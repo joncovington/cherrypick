@@ -8,6 +8,15 @@ file tracks the *suite*, not any one package.
 
 ## [Unreleased]
 
+- **Fixed: the suite-wide account listing ran a bare argv.** `accounts._first_broker_module`
+  called `cfgmod.broker_tool(mcfg)` without the module name, so for any module whose config block
+  does not declare `broker_tool` itself (meic ships without one), `cherrypick account --set` and
+  the Live Ops listing probed the login with `python list_accounts` — empty stdout, and
+  "list_accounts not ok" on every such machine, while `account --module`, `connect` and
+  `reconcile` (all of which pass the name) resolved the same tool fine. Now passes the name like
+  every other call site; guarded by a regression test asserting the argv the probe hands the
+  broker tool.
+
 ## v0.10.0 — 2026-10-01 — the public release
 The first release meant to be installed by someone other than its author: one command takes a fresh
 clone to a running console, the experimental modules ship switched off, every example config

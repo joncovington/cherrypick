@@ -133,7 +133,11 @@ def _first_broker_module(cfg: dict[str, Any]):
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         root = cfgmod.module_root(mcfg, name)
         if root.exists():
-            return name, mcfg, root, cfgmod.broker_tool(mcfg)
+            # Every other call site passes the module name so the known-module default applies;
+            # omitting it made the suite-wide listing run a bare argv for any module whose config
+            # block does not declare broker_tool itself (meic ships without one) — "list_accounts
+            # not ok" for every such machine, while per-module paths resolved fine.
+            return name, mcfg, root, cfgmod.broker_tool(mcfg, name)
     return None, None, None, None
 
 

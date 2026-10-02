@@ -158,6 +158,31 @@ def test_missing_keyring_service_degrades_cleanly(env):
     assert out["ok"] is False and "keyring_service" in out["error"]
 
 
+def test_suite_wide_probe_resolves_the_known_module_broker_tool(env, monkeypatch):
+    """The suite-wide surface (`cherrypick account --set` with no --module, and list_shared)
+    probes the login through _first_broker_module, which must resolve its argv the way every
+    per-module call site does: broker_tool(mcfg, name). Omitting the name skipped the
+    known-module default, so a module whose config block does not declare broker_tool itself
+    (meic ships without one) probed with a bare argv — `python list_accounts`, empty stdout —
+    and every such machine got "list_accounts not ok" while `account --module`, `connect` and
+    `reconcile` resolved the same tool fine. The spy is the guard: the fixture stub ignores the
+    argv it is handed, so only an assertion on the argv can catch the omission."""
+    _, cfg = env
+    seen: list = []
+
+    def spy(root, *argv, tool=None):
+        seen.append(list(tool or []))
+        return {"ok": True, "accounts": _ACCTS}
+
+    monkeypatch.setattr(accounts, "_tt", spy)
+    out = accounts.set_shared_account(cfg, "8569")
+    assert out["ok"] is True and out["designated"] == "****8569"
+    assert seen == [["-m", "cherrypick.meic.tt"]]
+    out = accounts.list_shared(cfg)
+    assert out["ok"] is True and out["designated"] == "****8569"
+    assert seen == [["-m", "cherrypick.meic.tt"], ["-m", "cherrypick.meic.tt"]]
+
+
 @pytest.fixture
 def fallback_env(tmp_path, monkeypatch):
     """Same shape as `env`, but wired to _FakeStoreWithFallback so the shared-service fallback
