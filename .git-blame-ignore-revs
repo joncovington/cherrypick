@@ -1,3 +1,3 @@
 # Format-only commits — skip in git blame (git config blame.ignoreRevsFile .git-blame-ignore-revs)
 # style: ruff format across every package (2026-07-29)
-298a286344115b3a13109054f8b707831e9a35a9
+c91473d506380cbf14c2c870367da0900d0e6025

@@ -8,7 +8,7 @@ Runnable from anywhere; the ledger resolves off `$CHERRYPICK_HOME` (default `~/.
 **What was wrong.** `paper._apply_exit_decision`'s expiry branch charged nothing ("expiration is not
 a transaction"), which is right for an OTM leg and wrong for an ITM one: SPX/XSP cash settlement is
 an exercise/assignment event the broker charges $5 for, per option symbol, never per contract. Fixed
-in 5ddcdf75 for every settlement from 2026-09-25 on; this brings the history in line, so the ledger
+in 587c9a17 for every settlement from 2026-09-25 on; this brings the history in line, so the ledger
 means one thing on both sides of the fix and no measurement break is needed.
 
 **What it rewrites.** For every row settled by expiry (`exit_reason` `expired_settlement` or

@@ -280,7 +280,7 @@ against. **No conclusion is claimed.**
 
 Settlement folds the expiry fee its real price charged into each position's `fees`, and
 `fly.position_pnl` reused that figure at every price, so a settled book's `worst` priced a
-hypothetical settlement with the real one's fees (fixed in d6f814a8). Every settled `fly_books`
+hypothetical settlement with the real one's fees (fixed in 184afc9c). Every settled `fly_books`
 floor was recomputed by `scripts/flies_recompute_book_floor.py`; `pnl` did not move, because the
 correction cancels at the settlement price, and the script refuses to write if it would.
 
