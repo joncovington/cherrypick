@@ -57,3 +57,8 @@ Thumbs.db
 # MSYS/Git Bash writes one of these wherever a process segfaults. `git subtree split`
 # reliably segfaults in this environment, so a routine core check litters the repo root.
 *.stackdump
+
+# Coverage databases: binary, and they embed this machine's absolute paths.
+.coverage
+.coverage.*
+htmlcov/
