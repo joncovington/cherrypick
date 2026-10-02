@@ -154,6 +154,13 @@ no setting).
 
 ## After installing: viewing the console
 
+> **⚠️ The console is not hardened. Keep it on this computer.** It has no login and was not built
+> to face a network: anyone who can reach it sees your positions and results and can use its
+> Config page, including the live-trading halt switch. It listens only on `127.0.0.1` (this
+> computer) by design. **Never expose it to your local network or the internet**: no port
+> forwarding, reverse proxy, tunnel (ngrok and the like) or remote-access sharing of the page.
+> The settings editor (`run.py settings`, port 8804) is under the same rule.
+
 The console is the web page where you look at everything: open **<http://127.0.0.1:5070>** in your
 browser and bookmark it. It listens on loopback only, so only this computer can open it. There is
 nothing to start by hand: the supervisor keeps it running in the background, restarts it if it dies,

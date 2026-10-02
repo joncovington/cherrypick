@@ -57,6 +57,15 @@ Paper fills here are modelled (at the mid, or with a modelled slippage concessio
 and early assignment is measured rather than modelled, so a paper result is an upper bound on what the
 same trades would have done live.
 
+## The console is not a secure web application
+
+The console (`http://127.0.0.1:5070`) and the settings editor (`run.py settings`, port 8804) have no
+login and are not hardened against attack. They listen only on `127.0.0.1`, so only this computer
+can open them, and they must stay that way: **never expose either to your local network or the
+internet** — no port forwarding, reverse proxy, tunnel or remote-access sharing. Anyone who can
+reach the console can read your positions, account figures and results, and use its Config page,
+including the live-trading halt switch.
+
 ## AI features
 
 The optional advisor and narratives send data to an AI model (Claude Code) and act only on paper

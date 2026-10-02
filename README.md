@@ -135,6 +135,13 @@ with an *experimental* chip.
 
 ## Where you look at the results
 
+> **⚠️ The console is not hardened. Keep it on this computer.** It has no login and was not built
+> to face a network: anyone who can reach it sees your positions and results and can use its
+> Config page, including the live-trading halt switch. It listens only on `127.0.0.1` (this
+> computer) by design. **Never expose it to your local network or the internet**: no port
+> forwarding, reverse proxy, tunnel (ngrok and the like) or remote-access sharing of the page.
+> The settings editor (`run.py settings`, port 8804) is under the same rule.
+
 - **The console** (`packages/console`, `127.0.0.1:5070`) — the suite's one read surface: every engine's
   read models plus interactive screening, the watchlist, and a strategy builder in one app. Read-only over
   every other package's data, and kept running by the supervisor rather than started by hand. A module or
