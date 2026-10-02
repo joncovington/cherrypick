@@ -11,6 +11,16 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: flies records what live fills needed, and paper shadows a live completion.** Every live
+  order now gets a `fly_live_orders` row (filled or not): its limit, the broker's own fill time and
+  leg-fill price, and at the fill, spot past the centre, spot past the completing long strike, and
+  the mid/natural gap to the limit. Each working order also gets a `fly_order_path` of quotes and
+  spot at every tick and watcher cycle. Every paper legged entry stamps the limit a live completion
+  would rest at and keeps first touches against it until settlement, down to net targets of
+  credit − 1.00. The order status from `cherrypick.core.broker` now carries the broker's per-leg
+  fills. Read with `run.py fill-model`; past orders are backfilled from broker transactions and the
+  gex spot trail with `python -m cherrypick.flies.fill_facts backfill` (a dry run unless `--write`).
+  Telemetry only, so not a measurement break. Write failures are logged, never raised into a fill.
 - **Fixed: the console's bridges reached the system Python on Linux.** The launcher prepends its
   own interpreter's directory to node's PATH so a bare `python` resolves to the one with the suite,
   but it resolved the path through symlinks — and a Linux venv's `bin/python` is a symlink to the
