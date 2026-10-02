@@ -20,8 +20,12 @@ Three steps, each its own subcommand and its own schedule:
   feed. The feed returns only its 50 newest orders, about a day's worth, so it is asked once per
   trader (about a week each) and the orders are kept, merged by id, so the history grows. Futures
   are dropped here; indexes are dropped by tastytrade, which does not list them as equities.
-  It also lands OCC's daily option volume by underlying for each recent session it lacks (one
-  CSV a session covers every name, ~4,400 underlyings), kept as `{underlying: contracts}`.
+  It also lands OCC's daily option volume by underlying for each recent session not yet stored,
+  through the morning pack's fetcher (`scripts/fetch_market_files.py`, the one place OCC is
+  fetched) into `market-files/occ/`, and reads contracts per underlying from there
+  (`cherrypick.overview.occ.contracts_by_session`). Until 2026-10-01 it kept its own copy,
+  totals only, in `universe/occ-volume/`; the two agreed on every underlying of all 13 sessions
+  both held.
 - **measure** (twice a session, inside regular hours only): for each candidate, tastytrade's
   liquidity rating (recorded as a guide), the stock's bid/ask, and the bid/ask of its at-the-money
   call and put about 30 days out. A quote not stamped inside that day's regular session is
@@ -42,9 +46,9 @@ Three steps, each its own subcommand and its own schedule:
   of the universe's names in one sync.
 
 Pacing: the follow feed gets one request per trader and OCC one per missing session, 5-10
-seconds apart; tastytrade gets batched calls and one chain request per name a day (cached), a
-second apart. A throttling response ends
-the step with what it has.
+seconds apart (OCC's pacing is the shared fetcher's); tastytrade gets batched calls and one chain
+request per name a day (cached), a second apart. A throttling response ends the step with what it
+has.
 
     python scripts/build_stock_universe.py harvest [--no-follow]
     python scripts/build_stock_universe.py measure [--force] [--limit N]
@@ -57,8 +61,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import csv
-import io
 import json
 import random
 import re
@@ -103,14 +105,6 @@ FOLLOW_PAUSE_RANGE_S = (5.0, 10.0)
 TT_PAUSE_S = 1.0
 TT_BATCH = 50  # instruments and metrics per call
 TT_QUOTE_BATCH = 100  # the market-data endpoint's own limit
-
-OCC_PAUSE_RANGE_S = (5.0, 10.0)
-OCC_URL = (
-    "https://marketdata.theocc.com/volume-query?reportDate={yyyymmdd}&format=csv&volumeQueryType=O"
-    "&symbolType=ALL&symbol=&reportType=D&accountType=ALL&productKind=ALL&porc=BOTH"
-)
-# An OCC reply this small is a "no data" page, not a session: a real day runs to ~4 MB.
-OCC_MIN_BYTES = 100_000
 
 FOLLOW_BASE = "https://follow.tastylive.com"
 FOLLOW_UA = "cherrypick-universe/1.0"
@@ -269,23 +263,6 @@ def reading(row: dict, measured_at: datetime, rule: dict = RULE) -> dict:
     elif row.get("options"):
         out["notes"].append("option quote stale or one-sided")
     return out
-
-
-def occ_volume(csv_text: str) -> dict[str, int]:
-    """{underlying: contracts traded} from one OCC daily volume-query CSV. OCC counts each side of a
-    trade (customer + firm on one side roughly equals market maker on the other: AAPL 1.53M C +
-    0.05M F against 1.56M M on 2026-09-25), so contracts traded is half the file's total. Rows for
-    every option root of an underlying (`AAPL`, `2AAPL` after an adjustment) add to it."""
-    totals: dict[str, int] = {}
-    for row in csv.DictReader(io.StringIO(csv_text)):
-        try:
-            q = int(row["quantity"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        und = (row.get("underlying") or "").strip()
-        if und:
-            totals[und] = totals.get(und, 0) + q
-    return {und: q // 2 for und, q in totals.items()}
 
 
 def to_occ(symbol: str) -> str:
@@ -693,55 +670,28 @@ def harvest_follow(kept: dict[str, dict]) -> tuple[dict[str, str], int, list[str
     return names, new, problems
 
 
-def _occ_dir() -> Path:
-    return store_dir() / "occ-volume"
-
-
 def load_volumes() -> dict[str, dict[str, int]]:
-    return {p.stem: v for p in sorted(_occ_dir().glob("????-??-??.json")) if (v := _read_json(p, None))}
+    """{session: {underlying: contracts}} from the shared OCC store. Imported here, not at the top:
+    this script's tests run where only the orchestrator is installed."""
+    from cherrypick.overview import occ
+
+    return occ.contracts_by_session()
 
 
-def harvest_occ(sessions: int) -> tuple[int, list[str]]:
-    """Land OCC's daily volume for each of the last `sessions` trading sessions not yet stored, one
-    request each, paced. A session OCC has not published yet (a tiny "no data" reply) is left for
-    the next run rather than stored as a day of zeros."""
-    from cherrypick.core import calendar as cal
+def harvest_occ() -> tuple[int, list[str]]:
+    """Land any recent OCC session the shared store lacks, by the morning pack's own fetcher, so
+    the screen never waits on the next market-files run for a session OCC has already published.
+    A session OCC has not published yet is left for the next run."""
+    import importlib.util
 
-    today = datetime.now(ET).date()
-    day = today if cal.is_trading_day(today) else cal.previous_trading_day(today)
-    wanted = []
-    while len(wanted) < sessions:
-        wanted.append(day)
-        day = cal.previous_trading_day(day)
-    landed, problems = 0, []
-    first = True
-    for d in sorted(wanted):
-        path = _occ_dir() / f"{d.isoformat()}.json"
-        if path.exists():
-            continue
-        if not first:
-            time.sleep(random.uniform(*OCC_PAUSE_RANGE_S))
-        first = False
-        url = OCC_URL.format(yyyymmdd=d.strftime("%Y%m%d"))
-        req = urllib.request.Request(url, headers={"User-Agent": FOLLOW_UA})
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                body = resp.read()
-        except urllib.error.HTTPError as exc:
-            problems.append(f"OCC {d}: HTTP {exc.code}")
-            if exc.code in (403, 429):
-                break
-            continue
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            problems.append(f"OCC {d}: {exc}")
-            continue
-        if len(body) < OCC_MIN_BYTES:
-            continue  # not published yet
-        volumes = occ_volume(body.decode("utf-8", errors="replace"))
-        if volumes:
-            _write_json(path, volumes)
-            landed += 1
-    return landed, problems
+    spec = importlib.util.spec_from_file_location(
+        "fetch_market_files", Path(__file__).with_name("fetch_market_files.py")
+    )
+    fmf = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fmf)
+    report: dict = {"problems": []}
+    fmf.fetch_occ(report, datetime.now(ET).date())
+    return len(report["occ"]["landed"]), report["problems"]
 
 
 def cmd_harvest(args) -> int:
@@ -761,7 +711,7 @@ def cmd_harvest(args) -> int:
         feed["harvested_at"] = datetime.now(UTC).isoformat()
         _write_json(feed_path, feed)
     follow = follow_candidates(feed["orders"], feed["traders"])
-    occ_landed, occ_problems = harvest_occ(RULE["lookback_sessions"])
+    occ_landed, occ_problems = harvest_occ()
     problems += occ_problems
 
     candidates = merge_candidates(vendor, follow)

@@ -139,17 +139,8 @@ def test_a_session_whose_file_lacks_the_name_counts_as_zero_volume():
     assert _status(_measurements(), volumes=vols)["status"] == "out"
 
 
-def test_occ_counts_both_sides_so_contracts_are_half_the_total():
-    csv_text = (
-        "quantity,underlying,symbol,actype,porc,exchange,actdate\n"
-        "1000,AAPL,AAPL,C,C,CBOE,09/25/2026\n"
-        "40,AAPL,2AAPL,F,P,CBOE,09/25/2026\n"
-        "1040,AAPL,AAPL,M,C,CBOE,09/25/2026\n"
-        "8,BRKB,BRKB,C,C,CBOE,09/25/2026\n"
-        "8,BRKB,BRKB,M,C,CBOE,09/25/2026\n"
-        "x,BAD,BAD,C,C,CBOE,09/25/2026\n"
-    )
-    assert bsu.occ_volume(csv_text) == {"AAPL": 1040, "BRKB": 8}
+def test_a_share_class_is_keyed_the_way_occ_writes_it():
+    # Halving OCC's sides into contracts is cherrypick.overview.occ's, tested there.
     assert bsu.to_occ("BRK.B") == "BRKB"
 
 
@@ -301,7 +292,8 @@ def test_the_strict_bar_is_not_loosened():
 
 
 def test_the_follow_feed_is_asked_slowly():
-    assert bsu.FOLLOW_PAUSE_RANGE_S[0] >= 5 and bsu.OCC_PAUSE_RANGE_S[0] >= 5 and bsu.TT_PAUSE_S >= 1.0
+    # OCC's pacing is the shared fetcher's (scripts/fetch_market_files.py), pinned in overview's tests.
+    assert bsu.FOLLOW_PAUSE_RANGE_S[0] >= 5 and bsu.TT_PAUSE_S >= 1.0
 
 
 def test_a_name_never_measured_is_out_once_its_volume_is_known_to_be_thin():

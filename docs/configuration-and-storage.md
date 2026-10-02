@@ -59,7 +59,7 @@ configure their own engine and nothing else:
 
 | Config | Owned by | Sets |
 |---|---|---|
-| `~/.cherrypick/config.json` | Orchestrator | `capabilities` (`claude`, `dolt` — see below); which modules are enabled + their `path` and `live_db`; the per-module `paper` block (`paper_db`, `trade_schema`, tick argv and cadence, entry/exit times) and `calibration`; the top-level `streamer` (the standalone producer), `services` (background daemons like the gex recorder) and `console`; `watchdog`, `eval_activity`, `trade_notify`, `desk_notify`, `status_digest`, `flies_payoff_post`, `notify`; `review`, `morning` (the overview), `technicals`, `market_report`; `data_epoch`, `log_archive`, `backup`; `advisor`, `reconcile`, `symbol_watch`; timezone. |
+| `~/.cherrypick/config.json` | Orchestrator | `capabilities` (`claude`, `dolt` — see below); which modules are enabled + their `path` and `live_db`; the per-module `paper` block (`paper_db`, `trade_schema`, tick argv and cadence, entry/exit times) and `calibration`; the top-level `streamer` (the standalone producer), `services` (background daemons like the gex recorder) and `console`; `watchdog`, `eval_activity`, `trade_notify`, `desk_notify`, `status_digest`, `flies_payoff_post`, `notify`; `review`, `morning` (the overview), `technicals`, `market_report`; `data_epoch`, `log_archive`, `backup`, `config_backup`; `advisor`, `reconcile`, `symbol_watch`; timezone. |
 | `~/.cherrypick/config/meic.json` | MEIC | `symbols`, delta/VIX bands, wing widths, credit floors, entry/exit windows, stop policy, regime thresholds, cash-settled set, deploy-limit pct. |
 | `~/.cherrypick/config/meic.risk.json` | MEIC | The arm registry (`active_profile`, `profiles`). Read from `$MEIC_RISK_CONFIG` if set, else this file, else the shipped control-only `packages/meic/config.risk.example.json`; a machine's arms are its own configuration, never the repo's. |
 | `~/.cherrypick/config/earnings.json` | Earnings | `available_capital_paper_mode`, position caps, entry/close windows, correlation block list, liquidity gates, per-strategy tuning, named profiles. |
@@ -143,6 +143,7 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | `flies_payoff_post` | **off** | `flies-payoff-post` |
 | `symbol_watch` | **off**, daily 06:30 when enabled | `symbol-watch` |
 | `backup` | **on**, daily 01:30 | `suite-backup` |
+| `config_backup` | **off** (opt in; `run.py config-backup --init --enable`, the installer, or the Config page) | `config-backup` |
 | `log_archive` | **on**, day 1 @ 03:30 | `log-archive` (monthly) |
 | `reconcile.schedule` | **off** by default, daily 16:30 when enabled — worth turning on once any module trades live, since it diffs the live ledger against the broker | `reconcile` |
 

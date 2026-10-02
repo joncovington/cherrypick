@@ -30,8 +30,8 @@ whichever is missing.
 
 ## Windows
 
-1. **Get the code.** Download the repository (green **Code** button → **Download ZIP**, then unzip it
-   somewhere easy to find, such as `Documents`), or clone it with git.
+1. **Get the code.** Download the [latest release][latest] (under **Assets**, **Source code
+   (zip)**, then unzip it somewhere easy to find, such as `Documents`), or clone it with git.
 2. **Run the installer.** Either double-click **`install.cmd`** in the cherrypick folder, or open
    PowerShell, go to the folder first, and run it from there:
 
@@ -45,15 +45,19 @@ whichever is missing.
    ```powershell
    git clone https://github.com/joncovington/cherrypick.git
    cd cherrypick
+   git checkout (git describe --tags --abbrev=0 origin/main)   # the latest release
    .\install.cmd
    ```
 
 ## macOS and Linux
 
-1. **Get the code** (the ZIP works here too — unzip it and `cd` into the folder):
+1. **Get the code**: the [latest release][latest]'s ZIP works here too (unzip it and `cd` into the
+   folder), or with git:
 
    ```bash
    git clone https://github.com/joncovington/cherrypick.git
+   cd cherrypick
+   git checkout "$(git describe --tags --abbrev=0 origin/main)"   # the latest release
    ```
 
 2. **Go to the folder, then run the installer** from inside it:
@@ -66,6 +70,12 @@ whichever is missing.
 On macOS and Linux the supervisor's anchor is a tagged entry in your user crontab. That backend is
 newer than the Windows Task Scheduler one and less proven on a real host — check
 `python packages/orchestrator/run.py status` after the first trading session, and report anything odd.
+
+Install from a release, not from `main`: `main` is where development happens and is often ahead of
+the latest release. The git lines above check out the newest release tag, which leaves git in
+"detached HEAD", as expected. How releases are cut: [docs/releasing.md](docs/releasing.md).
+
+[latest]: https://github.com/joncovington/cherrypick/releases/latest
 
 ## What the installer does
 
@@ -93,9 +103,15 @@ there, never overwrite your configuration, and are how you add Dolt or Claude Co
 8. **Broker login.** `python -m cherrypick.core.auth setup` asks for your OAuth `client_secret` and
    `refresh_token` (hidden input) and stores them in the OS keyring — Windows Credential Manager,
    the macOS Keychain or the Linux Secret Service — never in a file.
-9. **Start.** `run.py install` registers the one anchor task and starts the supervisor, which then
+9. **Settings history (optional, off unless you say yes).** `run.py config-backup --init --enable
+   [--remote <url>]` makes `~/.cherrypick` a git repository that tracks only `config.json` and
+   `config/*.json`, and the supervisor's `config-backup` job commits changes every 15 minutes and
+   pushes them to the remote, if you gave one. Use a **private** remote. Needs git; skipped without it.
+   Switch it on or off later on the console's Config page or with `run.py config-backup --enable` /
+   `--disable`.
+10. **Start.** `run.py install` registers the one anchor task and starts the supervisor, which then
    starts the data feed, every enabled module's paper loop and the console.
-10. **Open** <http://127.0.0.1:5070>.
+11. **Open** <http://127.0.0.1:5070>.
 
 | Option (Windows / macOS and Linux) | Effect |
 |---|---|
@@ -103,6 +119,7 @@ there, never overwrite your configuration, and are how you add Dolt or Claude Co
 | `-Yes` / `--yes` | Accept every default without asking (Dolt: no; connect: yes). The disclaimer still needs `-AcceptDisclaimer`. |
 | `-SkipDolt` / `--skip-dolt` | Do not offer the Dolt setup. Earnings and technicals stay off. |
 | `-WithDesk` / `--with-desk` | Also install the EXPERIMENTAL manual desk. Installing it does not enable it. |
+| `-ConfigHistory` / `--config-history` | Keep a git history of your settings without being asked (add `-ConfigRemote <url>` / `--config-remote <url>` to push it to a private repository you own). |
 | `-NoStart` / `--no-start` | Install only. Start later with `.venv/bin/python packages/orchestrator/run.py install` (`.venv\Scripts\python` on Windows). |
 
 **The supervisor runs the interpreter that ran `install`** — the installer's `.venv`. Run your own
@@ -196,6 +213,22 @@ Your data, configuration and broker login are **kept** (`~/.cherrypick` and the 
 running the installer again picks up where you left off. To remove everything, delete
 `~/.cherrypick` and the checkout by hand afterwards, and remove the `cherrypick-broker` entry from
 your keyring.
+
+## Updating to a new release
+
+Stop the suite (`uninstall.cmd` / `./uninstall.sh`; history and settings are kept), get the new
+release, and run the installer again. With the ZIP, unzip the new release over the old folder. With
+git, from the checkout:
+
+```bash
+git fetch --tags origin
+git checkout "$(git describe --tags --abbrev=0 origin/main)"
+```
+
+In PowerShell the second line is `git checkout (git describe --tags --abbrev=0 origin/main)`.
+
+Read that release's notes on the [Releases page](https://github.com/joncovington/cherrypick/releases)
+first: they say what changed and anything you need to do.
 
 ## For developers
 

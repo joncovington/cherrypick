@@ -1120,6 +1120,21 @@ def derive_jobs(
             enabled_reason="" if rs["enabled"] else "disabled in config (reconcile.schedule)",
         ),
     )
+    cbk = cfgmod.config_backup_settings(cfg)
+    add(
+        "config-backup",
+        lambda: JobSpec(
+            id="config-backup",
+            # Local git plus an optional push to the person's own remote (orchestrator.config_backup):
+            # commits whatever the home repo's allow-list tracks. A pass with nothing changed is a no-op.
+            argv=_run_py(pythonw, launcher, "config-backup"),
+            kind=KIND_INTERVAL,
+            interval_seconds=cbk["interval_minutes"] * 60,
+            enabled=cbk["enabled"],
+            enabled_reason="" if cbk["enabled"] else "disabled in config (config_backup.enabled)",
+        ),
+    )
+
     bk = cfgmod.backup_settings(cfg)
     add(
         "suite-backup",

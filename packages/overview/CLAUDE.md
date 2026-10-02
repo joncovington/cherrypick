@@ -49,8 +49,9 @@ once, here.
 ## The daily market files
 
 Readings with no good stream source come from files a script fetches each evening: Cboe's SKEW,
-VIX, VVIX and VXN histories, Treasury's par yield curve, and release calendars (BEA always; FRED's
-CPI, jobs and PPI once a FRED key is stored). `files.py` holds the parsers and the fetcher imports
+VIX, VVIX and VXN histories, Treasury's par yield curve, release calendars (BEA always; FRED's
+CPI, jobs and PPI once a FRED key is stored), and OCC's daily option volume by underlying with
+Nasdaq Trader's symbol directory. `files.py` holds the parsers and the fetcher imports
 them, so a file is validated on arrival by the code that reads it, and a download that parses to
 less than the file on disk is refused. **Every reader takes values strictly before the session.**
 
@@ -66,6 +67,19 @@ less than the file on disk is refused. **Every reader takes values strictly befo
   with its implied move (`scripts/fetch_earnings_moves.py`: 0.85 x the ATM straddle on the first
   expiration that can trade the print — the earnings module's rule, copied and pinned equal by a
   test). A file more than four days older than the session is refused.
+- **`hot_options`** (`occ.py`): OCC's cleared option volume for the newest session before the pack,
+  ranked the way the Hot Options Report ranks it — the five index products (VIX, SPY, SPX, IWM, QQQ),
+  then the top ten single-name equities and top five funds, each with call/put split, the customer
+  share of sides and volume against up to 20 prior sessions. Record-only.
+  - **OCC states both sides of every trade**, so contracts are its quantities halved (VIX 2026-09-30:
+    1,070,156 in the file, 535,078 at Cboe). The store keeps the sides; halving is on read.
+  - **OCC publishes a session late that evening** (10-01's file appeared between 23:12 and 23:22
+    ET), after the 18:45 fetch, so the 07:45 retry is what lands it before the pack. The block names
+    its session and counts `lag_sessions` behind the pack's prior one; more than three behind is
+    refused (`stale_occ_file`).
+  - **Stock or fund is Nasdaq Trader's `ETF` flag**, never guessed: no directory leaves equities
+    unranked (`no_listings_file`), and an unlisted name ranking in the top 25 (a cash index like
+    XSP) is named in `unclassified`.
 
 ## The pre-market tape
 

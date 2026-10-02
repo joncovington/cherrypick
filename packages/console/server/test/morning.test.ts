@@ -304,6 +304,47 @@ describe("fact version 4 blocks", () => {
   });
 });
 
+describe("the hot-options block", () => {
+  const row = {
+    symbol: "NVDA", rank: 4, contracts: 3048386, calls: 1988159, puts: 1060227, put_call: 0.53,
+    customer_side_pct: 46.9, avg_contracts: null, relative_volume: null,
+  };
+
+  it("passes the ranking through in the pack's order, and an unmeasured ratio stays null", () => {
+    const pack = minimalPack("2026-10-02");
+    pack["fact_version"] = 5;
+    pack["hot_options"] = {
+      session: "2026-09-30", lag_sessions: 1, listings_as_of: "2026-10-01", total_contracts: 66773828,
+      total_put_call: 0.77, underlyings: 4354, baseline_sessions: 3,
+      indexes: [{ symbol: "VIX", rank: null, contracts: 0 }, { ...row, symbol: "SPY", rank: 1 }],
+      equities: [row], funds: [], unclassified: ["XSP"], classification: "nasdaq_trader_directory",
+      record_only: true, reason: null,
+    };
+    writePack("2026-10-02", pack);
+    const h = readMorning(config).current?.hotOptions;
+    expect(h).toMatchObject({ session: "2026-09-30", lagSessions: 1, totalContracts: 66773828, unclassified: ["XSP"] });
+    expect(h?.indexes.map((r) => r.symbol)).toEqual(["VIX", "SPY"]);
+    expect(h?.indexes[0]).toMatchObject({ rank: null, contracts: 0, putCall: null });
+    expect(h?.equities?.[0]).toMatchObject({ symbol: "NVDA", putCall: 0.53, customerSidePct: 46.9, relativeVolume: null });
+  });
+
+  it("no directory keeps equities null, distinct from an empty list", () => {
+    const pack = minimalPack("2026-10-02");
+    pack["hot_options"] = { session: "2026-09-30", indexes: [], equities: null, funds: null, classification: "no_listings_file", reason: null };
+    writePack("2026-10-02", pack);
+    expect(readMorning(config).current?.hotOptions).toMatchObject({ equities: null, funds: null, classification: "no_listings_file" });
+  });
+
+  it("an unmeasured block carries its reason, and an older pack has no block at all", () => {
+    const pack = minimalPack("2026-10-02");
+    pack["hot_options"] = { session: null, reason: "no_occ_file" };
+    writePack("2026-10-02", pack);
+    writePack("2026-10-01", minimalPack("2026-10-01"));
+    expect(readMorning(config).current?.hotOptions).toMatchObject({ session: null, reason: "no_occ_file", indexes: [] });
+    expect(readMorning(config, "2026-10-01").current?.hotOptions).toBeNull();
+  });
+});
+
 describe("the technicals report", () => {
   function writeReport(session: string, extra: Record<string, unknown> = {}): void {
     fs.mkdirSync(path.join(tmp, "technicals"), { recursive: true });

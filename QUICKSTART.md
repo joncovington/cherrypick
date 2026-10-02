@@ -37,15 +37,21 @@ brew install python@3.13 node
 
 ## 2. Download cherrypick
 
-On the cherrypick GitHub page, click the green **Code** button, then **Download ZIP**. Unzip it
-into your **Documents** folder and rename the folder to just **`cherrypick`**, so the rest of this
+Open the [latest cherrypick release][latest]. Under **Assets**, click **Source code (zip)**. Unzip
+it into your **Documents** folder and rename the folder to just **`cherrypick`**, so the rest of this
 guide's paths match:
 
 - Windows: `C:\Users\<you>\Documents\cherrypick`
 - Mac: `/Users/<you>/Documents/cherrypick`
 
-(If you use git, `git clone` into the same place works too.) This folder is the **installation
-folder**: the installer puts everything it needs inside it, and you come back to it to run commands.
+(If you use git, clone into the same place and check out the latest release:
+`git checkout "$(git describe --tags --abbrev=0 origin/main)"`. [INSTALL.md](INSTALL.md) has the
+exact lines.)
+
+[latest]: https://github.com/joncovington/cherrypick/releases/latest
+
+This folder is the **installation folder**: the installer puts everything it needs inside it, and
+you come back to it to run commands.
 
 ## 3. Get your tastytrade API keys
 
@@ -109,6 +115,7 @@ The installer asks you a few things along the way:
 | Type YES to accept the disclaimer | Read [DISCLAIMER.md](DISCLAIMER.md), then type `YES`. |
 | Set up Dolt now? | **Optional.** Dolt downloads free market history that two extra features use: the **earnings** strategy and the **technicals** report. It is several GB and can take an hour. Answer **n** to skip it; those two features are then switched off and hidden, and you can add them later by running the installer again. |
 | Connect now? | Answer **y**. At `client_secret`, paste the **Client Secret** from step 3; at `refresh_token`, paste the **Refresh Token**. Nothing is shown as you paste; that is normal. Press Enter after each. |
+| Keep a history of your settings? | **Optional.** Answer **y** to have cherrypick keep a git history of your settings (never your trading data or passwords), so a change can be undone. It then asks for a private repository to copy it to: press Enter to keep it on your computer only. You can switch this on or off later on the console's **Config** page. Needs git installed. |
 
 At the end it starts cherrypick and opens the **console** in your web browser.
 
@@ -217,11 +224,12 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 1. Stop cherrypick: double-click **`uninstall.cmd`** (Windows) or run **`./uninstall.sh`** (Mac). Your
    history and settings are kept.
-2. Get the new version: download the new ZIP and unzip it over your installation folder (say *yes*
-   to replacing files), or, if you used git, run `git pull` in the installation folder.
+2. Get the new version: download the [latest release][latest]'s ZIP and unzip it over your
+   installation folder (say *yes* to replacing files), or, if you used git, follow
+   [INSTALL.md's updating steps](INSTALL.md#updating-to-a-new-release).
 3. Run the installer again, as in step 4. It brings everything up to date and starts cherrypick.
 
-Read the new version's `CHANGELOG.md` first: it says what changed and anything you need to do.
+Read the new release's notes on that page first: they say what changed and anything you need to do.
 
 ## Stopping cherrypick
 
