@@ -8,6 +8,7 @@ import type {
   MorningVolCurvePoint,
   MorningVolPercentile,
   MorningFuture,
+  MorningHotOptionsRow,
 } from "@console/shared";
 import { NoteMarkdown } from "../Review/NoteMarkdown";
 import { AXIS_FONT, SERIES_COLORS, LevelStrip } from "../../components/Charts";
@@ -710,6 +711,90 @@ function MovesYieldsCard({ pack }: { pack: MorningPack }) {
   );
 }
 
+function count(v: number | null | undefined): string {
+  return v === null || v === undefined ? "—" : v.toLocaleString();
+}
+
+function HotRows({ title, rows }: { title: string; rows: MorningHotOptionsRow[] }) {
+  return (
+    <>
+      <h3>{title}</h3>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Underlying</th>
+            <th>Contracts</th>
+            <th>Calls</th>
+            <th>Puts</th>
+            <th>P/C</th>
+            <th>vs avg</th>
+            <th>Customer sides</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.symbol}>
+              <td className="muted">{count(r.rank)}</td>
+              <td>{r.symbol}</td>
+              <td>{count(r.contracts)}</td>
+              <td>{count(r.calls)}</td>
+              <td>{count(r.puts)}</td>
+              <td>{fmt(r.putCall)}</td>
+              <td className={r.relativeVolume === null ? "muted" : ""}>
+                {r.relativeVolume === null ? "—" : `${fmt(r.relativeVolume)}x`}
+              </td>
+              <td className="muted">{r.customerSidePct === null ? "—" : `${fmt(r.customerSidePct, 1)}%`}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+/** OCC's prior-session option volume, ranked the Hot Options Report's way. The ranking is the
+ *  pack's; this only lays it out. */
+function HotOptionsCard({ pack }: { pack: MorningPack }) {
+  const h = pack.hotOptions;
+  if (!h) return null;
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2>Hot options</h2>
+        <span className="chip">record-only</span>
+        {h.session && <span className="card-asof">OCC cleared volume, {h.session}</span>}
+      </div>
+      {h.reason !== null ? (
+        <p className="muted">
+          Not measured ({h.reason}
+          {h.session ? `, newest file ${h.session}` : ""}).
+        </p>
+      ) : (
+        <>
+          <p className="muted">
+            {count(h.totalContracts)} contracts across {count(h.underlyings)} underlyings, put/call{" "}
+            {fmt(h.totalPutCall)}. “vs avg” is against {h.baselineSessions ?? 0} prior sessions.
+            {h.lagSessions ? ` ${h.lagSessions} session(s) behind the prior session — OCC publishes late in the evening, and the morning fetch had not landed it.` : ""}
+          </p>
+          <HotRows title="Indexes" rows={h.indexes} />
+          {h.equities === null ? (
+            <p className="muted">Equities and funds not ranked ({h.classification ?? "no directory"}).</p>
+          ) : (
+            <>
+              <HotRows title="Top single-name equities" rows={h.equities} />
+              {h.funds && h.funds.length > 0 && <HotRows title="Top funds" rows={h.funds} />}
+              {h.unclassified.length > 0 && (
+                <p className="muted">Unclassified among the most active: {h.unclassified.join(", ")}.</p>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 /** `tabs` is the Reports page's tab strip, rendered inside this page's own title row. Optional so
  *  the page still stands alone if it is ever routed to directly. */
 export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
@@ -897,6 +982,7 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
 
           <VolRegimeCard pack={current} />
           <MovesYieldsCard pack={current} />
+          <HotOptionsCard pack={current} />
           <DeploymentCard pack={current} />
 
           <CalendarCard pack={current} />

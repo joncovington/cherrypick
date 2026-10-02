@@ -115,6 +115,7 @@ The installer asks you a few things along the way:
 | Type YES to accept the disclaimer | Read [DISCLAIMER.md](DISCLAIMER.md), then type `YES`. |
 | Set up Dolt now? | **Optional.** Dolt downloads free market history that two extra features use: the **earnings** strategy and the **technicals** report. It is several GB and can take an hour. Answer **n** to skip it; those two features are then switched off and hidden, and you can add them later by running the installer again. |
 | Connect now? | Answer **y**. At `client_secret`, paste the **Client Secret** from step 3; at `refresh_token`, paste the **Refresh Token**. Nothing is shown as you paste; that is normal. Press Enter after each. |
+| Keep a history of your settings? | **Optional.** Answer **y** to have cherrypick keep a git history of your settings (never your trading data or passwords), so a change can be undone. It then asks for a private repository to copy it to: press Enter to keep it on your computer only. You can switch this on or off later on the console's **Config** page. Needs git installed. |
 
 At the end it starts cherrypick and opens the **console** in your web browser.
 

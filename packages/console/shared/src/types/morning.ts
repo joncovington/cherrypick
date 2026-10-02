@@ -275,6 +275,41 @@ export interface MorningYields {
   reason: string | null;
 }
 
+/** One underlying in the hot-options ranking. Contracts are OCC's sides halved (each trade is two). */
+export interface MorningHotOptionsRow {
+  symbol: string;
+  /** Overall rank by contracts across every underlying; null when it did not trade. */
+  rank: number | null;
+  contracts: number | null;
+  calls: number | null;
+  puts: number | null;
+  putCall: number | null;
+  /** Customer share of OCC's sides — not of contracts: a customer-to-customer trade is two sides. */
+  customerSidePct: number | null;
+  avgContracts: number | null;
+  relativeVolume: number | null;
+}
+
+/** OCC's cleared option volume for the newest session before the pack, ranked the way the Hot
+ *  Options Report ranks it: the five index products, then single-name equities and funds. */
+export interface MorningHotOptions {
+  session: string | null;
+  /** Sessions this file is behind the pack's prior session (OCC publishes late in the evening). */
+  lagSessions: number | null;
+  listingsAsOf: string | null;
+  totalContracts: number | null;
+  totalPutCall: number | null;
+  underlyings: number | null;
+  baselineSessions: number | null;
+  indexes: MorningHotOptionsRow[];
+  /** null when no stock/fund directory was on file — unranked, never guessed. */
+  equities: MorningHotOptionsRow[] | null;
+  funds: MorningHotOptionsRow[] | null;
+  unclassified: string[];
+  classification: string | null;
+  reason: string | null;
+}
+
 export interface MorningPack {
   session: string;
   factVersion: number | null;
@@ -294,6 +329,8 @@ export interface MorningPack {
   premarket: MorningPremarket | null;
   moves: MorningMoves | null;
   yields: MorningYields | null;
+  /** Absent before fact version 5. */
+  hotOptions: MorningHotOptions | null;
 }
 
 // --------------------------------------------------------------------------- Technicals report

@@ -10,13 +10,16 @@
 #   -SkipDolt   do not offer the Dolt setup (earnings and technicals stay off)
 #   -WithDesk   also install the EXPERIMENTAL manual desk (packages/desk)
 #   -NoStart    install only; do not start the suite
+#   -ConfigHistory [-ConfigRemote <url>]   keep a git history of your settings (see below)
 
 param(
     [switch]$Yes,
     [switch]$AcceptDisclaimer,
     [switch]$SkipDolt,
     [switch]$WithDesk,
-    [switch]$NoStart
+    [switch]$NoStart,
+    [switch]$ConfigHistory,
+    [string]$ConfigRemote = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -194,6 +197,32 @@ if ($connected) {
     if ($LASTEXITCODE -ne 0) { Warn "Not connected. Run this installer again to try once more." }
 } else {
     Warn "Skipped. Market data will not flow until you connect; run this installer again to do it."
+}
+
+# ---------------------------------------------------------------------------------- config history
+Step "Optional: a history of your settings"
+Note "cherrypick can keep a git history of your settings (config files only; never your trading"
+Note "data or passwords) and, if you give it one, push it to a PRIVATE repository you own, so a"
+Note "change can be undone and a new computer set up the same way."
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Note "git is not installed, so this is skipped. Install git and run the installer again to add it."
+} else {
+    $existing = Test-Path (Join-Path $HOME ".cherrypick\.git")
+    $want = $ConfigHistory -or $existing
+    if (-not $want -and -not $Yes) { $want = Ask "Keep a history of your settings?" $false }
+    if ($want) {
+        $remote = $ConfigRemote
+        if (-not $remote -and -not $Yes -and -not $existing) {
+            $remote = (Read-Host "    Private git repository URL to push to (Enter to keep it on this computer only)").Trim()
+        }
+        $cbArgs = @($RunPy, "config-backup", "--init", "--enable")
+        if ($remote) { $cbArgs += @("--remote", $remote) }
+        $null = & $VPy @cbArgs
+        if ($LASTEXITCODE -eq 0) { Note "On: your settings are committed every 15 minutes when they change." }
+        else { Warn "Could not set it up; run '.venv\Scripts\python packages\orchestrator\run.py config-backup --init' to see why." }
+    } else {
+        Note "Skipped. You can switch it on later on the console's Config page or with run.py config-backup."
+    }
 }
 
 # ---------------------------------------------------------------------------------- start

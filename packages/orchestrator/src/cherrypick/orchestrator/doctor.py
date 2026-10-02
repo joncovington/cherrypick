@@ -232,6 +232,26 @@ def _supervisor_checks(cfg: dict[str, Any], fast: bool) -> list[Check]:
 BACKUP_STALE_HOURS = 36  # one missed night, plus the slack a late catch-up run needs
 
 
+def _config_backup_check(cfg: dict[str, Any]) -> Check:
+    """The config-history job: off is fine (it is opt-in); on but not set up, failing, or a push
+    that keeps failing is a WARN, because the person believes their settings are being kept."""
+    from . import config_backup as cb
+
+    s = cfgmod.config_backup_settings(cfg)
+    if not s["enabled"]:
+        return Check("config_backup", OK, "off (opt in: run.py config-backup --init --enable)")
+    if not (_home.home() / ".git").exists():
+        detail = "switched on, but the cherrypick home is not a git repo (run.py config-backup --init)"
+        return Check("config_backup", WARN, detail)
+    last = cb.last_state()
+    if not last:
+        return Check("config_backup", OK, f"on, every {s['interval_minutes']} min; no pass recorded yet")
+    if not last.get("ok", False):
+        why = last.get("push_error") or last.get("error") or "unknown error"
+        return Check("config_backup", WARN, f"last pass failed at {last.get('at')}: {why[:160]}")
+    return Check("config_backup", OK, f"on, every {s['interval_minutes']} min; last pass {last.get('at')}")
+
+
 def _backup_check(cfg: dict[str, Any]) -> Check:
     """How old the newest nightly backup is. A backup job that silently stops running looks exactly
     like one that works until the night it is needed, so its age is a readiness row, not a log line."""
@@ -624,6 +644,7 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     checks.extend(_supervisor_checks(cfg, fast))
     checks.extend(_suite_task_checks(cfg))
     checks.append(_backup_check(cfg))
+    checks.append(_config_backup_check(cfg))
 
     # notify reachability — can the walk-away user actually be told?
     channels = cfg.get("notify", {}).get("channels", ["log"])

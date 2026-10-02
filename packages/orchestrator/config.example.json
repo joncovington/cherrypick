@@ -564,7 +564,7 @@
     "factpack_at": "08:30",
     "narrative": false,
     "narrative_at": "09:00",
-    "_comment_files": "The daily market files the pack reads (scripts/fetch_market_files.py): Cboe's SKEW/VIX/VVIX/VXN histories, Treasury's par yield curve and BEA's release dates, into data/market-files/. Credential-free, so ON with the pack: 'files_at' after Treasury posts (~18:00 ET), 'files_retry_at' before the pack builds. A download that parses to less than the file on disk is refused, so a failed fetch leaves yesterday's files. CPI, jobs and PPI dates need a free FRED API key, stored once with `python scripts/fetch_market_files.py fred-key`; without one the calendar carries BEA's releases and the FOMC dates only.",
+    "_comment_files": "The daily market files the pack reads (scripts/fetch_market_files.py): Cboe's SKEW/VIX/VVIX/VXN histories, Treasury's par yield curve, BEA's release dates, and OCC's daily option volume by underlying with Nasdaq Trader's symbol directory (the pack's hot options; OCC posts a session around 23:15 ET, so the 'files_retry_at' run is the one that lands it; each run lands any of the last 25 it lacks), into data/market-files/. Credential-free, so ON with the pack: 'files_at' after Treasury posts (~18:00 ET), 'files_retry_at' before the pack builds. A download that parses to less than the file on disk is refused, so a failed fetch leaves yesterday's files. CPI, jobs and PPI dates need a free FRED API key, stored once with `python scripts/fetch_market_files.py fred-key`; without one the calendar carries BEA's releases and the FOMC dates only.",
     "files": true,
     "files_at": "18:45",
     "files_retry_at": "07:45",
@@ -616,6 +616,12 @@
     "task_name": "cherrypick-log-archive",
     "day": 1,
     "at": "03:30"
+  },
+  "config_backup": {
+    "_comment": "A git history of this machine's configuration, OFF by default. `run.py config-backup --init [--remote <url>]` makes ~/.cherrypick a git repository whose .gitignore admits only config.json and config/*.json (never data, state, logs or credentials); then every interval_minutes the config-backup job commits what changed and, with push, pushes to the remote. Switch on here, on the console's Config page, or with `run.py config-backup --enable`. Use a PRIVATE remote: the files hold your strategy settings.",
+    "enabled": false,
+    "interval_minutes": 15,
+    "push": true
   },
   "backup": {
     "_comment": "The nightly suite backup (orchestrator.backup, the suite-backup job; run by hand with `cherrypick backup`). One verified zip of the suite's own data -- configs, state, every ledger (copied through SQLite's online backup API and quick_checked) and every artifact under data/ -- written to dest/cherrypick-backup.zip and REPLACED each night; only the latest is kept. A night with a problem never overwrites the good one (it lands as cherrypick-backup.failed.zip and notifies). Not included: the Dolt stores (re-pullable), the stream caches, logs, the vendor browser profile, and backup/archive copies. dest defaults to ~/.cherrypick/backups, the same disk: set it to another drive or a synced folder to survive a lost disk. `at` is ET.",

@@ -39,6 +39,53 @@ def _pct(value) -> str:
     return f"{value:+.2f}%" if isinstance(value, (int, float)) else DASH
 
 
+def _num(value, fmt: str = "{:,}") -> str:
+    return fmt.format(value) if isinstance(value, (int, float)) else DASH
+
+
+def _hot_rows(rows: list[dict]) -> list[str]:
+    out = [
+        "| # | Underlying | Contracts | Calls | Puts | P/C | vs avg | Customer sides |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for r in rows:
+        out.append(
+            f"| {_num(r.get('rank'))} | {r['symbol']} | {_num(r.get('contracts'))} | {_num(r.get('calls'))} "
+            f"| {_num(r.get('puts'))} | {_num(r.get('put_call'), '{:.2f}')} "
+            f"| {_num(r.get('relative_volume'), '{:.2f}x')} | {_num(r.get('customer_side_pct'), '{:.1f}%')} |"
+        )
+    out.append("")
+    return out
+
+
+def _hot_options(hot: dict) -> list[str]:
+    """OCC's prior-session volume, the Hot Options Report's split. Contracts, not OCC's sides."""
+    lines = [f"## Hot options ({hot.get('session') or 'not measured'})", ""]
+    if hot.get("reason"):
+        lines += [f"Not measured ({hot['reason']}).", ""]
+        return lines
+    lag = hot.get("lag_sessions") or 0
+    lines.append(
+        f"{_num(hot.get('total_contracts'))} contracts across {_num(hot.get('underlyings'))} underlyings, "
+        f"put/call {_num(hot.get('total_put_call'), '{:.2f}')}"
+        + (f" — **{lag} session(s) behind the prior session**" if lag else "")
+        + f" _(OCC cleared volume; vs avg over {hot.get('baseline_sessions', 0)} sessions)_"
+    )
+    lines.append("")
+    lines.append("**Indexes**")
+    lines.append("")
+    lines += _hot_rows(hot.get("indexes") or [])
+    if hot.get("equities") is None:
+        lines += [f"Equities and funds not ranked ({hot.get('classification') or DASH}).", ""]
+        return lines
+    lines += ["**Top single-name equities**", ""] + _hot_rows(hot["equities"])
+    if hot.get("funds"):
+        lines += ["**Top funds (outside the indexes)**", ""] + _hot_rows(hot["funds"])
+    if hot.get("unclassified"):
+        lines += [f"Unclassified among the most active: {', '.join(hot['unclassified'])}.", ""]
+    return lines
+
+
 def render(session: str) -> str | None:
     pack = _facts.read(session)
     if not pack:
@@ -221,6 +268,10 @@ def render(session: str) -> str | None:
         else:
             lines.append(f"Not measured ({yields.get('reason', DASH)}).")
         lines.append("")
+
+    hot = pack.get("hot_options") or {}
+    if hot:
+        lines.extend(_hot_options(hot))
 
     lines.append("## Sector board (prior session)")
     lines.append("")

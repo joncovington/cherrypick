@@ -38,6 +38,7 @@ from cherrypick.core.clock import ET as _ET
 
 from . import files as _files
 from . import gates as _gates
+from . import occ as _occ
 from . import paths as _paths
 from . import score as _score
 from . import symbols as _symbols
@@ -48,7 +49,9 @@ from . import symbols as _symbols
 # 4: + SKEW and VXN percentiles from Cboe's daily files, the `moves` and `yields` blocks, and the
 # calendar's `releases`, and the `premarket` futures/index block (2026-09-27). Additive: every v3 key
 # keeps its meaning.
-FACT_VERSION = 4
+# 5: + the record-only `hot_options` block, OCC's prior-session option volume ranked the way the
+# Hot Options Report ranks it (2026-10-01). Additive.
+FACT_VERSION = 5
 PACK = "overview.morning"
 
 # A pre-open quote older than this is not "live". Two hours spans the 07:00 producer start the
@@ -864,6 +867,7 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
         "premarket": premarket,
         "moves": _moves(readings, history),
         "yields": _yields(session),
+        "hot_options": _occ.block_for(session),
         "calendar": _calendar_block(session),
     }
 
