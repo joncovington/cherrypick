@@ -45,6 +45,13 @@
   "books": {
     "control": {
       "enabled": true
+    },
+    "_base_install_note": "A base install runs only `control`. The engine's other built-in arms run unless a config switches them off, so the example lists each one with enabled:false. Turn one on (or define your own) in ~/.cherrypick/config/curve.json.",
+    "noflip": {
+      "enabled": false
+    },
+    "hook": {
+      "enabled": false
     }
   },
   "_stream_note": "VXX is the only `symbols` entry (an underlying: spot + chain). VIX/VIX3M are quote-only `legs` \u2014 declaring them as `symbols` would have the producer maintain 0DTE chains for two symbols nothing here reads (the overview 2026-08-17 incident this plan explicitly avoids repeating).",

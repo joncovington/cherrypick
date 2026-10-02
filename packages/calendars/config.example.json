@@ -52,6 +52,10 @@
   "books": {
     "control": {
       "enabled": true
+    },
+    "_base_install_note": "A base install runs only `control`. The engine's other built-in arms run unless a config switches them off, so the example lists each one with enabled:false. Turn one on (or define your own) in ~/.cherrypick/config/calendars.json.",
+    "path": {
+      "enabled": false
     }
   },
 

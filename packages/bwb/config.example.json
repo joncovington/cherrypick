@@ -35,6 +35,16 @@
   "books": {
     "control": {
       "enabled": true
+    },
+    "_base_install_note": "A base install runs only `control`. The engine's other built-in arms run unless a config switches them off, so the example lists each one with enabled:false. Turn one on (or define your own) in ~/.cherrypick/config/bwb.json.",
+    "delta": {
+      "enabled": false
+    },
+    "bounce": {
+      "enabled": false
+    },
+    "flip": {
+      "enabled": false
     }
   },
   "_stream_note": "SPX is the only `symbols` entry. `expirations` carries the current target expiration plus every expiration still held open (the daily ladder holds up to ~7 distinct dates at steady state). `window_hints` is load-bearing: the body sits a full expected move below spot, at or beyond a default ATM window's edge, and must also cover the add-on bracket two increments below the far wing.",
