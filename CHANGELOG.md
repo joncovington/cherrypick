@@ -11,6 +11,18 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed: CI runs only what a pull request touches, installs with uv, and a 62-second core
+  test takes one.**
+  - A new `changes` job (`scripts/ci_changed_packages.py`) maps the changed paths to the package
+    jobs that need them. A package's own changes run that package; core, `scripts/`, `tools/`,
+    `.github/` and root config run everything; docs-only changes run only the docs job; a push to
+    main runs everything.
+  - Jobs that aren't needed skip their steps but still report, so every required check keeps its
+    name. A failed detection runs everything rather than nothing.
+  - Installs moved from pip to uv, with a cache.
+  - The slow test was the streamer's chain-fetch retry, which backed off 2+4+8+16+32 seconds without
+    checking for a stop. The backoff now ends the moment a stop is requested. That also stops a real
+    streamer asked to shut down during a retry from waiting up to a minute.
 - **Added: the flies `vol-floor` paper arm (from 2026-10-05).** `control` plus one variable: no
   entry while the ATM straddle is under 0.0022 of spot (`engine.low_vol_refusal`). The low-vol third
   of control's sessions completed 70% against a ~75% break-even. In-sample it was ahead in both
