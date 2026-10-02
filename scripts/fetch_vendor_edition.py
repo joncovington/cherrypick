@@ -25,9 +25,12 @@ what later runs reuse.
 the stage colours equal to the counts the edition states. A file that fails is kept aside as
 `YYYY-MM-DD.rejected.html`, never as the day's fixture. An existing edition is never overwritten.
 
-The vendor's address is not in this file. It lives in `collector.json` in the store:
+Nothing that names the vendor is in this file. Two generic keys in the suite config's
+`market_report` block say where to read and what the report is called, and the script refuses to run
+without both (the scheduler does not even create its jobs):
 
-    {"dashboard_url": "https://..."}
+    "vendor_dashboard_url": "https://...",
+    "vendor_edition_title": "<the title before the report's date>"
 
 Credentials live only in the OS keyring (service `cherrypick-vendor-report`).
 
@@ -64,7 +67,13 @@ COOLDOWN = timedelta(hours=24)
 CARD_READY_CHARS = 5000
 CARD_READY_TIMEOUT_S = 90
 
-HEADER_RE = re.compile(r"Vendor Report - ([A-Z][a-z]+ \d{1,2}, \d{4})")
+# The report header the browser looks for: '<vendor_edition_title> - September 25, 2026'. Built from the
+# config by load_config(), which every browser path calls first; None until then.
+HEADER_RE: re.Pattern[str] | None = None
+
+
+def header_re(title: str) -> re.Pattern[str]:
+    return re.compile(re.escape(title.strip()) + r" - ([A-Z][a-z]+ \d{1,2}, \d{4})")
 MONTHS = {
     m: i
     for i, m in enumerate(
@@ -194,13 +203,26 @@ def editions_dir() -> Path:
 
 
 def load_config() -> dict:
-    path = store_dir() / "collector.json"
-    if not path.exists():
+    """{"dashboard_url", "edition_title"} from the suite config's `market_report` block. Refuses
+    (exit) unless both generic keys are set: nothing about the vendor lives in the code."""
+    global HEADER_RE
+    from cherrypick.core import home
+
+    path = home.config_path()
+    try:
+        mr = json.loads(path.read_text(encoding="utf-8")).get("market_report") or {}
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"cannot read the suite config at {path}: {exc}") from exc
+    url, title = mr.get("vendor_dashboard_url"), mr.get("vendor_edition_title")
+    named = (("vendor_dashboard_url", url), ("vendor_edition_title", title))
+    missing = [key for key, value in named if not (isinstance(value, str) and value.strip())]
+    if missing:
         raise SystemExit(
-            f"No collector config at {path}. Create it with the dashboard address:\n"
-            '    {"dashboard_url": "https://..."}'
+            "The collector is not configured: set " + " and ".join(missing)
+            + f" in the market_report block of {path}. It does not run without them."
         )
-    return json.loads(path.read_text(encoding="utf-8"))
+    HEADER_RE = header_re(title)
+    return {"dashboard_url": url.strip(), "edition_title": title.strip()}
 
 
 def _state_path() -> Path:

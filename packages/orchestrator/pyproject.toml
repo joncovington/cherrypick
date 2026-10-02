@@ -6,15 +6,15 @@ build-backend = "hatchling.build"
 name = "cherrypick"
 version = "0.1.0"
 description = "Unattended paper-trading orchestrator + reporting hub for the cherrypick trading suite (drives MEICAgent / EarningsAgent in place). Imports as the cherrypick namespace package."
-readme = "ROADMAP.md"
-requires-python = ">=3.10"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
 authors = [{ name = "Jon Covington", email = "jon.covington@gmail.com" }]
 keywords = ["trading", "options", "orchestrator", "paper-trading", "cherrypick"]
-# License intentionally unset until the suite's licensing is decided (all rights reserved by default).
 classifiers = [
     "Private :: Do Not Upload",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.13",
     "Intended Audience :: Financial and Insurance Industry",
     "Topic :: Office/Business :: Financial :: Investment",

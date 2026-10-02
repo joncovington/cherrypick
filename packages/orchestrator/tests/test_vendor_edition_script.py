@@ -70,8 +70,8 @@ def edition(
         )
     )
     return (
-        "<!doctype html><html><head><title>Vendor Report - September 25, 2026</title></head>"
-        "<body><h1>Vendor Report - September 25, 2026</h1>" + body + "</body></html>"
+        "<!doctype html><html><head><title>Example Report - September 25, 2026</title></head>"
+        "<body><h1>Example Report - September 25, 2026</h1>" + body + "</body></html>"
     )
 
 
@@ -109,7 +109,7 @@ def test_a_ticker_in_the_wrong_colour_fails_the_count_check():
 
 
 def test_an_empty_page_shell_fails_every_content_check():
-    shell = "<html><body><h1>Vendor Report - September 25, 2026</h1></body></html>"
+    shell = "<html><body><h1>Example Report - September 25, 2026</h1></body></html>"
     problems = fve.validate_edition(shell, DAY)
     assert len(problems) == 6
 
@@ -248,3 +248,33 @@ def test_the_user_agent_is_regular_chrome_of_the_installed_version():
     ua = fve.chrome_user_agent("151.0.7922.34", "win32")
     assert "Headless" not in ua
     assert "Chrome/151.0.0.0 " in ua and "Windows NT 10.0; Win64; x64" in ua
+
+
+def test_the_script_refuses_without_its_generic_vendor_keys(tmp_path, monkeypatch):
+    """The script itself refuses too, before any browser or keyring: a person running it by hand
+    gets told which key to set rather than a run against nothing."""
+    import json
+
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    (tmp_path / "config.json").write_text(
+        json.dumps({"market_report": {"vendor_dashboard_url": "https://example.invalid/d"}}), encoding="utf-8"
+    )
+    with pytest.raises(SystemExit) as exc:
+        fve.load_config()
+    assert "vendor_edition_title" in str(exc.value)
+    (tmp_path / "config.json").write_text(
+        json.dumps(
+            {
+                "market_report": {
+                    "vendor_dashboard_url": "https://example.invalid/d",
+                    "vendor_edition_title": "Example Report",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert fve.load_config() == {
+        "dashboard_url": "https://example.invalid/d",
+        "edition_title": "Example Report",
+    }
+    assert fve.HEADER_RE.search("Example Report - September 25, 2026").group(1) == "September 25, 2026"

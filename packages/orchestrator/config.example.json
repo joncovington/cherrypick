@@ -602,6 +602,9 @@
   "market_report": {
     "_comment": "The vendor-edition collector (scripts/fetch_vendor_edition.py) - the fixture feed for docs/market-report-plan.md. Fetches the vendor's pre-open report after it is published ('edition_at', with a second chance at 'edition_retry_at'; a day already saved is skipped) and, after the close, the data behind its chart pages ('charts_at'), into data/market-report/. Paced on purpose: one browser session, 20-60 s between pages, at most 40 chart pages, and a 24-hour cooldown after any 429/403. Stops at a captcha or refused login and notifies. OFF by default: store the login first (`python scripts/fetch_vendor_edition.py credentials` then `login`), put the dashboard address in data/market-report/collector.json, then set collector=true and re-run `install`. Times are ET.",
     "collector": false,
+    "_vendor_note": "The collector needs both of these, and does not run without them even with collector true. vendor_dashboard_url: the address of the subscription dashboard the edition is read from. vendor_edition_title: the title the report carries before its date ('<title> - September 25, 2026'). The login itself is in the OS keyring (python scripts/fetch_vendor_edition.py credentials). You are responsible for complying with that service's terms.",
+    "vendor_dashboard_url": null,
+    "vendor_edition_title": null,
     "edition_at": "07:00",
     "edition_retry_at": "08:15",
     "charts_at": "17:15",

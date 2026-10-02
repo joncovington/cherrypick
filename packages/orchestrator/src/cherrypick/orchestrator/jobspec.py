@@ -943,7 +943,12 @@ def derive_jobs(
         ),
     )
     mr = cfgmod.market_report_settings(cfg)
-    mr_reason = "" if mr["collector"] else "disabled in config (market_report.collector)"
+    if mr["collector"]:
+        mr_reason = ""
+    elif mr["collector_switch"]:
+        mr_reason = "market_report.collector is on, but " + ", ".join(mr["collector_missing"]) + " not set"
+    else:
+        mr_reason = "disabled in config (market_report.collector)"
     for job_id, at, sub in (
         ("report-edition", mr["edition_at"], "edition"),
         ("report-edition-retry", mr["edition_retry_at"], "edition"),

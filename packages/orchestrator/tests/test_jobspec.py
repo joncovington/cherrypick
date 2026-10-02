@@ -841,7 +841,11 @@ def test_vendor_collector_runs_after_publication_and_after_the_close():
     and saves nothing. The chart data runs 20 minutes behind, so a capture before 16:20 files the
     previous session under today's panel."""
     cfg = suite_cfg()
-    cfg["market_report"] = {"collector": True}
+    cfg["market_report"] = {
+        "collector": True,
+        "vendor_dashboard_url": "https://example.invalid/dashboard",
+        "vendor_edition_title": "Example Report",
+    }
     jobs, errors = derive(cfg)
     assert errors == {}
     by_id = {j.id: j for j in jobs}
@@ -856,6 +860,24 @@ def test_vendor_collector_runs_after_publication_and_after_the_close():
     assert minutes("report-charts") >= 16 * 60 + 20
     assert by_id["report-edition"].argv[-1] == "edition"
     assert by_id["report-charts"].argv[-1] == "charts"
+
+
+def test_the_collector_never_runs_without_its_generic_vendor_keys():
+    """Nothing that names the vendor is in the code, so switched on without its address or its
+    report's title the collector has nothing to run against: no job fires, and the reason says
+    which key is missing."""
+    for missing in ("vendor_dashboard_url", "vendor_edition_title"):
+        cfg = suite_cfg()
+        cfg["market_report"] = {
+            "collector": True,
+            "vendor_dashboard_url": "https://example.invalid/dashboard",
+            "vendor_edition_title": "Example Report",
+        }
+        cfg["market_report"][missing] = "  "
+        by_id = {j.id: j for j in derive(cfg)[0]}
+        for job_id in ("report-edition", "report-edition-retry", "report-charts"):
+            assert by_id[job_id].enabled is False, job_id
+            assert missing in by_id[job_id].enabled_reason
 
 
 # --------------------------------------------------------------------------- stock universe (2026-09-27)

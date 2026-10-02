@@ -412,6 +412,10 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# The generic keys the vendor-edition collector cannot run without (market_report_settings).
+VENDOR_COLLECTOR_KEYS = ("vendor_dashboard_url", "vendor_edition_title")
+
+
 def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved scheduling for the vendor-edition collector (scripts/fetch_vendor_edition.py), the
     fixture feed for docs/market-report-plan.md. OFF by default: it needs a subscription login
@@ -432,8 +436,16 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     is the suite's one scheduled write to the broker account (a watchlist, never an order).
     """
     mr = cfg.get("market_report", {}) or {}
+    # The collector signs in to a subscription site, so nothing about that site is in the code: its
+    # address and its report's title are generic keys a person sets. Switched on without both, the
+    # collector is still off -- `collector_missing` names what is absent.
+    vendor = {key: mr.get(key) for key in VENDOR_COLLECTOR_KEYS}
+    missing = [key for key, value in vendor.items() if not (isinstance(value, str) and value.strip())]
     return {
-        "collector": bool(mr.get("collector", False)),
+        "collector": bool(mr.get("collector", False)) and not missing,
+        "collector_switch": bool(mr.get("collector", False)),
+        "collector_missing": missing,
+        **vendor,
         "edition_at": mr.get("edition_at", "07:00"),
         "edition_retry_at": mr.get("edition_retry_at", "08:15"),
         "charts_at": mr.get("charts_at", "17:15"),
