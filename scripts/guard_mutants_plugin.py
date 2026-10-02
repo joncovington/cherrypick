@@ -66,6 +66,10 @@ def _no_groups(*_args, **_kwargs):
     return {}
 
 
+def _unguarded(_log, fn, *args, **kwargs):
+    return fn(*args, **kwargs)
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -76,6 +80,7 @@ REPLACEMENTS = {
     "always_false": lambda: _always_false,
     "gone_at_once": lambda: _gone_at_once,
     "no_groups": lambda: _no_groups,
+    "unguarded": lambda: _unguarded,
 }
 
 
@@ -203,6 +208,15 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.core.looplock",
         attr="pid_alive",
         replacement="always_false",
+    ),
+    Mutant(
+        id="flies-fill-telemetry-guard",
+        breaks="a fill-telemetry failure aborts a live fill confirmation",
+        package="flies",
+        tests=("tests/test_fill_facts.py::test_a_telemetry_failure_never_stops_a_fill_being_confirmed",),
+        module="cherrypick.flies.live_loop",
+        attr="_telemetry",
+        replacement="unguarded",
     ),
 )
 

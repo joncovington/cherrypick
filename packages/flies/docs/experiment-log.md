@@ -434,3 +434,46 @@ never paid it" from "the slippage model ate it". The body's delta shows where in
 tolerance each attempt landed. The tick's shared `gate_detail` is now cleared before each entry mode,
 so one mode's legs or credit cannot land on another's row. Telemetry only: no gate moved, not a
 break. Build the replay after a few sessions; read it before touching the floor.
+
+## 2026-10-02 — live completions fill where paper's model says no; fill realism recorded from today
+
+Of the 48 live completions 2026-07-30..10-02, **43 filled below the best modelled completing debit
+the live loop saw while the spread was open**, by a median 0.14 points (about $14 a position, range
+0.025 worse to 0.49 better). Paper's gate (`debit < credit − fee_buffer`, on mid plus 0.125 of each
+leg's spread) would have refused those completions on the same quotes. Two readings, not yet
+separable: the live loop samples once a minute and the resting limit catches dips between samples,
+or the modelled haircut overcharges a resting order. Either way it questions the live-trading
+plan's assumption that paper's completion rate is a ceiling on live's.
+
+At the moment the loop noticed each fill, spot sat a median 6.2 points past the centre in the
+completing direction (−0.3 to 13.1; about 1.2 wing widths at 5-wide SPX), and median latency was
+22.7 minutes.
+
+From today the live ledger records every order and what it saw while it worked, and each paper
+legged entry carries a live-like completion shadow ([fill-model.md](fill-model.md)). The ledger's
+live `debit`/`credit` turned out to be each order's limit, not its fill, so any price improvement
+was invisible until now. Telemetry only: no gate moved, not a break. Read the shadow and the rule fit
+after a few dozen quoted completion orders; any switch of paper's completion rule lands at a
+declared boundary.
+
+**The backfill, same day** (`fill_facts backfill --write`; broker fill times from the transactions,
+spot from the gex trail; 2026-08-01..10-02, SPX and XSP):
+
+| | Orders | Filled | Spot past centre at fill (p25 / p50 / p75) | Past the completing long strike (p50) | Better than limit |
+|---|---|---|---|---|---|
+| Entries | 66 | 55 (11 cancelled) | −2.3 / −1.6 / −0.8 pts | — | none above 0.10 |
+| Completions | 55 | 42 (13 cut off at 15:30) | 3.6 / 5.1 / 6.0 pts (0.71 / 1.03 / 1.20 widths) | +0.14 pts | none above 0.05 |
+
+- **Completions fill when spot reaches the completing long strike.** The median sits 0.14 points
+  past it (0.21 of the entry's straddle past the centre). Measured at the moment the loop
+  noticed instead, the same fills read 6.2–6.4 points: notice lag, not market.
+- **There is no price improvement to speak of.** Every fill was within 0.05 of its limit, so the
+  ledger's limit-as-price was a fair record. The gap to paper is when the market reaches a limit,
+  not what it fills at.
+- **Entries fill on submission**, at the price asked; the 11 that did not were cancelled and
+  re-priced by the loop.
+- **A spot-distance rule** ("fill at the first time spot is X widths past the centre", over each
+  order's trail path) agrees with live on 84% of the 55 completion orders at 0.25–0.75 widths, and
+  fires a median 2.5–6.5 minutes early. At 1.0 width it agrees on only 65%: 18 fills arrived before
+  spot got there, because the limit depends on the credit as well as on spot. Spot alone is a
+  coarse rule. The price rules need quoted paths, which start today.

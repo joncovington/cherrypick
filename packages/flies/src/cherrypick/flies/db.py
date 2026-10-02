@@ -272,6 +272,83 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_fly_measurement_breaks_date ON measurement_breaks (break_date);
+
+-- LIVE fill realism (2026-10-02, fill_model.py). One row per live ORDER, entry and completion alike,
+-- from placement to resolution: what it was asked to do, what the broker says happened, and what the
+-- market looked like when it filled. Filled and unfilled orders both: a fill rule is fitted on the
+-- orders that never filled as much as on the ones that did. Telemetry only -- nothing on a decision
+-- path reads it, and a write failure here never costs a trade.
+--
+-- Three groups of columns, each written at a different time:
+--   placement   order_id .. placed_at, written when the order is placed;
+--   resolution  outcome .. fill_time_source, written when the order fills or dies. `resolved_at`
+--               is when WE learned it; `broker_filled_at` is the broker's own leg-fill time and
+--               `broker_fill_price` the per-share net from its leg fills (NULL until the order
+--               status carries fills, and on backfilled rows until the transactions are matched).
+--               `limit_price` is not the fill price: until 2026-10-02 the ledger's debit/credit was
+--               the order's own price field, which IS its limit, so price improvement was invisible;
+--   at the fill fill_spot .. fill_natural_gap, derived from fly_order_path (and the gex spot trail
+--               where the path has no observation); rebuildable, so `source` says how a row was made.
+-- The three distances and the signs are fill_model.py's: + is the completing direction for spot,
+-- and + is "the market had not reached the limit" for the two price gaps.
+CREATE TABLE IF NOT EXISTS fly_live_orders (
+    order_id           TEXT PRIMARY KEY,
+    trade_date         TEXT NOT NULL,
+    position_id        TEXT NOT NULL,
+    leg                TEXT NOT NULL,     -- entry | completion
+    side               TEXT,
+    center             REAL,
+    wing_width         REAL,
+    quantity           INTEGER,
+    limit_price        REAL,              -- per share, positive: the credit asked or the debit bid
+    mid_at_submit      REAL,              -- the spread's mid in the order's own direction
+    spot_at_submit     REAL,
+    placed_at          TEXT,
+    outcome            TEXT,              -- working | filled | cancelled | cutoff_cancelled |
+                                          --   replaced | <broker terminal state>
+    resolved_at        TEXT,
+    broker_filled_at   TEXT,
+    broker_fill_price  REAL,              -- per share, positive, in the order's own direction
+    fill_time_source   TEXT,              -- broker_order | transactions | noticed
+    fill_spot          REAL,
+    fill_spot_source   TEXT,              -- path | trail
+    fill_dist_center   REAL,
+    fill_dist_long     REAL,
+    fill_dist_widths   REAL,
+    fill_dist_moves    REAL,
+    fill_obs_at        TEXT,              -- the path observation the price measures came from
+    fill_mid           REAL,
+    fill_natural       REAL,
+    fill_mid_gap       REAL,
+    fill_natural_gap   REAL,
+    source             TEXT NOT NULL DEFAULT 'live',  -- live | backfill
+    updated_at         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_fly_live_orders_date ON fly_live_orders(trade_date);
+
+-- The market each working live order saw, every time the loop looked: the main tick and every
+-- burst-watcher cycle (~10s), for as long as the order works. The stream cache keeps no quote
+-- history, so this is recorded live or lost. Leg quotes rather than a spread price, so any price
+-- (mid, natural, a fraction of the spread) can be re-derived: `buy_*` is the leg the order buys and
+-- `sell_*` the one it sells (entry: buys the wing, sells the centre; completion: buys the far
+-- strike, sells the centre).
+CREATE TABLE IF NOT EXISTS fly_order_path (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    observed_at   TEXT NOT NULL,
+    trade_date    TEXT NOT NULL,
+    position_id   TEXT NOT NULL,
+    order_id      TEXT NOT NULL,
+    leg           TEXT NOT NULL,
+    source        TEXT,                -- tick | watch
+    limit_price   REAL,
+    buy_bid       REAL,
+    buy_ask       REAL,
+    sell_bid      REAL,
+    sell_ask      REAL,
+    spot          REAL,
+    UNIQUE (observed_at, order_id)
+);
+CREATE INDEX IF NOT EXISTS idx_fly_order_path_order ON fly_order_path(order_id, observed_at);
 """
 
 
@@ -515,6 +592,15 @@ _ADDED_POSITION_COLUMNS = {
     # improvement), the MEIC and bwb convention. Entry only: the completion is a resting limit that
     # fills whenever the market reaches it, so it has no submission mid to concede against.
     "entry_mid_at_submit": "REAL",
+    # PAPER only (2026-10-02): the live-like completion shadow (fill_model.py). Every legged entry
+    # stamps the limit a live completion order would have rested at -- `max_safe_completion_debit`
+    # floored to the tick, exactly what `live_orders.resting_completion_spec` submits -- and every
+    # tick folds the completing spread's mid/natural gap and spot distance into a first-touch
+    # record (JSON: fill_model.update_touches), until settlement and whether or not paper's own rule
+    # completed the position. Tag-don't-gate: paper's completion is untouched, nothing reads these
+    # on a decision path, and the shadow book is a read-side replay at any grid value.
+    "shadow_completion_limit": "REAL",
+    "shadow_touches": "TEXT",
 }
 
 # Rows whose decisions rest on a defect, stamped once when `void_reason` is first added. Keyed on
@@ -943,6 +1029,75 @@ def record_live_mark(
         ),
     )
     conn.commit()
+
+
+def save_live_order(conn, row: dict) -> None:
+    """Insert or merge one `fly_live_orders` row by `order_id`: only the columns given are written,
+    so placement, resolution and the at-fill measures can each land when they are known."""
+    row = {**row, "updated_at": _now()}
+    existing = conn.execute("SELECT 1 FROM fly_live_orders WHERE order_id = ?", (row["order_id"],)).fetchone()
+    if existing is None:
+        cols = ", ".join(row)
+        marks = ", ".join("?" for _ in row)
+        conn.execute(f"INSERT INTO fly_live_orders ({cols}) VALUES ({marks})", list(row.values()))
+    else:
+        sets = ", ".join(f"{c} = ?" for c in row if c != "order_id")
+        vals = [v for c, v in row.items() if c != "order_id"] + [row["order_id"]]
+        conn.execute(f"UPDATE fly_live_orders SET {sets} WHERE order_id = ?", vals)
+    conn.commit()
+
+
+def live_order(conn, order_id) -> dict | None:
+    row = conn.execute("SELECT * FROM fly_live_orders WHERE order_id = ?", (str(order_id),)).fetchone()
+    return dict(row) if row is not None else None
+
+
+def record_order_path(
+    conn,
+    *,
+    observed_at: str,
+    trade_date: str,
+    position_id: str,
+    order_id: str,
+    leg: str,
+    source: str,
+    limit_price: float | None,
+    buy_bid: float | None,
+    buy_ask: float | None,
+    sell_bid: float | None,
+    sell_ask: float | None,
+    spot: float | None,
+) -> None:
+    """One look at a working live order's market. Idempotent on (observed_at, order_id). Pure
+    telemetry: nothing reads it on the decision path."""
+    conn.execute(
+        "INSERT OR REPLACE INTO fly_order_path (observed_at, trade_date, position_id, order_id, leg, "
+        "source, limit_price, buy_bid, buy_ask, sell_bid, sell_ask, spot) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            observed_at,
+            trade_date,
+            position_id,
+            str(order_id),
+            leg,
+            source,
+            limit_price,
+            buy_bid,
+            buy_ask,
+            sell_bid,
+            sell_ask,
+            spot,
+        ),
+    )
+    conn.commit()
+
+
+def order_path(conn, order_id) -> list[dict]:
+    """A live order's recorded path, oldest first."""
+    rows = conn.execute(
+        "SELECT * FROM fly_order_path WHERE order_id = ? ORDER BY observed_at", (str(order_id),)
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def open_positions(conn, book_id: str) -> list[dict]:

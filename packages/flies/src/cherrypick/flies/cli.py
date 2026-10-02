@@ -199,6 +199,33 @@ def cmd_reversal_book(args) -> int:
     return 0
 
 
+def cmd_fill_model(args) -> int:
+    """Live fill realism (the LIVE ledger) beside the paper shadow (the paper ledger): what live
+    orders needed from the market, how well each first-touch rule reproduces them, and what the
+    paper books would have done under that rule. Read-only on both ledgers."""
+    from cherrypick.flies import analytics
+
+    live = dbmod.connect(args.live_db or dbmod.live_db_path())
+    paper = dbmod.connect(args.db)
+    out = {
+        "ok": True,
+        "live": analytics.fill_realism(live, start=args.start, end=args.end),
+        "shadow": analytics.shadow_completion(
+            paper,
+            start=args.start,
+            end=args.end,
+            symbol=args.symbol,
+            arm=args.arm,
+            basis=args.basis,
+            cutoff=args.cutoff,
+        ),
+    }
+    if not args.grid:
+        out["live"].pop("rule_fit", None)
+    print(json.dumps(out, indent=2, default=str))
+    return 0
+
+
 def regime_cuts_dir() -> str:
     """Where the artifact lands: beside advice_active.json, resolved the way paper_loop resolves it."""
     from cherrypick.flies import paper_loop
@@ -280,6 +307,20 @@ def main(argv=None) -> int:
     p_rev.add_argument("--window", type=float, default=10.0, help="max minutes between the two entries")
     p_rev.add_argument("--detail", action="store_true", help="include every pair")
     p_rev.set_defaults(func=cmd_reversal_book)
+
+    p_fill = sub.add_parser(
+        "fill-model",
+        help="live fill realism (distances, gaps, rule fit) beside the paper live-like completion shadow",
+    )
+    p_fill.add_argument("--start")
+    p_fill.add_argument("--end")
+    p_fill.add_argument("--arm", help="paper arm for the shadow (default: every legged arm)")
+    p_fill.add_argument("--symbol")
+    p_fill.add_argument("--basis", choices=("mid", "natural", "dist"), default="mid")
+    p_fill.add_argument("--cutoff", default="15:30", help="the shadow's completion cutoff, HH:MM ET")
+    p_fill.add_argument("--live-db", help="the live ledger (default: the live ledger's own path)")
+    p_fill.add_argument("--grid", action="store_true", help="include the per-value rule fit")
+    p_fill.set_defaults(func=cmd_fill_model)
 
     p_bands = sub.add_parser(
         "bands", help="band placement against the session's realized range, and whether it predicts the floor"
