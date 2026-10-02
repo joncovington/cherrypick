@@ -7,6 +7,7 @@ import { TimeLineChart } from "../../components/chart/TimeLineChart";
 import { TimeBarChart } from "../../components/chart/TimeBarChart";
 import { TabStrip } from "../../components/ScopeBar";
 import { powerNote, WithheldNote } from "../../lib/power";
+import { DailyRiskTiles } from "../../components/performance/DailyRiskTiles";
 
 interface BreakdownRow {
   bucket: string;
@@ -90,29 +91,7 @@ export function MeicPerformanceTab({
   return (
     <div className="cards cards-wide">
       <Card title="Risk-adjusted metrics ($100k bankroll, 252-day annualization)" updatedAt={dataUpdatedAt}>
-        <div className="stats-grid">
-          {[
-            ["sharpe (daily, ann.)", risk?.sharpe],
-            ["sortino (daily, ann.)", risk?.sortino],
-            ["calmar", risk?.calmar],
-            ["recovery factor", risk?.recoveryFactor],
-          ].map(([label, v]) => (
-            <div key={String(label)} className="stat-tile">
-              <span className="stat-label">{String(label)}</span>
-              <span className="stat-value">{typeof v === "number" ? v.toFixed(2) : "—"}</span>
-            </div>
-          ))}
-          <div className="stat-tile">
-            <span className="stat-label">sample (days)</span>
-            <span className="stat-value">{risk?.sampleSize ?? "—"}</span>
-          </div>
-        </div>
-        {risk !== undefined && (risk.sharpeOverfitFlag || risk.undersampledFlag) && (
-          <p className="stale-note" style={{ marginBottom: 0 }}>
-            {risk.sharpeOverfitFlag && "Sharpe > 3 reads as a curve-fit warning, not a stronger pass. "}
-            {risk.undersampledFlag && `Only ${risk.sampleSize} sessions — ratio metrics are not yet meaningful.`}
-          </p>
-        )}
+        <DailyRiskTiles risk={risk} maxDrawdown={equity.length > 0 ? Math.max(...equity.map((e) => e.drawdown), 0) : null} />
       </Card>
 
       <Card title="Profile comparison (every profile, ranked by net — the variance-test payoff)" updatedAt={dataUpdatedAt}>

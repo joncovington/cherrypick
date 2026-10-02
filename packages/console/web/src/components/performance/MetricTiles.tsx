@@ -1,6 +1,7 @@
 import type { OnPeakRisk } from "@console/shared";
 import { fmtMoney, fmtNum, fmtPct } from "../../lib/format";
 import { Tile } from "./Tile";
+import { TileGrid } from "./TileGrid";
 
 /**
  * The core calibration-reading tile row -- one `reading` object (a group's `calibration_reading`
@@ -35,6 +36,14 @@ function nested(reading: Record<string, unknown>, key: string, valueKey: "value"
   return { v, n };
 }
 
+/** `worst_session`'s `{session, net}` (core.metrics), or null when absent or misshapen. */
+function worstSession(reading: Record<string, unknown>): { session: string; net: number } | null {
+  const raw = reading["worst_session"];
+  if (typeof raw !== "object" || raw === null) return null;
+  const obj = raw as Record<string, unknown>;
+  return typeof obj["session"] === "string" && typeof obj["net"] === "number" ? { session: obj["session"], net: obj["net"] } : null;
+}
+
 function tone(v: number | null): "pos" | "neg" | "dim" | undefined {
   if (v === null) return "dim";
   return v >= 0 ? "pos" : "neg";
@@ -59,19 +68,23 @@ export function MetricTiles({ reading, peakRisk }: { reading: Record<string, unk
   const expectancy = num(reading, "expectancy");
   const profitFactor = num(reading, "profit_factor");
   const sharpe = num(reading, "sharpe");
+  const sessionSharpe = num(reading, "session_sharpe");
+  const psr = num(reading, "psr");
+  const sessions = count(reading, "sessions");
+  const worst = worstSession(reading);
   const maxDrawdown = num(reading, "max_drawdown");
   const returnOnCapital = num(reading, "return_on_capital");
   const captureRate = nested(reading, "capture_rate", "value");
 
+  // Twelve tiles, so TileGrid's 2/3/4/6 columns always come out even. The first six are edge, the
+  // second six shape and risk; the per-session pair sits beside the per-trade Sharpe it corrects.
   return (
-    <div className="stats-grid">
+    <TileGrid count={12}>
       <Tile label="sample" value={sample === null ? "—" : String(sample)} tone="dim" />
       <Tile label="net P&L" value={fmtMoney(netPnl)} tone={tone(netPnl)} afterFees n={sample} />
       <Tile label="win rate" value={fmtPct(pctFraction(winRate), 1)} tone={tone(winRate === null ? null : winRate - 0.5)} n={sample} />
       <Tile label="expectancy" value={fmtMoney(expectancy)} tone={tone(expectancy)} afterFees n={sample} />
       <Tile label="profit factor" value={fmtNum(profitFactor)} tone={tone(profitFactor === null ? null : profitFactor - 1)} n={sample} />
-      <Tile label="sharpe / trade" value={fmtNum(sharpe)} tone={tone(sharpe)} n={sample} />
-      <Tile label="max drawdown" value={fmtMoney(maxDrawdown === null ? null : -maxDrawdown)} tone={maxDrawdown === null || maxDrawdown === 0 ? "dim" : "neg"} afterFees />
       {peakRisk !== undefined ? (
         <Tile
           label="return on peak risk"
@@ -91,6 +104,45 @@ export function MetricTiles({ reading, peakRisk }: { reading: Record<string, unk
         <Tile label="return on capital" value={fmtPct(pctFraction(returnOnCapital), 1)} tone={tone(returnOnCapital)} n={sample} />
       )}
       <Tile label="capture rate" value={fmtPct(pctFraction(captureRate.v), 1)} tone={tone(captureRate.v)} n={captureRate.n} />
-    </div>
+      <Tile
+        label="max drawdown (per trade)"
+        value={fmtMoney(maxDrawdown === null ? null : -maxDrawdown)}
+        tone={maxDrawdown === null || maxDrawdown === 0 ? "dim" : "neg"}
+        afterFees
+        title="peak-to-trough of the running net, trade by trade in session order"
+      />
+      <Tile
+        label="worst session"
+        value={fmtMoney(worst?.net ?? null)}
+        tone={tone(worst?.net ?? null)}
+        n={sessions}
+        nUnit="sessions"
+        afterFees
+        title={worst !== null ? `the single worst day's net, ${worst.session}` : undefined}
+      />
+      <Tile
+        label="sharpe / trade"
+        value={fmtNum(sharpe)}
+        tone={tone(sharpe)}
+        n={sample}
+        title="mean over stdev of per-trade net. Entries on one day are not independent, so this reads steadier than the book; the per-session figure is the risk the arm ran"
+      />
+      <Tile
+        label="sharpe / session"
+        value={fmtNum(sessionSharpe)}
+        tone={tone(sessionSharpe)}
+        n={sessions}
+        nUnit="sessions"
+        title="mean over stdev of per-session net, not annualised (×√252 for a daily book, ×√52 for a weekly one). Refused below the suite's minimum effective sample of sessions"
+      />
+      <Tile
+        label="P(sharpe > 0)"
+        value={fmtPct(pctFraction(psr), 1)}
+        tone={psr === null ? "dim" : tone(sessionSharpe)}
+        n={sessions}
+        nUnit="sessions"
+        title="probabilistic Sharpe ratio: the chance the true per-session Sharpe is above zero, given how many sessions there are and how skewed and fat-tailed they were. Short premium's rare large loss lowers it below what the Sharpe alone suggests"
+      />
+    </TileGrid>
   );
 }

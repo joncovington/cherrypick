@@ -5,6 +5,8 @@ import { fliesQuery, type FliesFilter } from "../../lib/api";
 import { fmtMoney } from "../../components/DataTable";
 import { EquityUnderwater } from "../../components/EquityUnderwater";
 import { VoidedNote } from "./VoidedNote";
+import { DailyRiskTiles } from "../../components/performance/DailyRiskTiles";
+import { TileGrid } from "../../components/performance/TileGrid";
 
 interface Performance {
   tiles: {
@@ -206,46 +208,41 @@ export function CompletionCard({ c }: { c: Performance["completion"] | undefined
     <section className="card">
       <h2>Completion (legged — the number that decides if this is real)</h2>
       {c !== undefined && (
-        <table className="data-table">
-          <tbody>
-            <tr><td className="muted">legged entries</td><td>{c.leggedEntries}</td></tr>
-            <tr><td className="muted">completed into flies</td><td>{c.completed}</td></tr>
-            <tr><td className="muted">completion rate</td><td>{c.completionRatePct !== null ? `${c.completionRatePct.toFixed(1)}%` : "—"}</td></tr>
-            <tr><td className="muted">median latency</td><td>{c.medianLatencyMin !== null ? `${c.medianLatencyMin.toFixed(0)}m` : "—"}</td></tr>
-            <tr>
-              <td className="muted">latency range</td>
-              <td>{c.minLatencyMin !== null ? `${c.minLatencyMin.toFixed(0)}–${c.maxLatencyMin?.toFixed(0)}m` : "—"}</td>
-            </tr>
-            <tr><td className="muted">median spot move to complete</td><td>{c.medianSpotMove !== null ? c.medianSpotMove.toFixed(2) : "—"}</td></tr>
-          </tbody>
-        </table>
-      )}
-    </section>
-  );
-}
-
-export function MissesCard({ c }: { c: Performance["completion"] | undefined }) {
-  return (
-    <section className="card">
-      <h2>Why misses missed (opposite remedies — do not lump)</h2>
-      {c !== undefined && (
-        <table className="data-table">
-          <tbody>
-            <tr>
-              <td className="muted" title="the best debit ever seen was still above the credit — no buffer would have helped">market never offered it</td>
-              <td>{c.neverOffered}</td>
-            </tr>
-            <tr>
-              <td className="muted" title="the debit beat the credit but not fee_buffer — our price gate cost us the fly">blocked by fee_buffer</td>
-              <td>{c.bufferBlocked}</td>
-            </tr>
-            <tr>
-              <td className="muted" title="cleared the buffer but the post-fee floor missed min_floor_dollars — read from the decisions journal">blocked by min_floor_dollars</td>
-              <td>{c.floorBlocked}</td>
-            </tr>
-            <tr><td className="muted">never priced</td><td>{c.unknown}</td></tr>
-          </tbody>
-        </table>
+        <>
+          <table className="data-table">
+            <tbody>
+              <tr><td className="muted">legged entries</td><td>{c.leggedEntries}</td></tr>
+              <tr><td className="muted">completed into flies</td><td>{c.completed}</td></tr>
+              <tr><td className="muted">completion rate</td><td>{c.completionRatePct !== null ? `${c.completionRatePct.toFixed(1)}%` : "—"}</td></tr>
+              <tr><td className="muted">median latency</td><td>{c.medianLatencyMin !== null ? `${c.medianLatencyMin.toFixed(0)}m` : "—"}</td></tr>
+              <tr>
+                <td className="muted">latency range</td>
+                <td>{c.minLatencyMin !== null ? `${c.minLatencyMin.toFixed(0)}–${c.maxLatencyMin?.toFixed(0)}m` : "—"}</td>
+              </tr>
+              <tr><td className="muted">median spot move to complete</td><td>{c.medianSpotMove !== null ? c.medianSpotMove.toFixed(2) : "—"}</td></tr>
+            </tbody>
+          </table>
+          {/* The misses are the shortfall above (legged − completed), so they sit in this card rather
+              than a short one beside it that left half a row blank. */}
+          <h3 className="card-subhead">Why misses missed (opposite remedies — do not lump)</h3>
+          <table className="data-table">
+            <tbody>
+              <tr>
+                <td className="muted" title="the best debit ever seen was still above the credit — no buffer would have helped">market never offered it</td>
+                <td>{c.neverOffered}</td>
+              </tr>
+              <tr>
+                <td className="muted" title="the debit beat the credit but not fee_buffer — our price gate cost us the fly">blocked by fee_buffer</td>
+                <td>{c.bufferBlocked}</td>
+              </tr>
+              <tr>
+                <td className="muted" title="cleared the buffer but the post-fee floor missed min_floor_dollars — read from the decisions journal">blocked by min_floor_dollars</td>
+                <td>{c.floorBlocked}</td>
+              </tr>
+              <tr><td className="muted">never priced</td><td>{c.unknown}</td></tr>
+            </tbody>
+          </table>
+        </>
       )}
     </section>
   );
@@ -289,11 +286,17 @@ export function LiveVsPaperCard({ lvp }: { lvp: NonNullable<Performance["liveVsP
           <tr>
             <td className="muted">completion gap</td>
             <td colSpan={2} className={lvp.completionGapPct !== null && lvp.completionGapPct > lvp.abort.gapLimitPct ? "pnl-neg" : ""}>
-              {lvp.completionGapPct !== null ? `${lvp.completionGapPct.toFixed(1)}pp (halt if > ${lvp.abort.gapLimitPct.toFixed(0)}pp with ≥${lvp.abort.minLiveEntries} live entries)` : "—"}
+              {lvp.completionGapPct !== null ? `${lvp.completionGapPct.toFixed(1)}pp` : "—"}
             </td>
           </tr>
         </tbody>
       </table>
+      {/* The rule is prose and `.data-table td` is nowrap by house rule: inside the cell it pushed
+          the table past the card's right edge. */}
+      <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
+        Halts the pilot if the completion gap exceeds {lvp.abort.gapLimitPct.toFixed(0)}pp with at least{" "}
+        {lvp.abort.minLiveEntries} live entries.
+      </p>
     </section>
   );
 }
@@ -312,14 +315,14 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
   return (
     <div className="cards cards-wide">
       <section className="card">
-        <div className="stats-grid">
+        <TileGrid count={6}>
           <Tile label="net P&L" value={t !== undefined ? fmtMoney(t.netPnl) : "—"} tone={t !== undefined && t.netPnl >= 0 ? "pos" : "neg"} />
           <Tile label="trades" value={String(t?.trades ?? "—")} />
           <Tile label="win rate" value={t?.winRatePct != null ? `${t.winRatePct.toFixed(0)}%` : "—"} />
           <Tile label="profit factor" value={t?.profitFactor != null ? t.profitFactor.toFixed(2) : "—"} />
           <Tile label="fee drag" value={t?.feeDragPct != null ? `${t.feeDragPct.toFixed(1)}%` : "—"} tone="dim" />
           <Tile label="completion" value={t?.completionRatePct != null ? `${t.completionRatePct.toFixed(0)}%` : "—"} />
-        </div>
+        </TileGrid>
       </section>
 
       <section className="card">
@@ -358,28 +361,22 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
         ) : (
           <>
             <EquityUnderwater equity={data?.equity ?? []} />
-            <div className="stats-grid" style={{ marginTop: "0.75rem" }}>
-              <Tile label="sharpe (daily, ann.)" value={fmtRatio(data?.risk.sharpe ?? null)} tone={tone(data?.risk.sharpe ?? null)} />
-              <Tile label="sortino (daily, ann.)" value={fmtRatio(data?.risk.sortino ?? null)} tone={tone(data?.risk.sortino ?? null)} />
-              <Tile label="calmar" value={fmtRatio(data?.risk.calmar ?? null)} tone={tone(data?.risk.calmar ?? null)} />
-              <Tile
-                label="max drawdown"
-                value={fmtMoney(Math.max(...(data?.equity ?? []).map((e) => e.drawdown), 0))}
-                tone="neg"
+            <div style={{ marginTop: "0.75rem" }}>
+              <DailyRiskTiles
+                risk={data?.risk}
+                maxDrawdown={Math.max(...(data?.equity ?? []).map((e) => e.drawdown), 0)}
               />
-              <Tile label="sessions" value={String(data?.risk.sampleSize ?? 0)} tone="dim" />
             </div>
-            <p className="muted lbl" style={{ marginTop: "0.5rem" }}>
-              Annualized on 252 sessions from {data?.risk.sampleSize ?? 0} of them. A ratio over that
-              few sessions describes this stretch, not the strategy.
-              {data?.risk.sharpeOverfitFlag === true && " Sharpe above 3 on a sample this small is a warning about the sample."}
-            </p>
           </>
         )}
       </section>
 
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(22rem, 1fr))" }}>
+      {/* Pairs of similar height: completion beside the live-vs-paper read of the same number, then
+          the bwb roll beside left-on-table. A card left over spans the row (.cards-pairs). */}
+      <div className="cards cards-pairs">
         <CompletionCard c={c} />
+
+        {lvp !== null && <LiveVsPaperCard lvp={lvp} />}
 
         {/* The bwb arm has no completion rate: it is entered WHOLE for a credit and converted by a
             ROLL, not legged in and completed. Its own panel rather than a row in the one above, so
@@ -411,12 +408,7 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
                 <strong>{roll.leggedEntries} entries</strong> — too few to read as a rate.
               </p>
             )}
-          </section>
-        )}
-
-        {roll !== null && (
-          <section className="card">
-            <h2>Why rolls missed</h2>
+            <h3 className="card-subhead">Why rolls missed</h3>
             <table className="data-table">
               <tbody>
                 <tr><td className="muted">never cheap enough</td><td>{roll.neverOffered}</td></tr>
@@ -475,9 +467,6 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
           </section>
         )}
 
-        <MissesCard c={c} />
-
-        {lvp !== null && <LiveVsPaperCard lvp={lvp} />}
       </div>
 
       <section className="card">

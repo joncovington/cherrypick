@@ -369,6 +369,22 @@ h2 {
   gap: 0.75rem;
 }
 
+/* Two columns of paired cards — order the source so each pair is of a similar height. A card left
+   over spans the row instead of leaving half of it blank. One column on a narrow window. */
+.cards-pairs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cards-pairs > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .cards-pairs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .cards-wide {
   /* A bare `1fr` track's minimum width is content-based (`auto`), not 0 -- one long unbroken line
      (a log line, a JSON blob) blows the whole track out past the viewport instead of ever being
@@ -1138,6 +1154,38 @@ select.text-input {
   gap: 0.6rem;
 }
 
+/* TileGrid (components/performance/TileGrid.tsx): columns that always divide the tile count, so
+   no row ends ragged. Breakpoints are the 8.5rem tile minimum plus gaps: 3 columns need 26.7rem,
+   4 need 35.8rem, 6 need 54rem. Measured against the card, not the window. */
+.tile-grid-host {
+  container-type: inline-size;
+}
+
+.stats-grid.tile-grid-6,
+.stats-grid.tile-grid-12 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container (min-width: 27rem) {
+  .stats-grid.tile-grid-6,
+  .stats-grid.tile-grid-12 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 36rem) {
+  .stats-grid.tile-grid-12 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 54rem) {
+  .stats-grid.tile-grid-6,
+  .stats-grid.tile-grid-12 {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
 .stat-tile {
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -1515,6 +1563,19 @@ select.text-input {
 
 .review-module .stats-grid {
   margin-bottom: 0.9rem;
+}
+
+/* A labelled second block inside an ordinary card: the h2 treatment, ruled off from the block above.
+   (.review-subhead is the larger report-page version.) */
+.card-subhead {
+  font-size: 11px;
+  margin: 0.9rem 0 0.5rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--row-line);
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
 }
 
 .review-subhead {

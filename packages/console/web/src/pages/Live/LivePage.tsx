@@ -3,12 +3,12 @@ import type { LiveFliesPayload, LiveOnRisk, LivePerformance, LivePeriod, LivePos
 import { Card, DataCard } from "../../components/DataTable";
 import { EquityUnderwater } from "../../components/EquityUnderwater";
 import { MetricTiles } from "../../components/performance/MetricTiles";
+import { TileGrid } from "../../components/performance/TileGrid";
 import { fmtMoney } from "../../lib/format";
 import {
   CompletionCard,
   CompletionTrend,
   LiveVsPaperCard,
-  MissesCard,
   Tile as PerfTile,
   fmtRatio,
   tone as perfTone,
@@ -88,7 +88,7 @@ function PerformanceSection({ perf }: { perf: LivePerformance }) {
           <h2>performance · {perf.arm ?? "every arm"} · every live session</h2>
           <span className="muted lbl">the flies Performance tab, live mode, this arm</span>
         </div>
-        <div className="stats-grid">
+        <TileGrid count={12}>
           <PerfTile
             label="return on session peak risk"
             value={fmtReturn(perf.onRisk.ratio)}
@@ -110,7 +110,13 @@ function PerformanceSection({ perf }: { perf: LivePerformance }) {
             tone="neg"
             title="peak-to-trough of the cumulative DAILY net; the calibration reading below measures it trade by trade, so its figure can be larger"
           />
-        </div>
+          <PerfTile
+            label="recovery factor"
+            value={fmtRatio(r.recoveryFactor)}
+            tone={perfTone(r.recoveryFactor)}
+            title="net P&L over the largest daily drawdown"
+          />
+        </TileGrid>
         <p className="muted lbl" style={{ marginTop: "0.5rem" }}>
           Ratios annualized on 252 sessions from {r.sampleSize} of them — a ratio over that few sessions describes this
           stretch, not the strategy.
@@ -122,7 +128,7 @@ function PerformanceSection({ perf }: { perf: LivePerformance }) {
         <div className="panel-head-row">
           <h2>calibration reading · {perf.arm ?? "every arm"} · live ledger</h2>
           <span className="muted lbl">
-            the flies performance slide's tiles (core.metrics), per trade, from {perf.calibration.from ?? "all time"}
+            the flies performance slide's tiles (core.metrics), per trade and per session, from {perf.calibration.from ?? "all time"}
           </span>
         </div>
         {perf.calibration.reading !== null ? (
@@ -170,9 +176,8 @@ function PerformanceSection({ perf }: { perf: LivePerformance }) {
         </section>
       </div>
 
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(22rem, 1fr))" }}>
+      <div className="cards cards-pairs">
         <CompletionCard c={perf.completion} />
-        <MissesCard c={perf.completion} />
         {perf.liveVsPaper !== null && <LiveVsPaperCard lvp={perf.liveVsPaper} />}
       </div>
 

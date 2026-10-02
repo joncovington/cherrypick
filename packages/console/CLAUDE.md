@@ -231,6 +231,11 @@ four tabs, because its write actions are wired through page-spanning state (`nav
   `width = 1150` and scaling is not reflowing. The fallback stays 1150 for SSR and first paint.
 - **Animations are deferred, not removed**; frame components ship with none so that work starts
   neutral.
+- **No ragged rows.** A tile row is 6 or 12 tiles through `components/performance/TileGrid.tsx`,
+  whose columns follow the card's width and always divide the count; plain `.stats-grid` auto-fit
+  leaves a half-empty last row. Cards of uneven height go in `.cards-pairs`, ordered so each pair
+  matches, and a block that explains another card's number goes inside that card under a
+  `.card-subhead`, not in a short card beside it.
 
 **Reports** (`/reports`) holds the morning pack (`packages/overview`) and the EOD review
 (`packages/review`) as tabs; each tab renders its own page component unchanged, so neither report gains

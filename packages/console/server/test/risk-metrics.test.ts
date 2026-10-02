@@ -111,6 +111,22 @@ describe("annualization", () => {
     expect(daily! / weekly!).toBeCloseTo(Math.sqrt(252 / 52), 2);
   });
 
+  it("takes Sortino's downside deviation over every session, the core.metrics form", () => {
+    // Returns 0.004/-0.002/0.006/-0.001/0.003: mean 0.002; downside RMS over all five sessions
+    // sqrt((0.002² + 0.001²) / 5) = 0.001. The losing-days-only stdev (0.000707) reads 44.9.
+    expect(riskSummary(curve).sortino).toBeCloseTo(2 * Math.sqrt(252), 2);
+  });
+
+  it("reads Sortino on two EQUAL losses, which have no spread but are still a downside", () => {
+    const flatLosses = equityCurve([
+      { date: "2026-08-03", net: 300 },
+      { date: "2026-08-04", net: -100 },
+      { date: "2026-08-05", net: 300 },
+      { date: "2026-08-06", net: -100 },
+    ]);
+    expect(riskSummary(flatLosses).sortino).not.toBeNull();
+  });
+
   it("scales Calmar linearly, not by the root — it annualizes a RETURN, not a deviation", () => {
     const daily = riskSummary(curve, PERIODS.TRADING_SESSIONS).calmar;
     const weekly = riskSummary(curve, PERIODS.TRADING_WEEKS).calmar;

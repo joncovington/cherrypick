@@ -137,8 +137,12 @@ export function riskSummary(
 
   const meanR = returns.reduce((s, v) => s + v, 0) / n;
   const sd = stdev(returns);
-  const downside = returns.filter((r) => r < 0);
-  const ddSd = downside.length >= 2 ? stdev(downside) : null;
+  // Downside deviation in the standard form, the one `core.metrics.sortino` uses: root-mean-square
+  // of every period's shortfall below 0, gains counting as 0, over ALL n periods. It was the stdev of
+  // the losing days alone, which reads higher (it divides by fewer periods), measures the spread
+  // AMONG losses rather than their size, and went null on two equal losses.
+  const losses = returns.filter((r) => r < 0).length;
+  const ddSd = losses >= 2 ? Math.sqrt(returns.reduce((s, r) => s + Math.min(r, 0) ** 2, 0) / n) : null;
   const maxDd = Math.max(...equity.map((b) => b.drawdown), 0);
   const annualized = returns.reduce((s, v) => s + v, 0) * (periodsPerYear / n);
   const maxDdPct = maxDd / BANKROLL_BASE;
