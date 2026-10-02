@@ -287,7 +287,7 @@ def test_management_still_checks_desk_enabled():
 
 
 def test_management_still_checks_the_account_allowlist():
-    refusals = policy.evaluate_management(cfg=_cfg(allowed_accounts=["9999"]), account_number=ACCOUNT)
+    refusals = policy.evaluate_management(cfg=_cfg(allowed_accounts=["9993"]), account_number=ACCOUNT)
     assert any("allowed_accounts" in r for r in refusals)
 
 

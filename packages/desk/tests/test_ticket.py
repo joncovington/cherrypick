@@ -229,7 +229,7 @@ def test_a_lifetime_longer_than_the_configured_ttl_is_refused():
 
 def test_swapping_the_masked_account_breaks_the_seal():
     rec = ticket.create(_order(), ACCOUNT, ttl_seconds=TTL)
-    _rewrite(rec, lambda s: s.update(account="****9999"))
+    _rewrite(rec, lambda s: s.update(account="****9993"))
     with pytest.raises(ticket.TicketError, match="seal"):
         _consume(rec, account="5WT99993")
 

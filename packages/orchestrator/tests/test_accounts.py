@@ -145,7 +145,7 @@ def test_clear_unsets(env):
 
 def test_unresolvable_selector_errors(env):
     _, cfg = env
-    assert accounts.set_account(cfg, "meic", "9999")["ok"] is False
+    assert accounts.set_account(cfg, "meic", "9993")["ok"] is False
     assert accounts.set_account(cfg, "meic", "99")["ok"] is False  # index out of range
 
 

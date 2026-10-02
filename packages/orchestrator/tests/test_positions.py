@@ -213,7 +213,7 @@ def test_the_same_symbol_in_two_accounts_is_quoted_once(monkeypatch):
             "module": "meic",
             "accounts": [
                 {"account": "****9991", "open_positions": [_position("APO   260918C00125000")]},
-                {"account": "****9999", "open_positions": [_position("APO   260918C00125000")]},
+                {"account": "****9993", "open_positions": [_position("APO   260918C00125000")]},
             ],
         },
     )
@@ -244,7 +244,7 @@ def test_the_account_filter_takes_a_last_4(monkeypatch):
             "module": "meic",
             "accounts": [
                 {"account": "****9991", "open_positions": []},
-                {"account": "****9999", "open_positions": []},
+                {"account": "****9993", "open_positions": []},
             ],
         },
     )
