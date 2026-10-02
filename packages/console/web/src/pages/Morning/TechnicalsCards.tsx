@@ -190,7 +190,7 @@ function LeadersCard({ t }: { t: TechnicalsReport }) {
             {t.leaders.map((l) => (
               <tr key={l.symbol}>
                 <td>
-                  <Link to={`/reports/chart?symbol=${encodeURIComponent(l.symbol)}`}>{l.symbol}</Link>
+                  <Link to={`/charts/technicals?symbol=${encodeURIComponent(l.symbol)}`}>{l.symbol}</Link>
                 </td>
                 <td className="muted">{l.sector ?? "—"}</td>
                 <td className={l.return6mPct === null ? "muted" : l.return6mPct >= 0 ? "pnl-pos" : "pnl-neg"}>
@@ -217,7 +217,7 @@ function MoverRows({ rows }: { rows: TechnicalsMover[] }) {
       {rows.map((m) => (
         <tr key={m.symbol}>
           <td>
-            <Link to={`/reports/chart?symbol=${encodeURIComponent(m.symbol)}`}>{m.symbol}</Link>
+            <Link to={`/charts/technicals?symbol=${encodeURIComponent(m.symbol)}`}>{m.symbol}</Link>
           </td>
           <td className="muted">{m.sector ?? "—"}</td>
           <td className={m.changePct === null ? "muted" : m.changePct >= 0 ? "pnl-pos" : "pnl-neg"}>

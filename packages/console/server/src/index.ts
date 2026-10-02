@@ -18,6 +18,7 @@ import { registerPerformanceRoutes } from "./routes/performance.js";
 import { registerLiveRoutes } from "./routes/live.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { MarketDataService } from "./market/marketData.js";
+import { CandleService } from "./market/candles.js";
 import { registerWsHub } from "./ws/hub.js";
 import { registerSecurity } from "./security.js";
 import { registerConfigRoutes } from "./routes/configOps.js";
@@ -33,10 +34,11 @@ const app = Fastify({
   disableRequestLogging: true,
 });
 const market = new MarketDataService(config);
+const candles = new CandleService(market);
 
 registerSecurity(app);
 await app.register(fastifyWebsocket);
-registerWsHub(app, market);
+registerWsHub(app, market, candles);
 registerStatusRoutes(app, config, market);
 registerOverviewRoutes(app, config);
 registerReviewRoutes(app, config);

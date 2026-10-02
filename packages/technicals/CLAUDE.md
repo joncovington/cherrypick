@@ -143,7 +143,7 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   `report`: last 250 sessions of adjusted bars, the level grid, CCI 14 and 5, RSI 14, both trend
   scores, scan matches per session. Where the vendor chart was captured the file carries its levels
   (each marked whether our grid produces it; gap levels marked against our gap edges,
-  `chart_version` 2), trend grades, rank and bar agreement. The console's `/reports/chart` page draws
+  `chart_version` 2), trend grades, rank and bar agreement. The console's `/charts/technicals` page draws
   **our grid's extremes, never levels claimed as the vendor's** — it is built to show where we
   differ. Per-session matches come from `signal_days` (one pass); a test pins it equal to
   `signals.readings` on every day and fails when the CCI-5 lag breaks. ~15 MB per session, overwritten.

@@ -26,6 +26,11 @@ beyond the latest release.
   updating is a fetch and the same checkout). Pushing a `v*` tag on `main` publishes the next one
   with its changelog section as the notes (`.github/workflows/release.yml`, `tools/release_notes.py`).
   [docs/releasing.md](docs/releasing.md) has the procedure.
+- **Charts page** (console). A live intraday futures chart — /ES, /NQ, /CL, /GC, /ZB in 1-, 5- or
+  15-minute candles, extended hours, the bar in progress updating about once a second — over the
+  console's own DXLink session, measured first with `scripts/probe_candles.py`. The technicals chart
+  moved here from Reports (`/charts/technicals`; `/reports/chart` redirects). The console's feed now
+  aggregates at 1s instead of the SDK's 10s.
 
 ## v0.10.0 — 2026-10-01 — the public release
 The first release meant to be installed by someone other than its author: one command takes a fresh

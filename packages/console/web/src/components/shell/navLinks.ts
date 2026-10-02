@@ -24,6 +24,7 @@ export interface NavLinkDef {
 
 export const SUITE_LINKS: readonly NavLinkDef[] = [
   { to: "/", label: "Overview", end: true, key: "o" },
+  { to: "/charts", label: "Charts", key: "c" },
   { to: "/reports", label: "Reports", key: "r" },
   { to: "/advisor", label: "Advisor", key: "a" },
   { to: "/live", label: "Live", key: "l" },

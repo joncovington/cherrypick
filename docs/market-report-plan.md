@@ -790,7 +790,7 @@ is the work if that changes.
   (APH, CNQ) and tickers carrying another security's history (BNY, SPCX, HUT).
 - A chart view per name in `lightweight-charts`: our candles, levels, CCI and signal marker, with
   the vendor's captured values for the same date beside them. **Done 2026-09-28**
-  (`/reports/chart?symbol=X`, from `technicals/chart.py`). It draws our grid's extremes rather than
+  (`/reports/chart?symbol=X`, from `technicals/chart.py`; `/charts/technicals` since 2026-10-01). It draws our grid's extremes rather than
   levels we cannot yet select, and marks each vendor level placed or not: on the first run our grid
   placed 343 of the 358 support and resistance levels across 69 captured names. All 15 misses are
   on four names (ALC, BAP, CCJ, ENB) whose bars agree with the vendor's on under 30% of prices -- a

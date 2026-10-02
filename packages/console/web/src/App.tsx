@@ -1,8 +1,14 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { Shell } from "./components/shell/Shell";
 import { OverviewPage } from "./pages/Overview/OverviewPage";
 import { ModuleRoute } from "./pages/ModuleRoute";
 import { NotFoundPage } from "./pages/NotFoundPage";
+
+/** A moved page whose links carry a query (`/reports/chart?symbol=MSFT`): the query goes with it. */
+function MovedTo({ to }: { to: string }) {
+  const { search } = useLocation();
+  return <Navigate to={`${to}${search}`} replace />;
+}
 
 export default function App() {
   return (
@@ -14,6 +20,9 @@ export default function App() {
             page, matching every other page's page-in-the-URL convention. */}
         <Route path="morning" element={<Navigate to="/reports" replace />} />
         <Route path="review" element={<Navigate to="/reports/eod" replace />} />
+        {/* The technicals chart moved to the Charts page (2026-10-01); morning-pack links and
+            bookmarks still say `/reports/chart?symbol=X`. A static segment outranks `:module/:slide`. */}
+        <Route path="reports/chart" element={<MovedTo to="/charts/technicals" />} />
         {/* Champions & challengers was REMOVED 2026-08-20 — judging whether an arm earned
             anything belongs to the advisor's experiments now. Redirected rather than left to the
             generic 404, which tells the reader their build is stale and to reload: true for a
