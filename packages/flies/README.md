@@ -9,8 +9,8 @@
 
 **What this module does:** flies trades a strategy called a 0DTE net-credit butterfly on
 same-day-expiring SPX/XSP options — nicknamed the "profit forest." It runs as **paper trading**
-(simulated, no real money) by default, with a small, tightly-controlled **live pilot** now
-authorized for real-money testing. It's one module in the cherrypick suite — see the
+(simulated, no real money) by default. It also has a small, tightly-bounded **live pilot**:
+experimental, off by default, armed one day at a time, and used at your own risk. It's one module in the cherrypick suite — see the
 [suite README](../../README.md) for how it fits alongside the other strategies (MEIC, earnings,
 GEX). You don't need to touch any code to use it: everything below is run from a terminal
 command line, and a few steps can be done by asking Claude directly (noted where relevant).
@@ -36,8 +36,9 @@ idea itself, is what this module is really for.
 ```bash
 pip install -e ../core                       # the shared cherrypick.core library, install first
 pip install -e ".[dev]"
-cp config.example.json config.json
 python -m pytest                             # confirm everything checks out
+# Config: with no config of its own, flies runs from config.example.json. To change settings, copy it
+# to ~/.cherrypick/config/flies.json (or point FLIES_CONFIG at a file) and edit that copy.
 
 # paper trading (simulated) — requires the suite's shared streamer to be running
 python -m cherrypick.flies.paper_loop --once             # run one pass across every strategy variant
@@ -49,8 +50,8 @@ python -m cherrypick.flies.paper_loop --status           # what's open, what's s
 python run.py once --snapshot snapshot.json
 
 # monitoring and review
-# The read surface is the console: http://127.0.0.1:5070/flies -- Today / History / Performance,
-# the profit forest, the session timeline and the decision journal. This module's own dashboard and
+# The read surface is the console: http://127.0.0.1:5070/flies -- session, the profit forest, the
+# timeline, decisions, completion, performance, positions and history. This module's own dashboard and
 # its suite-dashboard card were retired 2026-08-12; every read still goes through analytics.py.
 python run.py regime                         # results grouped by the market regime each trade entered into
 python run.py regime-cuts --write             # the same cut, per arm, written nightly for the console/advisor
@@ -59,21 +60,21 @@ python -m cherrypick.review build --session <date>        # the suite review (al
 
 `regime` reports coverage first — how much of the book carries each tag, and whether a tag ever took
 more than one value — because a table split on a tag that never varied looks like a result and isn't.
-Pass `--dimension gex|vol|skew|time|center_offset|trend` for one dimension, or `--bucket-edges 0.4,0.6`
+Pass `--dimension gex|vol|skew|time|center_offset|trend|drift_alignment` for one dimension, or `--bucket-edges 0.4,0.6`
 to re-cut the recorded measurement at different thresholds without re-running any sessions.
 
 `regime-cuts` builds the same per-dimension cut but per ARM, era-scoped to what's comparable (a
 measurement break, or an arm added later, moves that arm's own start date), and writes it to
-`data/flies/regime_cuts.json` — what the console's "regime cuts" tab and the AI advisor's evening
+`data/flies/regime_cuts-<session>.json` plus a `regime_cuts.json` latest copy — what the console's "regime cuts" tab and the AI advisor's evening
 read actually consume. The supervisor runs it nightly; `--session YYYY-MM-DD` re-cuts a past day and
 `--backfill --since YYYY-MM-DD` fills a whole range.
 
 The paper-trading database lives at `~/.cherrypick/data/flies/paper_trades.db` (override with
 the `FLIES_DB_PATH` environment variable if you need a different location).
 
-**Live (real-money) trading** is a separate, much more guarded path — see
-"[Live trading](#live-trading)" below. It is normally started with the `/live-flies-start` command
-in Claude rather than by hand.
+**Live (real-money) trading** is a separate, much more guarded path — experimental, off by default
+and at your own risk. See "[Live trading](#live-trading)" below. It is armed with the
+`/live-flies-start` command in Claude rather than by hand.
 
 ## Where its prices come from
 
@@ -100,28 +101,30 @@ left holding the original credit spread — an ordinary, fully-defined-risk trad
 outcome is tracked and reported separately, because it's expected to be the common one, not an
 edge case.
 
-**Outright entry** — buy a already-cheap butterfly outright (capped at a small debit, 50 cents by
-default), funded by premium the day's trading has already collected. This doesn't create a new
+**Outright entry** — buy an already-cheap butterfly outright (capped at a small debit,
+`max_fly_debit`), funded by premium the day's trading has already collected. This doesn't create a new
 floor of its own; it spends part of an existing one, so its safety is judged at the level of the
 whole day's book, not the individual position, and only holds up within the price range the
-funding trades cover. *(As of the 2026-07-27 configuration update, this mode is switched off —
-see "Status" below.)*
+funding trades cover. *(Switched off since the 2026-07-27 configuration update: the shipped
+`entry_modes` is `["legged"]`.)*
 
 ## The strategy variants ("arms")
 
-The module runs several parallel copies of the strategy side by side, each changing exactly one
+The module can run several parallel copies of the strategy side by side, each changing exactly one
 variable from the `control` baseline, so results from one variant can be compared cleanly rather
-than a mix of confounded changes. `gex` picks its centre by dealer gamma positioning, `time_window`
-by trading only inside specific windows, and `width-2`..`width-5`/`width-10` sweep the wing width
-(in strike increments, so the sweep means the same thing regardless of the traded symbol's own
-strike spacing) — those
-change WHERE or WHEN a position is centred. `debit-first`, `iron`, and `bwb` instead change HOW the
-net credit is manufactured in the first place (buying the debit leg first, completing with an iron
-butterfly, or entering a broken-wing butterfly whole and rolling it in), and the `debit-first-up` /
-`debit-first-down` pair takes the debit-first idea out of the money: a cheap 15-delta debit spread
-above or below spot that becomes a risk-free fly only if price walks into it — see
-[`CLAUDE.md`](CLAUDE.md)'s "The arms" section for the current, complete list and what each one is
-actually testing; it's the canonical source so this file doesn't drift out of sync with it.
+than a mix of confounded changes. A base install runs only `control`; every other arm is switched on
+in this machine's own config (`~/.cherrypick/config/flies.json`).
+
+`gex` picks its centre by dealer gamma positioning, `time_window` by trading only inside specific
+windows, and `width-2`..`width-5`/`width-10` sweep the wing width (in strike increments, so the
+sweep means the same thing regardless of the traded symbol's own strike spacing) — those change
+WHERE or WHEN a position is centred. `debit-first`, `iron` (retired before it ever traded) and `bwb`
+instead change HOW the net credit is manufactured in the first place (buying the debit leg first,
+completing with an iron butterfly, or entering a broken-wing butterfly whole and rolling it in), and
+the `debit-first-up` / `debit-first-down` pair takes the debit-first idea out of the money: a cheap
+15-delta debit spread above or below spot that becomes a risk-free fly only if price walks into it —
+see [`CLAUDE.md`](CLAUDE.md)'s "The arms" section for the current, complete list and what each one
+is actually testing; it's the canonical source so this file doesn't drift out of sync with it.
 
 Each variant keeps a completely separate ledger, so one lucky trade in one variant can't make
 another variant look better than it is.
@@ -142,9 +145,10 @@ and full defined-risk exposure, not a bounded floor.
 
 ## Monitoring
 
-The console's flies page, `http://127.0.0.1:5070/flies` (`/console` opens it). Today tiles, the
-profit forest, the session timeline, the decision journal, positions with their post-fee floors, arm
-divergence, history and performance. Read-only and loopback-only, and the supervisor keeps it
+The console's flies page, `http://127.0.0.1:5070/flies` (`/console` opens it). Its tabs: session,
+the profit forest, timeline, opening range, attempts, decisions, arm divergence, regime cuts,
+completion, performance, advisor, books, positions (with their post-fee floors), history and help.
+Read-only and loopback-only, and the supervisor keeps it
 running. This module's own dashboard on 5052 was retired on 2026-08-12.
 
 ## What it costs
@@ -160,17 +164,21 @@ SPY, or futures options on /ES or /MES, instead of SPX/XSP.
 ## Live trading
 
 Paper trading (above) is simulated — no real orders, no real money. **A small, tightly-bounded
-live pilot is now authorized** on top of it: real orders, real money, one specific strategy
-variant (`control` since 2026-09-17 — plain at-the-money centring, the arm every alternative was
-measured against; it began on `gex`), one contract at a time, at most one open position at a
-time, under a local buying-power cap. It exists to
+live pilot exists** on top of it. It is experimental, off by default, and used at your own risk: real
+orders, real money, one strategy variant (`live.arm`, `control` since 2026-09-17 — plain
+at-the-money centring, the arm every alternative was measured against; it began on `gex`), one
+symbol, one contract per order, under a local worst-case buying-power cap
+(`live.max_open_margin_dollars`). Since 2026-09-25 there is no position-count limit by default; the
+cap is the sizing gate (`live.max_incomplete_spreads` restores one). Nothing trades until your own
+config sets `live.enabled` and fills in `live.gate0_confirmed`. It exists to
 surface real trading-mechanics issues (order fills, timing, cancellations) before any larger
 commitment, not to prove the strategy works — the statistical bar for that is defined, and not
 yet cleared, in [docs/live-trading-plan.md](docs/live-trading-plan.md).
 
 **To start a live session, use the `/live-flies-start` command in Claude.** It will show you
-the current state (any open positions, pending orders, and safety-flag status) and require an
-explicit, freshly-typed "YES" before arming anything — a previous day's confirmation never
+the current state (any open positions, pending orders, and safety-flag status), show the
+disclaimer verbatim, and require an explicit, fresh "YES" before arming anything. While armed, the
+orchestrator's supervisor runs the `flies-live` job, one tick a minute — a previous day's confirmation never
 carries over. Live trading also **automatically turns itself off every evening** (17:00 ET by
 default); starting it again the next trading day requires running the command again. To stop a
 live session early, run `/live-flies-start --stop`, or ask Claude to set the suite-wide halt
@@ -196,10 +204,11 @@ The live pilot described above began 2026-07-30, as a deliberate, explicitly log
 to that statistical bar — see [docs/live-trading-plan.md](docs/live-trading-plan.md) for exactly
 why, and what has to happen before the pilot can be expanded.
 
-Settlement (the final price used to close out a day's positions) defaults to the last streamed
-trade price, which closely approximates but isn't identical to the official closing print. For
-any day's result that matters, re-run settlement with the official print: `--settle --price
-<official price>`.
+Settlement (the final price used to close out a day's positions) in paper defaults to the last
+streamed trade price, which closely approximates but isn't identical to the official closing print.
+For any day's result that matters, re-run settlement with the official print: `--settle --price
+<official price>`. The live loop fetches the official print itself and, if no source has posted
+one, settles provisionally on the last trade and keeps retrying.
 
 ## Tests
 

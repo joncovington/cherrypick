@@ -19,10 +19,13 @@ run alongside `/earnings-start` the same day.
 
 ## What to do when this command runs
 
-**Before starting**: check `.claude/strategy_test_lock` for a live PID.
+**Before starting**: when the earnings module is enabled, the supervisor's `earnings-paper` job
+already runs this same harness every minute, so `/paper-start` is for a machine where it is not; if
+the harness reports `busy`, the supervisor's loop holds it, so stop rather than forcing a second run.
+Then check `.claude/strategy_test_lock` for a live PID.
 This is a **separate lock from `.claude/scheduled_tasks.lock`** (the
 live-loop's own) — the two can run concurrently, since this only ever
-writes strat_test rows (`profile='strat_test:<strategy>'`). If another `/paper-start` session
+writes strat_test rows (`arm='strat_test:<strategy>'`). If another `/paper-start` session
 already holds this lock, stop and tell the user instead of starting a
 second one (double-entries into the same test book would corrupt the
 sample).

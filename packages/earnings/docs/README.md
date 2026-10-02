@@ -1,7 +1,8 @@
 # cherrypick Earnings — documentation
 
-Guides for the cherrypick **Earnings** engine — automated overnight, defined-risk earnings option trades
-built on a multi-strategy decision framework.
+Guides for the cherrypick **Earnings** engine — automated, defined-risk earnings option trades built on
+a multi-strategy decision framework. Paper by default; its live path (`enable_live_trading`) is
+experimental, off by default and at your own risk.
 
 > **Part of the [cherrypick](../../../README.md) suite.** This is the `cherrypick-earnings` module
 > (`packages/earnings`). It runs standalone from this folder for live / interactive trading, and is driven
@@ -24,25 +25,30 @@ The Earnings Agent is a rules-based options trading system that:
 
 ### 6 Strategies (all defined-risk)
 
-| Strategy | Entry Credit | Risk | Best For |
+Profit targets and stops are the shipped `config.example.json` values (`strategies.<name>`).
+
+| Strategy | Profit target | Stop | Best For |
 |----------|---|---|---|
-| Iron Fly | $0.80-1.50 | Defined | Medium IV |
-| Iron Condor | $0.50-1.50 | Defined | Wide range |
-| Directional Spread | $0.50-1.50 | Defined | IV skew |
-| Broken Wing Butterfly | $0.20-0.60 | Defined | Asymmetric IV |
-| ATM Calendar | $0.20-0.50 | Defined | Low IV |
-| Double Calendar | $0.50-1.50 | Defined | Overpriced moves |
+| Iron Fly | 25% of credit | 1.5× credit | Medium IV |
+| Iron Condor | 50% of credit | 1.5× credit | Wide range |
+| Directional Spread | 50% of credit | 2.0× credit | IV skew |
+| Broken Wing Butterfly | 25% of credit | 2.0× credit | Asymmetric IV |
+| ATM Calendar | 15% of debit | 50% of debit | Low IV |
+| Double Calendar | 15% of debit | 50% of debit (plus a 0.45-delta leg stop) | Overpriced moves |
 
 ### Key Metrics
 
-- **Overnight Play**: enter once before the close, hold unmonitored through the earnings
-  reaction, close once after the next open — no same-day exit.
+- **Overnight Play**: enter once before the close (entry window default 15:30–15:55 ET) and hold
+  through the earnings reaction — no same-day exit.
 - **IV-Crush Capture**: the whole edge is the IV collapse that happens once the earnings
   uncertainty resolves overnight.
-- **Profit Target**: 50% of max credit (calendars: 25-30% of debit), checked the first morning
-  after entry (Step 3c).
-- **Holding Period**: unconditional close-window backstop the next morning (default `09:45` ET)
-  — whatever's still open closes regardless of P&L.
+- **Profit Target / Stop**: per strategy (table above), checked from the first morning after entry.
+- **Holding Period**: in the agent-driven loop (`/earnings-start`), an unconditional close-window
+  backstop the next morning (default `09:45` ET) closes whatever is still open regardless of P&L.
+  The unattended paper loop manages positions instead (since 2026-08-12): a loser closes on the
+  first morning, a winner short of target may be carried up to three trading sessions
+  (`management.hold_winners_max_days`), nothing is held through a leg's expiration, and an expired
+  position is settled at intrinsic.
 - **Entry Gate**: IV/RV ratio, term structure, and liquidity — see
   [Screening Criteria](./screening-criteria.md) for the full hard-filter list.
 
@@ -56,7 +62,7 @@ remaining files keep the numbers they were written with, so existing links stay 
 ### Getting Started
 - [Installation & Setup](./01-setup.md) — Configure, run tests, connect to the broker and Dolt
 - [Quick Reference](./02-quick-reference.md) — CLI commands, common workflows
-- [Configuration Guide](./03-configuration.md) — All `config.json` parameters explained
+- [Configuration Guide](./03-configuration.md) — All config parameters explained
 
 ### Learning the Framework
 - [Entry Conditions Framework](./04-entry-conditions.md) — Decision matrix, routing logic
@@ -78,6 +84,7 @@ remaining files keep the numbers they were written with, so existing links stay 
 - [Glossary](./14-glossary.md) — Terms and definitions
 - [Strategy Optimization Research](./strategy-optimization.md) — Hypotheses queued for paper-test validation
 - [File Size Exceptions](./file-size-exceptions.md) — Documented exceptions to the 500-line guideline
+- [Operating History](./operating-history.md) — Dated incidents behind the rules in `CLAUDE.md`
 
 ---
 
@@ -99,17 +106,20 @@ GATE:      Capital requirements
 ```
 Credit Strategies (Iron Fly, Iron Condor, Directional Spread,
 Broken Wing Butterfly):
-  Profit Target: 50% of entry credit
-  Stop Loss: 1.5x entry credit
-  Backstop: unconditional close-window exit next morning
+  Profit Target: 25-50% of entry credit (per strategy)
+  Stop Loss: 1.5-2.0x entry credit (per strategy)
+  Backstop: unconditional close-window exit next morning (agent loop)
 
 Calendar Strategies (ATM Calendar, Double Calendar):
-  Profit Target: 25% of entry debit
-  Backstop: unconditional close-window exit next morning
+  Profit Target: 15% of entry debit
+  Stop Loss: 50% of entry debit
+  Backstop: unconditional close-window exit next morning (agent loop)
 ```
 
-Every strategy closes by the next morning's close window regardless of P&L — nothing is held
-past the overnight IV-crush event. See `CLAUDE.md`'s Loop Steps for the exact mechanics.
+In the agent-driven loop every strategy closes by the next morning's close window regardless of
+P&L. The unattended paper loop carries a winner up to three sessions instead (see Key Metrics
+above). See `CLAUDE.md`'s Loop Steps and [Exit Strategy Guide](./10-exits.md) for the exact
+mechanics.
 
 ### Risk Framework
 
@@ -145,12 +155,15 @@ cherrypick/
     │   ├── tt.py                # tastytrade broker interface
     │   ├── db.py                # Persistence, live ledger (db_paper.py is the paper twin)
     │   ├── paths.py             # Resolves the data home (~/.cherrypick/data/earnings)
-    │   ├── strat_test_harness.py  # Forced-sampling paper-testing program (orchestrator-driven)
+    │   ├── paper_loop.py        # The managed paper loop the supervisor ticks every 60 s
+    │   ├── management.py        # Exit decisions for open paper positions (hold, carry, close)
+    │   ├── settlement.py        # Settles expired positions at intrinsic
+    │   ├── strat_test_harness.py  # Forced-sampling paper-testing program (driven by paper_loop)
     │   ├── strategy_report.py   # Per-strategy metrics, as text (the console draws the charts)
     │   └── ...
     ├── config/
-    │   ├── config.example.json  # Template — copy to config.json
-    │   └── config.json          # Your actual settings (created on first setup; gitignored)
+    │   └── config.example.json  # Shipped config; what earnings runs from until
+    │                            # ~/.cherrypick/config/earnings.json exists
     ├── tests/                   # Unit tests
     ├── docs/                    # This documentation
     ├── CLAUDE.md                # Authoritative operational spec
@@ -174,14 +187,15 @@ python -m cherrypick.earnings.strategies.iron_fly get_order --symbol AAPL --earn
 ```
 
 ### Overnight
-Position holds unmonitored through the earnings reaction — no intraday management, no same-day
-exit.
+Position holds through the earnings reaction — no same-day exit.
 
-### Next Morning
+### Next Morning (agent-driven loop)
 ```
 Step 3c (market open -> close_window_start): profit-target/stop-loss check against live quotes
 Step 3 (close_window_start, unconditional): whatever's still open closes regardless of P&L
 ```
+
+The unattended paper loop instead acts from 09:40 ET on the management rules above.
 
 See [Trading Workflow](./08-trading-workflow.md) for the full day-by-day walkthrough.
 
@@ -189,7 +203,7 @@ See [Trading Workflow](./08-trading-workflow.md) for the full day-by-day walkthr
 
 ## Key Files to Read
 
-1. **[Configuration Guide](./03-configuration.md)** — Understand config.json
+1. **[Configuration Guide](./03-configuration.md)** — Understand the config
 2. **[Entry Conditions Framework](./04-entry-conditions.md)** — Learn the routing logic
 3. **[Strategy Guide](./05-strategies.md)** — Deep dive on each strategy
 4. **[Earnings Scan Analysis](./06-scan-analysis.md)** — How to evaluate candidates
@@ -198,8 +212,8 @@ See [Trading Workflow](./08-trading-workflow.md) for the full day-by-day walkthr
 
 ## Statistics
 
-- **Total Strategies**: 7 (all defined-risk)
-- **Test Coverage**: 224 unit tests (`pytest`)
+- **Total Strategies**: 6 (all defined-risk)
+- **Tests**: unit tests under `tests/` (`pytest`)
 - **Market Coverage**: Any US-listed options with earnings and a real tastytrade option chain
 
 ---

@@ -30,6 +30,9 @@ have their own live loop behind their own gate; this is the only *discretionary*
 
 ## Turning it on
 
+The suite installer leaves the desk out. To include it, run the installer with `-WithDesk` (Windows,
+`install.ps1`) or `--with-desk` (`install.sh`), or install it by hand as below.
+
 Both gates must be open. Either one alone does nothing.
 
 1. **The config gate.** `~/.cherrypick/config/desk.json` must contain `"enabled": true` (a literal
@@ -41,6 +44,11 @@ Both gates must be open. Either one alone does nothing.
 With either gate closed, `propose`, `confirm`, `cancel` and `orders` exit non-zero before touching
 the network or the keyring, and say why. `status`, `analyze`, `purge` and the PIN commands keep
 working. The desk never falls back to `config.example.json`.
+
+The desk stores no broker secrets of its own. It borrows a module's keyring session, named by
+`broker_keyring_service` (`meicagent` by default), so that module's credentials must already be set
+up. Borrowing the credentials does not borrow that module's permissions: every desk gate still
+applies.
 
 ```bash
 pip install -e packages/core && pip install -e packages/desk

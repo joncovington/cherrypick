@@ -106,7 +106,7 @@ follows `stamp_for`; since 09-17 the tag names the experiment and the stamp is c
   `paths.data_path`; the console resolves the same path independently and must never import this
   package. Logs: `paths.logs_dir()` (`~/.cherrypick/logs/earnings`, `$EARNINGS_LOGS_DIR`, or
   `$CHERRYPICK_HOME/logs/earnings`). Config: `paths.config_path()` (`~/.cherrypick/config/earnings.json`,
-  else in-repo `config/config.json`). Reports: `paths.reports_dir()`. The Dolt databases share the
+  else in-repo `config/config.json`, else the shipped `config/config.example.json`). Reports: `paths.reports_dir()`. The Dolt databases share the
   directory without collision. The module's own EOD reports were retired 2026-08-13 —
   `packages/review` builds them.
 - **The orchestrator boundary is strict.** It drives this module by subprocess for unattended

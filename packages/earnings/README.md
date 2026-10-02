@@ -8,10 +8,11 @@
 > that places real orders through your broker account. **Read [DISCLAIMER.md](../../DISCLAIMER.md) before use.**
 
 **What this module does:** earnings trades defined-risk options strategies around company
-earnings announcements — opening a position the evening before a report and closing it the
-next morning, without watching it overnight. It picks from six different structures each night
-based on which one fits that stock's setup best, and it can run as **paper trading** (simulated)
-or **live** trading, gated behind a setting you turn on yourself. It's one strategy module in the
+earnings announcements — opening a position the afternoon before a report and managing it after
+the announcement. It picks from six different structures each night based on which one fits that
+stock's setup best, and it can run as **paper trading** (simulated) or **live** trading, gated
+behind a setting you turn on yourself. Live trading is experimental, off by default and at your own
+risk. It's one strategy module in the
 cherrypick suite, alongside the 0DTE iron-condor module, the butterfly module, and the GEX
 engine. Most of what you do here is run terminal commands, or ask Claude to run a
 `/`-prefixed command for you — no coding required.
@@ -27,8 +28,11 @@ engine. Most of what you do here is run terminal commands, or ask Claude to run 
 
 An autonomous options trading agent for overnight earnings plays. It scans the daily earnings
 calendar, evaluates six defined-risk options strategies against live market data, ranks
-candidates, and manages entries and exits around a single overnight hold — position opened once
-before the close, closed once after the next open, unmonitored overnight.
+candidates, and manages entries and exits around the announcement. The agent-driven loop opens
+before the close and closes in the next morning's close window (the calendars can run longer). The
+unattended paper loop manages positions instead: a loser closes on the first morning, a winner short
+of its target can be carried up to three trading sessions, and anything that expires is settled at
+intrinsic.
 
 Every strategy is **defined-risk**: max loss is known at entry. Undefined-risk/naked strategies
 (naked straddles, strangles, naked puts/calls) were deliberately excluded — a single-name
@@ -58,10 +62,12 @@ python -m venv venv && source venv/bin/activate   # venv\Scripts\activate on Win
 pip install -e ../core                             # shared cherrypick.core library, install first
 pip install -e ".[dev]"
 
-cp config/config.example.json config/config.json
 python -m cherrypick.earnings.tt secrets_set                       # store tastytrade OAuth credentials
 python -m cherrypick.earnings.tt get_connection_status              # confirm "connected": true
 ```
+
+With no config of its own, earnings runs from the shipped `config/config.example.json` (read-only). To
+change settings, copy it to `~/.cherrypick/config/earnings.json` and edit that copy.
 
 Every command below is run from inside `packages/earnings`. On macOS/Linux, if `python`/`pip` aren't
 found, use `python3`/`pip3` instead.
@@ -84,6 +90,9 @@ Then run the forced-sampling paper-testing program to validate the whole pipelin
 /paper-start
 ```
 
+On a suite install you don't need to: the supervisor's paper loop already runs the same harness
+every session, and `/paper-start` refuses with `busy` while the loop holds its lock.
+
 Full setup details, troubleshooting, and the first-trade walkthrough are in
 [docs/01-setup.md](./docs/01-setup.md).
 
@@ -95,12 +104,15 @@ This package is self-contained — everything else in this README works from `pa
 own. Inside the cherrypick suite it plays two roles:
 
 - **Live / interactive (this package, standalone).** You drive the trading loop and the `/`-commands
-  here, in this folder — `/earnings-start` runs `CLAUDE.md`'s Loop Steps, `rank_strategies.py` picks each
-  symbol's single best strategy. This is the only path that can place live orders, and only when you set
-  `enable_live_trading: true`. The orchestrator never touches it.
+  yourself — `/earnings-start` runs `CLAUDE.md`'s Loop Steps, `rank_strategies.py` picks each symbol's
+  single best strategy. This is the only path that can place live orders, and only when you set
+  `enable_live_trading: true` — experimental, off by default, at your own risk. Started from the repo
+  root, `/earnings-start` shows the disclaimer verbatim and stops unless you answer an explicit YES
+  whenever live trading is on. The orchestrator never touches it.
 - **Unattended paper (orchestrator-orchestrated).** The [orchestrator](../orchestrator)'s supervisor runs
   this module's managed paper loop (`cherrypick.earnings.paper_loop once`) as a short-lived process every
-  60 seconds. The loop drives the forced-sampling paper harness
+  60 seconds, as its `earnings-paper` job. It runs only when `modules.earnings.enabled` is true AND the
+  `dolt` capability is recorded. The loop drives the forced-sampling paper harness
   (`cherrypick/earnings/strat_test_harness.py`) into the isolated strat_test books; the orchestrator
   reads the resulting `paper_trades.db` — which
   lives in the shared cherrypick data home (`~/.cherrypick/data/earnings` by default) — for
@@ -110,7 +122,8 @@ own. Inside the cherrypick suite it plays two roles:
   (`cherrypick connect` / `account`), which delegates to this module's own credential tool and writes the
   chosen account into this module's `earningsagent` keyring service.
 
-You can run the paper harness here directly too (`/paper-start`); letting the orchestrator manage it just
+You can run the paper harness here directly too (`/paper-start`, on a machine where the supervisor
+isn't already running it); letting the orchestrator manage it just
 adds the watchdog, notifications, and the cross-module read side (`cherrypick report` / the console /
 `calibrate`). The shared `cherrypick.core` code (calendar, fees) lives in `packages/core`, a sibling
 in-repo package — see [Orchestrator & shared core](CLAUDE.md#orchestrator--shared-core) in `CLAUDE.md`
@@ -156,8 +169,8 @@ sees it.
   `paper_trades.db`) live under `~/.cherrypick/data/earnings` by default (override with
   `EARNINGS_DATA_DIR`), the same managed location the orchestrator reads for cross-module reporting and
   where the local `dolt sql-server` serves the earnings/options/stocks datasets. Data, logs, generated
-  reports, and (once migrated) config all live under `~/.cherrypick`; only the checked-in config example
-  under `config/` stays in the package checkout.
+  reports and config all live under `~/.cherrypick` (config at `~/.cherrypick/config/earnings.json`,
+  else a legacy in-repo `config/config.json`, else the shipped `config/config.example.json`).
 
 Full operational detail — loop steps, config options, database schema — lives in `CLAUDE.md`,
 the authoritative spec this system runs against.
@@ -166,7 +179,8 @@ the authoritative spec this system runs against.
 
 ## Paper vs. Live Mode
 
-Controlled by `enable_live_trading` in `config/config.json` (`false` by default):
+Controlled by `enable_live_trading` in the module's config (`~/.cherrypick/config/earnings.json`;
+`false` by default). Live trading is experimental and at your own risk:
 
 - **Paper mode**: persistence via `cherrypick/earnings/db_paper.py`, order handling stops at building the order
   spec — no order is ever submitted. Paper mode still sources live quotes/chains/greeks from the
@@ -174,13 +188,12 @@ Controlled by `enable_live_trading` in `config/config.json` (`false` by default)
 - **Live mode**: persistence via `cherrypick/earnings/db.py`, and entries submit real orders via
   `tt.py execute_trade --live`.
 
-Two separate paper-testing programs exist, and can run concurrently since they write to
-isolated books:
+Three commands, writing to isolated books:
 
 - **`/paper-start`** — forced-sampling strategy validation (`cherrypick/earnings/strat_test_harness.py`):
   opens every strategy that clears the screen on every viable symbol, not just each symbol's
   single best, so every strategy accumulates a usable sample size quickly. Writes to per-strategy
-  strat_test books (`profile='strat_test:<strategy>'`, per `strat_test_portfolio`).
+  strat_test books (`arm='strat_test:<strategy>'`, per `strat_test_portfolio`).
 - **`/paper-trading-start`** — one-shot production-ranking analysis (`rank_strategies.py`): what
   the real loop would pick tonight, without submitting anything.
 - **`/earnings-start`** — the actual continuous trading loop (paper or live per
@@ -205,7 +218,7 @@ pytest
 
 - [docs/README.md](./docs/README.md) — full documentation index
 - [docs/01-setup.md](./docs/01-setup.md) — installation and first-run walkthrough
-- [docs/03-configuration.md](./docs/03-configuration.md) — every `config.json` parameter
+- [docs/03-configuration.md](./docs/03-configuration.md) — every config parameter
 - [docs/05-strategies.md](./docs/05-strategies.md) — strategy-by-strategy structure and rules
 - [docs/screening-criteria.md](./docs/screening-criteria.md) — hard filters and the accept/reject screen (source
   of truth for what gates a candidate)

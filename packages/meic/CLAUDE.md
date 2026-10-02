@@ -228,9 +228,11 @@ from that symbol's own window.
 
 ## Risk profiles and arms
 
-**Live presets.** `/set-risk-profile <name>` switches a named preset that bundles gate thresholds with
-offsetting sizing and stop constraints; each is a partial override written into `config.json`, live on
-the next iteration. These four tiers are **live-only** and all `enabled: false` for paper:
+**Live presets (not shipped).** `/set-risk-profile <name>` applies a named preset from the machine's own
+arm registry (`paths.risk_profiles_path`) to `~/.cherrypick/config/meic.json`, live on the next
+iteration; it refuses while only the shipped control-only example exists. The four-tier ladder below no
+longer ships with the package; it exists only in a registry a machine has built, as **live-only**
+presets, all `enabled: false` for paper:
 
 - **conservative**: IV rank ≥30%, credit ≥15%, wide OTM buffers, latest entry 12:00. ~1–2 trades/day.
 - **moderate**: IV rank ≥22%, credit ≥12%, entry from 11:00, stop 0.93. Use after 2–4 weeks on
@@ -267,8 +269,9 @@ era (`ic_trades.era`, from `analytics.CURRENT_ERA` via `cmd_save_trade`), journa
 - **New arms are arm-scoped** (`arm_added` break at first session), so no other arm's clock moves.
 - **Retired arms stay in the machine's registry, `enabled: false`, with a written `_disabled_note` verdict —
   never silently deleted** (per `docs/paper-experiments.md`'s kill rule): a defined-but-forgotten arm is
-  worse than a documented-and-off one. The ladder no longer ships, and `/set-risk-profile` still opens
-  `config.risk.json` in the package folder; **paper study streams must never be applied to live config.**
+  worse than a documented-and-off one. The ladder no longer ships; `/set-risk-profile` reads the
+  machine's registry through `paths.risk_profiles_path`; **paper study streams must never be applied to
+  live config.**
 
 **Deriving stop policies read-side (`analytics.stop_grid`, `stop_policies.score_grid`).** The whole
 `stop_trigger_ratio` curve comes from recorded rows: `*_max_cost` says whether a threshold would have
