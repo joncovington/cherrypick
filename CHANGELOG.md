@@ -15,10 +15,17 @@ beyond the latest release.
   called `cfgmod.broker_tool(mcfg)` without the module name, so for any module whose config block
   does not declare `broker_tool` itself (meic ships without one), `cherrypick account --set` and
   the Live Ops listing probed the login with `python list_accounts` — no module, no output, and
-  "list_accounts not ok" on every such machine, while `account --module`, `connect` and
-  `reconcile` (all of which pass the name) resolved the same tool fine. Now passes the name like
-  every other call site; guarded by a regression test asserting the argv the probe hands the
-  broker tool.
+  "list_accounts not ok" on every such machine, while `account --module`, per-module `connect`
+  and `reconcile` (all of which pass the name) resolved the same tool fine. Suite-wide
+  `cherrypick connect` uses the same probe for its connection check, so it had the bug too and is
+  fixed with it. Now passes the name like every other call site; guarded by a regression test
+  asserting the argv the probe hands the broker tool.
+- **Fixed: the suite-wide account probe could pick a module with no broker.** It took the first
+  enabled module with a checkout, so calendars, pmcc or curve enabled ahead of meic, flies, bwb and
+  earnings became the probe and ran `-m cherrypick.<name>.tt`, which does not exist: "list_accounts
+  not ok" again. It now takes the first enabled module with a keyring service, and says so when
+  none is enabled. Tests cover module order, a broker tool declared only in config (bwb), and
+  suite-wide `connect`.
 - **Hot options** in the morning pack (fact version 5). `scripts/fetch_market_files.py` lands OCC's
   daily option volume by underlying (one keyless CSV a session, reduced to call/put sides by account
   type) and Nasdaq Trader's symbol directory; `cherrypick.overview.occ` ranks the prior session the

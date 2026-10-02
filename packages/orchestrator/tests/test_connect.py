@@ -109,3 +109,27 @@ def test_connect_skip_account_leaves_unchanged(env, monkeypatch):
     # empty selection -> skip, set_account never called
     out = connect.run(cfg, "meic", prompt_fn=lambda _p: "")
     assert out["ok"] is True and called["set"] is False
+
+
+def test_suite_connect_verifies_through_the_first_broker_module(env, monkeypatch):
+    """`cherrypick connect` (no --module) checks the connection through the same probe the
+    suite-wide account listing uses, so it shares that probe's two rules: the known-module tool is
+    resolved by name (#8), and a credential-free module enabled ahead of meic is passed over."""
+    tmp_path, cfg = env
+    (tmp_path / "calendars").mkdir()
+    cfg["modules"] = {"calendars": {"enabled": True, "path": str(tmp_path / "calendars")}, **cfg["modules"]}
+    seen = {}
+
+    def verify(root, tool):
+        seen["root"], seen["tool"] = root.name, list(tool)
+        return {"connected": True}
+
+    monkeypatch.setattr(connect, "_shared_setup", lambda: True)
+    monkeypatch.setattr(connect, "_offer_migration", lambda cfg, prompt_fn=input: [])
+    monkeypatch.setattr(connect, "_verify_connection", verify)
+    monkeypatch.setattr(connect, "_select_shared_account", lambda cfg, prompt_fn=input: {"designated": None})
+    monkeypatch.setattr(connect, "_offer_webhooks", lambda prompt_fn=input: None)
+    monkeypatch.setattr(connect, "_status_panel", lambda cfg: None)
+    out = connect.run_suite(cfg, prompt_fn=lambda _p: "")
+    assert out["ok"] is True and out["connected"] is True
+    assert seen == {"root": "meic", "tool": ["-m", "cherrypick.meic.tt"]}

@@ -127,10 +127,23 @@ def _shared_store() -> CredentialStore:
     return CredentialStore(SHARED_SERVICE)
 
 
+_NO_BROKER_MODULE = (
+    "no enabled broker module (one with a keyring service) has a checkout to query the broker with"
+)
+
+
 def _first_broker_module(cfg: dict[str, Any]):
-    """(name, mcfg, root, tool) for the first enabled module whose checkout exists — the probe
-    the suite-wide account listing uses (any module's broker tool can enumerate the login)."""
+    """(name, mcfg, root, tool) for the first enabled BROKER module whose checkout exists — the
+    probe the suite-wide account listing and `cherrypick connect` use (any broker module's tool can
+    enumerate the login).
+
+    A broker module is one with a keyring service. The credential-free modules (calendars, pmcc,
+    curve) have none and no broker tool either: picked first, one became the probe and ran
+    `-m cherrypick.<name>.tt`, a module that does not exist, and the listing failed with "list_accounts
+    not ok" whenever such a module was enabled ahead of meic, flies, bwb and earnings."""
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
+        if cfgmod.module_keyring_service(mcfg, name) is None:
+            continue
         root = cfgmod.module_root(mcfg, name)
         if root.exists():
             # Every other call site passes the module name so the known-module default applies;
@@ -146,7 +159,7 @@ def list_shared(cfg: dict[str, Any]) -> dict[str, Any]:
     module without its own designation inherits, via the store fallback chain)."""
     name, _mcfg, root, tool = _first_broker_module(cfg)
     if root is None:
-        return {"ok": False, "error": "no enabled module checkout found to query the broker"}
+        return {"ok": False, "error": _NO_BROKER_MODULE}
     accounts_list, aerr = _broker_accounts(root, tool)
     if aerr:
         return {"ok": False, "error": aerr}
@@ -175,7 +188,7 @@ def set_shared_account(cfg: dict[str, Any], selector: str) -> dict[str, Any]:
     `account --module X --set` still overrides. Caller is responsible for human confirmation."""
     name, _mcfg, root, tool = _first_broker_module(cfg)
     if root is None:
-        return {"ok": False, "error": "no enabled module checkout found to query the broker"}
+        return {"ok": False, "error": _NO_BROKER_MODULE}
     accounts_list, aerr = _broker_accounts(root, tool)
     if aerr:
         return {"ok": False, "error": aerr}
