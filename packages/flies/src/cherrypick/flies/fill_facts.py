@@ -430,17 +430,26 @@ def _cutoff_iso(trade_date: str) -> str:
 
 
 # --------------------------------------------------------------------------- command line
-async def _fetch_transactions(symbol: str, dates: list[str]) -> list[dict]:
+async def _fetch_transactions(symbols: list[str], dates: list[str]) -> list[dict]:
+    """Every symbol's transactions over `dates`, in ONE event loop: the cached broker session's async client
+    binds to the loop that first drives it, so a second `asyncio.run` fails with "Event loop is
+    closed" (the same trap `cherrypick.core.execution.Broker` documents)."""
     from cherrypick.core import broker as _broker
 
     from cherrypick.flies import credentials as creds
 
     session = creds.get_session()
     account = await _broker.resolve_account(session, creds.designated_account())
-    start, end = date.fromisoformat(min(dates)), date.fromisoformat(max(dates))
-    return await _broker.transaction_history(
-        account, session, start_date=start, end_date=end, underlying_symbol=symbol
-    )
+    out: list[dict] = []
+    # One trading day per call, as fee_reconcile fetches: a single range call came back capped at
+    # one 250-row page and silently dropped every earlier day's fills.
+    for symbol in symbols:
+        for day in sorted(set(dates)):
+            d = date.fromisoformat(day)
+            out.extend(
+                await _broker.transaction_history(account, session, start_date=d, underlying_symbol=symbol)
+            )
+    return out
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -517,8 +526,7 @@ def main(argv=None) -> int:
     ]
     txns: list[dict] = []
     if not args.no_broker and dates:
-        for symbol in symbols:
-            txns.extend(asyncio.run(_fetch_transactions(symbol, dates)))
+        txns = asyncio.run(_fetch_transactions(symbols, dates))
     fills = transaction_fills(txns)
     summary = {
         "ok": True,

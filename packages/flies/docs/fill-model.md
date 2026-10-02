@@ -63,8 +63,9 @@ completion shadow:
 
 - **The ledger's live `debit` and `credit` are limits, not fills.** They come from the order
   status's `price` field, which is the order's own limit. Any price improvement was invisible
-  until the broker's leg fills were recorded. `fee_reconcile` corrects `net` from the broker's cash
-  a day later; the at-fill price comes from `broker_fill_price`.
+  until the broker's leg fills were recorded. The backfill found almost none (no fill more than
+  0.05 better than its limit), so the limit has been a fair stand-in; `broker_fill_price` is now
+  the record of it.
 - **Before the order status carried leg fills, the only fill time known was when the loop noticed.**
   Such rows say `fill_time_source = 'noticed'`, and their measures describe that moment.
 
@@ -104,10 +105,11 @@ via `analytics.fill_realism` and `analytics.shadow_completion`.
    error.
    - A distance rule is simpler, but the same distance is worth more debit late in the day and less
      on a fast one. Read it across `time_bucket` and `vol_bucket` before preferring it.
-   - A first look at the backfilled orders (fill times as noticed, not the broker's): at the fill,
-     spot was a median 6.4 points (1.28 widths, 0.30 straddles) past the centre. A distance rule at
-     0.5–0.75 widths agreed with what live did on 90% of 52 orders, but fired 2–4 minutes before the
-     real fill.
+   - The backfill (2026-10-02; broker fill times, spot from the trail; 42 filled and 13 cut-off
+     completion orders, 2026-08-01..10-02) is in the experiment log. In short: completions filled
+     with spot a median 1.03 widths past the centre, at the completing long strike; no fill was
+     better than its limit by more than 0.05; and a distance rule at 0.25–0.75 widths agreed with
+     live on 84% of orders, firing a median 2.5–6.5 minutes before the real fill.
 3. **Shadow first.** Read the shadow at the fitted value against paper's own rule, and against live
    on the days both traded.
 4. **Switch at a declared boundary.** Replacing paper's completion rule changes what control's
