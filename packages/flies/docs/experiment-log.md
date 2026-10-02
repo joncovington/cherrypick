@@ -512,3 +512,40 @@ the arm live traded each day.
 on the unchanged trigger. It is a book-wide `completion_rule` break, journaled by the paper loop.
 Never pool completion P&L across it; the regime-cut era restarts there. The trigger is the next
 step, fitted from quoted live paths against the shadow, and it will be a second break.
+
+## 2026-10-02 — entry credit as a gate: neither a floor nor a band (a negative result)
+
+Asked whether `control` should enter only on a larger credit. Replayed by dropping the refused
+entries and keeping each remaining spread's recorded P&L, the `replay_gates` method (structures
+settle independently). Paper `control`: 345 settled 5-wide SPX spreads, 43 sessions,
+2026-08-03..10-02, no floor net +$2,932. The deployed `min_credit_pct_of_width` of 0.20 (1.00 on a
+5-wide) refuses nothing at the money.
+
+| Rule | Spreads kept | Net | Per spread | Sessions better / worse |
+|---|---|---|---|---|
+| no floor (deployed) | 345 | +$2,932 | +$8.50 | — |
+| credit ≥ 2.30 | 183 | +$3,686 | +$20.14 | 16 / 27 |
+| credit ≥ 2.40 | 145 | +$2,530 | +$17.45 | 17 / 26 |
+| credit ≥ 2.60 | 58 | +$2,508 | +$43.25 | 16 / 27 |
+| credit 2.40–2.59 only | 87 | +$22 | +$0.25 | 15 / 28 |
+
+- **A floor raises the per-spread figure and loses more sessions than it wins at every level.**
+- **What a high credit is.** It is the short strike sitting in the money at entry (r +0.41) and
+  low skew (r −0.43). 57 of the 58 entries at 2.60 or more were call spreads.
+- **The ≥ 2.60 edge is five sessions.** Those five give $2,298 of its $2,508.
+- **Other arms do not reproduce it.** Credits of 2.60 or more lost in `gex` (−$66 a spread),
+  `advised:miss-stop-90` (−$78) and `advised:no-entry-on-up-trend` (−$14).
+- **The completion rate is 78% in every credit bucket.** A larger credit only softens a miss
+  (−$164 against about −$255).
+- **The band looked like live's best bucket, and paper does not reproduce it.** Live's 2.40–2.59
+  entries completed 88% (22 of 25, +$58 a spread) against 67% and −$51 for the other 27 control-era
+  entries. That gap holds inside the control era alone, so it is not the earlier gex period. But it
+  sits in eight sessions, the completion difference is Fisher p 0.11, and paper `control` on the same
+  dates (09-17..10-02, 101 spreads) shows nothing: +$13.00 a spread in the band against +$12.51
+  outside it. Live credits also run about 0.12 above paper's for the same structure (the fresh
+  re-price), so a live credit bucket is not the paper bucket of the same name.
+
+No gate, no arm. The credit is a proxy for where the entry sits and which side it takes. If anything
+here is worth testing, it is the side split: calls +$17 a spread, puts +$1. That is a two-arm
+question held out over future sessions, and in a single up-trending tape it is more likely the tape
+than a rule.
