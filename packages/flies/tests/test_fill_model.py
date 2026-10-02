@@ -216,3 +216,25 @@ def test_shadow_misses_leave_the_short_vertical_and_respect_the_cutoff():
 def test_a_row_without_a_shadow_limit_is_not_judged():
     assert fm.shadow_outcome(_settled_row(shadow_completion_limit=None), "mid", 0.1, cutoff="15:30") is None
     assert fm.shadow_outcome(_settled_row(settlement_price=None), "mid", 0.1, cutoff="15:30") is None
+
+
+def test_a_negative_price_value_is_a_deeper_limit_and_pays_it():
+    """Net target 0.50 on a 1.20 credit: a resting limit 0.30 under the 1.00 shadow limit, filled at
+    its first touch and paying 0.70 -- the replay a bigger net target needs."""
+    row = _settled_row(shadow_touches={"mid": {fm.grid_key(-0.30): "2026-10-02T12:00:00-04:00"}})
+    out = fm.shadow_outcome(row, "mid", -0.30, cutoff="15:30")
+    assert out["completed"] and out["paid"] == pytest.approx(0.70)
+    expected = fly.position_pnl(
+        {
+            "kind": "fly",
+            "side": fly.PUT,
+            "center": 7495.0,
+            "wing_width": 5.0,
+            "net": 0.50,
+            "quantity": 1,
+            "fees": fly.vertical_open_fee("SPX", 1) * 2,
+        },
+        7495.0,
+    )
+    assert out["pnl"] == pytest.approx(round(expected, 2))
+    assert fm.grid_key(-0.75) in {fm.grid_key(g) for g in fm.GAP_GRID}, "net targets to credit - 1.00"

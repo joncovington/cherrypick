@@ -42,8 +42,37 @@ from cherrypick.flies import fly
 # Thresholds every touch record keeps a first-touch time for. A rule at a value OFF these grids
 # cannot be replayed from the compact record (the live path can), so they are deliberately wide:
 # live's first 48 fills sat 0.0-0.49 points under the best modelled debit and 0-13 points (0-2.6
-# widths at 5-wide SPX) past the centre.
-GAP_GRID = (-0.10, -0.05, 0.0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50)  # points
+# widths at 5-wide SPX) past the centre. The gap grid runs two ways from the live limit:
+#   positive  the market had not reached the limit -- "does a resting order fill before mid gets
+#             there" (the fill rule);
+#   negative  the market ran PAST the limit -- the first time a DEEPER resting limit at
+#             limit + value would have been reached, i.e. a bigger net target. Down to -0.75 so net
+#             targets to credit - 1.00 replay exactly, with the cutoff (widened 2026-10-02 before any
+#             shadow row was written: the ledger keeps only the day's lowest debit, whose time is
+#             usually after the 15:30 cutoff, so a deeper target could not be replayed from it).
+GAP_GRID = (
+    -0.75,
+    -0.60,
+    -0.50,
+    -0.45,
+    -0.40,
+    -0.35,
+    -0.30,
+    -0.25,
+    -0.20,
+    -0.15,
+    -0.10,
+    -0.05,
+    0.0,
+    0.05,
+    0.10,
+    0.15,
+    0.20,
+    0.25,
+    0.30,
+    0.40,
+    0.50,
+)  # points
 WIDTH_GRID = (-0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0)  # wing widths
 
 ENTRY = "entry"
@@ -373,7 +402,9 @@ def score_grid(orders: list[dict]) -> list[dict]:
 def shadow_outcome(row: dict, basis: str, value: float, *, cutoff: str | None) -> dict | None:
     """One settled paper legged row replayed under a live-like completion: a resting limit at
     `shadow_completion_limit`, filled at the first touch of `basis`/`value` no later than `cutoff`
-    (HH:MM ET), paying the limit. Returns the shadow's completion and P&L at the row's own
+    (HH:MM ET), paying the limit. A NEGATIVE price value is a deeper resting limit at
+    `limit + value` (a bigger net target) and pays that; a positive one is the same limit filled
+    before the market quite reached it, and pays the limit. Returns the shadow's completion and P&L at the row's own
     settlement price, or None for a row the shadow cannot judge (no limit, not settled, unparsed
     touches). Fees are the modelled stack -- one vertical's open fee, two if the shadow completed --
     plus the settlement fee that price triggers, so shadow and paper are on the same cost basis."""
@@ -388,18 +419,20 @@ def shadow_outcome(row: dict, basis: str, value: float, *, cutoff: str | None) -
     qty = row.get("quantity") or 1
     opened = fly.vertical_open_fee(row["symbol"], qty)
     completed = touched_at is not None
+    paid = limit + min(value, 0.0) if basis in ("mid", "natural") else limit
     position = {
         "kind": "fly" if completed else "short_vertical",
         "side": row["side"],
         "center": row["center"],
         "wing_width": row["wing_width"],
-        "net": row["credit"] - limit if completed else row["credit"],
+        "net": row["credit"] - paid if completed else row["credit"],
         "quantity": qty,
         "fees": opened * (2 if completed else 1),
     }
     return {
         "completed": completed,
         "completed_at": touched_at,
+        "paid": round(paid, 4) if completed else None,
         "pnl": round(fly.position_pnl(position, settle), 2),
     }
 

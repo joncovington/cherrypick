@@ -96,6 +96,9 @@ via `analytics.fill_realism` and `analytics.shadow_completion`.
   the spot trail. The counts say which population each figure comes from.
 - **`shadow`:** per paper arm, paper's own completion rate and net beside the shadow's at each grid
   value, on the same modelled cost stack at each row's own settlement price.
+  A negative price value is a deeper resting limit (`limit + value`), so the same record replays
+  a bigger net target, down to credit − 1.00, with the 15:30 cutoff applied exactly. The ledger's
+  own lowest-debit columns cannot do that: they keep only the day's low, usually after the cutoff.
 
 ## What comes next, and what would change paper
 
