@@ -45,12 +45,6 @@
   "books": {
     "control": {
       "enabled": true
-    },
-    "noflip": {
-      "enabled": true
-    },
-    "hook": {
-      "enabled": true
     }
   },
   "_stream_note": "VXX is the only `symbols` entry (an underlying: spot + chain). VIX/VIX3M are quote-only `legs` \u2014 declaring them as `symbols` would have the producer maintain 0DTE chains for two symbols nothing here reads (the overview 2026-08-17 incident this plan explicitly avoids repeating).",

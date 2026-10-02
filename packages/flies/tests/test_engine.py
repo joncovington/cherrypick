@@ -2056,6 +2056,19 @@ def _example_config():
     return json.loads(re.sub(r"^\s*//.*$", "", example.read_text(encoding="utf-8"), flags=re.M))
 
 
+def _machine_config():
+    """This machine's own flies config (read-only, the REAL home), for tests that pin the arms it
+    runs. The shipped example holds only `control`; every other arm's definition is a machine's
+    configuration. Skips where there is none (CI, a fresh clone)."""
+    import json
+    from pathlib import Path
+
+    path = Path.home() / ".cherrypick" / "config" / "flies.json"
+    if not path.is_file():
+        pytest.skip("no machine flies config -- these pin a configured machine's arms")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def test_the_delta_debit_arms_are_a_mirrored_pair_and_reach_the_roster():
     """`debit-first-up` and `debit-first-down` differ in direction and nothing else, so a difference
     between their books is the direction. Both must be in engine.ARMS AND the example config: the
@@ -2063,7 +2076,7 @@ def test_the_delta_debit_arms_are_a_mirrored_pair_and_reach_the_roster():
     (registry ∩ config) silently excluded them from the day they were written."""
     from cherrypick.flies import cli
 
-    example = _example_config()
+    example = _machine_config()
     arms = example["arms"]
     up, down = arms["debit-first-up"], arms["debit-first-down"]
     for arm, expected_direction in (("debit-first-up", "up"), ("debit-first-down", "down")):
@@ -2211,7 +2224,7 @@ def test_the_delta_rule_direction_key_is_center_direction_with_the_old_name_stil
 
 
 def test_the_bwb_delta_arms_are_two_mirrored_pairs_at_two_widths():
-    example = _example_config()
+    example = _machine_config()
     for width_tag, strikes in (("", None), ("-w2", 2)):
         up, down = example["arms"][f"bwb-up{width_tag}"], example["arms"][f"bwb-down{width_tag}"]
         for arm, direction in ((up, "up"), (down, "down")):
@@ -2227,16 +2240,25 @@ def test_the_bwb_delta_arms_are_two_mirrored_pairs_at_two_widths():
         }
 
 
-def test_every_registered_arm_has_a_config_entry_and_vice_versa():
-    """The seam that lost the ATM twins for two weeks: `enabled_arms` is registry ∩ config, so an
-    arm in ARMS with no config entry is silently never run, and a config entry no ARMS name matches
-    is silently ignored. Retired arms keep a disabled entry rather than being dropped, so the two
-    sets are equal by construction and any new arm has to be added in both places or this fails."""
-    configured = {k for k in _example_config()["arms"] if not k.startswith("_")}
-    assert set(engine.ARMS) == configured, {
-        "registered_not_configured": sorted(set(engine.ARMS) - configured),
-        "configured_not_registered": sorted(configured - set(engine.ARMS)),
-    }
+def test_every_configured_arm_is_a_registered_one():
+    """The seam that lost the ATM twins for two weeks: `enabled_arms` is registry ∩ config, so a
+    config entry no ARMS name matches is silently ignored. Checked against this machine's own
+    config. The other direction -- a registered arm with no config entry -- is the normal state since
+    the shipped example holds only `control`: an arm runs where a machine defines it."""
+    configured = {k for k in _machine_config()["arms"] if not k.startswith("_")}
+    assert configured <= set(engine.ARMS), sorted(configured - set(engine.ARMS))
+
+
+def test_the_shipped_example_configures_only_control_and_only_registered_arms():
+    """A base install runs one arm. Every arm the example names must be one the engine registers,
+    or `enabled_arms` (registry ∩ config) would silently drop it."""
+    from cherrypick.flies import cli
+
+    example = _example_config()
+    configured = {k for k in example["arms"] if not k.startswith("_")}
+    assert configured == {"control"}
+    assert configured <= set(engine.ARMS)
+    assert cli.enabled_arms(example) == ["control"]
 
 
 # --------------------------------------------------------------------------- where a miss sits

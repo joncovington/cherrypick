@@ -35,20 +35,6 @@
   "books": {
     "control": {
       "enabled": true
-    },
-    "delta": {
-      "enabled": true
-    },
-    "bounce": {
-      "enabled": true
-    },
-    "flip": {
-      "enabled": true
-    },
-    "wall": {
-      "enabled": true,
-      "max_leg_spread_abs": 0.05,
-      "_note": "Call-side BWB, body at the GEX call wall (added 2026-08-31; origin: the gex module's pin-study over 23 recorded sessions — the close finished at or below the morning wall 19-21/23). NOT one of the four base books: different structure (calls, +1 near/-2 body/+1 far ABOVE spot), no add-on in phase one (it never arms; its trigger-tick cohort records the call-side candidates for a future replay, the way the put books earned theirs). At ~7 DTE this asks a question the study did not answer — does the wall bound price over a week? — so its result stands on its own evidence. max_leg_spread_abs is the curve/calendars absolute floor: these are OTM calls where a done short quotes 0.00/0.01, a 200% ratio and a one-cent width; the put books' gate is deliberately untouched."
     }
   },
   "_stream_note": "SPX is the only `symbols` entry. `expirations` carries the current target expiration plus every expiration still held open (the daily ladder holds up to ~7 distinct dates at steady state). `window_hints` is load-bearing: the body sits a full expected move below spot, at or beyond a default ATM window's edge, and must also cover the add-on bracket two increments below the far wing.",

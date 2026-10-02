@@ -50,8 +50,9 @@
   "books_header": "===== the books — two real ones, and why only two =====",
   "_books_note": "Every book shares the SAME entry fills (one plan, N books), so any divergence is exit policy and nothing else. `control` is the user-defined baseline: sell every leg in the Friday exit window, no stops, no targets, no weekend hold. `path` is the permissive superset (MEIC's `open` arm precedent): it never closes — shorts run to Friday settlement (cash, or delivery plus the next session's share disposal), longs to the Monday disposition — and its recorded mark path is what exit_policies.py derives every candidate exit rule from, read-side, with exact pairing. That derivation is why there are no pt-20/sl-50/thu-close books: one permissive arm answers the whole grid. Do not disable `path` while any experiment is running — it is the substrate, not a variant. Deliberately NOT one-variable-apart (control differs from path in short AND long handling); the read-side grid answers the single-variable questions, and the module CLAUDE.md states the exemption so nobody 'fixes' it.",
   "books": {
-    "control": { "enabled": true },
-    "path": { "enabled": true }
+    "control": {
+      "enabled": true
+    }
   },
 
   "friday_entry_header": "===== the Friday entry regime (paper, OFF by default) =====",
