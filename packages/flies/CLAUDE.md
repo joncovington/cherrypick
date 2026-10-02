@@ -53,13 +53,15 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `cherrypick/flies/db.py` | `fly_positions` (ledger) and `fly_books` (roll-up with the floor's price band). |
 | `cherrypick/flies/analytics.py` | the one query layer every read surface goes through. Read-only. |
 | `cherrypick/flies/eod.py` | Report builders, retired 2026-08-13 (`packages/review` reports the session now). `logs_dir()` is still the loops' path helper. |
-| `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `regime` / `bands` / `replay-gates` / `hedge-overlay` / `reversal-book` / `regime-cuts`. |
+| `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `regime` / `bands` / `replay-gates` / `hedge-overlay` / `reversal-book` / `fill-model` / `regime-cuts`. |
 | `cherrypick/flies/live_loop.py` | The LIVE loop: a 1-min `--once --live` tick fired by the supervisor while the arm record (`state/flies-live-arm.json`, written per day via `/live-flies-start`) is valid; self-disarms at `live.disarm_time` by deleting the record. The arm record, both disarm reasons, the supervisor-heartbeat read and the record-only arming rule are `cherrypick.core.live` (thin wrappers here; the legacy schtasks fallback and pre-cutover record location stay flies-only); fill confirmation reads `cherrypick.core.execution.fill_state`. `--once` (dry-run default) is the rung-0 smoke; `--status`; `--settle --price` for the official print; burst fill-watchers `--watch-fills`. Every live tick marks each open position at mid into `fly_live_marks` — pure telemetry after every decision; an unquoted leg gets no row, never a zero. A mid is not a fill. Live only: paper's result is settled payoff by design. |
 | `cherrypick/flies/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor); `--live` double-gated. The loop's adapter is `cherrypick.core.execution.Broker` with this module's session, account, `live_gates`, serializer and deploy cap injected; only the REST re-quote remains here. `official_settlement_price` is `cherrypick.core.settlement`'s, kept as a module attribute so the adapter and tests patch one seam. |
 | `cherrypick/flies/live_orders.py` | Pure engine-decision → order-spec builders (OCC symbols from the provider). Tick rounding is `cherrypick.core.structures`. |
 | `cherrypick/flies/alert_daemon.py` | Optional order-alert daemon: one account-alert websocket for the trading day, started on arm / stopped on disarm. Decides nothing — appends to the inbox below so fills are *noticed* sooner. |
 | `cherrypick/flies/alerts_db.py` | The WAL-mode alert inbox (`live_alerts.db`), separate from the ledger on purpose — 1 writer (daemon), N readers (tick, watcher). |
 | `cherrypick/flies/credentials.py` | `fliesagent` keyring store + hidden-input CLI (orchestrator `connect` delegates here). `designated_account` is `CredentialStore.designated_account()`. |
+| `cherrypick/flies/fill_model.py` | Fill realism, pure: the three at-fill distances, spread prices and gaps, first-touch records, rule scoring, the paper shadow's outcome. [docs/fill-model.md](docs/fill-model.md). |
+| `cherrypick/flies/fill_facts.py` | Fill realism, recorded: the live loop's order/path writers (`fly_live_orders`, `fly_order_path`), `rebuild`, and the dry-run-by-default `backfill` from broker transactions and the gex spot trail. |
 | `tests/fixtures/books.json` | three real tastytrade order chains, transcribed. |
 
 ## The read side
@@ -97,6 +99,26 @@ what that layer returns — MEIC grew three call sites that disagree about what 
   that centres differently** (`gex`): the ATM arms agree on centre by construction (100% over 184
   iterations), which says nothing about redundancy. Read `time_window` vs `control` on timing and
   completion, `width-N` vs `control` on width. Never read a structural identity as a finding.
+
+**Fill realism, tag-don't-gate** (2026-10-02, [docs/fill-model.md](docs/fill-model.md)). Paper
+completes on the first tick its modelled debit clears the gate and pays that debit; live rests a
+limit at `max_safe_completion_debit` and pays the limit. 43 of the first 48 live completions filled
+below the best modelled debit the live loop ever saw, so the gap between the two is measured, not
+assumed:
+- **Live** records every order (`fly_live_orders`, filled or not) and what it saw while it worked
+  (`fly_order_path`, each tick and watcher cycle). At each fill it keeps all three distances (spot
+  past the centre, spot past the completing long strike, the mid/natural gap to the limit), signed
+  as `fill_model.py` defines them, plus the broker's own fill time and leg-fill price. **The
+  ledger's live `debit`/`credit` are the order's LIMIT** (the status `price` field), so price
+  improvement only shows in `broker_fill_price`. A row says `fill_time_source = 'noticed'` when
+  the broker's time is unknown. Every write goes through `live_loop._telemetry`: a failure is
+  logged, never raised into a fill confirmation or a placement.
+- **Paper** stamps each legged entry with the limit a live completion would rest at
+  (`shadow_completion_limit`) and keeps first touches against it every tick until settlement
+  (`shadow_touches`), whether or not paper's own rule completed the position.
+  `analytics.shadow_completion` replays it at any grid value. **Switching paper to a live-like
+  rule changes what control's numbers mean: fit first, shadow second, switch only at a declared
+  boundary.**
 
 **Two overlays on the legged book, both tag-don't-gate** (2026-09-19):
 - **The hedge overlay** (`engine.hedge_candidate`, `book.py` step 1e, `analytics.hedge_overlay`,
@@ -525,7 +547,9 @@ Live trading is running, not hypothetical. The two questions moving to live rais
 resolves them:
 
 - **Legging is where live diverges hardest from paper.** Live, step 2 is a working limit that may sit
-  or fill worse, so the paper completion rate is a **ceiling** on the live rate. Built-in abort: once
+  or fill worse, so the paper completion rate was taken as a **ceiling** on the live rate. The first
+  48 live completions question that: a resting limit filled where paper's modelled debit said no
+  (fill realism, above). Built-in abort: once
   30+ live legged entries exist, a live rate more than 15 points below paper over the same days halts
   the pilot automatically.
 - **`fund_from_open_credit` needs a real buying-power check** before any outright entry. Moot for the

@@ -7,12 +7,15 @@ this, that a cumulative book lets one lucky structure paper over a strategy that
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from cherrypick.flies import (
     clock,  # noqa: E402
     engine,  # noqa: E402
+    fill_model,  # noqa: E402
     fly,  # noqa: E402
+    live_orders,  # noqa: E402
 )
 from cherrypick.flies import db as dbmod  # noqa: E402
 
@@ -279,7 +282,51 @@ def _to_position(row: dict) -> dict:
         # The hedge overlay's strike and running max, so the per-tick tracker survives a restart.
         "hedge_strike": row["hedge_strike"],
         "hedge_best_mid": row["hedge_best_mid"],
+        # The live-like completion shadow, so its first-touch record survives a restart.
+        "shadow_completion_limit": dict(row).get("shadow_completion_limit"),
+        "shadow_touches": fill_model.load_touches(dict(row).get("shadow_touches")),
     }
+
+
+def shadow_completion_limit(position: dict, symbol: str, params: dict) -> float | None:
+    """The limit a LIVE completion order for this legged entry would rest at: the same
+    `max_safe_completion_debit` floored to the tick that `live_orders.resting_completion_spec`
+    submits, off the entry's own credit and fees. None when that floors to nothing submittable --
+    live would refuse to place it, so the shadow places nothing either."""
+    bound = live_orders.max_safe_completion_debit(
+        {**position, "symbol": symbol}, params.get("min_floor_dollars", 0.0), params.get("fee_buffer", 0.10)
+    )
+    price = live_orders.tick_floor(bound)
+    return price if price > 0 else None
+
+
+def _record_shadow_touches(conn, position: dict, snapshot: dict, when: str) -> None:
+    """Fold this tick's completing-spread gap and spot distance into the position's first-touch
+    record (fill_model.update_touches). Writes only when a threshold is touched for the first time
+    or an extreme moves. Telemetry only."""
+    side, center, width = position["side"], position["center"], position["wing_width"]
+    q = fill_model.quotes_for(
+        fill_model.COMPLETION, side, center, width, lambda s, k: engine.quote(snapshot, s, k)
+    )
+    gaps = fill_model.gaps(
+        fill_model.COMPLETION,
+        position["shadow_completion_limit"],
+        fill_model.spread_prices(fill_model.COMPLETION, **q),
+    )
+    dist = fill_model.spot_distances(side, center, width, snapshot.get("underlying_price"))
+    touches, changed = fill_model.update_touches(
+        position.get("shadow_touches"),
+        ts=when,
+        mid_gap=gaps["mid_gap"],
+        natural_gap=gaps["natural_gap"],
+        dist_widths=dist["dist_widths"],
+    )
+    if not changed:
+        return
+    position["shadow_touches"] = touches
+    dbmod.save_position(
+        conn, {"position_id": position["position_id"], "shadow_touches": json.dumps(touches, sort_keys=True)}
+    )
 
 
 def _record_hedge_best(conn, position: dict, credit: float, when: str) -> None:
@@ -737,6 +784,18 @@ def process_snapshot(
         if hedge_q is not None:
             _record_hedge_best(conn, pos, fly.leg_credit(hedge_q, slip), now)
 
+    # --- 1f. the live-like completion shadow (fill_model.py): for every open legged position that
+    # stamped a shadow limit at entry, fold this tick's completing-spread gap and spot distance into
+    # its first-touch record -- for the whole life of the position, whether or not paper's own rule
+    # has completed it, because the shadow is a second, independent completion of the same entry.
+    # Records, never gates: what a live resting order would have done is replayed on the read side.
+    for pos in positions:
+        if pos["status"] != "open" or pos.get("entry_mode") != "legged":
+            continue
+        if pos.get("shadow_completion_limit") is None:
+            continue
+        _record_shadow_touches(conn, pos, snapshot, now)
+
     open_positions = [p for p in positions if p["status"] == "open"]
     # Filled in by the engine's portfolio gates on a refusal: the strike that collided, or the
     # seconds still to wait. Passed as an out-dict because `plan is None on refusal` is an
@@ -791,12 +850,14 @@ def process_snapshot(
                 # inside the spacing window it was meant to be held out of.
                 "entry_time_min": _minute_of_day(now),
             }
+            pos["shadow_completion_limit"] = shadow_completion_limit(pos, symbol, params)
             positions.append(pos)
             open_positions.append(pos)
             dbmod.save_position(
                 conn,
                 {
                     **entry_row_base("legged", "short_vertical", position_id, plan),
+                    "shadow_completion_limit": pos["shadow_completion_limit"],
                     "net": plan["credit"],
                     "credit": plan["credit"],
                     "entry_center_delta": plan.get("center_delta"),

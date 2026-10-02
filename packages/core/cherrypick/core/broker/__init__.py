@@ -419,11 +419,34 @@ async def _preflight_then_submit(
 
 
 # --------------------------------------------------------------------------- order lifecycle
+def _leg_fills(placed: Any) -> list[dict]:
+    """Every per-leg execution the broker reports on an order, as
+    [{symbol, action, quantity, fill_price, filled_at}] -- strings, like `price`, so nothing is
+    rounded on the way through. `price` is the order's own LIMIT; these are what it actually filled
+    at, and when. Empty for a working order, and for a fill the broker has not itemised yet."""
+    out = []
+    for leg in getattr(placed, "legs", None) or []:
+        action = getattr(leg, "action", None)
+        for fill in getattr(leg, "fills", None) or []:
+            filled_at = getattr(fill, "filled_at", None)
+            out.append(
+                {
+                    "symbol": getattr(leg, "symbol", None),
+                    "action": str(getattr(action, "value", action)) if action is not None else None,
+                    "quantity": str(getattr(fill, "quantity", None)),
+                    "fill_price": str(getattr(fill, "fill_price", None)),
+                    "filled_at": filled_at.isoformat() if hasattr(filled_at, "isoformat") else filled_at,
+                }
+            )
+    return out
+
+
 def _serialize_placed_order(order_id: Any, placed: Any) -> dict:
     """A `PlacedOrder` (however it arrived — REST poll or account-alert push) -> the one
-    {order_id, status, cancellable, price, filled} shape every confirm path in this suite
+    {order_id, status, cancellable, price, filled, fills} shape every confirm path in this suite
     consumes. Shared so the push path (`wait_for_order_alerts`) and the poll path (`order_status`)
-    are byte-for-byte interchangeable to their callers."""
+    are byte-for-byte interchangeable to their callers. `fills` (2026-10-02) carries the broker's
+    own per-leg fill prices and times; a caller that does not read it is unaffected."""
     return {
         "order_id": order_id,
         "status": str(getattr(placed, "status", None)),
@@ -431,6 +454,7 @@ def _serialize_placed_order(order_id: Any, placed: Any) -> dict:
         "price": str(getattr(placed, "price", None)),
         "filled": str(getattr(placed, "status", "")).strip().lower() == "filled",
         "external_identifier": getattr(placed, "external_identifier", None),
+        "fills": _leg_fills(placed),
     }
 
 

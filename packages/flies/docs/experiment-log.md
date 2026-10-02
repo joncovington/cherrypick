@@ -434,3 +434,24 @@ never paid it" from "the slippage model ate it". The body's delta shows where in
 tolerance each attempt landed. The tick's shared `gate_detail` is now cleared before each entry mode,
 so one mode's legs or credit cannot land on another's row. Telemetry only: no gate moved, not a
 break. Build the replay after a few sessions; read it before touching the floor.
+
+## 2026-10-02 — live completions fill where paper's model says no; fill realism recorded from today
+
+Of the 48 live completions 2026-07-30..10-02, **43 filled below the best modelled completing debit
+the live loop saw while the spread was open**, by a median 0.14 points (about $14 a position, range
+0.025 worse to 0.49 better). Paper's gate (`debit < credit − fee_buffer`, on mid plus 0.125 of each
+leg's spread) would have refused those completions on the same quotes. Two readings, not yet
+separable: the live loop samples once a minute and the resting limit catches dips between samples,
+or the modelled haircut overcharges a resting order. Either way it questions the live-trading
+plan's assumption that paper's completion rate is a ceiling on live's.
+
+At the moment the loop noticed each fill, spot sat a median 6.2 points past the centre in the
+completing direction (−0.3 to 13.1; about 1.2 wing widths at 5-wide SPX), and median latency was
+22.7 minutes.
+
+From today the live ledger records every order and what it saw while it worked, and each paper
+legged entry carries a live-like completion shadow ([fill-model.md](fill-model.md)). The ledger's
+live `debit`/`credit` turned out to be each order's limit, not its fill, so any price improvement
+was invisible until now. Telemetry only: no gate moved, not a break. Read the shadow and the rule fit
+after a few dozen quoted completion orders; any switch of paper's completion rule lands at a
+declared boundary.

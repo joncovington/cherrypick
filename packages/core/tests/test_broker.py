@@ -431,7 +431,50 @@ def test_order_status_reports_filled():
         "price": "1.23",
         "filled": True,
         "external_identifier": None,
+        "fills": [],
     }
+
+
+def test_order_status_carries_the_brokers_own_leg_fills():
+    """`price` is the order's LIMIT. The leg fills are what it actually filled at, and when --
+    serialised from the SDK's own models, so a field rename upstream fails here rather than
+    reaching a ledger as an empty list."""
+    from datetime import datetime, timezone
+
+    from tastytrade.order import FillInfo, InstrumentType, Leg, OrderAction
+
+    when = datetime(2026, 10, 2, 15, 24, 40, tzinfo=timezone.utc)
+
+    def leg(symbol, action, price):
+        fill = FillInfo(fill_id=symbol, quantity=Decimal(1), fill_price=Decimal(price), filled_at=when)
+        return Leg(
+            instrument_type=InstrumentType.EQUITY_OPTION,
+            symbol=symbol,
+            action=action,
+            quantity=Decimal(1),
+            fills=[fill],
+        )
+
+    placed = FakePlacedOrder("Filled", price=Decimal("2.25"), cancellable=False)
+    placed.legs = [leg("FAR", OrderAction.BUY_TO_OPEN, "2.55"), leg("CTR", OrderAction.SELL_TO_OPEN, "0.35")]
+    out = _run(broker.order_status(FakeOrderAccount(orders={7: placed}), "sess", 7))
+    assert out["price"] == "2.25"
+    assert out["fills"] == [
+        {
+            "symbol": "FAR",
+            "action": "Buy to Open",
+            "quantity": "1",
+            "fill_price": "2.55",
+            "filled_at": when.isoformat(),
+        },
+        {
+            "symbol": "CTR",
+            "action": "Sell to Open",
+            "quantity": "1",
+            "fill_price": "0.35",
+            "filled_at": when.isoformat(),
+        },
+    ]
 
 
 def test_order_status_reports_live_working_order():
@@ -599,6 +642,7 @@ def test_wait_for_order_alerts_returns_only_matching_orders():
             "price": "1.05",
             "filled": True,
             "external_identifier": None,
+            "fills": [],
         }
     ]
 

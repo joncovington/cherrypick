@@ -22,6 +22,7 @@ from cherrypick.core import regimecuts as _rc
 
 from cherrypick.flies import (
     clock,  # noqa: E402
+    fill_model,  # noqa: E402
     fly,  # noqa: E402
 )
 
@@ -2165,3 +2166,192 @@ def band_placement_classifier(placements: list[dict]) -> dict:
             edge: sum(1 for p in scored if p["binding_edge"] == edge) for edge in ("low", "high")
         },
     }
+
+
+# --------------------------------------------------------------------------- fill realism
+def _seconds_between(a: str | None, b: str | None) -> float | None:
+    if not a or not b:
+        return None
+    return (fill_model.parse_ts(b) - fill_model.parse_ts(a)).total_seconds()
+
+
+def _improvement(order: dict) -> float | None:
+    """Points the broker filled BETTER than the limit (+), from its own leg fills: under the limit
+    for a completion's debit, over it for an entry's credit. None without a broker price."""
+    price, limit = order.get("broker_fill_price"), order.get("limit_price")
+    if price is None or limit is None:
+        return None
+    return round((limit - price) if order["leg"] == fill_model.COMPLETION else (price - limit), 4)
+
+
+def _fill_moment(order: dict) -> str | None:
+    """When a filled order filled: the broker's time when known, else when we noticed."""
+    if order.get("outcome") != "filled":
+        return None
+    return order.get("broker_filled_at") or order.get("resolved_at")
+
+
+def fill_realism(live_conn, start=None, end=None) -> dict:
+    """What live orders needed from the market before they filled (fill_model.py), from the LIVE
+    ledger's `fly_live_orders` and `fly_order_path`.
+
+    Per order leg: outcomes, and over filled orders the three distances (spot past the centre, spot
+    past the completing long strike, and the mid/natural gaps to the limit), the two normalisations,
+    the broker's price improvement against the limit, time to fill and how late we noticed.
+
+    `rule_fit` scores "fill at the first touch" against every completion order that resolved, per
+    basis and grid value (fill_model.score_rule). A price basis is scored only over orders whose
+    path carries quotes (recorded live, from 2026-10-02); the distance basis also over backfilled
+    orders, whose path is the gex spot trail. The two populations differ, and the counts say so.
+    """
+    clause, params = ["1 = 1"], []
+    if start:
+        clause.append("trade_date >= ?")
+        params.append(start)
+    if end:
+        clause.append("trade_date <= ?")
+        params.append(end)
+    orders = [
+        dict(r)
+        for r in live_conn.execute(
+            f"SELECT * FROM fly_live_orders WHERE {' AND '.join(clause)} ORDER BY placed_at", params
+        ).fetchall()
+    ]
+    out: dict = {"orders": len(orders), "legs": {}}
+    measures = (
+        "fill_dist_center",
+        "fill_dist_long",
+        "fill_dist_widths",
+        "fill_dist_moves",
+        "fill_mid_gap",
+        "fill_natural_gap",
+    )
+    for leg in (fill_model.ENTRY, fill_model.COMPLETION):
+        rows = [o for o in orders if o["leg"] == leg]
+        filled = [o for o in rows if o.get("outcome") == "filled"]
+        outcomes: dict[str, int] = {}
+        for o in rows:
+            key = o.get("outcome") or "unknown"
+            outcomes[key] = outcomes.get(key, 0) + 1
+        resolved = [o for o in rows if o.get("outcome") not in (None, "working")]
+        summary = {
+            "orders": len(rows),
+            "outcomes": outcomes,
+            "filled": len(filled),
+            "fill_rate": _rate(len(filled), len(resolved)),
+            "fill_time_sources": {
+                s: sum(1 for o in filled if (o.get("fill_time_source") or "none") == s)
+                for s in sorted({o.get("fill_time_source") or "none" for o in filled})
+            },
+        }
+        for m in measures:
+            summary[m.removeprefix("fill_")] = fill_model.quantiles(
+                [o[m] for o in filled if o.get(m) is not None]
+            )
+        summary["improvement"] = fill_model.quantiles([v for v in map(_improvement, filled) if v is not None])
+        to_fill = [_seconds_between(o.get("placed_at"), _fill_moment(o)) for o in filled]
+        summary["minutes_to_fill"] = fill_model.quantiles([s / 60 for s in to_fill if s is not None])
+        lags = [
+            _seconds_between(o.get("broker_filled_at"), o.get("resolved_at"))
+            for o in filled
+            if o.get("fill_time_source") == "broker_order"
+        ]
+        summary["notice_lag_s"] = fill_model.quantiles([s for s in lags if s is not None])
+        out["legs"][leg] = summary
+
+    resolved = [
+        o for o in orders if o["leg"] == fill_model.COMPLETION and o.get("outcome") not in (None, "working")
+    ]
+    priced, spotted = [], []
+    for o in resolved:
+        path = [
+            dict(r)
+            for r in live_conn.execute(
+                "SELECT * FROM fly_order_path WHERE order_id = ? ORDER BY observed_at", (o["order_id"],)
+            ).fetchall()
+        ]
+        touches = fill_model.touches_from_path(
+            path, leg=o["leg"], side=o["side"], center=o["center"], width=o["wing_width"]
+        )
+        judged = {"filled_at": _fill_moment(o), "touches": touches}
+        if any(r.get("buy_bid") is not None for r in path):
+            priced.append(judged)
+        if any(r.get("spot") is not None for r in path):
+            spotted.append(judged)
+    out["rule_fit"] = {
+        "price_orders": len(priced),
+        "distance_orders": len(spotted),
+        "mid": [fill_model.score_rule(priced, "mid", v) for v in fill_model.GAP_GRID],
+        "natural": [fill_model.score_rule(priced, "natural", v) for v in fill_model.GAP_GRID],
+        "dist": [fill_model.score_rule(spotted, "dist", v) for v in fill_model.WIDTH_GRID],
+    }
+    return out
+
+
+def shadow_completion(
+    paper_conn,
+    start=None,
+    end=None,
+    symbol=None,
+    arm=None,
+    basis: str = "mid",
+    values=None,
+    cutoff: str = "15:30",
+) -> dict:
+    """The live-like completion shadow over settled PAPER legged entries, per arm: paper's own
+    completion rate and net against the shadow's at each grid value of `basis` (a resting limit at
+    `shadow_completion_limit`, filled at the first touch no later than `cutoff`, paying the limit).
+
+    The shadow is scored at the row's own settlement price on the MODELLED cost stack (the entry
+    fee, the completion fee when completed, the settlement fee that price triggers), so it differs
+    from paper's recorded net only by the completion rule. Rows closed before expiry are excluded
+    with the void ones (rule 5). Rows from before the shadow was recorded carry no limit and are
+    not counted, never scored as misses."""
+    grid = (
+        values if values is not None else (fill_model.WIDTH_GRID if basis == "dist" else fill_model.GAP_GRID)
+    )
+    where, params = _period_clause(start, end, arm, symbol)
+    rows = [
+        dict(r)
+        for r in paper_conn.execute(
+            f"SELECT * FROM fly_positions WHERE {where} AND entry_mode = 'legged' "
+            "AND COALESCE(closed_before_expiry, 0) = 0 AND shadow_completion_limit IS NOT NULL "
+            "ORDER BY arm, entry_time",
+            params,
+        ).fetchall()
+    ]
+    by_arm: dict[str, list[dict]] = {}
+    for r in rows:
+        r["shadow_touches"] = fill_model.load_touches(r.get("shadow_touches"))
+        by_arm.setdefault(r["arm"], []).append(r)
+    out = {"basis": basis, "cutoff": cutoff, "arms": {}}
+    for name, arm_rows in by_arm.items():
+        paper_completed = sum(1 for r in arm_rows if r["kind"] == "fly")
+        shadow = []
+        for v in grid:
+            judged = [
+                x
+                for x in (fill_model.shadow_outcome(r, basis, v, cutoff=cutoff) for r in arm_rows)
+                if x is not None
+            ]
+            done = sum(1 for x in judged if x["completed"])
+            shadow.append(
+                {
+                    "value": v,
+                    "positions": len(judged),
+                    "completed": done,
+                    "completion_rate": _rate(done, len(judged)),
+                    "net": _round(sum(x["pnl"] for x in judged)),
+                }
+            )
+        out["arms"][name] = {
+            "positions": len(arm_rows),
+            "sessions": len({r["trade_date"] for r in arm_rows}),
+            "paper": {
+                "completed": paper_completed,
+                "completion_rate": _rate(paper_completed, len(arm_rows)),
+                "net": _round(sum((r["pnl"] or 0.0) for r in arm_rows)),
+            },
+            "shadow": shadow,
+        }
+    return out

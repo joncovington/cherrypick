@@ -85,6 +85,8 @@ from cherrypick.flies import (
     alerts_db,  # noqa: E402
     clock,  # noqa: E402
     engine,  # noqa: E402
+    fill_facts,  # noqa: E402
+    fill_model,  # noqa: E402
     fly,  # noqa: E402
     live_orders,  # noqa: E402
     provider,  # noqa: E402
@@ -354,6 +356,62 @@ def margin_cap_exceeded(cap: float | None, positions: list[dict], plan: dict) ->
     return total > float(cap), total
 
 
+# --------------------------------------------------------------------------- fill realism telemetry
+def _telemetry(log, fn, *args, **kwargs):
+    """Run one `fill_facts` recorder call, swallowing any failure into the log. Fill-realism rows
+    are measurement, written beside trading decisions that have already been made: losing one is a
+    gap in the data, never a reason for a fill confirmation or an order placement to fail."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:  # noqa: BLE001 -- telemetry must never break the loop
+        log(f"fill telemetry {getattr(fn, '__name__', fn)} failed ({type(exc).__name__}: {exc})")
+        return None
+
+
+def _completion_limit(conn, pos: dict, params: dict) -> float:
+    """The working completion order's limit: as recorded at placement, else the bound it was priced
+    from, floored to the tick the way `resting_completion_spec` submits it."""
+    order = dbmod.live_order(conn, pos["completion_order_id"]) if pos.get("completion_order_id") else None
+    if order is not None and order.get("limit_price") is not None:
+        return order["limit_price"]
+    return live_orders.tick_floor(
+        live_orders.max_safe_completion_debit(
+            pos, params.get("min_floor_dollars", 0.0), params.get("fee_buffer", 0.10)
+        )
+    )
+
+
+def _observe_working_orders(
+    conn, snapshot: dict, positions: list[dict], params: dict, *, source: str, log
+) -> int:
+    """One `fly_order_path` row per working live order off this snapshot. Called before fill
+    confirmation, so the look that notices a fill is itself on the path."""
+    seen = 0
+    for pos in positions:
+        if pos.get("status") != "open":
+            continue
+        if pos.get("entry_fill_status") == "pending" and pos.get("entry_order_id"):
+            leg, order_id, limit = fill_model.ENTRY, pos["entry_order_id"], pos.get("net")
+        elif pos.get("completion_fill_status") == "pending" and pos.get("completion_order_id"):
+            leg, order_id = fill_model.COMPLETION, pos["completion_order_id"]
+            limit = _telemetry(log, _completion_limit, conn, pos, params)
+        else:
+            continue
+        if _telemetry(
+            log,
+            fill_facts.observe,
+            conn,
+            snapshot,
+            pos,
+            leg=leg,
+            order_id=order_id,
+            limit_price=limit,
+            source=source,
+        ):
+            seen += 1
+    return seen
+
+
 # --------------------------------------------------------------------------- fill confirmation
 def measured_entry_slippage(
     mid: float | None, actual_credit: float | None, quantity: int | None
@@ -370,7 +428,8 @@ def measured_entry_slippage(
 def _confirm_entry_fill(conn, pos: dict, broker, log) -> dict:
     """Poll a pending entry order; record the ACTUAL fill credit once confirmed. Returns the
     (possibly updated) position dict."""
-    state, price = _execution.fill_state(broker.status(pos["entry_order_id"]), fallback_price=pos["net"])
+    status = broker.status(pos["entry_order_id"])
+    state, price = _execution.fill_state(status, fallback_price=pos["net"])
     if state == "filled":
         actual_credit = price  # the model only when the broker reported a fill without a parseable price
         slippage = measured_entry_slippage(
@@ -382,6 +441,16 @@ def _confirm_entry_fill(conn, pos: dict, broker, log) -> dict:
             (actual_credit, actual_credit, slippage, pos["id"]),
         )
         conn.commit()
+        _telemetry(
+            log,
+            fill_facts.filled,
+            conn,
+            pos,
+            leg=fill_model.ENTRY,
+            order_id=pos["entry_order_id"],
+            status=status,
+            limit_price=pos["net"],
+        )
         log(
             f"entry FILLED {pos['position_id']}: modeled {pos['net']:.2f} credit -> "
             f"actual {actual_credit:.2f}"
@@ -399,6 +468,16 @@ def _confirm_entry_fill(conn, pos: dict, broker, log) -> dict:
             (state, pos["id"]),
         )
         conn.commit()
+        _telemetry(
+            log,
+            fill_facts.resolved,
+            conn,
+            pos,
+            leg=fill_model.ENTRY,
+            order_id=pos["entry_order_id"],
+            outcome=state,
+            limit_price=pos["net"],
+        )
         log(f"entry {state.upper()} {pos['position_id']} — never established")
         return {**pos, "entry_fill_status": state, "status": "cancelled"}
     return pos  # still working — stays pending, still blocks a second entry
@@ -412,9 +491,8 @@ def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = 
     book.py always has. Regression (2026-07-30): live never recorded either, so every live
     Performance card's Completion panel (median latency, latency range, median spot move) read
     blank for a real session with real completions."""
-    state, price = _execution.fill_state(
-        broker.status(pos["completion_order_id"]), fallback_price=pos.get("debit") or 0.0
-    )
+    status = broker.status(pos["completion_order_id"])
+    state, price = _execution.fill_state(status, fallback_price=pos.get("debit") or 0.0)
     if state == "filled":
         actual_debit = price
         completion_fee = fly.vertical_open_fee(pos["symbol"], pos.get("quantity", 1))
@@ -453,6 +531,16 @@ def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = 
             f"({'risk-free' if risk_free else 'NOT risk-free'})",
             when=now,
         )
+        _telemetry(
+            log,
+            fill_facts.filled,
+            conn,
+            pos,
+            leg=fill_model.COMPLETION,
+            order_id=pos["completion_order_id"],
+            status=status,
+            limit_price=actual_debit,
+        )
         return {
             **updated,
             "floor_dollars": floor,
@@ -466,6 +554,15 @@ def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = 
             (state, pos["id"]),
         )
         conn.commit()
+        _telemetry(
+            log,
+            fill_facts.resolved,
+            conn,
+            pos,
+            leg=fill_model.COMPLETION,
+            order_id=pos["completion_order_id"],
+            outcome=state,
+        )
         log(f"completion {state.upper()} {pos['position_id']} — still a short vertical, may retry")
         dbmod.record_decision(
             conn,
@@ -525,6 +622,16 @@ def place_resting_completion(conn, pos: dict, snapshot: dict, params: dict, brok
             (str(res["order_id"]), completing, pos["id"]),
         )
         conn.commit()
+        _telemetry(
+            log,
+            fill_facts.placed,
+            conn,
+            pos,
+            leg=fill_model.COMPLETION,
+            order_id=res["order_id"],
+            limit_price=spec["price"],
+            snapshot=snapshot,
+        )
         return {
             **pos,
             "completion_order_id": str(res["order_id"]),
@@ -557,6 +664,18 @@ def _manage_pending_entry(conn, pos: dict, snapshot: dict, params: dict, others:
             (pos["id"],),
         )
         conn.commit()
+        # 'replaced' when the loop re-prices to a new order, 'cancelled' when it walks away: an
+        # entry fill rule is fitted on both, and they are different non-fills.
+        _telemetry(
+            log,
+            fill_facts.resolved,
+            conn,
+            pos,
+            leg=fill_model.ENTRY,
+            order_id=pos["entry_order_id"],
+            outcome="replaced" if enter else "cancelled",
+            limit_price=pos["net"],
+        )
         log(f"entry {pos['position_id']} cancelled — evaluation moved to {why}")
         return {**pos, "status": "cancelled", "entry_fill_status": "cancelled"}
     # Cancel refused: the likeliest reason is a fill that beat us. Ask, and record if so.
@@ -710,6 +829,9 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
 
     # --- 1. fill confirmation (before anything else acts on a position's current state) ---
     if live:
+        # What each working order's market looks like on this tick, before any confirmation: the
+        # look that notices a fill belongs on the path too (fill_facts.py; telemetry only).
+        _observe_working_orders(conn, snapshot, positions, params, source="tick", log=log)
         updated = []
         for pos in positions:
             if pos.get("completion_order_id") and pos.get("completion_fill_status") == "pending":
@@ -755,6 +877,15 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                     )
                     conn.commit()
                     summary["cancelled"] += 1
+                    _telemetry(
+                        log,
+                        fill_facts.resolved,
+                        conn,
+                        pos,
+                        leg=fill_model.COMPLETION,
+                        order_id=pos["completion_order_id"],
+                        outcome="cutoff_cancelled",
+                    )
                     journal(
                         "completion",
                         "cutoff_cancelled",
@@ -1030,6 +1161,24 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                             "entry_order_id": str(res["order_id"]),
                             "entry_fill_status": "pending",
                         },
+                    )
+                    _telemetry(
+                        log,
+                        fill_facts.placed,
+                        conn,
+                        {
+                            "trade_date": day,
+                            "position_id": pid,
+                            "side": plan["side"],
+                            "center": plan["center"],
+                            "wing_width": plan["wing_width"],
+                            "quantity": plan["quantity"],
+                        },
+                        leg=fill_model.ENTRY,
+                        order_id=res["order_id"],
+                        limit_price=entry_price,
+                        snapshot=snapshot,
+                        mid_at_submit=entry_mid,
                     )
                     journal(
                         "entry",
@@ -1362,6 +1511,10 @@ def run_watch(
             **provider.snapshot_kwargs(config),
         )
         naturals_ok = bool(snapshot.get("ok"))
+        if live:
+            # The watcher looks every ~`poll` seconds while an order works -- six times the main
+            # tick's resolution -- so its looks are most of each order's path (fill_facts.py).
+            _observe_working_orders(conn, snapshot, pending, params, source="watch", log=log)
 
         # Each position's relevant order this cycle (entry > completion, same priority the
         # per-position loop below uses) -- computed once so the alert-wait call and the
