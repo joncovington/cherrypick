@@ -572,7 +572,9 @@ class ChainStreamer:
                                 # The session the event DESCRIBES, not the day it arrived: every
                                 # subscribe resends the last session, and receipt-keying filed
                                 # that snapshot under the next day (`summary_session_date`).
-                                streamcache.summary_session_date(getattr(event, "day_id", None), _et_date(ts)),
+                                streamcache.summary_session_date(
+                                    getattr(event, "day_id", None), _et_date(ts)
+                                ),
                                 streamcache.to_float(getattr(event, "day_open_price", None)),
                                 high,
                                 low,

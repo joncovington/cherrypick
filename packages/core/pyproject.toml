@@ -39,7 +39,7 @@ broker = ["tastytrade>=12"]
 # no network" -- it drives async via asyncio.run() and only reaches for anyio.sleep_forever() in one
 # fake-streamer helper). It belongs here, not in `broker`, so testing broker's primitives never pulls
 # in tastytrade+httpx+pydantic+pandas-market-calendars just to satisfy one import.
-dev = ["pytest>=8", "ruff>=0.6", "anyio>=4"]
+dev = ["pytest>=8", "ruff==0.15.21", "anyio>=4"]
 
 [tool.setuptools.packages.find]
 # Native namespace package: `cherrypick` has no __init__.py; discovery must include namespaces so

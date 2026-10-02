@@ -44,14 +44,32 @@ def test_hourly_candles_aggregate_to_the_day_and_zero_candles_are_not_prices():
             _hour("2026-09-28", 20, 0, 0, 0, 0),  # the feed emits these; not part of the session
         ]
     )
-    assert bars["2026-09-28"] == {"date": "2026-09-28", "open": 7721.7, "high": 7724.15, "low": 7666.6, "close": 7683.69}
+    assert bars["2026-09-28"] == {
+        "date": "2026-09-28",
+        "open": 7721.7,
+        "high": 7724.15,
+        "low": 7666.6,
+        "close": 7683.69,
+    }
 
 
 def test_a_gap_is_filled_only_when_hourly_reproduces_the_daily_bars():
     daily = [{"date": "2026-09-25", "open": 7709.86, "high": 7752.07, "low": 7693.08, "close": 7743.41}]
     agreeing = {
-        "2026-09-25": {"date": "2026-09-25", "open": 7709.86, "high": 7752.07, "low": 7693.08, "close": 7743.41},
-        "2026-09-28": {"date": "2026-09-28", "open": 7721.7, "high": 7724.15, "low": 7666.6, "close": 7683.69},
+        "2026-09-25": {
+            "date": "2026-09-25",
+            "open": 7709.86,
+            "high": 7752.07,
+            "low": 7693.08,
+            "close": 7743.41,
+        },
+        "2026-09-28": {
+            "date": "2026-09-28",
+            "open": 7721.7,
+            "high": 7724.15,
+            "low": 7666.6,
+            "close": 7683.69,
+        },
     }
     filled, verdict = fib.gap_fill(daily, agreeing, ["2026-09-28"])
     assert [b["date"] for b in filled] == ["2026-09-28"] and verdict["agree"] == 1
@@ -77,7 +95,12 @@ def _index_file(rows):
 
 
 def test_spx_lands_from_the_index_file_even_with_no_dolt(monkeypatch):
-    _index_file([("SPX", "2026-09-25", 7709.86, 7752.07, 7693.08, 7743.41), ("SPX", "2026-09-28", 7721.7, 7724.15, 7666.6, 7683.69)])
+    _index_file(
+        [
+            ("SPX", "2026-09-25", 7709.86, 7752.07, 7693.08, 7743.41),
+            ("SPX", "2026-09-28", 7721.7, 7724.15, 7666.6, 7683.69),
+        ]
+    )
 
     def refuse(cfg, database):
         raise ConnectionRefusedError("no server")
@@ -94,7 +117,12 @@ def test_spx_lands_from_the_index_file_even_with_no_dolt(monkeypatch):
 
 
 def test_an_index_is_charted_but_never_counted_as_a_stock():
-    _index_file([("SPX", f"2026-09-{d:02d}", 7000.0 + d, 7010.0 + d, 6990.0 + d, 7005.0 + d) for d in (22, 23, 24, 25)])
+    _index_file(
+        [
+            ("SPX", f"2026-09-{d:02d}", 7000.0 + d, 7010.0 + d, 6990.0 + d, 7005.0 + d)
+            for d in (22, 23, 24, 25)
+        ]
+    )
     conn = store.connect()
     land.land_index_bars(conn, ["SPX"])
     conn.commit()
