@@ -11,6 +11,12 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed (a measurement break, 2026-10-05): paper flies completions pay the live limit.**
+  Live has filled every completion at exactly its resting limit, while paper paid its modelled
+  debit, about $4 a completion better than live ever got. From 2026-10-05 every legged arm pays the
+  limit live's order rests at, on the unchanged trigger. The paper loop journals a book-wide
+  `completion_rule` break; do not pool completion P&L across it. `completion_price: "modelled"`
+  keeps the old rule for an arm.
 - **Added: flies records what live fills needed, and paper shadows a live completion.** Every live
   order now gets a `fly_live_orders` row (filled or not): its limit, the broker's own fill time and
   leg-fill price, and at the fill, spot past the centre, spot past the completing long strike, and
