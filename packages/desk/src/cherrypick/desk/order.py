@@ -10,12 +10,14 @@ The diagram is piecewise-linear in the underlying with kinks only at strikes, so
 — no sampling, no tolerance. Infinity is handled by the slope test: if the payoff slope above the
 highest strike is negative, loss is unbounded and the position is *undefined risk*.
 
-Closing orders are classified separately and deliberately. An order whose every leg is "to close"
-*removes* exposure, so a risk cap that blocks it is the cap misfiring — that is the concrete failure
-that motivated this package (a naive account-level deploy governor refused a risk-reducing BKNG close
-because it only knew "more buying power consumed = bad"). Their cost is still reported (a debit paid
-to close is real money) but they are exempt from the defined-risk requirement: flattening a naked
-short is precisely what you want to allow.
+Only one kind of order is exempt from the risk gates: one whose every leg is "buy to close". Buying
+back shorts can only remove exposure. "Sell to close" is different — selling the long wing of an iron
+condor leaves a naked short — and this function only ever sees the order, not the position it acts
+on, so a sell-to-close leg is scored like any other short. `covering_only` carries the distinction.
+
+The accepted shape is deliberately narrow: equity options only, one underlying, a Day Limit order
+with a positive finite price, whole-number quantities, and no keys outside a small allow-list.
+Anything else is refused here, before a gate could misread it.
 """
 
 from __future__ import annotations
@@ -86,30 +88,63 @@ def parse_occ(symbol: str) -> tuple[str, date, str, float]:
     return m["root"].strip(), exp, m["cp"], int(m["strike"]) / 1000.0
 
 
+SPEC_KEYS = frozenset({"legs", "price", "price_effect", "order_type", "time_in_force"})
+LEG_KEYS = frozenset({"instrument_type", "symbol", "action", "quantity"})
+INSTRUMENT_TYPE = "Equity Option"
+
+
 def parse_leg(raw: dict[str, Any]) -> Leg:
     """One leg dict (the same shape `core.broker.build_order` consumes) -> a parsed Leg."""
+    if not isinstance(raw, dict):
+        raise OrderError(f"each leg must be a JSON object: {raw!r}")
+    unknown = sorted(set(raw) - LEG_KEYS)
+    if unknown:
+        raise OrderError(f"leg carries unsupported keys {unknown} (allowed: {sorted(LEG_KEYS)})")
     for key in ("instrument_type", "symbol", "action", "quantity"):
         if raw.get(key) in (None, ""):
             raise OrderError(f"leg is missing required field {key!r}: {raw!r}")
+    if raw["instrument_type"] != INSTRUMENT_TYPE:
+        raise OrderError(
+            f"instrument_type must be exactly {INSTRUMENT_TYPE!r} (got {raw['instrument_type']!r})"
+        )
     action = str(raw["action"]).strip().lower()
     if action not in _ACTIONS:
         raise OrderError(f"unknown leg action {raw['action']!r} (expected one of {sorted(_ACTIONS)})")
     sign, open_close = _ACTIONS[action]
-    try:
-        qty = int(raw["quantity"])
-    except (TypeError, ValueError) as exc:
-        raise OrderError(f"leg quantity is not an integer: {raw['quantity']!r}") from exc
-    if qty <= 0:
+    qty = raw["quantity"]
+    # A bool is an int in Python, and "2" or 2.7 would be coerced by int() — all refused, so the
+    # number fingerprinted is exactly the number the broker receives.
+    if isinstance(qty, bool) or not isinstance(qty, int):
+        raise OrderError(f"leg quantity must be a whole number: {qty!r}")
+    if qty < 1:
         # Direction is carried by `action`, never by a negative quantity — allowing both would make
         # "sell to open -2" ambiguous (double negative) and is a plausible way to fat-finger a side.
         raise OrderError(f"leg quantity must be positive (direction comes from action): {qty}")
 
-    itype = str(raw["instrument_type"]).strip()
-    symbol = str(raw["symbol"]).strip()
-    if itype.lower().replace("-", " ") in ("equity option", "future option"):
-        underlying, exp, right, strike = parse_occ(symbol)
-        return Leg(itype, symbol, action, qty, sign * qty, open_close, right, strike, exp, underlying)
-    return Leg(itype, symbol, action, qty, sign * qty, open_close, underlying=symbol.upper())
+    symbol = raw["symbol"]
+    if not isinstance(symbol, str) or symbol != symbol.strip().upper():
+        raise OrderError(f"option symbol must be an upper-case OCC symbol with no outer spaces: {symbol!r}")
+    underlying, exp, right, strike = parse_occ(symbol)
+    return Leg(INSTRUMENT_TYPE, symbol, action, qty, sign * qty, open_close, right, strike, exp, underlying)
+
+
+def _check_spec(spec: Any) -> None:
+    """The order-level allow-list. Every refusal names the field, so the fix is obvious."""
+    if not isinstance(spec, dict):
+        raise OrderError("order must be a JSON object")
+    if "stop_trigger" in spec:
+        raise OrderError("stop orders are not accepted here (stop_trigger)")
+    if "external_identifier" in spec:
+        raise OrderError("external_identifier is set by the desk itself, not by the order")
+    unknown = sorted(set(spec) - SPEC_KEYS)
+    if unknown:
+        raise OrderError(f"order carries unsupported keys {unknown} (allowed: {sorted(SPEC_KEYS)})")
+    if spec.get("order_type", "Limit") != "Limit":
+        raise OrderError(f"only Limit orders are accepted (order_type {spec.get('order_type')!r})")
+    if spec.get("time_in_force", "Day") != "Day":
+        raise OrderError(f"only Day orders are accepted (time_in_force {spec.get('time_in_force')!r})")
+    if spec.get("legs") is not None and not isinstance(spec["legs"], list):
+        raise OrderError("order legs must be a JSON list")
 
 
 @dataclass(frozen=True)
@@ -134,6 +169,9 @@ class RiskProfile:
     # (the far leg still carries time value at the near expiry, which cannot be known without a
     # pricing model). Both surface as max_loss=None; the reason distinguishes them in refusals.
     undefined_reason: str | None = None
+    # True only when every leg is "buy to close" — the one shape that can only remove exposure, and
+    # the only one the policy exempts from the risk gates.
+    covering_only: bool = False
 
     @property
     def unbounded(self) -> bool:
@@ -199,21 +237,30 @@ def _breakevens(legs: list[Leg], entry_cash: float, points: list[float]) -> tupl
 def analyze(spec: dict[str, Any]) -> tuple[list[Leg], RiskProfile]:
     """Parse an order spec and compute its worst case. Pure — no broker, no network, no clock.
 
-    `spec` is the same dict `core.broker.build_order` takes: `legs`, `price`, `price_effect`.
+    `spec` is the same dict `core.broker.build_order` takes: `legs`, `price`, `price_effect`, and
+    optionally `order_type` ("Limit") and `time_in_force` ("Day").
     """
+    _check_spec(spec)
     raw_legs = spec.get("legs") or []
     if not raw_legs:
         raise OrderError("order has no legs")
     legs = [parse_leg(leg) for leg in raw_legs]
+    # One payoff diagram is only meaningful over one underlying: strikes on two different symbols
+    # are not points on the same axis, and mixing them can make a naked short look covered.
+    if len({leg.underlying for leg in legs}) > 1:
+        raise OrderError("order spans more than one underlying — the payoff diagram would be meaningless")
 
     spreads = _spread_count(legs)
     price = spec.get("price")
     if price is None:
         raise OrderError("order has no price — a market order's cost is unbounded and is not accepted here")
-    try:
-        price = float(price)
-    except (TypeError, ValueError) as exc:
-        raise OrderError(f"order price is not a number: {spec.get('price')!r}") from exc
+    if isinstance(price, bool) or not isinstance(price, (int, float)):
+        raise OrderError(f"order price must be a number: {price!r}")
+    price = float(price)
+    if not math.isfinite(price) or price <= 0:
+        raise OrderError(
+            f"order price must be finite and greater than zero (direction comes from price_effect): {price!r}"
+        )
     effect = str(spec.get("price_effect") or "").strip().lower()
     if effect not in ("debit", "credit"):
         raise OrderError("order needs an explicit price_effect of 'debit' or 'credit'")
@@ -260,4 +307,5 @@ def analyze(spec: dict[str, Any]) -> tuple[list[Leg], RiskProfile]:
         breakevens=() if multi_expiry else _breakevens(legs, entry_cash, points),
         underlyings=tuple(sorted({leg.underlying for leg in legs if leg.underlying})),
         undefined_reason=undefined_reason,
+        covering_only=all(leg.action == "buy to close" for leg in legs),
     )

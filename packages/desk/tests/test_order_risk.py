@@ -178,3 +178,82 @@ def test_unknown_action_is_refused():
 def test_empty_order_is_refused():
     with pytest.raises(OrderError, match="no legs"):
         analyze(_order([], 1.0, "debit"))
+
+
+# --------------------------------------------------------------------------- the accepted shape
+ONE = [_leg("XYZ   260807C00085000", "buy to open")]
+
+
+@pytest.mark.parametrize("qty", [True, False, 1.0, 2.5, "1", None, 0])
+def test_quantity_must_be_a_positive_int_and_not_a_bool(qty):
+    with pytest.raises(OrderError):
+        analyze(_order([_leg("XYZ   260807C00085000", "buy to open", qty)], 1.0, "debit"))
+
+
+@pytest.mark.parametrize("price", [0, -1.0, float("nan"), float("inf"), "1.10", True])
+def test_price_must_be_a_finite_positive_number(price):
+    with pytest.raises(OrderError, match="price"):
+        analyze(_order(ONE, price, "debit"))
+
+
+@pytest.mark.parametrize("itype", ["Equity", "Future Option", "equity option", "Equity-Option"])
+def test_only_equity_options_are_accepted(itype):
+    with pytest.raises(OrderError, match="instrument_type"):
+        analyze(_order([_leg("XYZ   260807C00085000", "buy to open", itype=itype)], 1.0, "debit"))
+
+
+@pytest.mark.parametrize(
+    ("key", "value"), [("order_type", "Market"), ("order_type", "limit"), ("time_in_force", "GTC")]
+)
+def test_only_day_limit_orders_are_accepted(key, value):
+    with pytest.raises(OrderError, match=key):
+        analyze({**_order(ONE, 1.0, "debit"), key: value})
+
+
+def test_explicit_day_limit_is_fine():
+    assert analyze({**_order(ONE, 1.0, "debit"), "order_type": "Limit", "time_in_force": "Day"})
+
+
+@pytest.mark.parametrize("value", [None, 1.0, 0])
+def test_stop_trigger_is_refused_even_when_null(value):
+    with pytest.raises(OrderError, match="stop orders are not accepted"):
+        analyze({**_order(ONE, 1.0, "debit"), "stop_trigger": value})
+
+
+def test_unknown_order_keys_are_refused():
+    with pytest.raises(OrderError, match="unsupported keys"):
+        analyze({**_order(ONE, 1.0, "debit"), "source": "agent"})
+
+
+def test_unknown_leg_keys_are_refused():
+    with pytest.raises(OrderError, match="unsupported keys"):
+        analyze(_order([{**ONE[0], "ratio": 2}], 1.0, "debit"))
+
+
+def test_external_identifier_is_the_desks_to_set():
+    with pytest.raises(OrderError, match="external_identifier"):
+        analyze({**_order(ONE, 1.0, "debit"), "external_identifier": "mine"})
+
+
+def test_lower_case_symbol_is_refused_so_the_fingerprint_matches_what_is_sent():
+    with pytest.raises(OrderError, match="upper-case"):
+        analyze(_order([_leg("xyz   260807c00085000", "buy to open")], 1.0, "debit"))
+
+
+def test_two_underlyings_in_one_order_are_refused():
+    """Strikes on different symbols are not points on one axis: long SPY 600C against short XYZ 91C
+    would net to a flat upside slope and read as 'defined'."""
+    legs = [_leg("SPY   260807C00600000", "buy to open"), _leg("XYZ   260807C00091000", "sell to open")]
+    with pytest.raises(OrderError, match="more than one underlying"):
+        analyze(_order(legs, 1.0, "credit"))
+
+
+def test_covering_only_is_true_only_for_all_buy_to_close():
+    cover = [_leg("XYZ   260807C00091000", "buy to close"), _leg("XYZ   260807P00080000", "buy to close")]
+    assert analyze(_order(cover, 1.0, "debit"))[1].covering_only is True
+    mixed_close = [
+        _leg("XYZ   260807C00091000", "buy to close"),
+        _leg("XYZ   260807C00097000", "sell to close"),
+    ]
+    assert analyze(_order(mixed_close, 1.0, "debit"))[1].covering_only is False
+    assert analyze(_order(ONE, 1.0, "debit"))[1].covering_only is False

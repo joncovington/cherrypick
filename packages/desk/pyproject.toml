@@ -7,6 +7,7 @@ name = "cherrypick-desk"
 version = "0.1.0"
 description = "Manual trading desk — human-initiated discretionary orders, gated independently of every module's automated live flag"
 requires-python = ">=3.11"
+license = "MIT"
 # cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
 # keyring: the confirmation PIN lives in the OS credential store, never in a file (suite-wide rule).
 # tastytrade: only the submit path imports it (deferred), so the pure policy/ticket layers unit-test

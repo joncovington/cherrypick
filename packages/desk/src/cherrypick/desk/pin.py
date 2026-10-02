@@ -7,38 +7,63 @@ echoed, not logged, and not derivable from anything the desk stores.
 
 **Only a verifier is stored, never the PIN.** The keyring holds
 `pbkdf2_sha256$<iterations>$<salt>$<hash>`, so reading the keyring entry does not yield the PIN, and
-comparison is constant-time. That matters because the keyring is readable by anything running as the
-user — the same threat model that makes storing the raw PIN there pointless.
+comparison is constant-time. New verifiers use 600,000 iterations; an older record keeps verifying
+because the count is read back from the record itself.
 
-The honest limit, again stated rather than glossed: once a PIN is typed into an agent conversation,
-that agent has seen it. The PIN's guarantees are (a) an order cannot be submitted by a process that
-has *never* been given it, and (b) non-repudiation in the journal. It is not a defense against an
-agent replaying a PIN it was just handed — the order-bound ticket (single-use, expiring, fingerprinted)
-and the `policy.py` gates are what constrain that case. Rotate with `set_pin` whenever that matters.
+**Entry is interactive only.** The PIN is read with `getpass` from an interactive terminal — never a
+flag (shell history, process listings), never an environment variable (inherited by every child
+process), never a pipe. A non-TTY caller is refused outright.
+
+**Five wrong PINs in an hour lock it for an hour.** The failure counter lives in the keyring next to
+the verifier, not in the journal, so deleting a log file does not reset it. A counter that cannot be
+read or written refuses the attempt rather than allowing an unlimited one.
+
+**Changing or clearing a PIN needs the current one.** Otherwise anything that can run the CLI could
+replace the PIN with one it knows, which would make the PIN decorative.
+
+The honest limit, stated rather than glossed: anything running as this OS user can read and rewrite
+the keyring entries directly, and once a PIN is typed into an agent conversation, that agent has seen
+it. The PIN stops a process that has *never* been given it and gives non-repudiation in the journal;
+it is not a defence against a compromised user account.
 """
 
 from __future__ import annotations
 
 import hashlib
 import hmac
-import os
+import json
 import secrets
+import sys
+import time
 
-from .config import KEYRING_SERVICE
+from . import keystore
 
 _PIN_KEY = "confirm_pin_verifier"
-_ITERATIONS = 240_000
-_MIN_LENGTH = 6
+_FAILURES_KEY = "confirm_pin_failures"
+
+PBKDF2_ITERATIONS = 600_000
+MIN_LENGTH = 10
+MAX_FAILURES = 5
+FAILURE_WINDOW_SECONDS = 3600
+LOCKOUT_SECONDS = 3600
+
+# check() outcomes
+OK = "ok"
+BAD = "bad"  # wrong PIN, counted
+LOCKOUT = "lockout"  # wrong PIN, and this one tripped the lockout
+LOCKED = "locked"  # already locked out; the candidate was not even compared
 
 
 class PinError(RuntimeError):
-    """No PIN configured, or one that fails its own format rules."""
+    """No PIN configured, a PIN that fails its own format rules, or a keyring that cannot be used."""
 
 
-def _keyring():
-    import keyring  # imported lazily so the pure layers test without a keyring backend
+class PinRejected(PinError):
+    """A PIN check that did not pass. `outcome` is one of BAD / LOCKOUT / LOCKED."""
 
-    return keyring
+    def __init__(self, outcome: str, message: str):
+        super().__init__(message)
+        self.outcome = outcome
 
 
 def _derive(pin: str, salt: bytes, iterations: int) -> bytes:
@@ -47,47 +72,53 @@ def _derive(pin: str, salt: bytes, iterations: int) -> bytes:
 
 def _format(pin: str) -> str:
     salt = secrets.token_bytes(16)
-    digest = _derive(pin, salt, _ITERATIONS)
-    return f"pbkdf2_sha256${_ITERATIONS}${salt.hex()}${digest.hex()}"
+    digest = _derive(pin, salt, PBKDF2_ITERATIONS)
+    return f"pbkdf2_sha256${PBKDF2_ITERATIONS}${salt.hex()}${digest.hex()}"
 
 
-def set_pin(pin: str, *, service: str = KEYRING_SERVICE) -> None:
-    """Store (the verifier for) a new PIN. Rejects trivially short PINs.
-
-    No "old PIN" check: the keyring entry is already protected by the OS user session, so anything
-    able to overwrite it could equally read the keyring — a confirmation prompt here would be
-    ceremony, not security.
-    """
-    pin = str(pin or "")
-    if len(pin.strip()) < _MIN_LENGTH:
-        raise PinError(f"PIN must be at least {_MIN_LENGTH} characters")
-    _keyring().set_password(service, _PIN_KEY, _format(pin))
-
-
-def clear_pin(*, service: str = KEYRING_SERVICE) -> None:
+# --------------------------------------------------------------------------- terminal entry
+def _isatty() -> bool:
+    stdin = sys.stdin
     try:
-        _keyring().delete_password(service, _PIN_KEY)
-    except Exception:  # noqa: BLE001 — absent is the desired end state either way
-        pass
-
-
-def is_set(*, service: str = KEYRING_SERVICE) -> bool:
-    try:
-        return bool(_keyring().get_password(service, _PIN_KEY))
-    except Exception:  # noqa: BLE001 — a broken keyring reads as "not set", which refuses
+        return bool(stdin is not None and stdin.isatty())
+    except (AttributeError, ValueError, OSError):
         return False
 
 
-def verify(pin: str, *, service: str = KEYRING_SERVICE) -> bool:
-    """Constant-time check of a candidate PIN against the stored verifier.
+def _getpass(label: str) -> str:
+    import getpass
 
-    Returns False (never raises) for an absent or unparseable verifier, so a damaged keyring entry
-    refuses orders rather than admitting them.
-    """
+    return getpass.getpass(label)
+
+
+def prompt(label: str) -> str:
+    """Read a PIN without echo from an interactive terminal. Refuses anything else."""
+    if not _isatty():
+        raise PinError(
+            "PIN entry needs an interactive terminal — it is never read from a flag, "
+            "the environment or a pipe"
+        )
+    return _getpass(label)
+
+
+# --------------------------------------------------------------------------- stored verifier
+def _stored() -> str | None:
     try:
-        stored = _keyring().get_password(service, _PIN_KEY)
-    except Exception:  # noqa: BLE001
+        return keystore.get(_PIN_KEY)
+    except keystore.KeystoreError as exc:
+        raise PinError(str(exc)) from exc
+
+
+def is_set() -> bool:
+    try:
+        return bool(_stored())
+    except PinError:  # a broken keyring reads as "not set", which refuses
         return False
+
+
+def _matches(pin: str, stored: str | None) -> bool:
+    """Constant-time check against a stored verifier. False (never raises) for an absent or
+    unparseable verifier, so a damaged keyring entry refuses orders rather than admitting them."""
     if not stored:
         return False
     try:
@@ -101,11 +132,108 @@ def verify(pin: str, *, service: str = KEYRING_SERVICE) -> bool:
     return hmac.compare_digest(expected, actual)
 
 
-def env_pin() -> str | None:
-    """`CHERRYPICK_DESK_PIN`, for a caller that would rather not put the PIN in a command line.
+def verify(pin: str) -> bool:
+    """Bare comparison, with no lockout accounting. Order paths use `check`/`require` instead."""
+    try:
+        return _matches(pin, _stored())
+    except PinError:
+        return False
 
-    Deliberately *not* a way to store the PIN: an env var lives only as long as the process that set
-    it. The CLI checks this before its `--pin` argument so a shell history never has to hold one.
-    """
-    value = os.environ.get("CHERRYPICK_DESK_PIN")
-    return value if value else None
+
+# --------------------------------------------------------------------------- lockout
+def _failures() -> dict:
+    try:
+        raw = keystore.get(_FAILURES_KEY)
+    except keystore.KeystoreError as exc:
+        raise PinError(f"cannot read the PIN failure counter ({exc}) — refusing") from exc
+    if not raw:
+        return {"failures": [], "locked_until": 0.0}
+    try:
+        state = json.loads(raw)
+        failures = [float(t) for t in state.get("failures") or []]
+        locked_until = float(state.get("locked_until") or 0.0)
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise PinError(
+            "the PIN failure counter in the keyring is unreadable — refusing. Delete the "
+            f"'{_FAILURES_KEY}' entry under the '{keystore.KEYRING_SERVICE}' keyring service to reset it"
+        ) from exc
+    return {"failures": failures, "locked_until": locked_until}
+
+
+def _save_failures(state: dict) -> None:
+    try:
+        keystore.put(_FAILURES_KEY, json.dumps(state))
+    except keystore.KeystoreError as exc:
+        raise PinError(f"cannot record a failed PIN attempt ({exc}) — refusing") from exc
+
+
+def locked_until(now: float | None = None) -> float | None:
+    """Epoch seconds the lockout ends, or None when not locked (or the counter is unreadable)."""
+    now = time.time() if now is None else now
+    try:
+        until = _failures()["locked_until"]
+    except PinError:
+        return None
+    return until if until > now else None
+
+
+def check(pin: str, *, now: float | None = None) -> str:
+    """Lockout-aware PIN check. Returns OK / BAD / LOCKOUT / LOCKED. Raises PinError when the
+    keyring cannot be used or no PIN is configured — both refusals."""
+    now = time.time() if now is None else now
+    state = _failures()
+    if state["locked_until"] > now:
+        return LOCKED
+    stored = _stored()
+    if not stored:
+        raise PinError("no desk PIN configured — run `cherrypick-desk pin-set`")
+    if _matches(pin, stored):
+        if state["failures"] or state["locked_until"]:
+            _save_failures({"failures": [], "locked_until": 0.0})
+        return OK
+    recent = [t for t in state["failures"] if now - t < FAILURE_WINDOW_SECONDS] + [now]
+    if len(recent) >= MAX_FAILURES:
+        _save_failures({"failures": [], "locked_until": now + LOCKOUT_SECONDS})
+        return LOCKOUT
+    _save_failures({"failures": recent, "locked_until": 0.0})
+    return BAD
+
+
+def require(pin: str) -> None:
+    """`check`, raising PinRejected on anything but OK."""
+    outcome = check(pin)
+    if outcome == OK:
+        return
+    if outcome == LOCKED:
+        raise PinRejected(LOCKED, "PIN locked out after repeated failures — try again later")
+    if outcome == LOCKOUT:
+        raise PinRejected(
+            LOCKOUT, f"PIN rejected — {MAX_FAILURES} failures within an hour; locked for an hour"
+        )
+    raise PinRejected(BAD, "PIN rejected")
+
+
+# --------------------------------------------------------------------------- set / clear
+def set_pin(new_pin: str, *, current: str | None = None) -> None:
+    """Store (the verifier for) a new PIN. When a PIN is already set, `current` must pass
+    `require` first — lockout included."""
+    new_pin = str(new_pin or "")
+    if len(new_pin.strip()) < MIN_LENGTH:
+        raise PinError(f"PIN must be at least {MIN_LENGTH} characters")
+    if _stored():
+        require(current or "")
+    try:
+        keystore.put(_PIN_KEY, _format(new_pin))
+    except keystore.KeystoreError as exc:
+        raise PinError(str(exc)) from exc
+
+
+def clear_pin(*, current: str | None = None) -> None:
+    """Remove the PIN. Requires the current one when a PIN is set."""
+    if not _stored():
+        return
+    require(current or "")
+    try:
+        keystore.delete(_PIN_KEY)
+    except keystore.KeystoreError as exc:
+        raise PinError(str(exc)) from exc

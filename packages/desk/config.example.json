@@ -1,26 +1,35 @@
 {
-  "_header": "===== cherrypick manual trading desk =====",
-  "_note": "Copy to ~/.cherrypick/config/desk.json. Every default is the SAFE one: an absent or empty file refuses every order. This config authorizes HUMAN-INITIATED orders only and is completely independent of every module's enable_live_trading — enabling the desk never enables an automated loop, and vice versa.",
+  "_header": "===== cherrypick manual trading desk — EXPERIMENTAL PROTOTYPE, educational use only =====",
+  "_note": "Copy to ~/.cherrypick/config/desk.json. The desk places REAL, irreversible orders. Every default is the SAFE one: an absent file refuses every order, and so does a file with any invalid value (one bad cap refuses the WHOLE config). The desk is never armed from this example file. It also needs CHERRYPICK_DESK_EXPERIMENTAL=1 in the environment — the config alone is not enough. Completely independent of every module's enable_live_trading: enabling the desk never enables an automated loop, and vice versa.",
 
   "enabled": false,
-  "_enabled_note": "The desk's own master switch. Nothing is submitted while this is false. Deliberately separate from any module flag so the two can never be conflated.",
+  "_enabled_note": "Only a literal true arms the desk (\"yes\", 1 and \"true\" do not). Both this AND the CHERRYPICK_DESK_EXPERIMENTAL=1 environment variable are required.",
 
   "allowed_accounts": [],
-  "_allowed_accounts_note": "Last-4 fragments of the accounts authorized for manual orders, e.g. [\"2375\"]. Full account numbers never appear here (suite-wide masking rule); matching is done against the last 4 of the account resolved at submit time. An empty list refuses everything.",
+  "_allowed_accounts_note": "Last-4 fragments of the accounts authorized for manual orders, e.g. [\"1234\"]. Full account numbers never appear here (suite-wide masking rule). An empty list refuses everything.",
+
+  "allowed_underlyings": [],
+  "_allowed_underlyings_note": "Underlying symbols the desk may trade, e.g. [\"SPY\"]. Upper-cased on read. An empty list refuses everything, closing orders included.",
 
   "require_defined_risk": true,
-  "_require_defined_risk_note": "Refuse any OPENING order whose loss is unbounded (net short the upside tail) or not computable (a calendar/diagonal, where a single-expiry payoff is the wrong model). Set false to permit them — the dollar cap below still applies, and an uncomputable worst case can never satisfy a finite cap, so you must also null the cap to allow one through. CLOSING orders are exempt: flattening a naked short is exactly what you never want to block.",
+  "_require_defined_risk_note": "Refuse any order whose loss is unbounded (net short the upside tail) or not computable (a calendar/diagonal). Only a literal false turns it off, and even then the dollar caps below still apply — an uncomputable worst case can never satisfy a finite cap. Only an order whose every leg is 'buy to close' is exempt.",
 
-  "max_order_risk_dollars": 500,
-  "_max_order_risk_dollars_note": "Worst case at expiry, in dollars, that a single OPENING order may risk. Computed from the payoff diagram, not from a strategy-name whitelist. Set to null to disable the cap entirely — an ABSENT key falls back to 500, so forgetting it can never disable it. Closing orders are exempt.",
+  "max_order_risk_dollars": 100,
+  "_max_order_risk_dollars_note": "Worst case at expiry, in dollars, that one order may risk, from the payoff diagram. Must be a finite number >= 0; there is no 'no cap' value (null, a string, NaN or a negative refuses the whole config).",
 
-  "ticket_ttl_seconds": 180,
-  "_ticket_ttl_seconds_note": "How long a proposed order stays confirmable. Long enough to read the review and answer, short enough that an abandoned proposal cannot be revived later from scrollback.",
+  "max_order_buying_power_dollars": 100,
+  "_max_order_buying_power_dollars_note": "The most buying power one order may consume, as the broker's own preflight reports it. A preflight that reports no buying-power change is refused.",
 
-  "max_orders_per_day": null,
-  "max_daily_risk_dollars": null,
-  "_daily_caps_note": "Optional brakes, OFF unless set. Counted from the audit journal's `submitted` events only — a refused or merely proposed order consumes no budget. Useful as a runaway backstop.",
+  "max_spreads_per_order": 1,
+  "_max_spreads_per_order_note": "Quantity cap: how many copies of the structure one order may be (the GCD of the leg quantities — a 2/-4/2 butterfly is 2).",
+
+  "max_orders_per_day": 2,
+  "max_daily_risk_dollars": 200,
+  "_daily_caps_note": "Per ET trading date. Every submit attempt counts — placed, failed or uncertain alike — because a submit that raised may still have reached the broker. Refused and merely proposed orders cost nothing.",
+
+  "ticket_ttl_seconds": 120,
+  "_ticket_ttl_seconds_note": "How long a proposed order stays confirmable. Clamped to 30-300.",
 
   "broker_keyring_service": "meicagent",
-  "_broker_keyring_service_note": "Which existing module's keyring service holds the broker OAuth credentials to trade through. The desk stores NO secrets of its own — duplicating them into a second keyring entry would double the leak surface for no added capability. Borrowing the credentials is not borrowing the permissions: the desk never reads that module's trading flags."
+  "_broker_keyring_service_note": "Which existing module's keyring service holds the broker OAuth credentials to trade through. The desk stores NO broker secrets of its own. Borrowing the credentials is not borrowing the permissions: the desk never reads that module's trading flags."
 }
