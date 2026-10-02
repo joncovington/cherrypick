@@ -227,7 +227,7 @@ def run_suite(cfg: dict[str, Any], prompt_fn=input) -> dict[str, Any]:
     if root is not None:
         conn = _verify_connection(root, tool)
     else:
-        print("      no enabled module checkout found to verify with")
+        print("      no enabled broker module has a checkout to verify with")
 
     account = _select_shared_account(cfg, prompt_fn=prompt_fn)
     _offer_webhooks(prompt_fn=prompt_fn)

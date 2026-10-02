@@ -183,6 +183,69 @@ def test_suite_wide_probe_resolves_the_known_module_broker_tool(env, monkeypatch
     assert seen == [["-m", "cherrypick.meic.tt"], ["-m", "cherrypick.meic.tt"]]
 
 
+def _with_modules(tmp_path, cfg, *modules):
+    """`cfg` with `modules` (name, enabled, extra keys) added after meic, each with a checkout."""
+    for name, enabled, extra in modules:
+        (tmp_path / name).mkdir(exist_ok=True)
+        cfg["modules"][name] = {"enabled": enabled, "path": str(tmp_path / name), **extra}
+    return cfg
+
+
+def _spy_tt(monkeypatch):
+    seen: list = []
+
+    def spy(root, *argv, tool=None):
+        seen.append((Path(root).name, list(tool or [])))
+        return {"ok": True, "accounts": _ACCTS}
+
+    monkeypatch.setattr(accounts, "_tt", spy)
+    return seen
+
+
+def test_suite_wide_probe_passes_over_a_credential_free_module(env, monkeypatch):
+    """The probe is the first enabled BROKER module, not the first enabled module. calendars has
+    no keyring service and no broker tool; enabled ahead of meic it became the probe, ran
+    `-m cherrypick.calendars.tt` (no such module) and failed the listing with "list_accounts not
+    ok", the symptom the module-name fix (#8) removed for meic."""
+    tmp_path, cfg = env
+    cfg["modules"] = {"calendars": {"enabled": True, "path": str(tmp_path / "calendars")}, **cfg["modules"]}
+    (tmp_path / "calendars").mkdir()
+    seen = _spy_tt(monkeypatch)
+    assert accounts.list_shared(cfg)["ok"] is True
+    assert seen == [("meic", ["-m", "cherrypick.meic.tt"])]
+
+
+BWB_TOOL = ["-m", "cherrypick.bwb.broker_cli"]
+
+
+def test_suite_wide_probe_uses_a_config_declared_broker_tool(env, monkeypatch):
+    """With meic off, the next broker module serves, through the tool ITS config declares: bwb has
+    no known-module default, only `broker_tool` and `keyring_service` in its own block."""
+    tmp_path, cfg = env
+    cfg["modules"]["meic"]["enabled"] = False
+    _with_modules(
+        tmp_path,
+        cfg,
+        ("calendars", True, {}),
+        ("bwb", True, {"keyring_service": "bwbagent-test", "broker_tool": BWB_TOOL}),
+    )
+    seen = _spy_tt(monkeypatch)
+    assert accounts.set_shared_account(cfg, "8569")["ok"] is True
+    assert seen == [("bwb", BWB_TOOL)]
+
+
+def test_suite_wide_probe_with_no_broker_module_says_so(env, monkeypatch):
+    """Only credential-free modules enabled: there is nothing that can ask the broker, and the
+    answer names that rather than running a tool that does not exist."""
+    tmp_path, cfg = env
+    cfg["modules"]["meic"]["enabled"] = False
+    _with_modules(tmp_path, cfg, ("calendars", True, {}), ("pmcc", True, {}))
+    seen = _spy_tt(monkeypatch)
+    out = accounts.list_shared(cfg)
+    assert out["ok"] is False and "broker module" in out["error"]
+    assert seen == []
+
+
 @pytest.fixture
 def fallback_env(tmp_path, monkeypatch):
     """Same shape as `env`, but wired to _FakeStoreWithFallback so the shared-service fallback
