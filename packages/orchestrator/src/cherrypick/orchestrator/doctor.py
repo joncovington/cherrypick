@@ -309,6 +309,34 @@ def _suite_task_checks(cfg: dict[str, Any]) -> list[Check]:
     return checks
 
 
+def _capability_checks(cfg: dict[str, Any]) -> list[Check]:
+    """Recorded capabilities against what the machine has now. A recorded capability the machine
+    lacks is a WARN (its features are scheduled and will fail); one it has but never recorded is
+    OK with a pointer (its features are simply off)."""
+    from . import capabilities as caps
+
+    recorded = cfgmod.capabilities(cfg)
+    out: list[Check] = []
+    for name, found in caps.detect(cfg).items():
+        if recorded[name] and not found["present"]:
+            out.append(Check(f"capability.{name}", WARN, f"recorded present, but {found['detail']}"))
+        elif recorded[name]:
+            out.append(Check(f"capability.{name}", OK, found["detail"]))
+        elif found["present"]:
+            out.append(
+                Check(
+                    f"capability.{name}",
+                    OK,
+                    f"available but not recorded, so its features are off ({found['detail']}); "
+                    "run.py capabilities --detect --write to use it",
+                )
+            )
+        else:
+            detail = f"not present; its features are off ({found['detail']})"
+            out.append(Check(f"capability.{name}", OK, detail))
+    return out
+
+
 def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     """Run the readiness checks. `fast=True` skips the broker/keyring check — the only one that makes
     an authenticated broker round-trip (a 35s-timeout subprocess) — so it's safe to poll on a short
@@ -379,9 +407,21 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         )
     )
 
+    checks.extend(_capability_checks(cfg))
+
     modules = cfgmod.enabled_modules(cfg)
     if not modules:
         checks.append(Check("modules", WARN, "no modules enabled in config.json"))
+    for name, state in cfgmod.module_states(cfg).items():
+        if state["configured"] and not state["enabled"]:
+            checks.append(
+                Check(
+                    f"{name}.capabilities",
+                    WARN,
+                    f"switched on but not running: this machine has no {', '.join(state['missing'])} "
+                    "(run.py capabilities --detect)",
+                )
+            )
 
     broker_checked = False
     for name, mcfg in modules.items():

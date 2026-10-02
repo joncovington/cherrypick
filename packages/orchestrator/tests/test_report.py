@@ -57,6 +57,7 @@ def _cfg(tmp_path, meic_db="paper.db", earnings_db="paper.db", meic_dir="meic", 
     (tmp_path / meic_dir).mkdir(exist_ok=True)
     (tmp_path / earnings_dir).mkdir(exist_ok=True)
     return {
+        "capabilities": {"claude": True, "dolt": True},
         "modules": {
             "meic": {
                 "enabled": True,

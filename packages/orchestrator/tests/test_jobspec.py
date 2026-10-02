@@ -216,6 +216,7 @@ def test_arm_record_valid_today_and_expiry():
 def suite_cfg(**overrides):
     cfg = {
         "timezone": "America/New_York",
+        "capabilities": {"claude": True, "dolt": True},
         "modules": {
             "meic": {
                 "enabled": True,

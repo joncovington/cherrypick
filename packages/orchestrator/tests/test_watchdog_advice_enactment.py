@@ -24,7 +24,8 @@ from cherrypick.orchestrator import watchdog
 
 ET = ZoneInfo("America/New_York")
 MIDDAY = datetime(2026, 8, 25, 11, 0, tzinfo=ET)
-CFG = {"advisor": {"enabled": True}}
+CFG = {"capabilities": {"claude": True, "dolt": True},
+        "advisor": {"enabled": True}}
 
 
 class _Proc:
@@ -106,6 +107,7 @@ def test_a_module_is_not_late_before_its_own_entry_window_opens(advisor):
     2026-09-14 to 09-22, on a module behaving exactly as designed."""
     advisor(_payload(earnings="not_enacted"))
     cfg = {
+        "capabilities": {"claude": True, "dolt": True},
         "advisor": {"enabled": True},
         "modules": {"earnings": {"enabled": True, "paper": {"entry_time": "15:45"}}},
     }
@@ -119,6 +121,7 @@ def test_a_module_with_no_entry_time_is_judged_from_the_open(advisor):
     """A continuous loop decides from the open, so the window gate must not silence it."""
     advisor(_payload(flies="not_enacted"))
     cfg = {
+        "capabilities": {"claude": True, "dolt": True},
         "advisor": {"enabled": True},
         "modules": {"flies": {"enabled": True, "paper": {"tick_interval_seconds": 15}}},
     }

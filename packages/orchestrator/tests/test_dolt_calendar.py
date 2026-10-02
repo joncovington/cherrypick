@@ -63,7 +63,7 @@ def _state(**fields):
 
 
 def _calendar_finding():
-    cfg = {"modules": {"earnings": {"enabled": True}}}
+    cfg = {"capabilities": {"dolt": True}, "modules": {"earnings": {"enabled": True}}}
     found = [f for f in watchdog._check_earnings_calendar(cfg) if f.key == "earnings.calendar"]
     return found[0] if found else None
 

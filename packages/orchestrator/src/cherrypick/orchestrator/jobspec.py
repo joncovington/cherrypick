@@ -738,7 +738,9 @@ def derive_jobs(
         ),
     )
     tc = cfgmod.technicals_settings(cfg)
-    dolt_on = bool((cfg.get("modules", {}).get("earnings") or {}).get("enabled"))
+    # The Dolt server is kept alive by the earnings module's own job, so technicals needs earnings
+    # running -- and through enabled_modules, a machine with Dolt set up (capabilities.dolt).
+    dolt_on = "earnings" in cfgmod.enabled_modules(cfg)
     tc_on = tc["enabled"] and dolt_on
     add(
         "technicals-land",
@@ -932,11 +934,11 @@ def derive_jobs(
             at_et="05:30",
             catchup_minutes=CATCHUP_MINUTES["earnings-dolt-pull"],
             trading_days_only=False,
-            enabled=bool((cfg.get("modules", {}).get("earnings") or {}).get("enabled")),
+            enabled="earnings" in cfgmod.enabled_modules(cfg),
             enabled_reason=(
                 ""
-                if (cfg.get("modules", {}).get("earnings") or {}).get("enabled")
-                else "earnings module disabled"
+                if "earnings" in cfgmod.enabled_modules(cfg)
+                else "earnings module disabled, or Dolt not set up (capabilities.dolt)"
             ),
         ),
     )

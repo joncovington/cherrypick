@@ -241,9 +241,69 @@ def live_trading_enabled(module_cfg_doc: dict[str, Any]) -> bool:
     return bool(isinstance(live, dict) and live.get("enabled", False))
 
 
+# --------------------------------------------------------------------------- capabilities
+# A capability is something the MACHINE has, as distinct from a feature someone switched on: the
+# `claude` CLI (the advisor and both narratives shell out to it) and a set-up Dolt server with the
+# earnings/options/stocks clones (earnings and technicals read it). The installer probes for each
+# and records the answer in `capabilities`; a person may set it by hand. ABSENT MEANS FALSE, the
+# same rule as `modules.<m>.enabled`: a fresh machine has neither until something says it does.
+#
+# A feature runs only when its own switch AND every capability it needs are on. That AND lives
+# here, in the resolvers below, so the scheduler, the watchdog, the reports and the console all see
+# one answer -- an earnings module on a machine without Dolt is off everywhere, not "enabled but
+# failing every night".
+CAPABILITIES = ("claude", "dolt")
+
+# What each module needs. A module not named here needs nothing beyond the broker.
+MODULE_REQUIRES: dict[str, tuple[str, ...]] = {"earnings": ("dolt",)}
+
+# What each non-module feature needs, keyed by the settings block and switch it gates.
+FEATURE_REQUIRES: dict[str, tuple[str, ...]] = {
+    "technicals": ("dolt",),
+    "advisor": ("claude",),
+    "review.narrative": ("claude",),
+    "morning.narrative": ("claude",),
+}
+
+
+def capabilities(cfg: dict[str, Any]) -> dict[str, bool]:
+    """{capability: bool} from the `capabilities` block. Only a literal `true` counts: a string, a
+    1 or a missing key is off, so a half-edited block cannot switch a dependency on."""
+    raw = cfg.get("capabilities") or {}
+    if not isinstance(raw, dict):
+        raw = {}
+    return {name: raw.get(name) is True for name in CAPABILITIES}
+
+
+def missing_capabilities(cfg: dict[str, Any], needs: tuple[str, ...]) -> list[str]:
+    caps = capabilities(cfg)
+    return [c for c in needs if not caps.get(c, False)]
+
+
+def module_states(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Every configured module with both answers: `configured` (its own `enabled` switch) and
+    `enabled` (configured AND every capability it needs). `missing` names what is absent, so a
+    surface can say why a switched-on module is not running rather than just hiding it."""
+    out: dict[str, dict[str, Any]] = {}
+    for name, mcfg in (cfg.get("modules") or {}).items():
+        if not isinstance(mcfg, dict):
+            continue
+        configured = bool(mcfg.get("enabled", False))
+        missing = missing_capabilities(cfg, MODULE_REQUIRES.get(name, ()))
+        out[name] = {"configured": configured, "enabled": configured and not missing, "missing": missing}
+    return out
+
+
 def enabled_modules(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Return {name: module_cfg} for modules with enabled=true."""
-    return {name: mcfg for name, mcfg in cfg.get("modules", {}).items() if mcfg.get("enabled", False)}
+    """Return {name: module_cfg} for modules with enabled=true AND every capability they need
+    (MODULE_REQUIRES). The one gate every caller goes through, so the capability rule cannot be
+    applied in one place and forgotten in another."""
+    states = module_states(cfg)
+    return {
+        name: mcfg
+        for name, mcfg in cfg.get("modules", {}).items()
+        if states.get(name, {}).get("enabled", False)
+    }
 
 
 def enabled_services(cfg: dict[str, Any]) -> list[dict[str, Any]]:
@@ -277,7 +337,8 @@ def review_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # The narrative runs after the final pass, never with it: it must only ever see a finalised
         # session. OFF by default because it shells out to Claude Code, which is a dependency the
         # suite does not otherwise have -- turn it on once `claude` is on PATH.
-        "narrative": rv.get("narrative", False),
+        "narrative": bool(rv.get("narrative", False))
+        and not missing_capabilities(cfg, FEATURE_REQUIRES["review.narrative"]),
         "narrative_at": rv.get("narrative_at", "10:45"),
         "file_issues": rv.get("file_issues", False),
     }
@@ -299,7 +360,8 @@ def morning_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # ET, box-local. 08:30 leaves the pack a full hour before the open; the narrative follows
         # at 09:00 so a human reading pre-open gets facts even when the AI step fails or is off.
         "factpack_at": mv.get("factpack_at", "08:30"),
-        "narrative": mv.get("narrative", False),
+        "narrative": bool(mv.get("narrative", False))
+        and not missing_capabilities(cfg, FEATURE_REQUIRES["morning.narrative"]),
         "narrative_at": mv.get("narrative_at", "09:00"),
         # The daily market files the pack reads (scripts/fetch_market_files.py): Cboe's index
         # histories, Treasury's curve (posted by ~18:00 ET), the release calendars. Credential-free,
@@ -328,7 +390,9 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     # prices; reconciled, 93.3%). It refetches only symbols older than a week, so a daily run is
     # light after the first.
     return {
-        "enabled": bool(tc.get("enabled", True)),
+        # ON by default, but only on a machine with the Dolt clones set up (capabilities.dolt).
+        "enabled": bool(tc.get("enabled", True))
+        and not missing_capabilities(cfg, FEATURE_REQUIRES["technicals"]),
         "land_at": tc.get("land_at", "06:15"),
         # The market-report readings the console shows (stages by sector, breadth, rotation,
         # signals, leaders), written once from the bars the landing just refreshed.
@@ -425,7 +489,8 @@ def advisor_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         checkpoints = list(raw_checkpoints)
         checkpoint_slots = None
     return {
-        "enabled": av.get("enabled", False),
+        "enabled": bool(av.get("enabled", False))
+        and not missing_capabilities(cfg, FEATURE_REQUIRES["advisor"]),
         # ET, box-local like every other schedule in this file.
         "checkpoints": checkpoints,
         "checkpoint_slots": checkpoint_slots,

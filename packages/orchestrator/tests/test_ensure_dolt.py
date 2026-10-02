@@ -10,6 +10,7 @@ from cherrypick.orchestrator import watchdog
 
 def _cfg(data_dir="~/.cherrypick/data/earnings"):
     return {
+        "capabilities": {"claude": True, "dolt": True},
         "modules": {
             "earnings": {
                 "enabled": True,

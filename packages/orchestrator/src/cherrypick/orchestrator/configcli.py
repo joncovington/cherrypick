@@ -92,6 +92,12 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
         return liveops.set_halt(present)
 
     cfg = cfgmod.load_config()
+    if op == "features":
+        # The resolved module/capability/feature view (capabilities.gated_features): what the
+        # console shows or hides. Read-only, and the console never re-derives the rule itself.
+        from . import capabilities
+
+        return capabilities.gated_features(cfg)
     if op == "targets":
         return {"ok": True, "targets": configedit.targets(cfg)}
     if op == "load":

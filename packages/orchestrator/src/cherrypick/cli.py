@@ -895,6 +895,29 @@ def supersnap_anchor() -> str:
 
 
 # --------------------------------------------------------------------------- misc
+def cmd_capabilities(cfg, args) -> None:
+    """Show (default), detect (--detect [--write]) or set (--cap name=bool ...) what this machine has.
+    See orchestrator/capabilities.py; the installer runs `--detect --write`."""
+    from .orchestrator import capabilities as caps
+
+    if args.cap_set:
+        try:
+            values = caps.parse_set(args.cap_set)
+        except ValueError as exc:
+            _emit({"ok": False, "error": str(exc)})
+            sys.exit(2)
+        _emit(caps.write(values))
+        return
+    if args.detect:
+        found = caps.detect(cfg)
+        out: dict = {"ok": True, "detected": found}
+        if args.write:
+            out["written"] = caps.write({k: v["present"] for k, v in found.items()})
+        _emit(out)
+        return
+    _emit(caps.gated_features(cfg))
+
+
 def cmd_init(force: bool) -> None:
     result = init.run(force=force)
     _emit(result)
@@ -1290,6 +1313,7 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         choices=[
             "init",
+            "capabilities",
             "install",
             "uninstall",
             "status",
@@ -1383,6 +1407,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="For account: designate this account (a last-4 or 1-based index)",
     )
     parser.add_argument("--clear", action="store_true", help="For account: unset the designated account")
+    parser.add_argument(
+        "--detect", action="store_true", help="For capabilities: probe this machine for claude and dolt"
+    )
+    parser.add_argument(
+        "--write", action="store_true", help="For capabilities --detect: record the answers in config.json"
+    )
+    parser.add_argument(
+        "--cap",
+        dest="cap_set",
+        nargs="+",
+        metavar="NAME=true|false",
+        default=None,
+        help="For capabilities: record a capability by hand, e.g. --cap claude=false",
+    )
     parser.add_argument(
         "--scheduled",
         action="store_true",
@@ -1490,6 +1528,7 @@ def main() -> None:
         "uninstall": lambda: cmd_uninstall(cfg),
         "status": lambda: cmd_status(cfg),
         "doctor": lambda: cmd_doctor(cfg, fast=args.fast),
+        "capabilities": lambda: cmd_capabilities(cfg, args),
         "watchdog": lambda: cmd_watchdog(cfg),
         "preopen-check": lambda: cmd_preopen_check(cfg),
         "streamer-health": lambda: cmd_streamer_health(cfg),

@@ -19,6 +19,7 @@ def test_registry_snapshot_collects_every_declared_task(monkeypatch):
 
     monkeypatch.setattr(tasks, "query_verbose", fake_query_verbose)
     cfg = {
+        "capabilities": {"claude": True, "dolt": True},
         "modules": {
             "meic": {"enabled": True, "paper": {"task_name": "cherrypick-meic-paper-loop"}},
             "earnings": {
