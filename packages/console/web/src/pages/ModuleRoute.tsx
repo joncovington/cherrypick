@@ -7,6 +7,9 @@ import { FrameChrome } from "../lightbox/ModuleFrame";
 import { MODULE_FRAMES } from "../lightbox/registry";
 import { isModuleId } from "../lightbox/moduleOrder";
 import { NAV_DECL, resolveSlide } from "../lightbox/navGroups";
+import { useFeatures } from "../lib/useFeatures";
+import { isSlideVisible, offReason } from "../lib/visibility";
+import { ModuleOffCard } from "./ModuleOffCard";
 
 /**
  * `/:module` and `/:module/:slide`: every page renders here, inside the shell's own outlet, as a
@@ -22,10 +25,22 @@ import { NAV_DECL, resolveSlide } from "../lightbox/navGroups";
 export function ModuleRoute() {
   const { module = "", slide = "" } = useParams();
   const railExpanded = useBoolPref(RAIL_PREF);
+  const features = useFeatures();
   if (!isModuleId(module)) return <NotFoundPage />;
 
+  // A page the suite has turned off is a card saying so, never the module and never a 404.
+  const off = offReason(module, features);
+  if (off !== null) {
+    return (
+      <div className={railExpanded ? "mf" : "mf mf-rail-collapsed"}>
+        <ModuleNav module={module} slide="" />
+        <ModuleOffCard module={module} off={off} />
+      </div>
+    );
+  }
+
   const Frame = MODULE_FRAMES[module];
-  const slides = NAV_DECL[module].slides;
+  const slides = NAV_DECL[module].slides.filter((s) => isSlideVisible(module, s.id, features));
   const activeId = resolveSlide(module, slide, slides);
   const label = slides.find((s) => s.id === activeId)?.label ?? activeId;
 

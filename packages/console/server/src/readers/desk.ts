@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { DeskBookPayload, DeskPayload, DeskLiveness, DeskExposureRow, DeskEntriesRow, DeskEvidenceRow, DeskEodRow } from "@console/shared";
+import type { DeskBookPayload, DeskPayload, DeskLiveness, DeskExposureRow, DeskEntriesRow, DeskEvidenceRow, DeskEodRow, SuiteFeatures } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, readJson } from "./db.js";
 import { streamerFreshness } from "./streamcache.js";
@@ -14,6 +14,19 @@ import { readEarningsDetail } from "./earnings.js";
 import { buildSuiteReport, readFactSet, readModuleBreaks } from "../services/report.js";
 import { readModuleGate, sessionDateEt } from "../services/liveLock.js";
 import { readScreenMetrics } from "../services/screenBridge.js";
+import { moduleOn } from "../services/featuresBridge.js";
+
+/**
+ * Drop every row for a module the suite has turned off (`configcli` `features`, decided in Python).
+ * The streamer is not a module and always stays. `features` undefined or a failed read keeps every
+ * row: unknown is visible.
+ */
+function onlyEnabled<T>(rows: T[], idOf: (r: T) => string, features: SuiteFeatures | undefined): T[] {
+  return rows.filter((r) => {
+    const id = idOf(r);
+    return id === "streamer" || moduleOn(features, id);
+  });
+}
 
 /**
  * The Overview's suite matrix, in one composed read.
@@ -136,7 +149,7 @@ function sumField(positions: Array<Record<string, unknown>>, field: string): num
   }, null);
 }
 
-export function readDesk(config: ConsoleConfig): DeskPayload {
+export function readDesk(config: ConsoleConfig, features?: SuiteFeatures): DeskPayload {
   const orch = config.paths.orchestratorConfig;
   const streamer = streamerFreshness(config);
   const meicLoop = readMeicLoopStatus(config, "paper");
@@ -348,13 +361,14 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
     return { module: mod, net, closed, netPerTrade: closed !== null && closed > 0 ? net / closed : null };
   });
 
+  const keep = <T,>(rows: T[], idOf: (r: T) => string): T[] => onlyEnabled(rows, idOf, features);
   return {
     mode: "paper",
-    liveness: livenessRows,
-    exposure,
-    entries,
-    evidence,
-    eod: { session: lastSession?.session ?? null, rows: eodRows },
+    liveness: keep(livenessRows, (r) => r.id),
+    exposure: keep(exposure, (r) => r.module),
+    entries: keep(entries, (r) => r.module),
+    evidence: keep(evidence, (r) => r.module),
+    eod: { session: lastSession?.session ?? null, rows: keep(eodRows, (r) => r.module) },
   };
 }
 
@@ -401,7 +415,7 @@ const LIVE_OFF_NOTE = "live trading off";
  * session). The paper column reads the suite report, which is paper by construction, so the other
  * live rows show no figure rather than borrow one.
  */
-export function readDeskLive(config: ConsoleConfig): DeskBookPayload {
+export function readDeskLive(config: ConsoleConfig, features?: SuiteFeatures): DeskBookPayload {
   const fliesAnalytics = readFliesAnalytics(config, "live", { arm: null, date: null, symbol: null, era: null });
   const meicExposure = readMeicOpenExposure(config, "live");
   const earningsDetail = readEarningsDetail(config, "live", null);
@@ -502,5 +516,9 @@ export function readDeskLive(config: ConsoleConfig): DeskBookPayload {
   const offEntries = entries.map((r): DeskEntriesRow =>
     off.has(r.module) && r.filled + r.refused + r.noFill === 0 ? { ...r, available: false, note: LIVE_OFF_NOTE } : r,
   );
-  return { mode: "live", exposure: offExposure, entries: offEntries };
+  return {
+    mode: "live",
+    exposure: onlyEnabled(offExposure, (r) => r.module, features),
+    entries: onlyEnabled(offEntries, (r) => r.module, features),
+  };
 }

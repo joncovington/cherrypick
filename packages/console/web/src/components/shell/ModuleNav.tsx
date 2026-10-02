@@ -2,7 +2,10 @@ import type { ReactNode } from "react";
 import { NavLink, useSearchParams } from "react-router-dom";
 import { type ModuleId } from "../../lightbox/moduleOrder";
 import { NAV_DECL, navGroups } from "../../lightbox/navGroups";
-import { SUITE_LINKS, MODULE_LINKS, CONFIG_LINK, type NavLinkDef } from "./navLinks";
+import { CONFIG_LINK, visibleNavLinks, type NavLinkDef } from "./navLinks";
+import { useFeatures } from "../../lib/useFeatures";
+import { isSlideVisible } from "../../lib/visibility";
+import { ExperimentalChip } from "../ExperimentalChip";
 import { useDirtyCount } from "../../pages/Config/stagedStore";
 import { useBoolPref, writePref } from "../../lib/prefs";
 
@@ -36,11 +39,24 @@ export function ModuleNav({ module, slide }: { module: ModuleId; slide: string }
   const qs = params.toString();
   const withQs = (path: string) => (qs ? `${path}?${qs}` : path);
   const dirty = useDirtyCount();
-  const grouping = navGroups(module, NAV_DECL[module].slides);
+  // An off module, the advisor and its tabs, and Reports' chart leave the rail when the suite has
+  // turned them off (`visibility.ts`); Config keeps every toggle, so it is never filtered.
+  const features = useFeatures();
+  const { suite, modules } = visibleNavLinks(features);
+  const grouping = navGroups(
+    module,
+    NAV_DECL[module].slides.filter((s) => isSlideVisible(module, s.id, features)),
+  );
 
   // Any page opens out in place, wherever its link sits: a suite surface (Reports, Live, Config)
   // is on the frame like a module since 2026-09-25, and its tabs belong under its own name.
   const link = (l: NavLinkDef, extra?: ReactNode) => {
+    extra = (
+      <>
+        <ExperimentalChip id={l.to.slice(1)} />
+        {extra}
+      </>
+    );
     if (l.to.slice(1) !== module) {
       return (
         <NavLink
@@ -97,9 +113,9 @@ export function ModuleNav({ module, slide }: { module: ModuleId; slide: string }
         {expanded ? "«" : "»"}
       </button>
       <div id="mf-nav-links" hidden={!expanded}>
-        {SUITE_LINKS.map((l) => link(l))}
+        {suite.map((l) => link(l))}
         <div className="mf-nav-section">Modules</div>
-        {MODULE_LINKS.map((l) => link(l))}
+        {modules.map((l) => link(l))}
         <div className="mf-nav-section">Suite</div>
         {link(
           CONFIG_LINK,

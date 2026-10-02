@@ -6,6 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NAV_DECL } from "../src/lightbox/navGroups";
 import { MODULE_LABEL, TRADING_MODULE_ORDER, isModuleId } from "../src/lightbox/moduleOrder";
+import type { SuiteFeatures, SuiteFeaturesOk } from "@console/shared";
 
 /**
  * Route wiring, rendered rather than read.
@@ -205,6 +206,90 @@ describe("the suite surfaces are on the frame", () => {
 
   it("an unknown tab on a suite surface falls back to its first tab rather than 404ing", () => {
     expect(text(render("/gex/profile"))).toContain("GEX / gex");
+  });
+});
+
+describe("a page the suite has turned off", () => {
+  /** Render with the features answer already in the cache, as it is after the first poll. */
+  function renderWith(route: string, features: SuiteFeatures): string {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(["features"], features);
+    return renderToString(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={[route]}>
+          <App />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  const on = { configured: true, enabled: true, missing: [] };
+  const base: SuiteFeaturesOk = {
+    ok: true,
+    capabilities: { claude: true, dolt: false },
+    modules: {
+      meic: on,
+      flies: on,
+      calendars: on,
+      pmcc: { configured: false, enabled: false, missing: [] },
+      curve: on,
+      bwb: on,
+      earnings: { configured: true, enabled: false, missing: ["dolt"] },
+    },
+    services: { "gex-recorder": true },
+    features: { advisor: false, technicals: false, review_narrative: true, morning_narrative: true },
+  };
+
+  it("renders the turned-off card, not the module and not a 404", () => {
+    const html = text(renderWith("/pmcc", base));
+    expect(html).toContain("PMCC-99 is turned off");
+    expect(html).toContain("switched off in the suite config");
+    expect(html).not.toContain("Page not found");
+    expect(html).not.toContain("PMCC-99 / session");
+    expect(renderWith("/pmcc", base)).toContain('href="/config"');
+  });
+
+  it("says which capability a switched-on module is missing", () => {
+    expect(text(renderWith("/earnings/history", base))).toContain("needs Dolt");
+  });
+
+  it("the advisor page is a turned-off card when the advisor is off", () => {
+    expect(text(renderWith("/advisor", base))).toContain("Advisor is turned off");
+  });
+
+  it("a module that is on still renders, and loses its advisor tab when the advisor is off", () => {
+    const html = renderWith("/flies/session", base);
+    expect(text(html)).toContain("Flies / session");
+    expect(html).not.toContain('href="/flies/advisor"');
+    expect(html).not.toContain('href="/advisor"');
+    // With the advisor on, the same tab is in the rail.
+    expect(renderWith("/flies/session", { ...base, features: { ...base.features, advisor: true } })).toContain('href="/flies/advisor"');
+  });
+
+  it("the rail leaves off modules out, and Config keeps its link", () => {
+    const html = renderWith("/flies/session", base);
+    expect(html).not.toContain('href="/pmcc"');
+    expect(html).not.toContain('href="/earnings"');
+    expect(html).toContain('href="/meic"');
+    expect(html).toContain('href="/config"');
+  });
+
+  it("Reports loses its chart tab when technicals is off", () => {
+    expect(renderWith("/reports", base)).not.toContain('href="/reports/chart"');
+    expect(renderWith("/reports", { ...base, features: { ...base.features, technicals: true } })).toContain('href="/reports/chart"');
+  });
+
+  it("an experimental module that is on carries the chip in its title", () => {
+    // The chip follows the breadcrumb; the rail carries it beside each experimental module's link.
+    expect(text(renderWith("/curve", base))).toMatch(/curve \/ session\s*experimental/);
+    expect(text(renderWith("/meic", base))).not.toMatch(/MEIC \/ session\s*experimental/);
+    expect(text(renderWith("/meic", base))).toMatch(/Calendars\s*experimental/);
+  });
+
+  it("a failed features read shows everything (fail open)", () => {
+    const html = text(renderWith("/pmcc", { ok: false, error: "bridge down" }));
+    expect(html).toContain("PMCC-99 / session");
+    expect(html).not.toContain("turned off");
   });
 });
 

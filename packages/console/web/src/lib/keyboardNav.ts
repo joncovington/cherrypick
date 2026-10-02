@@ -1,4 +1,5 @@
-import { SUITE_LINKS, MODULE_LINKS } from "../components/shell/navLinks";
+import type { SuiteFeatures } from "@console/shared";
+import { visibleNavLinks } from "../components/shell/navLinks";
 
 /**
  * The keyboard shortcuts the header menu has been advertising.
@@ -34,6 +35,9 @@ export interface KeyEvent {
   modified: boolean;
   slides: string[];
   slide: string | null;
+  /** What the suite has turned on: the digits name the VISIBLE modules, in the menu's order, and
+   *  a chord to a hidden page does nothing. Undefined (loading, failed) means everything. */
+  features?: SuiteFeatures;
 }
 
 export function reduceKey(state: KeyState, ev: KeyEvent): { state: KeyState; action: KeyAction } {
@@ -44,15 +48,16 @@ export function reduceKey(state: KeyState, ev: KeyEvent): { state: KeyState; act
 
   // Inside the chord window, this key completes `g …`. Outside it, a stale `g` from a minute ago
   // must not turn an `o` into a navigation.
+  const links = visibleNavLinks(ev.features);
   if (state.pendingG !== null && ev.now - state.pendingG <= CHORD_MS) {
-    const hit = SUITE_LINKS.find((l) => l.key === ev.key);
+    const hit = links.suite.find((l) => l.key === ev.key);
     return { state: idle, action: hit === undefined ? null : { kind: "navigate", to: hit.to } };
   }
 
   if (ev.key === "g") return { state: { pendingG: ev.now }, action: null };
 
-  if (/^[1-8]$/.test(ev.key)) {
-    const hit = MODULE_LINKS[Number(ev.key) - 1];
+  if (/^[1-9]$/.test(ev.key)) {
+    const hit = links.modules[Number(ev.key) - 1];
     return { state: idle, action: hit === undefined ? null : { kind: "navigate", to: hit.to } };
   }
 

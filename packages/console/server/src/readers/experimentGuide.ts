@@ -7,7 +7,7 @@ import type {
   GuideOverride,
   TradingMode,
 } from "@console/shared";
-import type { ConsoleConfig } from "../config.js";
+import { meicRiskConfigPath, type ConsoleConfig } from "../config.js";
 import { armColumnOf, readJson, str, withReadOnlyDb } from "./db.js";
 import { adviceDeclOf, advisedTagStatus, type AdviceDecl } from "./adviceDecl.js";
 import { readExperimentIndex, resolveAdvisedTag, type ExperimentRef } from "./experimentIndex.js";
@@ -356,7 +356,7 @@ export function readMeicProfileGuide(config: ConsoleConfig, mode: TradingMode): 
     entries: [],
     configMissing: true,
   };
-  const doc = readJson(config.paths.meicRiskConfig);
+  const doc = readJson(meicRiskConfigPath(config));
   if (doc === null) return base;
 
   const profiles = (doc["profiles"] ?? {}) as Record<string, unknown>;

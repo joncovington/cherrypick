@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cherrypickHome, consolePort, BIND_HOST as SHARED_BIND_HOST } from "@console/shared";
@@ -39,9 +40,16 @@ export interface ConsoleConfig {
     technicalsDir: string;
     /** `state/advice/` — the artifacts the advisor issues and every module's loop reads. */
     adviceDir: string;
-    /** packages/meic/config.risk.json (source tree) -- profiles.<tag>.enabled is the literal
-        switch paper.py's all_profile_names() reads each tick. */
+    /** MEIC's arm registry -- profiles.<tag>.enabled is the literal switch paper.py's
+        all_profile_names() reads each tick. MEIC's own resolution (`meic.paths.risk_profiles_path`):
+        `$MEIC_RISK_CONFIG` if set, else this machine's `~/.cherrypick/config/meic.risk.json`. It
+        left the repo on 2026-10-01; read it through `meicRiskConfigPath`, which applies the
+        fallback below. */
     meicRiskConfig: string;
+    /** The shipped control-only `packages/meic/config.risk.example.json`, which MEIC runs from
+        while the home file does not exist. Absent under `$MEIC_RISK_CONFIG`: MEIC does not fall
+        back from an override, so neither does this. */
+    meicRiskConfigFallback?: string;
     /** ~/.cherrypick/config/flies.json (the deployed config the module actually runs off) --
         arms.<tag>.enabled is what cli.py's enabled_arms() reads. */
     fliesConfig: string;
@@ -85,7 +93,7 @@ export function loadConfig(): ConsoleConfig {
       advisorDir: path.join(data, "advisor"),
       technicalsDir: path.join(data, "technicals"),
       adviceDir: path.join(CHERRYPICK, "state", "advice"),
-      meicRiskConfig: path.join(REPO_ROOT, "packages", "meic", "config.risk.json"),
+      ...meicRiskPaths(),
       fliesConfig: path.join(CHERRYPICK, "config", "flies.json"),
       pmccConfigCandidates: [
         path.join(CHERRYPICK, "config", "pmcc.json"),
@@ -104,6 +112,27 @@ export function loadConfig(): ConsoleConfig {
       ],
     },
   };
+}
+
+function meicRiskPaths(): { meicRiskConfig: string; meicRiskConfigFallback?: string } {
+  const override = process.env["MEIC_RISK_CONFIG"];
+  if (override !== undefined && override !== "") return { meicRiskConfig: override };
+  return {
+    meicRiskConfig: path.join(CHERRYPICK, "config", "meic.risk.json"),
+    meicRiskConfigFallback: path.join(REPO_ROOT, "packages", "meic", "config.risk.example.json"),
+  };
+}
+
+/**
+ * The MEIC registry file MEIC itself is running from: the home file when it exists, else the
+ * shipped example. Existence, not readability, decides, as in `risk_profiles_path` -- a malformed
+ * home file is what MEIC reads (and fails on), so the console must not quietly show the example.
+ */
+export function meicRiskConfigPath(config: ConsoleConfig): string {
+  const own = config.paths.meicRiskConfig;
+  const fallback = config.paths.meicRiskConfigFallback;
+  if (fallback === undefined || fs.existsSync(own)) return own;
+  return fallback;
 }
 
 /** Loopback only — never configurable. Matches the suite-wide guardrail. */

@@ -1,6 +1,7 @@
 import { useWsState } from "../../lib/useQuote";
 import { useOverview, useStatus } from "../../lib/api";
 import { LivenessChips } from "./LivenessChips";
+import { useFeaturesFailure } from "../../lib/useFeatures";
 
 const DXLINK_LABEL: Record<string, string> = {
   connected: "● dxlink connected",
@@ -29,6 +30,7 @@ export function StatusBar() {
   const dxlink = ws.socket === "open" ? ws.dxlink : (status?.dxlink ?? "disconnected");
   const { data: overview } = useOverview();
   const wd = overview?.watchdog;
+  const featuresFailure = useFeaturesFailure();
 
   return (
     <div className="statusbar-wrap">
@@ -54,6 +56,14 @@ export function StatusBar() {
           </>
         )}
         <LivenessChips />
+        {featuresFailure !== null && (
+          <span
+            className="chip chip-warn"
+            title={`The suite's on/off answer could not be read, so every module is shown, including any that are off. ${featuresFailure}`}
+          >
+            module switches unknown
+          </span>
+        )}
         {wd?.overall && (
           <span
             className={`chip ${wd.overall === "OK" ? "chip-ok" : "chip-warn"}`}

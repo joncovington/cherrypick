@@ -10,6 +10,8 @@ import type {
   AdvisorProposal,
 } from "@console/shared";
 import { dismissAdvisorProposal, killAdvisorExperiment, useAdvisor } from "../../lib/api";
+import { useFeatures } from "../../lib/useFeatures";
+import { isModuleVisible } from "../../lib/visibility";
 import { otherFields, paramRows, scalar } from "./proposalPayload";
 import { TabStrip } from "../../components/ScopeBar";
 import { pushToast } from "../../lib/toast";
@@ -810,6 +812,7 @@ export function AdvisorPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { data, isLoading, isError } = useAdvisor(session);
+  const features = useFeatures();
 
   async function act(run: () => Promise<unknown>, successTitle: string) {
     setBusy(true);
@@ -832,6 +835,11 @@ export function AdvisorPage() {
   if (isError || data === undefined) return <div className="page">the advisor store could not be read</div>;
 
   const active = data.experiments.filter((e) => e.status === "active" || e.status === "queued");
+  // The module lists (the apply banner and the cross-module roll-up) leave out a module the suite
+  // has turned off. Each experiment's own card stays: its kill button is a de-risking action, and
+  // hiding the only control for something still running would be the wrong way round.
+  const shownStatus = data.applyStatus.filter((s) => isModuleVisible(s.module, features));
+  const shownActive = active.filter((e) => isModuleVisible(e.module, features));
   const concluded = data.experiments.filter((e) => e.status !== "active" && e.status !== "queued");
 
   return (
@@ -887,7 +895,7 @@ export function AdvisorPage() {
       />
 
       <div key={tab}>
-      <ApplyBanner status={data.applyStatus} />
+      <ApplyBanner status={shownStatus} />
 
       {tab === "today" &&
         (data.latest.length === 0 ? (
@@ -921,7 +929,7 @@ export function AdvisorPage() {
               <p className="muted">nothing running</p>
             </section>
           )}
-          {active.length > 0 && <ExperimentRollup experiments={active} />}
+          {shownActive.length > 0 && <ExperimentRollup experiments={shownActive} />}
           {active.map((e) => (
             <ExperimentCard key={e.id} e={e} busy={busy} onKill={(id) => void act(() => killAdvisorExperiment(id), "Experiment killed")} />
           ))}

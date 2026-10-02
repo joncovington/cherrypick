@@ -268,7 +268,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
         <ExperimentGuideView
           url="/api/meic/profiles"
           mode={mode}
-          intro="Every ENABLED arm is evaluated on every tick — they are parallel arms of one experiment, not a ladder you pick a rung from, and active_profile no longer selects between them. Each description below is the module's own, read from config.risk.json, and 'what makes it different' is derived from the arm's settings: the values it does not share with the module's base config or with most of its siblings."
+          intro="Every ENABLED arm is evaluated on every tick — they are parallel arms of one experiment, not a ladder you pick a rung from, and active_profile no longer selects between them. Each description below is the module's own, read from this machine's meic.risk.json (or the shipped example until that exists), and 'what makes it different' is derived from the arm's settings: the values it does not share with the module's base config or with most of its siblings."
         />
       ),
     },

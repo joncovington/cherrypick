@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ConsoleConfig } from "../config.js";
 import { callConfigCli, statusForCode, type BridgeOk, type BridgeResult } from "../services/configBridge.js";
 import { readLockStatus } from "../services/liveLock.js";
+import { getFeatures, invalidateFeatures } from "../services/featuresBridge.js";
 import { getPrefs, setPref } from "../store/consoleDb.js";
 
 /**
@@ -68,6 +69,13 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     return { targets };
   });
 
+  /**
+   * What the suite has turned on, as the orchestrator resolves it — the one source the rail, the
+   * header, the Overview and the turned-off card read. Always 200: a failed bridge is `{ok: false,
+   * error}` in the body, and the browser shows everything beside a warning chip (fail open).
+   */
+  app.get("/api/features", async () => getFeatures());
+
   /** The lock hero's read: file-only, cheap enough to poll every few seconds. */
   app.get("/api/config/lock", async () => readLockStatus(config));
 
@@ -86,6 +94,7 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
       });
     }
     if (sendBridgeFailure(reply, callConfigCli({ op: "set_halt", present })) === null) return reply;
+    invalidateFeatures();
     app.log.info(`halt flag ${present ? "set" : "cleared"} from the console config page`);
     return readLockStatus(config);
   });
@@ -124,6 +133,8 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
       }),
     );
     if (result === null) return reply;
+    // A save can switch a module or a feature off (or back on); the next features read asks again.
+    invalidateFeatures();
     app.log.info(`config saved: ${target} (${String(edits.length)} field(s))`);
     return {
       ok: true,

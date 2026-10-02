@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import type { ConsoleConfig } from "../config.js";
 import { readJson } from "../readers/db.js";
 
@@ -31,8 +30,6 @@ export interface LockStatus {
   modules: ModuleGate[];
   /** flies' per-day arm record — the third gate, and the only one that expires by itself. */
   fliesArm: { armed: boolean; date: string | null; at: string | null; stale: boolean };
-  /** meic-risk lives in the source tree, so editing it dirties the working tree. */
-  meicRiskDirty: boolean | null;
   sessionDate: string;
 }
 
@@ -67,35 +64,9 @@ export function sessionDateEt(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 }
 
-let riskDirtyCache: { at: number; value: boolean | null } | null = null;
-
-/**
- * Whether packages/meic/config.risk.json has uncommitted changes. Best-effort and cached: it is a
- * courtesy note on a section, never a gate, so a missing git or a slow call degrades to "unknown"
- * rather than holding up the page.
- */
-export function meicRiskDirty(config: ConsoleConfig, now = Date.now()): boolean | null {
-  if (riskDirtyCache !== null && now - riskDirtyCache.at < 30_000) return riskDirtyCache.value;
-  let value: boolean | null = null;
-  try {
-    const file = config.paths.meicRiskConfig;
-    const out = spawnSync("git", ["-C", path.dirname(file), "status", "--porcelain", "--", path.basename(file)], {
-      encoding: "utf-8",
-      timeout: 5_000,
-      windowsHide: true,
-    });
-    if (out.error === undefined && out.status === 0) value = out.stdout.trim() !== "";
-  } catch {
-    value = null;
-  }
-  riskDirtyCache = { at: now, value };
-  return value;
-}
-
-/** Reset the git-dirty cache. Tests only. */
-export function resetLockCaches(): void {
-  riskDirtyCache = null;
-}
+// There was a git check here ("uncommitted changes in packages/meic/config.risk.json"). It went
+// when MEIC's arm registry left the repo for `~/.cherrypick/config/meic.risk.json` (2026-10-01):
+// a file outside the checkout has no working tree to dirty.
 
 export function readLockStatus(config: ConsoleConfig): LockStatus {
   const haltFlagPath = path.join(config.paths.cherrypick, "state", "halt-live.flag");
@@ -122,7 +93,6 @@ export function readLockStatus(config: ConsoleConfig): LockStatus {
       at: typeof arm?.["at"] === "string" ? (arm["at"] as string) : null,
       stale: armDate !== null && armDate !== today,
     },
-    meicRiskDirty: meicRiskDirty(config),
     sessionDate: today,
   };
 }

@@ -49,6 +49,7 @@ import { readGex } from "../readers/gex.js";
 import { buildGexProfile, gexSymbols } from "../services/gexProfile.js";
 import { buildSuiteReport } from "../services/report.js";
 import { readLogTail } from "../readers/logs.js";
+import { getFeatures } from "../services/featuresBridge.js";
 import { readSystemPanel, readEod, renderReport } from "../services/suite.js";
 import { suiteEra } from "../readers/db.js";
 
@@ -392,7 +393,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/report", async () => buildSuiteReport(config));
   app.get<{ Querystring: { source?: string; limit?: string } }>("/api/logs", async (req) => {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit ?? "", 10) || 50, 1), 1000);
-    return { lines: readLogTail(config, limit, req.query.source || undefined) };
+    return { lines: readLogTail(config, limit, req.query.source || undefined, getFeatures()) };
   });
   app.get("/api/system", async () => readSystemPanel(config));
   app.get("/api/eod", async () => readEod(config));

@@ -101,13 +101,10 @@ export function ConfigSection({
   section,
   model,
   updatedAt,
-  meicRiskDirty,
 }: {
   section: SectionMeta;
   model: ConfigModelPayload | undefined;
   updatedAt?: number;
-  /** Whether the repo-tracked meic risk file currently has uncommitted changes. */
-  meicRiskDirty?: boolean | null;
 }) {
   useStagedVersion();
   const groups = resolveSection(section.id, model?.targets);
@@ -131,9 +128,9 @@ export function ConfigSection({
               <span className="cfg-group-title">{TARGET_TITLES[group.target]}</span>
               {group.target === "meic-risk" && (
                 <span className="cfg-group-note">
-                  lives in the repo (<code>packages/meic/config.risk.json</code>), so a save changes your working
-                  tree
-                  {meicRiskDirty === true && <strong> — uncommitted changes there now</strong>}
+                  this machine's own registry, <code>{targetModel?.portable ?? "~/.cherrypick/config/meic.risk.json"}</code>,
+                  not the repo; until it exists MEIC runs the shipped control-only{" "}
+                  <code>packages/meic/config.risk.example.json</code>
                 </span>
               )}
             </div>

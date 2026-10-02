@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ConsoleConfig } from "../src/config.js";
-import { readLockStatus, readModuleGate, sessionDateEt, resetLockCaches } from "../src/services/liveLock.js";
+import { readLockStatus, readModuleGate, sessionDateEt } from "../src/services/liveLock.js";
 
 /**
  * The lock hero reads three separate gates and must not blur them: the suite halt flag, each
@@ -48,7 +48,6 @@ beforeEach(() => {
       fliesConfig: path.join(tmp, "config", "flies.json"),
     },
   };
-  resetLockCaches();
 });
 
 describe("module live gates", () => {

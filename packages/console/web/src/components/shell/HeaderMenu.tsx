@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useDirtyCount } from "../../pages/Config/stagedStore";
-import { SUITE_LINKS, MODULE_LINKS, CONFIG_LINK, ALL_NAV_LINKS, type NavLinkDef } from "./navLinks";
+import { CONFIG_LINK, ALL_NAV_LINKS, visibleNavLinks, type NavLinkDef } from "./navLinks";
+import { useFeatures } from "../../lib/useFeatures";
+import { ExperimentalChip } from "../ExperimentalChip";
 
 /**
  * Page navigation as a hamburger dropdown on the "cherrypick" brand, replacing the fixed-width
@@ -17,11 +19,13 @@ import { SUITE_LINKS, MODULE_LINKS, CONFIG_LINK, ALL_NAV_LINKS, type NavLinkDef 
  * and with the keyboard handler, so the menu cannot advertise a page the rail lacks or a `g`
  * shortcut nothing implements.
  */
-const groups: Array<{ label: string | null; links: readonly NavLinkDef[] }> = [
-  { label: null, links: SUITE_LINKS },
-  { label: "Modules", links: MODULE_LINKS },
-  { label: "Suite", links: [CONFIG_LINK] },
-];
+function navGroupsFor(links: ReturnType<typeof visibleNavLinks>): Array<{ label: string | null; links: readonly NavLinkDef[] }> {
+  return [
+    { label: null, links: links.suite },
+    { label: "Modules", links: links.modules },
+    { label: "Suite", links: [CONFIG_LINK] },
+  ];
+}
 
 const ALL_LINKS = ALL_NAV_LINKS;
 
@@ -38,6 +42,9 @@ export function HeaderMenu() {
   const dirty = useDirtyCount();
   const location = useLocation();
   const rootRef = useRef<HTMLDivElement>(null);
+  // An off module is not offered here either, and the digit hints are renumbered over what is
+  // left -- the same list the keyboard handler reads, so a hint always names a real shortcut.
+  const groups = navGroupsFor(visibleNavLinks(useFeatures()));
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -97,6 +104,7 @@ export function HeaderMenu() {
                   className={({ isActive }) => (isActive ? "header-menu-link active" : "header-menu-link")}
                 >
                   {l.label}
+                  <ExperimentalChip id={l.to.slice(1)} />
                   {l.key !== undefined && <span className="header-menu-kbd">g {l.key}</span>}
                   {l.to === "/config" && dirty > 0 && (
                     <span className="nav-dot" title={`${String(dirty)} unsaved change${dirty === 1 ? "" : "s"}`} />

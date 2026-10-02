@@ -53,6 +53,31 @@ describe("the module digits", () => {
     expect(press(IDLE, "9").action).toBeNull();
     expect(press(IDLE, "0").action).toBeNull();
   });
+
+  it("name the VISIBLE modules: an off module's digit goes to the next one shown", () => {
+    // pmcc off: 3 is curve now, 7 is gex, and 8 (gex's old digit) is nobody's.
+    const features = {
+      ok: true as const,
+      capabilities: {},
+      modules: { pmcc: { configured: false, enabled: false, missing: [] } },
+      services: {},
+      features: {},
+    };
+    expect(press(IDLE, "3", { features }).action).toEqual({ kind: "navigate", to: "/curve" });
+    expect(press(IDLE, "7", { features }).action).toEqual({ kind: "navigate", to: "/gex" });
+    expect(press(IDLE, "8", { features }).action).toBeNull();
+  });
+
+  it("a chord to a hidden page does nothing", () => {
+    const features = { ok: true as const, capabilities: {}, modules: {}, services: {}, features: { advisor: false } };
+    const first = press(IDLE, "g");
+    expect(press(first.state, "a", { now: 1100, features }).action).toBeNull();
+    expect(press(first.state, "a", { now: 1100 }).action).toEqual({ kind: "navigate", to: "/advisor" });
+  });
+
+  it("show every module when the bridge failed", () => {
+    expect(press(IDLE, "3", { features: { ok: false, error: "bridge down" } }).action).toEqual({ kind: "navigate", to: "/pmcc" });
+  });
 });
 
 describe("j and k step tabs", () => {

@@ -3,6 +3,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { MODULE_LABEL, type ModuleId } from "./moduleOrder";
 import { navSlideIds, resolveSlide } from "./navGroups";
 import type { SlideDef } from "./types";
+import { ExperimentalChip } from "../components/ExperimentalChip";
+import { useFeatures } from "../lib/useFeatures";
+import { isSlideVisible } from "../lib/visibility";
 
 /**
  * What every page renders inside: the breadcrumb header, the integrity drawer, and the body.
@@ -47,6 +50,7 @@ export function FrameChrome({
         <span className="mf-crumb-sep">{" / "}</span>
         <span className="mf-crumb-slide">{slideLabel}</span>
       </span>
+      <ExperimentalChip id={module} />
       {badge}
       {loopPill}
       {session != null && <span className="muted">session {session}</span>}
@@ -61,7 +65,7 @@ export function FrameChrome({
 export function ModuleFrame({
   module,
   slide,
-  slides,
+  slides: allSlides,
   badge,
   loopPill,
   session,
@@ -85,6 +89,10 @@ export function ModuleFrame({
   const [params] = useSearchParams();
   const [integrityOpen, setIntegrityOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+  // A tab the suite has turned off (a module's advisor tab, Reports' chart) is not rendered, so a
+  // URL naming it resolves to the first tab like any other id the page does not have.
+  const features = useFeatures();
+  const slides = allSlides.filter((s) => isSlideVisible(module, s.id, features));
 
   const activeId = resolveSlide(module, slide, slides);
   const active = slides.find((s) => s.id === activeId);

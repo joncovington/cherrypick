@@ -203,6 +203,17 @@ never a second opinion. Two reads go beyond a file, both cached and read-only: `
 checkout holds; which processes predate their package's newest commit) and one `python -c`
 (interpreter and package versions). No control path: restarts and holds stay with `run.py`.
 
+**What is off is not shown.** Whether a module, GEX (the `gex-recorder` service), the advisor, the
+technicals cards or a narrative is on comes **only** from the orchestrator's `configcli` op
+`features` (`services/featuresBridge.ts`, memoised 15 s and dropped on every config save or halt
+toggle; `GET /api/features`), never from reading the config here — `enabled` already folds in
+capabilities like Dolt and Claude Code. Every web rule is in `lib/visibility.ts`; the Overview's desk
+rows and the default log sources are filtered on the server with the same answer. **Fail open:**
+loading, `{ok: false}` or an id the reply does not name all show the thing, with a status-bar chip on
+failure. A direct URL to an off page renders `ModuleOffCard` (why, and a link to Config), never a 404
+and never the module. Config always lists every toggle. Calendars, pmcc and curve carry an
+`experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`.
+
 **Module frame.** Every page renders a left rail and a content pane inside the shell. The rail
 starts collapsed to its toggle; open or shut is the `navExpanded` console preference.
 `registry.ts`'s `MODULE_FRAMES` and `navGroups.ts`'s `NAV_DECL` are full `Record`s over `ModuleId`, so

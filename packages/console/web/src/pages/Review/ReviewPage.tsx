@@ -2,6 +2,8 @@ import { useState, type ReactNode } from "react";
 import { useReview } from "../../lib/api";
 import type { ReviewArm, ReviewModule } from "@console/shared";
 import { NoteMarkdown } from "./NoteMarkdown";
+import { useFeatures } from "../../lib/useFeatures";
+import { isFeatureOn } from "../../lib/visibility";
 import { SignedBar, Sparkline } from "../../components/Charts";
 
 /**
@@ -235,6 +237,9 @@ function ModuleCard({ m }: { m: ReviewModule }) {
 export function ReviewPage({ tabs }: { tabs?: ReactNode } = {}) {
   const [session, setSession] = useState<string | undefined>(undefined);
   const { data, isLoading, isError } = useReview(session);
+  // The written note leaves the page when the suite turns the review narrative off; the fact set
+  // is the review package's and always shows.
+  const showNarrative = isFeatureOn("review_narrative", useFeatures());
 
   const current = data?.current ?? null;
   const modules = current?.modules ?? [];
@@ -316,7 +321,7 @@ export function ReviewPage({ tabs }: { tabs?: ReactNode } = {}) {
             ))}
           </div>
 
-          {current.note && (
+          {showNarrative && current.note && (
             <section className="card review-note">
               <div className="card-head">
                 <h2>Note</h2>

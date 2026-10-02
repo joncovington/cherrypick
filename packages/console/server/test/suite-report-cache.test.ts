@@ -2,8 +2,24 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { SuiteFeatures } from "@console/shared";
 import type { ConsoleConfig } from "../src/config.js";
 import { buildSuiteReport } from "../src/services/report.js";
+
+/**
+ * The desk readers drop every row for a module the suite has turned off, so each fixture here says
+ * which modules are on rather than leaning on the fail-open default: every trading module, and the
+ * GEX recorder.
+ */
+const ALL_ENABLED: SuiteFeatures = {
+  ok: true,
+  capabilities: { claude: true, dolt: true },
+  modules: Object.fromEntries(
+    ["meic", "flies", "calendars", "pmcc", "curve", "bwb", "earnings"].map((m) => [m, { configured: true, enabled: true, missing: [] }]),
+  ),
+  services: { "gex-recorder": true },
+  features: { advisor: true, review_narrative: true, morning_narrative: true, technicals: true },
+};
 
 /**
  * The suite report is memoised, and the case that memoisation must not break is the one the review
@@ -150,7 +166,7 @@ describe("the evidence clock", () => {
     add.run("2026-08-20", "bp-5k", "arm_added", "an arm added"); // arm-scoped: not the module's clock
     db.close();
 
-    const meic = readDesk(config).evidence.find((r) => r.module === "meic");
+    const meic = readDesk(config, ALL_ENABLED).evidence.find((r) => r.module === "meic");
     // The whole-book break predates the curve, and is still the clock's anchor -- not "no break".
     expect(meic?.lastBreakDate).toBe("2026-08-01");
     expect(meic?.sessionsSince).toBe(3);
@@ -176,7 +192,7 @@ describe("the live desk", () => {
         curveConfigCandidates: [],
       },
     } as ConsoleConfig;
-    const live = readDeskLive(config);
+    const live = readDeskLive(config, ALL_ENABLED);
     expect(live.mode).toBe("live");
     for (const m of ["calendars", "pmcc", "curve"]) {
       const exp = live.exposure.find((r) => r.module === m);
@@ -202,7 +218,7 @@ describe("the live desk", () => {
     } as ConsoleConfig;
     fs.mkdirSync(path.join(tmp, "config"), { recursive: true });
     fs.writeFileSync(path.join(tmp, "config", "flies.json"), JSON.stringify({ live: { enabled: true } }));
-    const live = readDeskLive(config);
+    const live = readDeskLive(config, ALL_ENABLED);
     expect(live.exposure.find((r) => r.module === "flies")).toMatchObject({ available: true, note: null });
     expect(live.exposure.find((r) => r.module === "meic")).toMatchObject({ available: false, note: "live trading off" });
   });

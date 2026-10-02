@@ -1,3 +1,6 @@
+import type { SuiteFeatures } from "@console/shared";
+import { isModuleVisible } from "../../lib/visibility";
+
 /**
  * The suite's page list, in one place.
  *
@@ -42,3 +45,20 @@ export const MODULE_LINKS: readonly NavLinkDef[] = [
 export const CONFIG_LINK: NavLinkDef = { to: "/config", label: "Config" };
 
 export const ALL_NAV_LINKS: readonly NavLinkDef[] = [...SUITE_LINKS, ...MODULE_LINKS, CONFIG_LINK];
+
+/**
+ * The links a reader can actually use right now: an off module (or the advisor, or GEX with its
+ * recorder off) is left out of every nav, and the digit shortcuts are renumbered over what is left,
+ * so `1`–`n` always name the modules the menu shows in the order it shows them. Unknown features
+ * keep every link (`visibility.ts`: unknown is visible).
+ */
+export function visibleNavLinks(features: SuiteFeatures | undefined): {
+  suite: NavLinkDef[];
+  modules: NavLinkDef[];
+} {
+  const shown = (l: NavLinkDef) => isModuleVisible(l.to.slice(1), features);
+  return {
+    suite: SUITE_LINKS.filter(shown),
+    modules: MODULE_LINKS.filter(shown).map((l, i) => ({ ...l, key: String(i + 1) })),
+  };
+}

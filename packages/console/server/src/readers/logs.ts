@@ -10,7 +10,9 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import type { SuiteFeatures } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
+import { moduleOn } from "../services/featuresBridge.js";
 
 const TAIL_BYTES = 256 * 1024;
 const DEFAULT_LINES = 50;
@@ -112,8 +114,14 @@ export function logSources(config: ConsoleConfig): Array<{ id: string; path: str
 /** The Overview's merged view: watchdog, notify and the trading modules' own loops. */
 const DEFAULT_SOURCES = new Set(["watchdog", "notify", "meic", "flies", "earnings", "calendars", "pmcc", "curve", "bwb"]);
 
-export function readLogTail(config: ConsoleConfig, limit = DEFAULT_LINES, source?: string): LogLine[] {
-  const sources = logSources(config).filter((s) => (source === undefined ? DEFAULT_SOURCES.has(s.id) : s.id === source));
+/**
+ * The merged default view leaves out a module the suite has turned off (`features`, decided in
+ * Python); asking for that source by name still reads it. Unknown features keep every default.
+ */
+export function readLogTail(config: ConsoleConfig, limit = DEFAULT_LINES, source?: string, features?: SuiteFeatures): LogLine[] {
+  const sources = logSources(config).filter((s) =>
+    source === undefined ? DEFAULT_SOURCES.has(s.id) && moduleOn(features, s.id) : s.id === source,
+  );
   const lines: LogLine[] = [];
   for (const { id, path: p } of sources) {
     for (const raw of tailFile(p)) lines.push(parseLine(id, raw));

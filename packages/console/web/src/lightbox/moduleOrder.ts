@@ -39,3 +39,14 @@ export const MODULE_LABEL: Record<ModuleId, string> = {
   system: "System",
   config: "Config",
 };
+
+/**
+ * The modules the suite calls EXPERIMENTAL (2026-10-01): paper-only designs still being shaped.
+ * One list, read by the rail, the header menu and each page's title, so the chip cannot appear in
+ * one place and not another.
+ */
+export const EXPERIMENTAL_MODULES: ReadonlySet<string> = new Set<ModuleId>(["calendars", "pmcc", "curve"]);
+
+export function isExperimental(id: string): boolean {
+  return EXPERIMENTAL_MODULES.has(id);
+}

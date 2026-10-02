@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ConfigModelPayload, ConfigSavePayload, ConfigTargetId, LockStatusPayload } from "@console/shared";
 import { getCsrf } from "../../lib/api";
+import { FEATURES_KEY } from "../../lib/useFeatures";
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -70,6 +71,7 @@ export function useSetLock() {
       // The System card shows the same flag.
       void qc.invalidateQueries({ queryKey: ["system"] });
       void qc.invalidateQueries({ queryKey: ["overview"] });
+      void qc.invalidateQueries({ queryKey: FEATURES_KEY });
     },
   });
 }
@@ -87,6 +89,10 @@ export function useSaveSection() {
       // point of that failure is that our copy is behind.
       void qc.invalidateQueries({ queryKey: ["config-model"] });
       void qc.invalidateQueries({ queryKey: ["config-lock"] });
+      // A save can switch a module or feature off or on: the rail, the menu and the Overview's
+      // rows all hang off `features` (the server dropped its memo on the same save).
+      void qc.invalidateQueries({ queryKey: FEATURES_KEY });
+      void qc.invalidateQueries({ queryKey: ["desk"] });
     },
   });
 }

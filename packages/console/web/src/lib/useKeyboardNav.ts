@@ -4,6 +4,8 @@ import { isModuleId } from "../lightbox/moduleOrder";
 import { navSlideIds, resolveSlide } from "../lightbox/navGroups";
 import { NAV_DECL } from "../lightbox/navGroups";
 import { reduceKey, type KeyState } from "./keyboardNav";
+import { useFeatures } from "./useFeatures";
+import { isSlideVisible } from "./visibility";
 
 function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -27,12 +29,13 @@ export function useKeyboardNav() {
   const location = useLocation();
   const [params] = useSearchParams();
   const stateRef = useRef<KeyState>({ pendingG: null });
+  const features = useFeatures();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const seg = location.pathname.split("/")[1] ?? "";
       const module = isModuleId(seg) ? seg : null;
-      const slides = module === null ? [] : navSlideIds(module);
+      const slides = module === null ? [] : navSlideIds(module).filter((id) => isSlideVisible(module, id, features));
       const rawSlide = location.pathname.split("/")[2] ?? "";
       const slide =
         module === null || slides.length === 0
@@ -46,6 +49,7 @@ export function useKeyboardNav() {
         modified: e.ctrlKey || e.metaKey || e.altKey,
         slides,
         slide,
+        features,
       });
       stateRef.current = state;
       if (action === null) return;
@@ -58,5 +62,5 @@ export function useKeyboardNav() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [location.pathname, navigate, params]);
+  }, [location.pathname, navigate, params, features]);
 }

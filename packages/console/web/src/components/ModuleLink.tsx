@@ -1,6 +1,15 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { isModuleId } from "../lightbox/moduleOrder";
+import { useFeatures } from "../lib/useFeatures";
+import { isModuleVisible } from "../lib/visibility";
+
+/** A link only to a page that exists AND is shown: an off module's name is plain text, since its
+ *  page is the turned-off card and a chip linking there is a click to "this is off". */
+function useLinkable(id: string): boolean {
+  const features = useFeatures();
+  return isModuleId(id) && isModuleVisible(id, features);
+}
 
 /**
  * A module name rendered as a link to its page (`/<module>`) when `id` names one, and as a plain
@@ -10,7 +19,7 @@ import { isModuleId } from "../lightbox/moduleOrder";
  * (`ModuleChipLink`, kept as a chip element either way so its tone class still applies).
  */
 export function ModuleCellLink({ id, children }: { id: string; children: ReactNode }) {
-  return isModuleId(id) ? (
+  return useLinkable(id) ? (
     <Link to={`/${id}`} className="module-link">
       {children}
     </Link>
@@ -30,7 +39,7 @@ export function ModuleChipLink({
   title?: string;
   children: ReactNode;
 }) {
-  return isModuleId(id) ? (
+  return useLinkable(id) ? (
     <Link to={`/${id}`} className={className} title={title}>
       {children}
     </Link>

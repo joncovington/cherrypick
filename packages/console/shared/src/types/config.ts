@@ -52,7 +52,6 @@ export interface LockStatusPayload {
   haltFlagPath: string;
   modules: ModuleGateView[];
   fliesArm: { armed: boolean; date: string | null; at: string | null; stale: boolean };
-  meicRiskDirty: boolean | null;
   sessionDate: string;
 }
 

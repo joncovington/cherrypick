@@ -12,6 +12,8 @@ import type {
 import { NoteMarkdown } from "../Review/NoteMarkdown";
 import { AXIS_FONT, SERIES_COLORS, LevelStrip } from "../../components/Charts";
 import { TechnicalsCards } from "./TechnicalsCards";
+import { useFeatures } from "../../lib/useFeatures";
+import { isFeatureOn } from "../../lib/visibility";
 
 /**
  * The morning report. Renders the fact pack and computes nothing.
@@ -713,6 +715,11 @@ function MovesYieldsCard({ pack }: { pack: MorningPack }) {
 export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
   const [session, setSession] = useState<string | undefined>(undefined);
   const { data, isLoading, isError } = useMorningReport(session);
+  // The technicals cards and the narrative leave the page when the suite turns their feature off;
+  // the fact pack itself is the overview package's and always shows.
+  const features = useFeatures();
+  const showTechnicals = isFeatureOn("technicals", features);
+  const showNarrative = isFeatureOn("morning_narrative", features);
 
   const current = data?.current ?? null;
   const levels = current?.levels ?? null;
@@ -886,7 +893,7 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
             )}
           </section>
 
-          <TechnicalsCards t={data?.technicals} />
+          {showTechnicals && <TechnicalsCards t={data?.technicals} />}
 
           <VolRegimeCard pack={current} />
           <MovesYieldsCard pack={current} />
@@ -894,7 +901,7 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
 
           <CalendarCard pack={current} />
 
-          {data?.note ? (
+          {!showNarrative ? null : data?.note ? (
             <section className="card review-note">
               <div className="card-head">
                 <h2>Narrative</h2>

@@ -62,7 +62,7 @@ export function ConfigLightbox({ slide }: { slide: string }) {
       label: s.title.toLowerCase(),
       render: () => (
         <div className="cards cards-wide">
-          <ConfigSection section={s} model={model.data} updatedAt={model.dataUpdatedAt} meicRiskDirty={lock.data?.meicRiskDirty ?? null} />
+          <ConfigSection section={s} model={model.data} updatedAt={model.dataUpdatedAt} />
         </div>
       ),
     })),
