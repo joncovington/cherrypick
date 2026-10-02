@@ -200,7 +200,12 @@ def test_a_telemetry_failure_never_stops_a_fill_being_confirmed(live_conn, monke
     monkeypatch.setattr(fill_facts, "observe", boom)
     logged = []
     broker = FakeBroker(order_statuses={"ORD-C1": {"status": "Filled", "price": "1.10", "filled": True}})
-    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=logged.append)
+    try:
+        live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=logged.append)
+        escaped = None
+    except RuntimeError as exc:  # caught so the guard fails on its assertion, not on the raise
+        escaped = exc
+    assert escaped is None, f"a telemetry failure escaped into the fill confirmation: {escaped}"
     pos = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
     assert pos["kind"] == "fly" and pos["completion_fill_status"] == "filled"
     assert any("fill telemetry" in str(m) and "disk full" in str(m) for m in logged)
