@@ -228,8 +228,7 @@ directional gate** (see `docs/strategy-testing-plan.md`):
   [menthorq.com](https://menthorq.com/guide/aces-earnings-calendar-strategy/)
 - Skew / broken-wing / asymmetric strikes:
   [alpaca.markets](https://alpaca.markets/learn/iron-condor-vs-iron-butterfly),
-  [datadrivenoptions.com](https://datadrivenoptions.com/strategies-for-option-trading/favorite-strategies/broken-wing-put-condor/),
-  [a strategy primer](https://www.a strategy primer/option-strategies/broken-wing-butterfly-put)
+  [datadrivenoptions.com](https://datadrivenoptions.com/strategies-for-option-trading/favorite-strategies/broken-wing-put-condor/)
 
 ## See also
 

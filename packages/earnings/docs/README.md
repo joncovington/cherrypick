@@ -1,6 +1,6 @@
 # cherrypick Earnings — documentation
 
-Guides for the cherrypick **Earnings** engine — automated overnight, defined-risk earnings a research vendors
+Guides for the cherrypick **Earnings** engine — automated overnight, defined-risk earnings option trades
 built on a multi-strategy decision framework.
 
 > **Part of the [cherrypick](../../../README.md) suite.** This is the `cherrypick-earnings` module
