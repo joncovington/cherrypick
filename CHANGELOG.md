@@ -11,6 +11,10 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Documented: entry credit is not a useful flies entry gate (a negative result).** Neither a
+  minimum entry credit nor a 2.40–2.59 band improved `control` on a replay of 43 sessions.
+  Completion is 78% in every credit bucket, and a high credit mostly reflects the side sold and
+  where the short strike sat. Recorded in the flies experiment log.
 - **Changed (a measurement break, 2026-10-05): paper flies completions pay the live limit.**
   Live has filled every completion at exactly its resting limit, while paper paid its modelled
   debit, about $4 a completion better than live ever got. From 2026-10-05 every legged arm pays the
