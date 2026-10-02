@@ -69,7 +69,7 @@ def _cfg(tmp_path, meic_db="paper.db", earnings_db="paper.db", meic_dir="meic", 
                 "path": str(tmp_path / earnings_dir),
                 "paper": {"paper_db": earnings_db, "trade_schema": "earnings"},
             },
-        }
+        },
     }
 
 

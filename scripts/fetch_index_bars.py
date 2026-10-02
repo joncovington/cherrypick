@@ -166,17 +166,16 @@ async def fetch(session, wanted: list[str], start: date, interval: str = "1d") -
         await streamer.subscribe_candle(
             wanted, interval=interval, start_time=datetime.combine(start, datetime.min.time(), tzinfo=UTC)
         )
-        listener = streamer.listen(Candle).__aiter__()
         deadline = time.monotonic() + MAX_WAIT_S
         while time.monotonic() < deadline:
+            # get_event per wait: a wait_for timeout around a listen() generator's __anext__ cancels
+            # the generator, so a first candle slower than the quiet gap ended the fetch with nothing.
             try:
-                event = await asyncio.wait_for(listener.__anext__(), timeout=QUIET_GAP_S)
+                event = await asyncio.wait_for(streamer.get_event(Candle), timeout=QUIET_GAP_S)
             except TimeoutError:
                 if bars:
                     break
                 continue
-            except StopAsyncIteration:
-                break
             base = str(event.event_symbol or "").split("{", 1)[0]
             stamp = streamcache.to_float(event.time)
             if base not in wanted or stamp is None:
