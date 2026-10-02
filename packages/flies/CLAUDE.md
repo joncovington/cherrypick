@@ -119,6 +119,14 @@ assumed:
   `analytics.shadow_completion` replays it at any grid value. **Switching paper to a live-like
   rule changes what control's numbers mean: fit first, shadow second, switch only at a declared
   boundary.**
+- **From 2026-10-05 every paper legged completion PAYS THE LIVE LIMIT** (`engine.pays_limit`,
+  `completion_price` / `completion_price_from`). The trigger is unchanged: the modelled debit at
+  or under the limit. The price is `engine.completion_limit`, the one formula live's resting order
+  is priced from; live filled at it 42 times out of 42. The plan's `market_debit` keeps the
+  modelled market price, and the best-debit counterfactuals record that, never the price paid. A
+  book-wide `completion_rule` break (`paper_loop._note_completion_rule`): **never pool completion
+  P&L across 2026-10-05.** The trigger's timing is the next step, fitted from quoted live paths
+  against the shadow, as a second break.
 
 **Two overlays on the legged book, both tag-don't-gate** (2026-09-19):
 - **The hedge overlay** (`engine.hedge_candidate`, `book.py` step 1e, `analytics.hedge_overlay`,
