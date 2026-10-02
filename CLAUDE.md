@@ -71,8 +71,10 @@ consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/ro
   borrowing credentials is not borrowing permissions. No loop, no schedule, no ledger, never scheduled,
   and **no automated package may import it**.
 
-`cherrypick.core` is **`packages/core`**, an editable dependency of every package. Fresh clone:
-`pip install -e packages/core` first, or run `scripts/dev-install.ps1`/`.sh` to install everything.
+`cherrypick.core` is **`packages/core`**, an editable dependency of every package. A user installs with
+the root `install.cmd`/`install.ps1`/`install.sh` (a `.venv`, every package but desk, the console, the
+supervisor); a developer runs `scripts/dev-install.ps1`/`.sh` (editable, with `[dev]` extras), or
+`pip install -e packages/core` first by hand.
 
 ## Suite-wide guardrails
 
@@ -120,7 +122,7 @@ name is chosen.**
 |---|---|---|
 | `book` | flies' per-session P&L roll-up **of** an arm — a time slice, not a variant | `fly_books`, `book_id` |
 | `book` | the paper-vs-live ledger designation | review fact sets, `modules.<m>.book = "paper"` |
-| `profile` | a config preset registry | `meic/config.risk.json`, `core.profiles.load_profiles` |
+| `profile` | a config preset registry | MEIC's arm registry (`meic.risk.json`), `core.profiles.load_profiles` |
 | `profile` | the gamma-by-strike curve | `GexProfileChart`, `useGexProfile` |
 | `strategy` | earnings' **structure type** (iron_fly vs double_calendar) | earnings is the only two-axis module: profile × strategy |
 

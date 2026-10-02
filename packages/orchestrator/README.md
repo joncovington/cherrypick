@@ -5,15 +5,21 @@ they are actually working, tells you when they are not, and gives you one place 
 across all of them.
 
 It drives the modules **by subprocess**, using paths from config — it never imports them, never edits
-their internals, and **never places a live order**. Its one live-adjacent action is onboarding: helping
-you pick which account a module would trade in if you ever enabled live trading.
+their internals, and **never places a live order** itself. Its one live-adjacent configuration action is
+onboarding: helping you pick which account a module would trade in if you ever enabled live trading.
+(It does run a module's own live loop as a job while a human has armed that module for the day — flies
+and bwb; see [guardrails-and-modes.md](../../docs/guardrails-and-modes.md).)
 
-New to the suite? Start with the [User Guide](../../docs/PROJECT.md) instead — it covers installing and
-running the whole thing in plain language. This README is the orchestrator package itself.
+New to the suite? Start with [QUICKSTART.md](../../QUICKSTART.md) or the
+[User Guide](../../docs/PROJECT.md) instead — they cover installing and running the whole thing in plain
+language. This README is the orchestrator package itself.
 
 ## Install
 
-From a fresh clone, the shared library goes first or every `import cherrypick.core…` fails:
+The root installer (`install.cmd` / `install.ps1` on Windows, `./install.sh` elsewhere) installs this
+package with the rest of the suite into a `.venv` in the checkout and runs `run.py install` for you —
+see [INSTALL.md](../../INSTALL.md). By hand, the shared library goes first or every
+`import cherrypick.core…` fails:
 
 ```bash
 pip install -e packages/core        # from the repo root — do this first
@@ -21,7 +27,8 @@ cd packages/orchestrator
 pip install -e ".[dev]"
 ```
 
-`scripts/dev-install.ps1` (or `.sh`) from the repo root does that plus every other package in one go.
+For development, `scripts/dev-install.ps1` (or `.sh`) from the repo root does that plus every other
+package, with the `[dev]` extras, in one go.
 
 ## The five commands that matter
 
@@ -36,10 +43,17 @@ python run.py report      # unified paper P&L across every module, gross and net
 ```
 
 `doctor` is the one to reach for first when something looks wrong; it checks each module's paths,
-credentials, jobs, and the data feed, and prints a line per check. `python run.py uninstall` stops
-everything cleanly and leaves your recorded data and settings untouched.
+credentials, jobs, capabilities and the data feed, and prints a line per check. `python run.py
+uninstall` removes the anchor task and stops the supervisor and its services, leaving the streamer, the
+console and Dolt running by design; `python run.py stop --all` after it is the full stop (the root
+`uninstall.cmd` / `uninstall.sh` runs both). Recorded data and settings are untouched.
 
-Every other command — calibration, the EOD digest and reports, reconcile, archive, secrets, onboarding
+`python run.py capabilities` shows whether this machine can carry the optional features (`dolt` for
+earnings and technicals, `claude` for the advisor and narratives), and `--detect --write` records it.
+Push notifications are **off by default**: every channel list in `config.example.json` is `["log"]`,
+so add `desktop`, `discord` or `slack` to turn one on (webhooks via `run.py secrets-set`).
+
+Every other command — calibration, the end-of-day review, reconcile, archive, backup, secrets, onboarding
 — is in the [CLI reference](../../docs/orchestrator-cli.md), which documents all of them and is checked
 against the code so it cannot quietly fall behind.
 
@@ -49,8 +63,8 @@ Nothing runtime lands in this checkout. Config, state, logs and reports all reso
 under **`~/.cherrypick`** (relocate the lot with `$CHERRYPICK_HOME`):
 
 ```
-~/.cherrypick/config.json     # this package's config — start from config.example.json, which annotates every key
-~/.cherrypick/logs/           # suite + per-module logs, EOD digests, insights
+~/.cherrypick/config.json     # this package's config (and `capabilities`) — config.example.json annotates every key
+~/.cherrypick/logs/           # suite + per-module logs (the EOD review lives in data/review/)
 ~/.cherrypick/state/          # supervisor job state, heartbeats, watchdog state
 ```
 

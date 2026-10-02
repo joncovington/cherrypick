@@ -34,7 +34,7 @@ individually — a blended book hides which strategy is carrying (or dragging) t
 
 Reporting and the orchestrator's read side group by that per-strategy book tag:
 
-- `strategy_report.py` / `strategy_dashboard.py` — `--profile` defaults to the **strat_test
+- `strategy_report.py` — `--profile` defaults to the **strat_test
   family**: a `--profile strat_test` request matches the whole family (the combined `strat_test`
   book *plus* every `strat_test:<strategy>` sub-book), so you get a complete picture whether the
   harness ran in `per_strategy` or `combined` mode. Narrow to one strategy with `--strategy
@@ -87,9 +87,9 @@ an **estimate** to be refined once real paper fills accumulate.
 
 ## Reading the books side by side
 
-Compare strategies by running `python -m cherrypick.earnings.strategy_report` (or `strategy_dashboard.py`) and
-reading the per-strategy numbers — the cross-strategy comparison grid in the dashboard already
-puts every book's equity curve, drawdown, and expectancy next to each other. There's no separate
+Compare strategies by running `python -m cherrypick.earnings.strategy_report` and reading the
+per-strategy numbers — the console's Earnings page puts every book's equity curve, drawdown, and
+expectancy next to each other. There's no separate
 head-to-head report script; the per-strategy books plus the shared `strategy_metrics.py`
 computations *are* the comparison.
 

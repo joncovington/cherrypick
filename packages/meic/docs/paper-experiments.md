@@ -5,6 +5,13 @@ the general paper-trading system and [risk-profiles.md](risk-profiles.md) for th
 ladder (now disabled, kept for history and for live `/set-risk-profile`). Part of the
 [MEIC module](../README.md) in the cherrypick suite.
 
+> **Where the registry lives now.** Until 2026-10-01 MEIC's arm registry was `config.risk.json` in
+> this package, and the record below names it that way. It is now each machine's own
+> `~/.cherrypick/config/meic.risk.json` (or the file `$MEIC_RISK_CONFIG` names); the package ships
+> only `config.risk.example.json`, which holds `control`, and MEIC falls back to it when a machine has
+> no registry of its own. The retired arms and their `_disabled_note` verdicts live in whichever
+> registry ran them.
+
 ## CLOSED 2026-08-21 — the advisor-era cutover
 
 The four-stream test below ran 2026-08-07..2026-08-20 and closed at the suite-wide advisor-era
@@ -129,7 +136,7 @@ wrong — recorded here so they aren't re-asserted:
 | `gex-open`/`gex-blocked` (2026-08-01, one session, byte-identical) | disabled 2026-08-07 — subsumed by `open`'s regime tagging, see the GEX study section below |
 
 **The kill rule this document follows:** a stream is retired only by an explicit written verdict
-here, never by silent deletion — `config.risk.json` keeps every retired profile's exact key set
+here, never by silent deletion — the arm registry keeps every retired profile's exact key set
 with `enabled: false` and a `_disabled_note` explaining why, rather than deleting it. A stream that
 enters zero trades for 5 consecutive sessions is escalated in the EOD report, not quietly dropped.
 
@@ -346,7 +353,7 @@ over-target floor-tightening) — so a paired comparison across widths on the sa
   the two uncalibrated settlement-friction constants.
 
 The parallel-shadow paper engine (`cherrypick/meic/paper.py`, driven unattended by `cherrypick/meic/paper_loop.py`)
-evaluates **every** profile in `config.risk.json` against each iteration's market snapshot, per
+evaluates **every** enabled profile in the arm registry against each iteration's market snapshot, per
 symbol, writing all books to `~/.cherrypick/data/meic/paper_trades.db`. Beyond the four-tier risk
 ladder (conservative → very-aggressive), the registry *used to* hold **experiment cells** whose
 purpose was to collect enough variation in the placed iron condors to analyze optimal risk profiles

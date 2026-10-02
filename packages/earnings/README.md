@@ -13,16 +13,16 @@ next morning, without watching it overnight. It picks from six different structu
 based on which one fits that stock's setup best, and it can run as **paper trading** (simulated)
 or **live** trading, gated behind a setting you turn on yourself. It's one strategy module in the
 cherrypick suite, alongside the 0DTE iron-condor module, the butterfly module, and the GEX
-dashboard. Most of what you do here is run terminal commands, or ask Claude to run a
+engine. Most of what you do here is run terminal commands, or ask Claude to run a
 `/`-prefixed command for you — no coding required.
 
 > **The earnings module of the [cherrypick](../../README.md) suite.** cherrypick is a monorepo of trading
 > modules driven by a shared **orchestrator**. This package (`packages/earnings`) is the overnight
 > earnings-play engine; its siblings are [`packages/meic`](../meic) (0DTE iron condors),
-> [`packages/gex`](../gex) (the gamma-exposure dashboard), and [`packages/orchestrator`](../orchestrator)
-> (the orchestrator). It can run standalone from this folder for live / interactive trading, or unattended
-> for paper collection — where the orchestrator drives it by subprocess (`cherrypick install`), never by
-> import. See [How this fits the suite](#how-this-fits-the-suite) below, this module's own
+> [`packages/gex`](../gex) (the gamma-exposure engine, shown on the console's GEX page), and
+> [`packages/orchestrator`](../orchestrator) (the orchestrator). It can run standalone from this folder for
+> live / interactive trading, or unattended for paper collection — where the orchestrator's supervisor
+> drives it by subprocess (`cherrypick install`), never by import. See [How this fits the suite](#how-this-fits-the-suite) below, this module's own
 > [docs/](docs/README.md), and the suite-wide [documentation index](../../docs/README.md).
 
 An autonomous options trading agent for overnight earnings plays. It scans the daily earnings
@@ -35,8 +35,15 @@ Every strategy is **defined-risk**: max loss is known at entry. Undefined-risk/n
 earnings gap on a naked short can blow out arbitrarily overnight with nobody watching.
 
 Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`** library, a sibling
-package (`packages/core`) in this same monorepo — install it (`pip install -e ../core`) before this
-package, or `import cherrypick.core...` can't resolve.
+package (`packages/core`) in this same monorepo. The suite's installer at the repo root (`install.cmd` on
+Windows, `install.sh` on macOS/Linux) installs it along with this package; installing by hand, install
+it (`pip install -e ../core`) before this package, or `import cherrypick.core...` can't resolve.
+
+> **This module needs the `dolt` capability.** Its earnings calendar, IV/RV history and realized-move
+> data come from three free DoltHub datasets (`earnings`, `options`, `stocks`), cloned under
+> `~/.cherrypick/data/earnings` and served by a local `dolt sql-server`. The root installer offers to
+> install Dolt and clone them, then records `capabilities.dolt` in `~/.cherrypick/config.json`. Without
+> it the orchestrator leaves earnings off even when `modules.earnings.enabled` is true.
 
 ---
 
@@ -91,10 +98,11 @@ own. Inside the cherrypick suite it plays two roles:
   here, in this folder — `/earnings-start` runs `CLAUDE.md`'s Loop Steps, `rank_strategies.py` picks each
   symbol's single best strategy. This is the only path that can place live orders, and only when you set
   `enable_live_trading: true`. The orchestrator never touches it.
-- **Unattended paper (orchestrator-orchestrated).** The [orchestrator](../orchestrator) package registers
-  and watchdogs a single self-healing 60-second job that runs the managed paper loop —
-  that run this module's forced-sampling paper harness (`cherrypick/earnings/strat_test_harness.py`, `run_entries` /
-  `run_closes`) into the isolated strat_test books, and reads the resulting `paper_trades.db` — which
+- **Unattended paper (orchestrator-orchestrated).** The [orchestrator](../orchestrator)'s supervisor runs
+  this module's managed paper loop (`cherrypick.earnings.paper_loop once`) as a short-lived process every
+  60 seconds. The loop drives the forced-sampling paper harness
+  (`cherrypick/earnings/strat_test_harness.py`) into the isolated strat_test books; the orchestrator
+  reads the resulting `paper_trades.db` — which
   lives in the shared cherrypick data home (`~/.cherrypick/data/earnings` by default) — for
   cross-module reporting. This module has no scheduler of its own. The orchestrator drives it **by
   subprocess only** — it never edits this code or config, never places, cancels, adjusts, or closes an
@@ -103,7 +111,7 @@ own. Inside the cherrypick suite it plays two roles:
   chosen account into this module's `earningsagent` keyring service.
 
 You can run the paper harness here directly too (`/paper-start`); letting the orchestrator manage it just
-adds the watchdog, notifications, and the cross-module read side (`cherrypick report` / `dashboard` /
+adds the watchdog, notifications, and the cross-module read side (`cherrypick report` / the console /
 `calibrate`). The shared `cherrypick.core` code (calendar, fees) lives in `packages/core`, a sibling
 in-repo package — see [Orchestrator & shared core](CLAUDE.md#orchestrator--shared-core) in `CLAUDE.md`
 for the exact couplings.
@@ -134,7 +142,7 @@ sees it.
 
 - **`cherrypick/earnings/scanner.py`** is the strategy-agnostic engine: earnings calendar, IV/RV ratio, winrate
   backtest, liquidity gates, ranking, expiration selection.
-- **`src/strategies/<name>.py`** holds only strategy-specific logic: hard-filter thresholds,
+- **`cherrypick/earnings/strategies/<name>.py`** (under `src/`) holds only strategy-specific logic: hard-filter thresholds,
   accept/reject screening, strike/order construction. New strategies can be added here without
   touching the shared engine.
 - **`cherrypick/earnings/rank_strategies.py`** evaluates every enabled strategy against every candidate on the
@@ -178,11 +186,10 @@ isolated books:
 - **`/earnings-start`** — the actual continuous trading loop (paper or live per
   `enable_live_trading`), run through a full market session.
 
-The forced-sampling close pass writes a deterministic end-of-day file automatically
 The module's own EOD reports were retired 2026-08-13 — the suite review covers every module in one
-place: `python -m cherrypick.review build --session <date>`. Track accumulated (multi-day)
-results with `python -m cherrypick.earnings.strategy_report` (text) or `python -m cherrypick.earnings.strategy_dashboard`
-(self-contained HTML dashboard, written to `reports/`).
+place: `python -m cherrypick.review build --session <date>`. Track accumulated (multi-day) results
+with `python -m cherrypick.earnings.strategy_report` (text), or on the console's earnings page (the
+module's HTML strategy dashboard was retired with the other dashboards on 2026-08-12).
 
 ---
 

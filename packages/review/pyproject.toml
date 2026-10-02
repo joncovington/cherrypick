@@ -7,6 +7,7 @@ name = "cherrypick-review"
 version = "0.1.0"
 description = "Cross-module end-of-day fact set and review — read-only over every module's ledger"
 requires-python = ">=3.11"
+license = "MIT"
 # cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
 # Not on PyPI (Private :: Do Not Upload) -- packages/core must be installed first, or resolution fails.
 dependencies = ["cherrypick-core"]

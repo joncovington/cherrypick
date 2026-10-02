@@ -48,11 +48,17 @@ python run.py --secrets-set               # store the shared tastytrade OAuth be
 ```
 
 Config: `~/.cherrypick/config/streamer.json`, or copy `config.example.json` → `config.json` in this
-package. Credentials live in the OS keyring only, under the shared `meicagent` service — the daemon
-needs just the two bearer secrets and never makes an account-scoped call.
+package. Credentials live in the OS keyring only, and the daemon needs just the two bearer secrets — it
+never makes an account-scoped call. It reads them from the `meicagent` service first, then the
+pre-rename `tastytrade-mcp`, then the suite's shared broker login, `cherrypick-broker` (where the
+installer's broker login stores them), so a machine onboarded once needs no re-entry. `--secrets-set`
+writes under `meicagent`.
 
-Normally you do not start this by hand: `cherrypick install` starts it, and the orchestrator keeps it
-alive.
+The package declares `tastytrade` as a dependency of its own: the daemon opens its broker session and
+DXLink stream through `cherrypick.core`, which imports `tastytrade` lazily and so does not declare it.
+
+Normally you do not install or start this by hand: the suite's installer at the repo root installs it,
+`cherrypick install` starts it, and the orchestrator keeps it alive.
 
 ## How the orchestrator supervises it
 

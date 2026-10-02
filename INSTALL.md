@@ -6,68 +6,216 @@
 > not suitable for all investors. Paper results are simulated and do not represent actual trading.
 > Provided "as is", without warranty. **Read [DISCLAIMER.md](DISCLAIMER.md) before use.**
 
-Just the commands. For what each step does and why, see the [README](README.md#quick-start); for a
-plain-language walkthrough, the [User Guide](docs/PROJECT.md).
+**Not a programmer?** Start with [QUICKSTART.md](QUICKSTART.md) instead — the same install, step by
+step in plain language, including where to get your tastytrade keys.
 
-**You need:** a [tastytrade](https://tastytrade.com) account · Python 3.11+ · git · a machine that
-stays awake during market hours (Windows recommended).
-**Optional:** Node 22+ and [pnpm](https://pnpm.io) (web console) · [Dolt](https://github.com/dolthub/dolt)
-(earnings engine) · [Claude Code](https://docs.claude.com/en/docs/claude-code) (agent-driven sessions).
+This page is the reference: what you need, what the installers do, and the developer path. For what
+the suite does once it is running, see the [README](README.md) and the [User Guide](docs/PROJECT.md).
 
-## 1. Clone and install
+## What you need
 
-```bash
-git clone https://github.com/joncovington/cherrypick.git
-cd cherrypick
+| | Required? | Notes |
+|---|---|---|
+| A [tastytrade](https://tastytrade.com) account | **Yes** | The market data every paper engine fills against. An OAuth client secret and a refresh token; a **read-only** grant is right for paper mode. |
+| **Python 3.11+** | **Yes** | Windows: `winget install -e --id Python.Python.3.13`. macOS: `brew install python@3.13`. Linux: your package manager (on Debian/Ubuntu also `python3-venv`). |
+| **Node.js 22+** | **Yes** | For the console, the suite's web UI. Windows: `winget install -e --id OpenJS.NodeJS.LTS`. macOS: `brew install node`. |
+| **pnpm 11** | Installed for you | The installer runs `npm install -g pnpm@11` if pnpm is missing. |
+| git | Optional | Downloading the ZIP from GitHub works just as well. |
+| [Dolt](https://github.com/dolthub/dolt) | Optional | Needed only by the **earnings** module and the **technicals** report. It serves three public DoltHub datasets: `stocks` (about 3 GB), `earnings` (about 1.35 GB) and `options` (large — the biggest of the three). Without it, those two features are switched off and hidden. |
+| [Claude Code](https://docs.claude.com/en/docs/claude-code) | Optional | Needed only by the AI advisor and the end-of-day and morning narratives, and for the repo's slash commands. Without it, those features are switched off and hidden. |
+| A machine that stays awake in market hours | **Yes** | It runs on your computer, not a cloud service. Windows is the most proven platform (see [below](#macos-and-linux)). |
 
-./scripts/dev-install.sh                   # macOS / Linux / Git Bash
-powershell -File scripts\dev-install.ps1   # Windows PowerShell
+The installers check Python and Node before doing anything else, and print the command to install
+whichever is missing.
+
+## Windows
+
+1. **Get the code.** Download the repository (green **Code** button → **Download ZIP**, then unzip it
+   somewhere easy to find, such as `Documents`), or clone it with git.
+2. **Run the installer.** Either double-click **`install.cmd`** in the cherrypick folder, or open
+   PowerShell, go to the folder first, and run it from there:
+
+   ```powershell
+   cd C:\path\to\cherrypick          # the folder that contains install.cmd
+   .\install.cmd                      # or: powershell -ExecutionPolicy Bypass -File install.ps1
+   ```
+
+   With git instead of the ZIP:
+
+   ```powershell
+   git clone https://github.com/joncovington/cherrypick.git
+   cd cherrypick
+   .\install.cmd
+   ```
+
+## macOS and Linux
+
+1. **Get the code** (the ZIP works here too — unzip it and `cd` into the folder):
+
+   ```bash
+   git clone https://github.com/joncovington/cherrypick.git
+   ```
+
+2. **Go to the folder, then run the installer** from inside it:
+
+   ```bash
+   cd ~/path/to/cherrypick              # the folder that contains install.sh
+   ./install.sh                         # or: bash install.sh
+   ```
+
+On macOS and Linux the supervisor's anchor is a tagged entry in your user crontab. That backend is
+newer than the Windows Task Scheduler one and less proven on a real host — check
+`python packages/orchestrator/run.py status` after the first trading session, and report anything odd.
+
+## What the installer does
+
+Both installers follow the same steps, and both are safe to run again: they reuse what is already
+there, never overwrite your configuration, and are how you add Dolt or Claude Code later.
+
+1. **Disclaimer.** You type `YES` to confirm you have read and accept [DISCLAIMER.md](DISCLAIMER.md).
+   Nothing is installed otherwise.
+2. **Prerequisites.** Python 3.11+ and Node 22+ are checked; pnpm 11 is installed if missing.
+3. **Python environment.** A virtual environment is created at `.venv` inside the checkout, and
+   `packages/core` is installed first (every other package depends on it, and it is not on PyPI),
+   then every other package **except `packages/desk`**. The desk is an EXPERIMENTAL prototype for
+   educational purposes only, not installed or enabled by default — see
+   [packages/desk/README.md](packages/desk/README.md).
+4. **Console.** `pnpm install` and `pnpm build` in `packages/console`.
+5. **Configuration.** `run.py init` writes `~/.cherrypick/config.json` from the annotated template,
+   and keeps it if it already exists.
+6. **Capabilities.** `run.py capabilities --detect --write` probes for Claude Code and Dolt and
+   records what it finds in the config's `capabilities` block. A feature whose capability is missing
+   stays off and is hidden in the console.
+7. **Dolt (optional, skippable).** If you say yes, Dolt is installed where it can be (winget on
+   Windows; on macOS and Linux it prints the command), and `post-no-preference/earnings`, `options`
+   and `stocks` are cloned into `~/.cherrypick/data/earnings`. This is the slow part: several GB, and
+   an hour or more on a slow connection. An interrupted clone resumes on the next run.
+8. **Broker login.** `python -m cherrypick.core.auth setup` asks for your OAuth `client_secret` and
+   `refresh_token` (hidden input) and stores them in the OS keyring — Windows Credential Manager,
+   the macOS Keychain or the Linux Secret Service — never in a file.
+9. **Start.** `run.py install` registers the one anchor task and starts the supervisor, which then
+   starts the data feed, every enabled module's paper loop and the console.
+10. **Open** <http://127.0.0.1:5070>.
+
+| Option (Windows / macOS and Linux) | Effect |
+|---|---|
+| `-AcceptDisclaimer` / `--accept-disclaimer` | You have read DISCLAIMER.md and accept it; no prompt. |
+| `-Yes` / `--yes` | Accept every default without asking (Dolt: no; connect: yes). The disclaimer still needs `-AcceptDisclaimer`. |
+| `-SkipDolt` / `--skip-dolt` | Do not offer the Dolt setup. Earnings and technicals stay off. |
+| `-WithDesk` / `--with-desk` | Also install the EXPERIMENTAL manual desk. Installing it does not enable it. |
+| `-NoStart` / `--no-start` | Install only. Start later with `.venv/bin/python packages/orchestrator/run.py install` (`.venv\Scripts\python` on Windows). |
+
+**The supervisor runs the interpreter that ran `install`** — the installer's `.venv`. Run your own
+commands through it too; see [Using the virtual environment](#using-the-virtual-environment).
+
+## Using the virtual environment
+
+The installer puts cherrypick and everything it needs into a **virtual environment**, the `.venv`
+folder inside the checkout, rather than into your system Python. Everything the suite runs in the
+background already uses it. When **you** run a cherrypick command by hand, activate it first, so that
+`python` means the suite's Python — with the packages installed — and not some other Python on your
+machine. (The supervisor runs on whichever interpreter ran `install`; running a command such as
+`run.py install` from a different Python would switch the suite over to that one.)
+
+Open a terminal, go to the checkout, and activate:
+
+| Shell | Go to the checkout | Activate |
+|---|---|---|
+| Windows PowerShell | `cd C:\path\to\cherrypick` | `.venv\Scripts\Activate.ps1` |
+| Windows Command Prompt | `cd C:\path\to\cherrypick` | `.venv\Scripts\activate.bat` |
+| macOS / Linux | `cd ~/path/to/cherrypick` | `source .venv/bin/activate` |
+
+Your prompt then starts with `(.venv)`. `deactivate` leaves it. If PowerShell refuses with "running
+scripts is disabled on this system", allow local scripts for your user once, then activate again:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
-Installs `packages/core` first (required), then every Python package, then builds the console if
-pnpm is present (skipped with a notice if not).
+(Or skip activation and call the interpreter directly: `.venv\Scripts\python` on Windows,
+`.venv/bin/python` elsewhere, in place of `python` below.)
 
-## 2. Configure
-
-```bash
-cd packages/orchestrator
-python run.py init          # writes ~/.cherrypick/config.json from the annotated template
-python run.py settings      # optional: edit it in the local web editor (loopback :8804)
-```
-
-## 3. Connect your broker
+With the environment active, from the checkout:
 
 ```bash
-python run.py connect       # wizard: tastytrade login, account designation, optional webhooks
+python packages/orchestrator/run.py doctor        # green/red readiness — read-only, safe any time
+python packages/orchestrator/run.py status        # what the supervisor is running
+python packages/orchestrator/run.py capabilities  # which optional features this machine can carry
+python packages/orchestrator/run.py connect       # account designation and Discord/Slack webhooks
+python packages/orchestrator/run.py notify-test   # fire a test notification through your channels
+python packages/orchestrator/run.py report        # paper P&L once data has accumulated
 ```
 
-Credentials go to the OS keyring, never a file. Everything after the login is skippable with Enter.
+Modules are switched on and off on the console's **Config** page, or under `modules.<name>.enabled`
+in `~/.cherrypick/config.json`. Calendars, PMCC-99 and curve are EXPERIMENTAL and ship switched off.
+Push notifications are off by default too: alerts go only to the suite's log until you add
+`desktop`, `discord` or `slack` to the `notify` channel lists (the console's own on-screen toasts need
+no setting).
 
-## 4. Check, then turn on
+## After installing: viewing the console
+
+The console is the web page where you look at everything: open **<http://127.0.0.1:5070>** in your
+browser and bookmark it. It listens on loopback only, so only this computer can open it. There is
+nothing to start by hand: the supervisor keeps it running in the background, restarts it if it dies,
+and brings it back after a reboot (through the one scheduled task or crontab entry `install`
+registered).
+
+If the page does not load, wait a minute and refresh, then check from the activated environment:
 
 ```bash
-python run.py doctor        # green/red readiness — read-only, safe any time
-python run.py install       # registers the one anchor task, starts the supervisor + data feed
+python packages/orchestrator/run.py status            # is the supervisor up, and the `console` job running?
+python packages/orchestrator/run.py doctor            # what is wrong, in plain words
+python packages/orchestrator/run.py restart console   # restart just the console
 ```
 
-Done. It now collects paper-trading data on its own.
-
-## Verify
+**Optional: a desktop window.** The console can also open in its own window (an Electron shell with a
+tray icon). It is a window only — it never starts the server, so the supervisor's console must be
+running. From the checkout:
 
 ```bash
-python run.py status        # what the supervisor is running
-python run.py notify-test   # fire a test notification through your channels
-python run.py report        # paper P&L once data has accumulated
+cd packages/console
+pnpm --filter @console/desktop start
 ```
 
-The console is at <http://127.0.0.1:5070> — the supervisor keeps it running; nothing to start.
+## Stopping and uninstalling
 
-## Stop
+Double-click **`uninstall.cmd`** on Windows, or run **`./uninstall.sh`** on macOS and Linux. It is a
+full stop:
+
+1. `run.py uninstall` — removes the anchor task (or crontab entry) and stops the supervisor and its
+   services;
+2. `run.py stop --all` — stops the streamer, the console and anything else still running;
+3. stops the Dolt server on port 3306, but only if the process listening there really is `dolt`.
+
+Your data, configuration and broker login are **kept** (`~/.cherrypick` and the OS keyring), so
+running the installer again picks up where you left off. To remove everything, delete
+`~/.cherrypick` and the checkout by hand afterwards, and remove the `cherrypick-broker` entry from
+your keyring.
+
+## For developers
+
+`scripts/dev-install.ps1` and `scripts/dev-install.sh` are the developer path: editable installs
+**with the `[dev]` extras** (pytest, ruff) of every package including desk, into whichever Python
+you pass, followed by a console build if pnpm is present. They do not create a venv, write config,
+detect capabilities or start anything.
 
 ```bash
-python run.py uninstall     # stops everything; recorded data and settings stay untouched
+./scripts/dev-install.sh .venv/bin/python                                # macOS / Linux / Git Bash
+powershell -File scripts\dev-install.ps1 -Python .venv\Scripts\python.exe   # Windows
 ```
 
-Live trading is **off** by default everywhere, and none of the steps above enables it. Before you
+By hand, `packages/core` **must** go first — every other package imports it and there is no
+`sys.path` fallback:
+
+```bash
+pip install -e "packages/core[dev]"
+pip install -e "packages/orchestrator[dev]"   # and so on, per package
+cd packages/console && pnpm install && pnpm build
+```
+
+Then `python packages/orchestrator/run.py init`, `connect`, `doctor` and `install`, as above. CI's
+checks can be run locally with `scripts/ci-local.sh`.
+
+Live trading is **off** by default everywhere, and nothing on this page enables it. Before you
 consider changing that, read
 [the warning in the README](README.md#before-you-go-anywhere-near-live-trading).

@@ -6,7 +6,8 @@ build-backend = "hatchling.build"
 name = "cherrypick-earnings"
 version = "0.1.0"
 description = "Earnings-play trading module — defined-risk strategies held overnight around a company's earnings report"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
+license = "MIT"
 # cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
 # Not on PyPI (Private :: Do Not Upload) -- packages/core must be installed first, or resolution fails.
 # mysql-connector-python speaks the MySQL wire protocol to the local `dolt sql-server` that serves the

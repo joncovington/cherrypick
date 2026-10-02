@@ -146,7 +146,7 @@ cherrypick/
     │   ├── db.py                # Persistence, live ledger (db_paper.py is the paper twin)
     │   ├── paths.py             # Resolves the data home (~/.cherrypick/data/earnings)
     │   ├── strat_test_harness.py  # Forced-sampling paper-testing program (orchestrator-driven)
-    │   ├── strategy_report.py   # Per-strategy metrics (strategy_dashboard.py draws the charts)
+    │   ├── strategy_report.py   # Per-strategy metrics, as text (the console draws the charts)
     │   └── ...
     ├── config/
     │   ├── config.example.json  # Template — copy to config.json

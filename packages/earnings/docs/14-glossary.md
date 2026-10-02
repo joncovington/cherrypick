@@ -215,8 +215,9 @@ Build a concrete tradeable order from live chain data.
 **`python -m cherrypick.earnings.tt execute_trade --order '<JSON>' [--live]`**
 Dry-run validate (no `--live`, still performs a real margin check) or submit a live order.
 
-**`python -m cherrypick.earnings.strategy_report`** / **`python -m cherrypick.earnings.strategy_dashboard`**
-Per-strategy expectancy/win-rate/IV-crush text report or self-contained HTML dashboard.
+**`python -m cherrypick.earnings.strategy_report`**
+Per-strategy expectancy/win-rate/IV-crush text report. The charts are on the console's Earnings page
+(the HTML `strategy_dashboard` was retired on 2026-08-12).
 
 See `CLAUDE.md`'s Tool Reference for the complete command list.
 

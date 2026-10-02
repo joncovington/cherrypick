@@ -1,147 +1,102 @@
-Switch to a named risk profile (conservative/moderate/aggressive/very-aggressive), automatically backing up and updating `config.json`.
+Switch MEIC's LIVE configuration to a named risk profile from this machine's arm registry, backing up
+the config first.
 
 ## Overview
 
-Risk profiles bundle entry-gate thresholds with offsetting position-cap and stop-management constraints. Running `/set-risk-profile moderate` (for example) reads the named profile from `config.risk.json`, backs up your current `config.json`, overwrites the relevant keys, and reports what changed — **without restarting the loop**. The new settings take effect on the next iteration.
+A risk profile bundles entry-gate thresholds with offsetting position-cap and stop-management
+constraints. `/set-risk-profile moderate` (for example) reads the named profile from this machine's
+arm registry, backs up MEIC's config, overwrites the relevant keys, and reports what changed —
+**without restarting the loop**. The new settings take effect on the next iteration.
 
-See [docs/risk-profiles.md](../../docs/risk-profiles.md) for the full rationale, trade-offs, and when to use each profile.
+Where the files are (MEIC's own resolvers, so this command and the loops never disagree):
 
-> ⚠️ **Only the four ladder tiers are valid targets for this command**: `conservative`,
-> `moderate`, `aggressive`, `very-aggressive`. `config.risk.json` also carries the paper-only
-> forward-test streams (`control`, `open`, `width-5`, `width-10`) used by the automated paper
-> loop — this command does not filter by `enabled` and will mechanically apply any of those names
-> too, but they are not risk-appetite presets: `open`/`width-5`/`width-10` run with
-> `overlap_scope: "none"` and `open` runs with no per-side stop management at all, settings that
-> only make sense as independent paper samples. Never point this command at one of them. See
-> [docs/paper-experiments.md](../../docs/paper-experiments.md).
+- **The registry**: `cherrypick.meic.paths.risk_profiles_path()` — `$MEIC_RISK_CONFIG`, else
+  `~/.cherrypick/config/meic.risk.json`, else the shipped control-only `config.risk.example.json`.
+- **The config it edits**: `cherrypick.meic.paths.config_path()` — `~/.cherrypick/config/meic.json`.
 
-## Step 1 — Check valid profile names
+> ⚠️ **The four ladder tiers (`conservative`, `moderate`, `aggressive`, `very-aggressive`) are not
+> shipped.** A base install's registry holds only `control`. The ladder exists only in a registry you
+> have built yourself; see [docs/risk-profiles.md](../../docs/risk-profiles.md). Never point this
+> command at a paper sampling stream (`control`, `live-shadow`, `bp-*`, …): those are paper arms, not
+> risk-appetite presets, and their settings (`overlap_scope: "none"`, no per-side stop) only make sense
+> as independent paper samples.
 
-List available profiles:
+> ⚠️ This changes what MEIC's **live** path would trade. Live trading is experimental and off by
+> default; see `DISCLAIMER.md` at the repo root.
 
-```bash
-python -c "import json; cfg = json.load(open('config.risk.json')); print('Available profiles:', ', '.join(cfg['profiles'].keys())); print('Current active profile:', cfg['active_profile'])"
-```
-
-Expected output (the full registry — includes the paper-only forward-test streams; only the four
-ladder names below the dashes are valid choices for this command):
-```
-Available profiles: control, open, width-5, width-10, conservative, moderate, aggressive, very-aggressive, gex-open, gex-blocked
-Current active profile: control
-```
-
-If you get an error, check that `config.risk.json` exists in the project root and is valid JSON.
-
-## Step 2 — Back up current config
-
-Before making any changes, your current `config.json` is automatically backed up to `config.json.bak`:
+## Step 1 — List the profiles this machine has
 
 ```bash
-copy config.json config.json.bak
+python -c "import json; from cherrypick.meic.paths import risk_profiles_path as p; f = p(); cfg = json.load(open(f, encoding='utf-8')); print('Registry:', f); print('Profiles:', ', '.join(k for k in cfg['profiles'] if not k.startswith('_'))); print('Active profile:', cfg.get('active_profile'))"
 ```
 
-(This happens automatically in Step 3's Python script; shown here for transparency.)
+If the registry printed is `config.risk.example.json`, this machine has no registry of its own yet and
+only `control` exists: there is nothing to switch to. Copy the example to
+`~/.cherrypick/config/meic.risk.json` and add profiles there first.
 
-## Step 3 — Apply the profile
+## Step 2 — Apply the profile
 
-Replace `<profile_name>` with one of: `conservative`, `moderate`, `aggressive`, or `very-aggressive`.
+Replace `<profile_name>`. The script refuses a name the registry does not hold, refuses to write the
+shipped example, and backs the config up to `meic.json.bak` beside it before changing anything.
 
 ```python
 import json
 import shutil
-from pathlib import Path
 
-# Load profiles and current config
-with open('config.risk.json') as f:
-    risk_profiles = json.load(f)
+from cherrypick.meic.paths import config_path, risk_profiles_path
 
-profile_name = '<profile_name>'  # e.g., 'moderate'
+reg_path = risk_profiles_path()
+if reg_path.name == "config.risk.example.json":
+    raise SystemExit("This machine has no arm registry of its own (only the shipped example). "
+                     "Copy it to ~/.cherrypick/config/meic.risk.json and add profiles first.")
+registry = json.loads(reg_path.read_text(encoding="utf-8"))
 
-if profile_name not in risk_profiles['profiles']:
-    print(f"ERROR: Profile '{profile_name}' not found.")
-    print(f"Valid profiles: {', '.join(risk_profiles['profiles'].keys())}")
-    exit(1)
+profile_name = "<profile_name>"  # e.g. "moderate"
+if profile_name not in registry["profiles"]:
+    raise SystemExit(f"No profile {profile_name!r} in {reg_path}. "
+                     f"Profiles: {', '.join(k for k in registry['profiles'] if not k.startswith('_'))}")
 
-profile = risk_profiles['profiles'][profile_name]
-profile_note = profile.pop('_note', '(no description)')
+profile = {k: v for k, v in registry["profiles"][profile_name].items() if not k.startswith("_") and k != "enabled"}
+note = registry["profiles"][profile_name].get("_note", "(no description)")
 
-# Back up current config
-shutil.copy('config.json', 'config.json.bak')
-print(f"✓ Backed up current config.json → config.json.bak")
+cfg_path = config_path()
+backup = cfg_path.with_name(cfg_path.name + ".bak")
+shutil.copy(cfg_path, backup)
+print(f"Backed up {cfg_path} -> {backup}")
 
-# Load current config
-with open('config.json') as f:
-    current_config = json.load(f)
+config = json.loads(cfg_path.read_text(encoding="utf-8"))
+changes = {k: (config.get(k), v) for k, v in profile.items() if config.get(k) != v}
+config.update(profile)
+cfg_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 
-# Track changes for reporting
-changes = {}
-for key, value in profile.items():
-    if key in current_config and current_config[key] != value:
-        old_val = current_config[key]
-        changes[key] = (old_val, value)
-    current_config[key] = value
+registry["active_profile"] = profile_name
+reg_path.write_text(json.dumps(registry, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-# Write updated config back
-with open('config.json', 'w') as f:
-    json.dump(current_config, f, indent=2)
-
-# Update active_profile in config.risk.json
-risk_profiles['active_profile'] = profile_name
-with open('config.risk.json', 'w') as f:
-    json.dump(risk_profiles, f, indent=2)
-
-print(f"\n✓ Applied profile: {profile_name}")
-print(f"\nProfile description:\n  {profile_note}\n")
-
+print(f"\nApplied profile: {profile_name}\n  {note}\n")
 if changes:
-    print("Keys changed:")
-    print("\n| Key | Old Value | New Value |")
-    print("|---|---|---|")
+    print("| Key | Old Value | New Value |\n|---|---|---|")
     for key, (old, new) in sorted(changes.items()):
         print(f"| `{key}` | {old} | {new} |")
 else:
-    print("(No keys changed — already at this profile.)")
-
-print(f"\n✓ Next loop iteration will pick up the new settings (no restart needed).")
-print(f"✓ To revert, run: /set-risk-profile conservative")
+    print("(No keys changed: already at this profile.)")
+print("\nThe next loop iteration picks up the new settings (no restart needed).")
 ```
 
-## Step 4 — Verify the switch
-
-Check that `config.json` and `config.risk.json` have been updated:
+## Step 3 — Verify
 
 ```bash
-python -c "import json; cfg = json.load(open('config.json')); print('min_iv_rank:', cfg['min_iv_rank']); print('max_concurrent_ics:', cfg['max_concurrent_ics'])"
-python -c "import json; cfg = json.load(open('config.risk.json')); print('Active profile:', cfg['active_profile'])"
+python -c "import json; from cherrypick.meic.paths import config_path, risk_profiles_path; c = json.load(open(config_path(), encoding='utf-8')); r = json.load(open(risk_profiles_path(), encoding='utf-8')); print('min_iv_rank:', c.get('min_iv_rank'), '| max_concurrent_ics:', c.get('max_concurrent_ics'), '| active profile:', r.get('active_profile'))"
 ```
 
-Expected output (if you switched to `moderate`):
-```
-min_iv_rank: 0.22
-max_concurrent_ics: 4
-Active profile: moderate
-```
+## Step 4 — Revert if needed
 
-## Step 5 — Revert if needed
-
-To switch back to the previous profile:
-
-```bash
-copy config.json.bak config.json
-```
-
-Or to go back to `conservative` (the baseline):
-
-```
-/set-risk-profile conservative
-```
+Restore the backup Step 2 wrote (`meic.json.bak` beside `meic.json` in `~/.cherrypick/config/`), or run
+`/set-risk-profile` again with the previous profile name.
 
 ## Summary
 
 - **Switched to**: `<profile_name>`
-- **Keys changed**: See the table above
-- **When it takes effect**: Next loop iteration (~5 min)
-- **To revert**: Run `/set-risk-profile conservative` or restore from `config.json.bak`
-- **For details**: See [docs/risk-profiles.md](../../docs/risk-profiles.md) for when to escalate, full trade-offs, and recommended progression
-
-**Tip**: Check your loop log after the next iteration to confirm the new thresholds are active. Search for "entry_skip" reasons to see which gates are now most active.
+- **Keys changed**: the table above
+- **When it takes effect**: the next loop iteration
+- **To revert**: restore `meic.json.bak`, or switch back by name
+- **Details**: [docs/risk-profiles.md](../../docs/risk-profiles.md)

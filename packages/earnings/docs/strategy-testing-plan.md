@@ -79,21 +79,15 @@ python -m cherrypick.earnings.strategy_report --since YYYY-MM-DD
 ```
 `strategy_report.py` prints a per-strategy table (sample count vs targets, win rate, profit
 factor, expectancy, Sharpe, max drawdown, average IV crush, regime coverage) to stdout.
-`strategy_dashboard.py` writes a self-contained, offline `reports/strategy_dashboard.html`
-(`cherrypick.core.viz` cards with payloads baked inline, drawn on a plain canvas — no server,
-no network, no CDN) with date-axis equity curves (drawdown folded in as a second series), a
-regime-coverage heat table, a rejection-reason histogram, and a cross-strategy comparison grid
-with a Cumulative / Rolling-4-week / Rolling-1-week / Per-week timeframe toggle. Both read
-`strategy_metrics.py`, so they can never disagree. The compact suite-dashboard card
-(`strategy_section.py --json`) reads the same module, so it can't disagree either.
+The HTML `strategy_dashboard.py` and its suite-dashboard card (`strategy_section.py`) were retired
+on 2026-08-12, when the console became the suite's one read surface; the console's Earnings page
+carries the charts.
 
-**Live vs paper (`--mode`)**: both tools default to `--mode paper` (this whole program is a
-paper test, and `enable_live_trading` is off). `--mode live` points them at
+**Live vs paper (`--mode`)**: the report defaults to `--mode paper` (this whole program is a
+paper test, and `enable_live_trading` is off). `--mode live` points it at
 `earnings_trades.db` instead of `paper_trades.db` (both in the cherrypick data home) — useful once live trading is
 enabled and you want the same views over real fills. In live mode the report header reads
-`MODE: LIVE`, the dashboard carries a red "LIVE — Real Money" badge (vs amber "PAPER —
-Simulated") and writes a separate `reports/strategy_dashboard_live.html` so it never clobbers
-the paper view, and `--profile` defaults to `default` (live trades aren't tagged
+`MODE: LIVE`, and `--profile` defaults to `default` (live trades aren't tagged
 `strat_test`). In paper mode `--profile` defaults to the whole strat_test family — the combined
 `strat_test` book plus every `strat_test:<strategy>` sub-book. `--db PATH` overrides the DB path
 directly if needed.
@@ -124,8 +118,8 @@ rare-regime and may only ever reach a directional read within a reasonable horiz
 - **Weeks 1-2 — calibration.** Nightly `run_entries`/`run_closes`. Goal is plumbing
   shakeout, not statistics: confirm every strategy fires at least a few times and every exit
   path (profit target, stop, close-window backstop) gets exercised at least once.
-- **Weeks 3-8+ — accumulation.** Continue nightly. Weekly `strategy_report.py`/
-  `strategy_dashboard.py` review: progress toward 30 then 100 per strategy, provisional
+- **Weeks 3-8+ — accumulation.** Continue nightly. Weekly `strategy_report.py`
+  review: progress toward 30 then 100 per strategy, provisional
   expectancy, regime coverage. Flag starved strategies but don't loosen gates just to hit a
   count — check whether the regime is genuinely rare first.
 

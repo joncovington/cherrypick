@@ -6,6 +6,14 @@ Turn the cherrypick suite **on**: register the ONE OS anchor task, start the sup
 derives and fires every job from config), and start the data feed, then verify. This runs the
 orchestrator's `install` from the monorepo root. The full job inventory lives in `docs/operations.md`.
 
+This is the developer's route, for a checkout that is already set up. A first install on a new machine
+is the root installer instead — `install.cmd` / `install.ps1` on Windows, `./install.sh` on macOS and
+Linux — which creates `.venv`, installs the packages, builds the console, writes the config, detects
+capabilities, stores the broker login and then runs this same `run.py install` (see `INSTALL.md`). If
+`.venv` exists, use its interpreter for every command below (`.venv\Scripts\python` on Windows,
+`.venv/bin/python` elsewhere): the anchor task records whichever Python runs `install`, and that is the
+interpreter the supervisor runs from then on.
+
 Do this:
 
 1. **Pre-check readiness** (read-only): `python packages/orchestrator/run.py doctor`.
@@ -27,12 +35,14 @@ Do this:
    ok/fail from its JSON output (`overall ok` + the `installed` map — the `legacy.*` entries are
    deletions and "not registered" there is a clean no-op).
 
-   Every recurring job (watchdog, streamer-health, trade-notify, the module paper loops, earnings
-   entry/exit, dolt keep-alive, log-archive, opt-in reconcile/symbol-watch/follow-notify) is a
-   **supervisor job derived from `~/.cherrypick/config.json`** — no per-job registration exists
-   anymore. The **EOD digest and insight remain event-driven** (watchdog-fired once every module has
-   run as two daily jobs (`review-provisional`, `review-final`) — they appear in the schedule, and
-   that is correct output, not a failure.
+   Every recurring job (watchdog, streamer-health, trade-notify, the module paper loops, the earnings
+   Dolt keep-alive, the morning fact pack, backups, log-archive, opt-in reconcile/symbol-watch/
+   status-digest) is a **supervisor job derived from `~/.cherrypick/config.json`** — no per-job
+   registration exists any more. The end-of-day review runs as two daily jobs (`review-provisional`
+   after the close, `review-final` the next morning); they appear in the schedule, and that is correct
+   output, not a failure. Jobs for a switched-off module or a missing capability (earnings and
+   technicals without Dolt, the advisor and narratives without Claude Code) are listed as disabled,
+   which is healthy.
 
 3. **Verify**:
    - `python packages/orchestrator/run.py status` — the `supervisor` block shows `running: true`

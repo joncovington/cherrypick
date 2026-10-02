@@ -15,15 +15,17 @@ One workspace holds the whole trading-tool suite as separate packages under `pac
 | `packages/earnings` | The **Earnings** defined-risk earnings-play engine. |
 | `packages/gex` | The **GEX** (gamma-exposure) engine and spot-trail recorder, built on the shared GEX math. It computes and records; the console renders it. |
 | `packages/flies` | The **Flies** 0DTE net-credit butterfly ("profit forest") paper engine — deliberately built so a negative result is usable (floors measured after fees, arm-based experiments). |
-| `packages/calendars` | The **Calendars** weekly SPX double-calendar paper engine — a forward exit-parameter experiment: control and path books over shared entry fills, a per-tick mark path, and a read-side exit-policy replay validated against the real books. Paper-only, credential-free; its 4DTE/7DTE chains come from the streamer's `expirations` request field. |
-| `packages/pmcc` | The **PMCC-99** deep-ITM covered-call paper engine on TQQQ — an 85-90-delta ~21DTE long against an ATM ~7DTE short (no yield floor, either side of spot), holding to the short's own expiration before closing both legs. Single `control` book plus an advised A/B against the old early-tv-exit rule. Paper-only, credential-free; its deep strikes come from the streamer's `expirations` **and `window_hints`** request fields, and early assignment is measured (exposure telemetry), never modelled. |
-| `packages/curve` | The **Curve** VXX call-credit-spread paper engine harvesting the VIX term-structure roll yield, gated by a daily VIX/VIX3M regime read. Three books differ only in entry gate and exit rule; the daily regime classification is recorded every session, RTH-gated and basis-stamped. Paper-only, credential-free. |
+| `packages/calendars` | ⚠️ **EXPERIMENTAL, off by default.** The **Calendars** weekly SPY double-calendar paper engine (SPX before 2026-08-15) — a forward exit-parameter experiment: control and path books over shared entry fills, a per-tick mark path, and a read-side exit-policy replay validated against the real books. Paper-only, credential-free; its 4DTE/7DTE chains come from the streamer's `expirations` request field. |
+| `packages/pmcc` | ⚠️ **EXPERIMENTAL, off by default.** The **PMCC-99** deep-ITM covered-call paper engine on TQQQ — an 85-90-delta ~21DTE long against an ATM ~7DTE short (no yield floor, either side of spot), holding to the short's own expiration before closing both legs. Single `control` book plus an advised A/B against the old early-tv-exit rule. Paper-only, credential-free; its deep strikes come from the streamer's `expirations` **and `window_hints`** request fields, and early assignment is measured (exposure telemetry), never modelled. |
+| `packages/curve` | ⚠️ **EXPERIMENTAL, off by default.** The **Curve** VXX call-credit-spread paper engine harvesting the VIX term-structure roll yield, gated by a daily VIX/VIX3M regime read. Three books differ only in entry gate and exit rule; the daily regime classification is recorded every session, RTH-gated and basis-stamped. Paper-only, credential-free. |
 | `packages/bwb` | The **BWB** daily-laddered SPX put broken-wing-butterfly paper engine — one net-credit BWB per session at the expected move, ~7 DTE, held to expiry. Four books share the identical base structure and differ only in the reversal add-on trigger; a cohort-keyed trigger-tick path is recorded for read-side replay. Plus an opt-in call-side book at the GEX call wall. Paper by default, credential-free on that path; since 2026-09-18 a narrow live path (one arm, per-day armed, the daily ladder under a worst-case cap, no closing orders) writes a separate live ledger. |
 | `packages/overview` | The **Overview** pre-open morning fact pack — index/vol/sector readings from the stream cache, gamma flip and walls from the suite's own GEX history, and a mechanical GREEN/YELLOW/RED phase from five declared gates. Missing data can never produce RED and always blocks GREEN. Credential-free, network-free, read-only. |
-| `packages/technicals` | The market report's **end-of-day store and technical engines**: raw daily bars, splits, dividends and IV history from the local Dolt clones for the universe candidates, rotation ETFs and benchmarks, with adjusted bars computed from raw on read (matched to the vendor's own to the cent). Credential-free, network-free; writes only its own store. |
+| `packages/technicals` | The market report's **end-of-day store and technical engines**: raw daily bars, splits, dividends and IV history from the local Dolt clones for the universe candidates, rotation ETFs and benchmarks, with adjusted bars computed from raw on read (matched to the vendor's own to the cent). Credential-free, network-free; writes only its own store. Needs the `dolt` capability. |
+| `packages/review` | The cross-module **end-of-day review**: one versioned, deterministic fact set per session over every module's ledger, read through `cherrypick.core.ledgers`, plus its renders. Written only to its own store (`~/.cherrypick/data/review/`); no credentials, no network, no AI — the narrative is written beside it by `scripts/eod_narrative.py`. |
+| `packages/advisor` | The **deterministic half of the AI advisor**: fact packs, validation of the model's replies, and the paper A/B experiments its admitted proposals run as (`advised:<experiment>` arms). Contains no AI — the model is invoked by `scripts/advisor_checkpoint.py` — and is off by default twice over: the suite must schedule it (and have the `claude` capability) and each module must declare its own `advice` bounds. |
 | `packages/streamer` | The **standalone streamer** — the suite's single market-data producer, writing the canonical shared stream cache that every module reads; modules declare their symbols via `state/stream_requests/`. |
 | `packages/console` | The reactive **console** UI (Node + TypeScript, React SPA on `127.0.0.1:5070`): every module's read models plus the research and screening surfaces in one app. The suite's **only** read surface since 2026-08-12, and the supervisor keeps it running as an always-on resident job. Read-only over every other package's data, with its own store. It reads the shared suite credential and never writes credentials; it probes the token's scope at boot, so a read-only token disables its write-oriented functions. No order-placement code paths. |
-| `packages/desk` | ⚠️ **Experimental.** The **manual trading desk** — the suite's only *discretionary* live-order path (MEIC, earnings, and flies each have a live loop behind their own `enable_live_trading` gate; this one has no loop at all). A foreground, human-initiated CLI for discretionary live orders, authorized entirely on its own (own config, own keyring PIN, per-order ticket) so placing one order never requires flipping a module's `enable_live_trading`. Not a strategy module: no loop, no schedule, no ledger. Never scheduled, and no automated package may import it. |
+| `packages/desk` | ⚠️ **EXPERIMENTAL** prototype for educational purposes only, not installed or enabled by default ([its README](../packages/desk/README.md)). The **manual trading desk** — the suite's only *discretionary* live-order path (MEIC, earnings, flies and bwb each have a live loop behind their own gate; this one has no loop at all). A foreground, human-initiated CLI for discretionary live orders, authorized entirely on its own (own config, own keyring PIN, per-order ticket) so placing one order never requires flipping a module's `enable_live_trading`. Not a strategy module: no loop, no schedule, no ledger. Never scheduled, and no automated package may import it. |
 
 Each package has its own `CLAUDE.md` with build commands, tech-stack reference, and invariants.
 `packages/console` is the one non-Python package; the rest share the src-layout described below.
@@ -34,9 +36,10 @@ Common logic — `cherrypick.core.calendar`, `.fees`, `.profiles`, `.gex`, `.str
 `.db`, `.viz`, `.home` — lives in **`packages/core`**, a sibling package in this same monorepo,
 consumed by every other package as a normal editable-installed dependency. This is why:
 
-- A fresh clone needs one install step before anything else: `pip install -e packages/core` (or run
-  `scripts/dev-install.ps1`/`.sh` from the repo root, which does that plus every package). Skip it and
-  every `import cherrypick.core…` fails.
+- A fresh clone needs one install step before anything else: `pip install -e packages/core`. The root
+  installers (`install.cmd`/`install.ps1`/`install.sh`, for users) and `scripts/dev-install.ps1`/`.sh`
+  (for developers) both do that first, then every other package. Skip it and every
+  `import cherrypick.core…` fails.
 - Every package declares `cherrypick-core` as a plain named dependency in its `pyproject.toml`. It is
   **not** on PyPI (`Private :: Do Not Upload`) — pip only ever resolves the name from what's already
   installed, so `packages/core` must be installed first.
@@ -57,7 +60,8 @@ and imports as `cherrypick.<pkg>.<mod>` — `cherrypick.meic.tt`, `cherrypick.fl
 `cherrypick.earnings.scanner`, and so on, alongside `cherrypick.core.*` and `cherrypick.orchestrator.*`.
 
 `src/cherrypick/` has **no `__init__.py`** in any package. That is what makes it a PEP 420 namespace, so
-all seven distributions compose under one `cherrypick.*` root instead of colliding. One level deeper,
+all sixteen Python distributions (every package but the console) compose under one `cherrypick.*` root
+instead of colliding. One level deeper,
 `src/cherrypick/<pkg>/__init__.py` **does** exist — that is an ordinary package.
 
 The packages were flat (`src/tt.py`, `src/db.py`, …) until this was unified. Fifteen top-level names
@@ -102,10 +106,13 @@ Everything hangs off one config file per package. The orchestrator's `config.jso
 ## How the orchestrator drives modules
 
 The orchestrator runs each module **in place, by subprocess**, using paths from config — it never edits
-a module's code or config, and never imports its engine. The boundary is strict: it only ever invokes the
-**paper** engine / paper DB, and **never places, cancels, adjusts, or closes an order** and never flips a
-module's live-trading flag. Its one live-adjacent action is onboarding config (`connect`/`account`), which
-delegates to the module's own credential tool — see [guardrails-and-modes.md](guardrails-and-modes.md).
+a module's code or config, and never imports its engine. The boundary is strict: its own commands only
+invoke **paper** engines and paper DBs, it **never places, cancels, adjusts, or closes an order**, never
+flips a module's live-trading flag, and never writes an arm record. The one live process it launches is a
+module's own live loop (`<module>-live`, today flies and bwb) while a human-written arm record for that
+day is valid; the module's loop places the orders, under the module's own gates. Its one live-adjacent
+*configuration* action is onboarding (`connect`/`account`), which delegates to the module's own
+credential tool — see [guardrails-and-modes.md](guardrails-and-modes.md).
 
 ### Per-schema dispatch
 
@@ -115,7 +122,13 @@ Each module's paper DB has a different schema, selected by `paper.trade_schema` 
 |---|---|---|---|
 | `meic_ic` | MEIC | `ic_trades` | `exit_time` set; net = `pnl − fees`; tag = `arm`. |
 | `earnings` | Earnings | `trades` | `closed_at` set; net = `pnl − entry_cost − exit_cost`; tag = `profile`. |
-| `fly_book` | Flies | `fly_positions` | settled rows; net after the modeled fee stack; tag = experiment *arm* (not a risk profile). |
+| `fly_book` | Flies | `fly_positions` | settled rows; net after the modelled fee stack; tag = experiment *arm* (not a risk profile). |
+| `dc_week` | Calendars | `dc_positions` | status `closed`; net = `gross_pnl − fees` (fees is the total modelled cost); tag = book. |
+| `pmcc_99` | PMCC-99 | `pmcc_positions` | status `closed`; net = `gross_pnl − fees`; tag = book. |
+| `curve_vx` | Curve | `curve_positions` | status `closed`; net = `gross_pnl − fees`; tag = book. |
+| `bwb_132` | BWB | `bwb_positions` | status `closed`; net = `gross_pnl − fees`; tag = book. |
+
+The per-schema net and risk rules for every row live in one place, `cherrypick.core.ledgers`.
 
 The canonical schema set lives in `schemas.SCHEMAS`, and coverage is enforced by a test
 (`tests/test_schema_registry.py`), not prose: every surface registry (`report.py`, `reconcile.py`,
@@ -130,8 +143,9 @@ wholesale with `$CHERRYPICK_HOME`:
 
 ```
 ~/.cherrypick/
-  config.json              # orchestrator config
-  config/<engine>.json     # per-module configs (meic.json, earnings.json)
+  config.json              # orchestrator config, including the `capabilities` block
+  config/<module>.json     # per-module configs (meic.json, flies.json, earnings.json, …)
+  config/meic.risk.json    # MEIC's arm registry, when the machine has arms beyond control
   data/<module>/           # paper + live SQLite DBs, streamer cache
   logs/                    # suite logs
   logs/<module>/           # per-module logs

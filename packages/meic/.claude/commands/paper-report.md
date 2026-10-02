@@ -1,4 +1,4 @@
-Produce the weekly (or custom-range) paper-trading performance report, comparing every enabled forward-test stream side by side (currently `control`/`open`/`width-5`/`width-10` — see `config.risk.json` and `docs/paper-experiments.md`). Covers both `execution_mode='paper'` (forward, live-quote) and `execution_mode='replay'` (historical SPX) trades in one combined view, since both write to the same `~/.cherrypick/data/meic/paper_trades.db` schema.
+Produce the weekly (or custom-range) paper-trading performance report, comparing every enabled forward-test stream side by side (whatever the arm registry (`$MEIC_RISK_CONFIG`, else `~/.cherrypick/config/meic.risk.json`, else the shipped control-only `config.risk.example.json`) enables — see `docs/paper-experiments.md`). Covers both `execution_mode='paper'` (forward, live-quote) and `execution_mode='replay'` (historical SPX) trades in one combined view, since both write to the same `~/.cherrypick/data/meic/paper_trades.db` schema.
 
 ## 1. Gather the range summary
 
@@ -6,7 +6,7 @@ Produce the weekly (or custom-range) paper-trading performance report, comparing
 python -m cherrypick.meic.db --db ~/.cherrypick/data/meic/paper_trades.db get_range_summary --start <YYYY-MM-DD> --end <YYYY-MM-DD>
 ```
 
-Default the range to the last 7 calendar days ending today (ET) unless the user specifies a different window (e.g. "since program start", "last month"). This returns `profiles: {...}` keyed dynamically by whichever `risk_profile` values actually traded in the range — currently `control`/`open`/`width-5`/`width-10` (the disabled ladder tiers and retired GEX arms won't appear unless someone manually re-enables and trades them; see `config.risk.json`'s `_disabled_note`s). Each key carries `total_trades`, `win_count`/`loss_count`/`win_rate_pct`, `profit_factor`, `avg_win`/`avg_loss`, `expectancy_per_trade`, `max_consecutive_losses`, `max_drawdown`, `worst_day`, `net_pnl`, and a `daily_pnl` series (date, net_pnl, cumulative_pnl) per profile.
+Default the range to the last 7 calendar days ending today (ET) unless the user specifies a different window (e.g. "since program start", "last month"). This returns `profiles: {...}` keyed dynamically by whichever `risk_profile` values actually traded in the range — `control` on a fresh install, plus whatever arms this machine's registry enables (retired arms appear only for ranges in which they traded). Each key carries `total_trades`, `win_count`/`loss_count`/`win_rate_pct`, `profit_factor`, `avg_win`/`avg_loss`, `expectancy_per_trade`, `max_consecutive_losses`, `max_drawdown`, `worst_day`, `net_pnl`, and a `daily_pnl` series (date, net_pnl, cumulative_pnl) per profile.
 
 ## 2. Compute the risk-adjusted suite
 

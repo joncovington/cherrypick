@@ -33,17 +33,23 @@ ledgers and tags every row with the mode it came from, so paper and live are sep
 rather than by which port you opened. The supervisor keeps the console running; you should not need
 to start anything here.
 
-## Step 3 — Paper-trading loop (scheduled task)
+## Step 3 — Paper-trading loop (the supervisor's `meic-paper` job)
 
-Register the unattended paper loop as a Windows scheduled task and fire the first run immediately:
+The paper loop is NOT started here. The orchestrator's supervisor runs it as the `meic-paper` job
+whenever `modules.meic.enabled` is true in `~/.cherrypick/config.json` (one `paper_loop --once` per
+`paper.tick_interval_seconds`, time-gated to market hours). **Do not register the standalone
+`cherrypick-meic-paper-loop` task** (`--install-task`): it would run a second copy of the same loop
+beside the supervisor's.
+
+Check that it is being driven, from the repo root:
 
 ```bash
-python -m cherrypick.meic.paper_loop --install-task
+python packages/orchestrator/run.py ps
 ```
 
-This creates the `cherrypick-meic-paper-loop` task, which runs `python -m cherrypick.meic.paper_loop --once` every 2 minutes. Each run is a short-lived process that reliably completes, self-heals if one fails, no-ops outside market hours (it's time-gated), and persists across sessions — the robust way to run it unattended on Windows (a long-running detached daemon proved fragile against stray console events). Each `--once` runs the parallel-shadow engine across every configured symbol: marking/exiting open ICs (per-side stops, the settlement-aware force-close cascade with physical-settlement early close + friction, and cash-settled left-to-expire settlement — no profit target) and evaluating new entries per profile. All writes go to `~/.cherrypick/data/meic/paper_trades.db`; the live account and `~/.cherrypick/data/meic/meic_trades.db` are never touched.
-
-(For a one-off manual iteration outside the task — e.g. a final force-close pass — run `python -m cherrypick.meic.paper_loop --once`. On non-Windows hosts, run `python -m cherrypick.meic.paper_loop` in a terminal or wire a cron job instead.)
+`meic-paper` should be listed. If the supervisor itself is not running, run `/install` (or the
+installer) rather than starting the loop by hand. For a one-off manual iteration, e.g. a final
+force-close pass, `python -m cherrypick.meic.paper_loop --once` is still safe.
 
 Tell the user:
-"Paper-trading session started — the paper loop runs as the supervisor's `meic-paper` job on the cadence set by `paper.tick_interval_seconds`, across every enabled forward-test stream (`control`/`open`/`width-5`/`width-10` — see config.risk.json), self-healing and time-gated to market hours. It rolls the session into daily_summary at the 16:00 settlement pass; the suite review reports the day across every module. Writes go to ~/.cherrypick/data/meic/paper_trades.db only; the live account and ~/.cherrypick/data/meic/meic_trades.db are untouched. Read surface: the console at http://127.0.0.1:5070/meic (rows carry their own paper/live mode). Stop the session with `python -m cherrypick.meic.paper_loop --uninstall-task`; run /paper-report for a synthesized write-up or `python -m cherrypick.review build --session <date>` for the day's review on demand."
+"Paper-trading session started — the paper loop runs as the supervisor's `meic-paper` job on the cadence set by `paper.tick_interval_seconds`, across every enabled arm in the registry (~/.cherrypick/config/meic.risk.json, or the shipped control-only example), self-healing and time-gated to market hours. It rolls the session into daily_summary at the 16:00 settlement pass; the suite review reports the day across every module. Writes go to ~/.cherrypick/data/meic/paper_trades.db only; the live account and ~/.cherrypick/data/meic/meic_trades.db are untouched. Read surface: the console at http://127.0.0.1:5070/meic (rows carry their own paper/live mode). Stop it by switching `modules.meic.enabled` off on the console's Config page (or `python packages/orchestrator/run.py stop meic-paper` for a moment); run /paper-report for a synthesized write-up or `python -m cherrypick.review build --session <date>` for the day's review on demand."

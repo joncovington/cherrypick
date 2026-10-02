@@ -1,5 +1,10 @@
 # cherrypick-curve
 
+> **EXPERIMENTAL, and off by default.** This module ships `enabled: false` in the orchestrator's
+> `config.example.json`, so a fresh install does not run it. To turn it on, use the **Modules &
+> symbols** section of the console's Config page, or set `modules.curve.enabled` to `true` in
+> `~/.cherrypick/config.json`. It is paper-only either way.
+
 curve: a paper-only module harvesting the VIX term-structure roll yield with VXX call credit
 spreads (short call ~30-delta, long wing a declared width higher), gated by a daily VIX/VIX3M
 regime read. Three books isolate one variable each: `control` (contango-gated entry, profit-take

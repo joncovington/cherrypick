@@ -22,6 +22,7 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 | `secrets-set` | Store a Slack/Discord webhook URL in the OS keyring (prompted without echo if `--url` omitted). | `--channel slack\|discord`, `--url` |
 | `secrets-status` | Show which push-channel secrets are configured (secret-free). | — |
 | `secrets-delete` | Remove a stored secret. | `--channel` |
+| `capabilities` | What this machine can carry for the two optional dependencies: `claude` (the Claude Code CLI — the advisor and the EOD/morning narratives need it) and `dolt` (the Dolt binary **and** the earnings/options/stocks clones — earnings and technicals need it). With no flag, prints the resolved view: each capability, each module's switch and effective state (with what is missing), and the gated features. `--detect` probes; `--detect --write` records the answers in `config.json`'s `capabilities` block (what the installer runs); `--cap name=true\|false` records one by hand. An absent capability is `false`, and detection never switches a feature on — each still has its own switch. `doctor` compares the record with the machine. | `--detect`, `--write`, `--cap name=true\|false` |
 | `settings` | Local web editor for every config file + a keyring secrets manager (loopback `:8804`) — the suite's one mutating HTTP surface, run on demand, never watchdog-started. Live-trading gate fields render read-only. With `--organize` it instead reorders a live config into its example's sections and exits (no server). | `--host`, `--port` (def `8804`), `--no-browser`, `--organize [target]`, `--apply` |
 
 ## Turning the suite on/off
@@ -95,7 +96,7 @@ deliberately separate path calibrate can never reach) · `--fast` (doctor) ·
 `--host` / `--port` / `--no-browser` (settings) · `--apply` (migrate-home,
 settings --organize) · `--organize [target]` (settings) · `--stop` (supervise — ask a running
 supervisor to exit) · `--detail` / `--account <last4>` / `--json` (positions) · `--scheduled` (reconcile — the daily job's mode; notifies on any non-FLAT
-verdict) · `--month` / `--dry-run` (archive) · `--dry-run` / `--list` / `--verify` / `--restore-to DIR` (backup) · `--channel` / `--url` (secrets) · `--force` (init).
+verdict) · `--month` / `--dry-run` (archive) · `--dry-run` / `--list` / `--verify` / `--restore-to DIR` (backup) · `--channel` / `--url` (secrets) · `--detect` / `--write` / `--cap name=bool` (capabilities) · `--force` (init).
 
 ## Slash-command equivalents (Claude Code)
 

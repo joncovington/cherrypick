@@ -31,7 +31,7 @@ The advisor reads live facts (context a competent observer would want) but canno
 - The only loop-facing output is a paper advice artifact at `state/advice/<module>-<session>.json`,
   which each module's consumer applies to a **synthetic `advised:<experiment name>` book beside its
   control** — never to the control, never to a live loop.
-- Nothing here writes a module config, `config.risk.json`, or any module's database. New-arm and
+- Nothing here writes a module config, MEIC's arm registry (`meic.risk.json`), or any module's database. New-arm and
   new-strategy ideas come out as `creative` proposals with ready-to-paste specs; a human applies them
   or not.
 - **It tunes only its own experiments.** A `tune` proposal naming a control arm, a human-configured

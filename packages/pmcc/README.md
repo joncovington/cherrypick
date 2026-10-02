@@ -1,5 +1,10 @@
 # cherrypick-pmcc
 
+> **EXPERIMENTAL, and off by default.** This module ships `enabled: false` in the orchestrator's
+> `config.example.json`, so a fresh install does not run it. To turn it on, use the **Modules &
+> symbols** section of the console's Config page, or set `modules.pmcc.enabled` to `true` in
+> `~/.cherrypick/config.json`. It is paper-only either way.
+
 PMCC-99: a paper-only module trading deep-ITM covered calls on TQQQ. Buy an 85-90-delta call at
 ~21 DTE as a stock substitute, sell the ATM call nearest spot at ~7 DTE (no yield floor, either
 side of spot); hold to the short's own expiration, then close both legs together. Single `control`

@@ -1,6 +1,12 @@
 # cherrypick-calendars
 
-Weekly SPX double calendars, paper-only, built as a **forward exit-parameter experiment**.
+> **EXPERIMENTAL, and off by default.** This module ships `enabled: false` in the orchestrator's
+> `config.example.json`, so a fresh install does not run it. To turn it on, use the **Modules &
+> symbols** section of the console's Config page, or set `modules.calendars.enabled` to `true` in
+> `~/.cherrypick/config.json`. It is paper-only either way.
+
+Weekly SPY double calendars (SPX until 2026-08-15), paper-only, built as a **forward
+exit-parameter experiment**.
 
 The trade: every Monday (Tuesday after a Monday holiday) at 10:00 ET, buy one put calendar at the
 expected-move-down strike and one call calendar at the expected-move-up strike — short legs expiring

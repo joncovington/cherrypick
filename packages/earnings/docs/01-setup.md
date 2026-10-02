@@ -2,11 +2,17 @@
 
 Complete setup from a fresh checkout to your first paper trading cycle.
 
+> **Installed the suite with the root installer?** It already installed this package, offered to
+> install Dolt and clone the three datasets into `~/.cherrypick/data/earnings`, and recorded the `dolt`
+> capability in `~/.cherrypick/config.json`; the supervisor then serves the data and runs the paper
+> loop. This walkthrough is the by-hand path for working on this package on its own. Earnings needs
+> the `dolt` capability either way — without it the orchestrator keeps the module off.
+
 ---
 
 ## Prerequisites
 
-- Python 3.10 or newer
+- Python 3.11 or newer
 - A [tastytrade](https://tastytrade.com) account (sandbox or live) — required even for paper
   mode, since paper mode still sources live quotes, chains, greeks, and open interest from the
   real tastytrade session; only order submission is skipped.

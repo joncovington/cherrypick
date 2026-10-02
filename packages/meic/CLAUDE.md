@@ -9,7 +9,7 @@
 > column is `arm` (`ic_trades.arm`, `entry_attempts.arm`; `risk_profile` until 2026-09-24), and
 > `db.init_db` refuses a ledger that still says `risk_profile` rather than adding `arm` beside it
 > (`scripts/arm_column_migrate.py --only risk_profile` renames one). The *config preset* registry in
-> `config.risk.json` under `profiles` keeps that word.
+> the arm registry under `profiles` keeps that word.
 
 You are an autonomous quantitative options trading agent. Your objective is to maximise risk-adjusted
 returns while strictly protecting capital, running a Multiple Entry Iron Condor (MEIC) strategy on 0DTE
@@ -84,10 +84,9 @@ decisions per symbol, one shared account-wide risk budget.
   builds the legacy `advised:control` tag its rows carry. Never touches the live loop.
 - **`experiment_id` stamping follows `cherrypick.core.advice.stamp_for`** (`packages/core/CLAUDE.md`);
   the stamp is carried per book from its own entry.
-- **Suite-dashboard card.** `python -m cherrypick.meic.section --json` emits the `cherrypick.core.viz`
-  section payload (paper by default, `--symbol`/`--profile` filters), read through `dashboard.py`'s own
-  query helpers so card and dashboard cannot disagree; a win is `pnl − fees > 0` on a resolved trade,
-  and headline dollars subtract fees.
+- **No section payload.** The suite-dashboard card emitter and this module's own dashboard were
+  retired with the suite dashboard on 2026-08-12; the console reads both ledgers directly, so there is
+  no second payload to keep in step. Shared read-side queries live in `cherrypick.meic.analytics`.
 
 ---
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
@@ -243,9 +242,11 @@ the next iteration. These four tiers are **live-only** and all `enabled: false` 
 
 Full rationale and progression: [docs/risk-profiles.md](docs/risk-profiles.md).
 
-**Paper arms (`config.risk.json`).** The paper registry is `control` plus the advisor's books and a few
-arm-scoped additions; `packages/advisor` designs and runs every experiment. `control` IS the permissive
-sampling substrate (formerly `open`: study gates off, no per-side stop, `overlap_scope: "none"`, full
+**Paper arms (the arm registry).** The registry is `$MEIC_RISK_CONFIG`, else the machine's own
+`~/.cherrypick/config/meic.risk.json`, else the shipped control-only `config.risk.example.json`
+(`paths.risk_profiles_path`); before 2026-10-01 it was `config.risk.json` in this package. A working
+registry is `control` plus the advisor's books and a few arm-scoped additions; `packages/advisor`
+designs and runs every experiment. `control` IS the permissive sampling substrate (formerly `open`: study gates off, no per-side stop, `overlap_scope: "none"`, full
 per-side path recording) — see the `meic_control_redefinition` measurement break. Every row carries its
 era (`ic_trades.era`, from `analytics.CURRENT_ERA` via `cmd_save_trade`), journaled in
 `measurement_breaks`. The closed 2026-08 forward test is recorded in
@@ -264,10 +265,10 @@ era (`ic_trades.era`, from `analytics.CURRENT_ERA` via `cmd_save_trade`), journa
   or the larger caps never bind and two arms become one — `test_every_bp_arm_can_reach_its_own_cap`
   pins it. They differ from control only in those five sizing keys, which a test pins.
 - **New arms are arm-scoped** (`arm_added` break at first session), so no other arm's clock moves.
-- **Retired arms stay in `config.risk.json`, `enabled: false`, with a written `_disabled_note` verdict —
+- **Retired arms stay in the machine's registry, `enabled: false`, with a written `_disabled_note` verdict —
   never silently deleted** (per `docs/paper-experiments.md`'s kill rule): a defined-but-forgotten arm is
-  worse than a documented-and-off one. The ladder stays because `/set-risk-profile` targets it for live;
-  **paper study streams must never be applied to live config.**
+  worse than a documented-and-off one. The ladder no longer ships, and `/set-risk-profile` still opens
+  `config.risk.json` in the package folder; **paper study streams must never be applied to live config.**
 
 **Deriving stop policies read-side (`analytics.stop_grid`, `stop_policies.score_grid`).** The whole
 `stop_trigger_ratio` curve comes from recorded rows: `*_max_cost` says whether a threshold would have
@@ -339,7 +340,7 @@ preserve: [docs/risk-profiles.md](docs/risk-profiles.md#design-rationale).
 | `wing_widths_by_symbol` | per-symbol lists | Candidate widths per instrument, scanned widest-first (10 points is ~0.13% of SPX but ~3.4% of IWM). `DEFAULT` covers unlisted symbols |
 | `quantity` | `1` | Contracts per IC |
 | `daily_ic_trade_target` | `200` | Guidance, never a cap — a never-binding backstop under independent sampling. `0` disables IC entries (ORB-only) |
-| `overlap_scope` | `"shorts"` | Check against this arm's open positions on the same symbol: `"all"` (any shared strike), `"shorts"` (exact repeat of the short pair), `"none"` (paper-only), `"sign"` (see above). Default `"all"`. **Live never sees a paper arm's value**: `live_loop.py` applies no `config.risk.json` overlay |
+| `overlap_scope` | `"shorts"` | Check against this arm's open positions on the same symbol: `"all"` (any shared strike), `"shorts"` (exact repeat of the short pair), `"none"` (paper-only), `"sign"` (see above). Default `"all"`. **Live never sees a paper arm's value**: `live_loop.py` applies no arm-registry overlay |
 | `entry_window_start` | `10:00` | Earliest entry (ET); skips the volatile first 30 min |
 | `entry_window_end` | `14:30` | Latest new IC entry (ET) — gamma risk after |
 | `force_close_time` | `15:45` | Hard force-close (ET) for all open 0DTE positions regardless of P&L |

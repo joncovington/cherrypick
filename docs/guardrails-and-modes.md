@@ -13,8 +13,10 @@ incident history behind them. If you extend the suite, preserve them.
 
 - **Paper (the default — and what the automation runs).** The scheduler, the watchdog/self-healing, the
   reporting, and all variance testing operate on paper: live market data in, simulated fills out, **none
-  of your money**. The orchestrator only ever invokes paper engines / paper DBs, and **never places,
-  cancels, closes, or adjusts a live order** — by design it can't sit on a trading decision.
+  of your money**. With every live gate closed, the orchestrator only invokes paper engines and paper
+  DBs, and it **never places, cancels, closes, or adjusts a live order** itself — by design it can't
+  sit on a trading decision. The one way it ever launches a live process is the armed live-loop job
+  described [below](#the-five-live-order-paths-and-what-actually-gates-each).
 - **Live (your account, connected — but you drive it).** You link a real tastytrade account so the engines
   use *your* live market data and can be **reconciled** against your real positions. Trading for real is
   a **deliberate, manual** action you take per module — the automation never does it for you, and if you
@@ -34,7 +36,7 @@ Know all five before opening any of them. **They do not share one gate**, and "g
 | **Earnings** | `earnings/tt.py execute_trade --live` | `enable_live_trading` in the earnings config. |
 | **Flies** | `flies/live_loop.py`, `live_orders.py` | **Not** `enable_live_trading`. A separate `live.enabled` **and** `live.gate0_confirmed` attestation, **and** a per-day arm record written by `/live-flies-start`, **and** a designated account, **and** the halt flag. Self-disarms every evening. |
 | **BWB** | `bwb/live_loop.py`, `live_orders.py` | The flies posture (2026-09-18): `live.enabled` **and** `live.gate0_confirmed` **and** a per-day arm record written by `/live-bwb-start` **and** a designated account **and** the halt flag, plus `live.arm` naming one of the four base books. Self-disarms every evening. Trades the full daily ladder under a worst-case margin cap (with a firing arm's future add-on reserved), one structure per day, a cost-derived credit floor, and a mark-drawdown breaker that blocks entries only. No closing orders: SPX cash-settles, on an official print or not at all. |
-| **Desk** | `packages/desk` | **Never reads `enable_live_trading` at all** — deliberately. Its own config `enabled`, an account allowlist, a PIN, a per-order ticket you confirm, and its own `policy.py` gates. ⚠️ Experimental. |
+| **Desk** | `packages/desk` | ⚠️ **EXPERIMENTAL** prototype for educational purposes only, not installed or enabled by default (see [its README](../packages/desk/README.md)). **Never reads `enable_live_trading` at all** — deliberately. Its own config `enabled` together with the `CHERRYPICK_DESK_EXPERIMENTAL=1` environment variable, an account allowlist, a PIN, a per-order ticket you confirm, and its own `policy.py` gates. |
 
 The first four are **loops**: once the gate is open they act on their own schedule without asking
 again. The desk is the only discretionary one — it acts because you typed a confirmation.
@@ -66,7 +68,10 @@ The **only** live-adjacent action the orchestrator performs is onboarding *confi
   `ACCOUNT_NUMBER` into the module's keyring (service = its `keyring_service`).
 
 The boundary is strict: it still **never** places/cancels/closes/adjusts an order, never flips
-`enable_live_trading`, never runs a module's live engine, and never edits a module's code/config files.
+`enable_live_trading`, never writes an arm record, and never edits a module's code/config files. (It
+does *run* an armed module's live loop as a supervisor job — see
+[above](#the-five-live-order-paths-and-what-actually-gates-each) — but only because a human wrote that
+day's arm record through the module's own command.)
 Account writes are human-confirmed. `reconcile` honors the designation — a designated live account is
 *expected* to hold positions (not flagged as drift).
 
@@ -156,7 +161,7 @@ secret; the status surfaces (doctor's onboarding line, the Live Ops card) show p
 files live under `~/.cherrypick`, not the checkout; scratch work goes in a gitignored `.tmp/`.
 
 **Best-effort side calls never break the reliability path.** The watchdog tick fires `trade_notifier.run`
-and `dashboard.render` inside `try/except`; a push/render hiccup must not fail the health check. Preserve
+inside `try/except`; a push hiccup must not fail the health check. Preserve
 this pattern for any tick-time work.
 
 ## Strategy-level risk rules
@@ -165,13 +170,16 @@ this pattern for any tick-time work.
   overnight naked short can blow out arbitrarily. Max loss is known at entry for every strategy.
 - **MEIC has no profit target.** A condor exits only by a per-side stop, a time/event force-close, or
   cash-settled expiration. Don't add a `profit_target_pct` (ORB keeps its own, separately).
-- **Correlation risk is not currently guarded** in either engine. Trading correlated underlyings (MEIC:
-  SPX + XSP move together; Earnings: same-sector/same-date names) can silently multiply exposure. Do not
-  configure correlated combinations until a guard exists.
+- **Correlation risk is not guarded at run time.** Trading correlated underlyings (MEIC: SPX + XSP move
+  together; Earnings: same-sector/same-date names) can silently multiply exposure. The orchestrator's
+  `test_symbol_correlation_lint.py` checks a machine's declared stream requests for one index traded
+  through two vehicles, but that is a check you run, not a refusal at entry. Do not configure correlated
+  combinations.
 
 ## Disclaimer
 
 For **educational and research purposes only** — **not financial, investment, or trading advice.** Options
 trading involves substantial risk of loss; paper-trading results do not reflect real-world performance.
-The project defaults to paper and never places live orders on its own; any live-trading use is entirely
-at your own risk. See the [README disclaimer](../README.md#disclaimer) and the [LICENSE](../LICENSE).
+The project defaults to paper and places no live order until you open a module's live gate yourself;
+any live-trading use is entirely at your own risk. The full text is [DISCLAIMER.md](../DISCLAIMER.md);
+see also the [LICENSE](../LICENSE).

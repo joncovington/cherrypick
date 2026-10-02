@@ -120,5 +120,5 @@ Returns `total_trades`, `total_pnl`, `avg_pnl`, `win_count`/`loss_count`/`win_ra
 `avg_win`/`avg_loss`, a `by_strategy`/`by_profile` breakdown, and the full closed-trade list —
 run it any time to check cumulative raw P&L. For cost-adjusted expectancy, win rate, profit
 factor, Sharpe, drawdown, and IV-crush metrics, use
-`python -m cherrypick.earnings.strategy_report` or `python -m cherrypick.earnings.strategy_dashboard` instead, which read the
+`python -m cherrypick.earnings.strategy_report` (or the console's Earnings page) instead, which reads the
 richer `strategy_metrics.py` computations on top of the same database.

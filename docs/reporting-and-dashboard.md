@@ -112,8 +112,10 @@ had a wing stopped, or closed since the last check, and pushes them. Each event 
 an id watermark rather than deduped — and on first activation the watermark is seeded to the current DB
 state, so switching it on never backfills your existing trades as a burst.
 
-Push goes to `notify.trade_channels` (default `log` + `discord`) rather than every channel, so frequent
-paper fills don't spam desktop toasts. Per module, it is opt-in via `paper.notify_trades`; a module's
+Push goes to `notify.trade_channels` rather than every channel, so frequent paper fills don't spam the
+warning channels. **It ships as `["log"]`**: push notifications are off by default, so a fill reaches
+you elsewhere only once you add `desktop`, `discord` or `slack` there. The console's own on-screen trade
+toasts are always on and need no setting. Per module, it is opt-in via `paper.notify_trades`; a module's
 **live** ledger is a separate opt-in (`live.notify_trades`) and its pushes carry a LIVE prefix and a
 desktop toast, because real money warrants one where paper deliberately doesn't.
 

@@ -4,10 +4,16 @@
 between with one command, what each one trades off, and when to move up or down the ladder. Part
 of the [MEIC module](../README.md) in the cherrypick suite.
 
-> **These four presets are `enabled: false` and are not what paper is running.** They remain the
-> **live**-trading preset system that `/set-risk-profile` targets — read this document in that frame.
-> Paper runs the four-stream forward test (`control`/`open`/`width-5`/`width-10`), with
-> `active_profile: "control"`. See the Overview note below for the full split.
+> **These four presets no longer ship, and are not what paper runs.** They were disabled for paper on
+> 2026-08-07. Since 2026-10-01 MEIC's arm registry is each machine's own
+> `~/.cherrypick/config/meic.risk.json` (or the file `$MEIC_RISK_CONFIG` names), and the package
+> carries only `config.risk.example.json`, holding `control`; MEIC falls back to that example when a
+> machine has no registry. A machine that wants the ladder defines these tiers in its own registry —
+> the values and the rationale are below. Where this document says `config.risk.json`, read "the arm
+> registry": that was its name in the package until 2026-10-01.
+>
+> **`/set-risk-profile` has not followed the move.** It still opens `config.risk.json` in the package
+> folder, so on a fresh install it finds no registry; the mechanism it describes below is unchanged.
 
 ## Overview
 
@@ -301,7 +307,7 @@ The four tiers follow a deliberate sequence. **Do not skip ahead** — the inter
 
 When you run `/set-risk-profile moderate`:
 
-1. The command reads `config.risk.json` and extracts the `moderate` profile object.
+1. The command reads `config.risk.json` from the package folder (not the home registry — see the note at the top) and extracts the `moderate` profile object.
 2. It backs up your current `config.json` → `config.json.bak` (so you can revert if needed).
 3. It overwrites the matching keys in `config.json` with the moderate profile's values.
 4. It updates `config.risk.json`'s `active_profile` field to track which one is active (for logging/auditing).

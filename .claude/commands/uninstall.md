@@ -6,6 +6,12 @@ Bring the cherrypick suite to a **complete, clean stop**: nothing running, nothi
 stays stopped. Runs from the monorepo root. Data (paper DBs, Dolt store, keyring) is never touched —
 `/install` brings everything back.
 
+The root `uninstall.cmd` / `uninstall.ps1` (Windows) and `./uninstall.sh` (macOS/Linux) do steps 1 and
+2 below non-interactively — `run.py uninstall`, `run.py stop --all`, then the Dolt server on 3306 only
+if the process there is `dolt` — and are what a non-technical user runs. This command does the same and
+then verifies. Use the `.venv` interpreter if the checkout has one (`.venv\Scripts\python` /
+`.venv/bin/python`).
+
 **The order is built in.** `uninstall` deletes the `cherrypick-supervisor` anchor task FIRST (so
 nothing can restart the daemon), then stops the supervisor (polite stop file, ≤10s wait, terminate
 fallback) — with the supervisor gone, no job fires and nothing resurrects a stopped daemon.
@@ -35,8 +41,9 @@ Do this:
      stop that one too: `python -m cherrypick.meic.streamer --stop`. Exactly one producer ever runs.)
      The settings editor (8804) needs nothing — it is foreground-only and stops when you close it.
    - **Dolt sql-server** (earnings' local market-data DB; its keep-alive task was removed in step 1):
-     stop the process serving port **3306**:
-     `Get-NetTCPConnection -LocalPort 3306 -State Listen -EA SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`
+     stop the process serving port **3306**, but only if it really is `dolt` (the same rule the root
+     uninstall scripts follow; anything else on the port is left alone):
+     `Get-NetTCPConnection -LocalPort 3306 -State Listen -EA SilentlyContinue | ForEach-Object { Get-Process -Id $_.OwningProcess } | Where-Object ProcessName -eq 'dolt' | Stop-Process -Force`
      (This is the shared Dolt server — skip it if you use Dolt outside cherrypick and want it running.)
    - **MEIC sidecar** (optional, off by default — if `meic-sidecar` was enabled in `services` it was
      already stopped in step 1; a manually-started one stops with

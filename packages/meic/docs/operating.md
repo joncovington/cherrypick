@@ -45,23 +45,18 @@ The agent runs every ~2-30 minutes depending on session and open positions (see 
 
 ## Paper trading
 
-Before committing real capital, run the parallel-shadow paper engine. It evaluates every enabled forward-test stream (`control`/`open`/`width-5`/`width-10` — see `docs/paper-experiments.md`) against the same live-quote snapshot per symbol, each on its own $100,000 virtual bankroll, and never touches the live account or the live `meic_trades.db`.
+Before committing real capital, run the parallel-shadow paper engine. It evaluates every enabled arm in the arm registry (`~/.cherrypick/config/meic.risk.json`, else the shipped control-only `config.risk.example.json` — see `docs/paper-experiments.md`) against the same live-quote snapshot per symbol, each on its own $100,000 virtual bankroll, and never touches the live account or the live `meic_trades.db`.
 
-Start a full unattended paper session:
+**Inside the suite (the normal setup), there is nothing to start.** The orchestrator's supervisor — installed by the suite installer through `run.py install` — runs the paper loop as its `meic-paper` job: a short-lived `python -m cherrypick.meic.paper_loop --once` process every 60 seconds (`modules.meic.paper.tick_interval_seconds`), headless, time-gated to market hours and self-healing. The OS scheduler holds one entry for the whole suite, not one per module. The supervisor also restarts a stalled streamer, sends notifications, and adds the cross-module read side (`cherrypick report` / `calibrate` / the console). It drives this module by subprocess only — it never places live orders or edits this config. To stop paper collection, switch the module off (`modules.meic.enabled` in `~/.cherrypick/config.json`).
 
-```
-/paper-start
-```
-
-This starts the shared DXLink streamer and registers a Windows scheduled task (`cherrypick-meic-paper-loop`) that runs `python -m cherrypick.meic.paper_loop --once` every 2 minutes — headless, time-gated to market hours, self-healing, and persistent across sessions. At the 16:00 ET settlement pass it rolls the session into `daily_summary`, which is what the suite review (`packages/review`) reads for this module. The module's own EOD reports were retired 2026-08-13.
+At the 16:00 ET settlement pass the loop rolls the session into `daily_summary`, which is what the suite review (`packages/review`) reads for this module. The module's own EOD reports were retired 2026-08-13.
 
 Manage the session directly:
 
 ```bash
-python -m cherrypick.meic.paper_loop --status          # task status + open-position count
+python -m cherrypick.meic.paper_loop --status          # loop status + open-position count
 python -m cherrypick.meic.paper_loop --once            # run a single manual iteration
 python -m cherrypick.review build --session <date>     # the suite review for one session (all modules)
-python -m cherrypick.meic.paper_loop --uninstall-task  # stop the unattended session
 ```
 
 For a multi-day, profile-by-profile performance write-up (equity curves, risk-adjusted metrics, graduation-gate checklist):
@@ -70,9 +65,7 @@ For a multi-day, profile-by-profile performance write-up (equity curves, risk-ad
 /paper-report
 ```
 
-On non-Windows hosts, run `python -m cherrypick.meic.paper_loop` in a terminal or wire a cron job to `--once`. See [paper-trading.md](paper-trading.md) for the engine design, fee model, historical-replay accelerator, and graduation criteria.
-
-> **Inside the suite:** you don't have to manage this task yourself. The [orchestrator](../../orchestrator) registers and watchdogs the same `cherrypick-meic-paper-loop` task (via `cherrypick install`), restarts a stalled streamer, sends notifications, and adds the cross-module read side (`cherrypick report` / `calibrate` / the console). It drives this module by subprocess only — it never places live orders or edits this config. Running `/paper-start` here is the standalone equivalent, minus the watchdog and notifications.
+**Standalone (no supervisor).** Run `python -m cherrypick.meic.paper_loop` in a terminal, or wire a cron job to `--once`. On Windows, `/paper-start` checks the streamer and registers the loop's own scheduled task (`cherrypick-meic-paper-loop`, `--once` every 2 minutes; `python -m cherrypick.meic.paper_loop --uninstall-task` removes it). That task is for a machine running MEIC without the supervisor — don't run both. See [paper-trading.md](paper-trading.md) for the engine design, fee model, historical-replay accelerator, and graduation criteria.
 
 ---
 

@@ -28,14 +28,18 @@ the suite's [documentation index](../../docs/README.md) for the big picture.
 
 ## Two ways to run
 
-**Piggyback (the default).** Out of the box this module reads the suite's shared, canonical
-market-data cache — the same one MEIC, flies, and the standalone `streamer` package read and
-write — read-only. If any of those is already running, it just works with no market-data connection
-of its own to manage.
+**Piggyback (the default).** Out of the box this module reads the suite's shared market-data cache,
+`~/.cherrypick/data/marketdata/stream_cache.db`, read-only. The streamer (`packages/streamer`) is the
+single writer of that cache; this module declares the symbols it needs in
+`~/.cherrypick/state/stream_requests/gex.json` (every `run.py gex` / `record` run refreshes it), and the
+streamer keeps them fresh. In the normal setup the supervisor runs both the streamer and this module's
+recorder (the `gex-recorder` service), so there is nothing to start.
 
-**Standalone.** You can instead have this module run its own connection to the market-data feed
-(`run.py stream`) and keep its own local cache of quotes, entirely independent of any other
-module. It signs in using the same secure, OS-stored credentials as the rest of the suite.
+**Standalone (development only).** `run.py stream` runs this module's own connection to the
+market-data feed, signing in with the same OS-stored credentials as the rest of the suite. It writes to
+whatever `source.stream_cache_db` resolves to — by default the shared cache — so repoint that key at a
+private file first, and never run it beside `packages/streamer`: the shared cache has exactly one
+writer.
 
 Either way, the open-interest and per-option volume figures only exist because a live data
 connection is actively subscribed to the relevant strikes — without one running somewhere, the
@@ -43,19 +47,24 @@ console shows the last cached snapshot rather than live data.
 
 ## Setup
 
+The suite's installer at the repo root (`install.cmd` on Windows, `install.sh` on macOS/Linux) installs
+this package and registers the recorder with the supervisor. To work on it by hand:
+
 ```bash
 git clone https://github.com/joncovington/cherrypick.git
 cd cherrypick
 pip install -e packages/core                    # shared cherrypick.core library, install first
 cd packages/gex
 pip install -e ".[dev]"
-cp config.example.json config.json              # point source.stream_cache_db at the MEIC cache
 ```
+
+No config file is needed: with none, the module reads `config.example.json`, which defaults to the
+shared cache.
 
 ## Commands
 
 ```bash
-python run.py stream --symbol SPX               # run the streamer -> own data/stream_cache.db (foreground)
+python run.py stream --symbol SPX               # standalone streamer -> source.stream_cache_db (see above)
 python run.py record                            # always-on spot-trail recorder (--once / --interval / --status / --stop)
 python run.py gex --symbol SPX                  # one-shot summary to the terminal
 python run.py gex --symbol SPX --json           # raw GEX payload
@@ -68,16 +77,18 @@ ruff check . && ruff format .                   # lint/format
 
 ## Config
 
-`config.json` (git-ignored, machine-local). Paths resolve **relative to the config file's directory**:
+The machine's config is `~/.cherrypick/config/gex.json`; a git-ignored in-repo `config.json` is still
+honoured until migrated, and with neither the module reads `config.example.json`. Paths expand `~` and
+`$VARS`; anything still relative resolves **relative to the config file's directory**:
 
-- `source.stream_cache_db` — the cache path. Defaults to the suite's shared, canonical cache
-  (`~/.cherrypick/data/marketdata/stream_cache.db`) if omitted — the piggyback path. Point it at
-  `data/stream_cache.db` (or any path) to read this module's own standalone `run.py stream` output
-  instead.
+- `source.stream_cache_db` — the cache path. Defaults to the suite's shared cache
+  (`~/.cherrypick/data/marketdata/stream_cache.db`) if omitted — the piggyback path. Repoint it at a
+  private file only for a standalone `run.py stream` session.
 - `symbols` — default symbol list; the first is used when `--symbol` is omitted.
 - `streamer` — `{window_strike_count}` for `run.py stream` (strikes each side of the money to subscribe).
 - `serve.refresh_seconds` — the spot-trail recorder's sample interval. The key keeps its name because
   this value outlived the server it was named for: `host`, `port`, `ws_port` and
   `push_min_interval_seconds` went with the dashboard, and renaming the block would break every
   existing `config.json`. The console polls its own GEX page at the same cache cadence.
-- `history_db` — this module's own SQLite for the persisted spot trail.
+- `history_db` — this module's own SQLite for the persisted spot trail (default
+  `~/.cherrypick/data/gex/gex_history.db`).
