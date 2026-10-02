@@ -417,8 +417,8 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
             checks.append(
                 Check(
                     f"{name}.capabilities",
-                    WARN,
-                    f"switched on but not running: this machine has no {', '.join(state['missing'])} "
+                    OK,
+                    f"switched on, off until this machine has {', '.join(state['missing'])} "
                     "(run.py capabilities --detect)",
                 )
             )
@@ -452,16 +452,30 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
             ),
             None,
         )
-        checks.append(
-            Check(
-                f"{name}.config",
-                OK if mc else WARN,
-                # `~/.cherrypick/config/<mod>.json`, not the resolved absolute path: the sibling
-                # `.path` and `.paper_db` checks already render portably, and this one was the
-                # outlier putting the username on screen.
-                cfgmod.portable_path(mc) if mc else "module config not found (home or in-repo)",
-            )
+        # A fresh install has no config of its own and runs the shipped example, which every module
+        # falls back to (core.home.load_module_config; meic's and earnings' own config_path). That is
+        # the base install working as designed, not a missing file.
+        example = next(
+            (
+                c
+                for c in (root / "config" / "config.example.json", root / "config.example.json")
+                if c.exists()
+            ),
+            None,
         )
+        if mc:
+            # `~/.cherrypick/config/<mod>.json`, not the resolved absolute path: the sibling `.path`
+            # and `.paper_db` checks already render portably.
+            config_check = Check(f"{name}.config", OK, cfgmod.portable_path(mc))
+        elif example:
+            config_check = Check(
+                f"{name}.config",
+                OK,
+                f"the shipped example (no ~/.cherrypick/config/{name}.json of your own yet)",
+            )
+        else:
+            config_check = Check(f"{name}.config", WARN, "module config not found (home, in-repo or example)")
+        checks.append(config_check)
 
         paper = mcfg.get("paper", {})
         # paper DB dir writable (resolved the same way every read surface resolves it, so this checks
@@ -628,8 +642,14 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     checks.append(
         Check(
             "notify.channels",
-            OK if has_push else WARN,
-            f"{', '.join(detail_bits)}" + ("" if has_push else "  (no push channel active; log floor only)"),
+            # Log-only is the shipped default (push channels are opt-in), so it is not a warning.
+            OK,
+            f"{', '.join(detail_bits)}"
+            + (
+                ""
+                if has_push
+                else "  (log only: push channels are off by default; console toasts still show)"
+            ),
         )
     )
 

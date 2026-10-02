@@ -65,10 +65,14 @@ def config_path() -> Path:
     home_cfg = _home.config_path("meic")
     if home_cfg.exists():
         return home_cfg
-    # src/cherrypick/meic/paths.py -> package root is four parents up (was parent.parent when
-    # the modules lived flat in src/).
-    legacy = Path(__file__).resolve().parents[3] / "config.json"
-    return legacy if legacy.exists() else home_cfg
+    legacy = _PKG_ROOT / "config.json"
+    if legacy.exists():
+        return legacy
+    # A fresh install has neither: the shipped example is the configuration it runs, read-only (the
+    # same last resort core.home.load_module_config gives every other module). Without it the paper
+    # loop opened a path that did not exist and failed every tick. Anything that WRITES the config
+    # must write the home path, never this one.
+    return _PKG_ROOT / "config.example.json"
 
 
 def logs_dir() -> Path:

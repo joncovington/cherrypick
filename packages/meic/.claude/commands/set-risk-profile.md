@@ -60,6 +60,15 @@ profile = {k: v for k, v in registry["profiles"][profile_name].items() if not k.
 note = registry["profiles"][profile_name].get("_note", "(no description)")
 
 cfg_path = config_path()
+if cfg_path.name == "config.example.json":
+    # A fresh install runs the shipped example read-only; never write into it. Start this
+    # machine's own config from it instead.
+    from cherrypick.core import home
+    target = home.config_path("meic")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(cfg_path, target)
+    cfg_path = target
+    print(f"Created {cfg_path} from the shipped example")
 backup = cfg_path.with_name(cfg_path.name + ".bak")
 shutil.copy(cfg_path, backup)
 print(f"Backed up {cfg_path} -> {backup}")

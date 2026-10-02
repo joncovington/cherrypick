@@ -57,15 +57,25 @@ def reports_dir() -> Path:
 
 def config_path() -> Path:
     """Earnings' config file. The home config (``~/.cherrypick/config/earnings.json``) once it exists,
-    else the legacy in-repo ``config/config.json`` until migrated. A pure lookup — never writes — so it
+    else the legacy in-repo ``config/config.json`` until migrated, else the shipped
+    ``config/config.example.json``. A pure lookup — never writes — so it
     is safe from tests and from a standalone checkout (which keeps using its in-repo config)."""
     home_cfg = _home.config_path("earnings")
     if home_cfg.exists():
         return home_cfg
     # This file sits at src/cherrypick/earnings/paths.py, so the package root is four parents up.
     # (Was parent.parent when the modules lived flat in src/.)
-    legacy = Path(__file__).resolve().parents[3] / "config" / "config.json"
-    return legacy if legacy.exists() else home_cfg
+    legacy = _PKG_ROOT / "config" / "config.json"
+    if legacy.exists():
+        return legacy
+    # A fresh install has neither: the shipped example is the configuration it runs, read-only (the
+    # same last resort core.home.load_module_config gives every other module). Anything that WRITES the
+    # config must write the home path, never this one.
+    return _PKG_ROOT / "config" / "config.example.json"
+
+
+# The package root: src/cherrypick/earnings/paths.py -> four parents up.
+_PKG_ROOT = Path(__file__).resolve().parents[3]
 
 
 def logs_dir() -> Path:

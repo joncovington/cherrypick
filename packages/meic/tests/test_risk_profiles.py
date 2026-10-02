@@ -736,3 +736,21 @@ def test_control_drift_is_control_with_only_the_drift_skew_added(sample_risk_pro
     assert extra == {"drift_skew_otm_multiple", "drift_band_points"}, extra
     for key, value in control.items():
         assert drift[key] == value, f"control-drift diverges from control on {key!r}"
+
+
+def test_a_fresh_install_reads_the_shipped_config_example(tmp_path, monkeypatch):
+    """No ~/.cherrypick/config/meic.json and no in-repo config.json: the loop must still have a
+    config to read (it opened a path that did not exist and failed every tick), and it is the
+    shipped example."""
+    from cherrypick.meic import paths
+
+    monkeypatch.setattr(paths._home, "config_path", lambda name=None: tmp_path / "absent.json")
+    monkeypatch.setattr(paths, "_PKG_ROOT", tmp_path)
+    (tmp_path / "config.example.json").write_text("{}", encoding="utf-8")
+    assert paths.config_path() == tmp_path / "config.example.json"
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    assert paths.config_path() == tmp_path / "config.json"
+    home = tmp_path / "home.json"
+    home.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(paths._home, "config_path", lambda name=None: home)
+    assert paths.config_path() == home
