@@ -221,3 +221,7 @@ if ($up) {
     Write-Host "  If it never loads, run:  .venv\Scripts\python packages\orchestrator\run.py doctor"
 }
 Write-Host "  Everything runs in PAPER mode. Live trading stays off until you deliberately turn it on."
+Write-Host ""
+Write-Host "  Open the console any time at $ConsoleUrl (bookmark it); cherrypick keeps running in the background."
+Write-Host "  To run cherrypick commands yourself, open a terminal in this folder ($Root) and activate"
+Write-Host "  the virtual environment first:  .venv\Scripts\Activate.ps1   (QUICKSTART.md explains)"

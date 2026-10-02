@@ -201,3 +201,7 @@ else
     echo "  If it never loads, run:  .venv/bin/python packages/orchestrator/run.py doctor"
 fi
 echo "  Everything runs in PAPER mode. Live trading stays off until you deliberately turn it on."
+echo
+echo "  Open the console any time at $CONSOLE_URL (bookmark it); cherrypick keeps running in the background."
+echo "  To run cherrypick commands yourself, open a terminal in this folder ($ROOT) and activate"
+echo "  the virtual environment first:  source .venv/bin/activate   (QUICKSTART.md explains)"
