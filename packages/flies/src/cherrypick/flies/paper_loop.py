@@ -271,6 +271,31 @@ def _note_completion_rule(conn, config: dict) -> None:
         _log(f"completion-rule journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
+VOL_FLOOR_ARM_FROM = "2026-10-05"
+
+
+def _note_vol_floor_arm(conn, config: dict) -> None:
+    """Journal the `vol-floor` arm's entry to the roster (an `arm_added` break dated its first
+    session), once a machine's config enables it. Idempotent; best-effort, never a reason to skip
+    a tick. Its book starts there, so the regime cuts never read it against control's earlier era."""
+    try:
+        arm = (config.get("arms") or {}).get("vol-floor")
+        if not isinstance(arm, dict) or not arm.get("enabled", True):
+            return
+        dbmod.record_measurement_break(
+            conn,
+            break_date=VOL_FLOOR_ARM_FROM,
+            scope="vol-floor",
+            kind="arm_added",
+            reason=(
+                "vol-floor arm enters the roster: control plus no entry while the ATM straddle is under "
+                f"min_entry_straddle_pct ({arm.get('min_entry_straddle_pct')}) of spot"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"vol-floor arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
 def _entry_cadence_state_path() -> str:
     return os.path.join(_paper_data_dir(), "entry_cadence.json")
 
@@ -814,6 +839,7 @@ def main(argv=None) -> int:
             _note_cadence_change(conn, args.interval)
             _note_entry_cadence_change(conn, config)
             _note_completion_rule(conn, config)
+            _note_vol_floor_arm(conn, config)
             # Stale-checkout guard (2026-08-05). The loop imports from the working tree, so a session
             # run from an older branch writes NULL to any regime column that branch predates --
             # silently, all day, with no backfill path afterwards. Logged rather than enforced: a

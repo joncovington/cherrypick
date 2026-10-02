@@ -295,6 +295,17 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   (5/10 and 10/20) as separate arms, each with its own `max_bwb_tail_dollars`. **Paper only, never a
   live candidate.** Read the roll as the result (`best_roll_debit`, unrolled vs rolled P&L). No hedge
   overlay — insuring the far wing is the roll's job.
+- `vol-floor` — `control` plus one variable (from 2026-10-05): no entry while the ATM straddle is
+  under `min_entry_straddle_pct` (0.0022) of spot (`engine.low_vol_refusal`, refusal
+  `straddle_below_floor`).
+  - **Why:** completion is a race for spot to travel a wing width one way before the close, and
+    control's low-vol third of sessions completed 70% against a ~75% break-even.
+  - **The threshold:** a ratio, so it survives spot moving. It was matched to the 17-point cut's
+    refusal rate and not re-optimised. In-sample it was ahead in both halves of the era but not
+    significantly: a test, not a default.
+  - **The one variable is pinned:** `tests/test_vol_floor.py` checks this machine's definition
+    equals control's apart from the floor.
+  - **The judging rule** is declared in the experiment log (2026-10-02).
 
 ### Regime tagging
 

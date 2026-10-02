@@ -107,6 +107,11 @@ ARMS = (
     # is not above spot, and its unknown -- whether an OTM spread at the wall pays enough credit to
     # clear the gates -- is exactly what the refusal rows will measure.
     "callwall",
+    # control plus a volatility floor (2026-10-05): no entry while the ATM straddle is under
+    # `min_entry_straddle_pct` of spot (`low_vol_refusal`). One variable vs control. The low-vol
+    # third of control's sessions completed 70% against a ~75% break-even; whether refusing them
+    # pays is what this arm measures, forward, because the in-sample cut is not significant.
+    "vol-floor",
 )
 
 
@@ -866,6 +871,29 @@ def trend_bucket_refusal(snapshot: dict, params: dict) -> str | None:
     return "trend_bucket_refused" if bucket == wanted else None
 
 
+def low_vol_refusal(snapshot: dict, params: dict) -> str | None:
+    """Refuse an entry while the ATM straddle is below `min_entry_straddle_pct` of spot (null/absent
+    = off). The `vol-floor` arm's one variable (2026-10-05).
+
+    Completion is a race for spot to travel a wing width in one direction before the close, and a
+    cheap straddle is the market saying it will not travel far: over control's 2026-08-03..10-02
+    era the lowest-vol third of sessions completed 70% for -$11 a spread, against 80-82% and +$17
+    on the rest, below the ~75% break-even. As a gate, refusing entries under 0.0022 (about 17 SPX
+    points at 7,700) kept 277 of 345 and raised completion from 78% to 81%, ahead in both halves of
+    the era (+$762, +$1,308) -- in-sample and not significant (12 sessions better, 9 worse), which
+    is why it is an arm and not a default. A ratio rather than points so it means the same thing as
+    spot moves; the same measure `classify_regime` stores as `vol_value`. Fails OPEN when the ATM
+    pair is unquoted: an entry with no ATM quotes is refused on its own legs anyway.
+    """
+    floor = params.get("min_entry_straddle_pct")
+    if not floor:
+        return None
+    _bucket, ratio = _classify_vol(snapshot, params)
+    if ratio is None:
+        return None
+    return "straddle_below_floor" if ratio < float(floor) else None
+
+
 def miss_stop_refusal(params: dict, day_book: list, now_min: int | None) -> str | None:
     """Refuse a new entry once any of today's spreads has sat uncompleted for
     `miss_stop_minutes` or longer (null/absent = off).
@@ -1154,6 +1182,9 @@ def evaluate_credit_spread_entry(
     if refusal:
         return False, refusal, None
     refusal = miss_stop_refusal(params, _day_book(open_positions, day_positions), snapshot.get("now_min"))
+    if refusal:
+        return False, refusal, None
+    refusal = low_vol_refusal(snapshot, params)
     if refusal:
         return False, refusal, None
 

@@ -549,3 +549,48 @@ No gate, no arm. The credit is a proxy for where the entry sits and which side i
 here is worth testing, it is the side split: calls +$17 a spread, puts +$1. That is a two-arm
 question held out over future sessions, and in a single up-trending tape it is more likely the tape
 than a rule.
+
+## 2026-10-02 — what moves the completion rate; the `vol-floor` arm declared (no result yet)
+
+The question was what would raise `control`'s completion rate. Read over paper `control`
+(345 settled 5-wide SPX spreads, 43 sessions, 2026-08-03..10-02). Completed spreads averaged +$80
+and misses −$242, so break-even is about 75% completion. Control runs 77.7%, and each point is worth
+about $3.20 a spread.
+
+- **Misses are wrong-direction days, not short ones.** Using the gex spot trail, spot travelled a full
+  wing width past the centre in at least one direction before 15:30 on 343 of 345 spreads. The worst
+  8 sessions hold 44% of the misses; 9 sessions had none.
+- **What does not move completion:**
+  - where spot sat in the strike interval at entry (77–80% across it);
+  - the entry credit (78% in every bucket);
+  - trend from the open, with or against (75% against 77%);
+  - flipping `choose_side`. A spot-travel proxy, calibrated on the side actually sold (93% agreement
+    with paper's own completions), gives the other side 77.4% against 76.8%;
+  - keeping live's completion order past 15:30. None of the 13 live misses saw spot travel a width
+    after the cutoff;
+  - wider wings (width-2 63%, down to width-10 12%).
+- **Stacking on a completed fly is a negative result.** The replay allowed a new legged entry on the
+  centre of a fly already completed (the duplicate rule refuses these today; the legs share the fly's
+  strikes and signs).
+  - 136 stacks completed only 67% (by the proxy), and lost about $13 each net of the shared
+    settlement fee. They come late: spot has to have completed one fly and come back.
+  - Unlimited stacking: 811 entries, −$3,433, worst day −$3,720 against −$836.
+  - Even completing a stack at net 0.15 (risk-free at two contracts) only breaks even.
+- **What separates completion:**
+  - volatility: the low-vol third of sessions 70% and −$11 a spread, the rest 80–82% and +$17;
+  - time of entry: 10:00–11:00 83–84%, 11:00–13:00 68–70%, after 14:00 50%;
+  - a flat open: within 5 points of the open, before 11:00, 91% on 34 spreads.
+
+  Each rule raised completion 3–6 points in both halves of the era, but only the volatility floor
+  was ahead on P&L in both halves. Midday skip is already under test as an advised arm.
+
+**Declared: the `vol-floor` arm, from 2026-10-05.**
+- **The arm:** `control` plus no entry while the ATM straddle is under 0.0022 of spot (about 17
+  points at 7,700). The ratio was matched to the 17-point cut's 21% refusal rate, not re-optimised.
+- **In-sample:** it kept 277 of 345 entries, raised completion from 78% to 81%, and was ahead in
+  both halves (+$762, +$1,308). That is not significant: 12 sessions better, 9 worse.
+- **How it will be read:** against `control` on the same sessions after at least 14 sessions
+  (`MIN_EFFECTIVE_N`), on per-session net (sign test) and on completion rate. It earns promotion
+  only if it is ahead on both and not on the strength of one or two sessions.
+- **Its book starts at its own `arm_added` break,** and it shares the 10-05 completion-price break
+  with every legged arm.
