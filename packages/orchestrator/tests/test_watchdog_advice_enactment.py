@@ -24,8 +24,7 @@ from cherrypick.orchestrator import watchdog
 
 ET = ZoneInfo("America/New_York")
 MIDDAY = datetime(2026, 8, 25, 11, 0, tzinfo=ET)
-CFG = {"capabilities": {"claude": True, "dolt": True},
-        "advisor": {"enabled": True}}
+CFG = {"capabilities": {"claude": True, "dolt": True}, "advisor": {"enabled": True}}
 
 
 class _Proc:

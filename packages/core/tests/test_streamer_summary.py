@@ -177,6 +177,10 @@ def test_a_snapshot_of_the_last_session_lands_on_that_session_not_today(tmp_path
     today = datetime.now(ZoneInfo("America/New_York")).date()
     yesterday = today - timedelta(days=1)
     day_id = (yesterday - date(1970, 1, 1)).days
-    conn = _run_summary(tmp_path, [_summary_event("SPX", o=7688.99, h=7722.88, lo=7651.54, prev=7670.84, day_id=day_id)])
-    dates = [r["trade_date"] for r in conn.execute("SELECT trade_date FROM stream_summary WHERE symbol='SPX'")]
+    conn = _run_summary(
+        tmp_path, [_summary_event("SPX", o=7688.99, h=7722.88, lo=7651.54, prev=7670.84, day_id=day_id)]
+    )
+    dates = [
+        r["trade_date"] for r in conn.execute("SELECT trade_date FROM stream_summary WHERE symbol='SPX'")
+    ]
     assert dates == [yesterday.isoformat()]
