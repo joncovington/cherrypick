@@ -1,0 +1,3 @@
+# Every change in this repository is reviewed by the owner. With branch protection's
+# "require review from code owners", a pull request into main merges only with this approval.
+* @joncovington
