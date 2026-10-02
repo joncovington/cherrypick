@@ -28,7 +28,6 @@ SERVER_ENTRY = HERE / "server" / "dist" / "index.js"
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
-
 def _child_env() -> dict[str, str]:
     """The environment node runs in, with THIS interpreter's directory first on PATH.
 
@@ -41,9 +40,15 @@ def _child_env() -> dict[str, str]:
     Scripts/ or bin/ holds both python and pythonw).
     """
     env = dict(os.environ)
-    here = str(Path(sys.executable).resolve().parent)
+    # absolute(), not resolve(): a Linux venv's bin/python is a symlink to the BASE interpreter
+    # (/usr/bin/python3.14), and resolving all the way through lands in /usr/bin — the very
+    # directory this exists to outrank. Windows venvs copy a real launcher in, so resolve() happened
+    # to work there; on Linux the venv must be reached THROUGH the symlink (executing
+    # .venv/bin/python is what gives a process the venv's site-packages).
+    here = str(Path(sys.executable).absolute().parent)
     env["PATH"] = here + os.pathsep + env.get("PATH", "")
     return env
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="cherrypick console launcher")
