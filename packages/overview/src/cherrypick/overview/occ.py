@@ -15,10 +15,11 @@ odd-lot roots `2SPX`/`4SPX` are OCC's alone). Every underlying's total and every
 subtotal was even that day, so halving is exact. The store holds the sides as OCC states them;
 contracts are halved on read.
 
-**OCC publishes a session the next day, not after its close.** 2026-10-01's file was still a "no
-data" reply at 22:20 ET that evening; 2026-09-30's was up by 18:00 ET on 10-01. So the pack reads
-the newest session strictly before its own, says which session that is, and counts how many
-sessions it lags.
+**OCC publishes a session late that evening, hours after its close.** 2026-10-01's file was a "no
+data" reply until 23:12 ET and was up by 23:22 ET: after the 18:45 market-files run, so it is the
+07:45 retry that lands the prior session before the 08:30 pack. The pack reads the newest session
+strictly before its own, says which session that is, and counts how many sessions it lags, so a
+morning the retry missed shows the session before, labelled as behind.
 
 **Stock or fund comes from Nasdaq Trader's symbol directory** (`nasdaqtraded.txt`), every
 US-listed security with an `ETF` flag. OCC's file does not say what an underlying is, and the

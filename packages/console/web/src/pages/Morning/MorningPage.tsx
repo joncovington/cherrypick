@@ -775,7 +775,7 @@ function HotOptionsCard({ pack }: { pack: MorningPack }) {
           <p className="muted">
             {count(h.totalContracts)} contracts across {count(h.underlyings)} underlyings, put/call{" "}
             {fmt(h.totalPutCall)}. “vs avg” is against {h.baselineSessions ?? 0} prior sessions.
-            {h.lagSessions ? ` ${h.lagSessions} session(s) behind the prior session — OCC publishes the next day.` : ""}
+            {h.lagSessions ? ` ${h.lagSessions} session(s) behind the prior session — OCC publishes late in the evening, and the morning fetch had not landed it.` : ""}
           </p>
           <HotRows title="Indexes" rows={h.indexes} />
           {h.equities === null ? (

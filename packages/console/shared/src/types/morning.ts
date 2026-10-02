@@ -294,7 +294,7 @@ export interface MorningHotOptionsRow {
  *  Options Report ranks it: the five index products, then single-name equities and funds. */
 export interface MorningHotOptions {
   session: string | null;
-  /** Sessions this file is behind the pack's prior session (OCC publishes the next day). */
+  /** Sessions this file is behind the pack's prior session (OCC publishes late in the evening). */
   lagSessions: number | null;
   listingsAsOf: string | null;
   totalContracts: number | null;

@@ -73,9 +73,10 @@ less than the file on disk is refused. **Every reader takes values strictly befo
   share of sides and volume against up to 20 prior sessions. Record-only.
   - **OCC states both sides of every trade**, so contracts are its quantities halved (VIX 2026-09-30:
     1,070,156 in the file, 535,078 at Cboe). The store keeps the sides; halving is on read.
-  - **OCC publishes a session the next day**, not at its close (10-01's file was still absent at
-    22:20 ET), so the block names its session and counts `lag_sessions` behind the pack's prior
-    one; more than three behind is refused (`stale_occ_file`).
+  - **OCC publishes a session late that evening** (10-01's file appeared between 23:12 and 23:22
+    ET), after the 18:45 fetch, so the 07:45 retry is what lands it before the pack. The block names
+    its session and counts `lag_sessions` behind the pack's prior one; more than three behind is
+    refused (`stale_occ_file`).
   - **Stock or fund is Nasdaq Trader's `ETF` flag**, never guessed: no directory leaves equities
     unranked (`no_listings_file`), and an unlisted name ranking in the top 25 (a cash index like
     XSP) is named in `unclassified`.

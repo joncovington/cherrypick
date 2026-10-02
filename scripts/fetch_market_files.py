@@ -16,7 +16,8 @@ so CPI, jobs and PPI dates come only through FRED's release-dates API, which nee
 (`fred-key` stores it in the OS keyring). FRED's keyless CSV download hangs from here, so FRED is
 reached only through its API.
 
-OCC publishes a session's volume the next day, not after its close, so each run lands every one of
+OCC publishes a session's volume late that evening (2026-10-01's appeared between 23:12 and 23:22
+ET), after the 18:45 run, so the 07:45 retry is the one that lands it; each run lands every one of
 the last `occ.OCC_SESSIONS` sessions it lacks (one ~4 MB CSV each, reduced to sides by underlying
 on arrival) and leaves an unpublished one for the next run. The first run backfills them all.
 
