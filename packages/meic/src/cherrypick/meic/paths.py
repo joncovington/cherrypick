@@ -20,6 +20,7 @@ never hardcode an absolute path — the home derives from ``Path.home()`` (or th
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from cherrypick.core import home as _home
@@ -80,3 +81,27 @@ def logs_dir() -> Path:
 def log_path(name: str) -> Path:
     """A named log file inside the logs home (see :func:`logs_dir`)."""
     return logs_dir() / name
+
+
+# The package root, holding the shipped config.*.example.json templates:
+# src/cherrypick/meic/paths.py -> four parents up.
+_PKG_ROOT = Path(__file__).resolve().parents[3]
+
+
+def risk_profiles_path() -> Path:
+    """MEIC's arm registry. ``$MEIC_RISK_CONFIG`` if set, else the machine's own
+    ``~/.cherrypick/config/meic.risk.json``, else the shipped control-only
+    ``config.risk.example.json``.
+
+    The registry used to be ``config.risk.json`` in the package, which put one machine's arms in
+    the repo and made every arm change a source edit. A machine's arms are its configuration, so
+    they live in the home beside ``meic.json``; the package keeps only the example a fresh install
+    runs from.
+    """
+    override = os.environ.get("MEIC_RISK_CONFIG")
+    if override:
+        return Path(os.path.expandvars(os.path.expanduser(override)))
+    home_copy = _home.config_dir() / "meic.risk.json"
+    if home_copy.is_file():
+        return home_copy
+    return _PKG_ROOT / "config.risk.example.json"

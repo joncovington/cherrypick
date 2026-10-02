@@ -16,7 +16,6 @@ compared on identical, reproducible criteria. See docs/paper-trading.md.
 import argparse
 import json
 import os
-import pathlib
 import sqlite3
 import sys
 from datetime import datetime
@@ -30,11 +29,6 @@ def _now_et():
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-# Package root (holds config.risk.json): src/cherrypick/meic/paper.py -> four parents up. This was
-# _HERE/".." when the modules lived flat in src/; config.risk.json is the risk-profile registry the
-# paper engine loads, so a wrong root here silently loses every named profile.
-_REPO_ROOT = str(pathlib.Path(__file__).resolve().parents[3])
-_RISK_PROFILES_PATH = os.path.join(_REPO_ROOT, "config.risk.json")
 
 from datetime import date as _date  # noqa: E402
 
@@ -222,7 +216,8 @@ def _close_cost(short_q: dict, long_q: dict, slippage_frac: float) -> float:
 
 
 def load_profiles() -> dict:
-    return _profiles.load_profiles(external_path=_RISK_PROFILES_PATH)
+    # The machine's registry, else the shipped control-only example (paths.risk_profiles_path).
+    return _profiles.load_profiles(external_path=str(_paths.risk_profiles_path()))
 
 
 def load_base_config() -> dict:

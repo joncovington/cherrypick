@@ -111,6 +111,7 @@ _EXAMPLE_REL: dict[str, str] = {
     "flies": "../flies/config.example.json",
     "gex": "../gex/config.example.json",
     "meic": "../meic/config.example.json",
+    "meic-risk": "../meic/config.risk.example.json",
     "pmcc": "../pmcc/config.example.json",
     "streamer": "../streamer/config.example.json",
 }
@@ -259,10 +260,11 @@ def _target_path(cfg: dict[str, Any], target_id: str) -> Path:
     if target_id == "orchestrator":
         return cfgmod.effective_config_path()
     if target_id == "meic-risk":
-        mcfg = (cfg.get("modules") or {}).get("meic")
-        if not mcfg:
-            raise KeyError("meic is not configured; no config.risk.json target")
-        return cfgmod.module_root(mcfg, "meic") / "config.risk.json"
+        # MEIC's arm registry is machine config (~/.cherrypick/config/meic.risk.json); the package
+        # ships only config.risk.example.json. Absent until a person creates it from the example.
+        if not (cfg.get("modules") or {}).get("meic"):
+            raise KeyError("meic is not configured; no arm registry target")
+        return _home.config_path("meic.risk")
     if target_id in _MODULE_TARGETS:
         return _home.config_path(target_id)
     raise KeyError(f"unknown config target: {target_id}")

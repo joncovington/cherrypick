@@ -37,6 +37,9 @@ for _leaked in (
 ):
     _os.environ.pop(_leaked, None)
 _ROOT = Path(__file__).resolve().parent.parent
+# The arm registry for the whole session, inherited by every subprocess the tests spawn: never a
+# machine's own ~/.cherrypick/config/meic.risk.json, never just the control-only example.
+_os.environ["MEIC_RISK_CONFIG"] = str(_ROOT / "tests" / "fixtures" / "meic.risk.test.json")
 _config = _ROOT / "config.json"
 if not _config.exists():
     shutil.copy(_ROOT / "config.example.json", _config)

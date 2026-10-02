@@ -4,6 +4,8 @@
   "_home_note": "Runtime home (this config.json, logs/, state/, dashboard.html) = CHERRYPICK_HOME if set, else the repo root in a source checkout, else ~/.cherrypick for a pip-installed copy. An installed copy thus reads ~/.cherrypick/config.json.",
   "_modules_home_note": "Managed module checkouts live under CHERRYPICK_MODULES_HOME, else CHERRYPICK_HOME/modules, else ~/.cherrypick/modules. `install` clones a module only when its checkout is absent and never touches an existing one; `uninstall` leaves checkouts in place.",
   "timezone": "America/New_York",
+  "_capabilities_note": "What this machine has, written by the installer (run.py capabilities --detect --write) and editable by hand. claude: the Claude Code CLI, which the advisor and the EOD/morning narratives shell out to. dolt: a running Dolt server with the earnings, options and stocks clones, which the earnings module and the technicals report read. Absent or false means every feature that needs it is off and hidden from the console, whatever its own switch says.",
+  "capabilities": {"claude": false, "dolt": false},
   "modules": {
     "meic": {
       "enabled": true,
@@ -44,7 +46,7 @@
           "--write"
         ],
         "_paper_db_note": "Path to the module's paper-trades SQLite DB — MUST point at the file the module actually WRITES (a mismatch silently blinds the orchestrator's report/reconcile/dashboard and the watchdog freshness check). Relative resolves against the module checkout; a leading '~' or env var expands (use e.g. '~/.cherrypick/data/meic/paper_trades.db' when the module keeps its data in the managed home); an absolute path is used as-is.",
-        "paper_db": "data/paper_trades.db",
+        "paper_db": "~/.cherrypick/data/meic/paper_trades.db",
         "notify_trades": true,
         "trade_schema": "meic_ic",
         "log": "paper_loop.log",
@@ -171,8 +173,8 @@
       }
     },
     "calendars": {
-      "_comment": "Weekly SPX double-calendar paper module (packages/calendars): enters Mondays, holds through the week, so its loop runs Mon-Fri like everything else and self-gates entry to the entry day. Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; its market data comes entirely from the shared stream cache via the streamer's `expirations` request field.",
-      "enabled": true,
+      "_comment": "EXPERIMENTAL, off by default: switch on with modules.calendars.enabled once you have read its package README. Weekly SPX double-calendar paper module (packages/calendars): enters Mondays, holds through the week, so its loop runs Mon-Fri like everything else and self-gates entry to the entry day. Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; its market data comes entirely from the shared stream cache via the streamer's `expirations` request field.",
+      "enabled": false,
       "path": "../calendars",
       "paper": {
         "kind": "self_healing",
@@ -202,8 +204,8 @@
       }
     },
     "pmcc": {
-      "_comment": "PMCC-99 deep-ITM covered-call paper module (packages/pmcc): buys an 85-90-delta ~21DTE call, sells the ATM ~7DTE call nearest spot, on TQQQ; enters any day the (symbol, book) slot is free and holds to the short's own expiration (~1-2 weeks). Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache via the streamer's `expirations` and `window_hints` request fields.",
-      "enabled": true,
+      "_comment": "EXPERIMENTAL, off by default: switch on with modules.pmcc.enabled once you have read its package README. PMCC-99 deep-ITM covered-call paper module (packages/pmcc): buys an 85-90-delta ~21DTE call, sells the ATM ~7DTE call nearest spot, on TQQQ; enters any day the (symbol, book) slot is free and holds to the short's own expiration (~1-2 weeks). Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache via the streamer's `expirations` and `window_hints` request fields.",
+      "enabled": false,
       "path": "../pmcc",
       "paper": {
         "kind": "self_healing",
@@ -233,8 +235,8 @@
       }
     },
     "curve": {
-      "_comment": "curve: VXX call credit spreads harvesting the VIX term-structure roll yield, gated by a daily VIX/VIX3M regime read (packages/curve). Paper-only and credential-free in the calendars/pmcc posture -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache. Note VXX is a real UNDERLYING here (a chain window plus its target expiration, ~700 subscriptions), unlike a quote-only leg: a new underlying needs a producer restart to pick up and trips the watchdog's subscription-growth recycle, so add it outside market hours and watch reconnect_count while it lands.",
-      "enabled": true,
+      "_comment": "EXPERIMENTAL, off by default: switch on with modules.curve.enabled once you have read its package README. curve: VXX call credit spreads harvesting the VIX term-structure roll yield, gated by a daily VIX/VIX3M regime read (packages/curve). Paper-only and credential-free in the calendars/pmcc posture -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache. Note VXX is a real UNDERLYING here (a chain window plus its target expiration, ~700 subscriptions), unlike a quote-only leg: a new underlying needs a producer restart to pick up and trips the watchdog's subscription-growth recycle, so add it outside market hours and watch reconnect_count while it lands.",
+      "enabled": false,
       "path": "../curve",
       "paper": {
         "kind": "self_healing",
@@ -438,7 +440,7 @@
     {
       "_comment": "Long-running background daemons the orchestrator keeps alive: started at `install`, restarted by the watchdog if down (single-instance guarded), stopped at `uninstall`. Located by 'path' (relative to this file) or 'repo'. status_argv must print {\"running\": bool}. A running service whose config changed since launch is recycled (stop then start) so it re-reads -- the orchestrator stamps a hash of this entry plus the service's own config file at launch and compares each tick; requires auto_restart, and set 'config_name' if that config file is named for neither the checkout directory nor the id. The gex spot-trail recorder samples every symbol's spot continuously so the GEX dashboard's spot trail has no gaps and builds all session, independent of whether the dashboard is open. Disabled by default.",
       "id": "gex-recorder",
-      "enabled": false,
+      "enabled": true,
       "path": "../gex",
       "status_argv": [
         "run.py",

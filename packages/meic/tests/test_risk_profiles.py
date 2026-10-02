@@ -1,4 +1,11 @@
-"""Unit tests for the risk-profile / arm-stream system: config.risk.json and profile switching."""
+"""Unit tests for the risk-profile / arm-stream system: the arm registry and profile switching.
+
+Two registries, two kinds of test. The SHIPPED example (`config.risk.example.json`, control only) is
+what a fresh install runs, and its tests run everywhere. A machine's OWN registry
+(`~/.cherrypick/config/meic.risk.json`, see paths.risk_profiles_path) is that machine's configuration
+-- the roster tests below pin the arms THIS suite's author runs, read-only from the real home, and skip
+with a stated reason on a machine (or CI) that has none.
+"""
 
 from __future__ import annotations
 
@@ -41,12 +48,57 @@ STUDY_ARM_PREFIXES = ("width-", "gex-")
 META_KEYS = {"enabled"}
 
 
+EXAMPLE_REGISTRY = Path(__file__).parent.parent / "config.risk.example.json"
+# The REAL home, not the session's throwaway one (conftest redirects CHERRYPICK_HOME): read-only.
+MACHINE_REGISTRY = Path.home() / ".cherrypick" / "config" / "meic.risk.json"
+
+
 @pytest.fixture
 def sample_risk_profiles():
-    """Load the actual config.risk.json from the repo."""
-    path = Path(__file__).parent.parent / "config.risk.json"
-    with open(path) as f:
+    """This machine's own arm registry, read-only. Skips where there is none: the roster it pins
+    is one machine's configuration, not the shipped default."""
+    if not MACHINE_REGISTRY.is_file():
+        pytest.skip(
+            f"no machine arm registry at {MACHINE_REGISTRY.name} -- roster tests pin a configured machine"
+        )
+    with open(MACHINE_REGISTRY, encoding="utf-8") as f:
         return json.load(f)
+
+
+@pytest.fixture
+def example_registry():
+    with open(EXAMPLE_REGISTRY, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def test_the_shipped_example_is_control_only(example_registry):
+    """A base install runs one arm. Every other arm is a machine's own configuration."""
+    assert example_registry["active_profile"] == "control"
+    assert list(example_registry["profiles"]) == ["control"]
+    assert example_registry["profiles"]["control"].get("enabled", True) is True
+
+
+def test_a_fresh_install_resolves_to_the_example(tmp_path, monkeypatch):
+    from cherrypick.meic import paths
+
+    monkeypatch.delenv("MEIC_RISK_CONFIG", raising=False)
+    monkeypatch.setattr(paths._home, "config_dir", lambda: tmp_path)
+    assert paths.risk_profiles_path() == EXAMPLE_REGISTRY.resolve()
+    (tmp_path / "meic.risk.json").write_text('{"profiles": {}}', encoding="utf-8")
+    assert paths.risk_profiles_path() == tmp_path / "meic.risk.json"
+    monkeypatch.setenv("MEIC_RISK_CONFIG", str(tmp_path / "elsewhere.json"))
+    assert paths.risk_profiles_path() == tmp_path / "elsewhere.json"
+
+
+def test_the_paper_loop_loads_the_resolved_registry(tmp_path, monkeypatch):
+    from cherrypick.meic import paper, paths
+
+    reg = tmp_path / "meic.risk.json"
+    reg.write_text(
+        json.dumps({"active_profile": "control", "profiles": {"control": {}, "mine": {}}}), encoding="utf-8"
+    )
+    monkeypatch.setattr(paths, "risk_profiles_path", lambda: reg)
+    assert "mine" in paper.load_profiles()
 
 
 @pytest.fixture
@@ -381,13 +433,13 @@ def test_ladder_profiles_have_required_gate_keys(sample_risk_profiles):
             assert key in profile_gates, f"Profile {profile_name} missing required key: {key}"
 
 
-def test_ladder_derived_thresholds_scale_with_each_tier():
+def test_ladder_derived_thresholds_scale_with_each_tier(sample_risk_profiles):
     """The low-IV relief ceiling/floor and late-entry-bias ceiling must DERIVE from each tier, not
     repeat one absolute (historical record: the ladder itself is retired, but its own internal
     consistency is still worth guarding since the values remain the base rung's documented history)."""
     from cherrypick.meic import paper
 
-    base, profiles = paper.load_base_config(), paper.load_profiles()
+    base, profiles = paper.load_base_config(), sample_risk_profiles["profiles"]
     prev = None
     for tier in ["conservative", "moderate", "aggressive", "very-aggressive"]:
         p = paper._merged_params(base, profiles[tier])
@@ -401,11 +453,11 @@ def test_ladder_derived_thresholds_scale_with_each_tier():
         prev = relief_max
 
 
-def test_ladder_credit_floor_is_monotonic_at_every_iv_level():
+def test_ladder_credit_floor_is_monotonic_at_every_iv_level(sample_risk_profiles):
     """The effective credit floor must never invert down the ladder (historical record)."""
     from cherrypick.meic import paper
 
-    base, profiles = paper.load_base_config(), paper.load_profiles()
+    base, profiles = paper.load_base_config(), sample_risk_profiles["profiles"]
     tiers = ["conservative", "moderate", "aggressive", "very-aggressive"]
     merged = {t: paper._merged_params(base, profiles[t]) for t in tiers}
     for iv_rank in (0.16, 0.21, 0.24, 0.28, 0.32, 0.40, 0.60):

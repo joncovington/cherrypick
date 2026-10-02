@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
 import subprocess
 import sys
 from pathlib import Path
@@ -166,6 +167,8 @@ def _traded_snapshot(*, wing=5, sp_bid=None, sc_bid=None, **overrides):
     )
 
 
+# The retired ladder's first two rungs, frozen in the session's test registry
+# (tests/fixtures/meic.risk.test.json, which conftest points MEIC_RISK_CONFIG at).
 CONSERVATIVE = paper.load_profiles()["conservative"]
 MODERATE = paper.load_profiles()["moderate"]
 BASE_CONFIG = paper.load_base_config()
@@ -2479,12 +2482,21 @@ def test_every_configured_profile_has_no_clock_based_pacing():
     assert base.get("min_minutes_between_entries") == 0 and base.get("stagger_entries") is True
 
 
+def _machine_profiles():
+    """This machine's own arm registry (read-only, real home), for tests that pin ITS arms. Skips
+    where there is none -- see test_risk_profiles for why roster checks are machine checks."""
+    path = pathlib.Path.home() / ".cherrypick" / "config" / "meic.risk.json"
+    if not path.is_file():
+        pytest.skip("no machine arm registry -- these pin a configured machine's arms")
+    return json.loads(path.read_text(encoding="utf-8"))["profiles"]
+
+
 def test_uncapped_sampling_streams_share_the_same_caps():
     """open/width-5/width-10 sample every tick independently (overlap_scope 'none') and must
     share IDENTICAL max_concurrent_ics/daily_ic_trade_target — an identical cap that BINDS still
     produces stream-dependent entry counts (exit speed feeds back into entry capacity), so the
     caps must be non-binding and equal across the whole family, not just present."""
-    profiles = paper.load_profiles()
+    profiles = _machine_profiles()
     sampling = {"control", "width-5", "width-10"}  # 'control' is the ex-'open' substrate since 2026-08-21 EOD
     assert sampling <= set(profiles)
     for name in sampling:
@@ -2499,7 +2511,7 @@ def test_control_gated_keeps_the_pre_cutover_deployed_policy():
     reference book whose whole point was matching the pre-cutover deployed policy ('shorts', 99).
     The frozen record must stay faithful — the derived stop policies (Phase 3) validated against
     exactly these values."""
-    control = paper.load_profiles()["control-gated"]
+    control = _machine_profiles()["control-gated"]
     assert control["overlap_scope"] == "shorts"
     assert control["max_concurrent_ics"] == 99
     assert control["per_side_stop_management"] is True
