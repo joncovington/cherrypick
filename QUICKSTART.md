@@ -172,8 +172,7 @@ and **activate** it:
 The prompt now starts with `(.venv)`. From there, commands are simply `python ...`, for example:
 
 ```
-python packages/orchestrator/run.py doctor            # a health check, in plain words
-python packages/orchestrator/run.py status            # what is running
+python packages/orchestrator/run.py doctor            # a health check of everything, in plain words
 python packages/orchestrator/run.py restart console   # restart just the console
 ```
 
@@ -185,6 +184,40 @@ then activate again:
 ```
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
+
+## Good habits for your first weeks
+
+- **Keep the computer awake during market hours.** cherrypick runs on your computer, so a computer
+  that is asleep, off or offline misses that time, and the day's paper record has a hole in it. On
+  Windows, set **Settings → System → Power → Sleep** to *Never* while plugged in; on a Mac, turn on
+  **System Settings → Battery (or Energy) → Prevent automatic sleeping**. A desktop or a laptop left
+  plugged in is best.
+- **All times are US Eastern.** Market hours, entry windows and every time in the console are New
+  York time, wherever you are.
+- **Give it weeks, not days.** A few sessions say almost nothing about a strategy: one quiet or one
+  violent day can dominate them. The console marks small samples as *underpowered*; believe it.
+  Remember too that paper results are simulated and flatter than real trading (see
+  [DISCLAIMER.md](DISCLAIMER.md)).
+- **Keep your tastytrade keys secret.** Never paste the client secret or refresh token into a chat,
+  an email or a file. If you think one has leaked, revoke it on tastytrade's website (**Manage → My
+  Profile → API**) and run the installer again with a new one.
+- **Back up your history.** Everything cherrypick records and every setting you change lives in the
+  `.cherrypick` folder in your home folder (`C:\Users\<you>\.cherrypick` or `~/.cherrypick`). It
+  makes one backup zip of its own data each night in `.cherrypick\backups`; copy that somewhere
+  else (a USB drive or cloud folder) now and then.
+- **When something looks wrong, ask `doctor` first.** It checks everything and says what is wrong in
+  plain words (see *Running cherrypick commands yourself* above). The detailed logs are in
+  `.cherrypick\logs` if someone helping you asks for them.
+
+### Updating to a new version
+
+1. Stop cherrypick: double-click **`uninstall.cmd`** (Windows) or run **`./uninstall.sh`** (Mac). Your
+   history and settings are kept.
+2. Get the new version: download the new ZIP and unzip it over your installation folder (say *yes*
+   to replacing files), or, if you used git, run `git pull` in the installation folder.
+3. Run the installer again, as in step 4. It brings everything up to date and starts cherrypick.
+
+Read the new version's `CHANGELOG.md` first: it says what changed and anything you need to do.
 
 ## Stopping cherrypick
 
