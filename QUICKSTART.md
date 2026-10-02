@@ -38,7 +38,14 @@ brew install python@3.13 node
 ## 2. Download cherrypick
 
 On the cherrypick GitHub page, click the green **Code** button, then **Download ZIP**. Unzip it
-somewhere easy to find, such as your **Documents** folder. (If you use git, `git clone` works too.)
+into your **Documents** folder and rename the folder to just **`cherrypick`**, so the rest of this
+guide's paths match:
+
+- Windows: `C:\Users\<you>\Documents\cherrypick`
+- Mac: `/Users/<you>/Documents/cherrypick`
+
+(If you use git, `git clone` into the same place works too.) This folder is the **installation
+folder**: the installer puts everything it needs inside it, and you come back to it to run commands.
 
 ## 3. Get your tastytrade API keys
 
@@ -59,16 +66,41 @@ tastytrade's own guide is at [developer.tastytrade.com](https://developer.tastyt
 
 ## 4. Run the installer
 
-**Windows.** Open the cherrypick folder and **double-click `install.cmd`**. If Windows asks whether
-to run it, choose **More info → Run anyway**.
+### Open a terminal in the installation folder
 
-**Mac.** In Terminal, go to the folder and run the installer (drag the folder onto the Terminal
-window after typing `cd ` to fill in its path):
+Every command below runs **from inside the cherrypick folder**.
+
+**Windows.** Open **File Explorer**, go to **Documents → cherrypick**, right-click an empty part of
+the window and choose **Open in Terminal**. (No such option? Open Terminal from the Start menu,
+type `cd $HOME\Documents\cherrypick` and press Enter.) The prompt should now end in
+`\Documents\cherrypick>`.
+
+**Mac.** Open **Terminal** and type:
 
 ```
 cd ~/Documents/cherrypick
+```
+
+To check you are in the right place, type `dir` (Windows) or `ls` (Mac): you should see
+`install.cmd`, `install.sh`, `QUICKSTART.md` and a `packages` folder.
+
+### Start the installer
+
+**Windows.** Either **double-click `install.cmd`** in File Explorer, or in the terminal type:
+
+```
+.\install.cmd
+```
+
+If Windows asks whether to run it, choose **More info → Run anyway**.
+
+**Mac.** In the terminal:
+
+```
 ./install.sh
 ```
+
+(If it says "permission denied", run `bash install.sh` instead.)
 
 The installer asks you a few things along the way:
 
@@ -80,19 +112,72 @@ The installer asks you a few things along the way:
 
 At the end it starts cherrypick and opens the **console** in your web browser.
 
-## 5. Use the console
+## 5. After installing: viewing the console
 
-The console is a web page at **<http://127.0.0.1:5070>** that only your own computer can open.
-Bookmark it. cherrypick keeps running in the background, including after a restart, so the page is
-there whenever you want it.
+The **console** is cherrypick's control room: a web page that only your own computer can open. The
+installer opens it for you when it finishes. To open it any other time:
 
-- During market hours (9:30–16:00 US Eastern), the strategies take paper trades and the pages fill
-  in. Outside those hours there is little to see; that is expected.
-- The **Overview** page is the summary; each strategy has its own page in the left menu.
-- The **Config** page turns strategies on and off. Strategies marked **experimental** are off by
-  default.
-- A small **read-only** badge at the bottom means your key has the read scope only. That is right
-  for paper mode.
+1. Open your web browser (Chrome, Edge, Safari or Firefox).
+2. Go to **<http://127.0.0.1:5070>**. (`127.0.0.1` means "this computer"; nothing is on the internet.)
+3. **Bookmark it**, so next time it is one click.
+
+You do not need to start anything first. cherrypick keeps running in the background, and starts
+again by itself after you restart the computer. If the page says it cannot connect, wait a minute
+(it may still be starting) and refresh; if it still does not load, see **If something goes wrong**
+below.
+
+What you will see:
+
+- During market hours (9:30–16:00 US Eastern, on trading days) the strategies take paper trades and
+  the pages fill in. Outside those hours there is little to see; that is expected.
+- **Overview** is the summary. Each strategy has its own page in the menu on the left (click **»**
+  at the top left to open it).
+- **Config** turns strategies on and off. Strategies marked **experimental** are off by default.
+- A small **read-only** badge at the bottom means your tastytrade key has the read scope only. That
+  is right for paper mode.
+
+**Optional: the console in its own window.** If you would rather have cherrypick as a desktop app
+than a browser tab, open a terminal in the installation folder and run:
+
+```
+cd packages/console/desktop
+pnpm start
+```
+
+It is the same console in its own window. Closing the window does not stop cherrypick.
+
+## Running cherrypick commands yourself (the virtual environment)
+
+You do not need this for everyday use. It is for checking on cherrypick, or for following a guide
+that says to run a command such as `run.py doctor`.
+
+The installer created a private Python setup inside the installation folder, called a **virtual
+environment** (the `.venv` folder), so cherrypick's parts never interfere with anything else on your
+computer. Before running a cherrypick command, open a terminal in the installation folder (step 4)
+and **activate** it:
+
+| Where | Type this |
+|---|---|
+| Windows Terminal / PowerShell | `.venv\Scripts\Activate.ps1` |
+| Windows Command Prompt | `.venv\Scripts\activate.bat` |
+| Mac / Linux Terminal | `source .venv/bin/activate` |
+
+The prompt now starts with `(.venv)`. From there, commands are simply `python ...`, for example:
+
+```
+python packages/orchestrator/run.py doctor            # a health check, in plain words
+python packages/orchestrator/run.py status            # what is running
+python packages/orchestrator/run.py restart console   # restart just the console
+```
+
+Type `deactivate` when you are done, or just close the window.
+
+If Windows says "running scripts is disabled on this system" when you activate, run this once,
+then activate again:
+
+```
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
 
 ## Stopping cherrypick
 
@@ -106,9 +191,9 @@ installer again picks up where you left off.
   Terminal window was not reopened afterwards. Repeat step 1, close Terminal, and run the installer
   again.
 - **The console page does not load**: wait a minute and refresh. If it still does not load, open a
-  Terminal in the cherrypick folder and run `.venv\Scripts\python packages\orchestrator\run.py doctor`
-  (Windows) or `.venv/bin/python packages/orchestrator/run.py doctor` (Mac). It lists what is wrong
-  in plain words.
+  terminal in the installation folder, activate the virtual environment (see above) and run
+  `python packages/orchestrator/run.py doctor`. It lists what is wrong in plain words, and
+  `python packages/orchestrator/run.py restart console` restarts just the console.
 - **No trades appear**: paper trades only happen during market hours on trading days, and only
   when a strategy's entry rules are met. Some days are quiet.
 
