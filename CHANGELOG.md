@@ -4,7 +4,10 @@ The entries up to v0.9.0 are retrospective: the suite tagged no versions until t
 reconstructed from commit history rather than written at release time. Versions mark
 architectural boundaries (a new package, a scheduler cutover, a read-side or trading-mode change),
 not commit counts. Per-package `pyproject.toml` versions remain at their `0.1.0` placeholder — this
-file tracks the *suite*, not any one package.
+file tracks the *suite*, not any one package. From v0.10.0 every version is a published GitHub
+Release, cut from `main` when a batch of work is finished, and the install docs point at the latest
+one; [docs/releasing.md](docs/releasing.md) has the procedure. `[Unreleased]` is what `main` holds
+beyond the latest release.
 
 ## [Unreleased]
 
@@ -18,6 +21,11 @@ file tracks the *suite*, not any one package.
   missing sessions through the same fetcher and reads contracts from the shared store. The two
   copies agreed on every underlying of all 13 sessions both held, and the universe builds
   identically from either. `universe/occ-volume/` is no longer read or written.
+- **Releases.** v0.10.0 is published as the first GitHub Release, and README, INSTALL and
+  QUICKSTART now install from the latest release instead of `main` (git users check out its tag;
+  updating is a fetch and the same checkout). Pushing a `v*` tag on `main` publishes the next one
+  with its changelog section as the notes (`.github/workflows/release.yml`, `tools/release_notes.py`).
+  [docs/releasing.md](docs/releasing.md) has the procedure.
 
 ## v0.10.0 — 2026-10-01 — the public release
 The first release meant to be installed by someone other than its author: one command takes a fresh

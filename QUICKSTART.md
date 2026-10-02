@@ -37,15 +37,21 @@ brew install python@3.13 node
 
 ## 2. Download cherrypick
 
-On the cherrypick GitHub page, click the green **Code** button, then **Download ZIP**. Unzip it
-into your **Documents** folder and rename the folder to just **`cherrypick`**, so the rest of this
+Open the [latest cherrypick release][latest]. Under **Assets**, click **Source code (zip)**. Unzip
+it into your **Documents** folder and rename the folder to just **`cherrypick`**, so the rest of this
 guide's paths match:
 
 - Windows: `C:\Users\<you>\Documents\cherrypick`
 - Mac: `/Users/<you>/Documents/cherrypick`
 
-(If you use git, `git clone` into the same place works too.) This folder is the **installation
-folder**: the installer puts everything it needs inside it, and you come back to it to run commands.
+(If you use git, clone into the same place and check out the latest release:
+`git checkout "$(git describe --tags --abbrev=0 origin/main)"`. [INSTALL.md](INSTALL.md) has the
+exact lines.)
+
+[latest]: https://github.com/joncovington/cherrypick/releases/latest
+
+This folder is the **installation folder**: the installer puts everything it needs inside it, and
+you come back to it to run commands.
 
 ## 3. Get your tastytrade API keys
 
@@ -218,11 +224,12 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 1. Stop cherrypick: double-click **`uninstall.cmd`** (Windows) or run **`./uninstall.sh`** (Mac). Your
    history and settings are kept.
-2. Get the new version: download the new ZIP and unzip it over your installation folder (say *yes*
-   to replacing files), or, if you used git, run `git pull` in the installation folder.
+2. Get the new version: download the [latest release][latest]'s ZIP and unzip it over your
+   installation folder (say *yes* to replacing files), or, if you used git, follow
+   [INSTALL.md's updating steps](INSTALL.md#updating-to-a-new-release).
 3. Run the installer again, as in step 4. It brings everything up to date and starts cherrypick.
 
-Read the new version's `CHANGELOG.md` first: it says what changed and anything you need to do.
+Read the new release's notes on that page first: they say what changed and anything you need to do.
 
 ## Stopping cherrypick
 
