@@ -452,14 +452,20 @@ def test_the_producer_repairs_what_receipt_date_keying_wrote(tmp_path):
     )
     out = streamcache.repair_misfiled_summary(conn)
     assert out == {"non_trading_day": 1, "repeated_snapshot": 1, "frozen_close": 1}
-    got = {(r[0], r[1]): r[2] for r in conn.execute("SELECT symbol, trade_date, day_close FROM stream_summary")}
+    got = {
+        (r[0], r[1]): r[2] for r in conn.execute("SELECT symbol, trade_date, day_close FROM stream_summary")
+    }
     assert ("SPY", "2026-09-26") not in got
     assert ("SPX", "2026-10-01") not in got, "the 09-30 snapshot filed under 10-01"
     assert got[("SPX", "2026-09-30")] is None, "09-30's own row stays, still awaiting its close"
     assert got[("SPX", "2026-09-28")] == 7683.69
     assert got[("SPX", "2026-09-25")] == 7743.41
     assert got[("HYG", "2026-09-22")] == 78.67, "a flat close the next session confirms is real"
-    assert streamcache.repair_misfiled_summary(conn) == {"non_trading_day": 0, "repeated_snapshot": 0, "frozen_close": 0}
+    assert streamcache.repair_misfiled_summary(conn) == {
+        "non_trading_day": 0,
+        "repeated_snapshot": 0,
+        "frozen_close": 0,
+    }
 
 
 def test_the_misfiled_snapshot_is_gone_before_the_close_fill_could_read_it(tmp_path):
@@ -476,5 +482,7 @@ def test_the_misfiled_snapshot_is_gone_before_the_close_fill_could_read_it(tmp_p
     )
     streamcache.repair_misfiled_summary(conn)
     streamcache.fill_closes_from_next_prev(conn)
-    close = conn.execute("SELECT day_close FROM stream_summary WHERE symbol='SPX' AND trade_date='2026-09-30'").fetchone()[0]
+    close = conn.execute(
+        "SELECT day_close FROM stream_summary WHERE symbol='SPX' AND trade_date='2026-09-30'"
+    ).fetchone()[0]
     assert close is None, "09-30's close waits for 10-01's own prior close, never borrows 09-29's"
