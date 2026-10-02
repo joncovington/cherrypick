@@ -163,6 +163,26 @@ class _State:
         self.window_strike_counts.clear()
 
 
+async def _wait_or_stop(state: _State, delay: float) -> bool:
+    """Wait `delay` seconds, or less if a stop is requested meanwhile. True when stopping.
+
+    A backoff that only ever sleeps holds a stop for the rest of its wait: the chain fetch retries
+    back off 2+4+8+16+32 seconds, so a streamer asked to stop during them sat out up to a minute
+    first (and the reconnect test that drives `_run_stream` took 62 seconds for it). The sleep is
+    still `asyncio.sleep`, raced against the stop event, so tests that stub the sleep stay instant.
+    """
+    if state.stop_event.is_set():
+        return True
+    sleeper = asyncio.ensure_future(asyncio.sleep(delay))
+    stopper = asyncio.ensure_future(state.stop_event.wait())
+    try:
+        await asyncio.wait({sleeper, stopper}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for task in (sleeper, stopper):
+            task.cancel()
+    return state.stop_event.is_set()
+
+
 class ChainStreamer:
     def __init__(
         self,
@@ -850,7 +870,9 @@ class ChainStreamer:
                     exc,
                     delay,
                 )
-                await asyncio.sleep(delay)
+                if await _wait_or_stop(state, delay):
+                    self.log.info("[%s] stop requested -- abandoning the chain fetch retries", symbol)
+                    return None
                 delay = min(delay * 2, _RECONNECT_MAX)
         return None  # unreachable, but keeps type-checkers honest
 

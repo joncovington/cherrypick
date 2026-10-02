@@ -10,9 +10,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Which jobs this change needs (scripts/ci_changed_packages.py has the rules and their reasons).
+  # A pull request runs only the packages it touches, plus everything when core or a shared path
+  # changes; a push to main runs everything. Every job below still REPORTS -- an unneeded one skips
+  # its steps, not itself -- because branch protection requires each check by name. And every job
+  # treats a failure HERE as "run everything": a skipped required job counts as passing, so a broken
+  # detector must never be able to wave a pull request through untested.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.detect.outputs.packages }}
+      console: ${{ steps.detect.outputs.console }}
+      guards: ${{ steps.detect.outputs.guards }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # A pull request checks out the merge commit; its first parent is the base branch, so the
+          # diff against HEAD^1 is exactly what the pull request changes.
+          fetch-depth: 2
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git diff --name-only HEAD^1 HEAD | python scripts/ci_changed_packages.py | tee -a "$GITHUB_OUTPUT"
+          else
+            python scripts/ci_changed_packages.py --all | tee -a "$GITHUB_OUTPUT"
+          fi
+
   # Repo-wide documentation guardrails (portable paths, no out-of-repo pointers, masked accounts,
   # no broken relative links). Separate from the package matrix because it is inherently cross-package
-  # -- a link in one package's docs routinely points at another's.
+  # -- a link in one package's docs routinely points at another's. Always runs: it is the one job
+  # every change, a docs-only one included, can affect.
   docs:
     runs-on: ubuntu-latest
     steps:
@@ -31,6 +61,8 @@ jobs:
         run: python tools/check_docs.py
 
   test:
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -38,96 +70,144 @@ jobs:
         # Every package with tests. The list grew one entry at a time as each module landed, and
         # five of them were never added: bwb, curve, advisor, review and overview carried 553
         # passing tests between them that CI had never once run. Adding a package here is part of
-        # landing it, not a follow-up.
+        # landing it, not a follow-up -- tools/tests/test_ci_changed_packages.py now fails until it is.
         package: [core, orchestrator, meic, earnings, gex, flies, calendars, pmcc, streamer, desk, bwb, curve, advisor, review, overview, technicals]
     defaults:
       run:
         working-directory: packages/${{ matrix.package }}
     env:
+      RUN: ${{ needs.changes.result != 'success' || contains(fromJSON(needs.changes.outputs.packages || '[]'), matrix.package) }}
       # Headless CI runners have no OS keyring service; the orchestrator's auth-CLI subprocess
       # smoke test (test_onboarding.py) needs a real backend to exercise the keyring plumbing it
       # actually asserts on. keyrings.alt (an orchestrator dev-only dependency) supplies one.
       # No-op for every other package's job -- keyring reads OS-native backends unless this is set.
       PYTHON_KEYRING_BACKEND: ${{ matrix.package == 'orchestrator' && 'keyrings.alt.file.PlaintextKeyring' || '' }}
     steps:
+      - name: Not needed for this change
+        if: env.RUN != 'true'
+        working-directory: ${{ github.workspace }}
+        run: echo "packages/${{ matrix.package }} is untouched by this change and nothing it imports changed -- skipped."
       - uses: actions/checkout@v5
+        if: env.RUN == 'true'
       - uses: actions/setup-python@v6
+        if: env.RUN == 'true'
         with:
           python-version: "3.13"
+      # uv in place of pip: the install was 8-31s of every job, 16 jobs a run. Installed into the
+      # setup-python interpreter (UV_SYSTEM_PYTHON), so ruff and pytest land on PATH as before.
+      - uses: astral-sh/setup-uv@v6
+        if: env.RUN == 'true'
+        with:
+          enable-cache: true
+          cache-dependency-glob: "packages/*/pyproject.toml"
       - name: Install
+        if: env.RUN == 'true'
+        env:
+          UV_SYSTEM_PYTHON: "1"
         run: |
-          python -m pip install --upgrade pip
-          # packages/core is not on PyPI (Private :: Do Not Upload); every consumer declares it as a
-          # plain named dependency, resolved only from what's already installed -- so it must go first.
-          if [ "${{ matrix.package }}" != "core" ]; then
-            pip install -e ../core
-          fi
           if [ "${{ matrix.package }}" == "core" ]; then
             # core's own broker/ tests (wait_for_order_alerts) deserialize real tastytrade alert
             # payloads via tastytrade.order.PlacedOrder -- a genuine dependency of the test, not
             # something auth.session's lazy-session-building invariant covers. Install the `broker`
             # extra too, so this is honest coverage rather than narrowed to fit a dev-only install.
-            pip install -e ".[dev,broker]"
+            uv pip install -e ".[dev,broker]"
           else
-            pip install -e ".[dev]"
+            # packages/core is not on PyPI (Private :: Do Not Upload); every consumer declares it as
+            # a plain named dependency, so it is installed in the same resolve, from its directory.
+            uv pip install -e ../core -e ".[dev]"
           fi
       - name: Lint (ruff)
+        if: env.RUN == 'true'
         run: ruff check .
       - name: Format (ruff)
+        if: env.RUN == 'true'
         run: ruff format --check .
       - name: Test (pytest)
+        if: env.RUN == 'true'
         run: pytest
 
   # Every guard shown to fail (the root CLAUDE.md's rule, run rather than remembered): each guard's
   # test runs clean, where it must pass, and under a mutant that breaks the guard in memory, where it
-  # must fail on an assertion. A guard can only stop failing when code changes, so this runs on every
-  # push; the pre-bell `guard-mutants` job re-checks only what this machine changed since. The
-  # packages to install are READ from the mutant table, so a new mutant is covered without editing
-  # this file.
+  # must fail on an assertion. A guard can only stop failing when code changes, so this runs whenever
+  # a package that carries a mutant changes (and on every push to main); the pre-bell `guard-mutants`
+  # job re-checks only what this machine changed since. The packages to install are READ from the
+  # mutant table, so a new mutant is covered without editing this file.
   guards:
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    env:
+      RUN: ${{ needs.changes.result != 'success' || needs.changes.outputs.guards == 'true' }}
     steps:
+      - name: Not needed for this change
+        if: env.RUN != 'true'
+        run: echo "No package with a guard mutant changed -- skipped."
       - uses: actions/checkout@v5
+        if: env.RUN == 'true'
       - uses: actions/setup-python@v6
+        if: env.RUN == 'true'
         with:
           python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+        if: env.RUN == 'true'
+        with:
+          enable-cache: true
+          cache-dependency-glob: "packages/*/pyproject.toml"
       - name: Install the packages the mutants test
+        if: env.RUN == 'true'
+        env:
+          UV_SYSTEM_PYTHON: "1"
         run: |
-          python -m pip install --upgrade pip
-          pip install -e "packages/core[dev,broker]"
+          args=(-e "packages/core[dev,broker]")
           for p in $(python scripts/guard_mutants.py --list-packages); do
-            if [ "$p" != core ]; then pip install -e "packages/$p[dev]"; fi
+            if [ "$p" != core ]; then args+=(-e "packages/$p[dev]"); fi
           done
+          uv pip install "${args[@]}"
       - name: Each guard fails under its mutant
+        if: env.RUN == 'true'
         run: python scripts/guard_mutants.py
 
   # The console is the one Node package (pnpm workspace inside packages/console), so it gets its
   # own job rather than a row in the Python matrix. Typecheck stands in for lint; the vitest run
   # includes the dry-run-only source scan (the invariant that no code path can place an order).
   console:
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    env:
+      RUN: ${{ needs.changes.result != 'success' || needs.changes.outputs.console == 'true' }}
     defaults:
       run:
         working-directory: packages/console
     steps:
+      - name: Not needed for this change
+        if: env.RUN != 'true'
+        working-directory: ${{ github.workspace }}
+        run: echo "Nothing the console builds or bridges changed -- skipped."
       - uses: actions/checkout@v5
+        if: env.RUN == 'true'
       - uses: pnpm/action-setup@v4
+        if: env.RUN == 'true'
         with:
           version: 11
       - uses: actions/setup-node@v4
+        if: env.RUN == 'true'
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: packages/console/pnpm-lock.yaml
       - name: Install
+        if: env.RUN == 'true'
         run: pnpm install --frozen-lockfile
       # Build first: @console/shared resolves through its dist/, so the server's
       # typecheck and tests need it emitted. tsc runs inside the build, so this
       # step IS the typecheck.
       - name: Build (tsc + vite)
+        if: env.RUN == 'true'
         run: pnpm build
       # All three workspaces, not just the server. `--filter @console/server` left every web test
       # unrun -- the build typechecks them, so they compiled, but no assertion in them had ever
       # been evaluated by CI.
       - name: Test (vitest, incl. dry-run-only invariant scan)
+        if: env.RUN == 'true'
         run: pnpm test

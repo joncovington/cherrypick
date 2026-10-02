@@ -91,3 +91,50 @@ def test_symbol_refresher_disables_window_when_retries_exhausted(tmp_path, monke
 
     assert "XSP" not in state.chains
     assert "XSP" not in state.window_syms
+
+
+def test_a_stop_already_requested_ends_the_retries_without_backing_off(tmp_path, monkeypatch):
+    """Shown to fail without `_wait_or_stop`: the backoff slept 2+4+8+16+32 seconds before a
+    streamer asked to stop could exit, and `_run_stream`'s reconnect test sat out all of it."""
+    slept = []
+
+    async def _record(seconds):
+        slept.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", _record)
+    engine = _engine(tmp_path)
+    state = _state(tmp_path)
+    state.stop_event.set()
+    calls = {"n": 0}
+
+    async def _always_fails(_self, symbol):
+        calls["n"] += 1
+        raise ValueError("Couldn't parse response: <html>")
+
+    monkeypatch.setattr(ChainStreamer, "_fetch_dte0_chain", _always_fails)
+
+    assert asyncio.run(engine._fetch_dte0_chain_with_retry("XSP", state)) is None
+    assert calls["n"] == 1, "no retry once a stop is requested"
+    assert slept == []
+
+
+def test_a_stop_during_the_backoff_cuts_the_wait_short(tmp_path, monkeypatch):
+    """The real sleep, interrupted: a stop requested 50ms into the first 2-second backoff returns
+    straight away instead of waiting it out and retrying."""
+    import time
+
+    engine = _engine(tmp_path)
+    state = _state(tmp_path)
+
+    async def _always_fails(_self, symbol):
+        raise ValueError("Couldn't parse response: <html>")
+
+    monkeypatch.setattr(ChainStreamer, "_fetch_dte0_chain", _always_fails)
+
+    async def _run():
+        asyncio.get_running_loop().call_later(0.05, state.stop_event.set)
+        return await engine._fetch_dte0_chain_with_retry("XSP", state)
+
+    started = time.monotonic()
+    assert asyncio.run(_run()) is None
+    assert time.monotonic() - started < 1.0
