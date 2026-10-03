@@ -34,6 +34,15 @@ states the rate it used rather than inheriting a silent default.
 Pure arithmetic plus one read-only cache reader (`strip_from_cache`); no broker, no network. The CLI
 (`python -m cherrypick.core.impliedvar check`) compares the arithmetic against a published Cboe
 index from the same cache.
+
+**The cache does not hold a full strip unless someone asks for one.** The producer serves a ±30
+strike window per declared expiration, and widening SPX's `window_hints` would widen every SPX window
+(0DTE included, at four event types each). `declare` asks for exactly the two expirations that
+bracket a target instead: their chain metadata through `expirations`, and their whole strip, 0.5x to
+1.2x spot, through a `leg_sources` query over the cache itself, at Quote and Greeks only. Neither key
+is in the producer's launch snapshot, so declaring or clearing never recycles it. The cost (about
+2,000 subscriptions for an SPXW weekly pair) is NOT in `streamrequests.estimate_subscriptions`, which
+models windows only. It is a validation instrument, declared for a session and cleared after.
 """
 
 from __future__ import annotations
@@ -42,12 +51,18 @@ import json
 import math
 import sqlite3
 from collections.abc import Iterable, Mapping
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
+from cherrypick.core import calendar as _cal
 from cherrypick.core import streamcache
 
 MINUTES_PER_YEAR = 525_600
 MINUTES_PER_DAY = 1_440
+
+# The strip `declare` subscribes, as fractions of spot. Wide enough that a 9- to 30-day SPX wing runs
+# dry inside it (the strikes past it are the far listings at 25- to 100-point spacing); a wing that
+# does not is still reported incomplete, never padded.
+STRIP_BOUNDS = (0.5, 1.2)
 
 
 def years_between(now_ts: float, expires_ts: float) -> float:
@@ -275,3 +290,39 @@ def strip_from_cache(
         "missing": len(chain) - len(quotes),
         **expiry_fields(conn, symbol, expiration, root),
     }
+
+
+def bracket_dates(today: date, days: int) -> tuple[date, date]:
+    """The P.M.-settled daily expirations (SPXW) that bracket `days` calendar days for the WHOLE of
+    `today`'s session: the latest trading day on or before today + days - 1 (still within `days` of
+    the 09:30 open) and the earliest on or after today + days (still at least `days` from the close).
+    Holidays are skipped through `core.calendar`; an early close still settles, so it still counts."""
+    near = today + timedelta(days=days - 1)
+    while not _cal.is_trading_day(near):
+        near -= timedelta(days=1)
+    nxt = today + timedelta(days=days)
+    while not _cal.is_trading_day(nxt):
+        nxt += timedelta(days=1)
+    return near, nxt
+
+
+def strip_query(symbol: str, root: str, expirations: Iterable[date], *, bounds=STRIP_BOUNDS) -> str:
+    """The `leg_sources` SELECT `declare` writes: every listed `root` option of `symbol` on the given
+    expirations with a strike inside `bounds` x the underlying's last print, read from the stream cache
+    itself. Literal values because a leg source takes no parameters, so each is validated here; an
+    expiration already past (UTC) selects nothing, so a file left behind decays to an empty set."""
+    if not (symbol.isalnum() and root.isalnum()):
+        raise ValueError(f"symbol and root must be alphanumeric, got {symbol!r} / {root!r}")
+    lo, hi = float(bounds[0]), float(bounds[1])
+    if not 0 < lo < 1 < hi:
+        raise ValueError(f"bounds must straddle spot, got {bounds!r}")
+    dates = ", ".join(f"'{d.isoformat()}'" for d in expirations)
+    spot = f"(SELECT last FROM stream_trades WHERE symbol = '{symbol}')"
+    return (
+        "SELECT streamer_symbol FROM stream_chain"
+        f" WHERE underlying_symbol = '{symbol}' AND expiration IN ({dates})"
+        " AND expiration >= date('now')"
+        f" AND substr(json_extract(data_json, '$.symbol'), 1, 6) = '{root:<6}'"
+        " AND CAST(json_extract(data_json, '$.strike_price') AS REAL)"
+        f" BETWEEN {lo} * {spot} AND {hi} * {spot}"
+    )

@@ -9,7 +9,7 @@ strike's midpoint, delta-K and contribution, printed to 1e-10). The headline fig
 import csv
 import json
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -190,7 +190,17 @@ def test_check_agrees_with_an_index_built_from_the_same_strips(tmp_path, capsys)
         index=("VIX", 13.93),
     )
     conn.close()
-    argv = ["check", "--db", str(tmp_path / "sc.db"), "--as-of", str(now), "--rate", "0.0003"]
+    argv = [
+        "check",
+        "--db",
+        str(tmp_path / "sc.db"),
+        "--as-of",
+        str(now),
+        "--rate",
+        "0.0003",
+        "--index",
+        "VIX",
+    ]
     assert cli.main(argv) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["verdict"] == "agrees" and abs(out["diff"]) < 0.05
@@ -210,7 +220,7 @@ def test_check_reports_truncation_instead_of_a_verdict(tmp_path, capsys):
         index=("VIX", 13.93),
     )
     conn.close()
-    assert cli.main(["check", "--db", str(tmp_path / "sc.db"), "--as-of", str(now)]) == 1
+    assert cli.main(["check", "--db", str(tmp_path / "sc.db"), "--as-of", str(now), "--index", "VIX"]) == 1
     out = json.loads(capsys.readouterr().out)
     assert out["verdict"] == "truncated" and out["near"]["put_wing"]["complete"] is False
 
@@ -223,3 +233,68 @@ def test_check_refuses_without_a_bracketing_pair(tmp_path, capsys):
     assert cli.main(["check", "--db", str(tmp_path / "sc.db"), "--as-of", str(now), "--index", "VIX9D"]) == 1
     out = json.loads(capsys.readouterr().out)
     assert out["reason"] == "not_bracketed" and out["offered"] == [["2026-10-09", 7.0]]
+
+
+# --- the declaration ------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "today, days, near, nxt",
+    [
+        ("2026-10-05", 9, "2026-10-13", "2026-10-14"),  # Columbus Day trades; nothing to skip
+        ("2026-11-18", 9, "2026-11-25", "2026-11-27"),  # Thanksgiving skipped; its early close counts
+        ("2026-10-05", 30, "2026-11-03", "2026-11-04"),
+    ],
+)
+def test_bracket_dates_hold_for_the_whole_session(today, days, near, nxt):
+    got = iv.bracket_dates(date.fromisoformat(today), days)
+    assert got == (date.fromisoformat(near), date.fromisoformat(nxt))
+    # From the open, the near expiry (16:00) is within `days`; from the close, the next is not.
+    open_, close = datetime.fromisoformat(f"{today}T09:30"), datetime.fromisoformat(f"{today}T16:00")
+    assert (datetime.combine(got[0], close.time()) - open_).total_seconds() <= days * 86_400
+    assert (datetime.combine(got[1], close.time()) - close).total_seconds() >= days * 86_400
+
+
+def test_strip_query_selects_only_the_declared_strip(tmp_path):
+    rows = [
+        {"strike": 100.0, "option_type": "call", "bid": 1.0, "ask": 1.1},
+        {"strike": 100.0, "option_type": "put", "bid": 1.0, "ask": 1.1},
+        {"strike": 40.0, "option_type": "put", "bid": 0.0, "ask": 0.05},  # below 0.5x spot
+        {"strike": 125.0, "option_type": "call", "bid": 0.0, "ask": 0.05},  # above 1.2x spot
+        {"strike": 100.0, "option_type": "call", "bid": 1.0, "ask": 1.1, "root": "SPX"},  # AM monthly
+    ]
+    conn = _cache(
+        tmp_path,
+        now=time.time(),
+        strips={
+            "2099-01-09": (EXPIRES, rows),
+            "2099-01-16": (EXPIRES, rows[:1]),
+            "2099-01-23": (EXPIRES, rows),
+        },
+        index=("SPX", 100.0),
+    )
+    query = iv.strip_query("SPX", "SPXW", (date(2099, 1, 9), date(2099, 1, 16)))
+    # The producer runs only a single SELECT and takes every string cell as a symbol.
+    assert query.lower().startswith("select") and ";" not in query
+    got = sorted(r[0] for r in conn.execute(query))
+    assert got == [".SPXW2099-01-09c100.0", ".SPXW2099-01-09p100.0", ".SPXW2099-01-16c100.0"]
+    with pytest.raises(ValueError):
+        iv.strip_query("SPX'; --", "SPXW", (date(2099, 1, 9),))
+
+
+def test_declare_writes_and_clears_the_request(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    from cherrypick.core import streamrequests
+
+    db = tmp_path / "sc.db"
+    assert cli.main(["declare", "--db", str(db), "--today", "2026-10-05"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["expirations"] == ["2026-10-13", "2026-10-14"]
+    (payload,) = streamrequests.read_all()
+    assert payload["expirations"] == {"SPX": ["2026-10-13", "2026-10-14"]}
+    assert payload["leg_sources"] == [{"db": str(db), "query": out["query"]}]
+    # Never growth for the producer's launch snapshot: narrower events, no nearest window.
+    assert payload["window_events"] == {"SPX": ["Quote"]} and payload["nearest_window"] == {"SPX": False}
+    assert cli.main(["declare", "--clear"]) == 0
+    assert json.loads(capsys.readouterr().out)["existed"] is True
+    assert streamrequests.read_all() == []

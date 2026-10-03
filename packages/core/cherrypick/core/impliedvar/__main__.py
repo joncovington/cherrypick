@@ -7,6 +7,14 @@ Commands:
            The same arithmetic interpolated to the index's constant maturity from the two cached
            expirations that bracket it, against the index's own print in the cache.
 
+    declare --index {VIX,VIX9D} [--today YYYY-MM-DD] [--clear]
+           Write (or with --clear, remove) state/stream_requests/impliedvar.json asking the streamer
+           for the two SPXW expirations that bracket the index's maturity through today's session,
+           with their whole strip at Quote and Greeks. Declare before the open (an expiration added
+           mid-session is served on the producer's next window pass, no restart) and clear after
+           the check; the leg query selects nothing once its dates have passed, but the request file
+           stays until cleared.
+
 Shared options: --db (default: the shared stream cache), --rate (decimal, default 0.0 — the suite
 carries no Treasury curve; the effect is second order and the output states it), --max-age (quote
 age limit in seconds against --as-of, default 10), --as-of (epoch seconds; default now).
@@ -30,11 +38,17 @@ import argparse
 import json
 import sys
 import time
+from datetime import date, datetime
 from pathlib import Path
 
 from cherrypick.core import db as _db
 from cherrypick.core import home as _home
 from cherrypick.core import impliedvar as _iv
+from cherrypick.core import streamrequests as _requests
+from cherrypick.core.clock import ET as _ET
+
+# The request file `declare` writes; a validation instrument, not a module.
+REQUEST_NAME = "impliedvar"
 
 # The constant maturity of each index this arithmetic reproduces. VIX1D is deliberately absent:
 # it is computed by a different (0DTE/1DTE, time-weighted) methodology, not this one.
@@ -109,10 +123,39 @@ def cmd_check(conn, args, now_ts: float) -> tuple[dict, int]:
     return out, 0 if verdict == "agrees" else 1
 
 
+def cmd_declare(args, path: Path) -> tuple[dict, int]:
+    request = _requests.request_path(REQUEST_NAME)
+    if args.clear:
+        existed = request.exists()
+        request.unlink(missing_ok=True)
+        return {"ok": True, "cleared": str(request), "existed": existed}, 0
+    today = date.fromisoformat(args.today) if args.today else datetime.now(_ET).date()
+    near, nxt = _iv.bracket_dates(today, INDEX_DAYS[args.index])
+    query = _iv.strip_query(args.symbol, args.root, (near, nxt))
+    _requests.write_request(
+        REQUEST_NAME,
+        [args.symbol],
+        leg_sources=[_requests.leg_source(path, query)],
+        expirations={args.symbol: [near.isoformat(), nxt.isoformat()]},
+        # Accurate, and never growth: this reads its declared dates' strips, never the nearest
+        # window, and only quotes on its own windows. A symbol narrows only when every declarer does.
+        window_events={args.symbol: ["Quote"]},
+        nearest_window={args.symbol: False},
+    )
+    return {
+        "ok": True,
+        "request": str(request),
+        "index": args.index,
+        "session": today.isoformat(),
+        "expirations": [near.isoformat(), nxt.isoformat()],
+        "query": query,
+    }, 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="cherrypick.core.impliedvar", description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
-    for name in ("term", "check"):
+    for name in ("term", "check", "declare"):
         p = sub.add_parser(name)
         p.add_argument("--db", default=None)
         p.add_argument("--symbol", default="SPX")
@@ -123,11 +166,19 @@ def main(argv: list[str] | None = None) -> int:
         if name == "term":
             p.add_argument("--expiration", required=True)
         else:
-            p.add_argument("--index", choices=sorted(INDEX_DAYS), default="VIX")
+            p.add_argument("--index", choices=sorted(INDEX_DAYS), default="VIX9D")
+        if name == "check":
             p.add_argument("--tolerance", type=float, default=0.5)
+        if name == "declare":
+            p.add_argument("--today", default=None)
+            p.add_argument("--clear", action="store_true")
     args = parser.parse_args(argv)
 
     path = Path(args.db) if args.db else _home.data_dir("marketdata") / "stream_cache.db"
+    if args.cmd == "declare":
+        out, code = cmd_declare(args, path)
+        print(json.dumps(out, indent=2))
+        return code
     try:
         conn = _db.connect_ro(path)
     except Exception as exc:  # noqa: BLE001 -- an unreadable store is a reported state
