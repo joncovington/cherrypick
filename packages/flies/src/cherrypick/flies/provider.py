@@ -336,10 +336,7 @@ def _day_events(day) -> dict:
 
     try:
         root = _events.calendar_dir()
-        stamp = tuple(
-            p.stat().st_mtime if p.exists() else None
-            for p in (_events.bea_path(root), _events.fred_path(root), _events.fred_history_path(root))
-        )
+        stamp = tuple(p.stat().st_mtime if p.exists() else None for p in _events.source_paths(root))
         key = (day.isoformat(), stamp)
         if key not in _EVENTS_CACHE:
             _EVENTS_CACHE.clear()
