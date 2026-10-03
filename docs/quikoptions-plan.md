@@ -101,14 +101,16 @@ so each is a decision, not a default.
 | `probe` | Phase 0 |
 | `login` | Visible Chrome on the profile; a person signs in; the session is saved |
 | `credentials` | Optional: store username/password in the keyring for auto sign-in |
-| `hot-options [--headed] [--no-jitter]` | The daily capture: the report, then the calendar (Phase 2) |
+| `hot-options [--jitter MIN] [--headless] [--no-calendar]` | The daily capture: the report, then the calendar (Phase 2) |
 | `validate FILE...` | Re-run the checks over saved files, offline |
 
-A scheduled run starts after a random 0-25 minute delay, loads the report, waits until all six
+A scheduled run starts after a random delay (`--jitter 25` from the job; none by hand), loads the report, waits until all six
 tables are drawn, dwells 30-60 s with a slow scroll, and saves `hot-options/YYYY-MM-DD.json`: the
 parsed tables, the session date the page states and the capture time, beside
-`hot-options/YYYY-MM-DD.html` (the six tables' own HTML, verbatim) so a parser fix can be re-run
-over every saved day without another visit. Each row keeps what the cells say plus what their
+`hot-options/YYYY-MM-DD.html` (the six tables' own HTML, verbatim but for icons and Blazor's
+`<!--!-->` markers: about 250 KB a day) so a parser fix can be re-run over every saved day without
+another visit. Never the whole page, which carries the account's name and email; a fragment that
+contains an address is refused even as a reject. Each row keeps what the cells say plus what their
 attributes say: the full company name, the call/put badge, and the side tooltip.
 
 **The checks, each an identity the page already satisfies** (verified on the 2026-10-02 screenshots):
@@ -269,8 +271,9 @@ Those are operations, and go to the suite's normal `notify` channels.
 - **Console reader:** an absent store and a malformed capture each return `degraded` with a reason,
   never an empty healthy result — checked against the running build, not only `vitest`.
 
-Fixtures come from the probe, cut to a few rows, with every header, cookie, token and account field
-removed before they are committed — the repo is public.
+The tests' tables are built to the markup the probe saw, never the site's own HTML (their data, and
+the repo is public) — the vendor collector's rule. Separate tests run every check over the real
+saved captures when they are on the machine, and skip elsewhere.
 
 ## Not in scope
 
