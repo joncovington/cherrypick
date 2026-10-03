@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { OptionsFlowDay } from "@console/shared";
-import { FlowSpreads, FlowToday, contractLabel } from "../src/pages/Flow/FlowPage";
+import { FlowDerived, FlowSpreads, FlowToday, contractLabel } from "../src/pages/Flow/FlowPage";
 
 /**
  * The Options flow page lays out the capture and decides nothing. What these guard is what the
@@ -84,6 +84,13 @@ const DAY: OptionsFlowDay = {
   tradesBySide: { Bullish: 1 },
   largestTrade: { table: "outrights", symbol: "PCG", premium: 1513300 },
   derived: {
+    checks: {
+      siteVote: { agrees: 16, neutral: 0, opposite: 0 },
+      delta: { broker: 20, singles: 20, off: ["VST 17 Dec 27 195P: broker -0.69, model -0.58"] },
+      close: null,
+      audit: null,
+      review: null,
+    },
     scoredAt: "2026-10-02T20:45:00+00:00",
     confirmedAt: null,
     flows: [
@@ -150,6 +157,15 @@ describe("the Options flow page", () => {
     expect(html).toContain("Net by name — 2026-10-02");
     const unscored = render(<FlowToday day={{ ...DAY, derived: null }} />);
     expect(unscored).toContain("Not scored yet for this session.");
+  });
+
+  it("the derived tab lays out the checks as recorded, and says what has not run yet", () => {
+    const html = render(<FlowDerived day={DAY} />);
+    expect(html).toContain("16 agree · 0 site neutral · 0 opposite");
+    expect(html).toContain("20 of 20 from the broker; the model off by more than 0.10 on 1");
+    expect(html).toContain("the next morning");
+    expect(html).toContain("none yet");
+    expect(html).toContain("not run yet");
   });
 
   it("names a contract the way a trader reads it", () => {

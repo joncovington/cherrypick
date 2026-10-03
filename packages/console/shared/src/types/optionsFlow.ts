@@ -126,7 +126,22 @@ export interface DerivedFlowName {
   top: number;
 }
 
+/** What the day's own data checked about the table, and the running checks across days. */
+export interface DerivedFlowChecks {
+  /** Our read against the site's own sentiment on the same trades. */
+  siteVote: { agrees: number; neutral: number; opposite: number } | null;
+  /** How many single-leg deltas came from the broker, and where the model disagreed by over 0.10. */
+  delta: { broker: number; singles: number; off: string[] } | null;
+  /** The broker's closes against Dolt's, the next morning; null until then. */
+  close: { compared: number; of: number; off: string[]; note: string | null } | null;
+  /** The hand checks against Time & Sales, across every session so far. */
+  audit: { checked: number; agree: number; rate: number | null } | null;
+  /** The fixed test of the score: how many sessions it has, of how many it needs, and the verdict. */
+  review: { sessions: number; needed: number; passed: boolean | null } | null;
+}
+
 export interface DerivedFlow {
+  checks: DerivedFlowChecks;
   scoredAt: string | null;
   confirmedAt: string | null;
   flows: DerivedFlowRow[];

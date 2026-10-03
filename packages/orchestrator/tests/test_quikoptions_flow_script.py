@@ -106,11 +106,74 @@ def test_the_fill_reads_bought_sold_or_not_at_all_and_the_view_follows_call_or_p
     assert doc["unread"][0]["score"] is None
 
 
-def test_a_label_that_disagrees_with_the_edge_halves_conviction():
-    doc = _flows(_capture(sweeps=[_out(fill="Mid Market", edge=0.72, time=None)]))
+def test_the_sites_own_sentiment_is_the_second_vote():
+    """Its fill wording ("Mid Market") is broader than its edge, so the wording is not the vote: on
+    2026-10-02 the site's sentiment agreed with every read where the wording looked like a
+    disagreement."""
+    agrees = _out(fill="Mid Market", edge=0.72, time=None)  # sentiment Bullish, a call bought: agrees
+    f = _flows(_capture(sweeps=[agrees]))["flows"][0]
+    assert f["site_vote"] == "agrees" and f["factors"]["conviction"] == pytest.approx(
+        0.3 + 0.7 * 0.72 + 0.1, abs=1e-3
+    )
+    opposite = {**_out(time=None), "side": {"sentiment": "Bearish", "fill": "On Ask", "edge": 1.0}}
+    f = _flows(_capture(sweeps=[opposite]))["flows"][0]
+    assert f["site_vote"] == "opposite" and "site disagrees" in f["flags"]
+    assert f["factors"]["conviction"] == pytest.approx(1.0 * 0.5)
+    neutral = {**_out(time=None), "side": {"sentiment": "Neutral", "fill": "On Ask", "edge": 1.0}}
+    f = _flows(_capture(sweeps=[neutral]))["flows"][0]
+    assert f["site_vote"] == "neutral" and f["factors"]["conviction"] == pytest.approx(0.75)
+
+
+def test_the_brokers_delta_comes_first_and_the_model_is_checked_against_it():
+    key = "PCG   270115C00016000"
+    doc = _flows(_capture(outrights=[_out()]), {**MARKET, "greeks": {key: 0.213}})
     f = doc["flows"][0]
-    assert "label disagrees" in f["flags"]
-    assert f["factors"]["conviction"] == pytest.approx((0.3 + 0.7 * 0.72 + 0.1) * 0.5, abs=1e-3)
+    assert (f["delta_from"], f["delta"]) == ("broker", 0.213)
+    assert f["model_delta"] == pytest.approx(0.22, abs=0.02) and "delta check" not in f["flags"]
+    assert doc["checks"]["delta"] == {"broker": 1, "singles": 1, "compared": 1, "off": []}
+    # A model far from the broker is flagged and counted: the model is what has to explain itself.
+    doc = _flows(_capture(outrights=[_out()]), {**MARKET, "greeks": {key: 0.45}})
+    assert "delta check" in doc["flows"][0]["flags"]
+    assert doc["checks"]["delta"]["off"] == ["PCG 15 Jan 27 16C: broker +0.45, model +0.22"]
+    # No greeks: the model stands.
+    assert _flows(_capture(outrights=[_out()]))["flows"][0]["delta_from"] == "trade"
+
+
+def test_the_close_check_and_the_hand_audit():
+    out = qf.close_check({"PCG": 12.32, "VST": 140.02, "SKHY": 195.13}, {"PCG": 12.32, "VST": 141.0})
+    assert out == {"compared": 2, "of": 3, "off": ["VST: broker 140.02, dolt 141.00"]}
+    doc = {"session": SESSION, "flows": [{"symbol": "PCG", "what": "15 Jan 27 16C", "direction": "bought"}]}
+    good = qf.audit_entry(doc, 1, "bought")
+    bad = qf.audit_entry(doc, 1, "middle", "printed between the quotes")
+    assert good["agrees"] and not bad["agrees"]
+    summary = qf.audit_summary([good, bad])
+    assert (summary["checked"], summary["agree"], summary["rate"]) == (2, 1, 0.5)
+    assert summary["disagree"] == ["2026-10-02 #1 PCG 15 Jan 27 16C: ours bought, tape middle"]
+
+
+def test_the_fixed_review_counts_hits_and_waits_for_enough_sessions():
+    day = (
+        {
+            "flows": [
+                {"symbol": "PCG", "score": 46.0},
+                {"symbol": "MU", "score": -12.0},
+                {
+                    "symbol": "F",
+                    "score": 31.0,
+                    "confirmed_score": -5.0,
+                },  # the confirmed score is the one judged
+            ],
+            "names": [{"symbol": "PCG", "net": 1e7}, {"symbol": "MU", "net": -5e6}],
+            "outcomes": {"5d": {"returns": {"PCG": 0.04, "MU": 0.02, "F": -0.01}}},
+        },
+        {"tables": {"outrights": [{"symbol": "MU", "premium": 400_000, "side": {"sentiment": "Bullish"}}]}},
+    )
+    out = qf.review([day])
+    assert out["hit_rates"]["strong"] == (1.0, 1)  # PCG: +46 and up
+    assert out["hit_rates"]["all_read"] == (round(2 / 3, 3), 3)  # PCG yes, MU no, F (-5) yes
+    assert out["hit_rates"]["net_delta_dollars"] == (0.5, 2)
+    assert out["hit_rates"]["site_premium"] == (1.0, 1)
+    assert out["ready"] is False and out["passed"] is None and out["needed"] == qf.REVIEW_SESSIONS
 
 
 def test_paired_prints_and_rolls_are_not_counted_as_bets():
