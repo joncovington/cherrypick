@@ -97,6 +97,23 @@ describe("options flow reader", () => {
     expect(day.tradesBySide).toEqual({ Bullish: 1, Neutral: 1 });
   });
 
+  it("attaches the session's scored flows, and says null until they are scored", () => {
+    fs.mkdirSync(dir, { recursive: true });
+    write("2026-10-02.json", capture("2026-10-02"));
+    expect(readOptionsFlow(config).current?.derived).toBeNull();
+    write("2026-10-02.flow.json", {
+      scored_at: "2026-10-02T20:45:00+00:00",
+      flows: [{ kind: "spread", symbol: "SMCI", view: "bearish", direction: "sold", delta_dollars: 9.6e6, score: -24, confirmed: "opened", confirmed_score: -40, factors: { size: 0.75, conviction: 0.7, purity: 0.75, opening: 1 }, flags: ["≤7d"] }],
+      unread: [{ kind: "outright", symbol: "VST", view: null, direction: null, score: null, flags: [] }],
+      names: [{ symbol: "SMCI", flows: 2, bullish: 0, bearish: 13.3e6, net: -13.3e6, unread: 0, top: -24 }],
+    });
+    const d = readOptionsFlow(config).current!.derived!;
+    expect(d.flows[0]).toMatchObject({ symbol: "SMCI", deltaDollars: 9.6e6, score: -24, confirmed: "opened", confirmedScore: -40 });
+    expect(d.unread[0]).toMatchObject({ symbol: "VST", score: null, factors: null, confirmed: null });
+    expect(d.names[0]?.net).toBe(-13.3e6);
+    expect(listFlowSessions(config)).toEqual(["2026-10-02"]); // the .flow.json is not a session of its own
+  });
+
   it("an unreadable capture is degraded, not an empty day", () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "2026-10-02.json"), "{ not json");

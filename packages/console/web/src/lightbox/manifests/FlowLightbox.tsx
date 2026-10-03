@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { OptionsFlowDay } from "@console/shared";
 import { useOptionsFlow } from "../../lib/api";
-import { FlowBirdseye, FlowSpreads, FlowToday, FlowTrades, FlowVolOi } from "../../pages/Flow/FlowPage";
+import { FlowBirdseye, FlowDerived, FlowSpreads, FlowToday, FlowTrades, FlowVolOi } from "../../pages/Flow/FlowPage";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
@@ -36,6 +36,7 @@ export function FlowLightbox({ slide }: { slide: string }) {
 
   const slides: SlideDef[] = [
     { id: "today", label: "today", render: body((d) => <FlowToday day={d} />) },
+    { id: "derived", label: "derived flow", render: body((d) => <FlowDerived day={d} />) },
     { id: "birdseye", label: "birdseye", render: body((d) => <FlowBirdseye day={d} />) },
     { id: "trades", label: "trades", render: body((d) => <FlowTrades day={d} />) },
     { id: "spreads", label: "spreads", render: body((d) => <FlowSpreads day={d} />) },

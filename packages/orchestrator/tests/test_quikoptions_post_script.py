@@ -209,13 +209,46 @@ def test_the_default_is_one_text_message_and_captures_nothing(harness):
     assert "**Largest by contracts**" in harness["posted"][0]["payload"]["content"]
 
 
-def test_default_series_is_the_header_and_one_pair(harness):
+def test_the_default_sections_as_cards_are_the_header_then_pairs(harness):
     assert _run() == "posted"
-    assert harness["captured"] == ["Largest by contracts", "Top sweeps"]
-    assert [len(p["files"]) for p in harness["posted"]] == [0, 2]
+    assert harness["captured"] == ["Derived flow", "Largest by contracts", "Top sweeps"]
+    assert [len(p["files"]) for p in harness["posted"]] == [0, 2, 1]
     assert all(p["url"] == "https://d/own" for p in harness["posted"])  # dedicated by default
     assert _run() == "skipped"  # once per session
-    assert len(harness["posted"]) == 2
+    assert len(harness["posted"]) == 3
+
+
+def test_the_derived_section_shows_top_flows_and_net_names():
+    flow = {
+        "flows": [
+            {
+                "symbol": "PCG",
+                "what": "15 Jan 27 16C",
+                "direction": "bought",
+                "view": "bullish",
+                "delta_dollars": 11e6,
+                "score": 46.0,
+            },
+            {
+                "symbol": "SMCI",
+                "what": "261009 43.5/45.5 CS",
+                "direction": "sold",
+                "view": "bearish",
+                "delta_dollars": 9.6e6,
+                "score": -24.0,
+                "confirmed_score": -40.0,
+            },
+        ],
+        "names": [
+            {"symbol": "PCG", "net": 11e6},
+            {"symbol": "SMCI", "net": -13.3e6},
+            {"symbol": "AI", "net": 0},
+        ],
+    }
+    text = qp.derived_text(flow)
+    assert "+46  PCG" in text and "-40  SMCI" in text  # the confirmed score once there is one
+    assert text.splitlines()[-1] == "net Δ$: PCG +$11.00M · SMCI −$13.30M"
+    assert qp.derived_text(None) == "(not scored yet)"
 
 
 def test_the_webhook_is_the_one_chosen_and_never_the_other(harness):

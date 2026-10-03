@@ -252,6 +252,7 @@ export const CHARTS_SLIDES = [
  */
 export const FLOW_SLIDES = [
   { id: "today", label: "today" },
+  { id: "derived", label: "derived flow" },
   { id: "birdseye", label: "birdseye" },
   { id: "trades", label: "trades" },
   { id: "spreads", label: "spreads" },
@@ -373,7 +374,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   flow: {
     slides: FLOW_SLIDES,
     groups: [
-      { label: "today", ids: ["today"] },
+      { label: "today", ids: ["today", "derived"] },
       { label: "tables", ids: ["birdseye", "trades", "spreads", "voloi"] },
     ],
   },

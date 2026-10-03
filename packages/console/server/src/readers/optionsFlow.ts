@@ -13,6 +13,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
+  DerivedFlow,
+  DerivedFlowName,
+  DerivedFlowRow,
   FlowBirdseyeRow,
   FlowName,
   FlowSide,
@@ -161,6 +164,65 @@ function shapeLargest(v: unknown): OptionsFlowDay["largestTrade"] {
   return premium === null || table === null ? null : { table, symbol: str(r["symbol"]), premium };
 }
 
+function shapeDerivedRow(v: unknown): DerivedFlowRow {
+  const r = rec(v);
+  const f = rec(r["factors"]);
+  const kind = r["kind"] === "sweep" || r["kind"] === "spread" ? r["kind"] : "outright";
+  const view = r["view"] === "bullish" || r["view"] === "bearish" ? r["view"] : null;
+  const direction = r["direction"] === "bought" || r["direction"] === "sold" ? r["direction"] : null;
+  const c = r["confirmed"];
+  return {
+    kind,
+    symbol: str(r["symbol"]) ?? "?",
+    what: str(r["what"]),
+    size: num(r["size"]),
+    premium: num(r["premium"]),
+    direction,
+    view,
+    delta: num(r["delta"]),
+    deltaDollars: num(r["delta_dollars"]),
+    days: num(r["days"]),
+    flags: list(r["flags"]).filter((x): x is string => typeof x === "string"),
+    factors:
+      r["factors"] === undefined
+        ? null
+        : { size: num(f["size"]) ?? 0, conviction: num(f["conviction"]) ?? 0, purity: num(f["purity"]) ?? 0, opening: num(f["opening"]) ?? 0 },
+    score: num(r["score"]),
+    confirmed: c === "opened" || c === "closed" || c === "mixed" ? c : null,
+    confirmedScore: num(r["confirmed_score"]),
+  };
+}
+
+function shapeDerivedName(v: unknown): DerivedFlowName {
+  const r = rec(v);
+  return {
+    symbol: str(r["symbol"]) ?? "?",
+    flows: num(r["flows"]) ?? 0,
+    bullish: num(r["bullish"]) ?? 0,
+    bearish: num(r["bearish"]) ?? 0,
+    net: num(r["net"]) ?? 0,
+    unread: num(r["unread"]) ?? 0,
+    top: num(r["top"]) ?? 0,
+  };
+}
+
+/** The session's scored derived flows (`<session>.flow.json`), or null when not scored yet. */
+function readDerived(config: ConsoleConfig, session: string): DerivedFlow | null {
+  let doc: Record<string, unknown>;
+  try {
+    doc = rec(JSON.parse(fs.readFileSync(path.join(flowDir(config), `${session}.flow.json`), "utf-8")));
+  } catch {
+    return null;
+  }
+  return {
+    scoredAt: str(doc["scored_at"]),
+    confirmedAt: str(doc["confirmed_at"]),
+    flows: list(doc["flows"]).map(shapeDerivedRow),
+    unread: list(doc["unread"]).map(shapeDerivedRow),
+    names: list(doc["names"]).map(shapeDerivedName),
+  };
+}
+
 function readDoc(config: ConsoleConfig, session: string): Record<string, unknown> | null {
   try {
     return rec(JSON.parse(fs.readFileSync(path.join(flowDir(config), `${session}.json`), "utf-8")));
@@ -189,6 +251,7 @@ export function shapeFlowDay(session: string, doc: Record<string, unknown>): Opt
     premiumBySide,
     tradesBySide,
     largestTrade: shapeLargest(d["largest_trade"]),
+    derived: null, // attached by readOptionsFlow, from the session's own .flow.json
   };
 }
 
@@ -200,7 +263,7 @@ export function readOptionsFlow(config: ConsoleConfig, session?: string): Option
   const chosen = session !== undefined && sessions.includes(session) ? session : sessions[sessions.length - 1]!;
   const doc = readDoc(config, chosen);
   if (doc === null) return { sessions, current: null, degraded: { reason: `the ${chosen} capture could not be read` } };
-  return { sessions, current: shapeFlowDay(chosen, doc) };
+  return { sessions, current: { ...shapeFlowDay(chosen, doc), derived: readDerived(config, chosen) } };
 }
 
 /**

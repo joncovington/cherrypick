@@ -483,6 +483,8 @@ QUIKOPTIONS_WEBHOOKS = {"notify": "discord", "dedicated": "discord_quikoptions"}
 
 # The Options flow `today` cards the series can post, by title, and the default: a short series.
 QUIKOPTIONS_CARDS = (
+    "Derived flow",
+    "Net by name",
     "Birdseye",
     "Names across tables",
     "Largest by contracts",
@@ -492,7 +494,7 @@ QUIKOPTIONS_CARDS = (
 )
 # `Events` is a section with no card: the session's high-impact releases, from the calendar capture.
 QUIKOPTIONS_SECTIONS = (*QUIKOPTIONS_CARDS, "Events")
-QUIKOPTIONS_DEFAULT_CARDS = ("Largest by contracts", "Top sweeps")
+QUIKOPTIONS_DEFAULT_CARDS = ("Derived flow", "Largest by contracts", "Top sweeps")
 # How the series is sent: card images two to a message, one to a message, one embed of small
 # tables, or plain text (scripts/quikoptions_post.py).
 QUIKOPTIONS_STYLES = ("cards", "singles", "embed", "text")

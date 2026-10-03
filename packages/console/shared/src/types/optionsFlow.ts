@@ -92,6 +92,48 @@ export interface FlowName {
   tables: string[];
 }
 
+/** One derived flow: an order, read and scored by `scripts/quikoptions_flow.py`. */
+export interface DerivedFlowRow {
+  kind: "outright" | "sweep" | "spread";
+  symbol: string;
+  what: string | null;
+  size: number | null;
+  premium: number | null;
+  /** `bought` / `sold` from where the fill sat (or a spread's sign); null when unread. */
+  direction: "bought" | "sold" | null;
+  view: "bullish" | "bearish" | null;
+  delta: number | null;
+  /** Stock-equivalent dollars: contracts × 100 × |delta| × the close. What the ranking uses. */
+  deltaDollars: number | null;
+  days: number | null;
+  flags: string[];
+  factors: { size: number; conviction: number; purity: number; opening: number } | null;
+  /** 0-100 signed by the view; null for an unread flow. */
+  score: number | null;
+  /** The next morning's verdict from open interest, and the score with it; null until then. */
+  confirmed: "opened" | "closed" | "mixed" | null;
+  confirmedScore: number | null;
+}
+
+export interface DerivedFlowName {
+  symbol: string;
+  flows: number;
+  /** Delta dollars of the read flows, weighted by purity. */
+  bullish: number;
+  bearish: number;
+  net: number;
+  unread: number;
+  top: number;
+}
+
+export interface DerivedFlow {
+  scoredAt: string | null;
+  confirmedAt: string | null;
+  flows: DerivedFlowRow[];
+  unread: DerivedFlowRow[];
+  names: DerivedFlowName[];
+}
+
 export interface OptionsFlowDay {
   session: string;
   /** When the capture saved it (UTC ISO). */
@@ -108,6 +150,8 @@ export interface OptionsFlowDay {
   tradesBySide: Record<string, number>;
   /** The day's largest outright, sweep or spread by size of premium; the capture's pick. */
   largestTrade: { table: string; symbol: string | null; premium: number } | null;
+  /** The scored derived flows; null until `quikoptions_flow.py score` has run for the session. */
+  derived: DerivedFlow | null;
 }
 
 export interface OptionsFlowPayload {
