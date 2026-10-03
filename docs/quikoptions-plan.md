@@ -193,25 +193,22 @@ rendering of the data and two places to see it.
 `scripts/quikoptions_post.py` — a script, not a package (it drives a browser and pushes a webhook,
 so a failure costs a post and never a capture), modelled on `scripts/flies_payoff_post.py`.
 
-**Its own webhook, in the keyring.** Stored under the notification stack's existing service
-(`cherrypick-notify`), entry `discord_quikoptions_webhook`, set with
-`cherrypick secrets-set --channel discord_quikoptions`. `notify/secrets.py` gains a set of
-*dedicated* webhooks beside `SUPPORTED`: `secrets-set`, `secrets-delete`, `doctor` and the status
-view accept them, but they are not push channels — they cannot be listed in `notify.channels`, so
-suite alerts can never land in the hot-options channel. **No fallback**: if the dedicated webhook
-is not set, the run posts nothing and says why. Posting the series to the suite's general Discord
-channel instead would be worse than not posting.
+**Built 2026-10-03** (`scripts/quikoptions_post.py`), shorter than first drawn: the day does not
+need every table to be told.
 
-**The series**, one post per message, in this order, a few seconds apart (and honouring any 429's
-`retry_after`):
+**The webhook is a choice** (`quikoptions.post_webhook`): `notify`, the suite's existing Discord
+notify webhook, or `dedicated`, the series' own keyring entry `discord_quikoptions` under the
+notification stack's service (`cherrypick secrets-set --channel discord_quikoptions`, or the settings
+surface). A dedicated webhook is never a push channel: listed in `notify.channels` the notifier skips
+it and `doctor` warns, so no suite alert can land there. **Never a fallback**: with the chosen
+webhook not stored, the run posts nothing and says why. `--webhook notify|dedicated` overrides the
+choice for one run (the first test, 2026-10-03, posts to the notify channel).
 
-| # | Post | Picture | Caption |
-|---|---|---|---|
-| 1 | Header | none | `<post_title> — Thu 2 Oct 2026 (stocks). Source: QuikOptions, captured 16:52 ET.` |
-| 2 | Birdseye | the Birdseye card | top three by trades, with calls/puts split |
-| 3 | Top outrights + top sweeps | both cards, one message | largest outright and largest sweep premium |
-| 4 | Top spreads | the spreads card | largest by size |
-| 5 | Vol/OI | both Vol/OI cards, one message | the highest V/OI name in each |
+**The series**: a header embed — the title, the date, four fields (most traded, the largest trade,
+bullish / bearish premium with trade counts, the names in two or more tables) and a footer with the
+source and capture time — then the cards in `quikoptions.post_cards`, two to a message so Discord
+shows them side by side. Default: `["Largest outrights", "Top sweeps"]`, one message. Any of the six
+`today` cards can be listed; an unknown name refuses the run.
 
 Pictures come from the console page via `tools/ui-check.mjs --card`, which refuses rather than
 crops the wrong card, and the card titles carry the session date, so a page still showing another
