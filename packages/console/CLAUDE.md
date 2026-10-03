@@ -57,8 +57,9 @@ alone):
 - **`pnpm ui-check` drives real Chrome** — clicks, expectations, screenshots, console errors;
   `--dump <file>` writes the rendered DOM. `--card <title text>` crops `--shot` to one grid card
   that has drawn its chart, and fails rather than falling back to the page;
-  `scripts/flies_payoff_post.py` captures the flies payoff card this way, so changing a card's
-  title text breaks that post. Prefer `--route` over `--click`: every slide is
+  `scripts/flies_payoff_post.py` captures the flies payoff card this way, and the QuikOptions
+  Discord series captures the Options flow page's `today` cards (each titled `<name> — <session>`),
+  so changing a card's title text breaks those posts. Prefer `--route` over `--click`: every slide is
   addressable, and on the frame `--click` cannot reach a tab (it skips anything inside a `<nav>`, and
   the rail is one).
 - **Under Git Bash, prefix it with `MSYS_NO_PATHCONV=1`**, or `--route /flies` arrives as

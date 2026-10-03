@@ -153,6 +153,16 @@ the agency's own page, and a correction on our side goes through `backfill-event
 
 ## Phase 3 — the console page
 
+**Built 2026-10-03** as "Options flow" at `/flow` (the Morning report already has an OCC card called
+"Hot options"): tabs `today`, `birdseye`, `trades`, `spreads`, `vol / OI`. The calendar card waits
+for Phase 2's comparison. What the page shows beyond the site's cells is derived by the capture
+(`derive`: outright premium, spread direction, trades printed together, the four trade-size bands,
+names across tables, premium and trade counts by the site's side, the largest trade), because the
+console computes nothing; `fetch_quikoptions.py reparse` rebuilds saved days after a rule changes.
+The `today` cards a Discord post can capture: `Birdseye`, `Names across tables`, `Largest
+outrights`, `Top sweeps`, `Top spreads`, `Vol / OI`, each titled `<name> — <session>` and each
+drawing an SVG, which `ui-check --card` requires.
+
 The console renders; the Discord series is pictures of what the console renders, so there is one
 rendering of the data and two places to see it.
 

@@ -3644,3 +3644,32 @@ td > .desk-refusal-reason {
 .module-off h2 {
   margin: 0 0 0.5rem;
 }
+
+/* ---- Options flow (2026-10-03) ----
+   QuikOptions' Hot Options Report. The cards hold tables of up to ten rows inside the fixed card
+   heights, so the rows are a step tighter than a full-page data table and start at the top of the
+   card body rather than its centre. */
+.gcard .flow-table {
+  font-size: 12px;
+}
+.gcard .flow-table th,
+.gcard .flow-table td {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.gcard-body:has(> .flow-table) {
+  justify-content: flex-start;
+  overflow: hidden;
+}
+.flow-bar {
+  display: block;
+}
+.flow-table tr.flow-linked td {
+  background: rgba(166, 173, 184, 0.06);
+}
+/* The Morning report's OCC card marks a name the Options flow capture also holds. */
+.flow-mark {
+  margin-left: 0.4em;
+  font-size: 10px;
+  padding: 0 0.35em;
+}

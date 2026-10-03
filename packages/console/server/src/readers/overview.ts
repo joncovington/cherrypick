@@ -49,6 +49,7 @@ import type {
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num, str } from "./db.js";
+import { readFlowMarks } from "./optionsFlow.js";
 
 function bool(v: unknown): boolean | null {
   return typeof v === "boolean" ? v : null;
@@ -448,6 +449,7 @@ function shapeHotOptions(raw: unknown): MorningHotOptions {
     unclassified: strList(h["unclassified"]),
     classification: str(h["classification"]),
     reason: str(h["reason"]),
+    flow: null, // attached by readMorning, which knows where the flow captures live
   };
 }
 
@@ -623,6 +625,7 @@ export function readMorning(config: ConsoleConfig, session?: string): MorningPay
   if (chosen) {
     const facts = readPack(dir, chosen);
     if (facts) current = shapePack(chosen, facts);
+    if (current?.hotOptions) current.hotOptions.flow = readFlowMarks(config, current.hotOptions.session);
     note = readNote(dir, chosen);
     technicals = readTechnicals(config, chosen);
   }

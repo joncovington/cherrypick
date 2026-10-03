@@ -459,6 +459,47 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# The Discord series' title: one line a person chose, so a rule the console's config editor and the
+# post script both apply. The date, market tab and source are always appended after it.
+QUIKOPTIONS_TITLE_MAX = 80
+
+
+def quikoptions_title_problem(title: Any) -> str | None:
+    """Why `title` cannot head the Discord series, or None: non-empty after trimming, one line, at
+    most QUIKOPTIONS_TITLE_MAX characters."""
+    if not isinstance(title, str) or not title.strip():
+        return "the title is empty"
+    if "\n" in title or "\r" in title:
+        return "the title must be one line"
+    if len(title.strip()) > QUIKOPTIONS_TITLE_MAX:
+        return f"the title is longer than {QUIKOPTIONS_TITLE_MAX} characters"
+    return None
+
+
+def quikoptions_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """QuikOptions' Hot Options Report (scripts/fetch_quikoptions.py, docs/quikoptions-plan.md):
+    the capture, the console's Options flow page, and the daily Discord series.
+
+    OFF by default: the capture signs in to a third-party site with a browser profile a person
+    signed in to by hand (`python scripts/fetch_quikoptions.py login`), and a job that fails every
+    day for want of one is noise. `enabled` also shows the console's Options flow page. `post` is
+    the Discord series, its own switch and OFF even with `enabled` on, because it republishes the
+    site's figures; it needs `enabled`. A title that breaks the rule falls back to the default
+    rather than heading the series badly; the config editor refuses one before it is ever saved.
+    """
+    q = cfg.get("quikoptions", {}) or {}
+    enabled = bool(q.get("enabled", False))
+    title = q.get("post_title", "Hot options")
+    return {
+        "enabled": enabled,
+        "at": q.get("at", "16:45"),
+        "headed": bool(q.get("headed", True)),
+        "post": enabled and bool(q.get("post", False)),
+        "post_at": q.get("post_at", "17:40"),
+        "post_title": title.strip() if quikoptions_title_problem(title) is None else "Hot options",
+    }
+
+
 def advisor_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved AI-advisor scheduling (packages/advisor + scripts/advisor_checkpoint.py). OFF by default.
 

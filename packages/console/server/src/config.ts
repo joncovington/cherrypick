@@ -38,6 +38,10 @@ export interface ConsoleConfig {
     advisorDir: string;
     /** `data/technicals/` — the technicals report (`report-<session>.json`) the Morning tab shows. */
     technicalsDir: string;
+    /** `data/quikoptions/` — the Hot Options Report captures (`hot-options/<session>.json`) the
+        Options flow page shows. Optional so a config built elsewhere (tests) need not name it; the
+        reader falls back to `<cherrypick>/data/quikoptions`. */
+    quikoptionsDir?: string;
     /** `state/advice/` — the artifacts the advisor issues and every module's loop reads. */
     adviceDir: string;
     /** MEIC's arm registry -- profiles.<tag>.enabled is the literal switch paper.py's
@@ -92,6 +96,7 @@ export function loadConfig(): ConsoleConfig {
       overviewDir: path.join(data, "overview"),
       advisorDir: path.join(data, "advisor"),
       technicalsDir: path.join(data, "technicals"),
+      quikoptionsDir: path.join(data, "quikoptions"),
       adviceDir: path.join(CHERRYPICK, "state", "advice"),
       ...meicRiskPaths(),
       fliesConfig: path.join(CHERRYPICK, "config", "flies.json"),

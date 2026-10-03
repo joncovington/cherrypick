@@ -239,3 +239,59 @@ describe("the scorecard fronts the S&P, crude and gold as futures", () => {
     expect(html).toContain("Gold (ETF proxy)");
   });
 });
+
+describe("the hot-options card marks the names the Options flow also holds", () => {
+  const row = (symbol: string) => ({
+    symbol,
+    rank: 1,
+    contracts: 100,
+    calls: 60,
+    puts: 40,
+    putCall: 0.67,
+    customerSidePct: null,
+    avgContracts: null,
+    relativeVolume: null,
+  });
+
+  function setHot(flow: unknown): string {
+    const hotOptions = {
+      session: "2026-10-02",
+      lagSessions: 0,
+      listingsAsOf: null,
+      totalContracts: 1000,
+      totalPutCall: 0.8,
+      underlyings: 2,
+      baselineSessions: 0,
+      indexes: [],
+      equities: [row("NVDA"), row("F")],
+      funds: [],
+      unclassified: [],
+      classification: null,
+      reason: null,
+      flow,
+    };
+    morning = { sessions: ["2026-10-03"], current: { ...PACK_BASE, hotOptions }, note: null } as unknown as MorningPayload;
+    return renderMorning();
+  }
+
+  it("links a marked name to that session's Options flow page, with its tables as the title", () => {
+    const html = setHot({ session: "2026-10-02", tables: { NVDA: ["birdseye", "spreads"] } });
+    expect(html).toContain('href="/flow?session=2026-10-02"');
+    expect(html).toContain("Hot Options Report for 2026-10-02: birdseye, spreads");
+    // The legend and NVDA; F is not in the flow, so it is not marked.
+    expect(html.match(/class="chip flow-mark"/g)?.length).toBe(2);
+  });
+
+  it("no capture for the session means no marks and no legend, never a claim of no flow", () => {
+    const html = setHot(null);
+    expect(html).toContain("Hot options");
+    expect(html).not.toContain("flow-mark");
+  });
+
+  it("a server older than this bundle omits the field: the card still renders, unmarked", () => {
+    const html = setHot(undefined);
+    expect(html).toContain("Hot options");
+    expect(html).toContain("NVDA");
+    expect(html).not.toContain("flow-mark");
+  });
+});

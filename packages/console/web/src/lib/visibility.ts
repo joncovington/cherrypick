@@ -30,6 +30,7 @@ export function isFeatureOn(name: string, f: Features): boolean {
  * - a trading module: `modules.<id>.enabled`
  * - gex: the `gex-recorder` service
  * - advisor: the `advisor` feature
+ * - flow: the `options_flow` feature (`quikoptions.enabled`)
  * - anything else (Overview, Live, Reports, System, Config, the streamer): always.
  */
 export function isModuleVisible(id: string, f: Features): boolean {
@@ -37,6 +38,7 @@ export function isModuleVisible(id: string, f: Features): boolean {
   if (isTradingModuleId(id)) return f.modules[id]?.enabled !== false;
   if (id === "gex") return f.services["gex-recorder"] !== false;
   if (id === "advisor") return f.features["advisor"] !== false;
+  if (id === "flow") return f.features["options_flow"] !== false;
   return true;
 }
 
@@ -66,5 +68,6 @@ export function offReason(id: string, f: Features): OffReason | null {
   }
   if (id === "gex") return { reason: "The GEX recorder is switched off in the suite config." };
   if (id === "advisor") return { reason: "The advisor is switched off in the suite config." };
+  if (id === "flow") return { reason: "The QuikOptions capture is switched off in the suite config (quikoptions.enabled)." };
   return { reason: "It is switched off in the suite config." };
 }

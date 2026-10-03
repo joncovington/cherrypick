@@ -49,6 +49,22 @@ export function fmtIvr(v: number | null | undefined): string {
   return v === null || v === undefined ? "—" : `${Math.round(v * 100)}/100`;
 }
 
+/** Whole dollars, short: `$1.51M`, `$646K`, `$920`. For market flow (other people's premium), where
+ *  the size is the point and cents would be noise. Unsigned: a flow figure's side is shown in words. */
+export function fmtDollarsShort(v: number | null): string {
+  if (v === null) return "—";
+  const a = Math.abs(v);
+  if (a >= 1e9) return `$${(a / 1e9).toFixed(2)}B`;
+  if (a >= 1e6) return `$${(a / 1e6).toFixed(2)}M`;
+  if (a >= 1e3) return `$${(a / 1e3).toFixed(a >= 1e5 ? 0 : 1)}K`;
+  return `$${a.toFixed(0)}`;
+}
+
+/** A whole count with separators, `40,900`. */
+export function fmtCount(v: number | null): string {
+  return v === null ? "—" : Math.round(v).toLocaleString("en-US");
+}
+
 export function fmtPct(v: number | null, digits = 0): string {
   return v === null ? "—" : `${v.toFixed(digits)}%`;
 }

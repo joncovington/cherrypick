@@ -12,6 +12,7 @@ It lives here because the orchestrator schedules the job.
 
 from __future__ import annotations
 
+import copy
 import html
 import importlib.util
 import json
@@ -443,3 +444,55 @@ def test_premium_checks_allow_the_sites_own_abbreviation():
     assert _check(report(sweep_premium="646.5K")) == []  # 646,450 shown as 646.5K
     problems = _check(report(sweep_premium="650.5K"))  # 4,050 off: more than rounding
     assert len(problems) == 1 and problems[0].startswith("sweeps SKHY")
+
+
+# ------------------------------------------------------------------------------------------------
+# What the capture derives for the console and the Discord series.
+# ------------------------------------------------------------------------------------------------
+
+
+def _derived(**kw):
+    return fq.derive(fq.parse_report(fq.tables_fragment(report(**kw), fq.HEADINGS, with_date=True)))
+
+
+def test_derive_adds_bands_outright_premium_and_side_totals():
+    doc = _derived()
+    tsla = doc["tables"]["birdseye"][0]
+    assert tsla["bands"] == {"1": 421_800, "2-10": 288_900, "11-99": 48_700, "100+": 3_040}
+    assert tsla["call_share"] == pytest.approx(462_900 / 762_500)
+    pcg = doc["tables"]["outrights"][0]
+    assert pcg["premium"] == 1_513_300 and pcg["premium_derived"] is True  # 40,900 x 0.37 x 100
+    assert doc["derived"]["premium_by_side"] == {"Bullish": 1_513_300, "Neutral": 646_450}
+    assert doc["derived"]["trades_by_side"] == {"Bullish": 1, "Neutral": 1}
+    # By size of premium across outrights, sweeps and spreads, whatever the sign: PCG's 1,513,300
+    # beats the sold spread's -921,800 and the sweep's 646,450.
+    assert doc["derived"]["largest_trade"] == {"table": "outrights", "symbol": "PCG", "premium": 1_513_300}
+    assert fq.validate_report(doc, DAY) == []  # deriving never breaks an identity
+    bigger = copy.deepcopy(doc)
+    bigger["tables"]["spreads"][0]["premium"] = -2_000_000.0
+    assert fq.derive(bigger)["derived"]["largest_trade"] == {
+        "table": "spreads",
+        "symbol": "AI",
+        "premium": 2_000_000,
+    }
+
+
+def test_spread_direction_reads_only_when_price_and_delta_agree():
+    assert fq.spread_direction(0.47, 0.24) == "bought"
+    assert fq.spread_direction(-0.22, -0.24) == "sold"
+    assert fq.spread_direction(0.47, -0.24) is None  # disagreeing signs: not read
+    assert fq.spread_direction(0.0, 0.1) is None and fq.spread_direction(None, 0.1) is None
+
+
+def test_spreads_printed_together_share_a_group_and_names_span_tables():
+    doc = _derived()
+    roll = dict(doc["tables"]["spreads"][0], price=0.47, delta=0.24, premium=1_969_300.0)
+    doc["tables"]["spreads"].append(roll)  # the AI roll: two rows, one time, one size
+    doc = fq.derive(doc)
+    groups = {r["group"] for r in doc["tables"]["spreads"]}
+    assert groups == {"AI 15:01:34.327 41900"}
+    assert [r["direction"] for r in doc["tables"]["spreads"]] == ["sold", "bought"]
+    assert doc["derived"]["names"] == []  # every synthetic name sits in one table
+    doc["tables"]["voloi"][0]["symbol"] = "TSLA"
+    names = fq.derive(doc)["derived"]["names"]
+    assert names == [{"symbol": "TSLA", "name": "Tesla, Inc.", "tables": ["birdseye", "voloi"]}]

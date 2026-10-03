@@ -15,6 +15,7 @@ import type {
   ReviewPayload,
   AdvisorPayload,
   MorningPayload,
+  OptionsFlowPayload,
   TechnicalsChartPayload,
   PmccPayload,
   PmccCycleRow,
@@ -201,6 +202,17 @@ export function useMorningReport(session?: string) {
     // The pack is written once before the open (the narrative may land a little later) — a minute
     // is already far finer than the data.
     refetchInterval: 60_000,
+  });
+}
+
+/** QuikOptions' Hot Options Report for a session (latest when none): one capture a day, after the
+ *  close, so a few minutes is already far finer than the data. */
+export function useOptionsFlow(session?: string) {
+  return useQuery<OptionsFlowPayload>({
+    queryKey: ["options-flow", session ?? "latest"],
+    queryFn: () =>
+      getJson<OptionsFlowPayload>(`/api/options-flow${session ? `?session=${encodeURIComponent(session)}` : ""}`),
+    refetchInterval: 300_000,
   });
 }
 

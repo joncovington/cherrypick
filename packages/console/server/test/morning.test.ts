@@ -335,6 +335,20 @@ describe("the hot-options block", () => {
     expect(readMorning(config).current?.hotOptions).toMatchObject({ equities: null, funds: null, classification: "no_listings_file" });
   });
 
+  it("marks the names the Options flow capture of the same session also holds", () => {
+    const pack = minimalPack("2026-10-02");
+    pack["hot_options"] = { session: "2026-09-30", indexes: [], equities: [{ symbol: "NVDA" }, { symbol: "F" }], funds: [], reason: null };
+    writePack("2026-10-02", pack);
+    expect(readMorning(config).current?.hotOptions?.flow).toBeNull(); // no capture: no marks, not "none"
+    const dir = path.join(tmp, "data", "quikoptions", "hot-options");
+    fs.mkdirSync(dir, { recursive: true });
+    const tables = { birdseye: [{ symbol: "NVDA" }], spreads: [{ symbol: "NVDA" }], voloi: [{ symbol: "TSLA" }] };
+    fs.writeFileSync(path.join(dir, "2026-09-30.json"), JSON.stringify({ session: "2026-09-30", tables }));
+    fs.writeFileSync(path.join(dir, "2026-10-01.rejected.json"), JSON.stringify({ tables: { birdseye: [{ symbol: "F" }] } }));
+    const flow = readMorning(config).current?.hotOptions?.flow;
+    expect(flow).toEqual({ session: "2026-09-30", tables: { NVDA: ["birdseye", "spreads"], TSLA: ["voloi"] } });
+  });
+
   it("an unmeasured block carries its reason, and an older pack has no block at all", () => {
     const pack = minimalPack("2026-10-02");
     pack["hot_options"] = { session: null, reason: "no_occ_file" };

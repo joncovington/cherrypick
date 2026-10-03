@@ -62,6 +62,12 @@ describe("gex, the advisor and the reports", () => {
     expect(isSlideVisible("flies", "advisor", ALL_ON)).toBe(true);
   });
 
+  it("Options flow follows the options_flow feature, and is shown while the reply does not name it", () => {
+    expect(isModuleVisible("flow", withOff({ features: { ...ALL_ON.features, options_flow: false } }))).toBe(false);
+    expect(isModuleVisible("flow", withOff({ features: { ...ALL_ON.features, options_flow: true } }))).toBe(true);
+    expect(isModuleVisible("flow", ALL_ON)).toBe(true);
+  });
+
   it("the technicals chart follows technicals; the narratives follow their own features", () => {
     const off = withOff({ features: { advisor: true, technicals: false, review_narrative: false, morning_narrative: true } });
     expect(isSlideVisible("charts", "technicals", off)).toBe(false);

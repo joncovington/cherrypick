@@ -11,6 +11,15 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: the console's Options flow page** (`/flow`), QuikOptions' Hot Options Report for a
+  session. `today` is the day at a glance (most traded, the largest trade, premium by the site's
+  own Bullish/Bearish call, the names in more than one table, and a card per table); `birdseye`,
+  `trades`, `spreads` and `vol / OI` are the site's tables in full. The capture now derives what
+  the page shows (an outright's premium, a spread's direction and the trades printed together, the
+  four trade-size bands) so the console computes nothing, and `fetch_quikoptions.py reparse`
+  rebuilds saved days from their HTML. The Morning report's OCC hot-options card marks the names the
+  same session's flow also holds. Shown only with `quikoptions.enabled`, a new suite config block,
+  off by default.
 - **Added: QuikOptions' Hot Options Report, captured daily** (`scripts/fetch_quikoptions.py`;
   plan in `docs/quikoptions-plan.md`). One paced load a day in the installed Chrome on a profile
   signed in by hand: the six tables (Birdseye, top outrights, sweeps, spreads, and both

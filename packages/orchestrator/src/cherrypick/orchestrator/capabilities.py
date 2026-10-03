@@ -137,5 +137,6 @@ def gated_features(cfg: dict[str, Any]) -> dict[str, Any]:
             "morning_narrative": bool(morning["enabled"] and morning["narrative"]),
             "technicals": bool(cfgmod.technicals_settings(cfg)["enabled"])
             and "earnings" in cfgmod.enabled_modules(cfg),
+            "options_flow": bool(cfgmod.quikoptions_settings(cfg)["enabled"]),
         },
     }

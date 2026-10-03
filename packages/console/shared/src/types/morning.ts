@@ -1,3 +1,5 @@
+import type { MorningFlowMarks } from "./optionsFlow.js";
+
 // --------------------------------------------------------------------------- Morning report
 // Shapes mirror `packages/overview`'s fact pack (data/overview/morning-<session>.json). The console
 // renders that artifact and derives nothing from it — the phase, the gate verdicts and the
@@ -308,6 +310,9 @@ export interface MorningHotOptions {
   unclassified: string[];
   classification: string | null;
   reason: string | null;
+  /** Which of these names were also in QuikOptions' Hot Options Report that session (the Options
+   *  flow page), and in which of its tables. Null when that session has no capture. */
+  flow: MorningFlowMarks | null;
 }
 
 export interface MorningPack {
