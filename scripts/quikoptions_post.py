@@ -1,32 +1,45 @@
-"""Post a session's QuikOptions Hot Options Report to its own Discord channel, as a short series.
+"""Post a session's QuikOptions Hot Options Report to Discord, in one of four styles.
 
-The series (docs/quikoptions-plan.md, decided 2026-10-03, shortened the same day): a header embed
-(the configured title, the session, a few summary fields, and a footer naming QuikOptions as the
-source with the capture time), then the Options flow cards named in `quikoptions.post_cards`, two to
-a message so Discord shows them side by side. The default is the header and one message: Largest
-outrights + Top sweeps. The day does not need every table to be told.
+The styles (`quikoptions.post_style`, docs/quikoptions-plan.md):
+
+    cards    a header embed (title, date, the day in four fields, the source and capture time in its
+             footer), then the chosen cards as images, two to a message so Discord shows them side
+             by side
+    singles  the same header, then one card image per message
+    embed    one embed and no images: the summary, then each chosen section as a small table
+    text     one plain message (split at a section if it would pass Discord's 2,000 characters):
+             the summary and each section as a small monospace table
+
+The sections (`quikoptions.post_cards`) are the Options flow `today` cards by title (Birdseye, Names
+across tables, Largest outrights, Top sweeps, Top spreads, Vol / OI) plus `Calendar`: the session's
+high-impact releases with actual against estimate, and the next ones, from the calendar capture. In
+the image styles Calendar is a header field (it has no card). Default: Largest outrights and Top
+sweeps, as cards. The day does not need every table to be told.
 
 The images are the console's own Options flow cards, captured with `tools/ui-check.mjs --card`,
 which refuses rather than crops the wrong thing: every card is titled "<name> — <session>", so a
-page still showing another day fails the run instead of posting it under this one's header. All six
-are captured before anything is posted, so a capture failure never leaves a header without its
-pictures. The header's figures come from the saved capture, never from a picture.
+page still showing another day fails the run instead of posting it under this one's header. Every
+image is captured before anything is posted, so a capture failure never leaves a header without its
+pictures. Every figure in text comes from the saved capture, never from a picture.
 
 A script, not a package: it drives a browser and pushes a webhook, so a failure costs a post and
-never a capture. It posts only to its OWN webhook (`cherrypick secrets-set --channel
+never a capture. It posts to the series' own webhook (`cherrypick secrets-set --channel
 discord_quikoptions`, `post_webhook: "dedicated"`) or to the suite's Discord notify webhook
 (`post_webhook: "notify"`): a choice, never a fallback. With the chosen one not stored it posts
 nothing and says why. Every message goes out with Discord's mentions switched off, so a title or
 caption can never ping anyone.
 
 Once per session: `state/quikoptions-post.json` (written only here, only after a message landed)
-records which messages of which session went out, and the title they went out under. A re-run sends
-only what is missing, in order, under that same title, so a failure halfway resumes rather than
-repeating the header, and one day never carries two titles. It posts only a capture that passed
-the page's own checks; with no capture for the session it posts nothing.
+records which messages of which session went out, and the title, style and sections they went out
+under. A re-run sends only what is missing, in order, the same way, so a failure halfway resumes
+rather than repeating, and one day never carries two titles. It posts only a capture that passed the
+page's own checks; with no capture for the session it posts nothing.
 
     python scripts/quikoptions_post.py [--session YYYY-MM-DD] [--webhook notify|dedicated]
-                                       [--dry-run] [--force] [--keep DIR]
+                                       [--style cards|singles|embed|text] [--cards "A,B"]
+                                       [--title TEXT] [--dry-run] [--force] [--keep DIR]
+
+`--style`, `--cards`, `--title` and `--webhook` override the config for one run (trying styles).
 """
 
 from __future__ import annotations
@@ -42,7 +55,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -56,13 +69,12 @@ MARKER_KEEP = 30
 USER_AGENT = "cherrypick-notifier/1.0 (+https://github.com/cherrypick)"  # Discord's front refuses urllib's
 PAUSE_S = 2.5
 EMBED_COLOUR = 0xD23F57  # the console's accent
-
 CARDS_PER_MESSAGE = 2
-
-
-def message_cards(cards: list[str]) -> list[list[str]]:
-    """The image messages in order: the chosen cards, two to a message (the last may hold one)."""
-    return [cards[i : i + CARDS_PER_MESSAGE] for i in range(0, len(cards), CARDS_PER_MESSAGE)]
+ROWS = 5  # rows per section in the text styles: a glance, not the table
+TEXT_LIMIT = 1900  # Discord caps a message at 2,000 characters
+CALENDAR = "Calendar"
+NO_MENTIONS = {"parse": []}
+TABLE_WORD = {"outrights": "outright", "sweeps": "sweep", "spreads": "spread"}
 
 
 def _now_et() -> datetime:
@@ -85,12 +97,16 @@ def _log(line: str) -> None:
 
 
 # ------------------------------------------------------------------------------------------------
-# The capture, the title, the header. Pure where it can be.
+# The capture and the settings.
 # ------------------------------------------------------------------------------------------------
 
 
 def capture_path(session: str) -> Path:
     return _home.data_dir("quikoptions") / "hot-options" / f"{session}.json"
+
+
+def calendar_path(captured: str) -> Path:
+    return _home.data_dir("quikoptions") / "calendar" / f"{captured}.json"
 
 
 def load_capture(session: str) -> dict | None:
@@ -100,15 +116,23 @@ def load_capture(session: str) -> dict | None:
         doc = json.loads(capture_path(session).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    return (
-        doc if isinstance(doc, dict) and doc.get("session") == session and not doc.get("problems") else None
-    )
+    ok = isinstance(doc, dict) and doc.get("session") == session and not doc.get("problems")
+    return doc if ok else None
+
+
+def load_calendar(session: str) -> dict | None:
+    """The calendar captured on `session` (the same run as the report), if it passed its checks."""
+    try:
+        doc = json.loads(calendar_path(session).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) and not doc.get("problems") else None
 
 
 def post_settings(cfg: dict) -> dict:
-    """{post, problem, title, webhook, cards}. The raw values are checked here, not the settings'
-    fallbacks: a broken title, an unknown webhook or card refuses the run and says why, rather than
-    posting something nobody chose."""
+    """{post, problem, title, webhook, cards, style}. The raw values are checked here, not the
+    settings' fallbacks: a broken title, an unknown webhook, style or section refuses the run and
+    says why, rather than posting something nobody chose."""
     from cherrypick.orchestrator import config as cfgmod
 
     q = cfg.get("quikoptions") or {}
@@ -120,7 +144,13 @@ def post_settings(cfg: dict) -> dict:
         "title": str(raw).strip(),
         "webhook": settings["post_webhook"],
         "cards": settings["post_cards"],
+        "style": settings["post_style"],
     }
+
+
+# ------------------------------------------------------------------------------------------------
+# Words and small tables. Pure.
+# ------------------------------------------------------------------------------------------------
 
 
 def _dollars(v: float | None) -> str:
@@ -136,14 +166,54 @@ def _dollars(v: float | None) -> str:
     return f"${a:.0f}"
 
 
-TABLE_WORD = {"outrights": "outright", "sweeps": "sweep", "spreads": "spread"}
+def _count(v: float | None) -> str:
+    return "—" if v is None else f"{v:,.0f}"
 
 
-def header_embed(doc: dict, title: str) -> dict:
-    """The series' first message: the title, the session, and the day in five fields, every figure
-    from the saved capture. The source and capture time are always in the footer, whatever the
-    title, so no title can drop the attribution or the date."""
-    session = date.fromisoformat(doc["session"])
+def _num(v: float | None, digits: int = 2) -> str:
+    return "—" if v is None else f"{v:.{digits}f}"
+
+
+def contract(expires: str | None, strike: float | None, cp: str | None) -> str:
+    """`15 Jan 27 16C`, the way the console names a contract."""
+    try:
+        exp = date.fromisoformat(expires or "").strftime("%d %b %y")
+    except ValueError:
+        exp = "—"
+    k = "—" if strike is None else f"{strike:g}"
+    return f"{exp} {k}{'C' if cp == 'call' else 'P' if cp == 'put' else ''}"
+
+
+def _side(row: dict) -> str:
+    s = row.get("side") or {}
+    if not s.get("sentiment"):
+        return "—"
+    return f"{s['sentiment'].lower()} {s.get('fill', '').lower()}".strip()
+
+
+def _table(rows: list[list[str]], right: set[int]) -> str:
+    """Rows of cells as an aligned monospace block; columns in `right` are right-aligned."""
+    if not rows:
+        return "(none)"
+    widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
+    lines = []
+    for r in rows:
+        cells = [
+            c.rjust(w) if i in right else c.ljust(w) for i, (c, w) in enumerate(zip(r, widths, strict=True))
+        ]
+        lines.append("  ".join(cells).rstrip())
+    return "\n".join(lines)
+
+
+def _captured(doc: dict) -> str:
+    try:
+        return f"{datetime.fromisoformat(doc.get('saved_at') or '').astimezone(ET):%H:%M} ET"
+    except ValueError:
+        return ""
+
+
+def summary(doc: dict) -> dict:
+    """The day in four lines, every figure from the capture: {most, largest, sides, names}."""
     tables = doc.get("tables") or {}
     derived = doc.get("derived") or {}
     top = (tables.get("birdseye") or [None])[0]
@@ -151,10 +221,7 @@ def header_embed(doc: dict, title: str) -> dict:
     big = derived.get("largest_trade")
     largest = "—"
     if big:
-        row = next(
-            (r for r in tables.get(big["table"], []) if r.get("symbol") == big.get("symbol")),
-            {},
-        )
+        row = next((r for r in tables.get(big["table"], []) if r.get("symbol") == big.get("symbol")), {})
         side = (row.get("side") or {}).get("sentiment") or row.get("direction")
         largest = (
             f"{big.get('symbol')} {_dollars(big['premium'])} {TABLE_WORD.get(big['table'], big['table'])}"
@@ -167,26 +234,199 @@ def header_embed(doc: dict, title: str) -> dict:
         return f"{_dollars(by_side.get(name))} ({n_side.get(name, 0)})" if name in by_side else "—"
 
     names = " · ".join(n["symbol"] for n in derived.get("names") or []) or "none"
-    saved = doc.get("saved_at")
-    captured = ""
-    if saved:
-        try:
-            captured = f" · captured {datetime.fromisoformat(saved).astimezone(ET):%H:%M} ET"
-        except ValueError:
-            captured = ""
     return {
-        "title": f"{title} — {session:%a} {session.day} {session:%b %Y} (stocks)",
-        "color": EMBED_COLOUR,
-        "fields": [
-            {"name": "Most traded", "value": most, "inline": True},
-            {"name": "Largest trade", "value": largest, "inline": True},
-            {"name": "Bullish / bearish", "value": f"{side('Bullish')} / {side('Bearish')}", "inline": True},
-            {"name": "In two or more tables", "value": names[:1000], "inline": False},
-        ],
-        "footer": {
-            "text": f"Source: QuikOptions Hot Options Report{captured}. The side is the site's own call."
-        },
+        "most": most,
+        "largest": largest,
+        "sides": f"{side('Bullish')} / {side('Bearish')}",
+        "names": names,
     }
+
+
+def _trade_cells(r: dict) -> list[str]:
+    size = f"{_count(r.get('size'))} @ {_num(r.get('price'))}"
+    return [
+        r["symbol"],
+        contract(r.get("expires"), r.get("strike"), r.get("cp")),
+        size,
+        _dollars(r.get("premium")),
+        _side(r),
+    ]
+
+
+def _spread_cells(r: dict) -> list[str]:
+    symbol = r["symbol"] + (" ⛓" if r.get("group") else "")
+    return [
+        symbol,
+        r.get("spread") or "—",
+        _count(r.get("size")),
+        r.get("direction") or "—",
+        _dollars(r.get("premium")),
+    ]
+
+
+def _voloi_cells(r: dict) -> list[str]:
+    exp = contract(r.get("expires"), r.get("strike"), r.get("cp"))
+    return [r["symbol"], exp, _count(r.get("volume")), _count(r.get("oi")), f"{_num(r.get('v_oi'), 1)}x"]
+
+
+def section_text(name: str, doc: dict, calendar: dict | None) -> str:
+    """One section as a small monospace table (or a line), at most ROWS rows: the text styles."""
+    t = doc.get("tables") or {}
+    if name in ("Largest outrights", "Top sweeps"):
+        key = "outrights" if name == "Largest outrights" else "sweeps"
+        return _table([_trade_cells(r) for r in (t.get(key) or [])[:ROWS]], {2, 3})
+    if name == "Top spreads":
+        return _table([_spread_cells(r) for r in (t.get("spreads") or [])[:ROWS]], {2, 4})
+    if name == "Vol / OI":
+        return _table([_voloi_cells(r) for r in (t.get("voloi") or [])[:ROWS]], {2, 3, 4})
+    if name == "Birdseye":
+        rows = []
+        for r in (t.get("birdseye") or [])[:ROWS]:
+            share = r.get("call_share")
+            big = (r.get("bands") or {}).get("100+")
+            rows.append(
+                [
+                    r["symbol"],
+                    f"{(r.get('shown') or {}).get('total', '—')} trades",
+                    "—" if share is None else f"{share:.0%} calls",
+                    f"{_count(big)} of 100+",
+                ]
+            )
+        return _table(rows, {1, 2, 3})
+    if name == "Names across tables":
+        names = (doc.get("derived") or {}).get("names") or []
+        return "\n".join(f"{n['symbol']:<6} {' · '.join(n['tables'])}" for n in names) or "(none)"
+    if name == CALENDAR:
+        return calendar_text(doc["session"], calendar)
+    return "(unknown section)"
+
+
+def calendar_text(session: str, calendar: dict | None) -> str:
+    """The session's high-impact releases with actual against estimate, then the next ones."""
+    if calendar is None:
+        return "(no calendar captured with this session)"
+    events = [e for e in calendar.get("events") or [] if e.get("impact") == "H" and e.get("date")]
+    today = [e for e in events if e["date"] == session]
+    ahead_end = (date.fromisoformat(session) + timedelta(days=7)).isoformat()
+    ahead = [e for e in events if session < e["date"] <= ahead_end]
+    lines = []
+    for e in today[:ROWS]:
+        detail = (
+            f"{e.get('actual') or '—'} vs {e.get('estimate') or '—'} est" if e.get("actual") else "pending"
+        )
+        lines.append(f"{e.get('time_et') or '':>5}  {e['event']}: {detail}")
+    if ahead:
+        if lines:
+            lines.append("next:")
+        seen = set()
+        for e in ahead:
+            key = (e["date"], e["event"].split(" (")[0])
+            if key in seen or len(seen) >= ROWS:
+                continue
+            seen.add(key)
+            when = date.fromisoformat(e["date"])
+            lines.append(f"{when:%a} {when.day:>2} {e.get('time_et') or '':>5}  {e['event']}")
+    return "\n".join(lines) or "(no high-impact releases)"
+
+
+def _title_line(title: str, session: date) -> str:
+    return f"{title} — {session:%a} {session.day} {session:%b %Y} (stocks)"
+
+
+def _footer(doc: dict) -> str:
+    captured = _captured(doc)
+    when = f" · captured {captured}" if captured else ""
+    return f"Source: QuikOptions Hot Options Report{when}. The side is the site's own call."
+
+
+# ------------------------------------------------------------------------------------------------
+# The message plan: what each style sends. Pure.
+# ------------------------------------------------------------------------------------------------
+
+
+def header_embed(doc: dict, title: str, calendar: dict | None = None, with_calendar: bool = False) -> dict:
+    """The image styles' first message: the title, the date and the day in four fields; Calendar as
+    a fifth when it is a chosen section. The source and capture time are always in the footer,
+    whatever the title, so no title can drop the attribution or the date."""
+    s = summary(doc)
+    fields = [
+        {"name": "Most traded", "value": s["most"], "inline": True},
+        {"name": "Largest trade", "value": s["largest"], "inline": True},
+        {"name": "Bullish / bearish", "value": s["sides"], "inline": True},
+        {"name": "In two or more tables", "value": s["names"][:1000], "inline": False},
+    ]
+    if with_calendar:
+        fields.append(
+            {
+                "name": "Releases",
+                "value": f"```\n{calendar_text(doc['session'], calendar)[:990]}\n```",
+                "inline": False,
+            }
+        )
+    return {
+        "title": _title_line(title, date.fromisoformat(doc["session"])),
+        "color": EMBED_COLOUR,
+        "fields": fields,
+        "footer": {"text": _footer(doc)},
+    }
+
+
+def plan_messages(
+    doc: dict, title: str, style: str, sections: list[str], calendar: dict | None
+) -> list[dict]:
+    """The messages a style sends, in order: {"payload": payload_json, "cards": [card titles to
+    attach]}. Images are named here and captured by the caller."""
+    cards = [c for c in sections if c != CALENDAR]
+    with_cal = CALENDAR in sections
+    if style in ("cards", "singles"):
+        per = CARDS_PER_MESSAGE if style == "cards" else 1
+        out = [{"payload": {"embeds": [header_embed(doc, title, calendar, with_cal)]}, "cards": []}]
+        out += [{"payload": {"content": ""}, "cards": cards[i : i + per]} for i in range(0, len(cards), per)]
+        return out
+    s = summary(doc)
+    if style == "embed":
+        fields = [
+            {"name": "Most traded", "value": s["most"], "inline": True},
+            {"name": "Largest trade", "value": s["largest"], "inline": True},
+            {"name": "Bullish / bearish", "value": s["sides"], "inline": True},
+        ]
+        for name in sections:
+            fields.append(
+                {
+                    "name": name,
+                    "value": f"```\n{section_text(name, doc, calendar)[:990]}\n```",
+                    "inline": False,
+                }
+            )
+        embed = {
+            "title": _title_line(title, date.fromisoformat(doc["session"])),
+            "color": EMBED_COLOUR,
+            "description": f"In two or more tables: {s['names']}",
+            "fields": fields[:25],
+            "footer": {"text": _footer(doc)},
+        }
+        return [{"payload": {"embeds": [embed]}, "cards": []}]
+    # text: plain markdown, split at a section when it would pass the limit.
+    head = (
+        f"**{_title_line(title, date.fromisoformat(doc['session']))}**\n"
+        f"Most traded {s['most']} · Largest {s['largest']}\n"
+        f"Bullish / bearish {s['sides']}\n"
+        f"In two or more tables: {s['names']}"
+    )
+    foot = f"-# {_footer(doc)}"
+    blocks = [f"**{name}**\n```\n{section_text(name, doc, calendar)}\n```" for name in sections]
+    messages, current = [], head
+    for block in blocks:
+        if len(current) + len(block) + 1 > TEXT_LIMIT:
+            messages.append(current)
+            current = block
+        else:
+            current += "\n" + block
+    current = current + "\n" + foot if len(current) + len(foot) + 1 <= TEXT_LIMIT else current
+    messages.append(current)
+    if not messages[-1].endswith(foot):
+        messages.append(foot)
+    return [{"payload": {"content": m[:2000]}, "cards": []} for m in messages]
 
 
 # ------------------------------------------------------------------------------------------------
@@ -206,9 +446,13 @@ def markers() -> dict:
         return {}
 
 
-def mark_sent(session: str, index: int, title: str, cards: list[str]) -> None:
+def mark_sent(session: str, index: int, how: dict, fresh: bool = False) -> None:
+    """Record message `index` of `session` as landed, with the title, style and sections it went out
+    under. `fresh` starts the day's record over (a forced re-post)."""
     all_ = markers()
-    entry = all_.setdefault(session, {"title": title, "cards": cards, "sent": []})
+    if fresh or session not in all_:
+        all_[session] = {**how, "sent": []}
+    entry = all_[session]
     if index not in entry["sent"]:
         entry["sent"] = sorted([*entry["sent"], index])
     entry["at"] = _now_et().isoformat(timespec="seconds")
@@ -248,16 +492,12 @@ def capture_card(session: str, name: str, out: Path) -> str | None:
     return None
 
 
-NO_MENTIONS = {"parse": []}
-
-
-def message_payload(index: int, embed: dict, images: list[list[Path]]) -> tuple[dict, list[Path]]:
-    """(payload_json, files) for message `index`: the header embed alone, then each message's cards."""
-    if index == 0:
-        return {"embeds": [embed], "allowed_mentions": NO_MENTIONS}, []
-    files = images[index - 1]
-    attachments = [{"id": i, "filename": p.name} for i, p in enumerate(files)]
-    return {"content": "", "attachments": attachments, "allowed_mentions": NO_MENTIONS}, files
+def with_files(payload: dict, files: list[Path]) -> dict:
+    """The payload as sent: mentions off always, and the attachments named when there are files."""
+    out = {**payload, "allowed_mentions": NO_MENTIONS}
+    if files:
+        out["attachments"] = [{"id": i, "filename": p.name} for i, p in enumerate(files)]
+    return out
 
 
 def _multipart(payload: dict, files: list[Path]) -> tuple[bytes, str]:
@@ -329,15 +569,20 @@ def run(
     keep: Path | None,
     cfg: dict | None = None,
     webhook: str | None = None,
+    overrides: dict | None = None,
 ) -> str:
-    """'posted', 'skipped' (nothing to do, now or ever) or 'failed'. `webhook` overrides the
-    configured choice for this run (a test post to the notify channel, say)."""
-    if cfg is None:
-        from cherrypick.orchestrator import config as cfgmod
+    """'posted', 'skipped' (nothing to do, now or ever) or 'failed'. `webhook` and `overrides`
+    (title, style, cards) replace the configured choices for this run, and are checked by the same
+    rules."""
+    from cherrypick.orchestrator import config as cfgmod
 
+    if cfg is None:
         cfg = cfgmod.load_config()
+    if overrides:
+        cfg = {**cfg, "quikoptions": {**(cfg.get("quikoptions") or {}), **overrides}}
     settings = post_settings(cfg)
-    why, title, cards = settings["problem"], settings["title"], settings["cards"]
+    why = settings["problem"]
+    how = {"title": settings["title"], "style": settings["style"], "cards": settings["cards"]}
     if not settings["post"] and not dry_run:
         _log(f"{session}: quikoptions.post is off (it needs quikoptions.enabled too); nothing posted")
         return "skipped"
@@ -348,14 +593,13 @@ def run(
     entry = markers().get(session) or {}
     sent = set(entry.get("sent") or []) if not force else set()
     if sent:
-        # A series part-posted finishes as it started: the same title and the same cards.
-        title, cards = entry.get("title", title), list(entry.get("cards") or cards)
+        # A series part-posted finishes as it started: the same title, style and sections.
+        how = {k: entry.get(k, how[k]) for k in how}
     elif why is not None:
         _log(f"{session}: the series settings cannot be used ({why}); nothing posted")
         return "failed"
-    groups = message_cards(cards)
-    total = 1 + len(groups)
-    if len(sent) >= total:
+    messages = plan_messages(doc, how["title"], how["style"], list(how["cards"]), load_calendar(session))
+    if len(sent) >= len(messages):
         _log(f"{session}: already posted")
         return "skipped"
     url, why_not = (None, None) if dry_run else webhook_url(webhook or settings["webhook"])
@@ -363,14 +607,13 @@ def run(
         _log(f"{session}: {why_not}; nothing posted")
         return "failed"
 
-    embed = header_embed(doc, title)
     with tempfile.TemporaryDirectory() as tmp:
         folder = keep or Path(tmp)
         folder.mkdir(parents=True, exist_ok=True)
-        images: list[list[Path]] = []
-        for group in groups:
+        files: list[list[Path]] = []
+        for message in messages:
             shots = []
-            for name in group:
+            for name in message["cards"]:
                 slug = name.lower().replace(" / ", "-").replace(" ", "-")
                 shot = folder / f"quikoptions-{session}-{slug}.png"
                 why = capture_card(session, name, shot)
@@ -378,41 +621,59 @@ def run(
                     _log(f"{session}: capture of {name!r} failed: {why}; nothing posted")
                     return "failed"
                 shots.append(shot)
-            images.append(shots)
+            files.append(shots)
         if dry_run:
-            _log(f"{session}: dry run, captured {sum(map(len, images))} cards into {folder}, posted nothing")
-            print(json.dumps(embed, indent=1, ensure_ascii=False))
+            _log(f"{session}: dry run ({how['style']}), {len(messages)} message(s), posted nothing")
+            for m in messages:
+                print(json.dumps(m["payload"], indent=1, ensure_ascii=False))
             return "skipped"
-        for index in range(total):
+        first = True
+        for index, message in enumerate(messages):
             if index in sent:
                 continue
-            payload, files = message_payload(index, embed, images)
-            why = post(url, payload, files)
+            why = post(url, with_files(message["payload"], files[index]), files[index])
             if why is not None:
-                _log(f"{session}: message {index + 1} of {total}: {why}; the next run resumes here")
+                _log(f"{session}: message {index + 1} of {len(messages)}: {why}; the next run resumes here")
                 return "failed"
-            mark_sent(session, index, title, cards)
-            if index < total - 1:
+            mark_sent(session, index, how, fresh=force and first)
+            first = False
+            if index < len(messages) - 1:
                 time.sleep(PAUSE_S)
-    _log(f"{session}: posted")
+    _log(f"{session}: posted ({how['style']})")
     return "posted"
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--session", default=None, help="YYYY-MM-DD; default today (ET)")
-    ap.add_argument("--dry-run", action="store_true", help="capture and print the header, post nothing")
+    ap.add_argument("--dry-run", action="store_true", help="capture and print the messages, post nothing")
     ap.add_argument("--force", action="store_true", help="post the whole series again for this session")
     ap.add_argument("--keep", type=Path, default=None, help="keep the card images in this directory")
+    ap.add_argument("--webhook", choices=["notify", "dedicated"], default=None, help="this run only")
     ap.add_argument(
-        "--webhook",
-        choices=["notify", "dedicated"],
-        default=None,
-        help="this run only: the suite's Discord notify webhook, or the series' own (default: the config)",
+        "--style", choices=["cards", "singles", "embed", "text"], default=None, help="this run only"
     )
+    ap.add_argument(
+        "--cards", default=None, help='this run only: sections, comma-separated ("Top sweeps,Calendar")'
+    )
+    ap.add_argument("--title", default=None, help="this run only: the series title")
     args = ap.parse_args(argv)
     session = args.session or _now_et().date().isoformat()
-    outcome = run(session, dry_run=args.dry_run, force=args.force, keep=args.keep, webhook=args.webhook)
+    overrides: dict = {}
+    if args.style:
+        overrides["post_style"] = args.style
+    if args.cards:
+        overrides["post_cards"] = [c.strip() for c in args.cards.split(",") if c.strip()]
+    if args.title is not None:
+        overrides["post_title"] = args.title
+    outcome = run(
+        session,
+        dry_run=args.dry_run,
+        force=args.force,
+        keep=args.keep,
+        webhook=args.webhook,
+        overrides=overrides,
+    )
     return 1 if outcome == "failed" else 0
 
 

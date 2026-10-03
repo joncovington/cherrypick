@@ -490,7 +490,12 @@ QUIKOPTIONS_CARDS = (
     "Top spreads",
     "Vol / OI",
 )
+# `Calendar` is a section with no card: the session's high-impact releases, from the calendar capture.
+QUIKOPTIONS_SECTIONS = (*QUIKOPTIONS_CARDS, "Calendar")
 QUIKOPTIONS_DEFAULT_CARDS = ("Largest outrights", "Top sweeps")
+# How the series is sent: card images two to a message, one to a message, one embed of small
+# tables, or plain text (scripts/quikoptions_post.py).
+QUIKOPTIONS_STYLES = ("cards", "singles", "embed", "text")
 
 
 def quikoptions_post_problem(q: dict[str, Any]) -> str | None:
@@ -500,12 +505,15 @@ def quikoptions_post_problem(q: dict[str, Any]) -> str | None:
     hook = q.get("post_webhook", "dedicated")
     if hook not in QUIKOPTIONS_WEBHOOKS:
         return f"post_webhook must be one of {sorted(QUIKOPTIONS_WEBHOOKS)}, not {hook!r}"
+    style = q.get("post_style", "cards")
+    if style not in QUIKOPTIONS_STYLES:
+        return f"post_style must be one of {list(QUIKOPTIONS_STYLES)}, not {style!r}"
     cards = q.get("post_cards", list(QUIKOPTIONS_DEFAULT_CARDS))
     if not isinstance(cards, list) or not cards:
         return "post_cards must be a non-empty list of card titles"
-    unknown = [c for c in cards if c not in QUIKOPTIONS_CARDS]
+    unknown = [c for c in cards if c not in QUIKOPTIONS_SECTIONS]
     if unknown:
-        return f"post_cards names cards the page does not have: {unknown} (known: {list(QUIKOPTIONS_CARDS)})"
+        return f"post_cards names sections there are not: {unknown} (known: {list(QUIKOPTIONS_SECTIONS)})"
     return None
 
 
@@ -534,6 +542,7 @@ def quikoptions_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "post_title": title.strip() if quikoptions_title_problem(title) is None else "Hot options",
         "post_webhook": q.get("post_webhook", "dedicated"),
         "post_cards": list(q.get("post_cards") or QUIKOPTIONS_DEFAULT_CARDS),
+        "post_style": q.get("post_style", "cards"),
     }
 
 

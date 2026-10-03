@@ -14,7 +14,9 @@ beyond the latest release.
 - **Added: the QuikOptions Discord series** (`scripts/quikoptions_post.py`). A session as a
   header embed (the day in four fields, the source and capture time in its footer) and then the
   Options flow cards named in `quikoptions.post_cards`, two to a message; by default Largest
-  outrights + Top sweeps. `quikoptions.post_webhook` picks the suite's Discord notify webhook or the
+  outrights + Top sweeps, in one of four styles (`post_style`: card images, one image a message,
+  one embed of small tables, or plain text), with a Calendar section of the day's releases against
+  estimate and the next ones. `quikoptions.post_webhook` picks the suite's Discord notify webhook or the
   series' own (`discord_quikoptions`, new in `secrets-set` and the settings surface, never a push
   channel), never one as a fallback for the other. Mentions are off; a re-run resumes rather than
   repeats. Off by default (`quikoptions.post`); not yet scheduled.

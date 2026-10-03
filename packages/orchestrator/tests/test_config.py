@@ -174,7 +174,10 @@ def test_quikoptions_post_choices_refuse_what_they_do_not_know():
     assert c.quikoptions_post_problem({"post_webhook": "notify"}) is None
     assert "post_webhook must be one of" in c.quikoptions_post_problem({"post_webhook": "slack"})
     assert c.quikoptions_post_problem({"post_cards": ["Birdseye", "Top spreads", "Vol / OI"]}) is None
-    assert "does not have: ['Top trades']" in c.quikoptions_post_problem({"post_cards": ["Top trades"]})
+    assert "there are not: ['Top trades']" in c.quikoptions_post_problem({"post_cards": ["Top trades"]})
+    assert c.quikoptions_post_problem({"post_cards": ["Calendar"], "post_style": "text"}) is None
+    assert "post_style must be one of" in c.quikoptions_post_problem({"post_style": "carousel"})
+    assert c.quikoptions_settings({})["post_style"] == "cards"
     assert (
         c.quikoptions_post_problem({"post_cards": []}) == "post_cards must be a non-empty list of card titles"
     )

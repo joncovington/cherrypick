@@ -108,16 +108,95 @@ def test_the_header_carries_source_and_date_whatever_the_title():
     assert len(embed["fields"]) == 4  # a short header: the day does not need every figure
 
 
-def test_cards_go_two_to_a_message_and_every_message_pings_no_one():
-    assert qp.message_cards(["Largest outrights", "Top sweeps"]) == [["Largest outrights", "Top sweeps"]]
-    assert qp.message_cards(["Birdseye", "Top sweeps", "Vol / OI"]) == [
-        ["Birdseye", "Top sweeps"],
-        ["Vol / OI"],
-    ]
-    images = [[Path("a.png"), Path("b.png")]]
-    for index in (0, 1):
-        payload, _ = qp.message_payload(index, {"title": "@everyone"}, images)
-        assert payload["allowed_mentions"] == {"parse": []}
+CALENDAR = {
+    "captured": SESSION,
+    "events": [
+        {
+            "date": SESSION,
+            "time_et": "08:30",
+            "impact": "H",
+            "event": "Non Farm Payrolls (Sep)",
+            "actual": "29K",
+            "estimate": "90K",
+        },
+        {
+            "date": SESSION,
+            "time_et": "10:00",
+            "impact": "M",
+            "event": "Factory Orders MoM (Aug)",
+            "actual": "0.1%",
+            "estimate": "0.1%",
+        },
+        {
+            "date": "2026-10-07",
+            "time_et": "14:00",
+            "impact": "H",
+            "event": "FOMC Minutes",
+            "actual": None,
+            "estimate": None,
+        },
+        {
+            "date": "2026-10-09",
+            "time_et": "10:00",
+            "impact": "H",
+            "event": "Michigan Consumer Sentiment (Oct)",
+            "actual": None,
+        },
+        {"date": "2026-10-20", "time_et": "08:30", "impact": "H", "event": "Too far ahead", "actual": None},
+    ],
+}
+SECTIONS = ["Largest outrights", "Top sweeps", "Calendar"]
+
+
+def test_each_style_plans_its_own_messages():
+    cards = qp.plan_messages(CAPTURE, "Hot options", "cards", ["Birdseye", "Top sweeps", "Vol / OI"], None)
+    assert [m["cards"] for m in cards] == [[], ["Birdseye", "Top sweeps"], ["Vol / OI"]]
+    singles = qp.plan_messages(CAPTURE, "Hot options", "singles", ["Birdseye", "Top sweeps"], None)
+    assert [m["cards"] for m in singles] == [[], ["Birdseye"], ["Top sweeps"]]
+    embed = qp.plan_messages(CAPTURE, "Hot options", "embed", SECTIONS, CALENDAR)
+    assert len(embed) == 1 and embed[0]["cards"] == []
+    names = [f["name"] for f in embed[0]["payload"]["embeds"][0]["fields"]]
+    assert names[-3:] == SECTIONS
+    text = qp.plan_messages(CAPTURE, "Hot options", "text", SECTIONS, CALENDAR)
+    body = "\n".join(m["payload"]["content"] for m in text)
+    assert body.startswith("**Hot options — Fri 2 Oct 2026 (stocks)**")
+    assert "Source: QuikOptions Hot Options Report" in body  # attribution, whatever the style
+    assert all(len(m["payload"]["content"]) <= 2000 for m in text)
+
+
+def test_calendar_shows_the_days_releases_and_the_next_high_impact_ones():
+    out = qp.calendar_text(SESSION, CALENDAR)
+    assert "08:30  Non Farm Payrolls (Sep): 29K vs 90K est" in out
+    assert "Factory Orders" not in out  # medium impact
+    assert "Wed  7 14:00  FOMC Minutes" in out and "Fri  9 10:00  Michigan Consumer Sentiment (Oct)" in out
+    assert "Too far ahead" not in out
+    assert qp.calendar_text(SESSION, None) == "(no calendar captured with this session)"
+    # In the image styles Calendar has no card: it is a header field instead.
+    header = qp.plan_messages(CAPTURE, "Hot options", "cards", SECTIONS, CALENDAR)
+    assert header[0]["payload"]["embeds"][0]["fields"][-1]["name"] == "Releases"
+    assert [m["cards"] for m in header[1:]] == [["Largest outrights", "Top sweeps"]]
+
+
+def test_every_message_pings_no_one():
+    for style in ("cards", "singles", "embed", "text"):
+        for m in qp.plan_messages(CAPTURE, "@everyone", style, SECTIONS, CALENDAR):
+            assert qp.with_files(m["payload"], [])["allowed_mentions"] == {"parse": []}
+    sent = qp.with_files({"content": ""}, [Path("a.png"), Path("b.png")])
+    assert sent["attachments"] == [{"id": 0, "filename": "a.png"}, {"id": 1, "filename": "b.png"}]
+
+
+def test_text_longer_than_a_message_is_split_at_a_section():
+    many = {
+        **CAPTURE,
+        "derived": {
+            **CAPTURE["derived"],
+            "names": [{"symbol": f"N{i}", "tables": ["birdseye"] * 6} for i in range(40)],
+        },
+    }
+    text = qp.plan_messages(
+        many, "Hot options", "text", ["Names across tables", "Names across tables", "Calendar"], CALENDAR
+    )
+    assert len(text) > 1 and all(len(m["payload"]["content"]) <= 2000 for m in text)
 
 
 def test_default_series_is_the_header_and_one_pair(harness):
@@ -144,6 +223,17 @@ def test_a_run_may_override_the_webhook_for_a_test_post(harness):
     assert {p["url"] for p in harness["posted"]} == {"https://d/notify"}
 
 
+def test_a_forced_test_post_in_another_style_starts_the_day_over(harness):
+    assert _run() == "posted"
+    assert _run(force=True, overrides={"post_style": "text", "post_cards": ["Calendar"]}) == "posted"
+    assert harness["posted"][-1]["payload"]["content"].startswith("**Hot options")
+    assert harness["posted"][-1]["files"] == []
+    marker = qp.markers()[SESSION]
+    assert (marker["style"], marker["cards"], marker["sent"]) == ("text", ["Calendar"], [0])
+    # An override is checked by the same rules as the config.
+    assert _run(force=True, overrides={"post_cards": ["Top trades"]}) == "failed"
+
+
 def test_a_failure_resumes_under_the_title_and_cards_it_started_with(harness):
     harness["fail_at"] = 1  # the header lands, the pictures do not
     assert _run(cfg=_cfg(post_title="Flow", post_cards=["Birdseye", "Top spreads"])) == "failed"
@@ -159,6 +249,7 @@ def test_bad_settings_and_a_failed_capture_post_nothing(harness, monkeypatch):
     assert _run(cfg=_cfg(post_title="x" * 81)) == "failed"
     assert _run(cfg=_cfg(post_cards=["Top trades"])) == "failed"
     assert _run(cfg=_cfg(post_webhook="slack")) == "failed"
+    assert _run(cfg=_cfg(post_style="carousel")) == "failed"
     assert _run(cfg={"quikoptions": {"enabled": True, "post": False}}) == "skipped"
     monkeypatch.setattr(qp, "capture_card", lambda session, name, out: "ui-check exit 1: no card")
     assert _run() == "failed"

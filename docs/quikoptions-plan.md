@@ -208,7 +208,14 @@ choice for one run (the first test, 2026-10-03, posts to the notify channel).
 bullish / bearish premium with trade counts, the names in two or more tables) and a footer with the
 source and capture time — then the cards in `quikoptions.post_cards`, two to a message so Discord
 shows them side by side. Default: `["Largest outrights", "Top sweeps"]`, one message. Any of the six
-`today` cards can be listed; an unknown name refuses the run.
+`today` cards can be listed, plus `Calendar` (the session's high-impact releases with actual against
+estimate, and the next ones, from the calendar capture); an unknown name refuses the run.
+
+**Four styles** (`quikoptions.post_style`), tried side by side on the notify channel on 2026-10-03:
+`cards` (the header, then card images two to a message), `singles` (one image a message), `embed`
+(one embed of small monospace tables, no images) and `text` (plain text tables, split at a section
+past Discord's 2,000 characters). In the image styles Calendar is a header field. `--style`,
+`--cards`, `--title` and `--webhook` override the config for one run, checked by the same rules.
 
 Pictures come from the console page via `tools/ui-check.mjs --card`, which refuses rather than
 crops the wrong card, and the card titles carry the session date, so a page still showing another
