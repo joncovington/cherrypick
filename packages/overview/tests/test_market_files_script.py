@@ -79,3 +79,22 @@ def test_only_the_declared_releases_are_kept():
         "release_dates": [{"release_id": 10, "date": "2026-10-14"}, {"release_id": 999, "date": "2026-10-14"}]
     }
     assert fmf.fred_releases(body) == [{"name": "Consumer Price Index", "at": "2026-10-14", "source": "FRED"}]
+
+
+def test_each_fetch_folds_into_a_history_that_never_drops_a_date(tmp_path, monkeypatch):
+    """fred.json is replaced every run with the window ahead, so a past release date used to vanish
+    the day after it. The history keeps every date and the ranges FRED was asked about."""
+    import json
+
+    from cherrypick.overview import files
+
+    monkeypatch.setattr(files, "store_dir", lambda: tmp_path)
+    fmf._merge_fred_history(
+        [{"name": "Employment Situation", "at": "2026-10-02", "source": "FRED"}], date(2026, 9, 1)
+    )
+    fmf._merge_fred_history(
+        [{"name": "Consumer Price Index", "at": "2026-10-14", "source": "FRED"}], date(2026, 10, 3)
+    )
+    doc = json.loads((tmp_path / "calendar" / "fred_history.json").read_text(encoding="utf-8"))
+    assert [r["at"] for r in doc["releases"]] == ["2026-10-02", "2026-10-14"]
+    assert doc["coverage"] == [["2026-09-01", "2026-11-17"]]  # overlapping windows merge

@@ -336,6 +336,7 @@ REGIME_DIMENSIONS = {
     "skew": ("entry_skew_bucket", "entry_skew_value"),
     "center_offset": ("entry_center_offset_bucket", "entry_center_offset_value"),
     "trend": ("entry_trend_bucket", "entry_trend_value"),
+    "event": ("entry_event_bucket", "entry_event_value"),
     "drift_alignment": (_DRIFT_ALIGNMENT_BUCKET, _DRIFT_ALIGNMENT_VALUE),
 }
 

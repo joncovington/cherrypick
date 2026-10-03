@@ -21,6 +21,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from cherrypick.core import events as _events
 from cherrypick.core import home as _home
 
 ET = ZoneInfo("America/New_York")
@@ -62,11 +63,11 @@ def risk_reversal_path() -> Path:
 
 
 def bea_path() -> Path:
-    return store_dir() / "calendar" / "bea.json"
+    return _events.bea_path(store_dir() / "calendar")
 
 
 def fred_releases_path() -> Path:
-    return store_dir() / "calendar" / "fred.json"
+    return _events.fred_path(store_dir() / "calendar")
 
 
 # --------------------------------------------------------------------------- parsers (pure)
@@ -125,21 +126,9 @@ def parse_treasury(text: str) -> list[tuple[date, dict[str, float]]]:
     return out
 
 
-def parse_bea(text: str) -> list[dict]:
-    """[{name, at (UTC ISO), source}] from BEA's release-dates file. Duplicate entries (the file
-    repeats some) collapse to one."""
-    try:
-        body = json.loads(text.lstrip("﻿"))
-    except ValueError:
-        return []
-    if not isinstance(body, dict):
-        return []
-    seen = set()
-    for name, row in body.items():
-        dates = row.get("release_dates") if isinstance(row, dict) else None
-        for at in dates or []:
-            seen.add((str(name).strip(), str(at)))
-    return [{"name": n, "at": a, "source": "BEA"} for n, a in sorted(seen, key=lambda x: (x[1], x[0]))]
+# The BEA release-dates parser is `cherrypick.core.events.parse_bea` (2026-10-02): flies tags every
+# entry with the day's releases from the same file, and one file deserves one parser.
+parse_bea = _events.parse_bea
 
 
 def history_problems(old: list, new: list) -> list[str]:

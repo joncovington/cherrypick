@@ -599,6 +599,16 @@ _ADDED_POSITION_COLUMNS = {
     # record (JSON: fill_model.update_touches), until settlement and whether or not paper's own rule
     # completed the position. Tag-don't-gate: paper's completion is untouched, nothing reads these
     # on a decision path, and the shadow book is a read-side replay at any grid value.
+    # The day's scheduled releases at entry and at completion (2026-10-02, engine._classify_event):
+    # bucket after/before/none/unknown, minutes since the latest major release, and every release's
+    # label. Backfillable exactly from the calendar store (`run.py backfill-events`), unlike the
+    # quote-derived tags, because a release calendar is history, not a market read.
+    "entry_event_bucket": "TEXT",
+    "completion_event_bucket": "TEXT",
+    "entry_event_value": "REAL",
+    "completion_event_value": "REAL",
+    "entry_event_labels": "TEXT",
+    "completion_event_labels": "TEXT",
     "shadow_completion_limit": "REAL",
     "shadow_touches": "TEXT",
 }
