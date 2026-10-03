@@ -34,6 +34,7 @@ cherrypick/core/
   execution/       the one live broker adapter and the fill primitives every live loop shares
   fees/            tastytrade cost model (one home for the fee schedule)
   gex/             gamma-exposure engine
+  impliedvar/      model-free implied variance (Cboe's VIX arithmetic, any expiration)
   ledgerstore/     ledger mechanics calendars and pmcc share
   live/            the per-day arm record and dead-man's switch a live loop runs under
   looplock/        single-instance guards for the suite's loops
