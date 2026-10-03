@@ -626,3 +626,50 @@ come from BEA's file, FRED's history and the curated FOMC list.
 day's releases (`event_bucket`, `event_value` minutes since the latest major release,
 `event_labels`). Earlier rows are backfilled from the calendar store, and the regime cuts carry the
 dimension. Tag only, so not a break. Read NFP again once there are several more of them.
+
+## 2026-10-02 — first read of the event tags: release days complete more, quiet low-vol days least
+
+Read after the calendar was corrected (Census for its own releases, ISM and the rest by rule) and
+every row re-tagged (`backfill-events --restamp`). Paper `control`, 345 settled 5-wide SPX
+spreads, 43 sessions, 08-03..10-02.
+
+| Entry was | Sessions | Completion | Per spread | Losing days |
+|---|---|---|---|---|
+| on a day with no major release | 26 | 75% | +$2.1 | 10 / 26 |
+| after that day's major release | 17 | 81% | +$16.5 | 6 / 17 |
+
+**It is not volatility in disguise.** The median entry straddle is the same on both (21.7 vs 21.5
+points), and release days do as well or better in every implied-volatility tercile:
+
+| Straddle | No release | After a release |
+|---|---|---|
+| Low (< 19.5 pts) | 67%, −$6.5 (18 sessions) | 76%, +$5.1 (11 sessions) |
+| Middle | 80%, −$1.2 | 80%, +$14.8 |
+| High (≥ 23.1 pts) | 81%, +$19.8 | 84%, +$24.6 |
+
+The likely mechanism is that a release delivers realised movement the straddle did not price.
+
+- **The weakest cell is a quiet, low-volatility day** (67% against a ~75% break-even). That is what
+  `vol-floor` is really aimed at, but the arm also refuses low-volatility release days, which
+  completed 76%. The arm stays as declared, with one variable. Its results are re-cut by
+  `event_bucket` at its 14-session read, which tests "low vol and no release" without a second arm.
+- **NFP is the one release with a consistent negative:** 3 sessions, 61%, −$41.7 a spread, every
+  day losing. Live's one NFP day completed 40%. Retail sales is negative on 2 sessions (69%, −$39.4).
+  Every other release is positive on 1–3 sessions each: JOLTS 94%, ISM Manufacturing 88%, PCE and
+  GDP 100%.
+- **Timing around a release is not the problem.** Entries within 15 minutes of a 10:00 release
+  (ISM, JOLTS, Conference Board) completed 91%, against 80% in the same window on quiet days.
+  Entries 4+ hours after a release did badly (50%, −$116, 5 sessions), but late entries are weak on
+  every kind of day.
+- **Across books:** the release-day edge holds in `control` and the advised arms built on it (not
+  independent: same days, same base). It is flat in live (77% vs 76%) and reversed in the `gex`
+  arms. NFP is lower in most books that traded one.
+
+Caveats: about 20 release labels were compared over 43 sessions, each release seen 1–3 times, so one
+or two extreme cells are expected by chance. Only the release-vs-quiet split and the quiet low-vol
+cell rest on enough sessions to act on, and neither yet earns a gate.
+
+**Re-read:**
+- NFP after about six more reports (next 2026-11-06).
+- `vol-floor` at 14 sessions, cut by `event_bucket`.
+- Retail sales at five or more sessions.
