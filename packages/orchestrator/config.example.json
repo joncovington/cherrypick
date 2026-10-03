@@ -588,21 +588,26 @@
     "iv_rank_at": "18:50"
   },
   "quikoptions": {
-    "_comment": "QuikOptions' Hot Options Report (scripts/fetch_quikoptions.py; docs/quikoptions-plan.md): one paced load a day after the close in the installed Chrome, on a profile a person signs in to by hand, then the economic calendar through the menu. Kept only when the page's own sums hold, into data/quikoptions/. 'enabled' also shows the console's Options flow page. A 429, or a 403 once signed in, starts a 24-hour cooldown; an expired session notifies and stops. OFF by default: sign in first (`python scripts/fetch_quikoptions.py login`), then set enabled=true. The scheduled job and the Discord series land in later releases. You are responsible for complying with the site's terms. Times are ET.",
+    "_comment": "QuikOptions' Hot Options Report (scripts/fetch_quikoptions.py; docs/quikoptions-plan.md): one paced load a day after the close in the installed Chrome, on a profile a person signs in to by hand, then the economic calendar through the menu. Kept only when the page's own sums hold, into data/quikoptions/. 'enabled' also shows the console's Options flow page. A 429, or a 403 once signed in, starts a 24-hour cooldown; an expired session notifies and stops. OFF by default: sign in first (`python scripts/fetch_quikoptions.py login`), then set enabled=true. Scheduled, trading days only: the capture at 'at' (plus 0-jitter_minutes), scoring at score_at, and the next morning the open-interest confirmation at confirm_at; each later step waits up to 45 minutes for the one before it. You are responsible for complying with the site's terms. Times are ET.",
     "enabled": false,
-    "at": "16:45",
+    "at": "16:30",
+    "jitter_minutes": 10,
     "headed": true,
-    "_comment_post": "The daily Discord series: the Options flow cards named in post_cards as screen captures, each under its own title, the first also under the series title line. OFF by default and needs enabled: it republishes the site's figures, so re-read their terms for redistribution first. post_webhook: 'dedicated' (its own, cherrypick secrets-set --channel discord_quikoptions) or 'notify' (the suite's Discord notify webhook); a choice, never a fallback. post_cards, from: Derived flow, Net by name, Trades (the site's Birdseye; the old name still works), Names across tables, Largest by contracts, Top sweeps, Top spreads, Vol / OI. post_title heads the first post (one line, at most 80 characters); the session date is always added after it.",
+    "score_at": "16:50",
+    "confirm_at": "08:30",
+    "_comment_post": "The daily Discord series: the Options flow cards named in post_cards as screen captures, each under its own title, the first also under the series title line. OFF by default and needs enabled: it republishes the site's figures, so re-read their terms for redistribution first. post_webhook: 'dedicated' (its own, cherrypick secrets-set --channel discord_quikoptions) or 'notify' (the suite's Discord notify webhook); a choice, never a fallback. post_cards, from: Derived flow, Net by name, Trades (the site's Birdseye; the old name still works), Names across tables, Largest by contracts, Top sweeps, Top spreads, Vol / OI. post_title heads the first picture (one line, at most 80 characters); the session date is always added after it.",
     "post": false,
-    "post_at": "17:40",
+    "post_at": "17:00",
     "post_title": "Hot options",
     "post_webhook": "dedicated",
     "post_cards": ["Derived flow", "Trades", "Top spreads", "Events"],
-    "_comment_post_style": "post_style: 'singles' (the default, chosen 2026-10-03: the header, then each card as its own screen capture, readable on a phone), 'text' (plain text tables), 'cards' (a header embed, then the cards as images two to a message), or 'embed' (one embed of small tables, no images). post_cards may also name 'Events': the session's high-impact releases with actual against estimate, and the next ones.",
+    "_comment_post_style": "post_style: 'singles' (the default, chosen 2026-10-03: each card as its own titled screen capture, the first under the series title, readable on a phone), 'text' (plain text tables), 'cards' (a header embed, then the cards as images two to a message), or 'embed' (one embed of small tables, no images). post_cards may also name 'Events': the session's high-impact releases with actual against estimate, and the next ones.",
     "post_style": "singles",
-    "_comment_post_followups": "post_morning: after the open-interest check, how the last session's flows came out (opened, closed, mixed). post_weekly: Friday's scorecard (the week's checks, confirmations, and how the calls did a day on; descriptive only until the fixed 40-session test). Both narrow text, both need post.",
+    "_comment_post_followups": "post_morning: after the open-interest check, how the last session's flows came out (opened, closed, mixed). post_weekly: Friday's scorecard (the week's checks, confirmations, and how the calls did a day on; descriptive only until the fixed 40-session test), on the week's last trading day. Both narrow text, both need post.",
     "post_morning": true,
-    "post_weekly": true
+    "morning_at": "08:45",
+    "post_weekly": true,
+    "weekly_at": "17:15"
   },
   "market_report": {
     "_comment": "The vendor-edition collector (scripts/fetch_vendor_edition.py) - the fixture feed for docs/market-report-plan.md. Fetches the vendor's pre-open report after it is published ('edition_at', with a second chance at 'edition_retry_at'; a day already saved is skipped) and, after the close, the data behind its chart pages ('charts_at'), into data/market-report/. Paced on purpose: one browser session, 20-60 s between pages, at most 40 chart pages, and a 24-hour cooldown after any 429/403. Stops at a captcha or refused login and notifies. OFF by default: store the login first (`python scripts/fetch_vendor_edition.py credentials` then `login`), put the dashboard address in data/market-report/collector.json, then set collector=true and re-run `install`. Times are ET.",

@@ -193,6 +193,36 @@ export const FIELDS: FieldMeta[] = [
   },
   { target: "orchestrator", pointer: "/reconcile/schedule/enabled", label: "Daily reconcile job", type: "boolean", section: "notify" },
   { target: "orchestrator", pointer: "/review/narrative", label: "Review narrative", type: "boolean", section: "notify" },
+  // The QuikOptions series can be paused, retitled and re-routed here; `enabled` stays out, because
+  // turning the capture on needs a person to sign in to the site, which this page cannot do. The
+  // orchestrator's config editor refuses a title, webhook or section the post script would.
+  {
+    target: "orchestrator",
+    pointer: "/quikoptions/post",
+    label: "Options flow Discord series",
+    type: "boolean",
+    section: "notify",
+    help: "The daily QuikOptions posts after the close. Needs the capture (quikoptions.enabled) on.",
+  },
+  {
+    target: "orchestrator",
+    pointer: "/quikoptions/post_title",
+    label: "Options flow series title",
+    type: "string",
+    section: "notify",
+    help: "One line, at most 80 characters; the session date is added after it.",
+  },
+  {
+    target: "orchestrator",
+    pointer: "/quikoptions/post_webhook",
+    label: "Options flow webhook",
+    type: "enum",
+    options: ["notify", "dedicated"],
+    section: "notify",
+    help: "The suite's Discord notify webhook, or the series' own (discord_quikoptions in the keyring). Never a fallback.",
+  },
+  { target: "orchestrator", pointer: "/quikoptions/post_morning", label: "Options flow morning post", type: "boolean", section: "notify" },
+  { target: "orchestrator", pointer: "/quikoptions/post_weekly", label: "Options flow weekly scorecard", type: "boolean", section: "notify" },
   {
     target: "orchestrator",
     pointer: "/config_backup/enabled",

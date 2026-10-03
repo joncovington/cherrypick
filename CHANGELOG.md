@@ -11,6 +11,13 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: the QuikOptions schedule.** Six trading-day jobs: the capture at 16:30 ET (with up to ten
+  minutes of random delay), scoring at 16:50, the series at 17:00, the open-interest confirmation at
+  08:30 and its morning post at 08:45, and the weekly scorecard at 17:15 on the week's last trading
+  day. Each later step waits up to 45 minutes for the one before it, so a machine that wakes after
+  the evening still runs it in order. `quikoptions_flow.py score --require-today` scores only the
+  day's own capture, and every score refreshes the fixed test's progress. The console's Config page
+  can now pause, retitle and re-route the series (`post`, `post_title`, `post_webhook`).
 - **Changed: the QuikOptions Discord series, after test posts.** One screen capture a message (Derived
   flow from a hidden post page without the factor columns, and Trades, the Birdseye card renamed),
   a header led by the derived flow and yesterday's calls a day on, a morning follow-up once the

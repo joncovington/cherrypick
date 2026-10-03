@@ -124,7 +124,7 @@ attributes say: the full company name, the call/put badge, and the side tooltip.
   non-empty.
 
 **Browser mode.** Headed real Chrome is the most faithful presentation; a window opening on the
-desktop at 16:45 is the cost. The default is headed with the window started minimised; a config
+desktop at 16:30 is the cost. The default is headed with the window started minimised; a config
 switch drops to headless with the matching Chrome user-agent, the vendor collector's mode.
 
 ## Phase 2 — the calendar check
@@ -272,15 +272,28 @@ Those are operations, and go to the suite's normal `notify` channels.
 
 ## Phase 5 — scheduling and config
 
-- `orchestrator/config.py`: `quikoptions_settings(cfg)`, resolving a top-level `quikoptions` block —
-  `enabled` (default `false`: a job that fails daily for want of a sign-in is noise), `at` (default
-  `16:45` ET, after the page's final results), `headed` (default `true`), `post` (default `false`,
-  and it needs `enabled`), `post_at` (default `17:40`, after the latest a jittered capture can
-  finish), `post_title` (default `Hot options`).
-- `orchestrator/jobspec.py`: two daily jobs, trading days only, each with its `CATCHUP_MINUTES`
-  entry — `quikoptions` (`fetch_quikoptions.py hot-options`) and `quikoptions-post`
-  (`quikoptions_post.py`). The calendar is read in the capture's own session, so it needs no job of
-  its own. The jobspec comments state the pacing, as the vendor collector's does.
+Built 2026-10-03. The report lands 30-60 minutes after the close; every time is ET and configurable.
+
+| Job | Default | Runs | Needs |
+|---|---|---|---|
+| `quikoptions-capture` | `at` 16:30, then 0-`jitter_minutes` (10) of random delay | `fetch_quikoptions.py hot-options --jitter N` (`--headless` when `headed` is false) | `enabled` |
+| `quikoptions-score` | `score_at` 16:50 | `quikoptions_flow.py score --require-today --wait 45`, which also refreshes `review.json` | `enabled` |
+| `quikoptions-post` | `post_at` 17:00 | `quikoptions_post.py --wait 45` | `post` |
+| `quikoptions-confirm` | `confirm_at` 08:30, the next trading morning | `quikoptions_flow.py confirm` | `enabled` |
+| `quikoptions-morning` | `morning_at` 08:45 | `quikoptions_post.py --kind morning --wait 45` | `post`, `post_morning` |
+| `quikoptions-weekly` | `weekly_at` 17:15, every trading day | `quikoptions_post.py --kind weekly`, which posts only on the week's last trading day (the Thursday before a Good Friday) | `post`, `post_weekly` |
+
+All trading days only, each with its `CATCHUP_MINUTES` entry (four to five hours: a late capture is
+the same page, and the morning pair is still worth posting before the next session's capture).
+The calendar is read in the capture's own session, so it needs no job of its own.
+
+**Each step waits for the one before it.** The scheduler fires a daily job once whatever its outcome,
+so a machine waking at 19:00 fires the capture, the score and the post in the same tick. `--wait`
+(45 minutes, past the capture's jitter and its paced run) has the score wait for today's capture and
+the post for today's scored flows; the morning post waits for the confirmation. Past the bound the
+score finds nothing and stops, the daily post goes out without its derived flow, and the morning
+post skips. `--require-today` keeps a day with no capture from re-scoring an earlier day under a
+post already made.
 - `config.example.json`: the block with a `_comment` (what it fetches, the pacing, the cooldown, how
   to sign in, how to store the webhook, the terms note), and a row in
   `docs/configuration-and-storage.md`.
@@ -321,7 +334,7 @@ official close, each contract's starting open interest and day volume, each name
 earnings date. Ex-dividend dates from the technicals store (the broker's looked stale). ADRs the
 broker does not list have no close, so no Δ$; they rank on premium, halved.
 
-**Three moments.** `score` after the capture (16:45 ET) writes `<session>.flow.json`. `confirm` the
+**Three moments.** `score` after the capture (16:50 ET) writes `<session>.flow.json`. `confirm` the
 next morning reads each contract's open interest again: each flow becomes `opened`, `closed` or
 `mixed`, and a confirmed score sits beside the first (the console and the post show the confirmed one
 once it exists). Every `score` run also records the **outcome** for the sessions 1 and 5 trading days
@@ -349,8 +362,7 @@ Also decided: the second vote is the site's **sentiment**, not its fill wording 
 broader than its edge; where the wording looked like a disagreement the sentiment agreed). Opposite
 sentiment halves conviction; neutral takes a quarter off.
 
-**Not yet:** the schedule (Phase 5: capture 16:30, score 16:45, post 16:55, confirm 08:30, so the
-report lands 30-60 minutes after the close). A paid tape (one month of ThetaData, every print against
+**Not yet:** a paid tape (one month of ThetaData, every print against
 the quote) to measure the read at scale is deferred until a few weeks of confirmations exist.
 
 ## Guards, each shown to fail

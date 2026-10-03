@@ -34,7 +34,7 @@ provisional until the outcome record says otherwise:
                 started with, else 0.6 — and the next morning, from the change in open interest:
                 1.0 opened, 0.6 mixed, 0.15 closed
 
-**Three moments.** `score` runs after the capture (about 16:45 ET): it reads each name's official
+**Three moments.** `score` runs after the capture (16:50 ET, scheduled): it reads each name's official
 close, each contract's starting open interest and day volume, and each name's next earnings date from
 the broker (read-only market data, the shared login), and writes `hot-options/<session>.flow.json`.
 `confirm` runs the next trading morning: each contract's open interest again, so each flow is
@@ -61,6 +61,7 @@ import json
 import math
 import re
 import sys
+import time
 from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -860,8 +861,27 @@ def record_outcomes(closes: dict[str, float], today: str) -> list[str]:
     return updated
 
 
+def wait_for(ready, minutes: float, poll_s: float = 30) -> bool:
+    """Poll `ready()` until it holds or `minutes` pass. The schedule fires each job once a day, so a
+    machine waking after the evening fires the capture, the score and the post together: each step
+    waits for the one before it, bounded, rather than finding nothing and being done for the day."""
+    deadline = time.monotonic() + minutes * 60
+    while not ready():
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(poll_s)
+    return True
+
+
 def cmd_score(args) -> int:
+    if getattr(args, "wait", 0):
+        wait_for(lambda: _last_session() == _today(), args.wait)
     session = args.session or _last_session()
+    if getattr(args, "require_today", False) and session != _today():
+        # Scheduled: a day with no capture has nothing to score, and re-scoring an earlier day would
+        # move its numbers under a post already made.
+        print(f"no capture for {_today()} to score (latest {session})")
+        return 0
     if session is None:
         print("no capture to score")
         return 1
@@ -891,6 +911,7 @@ def cmd_score(args) -> int:
     doc["scored_at"] = datetime.now(UTC).isoformat(timespec="seconds")
     _write(flow_path(session), doc)
     updated = record_outcomes({s: v.get("close") for s, v in market["names"].items()}, session)
+    cmd_review(args, quiet=True)  # the Checks card's progress toward the fixed test
     print(
         f"{session}: {len(doc['flows'])} flows ranked, {len(doc['unread'])} unread"
         + (f"; outcomes for {', '.join(updated)}" if updated else "")
@@ -1075,7 +1096,7 @@ def cmd_audit(args) -> int:
     return 0
 
 
-def cmd_review(_args) -> int:
+def cmd_review(_args, quiet: bool = False) -> int:
     days = []
     for session in _sessions():
         try:
@@ -1086,6 +1107,8 @@ def cmd_review(_args) -> int:
         days.append((doc, capture))
     out = review(days)
     _write(store().parent / "review.json", {**out, "at": datetime.now(UTC).isoformat(timespec="seconds")})
+    if quiet:
+        return 0
     print(
         f"{out['sessions']} of {out['needed']} sessions with a {REVIEW_LAG} outcome"
         + ("" if out["ready"] else " — too few to judge yet")
@@ -1136,6 +1159,10 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument(
                 "--no-greeks", action="store_true", help="skip the streamer's greeks (the model's delta)"
             )
+            p.add_argument(
+                "--require-today", action="store_true", help="score only today's capture (the schedule's run)"
+            )
+            p.add_argument("--wait", type=float, default=0, help="wait up to MIN minutes for today's capture")
         p.set_defaults(fn=fn)
     au = sub.add_parser("audit", help="record a hand check of a flow against Time & Sales, or --report")
     au.add_argument("--session", default=None)

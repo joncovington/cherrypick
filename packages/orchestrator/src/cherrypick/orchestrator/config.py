@@ -530,19 +530,27 @@ def quikoptions_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     day for want of one is noise. `enabled` also shows the console's Options flow page. `post` is
     the Discord series, its own switch and OFF even with `enabled` on, because it republishes the
     site's figures; it needs `enabled`. `post_webhook` chooses the suite's Discord notify webhook
-    or the series' own; `post_cards` the cards after the header. A title that breaks the rule falls
+    or the series' own; `post_cards` the cards it pictures. A title that breaks the rule falls
     back to the default rather than heading the series badly; the post script refuses a bad title,
     webhook or card list outright (`quikoptions_post_problem`).
     """
     q = cfg.get("quikoptions", {}) or {}
     enabled = bool(q.get("enabled", False))
     title = q.get("post_title", "Hot options")
+    # The day's timeline (ET), 30-60 minutes after the close: capture (with up to `jitter_minutes`
+    # of random delay), score once the broker's greeks can be read, post; the next trading morning,
+    # the open-interest confirmation and its post; on the week's last session, the scorecard.
     return {
         "enabled": enabled,
-        "at": q.get("at", "16:45"),
+        "at": q.get("at", "16:30"),
+        "jitter_minutes": int(q.get("jitter_minutes", 10)),
         "headed": bool(q.get("headed", True)),
+        "score_at": q.get("score_at", "16:50"),
+        "confirm_at": q.get("confirm_at", "08:30"),
         "post": enabled and bool(q.get("post", False)),
-        "post_at": q.get("post_at", "17:40"),
+        "post_at": q.get("post_at", "17:00"),
+        "morning_at": q.get("morning_at", "08:45"),
+        "weekly_at": q.get("weekly_at", "17:15"),
         "post_title": title.strip() if quikoptions_title_problem(title) is None else "Hot options",
         "post_webhook": q.get("post_webhook", "dedicated"),
         "post_cards": [
