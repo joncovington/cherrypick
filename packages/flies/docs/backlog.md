@@ -16,6 +16,10 @@ alone, and nothing tracked the gate after that.
   Deterministic, costs nothing.
 - **Reopens when** the live pilot has 15 sessions under the cap-only rule (the plan's Step 1 bar), and
   the replay shows the gate paying. Then it lands at a declared live boundary, never mid-clock.
+- **Measured 2026-10-03** (live control, 09-25..10-02, 6 sessions, 37 entries; experiment-log): not
+  paying. Every threshold from 15 to 90 minutes nets below no gate (−$368 → −$570 to −$979), and
+  paper on the same dates agrees. Entries made while a spread that went on to strand was still open
+  completed 91% (20 of 22) and made +$1,127. Re-run at 15 sessions (about 10-15).
 
 ## Variants of the delta-placed debit-first pair, by config only
 
@@ -99,6 +103,22 @@ and held to settlement.
   pays on losing days more than it costs on the others, the held version is the proposal, as
   telemetry on the hedge overlay's pattern before any arm; if `traded` does, the debit-first pair's
   own verdict already answers it.
+
+## Re-deriving the delta bwb pairs' credit floor
+
+`scripts/flies_bwb_floor_replay.py` prices every recorded bwb attempt from its own `proposed_legs`,
+re-runs the arm's gates at any floor (or none), and settles each entry at the print, unrolled. The
+first read (experiment-log 2026-10-03, three sessions) says the market refuses the delta pairs, not
+the slippage model, and that a lower floor's P&L split by side with the tape.
+
+- **Reopens when** there are 15 or more sessions with `proposed_legs`, including several down days
+  (09-30 is the only one so far). Then: is the unrolled P&L at a lower floor positive on both sides,
+  and on net ÷ tail rather than raw net? A floor change is measurement-affecting and lands at a
+  declared boundary.
+- **The replay is unrolled.** The roll needs later quotes at two strikes that the ledger does not
+  keep, so every replayed entry carries its whole tail. On the real fills the roll moved results both
+  ways (bwb-up +$109 unrolled → +$30 rolled; bwb-atm −$240 → −$144), so the replay overstates both
+  tails. A positive result is not a rolled-arm result.
 
 ## Done -- kept for the record
 
