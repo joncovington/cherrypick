@@ -70,6 +70,20 @@ def _unguarded(_log, fn, *args, **kwargs):
     return fn(*args, **kwargs)
 
 
+def _features_read_ahead():
+    """The real `feature_series`, except each session's close extremity is the NEXT session's: the
+    one-bar look-ahead the range-features truncation guard exists to catch."""
+    original = importlib.import_module("cherrypick.core.rangefeatures").feature_series
+
+    def patched(bars):
+        out = original(bars)
+        for i in range(len(out) - 1):
+            out[i]["close_extremity"] = out[i + 1]["close_extremity"]
+        return out
+
+    return patched
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -81,6 +95,7 @@ REPLACEMENTS = {
     "gone_at_once": lambda: _gone_at_once,
     "no_groups": lambda: _no_groups,
     "unguarded": lambda: _unguarded,
+    "features_read_ahead": _features_read_ahead,
 }
 
 
@@ -217,6 +232,15 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.flies.live_loop",
         attr="_telemetry",
         replacement="unguarded",
+    ),
+    Mutant(
+        id="rangefeatures-lookahead",
+        breaks="a range feature reads the session after its own (docs/range-features.md)",
+        package="core",
+        tests=("tests/test_rangefeatures.py::test_features_are_truncation_invariant",),
+        module="cherrypick.core.rangefeatures",
+        attr="feature_series",
+        replacement="features_read_ahead",
     ),
 )
 
