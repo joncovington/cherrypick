@@ -147,10 +147,14 @@ cannot answer it yet.
   observation, not ten.
 - 74 sessions cannot resolve a range difference of the size this design needs. The 09:30–10:00
   window is already covered by the opening-range declaration, with its own 30-session checkpoint.
-- **What would open it:** measuring how far back the broker serves SPX 5-minute candles.
-  `scripts/probe_candles.py` measures history depth for futures and would need a small change to
-  read the index. If years of 5-minute history exist, an intraday declaration in this same form
-  becomes possible. If not, the trail accrues at about 250 sessions a year.
+- **What would open it:** a deeper history than the trail. **Measured 2026-10-03**
+  (`scripts/probe_candles.py --symbol SPX`, asking for six years): the broker serves SPX 5-, 15- and
+  30-minute bars only from 2026-07-06 (64 sessions), and hourly bars from 2025-12-22 (196 sessions).
+  Three widths stopping on the same day means the cutoff is a time limit, not a record count. So the
+  broker cannot extend the trail, and hourly bars are too coarse for a 10:00 entry. The trail accrues
+  at about 250 sessions a year, which puts the roughly 200 sessions this design needs around mid-2027.
+  The only faster route is a bought historical intraday dataset, which nothing in the suite uses
+  today.
 
 ## Implementation
 
