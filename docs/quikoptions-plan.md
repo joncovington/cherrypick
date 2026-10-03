@@ -249,8 +249,8 @@ day fails the run instead of posting it under today's caption (the payoff post's
 built from the saved capture, never from the picture.
 
 **The title is configurable** (`quikoptions.post_title`, default `Hot options`). It replaces only the
-leading name: the session date and the market tab are always appended, and the capture time is in
-the footer, so no title can drop the date. It is trimmed, must be non-empty,
+leading name: the session date is always appended (`TCP Options Report — Fri 2 Oct 2026`; the
+`(stocks)` suffix was dropped 2026-10-03), so no title can drop the date. It is trimmed, must be non-empty,
 single-line and at most 80 characters, or the run refuses and says why rather than posting under a
 broken header. Every post is sent with Discord's `allowed_mentions` emptied, so a title (or any
 caption) containing `@everyone`, `@here` or a role mention renders as text and pings no one. A

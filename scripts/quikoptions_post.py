@@ -380,7 +380,7 @@ def calendar_text(session: str, calendar: dict | None) -> str:
 
 
 def _title_line(title: str, session: date) -> str:
-    return f"{title} — {session:%a} {session.day} {session:%b %Y} (stocks)"
+    return f"{title} — {session:%a} {session.day} {session:%b %Y}"
 
 
 def _footer(doc: dict) -> str:

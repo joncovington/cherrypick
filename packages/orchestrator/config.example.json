@@ -592,7 +592,7 @@
     "enabled": false,
     "at": "16:45",
     "headed": true,
-    "_comment_post": "The daily Discord series: a header (the day in a few fields, the capture time in its footer) then the Options flow cards named in post_cards, two to a message. OFF by default and needs enabled: it republishes the site's figures, so re-read their terms for redistribution first. post_webhook: 'dedicated' (its own, cherrypick secrets-set --channel discord_quikoptions) or 'notify' (the suite's Discord notify webhook); a choice, never a fallback. post_cards, from: Derived flow, Net by name, Trades (the site's Birdseye; the old name still works), Names across tables, Largest by contracts, Top sweeps, Top spreads, Vol / OI. post_title heads the first post (one line, at most 80 characters); the date and market tab are always added.",
+    "_comment_post": "The daily Discord series: the Options flow cards named in post_cards as screen captures, each under its own title, the first also under the series title line. OFF by default and needs enabled: it republishes the site's figures, so re-read their terms for redistribution first. post_webhook: 'dedicated' (its own, cherrypick secrets-set --channel discord_quikoptions) or 'notify' (the suite's Discord notify webhook); a choice, never a fallback. post_cards, from: Derived flow, Net by name, Trades (the site's Birdseye; the old name still works), Names across tables, Largest by contracts, Top sweeps, Top spreads, Vol / OI. post_title heads the first post (one line, at most 80 characters); the session date is always added after it.",
     "post": false,
     "post_at": "17:40",
     "post_title": "Hot options",

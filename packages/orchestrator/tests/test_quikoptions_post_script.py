@@ -100,7 +100,7 @@ def _run(**kw):
 
 def test_the_header_carries_date_and_capture_time_whatever_the_title_and_no_source():
     embed = qp.header_embed(CAPTURE, "@everyone flow")
-    assert embed["title"] == "@everyone flow — Fri 2 Oct 2026 (stocks)"
+    assert embed["title"] == "@everyone flow — Fri 2 Oct 2026"
     assert embed["footer"]["text"] == "Captured 16:52 ET."
     assert "QuikOptions" not in json.dumps(embed)  # no source attribution (2026-10-03)
     fields = {f["name"]: f["value"] for f in embed["fields"]}
@@ -157,7 +157,7 @@ def test_each_style_plans_its_own_messages():
     singles = qp.plan_messages(CAPTURE, "Hot options", "singles", ["Trades", "Top sweeps"], None)
     assert [m["cards"] for m in singles] == [["Trades"], ["Top sweeps"]]
     # No header message: the title line rides on the first picture, above its own title.
-    assert singles[0]["payload"]["content"] == "**Hot options — Fri 2 Oct 2026 (stocks)**\n**Trades**"
+    assert singles[0]["payload"]["content"] == "**Hot options — Fri 2 Oct 2026**\n**Trades**"
     assert singles[1]["payload"]["content"] == "**Top sweeps**"
     embed = qp.plan_messages(CAPTURE, "Hot options", "embed", SECTIONS, CALENDAR)
     assert len(embed) == 1 and embed[0]["cards"] == []
@@ -165,7 +165,7 @@ def test_each_style_plans_its_own_messages():
     assert names[-3:] == SECTIONS
     text = qp.plan_messages(CAPTURE, "Hot options", "text", SECTIONS, CALENDAR)
     body = "\n".join(m["payload"]["content"] for m in text)
-    assert body.startswith("**Hot options — Fri 2 Oct 2026 (stocks)**")
+    assert body.startswith("**Hot options — Fri 2 Oct 2026**")
     assert "Captured 16:52 ET." in body and "QuikOptions" not in body  # no source attribution
     assert all(len(m["payload"]["content"]) <= 2000 for m in text)
 
@@ -219,7 +219,7 @@ def test_the_default_is_one_titled_capture_a_message(harness):
     assert harness["captured"] == ["Derived flow", "Trades", "Top spreads", "Events"]
     assert [len(p["files"]) for p in harness["posted"]] == [1, 1, 1, 1]
     assert [p["payload"].get("content") for p in harness["posted"]] == [
-        "**Hot options — Fri 2 Oct 2026 (stocks)**\n**Derived flow**",
+        "**Hot options — Fri 2 Oct 2026**\n**Derived flow**",
         "**Trades**",
         "**Top spreads**",
         "**Events**",

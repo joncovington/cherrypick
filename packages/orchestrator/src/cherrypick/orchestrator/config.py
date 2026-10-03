@@ -460,7 +460,7 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 # The Discord series' title: one line a person chose, so a rule the console's config editor and the
-# post script both apply. The date, market tab and source are always appended after it.
+# post script both apply. The session date is always appended after it.
 QUIKOPTIONS_TITLE_MAX = 80
 
 
