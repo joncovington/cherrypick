@@ -3692,3 +3692,27 @@ td > .desk-refusal-reason {
   margin-right: 0.7em;
   white-space: nowrap;
 }
+/* The flags' key under a derived-flow table: one flag a line, the flag set like the table's own. */
+.flag-key {
+  margin: 0.6rem 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.flag-key > div {
+  display: flex;
+  gap: 0.6em;
+  line-height: 1.5;
+}
+.flag-key dt {
+  min-width: 11em;
+  font-family: var(--num-face);
+  color: var(--text);
+}
+.flag-key dd {
+  margin: 0;
+}
+/* Flags as symbols in a narrow column, keyed under the table (`FLAG_SYMBOL`, `FlagKey`). */
+.flag-symbols {
+  color: var(--warn);
+  letter-spacing: 0.25em;
+}

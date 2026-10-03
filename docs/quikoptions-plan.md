@@ -216,9 +216,15 @@ estimate, and the next ones, from the calendar capture); an unknown name refuses
 capture a message, so each reads full width on a phone — with **Derived flow, Trades (the site's
 Birdseye, renamed; the old name still resolves) and Events**. The Derived flow capture comes from a
 hidden **post page** (`/post/flow?session=…`: outside the shell, in no nav, 1,000 px wide, without the
-four factors or the open-interest column), and so does **Events**, a table of the session's
-high-impact releases (actual, estimate, previous) and the next week's; the others from the Options
-flow page. Every flow reads
+four factors or the open-interest column), and so do **Top spreads** (the day's largest spreads by
+contracts, in the derived flow's words) and **Events**, a table of the session's high-impact releases
+(actual, estimate, previous) and the next week's; Trades from the Options flow page. Each picture
+goes out under a bold text title. **Flags are symbols** in a narrow column (⚡ sweep, ★ opening,
+▲ volume over OI, ⌛ ≤7d, ◉ deep ITM, ¢ lottery, ⇥ near max, ⟳ roll, ⛓ linked, ⧉ paired prints,
+⇄ paired opposite, Ⓔ earnings event, Ⓓ before ex-dividend, ≠ sentiment opposite, ≈ sentiment
+neutral, Δ delta check), keyed under each table with only the flags it shows; one home for the
+symbols and the meanings (`FLAG_SYMBOL`, `FLAG_KEY`), shared by the console and the post page.
+Default sections: Derived flow, Trades, Top spreads, Events. Every flow reads
 in one order: symbol, date, strike, kind (`SMCI 09 Oct 26 43.5/45.5C call spread`). The header
 leads with the derived flow (bullish and bearish names, the top flow, the largest unread trade, and
 yesterday's calls a day on). Two more posts, both narrow text: the **morning follow-up** after the

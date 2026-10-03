@@ -168,6 +168,15 @@ describe("the Options flow page", () => {
     expect(html).toContain("not run yet");
   });
 
+  it("flags show as symbols with a key, and a flag without a symbol shows its name", () => {
+    const html = render(<FlowDerived day={DAY} />);
+    expect(html).toContain('title="≤7d"');
+    expect(html).toContain("⌛");
+    expect(html).toContain("expires within 7 days");
+    const odd = { ...DAY, derived: { ...DAY.derived!, flows: [{ ...DAY.derived!.flows[0]!, flags: ["new flag"] }] } };
+    expect(render(<FlowDerived day={odd} />)).toContain(">new flag<");
+  });
+
   it("names a contract the way a trader reads it", () => {
     expect(contractLabel("2027-01-15", 16, "call")).toBe("15 Jan 27 16C");
     expect(contractLabel(null, 157.5, "put")).toBe("— 157.5P");

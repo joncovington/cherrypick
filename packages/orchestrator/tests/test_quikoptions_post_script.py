@@ -214,8 +214,14 @@ def test_the_default_is_the_header_then_one_capture_a_message(harness):
         assert _run(cfg={"quikoptions": {"enabled": True, "post": True}}) == "posted"
     finally:
         qp.load_calendar = qp_load
-    assert harness["captured"] == ["Derived flow", "Trades", "Events"]
-    assert [len(p["files"]) for p in harness["posted"]] == [0, 1, 1, 1]
+    assert harness["captured"] == ["Derived flow", "Trades", "Top spreads", "Events"]
+    assert [len(p["files"]) for p in harness["posted"]] == [0, 1, 1, 1, 1]
+    assert [p["payload"].get("content") for p in harness["posted"][1:]] == [
+        "**Derived flow**",
+        "**Trades**",
+        "**Top spreads**",
+        "**Events**",
+    ]
     assert _run(cfg={"quikoptions": {"enabled": True, "post": True}}) == "skipped"  # once per session
 
 

@@ -313,6 +313,94 @@ function VolOiTable({ rows, limit }: { rows: FlowVolOi[]; limit?: number }) {
 
 // ----------------------------------------------------------------------------------- derived flow
 
+/**
+ * What each flag on a derived flow means, in one line. One home, read by the derived flow tab and
+ * the post page's key, so a flag cannot mean one thing in the console and another in a post. A flag
+ * the scorer adds without a line here shows in the key as itself, never silently dropped.
+ */
+export const FLAG_KEY: Record<string, string> = {
+  sweep: "one order filled across several exchanges at once — urgency",
+  opening: "on the day's openings list: no open interest before the session",
+  "volume over OI": "the day's volume passed the open interest the contract started with",
+  "≤7d": "expires within 7 days",
+  "deep ITM": "|delta| 0.85 or more — mostly stock replacement, little view",
+  lottery: "|delta| 0.10 or less — a cheap long shot",
+  "near max": "a spread priced at 90% or more of its width — most likely being closed",
+  roll: "printed with an opposite spread at the same time and size — one position moved",
+  linked: "printed with another spread at the same time and size",
+  "paired prints": "two prints at the same millisecond — one order",
+  "paired prints, opposite": "two prints at the same millisecond with opposite views — a structure, not a bet",
+  "earnings event": "expires within 30 days after the next earnings report — a bet on the event",
+  "before ex-dividend": "a deep in-the-money call before an ex-dividend date — a dividend trade",
+  "sentiment opposite": "the reported sentiment is the opposite of the read — conviction halved",
+  "sentiment neutral": "the reported sentiment is neutral — conviction reduced",
+  "delta check": "the model's delta differs from the broker's by more than 0.10",
+};
+
+/**
+ * Each flag as one character in a table (2026-10-03), keyed under the table by `FlagKey`, so a
+ * row's flags fit a narrow column in a phone-sized picture. A flag with no symbol here shows as its
+ * name rather than vanishing.
+ */
+export const FLAG_SYMBOL: Record<string, string> = {
+  sweep: "⚡",
+  opening: "★",
+  "volume over OI": "▲",
+  "≤7d": "⌛",
+  "deep ITM": "◉",
+  lottery: "¢",
+  "near max": "⇥",
+  roll: "⟳",
+  linked: "⛓",
+  "paired prints": "⧉",
+  "paired prints, opposite": "⇄",
+  "earnings event": "Ⓔ",
+  "before ex-dividend": "Ⓓ",
+  "sentiment opposite": "≠",
+  "sentiment neutral": "≈",
+  "delta check": "Δ",
+};
+
+/** A row's flags as symbols, each with its name as the tooltip; "—" for none. */
+export function FlagCell({ r }: { r: { flags: string[]; kindLabel?: string } }) {
+  const flags = shownFlags(r);
+  if (flags.length === 0) return <span className="muted">—</span>;
+  return (
+    <span className="flag-symbols">
+      {flags.map((f) => (
+        <span key={f} title={f}>
+          {FLAG_SYMBOL[f] ?? f}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** A row's flags without one that only repeats its kind (a sweep's "sweep"). */
+export function shownFlags(r: { flags: string[]; kindLabel?: string }): string[] {
+  return r.flags.filter((f) => f !== r.kindLabel);
+}
+
+/** The key to the flags these rows show, in the order the key lists them. */
+export function FlagKey({ rows }: { rows: { flags: string[]; kindLabel?: string }[] }) {
+  const present = new Set(rows.flatMap(shownFlags));
+  if (present.size === 0) return null;
+  const known = Object.keys(FLAG_KEY).filter((f) => present.has(f));
+  const unknown = [...present].filter((f) => !(f in FLAG_KEY)).sort();
+  return (
+    <dl className="flag-key">
+      {[...known, ...unknown].map((f) => (
+        <div key={f}>
+          <dt>
+            <span className="flag-symbols">{FLAG_SYMBOL[f] ?? ""}</span> {f}
+          </dt>
+          <dd>{FLAG_KEY[f] ?? ""}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function viewTone(view: DerivedFlowRow["view"]): string {
   return view === "bullish" ? "pnl-pos" : view === "bearish" ? "pnl-neg" : "muted";
 }
@@ -404,7 +492,9 @@ export function DerivedTable({
                 </td>
               )}
               {full && <td className="muted">{r.confirmed ?? "not yet"}</td>}
-              <td className="muted">{r.flags.join(" · ") || "—"}</td>
+              <td>
+                <FlagCell r={r} />
+              </td>
             </tr>
           );
         })}
@@ -564,6 +654,7 @@ export function FlowDerived({ day }: { day: OptionsFlowDay }) {
           record.
         </p>
         <DerivedTable rows={d.flows} full />
+        <FlagKey rows={d.flows} />
       </section>
       <ChecksCard checks={d.checks} session={day.session} />
       <div className="cards-pairs">

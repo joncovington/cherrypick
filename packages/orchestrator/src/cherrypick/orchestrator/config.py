@@ -494,7 +494,7 @@ QUIKOPTIONS_CARDS = (
 )
 # `Events` is a section with no card: the session's high-impact releases, from the calendar capture.
 QUIKOPTIONS_SECTIONS = (*QUIKOPTIONS_CARDS, "Events")
-QUIKOPTIONS_DEFAULT_CARDS = ("Derived flow", "Trades", "Events")
+QUIKOPTIONS_DEFAULT_CARDS = ("Derived flow", "Trades", "Top spreads", "Events")
 # Names a config may still carry from before a card was renamed: they resolve for good.
 QUIKOPTIONS_CARD_ALIASES = {"Birdseye": "Trades"}
 # How the series is sent: card images two to a message, one to a message, one embed of small

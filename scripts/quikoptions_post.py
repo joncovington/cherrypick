@@ -495,7 +495,9 @@ def plan_messages(
     if style in ("cards", "singles"):
         per = CARDS_PER_MESSAGE if style == "cards" else 1
         out = [{"payload": {"embeds": [header_embed(doc, title, calendar, with_cal, prev)]}, "cards": []}]
-        out += [{"payload": {"content": ""}, "cards": cards[i : i + per]} for i in range(0, len(cards), per)]
+        # Each picture under its own text title (2026-10-03), so the thread reads without opening one.
+        groups = [cards[i : i + per] for i in range(0, len(cards), per)]
+        out += [{"payload": {"content": " · ".join(f"**{c}**" for c in g)}, "cards": g} for g in groups]
         return out
     s = summary(doc)
     if style == "embed":
@@ -675,7 +677,7 @@ def mark_sent(session: str, index: int, how: dict, fresh: bool = False) -> None:
 
 # Cards captured from the post page (`/post/flow`, outside the shell, without the columns a post does
 # not need); every other card from the Options flow page itself.
-POST_PAGE_CARDS = {"Derived flow", "Net by name", "Events"}
+POST_PAGE_CARDS = {"Derived flow", "Net by name", "Top spreads", "Events"}
 
 
 def capture_card(session: str, name: str, out: Path) -> str | None:

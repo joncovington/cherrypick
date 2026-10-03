@@ -170,7 +170,7 @@ def test_quikoptions_title_rule_refuses_empty_multiline_and_long():
 
 def test_quikoptions_post_choices_refuse_what_they_do_not_know():
     assert c.quikoptions_post_problem({}) is None  # dedicated webhook, the two default cards
-    assert c.quikoptions_settings({})["post_cards"] == ["Derived flow", "Trades", "Events"]
+    assert c.quikoptions_settings({})["post_cards"] == ["Derived flow", "Trades", "Top spreads", "Events"]
     # The card's old name still resolves: a config is kept across upgrades with no migration.
     assert c.quikoptions_settings({"quikoptions": {"post_cards": ["Birdseye"]}})["post_cards"] == ["Trades"]
     assert c.quikoptions_post_problem({"post_webhook": "notify"}) is None

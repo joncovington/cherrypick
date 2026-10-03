@@ -597,7 +597,7 @@
     "post_at": "17:40",
     "post_title": "Hot options",
     "post_webhook": "dedicated",
-    "post_cards": ["Derived flow", "Trades", "Events"],
+    "post_cards": ["Derived flow", "Trades", "Top spreads", "Events"],
     "_comment_post_style": "post_style: 'singles' (the default, chosen 2026-10-03: the header, then each card as its own screen capture, readable on a phone), 'text' (plain text tables), 'cards' (a header embed, then the cards as images two to a message), or 'embed' (one embed of small tables, no images). post_cards may also name 'Events': the session's high-impact releases with actual against estimate, and the next ones.",
     "post_style": "singles",
     "_comment_post_followups": "post_morning: after the open-interest check, how the last session's flows came out (opened, closed, mixed). post_weekly: Friday's scorecard (the week's checks, confirmations, and how the calls did a day on; descriptive only until the fixed 40-session test). Both narrow text, both need post.",
