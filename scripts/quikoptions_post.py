@@ -2,8 +2,8 @@
 
 The styles (`quikoptions.post_style`, docs/quikoptions-plan.md):
 
-    cards    a header embed (title, date, the day in four fields, the source and capture time in its
-             footer), then the chosen cards as images, two to a message so Discord shows them side
+    cards    a header embed (title, date, the day in four fields, the capture time in its footer),
+             then the chosen cards as images, two to a message so Discord shows them side
              by side
     singles  the same header, then one card image per message
     embed    one embed and no images: the summary, then each chosen section as a small table
@@ -11,9 +11,9 @@ The styles (`quikoptions.post_style`, docs/quikoptions-plan.md):
              the summary and each section as a small monospace table
 
 The sections (`quikoptions.post_cards`) are the Options flow `today` cards by title (Birdseye, Names
-across tables, Largest outrights, Top sweeps, Top spreads, Vol / OI) plus `Calendar`: the session's
+across tables, Largest by contracts, Top sweeps, Top spreads, Vol / OI) plus `Events`: the session's
 high-impact releases with actual against estimate, and the next ones, from the calendar capture. In
-the image styles Calendar is a header field (it has no card). Default: Largest outrights and Top
+the image styles Events is a header field (it has no card). Default: Largest by contracts and Top
 sweeps, as cards. The day does not need every table to be told.
 
 The images are the console's own Options flow cards, captured with `tools/ui-check.mjs --card`,
@@ -72,7 +72,7 @@ EMBED_COLOUR = 0xD23F57  # the console's accent
 CARDS_PER_MESSAGE = 2
 ROWS = 5  # rows per section in the text styles: a glance, not the table
 TEXT_LIMIT = 1900  # Discord caps a message at 2,000 characters
-CALENDAR = "Calendar"
+EVENTS = "Events"
 NO_MENTIONS = {"parse": []}
 TABLE_WORD = {"outrights": "outright", "sweeps": "sweep", "spreads": "spread"}
 
@@ -272,8 +272,8 @@ def _voloi_cells(r: dict) -> list[str]:
 def section_text(name: str, doc: dict, calendar: dict | None) -> str:
     """One section as a small monospace table (or a line), at most ROWS rows: the text styles."""
     t = doc.get("tables") or {}
-    if name in ("Largest outrights", "Top sweeps"):
-        key = "outrights" if name == "Largest outrights" else "sweeps"
+    if name in ("Largest by contracts", "Top sweeps"):
+        key = "outrights" if name == "Largest by contracts" else "sweeps"
         return _table([_trade_cells(r) for r in (t.get(key) or [])[:ROWS]], {2, 3})
     if name == "Top spreads":
         return _table([_spread_cells(r) for r in (t.get("spreads") or [])[:ROWS]], {2, 4})
@@ -296,7 +296,7 @@ def section_text(name: str, doc: dict, calendar: dict | None) -> str:
     if name == "Names across tables":
         names = (doc.get("derived") or {}).get("names") or []
         return "\n".join(f"{n['symbol']:<6} {' · '.join(n['tables'])}" for n in names) or "(none)"
-    if name == CALENDAR:
+    if name == EVENTS:
         return calendar_text(doc["session"], calendar)
     return "(unknown section)"
 
@@ -326,7 +326,7 @@ def calendar_text(session: str, calendar: dict | None) -> str:
             seen.add(key)
             when = date.fromisoformat(e["date"])
             lines.append(f"{when:%a} {when.day:>2} {e.get('time_et') or '':>5}  {e['event']}")
-    return "\n".join(lines) or "(no high-impact releases)"
+    return "\n".join(lines) or "(no high-impact events)"
 
 
 def _title_line(title: str, session: date) -> str:
@@ -335,8 +335,8 @@ def _title_line(title: str, session: date) -> str:
 
 def _footer(doc: dict) -> str:
     captured = _captured(doc)
-    when = f" · captured {captured}" if captured else ""
-    return f"Source: QuikOptions Hot Options Report{when}. The side is the site's own call."
+    # No source attribution (decided 2026-10-03): the footer is the capture time alone.
+    return f"Captured {captured}." if captured else "Capture time not recorded."
 
 
 # ------------------------------------------------------------------------------------------------
@@ -345,9 +345,9 @@ def _footer(doc: dict) -> str:
 
 
 def header_embed(doc: dict, title: str, calendar: dict | None = None, with_calendar: bool = False) -> dict:
-    """The image styles' first message: the title, the date and the day in four fields; Calendar as
-    a fifth when it is a chosen section. The source and capture time are always in the footer,
-    whatever the title, so no title can drop the attribution or the date."""
+    """The image styles' first message: the title, the date and the day in four fields; Events as
+    a fifth when it is a chosen section. The date is always in the title line and the capture time
+    in the footer, whatever the title, so no title can drop them."""
     s = summary(doc)
     fields = [
         {"name": "Most traded", "value": s["most"], "inline": True},
@@ -358,7 +358,7 @@ def header_embed(doc: dict, title: str, calendar: dict | None = None, with_calen
     if with_calendar:
         fields.append(
             {
-                "name": "Releases",
+                "name": "Events",
                 "value": f"```\n{calendar_text(doc['session'], calendar)[:990]}\n```",
                 "inline": False,
             }
@@ -376,8 +376,8 @@ def plan_messages(
 ) -> list[dict]:
     """The messages a style sends, in order: {"payload": payload_json, "cards": [card titles to
     attach]}. Images are named here and captured by the caller."""
-    cards = [c for c in sections if c != CALENDAR]
-    with_cal = CALENDAR in sections
+    cards = [c for c in sections if c != EVENTS]
+    with_cal = EVENTS in sections
     if style in ("cards", "singles"):
         per = CARDS_PER_MESSAGE if style == "cards" else 1
         out = [{"payload": {"embeds": [header_embed(doc, title, calendar, with_cal)]}, "cards": []}]
@@ -654,7 +654,7 @@ def main(argv: list[str] | None = None) -> int:
         "--style", choices=["cards", "singles", "embed", "text"], default=None, help="this run only"
     )
     ap.add_argument(
-        "--cards", default=None, help='this run only: sections, comma-separated ("Top sweeps,Calendar")'
+        "--cards", default=None, help='this run only: sections, comma-separated ("Top sweeps,Events")'
     )
     ap.add_argument("--title", default=None, help="this run only: the series title")
     args = ap.parse_args(argv)

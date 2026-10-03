@@ -485,14 +485,14 @@ QUIKOPTIONS_WEBHOOKS = {"notify": "discord", "dedicated": "discord_quikoptions"}
 QUIKOPTIONS_CARDS = (
     "Birdseye",
     "Names across tables",
-    "Largest outrights",
+    "Largest by contracts",
     "Top sweeps",
     "Top spreads",
     "Vol / OI",
 )
-# `Calendar` is a section with no card: the session's high-impact releases, from the calendar capture.
-QUIKOPTIONS_SECTIONS = (*QUIKOPTIONS_CARDS, "Calendar")
-QUIKOPTIONS_DEFAULT_CARDS = ("Largest outrights", "Top sweeps")
+# `Events` is a section with no card: the session's high-impact releases, from the calendar capture.
+QUIKOPTIONS_SECTIONS = (*QUIKOPTIONS_CARDS, "Events")
+QUIKOPTIONS_DEFAULT_CARDS = ("Largest by contracts", "Top sweeps")
 # How the series is sent: card images two to a message, one to a message, one embed of small
 # tables, or plain text (scripts/quikoptions_post.py).
 QUIKOPTIONS_STYLES = ("cards", "singles", "embed", "text")

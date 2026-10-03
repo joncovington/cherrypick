@@ -170,12 +170,12 @@ def test_quikoptions_title_rule_refuses_empty_multiline_and_long():
 
 def test_quikoptions_post_choices_refuse_what_they_do_not_know():
     assert c.quikoptions_post_problem({}) is None  # dedicated webhook, the two default cards
-    assert c.quikoptions_settings({})["post_cards"] == ["Largest outrights", "Top sweeps"]
+    assert c.quikoptions_settings({})["post_cards"] == ["Largest by contracts", "Top sweeps"]
     assert c.quikoptions_post_problem({"post_webhook": "notify"}) is None
     assert "post_webhook must be one of" in c.quikoptions_post_problem({"post_webhook": "slack"})
     assert c.quikoptions_post_problem({"post_cards": ["Birdseye", "Top spreads", "Vol / OI"]}) is None
     assert "there are not: ['Top trades']" in c.quikoptions_post_problem({"post_cards": ["Top trades"]})
-    assert c.quikoptions_post_problem({"post_cards": ["Calendar"], "post_style": "text"}) is None
+    assert c.quikoptions_post_problem({"post_cards": ["Events"], "post_style": "text"}) is None
     assert "post_style must be one of" in c.quikoptions_post_problem({"post_style": "carousel"})
     assert c.quikoptions_settings({})["post_style"] == "cards"
     assert (

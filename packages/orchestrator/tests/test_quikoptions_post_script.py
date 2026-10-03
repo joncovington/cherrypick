@@ -1,6 +1,6 @@
 """The QuikOptions Discord series (`scripts/quikoptions_post.py`), shown to fail where it must.
 
-What it guards: a header that carries its source and date whatever the title, mentions switched
+What it guards: a header that carries its date and capture time whatever the title, mentions switched
 off on every message, the webhook the config chose and never the other as a fallback, a series that
 resumes rather than repeats and finishes under the title and cards it started with, a capture
 failure that posts nothing, and a 429 waited out once. No network, no browser: the capture and the
@@ -96,10 +96,11 @@ def _run(**kw):
 # ------------------------------------------------------------------------------------------------
 
 
-def test_the_header_carries_source_and_date_whatever_the_title():
+def test_the_header_carries_date_and_capture_time_whatever_the_title_and_no_source():
     embed = qp.header_embed(CAPTURE, "@everyone flow")
     assert embed["title"] == "@everyone flow — Fri 2 Oct 2026 (stocks)"
-    assert embed["footer"]["text"].startswith("Source: QuikOptions Hot Options Report · captured 16:52 ET")
+    assert embed["footer"]["text"] == "Captured 16:52 ET."
+    assert "QuikOptions" not in json.dumps(embed)  # no source attribution (2026-10-03)
     fields = {f["name"]: f["value"] for f in embed["fields"]}
     assert fields["Most traded"] == "TSLA · 762.5K trades"
     assert fields["Largest trade"] == "VST $92.95M outright (neutral)"
@@ -145,7 +146,7 @@ CALENDAR = {
         {"date": "2026-10-20", "time_et": "08:30", "impact": "H", "event": "Too far ahead", "actual": None},
     ],
 }
-SECTIONS = ["Largest outrights", "Top sweeps", "Calendar"]
+SECTIONS = ["Largest by contracts", "Top sweeps", "Events"]
 
 
 def test_each_style_plans_its_own_messages():
@@ -160,7 +161,7 @@ def test_each_style_plans_its_own_messages():
     text = qp.plan_messages(CAPTURE, "Hot options", "text", SECTIONS, CALENDAR)
     body = "\n".join(m["payload"]["content"] for m in text)
     assert body.startswith("**Hot options — Fri 2 Oct 2026 (stocks)**")
-    assert "Source: QuikOptions Hot Options Report" in body  # attribution, whatever the style
+    assert "Captured 16:52 ET." in body and "QuikOptions" not in body  # no source attribution
     assert all(len(m["payload"]["content"]) <= 2000 for m in text)
 
 
@@ -171,10 +172,10 @@ def test_calendar_shows_the_days_releases_and_the_next_high_impact_ones():
     assert "Wed  7 14:00  FOMC Minutes" in out and "Fri  9 10:00  Michigan Consumer Sentiment (Oct)" in out
     assert "Too far ahead" not in out
     assert qp.calendar_text(SESSION, None) == "(no calendar captured with this session)"
-    # In the image styles Calendar has no card: it is a header field instead.
+    # In the image styles Events has no card: it is a header field instead.
     header = qp.plan_messages(CAPTURE, "Hot options", "cards", SECTIONS, CALENDAR)
-    assert header[0]["payload"]["embeds"][0]["fields"][-1]["name"] == "Releases"
-    assert [m["cards"] for m in header[1:]] == [["Largest outrights", "Top sweeps"]]
+    assert header[0]["payload"]["embeds"][0]["fields"][-1]["name"] == "Events"
+    assert [m["cards"] for m in header[1:]] == [["Largest by contracts", "Top sweeps"]]
 
 
 def test_every_message_pings_no_one():
@@ -194,14 +195,14 @@ def test_text_longer_than_a_message_is_split_at_a_section():
         },
     }
     text = qp.plan_messages(
-        many, "Hot options", "text", ["Names across tables", "Names across tables", "Calendar"], CALENDAR
+        many, "Hot options", "text", ["Names across tables", "Names across tables", "Events"], CALENDAR
     )
     assert len(text) > 1 and all(len(m["payload"]["content"]) <= 2000 for m in text)
 
 
 def test_default_series_is_the_header_and_one_pair(harness):
     assert _run() == "posted"
-    assert harness["captured"] == ["Largest outrights", "Top sweeps"]
+    assert harness["captured"] == ["Largest by contracts", "Top sweeps"]
     assert [len(p["files"]) for p in harness["posted"]] == [0, 2]
     assert all(p["url"] == "https://d/own" for p in harness["posted"])  # dedicated by default
     assert _run() == "skipped"  # once per session
@@ -225,11 +226,11 @@ def test_a_run_may_override_the_webhook_for_a_test_post(harness):
 
 def test_a_forced_test_post_in_another_style_starts_the_day_over(harness):
     assert _run() == "posted"
-    assert _run(force=True, overrides={"post_style": "text", "post_cards": ["Calendar"]}) == "posted"
+    assert _run(force=True, overrides={"post_style": "text", "post_cards": ["Events"]}) == "posted"
     assert harness["posted"][-1]["payload"]["content"].startswith("**Hot options")
     assert harness["posted"][-1]["files"] == []
     marker = qp.markers()[SESSION]
-    assert (marker["style"], marker["cards"], marker["sent"]) == ("text", ["Calendar"], [0])
+    assert (marker["style"], marker["cards"], marker["sent"]) == ("text", ["Events"], [0])
     # An override is checked by the same rules as the config.
     assert _run(force=True, overrides={"post_cards": ["Top trades"]}) == "failed"
 

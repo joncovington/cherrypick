@@ -50,8 +50,8 @@ subscription site stays out of the code. Everything else follows that collector:
   repo, the config, or a fixture carries a cookie, a token, or the account's identity.
 - **Terms.** The terms of service do not prohibit automated viewing (read by the user,
   2026-10-02). The Discord series republishes their figures, which is a separate question from
-  viewing: the terms are re-read for redistribution before the series is switched on, and every
-  post names QuikOptions as the source.
+  viewing: the terms are re-read for redistribution before the series is switched on. The posts
+  carry no source attribution (decided 2026-10-03; the server is private).
 
 ## Phase 0 — probe (one visible session, a person present)
 
@@ -206,15 +206,16 @@ choice for one run (the first test, 2026-10-03, posts to the notify channel).
 
 **The series**: a header embed — the title, the date, four fields (most traded, the largest trade,
 bullish / bearish premium with trade counts, the names in two or more tables) and a footer with the
-source and capture time — then the cards in `quikoptions.post_cards`, two to a message so Discord
-shows them side by side. Default: `["Largest outrights", "Top sweeps"]`, one message. Any of the six
-`today` cards can be listed, plus `Calendar` (the session's high-impact releases with actual against
+capture time (no source attribution, decided 2026-10-03) — then the cards in `quikoptions.post_cards`, two to a message so Discord
+shows them side by side. Default: `["Largest by contracts", "Top sweeps"]`, one message. `Largest by contracts` is the site's
+"Top Outrights": single-leg trades ranked by number of contracts, as the site ranks them (2026-10-03). Any of the six
+`today` cards can be listed, plus `Events` (the session's high-impact releases with actual against
 estimate, and the next ones, from the calendar capture); an unknown name refuses the run.
 
 **Four styles** (`quikoptions.post_style`), tried side by side on the notify channel on 2026-10-03:
 `cards` (the header, then card images two to a message), `singles` (one image a message), `embed`
 (one embed of small monospace tables, no images) and `text` (plain text tables, split at a section
-past Discord's 2,000 characters). In the image styles Calendar is a header field. `--style`,
+past Discord's 2,000 characters). In the image styles Events is a header field. `--style`,
 `--cards`, `--title` and `--webhook` override the config for one run, checked by the same rules.
 
 Pictures come from the console page via `tools/ui-check.mjs --card`, which refuses rather than
@@ -223,8 +224,8 @@ day fails the run instead of posting it under today's caption (the payoff post's
 built from the saved capture, never from the picture.
 
 **The title is configurable** (`quikoptions.post_title`, default `Hot options`). It replaces only the
-leading name: the session date, the market tab, the source and the capture time are always appended
-by the script, so no title can drop the attribution or the date. It is trimmed, must be non-empty,
+leading name: the session date and the market tab are always appended, and the capture time is in
+the footer, so no title can drop the date. It is trimmed, must be non-empty,
 single-line and at most 80 characters, or the run refuses and says why rather than posting under a
 broken header. Every post is sent with Discord's `allowed_mentions` emptied, so a title (or any
 caption) containing `@everyone`, `@here` or a role mention renders as text and pings no one. A
