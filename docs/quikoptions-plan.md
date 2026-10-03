@@ -212,19 +212,23 @@ shows them side by side. Default: `["Largest by contracts", "Top sweeps"]`, one 
 `today` cards can be listed, plus `Events` (the session's high-impact releases with actual against
 estimate, and the next ones, from the calendar capture); an unknown name refuses the run.
 
-**As of 2026-10-03, after the test posts:** the default is **`singles`** — the header, then one screen
-capture a message, so each reads full width on a phone — with **Derived flow, Trades (the site's
+**As of 2026-10-03, after the test posts:** the default is **`singles`** — one screen capture a
+message, so each reads full width on a phone, with **no header message**: the series' title line
+rides on the first picture, and each picture goes out under its own bold title — with **Derived flow, Trades (the site's
 Birdseye, renamed; the old name still resolves) and Events**. The Derived flow capture comes from a
 hidden **post page** (`/post/flow?session=…`: outside the shell, in no nav, 1,000 px wide, without the
 four factors or the open-interest column), and so do **Top spreads** (the day's largest spreads by
 contracts, in the derived flow's words) and **Events**, a table of the session's high-impact releases
 (actual, estimate, previous) and the next week's; Trades from the Options flow page. Each picture
-goes out under a bold text title. **Flags are symbols** in a narrow column (⚡ sweep, ★ opening,
-▲ volume over OI, ⌛ ≤7d, ◉ deep ITM, ¢ lottery, ⇥ near max, ⟳ roll, ⛓ linked, ⧉ paired prints,
-⇄ paired opposite, Ⓔ earnings event, Ⓓ before ex-dividend, ≠ sentiment opposite, ≈ sentiment
-neutral, Δ delta check), keyed under each table with only the flags it shows; one home for the
-symbols and the meanings (`FLAG_SYMBOL`, `FLAG_KEY`), shared by the console and the post page.
-Default sections: Derived flow, Trades, Top spreads, Events. Every flow reads
+goes out under a bold text title. **Flags are abbreviated** in a narrow column — a name of four
+characters or fewer as itself, a longer one as a code (SWP sweep, OPEN opening, V>OI volume over OI,
+≤7d, DITM deep ITM, LOT lottery, NMAX near max, roll, LNK linked, PAIR paired prints, OPP paired
+opposite, EARN earnings event, XDIV before ex-dividend, ANTI sentiment opposite, NEUT sentiment
+neutral, ΔCHK delta check; symbols were tried and dropped the same day) — keyed under each table
+with only the flags it shows; one home for the codes and the meanings (`FLAG_ABBR`, `FLAG_KEY`),
+shared by the console and the post page.
+Default sections: Derived flow, Trades, Top spreads, Events. The post page is 1,280 px for the two
+flow tables (so a row's flags fit on one line) and 1,000 px for the rest. Every flow reads
 in one order: symbol, date, strike, kind (`SMCI 09 Oct 26 43.5/45.5C call spread`). The header
 leads with the derived flow (bullish and bearish names, the top flow, the largest unread trade, and
 yesterday's calls a day on). Two more posts, both narrow text: the **morning follow-up** after the

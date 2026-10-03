@@ -491,13 +491,15 @@ def plan_messages(
     # Events is a capture like any card (the post page's table, 2026-10-03); a calendar not captured
     # with the session has no card, so it is left out rather than failing the series.
     cards = [c for c in sections if c != EVENTS or (calendar and calendar.get("events"))]
-    with_cal = False
     if style in ("cards", "singles"):
         per = CARDS_PER_MESSAGE if style == "cards" else 1
-        out = [{"payload": {"embeds": [header_embed(doc, title, calendar, with_cal, prev)]}, "cards": []}]
-        # Each picture under its own text title (2026-10-03), so the thread reads without opening one.
+        # No header message (2026-10-03): the series' title line rides on the first picture, and each
+        # picture goes out under its own text title, so the thread reads without opening one.
         groups = [cards[i : i + per] for i in range(0, len(cards), per)]
-        out += [{"payload": {"content": " · ".join(f"**{c}**" for c in g)}, "cards": g} for g in groups]
+        out = [{"payload": {"content": " · ".join(f"**{c}**" for c in g)}, "cards": g} for g in groups]
+        if out:
+            head = f"**{_title_line(title, date.fromisoformat(doc['session']))}**"
+            out[0]["payload"]["content"] = head + "\n" + out[0]["payload"]["content"]
         return out
     s = summary(doc)
     if style == "embed":

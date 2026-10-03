@@ -3677,12 +3677,17 @@ td > .desk-refusal-reason {
 /* The post page (`/post/flow`): the Discord series' captures. A fixed width a phone reads once
    Discord scales the image, and cards as tall as their rows rather than the grid's fixed steps. */
 .post-page {
-  width: 1000px;
+  width: 1280px;
   padding: 12px;
   background: var(--bg);
 }
 .gcard.post-card {
   height: auto;
+}
+/* Derived flow and Top spreads take the page's full width (2026-10-03: widened so a row's flags fit
+   on one line); the narrower tables keep 1,000 px so their pictures do not stretch. */
+.gcard.post-card.post-card-narrow {
+  max-width: 1000px;
 }
 .band-key {
   margin-left: 0.6em;
@@ -3704,15 +3709,17 @@ td > .desk-refusal-reason {
   line-height: 1.5;
 }
 .flag-key dt {
-  min-width: 11em;
+  min-width: 16em;
   font-family: var(--num-face);
   color: var(--text);
 }
 .flag-key dd {
   margin: 0;
 }
-/* Flags as symbols in a narrow column, keyed under the table (`FLAG_SYMBOL`, `FlagKey`). */
-.flag-symbols {
+/* Flags as abbreviations in a narrow column, keyed under the table (`FLAG_ABBR`, `FlagKey`). */
+.flag-abbr {
   color: var(--warn);
-  letter-spacing: 0.25em;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 0.6em;
 }

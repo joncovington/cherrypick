@@ -153,9 +153,12 @@ SECTIONS = ["Largest by contracts", "Top sweeps", "Events"]
 
 def test_each_style_plans_its_own_messages():
     cards = qp.plan_messages(CAPTURE, "Hot options", "cards", ["Trades", "Top sweeps", "Vol / OI"], None)
-    assert [m["cards"] for m in cards] == [[], ["Trades", "Top sweeps"], ["Vol / OI"]]
+    assert [m["cards"] for m in cards] == [["Trades", "Top sweeps"], ["Vol / OI"]]
     singles = qp.plan_messages(CAPTURE, "Hot options", "singles", ["Trades", "Top sweeps"], None)
-    assert [m["cards"] for m in singles] == [[], ["Trades"], ["Top sweeps"]]
+    assert [m["cards"] for m in singles] == [["Trades"], ["Top sweeps"]]
+    # No header message: the title line rides on the first picture, above its own title.
+    assert singles[0]["payload"]["content"] == "**Hot options — Fri 2 Oct 2026 (stocks)**\n**Trades**"
+    assert singles[1]["payload"]["content"] == "**Top sweeps**"
     embed = qp.plan_messages(CAPTURE, "Hot options", "embed", SECTIONS, CALENDAR)
     assert len(embed) == 1 and embed[0]["cards"] == []
     names = [f["name"] for f in embed[0]["payload"]["embeds"][0]["fields"]]
@@ -177,10 +180,9 @@ def test_calendar_shows_the_days_releases_and_the_next_high_impact_ones():
     # In the image styles Events is a capture of the post page's table — and only when a calendar
     # was captured with the session, so a missing calendar costs that picture, not the series.
     planned = qp.plan_messages(CAPTURE, "Hot options", "singles", SECTIONS, CALENDAR)
-    assert [m["cards"] for m in planned[1:]] == [["Largest by contracts"], ["Top sweeps"], ["Events"]]
-    assert all(f["name"] != "Events" for f in planned[0]["payload"]["embeds"][0]["fields"])
+    assert [m["cards"] for m in planned] == [["Largest by contracts"], ["Top sweeps"], ["Events"]]
     planned = qp.plan_messages(CAPTURE, "Hot options", "singles", SECTIONS, None)
-    assert [m["cards"] for m in planned[1:]] == [["Largest by contracts"], ["Top sweeps"]]
+    assert [m["cards"] for m in planned] == [["Largest by contracts"], ["Top sweeps"]]
 
 
 def test_every_message_pings_no_one():
@@ -205,7 +207,7 @@ def test_text_longer_than_a_message_is_split_at_a_section():
     assert len(text) > 1 and all(len(m["payload"]["content"]) <= 2000 for m in text)
 
 
-def test_the_default_is_the_header_then_one_capture_a_message(harness):
+def test_the_default_is_one_titled_capture_a_message(harness):
     """Screen captures, one a message, so each reads full width on a phone (2026-10-03): Derived
     flow, Trades and the Events table."""
     qp_load = qp.load_calendar
@@ -215,9 +217,9 @@ def test_the_default_is_the_header_then_one_capture_a_message(harness):
     finally:
         qp.load_calendar = qp_load
     assert harness["captured"] == ["Derived flow", "Trades", "Top spreads", "Events"]
-    assert [len(p["files"]) for p in harness["posted"]] == [0, 1, 1, 1, 1]
-    assert [p["payload"].get("content") for p in harness["posted"][1:]] == [
-        "**Derived flow**",
+    assert [len(p["files"]) for p in harness["posted"]] == [1, 1, 1, 1]
+    assert [p["payload"].get("content") for p in harness["posted"]] == [
+        "**Hot options — Fri 2 Oct 2026 (stocks)**\n**Derived flow**",
         "**Trades**",
         "**Top spreads**",
         "**Events**",
@@ -227,7 +229,7 @@ def test_the_default_is_the_header_then_one_capture_a_message(harness):
 
 def test_cards_style_pairs_the_captures(harness):
     assert _run(cfg=_cfg(post_cards=["Derived flow", "Largest by contracts", "Top sweeps"])) == "posted"
-    assert [len(p["files"]) for p in harness["posted"]] == [0, 2, 1]
+    assert [len(p["files"]) for p in harness["posted"]] == [2, 1]
     assert all(p["url"] == "https://d/own" for p in harness["posted"])  # dedicated by default
 
 
@@ -341,8 +343,9 @@ def test_a_forced_test_post_in_another_style_starts_the_day_over(harness):
 
 
 def test_a_failure_resumes_under_the_title_and_cards_it_started_with(harness):
-    harness["fail_at"] = 1  # the header lands, the pictures do not
-    assert _run(cfg=_cfg(post_title="Flow", post_cards=["Trades", "Top spreads"])) == "failed"
+    harness["fail_at"] = 1  # the first picture lands, the second does not
+    first = _cfg(post_title="Flow", post_style="singles", post_cards=["Trades", "Top spreads"])
+    assert _run(cfg=first) == "failed"
     assert len(harness["posted"]) == 1
     harness["fail_at"] = None
     # The config changed meanwhile; the day's series finishes as it started.

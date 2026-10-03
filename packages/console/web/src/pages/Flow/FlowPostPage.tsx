@@ -8,7 +8,7 @@ import { DerivedTable, FlagCell, FlagKey, NetByName } from "./FlowPage";
 /**
  * The post page (`/post/flow?session=…`, 2026-10-03): what the Discord series captures, and nothing
  * else. Linked from no nav and outside the shell — no header, no rail — at a fixed width that reads
- * on a phone once Discord scales it. The derived flow without the columns a post does not need (the
+ * on a phone once Discord scales it (1,280 px for the two flow tables, 1,000 for the rest). The derived flow without the columns a post does not need (the
  * four factors, the open-interest verdict); the same capture's numbers as the derived flow tab.
  *
  * Card titles are `<name> — <session>` and each card draws an SVG, which `ui-check --card` needs;
@@ -141,7 +141,7 @@ export function FlowPostPage() {
           <DerivedTable rows={d.flows} limit={10} full={false} post />
           <FlagKey rows={d.flows.slice(0, 10)} />
         </GridCard>
-        <GridCard label={`Net by name — ${day.session}`} span={12} h={304} className="post-card" foot="read flows' Δ$, weighted by purity">
+        <GridCard label={`Net by name — ${day.session}`} span={12} h={304} className="post-card post-card-narrow" foot="read flows' Δ$, weighted by purity">
           <NetByName names={d.names} each={4} />
         </GridCard>
         {(() => {
@@ -167,7 +167,7 @@ export function FlowPostPage() {
             label={`Events — ${day.session}`}
             span={12}
             h={304}
-            className="post-card"
+            className="post-card post-card-narrow"
             foot="high-impact releases: the day's with actual against estimate, then the week ahead"
           >
             <EventsTable events={day.events} session={day.session} />

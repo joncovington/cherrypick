@@ -168,11 +168,14 @@ describe("the Options flow page", () => {
     expect(html).toContain("not run yet");
   });
 
-  it("flags show as symbols with a key, and a flag without a symbol shows its name", () => {
+  it("flags show abbreviated with a key, and a flag without an abbreviation shows its name", () => {
     const html = render(<FlowDerived day={DAY} />);
-    expect(html).toContain('title="≤7d"');
-    expect(html).toContain("⌛");
+    expect(html).toContain('title="≤7d"'); // four characters or fewer: as itself
     expect(html).toContain("expires within 7 days");
+    const earn = { ...DAY, derived: { ...DAY.derived!, flows: [{ ...DAY.derived!.flows[0]!, flags: ["earnings event"] }] } };
+    const shown = render(<FlowDerived day={earn} />);
+    expect(shown).toContain('title="earnings event">EARN<');
+    expect(shown).toContain("EARN</span> earnings event");
     const odd = { ...DAY, derived: { ...DAY.derived!, flows: [{ ...DAY.derived!.flows[0]!, flags: ["new flag"] }] } };
     expect(render(<FlowDerived day={odd} />)).toContain(">new flag<");
   });

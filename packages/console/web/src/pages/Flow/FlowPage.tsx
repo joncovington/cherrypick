@@ -338,38 +338,38 @@ export const FLAG_KEY: Record<string, string> = {
 };
 
 /**
- * Each flag as one character in a table (2026-10-03), keyed under the table by `FlagKey`, so a
- * row's flags fit a narrow column in a phone-sized picture. A flag with no symbol here shows as its
- * name rather than vanishing.
+ * Each flag as it shows in a table (2026-10-03): a name of four characters or fewer as itself, a
+ * longer one as an abbreviation, keyed under the table by `FlagKey`, so a row's flags fit a narrow
+ * column in a phone-sized picture. A flag with no entry here shows as its name rather than vanishing.
  */
-export const FLAG_SYMBOL: Record<string, string> = {
-  sweep: "⚡",
-  opening: "★",
-  "volume over OI": "▲",
-  "≤7d": "⌛",
-  "deep ITM": "◉",
-  lottery: "¢",
-  "near max": "⇥",
-  roll: "⟳",
-  linked: "⛓",
-  "paired prints": "⧉",
-  "paired prints, opposite": "⇄",
-  "earnings event": "Ⓔ",
-  "before ex-dividend": "Ⓓ",
-  "sentiment opposite": "≠",
-  "sentiment neutral": "≈",
-  "delta check": "Δ",
+export const FLAG_ABBR: Record<string, string> = {
+  sweep: "SWP",
+  opening: "OPEN",
+  "volume over OI": "V>OI",
+  "≤7d": "≤7d",
+  "deep ITM": "DITM",
+  lottery: "LOT",
+  "near max": "NMAX",
+  roll: "roll",
+  linked: "LNK",
+  "paired prints": "PAIR",
+  "paired prints, opposite": "OPP",
+  "earnings event": "EARN",
+  "before ex-dividend": "XDIV",
+  "sentiment opposite": "ANTI",
+  "sentiment neutral": "NEUT",
+  "delta check": "ΔCHK",
 };
 
-/** A row's flags as symbols, each with its name as the tooltip; "—" for none. */
+/** A row's flags, abbreviated, each with its full name as the tooltip; "—" for none. */
 export function FlagCell({ r }: { r: { flags: string[]; kindLabel?: string } }) {
   const flags = shownFlags(r);
   if (flags.length === 0) return <span className="muted">—</span>;
   return (
-    <span className="flag-symbols">
+    <span className="flag-abbr">
       {flags.map((f) => (
         <span key={f} title={f}>
-          {FLAG_SYMBOL[f] ?? f}
+          {FLAG_ABBR[f] ?? f}
         </span>
       ))}
     </span>
@@ -392,7 +392,8 @@ export function FlagKey({ rows }: { rows: { flags: string[]; kindLabel?: string 
       {[...known, ...unknown].map((f) => (
         <div key={f}>
           <dt>
-            <span className="flag-symbols">{FLAG_SYMBOL[f] ?? ""}</span> {f}
+            <span className="flag-abbr">{FLAG_ABBR[f] ?? f}</span>
+            {(FLAG_ABBR[f] ?? f) !== f ? ` ${f}` : ""}
           </dt>
           <dd>{FLAG_KEY[f] ?? ""}</dd>
         </div>
