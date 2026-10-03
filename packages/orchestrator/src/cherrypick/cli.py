@@ -1381,7 +1381,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--channel",
         choices=list(notify_secrets.WEBHOOKS),
         help="Webhook for secrets-set/secrets-delete: a push channel, or a dedicated one "
-        "(discord_quikoptions: the QuikOptions Discord series, never suite alerts)",
+        "(discord_reporting: the reporting channel the QuikOptions series posts to, never suite alerts)",
     )
     parser.add_argument(
         "--url", default=None, help="Webhook URL for secrets-set (omit to be prompted without echo)"

@@ -197,11 +197,11 @@ so a failure costs a post and never a capture), modelled on `scripts/flies_payof
 need every table to be told.
 
 **The webhook is a choice** (`quikoptions.post_webhook`): `notify`, the suite's existing Discord
-notify webhook, or `dedicated`, the series' own keyring entry `discord_quikoptions` under the
-notification stack's service (`cherrypick secrets-set --channel discord_quikoptions`, or the settings
-surface). A dedicated webhook is never a push channel: listed in `notify.channels` the notifier skips
+notify webhook, or `reporting`, the reporting channel's keyring entry `discord_reporting` under the
+notification stack's service (`cherrypick secrets-set --channel discord_reporting`, or the settings
+surface); `dedicated`, its first name, still resolves. A dedicated webhook is never a push channel: listed in `notify.channels` the notifier skips
 it and `doctor` warns, so no suite alert can land there. **Never a fallback**: with the chosen
-webhook not stored, the run posts nothing and says why. `--webhook notify|dedicated` overrides the
+webhook not stored, the run posts nothing and says why. `--webhook notify|reporting` overrides the
 choice for one run (the first test, 2026-10-03, posts to the notify channel).
 
 **The series**: a header embed — the title, the date, four fields (most traded, the largest trade,
@@ -376,7 +376,7 @@ the quote) to measure the read at scale is deferred until a few weeks of confirm
   (the vendor collector's 2026-09-30 lesson); a captcha ends the run with nothing saved.
 - **Config:** jobs absent while `enabled` is false; present when true; the post job absent while
   `post` is on but `enabled` is off (`test_jobspec.py`).
-- **Webhook:** `notify.channels` containing `discord_quikoptions` is refused; with only the general
+- **Webhook:** `notify.channels` containing `discord_reporting` is refused; with only the general
   Discord webhook stored, the series posts nothing and names the missing entry.
 - **Series:** a failure after post 2 leaves the marker at 2, and the re-run sends 3-5 only; a capture
   whose session differs from the card titles posts nothing; a `.rejected` capture posts nothing.

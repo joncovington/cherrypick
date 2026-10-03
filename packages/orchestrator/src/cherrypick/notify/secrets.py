@@ -25,8 +25,9 @@ SERVICE_NAME = "cherrypick-notify"
 SUPPORTED = ("slack", "discord")
 # Webhooks one job posts to and nothing else: never a push channel, so none can be listed in
 # `notify.channels` (the notifier skips an unknown name; `doctor` warns), and no suite alert can
-# land in them. `discord_quikoptions` is the QuikOptions series' channel (docs/quikoptions-plan.md).
-DEDICATED = ("discord_quikoptions",)
+# land in them. `discord_reporting` is the reporting channel the QuikOptions series posts to
+# (docs/quikoptions-plan.md).
+DEDICATED = ("discord_reporting",)
 WEBHOOKS = SUPPORTED + DEDICATED
 
 

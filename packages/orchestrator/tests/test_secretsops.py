@@ -133,13 +133,13 @@ def test_webhooks_set_delete_and_url_floor(env):
     assert secretsops.set_webhook("teams", "https://x")["ok"] is False
 
 
-def test_the_dedicated_quikoptions_webhook_is_settable_but_never_a_push_channel(env):
+def test_the_reporting_webhook_is_settable_but_never_a_push_channel(env):
     from cherrypick.notify import secrets
     from cherrypick.notify.notifier import Notifier
 
-    out = secretsops.set_webhook("discord_quikoptions", "https://discord.com/api/webhooks/1/x")
-    assert out["ok"] is True and out["webhooks"]["discord_quikoptions"] == "set"
-    assert "discord_quikoptions" in secrets.WEBHOOKS and "discord_quikoptions" not in secrets.SUPPORTED
+    out = secretsops.set_webhook("discord_reporting", "https://discord.com/api/webhooks/1/x")
+    assert out["ok"] is True and out["webhooks"]["discord_reporting"] == "set"
+    assert "discord_reporting" in secrets.WEBHOOKS and "discord_reporting" not in secrets.SUPPORTED
     # Listed as an alert channel by mistake, it receives nothing: the notifier skips the name.
-    res = Notifier({"channels": ["discord_quikoptions"]}).notify("INFO", "test", "t", "m")
-    assert res["discord_quikoptions"]["ok"] is False
+    res = Notifier({"channels": ["discord_reporting"]}).notify("INFO", "test", "t", "m")
+    assert res["discord_reporting"]["ok"] is False

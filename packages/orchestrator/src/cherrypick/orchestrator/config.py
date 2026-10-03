@@ -477,9 +477,11 @@ def quikoptions_title_problem(title: Any) -> str | None:
 
 
 # Which webhook the series posts to: the suite's own Discord notify webhook (`notify`, keyring
-# entry `discord`), or the series' own (`dedicated`, `discord_quikoptions`). A choice, never a
+# entry `discord`), or the reporting channel (`reporting`, `discord_reporting`). A choice, never a
 # fallback: with the chosen one not stored, nothing is posted.
-QUIKOPTIONS_WEBHOOKS = {"notify": "discord", "dedicated": "discord_quikoptions"}
+QUIKOPTIONS_WEBHOOKS = {"notify": "discord", "reporting": "discord_reporting"}
+# The choice's earlier spelling, which resolves for good (renamed 2026-10-03).
+QUIKOPTIONS_WEBHOOK_ALIASES = {"dedicated": "reporting"}
 
 # The Options flow `today` cards the series can post, by title, and the default: a short series.
 QUIKOPTIONS_CARDS = (
@@ -506,8 +508,8 @@ def quikoptions_post_problem(q: dict[str, Any]) -> str | None:
     """Why the series' `post_webhook` or `post_cards` cannot be used, or None. Checked by the post
     script before anything is sent: a wrong value refuses the run rather than quietly becoming
     another one."""
-    hook = q.get("post_webhook", "dedicated")
-    if hook not in QUIKOPTIONS_WEBHOOKS:
+    hook = q.get("post_webhook", "reporting")
+    if QUIKOPTIONS_WEBHOOK_ALIASES.get(hook, hook) not in QUIKOPTIONS_WEBHOOKS:
         return f"post_webhook must be one of {sorted(QUIKOPTIONS_WEBHOOKS)}, not {hook!r}"
     style = q.get("post_style", "singles")
     if style not in QUIKOPTIONS_STYLES:
@@ -552,7 +554,9 @@ def quikoptions_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "morning_at": q.get("morning_at", "08:45"),
         "weekly_at": q.get("weekly_at", "17:15"),
         "post_title": title.strip() if quikoptions_title_problem(title) is None else "Hot options",
-        "post_webhook": q.get("post_webhook", "dedicated"),
+        "post_webhook": QUIKOPTIONS_WEBHOOK_ALIASES.get(
+            q.get("post_webhook"), q.get("post_webhook", "reporting")
+        ),
         "post_cards": [
             QUIKOPTIONS_CARD_ALIASES.get(c, c) for c in (q.get("post_cards") or QUIKOPTIONS_DEFAULT_CARDS)
         ],
