@@ -11,6 +11,16 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: QuikOptions' Hot Options Report, captured daily** (`scripts/fetch_quikoptions.py`;
+  plan in `docs/quikoptions-plan.md`). One paced load a day in the installed Chrome on a profile
+  signed in by hand: the six tables (Birdseye, top outrights, sweeps, spreads, and both
+  volume-over-open-interest lists) and the economic calendar, read from the drawn page and kept
+  only when the page's own sums hold. The console page, the Discord series and the schedule
+  follow.
+- **Fixed: the preliminary Michigan sentiment reading was never on the event calendar.** FRED lists
+  only the final reading, so 2026-10-09 read as a known day with no release. The morning fetch now
+  folds Michigan's own "next data release" note into a never-dropping `umich.json`; without it a
+  day is degraded, not unknown. Found by comparing against QuikOptions' calendar.
 - **Documented: the first read of the flies event tags.** Release days completed more than quiet
   ones (81% vs 75%) at the same implied volatility. Quiet low-volatility days were weakest (67%), and
   NFP is the only release with a consistent negative, on three sessions. Recorded in the flies

@@ -11,6 +11,9 @@ Read from files already on this machine -- never the network. The calendar store
 - `fred.json`         FRED's next ~45 days (CPI, jobs, PPI, JOLTS, ADP, ECI, ...), dates only.
 - `fred_history.json` every FRED date the fetcher has ever seen, and the date ranges it covers, so
                       a past session can be labelled exactly (the fetcher only ever asks forward).
+- `umich.json`        the University of Michigan's own "next data release" note, every one ever
+                      seen. Michigan publishes no year schedule and FRED lists only the final
+                      reading, so this is the only source for the preliminary one.
 
 plus the FOMC decision days curated in `cherrypick.core.calendar`, and releases that follow a
 published rule and appear on no machine-readable calendar we can fetch (`RULE_EVENTS`: ISM,
@@ -21,6 +24,12 @@ other updates under one release id: it lists retail sales on 2026-09-28 (Census'
 09-16, its calendar has nothing on the 28th), and files new home sales (10:00) under "New
 Residential Construction" (housing starts, 08:30). BLS's releases (CPI, PPI, jobs, JOLTS) came out
 clean on FRED, and BLS refuses scripted access to its own schedule, so FRED stays their source.
+
+**Why Michigan's own page (2026-10-02).** FRED's release 91 carries only the *final* consumer
+sentiment reading (7/31, 8/28, 9/25, 10/23); the preliminary, the one that moves the market, was
+never on this calendar, and 2026-10-09 read as a known day without it. QuikOptions' economic
+calendar showed the gap (docs/quikoptions-plan.md). The preliminary has no fixed rule (2026: the
+third Friday in July, the second in August), so it is read, not computed.
 
 **Unknown is not quiet.** A day is `known` only when every source it cannot do without speaks for
 it: BEA's file holds that year, FRED's coverage includes the date, and the FOMC year is bundled.
@@ -61,6 +70,9 @@ RELEASES: dict[str, tuple[str, str | None, bool]] = {
     "Unemployment Insurance Weekly Claims": ("Claims", "08:30", False),
     "Industrial Production and Capacity Utilization": ("IP", "09:15", False),
     "Surveys of Consumers (University of Michigan)": ("UMich", "10:00", False),
+    # Michigan's own note (umich.json): the preliminary reading FRED never lists, and the final.
+    "Surveys of Consumers (University of Michigan) - Preliminary": ("UMich", "10:00", False),
+    "Surveys of Consumers (University of Michigan) - Final": ("UMich", "10:00", False),
     # FRED's copies of Census releases: the fallback when census.html is missing.
     "Advance Monthly Sales for Retail and Food Services": ("Retail", "08:30", True),
     "New Residential Construction": ("Housing", "08:30", False),
@@ -117,6 +129,10 @@ def fred_history_path(root: Path | None = None) -> Path:
     return (root or calendar_dir()) / "fred_history.json"
 
 
+def umich_path(root: Path | None = None) -> Path:
+    return (root or calendar_dir()) / "umich.json"
+
+
 # --------------------------------------------------------------------------- parsers (pure)
 def parse_bea(text: str) -> list[dict]:
     """[{name, at (UTC ISO), source}] from BEA's release-dates file. Duplicate entries (the file
@@ -159,6 +175,30 @@ def parse_census(text: str) -> list[dict]:
     return [{"name": n, "at": a, "source": "Census"} for n, a in sorted(seen, key=lambda x: (x[1], x[0]))]
 
 
+_UMICH_NOTE = re.compile(
+    r"Next data release:\s*[A-Z][a-z]+day,\s*([A-Z][a-z]+ \d{1,2}, \d{4})\s+for\s+(Preliminary|Final)\s+"
+    r"[A-Z][a-z]+\s+data\s+at\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)\s+ET",
+    re.I,
+)
+
+
+def parse_umich(text: str) -> list[dict]:
+    """[{name, at, source}] from the Surveys of Consumers home page's one-line note, "Next data
+    release: Friday, October 09, 2026 for Preliminary October data at 10am ET". Empty when the note
+    is missing or reads differently: a changed page is refused by the fetcher, never guessed at."""
+    flat = re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", " ", text or "")))
+    m = _UMICH_NOTE.search(flat)
+    if not m:
+        return []
+    try:
+        day = datetime.strptime(m.group(1), "%B %d, %Y").date()
+    except ValueError:
+        return []
+    hour = int(m.group(3)) % 12 + (12 if m.group(5).lower() == "pm" else 0)
+    name = f"Surveys of Consumers (University of Michigan) - {m.group(2).capitalize()}"
+    return [{"name": name, "at": f"{day.isoformat()}T{hour:02d}:{m.group(4) or '00'}", "source": "UMich"}]
+
+
 def merge_fred_history(old: dict | None, rows: list[dict], start: str, end: str) -> dict:
     """Fold one fetch of FRED rows covering `start`..`end` (ISO dates) into the history document.
     Rows are unioned (a date is never dropped), and the covered ranges are merged, so `covers` can
@@ -178,12 +218,22 @@ def merge_fred_history(old: dict | None, rows: list[dict], start: str, end: str)
     }
 
 
+def _merge_releases(old: dict | None, rows: list[dict], source: str) -> dict:
+    seen = {(r["at"], r["name"]) for r in (old or {}).get("releases", []) if r.get("at") and r.get("name")}
+    seen |= {(str(r["at"]), str(r["name"])) for r in rows if r.get("at") and r.get("name")}
+    return {"releases": [{"at": a, "name": n, "source": source} for a, n in sorted(seen)]}
+
+
 def merge_census(old: dict | None, rows: list[dict]) -> dict:
     """Fold one parse of Census's calendar into the stored document; a date is never dropped (the
     page shows only the current year, so January would otherwise erase December's)."""
-    seen = {(r["at"], r["name"]) for r in (old or {}).get("releases", []) if r.get("at") and r.get("name")}
-    seen |= {(str(r["at"]), str(r["name"])) for r in rows if r.get("at") and r.get("name")}
-    return {"releases": [{"at": a, "name": n, "source": "Census"} for a, n in sorted(seen)]}
+    return _merge_releases(old, rows, "Census")
+
+
+def merge_umich(old: dict | None, rows: list[dict]) -> dict:
+    """Fold Michigan's next-release note into the stored document; a date is never dropped (the
+    page only ever shows one)."""
+    return _merge_releases(old, rows, "UMich")
 
 
 def _covers(coverage: list, day: date) -> bool:
@@ -308,6 +358,17 @@ def day_events(day: date, *, root: Path | None = None) -> dict:
             continue  # Census is the source for its own releases
         seen.add(r["name"])
         events.append(_event(spec[0], r["name"], spec[1], spec[2], "FRED"))
+
+    # Michigan's note names one release at a time, so its store can only add dates: a missing file
+    # degrades the day (FRED still has the final reading), it does not make it unknown.
+    umich_doc = _read_json(umich_path(root)) or {}
+    umich_rows = [r for r in umich_doc.get("releases") or [] if isinstance(r, dict)]
+    if not umich_rows:
+        degraded.append("umich")
+    for r in umich_rows:
+        spec = RELEASES.get(str(r.get("name")))
+        if spec is not None and str(r.get("at"))[:10] == day.isoformat():
+            events.append(_event(spec[0], r["name"], str(r["at"])[11:16] or spec[1], spec[2], "UMich"))
 
     if not _calendar.fomc_year_known(day.year):
         missing.append("fomc")

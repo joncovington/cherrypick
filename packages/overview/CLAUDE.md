@@ -52,7 +52,7 @@ Readings with no good stream source come from files a script fetches each evenin
 VIX, VVIX and VXN histories, Treasury's par yield curve, release calendars (BEA always; FRED's
 CPI, jobs and PPI once a FRED key is stored; each FRED fetch is also folded into
 `fred_history.json`, which never drops a date, seeded once with `fetch_market_files.py fred-history
---since`; Census's economic-indicators calendar likewise into `census.json`), and OCC's daily option volume by underlying with
+--since`; Census's economic-indicators calendar likewise into `census.json`, and Michigan's next-release note into `umich.json`), and OCC's daily option volume by underlying with
 Nasdaq Trader's symbol directory. `files.py` holds the parsers and the fetcher imports
 them, so a file is validated on arrival by the code that reads it, and a download that parses to
 less than the file on disk is refused. **Every reader takes values strictly before the session.**

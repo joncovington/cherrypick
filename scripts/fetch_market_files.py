@@ -248,6 +248,34 @@ def fetch_census(report: dict, get=None) -> None:
     report["calendar"]["census_releases"] = len(rows)
 
 
+UMICH_URL = "https://www.sca.isr.umich.edu/"
+
+
+def fetch_umich(report: dict, get=None) -> None:
+    """The Surveys of Consumers home page's "Next data release" note, parsed
+    (`cherrypick.core.events.parse_umich`) and folded into umich.json, which never drops a date.
+    The only source for the preliminary sentiment reading: FRED lists only the final, and Michigan
+    publishes no year schedule. A page without the note is refused and the stored dates kept."""
+    from cherrypick.core import events as _events
+
+    get = get or _get
+    try:
+        rows = _events.parse_umich(get(UMICH_URL).decode("utf-8", errors="replace"))
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        report["problems"].append(f"UMich: {exc}")
+        return
+    if not rows:
+        report["problems"].append("UMich: no next-release note on the page; kept the old dates")
+        return
+    path = _events.umich_path(files.store_dir() / "calendar")
+    try:
+        old = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        old = None
+    _write(path, json.dumps(_events.merge_umich(old, rows)))
+    report["calendar"]["umich_next"] = rows[0]["at"]
+
+
 def _fred_key() -> str | None:
     try:
         from cherrypick.core.auth.credentials import CredentialStore
@@ -394,6 +422,7 @@ def cmd_fetch(_args) -> int:
     _pause()
     fetch_bea(report)
     fetch_census(report)
+    fetch_umich(report)
     fetch_fred(report, today)
     _pause()
     fetch_listings(report)
