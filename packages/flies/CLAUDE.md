@@ -328,8 +328,10 @@ changing one. The narrative behind every dimension:
   machine with no FRED key tags `unknown`, not `none`. `event_value` is minutes since the latest
   major release; `event_labels` lists every release, minor ones too. Backfillable exactly
   (`run.py backfill-events`, dry run unless `--write`), because a calendar is history. FRED mixes
-  headline dates with revisions (retail sales 2026-09-28 reads as a release day), and the agencies'
-  own calendars are the planned fix.
+  headline dates with revisions, so Census's own calendar is the source for its releases (retail
+  sales, housing, durable goods): FRED read 2026-09-28 as a retail-sales day, and Census has nothing
+  on it. ISM, Conference Board confidence, FOMC minutes and options expiry are computed by rule
+  (`source: "rule"`). After a calendar correction, `backfill-events --restamp --write` re-tags.
 - **Store the measure, not just the bucket.** `classify_regime` returns the continuous measure behind
   each bucket plus the GEX surface's provenance (`net_gex`, `gamma_flip`, `gex_strikes`,
   `gex_input_age`); `analytics.by_regime(..., bucket_edges=[...])` re-cuts it. Regime data has no

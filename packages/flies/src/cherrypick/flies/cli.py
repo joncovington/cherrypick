@@ -226,11 +226,13 @@ def cmd_fill_model(args) -> int:
     return 0
 
 
-def backfill_events(conn, *, write: bool, root=None) -> dict:
+def backfill_events(conn, *, write: bool, root=None, restamp: bool = False) -> dict:
     """Stamp `entry_event_*` / `completion_event_*` on rows recorded before the event tag existed,
-    from the calendar store alone (`cherrypick.core.events`). Only rows with no tag yet, and only
-    days every calendar source can speak for: a day it cannot is left NULL ("not recorded"), never
-    stamped 'unknown' as if the loop had looked. Dry run unless `write`."""
+    from the calendar store alone (`cherrypick.core.events`). Only rows with no tag yet -- or, with
+    `restamp`, every row, for when the calendar itself is corrected (a calendar tag is re-derivable
+    exactly, so correcting one is a re-run, not a measurement break). Only days every calendar
+    source can speak for: a day it cannot is left as it was, never stamped 'unknown' as if the loop
+    had looked. Dry run unless `write`."""
     from datetime import date
 
     from cherrypick.core import events as _events
@@ -239,7 +241,9 @@ def backfill_events(conn, *, write: bool, root=None) -> dict:
         dict(r)
         for r in conn.execute(
             "SELECT position_id, trade_date, entry_time, completed_at FROM fly_positions "
-            "WHERE entry_event_bucket IS NULL AND entry_time IS NOT NULL ORDER BY trade_date"
+            "WHERE entry_time IS NOT NULL "
+            + ("" if restamp else "AND entry_event_bucket IS NULL ")
+            + "ORDER BY trade_date"
         )
     ]
     days: dict = {}
@@ -276,7 +280,7 @@ def backfill_events(conn, *, write: bool, root=None) -> dict:
 
 def cmd_backfill_events(args) -> int:
     conn = dbmod.connect(args.db)
-    out = backfill_events(conn, write=args.write)
+    out = backfill_events(conn, write=args.write, restamp=args.restamp)
     print(json.dumps({"ok": True, "write": args.write, **out}, indent=2))
     return 0
 
@@ -367,6 +371,7 @@ def main(argv=None) -> int:
         "backfill-events", help="stamp the day's scheduled releases on rows recorded before the tag"
     )
     p_events.add_argument("--write", action="store_true", help="write (default: dry run)")
+    p_events.add_argument("--restamp", action="store_true", help="re-stamp every row, not only untagged ones")
     p_events.set_defaults(func=cmd_backfill_events)
 
     p_fill = sub.add_parser(

@@ -98,3 +98,21 @@ def test_each_fetch_folds_into_a_history_that_never_drops_a_date(tmp_path, monke
     doc = json.loads((tmp_path / "calendar" / "fred_history.json").read_text(encoding="utf-8"))
     assert [r["at"] for r in doc["releases"]] == ["2026-10-02", "2026-10-14"]
     assert doc["coverage"] == [["2026-09-01", "2026-11-17"]]  # overlapping windows merge
+
+
+def test_census_fetch_folds_into_a_calendar_that_never_drops_a_date(tmp_path, monkeypatch):
+    import json
+
+    from cherrypick.overview import files
+
+    monkeypatch.setattr(files, "store_dir", lambda: tmp_path)
+    page = (
+        "<td>Advance Monthly Sales for Retail and Food Services</td><td>September 16, 2026</td>"
+        "<td>8:30 AM</td><td>August 2026</td><td>A202609160830</td>"
+    )
+    report = {"calendar": {}, "problems": []}
+    fmf.fetch_census(report, get=lambda url: page.encode())
+    fmf.fetch_census(report, get=lambda url: b"<html>maintenance</html>")
+    doc = json.loads((tmp_path / "calendar" / "census.json").read_text(encoding="utf-8"))
+    assert [r["at"] for r in doc["releases"]] == ["2026-09-16T08:30"]
+    assert report["problems"] == ["Census: the calendar parsed to nothing; kept the old one"]

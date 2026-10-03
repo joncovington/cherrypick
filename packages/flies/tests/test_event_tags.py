@@ -98,3 +98,20 @@ def test_backfill_stamps_known_days_leaves_unknown_ones_blank_and_dry_runs_by_de
 
 def test_the_event_dimension_is_cut_like_the_others():
     assert analytics.REGIME_DIMENSIONS["event"] == ("entry_event_bucket", "entry_event_value")
+
+
+def test_restamp_retags_rows_already_stamped_when_the_calendar_is_corrected(tmp_path, monkeypatch):
+    from cherrypick.core import events
+
+    conn = dbmod.connect(str(tmp_path / "p.db"))
+    _row(conn, "A", "2026-10-02", "10:00")
+    monkeypatch.setattr(events, "day_events", lambda day, root=None: NFP_DAY)
+    cli.backfill_events(conn, write=True)
+    quiet = {**NFP_DAY, "events": []}
+    monkeypatch.setattr(events, "day_events", lambda day, root=None: quiet)
+    assert cli.backfill_events(conn, write=True)["rows"] == 0, "a plain run leaves stamped rows alone"
+    cli.backfill_events(conn, write=True, restamp=True)
+    assert (
+        conn.execute("SELECT entry_event_bucket FROM fly_positions WHERE position_id = 'A'").fetchone()[0]
+        == "none"
+    )
