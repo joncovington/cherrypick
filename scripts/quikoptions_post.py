@@ -498,7 +498,8 @@ def plan_messages(
         groups = [cards[i : i + per] for i in range(0, len(cards), per)]
         out = [{"payload": {"content": " · ".join(f"**{c}**" for c in g)}, "cards": g} for g in groups]
         if out:
-            head = f"**{_title_line(title, date.fromisoformat(doc['session']))}**"
+            # A Discord heading, so the series' title reads larger than each picture's own (2026-10-03).
+            head = f"## {_title_line(title, date.fromisoformat(doc['session']))}"
             out[0]["payload"]["content"] = head + "\n\n" + out[0]["payload"]["content"]
         return out
     s = summary(doc)
