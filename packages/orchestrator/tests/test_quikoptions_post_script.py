@@ -48,7 +48,9 @@ CAPTURE = {
 
 
 def _cfg(**q):
-    return {"quikoptions": {"enabled": True, "post": True, **q}}
+    # The image path is what most of these exercise, so `cards` unless a test says otherwise; the
+    # default style (text) has its own test.
+    return {"quikoptions": {"enabled": True, "post": True, "post_style": "cards", **q}}
 
 
 @pytest.fixture
@@ -200,6 +202,13 @@ def test_text_longer_than_a_message_is_split_at_a_section():
     assert len(text) > 1 and all(len(m["payload"]["content"]) <= 2000 for m in text)
 
 
+def test_the_default_is_one_text_message_and_captures_nothing(harness):
+    assert _run(cfg={"quikoptions": {"enabled": True, "post": True}}) == "posted"
+    assert harness["captured"] == []
+    assert len(harness["posted"]) == 1 and harness["posted"][0]["files"] == []
+    assert "**Largest by contracts**" in harness["posted"][0]["payload"]["content"]
+
+
 def test_default_series_is_the_header_and_one_pair(harness):
     assert _run() == "posted"
     assert harness["captured"] == ["Largest by contracts", "Top sweeps"]
@@ -251,7 +260,7 @@ def test_bad_settings_and_a_failed_capture_post_nothing(harness, monkeypatch):
     assert _run(cfg=_cfg(post_cards=["Top trades"])) == "failed"
     assert _run(cfg=_cfg(post_webhook="slack")) == "failed"
     assert _run(cfg=_cfg(post_style="carousel")) == "failed"
-    assert _run(cfg={"quikoptions": {"enabled": True, "post": False}}) == "skipped"
+    assert _run(cfg={"quikoptions": {"enabled": True, "post": False, "post_style": "cards"}}) == "skipped"
     monkeypatch.setattr(qp, "capture_card", lambda session, name, out: "ui-check exit 1: no card")
     assert _run() == "failed"
     assert harness["posted"] == []  # never a header without its pictures

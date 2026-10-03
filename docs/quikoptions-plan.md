@@ -215,7 +215,8 @@ estimate, and the next ones, from the calendar capture); an unknown name refuses
 **Four styles** (`quikoptions.post_style`), tried side by side on the notify channel on 2026-10-03:
 `cards` (the header, then card images two to a message), `singles` (one image a message), `embed`
 (one embed of small monospace tables, no images) and `text` (plain text tables, split at a section
-past Discord's 2,000 characters). In the image styles Events is a header field. `--style`,
+past Discord's 2,000 characters). In the image styles Events is a header field. **Default: `text`** (chosen 2026-10-03); the others stay
+configurable. `--style`,
 `--cards`, `--title` and `--webhook` override the config for one run, checked by the same rules.
 
 Pictures come from the console page via `tools/ui-check.mjs --card`, which refuses rather than

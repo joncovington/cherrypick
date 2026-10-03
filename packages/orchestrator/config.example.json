@@ -598,8 +598,8 @@
     "post_title": "Hot options",
     "post_webhook": "dedicated",
     "post_cards": ["Largest by contracts", "Top sweeps"],
-    "_comment_post_style": "post_style: 'cards' (a header embed, then the cards as images two to a message), 'singles' (one image a message), 'embed' (one embed of small tables, no images) or 'text' (plain text tables). post_cards may also name 'Events': the session's high-impact releases with actual against estimate, and the next ones.",
-    "post_style": "cards"
+    "_comment_post_style": "post_style: 'text' (the default, chosen 2026-10-03: plain text tables), 'cards' (a header embed, then the cards as images two to a message), 'singles' (one image a message), or 'embed' (one embed of small tables, no images). post_cards may also name 'Events': the session's high-impact releases with actual against estimate, and the next ones.",
+    "post_style": "text"
   },
   "market_report": {
     "_comment": "The vendor-edition collector (scripts/fetch_vendor_edition.py) - the fixture feed for docs/market-report-plan.md. Fetches the vendor's pre-open report after it is published ('edition_at', with a second chance at 'edition_retry_at'; a day already saved is skipped) and, after the close, the data behind its chart pages ('charts_at'), into data/market-report/. Paced on purpose: one browser session, 20-60 s between pages, at most 40 chart pages, and a 24-hour cooldown after any 429/403. Stops at a captcha or refused login and notifies. OFF by default: store the login first (`python scripts/fetch_vendor_edition.py credentials` then `login`), put the dashboard address in data/market-report/collector.json, then set collector=true and re-run `install`. Times are ET.",

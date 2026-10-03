@@ -177,7 +177,7 @@ def test_quikoptions_post_choices_refuse_what_they_do_not_know():
     assert "there are not: ['Top trades']" in c.quikoptions_post_problem({"post_cards": ["Top trades"]})
     assert c.quikoptions_post_problem({"post_cards": ["Events"], "post_style": "text"}) is None
     assert "post_style must be one of" in c.quikoptions_post_problem({"post_style": "carousel"})
-    assert c.quikoptions_settings({})["post_style"] == "cards"
+    assert c.quikoptions_settings({})["post_style"] == "text"  # chosen 2026-10-03
     assert (
         c.quikoptions_post_problem({"post_cards": []}) == "post_cards must be a non-empty list of card titles"
     )

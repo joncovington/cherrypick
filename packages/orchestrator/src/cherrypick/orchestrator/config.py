@@ -505,7 +505,7 @@ def quikoptions_post_problem(q: dict[str, Any]) -> str | None:
     hook = q.get("post_webhook", "dedicated")
     if hook not in QUIKOPTIONS_WEBHOOKS:
         return f"post_webhook must be one of {sorted(QUIKOPTIONS_WEBHOOKS)}, not {hook!r}"
-    style = q.get("post_style", "cards")
+    style = q.get("post_style", "text")
     if style not in QUIKOPTIONS_STYLES:
         return f"post_style must be one of {list(QUIKOPTIONS_STYLES)}, not {style!r}"
     cards = q.get("post_cards", list(QUIKOPTIONS_DEFAULT_CARDS))
@@ -542,7 +542,7 @@ def quikoptions_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "post_title": title.strip() if quikoptions_title_problem(title) is None else "Hot options",
         "post_webhook": q.get("post_webhook", "dedicated"),
         "post_cards": list(q.get("post_cards") or QUIKOPTIONS_DEFAULT_CARDS),
-        "post_style": q.get("post_style", "cards"),
+        "post_style": q.get("post_style", "text"),
     }
 
 

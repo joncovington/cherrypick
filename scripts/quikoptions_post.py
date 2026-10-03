@@ -14,7 +14,8 @@ The sections (`quikoptions.post_cards`) are the Options flow `today` cards by ti
 across tables, Largest by contracts, Top sweeps, Top spreads, Vol / OI) plus `Events`: the session's
 high-impact releases with actual against estimate, and the next ones, from the calendar capture. In
 the image styles Events is a header field (it has no card). Default: Largest by contracts and Top
-sweeps, as cards. The day does not need every table to be told.
+sweeps, as text (chosen 2026-10-03; the others stay configurable). The day does not need every
+table to be told.
 
 The images are the console's own Options flow cards, captured with `tools/ui-check.mjs --card`,
 which refuses rather than crops the wrong thing: every card is titled "<name> — <session>", so a
