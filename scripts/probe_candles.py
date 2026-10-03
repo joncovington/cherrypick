@@ -15,8 +15,14 @@ Read-only against the broker: one DXLink session for the length of the run, no o
 written. Network-reaching, so it lives in `scripts/` beside the other probes, never in a package. The
 contract comes from the futures map `refresh_futures_contracts.py` writes; never assemble one by hand.
 
-    python scripts/probe_candles.py [--product ES] [--interval 5m --interval 1m] [--hours 3] [--watch 120]
-                                    [--aggregation 10]
+    python scripts/probe_candles.py [--product ES | --symbol SPX] [--interval 5m --interval 1m] [--hours 3]
+                                    [--watch 120] [--aggregation 10] [--history-max 30]
+
+How much intraday history exists is a question this answers too: request years with `--hours`, raise
+`--history-max` so a long burst is not cut off by the probe's own timer, and read `history_first_date`
+against the requested start and `history_sessions`. `SNAP_END` in `flags_seen` says the feed finished
+the snapshot; without it, the burst was cut short and the depth is a lower bound. `--watch 0` skips the
+live phase (on a weekend there is nothing to watch).
 """
 
 from __future__ import annotations
@@ -50,6 +56,10 @@ def _et(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=ET).strftime("%m-%d %H:%M")
 
 
+def _et_date(ms: int) -> str:
+    return datetime.fromtimestamp(ms / 1000, tz=ET).strftime("%Y-%m-%d")
+
+
 def _flags(value: int) -> list[str]:
     return [name for bit, name in FLAG_NAMES.items() if value & bit]
 
@@ -69,7 +79,13 @@ class _Series:
 
 
 async def probe(
-    session, symbol: str, intervals: list[str], hours: float, watch_s: float, aggregation: float
+    session,
+    symbol: str,
+    intervals: list[str],
+    hours: float,
+    watch_s: float,
+    aggregation: float,
+    history_max_s: float = HISTORY_MAX_S,
 ) -> dict:
     from tastytrade import DXLinkStreamer
     from tastytrade.dxfeed import Candle
@@ -102,7 +118,7 @@ async def probe(
         watch_until = None
         while True:
             now = time.monotonic()
-            if phase == "history" and now - t0 > HISTORY_MAX_S:
+            if phase == "history" and now - t0 > history_max_s:
                 phase, watch_until = "live", now + watch_s
             if phase == "live" and now >= watch_until:
                 break
@@ -161,6 +177,9 @@ async def probe(
             "history_bars": len(times),
             "history_first_et": _et(times[0]) if times else None,
             "history_last_et": _et(times[-1]) if times else None,
+            "history_first_date": _et_date(times[0]) if times else None,
+            "history_last_date": _et_date(times[-1]) if times else None,
+            "history_sessions": len({_et_date(t) for t in times}),
             "history_last_bar": s.history[times[-1]] if times else None,
             "live_updates": len(s.live_updates),
             "live_distinct_bars": sorted({_et(t) for _, t in s.live_updates}),
@@ -175,6 +194,7 @@ async def probe(
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--product", default="ES", help="futures product code in the futures map (default ES)")
+    ap.add_argument("--symbol", default=None, help="streamer symbol to probe (e.g. SPX); overrides --product")
     ap.add_argument("--interval", action="append", help="candle width, repeatable (default 5m and 1m)")
     ap.add_argument("--hours", type=float, default=3.0, help="history to request (default 3)")
     ap.add_argument("--watch", type=float, default=120.0, help="seconds to watch live updates (default 120)")
@@ -184,6 +204,12 @@ def main(argv=None) -> int:
         default=0.1,
         help="the feed's acceptAggregationPeriod in seconds (default 0.1; the console's feed uses 10)",
     )
+    ap.add_argument(
+        "--history-max",
+        type=float,
+        default=HISTORY_MAX_S,
+        help=f"seconds to wait for the history burst before calling it over (default {HISTORY_MAX_S:g})",
+    )
     args = ap.parse_args(argv)
 
     store = CredentialStore(SHARED_SERVICE)
@@ -191,13 +217,17 @@ def main(argv=None) -> int:
     if missing:
         print(json.dumps({"ok": False, "reason": "credentials_missing", "missing": list(missing)}))
         return 1
-    symbol = _contract(args.product)
+    symbol = args.symbol or _contract(args.product)
     intervals = args.interval or ["5m", "1m"]
-    print(f"probing {symbol} {intervals}, {args.hours:g}h of history, extended hours on, ", end="")
-    print(f"aggregation {args.aggregation:g}s")
+    start = datetime.now(tz=UTC) - timedelta(hours=args.hours)
+    print(f"probing {symbol} {intervals}, {args.hours:g}h of history (from {start:%Y-%m-%d}), ", end="")
+    print(f"extended hours on, aggregation {args.aggregation:g}s")
     session = SessionManager(store).get_session()
-    result = asyncio.run(probe(session, symbol, intervals, args.hours, args.watch, args.aggregation))
-    print(json.dumps({"ok": True, "symbol": symbol, "series": result}, indent=2))
+    result = asyncio.run(
+        probe(session, symbol, intervals, args.hours, args.watch, args.aggregation, args.history_max)
+    )
+    out = {"ok": True, "symbol": symbol, "requested_from": f"{start:%Y-%m-%d}", "series": result}
+    print(json.dumps(out, indent=2))
     return 0
 
 
