@@ -219,7 +219,9 @@ export const FIELDS: FieldMeta[] = [
     type: "enum",
     options: ["notify", "dedicated"],
     section: "notify",
-    help: "The suite's Discord notify webhook, or the series' own (discord_quikoptions in the keyring). Never a fallback.",
+    help:
+      "The suite's Discord notify webhook, or the series' own (discord_quikoptions in the keyring). Never a fallback. " +
+      "The weekly scorecard always goes to notify.",
   },
   { target: "orchestrator", pointer: "/quikoptions/post_morning", label: "Options flow morning post", type: "boolean", section: "notify" },
   { target: "orchestrator", pointer: "/quikoptions/post_weekly", label: "Options flow weekly scorecard", type: "boolean", section: "notify" },

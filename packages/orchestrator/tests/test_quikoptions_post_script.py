@@ -448,3 +448,22 @@ def test_the_post_waits_for_the_days_scoring_and_the_morning_for_its_confirmatio
         json.dumps({"session": SESSION, "confirmed_at": "x", "flows": [], "unread": []}), encoding="utf-8"
     )
     assert qp.wait_for_inputs("morning", None, 2) is True
+
+
+def test_the_weekly_scorecard_goes_to_the_notify_channel_only(harness, tmp_path, monkeypatch):
+    """The scorecard is the suite's own measurement, never part of the options report's channel."""
+    from cherrypick.core import home
+
+    flow = {
+        "session": SESSION,
+        "flows": [{"symbol": "PCG", "what": "15 Jan 27 16C", "score": 46.0}],
+        "unread": [],
+        "checks": {"site_vote": {"agrees": 1, "neutral": 0, "opposite": 0}},
+    }
+    (tmp_path / f"{SESSION}.flow.json").write_text(json.dumps(flow), encoding="utf-8")
+    monkeypatch.setattr(home, "data_dir", lambda name: tmp_path)
+    cfg = _cfg(post_webhook="dedicated")
+    assert qp.run_weekly(SESSION, dry_run=False, force=False, cfg=cfg, webhook="dedicated") == "failed"
+    assert harness["posted"] == []
+    assert qp.run_weekly(SESSION, dry_run=False, force=False, cfg=cfg, webhook=None) == "posted"
+    assert [p["url"] for p in harness["posted"]] == ["https://d/notify"]

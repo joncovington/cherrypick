@@ -281,7 +281,7 @@ Built 2026-10-03. The report lands 30-60 minutes after the close; every time is 
 | `quikoptions-post` | `post_at` 17:00 | `quikoptions_post.py --wait 45` | `post` |
 | `quikoptions-confirm` | `confirm_at` 08:30, the next trading morning | `quikoptions_flow.py confirm` | `enabled` |
 | `quikoptions-morning` | `morning_at` 08:45 | `quikoptions_post.py --kind morning --wait 45` | `post`, `post_morning` |
-| `quikoptions-weekly` | `weekly_at` 17:15, every trading day | `quikoptions_post.py --kind weekly`, which posts only on the week's last trading day (the Thursday before a Good Friday) | `post`, `post_weekly` |
+| `quikoptions-weekly` | `weekly_at` 17:15, every trading day | `quikoptions_post.py --kind weekly`, which posts only on the week's last trading day (the Thursday before a Good Friday), and only to the notify webhook | `post`, `post_weekly` |
 
 All trading days only, each with its `CATCHUP_MINUTES` entry (four to five hours: a late capture is
 the same page, and the morning pair is still worth posting before the next session's capture).
