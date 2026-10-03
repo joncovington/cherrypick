@@ -157,7 +157,7 @@ def test_each_style_plans_its_own_messages():
     singles = qp.plan_messages(CAPTURE, "Hot options", "singles", ["Trades", "Top sweeps"], None)
     assert [m["cards"] for m in singles] == [["Trades"], ["Top sweeps"]]
     # No header message: the title line rides on the first picture, above its own title.
-    assert singles[0]["payload"]["content"] == "**Hot options — Fri 2 Oct 2026**\n**Trades**"
+    assert singles[0]["payload"]["content"] == "**Hot options — Fri 2 Oct 2026**\n\n**Trades**"
     assert singles[1]["payload"]["content"] == "**Top sweeps**"
     embed = qp.plan_messages(CAPTURE, "Hot options", "embed", SECTIONS, CALENDAR)
     assert len(embed) == 1 and embed[0]["cards"] == []
@@ -219,7 +219,7 @@ def test_the_default_is_one_titled_capture_a_message(harness):
     assert harness["captured"] == ["Derived flow", "Trades", "Top spreads", "Events"]
     assert [len(p["files"]) for p in harness["posted"]] == [1, 1, 1, 1]
     assert [p["payload"].get("content") for p in harness["posted"]] == [
-        "**Hot options — Fri 2 Oct 2026**\n**Derived flow**",
+        "**Hot options — Fri 2 Oct 2026**\n\n**Derived flow**",
         "**Trades**",
         "**Top spreads**",
         "**Events**",
