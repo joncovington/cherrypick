@@ -190,4 +190,63 @@ is the suite's standing one, each step gating the next:
 
 ## Results
 
-*None yet.*
+### Run 1: 2026-10-03, closed with no finding
+
+Run once, as declared, by `python -m cherrypick.core.rangefeatures study` at commit `9c3cb524`.
+That code was committed before the run. The run read SPX bars from 2021-02-16 through 2026-10-01
+(1,412 bars). The 2026-10-02 bar was not yet complete, so the evaluation segment has 937 sessions
+with an outcome at h = 1, not 938. `--bars-through 2026-10-01` reproduces the run exactly.
+
+**Verdict: closed. No feature × horizon passed the evaluation segment**, so the forward check has
+nothing to confirm.
+
+**The baseline** (HAR on ranges, calibration rows only):
+
+| h | rows | R² | residual sd |
+|---|---|---|---|
+| 1 | 452 | 0.515 | 0.420 |
+| 5 | 448 | 0.504 | 0.383 |
+| 7 | 446 | 0.534 | 0.353 |
+
+The one-session residual spread is 0.42, above the 0.35 assumed in "What the sample can see". So
+the smallest effect this sample could detect at h = 1 is nearer 0.12 log points than 0.10.
+
+**The twelve tests.** The statistic is the mean excess log range of group 1 (an NR7 day, or the top
+tercile) minus group 0. Every declared sign is positive. The threshold is p < 0.00417.
+
+| feature | h | group 1 / 0 | statistic | 95% interval | p |
+|---|---|---|---|---|---|
+| nr7 | 1 | 153 / 784 | +0.001 | −0.064 to +0.073 | 0.972 |
+| nr7 | 5 | 153 / 780 | −0.033 | −0.100 to +0.035 | 0.336 |
+| nr7 | 7 | 153 / 778 | −0.036 | −0.096 to +0.025 | 0.252 |
+| close_extremity | 1 | 230 / 340 | **−0.095** | −0.161 to −0.027 | 0.0047 |
+| close_extremity | 5 | 229 / 338 | −0.066 | −0.131 to −0.006 | 0.038 |
+| close_extremity | 7 | 229 / 338 | −0.064 | −0.121 to −0.006 | 0.032 |
+| channel_extremity | 1 | 294 / 281 | −0.054 | −0.113 to +0.006 | 0.076 |
+| channel_extremity | 5 | 294 / 278 | −0.081 | −0.159 to −0.007 | 0.037 |
+| channel_extremity | 7 | 294 / 276 | −0.085 | −0.174 to +0.001 | 0.057 |
+| round_distance | 1 | 326 / 275 | +0.014 | −0.048 to +0.075 | 0.658 |
+| round_distance | 5 | 324 / 275 | +0.026 | −0.044 to +0.094 | 0.464 |
+| round_distance | 7 | 324 / 273 | +0.037 | −0.035 to +0.107 | 0.310 |
+
+**What it says, within the declaration's rules:**
+
+- **NR7 adds nothing** to recent range: +0.001 log points the next session. The practitioner claim
+  that compression precedes expansion finds no support beyond what the baseline already knows.
+- **Round-number distance** points the declared way at every horizon and is small and far from
+  significant.
+- **Close extremity and channel extremity point the opposite way to their declared sign, at every
+  horizon, in both volatility buckets.** A close at the edge of its range, or near a 20-session
+  extreme, is followed by *less* range than the baseline expects. The strongest,
+  `close_extremity` at h = 1 (−0.095, p = 0.0047), misses the threshold. So under this declaration
+  it is neither a finding nor a recorded result against the mechanism.
+- **This consistency is an observation, not a result.** Testing it would be a new declaration with
+  its own sign, counting these twelve tests in its multiplicity, and run on data this run has not
+  touched. Here, that means the forward sessions only.
+
+**Not run:** the panel cross-check. The technicals panel starts 2023-08-30, after the calibration
+segment ends, so it has nothing to fit a baseline on. This declaration does not say how to borrow
+SPX's.
+
+**Retired 2026-10-03** under "What would retire it", first condition. The definitions above stay
+frozen as the record of what was tested.
