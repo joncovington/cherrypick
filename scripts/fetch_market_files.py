@@ -60,6 +60,8 @@ FRED_RELEASES = {
     180: "Unemployment Insurance Weekly Claims",
     9: "Advance Monthly Sales for Retail and Food Services",
     192: "Job Openings and Labor Turnover Survey",
+    11: "Employment Cost Index",
+    194: "ADP National Employment Report",
     13: "Industrial Production and Capacity Utilization",
     27: "New Residential Construction",
     91: "Surveys of Consumers (University of Michigan)",
@@ -217,6 +219,35 @@ def fred_release_pages(key: str, today: date, get=None) -> list[dict]:
     raise RuntimeError(f"more than {FRED_MAX_PAGES} pages of release dates; not writing a partial calendar")
 
 
+CENSUS_URL = "https://www.census.gov/economic-indicators/calendar-listview.html"
+
+
+def fetch_census(report: dict, get=None) -> None:
+    """Census's economic-indicators calendar, parsed (`cherrypick.core.events.parse_census`) and
+    folded into census.json, which never drops a date. The headline source for retail sales,
+    housing starts, new home sales and durable goods: FRED lists other updates under the same
+    release ids (retail sales on 2026-09-28, new home sales filed as housing starts). A page that
+    parses to nothing is refused and the stored calendar kept."""
+    from cherrypick.core import events as _events
+
+    get = get or _get
+    try:
+        rows = _events.parse_census(get(CENSUS_URL).decode("utf-8", errors="replace"))
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        report["problems"].append(f"Census: {exc}")
+        return
+    if not rows:
+        report["problems"].append("Census: the calendar parsed to nothing; kept the old one")
+        return
+    path = _events.census_path(files.store_dir() / "calendar")
+    try:
+        old = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        old = None
+    _write(path, json.dumps(_events.merge_census(old, rows)))
+    report["calendar"]["census_releases"] = len(rows)
+
+
 def _fred_key() -> str | None:
     try:
         from cherrypick.core.auth.credentials import CredentialStore
@@ -362,6 +393,7 @@ def cmd_fetch(_args) -> int:
     fetch_treasury(report, today)
     _pause()
     fetch_bea(report)
+    fetch_census(report)
     fetch_fred(report, today)
     _pause()
     fetch_listings(report)

@@ -4,17 +4,30 @@ Read from files already on this machine -- never the network. The calendar store
 (`<home>/data/market-files/calendar/`) is written by `scripts/fetch_market_files.py`:
 
 - `bea.json`          BEA's release-dates file for the year (PCE, GDP), with times.
-- `fred.json`         FRED's next ~45 days (CPI, jobs, PPI, JOLTS, retail sales, ...), dates only.
+- `census.json`       Census's economic-indicators calendar, with times: the headline dates for
+                      retail sales, housing starts, new home sales, durable goods and the rest.
+                      Census shows only the current year, so every fetch is folded in and no date
+                      is ever dropped. Census is the source for its own releases; FRED the fallback.
+- `fred.json`         FRED's next ~45 days (CPI, jobs, PPI, JOLTS, ADP, ECI, ...), dates only.
 - `fred_history.json` every FRED date the fetcher has ever seen, and the date ranges it covers, so
                       a past session can be labelled exactly (the fetcher only ever asks forward).
 
-plus the FOMC decision days curated in `cherrypick.core.calendar`.
+plus the FOMC decision days curated in `cherrypick.core.calendar`, and releases that follow a
+published rule and appear on no machine-readable calendar we can fetch (`RULE_EVENTS`: ISM,
+Conference Board confidence, FOMC minutes, monthly options expiry), labelled `source: "rule"`.
 
-**Unknown is not quiet.** A day is `known` only when every source can speak for it: BEA's file
-holds that year, FRED's coverage includes the date, and the FOMC year is bundled. Otherwise the
-caller is told which source is missing, and a tag built on it must say `unknown`, never `none` --
-a session with no FRED key looks exactly like a session with no releases, and that is the mistake
-this guards against.
+**Why Census over FRED for its own releases (2026-10-02).** FRED mixes headline release dates with
+other updates under one release id: it lists retail sales on 2026-09-28 (Census's headline was
+09-16, its calendar has nothing on the 28th), and files new home sales (10:00) under "New
+Residential Construction" (housing starts, 08:30). BLS's releases (CPI, PPI, jobs, JOLTS) came out
+clean on FRED, and BLS refuses scripted access to its own schedule, so FRED stays their source.
+
+**Unknown is not quiet.** A day is `known` only when every source it cannot do without speaks for
+it: BEA's file holds that year, FRED's coverage includes the date, and the FOMC year is bundled.
+Otherwise the caller is told which source is missing, and a tag built on it must say `unknown`,
+never `none` -- a session with no FRED key looks exactly like a session with no releases. A missing
+Census file is `degraded`, not unknown: FRED still carries retail sales and housing (with the noise
+above), so the day can still be told apart from a quiet one.
 
 `phase` turns a day's events into the regime-tag form flies records: whether a MAJOR release has
 already happened by a given minute, how long ago, and every release's label. Pure.
@@ -22,7 +35,9 @@ already happened by a given minute, how long ago, and every release's label. Pur
 
 from __future__ import annotations
 
+import html as _html
 import json
+import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -36,21 +51,48 @@ ET = ZoneInfo("America/New_York")
 # FRED gives dates only, so its releases carry their standing schedule time. "Major" is the set
 # that moves index options on the day; the rest are recorded but do not set the phase.
 RELEASES: dict[str, tuple[str, str | None, bool]] = {
-    # FRED
+    # FRED (BLS and others)
     "Consumer Price Index": ("CPI", "08:30", True),
     "Producer Price Index": ("PPI", "08:30", True),
     "Employment Situation": ("NFP", "08:30", True),
-    "Advance Monthly Sales for Retail and Food Services": ("Retail", "08:30", True),
     "Job Openings and Labor Turnover Survey": ("JOLTS", "10:00", True),
+    "Employment Cost Index": ("ECI", "08:30", True),
+    "ADP National Employment Report": ("ADP", "08:15", False),
     "Unemployment Insurance Weekly Claims": ("Claims", "08:30", False),
     "Industrial Production and Capacity Utilization": ("IP", "09:15", False),
-    "New Residential Construction": ("Housing", "08:30", False),
     "Surveys of Consumers (University of Michigan)": ("UMich", "10:00", False),
+    # FRED's copies of Census releases: the fallback when census.html is missing.
+    "Advance Monthly Sales for Retail and Food Services": ("Retail", "08:30", True),
+    "New Residential Construction": ("Housing", "08:30", False),
     # BEA (its file carries the time)
     "Personal Income and Outlays": ("PCE", None, True),
     "Gross Domestic Product": ("GDP", None, True),
     # Curated (cherrypick.core.calendar)
     "FOMC": ("FOMC", "14:00", True),
+}
+
+# Census's calendar names its releases at length; matched by prefix. (label, major); the time is
+# Census's own.
+CENSUS_RELEASES: dict[str, tuple[str, bool]] = {
+    "Advance Monthly Sales for Retail and Food Services": ("Retail", True),
+    "New Residential Construction": ("Housing", False),
+    "New Residential Sales": ("NewHome", False),
+    "Advance Report on Durable Goods": ("Durables", False),
+    "Full Report - Manufacturers' Shipments": ("Factory", False),
+    "Construction Spending": ("Construction", False),
+    "Advance Economic Indicators Report": ("AdvIndicators", False),
+}
+CENSUS_LABELS = {label for label, _ in CENSUS_RELEASES.values()}
+
+# Releases with a published rule and no fetchable calendar: (label, ET time or None, major).
+# ISM's "business day" is not NYSE's trading day, so on a holiday week (Good Friday) the rule can
+# land a day off; recorded as `source: "rule"` so a cut can leave them out.
+RULE_EVENTS: dict[str, tuple[str, str | None, bool]] = {
+    "ISM Manufacturing": ("ISM-Mfg", "10:00", True),  # 1st business day of the month
+    "ISM Services": ("ISM-Svcs", "10:00", True),  # 3rd business day of the month
+    "Conference Board Consumer Confidence": ("ConfBoard", "10:00", False),  # last Tuesday
+    "FOMC Minutes": ("FOMC-Minutes", "14:00", False),  # three weeks after each decision
+    "Monthly Options Expiration": ("OPEX", None, False),  # 3rd Friday, the Thursday on a holiday
 }
 FRED_WINDOW_DAYS = 45  # how far ahead the fetcher asks FRED; fred.json covers fetched..+45
 
@@ -61,6 +103,10 @@ def calendar_dir() -> Path:
 
 def bea_path(root: Path | None = None) -> Path:
     return (root or calendar_dir()) / "bea.json"
+
+
+def census_path(root: Path | None = None) -> Path:
+    return (root or calendar_dir()) / "census.json"
 
 
 def fred_path(root: Path | None = None) -> Path:
@@ -89,6 +135,30 @@ def parse_bea(text: str) -> list[dict]:
     return [{"name": n, "at": a, "source": "BEA"} for n, a in sorted(seen, key=lambda x: (x[1], x[0]))]
 
 
+_CENSUS_DATE = re.compile(r"^[A-Z][a-z]+ \d{1,2}, \d{4}$")
+_CENSUS_TIME = re.compile(r"^\d{1,2}:\d{2} [AP]M$")
+_CENSUS_CODE = re.compile(r"^A(\d{12})$")
+
+
+def parse_census(text: str) -> list[dict]:
+    """[{name, at (ET 'YYYY-MM-DDTHH:MM'), source}] from Census's economic-indicators calendar
+    (the list view). Each row reads name | date | time | reference period | A<yyyymmddhhmm> | ...;
+    the code is the release's own timestamp, so the date and time come from it. A release that
+    covers two reference periods on one day collapses to one."""
+    tokens = [re.sub(r"\s+", " ", _html.unescape(t)).strip() for t in re.split(r"<[^>]+>", text or "")]
+    tokens = [t for t in tokens if t]
+    seen = set()
+    for i in range(1, len(tokens) - 2):
+        if not (_CENSUS_DATE.match(tokens[i]) and _CENSUS_TIME.match(tokens[i + 1])):
+            continue
+        code = next((m for m in (_CENSUS_CODE.match(t) for t in tokens[i + 2 : i + 5]) if m), None)
+        if code is None:
+            continue
+        c = code.group(1)
+        seen.add((tokens[i - 1], f"{c[:4]}-{c[4:6]}-{c[6:8]}T{c[8:10]}:{c[10:12]}"))
+    return [{"name": n, "at": a, "source": "Census"} for n, a in sorted(seen, key=lambda x: (x[1], x[0]))]
+
+
 def merge_fred_history(old: dict | None, rows: list[dict], start: str, end: str) -> dict:
     """Fold one fetch of FRED rows covering `start`..`end` (ISO dates) into the history document.
     Rows are unioned (a date is never dropped), and the covered ranges are merged, so `covers` can
@@ -108,8 +178,49 @@ def merge_fred_history(old: dict | None, rows: list[dict], start: str, end: str)
     }
 
 
+def merge_census(old: dict | None, rows: list[dict]) -> dict:
+    """Fold one parse of Census's calendar into the stored document; a date is never dropped (the
+    page shows only the current year, so January would otherwise erase December's)."""
+    seen = {(r["at"], r["name"]) for r in (old or {}).get("releases", []) if r.get("at") and r.get("name")}
+    seen |= {(str(r["at"]), str(r["name"])) for r in rows if r.get("at") and r.get("name")}
+    return {"releases": [{"at": a, "name": n, "source": "Census"} for a, n in sorted(seen)]}
+
+
 def _covers(coverage: list, day: date) -> bool:
     return any(date.fromisoformat(s) <= day <= date.fromisoformat(e) for s, e in coverage or [])
+
+
+# --------------------------------------------------------------------------- rules (pure)
+def _nth_trading_day_of_month(year: int, month: int, n: int) -> date:
+    d = date(year, month, 1)
+    if not _calendar.is_trading_day(d):
+        d = _calendar.nth_trading_day(d, 1)
+    return _calendar.nth_trading_day(d, n - 1) if n > 1 else d
+
+
+def rule_events(day: date) -> list[dict]:
+    """The RULE_EVENTS falling on `day` (FOMC minutes only when the FOMC year is bundled)."""
+    out = []
+
+    def add(name):
+        label, time_et, major = RULE_EVENTS[name]
+        out.append({"label": label, "name": name, "time_et": time_et, "major": major, "source": "rule"})
+
+    if day == _nth_trading_day_of_month(day.year, day.month, 1):
+        add("ISM Manufacturing")
+    if day == _nth_trading_day_of_month(day.year, day.month, 3):
+        add("ISM Services")
+    if day == _calendar.last_weekday(day.year, day.month, _calendar.TUE):
+        add("Conference Board Consumer Confidence")
+    minutes_from = day - timedelta(days=21)
+    if _calendar.fomc_year_known(minutes_from.year) and _calendar.is_fomc_day(minutes_from):
+        add("FOMC Minutes")
+    opex = _calendar.nth_weekday(day.year, day.month, _calendar.FRI, 3)
+    if not _calendar.is_trading_day(opex):
+        opex -= timedelta(days=1)
+    if day == opex:
+        add("Monthly Options Expiration")
+    return out
 
 
 # --------------------------------------------------------------------------- one day
@@ -118,6 +229,13 @@ def _read_json(path: Path):
         return json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return None
+
+
+def _read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8-sig")
+    except OSError:
+        return ""
 
 
 def _fred_view(root: Path | None) -> tuple[list[dict], list]:
@@ -139,19 +257,20 @@ def _fred_view(root: Path | None) -> tuple[list[dict], list]:
     return rows, coverage
 
 
+def _event(label: str, name: str, time_et: str | None, major: bool, source: str) -> dict:
+    return {"label": label, "name": name, "time_et": time_et, "major": major, "source": source}
+
+
 def day_events(day: date, *, root: Path | None = None) -> dict:
-    """The scheduled releases on `day`: {"date", "known", "missing", "events": [{label, name,
-    time_et, major, source}]}, oldest first. `missing` names each source that cannot speak for the
-    day; `known` is True only when it is empty."""
+    """The scheduled releases on `day`: {"date", "known", "missing", "degraded", "events": [{label,
+    name, time_et, major, source}]}, by time. `missing` names each source that cannot speak for the
+    day (`known` is True only when it is empty); `degraded` names one whose absence costs accuracy
+    but not the day (a missing Census calendar, covered by FRED's copies)."""
     missing: list[str] = []
+    degraded: list[str] = []
     events: list[dict] = []
 
-    bea_text = None
-    try:
-        bea_text = bea_path(root).read_text(encoding="utf-8-sig")
-    except OSError:
-        pass
-    bea_rows = parse_bea(bea_text or "")
+    bea_rows = parse_bea(_read_text(bea_path(root)))
     if not any(str(r["at"])[:4] == str(day.year) for r in bea_rows):
         missing.append("bea")
     for r in bea_rows:
@@ -163,15 +282,19 @@ def day_events(day: date, *, root: Path | None = None) -> dict:
         except ValueError:
             continue
         if at.date() == day:
-            events.append(
-                {
-                    "label": spec[0],
-                    "name": r["name"],
-                    "time_et": at.strftime("%H:%M"),
-                    "major": spec[2],
-                    "source": "BEA",
-                }
-            )
+            events.append(_event(spec[0], r["name"], at.strftime("%H:%M"), spec[2], "BEA"))
+
+    census_doc = _read_json(census_path(root))
+    census_rows = [r for r in (census_doc or {}).get("releases") or [] if isinstance(r, dict) and r.get("at")]
+    census_ok = any(r["at"][:4] == str(day.year) for r in census_rows)
+    if not census_ok:
+        degraded.append("census")
+    for r in census_rows if census_ok else []:
+        if r["at"][:10] != day.isoformat():
+            continue
+        spec = next((v for k, v in CENSUS_RELEASES.items() if r["name"].startswith(k)), None)
+        if spec is not None:
+            events.append(_event(spec[0], r["name"], r["at"][11:16], spec[1], "Census"))
 
     fred_rows, coverage = _fred_view(root)
     if not _covers(coverage, day):
@@ -181,21 +304,28 @@ def day_events(day: date, *, root: Path | None = None) -> dict:
         spec = RELEASES.get(str(r.get("name")))
         if spec is None or str(r.get("at"))[:10] != day.isoformat() or r["name"] in seen:
             continue
+        if census_ok and spec[0] in CENSUS_LABELS:
+            continue  # Census is the source for its own releases
         seen.add(r["name"])
-        events.append(
-            {"label": spec[0], "name": r["name"], "time_et": spec[1], "major": spec[2], "source": "FRED"}
-        )
+        events.append(_event(spec[0], r["name"], spec[1], spec[2], "FRED"))
 
     if not _calendar.fomc_year_known(day.year):
         missing.append("fomc")
     elif _calendar.is_fomc_day(day):
         label, time_et, major = RELEASES["FOMC"]
-        events.append(
-            {"label": label, "name": "FOMC", "time_et": time_et, "major": major, "source": "curated"}
-        )
+        events.append(_event(label, "FOMC", time_et, major, "curated"))
+    events += rule_events(day)
 
-    events.sort(key=lambda e: (e["time_et"] or "99:99", e["label"]))
-    return {"date": day.isoformat(), "known": not missing, "missing": missing, "events": events}
+    # One release reported by two sources (BEA and Census both list the trade report) counts once.
+    unique = {(e["label"], e["time_et"]): e for e in events}
+    ordered = sorted(unique.values(), key=lambda e: (e["time_et"] or "99:99", e["label"]))
+    return {
+        "date": day.isoformat(),
+        "known": not missing,
+        "missing": missing,
+        "degraded": degraded,
+        "events": ordered,
+    }
 
 
 def _minute(hhmm: str) -> int:
@@ -213,9 +343,7 @@ def phase(day_doc: dict | None, now_min: int | None) -> tuple[str, float | None,
     if not day_doc or not day_doc.get("known") or now_min is None:
         return "unknown", None, None
     events = day_doc.get("events") or []
-    labels = (
-        ", ".join(f"{e['label']} {e['time_et']}" if e.get("time_et") else e["label"] for e in events) or ""
-    )
+    labels = ", ".join(f"{e['label']} {e['time_et']}" if e.get("time_et") else e["label"] for e in events)
     major = [_minute(e["time_et"]) for e in events if e.get("major") and e.get("time_et")]
     if not major:
         return "none", None, labels

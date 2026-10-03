@@ -11,6 +11,15 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed: the event calendar takes headline dates from Census and covers more releases.**
+  - **Census for its own releases.** FRED files other updates under the same release ids: it
+    listed retail sales on 2026-09-28, and new home sales as housing starts. Census's own calendar
+    is now the source for retail sales, housing starts, new home sales, durable goods and factory
+    orders, kept in a never-dropping `census.json`, with FRED as the fallback.
+  - **More releases.** ADP and ECI are added from FRED. ISM Manufacturing and Services,
+    Conference Board confidence, FOMC minutes and monthly options expiry are computed by rule and
+    labelled so.
+  - **Re-tagging.** `run.py backfill-events --restamp` re-tags rows after a calendar correction.
 - **Added: every flies entry and completion records the day's scheduled releases.**
   - **The calendar.** A new `cherrypick.core.events` reads the release calendar the morning fetch
     already stores: BEA, FRED and the curated FOMC days. It says when a source cannot speak for a
