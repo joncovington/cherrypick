@@ -1,9 +1,9 @@
 """Read QuikOptions' Hot Options Report and its Resources > Calendars page with our own login.
 
 **Why this exists.** `docs/quikoptions-plan.md`: the report adds what OCC's cleared volume cannot
-(trade counts by size, the day's largest outrights, sweeps and spreads, volume against open
-interest) for the console and a daily Discord series, and the site's calendar is an independent
-check on `cherrypick.core.events`. A check, never a source.
+(trade counts by size, the day's largest single-leg trades by contracts, sweeps and spreads, volume
+against open interest) for the console and a daily Discord series, and the site's calendar is an
+independent check on `cherrypick.core.events`. A check, never a source.
 
 A script rather than package code: it reaches the network, and nothing on a decision path may. It
 writes only its own store, `~/.cherrypick/data/quikoptions/`, and a failure leaves every saved day

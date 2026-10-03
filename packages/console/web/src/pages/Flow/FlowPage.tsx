@@ -371,11 +371,11 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
       <NamesCard day={day} />
 
       <GridCard
-        label={`Largest outrights — ${asOf(day)}`}
+        label={`Largest by contracts — ${asOf(day)}`}
         span={6}
         h={304}
         to="/flow/trades"
-        foot="* premium derived: size × price × 100"
+        foot="single-leg trades, the site's ranking by contracts · * premium derived"
       >
         <TradesTable rows={day.outrights} limit={7} showTime={false} />
       </GridCard>
@@ -460,13 +460,14 @@ export function FlowTrades({ day }: { day: OptionsFlowDay }) {
     <div className="cards-pairs">
       <section className="card view-fade">
         <div className="card-head">
-          <h2>Largest outrights</h2>
+          <h2>Largest by contracts</h2>
           <span className="card-asof">QuikOptions, {day.session}</span>
         </div>
         <TradesTable rows={day.outrights} showTime />
         <p className="muted">
-          The site's largest single-leg trades by size. * Premium is derived (size × price × 100): the site prints none
-          for outrights. Side is the site's classification, with where the fill sat.
+          The site's largest outrights — single-leg trades — ranked by number of contracts, as the site ranks them, not by
+          premium. * Premium is derived (size × price × 100): the site prints none for outrights. Side is the site's
+          classification, with where the fill sat.
         </p>
       </section>
       <section className="card view-fade">

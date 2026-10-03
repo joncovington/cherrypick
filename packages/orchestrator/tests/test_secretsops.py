@@ -59,7 +59,7 @@ def env(monkeypatch):
     monkeypatch.setattr(
         secretsops.notify_secrets,
         "status",
-        lambda channels=("slack", "discord"): {
+        lambda channels=secretsops.notify_secrets.WEBHOOKS: {
             ch: ("set" if ch in webhooks else "not set") for ch in channels
         },
     )
@@ -131,3 +131,15 @@ def test_webhooks_set_delete_and_url_floor(env):
     assert "hooks.slack.com" not in json.dumps(out["webhooks"])
     assert secretsops.delete_webhook("slack")["webhooks"]["slack"] == "not set"
     assert secretsops.set_webhook("teams", "https://x")["ok"] is False
+
+
+def test_the_dedicated_quikoptions_webhook_is_settable_but_never_a_push_channel(env):
+    from cherrypick.notify import secrets
+    from cherrypick.notify.notifier import Notifier
+
+    out = secretsops.set_webhook("discord_quikoptions", "https://discord.com/api/webhooks/1/x")
+    assert out["ok"] is True and out["webhooks"]["discord_quikoptions"] == "set"
+    assert "discord_quikoptions" in secrets.WEBHOOKS and "discord_quikoptions" not in secrets.SUPPORTED
+    # Listed as an alert channel by mistake, it receives nothing: the notifier skips the name.
+    res = Notifier({"channels": ["discord_quikoptions"]}).notify("INFO", "test", "t", "m")
+    assert res["discord_quikoptions"]["ok"] is False

@@ -476,6 +476,47 @@ def quikoptions_title_problem(title: Any) -> str | None:
     return None
 
 
+# Which webhook the series posts to: the suite's own Discord notify webhook (`notify`, keyring
+# entry `discord`), or the series' own (`dedicated`, `discord_quikoptions`). A choice, never a
+# fallback: with the chosen one not stored, nothing is posted.
+QUIKOPTIONS_WEBHOOKS = {"notify": "discord", "dedicated": "discord_quikoptions"}
+
+# The Options flow `today` cards the series can post, by title, and the default: a short series.
+QUIKOPTIONS_CARDS = (
+    "Birdseye",
+    "Names across tables",
+    "Largest by contracts",
+    "Top sweeps",
+    "Top spreads",
+    "Vol / OI",
+)
+# `Events` is a section with no card: the session's high-impact releases, from the calendar capture.
+QUIKOPTIONS_SECTIONS = (*QUIKOPTIONS_CARDS, "Events")
+QUIKOPTIONS_DEFAULT_CARDS = ("Largest by contracts", "Top sweeps")
+# How the series is sent: card images two to a message, one to a message, one embed of small
+# tables, or plain text (scripts/quikoptions_post.py).
+QUIKOPTIONS_STYLES = ("cards", "singles", "embed", "text")
+
+
+def quikoptions_post_problem(q: dict[str, Any]) -> str | None:
+    """Why the series' `post_webhook` or `post_cards` cannot be used, or None. Checked by the post
+    script before anything is sent: a wrong value refuses the run rather than quietly becoming
+    another one."""
+    hook = q.get("post_webhook", "dedicated")
+    if hook not in QUIKOPTIONS_WEBHOOKS:
+        return f"post_webhook must be one of {sorted(QUIKOPTIONS_WEBHOOKS)}, not {hook!r}"
+    style = q.get("post_style", "text")
+    if style not in QUIKOPTIONS_STYLES:
+        return f"post_style must be one of {list(QUIKOPTIONS_STYLES)}, not {style!r}"
+    cards = q.get("post_cards", list(QUIKOPTIONS_DEFAULT_CARDS))
+    if not isinstance(cards, list) or not cards:
+        return "post_cards must be a non-empty list of card titles"
+    unknown = [c for c in cards if c not in QUIKOPTIONS_SECTIONS]
+    if unknown:
+        return f"post_cards names sections there are not: {unknown} (known: {list(QUIKOPTIONS_SECTIONS)})"
+    return None
+
+
 def quikoptions_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """QuikOptions' Hot Options Report (scripts/fetch_quikoptions.py, docs/quikoptions-plan.md):
     the capture, the console's Options flow page, and the daily Discord series.
@@ -484,8 +525,10 @@ def quikoptions_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     signed in to by hand (`python scripts/fetch_quikoptions.py login`), and a job that fails every
     day for want of one is noise. `enabled` also shows the console's Options flow page. `post` is
     the Discord series, its own switch and OFF even with `enabled` on, because it republishes the
-    site's figures; it needs `enabled`. A title that breaks the rule falls back to the default
-    rather than heading the series badly; the config editor refuses one before it is ever saved.
+    site's figures; it needs `enabled`. `post_webhook` chooses the suite's Discord notify webhook
+    or the series' own; `post_cards` the cards after the header. A title that breaks the rule falls
+    back to the default rather than heading the series badly; the post script refuses a bad title,
+    webhook or card list outright (`quikoptions_post_problem`).
     """
     q = cfg.get("quikoptions", {}) or {}
     enabled = bool(q.get("enabled", False))
@@ -497,6 +540,9 @@ def quikoptions_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "post": enabled and bool(q.get("post", False)),
         "post_at": q.get("post_at", "17:40"),
         "post_title": title.strip() if quikoptions_title_problem(title) is None else "Hot options",
+        "post_webhook": q.get("post_webhook", "dedicated"),
+        "post_cards": list(q.get("post_cards") or QUIKOPTIONS_DEFAULT_CARDS),
+        "post_style": q.get("post_style", "text"),
     }
 
 
