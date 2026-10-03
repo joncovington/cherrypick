@@ -11,6 +11,13 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Fixed: two 2026 FOMC dates were wrong, and 2027 is now bundled.** `core.calendar` had the June
+  decision on 06-10 (the meeting was 16-17) and December on 12-16 (the meeting is 8-9). MEIC blocks
+  entries 13:30-14:30 and force-closes at 13:30 on FOMC days, so on 12-09 it would have held
+  through the announcement and on 12-16 closed for nothing. No ledger was affected: MEIC's records
+  start after June. 2027's eight meetings are added, so FOMC-dependent reads do not go unknown on
+  2027-01-01. Both years come from the Fed's own calendar, and the test now pins them from that
+  source rather than from the config it once mirrored.
 - **Changed: CI runs only what a pull request touches, installs with uv, and a 62-second core
   test takes one.**
   - A new `changes` job (`scripts/ci_changed_packages.py`) maps the changed paths to the package

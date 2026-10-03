@@ -26,15 +26,17 @@ CFG_HOLIDAYS_2026 = {
     date(2026, 12, 25),
 }
 CFG_QUARTERLY_2026 = [date(2026, 3, 31), date(2026, 6, 30), date(2026, 9, 30), date(2026, 12, 31)]
+# From the Fed's own calendar (federalreserve.gov/monetarypolicy/fomccalendars.htm, 2026-10-02), not
+# copied from a config: the config this once matched had June and December wrong.
 CFG_FOMC_2026 = [
     date(2026, 1, 28),
     date(2026, 3, 18),
     date(2026, 4, 29),
-    date(2026, 6, 10),
+    date(2026, 6, 17),
     date(2026, 7, 29),
     date(2026, 9, 16),
     date(2026, 10, 28),
-    date(2026, 12, 16),
+    date(2026, 12, 9),
 ]
 
 
@@ -105,6 +107,20 @@ def test_next_and_previous_trading_day_skip_holidays_and_weekends():
     assert cal.next_trading_day(date(2026, 12, 24)) == date(2026, 12, 28)
     # Back from Sat 2026-07-04 -> Fri is the Independence holiday -> Thu 2026-07-02.
     assert cal.previous_trading_day(date(2026, 7, 4)) == date(2026, 7, 2)
+
+
+def test_fomc_2027_is_bundled_from_the_feds_calendar():
+    assert cal.fomc_dates(2027) == [
+        date(2027, 1, 27),
+        date(2027, 3, 17),
+        date(2027, 4, 28),
+        date(2027, 6, 9),
+        date(2027, 7, 28),
+        date(2027, 9, 15),
+        date(2027, 10, 27),
+        date(2027, 12, 8),
+    ]
+    assert cal.is_fomc_day(date(2026, 12, 9)) and not cal.is_fomc_day(date(2026, 12, 16))
 
 
 def test_fomc_year_known_and_unknown():
