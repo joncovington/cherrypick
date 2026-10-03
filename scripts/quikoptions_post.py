@@ -13,10 +13,10 @@ The styles (`quikoptions.post_style`, docs/quikoptions-plan.md):
 The sections (`quikoptions.post_cards`) are the Options flow `today` cards by title (Derived flow,
 Net by name, Trades — the site's Birdseye, Names across tables, Largest by contracts, Top sweeps,
 Top spreads, Vol / OI) plus `Events`: the session's high-impact releases with actual against
-estimate, and the next ones, from the calendar capture. In the image styles Events is a header field
-(it has no card). Default: Derived flow (the top scored flows, from `scripts/quikoptions_flow.py`),
-Trades and Events, one screen capture a message (chosen 2026-10-03; the others stay configurable).
-The day does not need every table told.
+estimate, and the next ones, from the calendar capture. In the image styles Events is a capture of
+the post page's table. Default: Derived flow (the top scored flows, from
+`scripts/quikoptions_flow.py`), Trades and Events, one screen capture a message (chosen 2026-10-03;
+the others stay configurable). The day does not need every table told.
 
 The images are the console's own Options flow cards, captured with `tools/ui-check.mjs --card`,
 which refuses rather than crops the wrong thing: every card is titled "<name> — <session>", so a
@@ -488,8 +488,10 @@ def plan_messages(
 ) -> list[dict]:
     """The messages a style sends, in order: {"payload": payload_json, "cards": [card titles to
     attach]}. Images are named here and captured by the caller."""
-    cards = [c for c in sections if c != EVENTS]
-    with_cal = EVENTS in sections
+    # Events is a capture like any card (the post page's table, 2026-10-03); a calendar not captured
+    # with the session has no card, so it is left out rather than failing the series.
+    cards = [c for c in sections if c != EVENTS or (calendar and calendar.get("events"))]
+    with_cal = False
     if style in ("cards", "singles"):
         per = CARDS_PER_MESSAGE if style == "cards" else 1
         out = [{"payload": {"embeds": [header_embed(doc, title, calendar, with_cal, prev)]}, "cards": []}]
@@ -673,7 +675,7 @@ def mark_sent(session: str, index: int, how: dict, fresh: bool = False) -> None:
 
 # Cards captured from the post page (`/post/flow`, outside the shell, without the columns a post does
 # not need); every other card from the Options flow page itself.
-POST_PAGE_CARDS = {"Derived flow", "Net by name"}
+POST_PAGE_CARDS = {"Derived flow", "Net by name", "Events"}
 
 
 def capture_card(session: str, name: str, out: Path) -> str | None:

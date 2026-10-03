@@ -174,10 +174,13 @@ def test_calendar_shows_the_days_releases_and_the_next_high_impact_ones():
     assert "Wed  7 14:00  FOMC Minutes" in out and "Fri  9 10:00  Michigan Consumer Sentiment (Oct)" in out
     assert "Too far ahead" not in out
     assert qp.calendar_text(SESSION, None) == "(no calendar captured with this session)"
-    # In the image styles Events has no card: it is a header field instead.
-    header = qp.plan_messages(CAPTURE, "Hot options", "cards", SECTIONS, CALENDAR)
-    assert header[0]["payload"]["embeds"][0]["fields"][-1]["name"] == "Events"
-    assert [m["cards"] for m in header[1:]] == [["Largest by contracts", "Top sweeps"]]
+    # In the image styles Events is a capture of the post page's table — and only when a calendar
+    # was captured with the session, so a missing calendar costs that picture, not the series.
+    planned = qp.plan_messages(CAPTURE, "Hot options", "singles", SECTIONS, CALENDAR)
+    assert [m["cards"] for m in planned[1:]] == [["Largest by contracts"], ["Top sweeps"], ["Events"]]
+    assert all(f["name"] != "Events" for f in planned[0]["payload"]["embeds"][0]["fields"])
+    planned = qp.plan_messages(CAPTURE, "Hot options", "singles", SECTIONS, None)
+    assert [m["cards"] for m in planned[1:]] == [["Largest by contracts"], ["Top sweeps"]]
 
 
 def test_every_message_pings_no_one():
@@ -203,13 +206,16 @@ def test_text_longer_than_a_message_is_split_at_a_section():
 
 
 def test_the_default_is_the_header_then_one_capture_a_message(harness):
-    """Screen captures, one a message, so each reads full width on a phone (2026-10-03); Events has
-    no card and rides in the header."""
-    assert _run(cfg={"quikoptions": {"enabled": True, "post": True}}) == "posted"
-    assert harness["captured"] == ["Derived flow", "Trades"]
-    assert [len(p["files"]) for p in harness["posted"]] == [0, 1, 1]
-    header = harness["posted"][0]["payload"]["embeds"][0]
-    assert header["fields"][-1]["name"] == "Events"
+    """Screen captures, one a message, so each reads full width on a phone (2026-10-03): Derived
+    flow, Trades and the Events table."""
+    qp_load = qp.load_calendar
+    qp.load_calendar = lambda session: CALENDAR
+    try:
+        assert _run(cfg={"quikoptions": {"enabled": True, "post": True}}) == "posted"
+    finally:
+        qp.load_calendar = qp_load
+    assert harness["captured"] == ["Derived flow", "Trades", "Events"]
+    assert [len(p["files"]) for p in harness["posted"]] == [0, 1, 1, 1]
     assert _run(cfg={"quikoptions": {"enabled": True, "post": True}}) == "skipped"  # once per session
 
 
