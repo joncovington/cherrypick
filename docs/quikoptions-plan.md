@@ -266,6 +266,47 @@ Those are operations, and go to the suite's normal `notify` channels.
   console cannot save one the script would refuse. `enabled` stays out of it: turning the capture on
   needs a sign-in, which the console cannot do.
 
+## Phase 6 — derived flow (built 2026-10-03)
+
+The site's side is a lean, not a fact: where the fill sat says who was in a hurry, not whether the
+trade opened or closed, hedged or bet. `scripts/quikoptions_flow.py` turns each day's lists into
+**derived flows** — one row per order — and scores them on what the suite can check.
+
+**A row** is an outright, a sweep or a spread; prints sharing a symbol and a millisecond are one order
+(paired prints), and spreads printed together are a roll when their views differ. Each carries its
+read (bought/sold from the edge at ±0.5, or a spread's sign; otherwise *unread*), its view, its delta
+(from the volatility the trade's own price implies at the broker's close; ±1 at or under intrinsic;
+the name's 30-day IV as a fallback), **Δ$** (contracts × 100 × |delta| × close: the stock-equivalent
+size), and flags.
+
+**The score**, 0-100 and signed by the view, is size × conviction × purity × opening — each factor and
+constant named in the script and in its docstring. Decided 2026-10-03:
+
+| Question | Decision |
+|---|---|
+| Rank by | **Δ$**, premium shown beside it (premium overstates in-the-money trades) |
+| Size scale | **fixed** $100K-$50M log scale, so scores compare across days |
+| Read cutoff | edge ±0.5; the site's own fill label is a second vote: disagreeing halves conviction |
+| Unread flows | listed with their Δ$, **never ranked** |
+| Sold options | purity ×0.75: a sold call or put is often income or an overwrite |
+| Earnings | flagged only when the contract expires within 30 days after the next report (an event bet) |
+| Where | a `derived flow` tab and two `today` cards on the console; the first section of the text post (top 5 and the net by name) |
+
+**Data from the broker** (read-only market data, the shared login), at scoring time: each name's
+official close, each contract's starting open interest and day volume, each name's 30-day IV and next
+earnings date. Ex-dividend dates from the technicals store (the broker's looked stale). ADRs the
+broker does not list have no close, so no Δ$; they rank on premium, halved.
+
+**Three moments.** `score` after the capture (16:45 ET) writes `<session>.flow.json`. `confirm` the
+next morning reads each contract's open interest again: each flow becomes `opened`, `closed` or
+`mixed`, and a confirmed score sits beside the first (the console and the post show the confirmed one
+once it exists). Every `score` run also records the **outcome** for the sessions 1 and 5 trading days
+back — each name's close against its close then — the record the constants are to be judged on.
+
+**Not yet:** the schedule (Phase 5: capture 16:30, score 16:45, post 16:55, confirm 08:30, so the
+report lands 30-60 minutes after the close), and the read of the outcome record once a few weeks of
+it exist.
+
 ## Guards, each shown to fail
 
 - **Validation:** a fixture with one Birdseye bucket altered, one premium off by a contract, and one

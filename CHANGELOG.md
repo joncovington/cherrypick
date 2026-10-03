@@ -11,6 +11,15 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: derived flow** (`scripts/quikoptions_flow.py`). Each QuikOptions capture becomes one
+  row per order (outrights, sweeps, spreads, with paired prints and rolls grouped), read
+  (bought/sold from where the fill sat, or unread), sized in stock-equivalent dollars from the
+  broker's close and the trade's own implied volatility, flagged (deep in the money, lottery,
+  sold, near-max spread, earnings event, before ex-dividend, opening evidence) and scored on size,
+  conviction, purity and opening. The next morning's open interest confirms opened or closed, and
+  each run records the 1- and 5-session outcome. Shown as a `derived flow` tab and two cards on
+  the Options flow page, and as the first section of the text post. The score's constants are
+  provisional until the outcome record can judge them.
 - **Added: the QuikOptions Discord series** (`scripts/quikoptions_post.py`). A session as a
   header embed (the day in four fields, the capture time in its footer) and then the
   Options flow cards named in `quikoptions.post_cards`, two to a message; by default Largest

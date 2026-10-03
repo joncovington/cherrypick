@@ -10,12 +10,13 @@ The styles (`quikoptions.post_style`, docs/quikoptions-plan.md):
     text     one plain message (split at a section if it would pass Discord's 2,000 characters):
              the summary and each section as a small monospace table
 
-The sections (`quikoptions.post_cards`) are the Options flow `today` cards by title (Birdseye, Names
-across tables, Largest by contracts, Top sweeps, Top spreads, Vol / OI) plus `Events`: the session's
+The sections (`quikoptions.post_cards`) are the Options flow `today` cards by title (Derived flow,
+Net by name, Birdseye, Names across tables, Largest by contracts, Top sweeps, Top spreads, Vol /
+OI) plus `Events`: the session's
 high-impact releases with actual against estimate, and the next ones, from the calendar capture. In
-the image styles Events is a header field (it has no card). Default: Largest by contracts and Top
-sweeps, as text (chosen 2026-10-03; the others stay configurable). The day does not need every
-table to be told.
+the image styles Events is a header field (it has no card). Default: Derived flow (the top scored
+flows and the net by name, from `scripts/quikoptions_flow.py`), Largest by contracts and Top sweeps,
+as text (chosen 2026-10-03; the others stay configurable). The day does not need every table told.
 
 The images are the console's own Options flow cards, captured with `tools/ui-check.mjs --card`,
 which refuses rather than crops the wrong thing: every card is titled "<name> — <session>", so a
@@ -119,6 +120,17 @@ def load_capture(session: str) -> dict | None:
         return None
     ok = isinstance(doc, dict) and doc.get("session") == session and not doc.get("problems")
     return doc if ok else None
+
+
+def load_flow(session: str) -> dict | None:
+    """The session's scored derived flows (`scripts/quikoptions_flow.py score`), or None."""
+    try:
+        doc = json.loads(
+            (capture_path(session).with_name(f"{session}.flow.json")).read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) else None
 
 
 def load_calendar(session: str) -> dict | None:
@@ -270,6 +282,36 @@ def _voloi_cells(r: dict) -> list[str]:
     return [r["symbol"], exp, _count(r.get("volume")), _count(r.get("oi")), f"{_num(r.get('v_oi'), 1)}x"]
 
 
+def _flow_cells(f: dict) -> list[str]:
+    s = f.get("confirmed_score") if f.get("confirmed_score") is not None else f.get("score")
+    read = f"{f.get('direction') or '?'} {f.get('view') or ''}".strip()
+    return [
+        f"{s:+.0f}" if s is not None else "—",
+        f["symbol"],
+        f.get("what") or "",
+        read,
+        _dollars(f.get("delta_dollars")),
+    ]
+
+
+def derived_text(flow: dict | None) -> str:
+    """The top scored flows, then the most bullish and bearish names by net delta dollars."""
+    if flow is None:
+        return "(not scored yet)"
+    lines = [_table([_flow_cells(f) for f in (flow.get("flows") or [])[:ROWS]], {0, 4})]
+    names = flow.get("names") or []
+    bull = sorted((n for n in names if n.get("net", 0) > 0), key=lambda n: -n["net"])[:3]
+    bear = sorted((n for n in names if n.get("net", 0) < 0), key=lambda n: n["net"])[:3]
+    if bull or bear:
+        lines.append(
+            "net Δ$: "
+            + " · ".join(
+                f"{n['symbol']} {'+' if n['net'] > 0 else '−'}{_dollars(n['net'])}" for n in bull + bear
+            )
+        )
+    return "\n".join(lines)
+
+
 def section_text(name: str, doc: dict, calendar: dict | None) -> str:
     """One section as a small monospace table (or a line), at most ROWS rows: the text styles."""
     t = doc.get("tables") or {}
@@ -299,6 +341,8 @@ def section_text(name: str, doc: dict, calendar: dict | None) -> str:
         return "\n".join(f"{n['symbol']:<6} {' · '.join(n['tables'])}" for n in names) or "(none)"
     if name == EVENTS:
         return calendar_text(doc["session"], calendar)
+    if name in ("Derived flow", "Net by name"):
+        return derived_text(doc.get("_flow"))
     return "(unknown section)"
 
 
@@ -599,6 +643,7 @@ def run(
     elif why is not None:
         _log(f"{session}: the series settings cannot be used ({why}); nothing posted")
         return "failed"
+    doc = {**doc, "_flow": load_flow(session)}
     messages = plan_messages(doc, how["title"], how["style"], list(how["cards"]), load_calendar(session))
     if len(sent) >= len(messages):
         _log(f"{session}: already posted")

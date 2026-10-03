@@ -1,4 +1,12 @@
-import type { FlowBirdseyeRow, FlowSpread, FlowTrade, FlowVolOi, OptionsFlowDay } from "@console/shared";
+import type {
+  DerivedFlowName,
+  DerivedFlowRow,
+  FlowBirdseyeRow,
+  FlowSpread,
+  FlowTrade,
+  FlowVolOi,
+  OptionsFlowDay,
+} from "@console/shared";
 import { GridCard, StatTile } from "../../components/grid/GridCard";
 import { fmtCount, fmtDollarsShort, fmtNum, fmtPct } from "../../lib/format";
 
@@ -269,6 +277,210 @@ function VolOiTable({ rows, limit }: { rows: FlowVolOi[]; limit?: number }) {
   );
 }
 
+// ----------------------------------------------------------------------------------- derived flow
+
+function viewTone(view: DerivedFlowRow["view"]): string {
+  return view === "bullish" ? "pnl-pos" : view === "bearish" ? "pnl-neg" : "muted";
+}
+
+/** A score as a bar from the middle: right and green for bullish, left and red for bearish. */
+function ScoreBar({ score, width = 80 }: { score: number | null; width?: number }) {
+  const half = width / 2;
+  const w = score === null ? 0 : (Math.min(Math.abs(score), 100) / 100) * half;
+  const x = score !== null && score < 0 ? half - w : half;
+  const fill = score === null ? "var(--text-muted)" : score >= 0 ? "var(--ok)" : "var(--err)";
+  return (
+    <svg width={width} height={8} role="img" aria-label="score" className="flow-bar">
+      <rect x={0} y={0} width={width} height={8} fill="var(--row-line)" />
+      <rect x={half - 0.5} y={0} width={1} height={8} fill="var(--text-muted)" />
+      <rect x={x} y={0} width={w} height={8} fill={fill} />
+    </svg>
+  );
+}
+
+function shownScore(r: DerivedFlowRow): number | null {
+  return r.confirmedScore ?? r.score;
+}
+
+function DerivedTable({ rows, limit, full }: { rows: DerivedFlowRow[]; limit?: number; full: boolean }) {
+  const shown = limit === undefined ? rows : rows.slice(0, limit);
+  return (
+    <table className="data-table flow-table">
+      <thead>
+        <tr>
+          <th className="num">#</th>
+          <th>Flow</th>
+          <th>Read</th>
+          <th className="num">Δ$</th>
+          {full && <th className="num">Premium</th>}
+          {full && <th className="num">DTE</th>}
+          <th className="num">Score</th>
+          <th />
+          {full && <th title="size · conviction · purity · opening">S · C · P · O</th>}
+          {full && <th>Opened?</th>}
+          <th>Flags</th>
+        </tr>
+      </thead>
+      <tbody>
+        {shown.map((r, i) => {
+          const s = shownScore(r);
+          const f = r.factors;
+          return (
+            <tr key={`${r.symbol}-${String(i)}`}>
+              <td className="num muted">{i + 1}</td>
+              <td title={`${r.kind}${r.size !== null ? `, ${fmtCount(r.size)} contracts` : ""}`}>
+                {r.symbol} <span className="muted">{r.kind === "spread" ? "" : `${r.kind} `}</span>
+                {r.what ?? ""}
+              </td>
+              <td className={viewTone(r.view)}>
+                {r.direction ?? "unread"}
+                {r.view !== null ? `, ${r.view}` : ""}
+              </td>
+              <td className="num" title="contracts × 100 × |delta| × the close">
+                {fmtDollarsShort(r.deltaDollars)}
+              </td>
+              {full && <td className="num">{fmtDollarsShort(r.premium)}</td>}
+              {full && <td className="num">{r.days ?? "—"}</td>}
+              <td
+                className={`num ${s === null ? "muted" : s >= 0 ? "pnl-pos" : "pnl-neg"}`}
+                title={r.confirmedScore !== null ? `confirmed (first ${fmtNum(r.score, 0)})` : "before the open-interest check"}
+              >
+                {s === null ? "—" : `${s > 0 ? "+" : ""}${s.toFixed(0)}`}
+              </td>
+              <td>
+                <ScoreBar score={s} />
+              </td>
+              {full && (
+                <td className="muted">
+                  {f === null
+                    ? "—"
+                    : `${f.size.toFixed(2)} · ${f.conviction.toFixed(2)} · ${f.purity.toFixed(2)} · ${f.opening.toFixed(2)}`}
+                </td>
+              )}
+              {full && <td className="muted">{r.confirmed ?? "not yet"}</td>}
+              <td className="muted">{r.flags.join(" · ") || "—"}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function NetByName({ names, each }: { names: DerivedFlowName[]; each: number }) {
+  const bullish = names.filter((n) => n.net > 0).sort((a, b) => b.net - a.net).slice(0, each);
+  const bearish = names.filter((n) => n.net < 0).sort((a, b) => a.net - b.net).slice(0, each);
+  const rows = [...bullish, ...bearish];
+  const max = maxOf(rows.map((n) => n.net));
+  return (
+    <table className="data-table flow-table">
+      <tbody>
+        {rows.map((n) => (
+          <tr key={n.symbol}>
+            <td>{n.symbol}</td>
+            <td className={`num ${n.net >= 0 ? "pnl-pos" : "pnl-neg"}`}>
+              {n.net >= 0 ? "+" : "−"}
+              {fmtDollarsShort(n.net)}
+            </td>
+            <td>
+              <Bar value={n.net} max={max} tone={n.net >= 0 ? "pnl-pos" : "pnl-neg"} width={60} />
+            </td>
+            <td className="muted">{`${String(n.flows)} flow${n.flows === 1 ? "" : "s"}`}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function DerivedCards({ day }: { day: OptionsFlowDay }) {
+  const d = day.derived;
+  if (d === null) {
+    return (
+      <GridCard label={`Derived flow — ${asOf(day)}`} span={12} h={96} foot="scored by scripts/quikoptions_flow.py score">
+        <p className="muted">Not scored yet for this session.</p>
+        <svg width={0} height={0} aria-hidden="true" />
+      </GridCard>
+    );
+  }
+  return (
+    <>
+      <GridCard
+        label={`Derived flow — ${asOf(day)}`}
+        span={8}
+        h={304}
+        to="/flow/derived"
+        toLabel="every derived flow, scored"
+        foot="ranked by score: size · conviction · purity · opening; Δ$ is the stock-equivalent exposure"
+      >
+        <DerivedTable rows={d.flows} limit={8} full={false} />
+      </GridCard>
+      <GridCard label={`Net by name — ${asOf(day)}`} span={4} h={304} to="/flow/derived" foot="read flows' Δ$, weighted by purity">
+        <NetByName names={d.names} each={4} />
+      </GridCard>
+    </>
+  );
+}
+
+export function FlowDerived({ day }: { day: OptionsFlowDay }) {
+  const d = day.derived;
+  if (d === null) {
+    return (
+      <section className="card view-fade">
+        <div className="card-head">
+          <h2>Derived flow</h2>
+          <span className="card-asof">{day.session}</span>
+        </div>
+        <p className="muted">Not scored yet for this session (scripts/quikoptions_flow.py score).</p>
+      </section>
+    );
+  }
+  return (
+    <>
+      <section className="card view-fade">
+        <div className="card-head">
+          <h2>Derived flow — every order, read and scored</h2>
+          <span className="card-asof">
+            {day.session}
+            {d.confirmedAt !== null ? " · open interest checked" : " · open interest not checked yet"}
+          </span>
+        </div>
+        <p className="muted">
+          One row per order: an outright, a sweep or a spread, with prints at one timestamp grouped and rolls marked.
+          Ranked by score, 0–100 and signed by the view: <strong>size</strong> (Δ$ on a fixed $100K–$50M log scale) ×{" "}
+          <strong>conviction</strong> (how far the fill sat toward bid or ask; halved where the site&apos;s label
+          disagrees) × <strong>purity</strong> (1 for a mid-delta bet, lower for deep in the money, lottery tickets,
+          rolls, near-max spreads and sold options) × <strong>opening</strong> (new positioning: from the next
+          morning&apos;s open interest once checked). The constants are provisional, to be judged against the outcome
+          record.
+        </p>
+        <DerivedTable rows={d.flows} full />
+      </section>
+      <div className="cards-pairs">
+        <section className="card view-fade">
+          <div className="card-head">
+            <h2>Net by name</h2>
+            <span className="card-asof">{day.session}</span>
+          </div>
+          <NetByName names={d.names} each={10} />
+        </section>
+        <section className="card view-fade">
+          <div className="card-head">
+            <h2>Unread — the fill sat too near the middle</h2>
+            <span className="card-asof">{day.session}</span>
+          </div>
+          {d.unread.length === 0 ? (
+            <p className="muted">Every flow read.</p>
+          ) : (
+            <DerivedTable rows={d.unread} full={false} />
+          )}
+          <p className="muted">Listed for their size, never ranked: no read means no view.</p>
+        </section>
+      </div>
+    </>
+  );
+}
+
 // ----------------------------------------------------------------------------------- slides
 
 function NamesCard({ day }: { day: OptionsFlowDay }) {
@@ -357,6 +569,8 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         span={2}
         foot={day.names.slice(0, 3).map((n) => n.symbol).join(" · ") || "none"}
       />
+
+      <DerivedCards day={day} />
 
       <GridCard
         label={`Birdseye — ${asOf(day)}`}

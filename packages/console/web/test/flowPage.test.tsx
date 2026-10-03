@@ -83,6 +83,27 @@ const DAY: OptionsFlowDay = {
   premiumBySide: { Bullish: 1513300 },
   tradesBySide: { Bullish: 1 },
   largestTrade: { table: "outrights", symbol: "PCG", premium: 1513300 },
+  derived: {
+    scoredAt: "2026-10-02T20:45:00+00:00",
+    confirmedAt: null,
+    flows: [
+      {
+        kind: "outright", symbol: "PCG", what: "15 Jan 27 16C", size: 40900, premium: 1513300, direction: "bought",
+        view: "bullish", delta: 0.22, deltaDollars: 11_000_000, days: 105, flags: [], score: 46,
+        factors: { size: 0.77, conviction: 1, purity: 1, opening: 0.6 }, confirmed: null, confirmedScore: null,
+      },
+      {
+        kind: "spread", symbol: "SMCI", what: "261009 43.5/45.5 CS", size: 13236, premium: 820632, direction: "sold",
+        view: "bearish", delta: 0.17, deltaDollars: 9_600_000, days: 7, flags: ["≤7d"], score: -24,
+        factors: { size: 0.75, conviction: 0.7, purity: 0.75, opening: 0.6 }, confirmed: "opened", confirmedScore: -40,
+      },
+    ],
+    unread: [],
+    names: [
+      { symbol: "PCG", flows: 1, bullish: 11_000_000, bearish: 0, net: 11_000_000, unread: 0, top: 46 },
+      { symbol: "SMCI", flows: 2, bullish: 0, bearish: 13_300_000, net: -13_300_000, unread: 0, top: -24 },
+    ],
+  },
 };
 
 function render(node: ReactNode): string {
@@ -96,7 +117,7 @@ describe("the Options flow page", () => {
       .split('<section class="gcard')
       .slice(1)
       .filter((c) => !c.includes("stat-big"));
-    expect(cards.length).toBe(6);
+    expect(cards.length).toBe(8);
     for (const card of cards) {
       expect(card).toContain("— 2026-10-02");
       expect(card).toContain("<svg");
@@ -119,6 +140,16 @@ describe("the Options flow page", () => {
     expect(html).toContain("⛓");
     expect(html).toContain(">0.22<");
     expect(html).toContain("bid 11.11 / ask 11.12");
+  });
+
+  it("the derived flow card shows the confirmed score when there is one, toned by the view", () => {
+    const html = render(<FlowToday day={DAY} />);
+    expect(html).toContain("Derived flow — 2026-10-02");
+    expect(html).toMatch(/class="num pnl-neg"[^>]*>-40</); // SMCI confirmed opened: -40, not the first -24
+    expect(html).toMatch(/class="num pnl-pos"[^>]*>\+46</);
+    expect(html).toContain("Net by name — 2026-10-02");
+    const unscored = render(<FlowToday day={{ ...DAY, derived: null }} />);
+    expect(unscored).toContain("Not scored yet for this session.");
   });
 
   it("names a contract the way a trader reads it", () => {
