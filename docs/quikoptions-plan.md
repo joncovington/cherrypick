@@ -12,9 +12,10 @@ underlyings by OCC's cleared volume. OCC says how much traded; it does not say h
 report adds what OCC cannot: trade counts by size bucket, the day's largest single-leg trades,
 sweeps, spreads, and volume against open interest. It is also the nearest free thing to the
 "large options trades" section that `docs/market-report-plan.md` deferred as paid data (gap 1,
-Phase 6). It is not that section: it is a top-ten list per table, not the full tape, and whether
-it says bought or sold is for the probe to find out (the coloured dot beside each sweep's price
-may be an at-bid/at-ask marker; until that is confirmed, nothing reads it as one).
+Phase 6). It is not that section: it is a top-ten list per table, not the full tape. It does carry
+a side: the dot beside each trade's price has a tooltip with the site's own classification, where
+the fill sat in the market, and an edge figure ("Neutral / Mid Market / Edge: -0.38"). That is
+recorded as the site's word, never as our own bought/sold call.
 
 **The calendar.** `cherrypick.core.events` builds each session's releases from primary sources
 (BEA, Census, FRED, the curated FOMC days, and rules). Two wrong 2026 FOMC dates (#17) and FRED's
@@ -32,9 +33,9 @@ subscription site stays out of the code. Everything else follows that collector:
   its own store `~/.cherrypick/data/quikoptions/`, and a failure leaves every saved day as it was.
   Packages read the store and never the site.
 - **A person's pace.** One browser session per run, one load of the report a day after the close,
-  a dwell and a slow scroll on the page, reached through the menu as a person would. The calendar
-  rides along once a week in the same session. No request is sent that the page itself would not
-  send: data is read from the responses the page receives.
+  a dwell and a slow scroll on the page, then the calendar reached through the menu as a person
+  would. No request is sent that the page itself would not send: the site renders on its server
+  and the data is read from the page as it is drawn.
 - **A real browser, presented honestly.** The installed Chrome (Playwright's `chrome` channel) on
   a persistent profile the user signed in to by hand. No stealth plugins, no fingerprint spoofing,
   no captcha solving, no rotating addresses — they are fragile, they are working around the site
@@ -61,19 +62,31 @@ through the menu and steps through each calendar tab it finds. Every response (U
 type, body) is written to `~/.cherrypick/data/quikoptions/probe/<timestamp>/`, with request headers
 dropped.
 
-What the probe has to settle, written back into this document before Phase 1:
+### What the 2026-10-02 probe settled
 
-| Question | Why it matters |
+Run 19:55-20:01 MDT (21:55 ET), signed in by hand, with the person also clicking around the site
+during the run. 3,553 records, in `probe/20261002-195525/`.
+
+| Question | Answer |
 |---|---|
-| Is each table a JSON response, a websocket/SignalR stream, or server-rendered HTML? | Response capture vs DOM parsing |
-| One endpoint per table, or one for the page? | What a complete capture is |
-| Do the lower tables load only on scroll? | Whether the scroll is required, not just courtesy |
-| Do Trades / Volume / Premium each fetch, or re-sort one payload? | Whether a click is needed |
-| How do the date picker and the Stock / ETF / Index choice appear in requests? | Session date for validation; scope |
-| What do the coloured price dots and the Spread price sign mean? | Whether any side (bid/ask, credit/debit) can be read |
-| Which calendars exist (economic, earnings, dividends, holidays, expirations)? | What the comparison can cover |
-| How far ahead does each show; are times given, and in which zone? | The comparison window; time checks |
-| Session lifetime: does the profile stay signed in across days? | Whether auto sign-in is needed at all |
+| JSON, a stream, or server-rendered? | **Blazor Server.** The page is drawn on the site's server and DOM changes arrive as binary render batches over one websocket (`wss://app.quikoptions.com/_blazor`); there is no JSON data call at all. So the capture **reads the rendered DOM**, which is also exactly what a person sees. |
+| One endpoint per table? | Neither: one websocket for everything. The report is six `table.quikgrid` elements, each under its own heading: Birdseye, Top Outrights, Top Sweeps, Top Spreads, Top VolOverOI (OI > 100), Top VolOverOI (Openings). Table ids are random per render, so tables are found by heading. |
+| Do lower tables load on scroll? | All six were in the first snapshot, before any scroll. The scroll is courtesy, not a requirement. |
+| Trades / Volume / Premium? | Not yet observed (the probe's clicks missed while the page was elsewhere). Phase 1 captures the default, Trades; the other two are a follow-on. |
+| Date and market tab? | The page shows the session (`10/2/2026`) above the tables; that is the validation date. Stock is the default tab. |
+| Price dots, spread sign? | Each dot carries a tooltip: a sentiment, where the fill sat (e.g. "Mid Market"), and an edge. Spread price is negative on some rows (`-0.22` with premium `-921,800`), so the sign is the site's credit/debit convention — to be confirmed on more rows before `cr`/`db` is shown. |
+| Birdseye precision? | Display only (`421.8K`); no raw count anywhere in the DOM. Checks use a rounding tolerance. |
+| Which calendars? | **Economic** and **IPO**, filters ALL / COUNTRY. No earnings, dividend, holiday or expiry calendar. |
+| Window, times, zone? | Economic's default view ("Upcoming") ran Fri 10/2 to Fri 10/9: 99 US events, all USD, each with an ET time, an impact (H / M / L), and previous / estimate / actual / change. |
+| Sign-in | Auth0 (`quikoptions.us.auth0.com`), by hand, in the profile. How long it lasts is measured by the first scheduled runs. |
+| Badges | The `+5` beside a symbol is a paid feature ("Subscribe to see the 5 badges"). Nothing captured here is behind it. |
+
+**First comparison, by hand.** Their High-impact events against `events.day_events` for 10/2-10/9:
+NFP, ISM Services, FOMC minutes and Claims agree on date and time. **One disagreement, and it is
+ours:** they show Michigan Consumer Sentiment (Oct, preliminary) on Fri 10/9 at 10:00, and our
+calendar has nothing that day while calling the day `known`. FRED's release 91 lists only the
+*final* reading (7/31, 8/28, 9/25, 10/23), so the preliminary — the one that moves the market — has
+never been on our calendar. A bug fix in `cherrypick.core.events`, landing on its own.
 
 Scope for Phase 1 is the **Stock** market tab and the ten rows each table shows. The other tabs
 (ETF, Index) and the arrows' full lists are follow-ons, each a second request a person would make,
@@ -88,18 +101,21 @@ so each is a decision, not a default.
 | `probe` | Phase 0 |
 | `login` | Visible Chrome on the profile; a person signs in; the session is saved |
 | `credentials` | Optional: store username/password in the keyring for auto sign-in |
-| `hot-options [--headed] [--no-jitter]` | The daily capture (and the weekly calendar, Phase 2) |
+| `hot-options [--headed] [--no-jitter]` | The daily capture: the report, then the calendar (Phase 2) |
 | `validate FILE...` | Re-run the checks over saved files, offline |
 
-A scheduled run starts after a random 0-25 minute delay, loads the report, waits for every table's
-response, dwells 30-60 s with a slow scroll, and saves `hot-options/YYYY-MM-DD.json`: the raw
-responses verbatim plus the parsed tables, the capture time, and the session date the page states.
+A scheduled run starts after a random 0-25 minute delay, loads the report, waits until all six
+tables are drawn, dwells 30-60 s with a slow scroll, and saves `hot-options/YYYY-MM-DD.json`: the
+parsed tables, the session date the page states and the capture time, beside
+`hot-options/YYYY-MM-DD.html` (the six tables' own HTML, verbatim) so a parser fix can be re-run
+over every saved day without another visit. Each row keeps what the cells say plus what their
+attributes say: the full company name, the call/put badge, and the side tooltip.
 
 **The checks, each an identity the page already satisfies** (verified on the 2026-10-02 screenshots):
 
 - Birdseye: the size buckets sum to Total (TSLA: 762.4K against 762.5K, to display rounding), and
-  Calls + Puts = Total (462.9K + 299.6K = 762.5K). Checked on raw numbers where the payload has
-  them, with a rounding tolerance only where it does not.
+  Calls + Puts = Total (462.9K + 299.6K = 762.5K). The page shows only rounded counts, so the
+  tolerance is the sum of each cell's own rounding (±0.05K on a `K` cell, 0 on a whole number).
 - Spreads and sweeps: Premium = |price| × size × 100 (AI: 0.47 × 41,900 × 100 = 1,969,300).
 - Vol/OI: V/OI = Volume ÷ OI (SPCX: 135,071 ÷ 119 = 1,135.05); the Openings table has OI = 0.
 - The session date the page states is the session being saved, and every table is present and
@@ -111,10 +127,11 @@ switch drops to headless with the matching Chrome user-agent, the vendor collect
 
 ## Phase 2 — the calendar check
 
-**Capture.** Inside the daily session, when the newest calendar capture is six or more days old:
-after a 20-45 s pause, Resources > Calendars through the menu, each relevant tab, and "next" at
-most a few times to cover about four weeks ahead. Saved as `calendar/YYYY-MM-DD.json`, one per
-fetch, never overwritten, so their own revisions show up as differences between fetches.
+**Capture.** Every run, in the same session: after a 20-45 s pause, Resources > Calendars through
+the menu, the Economic tab's default Upcoming view. Its window is only about a week (today to the
+next Friday), so a weekly fetch would leave gaps; daily also records each release's actual on its
+day. The IPO tab is a follow-on. Saved as `calendar/YYYY-MM-DD.json` (and `.html`), one per fetch,
+never overwritten, so their own revisions show up as differences between fetches.
 
 **Comparison** — a pure function in `cherrypick.core.events` over the saved file and our stores,
 no network:
@@ -123,17 +140,12 @@ no network:
   ...). An unmapped name is reported as unmapped, never dropped: a dropped row reads as agreement.
 - For each date both sides cover: **match**, **date mismatch**, **time mismatch**, **only theirs**,
   **only ours**, and days where our side is `unknown` (a gap in our sources, not a disagreement).
-- Depending on what the probe finds, the same shape against our other calendars:
+- Against `cherrypick.core.events.day_events` only: the site has no earnings, dividend, holiday or
+  expiry calendar. Their High-impact events must each be matched or reported; Medium and Low are
+  listed when they map to one of our labels and otherwise ignored, so speeches and CFTC positions do
+  not drown the report.
 
-  | Their calendar | Ours |
-  |---|---|
-  | Economic releases | `cherrypick.core.events.day_events` |
-  | Market holidays, early closes | `cherrypick.core.calendar` |
-  | Earnings dates | the earnings module's data |
-  | Ex-dividend dates | `scripts/fetch_dividends.py`'s store (calendars and pmcc skip ex-dividend weeks) |
-  | Monthly expiries | `RULE_EVENTS` |
-
-`python scripts/fetch_quikoptions.py check-calendar` prints the result; the weekly capture notifies
+`python scripts/fetch_quikoptions.py check-calendar` prints the result; the daily capture notifies
 only when something disagrees. Their calendar can be the wrong one: each disagreement is settled at
 the agency's own page, and a correction on our side goes through `backfill-events --restamp`.
 
@@ -225,8 +237,8 @@ Those are operations, and go to the suite's normal `notify` channels.
   finish), `post_title` (default `Hot options`).
 - `orchestrator/jobspec.py`: two daily jobs, trading days only, each with its `CATCHUP_MINUTES`
   entry — `quikoptions` (`fetch_quikoptions.py hot-options`) and `quikoptions-post`
-  (`quikoptions_post.py`). The calendar is weekly by the script's own six-day rule, so no weekly job
-  kind is needed. The jobspec comments state the pacing, as the vendor collector's does.
+  (`quikoptions_post.py`). The calendar is read in the capture's own session, so it needs no job of
+  its own. The jobspec comments state the pacing, as the vendor collector's does.
 - `config.example.json`: the block with a `_comment` (what it fetches, the pacing, the cooldown, how
   to sign in, how to store the webhook, the terms note), and a row in
   `docs/configuration-and-storage.md`.
