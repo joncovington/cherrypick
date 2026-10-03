@@ -650,6 +650,18 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     channels = cfg.get("notify", {}).get("channels", ["log"])
     from cherrypick.notify import secrets as _secrets  # local import; keyring
 
+    # A dedicated webhook (one job's channel) is not a push channel: the notifier skips it, so
+    # listing one here would look like an alert route that never fires.
+    dedicated = [ch for ch in channels if ch in _secrets.DEDICATED]
+    if dedicated:
+        checks.append(
+            Check(
+                "notify.dedicated",
+                WARN,
+                f"{', '.join(dedicated)} in notify.channels is a dedicated webhook, not a push channel: "
+                "no alert is ever sent there",
+            )
+        )
     detail_bits = []
     for ch in channels:
         if ch in ("log", "desktop"):

@@ -1297,8 +1297,8 @@ def cmd_notify_test(cfg) -> None:
 
 
 def cmd_secrets_set(channel: str | None, url: str | None) -> None:
-    if channel not in notify_secrets.SUPPORTED:
-        _emit({"ok": False, "error": f"--channel must be one of {list(notify_secrets.SUPPORTED)}"})
+    if channel not in notify_secrets.WEBHOOKS:
+        _emit({"ok": False, "error": f"--channel must be one of {list(notify_secrets.WEBHOOKS)}"})
         sys.exit(2)
     if not url:
         # Read without echo / shell history. A webhook URL is a bearer secret.
@@ -1315,8 +1315,8 @@ def cmd_secrets_status() -> None:
 
 
 def cmd_secrets_delete(channel: str | None) -> None:
-    if channel not in notify_secrets.SUPPORTED:
-        _emit({"ok": False, "error": f"--channel must be one of {list(notify_secrets.SUPPORTED)}"})
+    if channel not in notify_secrets.WEBHOOKS:
+        _emit({"ok": False, "error": f"--channel must be one of {list(notify_secrets.WEBHOOKS)}"})
         sys.exit(2)
     removed = notify_secrets.delete_webhook(channel)
     _emit({"ok": removed, "channel": channel, "status": notify_secrets.status()})
@@ -1379,8 +1379,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--channel",
-        choices=list(notify_secrets.SUPPORTED),
-        help="Push channel for secrets-set/secrets-delete",
+        choices=list(notify_secrets.WEBHOOKS),
+        help="Webhook for secrets-set/secrets-delete: a push channel, or a dedicated one "
+        "(discord_quikoptions: the QuikOptions Discord series, never suite alerts)",
     )
     parser.add_argument(
         "--url", default=None, help="Webhook URL for secrets-set (omit to be prompted without echo)"

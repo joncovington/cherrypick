@@ -23,6 +23,11 @@ import keyring.errors
 
 SERVICE_NAME = "cherrypick-notify"
 SUPPORTED = ("slack", "discord")
+# Webhooks one job posts to and nothing else: never a push channel, so none can be listed in
+# `notify.channels` (the notifier skips an unknown name; `doctor` warns), and no suite alert can
+# land in them. `discord_quikoptions` is the QuikOptions series' channel (docs/quikoptions-plan.md).
+DEDICATED = ("discord_quikoptions",)
+WEBHOOKS = SUPPORTED + DEDICATED
 
 
 def _entry(channel: str) -> str:
@@ -72,6 +77,6 @@ def is_set(channel: str) -> bool:
     return bool(get_webhook(channel))
 
 
-def status(channels=SUPPORTED) -> dict[str, str]:
+def status(channels=WEBHOOKS) -> dict[str, str]:
     """A loggable, secret-free view: {channel: 'set' | 'not set'}."""
     return {ch: ("set" if is_set(ch) else "not set") for ch in channels}

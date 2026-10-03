@@ -592,10 +592,12 @@
     "enabled": false,
     "at": "16:45",
     "headed": true,
-    "_comment_post": "The daily Discord series: pictures of the Options flow page's cards, on its OWN webhook (cherrypick secrets-set --channel discord_quikoptions), never the suite's alert channel. OFF by default and needs enabled: it republishes the site's figures, so re-read their terms for redistribution first. post_title heads the first post (one line, at most 80 characters); the date, market tab and source are always added after it.",
+    "_comment_post": "The daily Discord series: a header (the day in a few fields, the source and capture time in its footer) then the Options flow cards named in post_cards, two to a message. OFF by default and needs enabled: it republishes the site's figures, so re-read their terms for redistribution first. post_webhook: 'dedicated' (its own, cherrypick secrets-set --channel discord_quikoptions) or 'notify' (the suite's Discord notify webhook); a choice, never a fallback. post_cards, from: Birdseye, Names across tables, Largest outrights, Top sweeps, Top spreads, Vol / OI. post_title heads the first post (one line, at most 80 characters); the date, market tab and source are always added.",
     "post": false,
     "post_at": "17:40",
-    "post_title": "Hot options"
+    "post_title": "Hot options",
+    "post_webhook": "dedicated",
+    "post_cards": ["Largest outrights", "Top sweeps"]
   },
   "market_report": {
     "_comment": "The vendor-edition collector (scripts/fetch_vendor_edition.py) - the fixture feed for docs/market-report-plan.md. Fetches the vendor's pre-open report after it is published ('edition_at', with a second chance at 'edition_retry_at'; a day already saved is skipped) and, after the close, the data behind its chart pages ('charts_at'), into data/market-report/. Paced on purpose: one browser session, 20-60 s between pages, at most 40 chart pages, and a 24-hour cooldown after any 429/403. Stops at a captcha or refused login and notifies. OFF by default: store the login first (`python scripts/fetch_vendor_edition.py credentials` then `login`), put the dashboard address in data/market-report/collector.json, then set collector=true and re-run `install`. Times are ET.",

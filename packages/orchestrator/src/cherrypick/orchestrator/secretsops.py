@@ -125,8 +125,8 @@ def delete_secret(cfg: dict[str, Any], service: str, key: str, store_factory=Cre
 
 
 def set_webhook(channel: str, url: str) -> dict[str, Any]:
-    if channel not in notify_secrets.SUPPORTED:
-        known = list(notify_secrets.SUPPORTED)
+    if channel not in notify_secrets.WEBHOOKS:
+        known = list(notify_secrets.WEBHOOKS)
         return {"ok": False, "error": f"unknown channel: {channel!r} (known: {known})"}
     if not isinstance(url, str) or not url.strip().lower().startswith("https://"):
         return {"ok": False, "error": "webhook must be an https:// URL"}
@@ -135,8 +135,8 @@ def set_webhook(channel: str, url: str) -> dict[str, Any]:
 
 
 def delete_webhook(channel: str) -> dict[str, Any]:
-    if channel not in notify_secrets.SUPPORTED:
-        known = list(notify_secrets.SUPPORTED)
+    if channel not in notify_secrets.WEBHOOKS:
+        known = list(notify_secrets.WEBHOOKS)
         return {"ok": False, "error": f"unknown channel: {channel!r} (known: {known})"}
     notify_secrets.delete_webhook(channel)
     return {"ok": True, "webhooks": notify_secrets.status()}
