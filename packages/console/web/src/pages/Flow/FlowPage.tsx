@@ -38,7 +38,32 @@ export const TABLE_LABEL: Record<string, string> = {
 const BAND_ORDER = ["1", "2-10", "11-99", "100+"] as const;
 const BAND_LABEL: Record<string, string> = { "1": "1 lot", "2-10": "2–10", "11-99": "11–99", "100+": "100+" };
 // Lighter to darker: a single-lot trade is the faintest band, a block the strongest.
-const BAND_OPACITY: Record<string, number> = { "1": 0.25, "2-10": 0.45, "11-99": 0.7, "100+": 1 };
+// A colour per band, not four shades of one: the 100+ band is a sliver (0.2-1% of trades on
+// 2026-10-02) and a fourth shade of red vanished beside the third. Every band that has trades also
+// gets MIN_BAND pixels, so the block trades are always visible.
+const BAND_FILL: Record<string, string> = {
+  "1": "#5b616b",
+  "2-10": "rgba(210, 63, 87, 0.5)",
+  "11-99": "var(--accent)",
+  "100+": "var(--warn)",
+};
+const MIN_BAND = 3;
+
+/** The four bands' colours, for a column header. */
+function BandKey() {
+  return (
+    <span className="band-key">
+      {BAND_ORDER.map((b) => (
+        <span key={b}>
+          <svg width={8} height={8} aria-hidden="true">
+            <rect width={8} height={8} fill={BAND_FILL[b]} />
+          </svg>{" "}
+          {BAND_LABEL[b]}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 /** `15 Jan 27 16C` from the capture's ISO expiry, strike and call/put. */
 export function contractLabel(expires: string | null, strike: number | null, cp: "call" | "put" | null): string {
@@ -83,14 +108,20 @@ function Bar({ value, max, tone, width = 72 }: { value: number | null; max: numb
 function BandsBar({ row, width = 160 }: { row: FlowBirdseyeRow; width?: number }) {
   const total = BAND_ORDER.reduce((sum, b) => sum + (row.bands[b] ?? 0), 0);
   if (total <= 0) return <span className="muted">—</span>;
+  // Widths in proportion, with every band that has trades at least MIN_BAND wide; the rest shrink to fit.
+  const raw = BAND_ORDER.map((b) => ((row.bands[b] ?? 0) / total) * width);
+  const floored = raw.map((w) => (w > 0 ? Math.max(w, MIN_BAND) : 0));
+  const excess = floored.reduce((a, w) => a + w, 0) - width;
+  const roomy = floored.reduce((a, w) => a + (w > MIN_BAND ? w : 0), 0);
+  const widths = floored.map((w) => (w > MIN_BAND && roomy > 0 ? w - (excess * w) / roomy : w));
   let x = 0;
   const title = BAND_ORDER.map((b) => `${BAND_LABEL[b]}: ${fmtPct(((row.bands[b] ?? 0) / total) * 100, 1)}`).join(" · ");
   return (
     <svg width={width} height={10} role="img" aria-label={`trades by size: ${title}`} className="flow-bar">
       <title>{title}</title>
-      {BAND_ORDER.map((b) => {
-        const w = ((row.bands[b] ?? 0) / total) * width;
-        const rect = <rect key={b} x={x} y={0} width={w} height={10} fill="var(--accent)" opacity={BAND_OPACITY[b]} />;
+      {BAND_ORDER.map((b, i) => {
+        const w = widths[i] ?? 0;
+        const rect = <rect key={b} x={x} y={0} width={w} height={10} fill={BAND_FILL[b]} />;
         x += w;
         return rect;
       })}
@@ -116,7 +147,9 @@ function BirdseyeSummaryTable({ rows }: { rows: FlowBirdseyeRow[] }) {
           <th>Symbol</th>
           <th className="num">Trades</th>
           <th className="num">Calls</th>
-          <th>Trade size (1 · 2–10 · 11–99 · 100+)</th>
+          <th>
+            Trade size <BandKey />
+          </th>
           <th className="num">100+ lots</th>
         </tr>
       </thead>
@@ -303,7 +336,20 @@ function shownScore(r: DerivedFlowRow): number | null {
   return r.confirmedScore ?? r.score;
 }
 
-function DerivedTable({ rows, limit, full }: { rows: DerivedFlowRow[]; limit?: number; full: boolean }) {
+/** `full` is the derived flow tab (every column); `post` is the hidden post page (the Discord
+ *  capture: no factors, no confirmation column); neither is the today card. */
+export function DerivedTable({
+  rows,
+  limit,
+  full,
+  post = false,
+}: {
+  rows: DerivedFlowRow[];
+  limit?: number;
+  full: boolean;
+  post?: boolean;
+}) {
+  const wide = full || post;
   const shown = limit === undefined ? rows : rows.slice(0, limit);
   return (
     <table className="data-table flow-table">
@@ -313,8 +359,8 @@ function DerivedTable({ rows, limit, full }: { rows: DerivedFlowRow[]; limit?: n
           <th>Flow</th>
           <th>Read</th>
           <th className="num">Δ$</th>
-          {full && <th className="num">Premium</th>}
-          {full && <th className="num">DTE</th>}
+          {wide && <th className="num">Premium</th>}
+          {wide && <th className="num">DTE</th>}
           <th className="num">Score</th>
           <th />
           {full && <th title="size · conviction · purity · opening">S · C · P · O</th>}
@@ -329,9 +375,8 @@ function DerivedTable({ rows, limit, full }: { rows: DerivedFlowRow[]; limit?: n
           return (
             <tr key={`${r.symbol}-${String(i)}`}>
               <td className="num muted">{i + 1}</td>
-              <td title={`${r.kind}${r.size !== null ? `, ${fmtCount(r.size)} contracts` : ""}`}>
-                {r.symbol} <span className="muted">{r.kind === "spread" ? "" : `${r.kind} `}</span>
-                {r.what ?? ""}
+              <td title={r.size !== null ? `${fmtCount(r.size)} contracts` : undefined}>
+                {r.symbol} {r.what ?? ""} <span className="muted">{r.kindLabel}</span>
               </td>
               <td className={viewTone(r.view)}>
                 {r.direction ?? "unread"}
@@ -340,8 +385,8 @@ function DerivedTable({ rows, limit, full }: { rows: DerivedFlowRow[]; limit?: n
               <td className="num" title="contracts × 100 × |delta| × the close">
                 {fmtDollarsShort(r.deltaDollars)}
               </td>
-              {full && <td className="num">{fmtDollarsShort(r.premium)}</td>}
-              {full && <td className="num">{r.days ?? "—"}</td>}
+              {wide && <td className="num">{fmtDollarsShort(r.premium)}</td>}
+              {wide && <td className="num">{r.days ?? "—"}</td>}
               <td
                 className={`num ${s === null ? "muted" : s >= 0 ? "pnl-pos" : "pnl-neg"}`}
                 title={r.confirmedScore !== null ? `confirmed (first ${fmtNum(r.score, 0)})` : "before the open-interest check"}
@@ -368,7 +413,7 @@ function DerivedTable({ rows, limit, full }: { rows: DerivedFlowRow[]; limit?: n
   );
 }
 
-function NetByName({ names, each }: { names: DerivedFlowName[]; each: number }) {
+export function NetByName({ names, each }: { names: DerivedFlowName[]; each: number }) {
   const bullish = names.filter((n) => n.net > 0).sort((a, b) => b.net - a.net).slice(0, each);
   const bearish = names.filter((n) => n.net < 0).sort((a, b) => a.net - b.net).slice(0, each);
   const rows = [...bullish, ...bearish];
@@ -638,7 +683,7 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
       <DerivedCards day={day} />
 
       <GridCard
-        label={`Birdseye — ${asOf(day)}`}
+        label={`Trades — ${asOf(day)}`}
         span={8}
         h={304}
         to="/flow/birdseye"
@@ -684,7 +729,7 @@ export function FlowBirdseye({ day }: { day: OptionsFlowDay }) {
   return (
     <section className="card view-fade">
       <div className="card-head">
-        <h2>Birdseye — trades by size</h2>
+        <h2>Trades by size (the site&apos;s Birdseye)</h2>
         <span className="card-asof">QuikOptions, {day.session}</span>
       </div>
       <p className="muted">

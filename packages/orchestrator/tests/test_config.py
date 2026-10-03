@@ -170,14 +170,24 @@ def test_quikoptions_title_rule_refuses_empty_multiline_and_long():
 
 def test_quikoptions_post_choices_refuse_what_they_do_not_know():
     assert c.quikoptions_post_problem({}) is None  # dedicated webhook, the two default cards
-    assert c.quikoptions_settings({})["post_cards"] == ["Derived flow", "Largest by contracts", "Top sweeps"]
+    assert c.quikoptions_settings({})["post_cards"] == ["Derived flow", "Trades", "Events"]
+    # The card's old name still resolves: a config is kept across upgrades with no migration.
+    assert c.quikoptions_settings({"quikoptions": {"post_cards": ["Birdseye"]}})["post_cards"] == ["Trades"]
     assert c.quikoptions_post_problem({"post_webhook": "notify"}) is None
     assert "post_webhook must be one of" in c.quikoptions_post_problem({"post_webhook": "slack"})
-    assert c.quikoptions_post_problem({"post_cards": ["Birdseye", "Top spreads", "Vol / OI"]}) is None
+    assert (
+        c.quikoptions_post_problem({"post_cards": ["Birdseye", "Trades", "Top spreads", "Vol / OI"]}) is None
+    )
     assert "there are not: ['Top trades']" in c.quikoptions_post_problem({"post_cards": ["Top trades"]})
     assert c.quikoptions_post_problem({"post_cards": ["Events"], "post_style": "text"}) is None
     assert "post_style must be one of" in c.quikoptions_post_problem({"post_style": "carousel"})
-    assert c.quikoptions_settings({})["post_style"] == "text"  # chosen 2026-10-03
+    assert (
+        c.quikoptions_settings({})["post_style"] == "singles"
+    )  # screen captures, one a message (2026-10-03)
+    assert (c.quikoptions_settings({})["post_morning"], c.quikoptions_settings({})["post_weekly"]) == (
+        True,
+        True,
+    )
     assert (
         c.quikoptions_post_problem({"post_cards": []}) == "post_cards must be a non-empty list of card titles"
     )

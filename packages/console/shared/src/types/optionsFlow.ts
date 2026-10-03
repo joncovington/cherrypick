@@ -95,7 +95,10 @@ export interface FlowName {
 /** One derived flow: an order, read and scored by `scripts/quikoptions_flow.py`. */
 export interface DerivedFlowRow {
   kind: "outright" | "sweep" | "spread";
+  /** The kind in words, after the date and strike: `outright`, `sweep`, `call spread`, `call calendar`. */
+  kindLabel: string;
   symbol: string;
+  /** Date then strike, one format for every kind: `15 Jan 27 16C`, `09 Oct 26 43.5/45.5C`. */
   what: string | null;
   size: number | null;
   premium: number | null;

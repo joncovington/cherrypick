@@ -174,6 +174,7 @@ function shapeDerivedRow(v: unknown): DerivedFlowRow {
   const c = r["confirmed"];
   return {
     kind,
+    kindLabel: str(r["kind_label"]) ?? kind,
     symbol: str(r["symbol"]) ?? "?",
     what: str(r["what"]),
     size: num(r["size"]),

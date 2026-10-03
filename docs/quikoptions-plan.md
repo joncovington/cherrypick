@@ -212,6 +212,18 @@ shows them side by side. Default: `["Largest by contracts", "Top sweeps"]`, one 
 `today` cards can be listed, plus `Events` (the session's high-impact releases with actual against
 estimate, and the next ones, from the calendar capture); an unknown name refuses the run.
 
+**As of 2026-10-03, after the test posts:** the default is **`singles`** — the header, then one screen
+capture a message, so each reads full width on a phone — with **Derived flow, Trades (the site's
+Birdseye, renamed; the old name still resolves) and Events**. The Derived flow capture comes from a
+hidden **post page** (`/post/flow?session=…`: outside the shell, in no nav, 1,000 px wide, without the
+four factors or the open-interest column); the others from the Options flow page. Every flow reads
+in one order: symbol, date, strike, kind (`SMCI 09 Oct 26 43.5/45.5C call spread`). The header
+leads with the derived flow (bullish and bearish names, the top flow, the largest unread trade, and
+yesterday's calls a day on). Two more posts, both narrow text: the **morning follow-up** after the
+open-interest check (opened, closed, mixed), and the **Friday scorecard** (the week's checks and
+confirmations, descriptive only until the fixed test). The morning post waits until the overnight
+open interest is actually out: on a Saturday every contract still showed Friday's starting figure.
+
 **Four styles** (`quikoptions.post_style`), tried side by side on the notify channel on 2026-10-03:
 `cards` (the header, then card images two to a message), `singles` (one image a message), `embed`
 (one embed of small monospace tables, no images) and `text` (plain text tables, split at a section

@@ -274,3 +274,30 @@ def test_outcomes_are_recorded_for_one_and_five_sessions_back(tmp_path, monkeypa
     assert one["outcomes"]["1d"] == {"through": "2026-10-05", "returns": {"PCG": 0.1}}
     five = json.loads((tmp_path / "2026-09-28.flow.json").read_text(encoding="utf-8"))
     assert five["outcomes"]["5d"]["returns"] == {"PCG": 0.1}
+
+
+def test_every_flow_reads_date_strike_then_kind():
+    assert qf.describe("outright", [{"expires": "2027-01-15", "strike": 16.0, "cp": "call"}]) == (
+        "15 Jan 27 16C",
+        "outright",
+    )
+    legs = qf.spread_legs("261009 43.5/45.5 CS", "CS")
+    assert qf.describe("spread", legs, "261009 43.5/45.5 CS", "CS") == ("09 Oct 26 43.5/45.5C", "call spread")
+    legs = qf.spread_legs("261016 23/261030 22 CSCAL", "CSCAL")
+    assert qf.describe("spread", legs, "261016 23/261030 22 CSCAL", "CSCAL") == (
+        "16 Oct 26 23C / 30 Oct 26 22C",
+        "call calendar",
+    )
+    assert qf.describe("spread", [], "261016 23/25/27 BFLY", "BFLY") == (
+        "261016 23/25/27 BFLY",
+        "bfly",
+    )  # never guessed
+
+
+def test_confirmation_waits_until_the_overnight_open_interest_is_out():
+    """2026-10-03, a Saturday: every contract still showed Friday's starting figure, and the first
+    version called all 30 flows `mixed`. Nothing moved means nothing published, not a mixed day."""
+    market = {**MARKET, "contracts": {"PCG   270115C00016000": {"open_interest": 91_606, "volume": 49_357}}}
+    doc = _flows(_capture(outrights=[_out()]), market)
+    assert qf.oi_published(doc, {"PCG   270115C00016000": 91_606}) is False
+    assert qf.oi_published(doc, {"PCG   270115C00016000": 132_000}) is True

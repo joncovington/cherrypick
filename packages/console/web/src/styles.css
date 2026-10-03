@@ -3673,3 +3673,22 @@ td > .desk-refusal-reason {
   font-size: 10px;
   padding: 0 0.35em;
 }
+
+/* The post page (`/post/flow`): the Discord series' captures. A fixed width a phone reads once
+   Discord scales the image, and cards as tall as their rows rather than the grid's fixed steps. */
+.post-page {
+  width: 1000px;
+  padding: 12px;
+  background: var(--bg);
+}
+.gcard.post-card {
+  height: auto;
+}
+.band-key {
+  margin-left: 0.6em;
+  text-transform: none;
+}
+.band-key > span {
+  margin-right: 0.7em;
+  white-space: nowrap;
+}
