@@ -612,9 +612,9 @@ def weekly_text(days: list[dict], audit: dict | None, review: dict | None, title
     lines = [
         f"**{title} scorecard — week of {first:%a} {first.day} {first:%b}**",
         f"Sessions {len(days)} · flows read {len(flows)} · unread {unread}",
-        f"Read vs the site's sentiment: {votes['agrees']} of {voted} agree · {votes['opposite']} opposite"
+        f"Read vs the reported sentiment: {votes['agrees']} of {voted} agree · {votes['opposite']} opposite"
         if voted
-        else "Read vs the site's sentiment: —",
+        else "Read vs the reported sentiment: —",
         f"Delta from the broker {broker} of {singles} · model off by >0.10 on {off}",
         f"Closes vs Dolt: {compared - close_off} of {compared} within 0.5%"
         if compared

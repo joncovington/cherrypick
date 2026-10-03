@@ -43,7 +43,7 @@ export function EventsTable({ events, session }: { events: FlowEvent[]; session:
             <tr key={`${e.date}-${e.event}-${String(i)}`}>
               <td className={today ? undefined : "muted"}>{today ? "today" : dayLabel(e.date)}</td>
               <td className="muted">{e.timeEt ?? "—"}</td>
-              <td title="high impact (the site's rating)">
+              <td title="high impact">
                 <svg width={8} height={8} aria-hidden="true">
                   <rect width={8} height={8} fill="var(--warn)" />
                 </svg>
@@ -93,7 +93,7 @@ export function FlowPostPage() {
             span={12}
             h={304}
             className="post-card"
-            foot="high-impact releases, the site's rating: the day's with actual against estimate, then the week ahead"
+            foot="high-impact releases: the day's with actual against estimate, then the week ahead"
           >
             <EventsTable events={day.events} session={day.session} />
           </GridCard>

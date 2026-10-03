@@ -86,7 +86,7 @@ function SideCell({ trade }: { trade: FlowTrade }) {
   if (s === null) return <span className="muted">—</span>;
   const edge = s.edge === null ? "" : ` · edge ${fmtNum(s.edge)}`;
   return (
-    <span className={sideTone(s.sentiment)} title={`${s.sentiment} — ${s.fill}${edge} (the site's classification)`}>
+    <span className={sideTone(s.sentiment)} title={`${s.sentiment} — ${s.fill}${edge}`}>
       {s.sentiment.toLowerCase()} <span className="muted">{s.fill.toLowerCase()}</span>
     </span>
   );
@@ -157,7 +157,7 @@ function BirdseyeSummaryTable({ rows }: { rows: FlowBirdseyeRow[] }) {
         {rows.map((r) => (
           <tr key={r.symbol}>
             <td title={r.name ?? undefined}>{r.symbol}</td>
-            <td className="num" title="as the site printed it">{r.shown["total"] ?? fmtCount(r.total)}</td>
+            <td className="num" title="as reported">{r.shown["total"] ?? fmtCount(r.total)}</td>
             <td className="num">{r.callShare === null ? "—" : fmtPct(r.callShare * 100)}</td>
             <td>
               <BandsBar row={r} />
@@ -185,7 +185,7 @@ function TradesTable({ rows, limit, showTime }: { rows: FlowTrade[]; limit?: num
           <th className="num">Price</th>
           <th className="num">Premium</th>
           <th />
-          <th>Side (site)</th>
+          <th>Side</th>
         </tr>
       </thead>
       <tbody>
@@ -196,7 +196,7 @@ function TradesTable({ rows, limit, showTime }: { rows: FlowTrade[]; limit?: num
             <td>{contractLabel(r.expires, r.strike, r.cp)}</td>
             <td className="num">{fmtCount(r.size)}</td>
             <td className="num">{fmtNum(r.price)}</td>
-            <td className="num" title={r.premiumDerived ? "size × price × 100 (the site prints no premium for outrights)" : undefined}>
+            <td className="num" title={r.premiumDerived ? "size × price × 100 (no premium is reported for outrights)" : undefined}>
               {fmtDollarsShort(r.premium)}
               {r.premiumDerived ? <span className="muted">*</span> : null}
             </td>
@@ -255,7 +255,7 @@ function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: numbe
               <td className="muted">{r.timeEt?.slice(0, 8) ?? "—"}</td>
               <td title={r.type ?? undefined}>{r.spread ?? "—"}</td>
               <td className="num">{fmtCount(r.size)}</td>
-              <td className={directionTone(r.direction)} title="from the site's signs: price and delta agree">
+              <td className={directionTone(r.direction)} title="from the signs of price and delta, where they agree">
                 {r.direction ?? "—"}
               </td>
               <td className="num">{r.price === null ? "—" : fmtNum(Math.abs(r.price))}</td>
@@ -484,8 +484,8 @@ function ChecksCard({ checks, session }: { checks: DerivedFlowChecks; session: s
       <table className="data-table flow-table">
         <tbody>
           <tr>
-            <td>Read against the site&apos;s own sentiment</td>
-            <td>{v === null ? "—" : `${String(v.agrees)} agree · ${String(v.neutral)} site neutral · ${String(v.opposite)} opposite`}</td>
+            <td>Read against the reported sentiment</td>
+            <td>{v === null ? "—" : `${String(v.agrees)} agree · ${String(v.neutral)} neutral · ${String(v.opposite)} opposite`}</td>
           </tr>
           <tr>
             <td>Delta: the broker&apos;s against the model&apos;s</td>
@@ -557,8 +557,8 @@ export function FlowDerived({ day }: { day: OptionsFlowDay }) {
         <p className="muted">
           One row per order: an outright, a sweep or a spread, with prints at one timestamp grouped and rolls marked.
           Ranked by score, 0–100 and signed by the view: <strong>size</strong> (Δ$ on a fixed $100K–$50M log scale) ×{" "}
-          <strong>conviction</strong> (how far the fill sat toward bid or ask; halved where the site&apos;s label
-          disagrees) × <strong>purity</strong> (1 for a mid-delta bet, lower for deep in the money, lottery tickets,
+          <strong>conviction</strong> (how far the fill sat toward bid or ask; halved where the reported
+          sentiment is the opposite) × <strong>purity</strong> (1 for a mid-delta bet, lower for deep in the money, lottery tickets,
           rolls, near-max spreads and sold options) × <strong>opening</strong> (new positioning: from the next
           morning&apos;s open interest once checked). The constants are provisional, to be judged against the outcome
           record.
@@ -662,7 +662,7 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         value={bull !== null ? fmtDollarsShort(bull) : null}
         tone="pos"
         span={2}
-        foot={`${String(nBull)} trades, the site's call`}
+        foot={`${String(nBull)} trades, by the reported side`}
         to="/flow/trades"
       />
       <StatTile
@@ -688,7 +688,7 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         h={304}
         to="/flow/birdseye"
         toLabel="the full Birdseye table"
-        foot="trades (not contracts), the site's ten most traded; counts as the site printed them"
+        foot="trades (not contracts), the ten most traded names; counts as reported"
       >
         <BirdseyeSummaryTable rows={day.birdseye} />
       </GridCard>
@@ -699,11 +699,11 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         span={6}
         h={304}
         to="/flow/trades"
-        foot="single-leg trades, the site's ranking by contracts · * premium derived"
+        foot="single-leg trades, ranked by contracts · * premium derived"
       >
         <TradesTable rows={day.outrights} limit={7} showTime={false} />
       </GridCard>
-      <GridCard label={`Top sweeps — ${asOf(day)}`} span={6} h={304} to="/flow/trades" foot="side is the site's classification">
+      <GridCard label={`Top sweeps — ${asOf(day)}`} span={6} h={304} to="/flow/trades" foot="side as reported">
         <TradesTable rows={day.sweeps} limit={7} showTime={false} />
       </GridCard>
 
@@ -712,7 +712,7 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         span={6}
         h={304}
         to="/flow/spreads"
-        foot="⛓ printed together (same time and size); direction from the site's signs"
+        foot="⛓ printed together (same time and size); direction from the signs of price and delta"
       >
         <SpreadsTable rows={day.spreads} limit={7} full={false} />
       </GridCard>
@@ -729,11 +729,11 @@ export function FlowBirdseye({ day }: { day: OptionsFlowDay }) {
   return (
     <section className="card view-fade">
       <div className="card-head">
-        <h2>Trades by size (the site&apos;s Birdseye)</h2>
+        <h2>Trades by size</h2>
         <span className="card-asof">QuikOptions, {day.session}</span>
       </div>
       <p className="muted">
-        The site's table as it printed it: the number of trades (not contracts) at each trade size, for its ten most
+        As reported: the number of trades (not contracts) at each trade size, for its ten most
         traded names. Each cell is shaded by its share of its own row.
       </p>
       <div className="table-scroll">
@@ -789,9 +789,8 @@ export function FlowTrades({ day }: { day: OptionsFlowDay }) {
         </div>
         <TradesTable rows={day.outrights} showTime />
         <p className="muted">
-          The site's largest outrights — single-leg trades — ranked by number of contracts, as the site ranks them, not by
-          premium. * Premium is derived (size × price × 100): the site prints none for outrights. Side is the site's
-          classification, with where the fill sat.
+          The largest outrights — single-leg trades — ranked by number of contracts, not by premium. * Premium is
+          derived (size × price × 100): none is reported for outrights. Side as reported, with where the fill sat.
         </p>
       </section>
       <section className="card view-fade">
@@ -800,7 +799,7 @@ export function FlowTrades({ day }: { day: OptionsFlowDay }) {
           <span className="card-asof">QuikOptions, {day.session}</span>
         </div>
         <TradesTable rows={day.sweeps} showTime={false} />
-        <p className="muted">The site's largest sweeps by premium. It prints no time for a sweep.</p>
+        <p className="muted">The largest sweeps by premium. A sweep carries no time.</p>
       </section>
     </div>
   );
@@ -815,7 +814,7 @@ export function FlowSpreads({ day }: { day: OptionsFlowDay }) {
       </div>
       <SpreadsTable rows={day.spreads} full />
       <p className="muted">
-        Direction is read from the site's own signs — price and delta agree on every spread seen, positive for a spread
+        Direction is read from the signs of price and delta — price and delta agree on every spread seen, positive for a spread
         bought and negative for one sold — and is a dash where they do not. ⛓ marks rows printed together (same time and
         size), such as a roll. Price is the net per share; premium is whole-position dollars.
       </p>

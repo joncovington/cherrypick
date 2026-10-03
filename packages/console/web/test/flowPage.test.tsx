@@ -161,7 +161,7 @@ describe("the Options flow page", () => {
 
   it("the derived tab lays out the checks as recorded, and says what has not run yet", () => {
     const html = render(<FlowDerived day={DAY} />);
-    expect(html).toContain("16 agree · 0 site neutral · 0 opposite");
+    expect(html).toContain("16 agree · 0 neutral · 0 opposite");
     expect(html).toContain("20 of 20 from the broker; the model off by more than 0.10 on 1");
     expect(html).toContain("the next morning");
     expect(html).toContain("none yet");

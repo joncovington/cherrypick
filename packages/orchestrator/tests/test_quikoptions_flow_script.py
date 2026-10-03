@@ -117,7 +117,7 @@ def test_the_sites_own_sentiment_is_the_second_vote():
     )
     opposite = {**_out(time=None), "side": {"sentiment": "Bearish", "fill": "On Ask", "edge": 1.0}}
     f = _flows(_capture(sweeps=[opposite]))["flows"][0]
-    assert f["site_vote"] == "opposite" and "site disagrees" in f["flags"]
+    assert f["site_vote"] == "opposite" and "sentiment opposite" in f["flags"]
     assert f["factors"]["conviction"] == pytest.approx(1.0 * 0.5)
     neutral = {**_out(time=None), "side": {"sentiment": "Neutral", "fill": "On Ask", "edge": 1.0}}
     f = _flows(_capture(sweeps=[neutral]))["flows"][0]

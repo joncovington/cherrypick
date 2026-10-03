@@ -406,9 +406,9 @@ def build_flows(capture: dict, market: dict) -> list[dict]:
         ):  # fmt: skip
             flags.append("before ex-dividend")
         if f["site_vote"] == "opposite":
-            flags.append("site disagrees")
+            flags.append("sentiment opposite")
         elif f["site_vote"] == "neutral":
-            flags.append("site neutral")
+            flags.append("sentiment neutral")
         if (
             f.get("model_delta") is not None
             and f["delta_from"] == "broker"
