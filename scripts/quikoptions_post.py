@@ -499,7 +499,7 @@ def plan_messages(
         out = [{"payload": {"content": " · ".join(f"**{c}**" for c in g)}, "cards": g} for g in groups]
         if out:
             head = f"**{_title_line(title, date.fromisoformat(doc['session']))}**"
-            out[0]["payload"]["content"] = head + "\n" + out[0]["payload"]["content"]
+            out[0]["payload"]["content"] = head + "\n\n" + out[0]["payload"]["content"]
         return out
     s = summary(doc)
     if style == "embed":
