@@ -1,4 +1,5 @@
 import type {
+  DerivedFlowChecks,
   DerivedFlowName,
   DerivedFlowRow,
   FlowBirdseyeRow,
@@ -422,6 +423,69 @@ function DerivedCards({ day }: { day: OptionsFlowDay }) {
   );
 }
 
+/** What verifies the table: the day's own checks and the running ones, laid out as recorded. */
+function ChecksCard({ checks, session }: { checks: DerivedFlowChecks; session: string }) {
+  const v = checks.siteVote;
+  const d = checks.delta;
+  const c = checks.close;
+  const a = checks.audit;
+  const r = checks.review;
+  return (
+    <section className="card view-fade">
+      <div className="card-head">
+        <h2>Checks</h2>
+        <span className="card-asof">{session}</span>
+      </div>
+      <table className="data-table flow-table">
+        <tbody>
+          <tr>
+            <td>Read against the site&apos;s own sentiment</td>
+            <td>{v === null ? "—" : `${String(v.agrees)} agree · ${String(v.neutral)} site neutral · ${String(v.opposite)} opposite`}</td>
+          </tr>
+          <tr>
+            <td>Delta: the broker&apos;s against the model&apos;s</td>
+            <td>
+              {d === null
+                ? "—"
+                : `${String(d.broker)} of ${String(d.singles)} from the broker; ${d.off.length === 0 ? "the model within 0.10 on all" : `the model off by more than 0.10 on ${String(d.off.length)}: ${d.off.join("; ")}`}`}
+            </td>
+          </tr>
+          <tr>
+            <td>Closes: the broker&apos;s against Dolt&apos;s</td>
+            <td>
+              {c === null
+                ? "the next morning"
+                : c.note !== null
+                  ? c.note
+                  : `${String(c.compared)} of ${String(c.of)} compared; ${c.off.length === 0 ? "all within 0.5%" : c.off.join("; ")}`}
+            </td>
+          </tr>
+          <tr>
+            <td>Hand checks against Time &amp; Sales (all sessions)</td>
+            <td>
+              {a === null || a.checked === 0
+                ? "none yet — scripts/quikoptions_flow.py audit --rank N --tape bought|sold|middle"
+                : `${String(a.agree)} of ${String(a.checked)} agree${a.rate === null ? "" : ` (${fmtPct(a.rate * 100)})`}`}
+            </td>
+          </tr>
+          <tr>
+            <td>The fixed test of the score</td>
+            <td>
+              {r === null
+                ? "not run yet — scripts/quikoptions_flow.py review"
+                : r.sessions < r.needed
+                  ? `${String(r.sessions)} of ${String(r.needed)} sessions with a 5-session outcome — too few to judge`
+                  : r.passed
+                    ? "passed: the strong scores beat every simpler read"
+                    : "did not pass: the score does not beat the simpler reads"}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 export function FlowDerived({ day }: { day: OptionsFlowDay }) {
   const d = day.derived;
   if (d === null) {
@@ -456,6 +520,7 @@ export function FlowDerived({ day }: { day: OptionsFlowDay }) {
         </p>
         <DerivedTable rows={d.flows} full />
       </section>
+      <ChecksCard checks={d.checks} session={day.session} />
       <div className="cards-pairs">
         <section className="card view-fade">
           <div className="card-head">

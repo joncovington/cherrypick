@@ -14,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type {
   DerivedFlow,
+  DerivedFlowChecks,
   DerivedFlowName,
   DerivedFlowRow,
   FlowBirdseyeRow,
@@ -206,6 +207,40 @@ function shapeDerivedName(v: unknown): DerivedFlowName {
   };
 }
 
+function readJson(file: string): Record<string, unknown> | null {
+  try {
+    return rec(JSON.parse(fs.readFileSync(file, "utf-8")));
+  } catch {
+    return null;
+  }
+}
+
+function strList(v: unknown): string[] {
+  return list(v).filter((x): x is string => typeof x === "string");
+}
+
+/** The day's checks from its flow file, and the running audit and review from their summaries. */
+function shapeChecks(config: ConsoleConfig, doc: Record<string, unknown>): DerivedFlowChecks {
+  const c = rec(doc["checks"]);
+  const vote = c["site_vote"] === undefined ? null : rec(c["site_vote"]);
+  const delta = c["delta"] === undefined ? null : rec(c["delta"]);
+  const close = c["close"] === undefined ? null : rec(c["close"]);
+  const root = path.dirname(flowDir(config));
+  const audit = readJson(path.join(root, "audit-summary.json"));
+  const review = readJson(path.join(root, "review.json"));
+  return {
+    siteVote: vote && { agrees: num(vote["agrees"]) ?? 0, neutral: num(vote["neutral"]) ?? 0, opposite: num(vote["opposite"]) ?? 0 },
+    delta: delta && { broker: num(delta["broker"]) ?? 0, singles: num(delta["singles"]) ?? 0, off: strList(delta["off"]) },
+    close: close && { compared: num(close["compared"]) ?? 0, of: num(close["of"]) ?? 0, off: strList(close["off"]), note: str(close["note"]) },
+    audit: audit && { checked: num(audit["checked"]) ?? 0, agree: num(audit["agree"]) ?? 0, rate: num(audit["rate"]) },
+    review: review && {
+      sessions: num(review["sessions"]) ?? 0,
+      needed: num(review["needed"]) ?? 0,
+      passed: typeof review["passed"] === "boolean" ? review["passed"] : null,
+    },
+  };
+}
+
 /** The session's scored derived flows (`<session>.flow.json`), or null when not scored yet. */
 function readDerived(config: ConsoleConfig, session: string): DerivedFlow | null {
   let doc: Record<string, unknown>;
@@ -215,6 +250,7 @@ function readDerived(config: ConsoleConfig, session: string): DerivedFlow | null
     return null;
   }
   return {
+    checks: shapeChecks(config, doc),
     scoredAt: str(doc["scored_at"]),
     confirmedAt: str(doc["confirmed_at"]),
     flows: list(doc["flows"]).map(shapeDerivedRow),

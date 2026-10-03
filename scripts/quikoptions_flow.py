@@ -48,6 +48,9 @@ captures; a failure leaves the capture and every earlier day as they were.
     python scripts/quikoptions_flow.py score   [--session YYYY-MM-DD]
     python scripts/quikoptions_flow.py confirm [--session YYYY-MM-DD]   # default: the last session
     python scripts/quikoptions_flow.py show    [--session YYYY-MM-DD]   # print the table, offline
+    python scripts/quikoptions_flow.py audit   --rank N --tape bought|sold|middle [--note ...]
+    python scripts/quikoptions_flow.py audit   --report                  # agreement with the tape
+    python scripts/quikoptions_flow.py review                            # the fixed test, once ready
 """
 
 from __future__ import annotations
@@ -70,7 +73,11 @@ READ_EDGE = 0.5  # an edge at or past this reads as bought (+) or sold (-)
 SIZE_FLOOR, SIZE_CEILING = 1e5, 5e7  # delta dollars mapped to 0.05 .. 1.0 on a log scale
 SPREAD_CONVICTION = 0.7
 SWEEP_BONUS = 0.1
-DISAGREEMENT = 0.5  # conviction multiplier when the site's fill label and its edge disagree
+SITE_OPPOSITE = 0.5  # conviction multiplier when the site's own sentiment is the opposite view
+SITE_NEUTRAL = 0.75  # ... and when the site calls it neutral while the edge reads it
+DELTA_CHECK = 0.10  # the broker's delta and the model's further apart than this: flagged
+CLOSE_CHECK = 0.005  # the broker's close and Dolt's further apart than this share: flagged
+GREEKS_WAIT_S = 150  # how long scoring waits for the streamer to bring the day's greeks
 DEEP_ITM, LOTTERY = 0.85, 0.10
 PURE_LOW, PURE_HIGH = 0.2, 0.75
 NEAR_MAX = 0.9  # a spread priced at or past this share of its width
@@ -185,11 +192,6 @@ def _read(edge: float | None) -> str | None:
     return "bought" if edge >= READ_EDGE else "sold" if edge <= -READ_EDGE else None
 
 
-def _label_side(fill: str | None) -> str | None:
-    f = (fill or "").lower()
-    return "bought" if "ask" in f else "sold" if "bid" in f else "middle" if "mid" in f else None
-
-
 def _single(row: dict, table: str, session: str, market: dict) -> dict:
     sym = row.get("symbol")
     names = market.get("names", {})
@@ -202,7 +204,7 @@ def _single(row: dict, table: str, session: str, market: dict) -> dict:
     if direction and cp in ("call", "put"):
         view = "bullish" if (direction == "bought") == (cp == "call") else "bearish"
     days = _days(session, row.get("expires"))
-    delta, how = option_delta(
+    model, how = option_delta(
         spot, row.get("strike"), days or 0, row.get("price"), cp, (names.get(sym) or {}).get("iv")
     )
     key = (
@@ -210,11 +212,16 @@ def _single(row: dict, table: str, session: str, market: dict) -> dict:
         if row.get("expires") and row.get("strike") and cp
         else None
     )
+    # The broker's own delta at the close (the streamer's greeks) is the coherent one: the model's
+    # mixes the trade's price at the time with the stock's close. The model is the fallback and the
+    # cross-check.
+    broker = (market.get("greeks") or {}).get(key)
+    delta, how = (broker, "broker") if broker is not None else (model, how)
+    site = (side.get("sentiment") or "").lower() or None
     contract = (market.get("contracts") or {}).get(key) or {}
     premium = row.get("premium")
     if premium is None and row.get("price") is not None and row.get("size") is not None:
         premium = row["price"] * row["size"] * 100
-    label = _label_side(side.get("fill"))
     return {
         "kind": "sweep" if table == "sweeps" else "outright",
         "symbol": sym,
@@ -238,11 +245,19 @@ def _single(row: dict, table: str, session: str, market: dict) -> dict:
         "premium": premium,
         "fill": side.get("fill"),
         "edge": edge,
-        "label_disagrees": bool(direction and label and label != direction),
+        "site": site,
+        "site_vote": None
+        if not view or site is None
+        else "agrees"
+        if site == view
+        else "neutral"
+        if site == "neutral"
+        else "opposite",
         "direction": direction,
         "view": view,
         "delta": delta,
         "delta_from": how,
+        "model_delta": model,
         "spot": spot,
         "days": days,
         "start_oi": contract.get("open_interest"),
@@ -289,7 +304,8 @@ def _spread(row: dict, session: str) -> dict:
         "premium": abs(row["premium"]) if row.get("premium") is not None else None,
         "fill": None,
         "edge": None,
-        "label_disagrees": False,
+        "site": None,
+        "site_vote": None,
         "direction": direction,
         "view": view,
         "delta": abs(delta) if delta is not None else None,
@@ -354,8 +370,16 @@ def build_flows(capture: dict, market: dict) -> list[dict]:
             and info.get("ex_dividend") and session < info["ex_dividend"] <= leg["expires"]
         ):  # fmt: skip
             flags.append("before ex-dividend")
-        if f["label_disagrees"]:
-            flags.append("label disagrees")
+        if f["site_vote"] == "opposite":
+            flags.append("site disagrees")
+        elif f["site_vote"] == "neutral":
+            flags.append("site neutral")
+        if (
+            f.get("model_delta") is not None
+            and f["delta_from"] == "broker"
+            and abs(f["model_delta"] - f["delta"]) > DELTA_CHECK
+        ):
+            flags.append("delta check")
 
     # Prints sharing a symbol and a timestamp are one order.
     by_time: dict[tuple, list[dict]] = {}
@@ -407,8 +431,10 @@ def conviction(f: dict) -> float:
         c = 0.3 + 0.7 * min(1.0, abs(f["edge"]))
         if f["kind"] == "sweep" and abs(f["edge"]) >= READ_EDGE:
             c = min(1.0, c + SWEEP_BONUS)
-    if f["label_disagrees"]:
-        c *= DISAGREEMENT
+    if f["site_vote"] == "opposite":
+        c *= SITE_OPPOSITE
+    elif f["site_vote"] == "neutral":
+        c *= SITE_NEUTRAL
     return round(c, 3)
 
 
@@ -476,6 +502,39 @@ def by_name(flows: list[dict]) -> list[dict]:
     return sorted(out.values(), key=lambda n: -abs(n["net"]))
 
 
+def score_checks(flows: list[dict]) -> dict:
+    """What the day's own data can check about the table: does the read agree with the site's own
+    sentiment, and does the model's delta agree with the broker's? Recorded every day, so a drift
+    in either shows as a number, not an impression."""
+    votes = [f["site_vote"] for f in flows if f.get("site_vote")]
+    compared = [f for f in flows if f.get("model_delta") is not None and f.get("delta_from") == "broker"]
+    off = [f for f in compared if abs(f["model_delta"] - f["delta"]) > DELTA_CHECK]
+    singles = [f for f in flows if f["kind"] != "spread"]
+    return {
+        "site_vote": {k: votes.count(k) for k in ("agrees", "neutral", "opposite")},
+        "delta": {
+            "broker": sum(1 for f in singles if f.get("delta_from") == "broker"),
+            "singles": len(singles),
+            "compared": len(compared),
+            "off": [
+                f"{f['symbol']} {f['what']}: broker {f['delta']:+.2f}, model {f['model_delta']:+.2f}"
+                for f in off
+            ],
+        },
+    }
+
+
+def close_check(closes: dict[str, float], reference: dict[str, float]) -> dict:
+    """The broker's closes against an independent source's (Dolt, the next morning)."""
+    both = [s for s in closes if closes.get(s) and reference.get(s)]
+    off = [
+        f"{s}: broker {closes[s]:.2f}, dolt {reference[s]:.2f}"
+        for s in both
+        if abs(closes[s] / reference[s] - 1) > CLOSE_CHECK
+    ]
+    return {"compared": len(both), "of": len(closes), "off": off}
+
+
 def derive_flow(capture: dict, market: dict) -> dict:
     """The day's derived flow document: ranked flows, unread flows, and names."""
     flows = build_flows(capture, market)
@@ -491,6 +550,7 @@ def derive_flow(capture: dict, market: dict) -> dict:
         "flows": ranked,
         "unread": unread,
         "names": by_name(flows),
+        "checks": score_checks(flows),
     }
 
 
@@ -564,6 +624,95 @@ async def _market(symbols: list[str], options: list[str]) -> dict:
         for m in await get_market_data_by_type(session, options=options[i : i + 100]):
             contracts[m.symbol] = {"open_interest": _f(m.open_interest), "volume": _f(m.volume)}
     return {"names": names, "contracts": contracts}
+
+
+def legs_db() -> Path:
+    from cherrypick.core import home
+
+    return home.data_dir("quikoptions") / "stream-legs.db"
+
+
+def request_legs(occs: list[str]) -> None:
+    """Ask the streamer for these contracts: a tiny database of their streamer symbols, declared as
+    a leg source, which the producer re-queries every poll (MEIC's open legs work the same way), so
+    no restart. An empty list releases them."""
+    import sqlite3
+
+    from cherrypick.core import streamcache, streamrequests
+
+    path = legs_db()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS legs (symbol TEXT PRIMARY KEY)")
+        conn.execute("DELETE FROM legs")
+        conn.executemany(
+            "INSERT OR IGNORE INTO legs VALUES (?)",
+            [(sym,) for sym in (streamcache.occ_to_streamer_symbol(o) for o in occs) if sym],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    streamrequests.write_request(
+        "quikoptions", (), leg_sources=[streamrequests.leg_source(str(path), "SELECT symbol FROM legs")]
+    )
+
+
+def broker_greeks(occs: list[str], wait_s: float = GREEKS_WAIT_S) -> dict[str, float]:
+    """The broker's delta per contract from the streamer's greeks, waiting up to `wait_s` for the
+    day's contracts to arrive. Whatever has not arrived is simply absent: the model's delta stands."""
+    import time
+
+    from cherrypick.core import home, streamcache
+
+    request_legs(occs)
+    wanted = {streamcache.occ_to_streamer_symbol(o): o for o in occs}
+    wanted.pop("", None)
+    cache = home.data_dir("marketdata") / "stream_cache.db"
+    deadline = time.monotonic() + wait_s
+    got: dict[str, float] = {}
+    while True:
+        try:
+            conn = streamcache.connect(cache)
+            try:
+                rows = streamcache.greeks_for(
+                    conn, list(wanted), now_ts=time.time(), max_age_seconds=6 * 3600
+                )
+            finally:
+                conn.close()
+            got = {wanted[s]: g["delta"] for s, g in rows.items() if g.get("delta") is not None}
+        except Exception:  # noqa: BLE001 - no cache, no greeks: the model's delta stands
+            got = {}
+        if len(got) >= len(wanted) or time.monotonic() > deadline:
+            return got
+        time.sleep(5)
+
+
+def dolt_closes(symbols: list[str], session: str) -> dict[str, float]:
+    """Each name's close on `session` from the local Dolt stocks clone (pulled each morning), the
+    independent source the broker's closes are checked against. Empty when Dolt is unreachable."""
+    try:
+        import mysql.connector
+
+        conn = mysql.connector.connect(
+            host="127.0.0.1", port=3306, user="root", database="stocks", connection_timeout=10
+        )
+    except Exception:  # noqa: BLE001 - no Dolt here: no check, said so in the record
+        return {}
+    try:
+        cur = conn.cursor()
+        out = {}
+        for i in range(0, len(symbols), 200):
+            chunk = symbols[i : i + 200]
+            marks = ", ".join(["%s"] * len(chunk))
+            cur.execute(
+                f"SELECT act_symbol, close FROM ohlcv WHERE date = %s AND act_symbol IN ({marks})",
+                [session, *chunk],
+            )
+            out.update({sym: float(close) for sym, close in cur.fetchall() if close is not None})
+        return out
+    finally:
+        conn.close()
 
 
 def _ex_dividends(symbols: list[str], session: str) -> dict[str, str]:
@@ -680,6 +829,7 @@ def cmd_score(args) -> int:
             pass
     symbols = sorted(set(symbols))
     market = asyncio.run(_market(symbols, contracts_of(capture)))
+    market["greeks"] = broker_greeks(contracts_of(capture)) if not args.no_greeks else {}
     for sym, ex in _ex_dividends(symbols, session).items():
         market["names"].setdefault(sym, {})["ex_dividend"] = ex
     doc = derive_flow(capture, market)
@@ -708,9 +858,189 @@ def cmd_confirm(args) -> int:
     market = asyncio.run(_market([], legs))
     next_oi = {s: c.get("open_interest") for s, c in market["contracts"].items()}
     doc = confirm_flows(doc, next_oi)
+    reference = dolt_closes(sorted(doc.get("closes") or {}), session)
+    doc.setdefault("checks", {})["close"] = (
+        close_check(doc.get("closes") or {}, reference)
+        if reference
+        else {"compared": 0, "note": "Dolt not reachable"}
+    )
     _write(flow_path(session), doc)
+    if session == _last_session():
+        request_legs([])  # the day's contracts are no longer needed
     done = sum(1 for f in doc["flows"] + doc["unread"] if f.get("confirmed"))
     print(f"{session}: {done} of {len(doc['flows']) + len(doc['unread'])} flows confirmed")
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------
+# Verification: the hand audit against the tape, and the test fixed before the results.
+# ------------------------------------------------------------------------------------------------
+
+# The test, fixed 2026-10-03 before any outcome existed (docs/quikoptions-plan.md, Phase 6). After
+# REVIEW_SESSIONS sessions with a 5-session outcome: flows scoring at least STRONG (either sign) must
+# move their stock their way more often than all read flows do, and the score must beat both simpler
+# reads of the same days — the site's own sentiment weighted by premium, and our delta dollars alone.
+REVIEW_SESSIONS = 40
+STRONG = 30
+REVIEW_LAG = "5d"
+
+
+def audit_path() -> Path:
+    from cherrypick.core import home
+
+    return home.data_dir("quikoptions") / "audit.jsonl"
+
+
+def audit_entry(doc: dict, rank: int, tape: str, note: str = "") -> dict:
+    """One hand check: flow `rank` of a session against what Time & Sales showed (bought, sold, or
+    middle). Pure."""
+    f = doc["flows"][rank - 1]
+    ours = f.get("direction") or "unread"
+    return {
+        "session": doc["session"],
+        "rank": rank,
+        "symbol": f["symbol"],
+        "what": f.get("what"),
+        "ours": ours,
+        "tape": tape,
+        "agrees": ours == tape,
+        "note": note,
+    }
+
+
+def audit_summary(records: list[dict]) -> dict:
+    """Agreement of our read with the tape, over every hand check so far."""
+    checked = [r for r in records if r.get("tape") in ("bought", "sold", "middle")]
+    agree = sum(1 for r in checked if r["agrees"])
+    return {
+        "checked": len(checked),
+        "agree": agree,
+        "rate": round(agree / len(checked), 3) if checked else None,
+        "disagree": [
+            f"{r['session']} #{r['rank']} {r['symbol']} {r['what']}: ours {r['ours']}, tape {r['tape']}"
+            for r in checked
+            if not r["agrees"]
+        ],
+    }
+
+
+def _sign(x: float) -> int:
+    return (x > 0) - (x < 0)
+
+
+def review(days: list[tuple[dict, dict]]) -> dict:
+    """The fixed test over (flow document, capture) pairs that carry a REVIEW_LAG outcome. Hits are a
+    view matching the sign of the stock's move; a flat move counts as neither. Pure."""
+    groups = {"strong": [0, 0], "all_read": [0, 0], "net_delta_dollars": [0, 0], "site_premium": [0, 0]}
+
+    def tally(group: str, view: int, move: float | None) -> None:
+        if move is None or view == 0 or move == 0:
+            return
+        groups[group][1] += 1
+        groups[group][0] += int(view == _sign(move))
+
+    usable = 0
+    for doc, capture in days:
+        returns = ((doc.get("outcomes") or {}).get(REVIEW_LAG) or {}).get("returns") or {}
+        if not returns:
+            continue
+        usable += 1
+        for f in doc.get("flows") or []:
+            s = f.get("confirmed_score") if f.get("confirmed_score") is not None else f.get("score")
+            if s is None:
+                continue
+            move = returns.get(f["symbol"])
+            tally("all_read", _sign(s), move)
+            if abs(s) >= STRONG:
+                tally("strong", _sign(s), move)
+        for n in doc.get("names") or []:
+            tally("net_delta_dollars", _sign(n.get("net") or 0), returns.get(n["symbol"]))
+        site: dict[str, float] = {}
+        for table in ("outrights", "sweeps"):
+            for r in (capture.get("tables") or {}).get(table) or []:
+                word = ((r.get("side") or {}).get("sentiment") or "").lower()
+                weight = r.get("premium") or (r.get("price") or 0) * (r.get("size") or 0) * 100
+                site[r["symbol"]] = site.get(r["symbol"], 0.0) + (
+                    weight if word == "bullish" else -weight if word == "bearish" else 0
+                )
+        for sym, net in site.items():
+            tally("site_premium", _sign(net), returns.get(sym))
+    rates = {g: (round(h / n, 3) if n else None, n) for g, (h, n) in groups.items()}
+    ready = usable >= REVIEW_SESSIONS
+    passed = None
+    if ready and all(rates[g][0] is not None for g in rates):
+        passed = rates["strong"][0] > rates["all_read"][0] and rates["strong"][0] > max(
+            rates["net_delta_dollars"][0], rates["site_premium"][0]
+        )
+    return {
+        "sessions": usable,
+        "needed": REVIEW_SESSIONS,
+        "ready": ready,
+        "hit_rates": rates,
+        "passed": passed,
+    }
+
+
+def cmd_audit(args) -> int:
+    if args.report:
+        try:
+            records = [
+                json.loads(line)
+                for line in audit_path().read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        except OSError:
+            records = []
+        summary = audit_summary(records)
+        rate = "—" if summary["rate"] is None else f"{summary['rate']:.0%}"
+        print(
+            f"{summary['checked']} hand checks, our read agreed with the tape on {summary['agree']} ({rate})"
+        )
+        for line in summary["disagree"]:
+            print("  " + line)
+        return 0
+    if args.rank is None or args.tape is None:
+        print("audit needs --rank N and --tape bought|sold|middle (or --report)")
+        return 2
+    session = args.session or _last_session()
+    doc = json.loads(flow_path(session).read_text(encoding="utf-8"))
+    entry = {
+        **audit_entry(doc, args.rank, args.tape, args.note or ""),
+        "at": datetime.now(UTC).isoformat(timespec="seconds"),
+    }
+    audit_path().parent.mkdir(parents=True, exist_ok=True)
+    with audit_path().open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry) + "\n")
+    records = [
+        json.loads(line) for line in audit_path().read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
+    _write(audit_path().with_name("audit-summary.json"), audit_summary(records))
+    print(
+        f"recorded: {entry['symbol']} {entry['what']} — ours {entry['ours']}, tape {entry['tape']}"
+        + ("" if entry["agrees"] else "  (disagrees)")
+    )
+    return 0
+
+
+def cmd_review(_args) -> int:
+    days = []
+    for session in _sessions():
+        try:
+            doc = json.loads(flow_path(session).read_text(encoding="utf-8"))
+            capture = json.loads((store() / f"{session}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        days.append((doc, capture))
+    out = review(days)
+    _write(store().parent / "review.json", {**out, "at": datetime.now(UTC).isoformat(timespec="seconds")})
+    print(
+        f"{out['sessions']} of {out['needed']} sessions with a {REVIEW_LAG} outcome"
+        + ("" if out["ready"] else " — too few to judge yet")
+    )
+    for group, (rate, n) in out["hit_rates"].items():
+        print(f"  {group:<18} {'—' if rate is None else f'{rate:.0%}':>5}  over {n}")
+    if out["ready"]:
+        print("passed" if out["passed"] else "did not pass: the score does not beat the simpler reads")
     return 0
 
 
@@ -749,7 +1079,21 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--session", default=None)
         if name == "show":
             p.add_argument("--top", type=int, default=15)
+        if name == "score":
+            p.add_argument(
+                "--no-greeks", action="store_true", help="skip the streamer's greeks (the model's delta)"
+            )
         p.set_defaults(fn=fn)
+    au = sub.add_parser("audit", help="record a hand check of a flow against Time & Sales, or --report")
+    au.add_argument("--session", default=None)
+    au.add_argument("--rank", type=int, default=None, help="the flow's rank on the derived flow tab")
+    au.add_argument("--tape", choices=["bought", "sold", "middle"], default=None)
+    au.add_argument("--note", default=None)
+    au.add_argument("--report", action="store_true")
+    au.set_defaults(fn=cmd_audit)
+    sub.add_parser("review", help="the fixed test of the score against the outcome record").set_defaults(
+        fn=cmd_review
+    )
     args = ap.parse_args(argv)
     return args.fn(args)
 

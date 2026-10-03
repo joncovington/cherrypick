@@ -303,9 +303,31 @@ next morning reads each contract's open interest again: each flow becomes `opene
 once it exists). Every `score` run also records the **outcome** for the sessions 1 and 5 trading days
 back — each name's close against its close then — the record the constants are to be judged on.
 
+**Verification (built 2026-10-03)**, four layers, each on the `derived flow` tab's Checks card:
+
+1. *The day's own data.* The read against the site's own sentiment (2026-10-02: 16 agree, 0
+   opposite). The **broker's delta is primary** — the streamer's greeks at the close for the day's
+   contracts, requested through a leg-source database the producer re-queries, so no restart — and
+   the model's is checked against it: on 2026-10-02 the model was within 0.10 on 18 of 20, and the
+   two it missed (a deep in-the-money 2027 VST put, TSM) are exactly where a trade price taken
+   hours before the close goes wrong. The next morning, each close against Dolt's.
+2. *Opening against closing* from the next morning's open interest (the confirmation).
+3. *A hand audit:* the top flows checked against the broker's Time & Sales, recorded with
+   `quikoptions_flow.py audit --rank N --tape bought|sold|middle`, reported as an agreement rate.
+4. *The fixed test*, written here on 2026-10-03 before any outcome existed, and not to be changed
+   after looking: **after 40 sessions with a 5-session outcome, flows scoring 30 or more (either
+   sign) must move their stock their way more often than all read flows do, and more often than both
+   simpler reads of the same days — the site's own sentiment weighted by premium, and our net delta
+   dollars alone.** `quikoptions_flow.py review` runs it; until 40 sessions it reports progress only.
+   A flat move counts as neither a hit nor a miss.
+
+Also decided: the second vote is the site's **sentiment**, not its fill wording ("Mid Market" is
+broader than its edge; where the wording looked like a disagreement the sentiment agreed). Opposite
+sentiment halves conviction; neutral takes a quarter off.
+
 **Not yet:** the schedule (Phase 5: capture 16:30, score 16:45, post 16:55, confirm 08:30, so the
-report lands 30-60 minutes after the close), and the read of the outcome record once a few weeks of
-it exist.
+report lands 30-60 minutes after the close). A paid tape (one month of ThetaData, every print against
+the quote) to measure the read at scale is deferred until a few weeks of confirmations exist.
 
 ## Guards, each shown to fail
 

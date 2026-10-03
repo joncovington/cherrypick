@@ -11,6 +11,12 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: verification for the derived flow.** The broker's own delta (the streamer's greeks at the
+  close) is now primary and the model's is checked against it; each day records the read against
+  the site's sentiment, the next morning the closes against Dolt; `quikoptions_flow.py audit` records
+  hand checks against Time & Sales; `review` runs a test fixed in advance (40 sessions: strong scores
+  must beat every simpler read). All on a Checks card. The site's sentiment, not its fill wording, is
+  now the second vote.
 - **Added: derived flow** (`scripts/quikoptions_flow.py`). Each QuikOptions capture becomes one
   row per order (outrights, sweeps, spreads, with paired prints and rolls grouped), read
   (bought/sold from where the fill sat, or unread), sized in stock-equivalent dollars from the
