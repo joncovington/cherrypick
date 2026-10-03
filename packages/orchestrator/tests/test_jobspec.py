@@ -325,6 +325,7 @@ def test_derive_full_suite_job_table():
         "morning-factpack",
         "morning-narrative",
         "advisor-deep",
+        *QUIKOPTIONS_JOBS,
     }
     assert by_id["watchdog"].interval_seconds == 600
     assert by_id["trade-notify"].interval_seconds == 30
@@ -1028,3 +1029,78 @@ def test_headlines_are_fetched_before_the_narrative_reads_them():
     assert job.enabled and job.trading_days_only
     assert job.argv[-1].endswith("fetch_headlines.py")
     assert job.at_et < note.at_et, "the narrative must find this morning's file"
+
+
+# --------------------------------------------------------------------------- QuikOptions (2026-10-03)
+QUIKOPTIONS_JOBS = (
+    "quikoptions-capture",
+    "quikoptions-score",
+    "quikoptions-post",
+    "quikoptions-confirm",
+    "quikoptions-morning",
+    "quikoptions-weekly",
+)
+
+
+def _qo(**block):
+    cfg = suite_cfg()
+    cfg["quikoptions"] = block
+    jobs, errors = derive(cfg)
+    assert errors == {}
+    return {j.id: j for j in jobs}
+
+
+def test_quikoptions_jobs_are_off_until_the_capture_is_switched_on():
+    by_id = _qo()
+    for job_id in QUIKOPTIONS_JOBS:
+        assert not by_id[job_id].enabled, job_id
+        assert "quikoptions." in by_id[job_id].enabled_reason
+
+
+def test_the_quikoptions_series_needs_its_own_switch_and_each_follow_up_its_own():
+    by_id = _qo(enabled=True)
+    assert all(by_id[j].enabled for j in ("quikoptions-capture", "quikoptions-score", "quikoptions-confirm"))
+    for job_id in ("quikoptions-post", "quikoptions-morning", "quikoptions-weekly"):
+        assert not by_id[job_id].enabled
+        assert "quikoptions.post" in by_id[job_id].enabled_reason
+    # `post` alone does nothing without the capture.
+    assert not _qo(post=True)["quikoptions-post"].enabled
+
+    by_id = _qo(enabled=True, post=True, post_weekly=False)
+    assert by_id["quikoptions-post"].enabled and by_id["quikoptions-morning"].enabled
+    assert not by_id["quikoptions-weekly"].enabled
+    assert "post_weekly" in by_id["quikoptions-weekly"].enabled_reason
+
+
+def test_quikoptions_runs_in_order_and_each_step_waits_for_the_one_before():
+    """The report lands 30-60 minutes after the close; the scheduler fires each job once a day, so a
+    step that cannot wait for its input would be done for the day after a wake fired them together."""
+    by_id = _qo(enabled=True, post=True)
+
+    def minutes(job_id):
+        h, m = (int(x) for x in by_id[job_id].at_et.split(":"))
+        return h * 60 + m
+
+    order = ("quikoptions-capture", "quikoptions-score", "quikoptions-post")
+    assert [minutes(j) for j in order] == sorted(minutes(j) for j in order)
+    assert 16 * 60 + 30 <= minutes("quikoptions-capture") and minutes("quikoptions-post") <= 17 * 60
+    assert minutes("quikoptions-confirm") < minutes("quikoptions-morning") < 9 * 60 + 30
+    assert all(by_id[j].trading_days_only and by_id[j].catchup_minutes for j in QUIKOPTIONS_JOBS)
+    for job_id in ("quikoptions-score", "quikoptions-post", "quikoptions-morning"):
+        argv = by_id[job_id].argv
+        assert argv[argv.index("--wait") + 1] == str(jobspec.QUIKOPTIONS_WAIT_MINUTES), job_id
+    assert "--require-today" in by_id["quikoptions-score"].argv
+
+
+def test_quikoptions_jobs_run_the_suite_scripts_with_the_configured_capture():
+    by_id = _qo(enabled=True, post=True, headed=False, jitter_minutes=5, at="16:40")
+    capture = by_id["quikoptions-capture"]
+    assert capture.argv[1].replace("\\", "/").endswith("scripts/fetch_quikoptions.py")
+    assert capture.argv[2:] == ("hot-options", "--jitter", "5", "--headless")
+    assert capture.at_et == "16:40"
+    assert "--headless" not in _qo(enabled=True)["quikoptions-capture"].argv
+    assert by_id["quikoptions-score"].argv[1].endswith("quikoptions_flow.py")
+    assert by_id["quikoptions-confirm"].argv[2:] == ("confirm",)
+    assert by_id["quikoptions-post"].argv[1].endswith("quikoptions_post.py")
+    assert by_id["quikoptions-morning"].argv[2:4] == ("--kind", "morning")
+    assert by_id["quikoptions-weekly"].argv[2:] == ("--kind", "weekly")

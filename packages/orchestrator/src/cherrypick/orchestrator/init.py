@@ -73,6 +73,17 @@ def validate_config(cfg: dict[str, Any]) -> list[tuple[str, str]]:
     if not cfg.get("timezone"):
         issues.append(("warn", "no 'timezone' set — defaulting to America/New_York"))
 
+    # The QuikOptions series refuses a bad title, webhook, style or section at post time; refusing
+    # it here too means the console's Config page cannot save one the post would then refuse.
+    q = cfg.get("quikoptions")
+    if isinstance(q, dict):
+        from . import config as cfgmod
+
+        if "post_title" in q and (why := cfgmod.quikoptions_title_problem(q["post_title"])):
+            issues.append(("error", f"quikoptions.post_title: {why}"))
+        if why := cfgmod.quikoptions_post_problem(q):
+            issues.append(("error", f"quikoptions: {why}"))
+
     channels = (cfg.get("notify") or {}).get("channels") or []
     unknown = [c for c in channels if c not in KNOWN_CHANNELS]
     if unknown:

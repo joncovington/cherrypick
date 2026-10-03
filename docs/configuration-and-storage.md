@@ -136,7 +136,7 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | `review` | **on** | `review-provisional` 16:30 ET, `review-final` 10:15 next morning, trading days only; `review-narrative` **off** (needs `claude`) |
 | `morning` | **on** | `morning-factpack` 08:30 ET, the market files (`market-files`, `market-files-retry`, `earnings-moves`, `fetch-headlines`); `morning-narrative` **off** (needs `claude`) |
 | `technicals` | on in config, but needs `dolt` **and** the earnings module | `technicals-land`, `technicals-report`, `technicals-dividends`, `technicals-index-bars`, `technicals-iv-rank` |
-| `quikoptions` | **off** (`enabled`; `post` off even then) | none yet — `enabled` shows the console's Options flow page; the capture job and the Discord series follow |
+| `quikoptions` | **off** (`enabled`; `post` off even then) | `quikoptions-capture` 16:30 ET, `quikoptions-score` 16:50, `quikoptions-confirm` 08:30 next morning; with `post`: `quikoptions-post` 17:00, `quikoptions-morning` 08:45, `quikoptions-weekly` 17:15 (the week's last trading day). `enabled` also shows the console's Options flow page |
 | `market_report` | **off** (`collector`, `universe`) | `report-edition`, `report-edition-retry`, `report-charts`, `universe-*` |
 | `advisor` | **off twice** (suite + per-module `advice` bounds), and needs `claude` | `advisor-deep` (17:00 ET) |
 | `status_digest` | **off** | `status-digest` (hourly), `status-digest-close` 16:35 ET |

@@ -401,3 +401,50 @@ def test_a_429_is_waited_out_once_then_retried(monkeypatch, tmp_path):
         raise urllib.error.HTTPError(req.full_url, 429, "slow down", {}, io.BytesIO(b"{}"))
 
     assert qp.post("https://d/x", {"content": ""}, [], opener=always_429) == "discord HTTP 429"
+
+
+def test_the_weekly_scorecard_posts_on_the_weeks_last_trading_day_only(harness, tmp_path, monkeypatch):
+    from datetime import date, datetime
+
+    flow = {
+        "session": SESSION,
+        "flows": [{"symbol": "PCG", "what": "15 Jan 27 16C", "score": 46.0}],
+        "unread": [],
+        "checks": {"site_vote": {"agrees": 1, "neutral": 0, "opposite": 0}},
+    }
+    (tmp_path / f"{SESSION}.flow.json").write_text(json.dumps(flow), encoding="utf-8")
+    from cherrypick.core import home
+
+    monkeypatch.setattr(home, "data_dir", lambda name: tmp_path)  # no audit or review yet
+
+    assert qp.last_session_of_week(date(2026, 10, 2))  # a Friday
+    assert not qp.last_session_of_week(date(2026, 10, 1))
+    assert qp.last_session_of_week(date(2027, 3, 25))  # the Thursday before Good Friday
+    monkeypatch.setattr(qp, "_now_et", lambda: datetime(2026, 9, 30, 17, 15, tzinfo=qp.ET))
+    assert qp.run_weekly(None, dry_run=False, force=False, cfg=_cfg(), webhook=None) == "skipped"
+    assert harness["posted"] == []
+    # A named session posts any day: the week has a scorecard to hold back.
+    assert qp.run_weekly(SESSION, dry_run=False, force=False, cfg=_cfg(), webhook=None) == "posted"
+
+
+def test_the_post_waits_for_the_days_scoring_and_the_morning_for_its_confirmation(
+    harness, tmp_path, monkeypatch
+):
+    clock = {"t": 0.0}
+    monkeypatch.setattr(qp.time, "monotonic", lambda: clock["t"])
+    flow = tmp_path / f"{SESSION}.flow.json"
+
+    def sleep(s):
+        clock["t"] += s
+        if clock["t"] >= 90:  # the score lands a minute and a half in
+            flow.write_text(json.dumps({"session": SESSION, "flows": [], "unread": []}), encoding="utf-8")
+
+    monkeypatch.setattr(qp.time, "sleep", sleep)
+    assert qp.wait_for_inputs("daily", SESSION, 45) is True and clock["t"] == 90
+    # Scored but not yet confirmed: the morning post waits to its bound, then goes ahead (and skips).
+    clock["t"] = 0.0
+    assert qp.wait_for_inputs("morning", None, 2) is False
+    flow.write_text(
+        json.dumps({"session": SESSION, "confirmed_at": "x", "flows": [], "unread": []}), encoding="utf-8"
+    )
+    assert qp.wait_for_inputs("morning", None, 2) is True

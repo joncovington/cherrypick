@@ -71,3 +71,19 @@ def test_scaffold_creates_when_absent_then_refuses_without_force(tmp_path):
     target.write_text("{}", encoding="utf-8")
     r3 = init.scaffold(target=target, force=True)
     assert r3["created"] and "modules" in json.loads(target.read_text(encoding="utf-8"))
+
+
+def test_validate_refuses_a_quikoptions_series_the_post_script_would():
+    """The console's Config page saves through this check, so it cannot store a title, webhook or
+    section the post would then refuse at 17:00."""
+    base = {"modules": {}, "quikoptions": {"enabled": True, "post": True}}
+    assert "error" not in _levels(init.validate_config(base))
+    for bad, said in (
+        ({"post_title": "a\nb"}, "quikoptions.post_title: the title must be one line"),
+        ({"post_title": "x" * 81}, "quikoptions.post_title: the title is longer than 80 characters"),
+        ({"post_webhook": "slack"}, "quikoptions: post_webhook must be one of"),
+        ({"post_cards": ["Nope"]}, "quikoptions: post_cards names sections there are not"),
+    ):
+        cfg = {**base, "quikoptions": {**base["quikoptions"], **bad}}
+        errors = [m for lvl, m in init.validate_config(cfg) if lvl == "error"]
+        assert any(m.startswith(said) for m in errors), (bad, errors)

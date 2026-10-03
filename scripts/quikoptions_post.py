@@ -917,10 +917,22 @@ def run_morning(session: str | None, **kw) -> str:
     )
 
 
+def last_session_of_week(day: date) -> bool:
+    """Whether `day` closes its week's trading: a Friday, or the Thursday before a Good Friday."""
+    from cherrypick.core import calendar as tcal
+
+    return tcal.next_trading_day(day).isocalendar()[:2] != day.isocalendar()[:2]
+
+
 def run_weekly(session: str | None, **kw) -> str:
-    """The scorecard for the week holding `session` (default: the last captured session)."""
+    """The scorecard for the week holding `session` (default: the last captured session). The
+    schedule runs it every trading day and it posts only on the week's last, so a holiday Friday
+    moves the scorecard to Thursday rather than losing it; a named session or --force posts any day."""
     from cherrypick.core import home
 
+    if session is None and not kw.get("force") and not last_session_of_week(_now_et().date()):
+        _log("weekly: not the week's last trading day (name --session to post anyway)")
+        return "skipped"
     sessions = _capture_sessions()
     anchor = (
         date.fromisoformat(session) if session else (date.fromisoformat(sessions[-1]) if sessions else None)
@@ -949,6 +961,30 @@ def run_weekly(session: str | None, **kw) -> str:
     return run_text(f"{year}-W{week:02d}:weekly", text, cfg=cfg, what="weekly", **kw)
 
 
+def wait_for_inputs(kind: str, session: str | None, minutes: float, poll_s: float = 30) -> bool:
+    """Wait, bounded, for the step before this post: the day's scored flows for the daily post, the
+    last session's open-interest confirmation for the morning one. The schedule fires each job once a
+    day, so after a wake the whole evening fires together; past the bound the post goes out with
+    what there is (the daily one without its derived flow), or skips (the morning one)."""
+
+    def ready() -> bool:
+        if kind == "daily":
+            return load_flow(session or _now_et().date().isoformat()) is not None
+        if kind == "morning":
+            days = [d for d in _capture_sessions() if session is None or d == session]
+            flow = load_flow(days[-1]) if days else None
+            return bool(flow and flow.get("confirmed_at"))
+        return True
+
+    deadline = time.monotonic() + minutes * 60
+    while not ready():
+        if time.monotonic() >= deadline:
+            _log(f"{kind}: waited {minutes:g} minutes; going ahead with what there is")
+            return False
+        time.sleep(poll_s)
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--session", default=None, help="YYYY-MM-DD; default today (ET)")
@@ -969,7 +1005,15 @@ def main(argv: list[str] | None = None) -> int:
         default="daily",
         help="daily (after the close), morning (the confirmations) or weekly (Friday's scorecard)",
     )
+    ap.add_argument(
+        "--wait",
+        type=float,
+        default=0,
+        help="wait up to MIN minutes for what the post reads (the day's scoring, the morning's confirmation)",
+    )
     args = ap.parse_args(argv)
+    if args.wait:
+        wait_for_inputs(args.kind, args.session, args.wait)
     if args.kind in ("morning", "weekly"):
         from cherrypick.orchestrator import config as cfgmod
 

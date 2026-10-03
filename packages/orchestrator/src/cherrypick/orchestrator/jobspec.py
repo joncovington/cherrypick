@@ -116,6 +116,15 @@ CATCHUP_MINUTES = {
     # A close card caught up mid-evening still describes the settled day correctly; past that the
     # next morning's cards take over.
     "status-digest-close": 90,
+    # QuikOptions (docs/quikoptions-plan.md): the capture is the session's final page, worth taking
+    # all evening; scoring and the post follow it; the confirmation and its post only make sense
+    # the morning after, before the next session's capture replaces the question.
+    "quikoptions-capture": 300,
+    "quikoptions-score": 300,
+    "quikoptions-post": 240,
+    "quikoptions-confirm": 300,
+    "quikoptions-morning": 240,
+    "quikoptions-weekly": 300,
 }
 
 # Mirrors packages/advisor/src/cherrypick/advisor/factpack.py's LIGHT_SLOTS. Not imported -- this
@@ -354,6 +363,15 @@ def _dolt_data_script(launcher: str) -> str:
 
 def _vendor_collector_script(launcher: str) -> str:
     return _suite_script(launcher, "fetch_vendor_edition.py")
+
+
+# How long a QuikOptions step waits for the one before it (`--wait`): past the capture's jitter and
+# its paced run, so a wake that fires the whole evening at once still runs it in order.
+QUIKOPTIONS_WAIT_MINUTES = 45
+
+
+def _quikoptions_script(launcher: str, name: str) -> str:
+    return _suite_script(launcher, "fetch_quikoptions.py" if name == "fetch" else f"quikoptions_{name}.py")
 
 
 def _universe_script(launcher: str) -> str:
@@ -989,6 +1007,61 @@ def derive_jobs(
                 trading_days_only=True,
                 enabled=mr["universe"],
                 enabled_reason=uv_reason,
+            ),
+        )
+    qo = cfgmod.quikoptions_settings(cfg)
+    qo_off = "disabled in config (quikoptions.enabled)"
+    post_off = "disabled in config (quikoptions.post, which needs quikoptions.enabled)"
+    capture_argv = (
+        "hot-options",
+        "--jitter",
+        str(qo["jitter_minutes"]),
+        *(() if qo["headed"] else ("--headless",)),
+    )
+    wait = ("--wait", str(QUIKOPTIONS_WAIT_MINUTES))
+    for job_id, at, script, args, on, reason in (
+        # Scripts, not packages: the capture signs in to a third-party site (paced, one session, a
+        # 24-hour cooldown after a refusal), scoring and confirming read the broker (read-only market
+        # data), and the posts push a webhook. A day with no capture leaves the rest nothing to do.
+        ("quikoptions-capture", qo["at"], "fetch", capture_argv, qo["enabled"], qo_off),
+        (
+            "quikoptions-score",
+            qo["score_at"],
+            "flow",
+            ("score", "--require-today", *wait),
+            qo["enabled"],
+            qo_off,
+        ),
+        ("quikoptions-confirm", qo["confirm_at"], "flow", ("confirm",), qo["enabled"], qo_off),
+        ("quikoptions-post", qo["post_at"], "post", wait, qo["post"], post_off),
+        (
+            "quikoptions-morning",
+            qo["morning_at"],
+            "post",
+            ("--kind", "morning", *wait),
+            qo["post"] and qo["post_morning"],
+            post_off if not qo["post"] else "disabled in config (quikoptions.post_morning)",
+        ),
+        (
+            "quikoptions-weekly",
+            qo["weekly_at"],
+            "post",
+            ("--kind", "weekly"),
+            qo["post"] and qo["post_weekly"],
+            post_off if not qo["post"] else "disabled in config (quikoptions.post_weekly)",
+        ),
+    ):
+        add(
+            job_id,
+            lambda job_id=job_id, at=at, script=script, args=args, on=on, reason=reason: JobSpec(
+                id=job_id,
+                argv=(pythonw, _quikoptions_script(launcher, script), *args),
+                kind=KIND_DAILY,
+                at_et=at,
+                catchup_minutes=CATCHUP_MINUTES[job_id],
+                trading_days_only=True,
+                enabled=on,
+                enabled_reason="" if on else reason,
             ),
         )
     wl_on = mr["universe"] and mr["universe_watchlist"]

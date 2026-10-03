@@ -301,3 +301,29 @@ def test_confirmation_waits_until_the_overnight_open_interest_is_out():
     doc = _flows(_capture(outrights=[_out()]), market)
     assert qf.oi_published(doc, {"PCG   270115C00016000": 91_606}) is False
     assert qf.oi_published(doc, {"PCG   270115C00016000": 132_000}) is True
+
+
+def test_the_scheduled_score_takes_only_todays_capture(tmp_path, monkeypatch):
+    """A day with no capture must not re-score the last one under a post already made."""
+    monkeypatch.setattr(qf, "store", lambda: tmp_path)
+    monkeypatch.setattr(qf, "_today", lambda: "2026-10-05")
+    (tmp_path / f"{SESSION}.json").write_text(json.dumps(_capture()), encoding="utf-8")
+    monkeypatch.setattr(qf, "_market", lambda *a, **k: pytest.fail("scored a day that was not today"))
+    assert qf.main(["score", "--require-today"]) == 0
+    assert not qf.flow_path(SESSION).exists()
+
+
+def test_a_step_waits_for_the_one_before_it_and_gives_up_at_the_bound(monkeypatch):
+    clock = {"t": 0.0, "polls": 0}
+    monkeypatch.setattr(qf.time, "monotonic", lambda: clock["t"])
+
+    def sleep(s):
+        clock["t"] += s
+        clock["polls"] += 1
+
+    monkeypatch.setattr(qf.time, "sleep", sleep)
+    assert qf.wait_for(lambda: clock["polls"] >= 3, minutes=45) is True
+    assert clock["polls"] == 3
+    clock.update(t=0.0, polls=0)
+    assert qf.wait_for(lambda: False, minutes=2) is False
+    assert clock["polls"] == 4  # 2 minutes of 30-second polls, then it stops
