@@ -13,7 +13,7 @@ beyond the latest release.
 
 - **Changed: the QuikOptions weekly scorecard goes to the Discord notify channel only.** It is the
   suite's measurement of the derived flow, not part of the options report, so it never posts to the
-  series' own webhook, whatever `quikoptions.post_webhook` says.
+  reporting webhook, whatever `quikoptions.post_webhook` says.
 - **Added: the QuikOptions schedule.** Six trading-day jobs: the capture at 16:30 ET (with up to ten
   minutes of random delay), scoring at 16:50, the series at 17:00, the open-interest confirmation at
   08:30 and its morning post at 08:45, and the weekly scorecard at 17:15 on the week's last trading
@@ -48,7 +48,8 @@ beyond the latest release.
   outrights + Top sweeps, in one of four styles (`post_style`: card images, one image a message,
   one embed of small tables, or plain text), with an Events section of the day's releases against
   estimate and the next ones. `quikoptions.post_webhook` picks the suite's Discord notify webhook or the
-  series' own (`discord_quikoptions`, new in `secrets-set` and the settings surface, never a push
+  reporting channel (`post_webhook: "reporting"`, keyring entry `discord_reporting`, new in
+  `secrets-set` and the settings surface, never a push
   channel), never one as a fallback for the other. Mentions are off; a re-run resumes rather than
   repeats. Off by default (`quikoptions.post`); not yet scheduled.
 - **Added: the console's Options flow page** (`/flow`), QuikOptions' Hot Options Report for a

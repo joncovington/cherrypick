@@ -25,8 +25,8 @@ image is captured before anything is posted, so a capture failure never leaves a
 pictures. Every figure in text comes from the saved capture, never from a picture.
 
 A script, not a package: it drives a browser and pushes a webhook, so a failure costs a post and
-never a capture. It posts to the series' own webhook (`cherrypick secrets-set --channel
-discord_quikoptions`, `post_webhook: "dedicated"`) or to the suite's Discord notify webhook
+never a capture. It posts to the reporting webhook (`cherrypick secrets-set --channel
+discord_reporting`, `post_webhook: "reporting"`) or to the suite's Discord notify webhook
 (`post_webhook: "notify"`): a choice, never a fallback. With the chosen one not stored it posts
 nothing and says why. Every message goes out with Discord's mentions switched off, so a title or
 caption can never ping anyone.
@@ -37,7 +37,7 @@ under. A re-run sends only what is missing, in order, the same way, so a failure
 rather than repeating, and one day never carries two titles. It posts only a capture that passed the
 page's own checks; with no capture for the session it posts nothing.
 
-    python scripts/quikoptions_post.py [--session YYYY-MM-DD] [--webhook notify|dedicated]
+    python scripts/quikoptions_post.py [--session YYYY-MM-DD] [--webhook notify|reporting]
                                        [--style cards|singles|embed|text] [--cards "A,B"]
                                        [--title TEXT] [--dry-run] [--force] [--keep DIR]
 
@@ -48,7 +48,7 @@ check, says how the last session's flows came out (opened, closed, mixed) beside
 `--kind weekly`, on Fridays, is the scorecard — the week's checks, confirmations and how the calls
 did a day on, descriptive only until the fixed 40-session test. The scorecard is the suite's own
 measurement, not part of the options report, so it goes to the suite's Discord notify webhook
-whatever `post_webhook` says (2026-10-03); `--webhook dedicated` is refused for it.
+whatever `post_webhook` says (2026-10-03); `--webhook reporting` is refused for it.
 """
 
 from __future__ import annotations
@@ -764,13 +764,14 @@ def post(url: str, payload: dict, files: list[Path], opener=urllib.request.urlop
 
 def webhook_url(choice: str) -> tuple[str | None, str | None]:
     """(url, why not) for the chosen webhook: `notify` (the suite's Discord notify webhook) or
-    `dedicated` (the series' own). Exactly that one, or nothing: never the other as a fallback."""
+    `reporting` (the reporting channel; `dedicated` is its earlier name). Exactly that one, or
+    nothing: never the other as a fallback."""
     from cherrypick.notify import secrets
     from cherrypick.orchestrator import config as cfgmod
 
-    entry = cfgmod.QUIKOPTIONS_WEBHOOKS.get(choice)
+    entry = cfgmod.QUIKOPTIONS_WEBHOOKS.get(cfgmod.QUIKOPTIONS_WEBHOOK_ALIASES.get(choice, choice))
     if entry is None:
-        return None, f"unknown webhook choice {choice!r} (notify or dedicated)"
+        return None, f"unknown webhook choice {choice!r} (notify or reporting)"
     value = secrets.read_entry(entry)
     if value is secrets.KEYRING_UNAVAILABLE:
         return None, "the OS keyring is unavailable"
@@ -999,7 +1000,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="capture and print the messages, post nothing")
     ap.add_argument("--force", action="store_true", help="post the whole series again for this session")
     ap.add_argument("--keep", type=Path, default=None, help="keep the card images in this directory")
-    ap.add_argument("--webhook", choices=["notify", "dedicated"], default=None, help="this run only")
+    ap.add_argument("--webhook", choices=["notify", "reporting"], default=None, help="this run only")
     ap.add_argument(
         "--style", choices=["cards", "singles", "embed", "text"], default=None, help="this run only"
     )

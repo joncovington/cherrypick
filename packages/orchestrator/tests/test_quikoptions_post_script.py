@@ -73,7 +73,7 @@ def harness(tmp_path, monkeypatch):
     state = {
         "posted": [],
         "fail_at": None,
-        "urls": {"discord": "https://d/notify", "discord_quikoptions": "https://d/own"},
+        "urls": {"discord": "https://d/notify", "discord_reporting": "https://d/own"},
     }
 
     def post(url, payload, files):
@@ -230,7 +230,7 @@ def test_the_default_is_one_titled_capture_a_message(harness):
 def test_cards_style_pairs_the_captures(harness):
     assert _run(cfg=_cfg(post_cards=["Derived flow", "Largest by contracts", "Top sweeps"])) == "posted"
     assert [len(p["files"]) for p in harness["posted"]] == [2, 1]
-    assert all(p["url"] == "https://d/own" for p in harness["posted"])  # dedicated by default
+    assert all(p["url"] == "https://d/own" for p in harness["posted"])  # the reporting channel by default
 
 
 def test_the_header_leads_with_the_derived_flow_and_yesterdays_calls():
@@ -319,15 +319,15 @@ def test_the_derived_section_shows_top_flows_and_net_names():
 def test_the_webhook_is_the_one_chosen_and_never_the_other(harness):
     assert _run(cfg=_cfg(post_webhook="notify")) == "posted"
     assert {p["url"] for p in harness["posted"]} == {"https://d/notify"}
-    # The dedicated one is chosen but not stored: nothing is posted, the notify one is not used.
+    # The reporting one is chosen but not stored: nothing is posted, the notify one is not used.
     harness["posted"].clear()
-    harness["urls"].pop("discord_quikoptions")
+    harness["urls"].pop("discord_reporting")
     assert _run(force=True) == "failed"
     assert harness["posted"] == []
 
 
 def test_a_run_may_override_the_webhook_for_a_test_post(harness):
-    assert _run(cfg=_cfg(post_webhook="dedicated"), webhook="notify") == "posted"
+    assert _run(cfg=_cfg(post_webhook="reporting"), webhook="notify") == "posted"
     assert {p["url"] for p in harness["posted"]} == {"https://d/notify"}
 
 
@@ -462,8 +462,21 @@ def test_the_weekly_scorecard_goes_to_the_notify_channel_only(harness, tmp_path,
     }
     (tmp_path / f"{SESSION}.flow.json").write_text(json.dumps(flow), encoding="utf-8")
     monkeypatch.setattr(home, "data_dir", lambda name: tmp_path)
-    cfg = _cfg(post_webhook="dedicated")
-    assert qp.run_weekly(SESSION, dry_run=False, force=False, cfg=cfg, webhook="dedicated") == "failed"
+    cfg = _cfg(post_webhook="reporting")
+    assert qp.run_weekly(SESSION, dry_run=False, force=False, cfg=cfg, webhook="reporting") == "failed"
     assert harness["posted"] == []
     assert qp.run_weekly(SESSION, dry_run=False, force=False, cfg=cfg, webhook=None) == "posted"
     assert [p["url"] for p in harness["posted"]] == ["https://d/notify"]
+
+
+def test_the_webhook_choices_earlier_name_still_resolves(harness):
+    """`dedicated` was the reporting channel's first name; a config that kept it posts there."""
+    from cherrypick.orchestrator import config as c
+
+    assert c.quikoptions_post_problem({"post_webhook": "dedicated"}) is None
+    assert (
+        c.quikoptions_settings({"quikoptions": {"post_webhook": "dedicated"}})["post_webhook"] == "reporting"
+    )
+    assert c.quikoptions_settings({})["post_webhook"] == "reporting"
+    assert _run(cfg=_cfg(post_webhook="dedicated")) == "posted"
+    assert {p["url"] for p in harness["posted"]} == {"https://d/own"}
