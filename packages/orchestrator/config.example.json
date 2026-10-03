@@ -603,7 +603,7 @@
     "post_cards": ["Derived flow", "Trades", "Top spreads", "Events"],
     "_comment_post_style": "post_style: 'singles' (the default, chosen 2026-10-03: each card as its own titled screen capture, the first under the series title, readable on a phone), 'text' (plain text tables), 'cards' (a header embed, then the cards as images two to a message), or 'embed' (one embed of small tables, no images). post_cards may also name 'Events': the session's high-impact releases with actual against estimate, and the next ones.",
     "post_style": "singles",
-    "_comment_post_followups": "post_morning: after the open-interest check, how the last session's flows came out (opened, closed, mixed). post_weekly: Friday's scorecard (the week's checks, confirmations, and how the calls did a day on; descriptive only until the fixed 40-session test), on the week's last trading day. Both narrow text, both need post.",
+    "_comment_post_followups": "post_morning: after the open-interest check, how the last session's flows came out (opened, closed, mixed). post_weekly: Friday's scorecard (the week's checks, confirmations, and how the calls did a day on; descriptive only until the fixed 40-session test), on the week's last trading day, and always to the suite's Discord notify webhook, never the series' own, whatever post_webhook says. Both narrow text, both need post.",
     "post_morning": true,
     "morning_at": "08:45",
     "post_weekly": true,

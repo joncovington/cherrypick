@@ -11,6 +11,9 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed: the QuikOptions weekly scorecard goes to the Discord notify channel only.** It is the
+  suite's measurement of the derived flow, not part of the options report, so it never posts to the
+  series' own webhook, whatever `quikoptions.post_webhook` says.
 - **Added: the QuikOptions schedule.** Six trading-day jobs: the capture at 16:30 ET (with up to ten
   minutes of random delay), scoring at 16:50, the series at 17:00, the open-interest confirmation at
   08:30 and its morning post at 08:45, and the weekly scorecard at 17:15 on the week's last trading

@@ -46,7 +46,9 @@ page's own checks; with no capture for the session it posts nothing.
 Two more posts, both narrow text (decided 2026-10-03): `--kind morning`, after the open-interest
 check, says how the last session's flows came out (opened, closed, mixed) beside their first scores;
 `--kind weekly`, on Fridays, is the scorecard — the week's checks, confirmations and how the calls
-did a day on, descriptive only until the fixed 40-session test.
+did a day on, descriptive only until the fixed 40-session test. The scorecard is the suite's own
+measurement, not part of the options report, so it goes to the suite's Discord notify webhook
+whatever `post_webhook` says (2026-10-03); `--webhook dedicated` is refused for it.
 """
 
 from __future__ import annotations
@@ -927,8 +929,14 @@ def last_session_of_week(day: date) -> bool:
 def run_weekly(session: str | None, **kw) -> str:
     """The scorecard for the week holding `session` (default: the last captured session). The
     schedule runs it every trading day and it posts only on the week's last, so a holiday Friday
-    moves the scorecard to Thursday rather than losing it; a named session or --force posts any day."""
+    moves the scorecard to Thursday rather than losing it; a named session or --force posts any day.
+    Always to the notify webhook: the scorecard is never posted to the series' own channel."""
     from cherrypick.core import home
+
+    if kw.get("webhook") not in (None, "notify"):
+        _log("weekly: the scorecard goes to the notify webhook only; nothing posted")
+        return "failed"
+    kw["webhook"] = "notify"
 
     if session is None and not kw.get("force") and not last_session_of_week(_now_et().date()):
         _log("weekly: not the week's last trading day (name --session to post anyway)")
@@ -1003,7 +1011,7 @@ def main(argv: list[str] | None = None) -> int:
         "--kind",
         choices=["daily", "morning", "weekly"],
         default="daily",
-        help="daily (after the close), morning (the confirmations) or weekly (Friday's scorecard)",
+        help="daily (after the close), morning (the confirmations) or weekly (the scorecard, notify only)",
     )
     ap.add_argument(
         "--wait",
