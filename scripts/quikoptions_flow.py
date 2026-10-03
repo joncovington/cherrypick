@@ -179,6 +179,36 @@ def spread_legs(spread: str, kind: str | None) -> list[dict] | None:
 # ------------------------------------------------------------------------------------------------
 
 
+def _leg_text(expires: str, strike: float, cp: str) -> str:
+    return f"{date.fromisoformat(expires):%d %b %y} {strike:g}{'C' if cp == 'call' else 'P'}"
+
+
+SPREAD_KIND = {"CS": "call spread", "PS": "put spread", "CSCAL": "call calendar", "PSCAL": "put calendar"}
+
+
+def describe(
+    kind: str, legs: list[dict], site_text: str | None = None, site_type: str | None = None
+) -> tuple[str, str]:
+    """(what, kind label) in one order for every flow — date, strike, then the kind: `15 Jan 27
+    16C` / `outright`, `09 Oct 26 43.5/45.5C` / `call spread`, `16 Oct 26 23C / 30 Oct 26 22C` /
+    `call calendar`. The site's own `261009 43.5/45.5 CS` is kept only where its legs cannot be
+    named (decided 2026-10-03: one order, one date format, everywhere the table is shown)."""
+    if kind != "spread":
+        leg = legs[0] if legs else None
+        return (_leg_text(leg["expires"], leg["strike"], leg["cp"]) if leg else (site_text or "")), kind
+    label = SPREAD_KIND.get(site_type or "", (site_type or "spread").lower())
+    if len(legs) != 2:
+        return site_text or "", label
+    a, b = legs
+    if a["expires"] == b["expires"]:
+        cp = "C" if a["cp"] == "call" else "P"
+        return f"{date.fromisoformat(a['expires']):%d %b %y} {a['strike']:g}/{b['strike']:g}{cp}", label
+    return (
+        f"{_leg_text(a['expires'], a['strike'], a['cp'])} / {_leg_text(b['expires'], b['strike'], b['cp'])}",
+        label,
+    )
+
+
 def _days(session: str, expires: str | None) -> int | None:
     try:
         return (date.fromisoformat(expires) - date.fromisoformat(session)).days
@@ -227,7 +257,10 @@ def _single(row: dict, table: str, session: str, market: dict) -> dict:
         "symbol": sym,
         "name": row.get("name"),
         "what": row.get("expires")
-        and f"{date.fromisoformat(row['expires']):%d %b %y} {row['strike']:g}{'C' if cp == 'call' else 'P'}",
+        and row.get("strike")
+        and cp
+        and _leg_text(row["expires"], row["strike"], cp),
+        "kind_label": "sweep" if table == "sweeps" else "outright",
         "time_et": row.get("time_et"),
         "legs": [
             {
@@ -279,6 +312,7 @@ def _spread(row: dict, session: str) -> dict:
         else None
     )
     legs = spread_legs(row.get("spread"), row.get("type")) or []
+    what, kind_label = describe("spread", legs, row.get("spread"), row.get("type"))
     days = _days(session, row.get("expires"))
     width = (
         abs(legs[1]["strike"] - legs[0]["strike"])
@@ -289,7 +323,8 @@ def _spread(row: dict, session: str) -> dict:
         "kind": "spread",
         "symbol": row.get("symbol"),
         "name": row.get("name"),
-        "what": row.get("spread"),
+        "what": what,
+        "kind_label": kind_label,
         "time_et": row.get("time_et"),
         "legs": [
             {
@@ -371,9 +406,9 @@ def build_flows(capture: dict, market: dict) -> list[dict]:
         ):  # fmt: skip
             flags.append("before ex-dividend")
         if f["site_vote"] == "opposite":
-            flags.append("site disagrees")
+            flags.append("sentiment opposite")
         elif f["site_vote"] == "neutral":
-            flags.append("site neutral")
+            flags.append("sentiment neutral")
         if (
             f.get("model_delta") is not None
             and f["delta_from"] == "broker"
@@ -564,6 +599,21 @@ def classify_change(start_oi: float | None, next_oi: float | None, size: float |
     if change <= -CONFIRM_SHARE * size:
         return "closed"
     return "mixed"
+
+
+def oi_published(doc: dict, next_oi: dict[str, float]) -> bool:
+    """Whether the overnight open interest is out: at least one of the day's contracts has moved.
+    OCC publishes a session's open interest before the next session's open (Monday's, for a
+    Friday), and until then the broker still shows the starting figure; every leg unchanged reads
+    as "not published", never as a day of `mixed` (2026-10-03: a Saturday check found all 40 legs
+    unchanged)."""
+    pairs = [
+        (leg.get("start_oi"), next_oi.get(leg["symbol"]))
+        for f in doc.get("flows", []) + doc.get("unread", [])
+        for leg in f.get("legs") or []
+    ]
+    pairs = [(a, b) for a, b in pairs if a is not None and b is not None]
+    return any(a != b for a, b in pairs)
 
 
 def confirm_flows(doc: dict, next_oi: dict[str, float]) -> dict:
@@ -857,6 +907,9 @@ def cmd_confirm(args) -> int:
     legs = sorted({leg["symbol"] for f in doc["flows"] + doc["unread"] for leg in f.get("legs") or []})
     market = asyncio.run(_market([], legs))
     next_oi = {s: c.get("open_interest") for s, c in market["contracts"].items()}
+    if not oi_published(doc, next_oi):
+        print(f"{session}: overnight open interest not published yet (all unchanged); nothing confirmed")
+        return 0
     doc = confirm_flows(doc, next_oi)
     reference = dolt_closes(sorted(doc.get("closes") or {}), session)
     doc.setdefault("checks", {})["close"] = (

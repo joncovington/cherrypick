@@ -95,7 +95,10 @@ export interface FlowName {
 /** One derived flow: an order, read and scored by `scripts/quikoptions_flow.py`. */
 export interface DerivedFlowRow {
   kind: "outright" | "sweep" | "spread";
+  /** The kind in words, after the date and strike: `outright`, `sweep`, `call spread`, `call calendar`. */
+  kindLabel: string;
   symbol: string;
+  /** Date then strike, one format for every kind: `15 Jan 27 16C`, `09 Oct 26 43.5/45.5C`. */
   what: string | null;
   size: number | null;
   premium: number | null;
@@ -149,6 +152,19 @@ export interface DerivedFlow {
   names: DerivedFlowName[];
 }
 
+/** A high-impact economic release from the calendar captured with the session (the site's own). */
+export interface FlowEvent {
+  date: string;
+  /** `HH:MM` ET; null for an event the site gives no time. */
+  timeEt: string | null;
+  event: string;
+  /** The site's rating: H, M or L. */
+  impact: string | null;
+  actual: string | null;
+  estimate: string | null;
+  previous: string | null;
+}
+
 export interface OptionsFlowDay {
   session: string;
   /** When the capture saved it (UTC ISO). */
@@ -167,6 +183,9 @@ export interface OptionsFlowDay {
   largestTrade: { table: string; symbol: string | null; premium: number } | null;
   /** The scored derived flows; null until `quikoptions_flow.py score` has run for the session. */
   derived: DerivedFlow | null;
+  /** The session's high-impact releases and the next week's, from the calendar captured with it;
+   *  null when no calendar was captured. */
+  events: FlowEvent[] | null;
 }
 
 export interface OptionsFlowPayload {

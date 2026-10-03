@@ -17,6 +17,7 @@ import type {
   DerivedFlowChecks,
   DerivedFlowName,
   DerivedFlowRow,
+  FlowEvent,
   FlowBirdseyeRow,
   FlowName,
   FlowSide,
@@ -174,6 +175,7 @@ function shapeDerivedRow(v: unknown): DerivedFlowRow {
   const c = r["confirmed"];
   return {
     kind,
+    kindLabel: str(r["kind_label"]) ?? kind,
     symbol: str(r["symbol"]) ?? "?",
     what: str(r["what"]),
     size: num(r["size"]),
@@ -259,6 +261,32 @@ function readDerived(config: ConsoleConfig, session: string): DerivedFlow | null
   };
 }
 
+const EVENT_DAYS = 7;
+
+/** The session's high-impact releases and the next week's, from `calendar/<session>.json` (the
+ *  capture's run). High impact is the site's own rating, recorded by the capture; nothing is ranked
+ *  here. Null when no calendar was captured that day. */
+function readEvents(config: ConsoleConfig, session: string): FlowEvent[] | null {
+  const doc = readJson(path.join(path.dirname(flowDir(config)), "calendar", `${session}.json`));
+  if (doc === null) return null;
+  const until = new Date(`${session}T12:00:00Z`);
+  until.setUTCDate(until.getUTCDate() + EVENT_DAYS);
+  const last = until.toISOString().slice(0, 10);
+  return list(doc["events"])
+    .map(rec)
+    .filter((e) => str(e["impact"]) === "H" && (str(e["date"]) ?? "") >= session && (str(e["date"]) ?? "") <= last)
+    .map((e) => ({
+      date: str(e["date"]) ?? "",
+      timeEt: str(e["time_et"]),
+      event: str(e["event"]) ?? "?",
+      impact: str(e["impact"]),
+      actual: str(e["actual"]),
+      estimate: str(e["estimate"]),
+      previous: str(e["previous"]),
+    }))
+    .sort((a, b) => `${a.date} ${a.timeEt ?? "99:99"}`.localeCompare(`${b.date} ${b.timeEt ?? "99:99"}`));
+}
+
 function readDoc(config: ConsoleConfig, session: string): Record<string, unknown> | null {
   try {
     return rec(JSON.parse(fs.readFileSync(path.join(flowDir(config), `${session}.json`), "utf-8")));
@@ -288,6 +316,7 @@ export function shapeFlowDay(session: string, doc: Record<string, unknown>): Opt
     tradesBySide,
     largestTrade: shapeLargest(d["largest_trade"]),
     derived: null, // attached by readOptionsFlow, from the session's own .flow.json
+    events: null, // attached by readOptionsFlow, from the calendar captured with the session
   };
 }
 
@@ -299,7 +328,10 @@ export function readOptionsFlow(config: ConsoleConfig, session?: string): Option
   const chosen = session !== undefined && sessions.includes(session) ? session : sessions[sessions.length - 1]!;
   const doc = readDoc(config, chosen);
   if (doc === null) return { sessions, current: null, degraded: { reason: `the ${chosen} capture could not be read` } };
-  return { sessions, current: { ...shapeFlowDay(chosen, doc), derived: readDerived(config, chosen) } };
+  return {
+    sessions,
+    current: { ...shapeFlowDay(chosen, doc), derived: readDerived(config, chosen), events: readEvents(config, chosen) },
+  };
 }
 
 /**

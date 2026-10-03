@@ -161,11 +161,23 @@ describe("the Options flow page", () => {
 
   it("the derived tab lays out the checks as recorded, and says what has not run yet", () => {
     const html = render(<FlowDerived day={DAY} />);
-    expect(html).toContain("16 agree · 0 site neutral · 0 opposite");
+    expect(html).toContain("16 agree · 0 neutral · 0 opposite");
     expect(html).toContain("20 of 20 from the broker; the model off by more than 0.10 on 1");
     expect(html).toContain("the next morning");
     expect(html).toContain("none yet");
     expect(html).toContain("not run yet");
+  });
+
+  it("flags show abbreviated with a key, and a flag without an abbreviation shows its name", () => {
+    const html = render(<FlowDerived day={DAY} />);
+    expect(html).toContain('title="≤7d"'); // four characters or fewer: as itself
+    expect(html).toContain("expires within 7 days");
+    const earn = { ...DAY, derived: { ...DAY.derived!, flows: [{ ...DAY.derived!.flows[0]!, flags: ["earnings event"] }] } };
+    const shown = render(<FlowDerived day={earn} />);
+    expect(shown).toContain('title="earnings event">EARN<');
+    expect(shown).toContain("EARN</span> earnings event");
+    const odd = { ...DAY, derived: { ...DAY.derived!, flows: [{ ...DAY.derived!.flows[0]!, flags: ["new flag"] }] } };
+    expect(render(<FlowDerived day={odd} />)).toContain(">new flag<");
   });
 
   it("names a contract the way a trader reads it", () => {

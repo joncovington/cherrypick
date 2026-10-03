@@ -11,6 +11,12 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed: the QuikOptions Discord series, after test posts.** One screen capture a message (Derived
+  flow from a hidden post page without the factor columns, and Trades, the Birdseye card renamed),
+  a header led by the derived flow and yesterday's calls a day on, a morning follow-up once the
+  overnight open interest is published, and a Friday scorecard. Every flow now reads symbol, date,
+  strike, kind. The trade-size bands have a colour each, so the 100+ band shows. The open-interest
+  confirmation refuses while nothing has moved (a Saturday check had called every flow mixed).
 - **Added: verification for the derived flow.** The broker's own delta (the streamer's greeks at the
   close) is now primary and the model's is checked against it; each day records the read against
   the site's sentiment, the next morning the closes against Dolt; `quikoptions_flow.py audit` records

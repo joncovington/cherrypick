@@ -11,12 +11,12 @@ The styles (`quikoptions.post_style`, docs/quikoptions-plan.md):
              the summary and each section as a small monospace table
 
 The sections (`quikoptions.post_cards`) are the Options flow `today` cards by title (Derived flow,
-Net by name, Birdseye, Names across tables, Largest by contracts, Top sweeps, Top spreads, Vol /
-OI) plus `Events`: the session's
-high-impact releases with actual against estimate, and the next ones, from the calendar capture. In
-the image styles Events is a header field (it has no card). Default: Derived flow (the top scored
-flows and the net by name, from `scripts/quikoptions_flow.py`), Largest by contracts and Top sweeps,
-as text (chosen 2026-10-03; the others stay configurable). The day does not need every table told.
+Net by name, Trades — the site's Birdseye, Names across tables, Largest by contracts, Top sweeps,
+Top spreads, Vol / OI) plus `Events`: the session's high-impact releases with actual against
+estimate, and the next ones, from the calendar capture. In the image styles Events is a capture of
+the post page's table. Default: Derived flow (the top scored flows, from
+`scripts/quikoptions_flow.py`), Trades and Events, one screen capture a message (chosen 2026-10-03;
+the others stay configurable). The day does not need every table told.
 
 The images are the console's own Options flow cards, captured with `tools/ui-check.mjs --card`,
 which refuses rather than crops the wrong thing: every card is titled "<name> — <session>", so a
@@ -42,6 +42,11 @@ page's own checks; with no capture for the session it posts nothing.
                                        [--title TEXT] [--dry-run] [--force] [--keep DIR]
 
 `--style`, `--cards`, `--title` and `--webhook` override the config for one run (trying styles).
+
+Two more posts, both narrow text (decided 2026-10-03): `--kind morning`, after the open-interest
+check, says how the last session's flows came out (opened, closed, mixed) beside their first scores;
+`--kind weekly`, on Fridays, is the scorecard — the week's checks, confirmations and how the calls
+did a day on, descriptive only until the fixed 40-session test.
 """
 
 from __future__ import annotations
@@ -322,7 +327,7 @@ def section_text(name: str, doc: dict, calendar: dict | None) -> str:
         return _table([_spread_cells(r) for r in (t.get("spreads") or [])[:ROWS]], {2, 4})
     if name == "Vol / OI":
         return _table([_voloi_cells(r) for r in (t.get("voloi") or [])[:ROWS]], {2, 3, 4})
-    if name == "Birdseye":
+    if name in ("Trades", "Birdseye"):
         rows = []
         for r in (t.get("birdseye") or [])[:ROWS]:
             share = r.get("call_share")
@@ -375,7 +380,7 @@ def calendar_text(session: str, calendar: dict | None) -> str:
 
 
 def _title_line(title: str, session: date) -> str:
-    return f"{title} — {session:%a} {session.day} {session:%b %Y} (stocks)"
+    return f"{title} — {session:%a} {session.day} {session:%b %Y}"
 
 
 def _footer(doc: dict) -> str:
@@ -389,17 +394,79 @@ def _footer(doc: dict) -> str:
 # ------------------------------------------------------------------------------------------------
 
 
-def header_embed(doc: dict, title: str, calendar: dict | None = None, with_calendar: bool = False) -> dict:
-    """The image styles' first message: the title, the date and the day in four fields; Events as
-    a fifth when it is a chosen section. The date is always in the title line and the capture time
-    in the footer, whatever the title, so no title can drop them."""
-    s = summary(doc)
-    fields = [
-        {"name": "Most traded", "value": s["most"], "inline": True},
-        {"name": "Largest trade", "value": s["largest"], "inline": True},
-        {"name": "Bullish / bearish", "value": s["sides"], "inline": True},
-        {"name": "In two or more tables", "value": s["names"][:1000], "inline": False},
-    ]
+def _net_names(flow: dict, sign: int, n: int = 3) -> str:
+    names = [x for x in flow.get("names") or [] if (x.get("net") or 0) * sign > 0]
+    names.sort(key=lambda x: -abs(x["net"]))
+    return (
+        " · ".join(f"{x['symbol']} {'+' if sign > 0 else '−'}{_dollars(x['net'])}" for x in names[:n]) or "—"
+    )
+
+
+def _shown(f: dict) -> float | None:
+    return f.get("confirmed_score") if f.get("confirmed_score") is not None else f.get("score")
+
+
+def yesterday_line(prev: dict | None, n: int = ROWS) -> str | None:
+    """The previous session's top calls, one day on: each name's move and whether it went the call's
+    way. None until that session has a 1-day outcome (recorded by the next day's scoring)."""
+    returns = (((prev or {}).get("outcomes") or {}).get("1d") or {}).get("returns") or {}
+    if not returns:
+        return None
+    out = []
+    for f in (prev.get("flows") or [])[:n]:
+        move, s = returns.get(f["symbol"]), _shown(f)
+        if move is None or s is None:
+            continue
+        mark = "✓" if (move > 0) == (s > 0) and move != 0 else "✗" if move != 0 else "·"
+        out.append(f"{f['symbol']} {s:+.0f} {move:+.1%} {mark}")
+    return " · ".join(out) or None
+
+
+def header_embed(
+    doc: dict, title: str, calendar: dict | None = None, with_calendar: bool = False, prev: dict | None = None
+) -> dict:
+    """The image styles' first message: the title, the date and the day in a few fields — led by
+    the derived flow once it is scored (the names by net delta dollars, the top flow, the largest
+    trade with no read, yesterday's calls one day on), else the site's own summary; Events when it is
+    a chosen section. The date is always in the title line and the capture time in the footer,
+    whatever the title, so no title can drop them."""
+    flow = doc.get("_flow")
+    if flow and flow.get("flows"):
+        top = flow["flows"][0]
+        fields = [
+            {"name": "Bullish", "value": _net_names(flow, +1), "inline": False},
+            {"name": "Bearish", "value": _net_names(flow, -1), "inline": False},
+            {
+                "name": "Top flow",
+                "value": " ".join(
+                    x
+                    for x in (f"{_shown(top):+.0f}", top["symbol"], top.get("what"), top.get("direction"))
+                    if x
+                ),
+                "inline": True,
+            },
+        ]
+        if flow.get("unread"):
+            u = flow["unread"][0]
+            fields.append(
+                {
+                    "name": "Unread, largest",
+                    "value": f"{u['symbol']} {u.get('what') or ''} "
+                    f"({_dollars(u.get('delta_dollars') or u.get('premium'))})",
+                    "inline": True,
+                }
+            )
+        line = yesterday_line(prev)
+        if line:
+            fields.append({"name": "Yesterday's calls, a day on", "value": line[:1000], "inline": False})
+    else:
+        s = summary(doc)
+        fields = [
+            {"name": "Most traded", "value": s["most"], "inline": True},
+            {"name": "Largest trade", "value": s["largest"], "inline": True},
+            {"name": "Bullish / bearish", "value": s["sides"], "inline": True},
+            {"name": "In two or more tables", "value": s["names"][:1000], "inline": False},
+        ]
     if with_calendar:
         fields.append(
             {
@@ -417,16 +484,23 @@ def header_embed(doc: dict, title: str, calendar: dict | None = None, with_calen
 
 
 def plan_messages(
-    doc: dict, title: str, style: str, sections: list[str], calendar: dict | None
+    doc: dict, title: str, style: str, sections: list[str], calendar: dict | None, prev: dict | None = None
 ) -> list[dict]:
     """The messages a style sends, in order: {"payload": payload_json, "cards": [card titles to
     attach]}. Images are named here and captured by the caller."""
-    cards = [c for c in sections if c != EVENTS]
-    with_cal = EVENTS in sections
+    # Events is a capture like any card (the post page's table, 2026-10-03); a calendar not captured
+    # with the session has no card, so it is left out rather than failing the series.
+    cards = [c for c in sections if c != EVENTS or (calendar and calendar.get("events"))]
     if style in ("cards", "singles"):
         per = CARDS_PER_MESSAGE if style == "cards" else 1
-        out = [{"payload": {"embeds": [header_embed(doc, title, calendar, with_cal)]}, "cards": []}]
-        out += [{"payload": {"content": ""}, "cards": cards[i : i + per]} for i in range(0, len(cards), per)]
+        # No header message (2026-10-03): the series' title line rides on the first picture, and each
+        # picture goes out under its own text title, so the thread reads without opening one.
+        groups = [cards[i : i + per] for i in range(0, len(cards), per)]
+        out = [{"payload": {"content": " · ".join(f"**{c}**" for c in g)}, "cards": g} for g in groups]
+        if out:
+            # A Discord heading, so the series' title reads larger than each picture's own (2026-10-03).
+            head = f"## {_title_line(title, date.fromisoformat(doc['session']))}"
+            out[0]["payload"]["content"] = head + "\n\n" + out[0]["payload"]["content"]
         return out
     s = summary(doc)
     if style == "embed":
@@ -474,6 +548,96 @@ def plan_messages(
     return [{"payload": {"content": m[:2000]}, "cards": []} for m in messages]
 
 
+def morning_text(flow: dict, title: str, n: int = 8) -> str | None:
+    """The morning after: how the last session's flows came out against the next morning's open
+    interest — opened, closed or mixed — and the top flows' first score beside the confirmed one.
+    None until the confirmation has run."""
+    if not flow.get("confirmed_at"):
+        return None
+    every = (flow.get("flows") or []) + (flow.get("unread") or [])
+    counts = {k: sum(1 for f in every if f.get("confirmed") == k) for k in ("opened", "closed", "mixed")}
+    unchecked = sum(1 for f in every if not f.get("confirmed"))
+    ranked = sorted(
+        (f for f in flow.get("flows") or [] if f.get("confirmed_score") is not None),
+        key=lambda f: -abs(f["confirmed_score"]),
+    )
+    rows = [
+        [f"{f['score']:+.0f} → {f['confirmed_score']:+.0f}", f["symbol"], f.get("what") or "", f["confirmed"]]
+        for f in ranked[:n]
+    ]
+    session = date.fromisoformat(flow["session"])
+    head = f"**{title}, confirmed — {session:%a} {session.day} {session:%b}**"
+    tally = (
+        f"Opened {counts['opened']} · closed {counts['closed']} · mixed {counts['mixed']}"
+        f" · not checked {unchecked}"
+    )
+    body = _table(rows, {0}) if rows else "(no flow could be checked)"
+    return (
+        f"{head}\n{tally}\n```\n{body}\n```\n-# From the change in each contract's open interest overnight."
+    )
+
+
+def weekly_text(days: list[dict], audit: dict | None, review: dict | None, title: str) -> str | None:
+    """The Friday scorecard over the week's flow documents: what was read, what the checks found,
+    how the confirmations came out, and how the calls did a day on — descriptive only; the verdict on
+    the score is the fixed 40-session test. None for a week with no scored session."""
+    if not days:
+        return None
+    flows = [f for d in days for f in d.get("flows") or []]
+    unread = sum(len(d.get("unread") or []) for d in days)
+    votes = {
+        k: sum((d.get("checks") or {}).get("site_vote", {}).get(k, 0) for d in days)
+        for k in ("agrees", "neutral", "opposite")
+    }
+    voted = sum(votes.values())
+    deltas = [(d.get("checks") or {}).get("delta") or {} for d in days]
+    broker = sum(x.get("broker", 0) for x in deltas)
+    singles = sum(x.get("singles", 0) for x in deltas)
+    off = sum(len(x.get("off") or []) for x in deltas)
+    closes = [(d.get("checks") or {}).get("close") or {} for d in days]
+    compared = sum(x.get("compared", 0) for x in closes)
+    close_off = sum(len(x.get("off") or []) for x in closes)
+    confirmed = [f for f in flows if f.get("confirmed")]
+    opened = sum(1 for f in confirmed if f["confirmed"] == "opened")
+    closed = sum(1 for f in confirmed if f["confirmed"] == "closed")
+    hits = total = strong_hits = strong_total = 0
+    for d in days:
+        returns = ((d.get("outcomes") or {}).get("1d") or {}).get("returns") or {}
+        for f in d.get("flows") or []:
+            move, s = returns.get(f["symbol"]), _shown(f)
+            if move in (None, 0) or s is None:
+                continue
+            hit = (move > 0) == (s > 0)
+            total += 1
+            hits += hit
+            if abs(s) >= 30:
+                strong_total += 1
+                strong_hits += hit
+    first = date.fromisoformat(min(d["session"] for d in days))
+    lines = [
+        f"**{title} scorecard — week of {first:%a} {first.day} {first:%b}**",
+        f"Sessions {len(days)} · flows read {len(flows)} · unread {unread}",
+        f"Read vs the reported sentiment: {votes['agrees']} of {voted} agree · {votes['opposite']} opposite"
+        if voted
+        else "Read vs the reported sentiment: —",
+        f"Delta from the broker {broker} of {singles} · model off by >0.10 on {off}",
+        f"Closes vs Dolt: {compared - close_off} of {compared} within 0.5%"
+        if compared
+        else "Closes vs Dolt: not checked yet",
+        f"Confirmed {len(confirmed)}: opened {opened} · closed {closed}"
+        f" · mixed {len(confirmed) - opened - closed}",
+        f"A day on: strong calls {strong_hits} of {strong_total} their way · all read {hits} of {total}"
+        if total
+        else "A day on: no outcome yet",
+    ]
+    if audit and audit.get("checked"):
+        lines.append(f"Hand checks vs Time & Sales: {audit['agree']} of {audit['checked']} agree")
+    if review:
+        lines.append(f"The fixed test: {review.get('sessions', 0)} of {review.get('needed', 40)} sessions")
+    lines.append("-# Descriptive only: the verdict on the score is the fixed 40-session test.")
+    return "\n".join(lines)
+
+
 # ------------------------------------------------------------------------------------------------
 # The marker.
 # ------------------------------------------------------------------------------------------------
@@ -514,13 +678,20 @@ def mark_sent(session: str, index: int, how: dict, fresh: bool = False) -> None:
 # ------------------------------------------------------------------------------------------------
 
 
+# Cards captured from the post page (`/post/flow`, outside the shell, without the columns a post does
+# not need); every other card from the Options flow page itself.
+POST_PAGE_CARDS = {"Derived flow", "Net by name", "Top spreads", "Events"}
+
+
 def capture_card(session: str, name: str, out: Path) -> str | None:
     """Screenshot the Options flow card titled "<name> — <session>" into `out`; None on success."""
     node = shutil.which("node")
     if node is None:
         return "node is not on PATH"
+    route = f"{'post/flow' if name in POST_PAGE_CARDS else 'flow'}?session={session}"
     argv = [
-        node, str(UI_CHECK), "--route", f"flow?session={session}", "--card", f"{name} — {session}",
+        node, str(UI_CHECK), "--route", route,
+        "--card", f"{name} — {session}",
         "--shot", str(out), "--scale", "2", "--viewport", "1600x1200", "--timeout", "45000",
     ]  # fmt: skip
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
@@ -644,7 +815,11 @@ def run(
         _log(f"{session}: the series settings cannot be used ({why}); nothing posted")
         return "failed"
     doc = {**doc, "_flow": load_flow(session)}
-    messages = plan_messages(doc, how["title"], how["style"], list(how["cards"]), load_calendar(session))
+    earlier = [d for d in _capture_sessions() if d < session]
+    prev = load_flow(earlier[-1]) if earlier else None
+    messages = plan_messages(
+        doc, how["title"], how["style"], list(how["cards"]), load_calendar(session), prev
+    )
     if len(sent) >= len(messages):
         _log(f"{session}: already posted")
         return "skipped"
@@ -689,6 +864,91 @@ def run(
     return "posted"
 
 
+def _capture_sessions() -> list[str]:
+    folder = capture_path("x").parent
+    return sorted(p.stem for p in folder.glob("????-??-??.json")) if folder.exists() else []
+
+
+def run_text(
+    key: str, text: str | None, *, dry_run: bool, force: bool, cfg: dict, webhook: str | None, what: str
+) -> str:
+    """Post one plain message once under `key` (a morning follow-up or a weekly scorecard)."""
+    settings = post_settings(cfg)
+    if text is None:
+        _log(f"{key}: nothing to post yet ({what})")
+        return "skipped"
+    if not dry_run and not settings["post"]:
+        _log(f"{key}: quikoptions.post is off; nothing posted")
+        return "skipped"
+    if not force and (markers().get(key) or {}).get("sent"):
+        _log(f"{key}: already posted")
+        return "skipped"
+    if dry_run:
+        print(text)
+        return "skipped"
+    url, why_not = webhook_url(webhook or settings["webhook"])
+    if url is None:
+        _log(f"{key}: {why_not}; nothing posted")
+        return "failed"
+    why = post(url, with_files({"content": text[:2000]}, []), [])
+    if why is not None:
+        _log(f"{key}: {why}")
+        return "failed"
+    mark_sent(key, 0, {"title": settings["title"], "style": "text", "cards": [what]}, fresh=True)
+    _log(f"{key}: posted")
+    return "posted"
+
+
+def run_morning(session: str | None, **kw) -> str:
+    """The morning follow-up for the last scored session (or `session`), once its open interest has
+    been checked."""
+    days = [d for d in _capture_sessions() if session is None or d == session]
+    flow = load_flow(days[-1]) if days else None
+    cfg = kw.pop("cfg")
+    if flow is None:
+        _log("morning: no scored session")
+        return "skipped"
+    return run_text(
+        f"{flow['session']}:morning",
+        morning_text(flow, post_settings(cfg)["title"]),
+        cfg=cfg,
+        what="morning",
+        **kw,
+    )
+
+
+def run_weekly(session: str | None, **kw) -> str:
+    """The scorecard for the week holding `session` (default: the last captured session)."""
+    from cherrypick.core import home
+
+    sessions = _capture_sessions()
+    anchor = (
+        date.fromisoformat(session) if session else (date.fromisoformat(sessions[-1]) if sessions else None)
+    )
+    cfg = kw.pop("cfg")
+    if anchor is None:
+        _log("weekly: no captured session")
+        return "skipped"
+    year, week, _ = anchor.isocalendar()
+    days = [
+        f
+        for d in sessions
+        if date.fromisoformat(d).isocalendar()[:2] == (year, week)
+        for f in [load_flow(d)]
+        if f
+    ]
+    folder = home.data_dir("quikoptions")
+
+    def read(name: str) -> dict | None:
+        try:
+            return json.loads((folder / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    text = weekly_text(days, read("audit-summary.json"), read("review.json"), post_settings(cfg)["title"])
+    return run_text(f"{year}-W{week:02d}:weekly", text, cfg=cfg, what="weekly", **kw)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--session", default=None, help="YYYY-MM-DD; default today (ET)")
@@ -703,7 +963,22 @@ def main(argv: list[str] | None = None) -> int:
         "--cards", default=None, help='this run only: sections, comma-separated ("Top sweeps,Events")'
     )
     ap.add_argument("--title", default=None, help="this run only: the series title")
+    ap.add_argument(
+        "--kind",
+        choices=["daily", "morning", "weekly"],
+        default="daily",
+        help="daily (after the close), morning (the confirmations) or weekly (Friday's scorecard)",
+    )
     args = ap.parse_args(argv)
+    if args.kind in ("morning", "weekly"):
+        from cherrypick.orchestrator import config as cfgmod
+
+        cfg = cfgmod.load_config()
+        if args.title is not None:
+            cfg = {**cfg, "quikoptions": {**(cfg.get("quikoptions") or {}), "post_title": args.title}}
+        runner = run_morning if args.kind == "morning" else run_weekly
+        outcome = runner(args.session, dry_run=args.dry_run, force=args.force, cfg=cfg, webhook=args.webhook)
+        return 1 if outcome == "failed" else 0
     session = args.session or _now_et().date().isoformat()
     overrides: dict = {}
     if args.style:

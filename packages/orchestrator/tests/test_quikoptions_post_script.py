@@ -100,7 +100,7 @@ def _run(**kw):
 
 def test_the_header_carries_date_and_capture_time_whatever_the_title_and_no_source():
     embed = qp.header_embed(CAPTURE, "@everyone flow")
-    assert embed["title"] == "@everyone flow — Fri 2 Oct 2026 (stocks)"
+    assert embed["title"] == "@everyone flow — Fri 2 Oct 2026"
     assert embed["footer"]["text"] == "Captured 16:52 ET."
     assert "QuikOptions" not in json.dumps(embed)  # no source attribution (2026-10-03)
     fields = {f["name"]: f["value"] for f in embed["fields"]}
@@ -152,17 +152,20 @@ SECTIONS = ["Largest by contracts", "Top sweeps", "Events"]
 
 
 def test_each_style_plans_its_own_messages():
-    cards = qp.plan_messages(CAPTURE, "Hot options", "cards", ["Birdseye", "Top sweeps", "Vol / OI"], None)
-    assert [m["cards"] for m in cards] == [[], ["Birdseye", "Top sweeps"], ["Vol / OI"]]
-    singles = qp.plan_messages(CAPTURE, "Hot options", "singles", ["Birdseye", "Top sweeps"], None)
-    assert [m["cards"] for m in singles] == [[], ["Birdseye"], ["Top sweeps"]]
+    cards = qp.plan_messages(CAPTURE, "Hot options", "cards", ["Trades", "Top sweeps", "Vol / OI"], None)
+    assert [m["cards"] for m in cards] == [["Trades", "Top sweeps"], ["Vol / OI"]]
+    singles = qp.plan_messages(CAPTURE, "Hot options", "singles", ["Trades", "Top sweeps"], None)
+    assert [m["cards"] for m in singles] == [["Trades"], ["Top sweeps"]]
+    # No header message: the title line rides on the first picture, above its own title.
+    assert singles[0]["payload"]["content"] == "## Hot options — Fri 2 Oct 2026\n\n**Trades**"
+    assert singles[1]["payload"]["content"] == "**Top sweeps**"
     embed = qp.plan_messages(CAPTURE, "Hot options", "embed", SECTIONS, CALENDAR)
     assert len(embed) == 1 and embed[0]["cards"] == []
     names = [f["name"] for f in embed[0]["payload"]["embeds"][0]["fields"]]
     assert names[-3:] == SECTIONS
     text = qp.plan_messages(CAPTURE, "Hot options", "text", SECTIONS, CALENDAR)
     body = "\n".join(m["payload"]["content"] for m in text)
-    assert body.startswith("**Hot options — Fri 2 Oct 2026 (stocks)**")
+    assert body.startswith("**Hot options — Fri 2 Oct 2026**")
     assert "Captured 16:52 ET." in body and "QuikOptions" not in body  # no source attribution
     assert all(len(m["payload"]["content"]) <= 2000 for m in text)
 
@@ -174,10 +177,12 @@ def test_calendar_shows_the_days_releases_and_the_next_high_impact_ones():
     assert "Wed  7 14:00  FOMC Minutes" in out and "Fri  9 10:00  Michigan Consumer Sentiment (Oct)" in out
     assert "Too far ahead" not in out
     assert qp.calendar_text(SESSION, None) == "(no calendar captured with this session)"
-    # In the image styles Events has no card: it is a header field instead.
-    header = qp.plan_messages(CAPTURE, "Hot options", "cards", SECTIONS, CALENDAR)
-    assert header[0]["payload"]["embeds"][0]["fields"][-1]["name"] == "Events"
-    assert [m["cards"] for m in header[1:]] == [["Largest by contracts", "Top sweeps"]]
+    # In the image styles Events is a capture of the post page's table — and only when a calendar
+    # was captured with the session, so a missing calendar costs that picture, not the series.
+    planned = qp.plan_messages(CAPTURE, "Hot options", "singles", SECTIONS, CALENDAR)
+    assert [m["cards"] for m in planned] == [["Largest by contracts"], ["Top sweeps"], ["Events"]]
+    planned = qp.plan_messages(CAPTURE, "Hot options", "singles", SECTIONS, None)
+    assert [m["cards"] for m in planned] == [["Largest by contracts"], ["Top sweeps"]]
 
 
 def test_every_message_pings_no_one():
@@ -202,20 +207,80 @@ def test_text_longer_than_a_message_is_split_at_a_section():
     assert len(text) > 1 and all(len(m["payload"]["content"]) <= 2000 for m in text)
 
 
-def test_the_default_is_one_text_message_and_captures_nothing(harness):
-    assert _run(cfg={"quikoptions": {"enabled": True, "post": True}}) == "posted"
-    assert harness["captured"] == []
-    assert len(harness["posted"]) == 1 and harness["posted"][0]["files"] == []
-    assert "**Largest by contracts**" in harness["posted"][0]["payload"]["content"]
+def test_the_default_is_one_titled_capture_a_message(harness):
+    """Screen captures, one a message, so each reads full width on a phone (2026-10-03): Derived
+    flow, Trades and the Events table."""
+    qp_load = qp.load_calendar
+    qp.load_calendar = lambda session: CALENDAR
+    try:
+        assert _run(cfg={"quikoptions": {"enabled": True, "post": True}}) == "posted"
+    finally:
+        qp.load_calendar = qp_load
+    assert harness["captured"] == ["Derived flow", "Trades", "Top spreads", "Events"]
+    assert [len(p["files"]) for p in harness["posted"]] == [1, 1, 1, 1]
+    assert [p["payload"].get("content") for p in harness["posted"]] == [
+        "## Hot options — Fri 2 Oct 2026\n\n**Derived flow**",
+        "**Trades**",
+        "**Top spreads**",
+        "**Events**",
+    ]
+    assert _run(cfg={"quikoptions": {"enabled": True, "post": True}}) == "skipped"  # once per session
 
 
-def test_the_default_sections_as_cards_are_the_header_then_pairs(harness):
-    assert _run() == "posted"
-    assert harness["captured"] == ["Derived flow", "Largest by contracts", "Top sweeps"]
-    assert [len(p["files"]) for p in harness["posted"]] == [0, 2, 1]
+def test_cards_style_pairs_the_captures(harness):
+    assert _run(cfg=_cfg(post_cards=["Derived flow", "Largest by contracts", "Top sweeps"])) == "posted"
+    assert [len(p["files"]) for p in harness["posted"]] == [2, 1]
     assert all(p["url"] == "https://d/own" for p in harness["posted"])  # dedicated by default
-    assert _run() == "skipped"  # once per session
-    assert len(harness["posted"]) == 3
+
+
+def test_the_header_leads_with_the_derived_flow_and_yesterdays_calls():
+    flow = {
+        "flows": [{"symbol": "PCG", "what": "15 Jan 27 16C", "direction": "bought", "score": 46.0}],
+        "unread": [{"symbol": "VST", "what": "17 Dec 27 195P", "delta_dollars": 1.16e8}],
+        "names": [{"symbol": "PCG", "net": 1.1e7}, {"symbol": "SMCI", "net": -1.33e7}],
+    }
+    prev = {
+        "flows": [{"symbol": "MU", "score": -39.0}, {"symbol": "F", "score": 45.0, "confirmed_score": 32.0}],
+        "outcomes": {"1d": {"returns": {"MU": -0.012, "F": -0.004}}},
+    }
+    embed = qp.header_embed({**CAPTURE, "_flow": flow}, "Hot options", prev=prev)
+    fields = {f["name"]: f["value"] for f in embed["fields"]}
+    assert fields["Bullish"] == "PCG +$11.00M" and fields["Bearish"] == "SMCI −$13.30M"
+    assert fields["Top flow"] == "+46 PCG 15 Jan 27 16C bought"
+    assert fields["Unread, largest"] == "VST 17 Dec 27 195P ($116.00M)"
+    assert fields["Yesterday's calls, a day on"] == "MU -39 -1.2% ✓ · F +32 -0.4% ✗"
+    assert qp.yesterday_line({"flows": [], "outcomes": {}}) is None  # no outcome yet: no line
+
+
+def test_the_morning_post_waits_for_the_confirmation_and_the_week_is_descriptive():
+    flow = {
+        "session": SESSION,
+        "flows": [{"symbol": "PCG", "what": "15 Jan 27 16C", "score": 46.0}],
+        "unread": [],
+    }
+    assert qp.morning_text(flow, "Hot options") is None  # not confirmed yet: nothing to say
+    flow["confirmed_at"] = "2026-10-05T12:31:00+00:00"
+    flow["flows"][0].update(confirmed="opened", confirmed_score=76.0)
+    text = qp.morning_text(flow, "Hot options")
+    assert text.startswith("**Hot options, confirmed — Fri 2 Oct**")
+    assert "Opened 1 · closed 0 · mixed 0 · not checked 0" in text and "+46 → +76" in text
+    week = qp.weekly_text(
+        [
+            {
+                **flow,
+                "checks": {
+                    "site_vote": {"agrees": 16, "neutral": 0, "opposite": 0},
+                    "delta": {"broker": 20, "singles": 20, "off": ["x"]},
+                },
+            }
+        ],
+        {"checked": 4, "agree": 3},
+        {"sessions": 1, "needed": 40},
+        "Hot options",
+    )
+    assert "16 of 16 agree" in week and "model off by >0.10 on 1" in week and "3 of 4 agree" in week
+    assert "1 of 40 sessions" in week and week.endswith("the fixed 40-session test.")
+    assert qp.weekly_text([], None, None, "Hot options") is None
 
 
 def test_the_derived_section_shows_top_flows_and_net_names():
@@ -278,14 +343,15 @@ def test_a_forced_test_post_in_another_style_starts_the_day_over(harness):
 
 
 def test_a_failure_resumes_under_the_title_and_cards_it_started_with(harness):
-    harness["fail_at"] = 1  # the header lands, the pictures do not
-    assert _run(cfg=_cfg(post_title="Flow", post_cards=["Birdseye", "Top spreads"])) == "failed"
+    harness["fail_at"] = 1  # the first picture lands, the second does not
+    first = _cfg(post_title="Flow", post_style="singles", post_cards=["Trades", "Top spreads"])
+    assert _run(cfg=first) == "failed"
     assert len(harness["posted"]) == 1
     harness["fail_at"] = None
     # The config changed meanwhile; the day's series finishes as it started.
     assert _run(cfg=_cfg(post_title="Something else", post_cards=["Top sweeps"])) == "posted"
     assert len(harness["posted"]) == 2
-    assert harness["captured"][-2:] == ["Birdseye", "Top spreads"]
+    assert harness["captured"][-2:] == ["Trades", "Top spreads"]
 
 
 def test_bad_settings_and_a_failed_capture_post_nothing(harness, monkeypatch):

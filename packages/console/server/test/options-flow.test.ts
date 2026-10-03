@@ -114,6 +114,25 @@ describe("options flow reader", () => {
     expect(listFlowSessions(config)).toEqual(["2026-10-02"]); // the .flow.json is not a session of its own
   });
 
+  it("attaches the week's high-impact events from the calendar captured with the session", () => {
+    fs.mkdirSync(dir, { recursive: true });
+    write("2026-10-02.json", capture("2026-10-02"));
+    expect(readOptionsFlow(config).current?.events).toBeNull(); // no calendar captured: null, not []
+    const cal = path.join(tmp, "quikoptions", "calendar");
+    fs.mkdirSync(cal, { recursive: true });
+    const ev = (date: string, time_et: string, impact: string, event: string, actual: string | null = null) =>
+      ({ date, time_et, impact, event, actual, estimate: "90K", previous: "133K" });
+    fs.writeFileSync(path.join(cal, "2026-10-02.json"), JSON.stringify({ events: [
+      ev("2026-10-07", "14:00", "H", "FOMC Minutes"),
+      ev("2026-10-02", "08:30", "H", "Non Farm Payrolls (Sep)", "29K"),
+      ev("2026-10-02", "10:00", "M", "Factory Orders"),
+      ev("2026-10-20", "08:30", "H", "Too far ahead"),
+    ] }));
+    const events = readOptionsFlow(config).current?.events ?? [];
+    expect(events.map((e) => e.event)).toEqual(["Non Farm Payrolls (Sep)", "FOMC Minutes"]);
+    expect(events[0]).toMatchObject({ date: "2026-10-02", timeEt: "08:30", actual: "29K", estimate: "90K" });
+  });
+
   it("an unreadable capture is degraded, not an empty day", () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "2026-10-02.json"), "{ not json");

@@ -3,6 +3,7 @@ import { Shell } from "./components/shell/Shell";
 import { OverviewPage } from "./pages/Overview/OverviewPage";
 import { ModuleRoute } from "./pages/ModuleRoute";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { FlowPostPage } from "./pages/Flow/FlowPostPage";
 
 /** A moved page whose links carry a query (`/reports/chart?symbol=MSFT`): the query goes with it. */
 function MovedTo({ to }: { to: string }) {
@@ -13,6 +14,8 @@ function MovedTo({ to }: { to: string }) {
 export default function App() {
   return (
     <Routes>
+      {/* The Discord series' capture page: outside the shell (no header, no rail) and in no nav. */}
+      <Route path="post/flow" element={<FlowPostPage />} />
       <Route element={<Shell />}>
         <Route index element={<OverviewPage />} />
         {/* Pre-2026-09 routes that appear in the suite's own docs — redirect rather than 404, and

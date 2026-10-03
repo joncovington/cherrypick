@@ -38,7 +38,32 @@ export const TABLE_LABEL: Record<string, string> = {
 const BAND_ORDER = ["1", "2-10", "11-99", "100+"] as const;
 const BAND_LABEL: Record<string, string> = { "1": "1 lot", "2-10": "2–10", "11-99": "11–99", "100+": "100+" };
 // Lighter to darker: a single-lot trade is the faintest band, a block the strongest.
-const BAND_OPACITY: Record<string, number> = { "1": 0.25, "2-10": 0.45, "11-99": 0.7, "100+": 1 };
+// A colour per band, not four shades of one: the 100+ band is a sliver (0.2-1% of trades on
+// 2026-10-02) and a fourth shade of red vanished beside the third. Every band that has trades also
+// gets MIN_BAND pixels, so the block trades are always visible.
+const BAND_FILL: Record<string, string> = {
+  "1": "#5b616b",
+  "2-10": "rgba(210, 63, 87, 0.5)",
+  "11-99": "var(--accent)",
+  "100+": "var(--warn)",
+};
+const MIN_BAND = 3;
+
+/** The four bands' colours, for a column header. */
+function BandKey() {
+  return (
+    <span className="band-key">
+      {BAND_ORDER.map((b) => (
+        <span key={b}>
+          <svg width={8} height={8} aria-hidden="true">
+            <rect width={8} height={8} fill={BAND_FILL[b]} />
+          </svg>{" "}
+          {BAND_LABEL[b]}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 /** `15 Jan 27 16C` from the capture's ISO expiry, strike and call/put. */
 export function contractLabel(expires: string | null, strike: number | null, cp: "call" | "put" | null): string {
@@ -61,7 +86,7 @@ function SideCell({ trade }: { trade: FlowTrade }) {
   if (s === null) return <span className="muted">—</span>;
   const edge = s.edge === null ? "" : ` · edge ${fmtNum(s.edge)}`;
   return (
-    <span className={sideTone(s.sentiment)} title={`${s.sentiment} — ${s.fill}${edge} (the site's classification)`}>
+    <span className={sideTone(s.sentiment)} title={`${s.sentiment} — ${s.fill}${edge}`}>
       {s.sentiment.toLowerCase()} <span className="muted">{s.fill.toLowerCase()}</span>
     </span>
   );
@@ -83,14 +108,20 @@ function Bar({ value, max, tone, width = 72 }: { value: number | null; max: numb
 function BandsBar({ row, width = 160 }: { row: FlowBirdseyeRow; width?: number }) {
   const total = BAND_ORDER.reduce((sum, b) => sum + (row.bands[b] ?? 0), 0);
   if (total <= 0) return <span className="muted">—</span>;
+  // Widths in proportion, with every band that has trades at least MIN_BAND wide; the rest shrink to fit.
+  const raw = BAND_ORDER.map((b) => ((row.bands[b] ?? 0) / total) * width);
+  const floored = raw.map((w) => (w > 0 ? Math.max(w, MIN_BAND) : 0));
+  const excess = floored.reduce((a, w) => a + w, 0) - width;
+  const roomy = floored.reduce((a, w) => a + (w > MIN_BAND ? w : 0), 0);
+  const widths = floored.map((w) => (w > MIN_BAND && roomy > 0 ? w - (excess * w) / roomy : w));
   let x = 0;
   const title = BAND_ORDER.map((b) => `${BAND_LABEL[b]}: ${fmtPct(((row.bands[b] ?? 0) / total) * 100, 1)}`).join(" · ");
   return (
     <svg width={width} height={10} role="img" aria-label={`trades by size: ${title}`} className="flow-bar">
       <title>{title}</title>
-      {BAND_ORDER.map((b) => {
-        const w = ((row.bands[b] ?? 0) / total) * width;
-        const rect = <rect key={b} x={x} y={0} width={w} height={10} fill="var(--accent)" opacity={BAND_OPACITY[b]} />;
+      {BAND_ORDER.map((b, i) => {
+        const w = widths[i] ?? 0;
+        const rect = <rect key={b} x={x} y={0} width={w} height={10} fill={BAND_FILL[b]} />;
         x += w;
         return rect;
       })}
@@ -116,7 +147,9 @@ function BirdseyeSummaryTable({ rows }: { rows: FlowBirdseyeRow[] }) {
           <th>Symbol</th>
           <th className="num">Trades</th>
           <th className="num">Calls</th>
-          <th>Trade size (1 · 2–10 · 11–99 · 100+)</th>
+          <th>
+            Trade size <BandKey />
+          </th>
           <th className="num">100+ lots</th>
         </tr>
       </thead>
@@ -124,7 +157,7 @@ function BirdseyeSummaryTable({ rows }: { rows: FlowBirdseyeRow[] }) {
         {rows.map((r) => (
           <tr key={r.symbol}>
             <td title={r.name ?? undefined}>{r.symbol}</td>
-            <td className="num" title="as the site printed it">{r.shown["total"] ?? fmtCount(r.total)}</td>
+            <td className="num" title="as reported">{r.shown["total"] ?? fmtCount(r.total)}</td>
             <td className="num">{r.callShare === null ? "—" : fmtPct(r.callShare * 100)}</td>
             <td>
               <BandsBar row={r} />
@@ -152,7 +185,7 @@ function TradesTable({ rows, limit, showTime }: { rows: FlowTrade[]; limit?: num
           <th className="num">Price</th>
           <th className="num">Premium</th>
           <th />
-          <th>Side (site)</th>
+          <th>Side</th>
         </tr>
       </thead>
       <tbody>
@@ -163,7 +196,7 @@ function TradesTable({ rows, limit, showTime }: { rows: FlowTrade[]; limit?: num
             <td>{contractLabel(r.expires, r.strike, r.cp)}</td>
             <td className="num">{fmtCount(r.size)}</td>
             <td className="num">{fmtNum(r.price)}</td>
-            <td className="num" title={r.premiumDerived ? "size × price × 100 (the site prints no premium for outrights)" : undefined}>
+            <td className="num" title={r.premiumDerived ? "size × price × 100 (no premium is reported for outrights)" : undefined}>
               {fmtDollarsShort(r.premium)}
               {r.premiumDerived ? <span className="muted">*</span> : null}
             </td>
@@ -222,7 +255,7 @@ function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: numbe
               <td className="muted">{r.timeEt?.slice(0, 8) ?? "—"}</td>
               <td title={r.type ?? undefined}>{r.spread ?? "—"}</td>
               <td className="num">{fmtCount(r.size)}</td>
-              <td className={directionTone(r.direction)} title="from the site's signs: price and delta agree">
+              <td className={directionTone(r.direction)} title="from the signs of price and delta, where they agree">
                 {r.direction ?? "—"}
               </td>
               <td className="num">{r.price === null ? "—" : fmtNum(Math.abs(r.price))}</td>
@@ -280,6 +313,95 @@ function VolOiTable({ rows, limit }: { rows: FlowVolOi[]; limit?: number }) {
 
 // ----------------------------------------------------------------------------------- derived flow
 
+/**
+ * What each flag on a derived flow means, in one line. One home, read by the derived flow tab and
+ * the post page's key, so a flag cannot mean one thing in the console and another in a post. A flag
+ * the scorer adds without a line here shows in the key as itself, never silently dropped.
+ */
+export const FLAG_KEY: Record<string, string> = {
+  sweep: "one order filled across several exchanges at once — urgency",
+  opening: "on the day's openings list: no open interest before the session",
+  "volume over OI": "the day's volume passed the open interest the contract started with",
+  "≤7d": "expires within 7 days",
+  "deep ITM": "|delta| 0.85 or more — mostly stock replacement, little view",
+  lottery: "|delta| 0.10 or less — a cheap long shot",
+  "near max": "a spread priced at 90% or more of its width — most likely being closed",
+  roll: "printed with an opposite spread at the same time and size — one position moved",
+  linked: "printed with another spread at the same time and size",
+  "paired prints": "two prints at the same millisecond — one order",
+  "paired prints, opposite": "two prints at the same millisecond with opposite views — a structure, not a bet",
+  "earnings event": "expires within 30 days after the next earnings report — a bet on the event",
+  "before ex-dividend": "a deep in-the-money call before an ex-dividend date — a dividend trade",
+  "sentiment opposite": "the reported sentiment is the opposite of the read — conviction halved",
+  "sentiment neutral": "the reported sentiment is neutral — conviction reduced",
+  "delta check": "the model's delta differs from the broker's by more than 0.10",
+};
+
+/**
+ * Each flag as it shows in a table (2026-10-03): a name of four characters or fewer as itself, a
+ * longer one as an abbreviation, keyed under the table by `FlagKey`, so a row's flags fit a narrow
+ * column in a phone-sized picture. A flag with no entry here shows as its name rather than vanishing.
+ */
+export const FLAG_ABBR: Record<string, string> = {
+  sweep: "SWP",
+  opening: "OPEN",
+  "volume over OI": "V>OI",
+  "≤7d": "≤7d",
+  "deep ITM": "DITM",
+  lottery: "LOT",
+  "near max": "NMAX",
+  roll: "roll",
+  linked: "LNK",
+  "paired prints": "PAIR",
+  "paired prints, opposite": "OPP",
+  "earnings event": "EARN",
+  "before ex-dividend": "XDIV",
+  "sentiment opposite": "ANTI",
+  "sentiment neutral": "NEUT",
+  "delta check": "ΔCHK",
+};
+
+/** A row's flags, abbreviated, each with its full name as the tooltip; "—" for none. */
+export function FlagCell({ r }: { r: { flags: string[]; kindLabel?: string } }) {
+  const flags = shownFlags(r);
+  if (flags.length === 0) return <span className="muted">—</span>;
+  return (
+    <span className="flag-abbr">
+      {flags.map((f) => (
+        <span key={f} title={f}>
+          {FLAG_ABBR[f] ?? f}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** A row's flags without one that only repeats its kind (a sweep's "sweep"). */
+export function shownFlags(r: { flags: string[]; kindLabel?: string }): string[] {
+  return r.flags.filter((f) => f !== r.kindLabel);
+}
+
+/** The key to the flags these rows show, in the order the key lists them. */
+export function FlagKey({ rows }: { rows: { flags: string[]; kindLabel?: string }[] }) {
+  const present = new Set(rows.flatMap(shownFlags));
+  if (present.size === 0) return null;
+  const known = Object.keys(FLAG_KEY).filter((f) => present.has(f));
+  const unknown = [...present].filter((f) => !(f in FLAG_KEY)).sort();
+  return (
+    <dl className="flag-key">
+      {[...known, ...unknown].map((f) => (
+        <div key={f}>
+          <dt>
+            <span className="flag-abbr">{FLAG_ABBR[f] ?? f}</span>
+            {(FLAG_ABBR[f] ?? f) !== f ? ` ${f}` : ""}
+          </dt>
+          <dd>{FLAG_KEY[f] ?? ""}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function viewTone(view: DerivedFlowRow["view"]): string {
   return view === "bullish" ? "pnl-pos" : view === "bearish" ? "pnl-neg" : "muted";
 }
@@ -303,7 +425,20 @@ function shownScore(r: DerivedFlowRow): number | null {
   return r.confirmedScore ?? r.score;
 }
 
-function DerivedTable({ rows, limit, full }: { rows: DerivedFlowRow[]; limit?: number; full: boolean }) {
+/** `full` is the derived flow tab (every column); `post` is the hidden post page (the Discord
+ *  capture: no factors, no confirmation column); neither is the today card. */
+export function DerivedTable({
+  rows,
+  limit,
+  full,
+  post = false,
+}: {
+  rows: DerivedFlowRow[];
+  limit?: number;
+  full: boolean;
+  post?: boolean;
+}) {
+  const wide = full || post;
   const shown = limit === undefined ? rows : rows.slice(0, limit);
   return (
     <table className="data-table flow-table">
@@ -313,8 +448,8 @@ function DerivedTable({ rows, limit, full }: { rows: DerivedFlowRow[]; limit?: n
           <th>Flow</th>
           <th>Read</th>
           <th className="num">Δ$</th>
-          {full && <th className="num">Premium</th>}
-          {full && <th className="num">DTE</th>}
+          {wide && <th className="num">Premium</th>}
+          {wide && <th className="num">DTE</th>}
           <th className="num">Score</th>
           <th />
           {full && <th title="size · conviction · purity · opening">S · C · P · O</th>}
@@ -329,9 +464,8 @@ function DerivedTable({ rows, limit, full }: { rows: DerivedFlowRow[]; limit?: n
           return (
             <tr key={`${r.symbol}-${String(i)}`}>
               <td className="num muted">{i + 1}</td>
-              <td title={`${r.kind}${r.size !== null ? `, ${fmtCount(r.size)} contracts` : ""}`}>
-                {r.symbol} <span className="muted">{r.kind === "spread" ? "" : `${r.kind} `}</span>
-                {r.what ?? ""}
+              <td title={r.size !== null ? `${fmtCount(r.size)} contracts` : undefined}>
+                {r.symbol} {r.what ?? ""} <span className="muted">{r.kindLabel}</span>
               </td>
               <td className={viewTone(r.view)}>
                 {r.direction ?? "unread"}
@@ -340,8 +474,8 @@ function DerivedTable({ rows, limit, full }: { rows: DerivedFlowRow[]; limit?: n
               <td className="num" title="contracts × 100 × |delta| × the close">
                 {fmtDollarsShort(r.deltaDollars)}
               </td>
-              {full && <td className="num">{fmtDollarsShort(r.premium)}</td>}
-              {full && <td className="num">{r.days ?? "—"}</td>}
+              {wide && <td className="num">{fmtDollarsShort(r.premium)}</td>}
+              {wide && <td className="num">{r.days ?? "—"}</td>}
               <td
                 className={`num ${s === null ? "muted" : s >= 0 ? "pnl-pos" : "pnl-neg"}`}
                 title={r.confirmedScore !== null ? `confirmed (first ${fmtNum(r.score, 0)})` : "before the open-interest check"}
@@ -359,7 +493,9 @@ function DerivedTable({ rows, limit, full }: { rows: DerivedFlowRow[]; limit?: n
                 </td>
               )}
               {full && <td className="muted">{r.confirmed ?? "not yet"}</td>}
-              <td className="muted">{r.flags.join(" · ") || "—"}</td>
+              <td>
+                <FlagCell r={r} />
+              </td>
             </tr>
           );
         })}
@@ -368,7 +504,7 @@ function DerivedTable({ rows, limit, full }: { rows: DerivedFlowRow[]; limit?: n
   );
 }
 
-function NetByName({ names, each }: { names: DerivedFlowName[]; each: number }) {
+export function NetByName({ names, each }: { names: DerivedFlowName[]; each: number }) {
   const bullish = names.filter((n) => n.net > 0).sort((a, b) => b.net - a.net).slice(0, each);
   const bearish = names.filter((n) => n.net < 0).sort((a, b) => a.net - b.net).slice(0, each);
   const rows = [...bullish, ...bearish];
@@ -439,8 +575,8 @@ function ChecksCard({ checks, session }: { checks: DerivedFlowChecks; session: s
       <table className="data-table flow-table">
         <tbody>
           <tr>
-            <td>Read against the site&apos;s own sentiment</td>
-            <td>{v === null ? "—" : `${String(v.agrees)} agree · ${String(v.neutral)} site neutral · ${String(v.opposite)} opposite`}</td>
+            <td>Read against the reported sentiment</td>
+            <td>{v === null ? "—" : `${String(v.agrees)} agree · ${String(v.neutral)} neutral · ${String(v.opposite)} opposite`}</td>
           </tr>
           <tr>
             <td>Delta: the broker&apos;s against the model&apos;s</td>
@@ -512,13 +648,14 @@ export function FlowDerived({ day }: { day: OptionsFlowDay }) {
         <p className="muted">
           One row per order: an outright, a sweep or a spread, with prints at one timestamp grouped and rolls marked.
           Ranked by score, 0–100 and signed by the view: <strong>size</strong> (Δ$ on a fixed $100K–$50M log scale) ×{" "}
-          <strong>conviction</strong> (how far the fill sat toward bid or ask; halved where the site&apos;s label
-          disagrees) × <strong>purity</strong> (1 for a mid-delta bet, lower for deep in the money, lottery tickets,
+          <strong>conviction</strong> (how far the fill sat toward bid or ask; halved where the reported
+          sentiment is the opposite) × <strong>purity</strong> (1 for a mid-delta bet, lower for deep in the money, lottery tickets,
           rolls, near-max spreads and sold options) × <strong>opening</strong> (new positioning: from the next
           morning&apos;s open interest once checked). The constants are provisional, to be judged against the outcome
           record.
         </p>
         <DerivedTable rows={d.flows} full />
+        <FlagKey rows={d.flows} />
       </section>
       <ChecksCard checks={d.checks} session={day.session} />
       <div className="cards-pairs">
@@ -617,7 +754,7 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         value={bull !== null ? fmtDollarsShort(bull) : null}
         tone="pos"
         span={2}
-        foot={`${String(nBull)} trades, the site's call`}
+        foot={`${String(nBull)} trades, by the reported side`}
         to="/flow/trades"
       />
       <StatTile
@@ -638,12 +775,12 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
       <DerivedCards day={day} />
 
       <GridCard
-        label={`Birdseye — ${asOf(day)}`}
+        label={`Trades — ${asOf(day)}`}
         span={8}
         h={304}
         to="/flow/birdseye"
         toLabel="the full Birdseye table"
-        foot="trades (not contracts), the site's ten most traded; counts as the site printed them"
+        foot="trades (not contracts), the ten most traded names; counts as reported"
       >
         <BirdseyeSummaryTable rows={day.birdseye} />
       </GridCard>
@@ -654,11 +791,11 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         span={6}
         h={304}
         to="/flow/trades"
-        foot="single-leg trades, the site's ranking by contracts · * premium derived"
+        foot="single-leg trades, ranked by contracts · * premium derived"
       >
         <TradesTable rows={day.outrights} limit={7} showTime={false} />
       </GridCard>
-      <GridCard label={`Top sweeps — ${asOf(day)}`} span={6} h={304} to="/flow/trades" foot="side is the site's classification">
+      <GridCard label={`Top sweeps — ${asOf(day)}`} span={6} h={304} to="/flow/trades" foot="side as reported">
         <TradesTable rows={day.sweeps} limit={7} showTime={false} />
       </GridCard>
 
@@ -667,7 +804,7 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         span={6}
         h={304}
         to="/flow/spreads"
-        foot="⛓ printed together (same time and size); direction from the site's signs"
+        foot="⛓ printed together (same time and size); direction from the signs of price and delta"
       >
         <SpreadsTable rows={day.spreads} limit={7} full={false} />
       </GridCard>
@@ -684,11 +821,11 @@ export function FlowBirdseye({ day }: { day: OptionsFlowDay }) {
   return (
     <section className="card view-fade">
       <div className="card-head">
-        <h2>Birdseye — trades by size</h2>
+        <h2>Trades by size</h2>
         <span className="card-asof">QuikOptions, {day.session}</span>
       </div>
       <p className="muted">
-        The site's table as it printed it: the number of trades (not contracts) at each trade size, for its ten most
+        As reported: the number of trades (not contracts) at each trade size, for its ten most
         traded names. Each cell is shaded by its share of its own row.
       </p>
       <div className="table-scroll">
@@ -744,9 +881,8 @@ export function FlowTrades({ day }: { day: OptionsFlowDay }) {
         </div>
         <TradesTable rows={day.outrights} showTime />
         <p className="muted">
-          The site's largest outrights — single-leg trades — ranked by number of contracts, as the site ranks them, not by
-          premium. * Premium is derived (size × price × 100): the site prints none for outrights. Side is the site's
-          classification, with where the fill sat.
+          The largest outrights — single-leg trades — ranked by number of contracts, not by premium. * Premium is
+          derived (size × price × 100): none is reported for outrights. Side as reported, with where the fill sat.
         </p>
       </section>
       <section className="card view-fade">
@@ -755,7 +891,7 @@ export function FlowTrades({ day }: { day: OptionsFlowDay }) {
           <span className="card-asof">QuikOptions, {day.session}</span>
         </div>
         <TradesTable rows={day.sweeps} showTime={false} />
-        <p className="muted">The site's largest sweeps by premium. It prints no time for a sweep.</p>
+        <p className="muted">The largest sweeps by premium. A sweep carries no time.</p>
       </section>
     </div>
   );
@@ -770,7 +906,7 @@ export function FlowSpreads({ day }: { day: OptionsFlowDay }) {
       </div>
       <SpreadsTable rows={day.spreads} full />
       <p className="muted">
-        Direction is read from the site's own signs — price and delta agree on every spread seen, positive for a spread
+        Direction is read from the signs of price and delta — price and delta agree on every spread seen, positive for a spread
         bought and negative for one sold — and is a dash where they do not. ⛓ marks rows printed together (same time and
         size), such as a roll. Price is the net per share; premium is whole-position dollars.
       </p>

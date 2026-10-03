@@ -212,6 +212,30 @@ shows them side by side. Default: `["Largest by contracts", "Top sweeps"]`, one 
 `today` cards can be listed, plus `Events` (the session's high-impact releases with actual against
 estimate, and the next ones, from the calendar capture); an unknown name refuses the run.
 
+**As of 2026-10-03, after the test posts:** the default is **`singles`** — one screen capture a
+message, so each reads full width on a phone, with **no header message**: the series' title line
+rides on the first picture, and each picture goes out under its own bold title — with **Derived flow, Trades (the site's
+Birdseye, renamed; the old name still resolves) and Events**. The Derived flow capture comes from a
+hidden **post page** (`/post/flow?session=…`: outside the shell, in no nav, 1,000 px wide, without the
+four factors or the open-interest column), and so do **Top spreads** (the day's largest spreads by
+contracts, in the derived flow's words) and **Events**, a table of the session's high-impact releases
+(actual, estimate, previous) and the next week's; Trades from the Options flow page. Each picture
+goes out under a bold text title. **Flags are abbreviated** in a narrow column — a name of four
+characters or fewer as itself, a longer one as a code (SWP sweep, OPEN opening, V>OI volume over OI,
+≤7d, DITM deep ITM, LOT lottery, NMAX near max, roll, LNK linked, PAIR paired prints, OPP paired
+opposite, EARN earnings event, XDIV before ex-dividend, ANTI sentiment opposite, NEUT sentiment
+neutral, ΔCHK delta check; symbols were tried and dropped the same day) — keyed under each table
+with only the flags it shows; one home for the codes and the meanings (`FLAG_ABBR`, `FLAG_KEY`),
+shared by the console and the post page.
+Default sections: Derived flow, Trades, Top spreads, Events. The post page is 1,280 px for the two
+flow tables (so a row's flags fit on one line) and 1,000 px for the rest. Every flow reads
+in one order: symbol, date, strike, kind (`SMCI 09 Oct 26 43.5/45.5C call spread`). The header
+leads with the derived flow (bullish and bearish names, the top flow, the largest unread trade, and
+yesterday's calls a day on). Two more posts, both narrow text: the **morning follow-up** after the
+open-interest check (opened, closed, mixed), and the **Friday scorecard** (the week's checks and
+confirmations, descriptive only until the fixed test). The morning post waits until the overnight
+open interest is actually out: on a Saturday every contract still showed Friday's starting figure.
+
 **Four styles** (`quikoptions.post_style`), tried side by side on the notify channel on 2026-10-03:
 `cards` (the header, then card images two to a message), `singles` (one image a message), `embed`
 (one embed of small monospace tables, no images) and `text` (plain text tables, split at a section
@@ -225,8 +249,8 @@ day fails the run instead of posting it under today's caption (the payoff post's
 built from the saved capture, never from the picture.
 
 **The title is configurable** (`quikoptions.post_title`, default `Hot options`). It replaces only the
-leading name: the session date and the market tab are always appended, and the capture time is in
-the footer, so no title can drop the date. It is trimmed, must be non-empty,
+leading name: the session date is always appended (`TCP Options Report — Fri 2 Oct 2026`; the
+`(stocks)` suffix was dropped 2026-10-03), so no title can drop the date. It is trimmed, must be non-empty,
 single-line and at most 80 characters, or the run refuses and says why rather than posting under a
 broken header. Every post is sent with Discord's `allowed_mentions` emptied, so a title (or any
 caption) containing `@everyone`, `@here` or a role mention renders as text and pings no one. A
