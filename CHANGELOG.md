@@ -11,6 +11,10 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Documented: the first read of the flies event tags.** Release days completed more than quiet
+  ones (81% vs 75%) at the same implied volatility. Quiet low-volatility days were weakest (67%), and
+  NFP is the only release with a consistent negative, on three sessions. Recorded in the flies
+  experiment log with the dates to re-read each.
 - **Changed: the event calendar takes headline dates from Census and covers more releases.**
   - **Census for its own releases.** FRED files other updates under the same release ids: it
     listed retail sales on 2026-09-28, and new home sales as housing starts. Census's own calendar
