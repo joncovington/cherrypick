@@ -673,3 +673,81 @@ cell rest on enough sessions to act on, and neither yet earns a gate.
 - NFP after about six more reports (next 2026-11-06).
 - `vol-floor` at 14 sessions, cut by `event_bucket`.
 - Retail sales at five or more sessions.
+
+## 2026-10-03 — `miss_stop_minutes` replayed on live under the cap-only rule: not paying (a negative result, early)
+
+The backlog's first step for turning the gate on live. `run.py --db <live ledger> replay-gates
+--start 2026-09-25`, live `control`, SPX, 09-25..10-02: 6 sessions, 37 settled entries. Nothing was
+changed.
+
+| Rule | Kept | Net | Losing days | Worst day | Paper `control`, same dates |
+|---|---|---|---|---|---|
+| no gate (deployed) | 37 | −$368.06 | 3 / 6 | −$784.10 | +$1,296.79 (54 entries) |
+| 15 min | 22 | −$604.17 | 5 / 6 | −$267.82 | +$1,138.34 |
+| 30 min | 25 | −$569.81 | 5 / 6 | −$265.33 | +$859.85 |
+| 45 min | 23 | −$907.11 | 5 / 6 | −$265.33 | +$1,274.40 |
+| 60 min | 26 | −$763.32 | 4 / 6 | −$545.66 | +$853.10 |
+| 90 min | 28 | −$978.64 | 4 / 6 | −$784.10 | +$686.25 |
+
+- **Entries made after a stranded first leg are where live made its money.** 22 of the 37 were
+  entered while a spread that went on to strand was still open. They completed 91% (20 of 22) and
+  made +$1,127. The 10 entered with nothing open completed 70% (−$711). The 5 entered with only
+  later-completing spreads open completed 40% (−$784). Paper on the same dates is less extreme (16 such
+  entries, 75%, +$287), but it has the same sign.
+- **The pattern the gate is built for happened once.** On 10-02, two spreads entered while a miss was
+  open (11:02, 11:25) also missed. Gating at 15–45 minutes cuts that day from −$784 to −$265, but
+  gives back more on 09-28, 09-29 and 10-01. Those days' biggest completions came after a stranding
+  (+$385, +$424, +$371).
+- **Caveats.** Six sessions. Dropping an entry frees room under the $1,000 margin cap that the replay
+  cannot spend, so a gated live loop would have entered trades the replay never sees. The 09-29 break
+  (live start 10:30 → 10:15) falls inside the window.
+
+The backlog's reopen condition is "15 sessions under the cap-only rule, and the replay shows the
+gate paying". The second half is not met so far. Re-run at 15 sessions.
+
+## 2026-10-03 — the refused delta bwbs, first replay: the market refuses them, and a lower floor splits by side with the tape
+
+The replay the 09-30 entry asked for, over the first three sessions with `proposed_legs`
+(09-30..10-02, SPX). `scripts/flies_bwb_floor_replay.py` (read-only; `--arm`, `--since`, `--per-day`)
+re-prices each attempt from its stored quotes, re-runs the gates after the floor (ceiling, tail cap,
+fees, then `portfolio_gates` against its own entries), and settles each entry at the `fly_books`
+print, **unrolled**. Validation, printed on every run: re-priced credits match `would_be_credit` to
+0.0001 on every priced row; the deployed floor reproduces every real first fill of the day; and the
+settlement path reproduces all 16 real unrolled `bwb-atm` fills since 09-21 to the cent.
+
+**Mostly the market, not the slippage model.** Mid and modelled credits differ by only 0.04–0.10.
+The best credit each session offered (modelled, then mid):
+
+| Arm | Floor | 09-30 | 10-01 | 10-02 |
+|---|---|---|---|---|
+| `bwb-up` (5/10) | 0.75 | 0.58 / 0.62 | 1.16 / 1.25 | 0.60 / 0.65 |
+| `bwb-down` (5/10) | 0.75 | 0.53 / 0.57 | 0.86 / 0.95 | 0.59 / 0.65 |
+| `bwb-up-w2` (10/20) | 1.50 | −0.05 / 0.00 | 0.52 / 0.62 | 0.25 / 0.35 |
+| `bwb-down-w2` (10/20) | 1.50 | 0.28 / 0.32 | 1.03 / 1.10 | 0.53 / 0.58 |
+
+At the deployed floor, pricing at mid adds no entries. The w2 pair never came within a third of its
+floor.
+
+**What a lower floor would have made, unrolled and held to the print.** With no floor, only the fee
+gate applies (about 0.16).
+
+| Arm | Entries | Net | Tail hits | 09-30 | 10-01 | 10-02 |
+|---|---|---|---|---|---|---|
+| `bwb-up` | 9 | +$534.90 | 0 | +$44.34 | +$423.72 | +$66.84 |
+| `bwb-down` | 12 | −$745.76 | 2 | −$990.02 | +$134.31 | +$109.95 |
+| `bwb-up-w2` | 4 | +$862.46 | 0 | | | |
+| `bwb-down-w2` | 9 | −$993.10 | 2 | | | |
+
+This is the tape, not the floor. On 09-30, SPX fell from 7,710.77 at 10:00 to a 7,651.54
+settlement. The other two sessions ended within about 10 points of their 10:00 level. So the one
+large move was down, into the side where a 15-delta put body sits. The P&L is not
+monotonic in the floor (`bwb-up` at 0.10 of tail: −$258; at 0.075: +$590), because one early entry
+blocks later ones through the cadence, duplicate and sign rules.
+
+**The roll moves the answer both ways.** On the arms' own real fills: `bwb-up` +$29.67 as traded
+against +$109.36 never rolled, `bwb-down` +$16.55 against +$79.36, and `bwb-atm` (20 fills, 17
+rolled) −$143.64 against −$239.98. The replay cannot roll, because the roll needs later quotes the
+ledger does not keep. Its figures therefore overstate both a winner and a loser.
+
+No conclusion and no floor change: three sessions, one down day. [backlog.md](backlog.md) holds the
+re-read condition.
