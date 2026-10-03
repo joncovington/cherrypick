@@ -251,7 +251,7 @@ def fetch_census(report: dict, get=None) -> None:
 UMICH_URL = "https://www.sca.isr.umich.edu/"
 
 
-def fetch_umich(report: dict, get=None) -> None:
+def fetch_umich(report: dict, today: date, get=None) -> None:
     """The Surveys of Consumers home page's "Next data release" note, parsed
     (`cherrypick.core.events.parse_umich`) and folded into umich.json, which never drops a date.
     The only source for the preliminary sentiment reading: FRED lists only the final, and Michigan
@@ -272,7 +272,7 @@ def fetch_umich(report: dict, get=None) -> None:
         old = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         old = None
-    _write(path, json.dumps(_events.merge_umich(old, rows)))
+    _write(path, json.dumps(_events.merge_umich(old, rows, today.isoformat())))
     report["calendar"]["umich_next"] = rows[0]["at"]
 
 
@@ -422,7 +422,7 @@ def cmd_fetch(_args) -> int:
     _pause()
     fetch_bea(report)
     fetch_census(report)
-    fetch_umich(report)
+    fetch_umich(report, today)
     fetch_fred(report, today)
     _pause()
     fetch_listings(report)

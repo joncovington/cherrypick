@@ -19,8 +19,10 @@ beyond the latest release.
   follow.
 - **Fixed: the preliminary Michigan sentiment reading was never on the event calendar.** FRED lists
   only the final reading, so 2026-10-09 read as a known day with no release. The morning fetch now
-  folds Michigan's own "next data release" note into a never-dropping `umich.json`; without it a
-  day is degraded, not unknown. Found by comparing against QuikOptions' calendar.
+  folds Michigan's own "next data release" note into `umich.json`, which keeps every release (a
+  moved one replaces its old date) and the span each fetch speaks for. A day no note covered,
+  including every day before the first fetch, is degraded, not unknown. flies' event cache now keys
+  on every file the calendar reads. Found by comparing against QuikOptions' calendar.
 - **Documented: the first read of the flies event tags.** Release days completed more than quiet
   ones (81% vs 75%) at the same implied volatility. Quiet low-volatility days were weakest (67%), and
   NFP is the only release with a consistent negative, on three sessions. Recorded in the flies

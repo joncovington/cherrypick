@@ -133,6 +133,12 @@ def umich_path(root: Path | None = None) -> Path:
     return (root or calendar_dir()) / "umich.json"
 
 
+def source_paths(root: Path | None = None) -> tuple[Path, ...]:
+    """Every file `day_events` reads, so a caller that caches on their modification times (flies'
+    provider) cannot fall behind a new source."""
+    return (bea_path(root), census_path(root), fred_path(root), fred_history_path(root), umich_path(root))
+
+
 # --------------------------------------------------------------------------- parsers (pure)
 def parse_bea(text: str) -> list[dict]:
     """[{name, at (UTC ISO), source}] from BEA's release-dates file. Duplicate entries (the file
@@ -177,15 +183,17 @@ def parse_census(text: str) -> list[dict]:
 
 _UMICH_NOTE = re.compile(
     r"Next data release:\s*[A-Z][a-z]+day,\s*([A-Z][a-z]+ \d{1,2}, \d{4})\s+for\s+(Preliminary|Final)\s+"
-    r"[A-Z][a-z]+\s+data\s+at\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)\s+ET",
+    r"([A-Z][a-z]+)\s+data\s+at\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)\s+ET",
     re.I,
 )
 
 
 def parse_umich(text: str) -> list[dict]:
-    """[{name, at, source}] from the Surveys of Consumers home page's one-line note, "Next data
-    release: Friday, October 09, 2026 for Preliminary October data at 10am ET". Empty when the note
-    is missing or reads differently: a changed page is refused by the fetcher, never guessed at."""
+    """[{name, period, at, source}] from the Surveys of Consumers home page's one-line note, "Next
+    data release: Friday, October 09, 2026 for Preliminary October data at 10am ET". `period` is the
+    data month ("2026-10"), which with the name identifies the release if Michigan moves its date.
+    Empty when the note is missing or reads differently: a changed page is refused by the fetcher,
+    never guessed at."""
     flat = re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", " ", text or "")))
     m = _UMICH_NOTE.search(flat)
     if not m:
@@ -194,9 +202,27 @@ def parse_umich(text: str) -> list[dict]:
         day = datetime.strptime(m.group(1), "%B %d, %Y").date()
     except ValueError:
         return []
-    hour = int(m.group(3)) % 12 + (12 if m.group(5).lower() == "pm" else 0)
+    try:
+        month = datetime.strptime(m.group(3), "%B").month
+    except ValueError:
+        return []
+    # The data month is the release's own, or December's data released in January.
+    year = day.year - (1 if month > day.month else 0)
+    hour = int(m.group(4)) % 12 + (12 if m.group(6).lower() == "pm" else 0)
     name = f"Surveys of Consumers (University of Michigan) - {m.group(2).capitalize()}"
-    return [{"name": name, "at": f"{day.isoformat()}T{hour:02d}:{m.group(4) or '00'}", "source": "UMich"}]
+    at = f"{day.isoformat()}T{hour:02d}:{m.group(5) or '00'}"
+    return [{"name": name, "period": f"{year}-{month:02d}", "at": at, "source": "UMich"}]
+
+
+def _merge_ranges(ranges: list) -> list[list[str]]:
+    """ISO date ranges, sorted, with overlapping and touching ones joined."""
+    merged: list[list[str]] = []
+    for s, e in sorted([list(r) for r in ranges]):
+        if merged and date.fromisoformat(s) <= date.fromisoformat(merged[-1][1]) + timedelta(days=1):
+            merged[-1][1] = max(merged[-1][1], e)
+        else:
+            merged.append([s, e])
+    return merged
 
 
 def merge_fred_history(old: dict | None, rows: list[dict], start: str, end: str) -> dict:
@@ -205,15 +231,8 @@ def merge_fred_history(old: dict | None, rows: list[dict], start: str, end: str)
     say for any past date whether FRED was asked about it at all."""
     seen = {(r["at"], r["name"]) for r in (old or {}).get("releases", []) if r.get("at") and r.get("name")}
     seen |= {(str(r["at"]), str(r["name"])) for r in rows if r.get("at") and r.get("name")}
-    ranges = sorted([*((old or {}).get("coverage") or []), [start, end]])
-    merged: list[list[str]] = []
-    for s, e in ranges:
-        if merged and date.fromisoformat(s) <= date.fromisoformat(merged[-1][1]) + timedelta(days=1):
-            merged[-1][1] = max(merged[-1][1], e)
-        else:
-            merged.append([s, e])
     return {
-        "coverage": merged,
+        "coverage": _merge_ranges([*((old or {}).get("coverage") or []), [start, end]]),
         "releases": [{"at": a, "name": n, "source": "FRED"} for a, n in sorted(seen)],
     }
 
@@ -230,10 +249,25 @@ def merge_census(old: dict | None, rows: list[dict]) -> dict:
     return _merge_releases(old, rows, "Census")
 
 
-def merge_umich(old: dict | None, rows: list[dict]) -> dict:
-    """Fold Michigan's next-release note into the stored document; a date is never dropped (the
-    page only ever shows one)."""
-    return _merge_releases(old, rows, "UMich")
+def merge_umich(old: dict | None, rows: list[dict], fetched: str) -> dict:
+    """Fold one reading of Michigan's next-release note, taken on `fetched` (ISO date), into the
+    stored document. Kept for good (the page only ever shows one), except that a release Michigan
+    moves replaces its old date: a release is its name and data month, not its date. Coverage is
+    each fetch's span, `fetched` to the release it names: a note saying the next release is the 9th
+    says nothing comes out before it, so those days can be told apart from days nobody looked at."""
+    by_release: dict[tuple[str, str], str] = {}
+    for r in [*((old or {}).get("releases") or []), *rows]:
+        if r.get("at") and r.get("name"):
+            by_release[(str(r["name"]), str(r.get("period") or r["at"]))] = str(r["at"])
+    ranges = list((old or {}).get("coverage") or [])
+    ranges += [[fetched, max(fetched, str(r["at"])[:10])] for r in rows if r.get("at")]
+    return {
+        "coverage": _merge_ranges(ranges),
+        "releases": [
+            {"at": at, "name": name, "period": period, "source": "UMich"}
+            for (name, period), at in sorted(by_release.items(), key=lambda kv: (kv[1], kv[0]))
+        ],
+    }
 
 
 def _covers(coverage: list, day: date) -> bool:
@@ -359,11 +393,12 @@ def day_events(day: date, *, root: Path | None = None) -> dict:
         seen.add(r["name"])
         events.append(_event(spec[0], r["name"], spec[1], spec[2], "FRED"))
 
-    # Michigan's note names one release at a time, so its store can only add dates: a missing file
-    # degrades the day (FRED still has the final reading), it does not make it unknown.
+    # A day Michigan's note never spoke for is degraded, not unknown: FRED still has the final
+    # reading, but a preliminary there may be missing. That includes every day before the first
+    # fetch, so a restamp of past sessions says so rather than writing the gap into history.
     umich_doc = _read_json(umich_path(root)) or {}
     umich_rows = [r for r in umich_doc.get("releases") or [] if isinstance(r, dict)]
-    if not umich_rows:
+    if not _covers(umich_doc.get("coverage"), day):
         degraded.append("umich")
     for r in umich_rows:
         spec = RELEASES.get(str(r.get("name")))

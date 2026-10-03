@@ -354,10 +354,12 @@ def read_rows(spec: list[tuple[str, str, str]], table: dict) -> list[dict]:
             if kind == SKIP:
                 continue
             value = _cell_value(kind, cell)
+            if kind in (COUNT, INT, NUM):
+                # What the site printed, so every check allows exactly the site's own rounding.
+                row.setdefault("shown", {})[key] = cell["text"]
             if kind == SYMBOL:
                 row.update(value)
             elif kind == COUNT:
-                row.setdefault("shown", {})[key] = cell["text"]
                 if key in BUCKETS:
                     row.setdefault("buckets", {})[key] = value
                 else:
@@ -377,7 +379,10 @@ def parse_report(page_html: str) -> dict:
     problems: list[str] = []
     session = None
     if page_date:
-        session = datetime.strptime(page_date, "%m/%d/%Y").date().isoformat()
+        try:
+            session = datetime.strptime(page_date, "%m/%d/%Y").date().isoformat()
+        except ValueError:
+            problems.append(f"session date did not read: {page_date!r}")
     else:
         problems.append("no session date on the page")
     tables: dict[str, list[dict]] = {}
@@ -438,19 +443,32 @@ def validate_report(doc: dict, expected: date | None = None) -> list[str]:
                 row.get("size"),
                 row.get("premium"),
             )
+            shown = row.get("shown", {})
+            tol = (
+                rounding(shown.get("premium", ""))
+                + abs(size or 0) * 100 * rounding(shown.get("price", ""))
+                + 0.5
+            )
             if None in (price, size, premium):
                 problems.append(f"{name} {sym}: price, size or premium did not read")
-            elif abs(price * size * 100 - premium) > 0.005 * size * 100 + 0.5:
+            elif abs(price * size * 100 - premium) > tol:
                 problems.append(f"{name} {sym}: {price} x {size} x 100 != premium {premium:,.0f}")
 
     for name in ("voloi", "openings"):
         for row in tables.get(name, []):
             sym, vol, oi, v_oi = row.get("symbol"), row.get("volume"), row.get("oi"), row.get("v_oi")
+            shown = row.get("shown", {})
+            r_ratio, r_vol = rounding(shown.get("v_oi", "")), rounding(shown.get("volume", ""))
             if None in (vol, oi, v_oi):
                 problems.append(f"{name} {sym}: volume, OI or V/OI did not read")
-            elif name == "openings" and (oi != 0 or abs(v_oi - vol) > 0.005):
+            elif name == "openings" and (oi != 0 or abs(v_oi - vol) > r_ratio + r_vol + 1e-9):
                 problems.append(f"openings {sym}: OI {oi}, V/OI {v_oi} (an opening has OI 0, V/OI = volume)")
-            elif name == "voloi" and (oi <= 0 or abs(vol / oi - v_oi) > 0.005 + 1e-9):
+            elif name == "voloi" and (
+                oi <= 0
+                # The ratio's own rounding, plus what rounding in volume and OI can move it by.
+                or abs(vol / oi - v_oi)
+                > r_ratio + r_vol / oi + vol * rounding(shown.get("oi", "")) / oi**2 + 1e-9
+            ):
                 problems.append(f"voloi {sym}: {vol} / {oi} != V/OI {v_oi}")
 
     for name, rows in tables.items():
@@ -462,7 +480,11 @@ def validate_report(doc: dict, expected: date | None = None) -> list[str]:
     return problems
 
 
-_CAL_WHEN = re.compile(r"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (\d{1,2})/(\d{1,2})(?: (\d{1,2}):(\d{2}) ([AP]M))?$")
+# A time, or none: the site may print a word ("All Day", "Tentative") where an event has no time.
+_CAL_WHEN = re.compile(
+    r"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (\d{1,2})/(\d{1,2})"
+    r"(?: (?:(\d{1,2}):(\d{2}) ([AP]M)|[A-Za-z][A-Za-z ]*))?$"
+)
 _WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
@@ -500,6 +522,12 @@ def parse_calendar(page_html: str, captured: date) -> dict:
         return {"captured": captured.isoformat(), "events": [], "problems": [why]}
     events = []
     for cells in table["rows"]:
+        if len(cells) < len(CALENDAR_COLUMNS):
+            # A one-cell separator ("no events") is a row of the view, not an event; anything else
+            # short is the table changing shape.
+            if len(cells) > 1:
+                problems.append(f"calendar: a row of {len(cells)} cells: {[c['text'] for c in cells]}")
+            continue
         row = {key: cell["text"] or None for (_, key, _), cell in zip(CALENDAR_COLUMNS, cells, strict=False)}
         row["date"], row["time_et"] = _calendar_when(cells[0]["text"], captured)
         if row["date"] is None:
@@ -519,7 +547,7 @@ def validate_calendar(doc: dict) -> list[str]:
         if e.get("date") and not (
             captured - timedelta(days=7) <= date.fromisoformat(e["date"]) <= captured + timedelta(days=21)
         ):
-            problems.append(f"calendar: {e['event']} on {e['date']} is outside the view's window")
+            problems.append(f"calendar: {e.get('event')} on {e['date']} is outside the view's window")
         if e.get("impact") not in ("H", "M", "L"):
             problems.append(f"calendar: {e.get('event')} has impact {e.get('impact')!r}")
     return problems
@@ -712,14 +740,20 @@ def _click_text(page, text: str, *, exact: bool = True) -> bool:
     return True
 
 
-def _wait_for_tables(page, ready, timeout_s: float = TABLES_TIMEOUT_S) -> str:
-    """The page's HTML once `ready(html)` says every table is drawn with rows."""
+def _wait_for_tables(page, ready, hits: list[str], timeout_s: float = TABLES_TIMEOUT_S) -> str:
+    """The page's HTML once `ready(html)` says every table is drawn with rows. A refusal while
+    waiting is throttling, not a page that needs a person: tables that never draw because the site
+    is refusing us must start the cooldown (review of #21)."""
     deadline = time.monotonic() + timeout_s
     while True:
+        if any(h.startswith("429 ") for h in hits):
+            raise Throttled(next(h for h in hits if h.startswith("429 ")))
         content = page.content()
         if ready(content):
             return content
         if time.monotonic() > deadline:
+            if hits:
+                raise Throttled(hits[0])
             raise NeedsPerson(f"the tables were not drawn within {timeout_s:.0f} s ({page.url})")
         time.sleep(2)
 
@@ -735,9 +769,18 @@ def _calendar_ready(content: str) -> bool:
     return any(t["heading"] == CALENDAR_HEADING and t["rows"] for t in found)
 
 
+def is_refusal(status: int, url: str) -> bool:
+    """A refusal that means the site is limiting us: a 403 or 429 from the site itself, or a 429
+    from its sign-in (Auth0). Never a third party's: an ad-blocked analytics pixel answering 403
+    must not throw away a good capture and the next day's with it."""
+    if status == 429 and ".auth0.com/" in url:
+        return True
+    return status in (403, 429) and url.startswith(SITE + "/")
+
+
 def _watch(page, hits: list[str]) -> None:
     def on_response(resp):
-        if resp.status in (403, 429):
+        if is_refusal(resp.status, resp.url):
             hits.append(f"{resp.status} {resp.url}")
 
     page.on("response", on_response)
@@ -755,8 +798,9 @@ def _today_et() -> date:
 def capture_report(page, hits: list[str]) -> str:
     if not _goto_report(page, timeout_s=60):
         raise NeedsPerson("signed out (or the report never showed): run `login`")
-    hits.clear()  # a 403 on the way in is the site asking who we are, not slowing us down
-    content = _wait_for_tables(page, _report_ready)
+    # A 403 on the way in is the site asking who we are, not slowing us down; a 429 still counts.
+    hits[:] = [h for h in hits if not h.startswith("403 ")]
+    _wait_for_tables(page, _report_ready, hits)
     end = time.monotonic() + random.uniform(*DWELL_S)
     _slow_scroll(page)
     while time.monotonic() < end:
@@ -787,7 +831,7 @@ def capture_calendar(page, hits: list[str]) -> str:
     time.sleep(random.uniform(1.0, 2.5))
     if not _click_text(page, "Calendars", exact=False):
         raise NeedsPerson("the Calendars link was not found")
-    content = _wait_for_tables(page, _calendar_ready)
+    _wait_for_tables(page, _calendar_ready, hits)
     time.sleep(random.uniform(8, 15))
     if hits:
         raise Throttled(hits[0])
@@ -872,8 +916,9 @@ def cmd_login(_args) -> int:
 
 class Recorder:
     """The probe's: every response and text websocket frame the page receives, one JSON line each,
-    tagged with the step the probe was on. Request headers are never written, so no cookie or token
-    reaches disk beyond the browser profile itself."""
+    tagged with the step the probe was on. Request headers and bodies are never written, nor any
+    sign-in response body, so no password, cookie or token reaches disk beyond the browser profile
+    itself."""
 
     def __init__(self, out: Path) -> None:
         self.out = out
@@ -898,16 +943,19 @@ class Recorder:
             "url": resp.url,
             "type": ctype,
         }
+        # A request body is never kept, only its size: the sign-in form posts the username and
+        # password, and the callback an id_token (the first probe, 2026-10-02, kept both).
         if req.method != "GET" and req.post_data:
-            entry["post"] = req.post_data[:20_000]
-        if req.resource_type in BODY_RESOURCE_TYPES and any(t in ctype for t in BODY_TYPES):
+            entry["post_bytes"] = len(req.post_data)
+        sign_in = ".auth0.com/" in resp.url or "/callback" in resp.url
+        if not sign_in and req.resource_type in BODY_RESOURCE_TYPES and any(t in ctype for t in BODY_TYPES):
             try:
                 body = resp.text()
                 entry["bytes"] = len(body)
                 entry["body"] = body[:MAX_BODY]
             except Exception as exc:  # noqa: BLE001 - a redirect or an aborted body
                 entry["body_error"] = str(exc)[:200]
-        if resp.status == 429:
+        if resp.status == 429 and is_refusal(resp.status, resp.url):
             self.throttled.append(resp.url)
         self._write(entry)
 
@@ -951,6 +999,10 @@ def cmd_probe(args) -> int:
     from playwright.sync_api import Error as PlaywrightError
     from playwright.sync_api import sync_playwright
 
+    until = cooldown_until()
+    if until and datetime.now(UTC) < until:
+        _log(f"in cooldown until {until.isoformat(timespec='minutes')}; nothing requested")
+        return 0
     out = store_dir() / "probe" / f"{datetime.now():%Y%m%d-%H%M%S}"
     out.mkdir(parents=True, exist_ok=True)
     rec = Recorder(out)
@@ -1023,7 +1075,8 @@ def cmd_probe(args) -> int:
             finally:
                 ctx.close()
     except Throttled as exc:
-        _log(f"STOPPED: {exc}. Nothing more is requested today.")
+        start_cooldown(str(exc))
+        _log(f"STOPPED: {exc}. A 24-hour cooldown has started.")
         return 2
     finally:
         rec.close()

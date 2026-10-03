@@ -126,9 +126,10 @@ def test_umich_fetch_folds_the_next_release_and_refuses_a_page_without_one(tmp_p
     monkeypatch.setattr(files, "store_dir", lambda: tmp_path)
     note = "Next data release: Friday, October 09, 2026 for Preliminary October data at 10am ET"
     report = {"calendar": {}, "problems": []}
-    fmf.fetch_umich(report, get=lambda url: f"<div>{note}</div>".encode())
-    fmf.fetch_umich(report, get=lambda url: b"<html>maintenance</html>")
+    fmf.fetch_umich(report, date(2026, 10, 2), get=lambda url: f"<div>{note}</div>".encode())
+    fmf.fetch_umich(report, date(2026, 10, 3), get=lambda url: b"<html>maintenance</html>")
     doc = json.loads((tmp_path / "calendar" / "umich.json").read_text(encoding="utf-8"))
     assert [r["at"] for r in doc["releases"]] == ["2026-10-09T10:00"]
     assert report["calendar"]["umich_next"] == "2026-10-09T10:00"
+    assert doc["coverage"] == [["2026-10-02", "2026-10-09"]]
     assert report["problems"] == ["UMich: no next-release note on the page; kept the old dates"]

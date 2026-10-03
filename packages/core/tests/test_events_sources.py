@@ -62,7 +62,7 @@ def _store(tmp_path, *, census=True, umich=True):
         )
     if umich:
         (cal / "umich.json").write_text(
-            json.dumps(ev.merge_umich(None, ev.parse_umich(UMICH_PAGE))), encoding="utf-8"
+            json.dumps(ev.merge_umich(None, ev.parse_umich(UMICH_PAGE), "2026-10-02")), encoding="utf-8"
         )
     fred_umich = {"name": "Surveys of Consumers (University of Michigan)", "at": "2026-10-23"}
     hist = json.loads((cal / "fred_history.json").read_text(encoding="utf-8"))
@@ -84,7 +84,8 @@ def test_census_is_the_source_for_its_own_releases(tmp_path):
 def test_without_census_fred_is_the_fallback_and_the_day_is_degraded_not_unknown(tmp_path):
     cal = _store(tmp_path, census=False)
     doc = ev.day_events(date(2026, 9, 28), root=cal)
-    assert doc["known"] and doc["degraded"] == ["census"]
+    # 09-28 is also before Michigan's first note, so that source says it cannot speak for it either.
+    assert doc["known"] and doc["degraded"] == ["census", "umich"]
     assert [(e["label"], e["source"]) for e in doc["events"]] == [("Retail", "FRED")]
 
 
@@ -92,6 +93,7 @@ def test_umich_note_reads_the_preliminary_with_its_time():
     assert ev.parse_umich(UMICH_PAGE) == [
         {
             "name": "Surveys of Consumers (University of Michigan) - Preliminary",
+            "period": "2026-10",
             "at": "2026-10-09T10:00",
             "source": "UMich",
         }
@@ -115,10 +117,46 @@ def test_the_preliminary_reading_fred_never_lists_is_on_the_calendar(tmp_path):
     assert bare["known"] and "umich" in bare["degraded"] and bare["events"] == []
 
 
-def test_merge_umich_never_drops_a_date():
-    old = ev.merge_umich(None, [{"name": "A", "at": "2026-10-09T10:00"}])
-    new = ev.merge_umich(old, [{"name": "B", "at": "2026-10-23T10:00"}])
+def test_merge_umich_keeps_every_release_and_covers_each_fetch_to_its_release():
+    old = ev.merge_umich(None, [{"name": "A", "period": "2026-10", "at": "2026-10-09T10:00"}], "2026-10-02")
+    new = ev.merge_umich(old, [{"name": "B", "period": "2026-10", "at": "2026-10-23T10:00"}], "2026-10-12")
     assert [r["at"] for r in new["releases"]] == ["2026-10-09T10:00", "2026-10-23T10:00"]
+    # 10-10 and 10-11 were never looked at: not covered.
+    assert new["coverage"] == [["2026-10-02", "2026-10-09"], ["2026-10-12", "2026-10-23"]]
+
+
+def test_a_release_michigan_moves_replaces_its_old_date():
+    """The note said Oct 9; a later note says the same release (October's preliminary) is Oct 16.
+    Keeping both would put a release on a day that had none."""
+    first = ev.parse_umich(UMICH_PAGE)
+    moved = ev.parse_umich(UMICH_PAGE.replace("Friday, October 09", "Friday, October 16"))
+    doc = ev.merge_umich(ev.merge_umich(None, first, "2026-10-02"), moved, "2026-10-05")
+    assert [r["at"] for r in doc["releases"]] == ["2026-10-16T10:00"]
+
+
+def test_days_the_note_never_spoke_for_are_degraded_not_quiet(tmp_path):
+    """A restamp of past sessions must not write 'no preliminary reading' into history for days
+    before the first fetch."""
+    cal = _store(tmp_path)
+    assert "umich" in ev.day_events(date(2026, 9, 11), root=cal)["degraded"]  # before the first fetch
+    assert "umich" not in ev.day_events(date(2026, 10, 5), root=cal)["degraded"]  # covered, quiet
+    assert "umich" in ev.day_events(date(2026, 10, 12), root=cal)["degraded"]  # past what it named
+
+
+def test_source_paths_names_every_file_day_events_reads(tmp_path, monkeypatch):
+    """flies caches day_events on these files' modification times; a source missing from the list
+    would leave a session tagged from a stale read."""
+    read = []
+    real = ev._read_json
+
+    def spy(path):
+        read.append(path.name)
+        return real(path)
+
+    monkeypatch.setattr(ev, "_read_json", spy)
+    monkeypatch.setattr(ev, "_read_text", lambda path: read.append(path.name) or "")
+    ev.day_events(date(2026, 10, 9), root=_store(tmp_path))
+    assert set(read) <= {p.name for p in ev.source_paths(tmp_path / "calendar")}
 
 
 def _rules(d):

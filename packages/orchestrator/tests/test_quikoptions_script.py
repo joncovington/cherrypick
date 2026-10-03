@@ -361,3 +361,85 @@ def test_every_saved_calendar_still_passes():
     for path in _saved("calendar"):
         doc = fq.parse_calendar(path.read_text(encoding="utf-8"), date.fromisoformat(path.stem))
         assert fq.validate_calendar(doc) == [], path
+
+
+# ------------------------------------------------------------------------------------------------
+# Findings from the review of #21: each one shown to fire.
+# ------------------------------------------------------------------------------------------------
+
+
+def test_only_the_sites_own_refusals_count_as_throttling():
+    assert fq.is_refusal(429, "https://app.quikoptions.com/_blazor/negotiate")
+    assert fq.is_refusal(403, "https://app.quikoptions.com/Market/Options/THOR/Stock")
+    assert fq.is_refusal(429, "https://quikoptions.us.auth0.com/u/login")
+    # A third party's 403 (an ad-blocked pixel) must not cost a good capture and the next day's.
+    assert not fq.is_refusal(403, "https://www.google-analytics.com/g/collect")
+    assert not fq.is_refusal(429, "https://fonts.gstatic.com/x.woff2")
+    assert not fq.is_refusal(403, "https://quikoptions.us.auth0.com/u/login")  # a sign-in asking
+    assert not fq.is_refusal(200, "https://app.quikoptions.com/")
+
+
+class _Page:
+    url = "https://app.quikoptions.com/Market/Options/THOR/Stock"
+
+    def content(self):
+        return "<html></html>"
+
+
+def test_a_429_while_tables_draw_is_throttling_not_a_person(monkeypatch):
+    monkeypatch.setattr(fq.time, "sleep", lambda s: None)
+    with pytest.raises(fq.Throttled):
+        fq._wait_for_tables(_Page(), lambda html: False, ["429 https://app.quikoptions.com/_blazor"], 0)
+    with pytest.raises(fq.NeedsPerson):
+        fq._wait_for_tables(_Page(), lambda html: False, [], 0)
+
+
+class _Request:
+    def __init__(self, method, post):
+        self.method, self.post_data, self.resource_type = method, post, "document"
+
+
+class _Response:
+    def __init__(self, url, method="POST", post="username=a&password=secret", status=200):
+        self.url, self.status = url, status
+        self.headers = {"content-type": "text/html"}
+        self.request = _Request(method, post)
+
+    def text(self):
+        return "<html>id_token=abc</html>"
+
+
+def test_the_probe_never_keeps_a_request_body_or_a_sign_in_page(tmp_path):
+    rec = fq.Recorder(tmp_path)
+    rec.on_response(_Response("https://quikoptions.us.auth0.com/u/login"))
+    rec.on_response(_Response("https://app.quikoptions.com/callback", post="id_token=abc&state=x"))
+    rec.close()
+    written = (tmp_path / "responses.jsonl").read_text(encoding="utf-8")
+    assert "secret" not in written and "id_token=abc" not in written
+    assert '"post_bytes": 26' in written
+
+
+def test_an_impossible_session_date_is_a_problem_not_a_crash():
+    doc = fq.parse_report(fq.tables_fragment(report(page_date="13/45/2026"), fq.HEADINGS, with_date=True))
+    assert doc["session"] is None and "session date did not read: '13/45/2026'" in doc["problems"]
+
+
+def test_a_separator_row_is_skipped_and_a_short_row_is_reported():
+    page = calendar().replace(
+        "</tbody>",
+        '<tr><td colspan="10">No more events</td></tr><tr><td>Fri 10/9</td><td>H</td></tr></tbody>',
+    )
+    doc = fq.parse_calendar(fq.tables_fragment(page, (fq.CALENDAR_HEADING,), False), DAY)
+    assert len(doc["events"]) == 2
+    assert fq.validate_calendar(doc) == ["calendar: a row of 2 cells: ['Fri 10/9', 'H']"]
+
+
+def test_an_all_day_event_reads_with_no_time():
+    assert fq._calendar_when("Mon 10/12 All Day", DAY) == ("2026-10-12", None)
+
+
+def test_premium_checks_allow_the_sites_own_abbreviation():
+    # SKHY: 70 x 92.35 x 100 = 646,450. Printed as 646.5K it is inside the 50 the K hides.
+    assert _check(report(sweep_premium="646.5K")) == []  # 646,450 shown as 646.5K
+    problems = _check(report(sweep_premium="650.5K"))  # 4,050 off: more than rounding
+    assert len(problems) == 1 and problems[0].startswith("sweeps SKHY")

@@ -40,6 +40,26 @@ def test_an_unreadable_calendar_is_unknown_and_never_refuses_the_snapshot(monkey
     assert doc["known"] is False and doc["missing"] == ["error: OSError"]
 
 
+def test_a_calendar_file_landing_mid_session_refreshes_the_days_events(tmp_path, monkeypatch):
+    """The cache key is every file day_events reads (core's `source_paths`): Michigan's note landing
+    after the loop started must show up, not wait for tomorrow (review of #21)."""
+    import os
+
+    from cherrypick.core import events
+
+    monkeypatch.setattr(events, "calendar_dir", lambda: tmp_path)
+    reads = []
+    monkeypatch.setattr(events, "day_events", lambda day, root=None: reads.append(day) or {"events": []})
+    provider._EVENTS_CACHE.clear()
+    provider._day_events(date(2026, 10, 9))
+    provider._day_events(date(2026, 10, 9))
+    assert len(reads) == 1  # cached
+    events.umich_path(tmp_path).write_text("{}", encoding="utf-8")
+    os.utime(events.umich_path(tmp_path), (1, 1))
+    provider._day_events(date(2026, 10, 9))
+    assert len(reads) == 2  # a new source file is a new read
+
+
 def test_entry_rows_record_the_tag_through_the_regime_columns(tmp_path):
     cols = bookmod.regime_columns("entry", snapshot(events=NFP_DAY, now_min=11 * 60), params())
     assert cols["entry_event_bucket"] == "after" and cols["entry_event_labels"] == "NFP 08:30"
