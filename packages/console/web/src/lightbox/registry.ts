@@ -23,6 +23,7 @@ export const MODULE_FRAMES: Record<ModuleId, ComponentType<{ slide: string }>> =
   pmcc: lazy(() => import("./manifests/PmccLightbox").then((m) => ({ default: m.PmccLightbox }))),
   calendars: lazy(() => import("./manifests/CalendarsLightbox").then((m) => ({ default: m.CalendarsLightbox }))),
   gex: lazy(() => import("./manifests/GexLightbox").then((m) => ({ default: m.GexLightbox }))),
+  flow: lazy(() => import("./manifests/FlowLightbox").then((m) => ({ default: m.FlowLightbox }))),
   live: lazy(() => import("./manifests/LiveLightbox").then((m) => ({ default: m.LiveLightbox }))),
   charts: lazy(() => import("./manifests/ChartsLightbox").then((m) => ({ default: m.ChartsLightbox }))),
   reports: lazy(() => import("./manifests/ReportsLightbox").then((m) => ({ default: m.ReportsLightbox }))),

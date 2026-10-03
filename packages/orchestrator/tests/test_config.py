@@ -148,3 +148,21 @@ def test_live_trading_enabled_nested_live_convention():
 def test_live_trading_enabled_either_convention_wins():
     assert c.live_trading_enabled({"enable_live_trading": True, "live": {"enabled": False}}) is True
     assert c.live_trading_enabled({"enable_live_trading": False, "live": {"enabled": True}}) is True
+
+
+def test_quikoptions_off_by_default_and_post_needs_enabled():
+    s = c.quikoptions_settings({})
+    assert (s["enabled"], s["post"], s["post_title"]) == (False, False, "Hot options")
+    assert c.quikoptions_settings({"quikoptions": {"post": True}})["post"] is False
+    on = c.quikoptions_settings({"quikoptions": {"enabled": True, "post": True, "post_title": "  Flow  "}})
+    assert (on["post"], on["post_title"]) == (True, "Flow")
+
+
+def test_quikoptions_title_rule_refuses_empty_multiline_and_long():
+    assert c.quikoptions_title_problem("Hot options") is None
+    assert c.quikoptions_title_problem("   ") == "the title is empty"
+    assert c.quikoptions_title_problem("a\nb") == "the title must be one line"
+    assert c.quikoptions_title_problem("x" * 81) == "the title is longer than 80 characters"
+    assert c.quikoptions_title_problem("x" * 80) is None
+    # A bad title in the config never heads the series: the default does.
+    assert c.quikoptions_settings({"quikoptions": {"post_title": "x" * 81}})["post_title"] == "Hot options"

@@ -31,6 +31,7 @@ saved day is never overwritten.
     python scripts/fetch_quikoptions.py login                 # sign in by hand; the session is kept
     python scripts/fetch_quikoptions.py hot-options [--jitter MIN] [--headless] [--no-calendar]
     python scripts/fetch_quikoptions.py validate FILE...      # re-check saved captures, offline
+    python scripts/fetch_quikoptions.py reparse [YYYY-MM-DD]  # rebuild saved JSON from its HTML
     python scripts/fetch_quikoptions.py probe [--linger 120]  # record both pages, a person present
 """
 
@@ -480,6 +481,91 @@ def validate_report(doc: dict, expected: date | None = None) -> list[str]:
     return problems
 
 
+# What the console and the Discord series show beyond the site's own cells. Computed here, at
+# capture, because the console derives no verdicts of its own; recomputable for every saved day
+# from its HTML (`reparse`), so a change to a rule here is a re-run, never a lost day.
+DERIVED_VERSION = 1
+SIZE_BANDS = {
+    "1": ("1s",),
+    "2-10": ("2s", "3s", "4s", "5s", "6s", "7s", "8s", "9s", "10s"),
+    "11-99": ("<20", "<50", "<100"),
+    "100+": ("<500", "<1K", "=>1K"),
+}
+
+
+def spread_direction(price: float | None, delta: float | None) -> str | None:
+    """'bought' or 'sold', from the site's own signs. On every spread seen (2026-10-02) price and
+    delta share a sign: positive for a spread bought (a debit, long its delta), negative for one
+    sold. Where they disagree, or one is missing or zero, the direction is not read."""
+    if price is None or delta is None or price == 0 or delta == 0 or (price > 0) != (delta > 0):
+        return None
+    return "bought" if price > 0 else "sold"
+
+
+def derive(doc: dict) -> dict:
+    """The capture plus `derived`: Birdseye's four size bands and call share, each outright's
+    premium (size x price x 100, which the site does not print for outrights), each spread's
+    direction and the trades printed together (same symbol, time and size: a roll is two rows),
+    premium by the site's own side for outrights and sweeps, the largest trade by premium, and
+    every name in more than one table. Pure; the parsed values are left as they were."""
+    tables = doc.get("tables", {})
+    for row in tables.get("birdseye", []):
+        buckets, total = row.get("buckets") or {}, row.get("total")
+        row["bands"] = {
+            band: (sum(buckets[k] for k in keys) if all(buckets.get(k) is not None for k in keys) else None)
+            for band, keys in SIZE_BANDS.items()
+        }
+        calls = row.get("calls")
+        row["call_share"] = calls / total if calls is not None and total else None
+    for row in tables.get("outrights", []):
+        price, size = row.get("price"), row.get("size")
+        row["premium"] = round(price * size * 100, 2) if price is not None and size is not None else None
+        row["premium_derived"] = True
+    groups: dict[tuple, int] = {}
+    for row in tables.get("spreads", []):
+        row["direction"] = spread_direction(row.get("price"), row.get("delta"))
+        key = (row.get("symbol"), row.get("time_et"), row.get("size"))
+        groups[key] = groups.get(key, 0) + 1
+    for row in tables.get("spreads", []):
+        key = (row.get("symbol"), row.get("time_et"), row.get("size"))
+        row["group"] = f"{key[0]} {key[1]} {key[2]}" if groups[key] > 1 else None
+    by_side: dict[str, float] = {}
+    trades_by_side: dict[str, int] = {}
+    for name in ("outrights", "sweeps"):
+        for row in tables.get(name, []):
+            sentiment = (row.get("side") or {}).get("sentiment")
+            if sentiment and row.get("premium") is not None:
+                by_side[sentiment] = by_side.get(sentiment, 0.0) + abs(row["premium"])
+                trades_by_side[sentiment] = trades_by_side.get(sentiment, 0) + 1
+    seen: dict[str, dict] = {}
+    for name in TABLES:
+        for row in tables.get(name, []):
+            sym = row.get("symbol")
+            if not sym:
+                continue
+            entry = seen.setdefault(sym, {"symbol": sym, "name": row.get("name"), "tables": []})
+            if name not in entry["tables"]:
+                entry["tables"].append(name)
+    names = sorted(
+        (e for e in seen.values() if len(e["tables"]) > 1), key=lambda e: (-len(e["tables"]), e["symbol"])
+    )
+    largest = None
+    for name in ("outrights", "sweeps", "spreads"):
+        for row in tables.get(name, []):
+            if row.get("premium") is not None and (
+                largest is None or abs(row["premium"]) > largest["premium"]
+            ):
+                largest = {"table": name, "symbol": row.get("symbol"), "premium": abs(row["premium"])}
+    doc["derived"] = {
+        "version": DERIVED_VERSION,
+        "names": names,
+        "premium_by_side": by_side,
+        "trades_by_side": trades_by_side,
+        "largest_trade": largest,
+    }
+    return doc
+
+
 # A time, or none: the site may print a word ("All Day", "Tentative") where an event has no time.
 _CAL_WHEN = re.compile(
     r"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (\d{1,2})/(\d{1,2})"
@@ -809,7 +895,7 @@ def capture_report(page, hits: list[str]) -> str:
         raise Throttled(hits[0])
     content = page.content()  # after the dwell: the tables as they finally stand
     fragment = tables_fragment(content, HEADINGS, with_date=True)
-    doc = parse_report(fragment)
+    doc = derive(parse_report(fragment))
     problems = validate_report(doc)
     session = doc.get("session")
     if session:
@@ -899,6 +985,37 @@ def cmd_validate(args) -> int:
             problems = validate_report(doc, date.fromisoformat(stem))
         bad += bool(problems)
         print(f"{path}: " + ("ok" if not problems else "; ".join(problems)))
+    return 1 if bad else 0
+
+
+def cmd_reparse(args) -> int:
+    """Rebuild saved days' JSON from their own HTML: the parsed tables and `derived`, after a parser
+    or derivation change. The HTML (what the site showed) is never touched; a day whose HTML no
+    longer passes every check keeps its JSON as it was and is reported."""
+    from cherrypick.core.jsonio import write_json_atomic
+
+    folder = store_dir() / "hot-options"
+    days = sorted(folder.glob("????-??-??.html")) if folder.exists() else []
+    if args.session:
+        days = [p for p in days if p.stem in args.session]
+    bad = 0
+    for html_path in days:
+        json_path = html_path.with_suffix(".json")
+        doc = derive(parse_report(html_path.read_text(encoding="utf-8")))
+        problems = validate_report(doc, date.fromisoformat(html_path.stem))
+        if problems:
+            bad += 1
+            print(f"{html_path.stem}: kept as it was — {'; '.join(problems[:3])}")
+            continue
+        try:
+            old = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            old = {}
+        now = datetime.now(UTC).isoformat(timespec="seconds")
+        write_json_atomic(
+            json_path, {**doc, "problems": [], "saved_at": old.get("saved_at"), "reparsed_at": now}
+        )
+        print(f"{html_path.stem}: rebuilt")
     return 1 if bad else 0
 
 
@@ -1095,6 +1212,9 @@ def main(argv: list[str] | None = None) -> int:
     ho.add_argument("--headless", action="store_true")
     ho.add_argument("--no-calendar", action="store_true", help="the report only")
     ho.set_defaults(fn=cmd_hot_options)
+    rp = sub.add_parser("reparse")
+    rp.add_argument("session", nargs="*", help="YYYY-MM-DD (default: every saved day)")
+    rp.set_defaults(fn=cmd_reparse)
     va = sub.add_parser("validate")
     va.add_argument("files", nargs="+", help="saved .html captures (hot-options/ or calendar/)")
     va.set_defaults(fn=cmd_validate)

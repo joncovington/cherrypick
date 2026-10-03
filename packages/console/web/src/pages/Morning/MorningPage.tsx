@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { useMorningReport } from "../../lib/api";
 import type {
   MorningGate,
@@ -8,6 +9,7 @@ import type {
   MorningVolCurvePoint,
   MorningVolPercentile,
   MorningFuture,
+  MorningHotOptions,
   MorningHotOptionsRow,
 } from "@console/shared";
 import { NoteMarkdown } from "../Review/NoteMarkdown";
@@ -715,7 +717,32 @@ function count(v: number | null | undefined): string {
   return v === null || v === undefined ? "—" : v.toLocaleString();
 }
 
-function HotRows({ title, rows }: { title: string; rows: MorningHotOptionsRow[] }) {
+/** A name the Options flow capture of the same session also holds: a link to that day's page, with
+ *  the flow tables it is in as the title. The marks are the reader's; this lays them out. */
+function FlowMark({ symbol, flow }: { symbol: string; flow: MorningHotOptions["flow"] | undefined }) {
+  // `undefined` too: a console server older than its rebuilt bundle omits the field entirely.
+  const tables = flow?.tables[symbol];
+  if (flow === null || flow === undefined || tables === undefined || tables.length === 0) return null;
+  return (
+    <Link
+      to={`/flow?session=${flow.session}`}
+      className="chip flow-mark"
+      title={`In QuikOptions' Hot Options Report for ${flow.session}: ${tables.join(", ")}`}
+    >
+      flow
+    </Link>
+  );
+}
+
+function HotRows({
+  title,
+  rows,
+  flow = null,
+}: {
+  title: string;
+  rows: MorningHotOptionsRow[];
+  flow?: MorningHotOptions["flow"] | undefined;
+}) {
   return (
     <>
       <h3>{title}</h3>
@@ -736,7 +763,10 @@ function HotRows({ title, rows }: { title: string; rows: MorningHotOptionsRow[] 
           {rows.map((r) => (
             <tr key={r.symbol}>
               <td className="muted">{count(r.rank)}</td>
-              <td>{r.symbol}</td>
+              <td>
+                {r.symbol}
+                <FlowMark symbol={r.symbol} flow={flow} />
+              </td>
               <td>{count(r.contracts)}</td>
               <td>{count(r.calls)}</td>
               <td>{count(r.puts)}</td>
@@ -777,13 +807,19 @@ function HotOptionsCard({ pack }: { pack: MorningPack }) {
             {fmt(h.totalPutCall)}. “vs avg” is against {h.baselineSessions ?? 0} prior sessions.
             {h.lagSessions ? ` ${h.lagSessions} session(s) behind the prior session — OCC publishes late in the evening, and the morning fetch had not landed it.` : ""}
           </p>
-          <HotRows title="Indexes" rows={h.indexes} />
+          {h.flow !== null && h.flow !== undefined && (
+            <p className="muted">
+              <span className="chip flow-mark">flow</span> marks a name also in QuikOptions&apos; Hot Options Report for{" "}
+              {h.flow.session} (<Link to={`/flow?session=${h.flow.session}`}>Options flow</Link>).
+            </p>
+          )}
+          <HotRows title="Indexes" rows={h.indexes} flow={h.flow} />
           {h.equities === null ? (
             <p className="muted">Equities and funds not ranked ({h.classification ?? "no directory"}).</p>
           ) : (
             <>
-              <HotRows title="Top single-name equities" rows={h.equities} />
-              {h.funds && h.funds.length > 0 && <HotRows title="Top funds" rows={h.funds} />}
+              <HotRows title="Top single-name equities" rows={h.equities} flow={h.flow} />
+              {h.funds && h.funds.length > 0 && <HotRows title="Top funds" rows={h.funds} flow={h.flow} />}
               {h.unclassified.length > 0 && (
                 <p className="muted">Unclassified among the most active: {h.unclassified.join(", ")}.</p>
               )}

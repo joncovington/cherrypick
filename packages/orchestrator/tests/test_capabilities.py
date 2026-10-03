@@ -143,6 +143,10 @@ def test_gated_features_is_the_one_view_the_console_reads():
     assert view["modules"]["pmcc"] == {"configured": False, "enabled": False, "missing": []}
     assert view["features"]["advisor"] is False
     assert view["features"]["technicals"] is True
+    assert view["features"]["options_flow"] is False  # off until a person signs in and switches it on
+    cfg = _cfg(dolt=True)
+    cfg["quikoptions"] = {"enabled": True}
+    assert caps.gated_features(cfg)["features"]["options_flow"] is True
 
 
 def test_cli_dispatches_capabilities(monkeypatch):

@@ -184,6 +184,8 @@ describe("the suite surfaces are on the frame", () => {
   const cases: Array<[string, string]> = [
     ["/gex/skew", "GEX / iv skew"],
     ["/gex", "GEX / gex"],
+    ["/flow", "Options flow / today"],
+    ["/flow/spreads", "Options flow / spreads"],
     ["/live", "Live / today"],
     ["/reports/eod", "Reports / eod"],
     ["/reports", "Reports / morning"],
@@ -290,6 +292,16 @@ describe("a page the suite has turned off", () => {
     expect(text(renderWith("/curve", base))).toMatch(/curve \/ session\s*experimental/);
     expect(text(renderWith("/meic", base))).not.toMatch(/MEIC \/ session\s*experimental/);
     expect(text(renderWith("/meic", base))).toMatch(/Calendars\s*experimental/);
+  });
+
+  it("Options flow is a turned-off card while the capture is off, and leaves the rail", () => {
+    const off = { ...base, features: { ...base.features, options_flow: false } };
+    expect(text(renderWith("/flow", off))).toContain("Options flow is turned off");
+    expect(text(renderWith("/flow", off))).toContain("quikoptions.enabled");
+    expect(renderWith("/flies/session", off)).not.toContain('href="/flow"');
+    const on = { ...base, features: { ...base.features, options_flow: true } };
+    expect(text(renderWith("/flow", on))).toContain("Options flow / today");
+    expect(renderWith("/flies/session", on)).toContain('href="/flow"');
   });
 
   it("a failed features read shows everything (fail open)", () => {

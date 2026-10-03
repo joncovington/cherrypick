@@ -245,6 +245,21 @@ export const CHARTS_SLIDES = [
   { id: "technicals", label: "technicals" },
 ] as const satisfies readonly NavSlide[];
 
+/**
+ * Options flow (2026-10-03): QuikOptions' Hot Options Report, one capture a session
+ * (`docs/quikoptions-plan.md`). `today` is the page at a glance and links into the four tables,
+ * each the site's own table in full.
+ */
+export const FLOW_SLIDES = [
+  { id: "today", label: "today" },
+  { id: "birdseye", label: "birdseye" },
+  { id: "trades", label: "trades" },
+  { id: "spreads", label: "spreads" },
+  { id: "voloi", label: "vol / OI" },
+] as const satisfies readonly NavSlide[];
+
+export type FlowSlideId = (typeof FLOW_SLIDES)[number]["id"];
+
 export const ADVISOR_SLIDES = [{ id: "advisor", label: "advisor" }] as const satisfies readonly NavSlide[];
 
 /**
@@ -355,6 +370,13 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     legacy: { now: "session" },
   },
   gex: { slides: GEX_SLIDES },
+  flow: {
+    slides: FLOW_SLIDES,
+    groups: [
+      { label: "today", ids: ["today"] },
+      { label: "tables", ids: ["birdseye", "trades", "spreads", "voloi"] },
+    ],
+  },
   live: { slides: LIVE_SLIDES },
   charts: { slides: CHARTS_SLIDES },
   reports: { slides: REPORTS_SLIDES },
