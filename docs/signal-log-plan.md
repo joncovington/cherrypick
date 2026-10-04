@@ -151,6 +151,15 @@ Trend following and mean reversion were never tuned, and are judged on everythin
 Each setup-side is also reported separately for 2011–2018 and 2019–2026. That is a stability check,
 not an extra hypothesis.
 
+Two more views, again not extra hypotheses (decided 2026-10-04). Options tradability can't be
+reconstructed point-in-time (see "The options-tradable filter" in Phase 2), so the headline question
+stays "does the signal predict the stock's move", on liquid stocks. The option rides on that move.
+The views are:
+- **names with a 50-session median dollar volume of at least $300M**, the best stock-only stand-in
+  for options liquidity (76% of them have weeklies);
+- **names on today's options-tradable list**, flagged as hindsight: it is today's list applied to
+  past dates.
+
 ### Scoring
 
 As analysis plan v2 below: next-open fills, a matched random baseline, costs, a family of eight
@@ -210,17 +219,58 @@ Time to about 150 live trades, at today's rates on our 527 names:
 | Trend following (long and short) | ~620–640 | ~12–13 weeks |
 | Breakout / breakdown | ~78–85 | ~2 years |
 
-**The breakouts are slow to confirm live,** though their verdict will already be in hand from
-history. One option, for when Phase 2 is built: run the nightly setups over the same liquid
-universe as the study (about 2,900 names today, not 527). That would make every confirmation about
-four times faster, breakouts in about six months.
+**Decided 2026-10-04: the nightly setups widen to the study's liquid universe** (price ≥ $5,
+50-session median dollar volume ≥ $20M, about 2,900 names today, not 527). Every confirmation runs
+about four times faster, breakouts in about six months, and the options-tradable filter (below) can
+find tradable names among all of them, not just today's curated list.
 
-- **Storage:** `eod.db` would grow from 57 MB to about 150–200 MB. The chart files would grow from
-  27 MB to about 100–150 MB, rewritten nightly. The chart job would take about 3–4 minutes, up from
-  42 seconds.
-- **The real cost is broker calls,** not storage. The IV-rank and dividend scripts call tastytrade
-  one symbol a second, so the cheap answer is to keep them on the curated names. The setups don't
-  read IV.
+- **Storage:** `eod.db` grows from 57 MB to about 150–200 MB. The chart files grow from 27 MB to
+  about 100–150 MB, rewritten nightly. The chart job takes about 3–4 minutes, up from 42 seconds.
+- **Broker calls:** the IV-rank job asks tastytrade for 50 symbols per call with a 1-second pause, so
+  about 2,900 names is about a minute a night. (An earlier note here said one symbol a second; that
+  is the dividend script, not this one.) The dividend script does go one symbol a second, and
+  refreshes each symbol weekly. Widened names use Dolt's dividends, and the tastytrade fetch stays
+  on the curated names. The setups don't read IV or dividends directly, only through the adjustment.
+- **The morning report is unaffected.** It keeps its own universe and its illiquid names. A name in
+  the report is not a claim that it is tradable.
+
+### The options-tradable filter (decided 2026-10-04)
+
+Many liquid stocks are still not names anyone would trade options on: wide spreads, thin books, or
+monthly expiries only. The vendor's morning report includes such names too, which is fine for a
+report and wrong for a trading watchlist.
+
+**Definition.** A name is options-tradable on a session when both hold:
+- **Weekly expiries:** at least 4 listed expiries in the next 35 days;
+- **tastytrade's liquidity rating of 3 or 4**, on at least 7 of the last 10 sessions. The rating
+  moves day to day (ABBV was 2 on 2026-10-02 and 3 on 2026-10-04), so the rule has hysteresis and
+  names don't flicker in and out.
+
+**Source.** The nightly IV-rank job already fetches both: the rating is recorded today, and the
+expiry list (`option_expiration_implied_volatilities`) arrives in the same response but is
+discarded. Keeping it costs no extra calls. The label is recorded every night, so it builds up as
+point-in-time history from now on.
+
+**Size today.** Of the 526 charted names, all have listed options, 242 (46%) have no weeklies, and
+147 have weeklies with a rating of 3 or 4. Some examples:
+- CSCO, NKE, HPQ and CHWY qualify.
+- ZTS is rated 4 but monthly only.
+- ANF has weeklies but is rated 2.
+- NHC and MTD are rated 1, monthly only.
+
+**Where it applies:**
+- the setups watchlist, as its default filter, with "show all" one click away;
+- the signal log, as context (`options_tradable`, `liquidity_rating`, `weekly_expiries`), so
+  outcomes can be split by it;
+- alerts.
+
+**Where it doesn't:** the charts and the morning report keep every name.
+
+**Why the history can't use it.** tastytrade gives only today. Dolt's option chains (from 2019)
+carry no weeklies, only the standard monthlies, so SPY shows two expiries in 35 days. Their quotes
+look like after-hours ones: ABBV's ~30-day at-the-money spread reads 17.9% of mid. Stock dollar
+volume predicts the label poorly among names this liquid: at a median of $500M a day or more, only
+53% are tradable, and 37% of tradable names fall below that line.
 
 ### Where it lives
 
@@ -236,7 +286,7 @@ say so.
 | `runs` | logging run | `run_id`, `started_at` (UTC), `as_of_session`, `code_sha` (git), `rule_version`, `context_version`, `symbols`, `events_new`, `restatements_new`, `outcome` |
 | `rule_versions` | rule version ever used | `rule_version`, `fingerprint`, `parameters_json` (every constant in `setups.py`), `rules_json` (each setup's rule text), `first_run_id` |
 | `signals` | **entry or exit, as first seen** | `signal_id`, `symbol`, `setup_id`, `family`, `side`, `event` (`entry`/`exit`), `event_session`, `position_key` (symbol, setup, entry session), `price_adj`, `close_raw`, `reason` (exits), `target` (pullbacks), `rule_version`, `first_run_id`, `first_seen_at`, `lag_sessions`, `seen_before_open`, `source` (`observed`/`reconstructed`), `tuned_on_data` |
-| `signal_context` | signal | `context_version`; as of `event_session`: `trend_1m`, `trend_6m`, `rs`, `vs_spy_1m`, `atr14`, `volume_ratio`, our nearest `support`/`resistance` and their distances, `sentiment`, `spy_trend_1m`/`_6m`, `universe_member` |
+| `signal_context` | signal | `context_version`; as of `event_session`: `trend_1m`, `trend_6m`, `rs`, `vs_spy_1m`, `atr14`, `volume_ratio`, our nearest `support`/`resistance` and their distances, `sentiment`, `spy_trend_1m`/`_6m`, `universe_member`, `options_tradable`, `liquidity_rating`, `weekly_expiries` |
 | `restatements` | later disagreement | `signal_id` (or the new event), `run_id`, `kind` (`vanished`, `late`, `price_moved`, `exit_changed`), `old_json`, `new_json`, `probable_cause` (`corporate_action`, `rule_version`, `data_correction`, `unknown`) |
 
 A few of these columns need explaining:
@@ -449,8 +499,12 @@ History makes most of these **runnable now, not someday**.
    chosen as of each day: price ≥ $5 and 50-session median dollar volume ≥ $20M. The live log
    follows as confirmation.
 
-**Still open, for when Phase 2 is built:** whether the nightly setups widen to the study's universe,
-for about four times faster live confirmation.
+7. **The nightly setups widen to the liquid universe** (about 2,900 names), for about four times
+   faster confirmation and a wider pool for the tradable filter. Widened names use Dolt's dividends.
+8. **An options-tradable filter:** weekly expiries, and a tastytrade liquidity rating of 3 or 4 on at
+   least 7 of the last 10 sessions. It is the watchlist's default, and it is context in the log and
+   alerts. The charts and the morning report keep every name. It is recorded nightly from now on.
+   The historical study adds a $300M-a-day view and a flagged today's-list view.
 
 ## References
 
