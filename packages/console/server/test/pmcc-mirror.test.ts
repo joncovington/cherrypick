@@ -28,7 +28,11 @@ const LEDGER = path.join(os.homedir(), ".cherrypick", "data", "pmcc", "paper_tra
 
 interface Headline {
   ok: boolean;
-  headline: { arms: Record<string, unknown>; open_positions: number };
+  headline: {
+    arms: Record<string, unknown>;
+    open_positions: number;
+    open_mtm?: Record<string, Record<string, { positions: number; net: number | null; unpriced: number }>>;
+  };
 }
 
 function moduleHeadline(): Headline | null {
@@ -87,6 +91,37 @@ describe.skipIf(!available)("the console's PMCC mirror agrees with the module it
         // The module rounds to the cent and the reader does not, so "to the cent" is half a cent
         // either side of the module's figure.
         expect(Math.abs((cell!.netPnl ?? Number.NaN) - c.net)).toBeLessThanOrEqual(0.0051);
+      }
+    }
+  });
+});
+
+describe.skipIf(!available)("the console's open P&L agrees with the module's open mark-to-market", () => {
+  it("agrees on every open (arm, symbol) cell's net, to the cent", () => {
+    // The module marks an open position with `tracker.value_at(now)`: every leg at its latest usable
+    // mark or its close, delivered shares held or covered, less every cost. The console's
+    // `unrealised.ts` states the same rule; a held-long arm has no other number for ten months.
+    const theirs = moduleHeadline()!.headline.open_mtm ?? {};
+    const mine = readPmcc(loadConfig());
+    const cells = new Map<string, { net: number; missing: boolean }>();
+    for (const p of mine.openPositions) {
+      const key = `${p.arm}/${p.symbol}`;
+      const cell = cells.get(key) ?? { net: 0, missing: false };
+      if (p.unrealisedNet === null) cell.missing = true;
+      else cell.net += p.unrealisedNet;
+      cells.set(key, cell);
+    }
+    const expected = Object.entries(theirs).flatMap(([arm, bySymbol]) =>
+      Object.entries(bySymbol).map(([symbol, c]) => ({ key: `${arm}/${symbol}`, net: c.net })),
+    );
+    expect([...cells.keys()].sort()).toEqual(expected.map((e) => e.key).sort());
+    for (const e of expected) {
+      const cell = cells.get(e.key)!;
+      if (e.net === null) {
+        expect(cell.missing).toBe(true);
+      } else {
+        // Both sides round each position to the cent; a cell sums them, so allow a cent per position.
+        expect(Math.abs(cell.net - e.net)).toBeLessThanOrEqual(0.01 * Math.max(1, mine.openPositions.length));
       }
     }
   });

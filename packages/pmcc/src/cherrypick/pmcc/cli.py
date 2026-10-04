@@ -7,6 +7,9 @@ Subcommands (all read-only over the module's own ledger):
     exposure   the early-assignment-exposure telemetry
     excursions per-closed-position MAE/MFE (docs/metrics-plan.md Phase 2) plus distributions
     ladder     the ITM call ladder as a selector would see it (the calibration read)
+    tracker    one position week by week: header, the long, every short, the weekly roll-up
+    tracker-index  every position the tracker can open, open ones first
+    weekly     the arms' weekly A/B: per (arm, symbol, week), the change in net P&L
 
 The paper loop's own argv (`python -m cherrypick.pmcc.paper_loop --once|--interval|--settle|
 --status`) is what the orchestrator drives; this CLI is the human read side.
@@ -249,6 +252,41 @@ def cmd_ladder(args) -> int:
     return 0
 
 
+def cmd_tracker(args) -> int:
+    from cherrypick.pmcc import analytics, db
+
+    conn = db.connect_ro(args.db)
+    out = analytics.tracker(conn, args.position, load_config(args.config))
+    if out is None:
+        print(json.dumps({"ok": False, "reason": "unknown_position", "position_id": args.position}))
+        return 1
+    print(json.dumps({"ok": True, "tracker": out}, indent=2, default=str))
+    return 0
+
+
+def cmd_tracker_index(args) -> int:
+    from cherrypick.pmcc import analytics, db
+
+    conn = db.connect_ro(args.db)
+    print(
+        json.dumps(
+            {"ok": True, "positions": analytics.tracker_index(conn, load_config(args.config))},
+            indent=2,
+            default=str,
+        )
+    )
+    return 0
+
+
+def cmd_weekly(args) -> int:
+    from cherrypick.pmcc import analytics, db
+
+    conn = db.connect_ro(args.db)
+    era = getattr(args, "era", None) or analytics.CURRENT_ERA
+    print(json.dumps({"ok": True, "weekly": analytics.weekly_by_arm(conn, era=era)}, indent=2, default=str))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="pmcc", description="PMCC deep-ITM covered-call paper module")
     ap.add_argument("--config")
@@ -277,6 +315,15 @@ def main(argv=None) -> int:
     p_ladder.add_argument("--expiration", help="one date (default: the plan's short and long)")
     p_ladder.add_argument("--json", action="store_true", help="include the full per-strike rows")
     p_ladder.set_defaults(func=cmd_ladder)
+    p_tracker = sub.add_parser("tracker", help="one position week by week")
+    p_tracker.add_argument("--position", required=True, help="the position id (SYMBOL:arm:entry-session)")
+    p_tracker.set_defaults(func=cmd_tracker)
+    sub.add_parser("tracker-index", help="every position the tracker can open").set_defaults(
+        func=cmd_tracker_index
+    )
+    p_weekly = sub.add_parser("weekly", help="the arms' weekly A/B")
+    p_weekly.add_argument("--era", default=None, help="one era, or 'ALL'. Defaults to the current era.")
+    p_weekly.set_defaults(func=cmd_weekly)
 
     args = ap.parse_args(argv)
     return args.func(args)
