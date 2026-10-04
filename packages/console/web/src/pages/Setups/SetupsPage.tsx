@@ -13,13 +13,25 @@ import { useSetupsWatchlist } from "../../lib/api";
  * -- no vendor data; the vendor only checks the scores and the rank. The page filters, sorts and
  * splits a position into its entry and exit rows; it decides nothing. "Move" is close to close in the
  * trade's direction and is never called P&L.
+ *
+ * Two lists share the page. The default is the setups' own rows; "Tested edge" swaps in the rows of
+ * the historical study's confirmed rule (TESTED_RULE), which re-walks its setup with one change, so
+ * the two overlap and are never shown together. Either is cut to options-tradable names by default
+ * when the file carries the label (weekly options, and $100M a day in the stock: the user trades
+ * options, so a liquid stock alone is not enough), with "All names" as the way out.
  */
 
 type View = "signals" | "open";
 type Event = "both" | "entry" | "exit";
 type SideFilter = "both" | "long" | "short";
-type Sort = "recent" | "rs" | "move" | "spy";
+type Sort = "recent" | "rs" | "move" | "spy" | "dvol";
 type Dir = "asc" | "desc";
+
+/**
+ * The study's one confirmed rule (packages/technicals docs/setups.md, "Round 2"): mean reversion
+ * (long) taken only on names trading at least $300M a day.
+ */
+const TESTED_RULE = "mr-300m";
 
 const WINDOWS = [1, 5, 20] as const;
 const FAMILIES = ["all", "trend", "pullback", "reversion", "breakout"] as const;
@@ -49,6 +61,12 @@ function money(v: number | null | undefined): string {
 function pct(v: number | null | undefined, digits = 1): string {
   if (v === null || v === undefined) return "—";
   return `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}%`;
+}
+
+/** A median dollar volume, in millions under a billion and billions over. */
+function dollars(v: number | null): string {
+  if (v === null) return "—";
+  return v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : `$${Math.round(v / 1e6)}M`;
 }
 
 function tone(v: number | null | undefined): string {
@@ -127,10 +145,11 @@ const SORT_VALUE: Record<Sort, (l: Line) => number | null> = {
   rs: (l) => l.row.rs,
   move: (l) => l.row.movePct,
   spy: (l) => l.row.vsSpy1m,
+  dvol: (l) => l.row.dollarVolume,
 };
 
 /** The direction a column sorts on its first click: newest first for Ago, largest first for the rest. */
-const FIRST_DIR: Record<Sort, Dir> = { recent: "asc", rs: "desc", move: "desc", spy: "desc" };
+const FIRST_DIR: Record<Sort, Dir> = { recent: "asc", rs: "desc", move: "desc", spy: "desc", dvol: "desc" };
 
 /** Either direction keeps a missing value at the bottom; ties go by symbol. */
 function compare(sort: Sort, dir: Dir) {
@@ -160,11 +179,17 @@ export function SetupsPage() {
   const family = (FAMILIES as readonly string[]).includes(familyParam) ? familyParam : "all";
   const sideParam = params.get("side");
   const side: SideFilter = sideParam === "long" || sideParam === "short" ? sideParam : "both";
+  const tested = params.get("tested") === "1";
   const agree = params.get("agree") === "1";
   const strong = params.get("rs7") === "1";
+  // Options-tradable names only, unless asked for all -- and only where the file carries a label:
+  // with none, every row's flag is unknown and the cut would empty the page.
+  const labelDay = data?.optionsLabelDay ?? null;
+  const tradableOnly = labelDay !== null && params.get("names") !== "all";
   const q = (params.get("q") ?? "").trim().toUpperCase();
   const sortParam = params.get("sort");
-  const sort: Sort = sortParam === "rs" || sortParam === "move" || sortParam === "spy" ? sortParam : "recent";
+  const sort: Sort =
+    sortParam === "rs" || sortParam === "move" || sortParam === "spy" || sortParam === "dvol" ? sortParam : "recent";
   const dirParam = params.get("dir");
   const dir: Dir = dirParam === "asc" || dirParam === "desc" ? dirParam : FIRST_DIR[sort];
 
@@ -176,14 +201,19 @@ export function SetupsPage() {
     setParams(next, { replace: true });
   };
 
+  // The tested rule fixes its own setup and side, and Trend agrees is off for it: an oversold
+  // entry never has a positive 1-month trend, so that filter would hide every one of its rows.
   const rows = (data?.rows ?? []).filter(
     (r) =>
-      (family === "all" || r.family === family) &&
-      (side === "both" || r.side === side) &&
-      (!agree || r.trendAgrees === true) &&
+      (tested ? r.tested === TESTED_RULE : r.tested === null) &&
+      (tested || family === "all" || r.family === family) &&
+      (tested || side === "both" || r.side === side) &&
+      (tested || !agree || r.trendAgrees === true) &&
+      (!tradableOnly || r.optionsTradable === true) &&
       (!strong || (r.rs !== null && r.rs >= 7)) &&
       (q === "" || r.symbol.includes(q)),
   );
+  const agreeHidesReversion = !tested && agree && (family === "all" || family === "reversion") && side !== "short";
   const lines: Line[] =
     view === "open"
       ? rows
@@ -253,17 +283,41 @@ export function SetupsPage() {
             />
           </>
         )}
-        <Toggle value={family} options={FAMILIES} onChange={(v) => set("setup", v === "all" ? null : v)} label="setup" render={(v) => FAMILY_SHORT[v] ?? v} />
-        <Toggle
-          value={side}
-          options={["both", "long", "short"] as const}
-          onChange={(v) => set("side", v === "both" ? null : v)}
-          label="side"
-          render={(v) => (v === "both" ? "Long & short" : v === "long" ? "Long" : "Short")}
-        />
-        <Flag on={agree} onChange={(on) => set("agree", on ? "1" : null)} title="Only trades whose 1M and 6M trend scores are both on the trade's side of zero: above it for a long, below for a short">
-          Trend agrees
+        <Flag
+          on={tested}
+          onChange={(on) => set("tested", on ? "1" : null)}
+          title="Only the rule the historical study confirmed: mean reversion (long) on names trading at least $300M a day"
+        >
+          Tested edge
         </Flag>
+        {!tested && (
+          <>
+            <Toggle value={family} options={FAMILIES} onChange={(v) => set("setup", v === "all" ? null : v)} label="setup" render={(v) => FAMILY_SHORT[v] ?? v} />
+            <Toggle
+              value={side}
+              options={["both", "long", "short"] as const}
+              onChange={(v) => set("side", v === "both" ? null : v)}
+              label="side"
+              render={(v) => (v === "both" ? "Long & short" : v === "long" ? "Long" : "Short")}
+            />
+            <Flag on={agree} onChange={(on) => set("agree", on ? "1" : null)} title="Only trades whose 1M and 6M trend scores are both on the trade's side of zero: above it for a long, below for a short">
+              Trend agrees
+            </Flag>
+          </>
+        )}
+        {labelDay !== null ? (
+          <Flag
+            on={tradableOnly}
+            onChange={(on) => set("names", on ? null : "all")}
+            title={`Only names that list weekly options (as of ${labelDay}) and whose stock trades at least $100M a day (50-session median). Off shows every name.`}
+          >
+            Options-tradable
+          </Flag>
+        ) : (
+          <span className="chip muted" title="The watchlist carries no options-tradable label, so every name is shown">
+            all names · no options label
+          </span>
+        )}
         <Flag on={strong} onChange={(on) => set("rs7", on ? "1" : null)} title="Only names with a relative-strength rank of 7 or more (the top 30% of the market)">
           RS ≥ 7
         </Flag>
@@ -279,6 +333,19 @@ export function SetupsPage() {
         </span>
       </div>
 
+      {tested && (
+        <p className="muted" style={{ margin: "0 0 8px" }}>
+          Mean reversion (long), taken only when the name trades at least $300M a day — the 50-session median of close ×
+          volume, to the session before the entry. The one change to a setup the historical study confirmed on names it had
+          not seen (2011–2026, stock fills at the next open, not options). Each symbol opens the mean-reversion chart, whose
+          arrows include these.
+        </p>
+      )}
+      {agreeHidesReversion && (
+        <p className="muted" style={{ margin: "0 0 8px" }}>
+          Trend agrees hides every long mean-reversion signal: an oversold entry never has a positive 1-month trend score.
+        </p>
+      )}
       {isError && <p className="muted">Could not read the setups watchlist.</p>}
       {isLoading && <p className="muted">Reading the watchlist…</p>}
       {data && data.rows.length === 0 && <p className="muted">No watchlist yet; the technicals report job writes it with the chart files.</p>}
@@ -315,6 +382,7 @@ export function SetupsPage() {
                 <th title="Our 6-month trend score and label">6M</th>
                 {sortHead("rs", "RS", "Relative strength 1-10: a decile across the whole US market of half the 1-month return plus the 6-month return. Not a comparison with SPY.")}
                 {sortHead("spy", "1M vs SPY", "The 21-session return less SPY's over the same sessions, in points")}
+                {sortHead("dvol", "$ Vol", "The 50-session median of close × volume, to the session before the entry")}
                 <th className="num" title="The nearest of our own support levels (swing lows in our bars) below the last close">
                   Support
                 </th>
@@ -327,7 +395,7 @@ export function SetupsPage() {
               {lines.map((l) => {
                 const r = l.row;
                 return (
-                  <tr key={`${r.symbol}-${r.setup}-${r.entryDate}-${l.kind}`}>
+                  <tr key={`${r.symbol}-${r.setup}-${r.tested ?? ""}-${r.entryDate}-${l.kind}`}>
                     <td>
                       <Link className="module-link" to={chartLink(r)} title={`Open ${r.symbol}'s chart with ${r.setupName} selected`}>
                         {r.symbol}
@@ -336,6 +404,12 @@ export function SetupsPage() {
                         <span className="muted" title="This name's bars end before the latest session">
                           {" "}
                           (to {r.session})
+                        </span>
+                      )}
+                      {!tradableOnly && r.optionsTradable === false && (
+                        <span className="muted" title="Not options-tradable: no weekly options, or the stock trades under $100M a day">
+                          {" "}
+                          · no opts
                         </span>
                       )}
                     </td>
@@ -354,6 +428,7 @@ export function SetupsPage() {
                     <td className={`num ${tone(r.vsSpy1m)}`}>
                       {r.vsSpy1m === null ? "—" : `${r.vsSpy1m > 0 ? "+" : r.vsSpy1m < 0 ? "−" : ""}${Math.abs(r.vsSpy1m).toFixed(1)} pts`}
                     </td>
+                    <td className="num">{dollars(r.dollarVolume)}</td>
                     <LevelCell near={r.support} />
                     <LevelCell near={r.resistance} />
                   </tr>
@@ -368,8 +443,9 @@ export function SetupsPage() {
         Signals from the four chart setups and their short mirrors, judged on daily closes; each symbol opens its chart with
         the setup and side selected. Move is close to close in the trade's direction, not P&amp;L. 1M and 6M are our trend
         scores and labels; RS is our 1–10 relative-strength rank across the whole market, which is not a comparison with
-        SPY — the 1M vs SPY column is. Support and resistance are our own swing levels. None of it is vendor data: the
-        vendor only checks our trend scores and rank.
+        SPY — the 1M vs SPY column is. $ Vol is the 50-session median dollar volume before the entry. Support and
+        resistance are our own swing levels. None of it is vendor data: the vendor only checks our trend scores and rank.
+        Options-tradable means the name lists weekly options and its stock trades at least $100M a day.
       </p>
     </section>
   );

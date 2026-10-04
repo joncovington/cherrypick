@@ -136,6 +136,12 @@ export interface TechnicalsWatchlistRow {
   setupName: string;
   family: string;
   side: "long" | "short";
+  /**
+   * The historical study's confirmed rule this row comes from (e.g. "mr-300m"), or null for a row
+   * from the setup itself. A rule re-walks its setup with one change, so most of its trades are
+   * also a setup row: a reader shows one kind or the other, never both.
+   */
+  tested: string | null;
   /** Both trend scores on the trade's side of zero; null until both are defined. */
   trendAgrees: boolean | null;
   entryDate: string;
@@ -147,6 +153,8 @@ export interface TechnicalsWatchlistRow {
   exitAgo: number | null;
   reason: string | null;
   target: number | null;
+  /** The 50-session median of close × volume to the session before the entry, in dollars. */
+  dollarVolume: number | null;
   status: "open" | "closed";
   lastClose: number | null;
   /** Close to close in the trade's direction (a fall is positive for a short). Not P&L. */
@@ -163,6 +171,8 @@ export interface TechnicalsWatchlistRow {
   /** The nearest of our own levels below and above the last close. */
   support: TechnicalsLevelNear | null;
   resistance: TechnicalsLevelNear | null;
+  /** Weeklies and a tastytrade liquidity rating of 3+ on the label's day; null with no label. */
+  optionsTradable: boolean | null;
 }
 
 export interface TechnicalsWatchlist {
@@ -170,5 +180,7 @@ export interface TechnicalsWatchlist {
   generatedAt: string | null;
   /** Sessions of entries and exits the file keeps beside every open position. */
   window: number | null;
+  /** The day the options-tradable label was read from; null when there is none. */
+  optionsLabelDay: string | null;
   rows: TechnicalsWatchlistRow[];
 }

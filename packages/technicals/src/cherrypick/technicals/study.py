@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from statistics import mean, median, pstdev
 
-from . import history, paths, setups, store, tuning_names, universe
+from . import history, paths, setups, store, tradable, tuning_names, universe
 
 PLAN = "v2"
 SEED = 20261004
@@ -61,38 +61,12 @@ SHADOW = 120
 
 # ------------------------------------------------------------------------------- a hindsight view
 
-TRADABLE_RATING = 3
-TRADABLE_EXPIRIES = 4
-
 
 def tradable_today() -> tuple[set[str], str | None]:
-    """(names options-tradable on the day the IV-rank file labels most names, that day): weeklies and a
-    tastytrade liquidity rating of 3 or 4 on that one day. Today's list, so applied to past dates it
-    is hindsight -- a view on the results, flagged as such, never the universe."""
-    import json as _json
-
-    try:
-        doc = _json.loads(paths.tastytrade_iv_rank().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return set(), None
-    # The day the most names carry an expiry count: each row is filed under tastytrade's own update
-    # time, so a weekend fetch leaves a few stragglers on a later day (18 on 2026-10-03, against
-    # 2,651 on 2026-10-02), and "the newest day" would read almost nothing.
-    labelled = {
-        d: sum(1 for v in rows.values() if v.get("expiries_35d") is not None)
-        for d, rows in doc.get("days", {}).items()
-    }
-    if not labelled or max(labelled.values()) == 0:
-        return set(), None
-    day = max(labelled, key=lambda d: (labelled[d], d))
-    rows = doc["days"][day]
-    names = {
-        s
-        for s, v in rows.items()
-        if (v.get("expiries_35d") or 0) >= TRADABLE_EXPIRIES
-        and (v.get("liquidity_rating") or 0) >= TRADABLE_RATING
-    }
-    return names, day
+    """Today's options-tradable names as plan v2 declared them (`tradable.rated_today`: weeklies and
+    a tastytrade liquidity rating of 3 or more). Applied to past dates it is hindsight -- a view on
+    the results, flagged as such, never the universe."""
+    return tradable.rated_today()
 
 
 # ------------------------------------------------------------------------------------------ costs

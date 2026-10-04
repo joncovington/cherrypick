@@ -24,25 +24,31 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from statistics import median
 from typing import Any
 
 from . import (
+    hypotheses,
     indicators,
     levels,
     paths,
     setups,
     signals,
     store,
+    study,
     swings,
     symbols,
+    tradable,
     trend,
+    universe,
     vendor_check,
     watchlist,
 )
 
 # 2: gap levels vs our gap edges; 3: entry/exit setups; 4: vendor_view per level; 5: short setups
-# (each setup names its family and side) and our own swing levels
-CHART_VERSION = 5
+# (each setup names its family and side) and our own swing levels; 6: each trade's dollar volume,
+# and the study's confirmed rules (`tested`)
+CHART_VERSION = 6
 DISPLAY = levels.WINDOW  # the sessions the grid is built on, and so the ones worth drawing
 # The index funds charted beside the stocks. Named, not taken from `store.stocks`: that filter
 # drops funds on purpose, because breadth counts stocks only, and the chart page is not breadth.
@@ -85,9 +91,42 @@ def _volumes(conn, symbol: str, bars) -> tuple[list[float | None], str | None]:
     return [b.volume or None for b in bars], None
 
 
-def setup_trades(bars, r: setups.Readings, start: int) -> list[dict]:
+def dollar_volumes(conn, symbol: str, bars) -> tuple[list[bool], list[float | None], float | None]:
+    """(in the study's universe, the median dollar volume that decided it) for each bar --
+    `universe.membership` over the raw bars, from the session before, exactly what the historical
+    study read -- and the median over the last WINDOW sessions to the last one, today's reading. All
+    out and None for a cash index, which has no volume of its own."""
+    if symbol in symbols.INDEXES:
+        return [False] * len(bars), [None] * len(bars), None
+    raw = {b.date: b for b in store.raw_bars(conn, symbol)}
+    closes, volumes = [raw[b.date].close for b in bars], [raw[b.date].volume for b in bars]
+    member, basis = universe.membership(closes, volumes)
+    w = universe.WINDOW
+    now = (
+        None
+        if len(bars) < w
+        else median(c * (v or 0.0) for c, v in zip(closes[-w:], volumes[-w:], strict=True))
+    )
+    return member, basis, now
+
+
+def _trade(bars, r: setups.Readings, t: setups.Trade, basis: list[float | None]) -> dict:
+    return {
+        "entry_date": bars[t.entry].date,
+        "entry_price": _r(r.closes[t.entry]),
+        "exit_date": None if t.exit is None else bars[t.exit].date,
+        "exit_price": None if t.exit is None else _r(r.closes[t.exit]),
+        "reason": t.reason,
+        "target": _r(t.target),
+        # The 50-session median of close x volume to the session before the entry, in dollars.
+        "dollar_volume": _r(basis[t.entry], 0),
+    }
+
+
+def setup_trades(bars, r: setups.Readings, start: int, basis: list[float | None] | None = None) -> list[dict]:
     """Each setup's rule and the trades with an arrow in the shown sessions: entered there, or entered
     before and exited there (or still open)."""
+    basis = basis or [None] * len(bars)
     out = []
     for s in setups.SETUPS:
         trades = [t for t in setups.RUN[s.id](r) if t.exit is None or t.exit >= start]
@@ -99,17 +138,61 @@ def setup_trades(bars, r: setups.Readings, start: int) -> list[dict]:
                 "side": s.side,
                 "rule": s.rule,
                 "lines": list(s.lines),
-                "trades": [
-                    {
-                        "entry_date": bars[t.entry].date,
-                        "entry_price": _r(r.closes[t.entry]),
-                        "exit_date": None if t.exit is None else bars[t.exit].date,
-                        "exit_price": None if t.exit is None else _r(r.closes[t.exit]),
-                        "reason": t.reason,
-                        "target": _r(t.target),
-                    }
-                    for t in trades
-                ],
+                "trades": [_trade(bars, r, t, basis) for t in trades],
+            }
+        )
+    return out
+
+
+# The historical study's confirmed rules (`hypotheses.FAMILY`; packages/technicals/docs/setups.md,
+# "Round 2"): a setup with one change that held up on names the study had not seen. Each is walked
+# with the study's own code, so a filtered-out signal never blocks a later one, and an entry outside
+# the study's universe (a close under $5, say) is dropped as the study dropped it.
+TESTED = ("mr-300m",)
+
+
+def tested_trades(
+    symbol: str,
+    bars,
+    r: setups.Readings,
+    start: int,
+    member: list[bool],
+    basis: list[float | None],
+    spy_above: dict[str, bool],
+) -> list[dict]:
+    """Each confirmed rule's trades with an arrow in the shown sessions, as `setup_trades`."""
+    nm = study.Name(
+        symbol=symbol,
+        dates=[b.date for b in bars],
+        opens=[],
+        highs=[],
+        lows=[],
+        closes=list(r.closes),
+        member=member,
+        dollar_volume=basis,
+        spreads=[],
+        readings=r,
+        ended=False,
+    )
+    ctx = hypotheses.Context(nm, spy_above)
+    out = []
+    for hid in TESTED:
+        h = hypotheses.BY_ID[hid]
+        s = next(x for x in setups.SETUPS if x.id == h.setup)
+        trades = [
+            t
+            for t in hypotheses.positions(h, nm, ctx)
+            if member[t.entry] and (t.exit is None or t.exit >= start)
+        ]
+        out.append(
+            {
+                "id": h.id,
+                "setup": s.id,
+                "name": s.name,
+                "family": s.family,
+                "side": s.side,
+                "change": h.text,
+                "trades": [_trade(bars, r, t, basis) for t in trades],
             }
         )
     return out
@@ -200,7 +283,11 @@ def _rank(conn, closes: list[float], session: str) -> int | None:
     return None if not cutoffs or score is None else levels.rank_from_cutoffs(score, cutoffs)
 
 
-def build(conn, symbol: str, session: str | None = None) -> dict[str, Any] | None:
+def build(
+    conn, symbol: str, session: str | None = None, spy_above: dict[str, bool] | None = None
+) -> dict[str, Any] | None:
+    """One name's chart file, or None with under two bars. `spy_above` is SPY's 200-session regime
+    (`hypotheses.spy_regime`), read here when not passed; `write_all` reads it once for every name."""
     bars = [b for b in store.adjusted_bars(conn, symbol) if session is None or b.date <= session]
     if len(bars) < 2:
         return None
@@ -227,6 +314,9 @@ def build(conn, symbol: str, session: str | None = None) -> dict[str, Any] | Non
 
     volumes, volume_source = _volumes(conn, symbol, bars)
     readings = setups.readings(highs, lows, closes, volumes)
+    member, basis, dollar_volume_now = dollar_volumes(conn, symbol, bars)
+    if spy_above is None:
+        spy_above = hypotheses.spy_regime(conn)
 
     return {
         "ok": True,
@@ -260,7 +350,10 @@ def build(conn, symbol: str, session: str | None = None) -> dict[str, Any] | Non
             {"date": bars[s["index"]].date, "rules": s["rules"]}
             for s in signal_days(highs, lows, closes, start)
         ],
-        "setups": setup_trades(bars, readings, start),
+        "setups": setup_trades(bars, readings, start, basis),
+        "tested": tested_trades(symbol, bars, readings, start, member, basis, spy_above),
+        # The 50-session median of close x volume to the last session: the options-tradable label's.
+        "dollar_volume_50d": _r(dollar_volume_now, 0),
         "setup_lines": {k: tail(v) for k, v in setups.lines(readings).items()},
         # Null when the volume is the name's own; the stand-in's symbol when it is not (SPX: SPY).
         "volume_source": volume_source,
@@ -287,15 +380,17 @@ def write_all(session: str | None = None, conn=None) -> dict:
     conn = conn or store.connect()
     written, sessions, rows = [], set(), []
     spy = {b.date: b.close for b in store.adjusted_bars(conn, "SPY")}
+    spy_above = hypotheses.spy_regime(conn)
+    weekly, label_day = tradable.weeklies()
     names = store.stocks(conn, symbols.all_symbols())
     for sym in [*symbols.INDEXES, *INDEX_FUNDS, *(s for s in names if s not in INDEX_FUNDS)]:
-        doc = build(conn, sym, session)
+        doc = build(conn, sym, session, spy_above)
         if doc is None:
             continue
         _write(charts_dir() / f"{sym}.json", doc)
         written.append({"symbol": sym, "session": doc["session"], "vendor": doc["vendor"] is not None})
         sessions.add(doc["session"])
-        rows.extend(watchlist.rows(doc, spy))
+        rows.extend(watchlist.rows(doc, spy, weekly if label_day else None))
     if own:
         conn.close()
     index = {
@@ -305,7 +400,7 @@ def write_all(session: str | None = None, conn=None) -> dict:
         "symbols": written,
     }
     _write(charts_dir() / "index.json", index)
-    watchlist.write(charts_dir(), rows, index["session"])
+    watchlist.write(charts_dir(), rows, index["session"], label_day)
     return {
         "charts": len(written),
         "watchlist_rows": len(rows),

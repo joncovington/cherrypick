@@ -159,7 +159,7 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   **our grid's extremes, never levels claimed as the vendor's** — it is built to show where we
   differ. Per-session matches come from `signal_days` (one pass); a test pins it equal to
   `signals.readings` on every day and fails when the CCI-5 lag breaks. ~15 MB per session, overwritten.
-- **Entry/exit setups** (`setups.py`, `chart_version` 5; the reasoning and the measurements are in
+- **Entry/exit setups** (`setups.py`, `chart_version` 6; the reasoning and the measurements are in
   [docs/setups.md](docs/setups.md)): four textbook setups (trend following, pullback, mean
   reversion, breakout) and their short mirrors, each walked over the whole history as one position,
   written into each chart file with the lines their rules read. **No vendor data in them**: the
@@ -174,7 +174,13 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   `charts/setups-index.json`, written by `chart.write_all` from the chart files it just wrote, so it
   cannot disagree with them. One row per setup position, long or short, open or traded in the last
   20 sessions, with our 1M/6M trend and five-step label, `trend_agrees`, RS (our rank -- a
-  whole-market decile, NOT vs SPY), 1M vs SPY in points, and our own nearest levels.
+  whole-market decile, NOT vs SPY), 1M vs SPY in points, our own nearest levels, the dollar volume
+  at entry and `options_tradable`. **The study's confirmed rule** (`chart.TESTED`, `mr-300m`) is
+  walked with the study's own code into each chart file's `tested` and gets its own rows, marked
+  `tested`; they overlap the setup's rows, so a reader shows one kind or the other.
+  **Options-tradable** (`tradable.py`) is weekly options plus $100M a day in the stock. It is read
+  from the IV-rank file's busiest day; tastytrade's rating is not part of it, because the rating
+  marks a name down for its share price.
 - **The historical study** (`history.py`, `universe.py`, `study.py`, `tuning_names.py`; plan and
   reasons in [docs/signal-log-plan.md](../../docs/signal-log-plan.md), Phase 1, analysis plan v2).
   - **`history.db`** is Dolt's whole daily history from 2011, every name, in `eod.db`'s schema. It
