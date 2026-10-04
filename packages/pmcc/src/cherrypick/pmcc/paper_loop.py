@@ -754,6 +754,7 @@ def run_settle(
     when: datetime | None = None,
     price: float | None = None,
     day: str | None = None,
+    symbol: str | None = None,
 ) -> dict:
     """Settle every open leg expiring `day` (default: today) at the settlement print.
 
@@ -762,13 +763,30 @@ def run_settle(
     recovers. `--price` overrides with the official print, which is the only honest path for a
     missed settlement day. Under physical settlement the print also sets the delivered shares'
     basis, so a stale one would misprice the weekend leg as well as the option one.
+
+    The work list is the LEDGER's: every symbol holding a leg that expires `day`, not the config's
+    current `symbols`. Until 2026-10-04 it was the config's, so retiring a symbol from `symbols`
+    while it still held legs would have left them unsettled for good.
+
+    An explicit `price` is ONE underlying's print, so it needs `symbol` whenever more than one
+    symbol expires that day. Applied across symbols it would settle XSP at a TQQQ print.
     """
     when = when or clock.now_et()
     day = day or when.date().isoformat()
+    expiring_symbols = sorted({leg["position_symbol"] for leg in db.expiring_open_legs(conn, day)})
+    if symbol is not None:
+        expiring_symbols = [s for s in expiring_symbols if s == symbol.upper()]
+    if price is not None and len(expiring_symbols) > 1:
+        _log(f"--price {price} names no symbol, but {', '.join(expiring_symbols)} all expire {day}")
+        return {
+            "ok": False,
+            "reason": "price_needs_symbol",
+            "symbols": expiring_symbols,
+            "results": [],
+            "date": day,
+        }
     out = []
-    for symbol in _symbols(config):
-        if not any(leg["position_symbol"] == symbol for leg in db.expiring_open_legs(conn, day)):
-            continue
+    for symbol in expiring_symbols:
         max_age = (config.get("defaults") or {}).get("settlement_max_age_seconds", 300)
         spot = price if price is not None else provider.read_spot(cache_path, symbol, max_age_seconds=max_age)
         if spot is None:
@@ -863,6 +881,7 @@ def main(argv=None) -> int:
     ap.add_argument("--settle", action="store_true", help="settle legs expiring --date (default today)")
     ap.add_argument("--price", type=float, help="explicit settlement price (see --settle)")
     ap.add_argument("--date", help="the expiration day --settle should settle (YYYY-MM-DD)")
+    ap.add_argument("--symbol", help="the one underlying --settle --price applies to")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--force", action="store_true", help="ignore the trading-day and RTH gates")
     args = ap.parse_args(argv)
@@ -879,7 +898,9 @@ def main(argv=None) -> int:
     if args.settle:
         print(
             json.dumps(
-                run_settle(config, conn, cache_path=cache_path, price=args.price, day=args.date),
+                run_settle(
+                    config, conn, cache_path=cache_path, price=args.price, day=args.date, symbol=args.symbol
+                ),
                 indent=2,
                 default=str,
             )
