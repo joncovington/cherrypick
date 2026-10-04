@@ -101,9 +101,10 @@ def test_leg_sources_query_returns_open_legs_only(tmp_path):
 
 def test_window_hint_computed_from_deep_chain(cache, config, tmp_path):
     cache.spot("TQQQ", 70.60)
-    # 70 listed $1 strikes between the window floor (~38.8) and spot -> need ~32 + margin 10.
+    # 32 listed $1 strikes between the window floor (~38.8) and spot ON THE LONG'S DATE (the
+    # 2026-08-24 plan's long is 2026-09-11) -> need 32 + margin 10.
     for strike in range(39, 71):
-        cache.option("TQQQ", "2026-09-04", float(strike))
+        cache.option("TQQQ", "2026-09-11", float(strike))
     # The computed need is emitted whatever it is. This used to be suppressed below `base_width`,
     # on the reasoning that "the default window covers it" — and `base_width` was a hand-copied
     # mirror of the producer's default that stopped being true when the producer was cut 60 -> 30
@@ -117,6 +118,67 @@ def test_window_hint_computed_from_deep_chain(cache, config, tmp_path):
         fresh, cache.path, ["TQQQ"], "2026-08-24", config, deep_window_pct=0.45
     )
     assert hints["TQQQ"] == {"down": 50, "up": 10}, "32 strikes of chain + 10 margin, rounded up to 10"
+
+
+def test_window_need_counts_only_the_expiration_the_long_is_sought_in(cache, config, tmp_path):
+    """The producer applies one per-symbol hint to every window of the symbol, so a count inflated
+    by another expiry's grid widens them all. Until 2026-10-04 the count ran over every cached
+    expiration: a weekly's dense $1 strikes set the need for a long sought on a coarser grid."""
+    cache.spot("TQQQ", 70.60)
+    for strike in range(39, 71):  # the short's weekly: dense $1 strikes, 32 in the band
+        cache.option("TQQQ", "2026-09-04", float(strike))
+    for strike in range(40, 71, 5):  # the long's date: $5 strikes, 7 in the band
+        cache.option("TQQQ", "2026-09-11", float(strike))
+    fresh = db.connect(str(tmp_path / "paper2.db"))
+    config["stream_window"] = {"base_width": 1, "margin": 0, "round_to": 1}
+    hints = stream_window.hints_for_symbols(
+        fresh, cache.path, ["TQQQ"], "2026-08-24", config, deep_window_pct=0.45
+    )
+    assert hints["TQQQ"]["down"] == 7
+
+
+def test_each_symbol_requests_only_its_own_dates(tmp_path, config):
+    """Every symbol used to be handed the union of every symbol's dates."""
+    conn = db.connect(str(tmp_path / "paper.db"))
+    for symbol, long_exp in (("TQQQ", "2026-09-18"), ("XSP", "2026-09-25")):
+        pid = f"{symbol}:control:2026-08-24"
+        db.save_position(
+            conn,
+            {
+                "position_id": pid,
+                "symbol": symbol,
+                "arm": "control",
+                "entry_session": "2026-08-24",
+                "quantity": 1,
+                "status": "open",
+                "fees": 0.0,
+                "long_expiration": long_exp,
+                "long_strike": 1.0,
+                "short_expiration": "2026-09-04",
+                "short_strike": 2.0,
+            },
+        )
+        db.save_leg(
+            conn,
+            {
+                "position_id": pid,
+                "leg_role": "long_call",
+                "occ_symbol": f"{symbol} L",
+                "streamer_symbol": f".{symbol}L",
+                "expiration": long_exp,
+                "strike": 1.0,
+                "option_type": "call",
+                "action": "Buy to Open",
+                "quantity": 1,
+                "status": "open",
+            },
+        )
+    out = stream_request.wanted_expirations(
+        conn, ["TQQQ", "XSP"], date(2026, 8, 24), config["defaults"], entry_symbols=["XSP"]
+    )
+    plan = clock.expiration_plan(date(2026, 8, 24), config["defaults"])
+    assert out["TQQQ"] == ["2026-09-18"]  # run-off symbol: its own open leg only, no plan dates
+    assert out["XSP"] == sorted({plan["short_expiration"], plan["long_expiration"], "2026-09-25"})
 
 
 def test_window_escalates_on_misses_and_decays(tmp_path, config):
@@ -296,7 +358,7 @@ def test_window_hints_use_each_symbols_own_bound(cache, tmp_path, monkeypatch):
     conn = db.connect(str(tmp_path / "paper.db"))
     seen: dict[str, float] = {}
 
-    def fake_needed(cache_path, symbol, *, deep_window_pct, margin):
+    def fake_needed(cache_path, symbol, *, deep_window_pct, margin, expirations=None):
         seen[symbol] = deep_window_pct
         return 163
 
@@ -534,3 +596,46 @@ def test_rounding_never_exceeds_the_cap(cache, config, tmp_path, monkeypatch):
         conn, cache.path, ["XSP"], "2026-09-25", config, deep_window_pct=0.08
     )
     assert hint["XSP"]["down"] == 195
+
+
+def test_a_symbol_retired_from_the_config_stays_declared_while_it_holds_a_position(cache, config, tmp_path):
+    """Retiring TQQQ from `symbols` must not drop its spot and quotes while its last legs are open:
+    they could neither be marked nor managed out."""
+    db_path = str(tmp_path / "paper.db")
+    conn = db.connect(db_path)
+    db.save_position(
+        conn,
+        {
+            "position_id": "TQQQ:control:2026-08-24",
+            "symbol": "TQQQ",
+            "arm": "control",
+            "entry_session": "2026-08-24",
+            "quantity": 1,
+            "status": "open",
+            "fees": 0.0,
+            "long_expiration": "2026-09-11",
+            "long_strike": 58.0,
+            "short_expiration": "2026-09-04",
+            "short_strike": 71.0,
+        },
+    )
+    db.save_leg(
+        conn,
+        {
+            "position_id": "TQQQ:control:2026-08-24",
+            "leg_role": "long_call",
+            "occ_symbol": "X",
+            "streamer_symbol": ".X",
+            "expiration": "2026-09-11",
+            "strike": 58.0,
+            "option_type": "call",
+            "action": "Buy to Open",
+            "status": "open",
+        },
+    )
+    retired = {**config, "symbols": ["XSP"], "settlement_style": {"TQQQ": "physical", "XSP": "cash"}}
+    path = stream_request.write(retired, conn, db_path, cache_path=cache.path, today=date(2026, 8, 24))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert set(payload["symbols"]) == {"XSP", "TQQQ"}
+    assert payload["expirations"]["TQQQ"] == ["2026-09-11"]
+    assert "TQQQ" not in payload.get("window_hints", {})  # no entries on it, so no deep window

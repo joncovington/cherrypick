@@ -2,7 +2,7 @@
 
 Writes ``~/.cherrypick/state/stream_requests/pmcc.json``. Three fields matter here:
 
-- ``symbols`` — TQQQ and XSP, for spot.
+- ``symbols`` — the configured symbols, plus any symbol still holding an open position, for spot.
 - ``leg_sources`` — one SELECT over this module's own ledger returning every open leg's streamer
   symbol, re-run by the producer every subscription poll, so a filled entry is subscribed within a
   poll and a closed leg ages out without a restart — and a deep leg, once OPEN, stays quoted
@@ -33,20 +33,39 @@ _log = logging.getLogger("pmcc_paper_loop")
 
 
 def wanted_expirations(
-    conn, symbols: list[str], today: date, params: dict | None = None
+    conn,
+    symbols: list[str],
+    today: date,
+    params: dict | None = None,
+    *,
+    entry_symbols: list[str] | None = None,
 ) -> dict[str, list[str]]:
-    """Per-symbol expiration dates the cache must hold: the current plan's short/long pair plus
-    whatever is still open in the ledger (a rolled short or a surviving long outlives the plan)."""
-    dates: set[str] = set(db.open_leg_expirations(conn))
+    """Per-symbol expiration dates the cache must hold: the current plan's short/long pair for a
+    symbol the module still ENTERS (`entry_symbols`, default all of `symbols`), plus whatever that
+    symbol's OWN open legs hold (a surviving long outlives the plan).
+
+    Per symbol since 2026-10-04. Before, every symbol was handed the union of every symbol's dates,
+    so one symbol's open long asked for a window on every other symbol -- and once longs sit on
+    LEAP months that differ per symbol, for dates the other symbol does not even list, which the
+    producer records as an error on every pass."""
     plan = clock.expiration_plan(today, params)
-    if plan is not None:
-        dates.add(plan["short_expiration"])
-        dates.add(plan["long_expiration"])
-    return {symbol: sorted(dates) for symbol in symbols} if dates else {}
+    planned = {plan["short_expiration"], plan["long_expiration"]} if plan is not None else set()
+    entering = {s.upper() for s in (entry_symbols if entry_symbols is not None else symbols)}
+    out: dict[str, list[str]] = {}
+    for symbol in symbols:
+        dates = set(db.open_leg_expirations_for(conn, symbol))
+        if symbol.upper() in entering:
+            dates |= planned
+        if dates:
+            out[symbol] = sorted(dates)
+    return out
 
 
 def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | None = None) -> Path:
-    symbols = [s.strip().upper() for s in (config.get("symbols") or ["TQQQ"])]
+    entry_symbols = [s.strip().upper() for s in (config.get("symbols") or ["TQQQ"])]
+    # A symbol retired from the config keeps its spot, its quotes and its own dates until its last
+    # position closes -- otherwise its open legs could neither be marked nor managed out.
+    symbols = entry_symbols + [s for s in db.open_position_symbols(conn) if s not in entry_symbols]
     today = today or clock.now_et().date()
     defaults = config.get("defaults") or {}
     leg_sources = [
@@ -71,7 +90,7 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
     hints = stream_window.hints_for_symbols(
         conn,
         cache_path,
-        symbols,
+        entry_symbols,
         today.isoformat(),
         config,
         arms=arms,
@@ -82,7 +101,7 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
         symbols,
         leg_sources=leg_sources,
         window_hints=hints,
-        expirations=wanted_expirations(conn, symbols, today, defaults),
+        expirations=wanted_expirations(conn, symbols, today, defaults, entry_symbols=entry_symbols),
         # What the loop reads off its windows (audited 2026-09-30): call quotes and greeks on the
         # plan's short and long dates -- the ATM short and the delta-band deep-ITM long. Never the
         # nearest expiration as such (a plan date that coincides with it is served as a requested

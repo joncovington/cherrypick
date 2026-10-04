@@ -50,10 +50,23 @@ def window_params(config: dict) -> dict:
     }
 
 
-def needed_width(cache_path, symbol: str, *, deep_window_pct: float, margin: int) -> int | None:
-    """The structural need: how many listed strikes sit between the deep window's floor and spot on
-    the NEAREST cached expiration, plus margin. None when the cache cannot answer (no spot, no
-    chain) — the caller falls back to escalation state alone."""
+def needed_width(
+    cache_path,
+    symbol: str,
+    *,
+    deep_window_pct: float,
+    margin: int,
+    expirations: list[str] | None = None,
+) -> int | None:
+    """The structural need: how many listed strikes sit between the deep window's floor and spot in
+    the expiration(s) the long is SOUGHT in (`expirations`), plus margin -- the largest over them.
+    None when the cache cannot answer (no spot, no chain) -- the caller falls back to escalation
+    state alone.
+
+    Per expiration since 2026-10-04. The count used to run over every cached expiration of the
+    symbol at once, so a weekly's dense $1 strikes inflated a need that only a coarser monthly or
+    LEAP grid has to meet -- and the producer applies the one per-symbol hint to EVERY window of the
+    symbol. `expirations=None` keeps the old union for a caller that has no target date."""
     try:
         conn = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
@@ -66,18 +79,23 @@ def needed_width(cache_path, symbol: str, *, deep_window_pct: float, margin: int
             return None
         import json as _json
 
-        strikes: set[float] = set()
-        for row in conn.execute("SELECT data_json FROM stream_chain WHERE underlying_symbol = ?", (symbol,)):
+        by_expiration: dict[str, set[float]] = {}
+        for row in conn.execute(
+            "SELECT expiration, data_json FROM stream_chain WHERE underlying_symbol = ?", (symbol,)
+        ):
+            key = row["expiration"] if expirations is not None else "*"
+            if expirations is not None and key not in expirations:
+                continue
             try:
                 opt = _json.loads(row["data_json"])
                 strike = float(opt.get("strike_price"))
             except (TypeError, ValueError):
                 continue
             if spot * (1.0 - deep_window_pct) <= strike <= spot:
-                strikes.add(strike)
-        if not strikes:
+                by_expiration.setdefault(key, set()).add(strike)
+        if not by_expiration:
             return None
-        return len(strikes) + margin
+        return max(len(strikes) for strikes in by_expiration.values()) + margin
     except sqlite3.Error:
         return None
     finally:
@@ -235,6 +253,13 @@ def hints_for_symbols(
     p = window_params(config)
     hints: dict[str, dict[str, int]] = {}
     roster = list(arms) if arms else []
+    # The date the deep long is sought in. Counting strikes only there is the point: the hint lands
+    # on every window of the symbol, so a count inflated by another expiry's grid widens them all.
+    try:
+        plan = clock.expiration_plan(datetime.fromisoformat(trade_date).date(), config.get("defaults") or {})
+    except ValueError:
+        plan = None
+    targets = [plan["long_expiration"]] if plan is not None else None
     for symbol in symbols:
         symbol = symbol.strip().upper()
         if roster and not entry_possible(conn, symbol, roster, max_positions):
@@ -243,7 +268,9 @@ def hints_for_symbols(
         # one strikes it cannot use (see provider.deep_window_pct_for). An explicit argument
         # still wins, so a caller pricing a hypothetical keeps full control.
         pct = deep_window_pct if deep_window_pct is not None else provider.deep_window_pct_for(config, symbol)
-        computed = needed_width(cache_path, symbol, deep_window_pct=pct, margin=p["margin"])
+        computed = needed_width(
+            cache_path, symbol, deep_window_pct=pct, margin=p["margin"], expirations=targets
+        )
         escalated = evaluate(
             conn,
             symbol,

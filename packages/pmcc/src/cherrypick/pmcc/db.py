@@ -439,6 +439,31 @@ def open_position_count(conn, arm: str) -> int:
     )
 
 
+def open_leg_expirations_for(conn, symbol: str) -> list[str]:
+    """Distinct expirations `symbol`'s own open legs hold. The store's `open_leg_expirations` is
+    the whole ledger's, and a request built from it asks every symbol for every symbol's dates."""
+    return [
+        r["expiration"]
+        for r in conn.execute(
+            "SELECT DISTINCT l.expiration FROM pmcc_legs l JOIN pmcc_positions p "
+            "ON p.position_id = l.position_id "
+            "WHERE l.status = 'open' AND p.status != 'closed' AND p.symbol = ? ORDER BY l.expiration",
+            (symbol.upper(),),
+        )
+    ]
+
+
+def open_position_symbols(conn) -> list[str]:
+    """Every symbol still holding a position that is not closed -- including one retired from the
+    config, whose last legs still need a spot and quotes until they close."""
+    return [
+        r["symbol"]
+        for r in conn.execute(
+            "SELECT DISTINCT symbol FROM pmcc_positions WHERE status != 'closed' ORDER BY symbol"
+        )
+    ]
+
+
 def next_short_role(conn, position_id: str) -> str:
     """The next `short_call_<n>` role for a roll — one past the highest already on file."""
     n = 0
