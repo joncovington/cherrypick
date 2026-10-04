@@ -1,111 +1,219 @@
-# The signal log: recording the chart setups as issued, and what it is for
+# The chart setups' evidence: a historical study now, and a live signal log after it
 
-*Drafted 2026-10-04. **Nothing is built yet.** Phase 1 (the log itself) is the proposal; its five
-open decisions were all made on 2026-10-04 (see "Decisions"). Phase 3's analysis plan is frozen
-below as v1. The later phases are ideas, recorded here so the log is shaped to serve them, and none
-is committed to. Phase 1 is built on its own branch once PR #31 (the setups, shorts and our own
-levels) has merged.*
+*Drafted 2026-10-04; **revised the same day**, before anything was built or observed. The first
+draft took its evidence only from signals recorded live from now on, which put the verdict on the
+commoner setups one to four years away and on the breakouts decades away. The user's verdict:
+"multiple years is not realistically useful to me". The local Dolt clone turned out to hold 15
+years of daily bars, delisted names included, so the verdict now comes from history, within a week.
+The live log follows, as confirmation and as a record. **Nothing is built yet.** Phase 1 is built
+on its own branch once PR #31 (the setups, shorts and our own levels) has merged.*
 
-**The short version:** the technicals chart setups fire about 50 entries and exits every session
-across 527 names, and today none of it is kept. Every run recomputes the whole history and
-overwrites the last answer. This plan adds an append-only record of each signal exactly as it was
-issued: when it was first seen, at what price, under which version of the rules, and against what
-context. Without that record, no later question about these setups (do they work, which filters
-matter, what regime they fire in) can be answered honestly.
+**The short version:**
 
-## Why record the signals at all
+- **Phase 1** runs the eight chart setups over 2011–2026 on a liquid universe chosen as of each day,
+  and scores them against a matched random baseline under a pre-declared analysis plan. That gives
+  a verdict on every setup within a week.
+- **Phase 2** adds an append-only log of each live signal as it is issued. Its job is to confirm
+  that the setups behave live as they did historically (weeks to a few months for the frequent
+  ones), to keep the record recomputation cannot, and to feed the watchlist, alerts and
+  data-health checks.
 
-### What happens today
+## Why do any of this
 
-- `technicals-report` runs at 06:30 ET (`orchestrator/jobspec.py`). It calls `chart.write_all`,
-  which walks every name's full history through the eight setups (`setups.py`) and **overwrites**:
-  - `charts/<SYMBOL>.json`, holding the last 250 sessions;
-  - `charts/setups-index.json`, holding open positions and the last 20 sessions' events.
-- Nothing outside the console reads them. No Python package reads `data/technicals/`.
-- The rules are deterministic, so past signals can *mostly* be regenerated. "Mostly" is the
-  problem:
-  1. **Corporate actions restate history.** A dividend or split re-adjusts every earlier bar. The
-     recomputed entry price moves, and a signal sitting on a threshold (a crossover, a band touch)
-     can appear or vanish after the fact. CSCO's dividend on 2026-10-02 moved its whole history by
-     0.39%. A capture of the vendor's data from the week before then disagreed with ours on 3,012
-     of 3,012 prices until the comparison was fixed.
-  2. **Rule changes rewrite the past silently.** On 2026-10-03 the pullback's RSI rule was amended
-     (it could not fire as first written). Every past pullback signal changed with it, and nothing
-     records what the old rule said.
-  3. **Data corrections.** The landing upserts Dolt wholesale, so an upstream correction replaces a
-     bar, and with it any signal that bar produced.
-- In forecasting research this is the *real-time vintage* problem: a model is judged on the data it
-  had at the time, not on today's revised history (Croushore & Stark 2001). An as-issued record is
-  the only defence, because no amount of recomputation reproduces what was known on the day.
-
-### What we hope to gain
-
-The record is the evidence base for questions the suite cannot answer today:
+### What we want to know
 
 1. **Do the setups have any edge?** They are textbook rules, chosen with the user and never scored.
    The literature's prior is sobering:
-   - Moving-average and range-break rules lost their edge out of sample (Sullivan, Timmermann &
-     White 1999).
-   - In-sample edges vanish after modest costs (Bajgrowicz & Scaillet 2012).
-   - Bollinger-band signals lost predictive power after they were popularised (Fang, Jacobsen & Qin
-     2017).
+   - moving-average and range-break rules lost their edge out of sample (Sullivan, Timmermann &
+     White 1999);
+   - in-sample edges vanish after modest costs (Bajgrowicz & Scaillet 2012);
+   - Bollinger-band signals lost predictive power once they were popularised (Fang, Jacobsen &
+     Qin 2017).
 
-   The aim is not to prove the setups work. It is to measure them precisely enough that the suite
-   neither trusts nor discards them on anecdote.
+   The aim is a precise measurement that settles it either way, not a hoped-for result.
 2. **Which context matters?** Whether "trend agrees", RS ≥ 7, distance to our support and
-   resistance, or the market's breadth changes outcomes. Each is a question only a record of
-   context-at-issue can answer.
-3. **Which exit is best?** Alternative exits replayed against the same entries, the way calendars'
-   `exit_policies.py` replays its policy grid.
+   resistance, or market breadth change the outcome.
+3. **Which exit is best?** Alternative exits replayed against the same entries.
 4. **What regime is the market in?** Daily counts of long versus short entries are a breadth
-   reading the suite does not have yet.
+   reading the suite lacks.
 5. **Do the options modules do better in some setup regimes?** For example, flies or bwb on days
    when SPX holds an open breakdown short.
-6. **Data health.** A logged signal that later recomputes differently is itself an alarm: a
-   corporate action, a correction or a code change moved history. It would have caught the CSCO
-   problem on its own.
-7. **A track record.** If any setup ever earns a paper module, its evidence is a record that
-   predates the decision, not a backtest written after it (Harvey 2017's case for pre-registration).
+
+### Why history can answer these now
+
+The local Dolt `stocks` clone (read by the technicals landing) holds:
+
+- **Daily bars from 2011-01-03 to the last session**: about 4,200 names in 2012, 5,300 in 2016 and
+  12,500 today.
+- **Delisted names.** Of the 5,349 names trading on 2016-06-01, 1,505 (28%) no longer trade,
+  acquisitions among them (ABMD, AAWW). A test over this history is not limited to today's
+  survivors (Brown, Goetzmann, Ibbotson & Ross 1992).
+- **Its own `split` and `dividend` tables.**
+
+At today's rates the setups make about 12 positions per name-year, across all eight. On about
+2,000 names over 15¾ years that is an estimated **380,000 positions, about 10,000 of them
+breakouts and breakdowns**. Every setup-side clears its sample threshold at once, even after
+same-day clustering.
+
+### Why a live record still matters
+
+Recomputation cannot reproduce what was known on the day. This is the real-time vintage problem
+(Croushore & Stark 2001):
+
+1. **Corporate actions restate history.** A dividend or split re-adjusts every earlier bar, and a
+   signal sitting on a threshold can appear or vanish after the fact. CSCO's dividend on 2026-10-02
+   moved its whole history by 0.39%. A capture of the vendor's data from the week before then
+   disagreed with ours on all 3,012 prices until the comparison was fixed.
+2. **Rule changes rewrite the past silently.** The pullback's RSI rule (2026-10-03) and the
+   breakouts' Supertrend condition (2026-10-04) each changed every past signal of those setups.
+3. **Data corrections.** The landing upserts Dolt wholesale, so a corrected bar replaces the signal
+   it produced.
+
+Today the nightly `technicals-report` (06:30 ET) recomputes every name's full history and
+overwrites `charts/<SYMBOL>.json` and `charts/setups-index.json`. Nothing is kept.
 
 ## Principles
 
-These come from the suite's own rules (root `CLAUDE.md`) and from the methodology literature
-(references at the end).
-
-- **Record the measure, not a verdict.** As the regime recorder does
-  (`docs/regime-recorder-plan.md`): raw values in, buckets and judgements derived on read.
-- **Append-only, enforced, not just a convention.** No store in the suite enforces this today; the
-  log would be the first, with SQLite triggers that refuse `UPDATE` and `DELETE` on its record
-  tables. Like every guard in the suite, these are shown to fail by trying.
-- **As issued.** Each row carries the run that first saw it, the wall-clock time, the rule version,
-  and the price two ways: as adjusted on that day and **raw** (unadjusted). The raw close never
-  changes under later corporate actions, so it anchors any later re-pricing.
+- **The verdict is pre-declared.** The analysis plan (v2 below) is written before any result is
+  looked at. Nothing is tuned on the study's own output (Harvey 2017; Bailey et al. 2017).
+- **No hindsight anywhere.**
+  - The universe is chosen each day from data up to the day before.
+  - Fills are at the next open.
+  - A rule tuned on part of the history is judged only on the rest.
+- **Record the measure, not a verdict** (as the regime recorder does,
+  `docs/regime-recorder-plan.md`).
+- **Append-only, enforced.** The live log's tables refuse `UPDATE` and `DELETE` through SQLite
+  triggers, the first store in the suite to enforce this. Each guard is shown to fail by trying.
 - **Rule versions are declared, and changing one is a boundary.** A rule change is
-  measurement-affecting in the suite's sense. It lands at a declared boundary, under a new version,
-  and the log never pools two versions without saying so.
-- **Known before the next open.** The report runs at 06:30 ET, so a session's signals are normally
-  logged before the next 09:30 open. The log records whether each one was. That is what makes a
-  next-open fill a fair assumption in the later scoring.
-- **No vendor data.** The setups and their context are computed from our own bars (since
-  2026-10-04). The vendor is used only to check our trend scores and rank, never as a log input.
-- **Record-only.** No loop, gate, or sizing rule reads the log until a later phase declares it, at a
-  boundary, the way the overview's deployment score "feeds no gate, no phase, no sizing".
-- **A logging failure must be loud, never silent, and must not cost the charts.** The chart files
-  are written first. The log is written in one transaction after them, and a failure exits non-zero
-  so the watchdog sees it.
+  measurement-affecting in the suite's sense. It lands at a declared boundary, under a new
+  version, and is never pooled silently with the old one.
+- **No vendor data.** The setups, their context and the study run on our own bars. The vendor only
+  checks our trend scores and rank.
+- **Record-only.** No loop, gate or sizing reads any of this until a later phase declares it, at a
+  boundary.
+- **Separate stores for separate jobs.**
+  - `eod.db` is the nightly store, rebuildable from Dolt.
+  - `history.db` is the study's research store, rebuildable from Dolt.
+  - `signals.db` is the live log, which can't be rebuilt from anything.
 
-## Phase 1: the log
+## Phase 1: the historical study (the verdict, within a week)
+
+### The data: `history.db`
+
+A research store at `~/.cherrypick/data/technicals/history.db`, landed from the local Dolt clone
+(`ohlcv`, `split`, `dividend`) for 2011-01-03 to the present.
+
+- **How it's read:** in month-wide windows with no symbol filter, as the nightly landing already
+  does. Dolt's keys lead with the date.
+- **How it's adjusted:** with the package's own `adjust` code, including its two defect corrections
+  (duplicate splits, and a ticker that changed hands, detected as a 3× one-day jump).
+- **It's kept apart from `eod.db`** so the nightly job is not slowed, and the operational store
+  does not grow by tens of millions of rows.
+
+**Checks before anything is scored:**
+- On the overlap (2023–26, our 527 names), adjusted bars from `history.db` must match `eod.db` to
+  the cent wherever `eod.db` uses Dolt's own dividends.
+- Before 2023:
+  - overnight jumps of more than 40% with no split recorded are listed and inspected;
+  - coverage gaps are counted per name.
+- **Dividends** before the tastytrade set rely on Dolt alone. Dolt's dividends matched the vendor's
+  adjusted prices on only 86.8% of prices when checked. That barely moves a 25-day return, but the
+  study reports it.
+
+### The universe, chosen each day
+
+A name qualifies on a session when, using bars **up to the previous session**:
+
+- its close is at least $5, and
+- its 50-session median dollar volume (close × volume) is at least $20M.
+
+That is about 2,000 names at a time: names a trader could actually fill at the open.
+
+- A setup's entry counts only if the name qualified that day.
+- A position, once opened, is held to its own exit, whether or not the name still qualifies.
+- SPX is not in Dolt and is not in the study. The index funds are in it, if they qualify.
+
+### The holdout for the rules that were tuned
+
+Two families had their rules changed after looking at 2023–26 on our 527 names:
+
+- the pullbacks (the RSI window);
+- the breakouts and breakdowns (the Supertrend condition).
+
+**These four setup-sides are judged only on data the change never saw:**
+- 2011-01-03 to 2022-12-30, all names;
+- 2023 onwards, names outside the 527.
+
+Trend following and mean reversion were never tuned, and are judged on everything.
+
+Each setup-side is also reported separately for 2011–2018 and 2019–2026. That is a stability check,
+not an extra hypothesis.
+
+### Scoring
+
+As analysis plan v2 below: next-open fills, a matched random baseline, costs, a family of eight
+with a Holm correction, and results in calendar time. `core.metrics` already provides excursions,
+expectancy and the probabilistic Sharpe. A missing mark is skipped, never read as zero.
+
+### What it produces
+
+- A versioned results fact set, `history-results-<run>.json`, with every setup-side and its sample.
+- A dated summary appended to `packages/technicals/docs/setups.md`, including any setup-side that
+  fails.
+
+### Guards, each shown to fail
+
+| Guard | Broken how, to check it fires |
+|---|---|
+| The universe uses no future data | qualify names on the same day's volume |
+| Fills are at the next open | fill at the signal close |
+| The tuned setup-sides cannot reach the verdict through their tuned window | let 2023–26 pullbacks into the verdict |
+| The baseline replays identically | change the seed and see the result differ |
+| The scorer reproduces the engine's own exits for every position | score a position off-by-one session |
+| `history.db` matches `eod.db` on the overlap | apply a dividend twice |
+
+### Effort
+
+About a day to land and check the history, and about a day for the scorer and baseline. Then an
+hour or so of computing. **A verdict on all eight setup-sides within the week.**
+
+## Phase 2: the live signal log (confirmation, record, day-to-day uses)
+
+### What it is for, now that history gives the verdict
+
+1. **Confirmation.** Does each setup-side behave live as it did historically?
+   - This needs far fewer trades than proving an edge from scratch: about 150 live trades per
+     setup-side, compared with the historical 95% interval.
+   - The setups are executed exactly as specified, so a live drift points to the market or the data,
+     not the rules.
+2. **The as-issued record** that recomputation cannot reproduce: restatements, rule versions, and
+   when each signal was first seen.
+3. **Data health.** A logged signal that later recomputes differently is an alarm in itself.
+4. **Day-to-day uses:** watchlist history, alerts, and the later phases.
+
+Time to about 150 live trades, at today's rates on our 527 names:
+
+| Setup-side | Live positions a year | Time to ~150 |
+|---|---|---|
+| Mean reversion (short) | ~1,970 | ~4 weeks |
+| Pullback (long) | ~1,370 | ~6 weeks |
+| Mean reversion (long) | ~840 | ~9 weeks |
+| Pullback (short) | ~830 | ~9 weeks |
+| Trend following (long and short) | ~620–640 | ~12–13 weeks |
+| Breakout / breakdown | ~78–85 | ~2 years |
+
+**The breakouts are slow to confirm live,** though their verdict will already be in hand from
+history. One option, for when Phase 2 is built: run the nightly setups over the same liquid
+universe as the study (about 2,000 names, not 527). That would make every confirmation about four
+times faster, breakouts in about six months. The landing already reads every name in each month
+window, so the cost is mostly storage.
 
 ### Where it lives
 
-A new SQLite file, `~/.cherrypick/data/technicals/signals.db`, via a new `paths.signals_db()`.
-
-It is deliberately **not** a table in `eod.db`. That store holds raw data upserted wholesale from
-Dolt, and could be rebuilt from Dolt at any time. The log can't be rebuilt from anything, so it must
-not share a file whose rows are replaced as a matter of course, or be deleted along with it.
-Separating the two also makes backup and the append-only rule simple to state. This widens the
-technicals package's stated write contract ("writes only `eod.db` and its report/chart files"), and
-its `CLAUDE.md` will say so.
+`~/.cherrypick/data/technicals/signals.db`, via a new `paths.signals_db()`. **Decided:** a separate
+file, because the log can't be rebuilt from anything and must not share a file whose rows are
+replaced as a matter of course. This widens the package's write contract, and its `CLAUDE.md` will
+say so.
 
 ### Tables
 
@@ -114,346 +222,225 @@ its `CLAUDE.md` will say so.
 | `runs` | logging run | `run_id`, `started_at` (UTC), `as_of_session`, `code_sha` (git), `rule_version`, `context_version`, `symbols`, `events_new`, `restatements_new`, `outcome` |
 | `rule_versions` | rule version ever used | `rule_version`, `fingerprint`, `parameters_json` (every constant in `setups.py`), `rules_json` (each setup's rule text), `first_run_id` |
 | `signals` | **entry or exit, as first seen** | `signal_id`, `symbol`, `setup_id`, `family`, `side`, `event` (`entry`/`exit`), `event_session`, `position_key` (symbol, setup, entry session), `price_adj`, `close_raw`, `reason` (exits), `target` (pullbacks), `rule_version`, `first_run_id`, `first_seen_at`, `lag_sessions`, `seen_before_open`, `source` (`observed`/`reconstructed`), `tuned_on_data` |
-| `signal_context` | signal | `context_version`; as of `event_session`: `trend_1m`, `trend_6m`, `rs`, `vs_spy_1m`, `atr14`, `volume_ratio` (today against the 50-session mean), our nearest `support`/`resistance` and their distances, `sentiment`, `spy_trend_1m`/`_6m`, `universe_member` |
+| `signal_context` | signal | `context_version`; as of `event_session`: `trend_1m`, `trend_6m`, `rs`, `vs_spy_1m`, `atr14`, `volume_ratio`, our nearest `support`/`resistance` and their distances, `sentiment`, `spy_trend_1m`/`_6m`, `universe_member` |
 | `restatements` | later disagreement | `signal_id` (or the new event), `run_id`, `kind` (`vanished`, `late`, `price_moved`, `exit_changed`), `old_json`, `new_json`, `probable_cause` (`corporate_action`, `rule_version`, `data_correction`, `unknown`) |
 
 A few of these columns need explaining:
 
-- **`lag_sessions`** is how many sessions after the event the log first saw it. It is 0 in the
-  normal case. A missed night's run logs its events the next day with lag 1, and the log says so
-  rather than pretending otherwise.
-- **`seen_before_open`** is whether `first_seen_at` came before 09:30 ET on the session after the
-  event.
-- **`source='reconstructed'`** marks rows from the backfill (below). Analysis keeps them apart from
-  observed rows unless it is told otherwise.
-- **`tuned_on_data`** is set on reconstructed rows of any setup whose rule was changed after
-  looking at that same history: both pullbacks (the RSI amendment) and both breakouts (the
-  Supertrend condition, 2026-10-04). Those rows can never count as evidence, and the flag keeps
-  that from being forgotten. Observed rows never carry it.
-- **`context_version`** versions the context definitions (`CONTEXT_VERSION`: the swing-level
-  width, "trend agrees", the volume ratio) separately from the rules. Changing context is recorded,
-  but it does not restart a setup's evidence clock the way a rule change does.
-- **`universe_member`** records whether the name was a universe member that day. It starts the
-  point-in-time membership record that survivorship-free scoring needs (Brown, Goetzmann, Ibbotson
-  & Ross 1992; Shumway 1997).
+- **`close_raw`** never changes under later corporate actions, so it anchors any re-pricing.
+- **`lag_sessions`** is 0 in the normal case. A missed night logs its events the next day with
+  lag 1, and the log says so.
+- **`seen_before_open`** is whether the signal was logged before the next 09:30 ET. The report runs
+  at 06:30, so normally it was.
+- **`tuned_on_data`** marks reconstructed rows of both pullbacks and both breakouts. Their rules
+  were changed after looking at that history.
+- **`context_version`** versions the context definitions (the swing-level width, "trend agrees",
+  the volume ratio) separately from the rules. A context change is recorded, but does not restart a
+  setup's evidence the way a rule change does.
+- **`universe_member`** starts the point-in-time membership record for the live universe.
 
 ### How a run works
 
-1. `report` writes the chart files as it does today.
-2. `signal_log.record(...)` takes the trades `setups.RUN` just computed for every name. No second
-   computation, so the log and the charts cannot disagree.
-3. Each entry and exit is keyed by (`position_key`, `event`, `rule_version`).
-   - **A key not yet in the log** is inserted with its context, as a new signal. If its session is
-     before the run's, it is also flagged `late`.
-   - **A key already logged, recomputed the same,** is ignored. Re-runs are idempotent.
-   - **A key already logged, recomputed differently** keeps the original row. The disagreement is
-     appended to `restatements`:
-     - `price_moved`: the price is different.
-     - `exit_changed`: the exit date or reason is different.
-     - `vanished`: a logged event is no longer produced.
-4. **Attributing a cause.** A restatement whose raw closes are unchanged, with a dividend or split
-   gone ex in between, is `corporate_action`. A change of rule version is `rule_version`. Changed
-   raw bars are `data_correction`. Anything else is `unknown`, and is surfaced.
-5. **Re-running a past session** (`report --session D`) runs as of D. It only compares events up to
-   D, so it cannot "un-see" anything logged later.
+1. `report` writes the chart files first, then `signal_log.record(...)` takes the trades
+   `setups.RUN` just computed. There is no second computation, so the log and the charts cannot
+   disagree.
+2. Each entry and exit is keyed by (`position_key`, `event`, `rule_version`):
+   - **a new key** is inserted with its context (and flagged `late` if its session is before the
+     run's);
+   - **a known key, unchanged,** is ignored, so re-runs are idempotent;
+   - **a known key, changed,** keeps the original row and appends the disagreement to
+     `restatements`.
+3. A cause is attributed:
+   - unchanged raw closes with a corporate action in between is `corporate_action`;
+   - a version change is `rule_version`;
+   - changed raw bars are `data_correction`;
+   - anything else is `unknown`, and is surfaced.
+4. A re-run of a past session compares events only up to that session, so it can't "un-see" later
+   ones.
+5. **Failure handling.** The log is written in one transaction after the charts. A failure exits
+   non-zero for the watchdog, and never costs the charts.
 
-### Rule versions, and the guard on them
+### Rule versions
 
-- `setups.RULE_VERSION` is a declared string, for example `"2026-10-04"`.
-- `setups.fingerprint()` hashes every constant and every rule's text.
-- A test pins the fingerprint for the declared version. **Changing a threshold without bumping the
-  version fails the build.** The guard is shown to fail by doing exactly that.
-- A bump is the suite's measurement-affecting change: batched to a declared boundary, recorded once
-  in `rule_versions`, and noted in `packages/technicals/docs/setups.md`.
+- `setups.RULE_VERSION = "2026-10-04"` and `setups.fingerprint()`, a hash of every constant and rule
+  text.
+- A test pins the fingerprint, so changing a threshold without bumping the version fails the build.
+  It is shown to fail by changing `ADX_MIN`.
+- `CONTEXT_VERSION` works the same way for the context definitions.
 
-### The backfill
+### The backfill (decided)
 
-- `python -m cherrypick.technicals signals reconstruct` is **dry-run by default**, like every
-  backfill in the suite. It reports what it would insert.
-- `--write` inserts today's computation of the full history as `source='reconstructed'`, under the
-  current rule version.
-- These rows give an early first look, and they are not as-issued evidence. **The pullback and
-  breakout rows are not even a clean test:** both rules were amended after looking at three years
-  of these same names (the pullback's RSI on 2026-10-03, the breakouts' Supertrend condition on
-  2026-10-04), so their reconstructed rows carry `tuned_on_data`. Observed rows start with the first
-  logged run.
+- `signals reconstruct` is dry-run by default; `--write` inserts today's computation of the stored
+  history.
+- Its rows are flagged `source = 'reconstructed'`, and the tuned families are flagged
+  `tuned_on_data`.
+- Its use is continuity and the console's history view. The evidence comes from Phase 1, not from
+  these rows.
 
-### Commands and surfaces
+### Commands, guards and size
 
-- `python -m cherrypick.technicals signals status` prints the last run, counts by setup and side,
-  observed versus reconstructed, restatements by kind and cause, and any `lag_sessions > 0`.
-- `signals export [--from --to --setup --side --source]` writes CSV or JSON for analysis.
-- Console (a small Phase 2): see below.
+- **Commands:** `signals status` (last run, counts, restatements, lags) and `signals export` (CSV
+  or JSON).
+- **Guards, each shown to fail:**
+  - the triggers refuse an update;
+  - a re-run inserts nothing;
+  - the CSCO dividend case yields one `price_moved` with cause `corporate_action` and an unchanged
+    `close_raw`;
+  - a changed constant fails the fingerprint;
+  - a vanished event is recorded;
+  - `reconstruct` writes nothing without `--write`;
+  - the log and the chart files agree on every event.
+- **Size:** about 50 events a night on 527 names, about 13,000 rows a year. That is small.
 
-### Guards, each shown to fail
+## Phase 3: a read surface
 
-| Guard | Broken how, to check it fires |
-|---|---|
-| Triggers refuse `UPDATE`/`DELETE` on `signals`, `signal_context`, `restatements` | issue an update in a test |
-| A re-run of the same session inserts nothing | drop the key check |
-| A dividend after a logged entry yields one `price_moved` restatement with cause `corporate_action`, and `close_raw` unchanged | the CSCO case, rebuilt as a fixture |
-| A changed constant without a version bump fails | change `ADX_MIN` |
-| A logged event that stops being produced is recorded `vanished` | remove a bar from the fixture |
-| `reconstruct` writes nothing without `--write` | call it without the flag |
-| The log and the chart files agree on every event a run produced | log from a second computation |
+- **On the console's Setups page:**
+  - a log tab: first-seen time, whether a signal was known before the open, and late and restated
+    marks;
+  - the restatements, with their causes;
+  - the Phase 1 results: each setup-side's verdict, sample and confidence interval, and, as live
+    trades accrue, the live figures against the historical interval.
+- **On the System page:** a chip for the last log run.
+- Read-only, through `readOnlyDb`.
 
-### Size
+## Analysis plan v2 (2026-10-04)
 
-The three-year history holds about 19,300 positions across the eight setups, about 25 a session. That is
-about 50 entry and exit events a night, or about 13,000 rows a year plus context. That is small for
-SQLite, and needs no retention policy.
+**Supersedes v1, which was frozen earlier the same day and under which nothing was ever observed.**
+What changed, and why: v1 took its evidence from observed live rows only, with a 12-month minimum.
+That put verdicts years away, and 15 years of usable history turned out to exist. So v2:
 
-## Phase 2: a read surface
+- takes the verdict from the historical study;
+- adds the holdout for the tuned rules;
+- demotes live rows to confirmation.
 
-- A **"log" tab** on the console's Setups page:
-  - each signal with its first-seen time;
-  - whether it was known before the next open;
-  - `late` and `restated` marks.
-- A **restatements list** with probable causes.
-- A **System page chip** for the last log run.
-- Read-only, through the console's `readOnlyDb`, so "no log here" and "the read threw" are told
-  apart.
+A change to anything here is v3, dated, with its reason, and is never applied to results already
+looked at under v2.
 
-## Phase 3: scoring the outcomes (the reason for the log)
+**What counts, and how it is filled**
+- **Unit:** each historical entry made while its name was in the point-in-time universe, scored to
+  its own rule exit. The four tuned setup-sides count only from their holdout.
+- **Fills:** the next session's open after the signal close, for entries and exits alike. Prices
+  are raw bars with corporate actions applied explicitly. A short pays the dividends it is held
+  through. Close-to-close measurement is not used: it flatters short-term reversal through bid-ask
+  bounce (Conrad, Gultekin & Kaul 1997), and overnight and intraday returns differ by strategy
+  (Lou, Polk & Skouras 2019).
 
-A deterministic scorer over the log and our bars, written to a versioned fact set like the review's.
-Its rules are **declared here, before the data accrues**, so the analysis cannot be fitted to the
-result (Harvey 2017; Bailey et al. 2017 on overfitting).
+**What is measured**
+- **Measures, per setup-side, never pooled across sides** (Brock, Lakonishok & LeBaron 1992):
+  - expectancy in R (ATR(14) at entry) and in percent;
+  - hit rate, payoff ratio, median hold;
+  - MAE and MFE (Sweeney 1997).
+- **Intrabar ties** take the stop.
 
-### How outcomes are measured
+**What it is compared against**
+- **Baseline:** for each entry,
+  - 20 same-date entries in random names from that day's universe, and
+  - 20 same-name entries on random dates when the name was in the universe,
 
-- **Fills at the next open, never at the signal close.**
-  - A signal known before the open fills at the next session's open; an exit, at the open after its
-    exit close.
-  - Close-to-close measurement flatters short-term reversal through bid-ask bounce (Conrad,
-    Gultekin & Kaul 1997), and overnight and intraday returns differ systematically by strategy
-    (Lou, Polk & Skouras 2019).
-  - The gap between the signal close and the fill is recorded as its own number: Perold's (1988)
-    "paper versus reality".
-- **Prices** are raw bars, with corporate actions applied explicitly over the holding period. A
-  short owes a payment in lieu of any dividend it is held through, and on raw bars that is a debit
-  (adjusted bars net it silently).
-- **Per signal:**
-  - holding-period return in the trade's direction;
-  - holding time;
-  - MAE and MFE from the daily path (Sweeney 1997), normalised by ATR(14) at entry, and as
-    R-multiples where the rule has a stop.
-  - `core.metrics.excursions` already provides the excursion maths. It skips a missing mark rather
-    than reading it as zero, which is the right behaviour here.
-- **Per setup and side, never pooled across sides** (Brock, Lakonishok & LeBaron 1992 found buys
-  and sells behave differently):
-  - hit rate, payoff ratio and **expectancy** (`core.metrics.expectancy`);
-  - per-trade Sharpe, and the probabilistic Sharpe (`core.metrics.probabilistic_sharpe`);
-  - `sample_progress` against `MIN_EFFECTIVE_N`.
-- **Intrabar order is unknown** on daily bars. When a stop and a target fall inside one bar, the
-  stop is taken, as the setups already do.
+  each with the same side, exit rule and fills. The seed is fixed and the draws are stored (Brock,
+  Lakonishok & LeBaron 1992; Lyon, Barber & Tsai 1999).
 
-### What it is compared against
+**The test**
+- **The test:** the setup-side's mean R minus its baseline's, in calendar time (one return per
+  session), with errors clustered by date (Petersen 2009). One-sided: only an edge matters.
+- **Family and correction:** the eight setup-sides, with a Holm correction at a family-wise α of
+  0.05. A later filter or exit joins the family (White 2000; Hansen 2005; Harvey, Liu & Zhu 2016).
+- **Minimum sample:** 780 × the measured design effect in counted entries per setup-side. The
+  historical sample is expected to clear it. If a tuned setup-side's holdout does not, it reads
+  "not yet judged".
 
-**A matched random baseline, the core of the test** (Brock, Lakonishok & LeBaron 1992; Lyon, Barber &
-Tsai 1999). For every real signal:
+**Costs**
+- **Spread:** the Corwin & Schultz (2012) estimator on our own bars.
+- **Shorts:** a borrow rate declared before the first scoring run (general collateral is cheap,
+  specials are not; D'Avolio 2002), and a Rule 201 flag after a 10% drop.
+- Costs appear as separate columns under the suite's money layout. High-turnover signals rarely
+  survive costs (Novy-Marx & Velikov 2016).
 
-- (a) entries on the **same date** in randomly drawn universe names, which removes that day's market
-  move;
-- (b) entries in the **same name** on random dates, which removes the stock's own drift.
+**Live confirmation**
+- After about 150 live trades per setup-side, live mean R is compared with the historical 95%
+  interval.
+- Outside it, the live figure is a finding to investigate, never a silent re-estimate.
 
-Each draw uses the same side, the same exit rule and the same fill rules. The seed is fixed and the
-draws are stored, so the baseline replays exactly. A setup that does no better than its own
-baseline has no edge, whatever its raw hit rate.
+**Reporting**
+- Every setup-side is reported, passing or failing, by sub-period (2011–18 and 2019–26), with its
+  sample.
 
-**Same-day signals are not independent.** Many signals land on the same market-wide move. Results
-are reported in calendar time (one portfolio return per session), or with standard errors
-clustered by date (Petersen 2009). A naive per-trade t-statistic overstates confidence.
+## Later phases: uses the study and log are shaped for, none committed
 
-### Costs
+History makes most of these **runnable now, not someday**.
 
-- **Spread** is estimated per name per day from our own high/low/close (Corwin & Schultz 2012; Abdi
-  & Ranaldo 2017), so it stays deterministic.
-- **Shorts** also carry:
-  - a **borrow** assumption, a declared parameter: general collateral is cheap, specials are not
-    (D'Avolio 2002), and loans can be recalled (Engelberg, Reed & Ringgenberg 2018);
-  - a **Rule 201** flag: after a drop of 10% or more, a short entry at the next open cannot be
-    assumed filled at the bid.
-- **The money layout.** The suite's root rule applies: P&L means net, gross is labelled gross, and
-  an unrecorded cost reads `n/r`, never zero. Swing setups turn over fast, and high-turnover
-  signals rarely survive costs (Novy-Marx & Velikov 2016).
+- **Alternative exits.** Replay a declared grid against the historical entries: a trailing ATR
+  stop, a fixed R target, a time stop. Follow calendars' `exit_policies.py`:
+  - the grid is declared;
+  - the replay runs over recorded prices;
+  - it refuses where data is missing;
+  - the control policy must reproduce every rule exit exactly before any alternative is trusted.
 
-### The test, and when to run it
+  Each exit joins the family.
+- **Filters and context.** "Trend agrees", RS ≥ 7, distance to our levels, volume at entry. Each is
+  a declared hypothesis, testable on history at once.
+- **A breadth and regime reading.** Daily long and short entry counts over the point-in-time
+  universe, with 15 years of history to test it on, first as a way to stratify the results (breadth
+  has cross-market evidence as a predictor; Zaremba et al. 2021). It goes into the morning overview
+  as a recorded measurement that feeds no gate: the `overview/score.py` deployment precedent, a key
+  in `facts.build()`.
+- **Context for the options modules.**
+  - An "SPX setup state" regime-cut dimension for flies and MEIC (`core.regimecuts`). It needs a
+    `REGIME_DIMENSIONS` entry and a recorded measurement break in each module. Room must be made
+    first, since the advisor's regime-cuts section sits at 71.9 KB of its 72 KB ceiling.
+  - Setup state recorded at entry by bwb, pmcc and earnings, record-only.
+  - Any action on it would be an advisor A/B experiment, never a rule change.
+- **Alerts.** A morning card, and a post to Discord when a starred name fires. It would use the
+  existing `notify/secrets.get_webhook` path as its own supervisor job, off by default, posting once
+  a session.
+- **An advisor fact source.** A setup-state summary in the deep-slot fact pack, after a size cut.
+- **Checking our setups against the vendor's.** Compare with the vendor's saved daily lists.
+  Validation only, never an input.
+- **A paper module, gated on evidence.** Only for a setup-side that beats its baseline after costs
+  under v2, in its holdout and in both sub-periods. It would be a new paper-only, credential-free
+  package with real next-open fills, fees and the money layout. That gate could now be met, or
+  plainly failed, within weeks.
 
-- **The family is declared: 4 setups × 2 sides = 8 hypotheses.** Corrected with Holm or
-  Benjamini–Hochberg–Yekutieli: small, deterministic, and enough for a fixed family. A Reality
-  Check or SPA bootstrap (White 2000; Hansen 2005) is only needed if parameter variants are ever
-  searched. In that case every variant tried is logged (`rule_versions` does this), and the
-  Deflated Sharpe applies (Bailey & López de Prado 2014). A filter or exit added in Phases 4 and 5
-  is a new hypothesis and is added to the family, not tested on its own.
-- **No verdict before the sample supports one.** The required sample size was worked with the
-  normal approximation, at a two-sided α of 0.05 and power of 0.80. **A hit rate of 55% against 50%
-  needs about 780 independent trades**, and 53% against 50% about 2,180. The same 5-point difference
-  measured against a baseline needs about 1,565 trades in each group.
-- **Clustering inflates those counts** by 1 + (m−1)ρ. Twenty same-day signals at ρ = 0.1 gives
-  about 2.9×. At today's rates, without clustering:
-
-| Setup and side | Positions a year (from three years) | Years to ~780 trades | With 2.9× clustering |
-|---|---|---|---|
-| Mean reversion (short) | ~1,970 | 0.4 | 1.2 |
-| Pullback (long) | ~1,370 | 0.6 | 1.6 |
-| Mean reversion (long) | ~840 | 0.9 | 2.7 |
-| Pullback (short) | ~830 | 0.9 | 2.7 |
-| Trend following (long) | ~640 | 1.2 | 3.5 |
-| Trend following (short) | ~620 | 1.3 | 3.7 |
-| Breakout (long) | ~85 | 9.1 | 27 |
-| Breakdown (short) | ~78 | 10.0 | 29 |
-
-- **The breakouts can't be judged from the log in any useful time** (the rows above are after
-  their Supertrend condition, which removed about 12% and 18% of them). They need a different answer:
-  pooling with a declared, longer reconstructed history, or accepting that they stay unjudged. That
-  is a decision to make at the time, written down, not drifted into.
-- **The live record is the out-of-sample test.** The scorer reports observed and reconstructed rows
-  separately. A conclusion rests on observed rows only.
-
-## Later phases: uses to shape the log for, none committed
-
-### Phase 4: alternative exits
-
-Replay a declared grid of exits against the same logged entries: a trailing ATR stop instead of the
-21 EMA, a fixed R-multiple target, a time stop. This follows the calendars pattern in
-`exit_policies.py`:
-
-- the grid is declared up front;
-- the replay runs over recorded prices;
-- it refuses rather than guesses where data is missing;
-- it checks itself: the control policy must reproduce every logged rule exit exactly before any
-  alternative is trusted.
-
-### Phase 5: filters and context
-
-Whether "trend agrees", RS ≥ 7, distance to our nearest level, or volume at entry changes outcomes,
-read from `signal_context`. Each filter is one more declared hypothesis in Phase 3's family.
-
-### Phase 6: a breadth and regime reading
-
-- **The reading:** daily counts of new long and short entries by setup, divided by the point-in-time
-  universe.
-- **Where it goes:** into the morning overview's fact pack as a **recorded measurement that feeds no
-  gate**. The precedent is `overview/score.py`'s deployment block; it is a new key in `facts.build()`
-  and a line in `render.py`.
-- **How it is used:** first, to stratify Phase 3 (outcomes by breadth regime, with the baseline drawn
-  within the same regime). Breadth has some cross-market evidence as a predictor (Zaremba et al.
-  2021) and weaker evidence near term. Using it as a predictor here would be one more declared
-  hypothesis, so it is not one by default.
-
-### Phase 7: context for the options modules
-
-- **Regime cuts.** An "SPX setup state" dimension for flies' and MEIC's regime cuts
-  (`core.regimecuts`). Either a column stamped at entry (through each module's added-columns
-  migration, which `stale_writer_columns` would then watch), or an at-or-before join from the
-  module into `signals.db`, read-only, on the model of `core.regime`.
-  - Either way it means a `REGIME_DIMENSIONS` entry and a recorded measurement break in each module.
-  - The advisor's thinned regime-cuts section sits at 71.9 KB against a 72 KB ceiling, so something
-    must be cut first.
-- **bwb, pmcc and earnings** could record their underlying's setup state at entry, record-only.
-  Recording a context column changes what a row says, not what the module did, so it isn't
-  measurement-affecting.
-- **Promotion is gated.** If a cut ever showed a difference, acting on it would be an advisor A/B
-  experiment under the existing mechanism, never a rule change.
-
-### Phase 8: alerts
-
-- A "fired since the last session" card on Reports → Morning.
-- A starred-names list (the console's prefs store), with a post to Discord through the existing
-  `notify/secrets.get_webhook` path when a starred name fires. It would be its own supervisor job,
-  off by default, never called from the watchdog tick, posting once per session with a state file
-  (the `flies_payoff_post.py` model).
-
-### Phase 9: an advisor fact source
-
-A setup-state summary for the names each module trades, in the advisor's deep-slot fact pack. One
-reader in `factpack.build()`, a `PACK_VERSION` bump, and room made under the pack's size ceiling.
-
-### Phase 10: checking our setups against the vendor's
-
-The vendor's daily trade-ideas lists are already saved with each chart capture. Comparing our logged
-signals with them is a check on our work only, never an input, in line with "the vendor validates,
-never feeds".
-
-### Phase 11: a paper module, gated on evidence
-
-- **The gate:** consider it only if a setup-side beats its matched baseline after costs, under the
-  pre-declared Phase 3 test, at the declared sample size.
-- **What it would be:**
-  - a new paper-only, credential-free package, like calendars or pmcc;
-  - one arm per setup-side;
-  - real next-open fills, fees, and the suite's money layout.
-- **It isn't promised.** The literature says most such tests fail, and a well-measured "no" is an
-  outcome this plan is built to deliver.
-
-## What could go wrong, and what the log does about it
+## What could go wrong
 
 | Risk | Handling |
 |---|---|
-| History restated after the fact | raw closes stored; restatements recorded with a cause, never silently replaced |
-| Rules changed without anyone noticing | version plus fingerprint guard; versions never pooled silently |
-| Survivorship (today's universe, delisted names gone) | `universe_member` recorded from day one; reconstructed rows flagged; delisting returns noted as a gap until the store keeps delisted names |
-| Look-ahead (signal-close fills) | `seen_before_open`; next-open fills in Phase 3 |
-| Many tests, one lucky result | a declared family, corrections, every variant logged |
-| Same-day clustering | calendar-time or date-clustered errors |
-| Too few trades | the sample-size table; no verdict before it |
+| Hindsight in the universe | membership from data up to the day before only; a guard shown to fail |
+| Survivorship | delisted names are in Dolt (28% of 2016's names); delisting returns are missing, so bankruptcies lose their final drop (Shumway 1997), and the report says so |
+| Older data not checked to the cent | overlap check against `eod.db`; jump and gap inspection before 2023; Dolt-only dividends reported |
+| Renamed tickers | two separate series; harmless to a per-position study |
+| Tuned rules judged on their tuning data | the holdout; a guard |
+| One regime dominating | results by sub-period |
+| Many tests, one lucky result | a declared family, the Holm correction, every variant counted |
+| Same-day clustering | calendar time, date-clustered errors |
 | Costs ignored | spread estimated, borrow and Rule 201 for shorts, dividends owed on shorts |
-| A missed nightly run | logged next run with `lag_sessions > 0`, visible in `status` |
-| Logging breaks the report | charts written first; the log in its own transaction; non-zero exit for the watchdog |
+| Live results drifting from history | Phase 2's confirmation, and a finding to investigate |
+| History restated after the fact | the live log's raw closes and restatements |
+| Rules changed unnoticed | the version and fingerprint guard |
 
-## Decisions (all made 2026-10-04)
+## Decisions (2026-10-04)
 
-1. **Where the log lives: a separate `signals.db`**, for the reasons above.
-2. **The reconstructed backfill: written**, flagged `reconstructed`, over the full stored history,
-   with `tuned_on_data` on both pullbacks and both breakouts.
-3. **The rules are frozen as `RULE_VERSION = "2026-10-04"`** with the fingerprint guard, including
-   the shorts, the amended pullback and one last fix made first: **a breakout or breakdown requires
-   Supertrend already on the trade's side at entry**. Without it, 73–82% of the entries made against
-   Supertrend exited the next close, a one-day round trip (`packages/technicals/docs/setups.md`).
-   The context definitions are versioned separately (`CONTEXT_VERSION`). The first observed record
-   is the first nightly run after Phase 1 ships, which follows the merge of PR #31.
-4. **Phase 3's analysis plan is frozen in its core now, as v1 below.** The cost parameters are
-   declared before the first scoring run and dated before any observed outcome is looked at.
-   Exploratory scoring of reconstructed rows is allowed, labelled exploratory, under one rule: any
-   rule change it prompts is a new rule version and restarts that setup's observed clock.
-5. **The vendor's scan-rule matches stay out of the log.** Our reproduction of them is already
-   kept daily in the dated `report-<session>.json` files, and the vendor's own lists are saved
-   daily by the collector (`trade-ideas.json`), so Phase 10's check has both sides without the log
-   holding vendor-shaped data.
+1. **The live log lives in a separate `signals.db`.**
+2. **The reconstructed backfill is written**, flagged, with `tuned_on_data` on both pullbacks and
+   both breakouts.
+3. **The rules are frozen as `RULE_VERSION = "2026-10-04"`** with the fingerprint guard. That
+   includes the shorts, the amended pullback and the breakouts' Supertrend condition. A breakout or
+   breakdown entered against Supertrend had exited the next close 73–82% of the time
+   (`packages/technicals/docs/setups.md`). The context is versioned separately.
+4. **The analysis plan is v2 above.** Costs are declared before the first scoring run.
+   Exploratory looks are labelled, and a rule change they prompt is a new version.
+5. **The vendor's scan-rule matches stay out of the log.** Ours are kept daily in the dated
+   `report-<session>.json` files, and the vendor's lists are saved daily by the collector.
+6. **The verdict comes from a historical study first** (revised 2026-10-04), over a universe
+   chosen as of each day: price ≥ $5 and 50-session median dollar volume ≥ $20M. The live log
+   follows as confirmation.
 
-## Analysis plan v1 (frozen 2026-10-04)
-
-Declared before any observed signal exists. A change to anything here is v2, dated, with its reason,
-and is never applied to results already looked at under v1.
-
-- **Unit:** each logged entry with `source = 'observed'`, scored against its own logged exit.
-  Reconstructed rows are exploratory only, and rows with `tuned_on_data` are never evidence.
-- **Fills:** the next session's open after the signal close, for entries and exits alike. A signal
-  not seen before that open (`seen_before_open = 0`) fills at the open after it was seen. Prices are
-  raw bars with corporate actions applied explicitly; a short pays the dividends it is held through.
-- **Measures, per setup-side, never pooled across sides:** expectancy in R (ATR(14) at entry) and
-  in percent, hit rate, payoff ratio, median hold, MAE and MFE. Intrabar ties take the stop.
-- **Baseline:** for each signal, 20 same-date entries in random universe names and 20 same-name
-  entries on random dates, same side, same exit rule, same fills. The seed is fixed and the draws
-  are stored.
-- **Test:** the setup-side's mean R minus its matched baseline's, in calendar time (one return per
-  session) with errors clustered by date. One-sided, because only an edge matters.
-- **Family and correction:** the 8 setup-sides. Holm correction at a family-wise α of 0.05. Every
-  later filter or exit tested joins the family.
-- **Minimum sample:** no verdict on a setup-side before 780 × its measured design effect in
-  observed entries (the table above), and never before 12 months of observed record.
-- **Costs:** spread from the Corwin–Schultz estimator on our own bars. Shorts also pay a borrow
-  rate declared before the first scoring run, and carry a Rule 201 flag after a 10% drop. All costs
-  appear as separate columns under the suite's money layout.
-- **Reporting:** every setup-side is reported, passing or not, with its sample progress. A
-  setup-side short of its minimum sample reads "not yet judged", never a number dressed as a
-  verdict.
+**Still open, for when Phase 2 is built:** whether the nightly setups widen to the study's universe,
+for about four times faster live confirmation.
 
 ## References
 
-Citations were checked against publisher, RePEc or SSRN pages where marked; the rest are standard
-texts.
+Citations were checked against publisher, RePEc or SSRN pages except where marked.
 
 - **Baselines and evidence on technical rules**
   - Brock, Lakonishok & LeBaron (1992), "Simple Technical Trading Rules and the Stochastic Properties
