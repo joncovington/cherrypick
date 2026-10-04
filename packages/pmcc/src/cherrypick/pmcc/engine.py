@@ -233,6 +233,54 @@ def select_short(entries: list[dict], quotes: dict, spot: float, params: dict) -
     }
 
 
+def select_short_by_delta(
+    entries: list[dict],
+    quotes: dict,
+    greeks: dict,
+    spot: float,
+    params: dict,
+    *,
+    floor_strike: float | None = None,
+) -> dict:
+    """The held-long arm's weekly short: the call whose delta is nearest `short_delta_target`
+    (default 0.70, Tom King's "about 70 delta") inside `[short_delta_min, short_delta_max]`
+    (0.65-0.78), strictly above `floor_strike` (the long's strike -- a short below its own cover is
+    a different, uncovered position). A tie takes the higher strike: nearer the money, more
+    extrinsic for the same delta reading.
+
+    No fallback: a strike with no delta on file is skipped, and none qualifying refuses
+    `no_short_delta`. The short is the measured half of this structure, so it is never chosen on a
+    guess at its delta."""
+    target = params.get("short_delta_target", 0.70)
+    lo = params.get("short_delta_min", 0.65)
+    hi = params.get("short_delta_max", 0.78)
+    best = None
+    for e in _quoted_calls(entries, quotes):
+        strike = e["strike_price"]
+        if floor_strike is not None and strike <= floor_strike:
+            continue
+        delta = (greeks.get(e["streamer_symbol"]) or {}).get("delta")
+        if delta is None or not lo <= delta <= hi:
+            continue
+        gap = abs(delta - target)
+        if best is None or gap < best[0] or (gap == best[0] and strike > best[1]["strike_price"]):
+            best = (gap, e, delta)
+    if best is None:
+        return {"ok": False, "reason": "no_short_delta"}
+    _, e, delta = best
+    mid = e["quote"]["mid"]
+    intrinsic = max(0.0, spot - e["strike_price"])
+    return {
+        "ok": True,
+        "entry": e,
+        "strike": e["strike_price"],
+        "mid": mid,
+        "intrinsic": round(intrinsic, 4),
+        "tv": round(mid - intrinsic, 4),
+        "delta": delta,
+    }
+
+
 def _spread_pct(quote: dict) -> float | None:
     """A leg's bid/ask spread as a fraction of its mid, or None when it cannot be computed.
 
@@ -259,7 +307,12 @@ def plan_entry(snapshot: dict, params: dict) -> dict:
     long_pick = select_long(snapshot["long_chain"], quotes, greeks, spot, params)
     if not long_pick["ok"]:
         return long_pick
-    short_pick = select_short(snapshot["short_chain"], quotes, spot, params)
+    if params.get("short_rule", "atm") == "delta":
+        short_pick = select_short_by_delta(
+            snapshot["short_chain"], quotes, greeks, spot, params, floor_strike=long_pick["strike"]
+        )
+    else:
+        short_pick = select_short(snapshot["short_chain"], quotes, spot, params)
     if not short_pick["ok"]:
         return short_pick
 
@@ -325,6 +378,67 @@ def plan_entry(snapshot: dict, params: dict) -> dict:
                 ),
             ],
         },
+    }
+
+
+def _leg_too_wide(quote: dict, params: dict) -> bool:
+    """A leg too wide to trade: wide in PERCENT and in MONEY, both -- the exit gate's rule
+    (`core.spreadbook.exit_spread_blocks`), because a roll's buyback is an exit and a percentage
+    alone refuses every penny-wide buyback of a short that has done its job."""
+    pct = _spread_pct(quote)
+    if pct is None:
+        return False
+    too_wide_abs = (quote["ask"] - quote["bid"]) > params.get("max_leg_spread_abs", 0.05)
+    return pct > params.get("max_leg_spread_pct", 0.25) and too_wide_abs
+
+
+def plan_short(snapshot: dict, params: dict, *, long_strike: float, buyback: dict | None = None) -> dict:
+    """The next weekly short of a held-long position, off a roll snapshot (one short expiration's
+    chain, quotes, greeks and spot): `{"ok": True, "leg", "net_credit", ...}` or a refusal.
+
+    With `buyback` (the current short's quote) this is a ROLL -- one two-leg ticket buying the old
+    short and selling the new one, `net_credit` being new mid minus buyback mid. Without it, a SALE
+    into a position that holds no short. Either leg too wide refuses `spread_too_wide`, naming it."""
+    spot = snapshot["spot"]
+    pick = select_short_by_delta(
+        snapshot["short_chain"],
+        snapshot["quotes"],
+        snapshot.get("greeks") or {},
+        spot,
+        params,
+        floor_strike=long_strike,
+    )
+    if not pick["ok"]:
+        return pick
+    for role, quote in (("buyback", buyback), ("new_short", pick["entry"]["quote"])):
+        if quote is not None and _leg_too_wide(quote, params):
+            return {
+                "ok": False,
+                "reason": "spread_too_wide",
+                "detail": {"leg": role, "spread_pct": round(_spread_pct(quote) or 0.0, 4)},
+            }
+    greeks = (snapshot.get("greeks") or {}).get(pick["entry"]["streamer_symbol"]) or {}
+    leg = _leg(
+        "short_call",
+        "Sell to Open",
+        pick["entry"],
+        pick["entry"]["quote"],
+        greeks,
+        snapshot["short_expiration"],
+    )
+    buyback_mid = buyback["mid"] if buyback is not None else None
+    return {
+        "ok": True,
+        "leg": leg,
+        "strike": pick["strike"],
+        "mid": pick["mid"],
+        "intrinsic": pick["intrinsic"],
+        "tv": pick["tv"],
+        "delta": pick["delta"],
+        "short_expiration": snapshot["short_expiration"],
+        "short_dte": snapshot.get("short_dte"),
+        "buyback_mid": buyback_mid,
+        "net_credit": round(pick["mid"] - (buyback_mid or 0.0), 4),
     }
 
 
@@ -398,6 +512,57 @@ def position_value(leg_marks: dict) -> float | None:
     if long_mid is None:
         return None
     return round(long_mid - (short_mid or 0.0), 4)
+
+
+def pnl_to_date(
+    position: dict, legs: list[dict], leg_marks: dict, assignments: list[dict], spot: float | None
+) -> dict | None:
+    """A position's P&L so far, in whole-position dollars: every closed or settled leg at its own
+    close (`leg_pnl`), every open leg at its mark (`leg_marks`: `{leg_role: mid}`), delivered
+    shares at their disposal or, still held, at `spot` -- minus every cost booked so far (`fees`).
+
+    The one P&L-to-date rule: the held-long stop, `analytics.headline`'s open mark-to-market, the
+    tracker and `excursions` all read it, so no two can disagree about what a position is worth.
+    None when any part cannot be priced -- never a partial figure dressed as a whole one."""
+    mult = 100 * int(position.get("quantity") or 1)
+    long_pnl = short_realised = short_open = 0.0
+    for leg in legs:
+        sign = 1 if leg["action"] == "Buy to Open" else -1
+        if leg["status"] == "open":
+            mid = leg_marks.get(leg["leg_role"])
+            if mid is None or leg.get("entry_mid") is None:
+                return None
+            pnl = (mid - leg["entry_mid"]) * sign * mult
+        else:
+            per_share = leg_pnl(leg)
+            if per_share is None:
+                return None
+            pnl = per_share * mult
+        if leg["leg_role"] == "long_call":
+            long_pnl += pnl
+        elif leg["status"] == "open":
+            short_open += pnl
+        else:
+            short_realised += pnl
+    shares = 0.0
+    for a in assignments:
+        if a.get("status") == "disposed" and a.get("share_pnl") is not None:
+            shares += a["share_pnl"]
+        elif spot is None:
+            return None
+        else:
+            shares += share_pnl(a["direction"], a["shares"], a["basis"], spot)
+    gross = long_pnl + short_realised + short_open + shares
+    fees = float(position.get("fees") or 0.0)
+    return {
+        "long": round(long_pnl, 2),
+        "short_realised": round(short_realised, 2),
+        "short_open": round(short_open, 2),
+        "shares": round(shares, 2),
+        "gross": round(gross, 2),
+        "fees": round(fees, 2),
+        "net": round(gross - fees, 2),
+    }
 
 
 def short_time_value(short_mid: float, spot: float, short_strike: float) -> float:

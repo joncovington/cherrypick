@@ -105,3 +105,72 @@ def expiration_plan(today: date, params: dict | None = None) -> dict | None:
         "short_dte": (short - today).days,
         "long_dte": (long_exp - today).days,
     }
+
+
+# --------------------------------------------------------------------------- the held-long plan
+# A held-long arm (`lifecycle: held_long`) buys a long of ~1 year and sells a weekly short against it
+# every week. The weekly short is chosen exactly as above; the long cannot be: ~1-year expirations
+# are LISTED months (monthlies, quarterlies, January LEAPs) that differ per symbol, so it is picked
+# from the broker's own listing (`streamcache.stream_expirations`) within a declared DTE band. A
+# listing is a fact about which dates exist, not a nearest-match of quotes, and a date the listing
+# lacks is a refusal (`no_leap_listed`), never a substitute.
+LEAP_DEFAULTS = {"leap_dte_min": 240, "leap_dte_max": 540, "leap_dte_target": 360}
+
+
+def leap_expiration(listed: list[str], today: date, params: dict | None = None) -> dict | None:
+    """The listed expiration whose DTE falls in `[leap_dte_min, leap_dte_max]` nearest
+    `leap_dte_target`; a tie takes the nearer date (less capital). None when the listing has none."""
+    p = {**LEAP_DEFAULTS, **{k: v for k, v in (params or {}).items() if k in LEAP_DEFAULTS}}
+    best: tuple[date, int] | None = None
+    for value in listed:
+        try:
+            exp = date.fromisoformat(str(value))
+        except ValueError:
+            continue
+        dte = (exp - today).days
+        if not p["leap_dte_min"] <= dte <= p["leap_dte_max"]:
+            continue
+        gap = abs(dte - p["leap_dte_target"])
+        if (
+            best is None
+            or gap < abs(best[1] - p["leap_dte_target"])
+            or (gap == abs(best[1] - p["leap_dte_target"]) and dte < best[1])
+        ):
+            best = (exp, dte)
+    if best is None:
+        return None
+    return {"long_expiration": best[0].isoformat(), "long_dte": best[1]}
+
+
+def short_expiration(today: date, params: dict | None = None, *, cap: str | None = None) -> dict | None:
+    """The weekly short's expiration: the soonest Friday in `[short_dte_min, short_dte_max]`, never
+    after `cap` (the long's own expiry -- a short must never outlive its cover). The rule entry uses,
+    so a roll lands where an entry on the same day would."""
+    p = _dte_params(params)
+    for exp in candidate_expirations(today):
+        dte = (exp - today).days
+        if cap is not None and exp.isoformat() > cap:
+            return None
+        if p["short_dte_min"] <= dte <= p["short_dte_max"]:
+            return {"short_expiration": exp.isoformat(), "short_dte": dte}
+    return None
+
+
+def held_long_plan(today: date, listed: list[str], params: dict | None = None) -> dict | None:
+    """A held-long entry's two expirations, or None: the weekly short as `short_expiration` picks
+    it, and the long from the listing as `leap_expiration` picks it."""
+    leap = leap_expiration(listed, today, params)
+    if leap is None:
+        return None
+    short = short_expiration(today, params, cap=leap["long_expiration"])
+    if short is None:
+        return None
+    return {**short, **leap}
+
+
+def session_close_min(day: date) -> int:
+    """The session's close in minutes after midnight ET: 16:00, or 13:00 on an early close. Every
+    time anchored to the bell (the roll, the roll deadline, the settlement pass) is measured from
+    this, never from a constant -- a Friday roll at 15:00 on 2026-11-27 would land two hours after
+    the market closed."""
+    return hhmm_to_min(_cal.session_close_hhmm(day), 16 * 60)

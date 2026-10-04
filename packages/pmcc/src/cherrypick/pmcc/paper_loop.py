@@ -31,7 +31,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import date, datetime
 
 from cherrypick.core import advice as _core_advice
 from cherrypick.core import calendar as _cal
@@ -72,12 +72,21 @@ def _log(message: str) -> None:
     _logger.info(message)
 
 
-def in_session(now_min: int) -> bool:
-    return RTH_OPEN_MIN <= now_min < RTH_CLOSE_MIN
+def in_session(now_min: int, day: date | None = None) -> bool:
+    """Regular trading hours, closing at the session's own bell when `day` is given (13:00 on an
+    early close), else at 16:00."""
+    close = clock.session_close_min(day) if day is not None else RTH_CLOSE_MIN
+    return RTH_OPEN_MIN <= now_min < close
 
 
-def settle_time_min(config: dict) -> int:
-    return clock.hhmm_to_min((config.get("defaults") or {}).get("settle_time"), DEFAULT_SETTLE_MIN)
+def settle_time_min(config: dict, day: date | None = None) -> int:
+    """When the settlement pass runs: the configured time (16:20), carried to the session's own
+    close on an early close -- 13:20 on 2026-11-27, when a 16:20 pass would read a print three hours
+    stale and refuse it."""
+    configured = clock.hhmm_to_min((config.get("defaults") or {}).get("settle_time"), DEFAULT_SETTLE_MIN)
+    if day is None:
+        return configured
+    return clock.session_close_min(day) + (configured - RTH_CLOSE_MIN)
 
 
 def _symbols(config: dict) -> list[str]:
@@ -218,7 +227,7 @@ def run_once(
             f"{len(overdue)} leg(s) past expiration remain open — settle manually with "
             f"--settle --date <expiration> --price <official print>"
         )
-    past_settle = now_min >= settle_time_min(config)
+    past_settle = now_min >= settle_time_min(config, today)
     if past_settle and _unsettled_today(conn, day):
         _log(f"past settle time — settling legs expiring {day}")
         return {
@@ -227,7 +236,7 @@ def run_once(
             **run_settle(config, conn, cache_path=cache_path, when=when),
         }
 
-    if not force and not in_session(now_min):
+    if not force and not in_session(now_min, today):
         return {"ok": True, "skipped": "outside_rth", "now_min": now_min}
     # The session's advice decision is read and RECORDED on every in-session tick, not only on
     # the entry path (2026-09-17, the calendars finding applied suite-wide): read-once, so the first
@@ -291,19 +300,59 @@ def _unsettled_today(conn, day: str) -> bool:
 
 
 # --------------------------------------------------------------------------- entry
-def _entry_guards(config: dict, symbol: str, plan_dates: dict, day: str) -> str | None:
-    """The pre-snapshot refusals for one symbol: settlement declaration and the dividend span over
-    the short leg's life. Returns the refusal reason or None."""
+def _short_guard(config: dict, symbol: str, day: str, short_expiration: str) -> str | None:
+    """The refusals for selling one short: settlement declaration and the dividend span over the
+    short's life. Every new short runs it -- an entry's, and since 2026-10-04 a held-long roll's or
+    sale's, each of which sells a short spanning its own week."""
     style = engine.settlement_style(config, symbol)
     if style is None:
         return "unknown_settlement"
     if style == "physical":
-        if not engine.dividend_coverage_ok(config, symbol, plan_dates["short_expiration"]):
+        if not engine.dividend_coverage_ok(config, symbol, short_expiration):
             return "dividend_calendar_lapsed"
-        hit = engine.ex_date_in_span(config, symbol, day, plan_dates["short_expiration"])
+        hit = engine.ex_date_in_span(config, symbol, day, short_expiration)
         if hit is not None:
             return "ex_dividend_span"
     return None
+
+
+def _entry_guards(config: dict, symbol: str, plan_dates: dict, day: str) -> str | None:
+    """The pre-snapshot refusals for one symbol's entry: `_short_guard` over the plan's short."""
+    return _short_guard(config, symbol, day, plan_dates["short_expiration"])
+
+
+def arm_params(config: dict, arm: str, advised: dict | None = None, decision: dict | None = None) -> dict:
+    """The params one arm enters under: its own merged config, or for an advised twin its base's
+    with the experiment's overlay. Each arm plans from its OWN params -- until 2026-10-04 every
+    non-advised arm reused control's plan, which a second base arm would have traded silently."""
+    entry = (advised or {}).get(arm)
+    if entry:
+        base = engine.base_book(arm, config=config, decision=decision)
+        return {
+            **management.PARAM_DEFAULTS,
+            **engine.merged_params(config, base),
+            **(entry.get("params") or {}),
+        }
+    return {**management.PARAM_DEFAULTS, **engine.merged_params(config, arm)}
+
+
+def _held_long_entries_today(conn, config: dict, day: str) -> set[str]:
+    """Symbols a held-long arm entered on `day` -- the pacing counter for staggered first entries."""
+    out: set[str] = set()
+    for row in conn.execute("SELECT * FROM pmcc_positions WHERE entry_session = ?", (day,)):
+        if management.is_held_long(management.effective_params(dict(row), config)):
+            out.add(row["symbol"])
+    return out
+
+
+def _refuse_entry(
+    conn, day: str, symbol: str, arm: str, reason: str, *, attempt: bool = True, **extra
+) -> None:
+    if attempt:
+        db.record_entry_attempt(conn, trade_date=day, symbol=symbol, arm=arm, outcome=reason, **extra)
+    db.record_decision(
+        conn, trade_date=day, arm=arm, symbol=symbol, mode="entry", reason=reason, accepted=False
+    )
 
 
 def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: str) -> int:
@@ -314,194 +363,116 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
     defaults = config.get("defaults") or {}
     max_positions = int(defaults.get("max_positions", 3))
     opened_count = 0
-    plan_dates = clock.expiration_plan(when.date(), defaults)
+    params_by_arm = {b: arm_params(config, b, advised, decision) for b in arms}
+    paced = _held_long_entries_today(conn, config, day)
 
     for symbol in _symbols(config):
-        wanting = [
-            b
-            for b in arms
-            if db.open_position_for(conn, symbol, b) is None
-            and db.open_position_count(conn, b) < max_positions
-        ]
-        if not wanting:
+        free = [b for b in arms if db.open_position_for(conn, symbol, b) is None]
+        wanting = [b for b in free if db.open_position_count(conn, b) < max_positions]
+        for b in free:
+            if b not in wanting:
+                # A free slot on this symbol but the arm is at its cap across symbols: its own reason,
+                # so a full arm never reads as a full slot.
+                _refuse_entry(conn, day, symbol, b, "arm_cap", attempt=False)
+        if not free:
             # Every arm already holds this symbol, so there is nothing to attempt. Recorded rather
             # than skipped: a session with no attempt rows at all reads identically to a loop that
             # never evaluated entry, and "all slots full" is the benign half of that pair. Collapsed
             # per (day, arm, symbol, reason), so a whole session costs one counted row.
             for b in arms:
-                db.record_decision(
-                    conn,
-                    trade_date=day,
-                    arm=b,
-                    symbol=symbol,
-                    mode="entry",
-                    reason="slot_held",
-                    accepted=False,
-                )
-            continue
-        if plan_dates is None:
-            for b in wanting:
-                db.record_decision(
-                    conn,
-                    trade_date=day,
-                    arm=b,
-                    symbol=symbol,
-                    mode="entry",
-                    reason="no_expiration_plan",
-                    accepted=False,
-                )
+                _refuse_entry(conn, day, symbol, b, "slot_held", attempt=False)
             continue
 
-        for b in list(wanting):
-            reason = _entry_guards(config, symbol, plan_dates, day)
+        # Each arm's expiration plan: control's weekly pair, or a held-long arm's weekly short and
+        # listed ~1-year long. Arms whose plans, and deep windows, agree share one snapshot -- shield
+        # and shield_hold always do, which is what makes them a pair.
+        groups: dict[tuple, list[str]] = {}
+        plan_dates_by_key: dict[tuple, dict] = {}
+        listed: list[str] | None = None
+        for b in wanting:
+            params = params_by_arm[b]
+            if management.is_held_long(params):
+                limit = params.get("entry_symbols_per_session")
+                if limit is not None and symbol not in paced and len(paced) >= int(limit):
+                    _refuse_entry(conn, day, symbol, b, "entry_pacing")
+                    continue
+                if listed is None:
+                    listed = provider.listed_expirations(cache_path, symbol)
+                dates = clock.held_long_plan(when.date(), listed, params)
+                if dates is None:
+                    _refuse_entry(conn, day, symbol, b, "no_leap_listed" if listed else "no_listing")
+                    continue
+            else:
+                dates = clock.expiration_plan(when.date(), params)
+                if dates is None:
+                    _refuse_entry(conn, day, symbol, b, "no_expiration_plan", attempt=False)
+                    continue
+            reason = _entry_guards(config, symbol, dates, day)
             if reason is not None:
-                wanting.remove(b)
-                db.record_entry_attempt(
-                    conn,
-                    trade_date=day,
-                    symbol=symbol,
-                    arm=b,
-                    outcome=reason,
-                )
-                db.record_decision(
-                    conn,
-                    trade_date=day,
-                    arm=b,
-                    symbol=symbol,
-                    mode="entry",
-                    reason=reason,
-                    accepted=False,
-                )
-        if not wanting:
-            continue
+                _refuse_entry(conn, day, symbol, b, reason)
+                continue
+            pct = provider.deep_window_pct_for(config, symbol, params)
+            key = (dates["short_expiration"], dates["long_expiration"], pct)
+            groups.setdefault(key, []).append(b)
+            plan_dates_by_key[key] = dates
 
         root = ((config.get("occ_roots") or {}).get(symbol)) or symbol
-        snapshot = provider.build_entry_snapshot(
-            cache_path,
-            symbol,
-            plan_dates,
-            root=root,
-            when=when,
-            **provider.snapshot_kwargs(config),
-            deep_window_pct=provider.deep_window_pct_for(config, symbol),
-        )
-        if not snapshot.get("ok"):
-            _log(f"{symbol}: entry snapshot refused ({snapshot['reason']})")
+        for key, group in groups.items():
+            snapshot = provider.build_entry_snapshot(
+                cache_path,
+                symbol,
+                plan_dates_by_key[key],
+                root=root,
+                when=when,
+                **provider.snapshot_kwargs(config),
+                deep_window_pct=key[2],
+            )
+            if not snapshot.get("ok"):
+                _log(f"{symbol}: entry snapshot refused ({snapshot['reason']})")
+                db.record_snapshot(
+                    conn,
+                    trade_date=day,
+                    symbol=symbol,
+                    kind="entry",
+                    status=snapshot["reason"],
+                    quotes_stale=snapshot.get("rejected"),
+                )
+                for b in group:
+                    _refuse_entry(conn, day, symbol, b, snapshot["reason"])
+                continue
             db.record_snapshot(
                 conn,
                 trade_date=day,
                 symbol=symbol,
                 kind="entry",
-                status=snapshot["reason"],
-                quotes_stale=snapshot.get("rejected"),
+                status="ok",
+                quotes_fresh=snapshot["quote_stats"]["fresh"],
+                quotes_stale=snapshot["quote_stats"]["rejected"],
+                spot=snapshot["spot"],
             )
-            for b in wanting:
-                db.record_entry_attempt(
-                    conn,
-                    trade_date=day,
-                    symbol=symbol,
-                    arm=b,
-                    outcome=snapshot["reason"],
-                )
-                db.record_decision(
-                    conn,
-                    trade_date=day,
-                    arm=b,
-                    symbol=symbol,
-                    mode="entry",
-                    reason=snapshot["reason"],
-                    accepted=False,
-                )
-            continue
-        db.record_snapshot(
-            conn,
-            trade_date=day,
-            symbol=symbol,
-            kind="entry",
-            status="ok",
-            quotes_fresh=snapshot["quote_stats"]["fresh"],
-            quotes_stale=snapshot["quote_stats"]["rejected"],
-            spot=snapshot["spot"],
-        )
-
-        # One plan for the base arm; each advised arm plans separately when its overlay touches
-        # entry, from the base its decision entry names (control, the only base this module has)
-        # with that entry's own params on top.
-        base_params = {**management.PARAM_DEFAULTS, **engine.merged_params(config, "control")}
-        planned = engine.plan_entry(snapshot, base_params)
-        plans: dict[str, dict] = {}
-        for b in wanting:
-            entry = advised.get(b)
-            if entry and entry.get("params"):
-                adv_base = engine.base_book(b, config=config, decision=decision)
-                adv_params = {
-                    **management.PARAM_DEFAULTS,
-                    **engine.merged_params(config, adv_base),
-                    **entry["params"],
-                }
-                plans[b] = engine.plan_entry(snapshot, adv_params)
-            else:
-                plans[b] = planned
-
-        for b in wanting:
-            result = plans[b]
-            if not result.get("ok"):
-                db.record_entry_attempt(
-                    conn,
-                    trade_date=day,
-                    symbol=symbol,
-                    arm=b,
-                    outcome=result["reason"],
-                    block_detail=result.get("detail"),
-                    spot=snapshot["spot"],
-                )
-                db.record_decision(
-                    conn,
-                    trade_date=day,
-                    arm=b,
-                    symbol=symbol,
-                    mode="entry",
-                    reason=result["reason"],
-                    accepted=False,
-                )
-                continue
-            plan = result["plan"]
-            if plan.get("long_selected_by") == "extrinsic":
-                # Temporary visibility while the feed's own greeks coverage is unproven for this
-                # deep-ITM window: extrinsic-only selection is a legitimate degrade (the delta
-                # floor simply can't be checked), not a defect, but every occurrence is worth a
-                # human noticing until there is enough history to know how often the feed lacks
-                # deep-strike deltas here.
-                _logger.warning(
-                    "pmcc entry (%s/%s): long strike %.2f selected via extrinsic-only fallback, "
-                    "feed had no delta for this deep-ITM candidate",
-                    symbol,
-                    b,
-                    plan["long_strike"],
-                )
-            opened = bookmod.enter_position(
-                conn,
-                plan,
-                config,
-                b,
-                entry_session=day,
-                advice_params=(advised.get(b) or {}).get("params"),
-                experiment_id=decision,
+            plans = {b: engine.plan_entry(snapshot, params_by_arm[b]) for b in group}
+            opened_count += _fill_entries(
+                conn, config, symbol, group, plans, snapshot, advised, decision, day, paced, params_by_arm
             )
-            if opened is None:
-                continue
-            opened_count += 1
+    return opened_count
+
+
+def _fill_entries(
+    conn, config, symbol, group, plans, snapshot, advised, decision, day, paced, params_by_arm
+) -> int:
+    opened_count = 0
+    wanting = group
+    for b in wanting:
+        result = plans[b]
+        if not result.get("ok"):
             db.record_entry_attempt(
                 conn,
                 trade_date=day,
                 symbol=symbol,
                 arm=b,
-                outcome="filled",
-                spot=plan["spot"],
-                long_strike=plan["long_strike"],
-                short_strike=plan["short_strike"],
-                net_debit=plan["net_debit"],
-                protection_pct=plan["downside_protection_pct"],
+                outcome=result["reason"],
+                block_detail=result.get("detail"),
+                spot=snapshot["spot"],
             )
             db.record_decision(
                 conn,
@@ -509,20 +480,70 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 arm=b,
                 symbol=symbol,
                 mode="entry",
-                reason=(
-                    f"entered {plan['long_strike']:g}/{plan['short_strike']:g} "
-                    f"debit {plan['net_debit']:.2f} tv {plan['net_tv']:.2f} "
-                    f"protection {plan['downside_protection_pct']:.1%}"
-                ),
-                accepted=True,
+                reason=result["reason"],
+                accepted=False,
             )
-            _log(
-                f"[{b}] {symbol}: entered long {plan['long_strike']:g} ({plan['long_expiration']}) / "
-                f"short {plan['short_strike']:g} ({plan['short_expiration']}) — "
-                f"debit {plan['net_debit']:.2f}, net TV {plan['net_tv']:.2f}, "
-                f"protection {plan['downside_protection_pct']:.1%}, "
-                f"long by {plan['long_selected_by']}"
+            continue
+        plan = result["plan"]
+        if plan.get("long_selected_by") == "extrinsic":
+            # Temporary visibility while the feed's own greeks coverage is unproven for this
+            # deep-ITM window: extrinsic-only selection is a legitimate degrade (the delta
+            # floor simply can't be checked), not a defect, but every occurrence is worth a
+            # human noticing until there is enough history to know how often the feed lacks
+            # deep-strike deltas here.
+            _logger.warning(
+                "pmcc entry (%s/%s): long strike %.2f selected via extrinsic-only fallback, "
+                "feed had no delta for this deep-ITM candidate",
+                symbol,
+                b,
+                plan["long_strike"],
             )
+        opened = bookmod.enter_position(
+            conn,
+            plan,
+            config,
+            b,
+            entry_session=day,
+            advice_params=(advised.get(b) or {}).get("params"),
+            experiment_id=decision,
+        )
+        if opened is None:
+            continue
+        opened_count += 1
+        if management.is_held_long(params_by_arm[b]):
+            paced.add(symbol)
+        db.record_entry_attempt(
+            conn,
+            trade_date=day,
+            symbol=symbol,
+            arm=b,
+            outcome="filled",
+            spot=plan["spot"],
+            long_strike=plan["long_strike"],
+            short_strike=plan["short_strike"],
+            net_debit=plan["net_debit"],
+            protection_pct=plan["downside_protection_pct"],
+        )
+        db.record_decision(
+            conn,
+            trade_date=day,
+            arm=b,
+            symbol=symbol,
+            mode="entry",
+            reason=(
+                f"entered {plan['long_strike']:g}/{plan['short_strike']:g} "
+                f"debit {plan['net_debit']:.2f} tv {plan['net_tv']:.2f} "
+                f"protection {plan['downside_protection_pct']:.1%}"
+            ),
+            accepted=True,
+        )
+        _log(
+            f"[{b}] {symbol}: entered long {plan['long_strike']:g} ({plan['long_expiration']}) / "
+            f"short {plan['short_strike']:g} ({plan['short_expiration']}) — "
+            f"debit {plan['net_debit']:.2f}, net TV {plan['net_tv']:.2f}, "
+            f"protection {plan['downside_protection_pct']:.1%}, "
+            f"long by {plan['long_selected_by']}"
+        )
     return opened_count
 
 
@@ -610,6 +631,9 @@ def _manage_positions(config: dict, conn, values: dict, *, cache_path: str, when
         if position["status"] != "open":
             continue  # short_settled positions belong to the disposition phase
         params = state["params"]
+        if management.is_held_long(params):
+            actions += _manage_held_long(config, conn, state, cache_path=cache_path, when=when, day=day)
+            continue
         decision = management.evaluate(
             position,
             params,
@@ -646,6 +670,190 @@ def _manage_positions(config: dict, conn, values: dict, *, cache_path: str, when
     return actions
 
 
+def _manage_refusal(conn, position: dict, day: str, reason: str) -> None:
+    """A held-long verdict that could not be carried out this tick. Collapsed per (day, arm, symbol,
+    reason) -- a sale refused for a whole session is one counted row, not one per tick."""
+    db.record_decision(
+        conn,
+        trade_date=day,
+        arm=position["arm"],
+        symbol=position["symbol"],
+        mode="manage",
+        reason=reason,
+        accepted=False,
+    )
+
+
+def _manage_held_long(config: dict, conn, state: dict, *, cache_path: str, when: datetime, day: str) -> int:
+    """One held-long position's tick: the verdict (`management.evaluate_held_long`) and, through the
+    short-only gate, the ticket that carries it out -- a roll, a sale, a buyback, or the full close."""
+    position, params, snapshot = state["position"], state["params"], state["snapshot"]
+    pid = position["position_id"]
+    legs = db.legs_for(conn, pid)
+    long_leg = next((leg for leg in legs if leg["leg_role"] == "long_call" and leg["status"] == "open"), None)
+    short_leg = next(
+        (leg for leg in legs if leg["leg_role"] != "long_call" and leg["status"] == "open"), None
+    )
+    if long_leg is None:
+        return 0
+    spot = snapshot.get("spot")
+    quotes = snapshot.get("quotes") or {}
+    marks = {
+        leg["leg_role"]: quotes[leg["streamer_symbol"]]["mid"]
+        for leg in legs
+        if leg["status"] == "open" and quotes.get(leg["streamer_symbol"]) is not None
+    }
+    pnl = engine.pnl_to_date(position, legs, marks, db.assignments_for(conn, pid), spot)
+    long_dte = (date.fromisoformat(long_leg["expiration"]) - when.date()).days
+    short = None
+    old_quote = None
+    if short_leg is not None:
+        old_quote = quotes.get(short_leg["streamer_symbol"])
+        entry_spot = (
+            short_leg.get("entry_spot")
+            if short_leg.get("entry_spot") is not None
+            else position.get("entry_spot")
+        )
+        entry_tv = None
+        if entry_spot is not None and short_leg.get("entry_mid") is not None:
+            entry_tv = short_leg["entry_mid"] - max(0.0, entry_spot - short_leg["strike"])
+        short = {
+            "strike": short_leg["strike"],
+            "expiration": short_leg["expiration"],
+            "tv": state.get("short_tv"),
+            "entry_tv": entry_tv,
+        }
+    verdict = management.evaluate_held_long(
+        position,
+        params,
+        now=when,
+        short=short,
+        spot=spot,
+        pnl=pnl,
+        long_dte=long_dte,
+        rolled_today=db.rolled_today(conn, pid, day),
+        session_close_min=clock.session_close_min(when.date()),
+    )
+    if not verdict.acts:
+        return 0
+
+    if verdict.action == "close_all":
+        gate = management.execution_gate(snapshot, params, now=when)
+        executed = 0
+        if gate is None:
+            result = bookmod.close_open_legs(
+                conn, position, snapshot, config, reason=verdict.reason, session_date=day
+            )
+            executed = 1 if result.get("ok") else 0
+            gate = None if result.get("ok") else result.get("reason")
+        db.record_management_event(
+            conn,
+            position_id=pid,
+            occurred_at=time.time(),
+            session_date=day,
+            action="close_all",
+            reason=verdict.reason,
+            executed=executed,
+            gate=gate,
+            detail_json=json.dumps(verdict.detail) if verdict.detail else None,
+        )
+        if executed:
+            _log(f"[{position['arm']}] {pid} closed -- {verdict.reason}")
+        return executed
+
+    if verdict.action == "close_short":
+        gate = management.short_execution_gate([old_quote], params, now=when)
+        if gate is not None:
+            _manage_refusal(conn, position, day, f"{verdict.reason}:{gate}")
+            return 0
+        bookmod.close_short_leg(
+            conn, position, short_leg, old_quote, config, reason=verdict.reason, session_date=day, spot=spot
+        )
+        _log(f"[{position['arm']}] {pid} short {short_leg['strike']:g} bought back -- {verdict.reason}")
+        return 1
+
+    # roll_short / sell_short: both sell next week's short.
+    if verdict.action == "sell_short":
+        window_start = clock.hhmm_to_min(params.get("entry_window_start"), 10 * 60)
+        window_end = clock.hhmm_to_min(params.get("entry_window_end"), 15 * 60 + 30)
+        if not window_start <= clock.minute_of_day(when) <= window_end:
+            return 0
+        if db.open_assignment_count(conn, pid):
+            _manage_refusal(conn, position, day, "sell_short:shares_open")
+            return 0
+    target = clock.short_expiration(when.date(), params, cap=long_leg["expiration"])
+    if target is None:
+        _manage_refusal(conn, position, day, f"{verdict.reason}:no_roll_expiration")
+        return 0
+    guard = _short_guard(config, position["symbol"], day, target["short_expiration"])
+    if guard is not None:
+        # The new short is refused. An EXPIRING short is still bought back -- it cannot be carried
+        # through its own expiry under the IRA policy -- and the position runs without a short until
+        # a later tick clears the date. Any other roll keeps the short it has.
+        if verdict.action == "roll_short" and verdict.reason == "expiry" and old_quote is not None:
+            gate = management.short_execution_gate([old_quote], params, now=when)
+            if gate is None:
+                bookmod.close_short_leg(
+                    conn,
+                    position,
+                    short_leg,
+                    old_quote,
+                    config,
+                    reason=f"expiry:{guard}",
+                    session_date=day,
+                    spot=spot,
+                )
+                return 1
+        _manage_refusal(conn, position, day, f"{verdict.reason}:{guard}")
+        return 0
+    root = ((config.get("occ_roots") or {}).get(position["symbol"])) or position["symbol"]
+    roll_snap = provider.build_roll_snapshot(
+        cache_path,
+        position["symbol"],
+        target["short_expiration"],
+        root=root,
+        short_dte=target["short_dte"],
+        when=when,
+        **provider.snapshot_kwargs(config),
+    )
+    if not roll_snap.get("ok"):
+        _manage_refusal(conn, position, day, f"{verdict.reason}:{roll_snap['reason']}")
+        return 0
+    buyback = old_quote if verdict.action == "roll_short" else None
+    plan = engine.plan_short(roll_snap, params, long_strike=long_leg["strike"], buyback=buyback)
+    if not plan.get("ok"):
+        _manage_refusal(conn, position, day, f"{verdict.reason}:{plan['reason']}")
+        return 0
+    new_quote = {"bid": plan["leg"]["bid"], "ask": plan["leg"]["ask"], "mid": plan["leg"]["mid"]}
+    gate_quotes = [old_quote, new_quote] if verdict.action == "roll_short" else [new_quote]
+    gate = management.short_execution_gate(gate_quotes, params, now=when)
+    if gate is not None:
+        _manage_refusal(conn, position, day, f"{verdict.reason}:{gate}")
+        return 0
+    if verdict.action == "roll_short":
+        out = bookmod.roll_short_leg(
+            conn,
+            position,
+            short_leg,
+            old_quote,
+            plan,
+            config,
+            reason=verdict.reason,
+            session_date=day,
+            spot=spot,
+        )
+        _log(
+            f"[{position['arm']}] {pid} rolled {out['old_strike']:g} -> {out['new_strike']:g} "
+            f"({out['new_expiration']}), net {plan['net_credit']:+.2f} -- {verdict.reason}"
+        )
+    else:
+        bookmod.sell_short_leg(
+            conn, position, plan, config, reason=verdict.reason, session_date=day, spot=spot
+        )
+        _log(f"[{position['arm']}] {pid} sold short {plan['strike']:g} ({plan['short_expiration']})")
+    return 1
+
+
 # --------------------------------------------------------------------------- disposition
 def _dispose_longs(config: dict, conn, *, cache_path: str, when: datetime, day: str) -> int:
     """Sell the surviving long of every short-settled position — the combined-disposal half that
@@ -654,6 +862,8 @@ def _dispose_longs(config: dict, conn, *, cache_path: str, when: datetime, day: 
     delivered shares — together they are the 'both legs closed at assignment' model."""
     actions = 0
     for position in db.open_positions(conn, statuses=("short_settled",)):
+        if management.is_held_long(management.effective_params(position, config)):
+            continue  # a held-long long outlives its shorts; it is never disposed with one
         legs = db.open_legs_for(conn, position["position_id"])
         if not legs:
             bookmod.finalize_if_done(conn, position["position_id"], reason="expired", session_date=day)

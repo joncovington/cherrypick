@@ -18,11 +18,12 @@ Fee/P&L conventions (the ledger reader depends on these):
 from __future__ import annotations
 
 import json
+import time
 
 from cherrypick.core import advice as _core_advice
 from cherrypick.core import spreadbook as _spreadbook
 
-from cherrypick.pmcc import analytics, clock, db, engine
+from cherrypick.pmcc import analytics, clock, db, engine, management
 
 
 def position_id(symbol: str, arm: str, entry_session: str) -> str:
@@ -198,6 +199,228 @@ def close_open_legs(
     return result
 
 
+# --------------------------------------------------------------------------- the held-long short
+#
+# A held-long position keeps its ~1-year long and trades its weekly short on three tickets, each
+# booked here: a ROLL (buy back the open short, sell the next -- one two-leg ticket), a SALE (sell a
+# short into a position that holds none), and a BUYBACK alone (the roll deadline, an ex-dividend
+# gap). Every ticket's cost is added to the position's running `exit_cost`/`exit_slippage`/`fees`
+# -- for a held-long position `exit_*` is "every ticket after the entry" -- and split across the
+# ticket's own legs (`engine.leg_costs`). Nothing is realised on the position row until it closes:
+# `finalize_if_done` sums every leg, rolled shorts included, exactly as the old roll arm did.
+
+
+def _ticket(symbol: str, legs: list[dict], quantity: int, config: dict) -> tuple[dict, list[dict]]:
+    """One ticket's `{"fee", "slippage", "total"}` and each leg's share of it. `legs` carry `bid`,
+    `ask`, `opening` and `selling` -- a roll is one closing buy and one opening sell, which no
+    single entry/close cost helper prices."""
+    raw_fees = [
+        engine.leg_fee(symbol, quantity, opening=leg["opening"], selling=leg["selling"]) for leg in legs
+    ]
+    raw_slips = [
+        engine._slippage_dollars([{"bid": leg["bid"], "ask": leg["ask"]}], quantity, config) for leg in legs
+    ]
+    fee, slip = round(sum(raw_fees), 2), round(sum(raw_slips), 2)
+    shares = [
+        {"fee": f, "slippage": sl}
+        for f, sl in zip(engine.allocate(fee, raw_fees), engine.allocate(slip, raw_slips), strict=True)
+    ]
+    return {"fee": fee, "slippage": slip, "total": round(fee + slip, 2)}, shares
+
+
+def _open_short(
+    conn, position: dict, plan: dict, share: dict, *, now: str, session_date: str, spot: float
+) -> str:
+    role = db.next_short_role(conn, position["position_id"])
+    leg = plan["leg"]
+    db.save_leg(
+        conn,
+        {
+            "position_id": position["position_id"],
+            "leg_role": role,
+            "occ_symbol": leg["occ_symbol"],
+            "streamer_symbol": leg["streamer_symbol"],
+            "expiration": leg["expiration"],
+            "strike": leg["strike"],
+            "option_type": leg["option_type"],
+            "action": "Sell to Open",
+            "quantity": int(position.get("quantity") or 1),
+            "entry_bid": leg["bid"],
+            "entry_ask": leg["ask"],
+            "entry_mid": leg["mid"],
+            "entry_iv": leg.get("iv"),
+            "entry_delta": leg.get("delta"),
+            "status": "open",
+            "opened_at": now,
+            "opened_session": session_date,
+            "entry_spot": spot,
+            "entry_cost": share["fee"],
+            "entry_slippage": share["slippage"],
+        },
+    )
+    return role
+
+
+def _close_short(
+    conn, old_leg: dict, quote: dict, share: dict, *, now: str, spot: float, kind: str, reason: str
+):
+    db.save_leg(
+        conn,
+        {
+            "position_id": old_leg["position_id"],
+            "leg_role": old_leg["leg_role"],
+            "status": "closed",
+            "close_kind": kind,
+            "closed_at": now,
+            "close_bid": quote["bid"],
+            "close_ask": quote["ask"],
+            "close_value": quote["mid"],
+            "close_spot": spot,
+            "close_cost": share["fee"],
+            "close_slippage": share["slippage"],
+            "close_reason": reason,
+        },
+    )
+
+
+def roll_short_leg(
+    conn,
+    position: dict,
+    old_leg: dict,
+    buyback: dict,
+    plan: dict,
+    config: dict,
+    *,
+    reason: str,
+    session_date: str,
+    spot: float,
+) -> dict:
+    """The roll ticket: buy back `old_leg` at `buyback`'s mid, sell `plan["leg"]` at its mid. The
+    old leg closes `rolled`; the new one takes the next `short_call_<n>` role. The position row keeps
+    `short_strike`/`short_expiration`/`roll_count` current, which the advisor's fact pack and the
+    notifier read; the `roll_short` event carries the detail the console's history reader parses."""
+    now = clock.now_iso()
+    quantity = int(position.get("quantity") or 1)
+    new = plan["leg"]
+    cost, (old_share, new_share) = _ticket(
+        position["symbol"],
+        [
+            {"bid": buyback["bid"], "ask": buyback["ask"], "opening": False, "selling": False},
+            {"bid": new["bid"], "ask": new["ask"], "opening": True, "selling": True},
+        ],
+        quantity,
+        config,
+    )
+    _close_short(
+        conn, old_leg, buyback, old_share, now=now, spot=spot, kind="rolled", reason=f"roll:{reason}"
+    )
+    role = _open_short(conn, position, plan, new_share, now=now, session_date=session_date, spot=spot)
+    _accumulate_exit_costs(conn, position["position_id"], fee=cost["fee"], slippage=cost["slippage"])
+    roll_count = int(position.get("roll_count") or 0) + 1
+    db.save_position(
+        conn,
+        {
+            "position_id": position["position_id"],
+            "short_strike": new["strike"],
+            "short_expiration": new["expiration"],
+            "roll_count": roll_count,
+        },
+    )
+    detail = {
+        "old_strike": old_leg["strike"],
+        "new_strike": new["strike"],
+        "old_expiration": old_leg["expiration"],
+        "new_expiration": new["expiration"],
+        "net_roll_credit": plan["net_credit"],
+        "reason": reason,
+        "new_role": role,
+    }
+    db.record_management_event(
+        conn,
+        position_id=position["position_id"],
+        occurred_at=time.time(),
+        session_date=session_date,
+        action="roll_short",
+        reason=reason,
+        executed=1,
+        detail_json=json.dumps(detail),
+    )
+    return {"ok": True, "role": role, "cost": cost, "roll_count": roll_count, **detail}
+
+
+def sell_short_leg(
+    conn, position: dict, plan: dict, config: dict, *, reason: str, session_date: str, spot: float
+) -> dict:
+    """A SALE into a held-long position that holds no short (after a buyback-only deadline, an
+    ex-dividend gap, a settled short)."""
+    now = clock.now_iso()
+    new = plan["leg"]
+    cost, (share,) = _ticket(
+        position["symbol"],
+        [{"bid": new["bid"], "ask": new["ask"], "opening": True, "selling": True}],
+        int(position.get("quantity") or 1),
+        config,
+    )
+    role = _open_short(conn, position, plan, share, now=now, session_date=session_date, spot=spot)
+    _accumulate_exit_costs(conn, position["position_id"], fee=cost["fee"], slippage=cost["slippage"])
+    db.save_position(
+        conn,
+        {
+            "position_id": position["position_id"],
+            "short_strike": new["strike"],
+            "short_expiration": new["expiration"],
+        },
+    )
+    db.record_management_event(
+        conn,
+        position_id=position["position_id"],
+        occurred_at=time.time(),
+        session_date=session_date,
+        action="sell_short",
+        reason=reason,
+        executed=1,
+        detail_json=json.dumps(
+            {"new_strike": new["strike"], "new_expiration": new["expiration"], "role": role}
+        ),
+    )
+    return {"ok": True, "role": role, "cost": cost}
+
+
+def close_short_leg(
+    conn,
+    position: dict,
+    old_leg: dict,
+    quote: dict,
+    config: dict,
+    *,
+    reason: str,
+    session_date: str,
+    spot: float,
+) -> dict:
+    """A BUYBACK alone: the short closes `traded` and the position keeps its long with no short until
+    a later tick sells one."""
+    now = clock.now_iso()
+    cost, (share,) = _ticket(
+        position["symbol"],
+        [{"bid": quote["bid"], "ask": quote["ask"], "opening": False, "selling": False}],
+        int(position.get("quantity") or 1),
+        config,
+    )
+    _close_short(conn, old_leg, quote, share, now=now, spot=spot, kind="traded", reason=reason)
+    _accumulate_exit_costs(conn, position["position_id"], fee=cost["fee"], slippage=cost["slippage"])
+    db.record_management_event(
+        conn,
+        position_id=position["position_id"],
+        occurred_at=time.time(),
+        session_date=session_date,
+        action="close_short",
+        reason=reason,
+        executed=1,
+        detail_json=json.dumps({"strike": old_leg["strike"], "expiration": old_leg["expiration"]}),
+    )
+    return {"ok": True, "cost": cost}
+
+
 def settle_expiring_legs(
     conn, day: str, spot: float, config: dict, *, symbol: str | None = None
 ) -> list[dict]:
@@ -282,7 +505,14 @@ def settle_expiring_legs(
         still_open = conn.execute(
             "SELECT COUNT(*) FROM pmcc_legs WHERE position_id = ? AND status = 'open'", (pid,)
         ).fetchone()[0]
-        if still_open:
+        position_row = conn.execute("SELECT * FROM pmcc_positions WHERE position_id = ?", (pid,)).fetchone()
+        held_long = position_row is not None and management.is_held_long(
+            management.effective_params(dict(position_row), config)
+        )
+        # A held-long position's long outlives its weekly short by design: a settled short leaves it
+        # OPEN, to sell its next short (after covering any delivered shares). Only the weekly
+        # lifecycle hands its surviving long to the next session's disposal.
+        if still_open and not held_long:
             db.save_position(conn, {"position_id": pid, "status": "short_settled"})
         results.append({"position_id": pid, "settled_legs": info["legs"], "itm": info["itm"], "fee": fee})
     return results

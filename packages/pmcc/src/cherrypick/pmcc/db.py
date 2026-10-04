@@ -479,6 +479,20 @@ def open_position_symbols(conn) -> list[str]:
     ]
 
 
+def rolled_today(conn, position_id: str, session_date: str) -> bool:
+    """Whether a roll was EXECUTED for this position on `session_date` -- the held-long cadence
+    guard: an early roll (decay, breach) fires at most once a session, so a churning price cannot
+    roll the same short back and forth tick after tick."""
+    return (
+        conn.execute(
+            "SELECT 1 FROM pmcc_management_events WHERE position_id = ? AND session_date = ? "
+            "AND action = 'roll_short' AND executed = 1 LIMIT 1",
+            (position_id, session_date),
+        ).fetchone()
+        is not None
+    )
+
+
 def next_short_role(conn, position_id: str) -> str:
     """The next `short_call_<n>` role for a roll — one past the highest already on file."""
     n = 0
