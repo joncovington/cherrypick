@@ -335,6 +335,17 @@ def _draws(work: list[tuple[str, list[tuple[int, str, str, str]]]]) -> dict[int,
     return dict(acc)
 
 
+def merge_sums(acc: dict[int, list[float]], part: dict[int, list[float]]) -> None:
+    """Add one worker's per-entry sums into the total. An entry's draws land in many names, so in
+    many workers' parts: they must be ADDED. Until 2026-10-04 they were merged with dict.update,
+    which kept one worker's share and dropped the rest -- a median of one draw per entry instead of
+    about forty (round 1 and round 2's first stage A were re-run after the fix)."""
+    for key, v in part.items():
+        a = acc.setdefault(key, [0.0, 0, 0.0, 0])
+        for k in range(4):
+            a[k] += v[k]
+
+
 def draw_plan(rows: list[dict], by_date: dict[str, list[str]], by_name: dict[str, list[str]]):
     """For each counted entry, its seeded draws, bucketed by the name they land in."""
     work: dict[str, list[tuple[int, str, str, str]]] = defaultdict(list)
@@ -386,13 +397,14 @@ def run(workers: int = 14, path=None, progress=print, tradable: set[str] | None 
         items = sorted(work.items())
         acc: dict[int, list[float]] = {}
         for part in pool.map(_draws, _chunks(items, workers * 8)):
-            acc.update(part)
+            merge_sums(acc, part)
     for key, row in enumerate(rows):
         a = acc.get(key)
         row["base_date"] = a[0] / a[1] if a and a[1] else None
         row["base_name"] = a[2] / a[3] if a and a[3] else None
         n = (a[1] + a[3]) if a else 0
         row["base"] = (a[0] + a[2]) / n if n else None
+        row["base_n"] = n
     result = summarise(rows, tradable)
     result.update(
         plan=PLAN,
@@ -460,7 +472,7 @@ def describe(rows: list[dict]) -> dict:
         return {"entries": 0}
     r = [x["r"] for x in rows]
     wins, losses = [v for v in r if v > 0], [v for v in r if v <= 0]
-    base = [x["base"] for x in rows if x["base"] is not None]
+    base = [x["base"] for x in rows if x.get("base") is not None]
     return {
         "entries": len(rows),
         "expectancy_r": mean(r),
@@ -473,6 +485,7 @@ def describe(rows: list[dict]) -> dict:
         "median_mfe": median(x["mfe"] for x in rows),
         "median_mae": median(x["mae"] for x in rows),
         "baseline_r": mean(base) if base else None,
+        "median_baseline_draws": median(x.get("base_n", 0) for x in rows),
         "ended_by_data": sum(1 for x in rows if x["ended"]),
     }
 

@@ -287,6 +287,46 @@ def cmd_study_run(args) -> int:
     return 0
 
 
+def cmd_study_round2(args) -> int:
+    """Round 2 (docs/signal-log-plan.md): stage A tests the declared family on half A; stage B
+    re-tests only stage A's survivors on half B."""
+    from . import hypotheses as hy
+
+    if args.stage == "B":
+        a = hy.latest("A")
+        if a is None:
+            print(json.dumps({"ok": False, "reason": "no stage A result yet"}))
+            return 1
+        ids = hy.survivors(a)
+        if not ids:
+            print(json.dumps({"ok": True, "stage": "B", "survivors": [], "note": "nothing passed stage A"}))
+            return 0
+    else:
+        ids = None
+    result = hy.run(args.stage, ids=ids, workers=args.workers, progress=lambda m: print(m, flush=True))
+    path = hy.write(result)
+    summary = []
+    for hid, v in result["hypotheses"].items():
+        d, t = v["describe"], v["test"]
+        summary.append(
+            {
+                "hypothesis": hid,
+                "passed": v["passed"],
+                "entries": d.get("entries"),
+                "net_r": round(d["expectancy_r"], 3) if d.get("entries") else None,
+                "base_setup_net_r": round(v["base_setup_describe"]["expectancy_r"], 3)
+                if v["base_setup_describe"].get("entries")
+                else None,
+                "baseline_r": round(d["baseline_r"], 3) if d.get("baseline_r") is not None else None,
+                "edge_r": round(t["edge_r"], 3) if "edge_r" in t else None,
+                "t": round(t["t"], 2) if "t" in t else None,
+                "p": t.get("p"),
+            }
+        )
+    print(json.dumps({"path": path, "seconds": result["seconds"], "summary": summary}, indent=1))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m cherrypick.technicals", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -344,6 +384,10 @@ def main(argv: list[str] | None = None) -> int:
     sr_ = ss.add_parser("run", help="score every setup over the history against its random baseline")
     sr_.add_argument("--workers", type=int, default=14)
     sr_.set_defaults(fn=cmd_study_run)
+    s2 = ss.add_parser("round2", help="round 2: the declared improvements, stage A or B")
+    s2.add_argument("--stage", choices=("A", "B"), required=True)
+    s2.add_argument("--workers", type=int, default=14)
+    s2.set_defaults(fn=cmd_study_round2)
     rp = sub.add_parser("report", help="write one session's market-report readings for the console")
     rp.add_argument("--session", help="ISO date (default: the latest session stored)")
     rp.set_defaults(fn=cmd_report)

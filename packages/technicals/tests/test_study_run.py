@@ -51,5 +51,11 @@ def test_the_study_runs_end_to_end_and_reports_every_setup(tmp_path):
         assert v["verdict"] in ("edge over baseline", "no edge over baseline", "not yet judged")
         if v["describe"]["entries"]:
             assert v["describe"]["baseline_r"] is not None  # every counted entry drew a baseline
+    # Every counted entry keeps (nearly) all its draws: 5 other names on its date and up to 20 days
+    # of its own name. Two workers over six names split each entry's draws across chunks, which is
+    # where a merge that overwrote instead of adding kept only one chunk's share (a median of 1).
+    for v in result["setups"].values():
+        if v["describe"]["entries"]:
+            assert v["describe"]["median_baseline_draws"] >= 20
     # Six names cannot clear 780 effective entries: nothing is judged on a sample this small.
     assert all(v["verdict"] == "not yet judged" for v in result["setups"].values())

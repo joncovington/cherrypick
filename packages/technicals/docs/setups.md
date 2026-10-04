@@ -295,52 +295,82 @@ dollar volume ≥ $20M, which is 4,633 names over the period and 2,663 on the la
 - **The holdout:** both pullbacks and both breakouts count only before 2023 or on names outside the
   527 they were tuned on.
 - **Exclusions:** 1,590 positions were left out for suspected unrecorded corporate actions.
-- **The sample:** 284,770 counted entries against 11.4 million baseline draws. Every setup-side
-  cleared its minimum sample.
+- **The sample:** 284,770 counted entries.
 
-| Setup | Entries | Net R | Gross R | Cost R | Hit rate | Payoff | Median hold | Baseline R | Edge R (t) | Verdict |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Trend following | 31,256 | +0.045 | +0.253 | 0.208 | 32.6% | 2.17 | 10 | +0.104 | −0.068 (−1.1) | no edge |
-| Pullback | 56,634 | −0.058 | +0.152 | 0.209 | 59.4% | 0.64 | 8 | +0.095 | −0.153 (−5.2) | no edge (worse than random) |
-| Mean reversion | 47,059 | +0.015 | +0.181 | 0.166 | 57.5% | 0.75 | 10 | −0.075 | +0.050 (+1.8) | no edge after correction |
-| Breakout | 4,328 | +0.138 | +0.349 | 0.212 | 36.9% | 1.86 | 25 | +0.258 | +0.108 (+0.7) | no edge |
-| Trend following (short) | 30,135 | −0.416 | −0.191 | 0.226 | 26.3% | 1.72 | 9 | −0.355 | −0.015 (−0.6) | no edge |
-| Pullback (short) | 40,227 | −0.363 | −0.133 | 0.230 | 50.5% | 0.69 | 9 | −0.415 | **+0.086 (+3.1)** | **edge over baseline** |
-| Mean reversion (short) | 70,838 | −0.369 | −0.131 | 0.239 | 49.3% | 0.72 | 10 | −0.268 | −0.167 (−7.0) | no edge (worse than random) |
-| Breakdown (short) | 4,293 | −0.867 | −0.591 | 0.276 | 27.8% | 1.44 | 24 | −0.629 | −0.144 (−1.6) | no edge |
+**These are the figures after a fix.** A bug merged each entry's baseline draws by overwriting
+instead of adding, keeping a median of one draw instead of forty. The first table published here
+(the same day) had those noisy baselines; this one has all forty.
 
-The edge is measured in calendar time (one figure per session, errors clustered by date), against a
-Holm-corrected one-sided test at a family-wise 5%. Only the short pullback passes.
+| Setup | Entries | Net R | Baseline R | Edge R (t) | Verdict |
+|---|---|---|---|---|---|
+| Trend following | 31,256 | +0.045 | +0.288 | −0.577 (−7.6) | worse than random |
+| Pullback | 56,634 | −0.058 | +0.112 | −0.202 (−8.8) | worse than random |
+| **Mean reversion** | 47,059 | **+0.015** | −0.121 | **+0.066 (+2.5)** | **edge over baseline**, barely profitable |
+| Breakout | 4,328 | +0.138 | +0.275 | +0.020 (+0.2) | no edge |
+| Trend following (short) | 30,135 | −0.416 | −0.350 | −0.028 (−1.2) | no edge |
+| Pullback (short) | 40,227 | −0.363 | −0.408 | +0.056 (+2.6) | edge over baseline, but loses money |
+| Mean reversion (short) | 70,838 | −0.369 | −0.293 | −0.130 (−5.9) | worse than random |
+| Breakdown (short) | 4,293 | −0.867 | −0.529 | −0.198 (−2.4) | no edge |
 
-**What it says:**
+The edge is in calendar time (errors clustered by date), against a Holm-corrected one-sided test at
+a family-wise 5%. The full results, with every sub-period and view, are in
+`~/.cherrypick/data/technicals/study/history-results-20261004-140734.json`.
 
-- **No setup is profitable after costs and better than random entry.** The one that beats its
-  baseline, the short pullback, still loses 0.36 R a trade in absolute terms. Shorting through
-  2011–2026 lost money, and this setup only loses less than random shorts. Its edge holds in both
-  halves (+0.047 R in 2011–18, +0.124 R in 2019–26) and without the Rule 201 entries.
-- **Two setups are reliably worse than random:**
-  - **The long pullback**, at −0.15 R a trade and worse after 2019 (−0.28 R, t −6.1). It wins 59% of
-    the time, but its winners are small (payoff 0.64), and it was judged in its holdout.
-  - **Fading strength (the short mean reversion)**, at −0.17 R in both halves: buying weakness and
-    selling strength runs against momentum.
-- **Mean reversion (long) is the only promising long.** It shows +0.05 R against random, stronger
-  after 2019 (+0.089, t 2.3) and among names trading $300M or more a day (+0.093, t 1.9, net
-  +0.215 R). That isn't significant once the eight tests are allowed for. It is the first
-  candidate for the filter and exit phases, as a declared new hypothesis, not a re-reading of
-  this one.
-- **Trend following flipped between the halves:** +0.19 R against random in 2011–18 (t 2.4), and
-  −0.32 R in 2019–26 (t −3.5). Over the whole period it has no edge.
-- **Costs are a large share of every trade** (0.17–0.28 R). The Corwin–Schultz estimate is noisy
-  and likely overstates spreads on the most liquid names. That affects the absolute net figures,
-  but barely affects the comparison with the baseline, which pays the same costs.
+**What round 1 says:**
+
+- **As written, no setup is worth trading.**
+  - Mean reversion (long) beats random entry, but nets only +0.015 R a trade.
+  - The short pullback beats random shorts, but loses 0.36 R a trade: shorting lost money through
+    2011–2026.
+- **Riding a trend works; entering on the 9/21 cross doesn't.** Random entries held to the same
+  "exit on a close under the 21 EMA" rule earn +0.29 R. Trend following's entry is worse than
+  random by 0.58 R, in both halves.
+- **The long pullback and fading strength (mean reversion, short) are reliably worse than random.**
+- **Costs are 0.17–0.28 R a trade.** The Corwin–Schultz estimate is noisy, especially on the most
+  liquid names. That moves the absolute net figures, not the comparison with the baseline, which
+  pays the same costs.
+
+## Round 2: one improvement confirmed (2026-10-04)
+
+Nine improvements were declared before they were run (`docs/signal-log-plan.md`, "Round 2"):
+filters on the long mean reversion, market-regime filters on SPY's 200-session SMA, and two
+long-pullback exits.
+- They were tested on half the names (stage A).
+- The survivors were re-tested on the untouched half (stage B).
+- The baselines were matched to each hypothesis's own conditions.
+- A pass needed a Holm-significant edge and a positive net R, in both stages.
+
+**Confirmed: mean reversion (long) on names trading at least $300M a day** (50-session median
+dollar volume, as of the session before; `mr-300m`):
+
+| | Stage A (half A) | Stage B (half B, untouched) |
+|---|---|---|
+| Trades | 3,219 | 2,880 |
+| Net R / net % per trade | +0.200 / +0.87% | +0.235 / +1.09% |
+| Hit rate · payoff · median hold | 60% · 0.81 · 10 sessions | 62% · 0.78 · 10 sessions |
+| 2011–18 / 2019–26 net R | +0.225 / +0.188 | +0.262 / +0.223 |
+| Baseline R · edge R (t) | −0.096 · +0.177 (3.1) | −0.086 · +0.182 (3.05) |
+
+Unfiltered on the same halves, the setup nets +0.010 and +0.020 R. As of the last session, 469 names
+clear $300M a day, and 191 of them carry the current options-tradable label.
+
+**The other hypotheses:**
+- **Mean reversion above its 200-session SMA** passed stage A (+0.144 R, t 3.0) but failed
+  confirmation: +0.065 R, t 1.3 on half B.
+- **Every market-regime filter and both pullback exits failed stage A.** The pullback with no
+  target is profitable (+0.141 R), but worse than random entries with the same exit (+0.263 R):
+  the entry adds nothing.
+- **Mean reversion with "trend agrees" is empty by construction.** An oversold band touch never has
+  a positive 1-month trend score. The watchlist's "Trend agrees" filter therefore hides every long
+  mean-reversion signal.
 
 **Limits:**
-- The study uses stock fills at the open, not options.
+- The study uses stock fills at the open, not options. A test of an options expression of this
+  signal needs option prices this store doesn't have reliably.
+- The costs are the declared estimate.
 - Delisting returns are missing.
-- Dividends before 2023 come from Dolt alone.
-- Unrecorded 4:3 and 5:4 splits on quiet days are not caught.
-- The "options-tradable today" view uses today's list on past dates (hindsight), and shows nothing
-  different.
+- The $300M bar came from round 1's own view of the same history, so stage A was not a clean
+  discovery for it; half B is the one test it had not seen.
 
-The full results, including every sub-period and view, are in
-`~/.cherrypick/data/technicals/study/history-results-20261004-074339.json`.
+Results: `round2-stageA-20261004-141804.json` and `round2-stageB-20261004-142845.json` in the
+study folder.

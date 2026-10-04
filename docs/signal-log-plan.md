@@ -10,12 +10,16 @@ profitable after costs and better than random entry. Its secondary uses (the as-
 health) don't justify it alone. Revisit only if a setup passes the study, or a filter or exit tested
 on history does. The design below stays as the record of what it would be.
 
-***First results (2026-10-04, `packages/technicals/docs/setups.md`, "Historical evidence"):***
-- *No setup is profitable after costs and better than random entry.*
-- *Only the short pullback beats its baseline, and it still loses 0.36 R a trade.*
-- *The long pullback and the short mean reversion are reliably worse than random.*
-- *The long mean reversion is the one promising long, but it is not significant once eight tests
-  are allowed for.*
+***Results (2026-10-04; `packages/technicals/docs/setups.md`, "Historical evidence" and "Round 2"):***
+- *Round 1 (after the merge fix): as written, no setup is worth trading. Mean reversion (long)
+  beats random entry but nets only +0.015 R. The short pullback beats random shorts but loses 0.36 R.
+  Trend following's entry, the long pullback and fading strength are worse than random.*
+- ***Round 2 confirmed one improvement: mean reversion (long) on names trading at least $300M a
+  day.*** *It netted +0.235 R (+1.09%) a trade with a +0.182 R edge (t 3.05) on the untouched half,
+  matching discovery (+0.200 R, t 3.1). Every other hypothesis failed.*
+- *That meets the revisit condition above. Phase 2 stays dropped until the user decides otherwise:
+  a live log would confirm one filter on one setup, and that is a narrower job than the one it was
+  designed for.*
 
 *Drafted 2026-10-04; **revised the same day**, before anything was built or observed. The first
 draft took its evidence only from signals recorded live from now on, which put the verdict on the
@@ -483,6 +487,79 @@ looked at under v2.
 **Reporting**
 - Every setup-side is reported, passing or failing, by sub-period (2011–18 and 2019–26), with its
   sample.
+
+## Round 2: improvements, declared before they were run (2026-10-04)
+
+The first results found no setup worth trading. Round 2 tests whether a filter or a different exit
+makes one worth trading. **These ideas were suggested by looking at round 1**, so testing them on
+the same data would partly re-find what was seen. The design is built around that.
+
+**Two stages, on disjoint names.**
+- Every name is assigned for good to half A or half B by the CRC-32 of its ticker (even is A).
+- **Stage A (discovery)** tests all nine hypotheses on half A's names only. Baseline draws also come
+  only from half A.
+- **Stage B (confirmation)** tests only the stage-A survivors on half B, which nothing in round 2
+  looks at before then.
+
+**The family: nine hypotheses**, with textbook settings fixed here and not tuned. A filter is
+applied at entry, and the setup's positions are re-walked with it, so a filtered-out signal never
+blocks a later one. An exit replaces the setup's own exit, and its positions are re-walked too.
+
+| Id | Starts from | Change |
+|---|---|---|
+| `mr-trend-agrees` | mean reversion (long) | enter only when both trend scores (1M and 6M) are above zero |
+| `mr-above-200` | mean reversion (long) | enter only when the close is above the name's 200-session SMA |
+| `mr-300m` | mean reversion (long) | enter only when the 50-session median dollar volume (the session before) is ≥ $300M |
+| `trend-market-up` | trend following (long) | enter only when SPY closed above its 200-session SMA |
+| `breakout-market-up` | breakout (long) | enter only when SPY closed above its 200-session SMA |
+| `trend-short-market-down` | trend following (short) | enter only when SPY closed below its 200-session SMA |
+| `pullback-short-market-down` | pullback (short) | enter only when SPY closed below its 200-session SMA |
+| `pullback-hold-10` | pullback (long) | exit after 10 sessions: no target, no stop |
+| `pullback-no-target` | pullback (long) | no target: exit only on the Chandelier stop |
+
+**Everything else is as in analysis plan v2:**
+- the universe chosen as of each day;
+- the holdout for the tuned families (pullbacks, breakouts);
+- the corporate-action exclusions;
+- next-open fills;
+- R net of the same declared costs;
+- calendar-time, one-sided tests.
+
+**The baseline matches the conditions.** For each counted entry, 40 same-date candidates (other
+half-A names in that day's universe) and 40 same-name candidates (other days the name qualified) are
+drawn with a fixed seed. Only candidates that pass the hypothesis's own filter that day are kept,
+and they are held to the hypothesis's exit. A filter is credited only for what the setup adds under
+it, not for the filter itself (buying random stocks in an uptrend also does well).
+
+**The decision rule.** A hypothesis advances from stage A only if both hold:
+- its edge over the matched baseline is significant under Holm across all nine at a family-wise
+  α of 0.05; and
+- its net R is above zero, meaning it makes money after costs on its own.
+
+In stage B, survivors are re-tested on half B with Holm across the survivors only. **Confirmed
+means both conditions hold again on half B.** Anything else is reported as found: a stage-A failure,
+or a stage-B failure.
+
+**Two corrections found in round 2's first run (2026-10-04):**
+
+- **A merge bug, affecting round 1 too.** Each entry's baseline draws land in many names, so in
+  many workers' results. They were merged with `dict.update`, which kept one worker's share and
+  dropped the rest: a median of one draw per entry instead of about forty.
+  - The kept draws were still random, so the baselines were unbiased, but far noisier, and the tests
+    weaker than declared.
+  - Fixed in `study.merge_sums`. The end-to-end tests now require nearly every draw and fail with the
+    old merge.
+  - **Round 1 and stage A were re-run after the fix.** That fixes a bug, not the hypotheses or the
+    rule.
+  - The first stage-A result was read before the bug was noticed: with its noisy baselines, only
+    `mr-300m` passed. It is superseded, and nothing in the family, the parameters or the rule changed
+    after it was seen.
+- **Outcome:** stage A passed `mr-300m` and `mr-above-200`. Stage B confirmed `mr-300m` (+0.235 R
+  net, edge +0.182 R, t 3.05) and not `mr-above-200` (t 1.3).
+- **`mr-trend-agrees` is empty by construction.** A lower-band touch with RSI(14) under 30 never has
+  a 1-month trend score above zero: 0 entries in half A. It stays in the family as declared, and is
+  reported as not judged. The same fact means the watchlist's "Trend agrees" filter hides every long
+  mean-reversion signal.
 
 ## Later phases: uses the study and log are shaped for, none committed
 
