@@ -40,7 +40,10 @@ def _position(
     )
 
 
-def _mark(conn, position_id, marked_at, long_mid, short_mid, usable=1):
+def _mark(conn, position_id, marked_at, long_mid, short_mid, usable=1, short_role="short_call_1"):
+    # The roles the module actually writes: `long_call` and `short_call_<n>` (engine.plan_entry,
+    # db.next_short_role). This seed used a bare `short_call` until 2026-10-04, which matched the
+    # analytics filter's own typo and hid that excursions returned nothing on the real ledger.
     conn.execute(
         "INSERT INTO pmcc_marks (position_id, leg_role, marked_at, session_date, mid, usable) "
         "VALUES (?, 'long_call', ?, '2026-08-20', ?, ?)",
@@ -48,8 +51,8 @@ def _mark(conn, position_id, marked_at, long_mid, short_mid, usable=1):
     )
     conn.execute(
         "INSERT INTO pmcc_marks (position_id, leg_role, marked_at, session_date, mid, usable) "
-        "VALUES (?, 'short_call', ?, '2026-08-20', ?, ?)",
-        (position_id, marked_at, short_mid, usable),
+        "VALUES (?, ?, ?, '2026-08-20', ?, ?)",
+        (position_id, short_role, marked_at, short_mid, usable),
     )
 
 
