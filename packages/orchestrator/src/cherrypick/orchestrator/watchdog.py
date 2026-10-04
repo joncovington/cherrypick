@@ -1864,13 +1864,17 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
 
     # (c2) orphaned orders: the last tick's broker-truth sweep found working orders the ledger
     # has never heard of — real orders resting unwatched. Always CRITICAL, session or not.
-    if status and (status.get("orphaned_orders") or 0) > 0:
+    # flies reports a COUNT and bwb the LIST itself (its arming skill shows them to a human):
+    # comparing bwb's list with `> 0` raised, and the raise skipped the settle check below.
+    orphans = status.get("orphaned_orders") if status else None
+    n_orphans = len(orphans) if isinstance(orphans, (list, tuple)) else int(orphans or 0)
+    if n_orphans > 0:
         findings.append(
             Finding(
                 f"{name}.live_orphans",
                 CRITICAL,
                 f"{label} ORPHANED live orders",
-                f"{status['orphaned_orders']} working order(s) at the broker unknown to the live "
+                f"{n_orphans} working order(s) at the broker unknown to the live "
                 "ledger — review in the broker UI before any further arming.",
             )
         )
