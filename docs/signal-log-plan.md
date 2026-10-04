@@ -10,12 +10,16 @@ profitable after costs and better than random entry. Its secondary uses (the as-
 health) don't justify it alone. Revisit only if a setup passes the study, or a filter or exit tested
 on history does. The design below stays as the record of what it would be.
 
-***First results (2026-10-04, `packages/technicals/docs/setups.md`, "Historical evidence"):***
-- *No setup is profitable after costs and better than random entry.*
-- *Only the short pullback beats its baseline, and it still loses 0.36 R a trade.*
-- *The long pullback and the short mean reversion are reliably worse than random.*
-- *The long mean reversion is the one promising long, but it is not significant once eight tests
-  are allowed for.*
+***Results (2026-10-04; `packages/technicals/docs/setups.md`, "Historical evidence" and "Round 2"):***
+- *Round 1 (after the merge fix): as written, no setup is worth trading. Mean reversion (long)
+  beats random entry but nets only +0.015 R. The short pullback beats random shorts but loses 0.36 R.
+  Trend following's entry, the long pullback and fading strength are worse than random.*
+- ***Round 2 confirmed one improvement: mean reversion (long) on names trading at least $300M a
+  day.*** *It netted +0.235 R (+1.09%) a trade with a +0.182 R edge (t 3.05) on the untouched half,
+  matching discovery (+0.200 R, t 3.1). Every other hypothesis failed.*
+- *That meets the revisit condition above. Phase 2 stays dropped until the user decides otherwise:
+  a live log would confirm one filter on one setup, and that is a narrower job than the one it was
+  designed for.*
 
 *Drafted 2026-10-04; **revised the same day**, before anything was built or observed. The first
 draft took its evidence only from signals recorded live from now on, which put the verdict on the
@@ -535,6 +539,27 @@ it, not for the filter itself (buying random stocks in an uptrend also does well
 In stage B, survivors are re-tested on half B with Holm across the survivors only. **Confirmed
 means both conditions hold again on half B.** Anything else is reported as found: a stage-A failure,
 or a stage-B failure.
+
+**Two corrections found in round 2's first run (2026-10-04):**
+
+- **A merge bug, affecting round 1 too.** Each entry's baseline draws land in many names, so in
+  many workers' results. They were merged with `dict.update`, which kept one worker's share and
+  dropped the rest: a median of one draw per entry instead of about forty.
+  - The kept draws were still random, so the baselines were unbiased, but far noisier, and the tests
+    weaker than declared.
+  - Fixed in `study.merge_sums`. The end-to-end tests now require nearly every draw and fail with the
+    old merge.
+  - **Round 1 and stage A were re-run after the fix.** That fixes a bug, not the hypotheses or the
+    rule.
+  - The first stage-A result was read before the bug was noticed: with its noisy baselines, only
+    `mr-300m` passed. It is superseded, and nothing in the family, the parameters or the rule changed
+    after it was seen.
+- **Outcome:** stage A passed `mr-300m` and `mr-above-200`. Stage B confirmed `mr-300m` (+0.235 R
+  net, edge +0.182 R, t 3.05) and not `mr-above-200` (t 1.3).
+- **`mr-trend-agrees` is empty by construction.** A lower-band touch with RSI(14) under 30 never has
+  a 1-month trend score above zero: 0 entries in half A. It stays in the family as declared, and is
+  reported as not judged. The same fact means the watchlist's "Trend agrees" filter hides every long
+  mean-reversion signal.
 
 ## Later phases: uses the study and log are shaped for, none committed
 
