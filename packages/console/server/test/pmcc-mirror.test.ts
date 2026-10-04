@@ -63,15 +63,31 @@ describe.skipIf(!available)("the console's PMCC mirror agrees with the module it
     expect(new Set(mine.arms.map((b) => b.arm))).toEqual(new Set(Object.keys(theirs!.headline.arms)));
   });
 
-  it("agrees on each arm's net, to the cent", () => {
+  it("agrees on every (arm, symbol) cell's net, to the cent", () => {
     // The number a reader acts on. A mirror that drifts here is worse than no mirror: it is a
     // second opinion wearing the module's authority.
+    //
+    // The module nests `arms[arm][symbol].net_pnl`, and the console's cells are one per (arm,
+    // symbol) carrying `netPnl`. Until 2026-10-04 this read `arms[arm].net` -- always undefined --
+    // so every comparison hit `continue` and the check could not fail. Every cell is now required
+    // on both sides; a missing one is a failure, not a skip.
     const mine = readPmcc(loadConfig());
-    const theirs = moduleHeadline()!.headline.arms as Record<string, { net?: number }>;
-    for (const arm of mine.arms) {
-      const other = theirs[arm.arm];
-      if (other?.net === undefined) continue;
-      expect(arm.net ?? 0).toBeCloseTo(other.net, 2);
+    const theirs = moduleHeadline()!.headline.arms as Record<string, Record<string, { net_pnl: number | null }>>;
+    const cells = Object.entries(theirs).flatMap(([arm, bySymbol]) =>
+      Object.entries(bySymbol).map(([symbol, cell]) => ({ arm, symbol, net: cell.net_pnl })),
+    );
+    expect(cells.length).toBeGreaterThan(0);
+    expect(mine.arms.length).toBe(cells.length);
+    for (const c of cells) {
+      const cell = mine.arms.find((m) => m.arm === c.arm && m.symbol === c.symbol);
+      expect(cell, `${c.arm}/${c.symbol} is in the module's headline but not the console's`).toBeDefined();
+      if (c.net === null) {
+        expect(cell!.netPnl).toBeNull();
+      } else {
+        // The module rounds to the cent and the reader does not, so "to the cent" is half a cent
+        // either side of the module's figure.
+        expect(Math.abs((cell!.netPnl ?? Number.NaN) - c.net)).toBeLessThanOrEqual(0.0051);
+      }
     }
   });
 });
