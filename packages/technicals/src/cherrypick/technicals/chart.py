@@ -2,8 +2,9 @@
 
 Phase 7's per-name view. For every stock the store holds, `charts/<SYMBOL>.json` carries the last
 `DISPLAY` sessions of adjusted bars, the level grid those same sessions define, CCI (14 and the
-scan rules' 5), RSI 14, both trend scores, and the scan-rule matches for every displayed session --
-all from this package's engines, so the console draws them and computes nothing.
+scan rules' 5), RSI 14, both trend scores, the scan-rule matches for every displayed session, and
+the entry/exit setups (`setups.py`, with the lines their rules read) -- all from this package's
+engines, so the console draws them and computes nothing.
 
 Where the vendor's chart for the name has been captured, the file also carries what the vendor
 drew: its support, resistance and gap levels, each marked with whether OUR grid can produce it,
@@ -25,13 +26,16 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from . import indicators, levels, paths, signals, store, symbols, trend, vendor_check
+from . import indicators, levels, paths, setups, signals, store, symbols, trend, vendor_check, watchlist
 
-CHART_VERSION = 2  # 2: gap levels are asked against our gap edges, no longer null
+CHART_VERSION = 4  # 2: gap levels vs our gap edges; 3: entry/exit setups; 4: vendor_view per level
 DISPLAY = levels.WINDOW  # the sessions the grid is built on, and so the ones worth drawing
 # The index funds charted beside the stocks. Named, not taken from `store.stocks`: that filter
 # drops funds on purpose, because breadth counts stocks only, and the chart page is not breadth.
 INDEX_FUNDS = ("SPY", "QQQ", "IWM")
+# A cash index has no volume of its own (nothing trades as SPX), so the breakout setup's volume test
+# reads the fund that tracks it, matched by date, and the chart file names the stand-in.
+VOLUME_PROXY = {"SPX": "SPY"}
 
 
 def _r(v: float | None, digits: int = 4) -> float | None:
@@ -57,7 +61,62 @@ def signal_days(highs, lows, closes, start: int = 0) -> list[dict]:
     return out
 
 
-def _vendor(symbol: str, bars) -> dict | None:
+def _volumes(conn, symbol: str, bars) -> tuple[list[float | None], str | None]:
+    """Each bar's volume for the setups, and the symbol it was read from when not the name's own. A
+    zero is the store's stand-in for no volume, so it reads as missing, never as a quiet day."""
+    if symbol in symbols.INDEXES:
+        proxy = VOLUME_PROXY.get(symbol)
+        by_date = {} if proxy is None else {b.date: b.volume for b in store.adjusted_bars(conn, proxy)}
+        return [by_date.get(b.date) or None for b in bars], proxy
+    return [b.volume or None for b in bars], None
+
+
+def setup_trades(bars, r: setups.Readings, start: int) -> list[dict]:
+    """Each setup's rule and the trades with an arrow in the shown sessions: entered there, or entered
+    before and exited there (or still open)."""
+    out = []
+    for s in setups.SETUPS:
+        trades = [t for t in setups.RUN[s.id](r) if t.exit is None or t.exit >= start]
+        out.append(
+            {
+                "id": s.id,
+                "name": s.name,
+                "rule": s.rule,
+                "lines": list(s.lines),
+                "trades": [
+                    {
+                        "entry_date": bars[t.entry].date,
+                        "entry_price": _r(r.closes[t.entry]),
+                        "exit_date": None if t.exit is None else bars[t.exit].date,
+                        "exit_price": None if t.exit is None else _r(r.closes[t.exit]),
+                        "reason": t.reason,
+                        "target": _r(t.target),
+                    }
+                    for t in trades
+                ],
+            }
+        )
+    return out
+
+
+# Which of the vendor's levels its chart page draws: the nearest VIEW_PER_SIDE of its support list
+# and of its resistance list, by distance from the capture's last close; never a gap level. 18 of 18
+# names against the summary line its chart page prints (docs/vendor-view.md in this package). A
+# display rule only: how the vendor picks its levels in the first place is still unsolved.
+VIEW_PER_SIDE = 2
+VIEW_KINDS = ("support", "resistance")
+
+
+def vendor_view(lv: list[dict], price: float) -> list[bool]:
+    """For each level, whether the vendor's chart page draws it (see VIEW_PER_SIDE)."""
+    shown = set()
+    for kind in VIEW_KINDS:
+        side = sorted((abs(x["value"] - price), i) for i, x in enumerate(lv) if x["kind"] == kind)
+        shown.update(i for _, i in side[:VIEW_PER_SIDE])
+    return [i in shown for i in range(len(lv))]
+
+
+def _vendor(conn, symbol: str) -> dict | None:
     """The newest capture of the vendor's chart for `symbol`, or None."""
     root = paths.market_report_dir() / "vendor-charts"
     found = sorted(root.glob(f"????-??-??/{symbol}.json"))
@@ -70,7 +129,9 @@ def _vendor(symbol: str, bars) -> dict | None:
     except (OSError, ValueError, KeyError, TypeError):
         return None
     through = quotes[-1]["date"][:10] if quotes else None
-    upto = [b for b in bars if through is None or b.date <= through]
+    # Our bars as they were adjusted on the capture's own last session: a dividend or split since
+    # would move every earlier bar off the vendor's, and every level off our grid with it.
+    upto = store.adjusted_bars(conn, symbol, as_of=through)
     ours = {b.date: {f: getattr(b, f) for f in vendor_check.FIELDS} for b in upto}
     agreement = vendor_check.compare(ours, quotes)
     # The grid as of the capture's own last bar -- the one the vendor's levels were drawn on.
@@ -89,6 +150,9 @@ def _vendor(symbol: str, bars) -> dict | None:
                 placed = levels.places_gap(gaps, kind, x["value"], date) if upto else None
             # "on_our_grid" keeps its name for the file's readers; for a gap it means our gap edges.
             lv.append({"kind": kind, "value": x["value"], "date": date, "on_our_grid": placed})
+    if quotes:
+        for x, shown in zip(lv, vendor_view(lv, quotes[-1]["close"]), strict=True):
+            x["vendor_view"] = shown
 
     def series(key):
         rows = why.get(key) or []
@@ -145,6 +209,9 @@ def build(conn, symbol: str, session: str | None = None) -> dict[str, Any] | Non
     def tail(xs, digits=2):
         return [_r(v, digits) for v in xs[start:]]
 
+    volumes, volume_source = _volumes(conn, symbol, bars)
+    readings = setups.readings(highs, lows, closes, volumes)
+
     return {
         "ok": True,
         "chart_version": CHART_VERSION,
@@ -175,7 +242,11 @@ def build(conn, symbol: str, session: str | None = None) -> dict[str, Any] | Non
             {"date": bars[s["index"]].date, "rules": s["rules"]}
             for s in signal_days(highs, lows, closes, start)
         ],
-        "vendor": _vendor(symbol, bars),
+        "setups": setup_trades(bars, readings, start),
+        "setup_lines": {k: tail(v) for k, v in setups.lines(readings).items()},
+        # Null when the volume is the name's own; the stand-in's symbol when it is not (SPX: SPY).
+        "volume_source": volume_source,
+        "vendor": _vendor(conn, symbol),
         "record_only": True,
     }
 
@@ -193,10 +264,11 @@ def _write(path, doc) -> None:
 
 def write_all(session: str | None = None, conn=None) -> dict:
     """Every stock the store holds, the `INDEX_FUNDS` and the cash indexes, plus an index file the
-    console's picker reads."""
+    console's picker reads and the setups watchlist (`watchlist.py`) built from the same files."""
     own = conn is None
     conn = conn or store.connect()
-    written, sessions = [], set()
+    written, sessions, rows = [], set(), []
+    spy = {b.date: b.close for b in store.adjusted_bars(conn, "SPY")}
     names = store.stocks(conn, symbols.all_symbols())
     for sym in [*symbols.INDEXES, *INDEX_FUNDS, *(s for s in names if s not in INDEX_FUNDS)]:
         doc = build(conn, sym, session)
@@ -205,6 +277,7 @@ def write_all(session: str | None = None, conn=None) -> dict:
         _write(charts_dir() / f"{sym}.json", doc)
         written.append({"symbol": sym, "session": doc["session"], "vendor": doc["vendor"] is not None})
         sessions.add(doc["session"])
+        rows.extend(watchlist.rows(doc, spy))
     if own:
         conn.close()
     index = {
@@ -214,8 +287,10 @@ def write_all(session: str | None = None, conn=None) -> dict:
         "symbols": written,
     }
     _write(charts_dir() / "index.json", index)
+    watchlist.write(charts_dir(), rows, index["session"])
     return {
         "charts": len(written),
+        "watchlist_rows": len(rows),
         "with_vendor": sum(w["vendor"] for w in written),
         "session": index["session"],
     }

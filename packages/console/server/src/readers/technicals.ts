@@ -15,8 +15,11 @@ import type {
   TechnicalsChartIndex,
   TechnicalsChartPayload,
   TechnicalsGrid,
+  TechnicalsSetup,
   TechnicalsVendorChart,
   TechnicalsVendorLevel,
+  TechnicalsWatchlist,
+  TechnicalsWatchlistRow,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num, str } from "./db.js";
@@ -72,7 +75,16 @@ function shapeLevel(raw: unknown): TechnicalsVendorLevel[] {
   const value = num(l["value"]);
   if (kind === null || value === null) return [];
   const on = l["on_our_grid"];
-  return [{ kind, value, date: str(l["date"]), onOurGrid: typeof on === "boolean" ? on : null }];
+  const view = l["vendor_view"];
+  return [
+    {
+      kind,
+      value,
+      date: str(l["date"]),
+      onOurGrid: typeof on === "boolean" ? on : null,
+      vendorView: typeof view === "boolean" ? view : null,
+    },
+  ];
 }
 
 function datedValues(raw: unknown): { date: string; value: number }[] {
@@ -113,6 +125,37 @@ function shapeVendor(raw: unknown): TechnicalsVendorChart | null {
   };
 }
 
+function shapeSetup(raw: unknown): TechnicalsSetup[] {
+  const s = rec(raw);
+  const id = str(s["id"]);
+  const name = str(s["name"]);
+  if (id === null || name === null) return [];
+  return [
+    {
+      id,
+      name,
+      rule: str(s["rule"]) ?? "",
+      lines: list(s["lines"]).filter((l): l is string => typeof l === "string"),
+      trades: list(s["trades"]).flatMap((rt) => {
+        const t = rec(rt);
+        const entryDate = str(t["entry_date"]);
+        return entryDate === null
+          ? []
+          : [
+              {
+                entryDate,
+                entryPrice: num(t["entry_price"]),
+                exitDate: str(t["exit_date"]),
+                exitPrice: num(t["exit_price"]),
+                reason: str(t["reason"]),
+                target: num(t["target"]),
+              },
+            ];
+      }),
+    },
+  ];
+}
+
 /** The file is columnar (one array per field); rows are rebuilt here. A bar missing any price is
  *  dropped rather than drawn at zero, and the indicator arrays stay aligned with the bars kept. */
 function shapeChart(doc: Record<string, unknown>): TechnicalsChart | null {
@@ -133,10 +176,12 @@ function shapeChart(doc: Record<string, unknown>): TechnicalsChart | null {
     keep.push(i);
     bars.push({ date, open, high, low, close, volume: num(col("volume")[i]) });
   });
-  const aligned = (k: string) => {
-    const s = list(doc[k]);
+  const alignedIn = (from: Record<string, unknown>, k: string) => {
+    const s = list(from[k]);
     return keep.map((i) => num(s[i]));
   };
+  const aligned = (k: string) => alignedIn(doc, k);
+  const lines = rec(doc["setup_lines"]);
   return {
     symbol,
     session,
@@ -157,6 +202,9 @@ function shapeChart(doc: Record<string, unknown>): TechnicalsChart | null {
       const rules = list(s["rules"]).filter((r): r is string => typeof r === "string");
       return date === null ? [] : [{ date, rules }];
     }),
+    setups: list(doc["setups"]).flatMap(shapeSetup),
+    setupLines: Object.fromEntries(Object.keys(lines).map((k) => [k, alignedIn(lines, k)])),
+    volumeSource: str(doc["volume_source"]),
     vendor: shapeVendor(doc["vendor"]),
   };
 }
@@ -167,4 +215,59 @@ export function readChart(config: ConsoleConfig, symbol?: string): TechnicalsCha
   if (wanted === undefined || !SYMBOL.test(wanted)) return { index, chart: null };
   const doc = readJson(path.join(chartsDir(config), `${wanted}.json`));
   return { index, chart: doc === null ? null : shapeChart(doc) };
+}
+
+function shapeNear(raw: unknown): TechnicalsWatchlistRow["support"] {
+  const n = rec(raw);
+  const value = num(n["value"]);
+  return value === null ? null : { value, pct: num(n["pct"]) };
+}
+
+function shapeWatchRow(raw: unknown): TechnicalsWatchlistRow[] {
+  const r = rec(raw);
+  const symbol = str(r["symbol"]);
+  const session = str(r["session"]);
+  const setup = str(r["setup"]);
+  const entryDate = str(r["entry_date"]);
+  if (symbol === null || session === null || setup === null || entryDate === null) return [];
+  return [
+    {
+      symbol,
+      session,
+      setup,
+      setupName: str(r["setup_name"]) ?? setup,
+      entryDate,
+      entryPrice: num(r["entry_price"]),
+      entryAgo: num(r["entry_ago"]),
+      exitDate: str(r["exit_date"]),
+      exitPrice: num(r["exit_price"]),
+      exitAgo: num(r["exit_ago"]),
+      reason: str(r["reason"]),
+      target: num(r["target"]),
+      // A row with an exit is closed whatever the file says; an open one has none.
+      status: str(r["exit_date"]) === null ? "open" : "closed",
+      lastClose: num(r["last_close"]),
+      movePct: num(r["move_pct"]),
+      trend1m: num(r["trend_1m"]),
+      trend6m: num(r["trend_6m"]),
+      trend1mLabel: str(r["trend_1m_label"]),
+      trend6mLabel: str(r["trend_6m_label"]),
+      rs: num(r["rs"]),
+      vsSpy1m: num(r["vs_spy_1m"]),
+      support: shapeNear(r["support"]),
+      resistance: shapeNear(r["resistance"]),
+    },
+  ];
+}
+
+/** The setups watchlist the report job writes beside the chart files; empty when there is none. */
+export function readSetupsWatchlist(config: ConsoleConfig): TechnicalsWatchlist {
+  const doc = readJson(path.join(chartsDir(config), "setups-index.json"));
+  if (doc === null) return { session: null, generatedAt: null, window: null, rows: [] };
+  return {
+    session: str(doc["session"]),
+    generatedAt: str(doc["generated_at"]),
+    window: num(doc["window"]),
+    rows: list(doc["rows"]).flatMap(shapeWatchRow),
+  };
 }

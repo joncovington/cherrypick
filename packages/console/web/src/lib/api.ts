@@ -17,6 +17,7 @@ import type {
   MorningPayload,
   OptionsFlowPayload,
   TechnicalsChartPayload,
+  TechnicalsWatchlist,
   PmccPayload,
   PmccCycleRow,
   PmccHistory,
@@ -224,6 +225,15 @@ export function useTechnicalsChart(symbol?: string) {
         `/api/technicals/chart${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ""}`,
       ),
     // Written once a session by the report job.
+    refetchInterval: 300_000,
+  });
+}
+
+export function useSetupsWatchlist() {
+  return useQuery<TechnicalsWatchlist>({
+    queryKey: ["technicals-setups"],
+    queryFn: () => getJson<TechnicalsWatchlist>("/api/technicals/setups"),
+    // Written once a session by the report job, with the chart files.
     refetchInterval: 300_000,
   });
 }

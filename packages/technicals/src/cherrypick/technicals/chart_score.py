@@ -34,7 +34,9 @@ def score_trends() -> dict:
             why = json.loads(path.read_text(encoding="utf-8"))["why"]
         except (OSError, ValueError, KeyError, TypeError):
             continue
-        bars = store.adjusted_bars(conn, sym)
+        quotes = why.get("historicalQuotes") or []
+        # As adjusted on the capture's last session: the vendor scored the prices it had then.
+        bars = store.adjusted_bars(conn, sym, as_of=quotes[-1]["date"][:10] if quotes else None)
         if not bars:
             continue
         dates = [b.date for b in bars]
@@ -108,9 +110,7 @@ def _agreeing(conn, min_bar_agreement: float, skipped: list):
     from . import vendor_check
 
     for sym, why in sorted(_captures().items()):
-        bars = [
-            b for b in store.adjusted_bars(conn, sym) if b.date <= why["historicalQuotes"][-1]["date"][:10]
-        ]
+        bars = store.adjusted_bars(conn, sym, as_of=why["historicalQuotes"][-1]["date"][:10])
         ours = {b.date: {f: getattr(b, f) for f in vendor_check.FIELDS} for b in bars}
         agreement = vendor_check.compare(ours, why["historicalQuotes"])
         if not agreement["prices"] or agreement["agree"] / agreement["prices"] < min_bar_agreement:

@@ -27,6 +27,13 @@ cent. So adjusted prices are stored and returned **unrounded**; rounding is a di
 `check-vendor` repeats the comparison; a few OPEN prices differ by tens of cents (the sources
 disagree on which print is the open) — a known source difference, not a defect.
 
+**Every comparison with a capture adjusts AS OF the capture's last session**
+(`store.adjusted_bars(..., as_of=)`: bars, splits and dividends through that day). A capture states
+prices as adjusted then; a dividend since re-scales every earlier bar of ours. Compared as of
+today, a name that went ex after its capture agreed on 0 bars and placed none of its levels (seven
+names on 2026-10-03, CSCO among them, all ~3,010/3,012 once fixed). The chart file, `check-vendor`
+and the trend/level scorers all use it; a test fails if the chart file stops.
+
 **Two Dolt defects are corrected before adjustment** (`adjust.dedupe_splits`,
 `adjust.series_break`): of two same-ratio splits within 20 days only the one the raw prices jump on
 is kept; a one-day move beyond 3x either way (a ticker that changed hands) starts the series over.
@@ -133,6 +140,10 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   at the day the set was computed; polarity/role reversal is at chance. Price and date do not
   determine each other by any rule tried (~35-37%). **What would settle it is a fixed panel
   re-captured every evening**, turning it into a differential problem; not more fitting.
+  - **Which of its levels the vendor's chart DRAWS is a separate, solved question** (2026-10-03,
+    [docs/vendor-view.md](docs/vendor-view.md)): the two nearest of its support list and of its
+    resistance list, never a gap level (`chart.vendor_view`, `VIEW_PER_SIDE`). The chart file
+    flags each level `vendor_view`; the console opens on that view.
 - **Which gaps are drawn**: an unfilled gap mostly needs to be near one current ATR wide (F1 0.91),
   both edges when wider; a crossed gap keeps at most its POST-gap edge; no feature tried says which.
   TradingView's "closed once entered" convention does not fit.
@@ -147,6 +158,19 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   **our grid's extremes, never levels claimed as the vendor's** — it is built to show where we
   differ. Per-session matches come from `signal_days` (one pass); a test pins it equal to
   `signals.readings` on every day and fails when the CCI-5 lag breaks. ~15 MB per session, overwritten.
+- **Entry/exit setups** (`setups.py`, `chart_version` 3; the reasoning and the measurements are in
+  [docs/setups.md](docs/setups.md)): four textbook long-only setups (trend following, pullback,
+  mean reversion, breakout), each walked over the whole history as one position, written into each
+  chart file with the lines their rules read. They are what the chart's arrows show; the scan
+  matches are listed but no longer drawn. Not fitted and not scored for outcomes. **SPX's breakout
+  volume is SPY's** (`chart.VOLUME_PROXY`, by date), and the file names it in `volume_source`. The
+  pullback's RSI is a dip within 5 sessions because on the entry bar it could not fire; the
+  parameters are constants in `setups.py`, and changing one changes what every arrow means.
+- **Setups watchlist** (`watchlist.py`, [docs/setups-watchlist.md](docs/setups-watchlist.md)):
+  `charts/setups-index.json`, written by `chart.write_all` from the chart files it just wrote, so it
+  cannot disagree with them. One row per setup position, open or traded in the last 20 sessions, with
+  the 1M/6M trend (vendor page's three-way label; 0..+2 assumed, not yet seen), RS (our rank -- a
+  whole-market decile, NOT vs SPY), 1M vs SPY in points, and the nearest vendor-view levels.
 - **Report** (`report.py`): one session's stages by sector, 10-session breadth, rotation, scan
   signals, RS leaders and (v2) largest movers with volume against the 50-session average, into
   `data/technicals/report-<session>.json`. **Nothing downstream recomputes them.**

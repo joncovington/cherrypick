@@ -289,6 +289,21 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   with its query. Shown only while the technicals feature is on. The symbol becomes a file name, so the
   reader accepts only ticker characters; a test sends `../` and was shown to fail with the pattern
   loosened.
+  - Its arrows are ONE entry/exit setup at a time (`?setup=`, `packages/technicals/docs/setups.md`):
+    entries, exits labelled with the reason, an open-position chip, and the lines the rule reads.
+    The rule text is the package's, never restated here. Where `volumeSource` is set (SPX: SPY) the
+    page says so on every setup (`web/test/chartPage.test.tsx`, shown to fail when hidden).
+    Levels are `?levels=all|vendor|off`: every level (grid extremes and the vendor's), only those
+    the vendor's own chart draws (the file's `vendorView`, decided in `packages/technicals`, never
+    here), or none; never the setup lines. The default is the vendor's view where a capture exists,
+    else all. Vendor levels are drawn from their own date, as the vendor draws them, and kept out
+    of the autoscale. Entry and exit arrows are both amber: an arrow marks an event, and green or
+    red would read as a gain or a loss.
+- `/charts/setups` is the setups watchlist (`pages/Setups/SetupsPage.tsx`, `GET /api/technicals/setups`
+  over `charts/setups-index.json`): recent entries and exits, or open positions, each symbol linking
+  to its chart with the setup selected. Gated with the technicals tab. The page filters and sorts
+  and splits a position into entry and exit lines; every value is the package's. "Move" is close to
+  close and never called P&L, and nothing ranks a signal's quality.
 
 **Module advisor slides.** `readers/advisor.ts`'s `readAdvisorModule` serves
 `/api/advisor/module/:module`: active experiments with progress against length and stall budget, the

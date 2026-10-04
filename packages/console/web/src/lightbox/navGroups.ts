@@ -243,6 +243,7 @@ export const REPORTS_SLIDES = [
 export const CHARTS_SLIDES = [
   { id: "intraday", label: "intraday" },
   { id: "technicals", label: "technicals" },
+  { id: "setups", label: "setups" },
 ] as const satisfies readonly NavSlide[];
 
 /**
