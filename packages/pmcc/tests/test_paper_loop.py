@@ -188,6 +188,81 @@ def test_otm_expiry_orphan_long_disposed_next_session(cache, config, tmp_path):
     assert position["gross_pnl"] == pytest.approx(expected, abs=0.01)
 
 
+def test_settlement_follows_the_ledger_not_the_config_symbols(cache, config, tmp_path):
+    """Retiring a symbol from `symbols` must not strand its open legs: the settle pass reads which
+    symbols expire from the ledger. (It read `config["symbols"]` until 2026-10-04.)"""
+    conn = db.connect(str(tmp_path / "paper.db"))
+    pid = _seed_position(conn)
+    retired = {
+        **config,
+        "symbols": ["XSP"],
+        "settlement_style": {**config["settlement_style"], "XSP": "cash"},
+    }
+    settle = paper_loop.run_settle(
+        retired,
+        conn,
+        cache_path=cache.path,
+        when=datetime(2026, 8, 28, 16, 30),
+        price=66.40,
+        day="2026-08-28",
+    )
+    assert settle["ok"], settle
+    short_leg = [leg for leg in db.legs_for(conn, pid) if leg["leg_role"] == "short_call_1"][0]
+    assert short_leg["close_kind"] == "expired"
+
+
+def test_an_explicit_price_is_refused_when_it_could_settle_two_symbols(cache, config, tmp_path):
+    """One print is one underlying's. With TQQQ and XSP both expiring, `--price` without `--symbol`
+    would have settled XSP at a TQQQ price."""
+    conn = db.connect(str(tmp_path / "paper.db"))
+    _seed_position(conn)
+    db.save_position(
+        conn,
+        {
+            "position_id": "XSP:control:2026-08-24",
+            "symbol": "XSP",
+            "arm": "control",
+            "entry_session": "2026-08-24",
+            "quantity": 1,
+            "long_expiration": "2026-09-04",
+            "long_strike": 734.0,
+            "short_expiration": "2026-08-28",
+            "short_strike": 765.0,
+            "status": "open",
+            "fees": 0.0,
+        },
+    )
+    db.save_leg(
+        conn,
+        {
+            "position_id": "XSP:control:2026-08-24",
+            "leg_role": "short_call_1",
+            "occ_symbol": "XSP   260828C00765000",
+            "streamer_symbol": ".XSP260828C765",
+            "expiration": "2026-08-28",
+            "strike": 765.0,
+            "option_type": "call",
+            "action": "Sell to Open",
+            "quantity": 1,
+            "entry_mid": 7.0,
+            "status": "open",
+        },
+    )
+    kw = dict(cache_path=cache.path, when=datetime(2026, 8, 28, 16, 30), price=66.40, day="2026-08-28")
+    refused = paper_loop.run_settle(config, conn, **kw)
+    assert refused == {
+        "ok": False,
+        "reason": "price_needs_symbol",
+        "symbols": ["TQQQ", "XSP"],
+        "results": [],
+        "date": "2026-08-28",
+    }
+    assert conn.execute("SELECT COUNT(*) FROM pmcc_legs WHERE status = 'open'").fetchone()[0] == 3
+
+    scoped = paper_loop.run_settle(config, conn, symbol="TQQQ", **kw)
+    assert scoped["ok"] and [r["symbol"] for r in scoped["results"]] == ["TQQQ"]
+
+
 def test_missed_settlement_is_never_backfilled(cache, config, tmp_path):
     conn = db.connect(str(tmp_path / "paper.db"))
     _seed_position(conn)
