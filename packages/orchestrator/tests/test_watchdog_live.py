@@ -203,6 +203,32 @@ def test_orphaned_orders_are_critical_any_time(monkeypatch, tmp_path):
     assert "2 working order(s)" in orphans[0].message
 
 
+def test_orphans_reported_as_a_list_are_counted_and_the_settle_check_still_runs(monkeypatch, tmp_path):
+    """bwb's `--status` reports its orphans as a LIST (the skill shows them to a human); flies
+    reports a count. Comparing the list with `> 0` raised a TypeError, which the watchdog turned
+    into a generic module error and which skipped the live settle check after it."""
+    _setup(
+        monkeypatch,
+        tmp_path,
+        status_obj={
+            "armed_for": _TODAY,
+            "orphaned_orders": [{"id": "1"}, {"id": "2"}],
+            "session_settled": False,
+            "open_positions": 1,
+        },
+        registered=False,
+    )
+    out = wd._check_live("flies", _mcfg(), _AFTER_CLOSE, False)
+    orphans = [f for f in out if f.key == "flies.live_orphans"]
+    assert orphans and orphans[0].status == CRITICAL
+    assert "2 working order(s)" in orphans[0].message
+    assert [f for f in out if f.key == "flies.live_settle_overdue"]
+
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY, "orphaned_orders": []}, registered=False)
+    out = wd._check_live("flies", _mcfg(), _MIDDAY, True)
+    assert [f.status for f in out if f.key == "flies.live_orphans"] == [OK]
+
+
 def test_zero_orphans_reports_ok_so_a_prior_alert_recovers(monkeypatch, tmp_path):
     _setup(
         monkeypatch,
