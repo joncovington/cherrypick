@@ -41,6 +41,7 @@ cherrypick/core/
   metrics/         the shared calibration metric bundle
   openingrange/    the 09:30-10:00 ET opening range (derived, never recorded)
   profiles/        named arm registry + merge engine + calibration comparison
+  rangefeatures/   the declared daily range-features study (docs/range-features.md)
   regime/          joining a timestamp against the recorded market regime
   regimecuts/      the regime-cuts artifact contract
   risk/            account-level risk primitives (fail-closed deploy cap)
