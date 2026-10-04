@@ -178,7 +178,9 @@ alone):
   review totals) bound to the suite `data_epoch` via `readers/db.ts::suiteEra`, the lever `calibrate`
   enforces. Earlier eras stay reachable through a visible scope control using the shared `"ALL"`
   convention; widening is a stated choice, never the default. Filtering to nothing is reported as a
-  filtered-out result, not an empty page. calendars/pmcc need no bound until a second era exists.
+  filtered-out result, not an empty page. pmcc scopes its arm comparison and weekly A/B to its own
+  `CURRENT_ERA` with an era picker (2026-10-05; `test/pmcc-era.test.ts` pins the copy to the
+  module's); calendars needs no bound until a second era exists.
 - **Market data**: the console opens its own DXLink session via the official `@tastytrade/api` SDK
   (`quoteStreamer`). The Python streamer and `stream_cache.db` are untouched; the cache is read
   read-only as the off-hours / disconnected fallback.

@@ -35,9 +35,9 @@ interface Headline {
   };
 }
 
-function moduleHeadline(): Headline | null {
+function moduleHeadline(era: string | null = null): Headline | null {
   if (!fs.existsSync(path.join(PMCC_PKG, "run.py"))) return null;
-  const out = spawnSync("python", ["run.py", "headline"], {
+  const out = spawnSync("python", ["run.py", "headline", ...(era === null ? [] : ["--era", era])], {
     cwd: PMCC_PKG,
     encoding: "utf-8",
     timeout: 60_000,
@@ -67,20 +67,25 @@ describe.skipIf(!available)("the console's PMCC mirror agrees with the module it
     expect(new Set(mine.arms.map((b) => b.arm))).toEqual(new Set(Object.keys(theirs!.headline.arms)));
   });
 
-  it("agrees on every (arm, symbol) cell's net, to the cent", () => {
-    // The number a reader acts on. A mirror that drifts here is worse than no mirror: it is a
-    // second opinion wearing the module's authority.
-    //
-    // The module nests `arms[arm][symbol].net_pnl`, and the console's cells are one per (arm,
-    // symbol) carrying `netPnl`. Until 2026-10-04 this read `arms[arm].net` -- always undefined --
-    // so every comparison hit `continue` and the check could not fail. Every cell is now required
-    // on both sides; a missing one is a failure, not a skip.
-    const mine = readPmcc(loadConfig());
-    const theirs = moduleHeadline()!.headline.arms as Record<string, Record<string, { net_pnl: number | null }>>;
+  // The number a reader acts on. A mirror that drifts here is worse than no mirror: it is a second
+  // opinion wearing the module's authority.
+  //
+  // The module nests `arms[arm][symbol].net_pnl`, and the console's cells are one per (arm, symbol)
+  // carrying `netPnl`. Until 2026-10-04 this read `arms[arm].net` -- always undefined -- so every
+  // comparison hit `continue` and the check could not fail. Every cell is now required on both
+  // sides; a missing one is a failure, not a skip. Both scopes are compared: the current era, which
+  // is legitimately empty in the weeks after a boundary, and every era pooled, which must hold cells
+  // so the comparison can fail at all.
+  it.each([
+    ["the current era", null],
+    ["every era, pooled", "ALL"],
+  ])("agrees on every (arm, symbol) cell's net, to the cent, over %s", (_label, era) => {
+    const mine = readPmcc(loadConfig(), era);
+    const theirs = moduleHeadline(era)!.headline.arms as Record<string, Record<string, { net_pnl: number | null }>>;
     const cells = Object.entries(theirs).flatMap(([arm, bySymbol]) =>
       Object.entries(bySymbol).map(([symbol, cell]) => ({ arm, symbol, net: cell.net_pnl })),
     );
-    expect(cells.length).toBeGreaterThan(0);
+    if (era === "ALL") expect(cells.length).toBeGreaterThan(0);
     expect(mine.arms.length).toBe(cells.length);
     for (const c of cells) {
       const cell = mine.arms.find((m) => m.arm === c.arm && m.symbol === c.symbol);

@@ -1,22 +1,33 @@
 {
-  "_header": "===== cherrypick-pmcc \u2014 PMCC deep-ITM covered calls on TQQQ (paper-only) =====",
-  "_what_this_is": "Buy an 85-90-delta call at ~21 DTE (a stock substitute, NOT a LEAP), sell the ATM call nearest spot at ~7 DTE regardless of which side of spot it lands on. Since the 2026-08-23 redesign this is a single book (`control`) run across two symbols: TQQQ (American, physical-settlement ETF) and, added the same day, XSP (Mini-SPX, European, cash-settled broad-based index option). Same rules, two structurally different underlyings measured as separate populations \u2014 see the module CLAUDE.md's 2026-08-23 note. Mechanical entry, hold to the short's own expiration, then close both legs together. `tv_close_threshold`/`tv_managed_exit` remain as an advisor-tunable early-exit experiment, run only through the synthetic `advised:control` book. TQQQ's early assignment is REFUSED-around and MEASURED, never modelled \u2014 see the dividends block and the assignment_exposure_tv knob; XSP carries neither risk (see _settlement_style_note). Copy to config.json (git-ignored) or ~/.cherrypick/config/pmcc.json.",
-  "_symbols_note": "TQQQ (Nasdaq-100 3x, American physical delivery) and XSP (Mini-SPX, European cash settlement), one book (`control`) since the 2026-08-23 redesign \u2014 both $1-or-finer strikes, weekly expirations. One position per (symbol, book) at a time \u2014 max_positions bounds the book to how many concurrent cycles it may hold, summed across symbols. A symbol not declared in settlement_style is refused at entry (unknown_settlement); TQQQ and XSP results are NOT interchangeable \u2014 different settlement mechanics and risk profile, directly comparable only as separate populations under the same rule set.",
+  "_header": "===== cherrypick-pmcc \u2014 PMCC deep-ITM covered calls on XSP, QQQ, GLD, IWM and SLV (paper-only) =====",
+  "_what_this_is": "A deep-ITM call with a short call sold against it, three ways (the arms block). control: buy an 85-90-delta call at ~21 DTE, sell the ATM call nearest spot at ~7 DTE, hold to the short's expiration and close both. shield and shield_hold (2026-10-05): Tom King's 'Income Shield' -- hold a ~1-year 0.90-0.95-delta call and roll a 0.70-delta weekly short against it until the long reaches 45 DTE. tv_close_threshold/tv_managed_exit remain an advisor-tunable exit experiment on control's advised twins. Early assignment on the physical symbols is REFUSED-around (the dividends block) and MEASURED, never modelled; XSP carries neither risk (see _settlement_style_note). Copy to config.json (git-ignored) or ~/.cherrypick/config/pmcc.json.",
+  "_symbols_note": "XSP (Mini-SPX, European, cash-settled), QQQ, GLD, IWM and SLV (American, physical delivery) since the 2026-10-05 shield boundary (docs/shield-study.md has why each and why not the rest); TQQQ before it, and still declared in occ_roots, settlement_style and dividends so its open positions settle -- remove it once none is open. Every arm trades every symbol, one position per (symbol, arm) at a time; max_positions bounds each arm's concurrent positions summed across symbols. A symbol not declared in settlement_style is refused at entry (unknown_settlement). Symbols are never pooled: each is its own population.",
   "symbols": [
-    "TQQQ",
-    "XSP"
+    "XSP",
+    "QQQ",
+    "GLD",
+    "IWM",
+    "SLV"
   ],
   "_occ_roots_note": "The OCC root the provider admits per underlying. Leveraged ETFs split often, and a split leaves ADJUSTED roots (TQQQ1) sharing expiration dates with the standard root; only the configured root is priced, and an expiration listing only adjusted roots refuses `not_root_listed`. After a split, verify the standard root re-lists before resuming \u2014 and treat a split mid-position as a manual `--settle` plus a measurement break (unmodelled). XSP does not split, so its root is simply itself.",
   "occ_roots": {
     "TQQQ": "TQQQ",
-    "XSP": "XSP"
+    "XSP": "XSP",
+    "QQQ": "QQQ",
+    "GLD": "GLD",
+    "IWM": "IWM",
+    "SLV": "SLV"
   },
   "_settlement_style_note": "How each symbol's expiring legs settle. TQQQ is `physical` \u2014 American delivery: an ITM short call hands over 100 short shares per contract at the settlement print, covered the NEXT session together with the long's sale (the combined disposal), so a Friday assignment carries short shares over the weekend. Delivered shares are booked at the SETTLEMENT SPOT, not the strike \u2014 the calendars decomposition, which keeps physical settlement exactly cash-plus-a-share-leg. XSP is `cash` \u2014 European exercise style, so it can ONLY be exercised at its own expiration: there is no early-assignment risk to refuse around (the dividends block below has no XSP entry and none is needed \u2014 `_entry_guards` in paper_loop.py only runs the ex-dividend check for `physical` symbols) and no delivered-share path ever fires for it (`assignment_from` is only called from the `physical` branch of `book.settle_expiring_legs`). `management.assignment_exposed` is likewise exempt for `cash` positions \u2014 see its docstring. A symbol declared as neither style is refused at entry.",
   "settlement_style": {
     "TQQQ": "physical",
-    "XSP": "cash"
+    "XSP": "cash",
+    "QQQ": "physical",
+    "GLD": "physical",
+    "IWM": "physical",
+    "SLV": "physical"
   },
-  "_dividends_note": "PHYSICAL-settlement symbols only. Entries whose short leg spans a declared ex-dividend date are REFUSED (ex_dividend_span): a short ITM call is really assigned at the close BEFORE the ex-date, and this module deliberately does not model early assignment. This check is skipped outright for `cash`-settled symbols (XSP) \u2014 a European option cannot be exercised early, so there is no ex-date question to answer, and XSP therefore needs NO entry in this block at all (dividend_coverage_ok/ex_date_in_span are simply never called for it; see _entry_guards in paper_loop.py). For physical symbols, dates are DECLARED from the issuer's own distribution schedule (quarterly, ex-dates in late Mar/Jun/Sep/Dec for TQQQ) and never computed or fetched. REFRESH EACH PHYSICAL SYMBOL'S BLOCK QUARTERLY: a span past `declared_through` refuses entry (dividend_calendar_lapsed) rather than assuming itself dividend-free, so a lapsed table stops entries loudly, by design. The example ships TQQQ declared through August only \u2014 August sits between the June and September distributions \u2014 so the first refresh is due before mid-September entries; fill in the September ex-date from the issuer page when you do.",
+  "_dividends_note": "PHYSICAL-settlement symbols only. A short whose life [sale day, expiration] spans a declared ex-dividend date is REFUSED (ex_dividend_span): an ITM short call is really assigned at the close before the ex-date, and this module deliberately does not model early assignment. At entry the whole entry is refused; on a held-long position the roll is, and the position runs without a short until a later day clears the date (the tracker counts those weeks). Skipped outright for `cash`-settled XSP. Dates are DECLARED from the issuer's own schedule and never computed or fetched; a non-paying trust (GLD, SLV) is declared with an empty list. REFRESH BEFORE declared_through: a span past it refuses entry (dividend_calendar_lapsed) rather than assuming itself dividend-free, so a lapsed table stops entries loudly, by design.",
   "dividends": {
     "TQQQ": {
       "_source": "ProShares own distribution schedule (proshares.com/resources/distributions/distribution-schedule), verified 2026-08-24: Q3 ex 9/23 payable 9/29, Q4 ex 12/23 payable 12/30, plus the POTENTIAL excise-tax distribution ex 12/31 payable 1/7/2027 (included deliberately -- refusing a week that might carry an ex-date is the safe direction). Cross-checked against an independent aggregator, which agreed on 9/23; this module's docs record that aggregators disagree by a day, so the issuer page is the authority and a second source is the check on it. DECLARED, never fetched -- nothing on a loop path may touch the network. Refresh by hand from the issuer page before an entry can span past declared_through; a lapse stops entries loudly, by design.",
@@ -26,6 +37,37 @@
         "2026-12-23",
         "2026-12-31"
       ]
+    },
+    "QQQ": {
+      "_source": "Invesco publishes no forward US distribution schedule we could find (checked 2026-10-04). The issuer's own Q3 2026 notice puts the record date on the Monday after the quarter's third Friday (2026-09-21), which under T+1 settlement is the US ex-date, and the 2026 ex-dates on file follow it (03-23, 06-22, 09-21). Q4 2026 = 2026-12-21, as two aggregators also state (marketchameleon, stockanalysis). DECLARED, never fetched. Refresh by mid-December with the Q1 2027 date (expected 2027-03-22): a span past declared_through refuses entry (dividend_calendar_lapsed), loudly, by design.",
+      "declared_through": "2026-12-31",
+      "ex_dates": [
+        "2026-09-21",
+        "2026-12-21"
+      ]
+    },
+    "IWM": {
+      "_source": "iShares' own 2026-2028 Fund Distributions Schedule (ishares.com, as of 2026-09-30; IWM is in the quarterly equity group: ex 3 business days before the third Friday of Mar/Jun/Sep/Dec), verified 2026-10-04. The 2026 dates already past (03-17, 06-15, 09-15) match the dividend history on file. Includes BlackRock's POTENTIAL late-December excise distribution (2026-12-30, 2027-12-30) deliberately -- refusing a week that might carry an ex-date is the safe direction. DECLARED, never fetched.",
+      "declared_through": "2027-12-31",
+      "ex_dates": [
+        "2026-12-15",
+        "2026-12-30",
+        "2027-03-16",
+        "2027-06-10",
+        "2027-09-14",
+        "2027-12-14",
+        "2027-12-30"
+      ]
+    },
+    "GLD": {
+      "_source": "A grantor trust holding gold bullion: it pays no distributions (none in the dividend history on file since 2011, nor in tastytrade's). Declared empty rather than left out, so the physical-settlement check reads an answer instead of a lapse. Re-check if the trust changes.",
+      "declared_through": "2027-12-31",
+      "ex_dates": []
+    },
+    "SLV": {
+      "_source": "A grantor trust holding silver bullion: it pays no distributions (none in the dividend history on file since 2011, nor in tastytrade's). Declared empty rather than left out, so the physical-settlement check reads an answer instead of a lapse. Re-check if the trust changes.",
+      "declared_through": "2027-12-31",
+      "ex_dates": []
     }
   },
   "_source_note": "stream_cache_db overrides the shared stream cache path; null means the suite default (~/.cherrypick/data/marketdata/stream_cache.db). This module is a pure READ-ONLY consumer of that cache \u2014 its two expirations are served by the streamer's `expirations` request field, and its deep strikes by the `window_hints` field, both declared automatically every tick.",
@@ -39,7 +81,7 @@
   "_window_note": "deep_window_pct bounds the entry snapshot's quote fetch: strikes in [spot*(1-deep_window_pct), spot*1.02]. The 85-90-delta long (2026-08-23 redesign) sits much closer to spot than the old ~99-delta design, so this dropped from 0.45 to 0.20 \u2014 via stream_window's window_hints, this is what makes the module's long-leg quotes exist at all.",
   "defaults": {
     "quantity": 1,
-    "max_positions": 3,
+    "max_positions": 6,
     "short_dte_min": 5,
     "short_dte_max": 11,
     "short_dte_target": 7,
@@ -63,16 +105,46 @@
     "deep_window_pct": 0.2,
     "_deep_window_by_symbol_note": "Per-symbol override for deep_window_pct, because one shared bound is necessarily sized for the DEEPEST symbol and buys every other one strikes it cannot use. Measured 2026-08-24 against the live chain: an 85-90-delta call at ~21 DTE sat 15.2-18.8% ITM on TQQQ (strikes 56.0-58.5 against a 68.995 spot) but only 4.0% ITM on XSP (734 against 764.5) -- a 3x leveraged ETF carries several times a broad index's implied volatility. A single 0.20 therefore gives TQQQ a correct window and XSP roughly five times the strikes it can use, which is what made XSP the largest window in the suite. Unset symbols fall back to deep_window_pct, so this is additive. Re-derive per symbol rather than inheriting these numbers -- see docs/window-parameters.md.",
     "deep_window_pct_by_symbol": {
-      "XSP": 0.08
+      "XSP": 0.08,
+      "QQQ": 0.1,
+      "GLD": 0.12,
+      "IWM": 0.1,
+      "SLV": 0.2
     },
     "allow_extrinsic_fallback": true,
-    "_max_leg_spread_pct_note": "max_leg_spread_pct is enforced on BOTH paths since 2026-08-28: engine.plan_entry refuses an entry whose long or short leg quotes wider than this (spread_too_wide), and management.execution_gate still blocks acting on a mark that does. Until that date it was the exit path only, so nothing measured the spread being PAID at entry -- curve and bwb both hold this parameter at the same default and check it at entry, and pmcc was the outlier. Measured over all 8 entries before the change: seven at 0.018-0.072 (deep-ITM long legs included) and one at 0.293. Recalibrating this is a config change plus a journaled break, per the module's own honesty rules."
+    "_max_leg_spread_pct_note": "max_leg_spread_pct is enforced on BOTH paths since 2026-08-28: engine.plan_entry refuses an entry whose long or short leg quotes wider than this (spread_too_wide), and management.execution_gate still blocks acting on a mark that does. Until that date it was the exit path only, so nothing measured the spread being PAID at entry -- curve and bwb both hold this parameter at the same default and check it at entry, and pmcc was the outlier. Measured over all 8 entries before the change: seven at 0.018-0.072 (deep-ITM long legs included) and one at 0.293. Recalibrating this is a config change plus a journaled break, per the module's own honesty rules.",
+    "_account_policy_note": "Read only by held-long arms (control ignores it), so paper shield trades under its live twin's account rules. ira: every expiring short is bought back before the bell at any moneyness, since an IRA cannot carry short stock. margin: a short further than pin_buffer_pct out of the money may expire.",
+    "account_policy": "ira"
   },
-  "books_header": "===== the book =====",
-  "_books_note": "Single book since the 2026-08-23 redesign (the old keltner/roll books and the TNA/UPRO symbols are retired): `control` is mechanical entry whenever the (symbol, book) slot is free, hold to the short's own expiration, close both legs together, never roll. The `advised:control` synthetic twin (see the advice block below) is the only other row that can appear, and only when the advisor has admitted params for the session.",
+  "books_header": "===== the arms =====",
+  "_books_note": "Three arms from the 2026-10-05 shield boundary. `control` (since 2026-08-23): a 21-DTE long re-bought every cycle, an ATM weekly short, both closed at the short's expiry. `shield` and `shield_hold`: Tom King's held-long design, a ~1-year long held while a weekly 0.70-delta short rolls against it; they share one entry plan and differ only in that shield also rolls early (85% of the short's extrinsic decayed, or spot at its strike) and shield_hold holds each short to Friday. An arm other than control that this block does not declare stays off. The `advised:<experiment>` twins shadow control only.",
   "books": {
     "control": {
       "enabled": true
+    },
+    "shield": {
+      "_note": "Held-long arm (2026-10-05 boundary, docs/shield-study.md). What makes it itself is in code, engine.ARM_RULES, so this block tunes it but cannot turn it into a copy of control: a ~1-year long (the third-Friday monthly nearest 360 DTE in [240, 540]) chosen by delta in [0.90, 0.95], no extrinsic fallback; a 0.70-delta weekly short (band 0.65-0.78, soonest Friday 5-11 DTE, above the long's strike), rolled on its expiry day from the close - 60m with a buyback-only deadline at close - 20m; closed when the long reaches 45 DTE or P&L to date reaches -30% of the long's cost, re-entering the next session. entry_symbols_per_session staggers first entries across the five symbols during the rollout. deep_window_pct_by_symbol here is this arm's own: its long sits 20-40% in the money where control's sits 4-10%.",
+      "enabled": true,
+      "entry_symbols_per_session": 1,
+      "deep_window_pct_by_symbol": {
+        "XSP": 0.3,
+        "QQQ": 0.35,
+        "GLD": 0.4,
+        "IWM": 0.35,
+        "SLV": 0.5
+      }
+    },
+    "shield_hold": {
+      "_note": "Held-long arm (2026-10-05 boundary, docs/shield-study.md). What makes it itself is in code, engine.ARM_RULES, so this block tunes it but cannot turn it into a copy of control: a ~1-year long (the third-Friday monthly nearest 360 DTE in [240, 540]) chosen by delta in [0.90, 0.95], no extrinsic fallback; a 0.70-delta weekly short (band 0.65-0.78, soonest Friday 5-11 DTE, above the long's strike), rolled on its expiry day from the close - 60m with a buyback-only deadline at close - 20m; closed when the long reaches 45 DTE or P&L to date reaches -30% of the long's cost, re-entering the next session. entry_symbols_per_session staggers first entries across the five symbols during the rollout. deep_window_pct_by_symbol here is this arm's own: its long sits 20-40% in the money where control's sits 4-10%.",
+      "enabled": true,
+      "entry_symbols_per_session": 1,
+      "deep_window_pct_by_symbol": {
+        "XSP": 0.3,
+        "QQQ": 0.35,
+        "GLD": 0.4,
+        "IWM": 0.35,
+        "SLV": 0.5
+      }
     }
   },
   "_stream_window_note": "How wide an ATM window this module asks the producer for (window_hints). base_width is the ESCALATION FLOOR only -- it is NOT a suppression threshold and NOT a mirror of the producer's default, both of which it was until 2026-08-27. It claimed to mirror `window_strike_count`, and stopped being true when that was cut 60 -> 30 in the 2026-08-24 subscription incident: any computed need between 31 and 60 was then silently swallowed here while the producer served 30. TQQQ's structural need is 39 and sat squarely in that dead band. The hint is now emitted whatever it computes and the producer resolves max(default, hint) at the other end, so there is no duplicated constant left to drift. increment/decay_after_minutes stay at this deployment's tuned values (60/1440) rather than the module's 30/60 defaults -- widened after the 2026-08-17 incident where a faster-decaying escalation recycled the streamer every ~5 minutes for two hours. The union across modules takes the max per symbol, so this can never narrow anyone else.",

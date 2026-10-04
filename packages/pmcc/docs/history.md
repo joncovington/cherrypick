@@ -45,6 +45,46 @@ acted on when closing), so nothing measured the spread paid at entry and the doc
 the code did not have. Measured over all 8 entries before landing: seven at 0.018–0.072, deep-ITM
 long legs included, and one at 0.293 — so the gate refuses the anomaly rather than the strategy.
 
+## The shield boundary (2026-10-05, measurement break)
+
+On 2026-10-04 Tom King's "Income Shield" (a ~1-year deep-ITM call held, a ~70-delta weekly call
+rolled against it) was compared with control. The replay (`scripts/pmcc_shield_replay.py`,
+docs/shield-study.md) found:
+- holding the long beat re-buying it on all five candidate symbols over 2011–2026, though in only 11
+  of 15 five-year windows;
+- the weekly short's edge turns on the IV assumption;
+- TQQQ is the worst vehicle for any version.
+
+So the module took Tom's design as two new arms beside control, rather than redesigning control.
+`shield` follows his rules including the early roll; `shield_hold` holds each short to Friday. The
+symbols became XSP, QQQ, GLD, IWM and SLV, and TQQQ ran off.
+
+Built beside it:
+- the held-long lifecycle (`management.evaluate_held_long`);
+- per-leg costs;
+- per-symbol stream requests;
+- the producer's persisted expiry listing (`stream_expirations`), with a request for an unlisted
+  date no longer treated as a stall;
+- `tracker.value_at`, with the console's tracker tab and weekly A/B;
+- the notifier's per-leg settlement and notable-roll pings.
+
+The arms' defining rules live in code (`engine.ARM_RULES`), and an undeclared arm stays off.
+
+Found on the way:
+- **Six pre-existing bugs**, fixed first in their own commits:
+  - `excursions` filtered on a leg role the module never wrote;
+  - the console mirror test could not fail;
+  - the review's expected readers filtered on a column that had moved;
+  - settlement iterated config symbols rather than the ledger's;
+  - the watchdog choked on bwb's orphan list;
+  - bwb's live log did not mask account numbers.
+- **The year-long pick:** nearest-to-360 chose end-of-quarter expirations whose grids stop above the
+  deep band, so the pick prefers standard monthlies (`scripts/pmcc_leap_probe.py`).
+- **The replay's own IV level:** fitted to the ledger, it priced weeklies about 5% rich against WPUT,
+  so it was refitted to that benchmark.
+
+The era is `shield`. Pre-boundary rows stay under `redesign`.
+
 ## Milestones
 
 Built 2026-08-16. `live.enabled` placeholder added 2026-08-16. The console's `/pmcc` page landed

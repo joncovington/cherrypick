@@ -304,7 +304,12 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   });
   // PMCC. No `mode` on any of these: the module has no live loop and no live store, so a mode
   // parameter could only ever name a book that does not exist.
-  app.get("/api/pmcc", async () => readPmcc(config));
+  // `era`: "ALL" pools every era, an era key narrows to it, anything else is the current era --
+  // widening is only ever a stated choice.
+  app.get("/api/pmcc", async (req) => {
+    const era = (req.query as Record<string, unknown> | undefined)?.["era"];
+    return readPmcc(config, typeof era === "string" && /^[A-Za-z0-9_-]{1,20}$/.test(era) ? era : null);
+  });
   app.get("/api/pmcc/meta", async () => readPmccMeta(config));
   app.get("/api/pmcc/assignments", async () => ({ rows: readPmccAssignments(config) }));
   app.get("/api/pmcc/history", async (req) => {

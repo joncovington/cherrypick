@@ -2,7 +2,7 @@ import { useState } from "react";
 import { usePmcc } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, fmtPct } from "../../components/DataTable";
-import { LoopPill, ScopeSelect } from "../../components/ScopeBar";
+import { EraSelect, LoopPill, ScopeSelect } from "../../components/ScopeBar";
 import { ArmRail, AttemptTimeline } from "../../components/Attempts";
 import { IntegrityStrip } from "../../pages/Pmcc/IntegrityStrip";
 import { BookComparison, OpenTradesCard } from "../../pages/Pmcc/CurrentStateCards";
@@ -26,7 +26,8 @@ const PMCC_LABEL = Object.fromEntries(PMCC_SLIDES.map((s) => [s.id, s.label])) a
  */
 export function PmccLightbox({ slide }: { slide: string }) {
   const [symbol, setSymbol] = useState<string | null>(null);
-  const { data, isLoading, isError, dataUpdatedAt } = usePmcc();
+  const [era, setEra] = useState<string | null>(null);
+  const { data, isLoading, isError, dataUpdatedAt } = usePmcc(era);
   const loopState =
     data?.today.lastIteration == null ? "no-data" : data.today.lastIteration.ageSeconds < 900 ? "live" : "idle";
 
@@ -115,7 +116,7 @@ export function PmccLightbox({ slide }: { slide: string }) {
       render: () => (
         <div className="cards cards-wide">
           <BookComparison data={data} updatedAt={dataUpdatedAt} symbol={symbol} />
-          <WeeklyByArmCard symbol={symbol} />
+          <WeeklyByArmCard symbol={symbol} era={era} />
         </div>
       ),
     },
@@ -148,7 +149,17 @@ export function PmccLightbox({ slide }: { slide: string }) {
       slides={slides}
       badge={<PaperLiveBadge mode="paper" />}
       headerControls={
-        <ScopeSelect label="symbol filter" value={symbol} options={data?.params.symbols} onChange={setSymbol} allLabel="all symbols" />
+        <>
+          <ScopeSelect label="symbol filter" value={symbol} options={data?.params.symbols} onChange={setSymbol} allLabel="all symbols" />
+          <EraSelect
+            value={era}
+            eras={data?.eras}
+            currentEra={data?.currentEra}
+            onChange={setEra}
+            title="The arm comparison and the weekly A/B are scoped to this era. The shield era (2026-10-05) added the held-long arms and changed the symbols; pooling it with the redesign era reads as one book when it is really two."
+            pooledLabel="every era, pooled"
+          />
+        </>
       }
       loopPill={
         <LoopPill

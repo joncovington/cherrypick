@@ -21,7 +21,32 @@ from cherrypick.core import config as _cfg
 from cherrypick.core import fees as _fees
 from cherrypick.core import settlement as _settlement
 
-ARMS = ("control",)
+ARMS = ("control", "shield", "shield_hold")
+
+# What makes each arm itself, in code (2026-10-04). Merged between `defaults` and the arm's own
+# config block, so the config tunes an arm but a thin or missing block cannot turn a held-long arm
+# into a copy of control -- which `defaults` alone would make it, with a P&L that still looks
+# plausible. Open positions are managed through the same merge (`management.effective_params`), so
+# an arm dropped from the config still manages what it holds by its own rules. The values are the
+# shield study's (docs/shield-study.md): a 0.90-0.95-delta year-long long chosen by delta alone (no
+# extrinsic fallback), a 0.70-delta weekly short, Tom King's 30% stop; `shield` alone rolls early
+# (at 85% of the short's extrinsic decayed, or on a breach).
+_HELD_LONG_RULES = {
+    "lifecycle": "held_long",
+    "short_rule": "delta",
+    "long_delta_min": 0.90,
+    "long_delta_max": 0.95,
+    "allow_extrinsic_fallback": False,
+    "stop_loss_frac": 0.30,
+}
+ARM_RULES = {
+    "control": {},
+    "shield": {**_HELD_LONG_RULES, "early_roll_decay": 0.85, "breach_roll": True},
+    "shield_hold": {**_HELD_LONG_RULES, "early_roll_decay": None, "breach_roll": False},
+}
+# Whether an arm the config does not declare may enter. Only control: an arm joins a suite because
+# its config says so, never because the code grew one (each new arm widens the stream request).
+DEFAULT_ENABLED = {"control": True}
 
 # How an expiring leg settles, per underlying. The module models both styles and refuses a symbol it
 # has been told nothing about — the calendars guard, kept verbatim: an unmodelled settlement produces
@@ -106,9 +131,13 @@ def base_book(arm: str, *, config: dict | None = None, decision: dict | None = N
 
 
 def merged_params(config: dict, arm: str) -> dict:
-    """`defaults` overlaid with the arm's own block — the flies `merged_params` shape, so an
-    advised arm resolves through the same path as every other."""
-    params = {**(config.get("defaults") or {}), **(_cfg.registry(config, label="pmcc").get(arm) or {})}
+    """`defaults`, then the arm's own rules (`ARM_RULES`), then its config block — the flies
+    `merged_params` shape, so an advised arm resolves through the same path as every other."""
+    params = {
+        **(config.get("defaults") or {}),
+        **ARM_RULES.get(arm, {}),
+        **(_cfg.registry(config, label="pmcc").get(arm) or {}),
+    }
     params["arm"] = arm
     return params
 

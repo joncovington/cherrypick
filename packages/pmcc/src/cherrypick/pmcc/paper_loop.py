@@ -40,9 +40,9 @@ from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
 
+from cherrypick.pmcc import analytics, clock, db, engine, management, provider, stream_request
 from cherrypick.pmcc import book as bookmod
 from cherrypick.pmcc import cli as climod
-from cherrypick.pmcc import clock, db, engine, management, provider, stream_request
 
 RTH_OPEN_MIN = 9 * 60 + 30
 RTH_CLOSE_MIN = 16 * 60
@@ -176,8 +176,9 @@ def advice_decision(config: dict, today: str) -> dict:
 def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]:
     """(the arms entry may open today, `{advised tag: its experiment entry}`). The roster only
     matters at ENTRY — marking, management, disposition, and settlement all iterate open positions
-    from the ledger whatever their arm tag, so a arm once opened can never be stranded by a later
-    roster change. Single arm (`control`) since the 2026-08-23 redesign, plus its advised twins.
+    from the ledger whatever their arm tag, so an arm once opened can never be stranded by a later
+    roster change. `control`, plus `shield` and `shield_hold` from 2026-10-05 where the config
+    enables them (an undeclared arm other than control stays off), plus control's advised twins.
 
     One advised arm PER EXPERIMENT the day's decision admitted (2026-09-17): each entry names its
     own tag (`advised:<experiment name>`), the base it shadows and the params it overlays; a
@@ -185,7 +186,9 @@ def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]
     on a baseline day. Every tag here is on the roster the stream request subscribes for -- the
     2026-08-27 lesson (`stream_window.entry_possible`) holds for every twin, not just the first."""
     declared = _cfg.registry(config, label="pmcc", log=_log)
-    arms = [b for b in engine.ARMS if (declared.get(b) or {}).get("enabled", True)]
+    arms = [
+        b for b in engine.ARMS if (declared.get(b) or {}).get("enabled", engine.DEFAULT_ENABLED.get(b, False))
+    ]
     advised = advised_entries(advice_decision(config, today))
     arms.extend(tag for tag in advised if tag not in arms)
     return arms, advised
@@ -195,6 +198,67 @@ def advised_entries(decision: dict | None) -> dict[str, dict]:
     """`{tag: experiment entry}` for every experiment the decision opens a arm for, in artifact
     order -- keyed by tag because planning, freezing and stamping all look the arm up by it."""
     return {e["tag"]: e for e in _core_advice.advised_books(decision) if e.get("tag")}
+
+
+# --------------------------------------------------------------------------- the boundary
+# The first session of the shield boundary (docs/shield-study.md). Entries from the deploy on are
+# stamped `analytics.CURRENT_ERA`; if the deploy slips past this date, move it with the deploy.
+SHIELD_FROM = "2026-10-05"
+_PRE_SHIELD = {"arms": "control", "symbols": "TQQQ, XSP", "max_positions": "3"}
+
+
+def _note_shield_boundary(conn, config: dict) -> None:
+    """Journal the shield boundary once a machine's config enables a held-long arm: the era, the
+    arm roster, the symbols and the held-long arms' first-entry pacing, each a `measurement_breaks`
+    row dated `SHIELD_FROM`. The new values are read from the config as it stands, so each row says
+    what this machine runs. Idempotent (one row per date and key) and best-effort: telemetry, never
+    a reason to skip a tick."""
+    try:
+        declared = _cfg.registry(config, label="pmcc")
+        on = [
+            b
+            for b in engine.ARMS
+            if (declared.get(b) or {}).get("enabled", engine.DEFAULT_ENABLED.get(b, False))
+        ]
+        held = {b: engine.merged_params(config, b) for b in on}
+        held = {b: p for b, p in held.items() if management.is_held_long(p)}
+        if not held:
+            return
+        defaults = config.get("defaults") or {}
+        rows = [
+            (
+                "era",
+                "redesign",
+                analytics.CURRENT_ERA,
+                "headline and excursions scope to the new era; earlier rows stay in the ledger, History "
+                "and any era='ALL' read, and TQQQ's open positions finish under the old one",
+            ),
+            (
+                "arms",
+                _PRE_SHIELD["arms"],
+                ", ".join(on),
+                "held-long arms beside control: a ~1-year 0.90-0.95-delta long held while a weekly "
+                "0.70-delta short rolls against it; shield rolls early, shield_hold holds to Friday",
+            ),
+            (
+                "symbols",
+                f"{_PRE_SHIELD['symbols']}; max_positions {_PRE_SHIELD['max_positions']}",
+                f"{', '.join(config.get('symbols') or [])}; max_positions {defaults.get('max_positions')}",
+                "each symbol is its own population; TQQQ takes no new entries and runs off",
+            ),
+            (
+                "pacing",
+                None,
+                json.dumps({b: p.get("entry_symbols_per_session") for b, p in held.items()}, sort_keys=True),
+                "held-long first entries staggered: at most this many symbols enter a session",
+            ),
+        ]
+        for key, old, new, note in rows:
+            db.record_measurement_break(
+                conn, break_date=SHIELD_FROM, key=key, old_value=old, new_value=new, note=note
+            )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"shield boundary journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
 # --------------------------------------------------------------------------- the tick
@@ -217,6 +281,7 @@ def run_once(
 
     if not force and not _cal.is_trading_day(today):
         return {"ok": True, "skipped": "not_a_trading_day", "date": day}
+    _note_shield_boundary(conn, config)
 
     # Settlement before the RTH gate (the settle time is after the close). Only ever settles legs
     # expiring TODAY: a leg whose expiration already passed cannot be honestly priced from a cache

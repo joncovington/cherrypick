@@ -43,18 +43,25 @@ const DB_FILE = "paper_trades.db";
 
 /**
  * The era the module counts as evidence. Its own `headline()` narrows to this by default, so
- * anything tagged to an earlier era is pre-redesign data — mixing it in silently pools two
- * incomparable strategies into one number. Duplicated as a literal here rather than imported,
- * because this package cannot import Python: it must be hand-kept equal to `CURRENT_ERA` in
- * `packages/pmcc/src/cherrypick/pmcc/analytics.py`.
+ * anything tagged to an earlier era ran under a different roster or rules — mixing it in silently
+ * pools incomparable books into one number. Duplicated as a literal here rather than imported,
+ * because this package cannot import Python; `test/pmcc-era.test.ts` reads
+ * `packages/pmcc/src/cherrypick/pmcc/analytics.py` and fails when the two disagree.
  *
- * One era so far: `"redesign"` (2026-08-23 ->), opened by the single-symbol/single-arm redesign
- * and the XSP addition. `era` is an ADDED column — every pre-redesign row reads back `NULL`, which
- * never equals the literal era string, so old rows are excluded by construction. `hasColumn` guards
- * a ledger this build's migration hasn't reached yet (stale checkout), in which case every row is
- * read unscoped rather than the query failing on a missing column.
+ * `"shield"` (2026-10-05 ->): the held-long arms join control on XSP, QQQ, GLD, IWM and SLV.
+ * `"redesign"` (2026-08-23 -> 10-04): control alone on TQQQ and XSP. Rows from before the redesign
+ * read back `NULL` (an ADDED column) and are labelled `pre-redesign` here, so the era picker can
+ * still reach them. `hasColumn` guards a ledger this build's migration hasn't reached yet, in which
+ * case every row is read unscoped rather than the query failing on a missing column.
  */
-const CURRENT_ERA = "redesign";
+export const CURRENT_ERA = "shield";
+/** What a row with no era stamp is called on this surface; it never matches a stamped era. */
+const UNSTAMPED_ERA = "pre-redesign";
+const ERA_LABEL: Record<string, string> = {
+  shield: "shield era (2026-10-05 →)",
+  redesign: "redesign era (2026-08-23 → 10-04)",
+  [UNSTAMPED_ERA]: "before the redesign",
+};
 
 /** Config keys the page renders against. Thresholds the module runs on, not display preferences. */
 interface PmccParams {
@@ -338,7 +345,7 @@ function readBooks(db: DatabaseHandle, era: string = CURRENT_ERA): PmccArmCell[]
   const sql = `SELECT arm, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees,
               SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins,
               SUM(roll_count) AS rolls
-         FROM pmcc_positions WHERE status = 'closed'${scoped ? " AND era = ?" : ""}
+         FROM pmcc_positions WHERE status = 'closed'${scoped ? ` AND COALESCE(era, '${UNSTAMPED_ERA}') = ?` : ""}
         GROUP BY arm, symbol ORDER BY arm, symbol`;
   const rows = scoped
     ? db.prepare<[string], Record<string, unknown>>(sql).all(era)
@@ -410,14 +417,38 @@ function readMarkCoverage(db: DatabaseHandle, session: string | null): PmccInteg
   return { session, marks, refused, refusalShare: marks > 0 ? refused / marks : null, refusals };
 }
 
-export function readPmcc(config: ConsoleConfig): PmccPayload {
+/** Closed positions per era, newest era first: what the era picker offers, with its counts. */
+function readEras(db: DatabaseHandle): PmccPayload["eras"] {
+  if (!hasColumn(db, "pmcc_positions", "era")) return [];
+  return db
+    .prepare<[], Record<string, unknown>>(
+      `SELECT COALESCE(era, '${UNSTAMPED_ERA}') AS era, SUM(status = 'closed') AS n, MIN(entry_session) AS first
+         FROM pmcc_positions GROUP BY 1 ORDER BY first DESC`,
+    )
+    .all()
+    .map((r) => {
+      const era = str(r["era"]) ?? UNSTAMPED_ERA;
+      return { era, trades: Number(r["n"] ?? 0), label: ERA_LABEL[era] ?? `era ${era}` };
+    });
+}
+
+/**
+ * `era`: null for the module's current era, "ALL" to pool every era (a stated choice), or one era
+ * key. Only the arm comparison is era-scoped; open positions, integrity and today's activity are
+ * what they are whatever era they were entered in.
+ */
+export function readPmcc(config: ConsoleConfig, era: string | null = null): PmccPayload {
   const params = loadParams(config);
+  const scope = era ?? CURRENT_ERA;
   const empty: PmccPayload = {
     session: null,
     dbPresent: false,
     openPositions: [],
     openCount: 0,
     arms: [],
+    eras: [],
+    currentEra: CURRENT_ERA,
+    eraScope: scope,
     integrity: {
       exposure: { positionsWithExposure: 0, exposedTicks: 0, markedTicks: 0 },
       dividends: [],
@@ -515,7 +546,10 @@ export function readPmcc(config: ConsoleConfig): PmccPayload {
       dbPresent: true,
       openPositions,
       openCount: openPositions.length,
-      arms: readBooks(db),
+      arms: readBooks(db, scope),
+      eras: readEras(db),
+      currentEra: CURRENT_ERA,
+      eraScope: scope,
       integrity: {
         exposure: {
           positionsWithExposure: exposureRows.filter((e) => e.exposed > 0).length,

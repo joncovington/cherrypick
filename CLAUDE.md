@@ -23,11 +23,13 @@ consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/ro
   are distinct structures, never pooled; both European cash and American physical settlement are
   modelled, and a symbol declared as neither is refused at entry; ex-dividend weeks are skipped. No
   live path.
-- **packages/pmcc** — PMCC deep-ITM covered calls on TQQQ and XSP; **paper-only, credential-free**, the
-  calendars posture (chains via `expirations`/`window_hints`). Book `control` plus the advisor's
-  `advised:control` twin (`tv_managed_exit` as an A/B against hold-to-expiry). **Early assignment is
-  measured, never modelled**: ex-dividend spans refused, near-zero-extrinsic marks flagged
-  assignment-exposed, so the paper result is an explicit upper bound. No live path.
+- **packages/pmcc** — PMCC deep-ITM calls with a short call against them, on XSP, QQQ, GLD, IWM and
+  SLV; **paper-only, credential-free**, the calendars posture (chains via `expirations`/`window_hints`,
+  year-long dates from the streamer's listing). Arms `control` (a 21-DTE long re-bought each cycle)
+  and, from 2026-10-05, `shield`/`shield_hold` (a ~1-year long held while a weekly short rolls
+  against it, closed-only readers seeing them late), plus control's advised twins. **Early assignment
+  is measured, never modelled**: ex-dividend spans refused, near-zero-extrinsic marks flagged
+  assignment-exposed, so the paper result is an explicit upper bound. No live path yet.
 - **packages/curve** — VXX call-credit spreads gated by a daily VIX/VIX3M regime read; **paper-only,
   credential-free**. Books `control`, `noflip` (byte-identical to control until a flip fires) and
   `hook` differ only in entry gate and exit rule. The daily classification is recorded every session,
