@@ -37,7 +37,7 @@ lines at the top saying what has shipped; once a plan has fully landed it moves 
 | Doc | Covers |
 |---|---|
 | [market-report-plan.md](market-report-plan.md) | The suite's own daily market report: what a commercial pre-open report measures, what data each part needs, and the build plan the technicals package belongs to. |
-| [signal-log-plan.md](signal-log-plan.md) | The chart setups' evidence: a historical study over Dolt's 2011–2026 bars on a liquid universe chosen as of each day, scored against a matched random baseline under a pre-declared analysis plan (a verdict within a week), then a live, append-only signal log as confirmation and record. Nothing built yet. |
+| [signal-log-plan.md](signal-log-plan.md) | The chart setups' evidence: a historical study over Dolt's 2011–2026 bars on a liquid universe chosen as of each day, scored against a matched random baseline under a pre-declared analysis plan. Built and run 2026-10-04 (no setup profitable after costs and better than random); the live signal log it also planned is dropped. |
 | [metrics-plan.md](metrics-plan.md) | Expanding the calibration metrics (expectancy, profit factor, Sortino, per-session Sharpe, the Probabilistic Sharpe Ratio, excursions) — what is computed today and what is still a gap. |
 | [regime-recorder-plan.md](regime-recorder-plan.md) | The market-regime recorder in the gex package: which readings are recorded each minute, the entitlement probe that froze the list, and what is still open. |
 | [streamer-subscription-budget.md](streamer-subscription-budget.md) | The 2026-08-24 subscription-rate incident in the streamer, and the fixes, each marked built or open. |
