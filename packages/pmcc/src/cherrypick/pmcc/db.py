@@ -339,7 +339,22 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "experiment_id": "TEXT",  # The base arm an advised row shadows, stamped at entry from the session decision (2026-09-17): the tag no longer carries it, and after the session the decision file is gone. Management prefers this over the configured advice.base_book, so a twin of a non-default base keeps its rules.
         "advice_base": "TEXT",
     },
-    "pmcc_legs": {},
+    # Per-leg ticket facts (2026-10-04), for a position that holds one long for months against a
+    # chain of weekly shorts: each leg's own opening and closing spot, its share of its ticket's
+    # fee and slippage (allocated so a ticket's legs sum to it exactly -- `engine.allocate`), and
+    # why it closed. Position-level totals are unchanged; these sit beside them. A row written
+    # before this reads NULL -- "not recorded", never zero.
+    "pmcc_legs": {
+        "opened_at": "TEXT",
+        "opened_session": "TEXT",
+        "entry_spot": "REAL",
+        "entry_cost": "REAL",
+        "entry_slippage": "REAL",
+        "close_spot": "REAL",
+        "close_cost": "REAL",
+        "close_slippage": "REAL",
+        "close_reason": "TEXT",
+    },
     "pmcc_marks": {},
     "pmcc_assignments": {},
 }

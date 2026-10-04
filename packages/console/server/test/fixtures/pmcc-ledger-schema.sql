@@ -98,7 +98,7 @@ CREATE TABLE pmcc_legs (
     close_ask       REAL,
     close_value     REAL,
     created_at      TEXT,
-    updated_at      TEXT,
+    updated_at      TEXT, opened_at TEXT, opened_session TEXT, entry_spot REAL, entry_cost REAL, entry_slippage REAL, close_spot REAL, close_cost REAL, close_slippage REAL, close_reason TEXT,
     UNIQUE(position_id, leg_role)
 );
 CREATE TABLE pmcc_loop_iterations (

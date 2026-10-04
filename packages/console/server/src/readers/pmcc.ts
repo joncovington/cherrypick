@@ -104,6 +104,9 @@ const KNOWN_COLUMNS: Record<string, string[]> = {
     "id", "position_id", "leg_role", "occ_symbol", "streamer_symbol", "expiration", "strike", "option_type",
     "action", "quantity", "entry_bid", "entry_ask", "entry_mid", "entry_iv", "entry_delta", "status",
     "close_kind", "closed_at", "close_bid", "close_ask", "close_value", "created_at", "updated_at",
+    // Per-leg ticket facts (2026-10-04): a leg's own spot, timing and share of its ticket's cost.
+    "opened_at", "opened_session", "entry_spot", "entry_cost", "entry_slippage", "close_spot",
+    "close_cost", "close_slippage", "close_reason",
   ],
   pmcc_marks: [
     "id", "position_id", "leg_role", "marked_at", "session_date", "bid", "ask", "mid", "delta", "iv", "vega",
