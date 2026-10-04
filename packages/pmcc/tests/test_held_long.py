@@ -109,6 +109,19 @@ def test_the_long_is_picked_from_the_listing_nearest_a_year():
     assert clock.leap_expiration(tie, today)["long_expiration"] == "2027-07-20"
 
 
+def test_a_standard_monthly_is_preferred_to_a_nearer_quarterly():
+    """Probed 2026-10-04: SLV's 2027-09-30 (end of quarter, 361 DTE) lists strikes from 39, its
+    2027-09-17 (third Friday, 348 DTE) from 5. Nearest-to-360 alone took the quarterly, which has no
+    0.90-0.95-delta strike at a 54.74 spot."""
+    today = datetime(2026, 10, 4).date()
+    listed = ["2027-06-17", "2027-06-30", "2027-09-17", "2027-09-30", "2028-01-21"]
+    assert clock.leap_expiration(listed, today)["long_expiration"] == "2027-09-17"
+    # With no monthly in the band, any listed date still serves.
+    assert clock.leap_expiration(["2027-09-30"], today)["long_expiration"] == "2027-09-30"
+    assert clock.standard_monthly(2027, 6).isoformat() == "2027-06-17"  # Juneteenth observed Friday
+    assert clock.standard_monthly(2027, 9).isoformat() == "2027-09-17"
+
+
 def test_a_short_never_outlives_its_long():
     assert clock.short_expiration(MONDAY.date())["short_expiration"] == "2026-09-04"
     assert clock.short_expiration(MONDAY.date(), cap="2026-09-01") is None

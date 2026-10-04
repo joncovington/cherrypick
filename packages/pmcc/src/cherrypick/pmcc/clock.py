@@ -117,19 +117,39 @@ def expiration_plan(today: date, params: dict | None = None) -> dict | None:
 LEAP_DEFAULTS = {"leap_dte_min": 240, "leap_dte_max": 540, "leap_dte_target": 360}
 
 
+def standard_monthly(year: int, month: int) -> date:
+    """The month's standard expiration: its third Friday, moved back a day when that is a holiday
+    (2027-06-18, Juneteenth observed, expires Thursday 06-17)."""
+    first = date(year, month, 1)
+    friday = first + timedelta(days=(4 - first.weekday()) % 7 + 14)
+    while not _cal.is_trading_day(friday):
+        friday -= timedelta(days=1)
+    return friday
+
+
 def leap_expiration(listed: list[str], today: date, params: dict | None = None) -> dict | None:
     """The listed expiration whose DTE falls in `[leap_dte_min, leap_dte_max]` nearest
-    `leap_dte_target`; a tie takes the nearer date (less capital). None when the listing has none."""
+    `leap_dte_target`, a tie taking the nearer date (less capital). None when the listing has none.
+
+    **Standard monthlies first.** A ~1-year horizon lists two kinds of date: the standard monthly
+    (third Friday) and end-of-quarter or end-of-month expirations. Probed 2026-10-04, only the
+    monthlies list deep strikes: SLV's 2027-09-17 goes down to 5 where its 2027-09-30 stops at 39
+    (a ~0.85-delta call at a 54.74 spot, outside the 0.90-0.95 band, so a refusal every session);
+    QQQ's to 285 against 525. The nearest-to-360 rule alone chose the quarterly. So the pick is made
+    among the standard monthlies in the band, and falls back to any listed date only when none is."""
     p = {**LEAP_DEFAULTS, **{k: v for k, v in (params or {}).items() if k in LEAP_DEFAULTS}}
-    best: tuple[date, int] | None = None
+    in_band: list[tuple[date, int]] = []
     for value in listed:
         try:
             exp = date.fromisoformat(str(value))
         except ValueError:
             continue
         dte = (exp - today).days
-        if not p["leap_dte_min"] <= dte <= p["leap_dte_max"]:
-            continue
+        if p["leap_dte_min"] <= dte <= p["leap_dte_max"]:
+            in_band.append((exp, dte))
+    monthlies = [(e, d) for e, d in in_band if e == standard_monthly(e.year, e.month)]
+    best: tuple[date, int] | None = None
+    for exp, dte in monthlies or in_band:
         gap = abs(dte - p["leap_dte_target"])
         if (
             best is None
