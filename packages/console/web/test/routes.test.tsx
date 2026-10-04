@@ -280,6 +280,9 @@ describe("a page the suite has turned off", () => {
     expect(renderWith("/charts", base)).not.toContain('href="/charts/technicals"');
     expect(renderWith("/charts", base)).toContain('href="/charts/intraday"');
     expect(renderWith("/charts", { ...base, features: { ...base.features, technicals: true } })).toContain('href="/charts/technicals"');
+    // The setups watchlist reads the same package's files, so it follows the same switch.
+    expect(renderWith("/charts", base)).not.toContain('href="/charts/setups"');
+    expect(renderWith("/charts", { ...base, features: { ...base.features, technicals: true } })).toContain('href="/charts/setups"');
   });
 
   it("Reports no longer carries a chart tab", () => {

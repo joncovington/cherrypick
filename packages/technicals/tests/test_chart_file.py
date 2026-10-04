@@ -91,6 +91,32 @@ def test_a_vendor_capture_carries_its_levels_marked_against_our_grid_and_gaps():
     ]
 
 
+def test_a_dividend_after_the_capture_does_not_move_our_bars_off_the_vendors():
+    """The capture states prices as adjusted on its own last session. A dividend that goes ex after
+    it re-adjusts every earlier bar of ours; compared as of today, no bar would agree and no level
+    would sit on our grid (CSCO, 2026-10-02). Compared as of the capture, nothing changes."""
+    conn = store.connect()
+    days = _land(conn, "ABC")
+    through = days[-6]
+    bars = [b for b in store.adjusted_bars(conn, "ABC") if b.date <= through]
+    lo = min(b.low for b in bars[-250:])
+    root = paths.market_report_dir() / "vendor-charts" / through
+    root.mkdir(parents=True, exist_ok=True)
+    quotes = [{"date": b.date, "open": b.open, "high": b.high, "low": b.low, "close": b.close} for b in bars]
+    levels = {"support": [{"value": round(lo, 4)}]}
+    doc = {"why": {"historicalQuotes": quotes, "supportAndResistance": levels}}
+    (root / "ABC.json").write_text(json.dumps(doc), encoding="utf-8")
+    before = chart.build(conn, "ABC")["vendor"]
+    assert before["bars_agree"] == before["bars_compared"] > 0 and before["levels"][0]["on_our_grid"]
+
+    store.upsert_dividends(conn, [("ABC", days[-3], 2.0)])  # ex three sessions after the capture
+    conn.commit()
+    assert store.adjusted_bars(conn, "ABC")[0].close != bars[0].close, "today's history did move"
+    after = chart.build(conn, "ABC")["vendor"]
+    assert after["bars_agree"] == after["bars_compared"] == before["bars_compared"]
+    assert after["levels"][0]["on_our_grid"] is True
+
+
 def test_write_all_writes_a_file_per_name_and_an_index():
     conn = store.connect()
     _land(conn, "ABC")
@@ -136,3 +162,27 @@ def test_the_chart_carries_the_iv_rank_as_of_its_own_session():
     }
     assert chart.build(conn, "ABC")["iv_rank"]["iv_rank"] == 95.0
     assert chart.build(conn, "XYZ") is None or chart.build(conn, "XYZ")["iv_rank"] is None
+
+
+def _lv(kind, *values):
+    return [{"kind": kind, "value": v} for v in values]
+
+
+def test_the_vendor_view_is_the_two_nearest_of_each_list_and_never_a_gap():
+    """Two names as the vendor's chart page showed them on 2026-10-03. CSCO at 112.20: two of five
+    supports, both resistances, none of seven gap levels -- the gap support at 113.11 sits nearer
+    than anything shown. CDNS at 351.35: its one support at -25% is shown although three
+    resistances are nearer; "the three nearest levels" would have shown resistances only."""
+    csco = (
+        _lv("resistance", 113.6, 129.38)
+        + _lv("support", 106.6, 94.1, 89.6, 86.1, 65.6)
+        + _lv("gapResistance", 79.33, 101.24, 115.5)
+        + _lv("gapSupport", 121.79, 118.27, 113.11, 75.26)
+    )
+    shown = [x["value"] for x, s in zip(csco, chart.vendor_view(csco, 112.20), strict=True) if s]
+    assert sorted(shown) == [94.1, 106.6, 113.6, 129.38]
+    cdns = (
+        _lv("resistance", 356.75, 364.75, 398.75, 416.69) + _lv("support", 262.75) + _lv("gapSupport", 358.74)
+    )
+    shown = [x["value"] for x, s in zip(cdns, chart.vendor_view(cdns, 351.35), strict=True) if s]
+    assert sorted(shown) == [262.75, 356.75, 364.75]

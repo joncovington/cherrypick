@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   createChart,
@@ -17,13 +17,13 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { TechnicalsChart, TechnicalsVendorLevel } from "@console/shared";
+import type { TechnicalsChart, TechnicalsSetup, TechnicalsVendorLevel } from "@console/shared";
 import { useTechnicalsChart } from "../../lib/api";
 import { SERIES_COLORS } from "../../components/Charts";
 import { fmtIvr } from "../../lib/format";
 
 /**
- * One name's chart: our bars, our level grid, CCI and the trend scores, with the vendor's levels
+ * One name's chart: our bars, our level grid, RSI and the trend scores, with the vendor's levels
  * and trend grades beside them where the vendor's chart was captured.
  *
  * Everything drawn is `packages/technicals`' chart file (`data/technicals/charts/<SYMBOL>.json`);
@@ -34,6 +34,13 @@ import { fmtIvr } from "../../lib/format";
  *
  * Styling carries that distinction: a support or resistance we place is a solid line, a gap level we
  * place is dotted, and any level we cannot produce is dashed.
+ *
+ * The arrows are one entry/exit setup at a time (`packages/technicals/setups.py`), picked by
+ * `?setup=` (the family) and `?side=` (long, short or both): amber for a long -- up where it opened,
+ * down where its exit rule closed it -- and pale for a short -- down labelled "short" where it
+ * opened, up labelled "cover" where it closed -- with the lines that rule reads drawn beside them.
+ * The levels default to our own (swing points, `swings.py`); the vendor's stay as a comparison. The package walks the positions; the page
+ * only places what the file says. The scan-rule matches are listed below the chart, not drawn on it.
  */
 
 const UP = "#43b57a";
@@ -41,9 +48,25 @@ const DOWN = "#d95c4a";
 const GRID_INK = "#8a93a3";
 const OURS = SERIES_COLORS[0]!;
 const VENDOR = SERIES_COLORS[2]!;
+/** Both arrows are amber: an arrow marks an event, and green or red would read as a gain or a loss. */
+const ARROW = SERIES_COLORS[2]!;
+/** A short's arrows: pale, so a short entry (down) is never read as a long's exit (also down). */
+const SHORT_ARROW = "#e3e6ec";
+/** Twice the library's default: at 1 an entry arrow, which carries no label, was lost among the candles. */
+const ARROW_SIZE = 2;
+type Side = "long" | "short" | "both";
+const SIDES: readonly Side[] = ["long", "short", "both"];
 
-/** The scan rules that read bullish; the other three read bearish. */
-const BULLISH = new Set(["BullishCounterTrend", "CciDipInBullishTrend", "BullishTrendFollowing"]);
+/** How each series a setup reads is drawn, keyed as the chart file's `setup_lines`. */
+const SETUP_LINE: Record<string, { title: string; color: string; style: LineStyle; width: 1 | 2 }> = {
+  ema9: { title: "EMA 9", color: SERIES_COLORS[4]!, style: LineStyle.Solid, width: 1 },
+  ema21: { title: "EMA 21", color: SERIES_COLORS[0]!, style: LineStyle.Solid, width: 2 },
+  ema50: { title: "EMA 50", color: SERIES_COLORS[3]!, style: LineStyle.Solid, width: 2 },
+  bb_upper: { title: "BB upper", color: GRID_INK, style: LineStyle.Dotted, width: 1 },
+  bb_mid: { title: "BB mid", color: GRID_INK, style: LineStyle.Dashed, width: 1 },
+  bb_lower: { title: "BB lower", color: GRID_INK, style: LineStyle.Dotted, width: 1 },
+  supertrend: { title: "Supertrend", color: SERIES_COLORS[5]!, style: LineStyle.Solid, width: 2 },
+};
 
 const RULE_LABEL: Record<string, string> = {
   BullishTrendFollowing: "Bullish trend following",
@@ -109,7 +132,14 @@ interface LevelTitle {
   price: number;
   title: string;
   color: string;
+  /** Where its line starts, for a line that starts mid-chart; the chip sits there, not at the edge. */
+  from?: Time;
 }
+
+/** Which horizontal levels are drawn: every one, only those the vendor's own chart draws, or none. */
+type LevelsMode = "ours" | "vendor" | "all" | "off";
+const LEVELS_MODES: readonly LevelsMode[] = ["ours", "vendor", "all", "off"];
+const LEVELS_LABEL: Record<LevelsMode, string> = { ours: "Our levels", vendor: "Vendor's view", all: "All", off: "Off" };
 
 /** A series' last drawn value, for its chip; null when it has none. */
 function lastValue(values: readonly (number | null)[]): number | null {
@@ -128,19 +158,24 @@ function lastValue(values: readonly (number | null)[]): number | null {
  */
 class LeftTitles implements ISeriesPrimitive<Time> {
   private series: ISeriesApi<SeriesType> | null = null;
+  private chart: IChartApi | null = null;
   private readonly views: readonly IPrimitivePaneView[];
 
   constructor(private readonly titles: LevelTitle[]) {
     const renderer: IPrimitivePaneRenderer = { draw: (target) => this.draw(target) };
-    this.views = [{ zOrder: () => "top", renderer: () => renderer }];
+    // Over the series, under the setup arrows (which draw "top"): an arrow on an early bar is information,
+    // the chip over it is only a label.
+    this.views = [{ zOrder: () => "normal", renderer: () => renderer }];
   }
 
   attached(param: SeriesAttachedParameter<Time>): void {
     this.series = param.series;
+    this.chart = param.chart as IChartApi;
   }
 
   detached(): void {
     this.series = null;
+    this.chart = null;
   }
 
   paneViews(): readonly IPrimitivePaneView[] {
@@ -150,17 +185,28 @@ class LeftTitles implements ISeriesPrimitive<Time> {
   private draw(target: Parameters<IPrimitivePaneRenderer["draw"]>[0]): void {
     const series = this.series;
     if (series === null) return;
-    target.useMediaCoordinateSpace(({ context }) => {
+    target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       context.font = "11px -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif";
       context.textBaseline = "middle";
       // A chip centred on its line, as the library draws a title. A vendor level on the grid's high
       // or low shares its line; chips that would overlap sit side by side instead.
-      const placed: { y: number; right: number }[] = [];
+      const placed: { y: number; left: number; right: number }[] = [];
       for (const l of this.titles) {
         const y = series.priceToCoordinate(l.price);
         if (y === null) continue;
-        let x = Math.max(0, ...placed.filter((p) => Math.abs(p.y - y) < CHIP_H).map((p) => p.right + 4));
-        for (const text of [l.title, fmt(l.price)]) {
+        const start = l.from === undefined ? null : (this.chart?.timeScale().timeToCoordinate(l.from) ?? null);
+        // At its line's start (or the left edge), else just right of a chip it would cover, else just
+        // left of one -- always inside the pane, so a line that starts near the right edge keeps a
+        // readable chip rather than one drawn over its neighbour's.
+        const texts = [l.title, fmt(l.price)];
+        const total = texts.reduce((sum, text) => sum + context.measureText(text).width + 2 * CHIP_PAD + 1, -1);
+        const fit = (v: number) => Math.max(0, Math.min(v, mediaSize.width - total));
+        const row = placed.filter((p) => Math.abs(p.y - y) < CHIP_H);
+        const clear = (v: number) => !row.some((p) => v < p.right + 4 && v + total + 4 > p.left);
+        const tries = [start ?? 0, ...row.map((p) => p.right + 4), ...row.map((p) => p.left - total - 4)].map(fit);
+        let x = tries.find(clear) ?? fit(start ?? 0);
+        const left = x;
+        for (const text of texts) {
           const w = context.measureText(text).width + 2 * CHIP_PAD;
           context.fillStyle = l.color;
           context.beginPath();
@@ -170,13 +216,13 @@ class LeftTitles implements ISeriesPrimitive<Time> {
           context.fillText(text, x + CHIP_PAD, y + 0.5);
           x += w + 1;
         }
-        placed.push({ y, right: x - 1 });
+        placed.push({ y, left, right: x - 1 });
       }
     });
   }
 }
 
-function PriceChart({ c }: { c: TechnicalsChart }) {
+function PriceChart({ c, shown, levels }: { c: TechnicalsChart; shown: TechnicalsSetup[]; levels: LevelsMode }) {
   const hostRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = hostRef.current;
@@ -190,7 +236,7 @@ function PriceChart({ c }: { c: TechnicalsChart }) {
     });
     const dates = c.bars.map((b) => b.date);
 
-    // Pane 0: candles, our grid's extremes, the vendor's levels, our scan-rule matches.
+    // Pane 0: candles, our grid's extremes, the vendor's levels, the chosen setup's lines and arrows.
     const candles = chart.addSeries(CandlestickSeries, {
       upColor: UP,
       downColor: DOWN,
@@ -201,7 +247,33 @@ function PriceChart({ c }: { c: TechnicalsChart }) {
     });
     candles.setData(c.bars.map((b) => ({ time: t(b.date), open: b.open, high: b.high, low: b.low, close: b.close })));
     const titles: LevelTitle[] = [];
-    if (c.grid) {
+    // "Ours" draws our own swing levels; "vendor" only the levels the vendor's own chart draws (the
+    // file's `vendorView`, a package rule; a file without it shows them all), for comparison; "all"
+    // ours, our grid's extremes and every vendor level; "off" none. Never the setup lines, which are
+    // what the arrows are read against.
+    const fromDate = (date: string | null) =>
+      date !== null && date > dates[0]! ? (dates.find((d) => d >= date) ?? dates[0]!) : dates[0]!;
+    const levelLine = (value: number, date: string | null, color: string, style: LineStyle, title: string) => {
+      // From the level's own date to the last bar, so a recent level is a short line, not one across
+      // the whole chart; kept out of the autoscale, as a price line would be.
+      const from = fromDate(date);
+      const series = chart.addSeries(LineSeries, {
+        color,
+        lineWidth: 1,
+        lineStyle: style,
+        title: "",
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        autoscaleInfoProvider: () => null,
+      });
+      series.setData(dates.filter((d) => d >= from).map((d) => ({ time: t(d), value })));
+      titles.push({ price: value, title, color, from: from === dates[0] ? undefined : t(from) });
+    };
+    if (levels === "ours" || levels === "all") {
+      for (const l of c.ourLevels) levelLine(l.value, l.date, l.kind === "support" ? UP : DOWN, LineStyle.Solid, l.kind);
+    }
+    if (levels === "all" && c.grid) {
       for (const [price, title] of [
         [c.grid.high, "grid high"],
         [c.grid.low, "grid low"],
@@ -210,35 +282,60 @@ function PriceChart({ c }: { c: TechnicalsChart }) {
         titles.push({ price, title, color: GRID_INK });
       }
     }
-    for (const l of c.vendor?.levels ?? []) {
-      const color = levelColor(l);
-      candles.createPriceLine({
-        price: l.value,
-        color,
-        lineWidth: 1,
-        lineStyle: levelStyle(l),
-        axisLabelVisible: false,
+    const drawn = (c.vendor?.levels ?? []).filter((l) => levels === "all" || (levels === "vendor" && l.vendorView !== false));
+    for (const l of drawn) levelLine(l.value, l.date, levelColor(l), levelStyle(l), `vendor ${KIND_LABEL[l.kind] ?? l.kind}`);
+    // The chips draw with whichever pane-0 series carries them, so they go on the last one added:
+    // over every line, and under the arrows, which draw on top.
+    let topmost: ISeriesApi<SeriesType> = candles;
+    for (const key of shown[0]?.lines ?? []) {
+      const look = SETUP_LINE[key];
+      const values = c.setupLines[key];
+      if (look === undefined || values === undefined) continue;
+      const s = chart.addSeries(LineSeries, {
+        color: look.color,
+        lineWidth: look.width,
+        lineStyle: look.style,
         title: "",
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
       });
-      titles.push({ price: l.value, title: `vendor ${KIND_LABEL[l.kind] ?? l.kind}`, color });
+      s.setData(line(dates, values));
+      topmost = s;
+      const last = lastValue(values);
+      if (last !== null) titles.push({ price: last, title: look.title, color: look.color });
     }
-    candles.attachPrimitive(new LeftTitles(titles));
+    topmost.attachPrimitive(new LeftTitles(titles));
+    // A long: an amber up arrow under its entry bar, a down arrow over its exit bar labelled with what
+    // closed it. A short, the mirror in pale: a down arrow labelled "short" over its entry bar, an up
+    // arrow labelled "cover" under its exit. A position entered before the bars drawn shows only its exit.
     const inRange = new Set(dates);
-    const markers: SeriesMarker<Time>[] = c.signals
-      .filter((s) => inRange.has(s.date))
-      .map((s) => {
-        const bull = s.rules.some((r) => BULLISH.has(r));
-        return {
-          time: t(s.date),
-          position: bull ? "belowBar" : "aboveBar",
-          color: bull ? UP : DOWN,
-          shape: bull ? "arrowUp" : "arrowDown",
-          text: "",
-        };
-      });
-    createSeriesMarkers(candles, markers);
+    const markers: SeriesMarker<Time>[] = [];
+    for (const st of shown) {
+      const long = st.side === "long";
+      const color = long ? ARROW : SHORT_ARROW;
+      for (const tr of st.trades) {
+        if (inRange.has(tr.entryDate)) {
+          markers.push(
+            long
+              ? { time: t(tr.entryDate), position: "belowBar", color, shape: "arrowUp", size: ARROW_SIZE, text: "" }
+              : { time: t(tr.entryDate), position: "aboveBar", color, shape: "arrowDown", size: ARROW_SIZE, text: "short" },
+          );
+        }
+        if (tr.exitDate !== null && inRange.has(tr.exitDate)) {
+          const why = tr.reason ?? "";
+          markers.push(
+            long
+              ? { time: t(tr.exitDate), position: "aboveBar", color, shape: "arrowDown", size: ARROW_SIZE, text: why }
+              : { time: t(tr.exitDate), position: "belowBar", color, shape: "arrowUp", size: ARROW_SIZE, text: `cover · ${why}` },
+          );
+        }
+      }
+    }
+    markers.sort((a, b) => (a.time as number) - (b.time as number));
+    // Above the chips (LeftTitles draws "normal"), so an arrow on an early bar is never hidden by one.
+    createSeriesMarkers(candles, markers, { zOrder: "aboveSeries" });
 
-    // Pane 1: CCI 14 (the scan rules' trend-following input) and CCI 5 (their dip/rally input).
     // Series titles and last values are chips at the left (LeftTitles), not on the axis.
     const seriesChip = (values: readonly (number | null)[], title: string, color: string): LevelTitle[] => {
       const price = lastValue(values);
@@ -246,16 +343,23 @@ function PriceChart({ c }: { c: TechnicalsChart }) {
     };
     const unlabelled = { title: "", lastValueVisible: false, priceLineVisible: false } as const;
 
-    // Pane 1: CCI 14 (the scan rules' trend-following input) and CCI 5 (their dip/rally input).
-    const cci5Color = SERIES_COLORS[3]!;
-    const cci14 = chart.addSeries(LineSeries, { color: OURS, lineWidth: 2, ...unlabelled }, 1);
-    cci14.setData(line(dates, c.cci14));
-    const cci5 = chart.addSeries(LineSeries, { color: cci5Color, lineWidth: 1, ...unlabelled }, 1);
-    cci5.setData(line(dates, c.cci5));
-    for (const price of [100, -100]) {
-      cci14.createPriceLine({ price, color: GRID_INK, lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: "" });
+    // Pane 1: RSI 14, the reading the setups use (mean reversion under 30, the pullback's 40-50 dip),
+    // on a fixed 0-100 scale so 30 and 70 are always on screen; 50 is the midline.
+    const rsi = chart.addSeries(
+      LineSeries,
+      { color: OURS, lineWidth: 2, ...unlabelled, autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) },
+      1,
+    );
+    rsi.setData(line(dates, c.rsi14));
+    rsi.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.08 } });
+    for (const [price, style] of [
+      [70, LineStyle.Dotted],
+      [50, LineStyle.Dashed],
+      [30, LineStyle.Dotted],
+    ] as const) {
+      rsi.createPriceLine({ price, color: GRID_INK, lineWidth: 1, lineStyle: style, axisLabelVisible: false, title: "" });
     }
-    cci14.attachPrimitive(new LeftTitles([...seriesChip(c.cci14, "CCI 14", OURS), ...seriesChip(c.cci5, "CCI 5", cci5Color)]));
+    rsi.attachPrimitive(new LeftTitles(seriesChip(c.rsi14, "RSI 14", OURS)));
 
     // Pane 2: the short-term trend score, ours against the vendor's grade for the same day.
     const ours = chart.addSeries(LineSeries, { color: OURS, lineWidth: 2, lineType: 1, ...unlabelled }, 2);
@@ -277,10 +381,116 @@ function PriceChart({ c }: { c: TechnicalsChart }) {
     panes[2]?.setStretchFactor(0.18);
     chart.timeScale().fitContent();
     return () => chart.remove();
-  }, [c]);
+  }, [c, shown, levels]);
 
   if (c.bars.length < 2) return <p className="muted">Not enough bars to draw.</p>;
   return <div ref={hostRef} style={{ height: "620px" }} />;
+}
+
+/**
+ * The setup picker, the chosen setup's rule as the package words it, and whether it holds a position.
+ * Where the setups read another symbol's volume (SPX reads SPY's) it says so, whatever setup is shown.
+ */
+function LevelsToggle({ c, mode, onChange }: { c: TechnicalsChart; mode: LevelsMode; onChange: (m: LevelsMode) => void }) {
+  const all = c.ourLevels.length + (c.grid ? 2 : 0) + (c.vendor?.levels.length ?? 0);
+  const theirs = c.vendor?.levels.filter((l) => l.vendorView !== false).length ?? 0;
+  const tip: Record<LevelsMode, string> = {
+    ours: `Our own support and resistance, swing points in our bars, the two nearest each side: ${c.ourLevels.length} lines`,
+    vendor: `For comparison: only what the vendor's own chart draws, the two nearest supports and resistances: ${theirs} lines`,
+    all: `Ours, our grid's high and low and every level in the vendor's data: ${all} lines`,
+    off: "No levels",
+  };
+  // Without a vendor capture there is no vendor's view to show.
+  const modes = LEVELS_MODES.filter((m) => m !== "vendor" || c.vendor !== null);
+  return (
+    <div className="mode-toggle" role="group" aria-label="levels" style={{ marginLeft: 0 }}>
+      {modes.map((m) => (
+        <button key={m} type="button" title={tip[m]} className={m === mode ? "mode-btn active" : "mode-btn"} onClick={() => onChange(m)}>
+          {LEVELS_LABEL[m]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SetupBar({
+  c,
+  family,
+  side,
+  shown,
+  onPick,
+  onSide,
+  levels,
+  onLevels,
+}: {
+  c: TechnicalsChart;
+  family: string | null;
+  side: Side;
+  shown: TechnicalsSetup[];
+  onPick: (family: string) => void;
+  onSide: (side: Side) => void;
+  levels: LevelsMode;
+  onLevels: (m: LevelsMode) => void;
+}) {
+  if (c.setups.length === 0) {
+    return (
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
+        <LevelsToggle c={c} mode={levels} onChange={onLevels} />
+        <span className="muted">This chart file predates the entry/exit setups; the next report run writes them.</span>
+      </div>
+    );
+  }
+  // One button per family, named by its long setup; the side picks which of its positions are drawn.
+  const families = c.setups.filter((s) => s.side === "long");
+  const hasShorts = c.setups.some((s) => s.side === "short");
+  const drawn = new Set(c.bars.map((b) => b.date));
+  const entries = shown.reduce((n, st) => n + st.trades.filter((tr) => drawn.has(tr.entryDate)).length, 0);
+  const open = shown.flatMap((st) => st.trades.filter((tr) => tr.exitDate === null).map((tr) => ({ st, tr })));
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <div className="mode-toggle" role="group" aria-label="setup" style={{ marginLeft: 0 }}>
+          {families.map((s) => (
+            <button key={s.family} type="button" className={s.family === family ? "mode-btn active" : "mode-btn"} onClick={() => onPick(s.family)}>
+              {s.name}
+            </button>
+          ))}
+        </div>
+        {hasShorts && (
+          <div className="mode-toggle" role="group" aria-label="side" style={{ marginLeft: 0 }}>
+            {SIDES.map((sd) => (
+              <button key={sd} type="button" className={sd === side ? "mode-btn active" : "mode-btn"} onClick={() => onSide(sd)}>
+                {sd === "long" ? "Long" : sd === "short" ? "Short" : "Both"}
+              </button>
+            ))}
+          </div>
+        )}
+        <LevelsToggle c={c} mode={levels} onChange={onLevels} />
+        <span className="chip">
+          {entries} {entries === 1 ? "entry" : "entries"} in {c.bars.length} sessions
+        </span>
+        {open.map(({ st, tr }) => (
+          <span key={st.id} className="chip" title="The position this setup opened has not met its exit rule yet.">
+            {st.side === "short" ? "short" : "long"} open since {tr.entryDate} at {fmt(tr.entryPrice)}
+            {tr.target !== null ? `, target ${fmt(tr.target)}` : ""}
+          </span>
+        ))}
+      </div>
+      {shown.map((st) => (
+        <p key={st.id} className="muted" style={{ marginTop: 6 }}>
+          {shown.length > 1 && <strong>{st.side === "short" ? "Short: " : "Long: "}</strong>}
+          {st.rule}
+        </p>
+      ))}
+      {c.volumeSource !== null && (
+        <p className="muted" style={{ marginTop: 4 }}>
+          <strong>Volume is {c.volumeSource}'s.</strong> {c.symbol} has no volume of its own: it is calculated from its
+          member stocks, so nothing trades as {c.symbol}. The breakout setup's volume test reads {c.volumeSource}'s
+          volume for the same session, against {c.volumeSource}'s own 50-session average.
+        </p>
+      )}
+    </div>
+  );
 }
 
 function Card({ title, children, asOf }: { title: string; children: ReactNode; asOf?: string }) {
@@ -355,6 +565,9 @@ function VendorCard({ c }: { c: TechnicalsChart }) {
               <th title="Support and resistance: a point on our grid. Gap levels: an edge of one of our own gaps, on the same bar.">
                 We place it
               </th>
+              <th title="Whether the vendor's own chart page draws it: the two nearest of its support list and of its resistance list, never a gap level.">
+                On their chart
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -368,6 +581,7 @@ function VendorCard({ c }: { c: TechnicalsChart }) {
                   <td className={l.onOurGrid === false ? "pnl-neg" : l.onOurGrid === null ? "muted" : ""}>
                     {l.onOurGrid === null ? "—" : l.onOurGrid ? (GAP_KINDS.has(l.kind) ? "gap edge" : "on grid") : "no"}
                   </td>
+                  <td className={l.vendorView === true ? "" : "muted"}>{l.vendorView === null ? "—" : l.vendorView ? "yes" : "no"}</td>
                 </tr>
               ))}
           </tbody>
@@ -375,8 +589,9 @@ function VendorCard({ c }: { c: TechnicalsChart }) {
       )}
       <p className="muted">
         On the chart: solid, a support or resistance our grid places; dotted, a gap level that is an edge of one
-        of our gaps; dashed, a level we cannot produce. Which of those candidates the vendor chooses to draw is
-        not yet reproduced.
+        of our gaps; dashed, a level we cannot produce. Each starts at its own date, as the vendor draws it.
+        "Vendor's view" shows only the levels the vendor's chart page draws (the two nearest supports and
+        resistances, no gaps); which levels the vendor computes in the first place is not yet reproduced.
       </p>
     </Card>
   );
@@ -406,7 +621,10 @@ function SignalsCard({ c }: { c: TechnicalsChart }) {
           </tbody>
         </table>
       )}
-      <p className="muted">Arrows on the chart: up for the bullish rules, down for the bearish. A pattern, not a trade idea.</p>
+      <p className="muted">
+        The vendor's scan rules as we reproduce them: a pattern, not a trade idea, so they are listed here and not
+        drawn. The chart's arrows are the selected setup's entries and exits.
+      </p>
     </Card>
   );
 }
@@ -421,6 +639,7 @@ const DEFAULT_SYMBOL = "SPX";
 export function ChartPage() {
   const [params, setParams] = useSearchParams();
   const symbol = params.get("symbol")?.toUpperCase() || DEFAULT_SYMBOL;
+  const setupParam = params.get("setup");
   const { data, isLoading, isError } = useTechnicalsChart(symbol);
   const c = data?.chart ?? null;
   const index = data?.index;
@@ -437,6 +656,43 @@ export function ChartPage() {
     setDraft("");
   };
   const last = c ? c.bars[c.bars.length - 1] : undefined;
+  // `?setup=` names a family (trend following unless the URL names another the file carries) and
+  // `?side=` which of its positions are drawn, long by default. A short's own id ("trend-short"), as a
+  // link may carry, picks its family and the short side.
+  const named = c?.setups.find((s) => s.id === setupParam) ?? null;
+  const family = named?.family ?? c?.setups[0]?.family ?? null;
+  const sideParam = params.get("side");
+  const side: Side =
+    sideParam === "short" || sideParam === "both" || sideParam === "long" ? sideParam : named?.side === "short" ? "short" : "long";
+  // Memoised: the chart is rebuilt whenever this changes, so it must not be a new array every render.
+  const shown = useMemo(
+    () => (c?.setups ?? []).filter((s) => s.family === family && (side === "both" || s.side === side)),
+    [c, family, side],
+  );
+  const pickSetup = (fam: string) => {
+    const next = new URLSearchParams(params);
+    next.set("setup", fam);
+    setParams(next, { replace: true });
+  };
+  const pickSide = (sd: Side) => {
+    const next = new URLSearchParams(params);
+    if (family !== null) next.set("setup", family);
+    if (sd === "long") next.delete("side");
+    else next.set("side", sd);
+    setParams(next, { replace: true });
+  };
+  // Our own levels, the vendor's kept for comparison; a chart file from before our levels falls back
+  // to the vendor's view or every level. A `?levels=` in the URL outranks that.
+  const levelsParam = params.get("levels");
+  const fallback: LevelsMode = c && c.ourLevels.length > 0 ? "ours" : c?.vendor ? "vendor" : "all";
+  const asked = LEVELS_MODES.find((m) => m === levelsParam);
+  const levels: LevelsMode = asked === undefined || (asked === "vendor" && !c?.vendor) ? fallback : asked;
+  const setLevels = (m: LevelsMode) => {
+    const next = new URLSearchParams(params);
+    if (m === fallback) next.delete("levels");
+    else next.set("levels", m);
+    setParams(next, { replace: true });
+  };
 
   return (
     <div className="page">
@@ -517,13 +773,25 @@ export function ChartPage() {
               </span>
             )}
           </div>
-          <Card title="Price, CCI and trend" asOf={last ? `close ${fmt(last.close)}` : undefined}>
-            <PriceChart c={c} />
+          <Card title="Price, RSI and trend" asOf={last ? `close ${fmt(last.close)}` : undefined}>
+            <SetupBar
+              c={c}
+              family={family}
+              side={side}
+              shown={shown}
+              onPick={pickSetup}
+              onSide={pickSide}
+              levels={levels}
+              onLevels={setLevels}
+            />
+            <PriceChart c={c} shown={shown} levels={levels} />
             <p className="muted">
               {c.grid
                 ? `Grid over ${c.grid.window ?? 250} sessions: low ${fmt(c.grid.low)} (${c.grid.lowDate ?? "—"}), high ${fmt(c.grid.high)} (${c.grid.highDate ?? "—"}), step ${fmt(c.grid.step)}. `
                 : "Too few sessions for a grid. "}
-              Middle pane: CCI 14 and CCI 5 with ±100. Bottom: the short-term trend score (−4 to +4), ours solid
+              Arrows: amber for a long (up where it opened, down where it closed), pale for a short (down
+              labelled "short" where it opened, up labelled "cover" where it closed); each exit is labelled
+              with what closed it. Middle pane: RSI 14 with 30, 50 and 70. Bottom: the short-term trend score (−4 to +4), ours solid
               {c.vendor ? ", the vendor's dashed" : ""}.
             </p>
           </Card>

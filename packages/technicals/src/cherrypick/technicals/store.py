@@ -185,10 +185,20 @@ def splits(conn, symbol: str) -> list[_adjust.Split]:
     return dolt + public_splits(symbol)
 
 
-def adjusted_bars(conn, symbol: str) -> list[_adjust.AdjustedBar]:
+def adjusted_bars(conn, symbol: str, as_of: str | None = None) -> list[_adjust.AdjustedBar]:
+    """The bars as adjusted today -- or, with `as_of`, as they were adjusted on that session: bars
+    through it, and only the splits and dividends that had gone ex by then. A vendor capture states
+    its prices as of its own last session, so it is compared with `as_of` set to that session; a
+    dividend paid after the capture would otherwise move every earlier bar off the vendor's by its
+    ratio (CSCO, ex 2026-10-02 against a 2026-09-25 capture: 0 of 3,012 prices agreed)."""
     splits_ = splits(conn, symbol)
     raw = raw_bars(conn, symbol)
-    adjusted = _adjust.adjust(raw, _adjust.dedupe_splits(raw, splits_), dividends(conn, symbol)[0])
+    divs = dividends(conn, symbol)[0]
+    if as_of is not None:
+        raw = [b for b in raw if b.date <= as_of]
+        splits_ = [s for s in splits_ if s.ex_date <= as_of]
+        divs = [d for d in divs if d.ex_date <= as_of]
+    adjusted = _adjust.adjust(raw, _adjust.dedupe_splits(raw, splits_), divs)
     return adjusted[_adjust.series_break(adjusted) :]
 
 

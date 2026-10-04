@@ -60,7 +60,9 @@ def check(captures: list[Path] | None = None) -> dict:
             vendor = json.loads(path.read_text(encoding="utf-8"))["why"]["historicalQuotes"]
         except (OSError, ValueError, KeyError, TypeError):
             continue
-        ours = {b.date: {f: getattr(b, f) for f in FIELDS} for b in store.adjusted_bars(conn, sym)}
+        # As adjusted on the capture's last session, not today: a later dividend is not a disagreement.
+        as_of = str(vendor[-1].get("date", ""))[:10] or None if vendor else None
+        ours = {b.date: {f: getattr(b, f) for f in FIELDS} for b in store.adjusted_bars(conn, sym, as_of)}
         if not ours:
             not_held.append(sym)
             continue

@@ -45,7 +45,7 @@ export function isModuleVisible(id: string, f: Features): boolean {
 /** Whether one tab of a visible page is shown: each module's advisor tab, and the technicals chart. */
 export function isSlideVisible(module: string, slide: string, f: Features): boolean {
   if (slide === "advisor" && isTradingModuleId(module)) return isFeatureOn("advisor", f);
-  if (module === "charts" && slide === "technicals") return isFeatureOn("technicals", f);
+  if (module === "charts" && (slide === "technicals" || slide === "setups")) return isFeatureOn("technicals", f);
   return true;
 }
 

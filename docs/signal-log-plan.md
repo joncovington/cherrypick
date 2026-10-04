@@ -1,0 +1,576 @@
+# The chart setups' evidence: a historical study now, and a live signal log after it
+
+*Drafted 2026-10-04; **revised the same day**, before anything was built or observed. The first
+draft took its evidence only from signals recorded live from now on, which put the verdict on the
+commoner setups one to four years away and on the breakouts decades away. The user's verdict:
+"multiple years is not realistically useful to me". The local Dolt clone turned out to hold 15
+years of daily bars, delisted names included, so the verdict now comes from history, within a week.
+The live log follows, as confirmation and as a record. **Nothing is built yet.** Phase 1 is built
+on its own branch once PR #31 (the setups, shorts and our own levels) has merged.*
+
+**The short version:**
+
+- **Phase 1** runs the eight chart setups over 2011–2026 on a liquid universe chosen as of each day,
+  and scores them against a matched random baseline under a pre-declared analysis plan. That gives
+  a verdict on every setup within a week.
+- **Phase 2** adds an append-only log of each live signal as it is issued. Its job is to confirm
+  that the setups behave live as they did historically (weeks to a few months for the frequent
+  ones), to keep the record recomputation cannot, and to feed the watchlist, alerts and
+  data-health checks.
+
+## Why do any of this
+
+### What we want to know
+
+1. **Do the setups have any edge?** They are textbook rules, chosen with the user and never scored.
+   The literature's prior is sobering:
+   - moving-average and range-break rules lost their edge out of sample (Sullivan, Timmermann &
+     White 1999);
+   - in-sample edges vanish after modest costs (Bajgrowicz & Scaillet 2012);
+   - Bollinger-band signals lost predictive power once they were popularised (Fang, Jacobsen &
+     Qin 2017).
+
+   The aim is a precise measurement that settles it either way, not a hoped-for result.
+2. **Which context matters?** Whether "trend agrees", RS ≥ 7, distance to our support and
+   resistance, or market breadth change the outcome.
+3. **Which exit is best?** Alternative exits replayed against the same entries.
+4. **What regime is the market in?** Daily counts of long versus short entries are a breadth
+   reading the suite lacks.
+5. **Do the options modules do better in some setup regimes?** For example, flies or bwb on days
+   when SPX holds an open breakdown short.
+
+### Why history can answer these now
+
+The local Dolt `stocks` clone (read by the technicals landing) holds:
+
+- **Daily bars from 2011-01-03 to the last session**: about 4,200 names in 2012, 5,300 in 2016 and
+  12,500 today.
+- **Delisted names.** Of the 5,349 names trading on 2016-06-01, 1,505 (28%) no longer trade,
+  acquisitions among them (ABMD, AAWW). A test over this history is not limited to today's
+  survivors (Brown, Goetzmann, Ibbotson & Ross 1992).
+- **Its own `split` and `dividend` tables.**
+
+At today's rates the setups make about 12 positions per name-year, across all eight. The liquid
+universe grows from about 1,050 names in 2011 to about 1,800 in 2019 and about 2,900 in 2026 (a
+one-day dollar-volume stand-in for the 50-session median, 2026-10-04). Over 15¾ years that is an
+estimated **330,000 positions, about 8,500 of them breakouts and breakdowns**. Every setup-side
+clears its sample threshold at once, even after same-day clustering.
+
+### Why a live record still matters
+
+Recomputation cannot reproduce what was known on the day. This is the real-time vintage problem
+(Croushore & Stark 2001):
+
+1. **Corporate actions restate history.** A dividend or split re-adjusts every earlier bar, and a
+   signal sitting on a threshold can appear or vanish after the fact. CSCO's dividend on 2026-10-02
+   moved its whole history by 0.39%. A capture of the vendor's data from the week before then
+   disagreed with ours on all 3,012 prices until the comparison was fixed.
+2. **Rule changes rewrite the past silently.** The pullback's RSI rule (2026-10-03) and the
+   breakouts' Supertrend condition (2026-10-04) each changed every past signal of those setups.
+3. **Data corrections.** The landing upserts Dolt wholesale, so a corrected bar replaces the signal
+   it produced.
+
+Today the nightly `technicals-report` (06:30 ET) recomputes every name's full history and
+overwrites `charts/<SYMBOL>.json` and `charts/setups-index.json`. Nothing is kept.
+
+## Principles
+
+- **The verdict is pre-declared.** The analysis plan (v2 below) is written before any result is
+  looked at. Nothing is tuned on the study's own output (Harvey 2017; Bailey et al. 2017).
+- **No hindsight anywhere.**
+  - The universe is chosen each day from data up to the day before.
+  - Fills are at the next open.
+  - A rule tuned on part of the history is judged only on the rest.
+- **Record the measure, not a verdict** (as the regime recorder does,
+  `docs/regime-recorder-plan.md`).
+- **Append-only, enforced.** The live log's tables refuse `UPDATE` and `DELETE` through SQLite
+  triggers, the first store in the suite to enforce this. Each guard is shown to fail by trying.
+- **Rule versions are declared, and changing one is a boundary.** A rule change is
+  measurement-affecting in the suite's sense. It lands at a declared boundary, under a new
+  version, and is never pooled silently with the old one.
+- **No vendor data.** The setups, their context and the study run on our own bars. The vendor only
+  checks our trend scores and rank.
+- **Record-only.** No loop, gate or sizing reads any of this until a later phase declares it, at a
+  boundary.
+- **Separate stores for separate jobs.**
+  - `eod.db` is the nightly store, rebuildable from Dolt.
+  - `history.db` is the study's research store, rebuildable from Dolt.
+  - `signals.db` is the live log, which can't be rebuilt from anything.
+
+## Phase 1: the historical study (the verdict, within a week)
+
+### The data: `history.db`
+
+A research store at `~/.cherrypick/data/technicals/history.db`, landed from the local Dolt clone
+(`ohlcv`, `split`, `dividend`) for 2011-01-03 to the present.
+
+- **How it's read:** in month-wide windows with no symbol filter, as the nightly landing already
+  does. Dolt's keys lead with the date.
+- **How it's adjusted:** with the package's own `adjust` code, including its two defect corrections
+  (duplicate splits, and a ticker that changed hands, detected as a 3× one-day jump).
+- **It's kept apart from `eod.db`** so the nightly job is not slowed, and the operational store
+  does not grow by tens of millions of rows.
+
+**Checks before anything is scored:**
+- On the overlap (2023–26, our 527 names), adjusted bars from `history.db` must match `eod.db` to
+  the cent wherever `eod.db` uses Dolt's own dividends.
+- Before 2023:
+  - overnight jumps of more than 40% with no split recorded are listed and inspected;
+  - coverage gaps are counted per name.
+- **Dividends** before the tastytrade set rely on Dolt alone. Dolt's dividends matched the vendor's
+  adjusted prices on only 86.8% of prices when checked. That barely moves a 25-day return, but the
+  study reports it.
+
+### The universe, chosen each day
+
+A name qualifies on a session when, using bars **up to the previous session**:
+
+- its close is at least $5, and
+- its 50-session median dollar volume (close × volume) is at least $20M.
+
+That is about 1,050 names in 2011, rising to about 2,900 today: names a trader could actually fill at
+the open.
+
+- A setup's entry counts only if the name qualified that day.
+- A position, once opened, is held to its own exit, whether or not the name still qualifies.
+- SPX is not in Dolt and is not in the study. The index funds are in it, if they qualify.
+
+### The holdout for the rules that were tuned
+
+Two families had their rules changed after looking at 2023–26 on our 527 names:
+
+- the pullbacks (the RSI window);
+- the breakouts and breakdowns (the Supertrend condition).
+
+**These four setup-sides are judged only on data the change never saw:**
+- 2011-01-03 to 2022-12-30, all names;
+- 2023 onwards, names outside the 527.
+
+Trend following and mean reversion were never tuned, and are judged on everything.
+
+Each setup-side is also reported separately for 2011–2018 and 2019–2026. That is a stability check,
+not an extra hypothesis.
+
+Two more views, again not extra hypotheses (decided 2026-10-04). Options tradability can't be
+reconstructed point-in-time (see "The options-tradable filter" in Phase 2), so the headline question
+stays "does the signal predict the stock's move", on liquid stocks. The option rides on that move.
+The views are:
+- **names with a 50-session median dollar volume of at least $300M**, the best stock-only stand-in
+  for options liquidity (76% of them have weeklies);
+- **names on today's options-tradable list**, flagged as hindsight: it is today's list applied to
+  past dates.
+
+### Scoring
+
+As analysis plan v2 below: next-open fills, a matched random baseline, costs, a family of eight
+with a Holm correction, and results in calendar time. `core.metrics` already provides excursions,
+expectancy and the probabilistic Sharpe. A missing mark is skipped, never read as zero.
+
+### What it produces
+
+- A versioned results fact set, `history-results-<run>.json`, with every setup-side and its sample.
+- A dated summary appended to `packages/technicals/docs/setups.md`, including any setup-side that
+  fails.
+
+### Guards, each shown to fail
+
+| Guard | Broken how, to check it fires |
+|---|---|
+| The universe uses no future data | qualify names on the same day's volume |
+| Fills are at the next open | fill at the signal close |
+| The tuned setup-sides cannot reach the verdict through their tuned window | let 2023–26 pullbacks into the verdict |
+| The baseline replays identically | change the seed and see the result differ |
+| The scorer reproduces the engine's own exits for every position | score a position off-by-one session |
+| `history.db` matches `eod.db` on the overlap | apply a dividend twice |
+
+### Storage
+
+All of Dolt from 2011 is about 29 million bars, about 2.6 GB at the store's 90 bytes per row.
+Storing only names that ever qualify is about 1 GB. Results are tens of MB: baseline draws are
+regenerated from the fixed seed, not stored one by one (that would be about 1 GB more).
+
+### Effort
+
+About a day to land and check the history, and about a day for the scorer and baseline. Then an
+hour or so of computing. **A verdict on all eight setup-sides within the week.**
+
+## Phase 2: the live signal log (confirmation, record, day-to-day uses)
+
+### What it is for, now that history gives the verdict
+
+1. **Confirmation.** Does each setup-side behave live as it did historically?
+   - This needs far fewer trades than proving an edge from scratch: about 150 live trades per
+     setup-side, compared with the historical 95% interval.
+   - The setups are executed exactly as specified, so a live drift points to the market or the data,
+     not the rules.
+2. **The as-issued record** that recomputation cannot reproduce: restatements, rule versions, and
+   when each signal was first seen.
+3. **Data health.** A logged signal that later recomputes differently is an alarm in itself.
+4. **Day-to-day uses:** watchlist history, alerts, and the later phases.
+
+**Decided 2026-10-04: the nightly setups widen to the study's liquid universe** (price ≥ $5,
+50-session median dollar volume ≥ $20M, about 2,900 names today, not 527). Time to about 150 live
+trades per setup-side, scaling today's 527-name rates by name count (about 5½×, a rough guide until
+the wider universe's own rates are measured):
+
+| Setup-side | Live positions a year (527 names) | Time to ~150 on 527 | On ~2,900 names |
+|---|---|---|---|
+| Mean reversion (short) | ~1,970 | ~4 weeks | ~1 week |
+| Pullback (long) | ~1,370 | ~6 weeks | ~1 week |
+| Mean reversion (long) | ~840 | ~9 weeks | ~2 weeks |
+| Pullback (short) | ~830 | ~9 weeks | ~2 weeks |
+| Trend following (long and short) | ~620–640 | ~12–13 weeks | ~2–3 weeks |
+| Breakout / breakdown | ~78–85 | ~2 years | ~4 months |
+
+Restricting to options-tradable names (below) slows these by however many names it removes; the
+log records the label, so confirmation can be read either way. The wider pool also lets the
+options-tradable filter find tradable names among all of them, not just today's curated list.
+
+- **Storage:** `eod.db` grows from 57 MB to about 150–200 MB. The chart files grow from 27 MB to
+  about 100–150 MB, rewritten nightly. The chart job takes about 3–4 minutes, up from 42 seconds.
+- **Broker calls:** the IV-rank job asks tastytrade for 50 symbols per call with a 1-second pause, so
+  about 2,900 names is about a minute a night. (An earlier note here said one symbol a second; that
+  is the dividend script, not this one.) The dividend script does go one symbol a second, and
+  refreshes each symbol weekly. Widened names use Dolt's dividends, and the tastytrade fetch stays
+  on the curated names. The setups don't read IV or dividends directly, only through the adjustment.
+- **The morning report is unaffected.** It keeps its own universe and its illiquid names. A name in
+  the report is not a claim that it is tradable.
+
+### The options-tradable filter (decided 2026-10-04)
+
+Many liquid stocks are still not names anyone would trade options on: wide spreads, thin books, or
+monthly expiries only. The vendor's morning report includes such names too, which is fine for a
+report and wrong for a trading watchlist.
+
+**Definition.** A name is options-tradable on a session when both hold:
+- **Weekly expiries:** at least 4 listed expiries in the next 35 days;
+- **tastytrade's liquidity rating of 3 or 4**, on at least 7 of the last 10 sessions. The rating
+  moves day to day (ABBV was 2 on 2026-10-02 and 3 on 2026-10-04), so the rule has hysteresis and
+  names don't flicker in and out.
+
+**Source.** The nightly IV-rank job already fetches both: the rating is recorded today, and the
+expiry list (`option_expiration_implied_volatilities`) arrives in the same response but is
+discarded. Keeping it costs no extra calls. The label is recorded every night, so it builds up as
+point-in-time history from now on.
+
+**Size today.** Of the 526 charted names, all have listed options, 242 (46%) have no weeklies, and
+147 have weeklies with a rating of 3 or 4. Some examples:
+- CSCO, NKE, HPQ and CHWY qualify.
+- ZTS is rated 4 but monthly only.
+- ANF has weeklies but is rated 2.
+- NHC and MTD are rated 1, monthly only.
+
+**Where it applies:**
+- the setups watchlist, as its default filter, with "show all" one click away;
+- the signal log, as context (`options_tradable`, `liquidity_rating`, `weekly_expiries`), so
+  outcomes can be split by it;
+- alerts.
+
+**Where it doesn't:** the charts and the morning report keep every name.
+
+**Why the history can't use it.** tastytrade gives only today. Dolt's option chains (from 2019)
+carry no weeklies, only the standard monthlies, so SPY shows two expiries in 35 days. Their quotes
+look like after-hours ones: ABBV's ~30-day at-the-money spread reads 17.9% of mid. Stock dollar
+volume predicts the label poorly among names this liquid: at a median of $500M a day or more, only
+53% are tradable, and 37% of tradable names fall below that line.
+
+### Where it lives
+
+`~/.cherrypick/data/technicals/signals.db`, via a new `paths.signals_db()`. **Decided:** a separate
+file, because the log can't be rebuilt from anything and must not share a file whose rows are
+replaced as a matter of course. This widens the package's write contract, and its `CLAUDE.md` will
+say so.
+
+### Tables
+
+| Table | One row per | Key columns |
+|---|---|---|
+| `runs` | logging run | `run_id`, `started_at` (UTC), `as_of_session`, `code_sha` (git), `rule_version`, `context_version`, `symbols`, `events_new`, `restatements_new`, `outcome` |
+| `rule_versions` | rule version ever used | `rule_version`, `fingerprint`, `parameters_json` (every constant in `setups.py`), `rules_json` (each setup's rule text), `first_run_id` |
+| `signals` | **entry or exit, as first seen** | `signal_id`, `symbol`, `setup_id`, `family`, `side`, `event` (`entry`/`exit`), `event_session`, `position_key` (symbol, setup, entry session), `price_adj`, `close_raw`, `reason` (exits), `target` (pullbacks), `rule_version`, `first_run_id`, `first_seen_at`, `lag_sessions`, `seen_before_open`, `source` (`observed`/`reconstructed`), `tuned_on_data` |
+| `signal_context` | signal | `context_version`; as of `event_session`: `trend_1m`, `trend_6m`, `rs`, `vs_spy_1m`, `atr14`, `volume_ratio`, our nearest `support`/`resistance` and their distances, `sentiment`, `spy_trend_1m`/`_6m`, `universe_member`, `options_tradable`, `liquidity_rating`, `weekly_expiries` |
+| `restatements` | later disagreement | `signal_id` (or the new event), `run_id`, `kind` (`vanished`, `late`, `price_moved`, `exit_changed`), `old_json`, `new_json`, `probable_cause` (`corporate_action`, `rule_version`, `data_correction`, `unknown`) |
+
+A few of these columns need explaining:
+
+- **`close_raw`** never changes under later corporate actions, so it anchors any re-pricing.
+- **`lag_sessions`** is 0 in the normal case. A missed night logs its events the next day with
+  lag 1, and the log says so.
+- **`seen_before_open`** is whether the signal was logged before the next 09:30 ET. The report runs
+  at 06:30, so normally it was.
+- **`tuned_on_data`** marks reconstructed rows of both pullbacks and both breakouts. Their rules
+  were changed after looking at that history.
+- **`context_version`** versions the context definitions (the swing-level width, "trend agrees",
+  the volume ratio) separately from the rules. A context change is recorded, but does not restart a
+  setup's evidence the way a rule change does.
+- **`universe_member`** starts the point-in-time membership record for the live universe.
+
+### How a run works
+
+1. `report` writes the chart files first, then `signal_log.record(...)` takes the trades
+   `setups.RUN` just computed. There is no second computation, so the log and the charts cannot
+   disagree.
+2. Each entry and exit is keyed by (`position_key`, `event`, `rule_version`):
+   - **a new key** is inserted with its context (and flagged `late` if its session is before the
+     run's);
+   - **a known key, unchanged,** is ignored, so re-runs are idempotent;
+   - **a known key, changed,** keeps the original row and appends the disagreement to
+     `restatements`.
+3. A cause is attributed:
+   - unchanged raw closes with a corporate action in between is `corporate_action`;
+   - a version change is `rule_version`;
+   - changed raw bars are `data_correction`;
+   - anything else is `unknown`, and is surfaced.
+4. A re-run of a past session compares events only up to that session, so it can't "un-see" later
+   ones.
+5. **Failure handling.** The log is written in one transaction after the charts. A failure exits
+   non-zero for the watchdog, and never costs the charts.
+
+### Rule versions
+
+- `setups.RULE_VERSION = "2026-10-04"` and `setups.fingerprint()`, a hash of every constant and rule
+  text.
+- A test pins the fingerprint, so changing a threshold without bumping the version fails the build.
+  It is shown to fail by changing `ADX_MIN`.
+- `CONTEXT_VERSION` works the same way for the context definitions.
+
+### The backfill (decided)
+
+- `signals reconstruct` is dry-run by default; `--write` inserts today's computation of the stored
+  history.
+- Its rows are flagged `source = 'reconstructed'`, and the tuned families are flagged
+  `tuned_on_data`.
+- Its use is continuity and the console's history view. The evidence comes from Phase 1, not from
+  these rows.
+
+### Commands, guards and size
+
+- **Commands:** `signals status` (last run, counts, restatements, lags) and `signals export` (CSV
+  or JSON).
+- **Guards, each shown to fail:**
+  - the triggers refuse an update;
+  - a re-run inserts nothing;
+  - the CSCO dividend case yields one `price_moved` with cause `corporate_action` and an unchanged
+    `close_raw`;
+  - a changed constant fails the fingerprint;
+  - a vanished event is recorded;
+  - `reconstruct` writes nothing without `--write`;
+  - the log and the chart files agree on every event.
+- **Size:** on about 2,900 names, about 275 events a night and 70,000 rows a year, about 20–40 MB.
+  That is small.
+
+## Phase 3: a read surface
+
+- **On the console's Setups page:**
+  - a log tab: first-seen time, whether a signal was known before the open, and late and restated
+    marks;
+  - the restatements, with their causes;
+  - the Phase 1 results: each setup-side's verdict, sample and confidence interval, and, as live
+    trades accrue, the live figures against the historical interval.
+- **On the System page:** a chip for the last log run.
+- Read-only, through `readOnlyDb`.
+
+## Analysis plan v2 (2026-10-04)
+
+**Supersedes v1, which was frozen earlier the same day and under which nothing was ever observed.**
+What changed, and why: v1 took its evidence from observed live rows only, with a 12-month minimum.
+That put verdicts years away, and 15 years of usable history turned out to exist. So v2:
+
+- takes the verdict from the historical study;
+- adds the holdout for the tuned rules;
+- demotes live rows to confirmation.
+
+A change to anything here is v3, dated, with its reason, and is never applied to results already
+looked at under v2.
+
+**What counts, and how it is filled**
+- **Unit:** each historical entry made while its name was in the point-in-time universe, scored to
+  its own rule exit. The four tuned setup-sides count only from their holdout.
+- **Fills:** the next session's open after the signal close, for entries and exits alike. Prices
+  are raw bars with corporate actions applied explicitly. A short pays the dividends it is held
+  through. Close-to-close measurement is not used: it flatters short-term reversal through bid-ask
+  bounce (Conrad, Gultekin & Kaul 1997), and overnight and intraday returns differ by strategy
+  (Lou, Polk & Skouras 2019).
+
+**What is measured**
+- **Measures, per setup-side, never pooled across sides** (Brock, Lakonishok & LeBaron 1992):
+  - expectancy in R (ATR(14) at entry) and in percent;
+  - hit rate, payoff ratio, median hold;
+  - MAE and MFE (Sweeney 1997).
+- **Intrabar ties** take the stop.
+
+**What it is compared against**
+- **Baseline:** for each entry,
+  - 20 same-date entries in random names from that day's universe, and
+  - 20 same-name entries on random dates when the name was in the universe,
+
+  each with the same side, exit rule and fills. The seed is fixed and the draws are stored (Brock,
+  Lakonishok & LeBaron 1992; Lyon, Barber & Tsai 1999).
+
+**The test**
+- **The test:** the setup-side's mean R minus its baseline's, in calendar time (one return per
+  session), with errors clustered by date (Petersen 2009). One-sided: only an edge matters.
+- **Family and correction:** the eight setup-sides, with a Holm correction at a family-wise α of
+  0.05. A later filter or exit joins the family (White 2000; Hansen 2005; Harvey, Liu & Zhu 2016).
+- **Minimum sample:** 780 × the measured design effect in counted entries per setup-side. The
+  historical sample is expected to clear it. If a tuned setup-side's holdout does not, it reads
+  "not yet judged".
+
+**Costs**
+- **Spread:** the Corwin & Schultz (2012) estimator on our own bars.
+- **Shorts:** a borrow rate declared before the first scoring run (general collateral is cheap,
+  specials are not; D'Avolio 2002), and a Rule 201 flag after a 10% drop.
+- Costs appear as separate columns under the suite's money layout. High-turnover signals rarely
+  survive costs (Novy-Marx & Velikov 2016).
+
+**Live confirmation**
+- After about 150 live trades per setup-side, live mean R is compared with the historical 95%
+  interval.
+- Outside it, the live figure is a finding to investigate, never a silent re-estimate.
+
+**Reporting**
+- Every setup-side is reported, passing or failing, by sub-period (2011–18 and 2019–26), with its
+  sample.
+
+## Later phases: uses the study and log are shaped for, none committed
+
+History makes most of these **runnable now, not someday**.
+
+- **Alternative exits.** Replay a declared grid against the historical entries: a trailing ATR
+  stop, a fixed R target, a time stop. Follow calendars' `exit_policies.py`:
+  - the grid is declared;
+  - the replay runs over recorded prices;
+  - it refuses where data is missing;
+  - the control policy must reproduce every rule exit exactly before any alternative is trusted.
+
+  Each exit joins the family.
+- **Filters and context.** "Trend agrees", RS ≥ 7, distance to our levels, volume at entry. Each is
+  a declared hypothesis, testable on history at once.
+- **A breadth and regime reading.** Daily long and short entry counts over the point-in-time
+  universe, with 15 years of history to test it on, first as a way to stratify the results (breadth
+  has cross-market evidence as a predictor; Zaremba et al. 2021). It goes into the morning overview
+  as a recorded measurement that feeds no gate: the `overview/score.py` deployment precedent, a key
+  in `facts.build()`.
+- **Context for the options modules.**
+  - An "SPX setup state" regime-cut dimension for flies and MEIC (`core.regimecuts`). It needs a
+    `REGIME_DIMENSIONS` entry and a recorded measurement break in each module. Room must be made
+    first, since the advisor's regime-cuts section sits at 71.9 KB of its 72 KB ceiling.
+  - Setup state recorded at entry by bwb, pmcc and earnings, record-only.
+  - Any action on it would be an advisor A/B experiment, never a rule change.
+- **Alerts.** A morning card, and a post to Discord when a starred name fires. It would use the
+  existing `notify/secrets.get_webhook` path as its own supervisor job, off by default, posting once
+  a session.
+- **An advisor fact source.** A setup-state summary in the deep-slot fact pack, after a size cut.
+- **Checking our setups against the vendor's.** Compare with the vendor's saved daily lists.
+  Validation only, never an input.
+- **A paper module, gated on evidence.** Only for a setup-side that beats its baseline after costs
+  under v2, in its holdout and in both sub-periods. It would be a new paper-only, credential-free
+  package with real next-open fills, fees and the money layout. That gate could now be met, or
+  plainly failed, within weeks.
+
+## What could go wrong
+
+| Risk | Handling |
+|---|---|
+| Hindsight in the universe | membership from data up to the day before only; a guard shown to fail |
+| Survivorship | delisted names are in Dolt (28% of 2016's names); delisting returns are missing, so bankruptcies lose their final drop (Shumway 1997), and the report says so |
+| Older data not checked to the cent | overlap check against `eod.db`; jump and gap inspection before 2023; Dolt-only dividends reported |
+| Renamed tickers | two separate series; harmless to a per-position study |
+| Tuned rules judged on their tuning data | the holdout; a guard |
+| One regime dominating | results by sub-period |
+| Many tests, one lucky result | a declared family, the Holm correction, every variant counted |
+| Same-day clustering | calendar time, date-clustered errors |
+| Costs ignored | spread estimated, borrow and Rule 201 for shorts, dividends owed on shorts |
+| Live results drifting from history | Phase 2's confirmation, and a finding to investigate |
+| History restated after the fact | the live log's raw closes and restatements |
+| Rules changed unnoticed | the version and fingerprint guard |
+
+## Decisions (2026-10-04)
+
+1. **The live log lives in a separate `signals.db`.**
+2. **The reconstructed backfill is written**, flagged, with `tuned_on_data` on both pullbacks and
+   both breakouts.
+3. **The rules are frozen as `RULE_VERSION = "2026-10-04"`** with the fingerprint guard. That
+   includes the shorts, the amended pullback and the breakouts' Supertrend condition. A breakout or
+   breakdown entered against Supertrend had exited the next close 73–82% of the time
+   (`packages/technicals/docs/setups.md`). The context is versioned separately.
+4. **The analysis plan is v2 above.** Costs are declared before the first scoring run.
+   Exploratory looks are labelled, and a rule change they prompt is a new version.
+5. **The vendor's scan-rule matches stay out of the log.** Ours are kept daily in the dated
+   `report-<session>.json` files, and the vendor's lists are saved daily by the collector.
+6. **The verdict comes from a historical study first** (revised 2026-10-04), over a universe
+   chosen as of each day: price ≥ $5 and 50-session median dollar volume ≥ $20M. The live log
+   follows as confirmation.
+7. **The nightly setups widen to the liquid universe** (about 2,900 names), for roughly 5½ times
+   faster confirmation and a wider pool for the tradable filter. Widened names use Dolt's dividends.
+8. **An options-tradable filter:** weekly expiries, and a tastytrade liquidity rating of 3 or 4 on at
+   least 7 of the last 10 sessions. It is the watchlist's default, and it is context in the log and
+   alerts. The charts and the morning report keep every name. It is recorded nightly from now on.
+   The historical study adds a $300M-a-day view and a flagged today's-list view.
+
+## References
+
+Citations were checked against publisher, RePEc or SSRN pages except where marked.
+
+- **Baselines and evidence on technical rules**
+  - Brock, Lakonishok & LeBaron (1992), "Simple Technical Trading Rules and the Stochastic Properties
+    of Stock Returns", *Journal of Finance* 47(5).
+  - Lo, Mamaysky & Wang (2000), "Foundations of Technical Analysis", *Journal of Finance* 55(4).
+  - Sullivan, Timmermann & White (1999), "Data-Snooping, Technical Trading Rule Performance, and the
+    Bootstrap", *Journal of Finance* 54(5).
+  - Park & Irwin (2007), "What Do We Know About the Profitability of Technical Analysis?",
+    *Journal of Economic Surveys* 21(4).
+  - Bajgrowicz & Scaillet (2012), "Technical Trading Revisited: False Discoveries, Persistence Tests,
+    and Transaction Costs", *Journal of Financial Economics* 106(3).
+  - Fang, Jacobsen & Qin (2017), "Popularity versus Profitability: Evidence from Bollinger Bands",
+    *Journal of Portfolio Management* 43(4). The variant tested was not confirmed.
+  - McLean & Pontiff (2016), "Does Academic Research Destroy Stock Return Predictability?",
+    *Journal of Finance* 71(1).
+- **Multiple testing and overfitting**
+  - White (2000), "A Reality Check for Data Snooping", *Econometrica* 68(5).
+  - Hansen (2005), "A Test for Superior Predictive Ability", *Journal of Business & Economic
+    Statistics* 23.
+  - Harvey, Liu & Zhu (2016), "…and the Cross-Section of Expected Returns", *Review of Financial
+    Studies* 29(1).
+  - Harvey (2017), "Presidential Address: The Scientific Outlook in Financial Economics",
+    *Journal of Finance* 72(4).
+  - Bailey & López de Prado (2014), "The Deflated Sharpe Ratio", *Journal of Portfolio Management*
+    40(5).
+  - Bailey, Borwein, López de Prado & Zhu (2017), "The Probability of Backtest Overfitting",
+    *Journal of Computational Finance* 20(4).
+- **Long-horizon tests and standard errors**
+  - Lyon, Barber & Tsai (1999), "Improved Methods for Tests of Long-Run Abnormal Stock Returns",
+    *Journal of Finance* 54(1).
+  - Petersen (2009), "Estimating Standard Errors in Finance Panel Data Sets", *Review of Financial
+    Studies* 22(1).
+- **Point-in-time data and survivorship**
+  - Croushore & Stark (2001), "A Real-Time Data Set for Macroeconomists", *Journal of Econometrics*
+    105.
+  - Brown, Goetzmann, Ibbotson & Ross (1992), "Survivorship Bias in Performance Studies", *Review of
+    Financial Studies* 5.
+  - Shumway (1997), "The Delisting Bias in CRSP Data", *Journal of Finance* 52(1).
+- **Fills and the cost of trading**
+  - Conrad, Gultekin & Kaul (1997), "Profitability of Short-Term Contrarian Strategies:
+    Implications for Market Efficiency", *Journal of Business & Economic Statistics* 15. Details
+    from secondary summaries.
+  - Lou, Polk & Skouras (2019), "A Tug of War: Overnight versus Intraday Expected Returns",
+    *Journal of Financial Economics* 134(1).
+  - Perold (1988), "The Implementation Shortfall: Paper versus Reality", *Journal of Portfolio
+    Management* 14(3).
+  - Corwin & Schultz (2012), "A Simple Way to Estimate Bid-Ask Spreads from Daily High and Low
+    Prices", *Journal of Finance* 67(2).
+  - Abdi & Ranaldo (2017), "A Simple Estimation of Bid-Ask Spreads from Daily Close, High, and Low
+    Prices", *Review of Financial Studies* 30(12).
+  - Novy-Marx & Velikov (2016), "A Taxonomy of Anomalies and Their Trading Costs", *Review of
+    Financial Studies* 29(1).
+  - D'Avolio (2002), "The Market for Borrowing Stock", *Journal of Financial Economics* 66. Its
+    borrow-fee levels date from 2000–01.
+  - Engelberg, Reed & Ringgenberg (2018), "Short-Selling Risk", *Journal of Finance* 73(2).
+  - SEC Rule 201 (2010), the alternative uptick rule.
+- **Breadth**
+  - Zaremba, Szyszka, Karathanasopoulos & Mikutowski (2021), "Herding for Profits: Market Breadth
+    and the Cross-Section of Global Equity Returns", *Economic Modelling* 97.
+- **Practitioner texts**
+  - Sweeney (1997), *Maximum Adverse Excursion: Analyzing Price Fluctuations for Trading
+    Management* (Wiley).
+  - Aronson (2006), *Evidence-Based Technical Analysis* (Wiley).
