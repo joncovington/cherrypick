@@ -124,6 +124,49 @@ def test_chain_fetch_error_no_auto_restart_just_warns(monkeypatch, calls, tmp_pa
     assert calls["start"] == []
 
 
+def test_an_unlisted_requested_date_warns_but_never_restarts(monkeypatch, calls, tmp_path):
+    """A module asking for a date the broker does not list is a request problem. Until 2026-10-04
+    it read as a chain-fetch stall, and the restart it triggered took every live module's quotes
+    down with it, on every pass, while restarting could never list the date."""
+    from cherrypick.core import streamcache
+
+    _status(
+        monkeypatch,
+        {
+            "running": True,
+            "oldest_event_age_s": 1.0,
+            "underlyings_stale_age_s": 1.0,
+            "connected_since": "2020-01-01T00:00:00+00:00",
+            "chain_fetch_errors": {"SLV@2027-09-17": streamcache.UNLISTED_EXPIRATION_ERROR},
+        },
+    )
+    findings = wd._check_streamer_health("streamer", tmp_path, _spec())
+    assert calls["stop"] == [] and calls["start"] == []
+    assert not any("stalled" in f.title for f in findings)
+    unlisted = [f for f in findings if f.key.endswith(".unlisted_expirations")]
+    assert unlisted and unlisted[0].status == wd.WARN
+    assert "SLV@2027-09-17" in unlisted[0].message
+
+
+def test_a_real_fetch_error_beside_an_unlisted_date_still_restarts(monkeypatch, calls, tmp_path):
+    from cherrypick.core import streamcache
+
+    _status(
+        monkeypatch,
+        {
+            "running": True,
+            "oldest_event_age_s": 1.0,
+            "underlyings_stale_age_s": 1.0,
+            "connected_since": "2020-01-01T00:00:00+00:00",
+            "chain_fetch_errors": {"XSP": "boom", "SLV@2027-09-17": streamcache.UNLISTED_EXPIRATION_ERROR},
+        },
+    )
+    findings = wd._check_streamer_health("streamer", tmp_path, _spec())
+    assert "stalled" in findings[0].title and "XSP" in findings[0].message
+    assert "SLV@2027-09-17" not in findings[0].message
+    assert calls["stop"]
+
+
 def test_dead_underlying_triggers_restart_even_with_healthy_aggregate_ages(monkeypatch, calls, tmp_path):
     # running=true, every aggregate fresh (SPX ticking fine), but TQQQ's own spot subscription died
     # mid-flight -- the 2026-08-17..21 incident this check exists for: four sessions dead behind a

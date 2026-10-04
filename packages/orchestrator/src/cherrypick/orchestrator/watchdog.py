@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import home as core_home
+from cherrypick.core import streamcache as _streamcache
 from cherrypick.core import streamrequests as _streamrequests
 
 from cherrypick.notify import Notifier
@@ -428,7 +429,21 @@ def _streamer_chain_fetch_errors(status: dict[str, Any]) -> dict[str, str]:
     that doesn't report this field degrades cleanly to the aggregate-age checks alone.
     """
     errors = status.get("chain_fetch_errors")
-    return errors if isinstance(errors, dict) else {}
+    if not isinstance(errors, dict):
+        return {}
+    # A requested expiration the broker does not list is a REQUEST problem, not a feed stall:
+    # restarting cannot list a date, and until 2026-10-04 one such row restarted the producer --
+    # and every live module's quotes with it -- on every pass. `_streamer_unlisted_requests` reports
+    # them on their own.
+    return {k: v for k, v in errors.items() if v != _streamcache.UNLISTED_EXPIRATION_ERROR}
+
+
+def _streamer_unlisted_requests(status: dict[str, Any]) -> list[str]:
+    """`SYMBOL@date` keys a module asked the producer for that the broker does not list."""
+    errors = status.get("chain_fetch_errors")
+    if not isinstance(errors, dict):
+        return []
+    return sorted(k for k, v in errors.items() if v == _streamcache.UNLISTED_EXPIRATION_ERROR)
 
 
 def _streamer_stale_chains(status: dict[str, Any]) -> dict[str, str]:
@@ -662,6 +677,17 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
     churn = _streamer_churn_finding(label, status)
     if churn is not None:
         findings.append(churn)
+    unlisted = _streamer_unlisted_requests(status)
+    if unlisted:
+        findings.append(
+            Finding(
+                f"{label}.unlisted_expirations",
+                WARN,
+                "Streamer asked for unlisted expirations",
+                f"{', '.join(unlisted)}: a module requested a date the broker does not list. Not a "
+                "stall (a restart cannot list it); the requesting module's expiration plan is wrong.",
+            )
+        )
     return findings
 
 
