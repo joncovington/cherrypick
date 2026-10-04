@@ -48,6 +48,8 @@ const OURS = SERIES_COLORS[0]!;
 const VENDOR = SERIES_COLORS[2]!;
 /** Both arrows are amber: an arrow marks an event, and green or red would read as a gain or a loss. */
 const ARROW = SERIES_COLORS[2]!;
+/** Twice the library's default: at 1 an entry arrow, which carries no label, was lost among the candles. */
+const ARROW_SIZE = 2;
 
 /** How each series a setup reads is drawn, keyed as the chart file's `setup_lines`. */
 const SETUP_LINE: Record<string, { title: string; color: string; style: LineStyle; width: 1 | 2 }> = {
@@ -299,10 +301,10 @@ function PriceChart({ c, setup, levels }: { c: TechnicalsChart; setup: Technical
     const markers: SeriesMarker<Time>[] = [];
     for (const tr of setup?.trades ?? []) {
       if (inRange.has(tr.entryDate)) {
-        markers.push({ time: t(tr.entryDate), position: "belowBar", color: ARROW, shape: "arrowUp", text: "" });
+        markers.push({ time: t(tr.entryDate), position: "belowBar", color: ARROW, shape: "arrowUp", size: ARROW_SIZE, text: "" });
       }
       if (tr.exitDate !== null && inRange.has(tr.exitDate)) {
-        markers.push({ time: t(tr.exitDate), position: "aboveBar", color: ARROW, shape: "arrowDown", text: tr.reason ?? "" });
+        markers.push({ time: t(tr.exitDate), position: "aboveBar", color: ARROW, shape: "arrowDown", size: ARROW_SIZE, text: tr.reason ?? "" });
       }
     }
     markers.sort((a, b) => (a.time as number) - (b.time as number));
