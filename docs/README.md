@@ -37,6 +37,7 @@ lines at the top saying what has shipped; once a plan has fully landed it moves 
 | Doc | Covers |
 |---|---|
 | [market-report-plan.md](market-report-plan.md) | The suite's own daily market report: what a commercial pre-open report measures, what data each part needs, and the build plan the technicals package belongs to. |
+| [signal-log-plan.md](signal-log-plan.md) | Recording the technicals chart setups' signals as issued (append-only, versioned, with context), why the record matters, how outcomes would be scored against a matched random baseline, and the later uses the log is shaped for. Nothing built yet. |
 | [metrics-plan.md](metrics-plan.md) | Expanding the calibration metrics (expectancy, profit factor, Sortino, per-session Sharpe, the Probabilistic Sharpe Ratio, excursions) — what is computed today and what is still a gap. |
 | [regime-recorder-plan.md](regime-recorder-plan.md) | The market-regime recorder in the gex package: which readings are recorded each minute, the entitlement probe that froze the list, and what is still open. |
 | [streamer-subscription-budget.md](streamer-subscription-budget.md) | The 2026-08-24 subscription-rate incident in the streamer, and the fixes, each marked built or open. |

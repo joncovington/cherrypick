@@ -247,7 +247,7 @@ def test_a_breakout_needs_a_recent_squeeze_and_volume_and_leaves_when_supertrend
 
     _check(
         setups.breakout(r),
-        lambda i: r.closes[i] > r.bb_upper[i] and squeezed(i) and volume(i),
+        lambda i: r.closes[i] > r.bb_upper[i] and squeezed(i) and volume(i) and r.supertrend_up[i] is True,
         lambda j, t: r.supertrend_up[j] is False,
         len(r.closes),
     )
@@ -338,6 +338,7 @@ def test_a_breakdown_needs_a_recent_squeeze_and_volume_and_covers_when_supertren
             r.closes[i] < r.bb_lower[i]
             and squeezed(i)
             and r.volumes[i] > 1.5 * sum(r.volumes[i - 50 : i]) / 50
+            and r.supertrend_up[i] is False
         ),
         lambda j, t: r.supertrend_up[j] is True,
         len(r.closes),

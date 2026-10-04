@@ -111,11 +111,15 @@ to reduce.
 ### 4. Breakout
 
 - **Entry:** a close above the upper Bollinger band, within 5 sessions of a squeeze (band width at
-  its lowest of 120 sessions), on volume above 1.5 × the mean of the 50 sessions before. Today's
-  volume is excluded from the average it is compared against.
-- **Exit:** the first close with Supertrend(10, 3) down. If the breakout bar doesn't turn
-  Supertrend up, the position closes on the next close: that is a failed breakout, and treating it
-  as one is the point.
+  its lowest of 120 sessions), on volume above 1.5 × the mean of the 50 sessions before, **with
+  Supertrend(10, 3) already up**. Today's volume is excluded from the average it is compared against.
+- **Exit:** the first close with Supertrend(10, 3) down.
+- **Why Supertrend must already be up (added 2026-10-04, before the rules were frozen):** without
+  it, a breakout entered while Supertrend was still down exited on the very next close. That
+  happened on 33 of 45 such entries; the breakdown mirror, 47 of 57. Those were one-day round trips,
+  two fills for nothing, not breakouts failing. With the condition, next-bar exits fell from 13.3%
+  to 1.6% (breakdowns 17.8% to 0.5%), the median hold is 25 sessions, and about 12% of breakouts
+  and 18% of breakdowns are no longer taken.
 - **Missing volume:** a missing volume never confirms. An unmeasured day is not a quiet day.
 - **What to expect:** this is the rarest setup by far. It needs three things in one week:
   compression, expansion and participation.
@@ -177,7 +181,7 @@ positions, and they never net against each other.
 | Trend following | the 9 EMA crosses below the 21, close under the 50 EMA, ADX(14) > 20 | first close over the 21 EMA |
 | Pullback | EMAs stacked 9 < 21 < 50, the high reaches the 21 but the close is under it, RSI(14) rallied to 50–60 in the last 5 sessions | the low reaches the lowest low of the 20 sessions before entry (target), or a close over the lowest low since entry plus 3 × ATR(22) (stop); both on one bar is a stop |
 | Mean reversion | the high touches the upper band with RSI(14) over 70 | a close at or under the middle band (target), or more than 2 × ATR(14) over the entry close (stop) |
-| Breakdown | a close under the lower band within 5 sessions of a squeeze, volume > 1.5 × its 50-session average | the first close with Supertrend(10, 3) up |
+| Breakdown | a close under the lower band within 5 sessions of a squeeze, volume > 1.5 × its 50-session average, Supertrend already down | the first close with Supertrend(10, 3) up |
 
 **The short pullback has the same problem as the long one, measured the same way.** On bars stacked
 down where the 21 EMA rejected the close, RSI(14) never reached 50: 232 bars on eleven names, peaking
@@ -227,13 +231,14 @@ These are frequencies, not results. Nothing here scores whether a setup makes mo
 | Trend following | 1,919 | 508 | 674 | 15 | all at the 21 EMA |
 | Pullback | 4,123 | 524 | 1,504 | 42 | 2,595 target, 1,486 stop |
 | Mean reversion | 2,515 | 518 | 857 | 114 | 1,772 target, 629 stop |
-| Breakout | 291 | 232 | 79 | 12 | all Supertrend |
+| Breakout | 256 | 212 | 71 | 12 | all Supertrend |
 | Trend following (short) | 1,857 | 505 | 643 | 59 | all at the 21 EMA |
 | Pullback (short) | 2,490 | 512 | 980 | 34 | 1,295 target, 1,161 stop |
 | Mean reversion (short) | 5,899 | 523 | 1,821 | 26 | 2,983 target, 2,890 stop |
-| Breakdown (short) | 286 | 230 | 97 | 16 | all Supertrend |
+| Breakdown (short) | 234 | 196 | 83 | 16 | all Supertrend |
 
-The short rows were counted on 2026-10-04.
+The short rows, and both breakout rows after their Supertrend condition, were counted on
+2026-10-04.
 
 ## How it is checked
 

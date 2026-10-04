@@ -91,7 +91,8 @@ SETUPS = (
         "Breakout",
         "Enter on a close above the upper Bollinger band (20, 2) within 5 sessions of a squeeze — "
         "the band's width at its narrowest of 120 sessions — on volume above 1.5 × its average of "
-        "the 50 sessions before. Exit on the first close with Supertrend(10, 3) down.",
+        "the 50 sessions before, with Supertrend(10, 3) already up. Exit on the first close with "
+        "Supertrend down.",
         ("bb_upper", "bb_mid", "bb_lower", "supertrend"),
     ),
     Setup(
@@ -129,7 +130,8 @@ SETUPS = (
         "Breakdown (short)",
         "Short on a close under the lower Bollinger band (20, 2) within 5 sessions of a squeeze — the "
         "band's width at its narrowest of 120 sessions — on volume above 1.5 × its average of the 50 "
-        "sessions before. Cover on the first close with Supertrend(10, 3) up.",
+        "sessions before, with Supertrend(10, 3) already down. Cover on the first close with Supertrend "
+        "up.",
         ("bb_upper", "bb_mid", "bb_lower", "supertrend"),
         "breakout",
         "short",
@@ -299,7 +301,10 @@ def breakout(r: Readings) -> list[Trade]:
     def enter(i):
         if not _defined(r.bb_upper[i]) or not any(r.squeeze[max(0, i - SQUEEZE_RECENT + 1) : i + 1]):
             return None
-        return Trade(i) if r.closes[i] > r.bb_upper[i] and volume_confirms(r.volumes, i) else None
+        # Supertrend must already be up: entered against it, the exit fired the next close on 33 of
+        # 45 such breakouts (2026-10-04) -- a one-day round trip, not a breakout failing.
+        on_side = r.supertrend_up[i] is True
+        return Trade(i) if on_side and r.closes[i] > r.bb_upper[i] and volume_confirms(r.volumes, i) else None
 
     def leave(i, t):
         return "supertrend" if r.supertrend_up[i] is False else None
@@ -367,7 +372,8 @@ def breakout_short(r: Readings) -> list[Trade]:
     def enter(i):
         if not _defined(r.bb_lower[i]) or not any(r.squeeze[max(0, i - SQUEEZE_RECENT + 1) : i + 1]):
             return None
-        return Trade(i) if r.closes[i] < r.bb_lower[i] and volume_confirms(r.volumes, i) else None
+        on_side = r.supertrend_up[i] is False  # the mirror: 47 of 57 entered against it covered next close
+        return Trade(i) if on_side and r.closes[i] < r.bb_lower[i] and volume_confirms(r.volumes, i) else None
 
     def leave(i, t):
         return "supertrend" if r.supertrend_up[i] is True else None
