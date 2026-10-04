@@ -17,6 +17,7 @@ import { useSetupsWatchlist } from "../../lib/api";
 type View = "signals" | "open";
 type Event = "both" | "entry" | "exit";
 type Sort = "recent" | "rs" | "move" | "spy";
+type Dir = "asc" | "desc";
 
 const WINDOWS = [1, 5, 20] as const;
 const SETUP_IDS = [
@@ -156,23 +157,36 @@ function Flag({
   );
 }
 
-const byNumber = (pick: (l: Line) => number | null) => (a: Line, b: Line) => {
-  const x = pick(a);
-  const y = pick(b);
-  if (x === null && y === null) return 0;
-  if (x === null) return 1;
-  if (y === null) return -1;
-  return y - x;
+/** Each sortable column's value. */
+const SORT_VALUE: Record<Sort, (l: Line) => number | null> = {
+  recent: (l) => l.ago,
+  rs: (l) => l.row.rs,
+  move: (l) => l.row.movePct,
+  spy: (l) => l.row.vsSpy1m,
 };
 
-const SORTS: Record<Sort, (a: Line, b: Line) => number> = {
-  recent: (a, b) =>
-    (a.ago ?? 9999) - (b.ago ?? 9999) ||
-    a.row.symbol.localeCompare(b.row.symbol),
-  rs: byNumber((l) => l.row.rs),
-  move: byNumber((l) => l.row.movePct),
-  spy: byNumber((l) => l.row.vsSpy1m),
+/** The direction a column sorts on its first click: newest first for Ago, largest first for the rest. */
+const FIRST_DIR: Record<Sort, Dir> = {
+  recent: "asc",
+  rs: "desc",
+  move: "desc",
+  spy: "desc",
 };
+
+/** Either direction keeps a missing value at the bottom; ties go by symbol. */
+function compare(sort: Sort, dir: Dir) {
+  const pick = SORT_VALUE[sort];
+  return (a: Line, b: Line) => {
+    const x = pick(a);
+    const y = pick(b);
+    if (x === null || y === null) {
+      if (x !== y) return x === null ? 1 : -1;
+    } else if (x !== y) {
+      return dir === "asc" ? x - y : y - x;
+    }
+    return a.row.symbol.localeCompare(b.row.symbol);
+  };
+}
 
 export function SetupsPage() {
   const [params, setParams] = useSearchParams();
@@ -198,6 +212,9 @@ export function SetupsPage() {
     sortParam === "rs" || sortParam === "move" || sortParam === "spy"
       ? sortParam
       : "recent";
+  const dirParam = params.get("dir");
+  const dir: Dir =
+    dirParam === "asc" || dirParam === "desc" ? dirParam : FIRST_DIR[sort];
 
   // Every control is in the URL, so a filtered view is a link; a default is left out of it.
   const set = (key: string, value: string | null) => {
@@ -253,18 +270,43 @@ export function SetupsPage() {
           }
           return out;
         });
-  lines.sort(SORTS[sort]);
+  lines.sort(compare(sort, dir));
   const names = new Set(lines.map((l) => l.row.symbol)).size;
 
+  // A header is a button, so the sort is reachable from the keyboard as well as the mouse.
   const sortHead = (key: Sort, text: string, title: string) => (
     <th
       className="num"
       title={title}
-      style={{ cursor: "pointer" }}
-      onClick={() => set("sort", key === "recent" ? null : key)}
+      aria-sort={
+        sort === key ? (dir === "asc" ? "ascending" : "descending") : undefined
+      }
     >
-      {text}
-      {sort === key ? " ▾" : ""}
+      <button
+        type="button"
+        style={{
+          background: "none",
+          border: 0,
+          padding: 0,
+          color: "inherit",
+          font: "inherit",
+          cursor: "pointer",
+        }}
+        onClick={() => {
+          // A second click on the column in use reverses it; another column starts its own way.
+          const next = new URLSearchParams(params);
+          const nextDir: Dir =
+            key === sort ? (dir === "asc" ? "desc" : "asc") : FIRST_DIR[key];
+          if (key === "recent") next.delete("sort");
+          else next.set("sort", key);
+          if (nextDir === FIRST_DIR[key]) next.delete("dir");
+          else next.set("dir", nextDir);
+          setParams(next, { replace: true });
+        }}
+      >
+        {text}
+        {sort === key ? (dir === "asc" ? " ▴" : " ▾") : ""}
+      </button>
     </th>
   );
 

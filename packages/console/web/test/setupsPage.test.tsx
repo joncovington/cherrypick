@@ -89,6 +89,22 @@ describe("the setups watchlist page", () => {
     expect(symbols(render("/charts/setups?window=20&sort=rs"))).toEqual(["HPQ:trend", "ABBV:pullback", "ABBV:pullback"]);
   });
 
+  it("every sortable column reverses on a second click, and a blank stays at the bottom either way", () => {
+    payload = { session: "2026-10-02", generatedAt: null, window: 20, rows: ROWS };
+    // Ago: newest first by default, oldest first reversed.
+    expect(symbols(render("/charts/setups"))).toEqual(["HPQ:trend", "ABBV:pullback"]);
+    expect(symbols(render("/charts/setups?dir=desc"))).toEqual(["ABBV:pullback", "HPQ:trend"]);
+    // RS: strongest first by default, weakest first reversed.
+    expect(symbols(render("/charts/setups?view=open&sort=rs"))).toEqual(["HPQ:trend", "ABT:reversion"]);
+    expect(symbols(render("/charts/setups?view=open&sort=rs&dir=asc"))).toEqual(["ABT:reversion", "HPQ:trend"]);
+    const unranked = row({ symbol: "ZZZ", rs: null });
+    payload = { ...payload, rows: [...ROWS, unranked] };
+    for (const dir of ["", "&dir=asc"]) {
+      expect(symbols(render(`/charts/setups?view=open&sort=rs${dir}`)).at(-1)).toBe("ZZZ:trend");
+    }
+    payload = { ...payload, rows: ROWS };
+  });
+
   it("an empty file says the report job writes it", () => {
     payload = { session: null, generatedAt: null, window: null, rows: [] };
     expect(render("/charts/setups")).toContain("No watchlist yet");
