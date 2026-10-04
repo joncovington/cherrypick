@@ -294,7 +294,9 @@ rating 4 and $189 at rating 2, and HD, LOW, APP, GS, CAT, LLY and COST were all 
 user's call: "I don't like that HD LOW and APP are marked not options-tradeable". The study's
 hindsight view keeps the rating, as declared (`tradable.rated_today`). Measured at-the-money
 bid/ask, on the standard monthly expiry, is to be added; the user's direction is that weeklies quote
-wider. The text below is the original decision, kept as the record.*
+wider. The universe script measures the monthly from 2026-10-05, and the bar is to be chosen from
+the first three sessions of those readings. The text below is the original decision, kept as the
+record.*
 
 Many liquid stocks are still not names anyone would trade options on: wide spreads, thin books, or
 monthly expiries only. The vendor's morning report includes such names too, which is fine for a

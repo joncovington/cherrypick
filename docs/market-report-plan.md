@@ -475,7 +475,9 @@ Each phase ends with something that runs and a test that has been shown to fail.
   tastylive follow feed trades (110 from the first harvest; futures dropped). A candidate is kept
   only when it is **very liquid by measurement**: the stock's spread within 0.05% of mid or one
   cent; the worse of its at-the-money call and put about 30 days out within 3% of mid or five
-  cents (both read from tastytrade REST quotes inside regular hours); and a median of at least
+  cents (both read from tastytrade REST quotes inside regular hours; **on the standard monthly
+  expiry since 2026-10-05**, never a weekly, which quotes wider: the expiry nearest 30 days had been
+  a weekly for 188 of 190 names on 2026-10-02); and a median of at least
   10,000 option contracts a day over the last ten sessions, from OCC's daily volume file (one CSV a
   session covers every underlying; OCC counts both sides of each trade, so contracts are half its
   total). Each needs at least three sessions; fewer is *pending*, never a pass.
@@ -488,6 +490,13 @@ Each phase ends with something that runs and a test that has been shown to fail.
   2026-09-27). On the first build, volume alone put 306 of the 493 candidates out and left 187 to
   be measured. The universe deliberately differs from the vendor's, which includes names with
   almost no option volume (NMR, KB, SHG), so the stage counts are compared as rates, not totals.
+  **The move to the monthly (2026-10-05)** is made name by name: a name is judged on its earlier
+  readings until it has three sessions on the monthly, and the two are never pooled. Rebuilt over
+  every stored measurement, the rule gave the same verdict for all 558 candidates. The date rule
+  for the monthly (the third Friday, or the trading day before it when that Friday is a holiday)
+  agreed with tastytrade's own expiry labels on all 126 expiries of eight names. Since the same
+  date, the measure quotes every listed candidate's options, including names the volume bar
+  already rules out: the spread is wanted for the setups watchlist's options-tradable label too.
   The members are mirrored to a private tastytrade watchlist, `cherrypick universe`, by the
   script's `watchlist` step — the suite's one scheduled write to the broker account, a watchlist
   and never an order. It previews unless `--apply`, has its own switch

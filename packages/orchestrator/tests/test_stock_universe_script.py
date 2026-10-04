@@ -31,6 +31,9 @@ bsu = _module()
 
 # Three fixed sessions, measured at 11:00 ET: permanent dates, nothing in them to expire.
 DAYS = ("2026-09-21", "2026-09-22", "2026-09-23")
+LATER = ("2026-09-24", "2026-09-25", "2026-09-28")
+MONTHLY = "2026-10-16"  # October 2026's third Friday
+WEEKLY = "2026-10-30"
 
 
 def _at(day: str, hhmm: str = "11:00") -> datetime:
@@ -42,14 +45,23 @@ def _quote(bid, ask, at: datetime, age_min: int = 1) -> dict:
     return {"bid": bid, "ask": ask, "updated_at": (at - timedelta(minutes=age_min)).isoformat()}
 
 
-def _row(at: datetime, *, stock=(99.99, 100.01), call=(2.00, 2.04), put=(1.98, 2.02), rating=4, **kw) -> dict:
+def _row(
+    at: datetime,
+    *,
+    stock=(99.99, 100.01),
+    call=(2.00, 2.04),
+    put=(1.98, 2.02),
+    rating=4,
+    expiration=MONTHLY,
+    **kw,
+) -> dict:
     row = {
         "listed": True,
         "is_etf": False,
         "is_illiquid": False,
         "liquidity_rating": rating,
         "quote": _quote(*stock, at),
-        "options": {"call": _quote(*call, at), "put": _quote(*put, at)},
+        "options": {"expiration": expiration, "call": _quote(*call, at), "put": _quote(*put, at)},
     }
     row.update(kw)
     return row
@@ -263,19 +275,76 @@ def test_edition_candidates_count_each_edition_once():
     assert bsu.to_tastytrade("BRK.B") == "BRK/B"
 
 
-def test_choose_options_takes_the_atm_strike_nearest_thirty_days():
+def test_choose_options_takes_the_atm_strike_of_the_monthly_never_a_nearer_weekly():
+    """The 30 October weekly is nearer 30 days than the 16 October monthly, and was what the measure
+    took until 2026-10-04. Weeklies quote wider, so the monthly is the name's spread."""
     exps = [
-        {"expiration": "2026-10-02", "dte": 5, "strikes": [[100, "C5", "P5"]]},  # too near
+        {"expiration": "2026-09-18", "dte": 5, "strikes": [[100, "C5", "P5"]]},  # a monthly, too near
         {"expiration": "2026-10-16", "dte": 19, "strikes": [[95, "a", "b"], [100, "C19", "P19"]]},
         {
             "expiration": "2026-10-30",
             "dte": 33,
             "strikes": [[95, "c", "d"], [100, "C33", "P33"], [105, "e", "f"]],
         },
+        {"expiration": "2026-11-20", "dte": 54, "strikes": [[100, "C54", "P54"]]},
     ]
     pick = bsu.choose_options(exps, 101.0)
-    assert (pick["dte"], pick["strike"], pick["call"], pick["put"]) == (33, 100.0, "C33", "P33")
+    assert (pick["dte"], pick["strike"], pick["call"], pick["put"]) == (19, 100.0, "C19", "P19")
     assert bsu.choose_options(exps[:1], 101.0) is None
+    assert bsu.choose_options([exps[2]], 101.0) is None, "a weekly alone is no reading at all"
+
+
+def test_the_monthly_is_the_third_friday_or_the_trading_day_before_a_holiday():
+    assert bsu.monthly_expiry(2026, 10).isoformat() == "2026-10-16"
+    assert bsu.monthly_expiry(2025, 4).isoformat() == "2025-04-17"  # Good Friday, 2025-04-18
+    assert bsu.monthly_expiry(2027, 6).isoformat() == "2027-06-17"  # Juneteenth observed, 06-18
+    assert bsu.is_monthly("2026-10-16") and bsu.is_monthly("2025-04-17")
+    assert not bsu.is_monthly("2026-10-30")  # an end-of-month weekly
+    assert not bsu.is_monthly("2026-10-09") and not bsu.is_monthly("2025-04-18")
+    assert not bsu.is_monthly(None) and not bsu.is_monthly("")
+
+
+# --- the changeover to the monthly ---------------------------------------------------------------
+
+
+def test_until_a_name_has_three_monthly_sessions_it_is_judged_on_its_earlier_readings():
+    """A name measured nearest 30 days in three sessions keeps that verdict while the monthly builds
+    up, and the reason says which expiry it read -- no three-day gap in which everything is pending."""
+    earlier = _measurements(expiration=WEEKLY, call=(2.00, 2.20))  # 10% wide
+    monthly = _measurements(days=LATER[:2], call=(2.00, 2.04))  # tight, two sessions only
+    name = _status(earlier + monthly)
+    assert name["status"] == "out"
+    assert name["medians"]["option"]["expiry"] == "nearest 30 days"
+    assert name["medians"]["option"]["monthly_sessions"] == 2
+    assert any("the monthly has 2 of 3 sessions" in r for r in name["reasons"])
+
+
+def test_three_monthly_sessions_decide_alone_and_the_two_are_never_pooled():
+    """Wide on the weekly, tight on the monthly: once the monthly has three sessions only it counts.
+    Pooled, the median of three wide and three tight sessions would land between them."""
+    earlier = _measurements(expiration=WEEKLY, call=(2.00, 2.20))
+    monthly = _measurements(days=LATER, call=(2.00, 2.04))
+    name = _status(earlier + monthly)
+    assert name["status"] == "in"
+    assert name["medians"]["option"]["expiry"] == "monthly"
+    assert name["medians"]["option"]["sessions"] == 3
+    # And the other way round: tight on the weekly cannot rescue a name wide on the monthly.
+    flipped = _status(
+        _measurements(expiration=WEEKLY, call=(2.00, 2.04)) + _measurements(days=LATER, call=(2.00, 2.20))
+    )
+    assert flipped["status"] == "out" and flipped["medians"]["option"]["expiry"] == "monthly"
+
+
+def test_a_name_first_measured_after_the_changeover_waits_for_the_monthly():
+    name = _status(_measurements(days=LATER[:2]))
+    assert name["status"] == "pending"
+    assert "option spread measured in 2 of 3 sessions on the monthly" in name["reasons"]
+
+
+def test_a_reading_says_whether_it_read_the_monthly():
+    at = _at(DAYS[0])
+    assert bsu.reading(_row(at), at)["option"]["monthly"] is True
+    assert bsu.reading(_row(at, expiration=WEEKLY), at)["option"]["monthly"] is False
 
 
 # --- the bar itself -----------------------------------------------------------------------------
