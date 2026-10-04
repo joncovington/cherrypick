@@ -484,6 +484,58 @@ looked at under v2.
 - Every setup-side is reported, passing or failing, by sub-period (2011–18 and 2019–26), with its
   sample.
 
+## Round 2: improvements, declared before they were run (2026-10-04)
+
+The first results found no setup worth trading. Round 2 tests whether a filter or a different exit
+makes one worth trading. **These ideas were suggested by looking at round 1**, so testing them on
+the same data would partly re-find what was seen. The design is built around that.
+
+**Two stages, on disjoint names.**
+- Every name is assigned for good to half A or half B by the CRC-32 of its ticker (even is A).
+- **Stage A (discovery)** tests all nine hypotheses on half A's names only. Baseline draws also come
+  only from half A.
+- **Stage B (confirmation)** tests only the stage-A survivors on half B, which nothing in round 2
+  looks at before then.
+
+**The family: nine hypotheses**, with textbook settings fixed here and not tuned. A filter is
+applied at entry, and the setup's positions are re-walked with it, so a filtered-out signal never
+blocks a later one. An exit replaces the setup's own exit, and its positions are re-walked too.
+
+| Id | Starts from | Change |
+|---|---|---|
+| `mr-trend-agrees` | mean reversion (long) | enter only when both trend scores (1M and 6M) are above zero |
+| `mr-above-200` | mean reversion (long) | enter only when the close is above the name's 200-session SMA |
+| `mr-300m` | mean reversion (long) | enter only when the 50-session median dollar volume (the session before) is ≥ $300M |
+| `trend-market-up` | trend following (long) | enter only when SPY closed above its 200-session SMA |
+| `breakout-market-up` | breakout (long) | enter only when SPY closed above its 200-session SMA |
+| `trend-short-market-down` | trend following (short) | enter only when SPY closed below its 200-session SMA |
+| `pullback-short-market-down` | pullback (short) | enter only when SPY closed below its 200-session SMA |
+| `pullback-hold-10` | pullback (long) | exit after 10 sessions: no target, no stop |
+| `pullback-no-target` | pullback (long) | no target: exit only on the Chandelier stop |
+
+**Everything else is as in analysis plan v2:**
+- the universe chosen as of each day;
+- the holdout for the tuned families (pullbacks, breakouts);
+- the corporate-action exclusions;
+- next-open fills;
+- R net of the same declared costs;
+- calendar-time, one-sided tests.
+
+**The baseline matches the conditions.** For each counted entry, 40 same-date candidates (other
+half-A names in that day's universe) and 40 same-name candidates (other days the name qualified) are
+drawn with a fixed seed. Only candidates that pass the hypothesis's own filter that day are kept,
+and they are held to the hypothesis's exit. A filter is credited only for what the setup adds under
+it, not for the filter itself (buying random stocks in an uptrend also does well).
+
+**The decision rule.** A hypothesis advances from stage A only if both hold:
+- its edge over the matched baseline is significant under Holm across all nine at a family-wise
+  α of 0.05; and
+- its net R is above zero, meaning it makes money after costs on its own.
+
+In stage B, survivors are re-tested on half B with Holm across the survivors only. **Confirmed
+means both conditions hold again on half B.** Anything else is reported as found: a stage-A failure,
+or a stage-B failure.
+
 ## Later phases: uses the study and log are shaped for, none committed
 
 History makes most of these **runnable now, not someday**.
