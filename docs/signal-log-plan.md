@@ -53,8 +53,8 @@ The local Dolt `stocks` clone (read by the technicals landing) holds:
 At today's rates the setups make about 12 positions per name-year, across all eight. The liquid
 universe grows from about 1,050 names in 2011 to about 1,800 in 2019 and about 2,900 in 2026 (a
 one-day dollar-volume stand-in for the 50-session median, 2026-10-04). Over 15¾ years that is an
-estimated **330,000 positions, about 8,500 of them breakouts and breakdowns**. Every setup-side clears its sample threshold at once, even after
-same-day clustering.
+estimated **330,000 positions, about 8,500 of them breakouts and breakdowns**. Every setup-side
+clears its sample threshold at once, even after same-day clustering.
 
 ### Why a live record still matters
 
@@ -208,21 +208,23 @@ hour or so of computing. **A verdict on all eight setup-sides within the week.**
 3. **Data health.** A logged signal that later recomputes differently is an alarm in itself.
 4. **Day-to-day uses:** watchlist history, alerts, and the later phases.
 
-Time to about 150 live trades, at today's rates on our 527 names:
-
-| Setup-side | Live positions a year | Time to ~150 |
-|---|---|---|
-| Mean reversion (short) | ~1,970 | ~4 weeks |
-| Pullback (long) | ~1,370 | ~6 weeks |
-| Mean reversion (long) | ~840 | ~9 weeks |
-| Pullback (short) | ~830 | ~9 weeks |
-| Trend following (long and short) | ~620–640 | ~12–13 weeks |
-| Breakout / breakdown | ~78–85 | ~2 years |
-
 **Decided 2026-10-04: the nightly setups widen to the study's liquid universe** (price ≥ $5,
-50-session median dollar volume ≥ $20M, about 2,900 names today, not 527). Every confirmation runs
-about four times faster, breakouts in about six months, and the options-tradable filter (below) can
-find tradable names among all of them, not just today's curated list.
+50-session median dollar volume ≥ $20M, about 2,900 names today, not 527). Time to about 150 live
+trades per setup-side, scaling today's 527-name rates by name count (about 5½×, a rough guide until
+the wider universe's own rates are measured):
+
+| Setup-side | Live positions a year (527 names) | Time to ~150 on 527 | On ~2,900 names |
+|---|---|---|---|
+| Mean reversion (short) | ~1,970 | ~4 weeks | ~1 week |
+| Pullback (long) | ~1,370 | ~6 weeks | ~1 week |
+| Mean reversion (long) | ~840 | ~9 weeks | ~2 weeks |
+| Pullback (short) | ~830 | ~9 weeks | ~2 weeks |
+| Trend following (long and short) | ~620–640 | ~12–13 weeks | ~2–3 weeks |
+| Breakout / breakdown | ~78–85 | ~2 years | ~4 months |
+
+Restricting to options-tradable names (below) slows these by however many names it removes; the
+log records the label, so confirmation can be read either way. The wider pool also lets the
+options-tradable filter find tradable names among all of them, not just today's curated list.
 
 - **Storage:** `eod.db` grows from 57 MB to about 150–200 MB. The chart files grow from 27 MB to
   about 100–150 MB, rewritten nightly. The chart job takes about 3–4 minutes, up from 42 seconds.
@@ -354,7 +356,8 @@ A few of these columns need explaining:
   - a vanished event is recorded;
   - `reconstruct` writes nothing without `--write`;
   - the log and the chart files agree on every event.
-- **Size:** about 50 events a night on 527 names, about 13,000 rows a year. That is small.
+- **Size:** on about 2,900 names, about 275 events a night and 70,000 rows a year, about 20–40 MB.
+  That is small.
 
 ## Phase 3: a read surface
 
@@ -498,8 +501,7 @@ History makes most of these **runnable now, not someday**.
 6. **The verdict comes from a historical study first** (revised 2026-10-04), over a universe
    chosen as of each day: price ≥ $5 and 50-session median dollar volume ≥ $20M. The live log
    follows as confirmation.
-
-7. **The nightly setups widen to the liquid universe** (about 2,900 names), for about four times
+7. **The nightly setups widen to the liquid universe** (about 2,900 names), for roughly 5½ times
    faster confirmation and a wider pool for the tradable filter. Widened names use Dolt's dividends.
 8. **An options-tradable filter:** weekly expiries, and a tastytrade liquidity rating of 3 or 4 on at
    least 7 of the last 10 sessions. It is the watchlist's default, and it is context in the log and
