@@ -467,6 +467,42 @@ def settlement_fee(itm_settlements: int) -> float:
     return _fees.ic_expire_fee(itm_settlements)
 
 
+def allocate(total: float, raw: list[float]) -> list[float]:
+    """Split one ticket's rounded `total` across its legs: each leg its own share rounded to the
+    cent, the LAST leg the remainder -- so the legs sum to the ticket exactly, never a cent off.
+    `raw` is each leg's own unrounded share, in leg order."""
+    if not raw:
+        return []
+    shares = [round(x, 2) for x in raw[:-1]]
+    shares.append(round(total - sum(shares), 2))
+    return shares
+
+
+def leg_fee(symbol: str, quantity: int, *, opening: bool, selling: bool) -> float:
+    """One leg's own share of a ticket's fee schedule -- the core schedule is per leg and linear
+    (commission, its per-leg cap, clearing, ORF, the index exchange fee, TAF on a sell), so a
+    ticket's legs priced one at a time sum to the ticket."""
+    fn = _fees.ic_open_fee if opening else _fees.ic_close_fee
+    return fn(symbol, quantity, legs=1, sell_legs=1 if selling else 0, ndigits=4)
+
+
+def leg_costs(
+    symbol: str, legs: list[dict], quantity: int, config: dict, ticket: dict, *, opening: bool
+) -> list[dict]:
+    """Each leg's `{"fee", "slippage"}` share of one ticket (`ticket` is that ticket's own
+    `entry_cost`/`close_cost` result). `legs` carry `bid`, `ask` and `selling` (whether this leg
+    is a sell on THIS ticket: a short opening, or a long closing)."""
+    fees = allocate(
+        ticket["fee"],
+        [leg_fee(symbol, quantity, opening=opening, selling=leg["selling"]) for leg in legs],
+    )
+    slips = allocate(
+        ticket["slippage"],
+        [_fees.slippage_dollars([{"bid": leg["bid"], "ask": leg["ask"]}], quantity, config) for leg in legs],
+    )
+    return [{"fee": f, "slippage": s} for f, s in zip(fees, slips, strict=True)]
+
+
 # The two-leg spread books' cost and leg-P&L rules live once in core; calendars, curve and pmcc
 # carried identical copies (and bwb its own leg_pnl). Kept under the old names for every caller.
 _slippage_dollars = _fees.slippage_dollars

@@ -112,7 +112,15 @@ def enter_position(
             "era": analytics.CURRENT_ERA,
         },
     )
-    for leg in plan["legs"]:
+    shares = engine.leg_costs(
+        plan["symbol"],
+        [{**leg, "selling": leg["action"] == "Sell to Open"} for leg in plan["legs"]],
+        quantity,
+        config,
+        cost,
+        opening=True,
+    )
+    for leg, share in zip(plan["legs"], shares, strict=True):
         db.save_leg(
             conn,
             {
@@ -131,6 +139,11 @@ def enter_position(
                 "entry_iv": leg.get("iv"),
                 "entry_delta": leg.get("delta"),
                 "status": "open",
+                "opened_at": now,
+                "opened_session": entry_session,
+                "entry_spot": plan["spot"],
+                "entry_cost": share["fee"],
+                "entry_slippage": share["slippage"],
             },
         )
     return {"position_id": pid, "arm": arm, "symbol": plan["symbol"], "net_debit": plan["net_debit"]}
@@ -140,11 +153,49 @@ def enter_position(
 # spread-book writer in `cherrypick.core.spreadbook`: calendars, pmcc and curve carried identical
 # copies of all five. Bound to this module's ledger and kept under the old names for every caller.
 _book = _spreadbook.SpreadBook(db._store)
-close_open_legs = _book.close_open_legs
 dispose_assignment = _book.dispose_assignment
 finalize_if_done = _book.finalize_if_done
 _accumulate_exit_costs = _book.accumulate_exit_costs
 _position_quantity = _book.position_quantity
+
+
+def close_open_legs(
+    conn, position: dict, mark_snapshot: dict, config: dict, *, reason: str, session_date: str
+) -> dict:
+    """The shared traded close (`cherrypick.core.spreadbook`), then each closed leg's own share of
+    the close ticket, its closing spot and why it closed. The stamp lives here rather than in the
+    shared writer, which calendars and curve run byte-identically; the position-level totals it
+    writes are untouched."""
+    legs = db.open_legs_for(conn, position["position_id"])
+    result = _book.close_open_legs(
+        conn, position, mark_snapshot, config, reason=reason, session_date=session_date
+    )
+    if result.get("ok") and legs:
+        quotes = mark_snapshot.get("quotes") or {}
+        priced = [
+            {**quotes[leg["streamer_symbol"]], "selling": leg["action"] == "Buy to Open"} for leg in legs
+        ]
+        shares = engine.leg_costs(
+            position["symbol"],
+            priced,
+            int(position.get("quantity") or 1),
+            config,
+            result["cost"],
+            opening=False,
+        )
+        for leg, share in zip(legs, shares, strict=True):
+            db.save_leg(
+                conn,
+                {
+                    "position_id": leg["position_id"],
+                    "leg_role": leg["leg_role"],
+                    "close_spot": mark_snapshot.get("spot"),
+                    "close_cost": share["fee"],
+                    "close_slippage": share["slippage"],
+                    "close_reason": reason,
+                },
+            )
+    return result
 
 
 def settle_expiring_legs(
@@ -182,6 +233,12 @@ def settle_expiring_legs(
                 "close_kind": "assigned" if assigned else ("expired" if intrinsic <= 0 else "cash_settled"),
                 "closed_at": now,
                 "close_value": intrinsic,
+                # Settled, not traded: no fee and no slippage on the leg itself. Its settlement or
+                # assignment charge is the position's `settlement_fees`, a separate column.
+                "close_spot": spot,
+                "close_cost": 0.0,
+                "close_slippage": 0.0,
+                "close_reason": "settlement",
             },
         )
         entry = by_position.setdefault(leg["position_id"], {"itm": 0, "legs": 0, "assigned": 0})
