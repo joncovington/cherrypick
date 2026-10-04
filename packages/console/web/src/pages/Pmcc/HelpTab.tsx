@@ -5,11 +5,10 @@ import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
  * What this experiment is, in the module's own terms.
  *
  * Deliberately not the shared ExperimentGuideView: that component reads a flies/meic-shaped config
- * block and derives each arm's differences from its siblings. PMCC's single arm plus its advised
- * arms differ by one frozen overlay each, not by a set of declared arms, so a derived diff would report
- * almost nothing. The prose here is the config's own `_what_this_is`/`_selection_note`/
- * `_management_note`, kept in one place. Rewritten for the 2026-08-23 redesign — see
- * packages/pmcc/CLAUDE.md's measurement-break note for what changed and why.
+ * block and derives each arm's differences from its siblings, and PMCC's arms differ by lifecycle
+ * (a long re-bought each cycle against one held for a year), which a derived key diff would report
+ * as noise. The prose here follows the config's own notes and packages/pmcc/CLAUDE.md, rewritten
+ * for the 2026-10-05 shield boundary.
  */
 export function HelpTab({ data }: { data: PmccPayload | undefined }) {
   const p = data?.params;
@@ -22,60 +21,67 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
       <Card title="what PMCC is" collapseKey="pmcc-help-what" defaultCollapsed className="view-fade">
         <div className="pmcc-prose">
           <p>
-            Buy a call inside an 85-90-delta band
-            {p?.longDeltaMin != null && p?.longDeltaMax != null && (
-              <> ({fmtPct(p.longDeltaMin * 100, 0)}–{fmtPct(p.longDeltaMax * 100, 0)})</>
-            )}{" "}
-            at ~21 DTE — a stock substitute, deliberately <em>not</em> a LEAP — and sell the ATM call nearest spot at
-            ~7 DTE, whichever side of spot it lands on. There is no yield search on the short any more: it is simply
-            the nearest strike, so it can land OTM as easily as ITM.
+            Hold a deep in-the-money call as a stock substitute and sell a shorter-dated call against it, collecting
+            the short's time value. The module runs that idea three ways at once, each its own portfolio on the same
+            symbols, so the difference between them is the measurement.
           </p>
           <p>
-            The default exit <strong>holds to the short's own expiration</strong>, then closes both legs together and
-            re-enters — no more early close on time-value exhaustion by default. That earlier rule survives as{" "}
-            <span className="mono">tv_managed_exit</span>
-            {p?.tvCloseThreshold != null && <> (threshold ≈{fmtMoney(p.tvCloseThreshold)})</>}, a live,
-            advisor-tunable override read only through an experiment's{" "}
-            <span className="mono">advised:&lt;experiment name&gt;</span> arm's frozen params
-            {p?.tvManagedExit === true && (
-              <span className="chip chip-warn integrity-chip" style={{ marginLeft: 6 }}>
-                on in this config's defaults
-              </span>
-            )}
-            .
+            By put-call parity a deep call plus a short in-the-money weekly call is a short weekly put plus a far
+            out-of-the-money long put: the position earns the variance premium on the weekly, with a crash floor far
+            below. Whether that premium is there is exactly what the short leg tests; the replay behind these arms
+            found it turns on the implied-volatility level (packages/pmcc/docs/shield-study.md).
           </p>
           <p className="muted">
-            {symbols.length > 0 ? symbols.join(", ") : "One symbol"} since the 2026-08-23 redesign, one position per
-            symbol at a time — TQQQ (American, physical-settlement) and XSP (Mini-SPX, European, cash-settled) added
-            the same day, run as separate populations under the identical rule set. Paper only: there is no live
-            loop and no order-placement code anywhere in the module.
+            {symbols.length > 0 ? symbols.join(", ") : "No symbols configured"} — one position per symbol and arm
+            at a time, every symbol its own population, never pooled. Paper only: there is no live loop and no
+            order-placement code anywhere in the module.
           </p>
         </div>
       </Card>
 
-      <Card title="one arm, plus its advised arms" collapseKey="pmcc-help-arms" defaultCollapsed>
+      <Card title="the arms" collapseKey="pmcc-help-arms" defaultCollapsed>
         <div className="pmcc-prose">
           <dl className="pmcc-defs">
             <dt>control</dt>
             <dd>
-              The strategy as taught: mechanical entry whenever the slot is free, an 85-90-delta long, an ATM short
-              with no yield floor, hold to the short's own expiration, then close both legs together. Never rolls —
-              there is no more roll arm.
+              Buy a call inside an 85-90-delta band
+              {p?.longDeltaMin != null && p?.longDeltaMax != null && (
+                <> ({fmtPct(p.longDeltaMin * 100, 0)}–{fmtPct(p.longDeltaMax * 100, 0)})</>
+              )}{" "}
+              at ~21 DTE, sell the call nearest spot at ~7 DTE, hold to the short's expiration and close both. The long
+              is re-bought every cycle, which is where most of its cost goes.
+            </dd>
+            <dt>shield</dt>
+            <dd>
+              Tom King's "Income Shield" (from 2026-10-05): hold a ~1-year call at 0.90-0.95 delta and sell a
+              0.70-delta weekly call against it, rolled each Friday an hour before the close, until the long reaches 45
+              DTE or the position loses 30% of the long's cost. Also rolls early once the short's extrinsic is 85%
+              decayed or spot reaches its strike, at most once a session.
+            </dd>
+            <dt>shield_hold</dt>
+            <dd>
+              The same entry as shield, on the same days, holding each short to Friday. The pair isolates the early
+              roll.
             </dd>
             <dt>advised:&lt;experiment name&gt;</dt>
             <dd>
-              One arm per advisor experiment (any number at once since 2026-09-17), each carrying that
-              experiment's admitted params frozen on each row at entry and restated every tick through the
-              module's one choke point, measured against control. The one thing currently worth advising is{" "}
-              <span className="mono">tv_managed_exit</span>/<span className="mono">tv_close_threshold</span> —
-              flipping the exit rule back to early-tv-exhaustion, as a paper A/B against hold-to-expiry. Off by
-              default.
+              One arm per advisor experiment, shadowing control with that experiment's params frozen at entry. The one
+              thing currently worth advising is <span className="mono">tv_managed_exit</span>/
+              <span className="mono">tv_close_threshold</span>
+              {p?.tvCloseThreshold != null && <> (threshold ≈{fmtMoney(p.tvCloseThreshold)})</>} — the early
+              time-value exit, as a paper A/B against hold-to-expiry
+              {p?.tvManagedExit === true && (
+                <span className="chip chip-warn integrity-chip" style={{ marginLeft: 6 }}>
+                  on in this config's defaults
+                </span>
+              )}
+              . Off by default.
             </dd>
           </dl>
           <p className="muted">
-            There is no more multi-arm fill pairing to reason about: with one arm plus its advised arms, every{" "}
-            <span className="mono">control</span> cycle is directly comparable to every other{" "}
-            <span className="mono">control</span> cycle.
+            A shield position closes about ten months after it opens, so the closed-results table shows nothing from
+            it for most of a year. Read the shield arms on the arms page's "open, marked to market" and "weekly by
+            arm", and one position at a time on the tracker.
           </p>
         </div>
       </Card>
@@ -127,21 +133,25 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
       <Card title="settlement, by symbol" collapseKey="pmcc-help-settlement" defaultCollapsed>
         <div className="pmcc-prose">
           <p>
-            TQQQ is American physical delivery. An ITM short call at expiry arms its intrinsic <em>and</em> delivers
-            100 short shares per contract at the settlement print; the surviving ~14-DTE long stays open, and the
-            next session's combined disposal covers the shares and sells the long.
+            Physical-settlement symbols{physicalSymbols.length > 0 && <> ({physicalSymbols.join(", ")})</>} are
+            American delivery. An ITM short call at expiry books its intrinsic value <em>and</em> delivers 100 short
+            shares per contract at the settlement print. Shares are booked at the settlement spot rather than the
+            strike, which keeps the option accounting untouched.
           </p>
           <p>
-            A position does not close while its shares are outstanding — that is the{" "}
-            <span className="mono">short_settled</span> state on this page — and the Friday-to-Monday gap is left
-            visible, because it <em>is</em> the weekend exposure. Shares are booked at the settlement spot rather
-            than the strike, which keeps the option accounting untouched.
+            For control the surviving long stays open and the next session's combined disposal covers the shares and
+            sells it; the position does not close while shares are outstanding (the{" "}
+            <span className="mono">short_settled</span> state), and the Friday-to-Monday gap is left visible because
+            it <em>is</em> the weekend exposure. A shield position keeps its long; under the module's{" "}
+            <span className="mono">ira</span> account policy every expiring short is bought back before the bell, so a
+            delivery means a buyback failed.
           </p>
-          <p>
-            XSP (Mini-SPX) is European, cash-settled: it can only be exercised at its own expiration, never early,
-            so there is no <span className="mono">short_settled</span> state, no delivered-share disposal, and no
-            weekend share-carry exposure for it. Both legs simply close at expiry.
-          </p>
+          {cashSymbols.length > 0 && (
+            <p>
+              Cash-settled symbols ({cashSymbols.join(", ")}) are European: they can only be exercised at their own
+              expiration, so there is no delivered-share disposal and no weekend share-carry exposure for them.
+            </p>
+          )}
         </div>
       </Card>
     </div>

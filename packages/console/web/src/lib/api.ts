@@ -459,10 +459,12 @@ export function useFliesMeta(mode: TradingMode, era: string | null = null) {
 /**
  * PMCC. No mode argument anywhere: the module is paper-only by construction, not by preference.
  */
-export function usePmcc() {
+/** `era`: null = the module's current era; "ALL" pools every era, a stated choice; or one era key.
+ *  Only the arm comparison is era-scoped. */
+export function usePmcc(era: string | null = null) {
   return useQuery<PmccPayload>({
-    queryKey: ["pmcc"],
-    queryFn: () => getJson<PmccPayload>("/api/pmcc"),
+    queryKey: ["pmcc", era],
+    queryFn: () => getJson<PmccPayload>(`/api/pmcc${era === null ? "" : `?era=${encodeURIComponent(era)}`}`),
     // The loop marks every tick in session; 15s matches the other module dashboards.
     refetchInterval: 15_000,
     placeholderData: (prev) => prev,

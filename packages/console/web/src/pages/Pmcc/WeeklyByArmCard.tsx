@@ -13,8 +13,8 @@ import { TimeLineChart } from "../../components/chart/TimeLineChart";
  * across a row for one week's A/B. Symbols are never pooled (the module's rule: each is its own
  * population), so the symbol filter picks columns rather than summing them.
  */
-export function WeeklyByArmCard({ symbol }: { symbol: string | null }) {
-  const { data, isLoading, dataUpdatedAt } = usePmccWeekly(null);
+export function WeeklyByArmCard({ symbol, era = null }: { symbol: string | null; era?: string | null }) {
+  const { data, isLoading, dataUpdatedAt } = usePmccWeekly(era);
   const rows = (data?.data ?? []).filter((r) => symbol === null || r.symbol === symbol);
   return (
     <Card title="weekly by arm" collapseKey="pmcc-weekly" updatedAt={dataUpdatedAt} isError={data?.ok === false}>

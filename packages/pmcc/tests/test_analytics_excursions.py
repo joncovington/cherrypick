@@ -104,9 +104,9 @@ def test_excursions_skips_unusable_marks():
 
 def test_excursions_scopes_to_current_era_by_default():
     conn = db.connect(":memory:")
-    _position(conn, "old", net_debit=10.0, era="pre-redesign")
+    _position(conn, "old", net_debit=10.0, era="redesign")
     _mark(conn, "old", 1, long_mid=25.0, short_mid=10.0)
-    _position(conn, "new", net_debit=10.0, era="redesign")
+    _position(conn, "new", net_debit=10.0, era=analytics.CURRENT_ERA)
     _mark(conn, "new", 1, long_mid=25.0, short_mid=10.0)
     conn.commit()
 

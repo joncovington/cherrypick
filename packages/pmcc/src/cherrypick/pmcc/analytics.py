@@ -30,8 +30,13 @@ value_at = _tracker.value_at
 # NULL, which never equals a literal era string, so old rows are excluded from `headline()` by
 # construction rather than by a backfilled guess.
 #
-# One era so far: `"redesign"` (2026-08-23 ->), stamped by `book.enter_position` on every new row.
-# It closes the pre-redesign window — TNA/UPRO alongside TQQQ, the `keltner`/`roll` arms, the
+# `"shield"` (2026-10-05 ->, `paper_loop.SHIELD_FROM`): the held-long arms `shield` and
+# `shield_hold` join control, and the symbols become XSP, QQQ, GLD, IWM and SLV (TQQQ runs off). It
+# closes `"redesign"`, whose XSP control rules carry on unchanged but whose roster, symbols and
+# position cap do not -- docs/shield-study.md and the CLAUDE.md boundary note.
+#
+# `"redesign"` (2026-08-23 -> 2026-10-04), stamped by `book.enter_position` on every new row,
+# closed the pre-redesign window — TNA/UPRO alongside TQQQ, the `keltner`/`roll` arms, the
 # ~99-delta-floor long and yield-targeted ITM short, the early-tv-exhaustion default exit — which
 # ran symbol/arm/rule combinations the redesigned engine no longer produces and never will again.
 # Four closed cycles exist from that window (all TQQQ, one apiece across control/keltner/roll/
@@ -39,7 +44,7 @@ value_at = _tracker.value_at
 # History tab and any `era="ALL"` read, but pooling them into the new design's headline would
 # average two incomparable strategies into one number. See the module CLAUDE.md's 2026-08-23
 # measurement-break note and the `measurement_breaks` row this reset journals.
-CURRENT_ERA = "redesign"
+CURRENT_ERA = "shield"
 
 
 def headline(conn, era: str | None = CURRENT_ERA) -> dict:

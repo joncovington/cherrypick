@@ -553,7 +553,15 @@ export interface PmccPayload {
   dbPresent: boolean;
   openPositions: PmccOpenPosition[];
   openCount: number;
+  /** Closed results per (arm, symbol), scoped to `eraScope`. */
   arms: PmccArmCell[];
+  /** Every era on file with its closed-position count, newest first; rows with no era stamp are
+   *  `pre-redesign`. */
+  eras: Array<{ era: string; trades: number; label?: string }>;
+  /** The module's own `CURRENT_ERA`. */
+  currentEra: string;
+  /** What `arms` is scoped to: an era key, or "ALL". */
+  eraScope: string;
   integrity: PmccIntegrity;
   today: {
     attempts: Array<{
