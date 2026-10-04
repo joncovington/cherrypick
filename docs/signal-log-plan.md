@@ -50,9 +50,10 @@ The local Dolt `stocks` clone (read by the technicals landing) holds:
   survivors (Brown, Goetzmann, Ibbotson & Ross 1992).
 - **Its own `split` and `dividend` tables.**
 
-At today's rates the setups make about 12 positions per name-year, across all eight. On about
-2,000 names over 15¾ years that is an estimated **380,000 positions, about 10,000 of them
-breakouts and breakdowns**. Every setup-side clears its sample threshold at once, even after
+At today's rates the setups make about 12 positions per name-year, across all eight. The liquid
+universe grows from about 1,050 names in 2011 to about 1,800 in 2019 and about 2,900 in 2026 (a
+one-day dollar-volume stand-in for the 50-session median, 2026-10-04). Over 15¾ years that is an
+estimated **330,000 positions, about 8,500 of them breakouts and breakdowns**. Every setup-side clears its sample threshold at once, even after
 same-day clustering.
 
 ### Why a live record still matters
@@ -127,7 +128,8 @@ A name qualifies on a session when, using bars **up to the previous session**:
 - its close is at least $5, and
 - its 50-session median dollar volume (close × volume) is at least $20M.
 
-That is about 2,000 names at a time: names a trader could actually fill at the open.
+That is about 1,050 names in 2011, rising to about 2,900 today: names a trader could actually fill at
+the open.
 
 - A setup's entry counts only if the name qualified that day.
 - A position, once opened, is held to its own exit, whether or not the name still qualifies.
@@ -172,6 +174,12 @@ expectancy and the probabilistic Sharpe. A missing mark is skipped, never read a
 | The scorer reproduces the engine's own exits for every position | score a position off-by-one session |
 | `history.db` matches `eod.db` on the overlap | apply a dividend twice |
 
+### Storage
+
+All of Dolt from 2011 is about 29 million bars, about 2.6 GB at the store's 90 bytes per row.
+Storing only names that ever qualify is about 1 GB. Results are tens of MB: baseline draws are
+regenerated from the fixed seed, not stored one by one (that would be about 1 GB more).
+
 ### Effort
 
 About a day to land and check the history, and about a day for the scorer and baseline. Then an
@@ -204,9 +212,15 @@ Time to about 150 live trades, at today's rates on our 527 names:
 
 **The breakouts are slow to confirm live,** though their verdict will already be in hand from
 history. One option, for when Phase 2 is built: run the nightly setups over the same liquid
-universe as the study (about 2,000 names, not 527). That would make every confirmation about four
-times faster, breakouts in about six months. The landing already reads every name in each month
-window, so the cost is mostly storage.
+universe as the study (about 2,900 names today, not 527). That would make every confirmation about
+four times faster, breakouts in about six months.
+
+- **Storage:** `eod.db` would grow from 57 MB to about 150–200 MB. The chart files would grow from
+  27 MB to about 100–150 MB, rewritten nightly. The chart job would take about 3–4 minutes, up from
+  42 seconds.
+- **The real cost is broker calls,** not storage. The IV-rank and dividend scripts call tastytrade
+  one symbol a second, so the cheap answer is to keep them on the curated names. The setups don't
+  read IV.
 
 ### Where it lives
 
