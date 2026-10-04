@@ -19,9 +19,12 @@ is re-priced from its own quotes through `fly.fly_debit` -- `modelled` at the ar
 `mid` at zero. An attempt is entered when the credit clears the floor under test and every gate
 after the floor in `evaluate_bwb_entry` (the ceiling, `max_bwb_tail_dollars`, fees), and then
 `engine.portfolio_gates` (cadence, duplicate, sign rule) against the positions the replay itself has
-entered that day. Gates ahead of strike selection (window, delta, containment) were already applied:
-a row only carries legs if it got that far. Each entry settles at the session's `fly_books` print
-through `fly.position_pnl` (`kind: bwb`, opening fee, and the settlement fee that print triggers).
+entered that day. Of the gates ahead of strike selection, those that read only the market (window,
+delta, containment) were already applied: a row only carries legs if it got that far. The two that
+count positions (`max_positions`, `max_positions_per_window`) are applied again here, against the
+replay's own entries, because a lower floor changes what they count. Each entry settles at the
+session's `fly_books` print through `fly.position_pnl` (`kind: bwb`, opening fee, and the settlement
+fee that print triggers).
 
 **What it is not.**
 - **Unrolled.** A real bwb rolls its far wing in once the roll cheapens (`engine.evaluate_roll`), and
@@ -33,8 +36,17 @@ through `fly.position_pnl` (`kind: bwb`, opening fee, and the settlement fee tha
 - **Pre-floor refusals are fixed.** Floor-refused rows only exist where the window and delta gates
   passed, so a lower floor cannot add a tick the arm never priced.
 
-The deployed floor replayed through this same path must reproduce the arm's real fills, and the
-`validation` line says whether it does. A floor-replay result that fails it means nothing.
+**Validation, on every run, per arm.** Each must hold, or the arm's floor table is not printed and
+the run exits 1:
+- the credit re-priced from the stored quotes matches `would_be_credit` on every priced row;
+- at the deployed floor, the replay enters exactly the real fills made before the session's first
+  real roll. Until then the replay's book and the real one are the same, so they must agree. After
+  it they may part, since a rolled position is a fly to the sign and duplicate rules and the replay
+  cannot roll; that count is printed, never excused;
+- every real fill that was never rolled settles through this path to the cent.
+
+An arm with no real fill has nothing to check its gating against: its table prints, marked
+UNVALIDATED.
 """
 
 from __future__ import annotations
@@ -43,6 +55,7 @@ import argparse
 import json
 import os
 import sqlite3
+import sys
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -99,6 +112,14 @@ def replay_day(rows: list[dict], params: dict, floor_frac: float, slip: float, s
     tail_cap = params.get("max_bwb_tail_dollars", 150.0)
     taken: list[dict] = []
     for r in rows:
+        # The two pre-strike gates that count positions, against the replay's own book (the engine
+        # applies them before it records `proposed_legs`, so a row passed them only against the REAL
+        # book). A skip has no side effect, so their place in the order does not change the result.
+        if len(taken) >= params.get("max_positions", 4):
+            continue
+        _, window = engine.in_entry_window(r["now_min"], params.get("entry_windows", []))
+        if engine._window_cap_reached(params, taken, window):
+            continue
         tail = r["far_width"] - r["wing_width"]
         c = credit(r["legs"], slip)
         if c <= floor_frac * tail or c > ceiling * tail:
@@ -115,6 +136,7 @@ def replay_day(rows: list[dict], params: dict, floor_frac: float, slip: float, s
             "far_width": r["far_width"],
             "trade_date": r["trade_date"],
             "entry_time_min": r["now_min"],
+            "entry_window": window,
         }
         proposed = [(engine._EXPIRY, *leg[1:]) for leg in fly.position_legs(pos)]
         refusal, _ = engine.portfolio_gates(
@@ -147,6 +169,16 @@ def settle(p: dict, price: float) -> float:
     )
 
 
+def before_roll(fills: list[tuple[str, str]], days: list[str], first_roll: dict[str, datetime]) -> set:
+    """The (session, ts) fills made before that session's first real roll, on the replayed sessions:
+    the stretch over which the replay's book and the real one are the same."""
+    return {
+        (d, t)
+        for d, t in fills
+        if d in days and (d not in first_roll or datetime.fromisoformat(t) < first_roll[d])
+    }
+
+
 def _days(per_day: dict[str, float]) -> str:
     vals = list(per_day.values())
     return (
@@ -164,6 +196,7 @@ def main() -> None:
     ap.add_argument("--until")
     ap.add_argument("--per-day", dest="per_day", action="store_true")
     a = ap.parse_args()
+    failed = []
 
     config = cli.load_config()
     conn = sqlite3.connect(f"file:{_ledger('paper').as_posix()}?mode=ro", uri=True)
@@ -180,7 +213,7 @@ def main() -> None:
     for arm in a.arm or ARMS:
         params = engine.merged_params(config, arm)
         slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
-        deployed = params.get("min_bwb_credit_pct_of_tail") or 0.15
+        deployed = params.get("min_bwb_credit_pct_of_tail", 0.15)  # the engine's own default
         attempts = load_attempts(conn, arm, a.symbol, a.since, a.until)
         by_day: dict[str, list[dict]] = defaultdict(list)
         for r in attempts:
@@ -196,13 +229,12 @@ def main() -> None:
             f"deployed floor {deployed:g} = {deployed * tail:.2f})"
         )
 
-        # Validation: the stored credit, then the deployed floor's fills against the real ones.
+        # Validation (see the module note): the stored credit, the deployed floor's entries against
+        # the real fills up to each session's first real roll, and settlement on unrolled fills.
         priced = [r for r in attempts if r["would_be_credit"] is not None]
         worst = max((abs(credit(r["legs"], slip) - r["would_be_credit"]) for r in priced), default=0.0)
         real = [(r["trade_date"], r["ts"]) for r in attempts if r["outcome"] == "filled"]
         mine = [(d, p["ts"]) for d in days for p in replay_day(by_day[d], params, deployed, slip, a.symbol)]
-        first_real = {d: t for d, t in reversed(real)}
-        first_mine = {d: t for d, t in reversed(mine)}
         rows = [
             dict(r)
             for r in conn.execute(
@@ -212,6 +244,12 @@ def main() -> None:
             )
         ]
         held = [r for r in rows if r["kind"] == "bwb"]
+        first_roll: dict[str, datetime] = {}
+        for r in rows:
+            if r["rolled_at"]:
+                at = datetime.fromisoformat(r["rolled_at"])
+                first_roll[r["trade_date"]] = min(first_roll.get(r["trade_date"], at), at)
+
         settled_ok = sum(
             abs(
                 settle(
@@ -223,17 +261,36 @@ def main() -> None:
             < 0.005
             for r in held
         )
+        real_early = before_roll(real, days, first_roll)
+        mine_early = before_roll(mine, days, first_roll)
+        problems = []
+        if worst > 0.0005:
+            problems.append(f"credit re-prices {worst:.4f} away from would_be_credit")
+        if mine_early != real_early:
+            problems.append(
+                f"before the first roll the replay enters {len(mine_early)} vs {len(real_early)} real "
+                f"(missing {sorted(real_early - mine_early)[:3]}, "
+                f"extra {sorted(mine_early - real_early)[:3]})"
+            )
+        if settled_ok != len(held):
+            problems.append(f"settlement reproduces only {settled_ok}/{len(held)} unrolled fills")
+        status = "FAIL" if problems else ("UNVALIDATED" if not real else "PASS")
         print(
-            f"  validation: credit re-priced on {len(priced)} rows, worst gap {worst:.4f}; deployed floor "
-            f"enters {len(mine)} vs {len(real)} real fills, first fill of the day matches on "
-            f"{sum(first_mine.get(d) == t for d, t in first_real.items())}/{len(first_real)} sessions"
-            + ("" if set(mine) == set(real) else " (later fills diverge: real positions rolled into flies)")
+            f"  validation {status}: credit re-priced on {len(priced)} rows, worst gap {worst:.4f}; "
+            f"before each session's first real roll the deployed floor enters {len(mine_early)} vs "
+            f"{len(real_early)} real fills; after it {len(mine) - len(mine_early)} vs "
+            f"{len(real) - len(real_early)} (the replay cannot roll)"
             + (
                 f"; settlement reproduces {settled_ok}/{len(held)} real unrolled fills to the cent"
                 if held
                 else ""
             )
+            + ("" if real else "; no real fill to check the gating against")
         )
+        if problems:
+            failed.append(arm)
+            print("  " + "; ".join(problems) + " -- the floor table is not printed\n")
+            continue
 
         # How far short of the floor the market was: the session's best offered credit.
         print(
@@ -271,7 +328,10 @@ def main() -> None:
                 )
                 if a.per_day and n:
                     print("                " + "  ".join(f"{d[5:]} {v:+.2f}" for d, v in per_day.items()))
-        print("  (* deployed; every entry unrolled, held to the print)")
+        print(
+            "  (* deployed; every entry unrolled, held to the print"
+            + ("; UNVALIDATED: no real fill to check the gating against)" if not real else ")")
+        )
 
         # The roll's weight, on the arm's own real fills since --since: as traded vs never rolled.
         if rows:
@@ -294,6 +354,9 @@ def main() -> None:
                 f"same entries never rolled {unrolled:+.2f}"
             )
         print()
+    if failed:
+        print(f"validation FAILED for {', '.join(failed)}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

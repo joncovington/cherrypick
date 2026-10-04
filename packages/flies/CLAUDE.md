@@ -290,8 +290,10 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   loosened**; refusal rows are the result. From 2026-09-30 each bwb attempt row, refused or filled,
   carries the structure in `proposed_legs` (strikes, quotes, deltas) and, once priced, its
   `would_be_credit` — enough to settle a refused bwb against the print and replay any floor
-  (`scripts/flies_bwb_floor_replay.py`, unrolled, self-validating); both are NULL before that. `entry_far_wing_delta` is stamped on every row so the flat
-  floor can later be re-derived against `P(tail) × tail` — store first, retune second. Two widths
+  (`scripts/flies_bwb_floor_replay.py`: unrolled; it checks itself against the real fills and prints
+  no floor table for an arm that fails); both are NULL before that. `entry_far_wing_delta` is
+  stamped on every row so the flat floor can later be re-derived against `P(tail) × tail` — store
+  first, retune second. Two widths
   (5/10 and 10/20) as separate arms, each with its own `max_bwb_tail_dollars`. **Paper only, never a
   live candidate.** Read the roll as the result (`best_roll_debit`, unrolled vs rolled P&L). No hedge
   overlay — insuring the far wing is the roll's job.

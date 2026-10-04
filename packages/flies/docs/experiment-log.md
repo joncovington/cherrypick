@@ -711,9 +711,17 @@ The replay the 09-30 entry asked for, over the first three sessions with `propos
 (09-30..10-02, SPX). `scripts/flies_bwb_floor_replay.py` (read-only; `--arm`, `--since`, `--per-day`)
 re-prices each attempt from its stored quotes, re-runs the gates after the floor (ceiling, tail cap,
 fees, then `portfolio_gates` against its own entries), and settles each entry at the `fly_books`
-print, **unrolled**. Validation, printed on every run: re-priced credits match `would_be_credit` to
-0.0001 on every priced row; the deployed floor reproduces every real first fill of the day; and the
-settlement path reproduces all 16 real unrolled `bwb-atm` fills since 09-21 to the cent.
+print, **unrolled**. It validates itself on every run, and an arm that fails gets no floor table
+and the run exits 1:
+- Re-priced credits match `would_be_credit` to 0.0001 on every priced row.
+- At the deployed floor, the replay enters exactly the real fills made before each session's first
+  real roll, after which the real book holds flies the replay cannot have. That is 1 of 1 for
+  `bwb-up` and `bwb-down`, and 4 of 4 for `bwb-atm` (14 vs 16 after the first roll).
+- The settlement path reproduces all 16 real unrolled `bwb-atm` fills since 09-21 to the cent.
+
+**The w2 pair has no real fill, so its gating is unvalidated**; its tables are marked so. Each
+check was broken on purpose (wrong slippage, portfolio gates skipped, fees dropped from settlement),
+and each failed the run.
 
 **Mostly the market, not the slippage model.** Mid and modelled credits differ by only 0.04–0.10.
 The best credit each session offered (modelled, then mid):
@@ -725,8 +733,8 @@ The best credit each session offered (modelled, then mid):
 | `bwb-up-w2` (10/20) | 1.50 | −0.05 / 0.00 | 0.52 / 0.62 | 0.25 / 0.35 |
 | `bwb-down-w2` (10/20) | 1.50 | 0.28 / 0.32 | 1.03 / 1.10 | 0.53 / 0.58 |
 
-At the deployed floor, pricing at mid adds no entries. The w2 pair never came within a third of its
-floor.
+At the deployed floor, pricing at mid adds no entries. The w2 pair never reached its floor:
+`bwb-up-w2` peaked at 0.62 against 1.50, and `bwb-down-w2` came closest at 1.10 (mid) on 10-01.
 
 **What a lower floor would have made, unrolled and held to the print.** With no floor, only the fee
 gate applies (about 0.16).
