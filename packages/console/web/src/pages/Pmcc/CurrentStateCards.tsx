@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import type { PmccArmCell, PmccOpenPosition, PmccPayload } from "@console/shared";
 import { Card, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
@@ -51,7 +52,11 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
         const exposedShare = p.markedTicks > 0 ? (p.exposedTicks / p.markedTicks) * 100 : null;
         return (
           <tr key={p.positionId}>
-            <td>{p.symbol}</td>
+            <td>
+              <Link to={`/pmcc/tracker?position=${encodeURIComponent(p.positionId)}`} title="this position, week by week">
+                {p.symbol}
+              </Link>
+            </td>
             <td>
               {p.arm}
               {p.status === "short_settled" && (
@@ -183,6 +188,9 @@ export function OpenTradesCard({
           </tbody>
         </table>
       </div>
+      <div className="card-footer">
+        <Link to="/pmcc/tracker">every position, week by week →</Link>
+      </div>
     </Card>
   );
 }
@@ -224,6 +232,20 @@ function totalsByBook(arms: PmccArmCell[]): BookTotals[] {
  * comparable to every other `control` cycle; the advised arms are called out separately because
  * their admitted params can differ position to position.
  */
+/** Open positions' mark-to-market per (arm, symbol): the module's `open_mtm`, which the mirror test
+ *  pins this sum to. Null while any position in the cell is unpriceable. */
+function openMarkByArm(rows: PmccOpenPosition[]): Array<{ arm: string; symbol: string; positions: number; net: number | null }> {
+  const cells = new Map<string, { arm: string; symbol: string; positions: number; net: number | null }>();
+  for (const p of rows) {
+    const key = `${p.arm}/${p.symbol}`;
+    const cell = cells.get(key) ?? { arm: p.arm, symbol: p.symbol, positions: 0, net: 0 };
+    cell.positions += 1;
+    cell.net = cell.net === null || p.unrealisedNet === null ? null : Math.round((cell.net + p.unrealisedNet) * 100) / 100;
+    cells.set(key, cell);
+  }
+  return [...cells.values()].sort((a, b) => a.arm.localeCompare(b.arm) || a.symbol.localeCompare(b.symbol));
+}
+
 export function BookComparison({
   data,
   updatedAt,
@@ -238,12 +260,46 @@ export function BookComparison({
 }) {
   const arms = (data?.arms ?? []).filter((b) => symbol === null || b.symbol === symbol);
   const totals = totalsByBook(arms);
+  const open = openMarkByArm((data?.openPositions ?? []).filter((p) => symbol === null || p.symbol === symbol));
   const others = totals.filter((t) => !CORE_BOOKS.includes(t.arm));
   const maxAbs = Math.max(1, ...totals.map((t) => Math.abs(t.net ?? 0)));
   const hasClosed = arms.length > 0;
 
   return (
     <Card title="arm comparison" collapseKey="pmcc-arms" updatedAt={updatedAt}>
+      {open.length > 0 && (
+        <section className="pmcc-compare">
+          <h3>open, marked to market</h3>
+          <table className="data-table num-from-2">
+            <thead>
+              <tr>
+                <th>arm</th>
+                <th>symbol</th>
+                <th>open</th>
+                <th title="every leg at its latest usable mark or its close, shares held or covered, less every cost so far">
+                  net to date
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {open.map((o) => (
+                <tr key={`${o.arm}/${o.symbol}`}>
+                  <td className="mono">{o.arm}</td>
+                  <td>{o.symbol}</td>
+                  <td>{o.positions}</td>
+                  <td>
+                    <PnlCell v={o.net} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="integrity-note">
+            A held-long arm has no closed result until its long is sold, ~10 months after entry; until then this is its
+            only number. A cell with an unpriceable position shows a dash rather than a partial sum.
+          </p>
+        </section>
+      )}
       {!hasClosed ? (
         <p className="muted">
           no completed cycles yet — per-arm results fill in as positions close

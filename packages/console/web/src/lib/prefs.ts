@@ -53,13 +53,18 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+// The third argument is the server snapshot: the same version. Without it React refuses to render
+// a prefs-reading component outside a browser at all, which kept every history table (its column
+// layout is a pref) out of the render tests until 2026-10-04.
+const snapshot = (): number => version;
+
 export function useBoolPref(key: string): boolean {
-  useSyncExternalStore(subscribe, () => version);
+  useSyncExternalStore(subscribe, snapshot, snapshot);
   return cache[key] === true;
 }
 
 export function usePrefsVersion(): number {
-  return useSyncExternalStore(subscribe, () => version);
+  return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
 /** Write through: the local mirror updates immediately, the server copy follows. */

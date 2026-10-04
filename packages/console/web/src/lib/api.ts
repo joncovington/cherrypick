@@ -23,6 +23,10 @@ import type {
   PmccHistory,
   PmccMeta,
   PmccAssignment,
+  PmccBridged,
+  PmccTracker,
+  PmccTrackerIndexRow,
+  PmccWeeklyRow,
   CurvePayload,
   CurveCycleRow,
   CurveHistory,
@@ -461,6 +465,41 @@ export function usePmcc() {
     queryFn: () => getJson<PmccPayload>("/api/pmcc"),
     // The loop marks every tick in session; 15s matches the other module dashboards.
     refetchInterval: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/**
+ * One PMCC position, week by week (the tracker tab), bridged from the module's own analytics. A
+ * position only changes when the loop marks or trades it, and the server answers an idle one from
+ * memory, so a 30s poll is cheap.
+ */
+export function usePmccTracker(position: string | null) {
+  return useQuery<PmccBridged<PmccTracker>>({
+    queryKey: ["pmcc-tracker", position],
+    queryFn: () => getJson<PmccBridged<PmccTracker>>(`/api/pmcc/tracker?position=${encodeURIComponent(position ?? "")}`),
+    enabled: position !== null,
+    refetchInterval: 30_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function usePmccTrackerIndex() {
+  return useQuery<PmccBridged<PmccTrackerIndexRow[]>>({
+    queryKey: ["pmcc-tracker-index"],
+    queryFn: () => getJson<PmccBridged<PmccTrackerIndexRow[]>>("/api/pmcc/tracker/index"),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** The arms' weekly A/B: per (arm, symbol, ISO week), the change in net P&L. */
+export function usePmccWeekly(era: string | null = null) {
+  const q = era === null ? "" : `?era=${encodeURIComponent(era)}`;
+  return useQuery<PmccBridged<PmccWeeklyRow[]>>({
+    queryKey: ["pmcc-weekly", era],
+    queryFn: () => getJson<PmccBridged<PmccWeeklyRow[]>>(`/api/pmcc/weekly${q}`),
+    refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });
 }

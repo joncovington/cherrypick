@@ -32,6 +32,7 @@ export function HistoryTable<R>({
   expanded,
   detailClassName,
   className,
+  dateRange = true,
 }: {
   /** The prefs key the column layout is kept under: `columns:<table>`. */
   table: string;
@@ -56,6 +57,9 @@ export function HistoryTable<R>({
   expanded?: (row: R) => ReactNode | null;
   detailClassName?: string;
   className?: string;
+  /** False for a table that is not a history over dates (one position's own legs): no date bar,
+   *  which would filter nothing and read as though it did. */
+  dateRange?: boolean;
 }) {
   const cols = useColumnLayout(table, defs);
   const span = cols.columns.length;
@@ -64,7 +68,7 @@ export function HistoryTable<R>({
       <div className="history-controls">
         <ColumnsMenu defs={defs} layout={cols.layout} onChange={cols.setLayout} onReset={cols.reset} isDefault={cols.isDefault} />
         {filters}
-        <DateRangeBar basis={dateBasis} allLabel={allLabel} allTitle={allTitle} />
+        {dateRange && <DateRangeBar basis={dateBasis} allLabel={allLabel} allTitle={allTitle} />}
       </div>
       <div className={`table-scroll ${busy ? "table-busy" : ""}`}>
         <table className="data-table">

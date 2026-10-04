@@ -8,6 +8,8 @@ import { IntegrityStrip } from "../../pages/Pmcc/IntegrityStrip";
 import { BookComparison, OpenTradesCard } from "../../pages/Pmcc/CurrentStateCards";
 import { DecisionsCard } from "../../components/DecisionsCard";
 import { HistoryTab } from "../../pages/Pmcc/HistoryTab";
+import { TrackerTab } from "../../pages/Pmcc/TrackerTab";
+import { WeeklyByArmCard } from "../../pages/Pmcc/WeeklyByArmCard";
 import { HelpTab } from "../../pages/Pmcc/HelpTab";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
@@ -113,6 +115,7 @@ export function PmccLightbox({ slide }: { slide: string }) {
       render: () => (
         <div className="cards cards-wide">
           <BookComparison data={data} updatedAt={dataUpdatedAt} symbol={symbol} />
+          <WeeklyByArmCard symbol={symbol} />
         </div>
       ),
     },
@@ -133,6 +136,7 @@ export function PmccLightbox({ slide }: { slide: string }) {
         </div>
       ),
     },
+    { id: "tracker", label: PMCC_LABEL.tracker, render: () => <TrackerTab symbol={symbol} /> },
     { id: "history", label: PMCC_LABEL.history, render: () => <HistoryTab /> },
     { id: "guide", label: PMCC_LABEL.guide, render: () => <HelpTab data={data} /> },
   ];

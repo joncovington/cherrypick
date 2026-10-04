@@ -179,6 +179,7 @@ export const PMCC_SLIDES = [
   { id: "performance", label: "performance" },
   { id: "advisor", label: "advisor" },
   { id: "positions", label: "positions" },
+  { id: "tracker", label: "tracker" },
   { id: "history", label: "history" },
   { id: "guide", label: "help" },
 ] as const satisfies readonly NavSlide[];
@@ -366,7 +367,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
       { label: "today", ids: ["session"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "advisor"] },
-      { label: "tables", ids: ["positions", "history"] },
+      { label: "tables", ids: ["positions", "tracker", "history"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: { now: "session" },
