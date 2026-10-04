@@ -4,6 +4,12 @@
 `universe.py`, `study.py` and `tuning_names.py`, with the `history land|check` and `study run`
 commands. Its six guards were each shown to fail.*
 
+***Phase 2 (the live signal log) is dropped (2026-10-04, the user's decision).*** Its main job was to
+confirm live that a setup behaves as it did historically, and no setup earned that: none is
+profitable after costs and better than random entry. Its secondary uses (the as-issued record, data
+health) don't justify it alone. Revisit only if a setup passes the study, or a filter or exit tested
+on history does. The design below stays as the record of what it would be.
+
 ***First results (2026-10-04, `packages/technicals/docs/setups.md`, "Historical evidence"):***
 - *No setup is profitable after costs and better than random entry.*
 - *Only the short pullback beats its baseline, and it still loses 0.36 R a trade.*
@@ -553,6 +559,9 @@ History makes most of these **runnable now, not someday**.
    least 7 of the last 10 sessions. It is the watchlist's default, and it is context in the log and
    alerts. The charts and the morning report keep every name. It is recorded nightly from now on.
    The historical study adds a $300M-a-day view and a flagged today's-list view.
+9. **Phase 2, the live signal log, is dropped** (2026-10-04, after the first results). Decisions 1,
+   2, 3 and 7 described it and are not acted on. The options-tradable label (8) stands on its own as
+   a watchlist filter: the IV-rank script records its inputs nightly from 2026-10-04.
 
 ## References
 
