@@ -55,14 +55,38 @@ PARAM_DEFAULTS = {
     # The floor under the percentage: refuse a leg only when wide in percent AND in money.
     "max_leg_spread_abs": 0.05,
     "allow_extrinsic_fallback": True,
+    # The held-long lifecycle (2026-10-04). `weekly` is control's: one long and one short, closed
+    # together at the short's expiry. `held_long` holds a ~1-year long and rolls a weekly short
+    # against it; every key below is read only under it.
+    "lifecycle": "weekly",
+    "short_rule": "atm",
+    # Minutes before the session's own close (`clock.session_close_min`, 13:00 on an early close).
+    "roll_time_offset": 60,
+    "roll_deadline_offset": 20,
+    # Fraction of the short's extrinsic at sale that has decayed when the early roll fires (Tom
+    # King's "80-90% decayed"); None never rolls early (`shield_hold`).
+    "early_roll_decay": None,
+    "breach_roll": False,
+    # P&L to date at or below -this x the long's cost closes the position (Tom King's 30% stop).
+    "stop_loss_frac": None,
+    "long_close_dte": 45,
+    # How an expiring short is treated (Part 2's account policy, read by paper too so a paper arm
+    # trades under its live twin's rules). `ira`: always bought back before the bell, any
+    # moneyness -- an IRA cannot carry short stock. `margin`: a short further than `pin_buffer_pct`
+    # out of the money may expire instead.
+    "account_policy": "ira",
+    "pin_buffer_pct": 0.02,
 }
+
+HELD_LONG = "held_long"
 
 
 @dataclass(frozen=True)
 class Decision:
     """A verdict about one position. `executed` is decided by the caller after `execution_gate`."""
 
-    action: str  # "hold" | "close_all"
+    # "hold" | "close_all" | "roll_short" | "sell_short" | "close_short" (the last three: held_long)
+    action: str
     reason: str
     detail: dict = field(default_factory=dict)
 
@@ -137,6 +161,92 @@ def evaluate(
     if now.date().isoformat() >= position["short_expiration"]:
         return Decision("close_all", "short_expiration", {"short_tv": short_tv, "spot": spot})
     return Decision("hold", "holding_to_expiry")
+
+
+def is_held_long(params: dict) -> bool:
+    return params.get("lifecycle") == HELD_LONG
+
+
+def evaluate_held_long(
+    position: dict,
+    params: dict,
+    *,
+    now: datetime,
+    short: dict | None,
+    spot: float | None,
+    pnl: dict | None,
+    long_dte: int | None,
+    rolled_today: bool,
+    session_close_min: int,
+) -> Decision:
+    """The verdict for one open HELD-LONG position this tick, in this order:
+
+    1. `stop_loss`: P&L to date at or below -`stop_loss_frac` x the long's cost -> close all.
+    2. `long_roll_due`: the long at or under `long_close_dte` -> close all (a new long enters on a
+       later session, as a new position).
+    3. `no_short`: no short open -> sell one.
+    4. `roll_deadline`: the short expires today and the bell is `roll_deadline_offset` away -> buy
+       it back alone (a margin account may instead let a far-OTM short expire).
+    5. `expiry`: the short expires today, `roll_time_offset` before the bell -> roll it.
+    6. `decayed`: (`early_roll_decay` set) the short's extrinsic is down to (1 - decay) of its
+       extrinsic at sale -> roll it, at most once a session.
+    7. `breach`: (`breach_roll`) spot at or below the short's strike -> roll it down, at most once a
+       session.
+    8. hold.
+
+    `short` is `{"strike", "expiration", "tv", "entry_tv"}` for the open short, or None. A short
+    without a price holds (`unpriced_mark`) rather than acting on a hole; the stop and the long roll
+    still fire when their own inputs are known."""
+    long_cost = float(position.get("long_entry_mid") or 0.0) * 100 * int(position.get("quantity") or 1)
+    stop = params.get("stop_loss_frac")
+    if stop and pnl is not None and long_cost > 0 and pnl["net"] <= -stop * long_cost:
+        return Decision("close_all", "stop_loss", {"net": pnl["net"], "long_cost": round(long_cost, 2)})
+    if long_dte is not None and long_dte <= params.get("long_close_dte", 45):
+        return Decision("close_all", "long_roll_due", {"long_dte": long_dte})
+    if short is None:
+        return Decision("sell_short", "no_short")
+    if spot is None or short.get("tv") is None:
+        return Decision("hold", "unpriced_mark")
+
+    minute = clock.minute_of_day(now)
+    today = now.date().isoformat()
+    if today >= short["expiration"]:
+        if minute >= session_close_min - params.get("roll_deadline_offset", 20):
+            far_otm = spot < short["strike"] * (1.0 - params.get("pin_buffer_pct", 0.02))
+            if params.get("account_policy", "ira") == "margin" and far_otm:
+                return Decision("hold", "let_expire", {"spot": spot, "strike": short["strike"]})
+            return Decision("close_short", "roll_deadline", {"spot": spot, "short_tv": short["tv"]})
+        if minute >= session_close_min - params.get("roll_time_offset", 60):
+            return Decision("roll_short", "expiry", {"spot": spot, "short_tv": short["tv"]})
+
+    decay = params.get("early_roll_decay")
+    entry_tv = short.get("entry_tv")
+    if decay is not None and not rolled_today and entry_tv and entry_tv > 0:
+        if short["tv"] <= (1.0 - decay) * entry_tv:
+            return Decision("roll_short", "decayed", {"short_tv": short["tv"], "entry_tv": entry_tv})
+    if params.get("breach_roll") and not rolled_today and spot <= short["strike"]:
+        return Decision("roll_short", "breach", {"spot": spot, "strike": short["strike"]})
+    return Decision("hold", "holding")
+
+
+def short_execution_gate(quotes: list[dict | None], params: dict, *, now: datetime) -> str | None:
+    """Why a short-only ticket (a roll, a sale, a buyback) may not be acted on, or None. The roll
+    trades the short legs only, so it is gated on them -- not on the ~1-year long, whose own spread
+    has nothing to do with this ticket and would otherwise hold every roll of every week behind it."""
+    exec_start = clock.hhmm_to_min(params.get("exec_window_start"), 9 * 60 + 40)
+    if clock.minute_of_day(now) < exec_start:
+        return "before_exec_window"
+    for quote in quotes:
+        if quote is None:
+            return "missing_leg_quotes"
+        mid = quote.get("mid") or 0.0
+        if mid > 0:
+            pct = (quote["ask"] - quote["bid"]) / mid
+            if pct > params.get("max_leg_spread_pct", 0.25) and (quote["ask"] - quote["bid"]) > params.get(
+                "max_leg_spread_abs", 0.05
+            ):
+                return "spread_too_wide"
+    return None
 
 
 def execution_gate(mark_snapshot: dict, params: dict, *, now: datetime) -> str | None:

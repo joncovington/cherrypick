@@ -38,6 +38,7 @@ from cherrypick.core.db import connect_ro as _connect_ro
 # occ_root is re-exported: the modules' own code calls provider.occ_root.
 from cherrypick.core.streamcache import chain_for_expiration as _chain_for_expiration
 from cherrypick.core.streamcache import greeks_for as _greeks
+from cherrypick.core.streamcache import listed_expirations as _listed_expirations
 
 # Shared with every other provider — see cherrypick.core.streamcache.
 # read_spot is re-exported deliberately: the loops call provider.read_spot and their tests
@@ -71,7 +72,7 @@ def snapshot_kwargs(config: dict) -> dict:
     }
 
 
-def deep_window_pct_for(config: dict, symbol: str) -> float:
+def deep_window_pct_for(config: dict, symbol: str, params: dict | None = None) -> float:
     """How far below spot this SYMBOL's deep window must reach.
 
     One shared bound is necessarily sized for the deepest symbol and wasteful for every other, and
@@ -86,11 +87,30 @@ def deep_window_pct_for(config: dict, symbol: str) -> float:
     additive: the per-symbol map is an override, never a requirement.
     """
     defaults = config.get("defaults", {}) or {}
-    by_symbol = defaults.get("deep_window_pct_by_symbol") or {}
-    value = by_symbol.get(symbol.strip().upper())
-    if isinstance(value, (int, float)) and value > 0:
-        return float(value)
+    # An arm's own params come first (2026-10-04): a held-long arm's ~1-year long sits 20-40% in
+    # the money where control's 21-DTE long sits 4-15%, so one bound per symbol cannot serve both.
+    for source in (params or {}, defaults):
+        by_symbol = source.get("deep_window_pct_by_symbol") or {}
+        value = by_symbol.get(symbol.strip().upper())
+        if isinstance(value, (int, float)) and value > 0:
+            return float(value)
+        if source is params and isinstance(source.get("deep_window_pct"), (int, float)):
+            return float(source["deep_window_pct"])
     return float(defaults.get("deep_window_pct", DEFAULT_DEEP_WINDOW_PCT))
+
+
+def listed_expirations(db_path, symbol: str) -> list[str]:
+    """Every expiration the broker lists for `symbol`, as the producer last fetched it
+    (`streamcache.stream_expirations`). Empty when the cache has no listing -- a held-long entry then
+    refuses `no_leap_listed` rather than guessing a date."""
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return []
+    conn = _connect_ro(db_path)
+    try:
+        return _listed_expirations(conn, symbol.strip().upper())[0]
+    finally:
+        conn.close()
 
 
 def _quotes_for(conn, streamer_syms: list[str], now_ts: float, max_age: float) -> tuple[dict, int]:
@@ -178,6 +198,63 @@ def build_entry_snapshot(
             "long_dte": plan["long_dte"],
             "short_chain": short_chain,
             "long_chain": long_chain,
+            "quotes": quotes,
+            "greeks": greeks,
+            "quote_stats": {"fresh": len(quotes), "rejected": stale},
+        }
+    finally:
+        conn.close()
+
+
+def build_roll_snapshot(
+    db_path,
+    symbol: str,
+    expiration: str,
+    *,
+    root: str,
+    short_dte: int | None = None,
+    when: datetime | None = None,
+    max_quote_age_seconds: float = DEFAULT_MAX_QUOTE_AGE_SECONDS,
+    band_pct: float = 0.10,
+) -> dict:
+    """One short expiration's calls near the money, for a held-long position's next weekly short:
+    `{ok, spot, short_chain, quotes, greeks, short_expiration, short_dte}` or a refusal. The ~0.70
+    delta short sits a few percent in the money, so the band is `[spot x (1 - band_pct), spot x
+    1.02]`; the date is exact-matched like every other chain read here."""
+    symbol = symbol.strip().upper()
+    db_path = Path(db_path)
+    when = when or now_et()
+    if not db_path.exists():
+        return _fail(symbol, "stream_cache_missing")
+    conn = _connect_ro(db_path)
+    try:
+        tr = conn.execute("SELECT last FROM stream_trades WHERE symbol = ?", (symbol,)).fetchone()
+        spot = float(tr["last"]) if tr and tr["last"] is not None else None
+        if not spot:
+            return _fail(symbol, "no_spot_price")
+        chain = _chain_for_expiration(conn, symbol, expiration, root)
+        if not chain:
+            any_root = conn.execute(
+                "SELECT COUNT(*) FROM stream_chain WHERE expiration = ? AND underlying_symbol = ?",
+                (expiration, symbol),
+            ).fetchone()[0]
+            return _fail(symbol, "not_root_listed" if any_root else "no_short_chain")
+        lo, hi = spot * (1.0 - band_pct), spot * 1.02
+        near = [e for e in chain if e["option_type"] == "call" and lo <= e["strike_price"] <= hi]
+        if not near:
+            return _fail(symbol, "no_strikes_in_window")
+        now_ts = time.time()
+        quotes, stale = _quotes_for(conn, [e["streamer_symbol"] for e in near], now_ts, max_quote_age_seconds)
+        if not quotes:
+            return _fail(symbol, "no_fresh_quotes", rejected=stale)
+        greeks = _greeks(conn, list(quotes), now_ts=now_ts, max_age_seconds=max_quote_age_seconds * 6)
+        return {
+            "ok": True,
+            "symbol": symbol,
+            "spot": spot,
+            "short_expiration": expiration,
+            "short_dte": short_dte,
+            "short_chain": near,
             "quotes": quotes,
             "greeks": greeks,
             "quote_stats": {"fresh": len(quotes), "rejected": stale},

@@ -26,7 +26,7 @@ from pathlib import Path
 
 from cherrypick.core import streamrequests as _sr
 
-from cherrypick.pmcc import clock, db, stream_window
+from cherrypick.pmcc import clock, db, management, stream_window
 
 _MODULE = "pmcc"
 _log = logging.getLogger("pmcc_paper_loop")
@@ -39,6 +39,8 @@ def wanted_expirations(
     params: dict | None = None,
     *,
     entry_symbols: list[str] | None = None,
+    extra: dict[str, set[str]] | None = None,
+    held_longs: dict[str, set[str]] | None = None,
 ) -> dict[str, list[str]]:
     """Per-symbol expiration dates the cache must hold: the current plan's short/long pair for a
     symbol the module still ENTERS (`entry_symbols`, default all of `symbols`), plus whatever that
@@ -51,14 +53,41 @@ def wanted_expirations(
     plan = clock.expiration_plan(today, params)
     planned = {plan["short_expiration"], plan["long_expiration"]} if plan is not None else set()
     entering = {s.upper() for s in (entry_symbols if entry_symbols is not None else symbols)}
+    extra = extra or {}
     out: dict[str, list[str]] = {}
     for symbol in symbols:
-        dates = set(db.open_leg_expirations_for(conn, symbol))
+        dates = set(db.open_leg_expirations_for(conn, symbol)) - set((held_longs or {}).get(symbol, ()))
         if symbol.upper() in entering:
             dates |= planned
+        dates |= set(extra.get(symbol, ()))
         if dates:
             out[symbol] = sorted(dates)
     return out
+
+
+def held_long_dates(conn, config: dict, today: date) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """(each symbol's OPEN held-long longs' expirations, which `expirations` leaves out; each
+    symbol's next weekly short date for its held-long positions, which it asks for).
+
+    An open ~1-year long is quoted through `leg_sources` like every open leg, so asking for its whole
+    expiration as a window would subscribe a block of strikes nobody reads for ten months. Its
+    position's next short is a roll target the loop must be able to price, retired symbol or not."""
+    longs: dict[str, set[str]] = {}
+    shorts: dict[str, set[str]] = {}
+    for position in db.open_positions(conn):
+        params = management.effective_params(position, config)
+        if not management.is_held_long(params):
+            continue
+        symbol = position["symbol"]
+        long_exp = None
+        for leg in db.open_legs_for(conn, position["position_id"]):
+            if leg["leg_role"] == "long_call":
+                long_exp = leg["expiration"]
+                longs.setdefault(symbol, set()).add(long_exp)
+        target = clock.short_expiration(today, params, cap=long_exp)
+        if target is not None:
+            shorts.setdefault(symbol, set()).add(target["short_expiration"])
+    return longs, shorts
 
 
 def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | None = None) -> Path:
@@ -87,6 +116,15 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
     from cherrypick.pmcc import paper_loop as _paper_loop  # circular at module scope
 
     arms, _ = _paper_loop.session_books(config, today.isoformat())
+    max_positions = int(defaults.get("max_positions", 3))
+    # Held-long dates: the next weekly short of every held-long position, and the listed ~1-year
+    # long a held-long arm would enter today -- asked for only while that arm can still enter.
+    held_longs, extra = held_long_dates(conn, config, today)
+    for symbol in entry_symbols:
+        for target, _pct in stream_window.entry_targets(
+            conn, cache_path, symbol, today, config, arms, max_positions
+        ):
+            extra.setdefault(symbol, set()).add(target)
     hints = stream_window.hints_for_symbols(
         conn,
         cache_path,
@@ -94,14 +132,16 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
         today.isoformat(),
         config,
         arms=arms,
-        max_positions=int(defaults.get("max_positions", 3)),
+        max_positions=max_positions,
     )
     return _sr.write_request(
         _MODULE,
         symbols,
         leg_sources=leg_sources,
         window_hints=hints,
-        expirations=wanted_expirations(conn, symbols, today, defaults, entry_symbols=entry_symbols),
+        expirations=wanted_expirations(
+            conn, symbols, today, defaults, entry_symbols=entry_symbols, extra=extra, held_longs=held_longs
+        ),
         # What the loop reads off its windows (audited 2026-09-30): call quotes and greeks on the
         # plan's short and long dates -- the ATM short and the delta-band deep-ITM long. Never the
         # nearest expiration as such (a plan date that coincides with it is served as a requested

@@ -18,7 +18,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
-from cherrypick.pmcc import clock, db, provider
+from cherrypick.pmcc import clock, db, management, provider
 
 DEFAULT_BASE_WIDTH = 60
 DEFAULT_MARGIN = 10
@@ -211,6 +211,38 @@ def entry_possible(conn, symbol: str, arms: list[str], max_positions: int) -> bo
     )
 
 
+def entry_targets(
+    conn,
+    cache_path,
+    symbol: str,
+    today,
+    config: dict,
+    arms: list[str],
+    max_positions: int,
+    *,
+    ignore_slots: bool = False,
+) -> list[tuple[str, float]]:
+    """`[(expiration, deep_window_pct)]` the deep long would be sought in today, one per arm KIND
+    that can still enter `symbol`: control's weekly plan long, a held-long arm's listed ~1-year long.
+    The stream request asks for these dates and sizes its deep window on them. `ignore_slots` keeps
+    the no-roster contract: a caller passing no roster gets the width whatever the slots hold."""
+    out: dict[str, float] = {}
+    for arm in arms:
+        held = db.open_position_for(conn, symbol, arm) is not None
+        if not ignore_slots and (held or db.open_position_count(conn, arm) >= max_positions):
+            continue
+        params = management.effective_params({"arm": arm}, config)
+        if management.is_held_long(params):
+            plan = clock.held_long_plan(today, provider.listed_expirations(cache_path, symbol), params)
+        else:
+            plan = clock.expiration_plan(today, params)
+        if plan is None:
+            continue
+        pct = provider.deep_window_pct_for(config, symbol, params)
+        out[plan["long_expiration"]] = max(out.get(plan["long_expiration"], 0.0), pct)
+    return sorted(out.items())
+
+
 def hints_for_symbols(
     conn,
     cache_path,
@@ -253,24 +285,42 @@ def hints_for_symbols(
     p = window_params(config)
     hints: dict[str, dict[str, int]] = {}
     roster = list(arms) if arms else []
-    # The date the deep long is sought in. Counting strikes only there is the point: the hint lands
-    # on every window of the symbol, so a count inflated by another expiry's grid widens them all.
     try:
-        plan = clock.expiration_plan(datetime.fromisoformat(trade_date).date(), config.get("defaults") or {})
+        today = datetime.fromisoformat(trade_date).date()
     except ValueError:
-        plan = None
-    targets = [plan["long_expiration"]] if plan is not None else None
+        today = None
     for symbol in symbols:
         symbol = symbol.strip().upper()
         if roster and not entry_possible(conn, symbol, roster, max_positions):
             continue
-        # Per SYMBOL: one shared bound is sized for the deepest symbol and buys every other
-        # one strikes it cannot use (see provider.deep_window_pct_for). An explicit argument
-        # still wins, so a caller pricing a hypothetical keeps full control.
-        pct = deep_window_pct if deep_window_pct is not None else provider.deep_window_pct_for(config, symbol)
-        computed = needed_width(
-            cache_path, symbol, deep_window_pct=pct, margin=p["margin"], expirations=targets
+        # The date(s) the deep long is sought in, per arm kind that can still enter: control's
+        # ~21-DTE long, a held-long arm's listed ~1-year long. Counting strikes only there is the
+        # point: the hint lands on every window of the symbol, so a count inflated by another
+        # expiry's grid widens them all. Each target is counted at its OWN depth -- a held-long
+        # long sits 20-40% in the money where control's sits 4-15%.
+        targets = (
+            entry_targets(
+                conn,
+                cache_path,
+                symbol,
+                today,
+                config,
+                roster or ["control"],
+                max_positions,
+                ignore_slots=not roster,
+            )
+            if today is not None
+            else []
         )
+        computed = None
+        for target, target_pct in targets:
+            # An explicit argument still wins, so a caller pricing a hypothetical keeps full control.
+            pct = deep_window_pct if deep_window_pct is not None else target_pct
+            need = needed_width(
+                cache_path, symbol, deep_window_pct=pct, margin=p["margin"], expirations=[target]
+            )
+            if need is not None:
+                computed = max(computed or 0, need)
         escalated = evaluate(
             conn,
             symbol,
