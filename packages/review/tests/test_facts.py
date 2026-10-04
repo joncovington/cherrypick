@@ -367,3 +367,62 @@ def test_the_fact_set_carries_the_concentration_block():
     source = inspect.getsource(facts_mod.build_module_facts)
     assert '"concentration"' in source
     assert "_ledgers.concentration(" in source
+
+
+# --------------------------------------------------------------------------- expected readers vs the schema
+
+
+def _ledger(create: str, insert: str, row: tuple) -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(create)
+    conn.execute(insert, row)
+    return conn
+
+
+def test_expected_readers_filter_on_arm_the_column_the_ledgers_actually_have():
+    """All four filtered on `book` for eleven days after the 2026-09-23 rename to `arm`. The
+    ledgers have no `book` column, `_rows` swallowed the error as "no such table", and every
+    session's expectation for these modules read as "nothing closed"."""
+    pmcc = _ledger(
+        "CREATE TABLE pmcc_positions (arm TEXT, status TEXT, closed_session TEXT, entry_session TEXT,"
+        " entry_weekly_yield_pct REAL, gross_pnl REAL, fees REAL, net_debit REAL, quantity INTEGER)",
+        "INSERT INTO pmcc_positions VALUES (?,?,?,?,?,?,?,?,?)",
+        ("control", "closed", "2026-10-02", "2026-09-25", 0.02, 120.0, 20.0, 10.0, 1),
+    )
+    assert facts._pmcc_expected(pmcc, "2026-10-02")["positions_closed"] == 1
+
+    for table, reader in (("bwb_positions", facts._bwb_expected), ("curve_positions", facts._curve_expected)):
+        conn = _ledger(
+            f"CREATE TABLE {table} (arm TEXT, status TEXT, closed_session TEXT, entry_credit REAL,"
+            " quantity INTEGER, gross_pnl REAL, fees REAL)",
+            f"INSERT INTO {table} VALUES (?,?,?,?,?,?,?)",
+            ("control", "closed", "2026-10-02", 1.10, 1, 90.0, 5.0),
+        )
+        assert reader(conn, "2026-10-02")["positions_closed"] == 1, table
+
+    cal = _ledger(
+        "CREATE TABLE dc_positions (arm TEXT, front_expiration TEXT, settlement_spot REAL, side TEXT,"
+        " entry_em REAL, entry_spot REAL)",
+        "INSERT INTO dc_positions VALUES (?,?,?,?,?,?)",
+        ("path", "2026-10-02", 671.0, "put", 9.5, 665.0),
+    )
+    assert facts._calendars_expected(cal, "2026-10-02")["weeks_settled"] == 1
+
+
+def test_rows_treats_a_missing_table_as_empty_but_a_missing_column_as_a_bug():
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE t (arm TEXT)")
+    assert facts._rows(conn, "SELECT * FROM never_written") == []
+    with pytest.raises(sqlite3.OperationalError, match="no such column"):
+        facts._rows(conn, "SELECT book FROM t")
+
+
+def test_a_reader_that_raises_is_reported_in_the_facts_not_as_empty_and_not_as_a_crash():
+    conn = sqlite3.connect(":memory:")
+
+    def broken(conn, session):
+        return facts._rows(conn, "SELECT book FROM sqlite_master")
+
+    out = facts._guarded(broken, conn, "2026-10-02")
+    assert "no such column" in out["error"]
