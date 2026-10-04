@@ -17,6 +17,7 @@ function row(over: Partial<TechnicalsWatchlistRow>): TechnicalsWatchlistRow {
     setupName: "Trend following",
     family: "trend",
     side: "long",
+    tested: null,
     trendAgrees: true,
     entryDate: "2026-10-01",
     entryPrice: 32.12,
@@ -26,6 +27,7 @@ function row(over: Partial<TechnicalsWatchlistRow>): TechnicalsWatchlistRow {
     exitAgo: null,
     reason: null,
     target: null,
+    dollarVolume: 4.2e8,
     status: "open",
     lastClose: 32.09,
     movePct: -0.09,
@@ -37,6 +39,7 @@ function row(over: Partial<TechnicalsWatchlistRow>): TechnicalsWatchlistRow {
     vsSpy1m: 0.54,
     support: { value: 30.71, pct: -4.39 },
     resistance: null,
+    optionsTradable: null,
     ...over,
   };
 }
@@ -51,7 +54,7 @@ const ROWS = [
   row({ symbol: "NKE", setup: "trend-short", setupName: "Trend following (short)", family: "trend", side: "short", entryDate: "2026-10-02", entryAgo: 0, rs: 2, trend1m: -3, trend6m: -4, trend1mLabel: "Bearish", trend6mLabel: "Bearish" }),
 ];
 
-let payload: TechnicalsWatchlist = { session: "2026-10-02", generatedAt: null, window: 20, rows: ROWS };
+let payload: TechnicalsWatchlist = { session: "2026-10-02", generatedAt: null, window: 20, optionsLabelDay: null, rows: ROWS };
 
 vi.mock("../src/lib/api", () => ({
   useSetupsWatchlist: () => ({ data: payload, isLoading: false, isError: false }),
@@ -75,7 +78,7 @@ const symbols = (html: string) =>
 
 describe("the setups watchlist page", () => {
   it("lists the last 5 sessions' entries and exits, each symbol linking to its chart with that setup", () => {
-    payload = { session: "2026-10-02", generatedAt: null, window: 20, rows: ROWS };
+    payload = { session: "2026-10-02", generatedAt: null, window: 20, optionsLabelDay: null, rows: ROWS };
     const html = render("/charts/setups");
     expect(symbols(html)).toEqual(["NKE:trend:short", "HPQ:trend", "ABBV:pullback"]);
     expect(html).toContain("▲ entry");
@@ -102,7 +105,7 @@ describe("the setups watchlist page", () => {
   });
 
   it("every sortable column reverses on a second click, and a blank stays at the bottom either way", () => {
-    payload = { session: "2026-10-02", generatedAt: null, window: 20, rows: ROWS };
+    payload = { session: "2026-10-02", generatedAt: null, window: 20, optionsLabelDay: null, rows: ROWS };
     // Ago: newest first by default, oldest first reversed.
     expect(symbols(render("/charts/setups?side=long"))).toEqual(["HPQ:trend", "ABBV:pullback"]);
     expect(symbols(render("/charts/setups?side=long&dir=desc"))).toEqual(["ABBV:pullback", "HPQ:trend"]);
@@ -117,8 +120,64 @@ describe("the setups watchlist page", () => {
     payload = { ...payload, rows: ROWS };
   });
 
+  // The tested rule's rows sit beside the setup rows they overlap: ABT's reversion is in both.
+  const TESTED = [
+    ...ROWS,
+    row({ symbol: "ABT", setup: "reversion", setupName: "Mean reversion", family: "reversion", tested: "mr-300m", entryDate: "2026-10-01", entryAgo: 1, trendAgrees: false, dollarVolume: 8.5e8 }),
+    row({ symbol: "HD", setup: "reversion", setupName: "Mean reversion", family: "reversion", tested: "mr-300m", entryDate: "2026-10-02", entryAgo: 0, trendAgrees: false, dollarVolume: 1.3e9 }),
+  ];
+
+  it("the tested view lists only the confirmed rule's rows, whatever the setup, side and agree filters say", () => {
+    payload = { session: "2026-10-02", generatedAt: null, window: 20, optionsLabelDay: null, rows: TESTED };
+    expect(symbols(render("/charts/setups?tested=1"))).toEqual(["HD:reversion", "ABT:reversion"]);
+    // Trend agrees would hide both (an oversold entry never has a positive 1-month trend): ignored.
+    expect(symbols(render("/charts/setups?tested=1&agree=1&setup=trend&side=short"))).toEqual(["HD:reversion", "ABT:reversion"]);
+    // And the default view never shows them, so no trade is listed twice.
+    expect(symbols(render("/charts/setups?window=20"))).not.toContain("HD:reversion");
+    const html = render("/charts/setups?tested=1");
+    expect(html).toContain("at least $300M a day");
+    expect(html).toContain("$1.3B");
+    expect(html).toContain("$850M");
+  });
+
+  it("says when Trend agrees hides every long mean-reversion signal", () => {
+    payload = { session: "2026-10-02", generatedAt: null, window: 20, optionsLabelDay: null, rows: ROWS };
+    const note = "Trend agrees hides every long mean-reversion signal";
+    expect(render("/charts/setups?agree=1")).toContain(note);
+    expect(render("/charts/setups?agree=1&setup=reversion")).toContain(note);
+    expect(render("/charts/setups?agree=1&setup=trend")).not.toContain(note);
+    expect(render("/charts/setups?agree=1&side=short")).not.toContain(note);
+    expect(render("/charts/setups")).not.toContain(note);
+  });
+
+  it("cuts to options-tradable names by default when the file carries the label, with a way out", () => {
+    const labelled = ROWS.map((r) => ({ ...r, optionsTradable: r.symbol !== "ABBV" }));
+    payload = { session: "2026-10-02", generatedAt: null, window: 20, optionsLabelDay: "2026-10-02", rows: labelled };
+    expect(symbols(render("/charts/setups"))).toEqual(["NKE:trend:short", "HPQ:trend"]);
+    const all = render("/charts/setups?names=all");
+    expect(symbols(all)).toEqual(["NKE:trend:short", "HPQ:trend", "ABBV:pullback"]);
+    expect(all).toContain("· no opts");
+    // An unknown flag is not a yes: a row the label could not judge is cut too.
+    payload = { ...payload, rows: [...labelled, row({ symbol: "ZZZ", optionsTradable: null })] };
+    expect(symbols(render("/charts/setups"))).not.toContain("ZZZ:trend");
+  });
+
+  it("with no label at all, nothing is cut and the page says so", () => {
+    payload = { session: "2026-10-02", generatedAt: null, window: 20, optionsLabelDay: null, rows: ROWS };
+    const html = render("/charts/setups");
+    expect(symbols(html)).toEqual(["NKE:trend:short", "HPQ:trend", "ABBV:pullback"]);
+    expect(html).toContain("no options label");
+  });
+
+  it("sorts by dollar volume, largest first", () => {
+    const rows = [row({ symbol: "AAA", dollarVolume: 1e8 }), row({ symbol: "BBB", dollarVolume: 2e9 }), row({ symbol: "CCC", dollarVolume: null })];
+    payload = { session: "2026-10-02", generatedAt: null, window: 20, optionsLabelDay: null, rows };
+    expect(symbols(render("/charts/setups?view=open&sort=dvol"))).toEqual(["BBB:trend", "AAA:trend", "CCC:trend"]);
+    expect(symbols(render("/charts/setups?view=open&sort=dvol&dir=asc"))).toEqual(["AAA:trend", "BBB:trend", "CCC:trend"]);
+  });
+
   it("an empty file says the report job writes it", () => {
-    payload = { session: null, generatedAt: null, window: null, rows: [] };
+    payload = { session: null, generatedAt: null, window: null, optionsLabelDay: null, rows: [] };
     expect(render("/charts/setups")).toContain("No watchlist yet");
   });
 });

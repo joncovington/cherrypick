@@ -162,9 +162,39 @@ describe("the setups watchlist reader", () => {
     expect(w.rows).toHaveLength(1);
     expect(w.rows[0]).toMatchObject({ symbol: "HPQ", status: "open", rs: 10, vsSpy1m: 0.54, resistance: null });
     expect(w.rows[0]?.support).toEqual({ value: 30.71, pct: -4.39 });
+    // A file from before tested rules and the options label reads them as unknown, never as false.
+    expect(w.optionsLabelDay).toBeNull();
+    expect(w.rows[0]).toMatchObject({ tested: null, dollarVolume: null, optionsTradable: null });
+  });
+
+  it("passes a tested rule's name, the dollar volume and the options label through", () => {
+    const base = {
+      symbol: "NKE", session: "2026-10-02", setup: "reversion", setup_name: "Mean reversion", family: "reversion",
+      side: "long", entry_date: "2026-10-02", entry_price: 62.5, exit_date: null, dollar_volume: 1083000000,
+      options_tradable: true,
+    };
+    write("setups-index.json", {
+      version: 3,
+      session: "2026-10-02",
+      window: 20,
+      options_label_day: "2026-10-02",
+      rows: [
+        { ...base, tested: null },
+        { ...base, tested: "mr-300m" },
+        { ...base, symbol: "HD", tested: "mr-300m", options_tradable: false },
+      ],
+    });
+    const w = readSetupsWatchlist(config);
+    expect(w.optionsLabelDay).toBe("2026-10-02");
+    expect(w.rows.map((r) => [r.symbol, r.tested, r.optionsTradable])).toEqual([
+      ["NKE", null, true],
+      ["NKE", "mr-300m", true],
+      ["HD", "mr-300m", false],
+    ]);
+    expect(w.rows[0]?.dollarVolume).toBe(1083000000);
   });
 
   it("no file is an empty watchlist, not a failure", () => {
-    expect(readSetupsWatchlist(config)).toEqual({ session: null, generatedAt: null, window: null, rows: [] });
+    expect(readSetupsWatchlist(config)).toEqual({ session: null, generatedAt: null, window: null, optionsLabelDay: null, rows: [] });
   });
 });

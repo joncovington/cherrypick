@@ -304,7 +304,11 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   over `charts/setups-index.json`): recent entries and exits, or open positions, long and short,
   each symbol linking to its chart with the setup and side selected; nothing on it is vendor data. Gated with the technicals tab. The page filters and sorts
   and splits a position into entry and exit lines; every value is the package's. "Move" is close to
-  close and never called P&L, and nothing ranks a signal's quality.
+  close and never called P&L, and nothing ranks a signal's quality. "Tested edge" swaps in the
+  study's confirmed rule's rows (`tested`), which overlap the setup rows and are never shown with
+  them. The page is cut to `optionsTradable` names by default whenever the file carries a label
+  (`names=all` is the way out). With no label it cuts nothing, because an unknown flag would empty
+  it.
 
 **Module advisor slides.** `readers/advisor.ts`'s `readAdvisorModule` serves
 `/api/advisor/module/:module`: active experiments with progress against length and stall budget, the

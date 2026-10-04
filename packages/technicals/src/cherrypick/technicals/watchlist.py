@@ -14,6 +14,14 @@ it has one, and the context the user reads a signal against, all as of the chart
   the same sessions, in percentage points.
 - **Nearest support / resistance**: our own swing levels (`swings.py`), the nearest below and above
   the last close. No vendor data: the vendor's levels are a comparison on the chart, nothing more.
+- **Dollar volume**: the 50-session median of close x volume to the session before the entry -- the
+  number the historical study's universe and its "$300M a day" rule read (`universe.membership`).
+- **Options-tradable**: the name lists weekly options and its stock trades at least $100M a day
+  (`tradable.py`); null when there is no label.
+
+A row from a setup carries `tested: null`. The historical study's confirmed rules (`chart.TESTED`)
+add their own rows, each with `tested` naming the rule: the same setup re-walked with the study's
+one change, so most of its trades are also a setup row, and a reader shows one kind or the other.
 
 "Move" is close to close in the trade's direction (exit against entry, or the last close against
 entry while open; a fall is a positive move for a short). It is not P&L: no fill, no cost, no
@@ -27,9 +35,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import trend
+from . import tradable, trend
 
-VERSION = 2  # 2: short setups (family, side), our own levels and labels, trend_agrees
+# 2: short setups (family, side), our own levels and labels, trend_agrees; 3: tested rows, dollar
+# volume at entry, options_tradable
+VERSION = 3
 WINDOW = 20  # sessions of entries and exits kept beside every open position
 MONTH = 21  # sessions in the 1M vs SPY return
 
@@ -68,9 +78,11 @@ def nearest_levels(ours: list[dict] | None, close: float | None) -> tuple[dict |
     return at(max(below, default=None)), at(min(above, default=None))
 
 
-def rows(doc: dict[str, Any], spy: dict[str, float]) -> list[dict]:
+def rows(doc: dict[str, Any], spy: dict[str, float], weekly: set[str] | None = None) -> list[dict]:
     """The watchlist rows for one chart file: open positions, and positions that entered or exited
-    within the last WINDOW sessions drawn."""
+    within the last WINDOW sessions drawn, from its setups and its tested rules. `weekly` is the
+    names listing weekly options (`tradable.weeklies`); None when there is no label, which leaves
+    every row's options-tradable flag null."""
     dates = doc["bars"]["date"]
     closes = doc["bars"]["close"]
     if not dates:
@@ -96,9 +108,13 @@ def rows(doc: dict[str, Any], spy: dict[str, float]) -> list[dict]:
         "vs_spy_1m": vs_spy(dates, closes, spy),
         "support": support,
         "resistance": resistance,
+        "options_tradable": tradable.tradable(doc["symbol"], weekly, doc.get("dollar_volume_50d")),
     }
+    blocks = [(s, None) for s in doc.get("setups") or []]
+    # A tested rule names the setup it changes; its rows read as that setup's, marked with the rule.
+    blocks += [({**t, "id": t["setup"]}, t["id"]) for t in doc.get("tested") or []]
     out = []
-    for s in doc.get("setups") or []:
+    for s, tested in blocks:
         for t in s["trades"]:
             entry_ago, exit_ago = ago(t["entry_date"]), ago(t["exit_date"])
             is_open = t["exit_date"] is None
@@ -114,6 +130,7 @@ def rows(doc: dict[str, Any], spy: dict[str, float]) -> list[dict]:
                     "setup_name": s["name"],
                     "family": s.get("family", s["id"]),
                     "side": side,
+                    "tested": tested,
                     "trend_agrees": trend_agrees(side, short, long_),
                     "entry_date": t["entry_date"],
                     "entry_price": t["entry_price"],
@@ -123,6 +140,7 @@ def rows(doc: dict[str, Any], spy: dict[str, float]) -> list[dict]:
                     "exit_ago": exit_ago,
                     "reason": t["reason"],
                     "target": t["target"],
+                    "dollar_volume": t.get("dollar_volume"),
                     "status": "open" if is_open else "closed",
                     # In the trade's direction: a fall is a positive move for a short.
                     "move_pct": None if move is None else (move if side == "long" else -move),
@@ -134,13 +152,15 @@ def rows(doc: dict[str, Any], spy: dict[str, float]) -> list[dict]:
 FILE = "setups-index.json"
 
 
-def write(directory: Path, all_rows: list[dict], session: str | None) -> None:
-    """`setups-index.json` beside the chart files, written then renamed like them."""
+def write(directory: Path, all_rows: list[dict], session: str | None, label_day: str | None = None) -> None:
+    """`setups-index.json` beside the chart files, written then renamed like them. `label_day` is the
+    day the weeklies were read from; None when there is no label."""
     doc = {
         "version": VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
         "session": session,
         "window": WINDOW,
+        "options_label_day": label_day,
         "rows": all_rows,
     }
     p = directory / FILE

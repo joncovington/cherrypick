@@ -247,6 +247,7 @@ function shapeWatchRow(raw: unknown): TechnicalsWatchlistRow[] {
       setupName: str(r["setup_name"]) ?? setup,
       family: str(r["family"]) ?? setup,
       side: r["side"] === "short" ? "short" : "long",
+      tested: str(r["tested"]),
       trendAgrees: typeof r["trend_agrees"] === "boolean" ? r["trend_agrees"] : null,
       entryDate,
       entryPrice: num(r["entry_price"]),
@@ -256,6 +257,7 @@ function shapeWatchRow(raw: unknown): TechnicalsWatchlistRow[] {
       exitAgo: num(r["exit_ago"]),
       reason: str(r["reason"]),
       target: num(r["target"]),
+      dollarVolume: num(r["dollar_volume"]),
       // A row with an exit is closed whatever the file says; an open one has none.
       status: str(r["exit_date"]) === null ? "open" : "closed",
       lastClose: num(r["last_close"]),
@@ -268,6 +270,7 @@ function shapeWatchRow(raw: unknown): TechnicalsWatchlistRow[] {
       vsSpy1m: num(r["vs_spy_1m"]),
       support: shapeNear(r["support"]),
       resistance: shapeNear(r["resistance"]),
+      optionsTradable: typeof r["options_tradable"] === "boolean" ? r["options_tradable"] : null,
     },
   ];
 }
@@ -275,11 +278,12 @@ function shapeWatchRow(raw: unknown): TechnicalsWatchlistRow[] {
 /** The setups watchlist the report job writes beside the chart files; empty when there is none. */
 export function readSetupsWatchlist(config: ConsoleConfig): TechnicalsWatchlist {
   const doc = readJson(path.join(chartsDir(config), "setups-index.json"));
-  if (doc === null) return { session: null, generatedAt: null, window: null, rows: [] };
+  if (doc === null) return { session: null, generatedAt: null, window: null, optionsLabelDay: null, rows: [] };
   return {
     session: str(doc["session"]),
     generatedAt: str(doc["generated_at"]),
     window: num(doc["window"]),
+    optionsLabelDay: str(doc["options_label_day"]),
     rows: list(doc["rows"]).flatMap(shapeWatchRow),
   };
 }

@@ -373,4 +373,5 @@ clear $300M a day, and 191 of them carry the current options-tradable label.
   discovery for it; half B is the one test it had not seen.
 
 Results: `round2-stageA-20261004-141804.json` and `round2-stageB-20261004-142845.json` in the
-study folder.
+study folder. The watchlist lists the rule's own trades under "Tested edge"
+([setups-watchlist.md](setups-watchlist.md)).
