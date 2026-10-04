@@ -156,6 +156,11 @@
     "miss_threshold": 3,
     "decay_after_minutes": 60
   },
+  "_skew_samples_note": "The skew sampler (skew.py, 2026-10-04): once a session per symbol, from sample_offset minutes before the session's own close, the loop records the weekly ATM call, the weekly call nearest 0.70 delta, the year-long ATM call and the year-long puts nearest 0.30/0.20/0.10 delta into pmcc_skew_samples. Telemetry only, for scripts/pmcc_shield_replay.py --skew-check: the replay's two most sensitive inputs are the skew under the shield's weekly short and the year-long put skew, and neither has been calibrated. While enabled the stream request keeps every symbol's year-long expiry (one window each, no extra depth).",
+  "skew_samples": {
+    "enabled": true,
+    "sample_offset": 60
+  },
   "_tastytrade_costs_note": "Overrides for the shared cost model (cherrypick.core.fees.DEFAULT_COSTS): slippage_frac_of_spread, slippage_cap_frac_of_mid, commissions. Empty means the suite defaults. The per-symbol pieces are automatic and this is the one place TQQQ and XSP genuinely differ in the fee stack: TQQQ is an ETF and is off the broad-based index exchange-fee schedule entirely, while XSP IS a broad-based index option and is looked up on cherrypick.core.fees.INDEX_EXCHANGE_FEE_PER_CONTRACT by symbol (currently $0.00/contract under 10 contracts/leg \u2014 the same number as the ETF default today, but wired through the index schedule rather than an ETF exemption, so a future rate change there reaches XSP automatically). Every ITM expiry costs the $5 settlement/assignment event regardless of symbol; only TQQQ's physical assignments add the SEC/FINRA pass-throughs on the share side (XSP never reaches that path).",
   "tastytrade_costs": {},
   "advice_header": "===== the advised book (paper only, off by default) =====",

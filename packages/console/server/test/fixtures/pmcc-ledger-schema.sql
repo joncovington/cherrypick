@@ -202,6 +202,27 @@ CREATE TABLE pmcc_positions (
     updated_at                     TEXT,
     era                            TEXT
 , settlement_fees REAL, advice_base TEXT);
+CREATE TABLE pmcc_skew_samples (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_date       TEXT NOT NULL,
+    sampled_at         TEXT NOT NULL,
+    symbol             TEXT NOT NULL,
+    target             TEXT NOT NULL,
+    expiration         TEXT,
+    dte                INTEGER,
+    option_type        TEXT,
+    spot               REAL,
+    strike             REAL,
+    delta              REAL,
+    iv                 REAL,
+    bid                REAL,
+    ask                REAL,
+    mid                REAL,
+    quote_age_seconds  REAL,
+    usable             INTEGER,
+    refusal            TEXT,
+    UNIQUE(session_date, symbol, target)
+);
 CREATE TABLE pmcc_snapshots (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     ts            TEXT NOT NULL,

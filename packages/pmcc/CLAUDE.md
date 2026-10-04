@@ -186,6 +186,16 @@ Their identities: entry + exit = gross; gross − costs = net; the last weekly r
   entry pricing.
 - **The producer persists every listed expiry** (`stream_expirations`). A request for a date the
   broker does not list is a WARN, never a stall restart.
+- **The skew sampler** (`skew.py`, `skew_samples` in the config) records, once a session per symbol
+  from an hour before the close (`pmcc_skew_samples`), what the market charged at the points the
+  replay can only model:
+  - the weekly ATM call and the call nearest 0.70 delta;
+  - the year-long ATM call and the puts nearest 0.30, 0.20 and 0.10 delta.
+
+  While it is on, the request keeps every symbol's year-long expiry, which the held-long arms stop
+  asking for once they hold the symbol. It is telemetry: nothing reads it to trade, and a refused
+  snapshot is journaled (`mode='skew_sample'`). `scripts/pmcc_shield_replay.py --skew-check` reads it
+  back.
 - **The provider refuses rather than guesses.** The OCC-root filter admits only the configured root.
   A split mid-position is unmodelled: a manual `--settle` plus a measurement break.
 
@@ -233,6 +243,7 @@ Its plan, kept in the session record:
 | `src/cherrypick/pmcc/paper_loop.py` | mark, manage, enter, dispose, settle at the bell; journals the shield boundary. |
 | `src/cherrypick/pmcc/analytics.py` | the one read-only query layer (`headline`, `excursions`, `exposure`, re-exports the tracker). |
 | `src/cherrypick/pmcc/tracker.py` | `value_at` and everything valued through it: the tracker, `open_mtm`, `weekly_by_arm`. |
+| `src/cherrypick/pmcc/skew.py` | the skew sampler's dates, targets and pick. Telemetry; pure. |
 | `src/cherrypick/pmcc/db.py` | schema, additive migrations, stale-writer guard, writers. |
 | `src/cherrypick/pmcc/stream_request.py` | declares symbols, open legs, per-symbol expirations, window hints. |
 | `src/cherrypick/pmcc/stream_window.py` | deep-window width: computed per target expiry, escalated on misses. |
@@ -252,7 +263,8 @@ python run.py tracker --position SLV:shield:2026-10-05   # one position, week by
 python run.py weekly [--era ALL]                   # the arms' weekly A/B
 python run.py exposure                             # the early-assignment-exposure telemetry
 python ../../scripts/pmcc_leap_probe.py            # what each symbol lists ~1 year out (network, read-only)
-python ../../scripts/pmcc_shield_replay.py         # the 2011- replay behind the shield arms
+python ../../scripts/pmcc_shield_replay.py         # the 2011- replay behind the shield arms, put benchmark included
+python ../../scripts/pmcc_shield_replay.py --skew-check   # the model against the sampled skew
 python -m pytest                                   # temp CHERRYPICK_HOME; no broker, no streamer needed
 ruff check . && ruff format .                      # line-length 110
 ```

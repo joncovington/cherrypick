@@ -40,7 +40,7 @@ from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
 
-from cherrypick.pmcc import analytics, clock, db, engine, management, provider, stream_request
+from cherrypick.pmcc import analytics, clock, db, engine, management, provider, skew, stream_request
 from cherrypick.pmcc import book as bookmod
 from cherrypick.pmcc import cli as climod
 
@@ -261,6 +261,43 @@ def _note_shield_boundary(conn, config: dict) -> None:
         _log(f"shield boundary journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
+# --------------------------------------------------------------------------- the skew sampler
+def _sample_skew(config: dict, conn, *, cache_path: str, when: datetime, day: str) -> int:
+    """Once a session per symbol, from `sample_offset` minutes before the session's own close: the
+    quotes `skew.TARGETS` names (see skew.py for why). A symbol whose snapshot is refused is retried
+    next tick and its refusal journaled once a session; a sampled one is never sampled twice.
+    Best-effort: telemetry, never a reason to skip a tick."""
+    s = skew.settings(config)
+    if not s["enabled"]:
+        return 0
+    if clock.minute_of_day(when) < clock.session_close_min(when.date()) - int(s["sample_offset"]):
+        return 0
+    written = 0
+    roots = config.get("occ_roots") or {}
+    for symbol in [x.strip().upper() for x in config.get("symbols") or []]:
+        try:
+            if db.skew_sampled(conn, day, symbol):
+                continue
+            dates = skew.dates(provider.listed_expirations(cache_path, symbol), when.date())
+            snap = (
+                provider.skew_snapshot(cache_path, symbol, dates, root=roots.get(symbol, symbol))
+                if dates is not None
+                else {"ok": False, "reason": "no_year_expiry_listed"}
+            )
+            if not snap.get("ok"):
+                db.record_decision(
+                    conn, trade_date=day, arm="*", symbol=symbol, mode="skew_sample",
+                    reason=str(snap.get("reason")), accepted=False,
+                )  # fmt: skip
+                continue
+            written += db.record_skew_samples(
+                conn, session_date=day, symbol=symbol, spot=snap["spot"], rows=skew.select(snap, when.date())
+            )
+        except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+            _log(f"skew sample failed for {symbol} (non-fatal): {type(exc).__name__}: {exc}")
+    return written
+
+
 # --------------------------------------------------------------------------- the tick
 def run_once(
     config: dict, conn, *, cache_path: str, when: datetime | None = None, force: bool = False
@@ -334,6 +371,7 @@ def run_once(
     marked, values = _mark_positions(config, conn, cache_path=cache_path, when=when, day=day)
     marks_written += marked
     actions += _manage_positions(config, conn, values, cache_path=cache_path, when=when, day=day)
+    _sample_skew(config, conn, cache_path=cache_path, when=when, day=day)
 
     db.record_iteration(
         conn,

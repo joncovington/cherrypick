@@ -409,6 +409,81 @@ def _raw_quote(row, now_ts: float, max_age: float) -> dict:
     }
 
 
+def skew_snapshot(
+    db_path,
+    symbol: str,
+    dates: dict,
+    *,
+    root: str,
+    max_quote_age_seconds: float = DEFAULT_MAX_QUOTE_AGE_SECONDS,
+) -> dict:
+    """Every quoted or greeked option on `dates`' expirations (`skew.dates`), calls and puts, each
+    with its staleness rather than filtered by it -- the `ladder_snapshot` rule: a measurement that
+    hides stale rows cannot measure staleness. Greeks get the selectors' loose age bound. Only the
+    strikes the producer's windows cover appear, which is all `skew.select` needs.
+
+    Refusal-shaped like every other builder: `{"ok": False, "reason": ...}`."""
+    symbol = symbol.strip().upper()
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return _fail(symbol, "stream_cache_missing")
+    conn = _connect_ro(db_path)
+    try:
+        tr = conn.execute("SELECT last FROM stream_trades WHERE symbol = ?", (symbol,)).fetchone()
+        spot = float(tr["last"]) if tr and tr["last"] is not None else None
+        if not spot:
+            return _fail(symbol, "no_spot_price")
+        now_ts = time.time()
+        entries: dict[str, list[dict]] = {}
+        for exp in sorted(set(dates.values())):
+            chain = _chain_for_expiration(conn, symbol, exp, root)
+            syms = [e["streamer_symbol"] for e in chain]
+            raw: dict[str, dict] = {}
+            for i in range(0, len(syms), 900):
+                chunk = syms[i : i + 900]
+                marks = ", ".join("?" * len(chunk))
+                for r in conn.execute(
+                    f"SELECT symbol, bid, ask, mid, updated_at FROM stream_quotes WHERE symbol IN ({marks})",
+                    chunk,
+                ):
+                    raw[r["symbol"]] = _raw_quote(r, now_ts, max_quote_age_seconds)
+            greeks = _greeks(conn, syms, now_ts=now_ts, max_age_seconds=max_quote_age_seconds * 6)
+            rows = []
+            for e in chain:
+                sym = e["streamer_symbol"]
+                q, g = raw.get(sym), greeks.get(sym) or {}
+                if q is None and not g:
+                    continue
+                q = q or {
+                    "bid": None,
+                    "ask": None,
+                    "mid": None,
+                    "age_seconds": None,
+                    "usable": False,
+                    "refusal": "no_quote",
+                }
+                rows.append(
+                    {
+                        "strike": e["strike_price"],
+                        "option_type": e["option_type"],
+                        "delta": g.get("delta"),
+                        "iv": g.get("iv"),
+                        "bid": q["bid"],
+                        "ask": q["ask"],
+                        "mid": q["mid"],
+                        "quote_age_seconds": q["age_seconds"],
+                        "usable": q["usable"],
+                        "refusal": q["refusal"],
+                    }
+                )
+            entries[exp] = rows
+        if not any(entries.values()):
+            return _fail(symbol, "no_quotes", dates=dates)
+        return {"ok": True, "symbol": symbol, "spot": spot, "dates": dates, "entries": entries}
+    finally:
+        conn.close()
+
+
 def ladder_snapshot(
     db_path,
     symbol: str,
