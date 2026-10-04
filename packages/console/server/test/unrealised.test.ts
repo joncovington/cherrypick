@@ -149,6 +149,36 @@ describe("mark-to-market P&L", () => {
     expect(out?.unrealisedGross).toBe(-397);
   });
 
+  it("counts shares already covered on a position still open, at their booked P&L (2026-10-04)", () => {
+    // A held-long position outlives its shorts: its assigned short settled at intrinsic, the
+    // delivered shares were covered for a booked +35.00, and the long is still open. Until this
+    // date only HELD shares were read, so the covered result vanished from the open P&L.
+    const conn = db({
+      positions: [["A", "open", 5, 1]],
+      legs: [
+        ["A", "long_call", "Buy to Open", 37.8, "open"],
+        ["A", "short_call_1", "Sell to Open", 3.65, "settled", 4.1],
+      ],
+      marks: [["A", "long_call", 38.2, 1, 5, 72.1]],
+    });
+    conn.exec("ALTER TABLE a ADD COLUMN share_pnl REAL");
+    conn.prepare("INSERT INTO a VALUES (?,?,?,?,?,?)").run("A", "short", 100, 72.1, "disposed", 35);
+    const out = unrealisedByPosition(conn as never, { ...OPTS, assignmentsTable: "a" }).get("A");
+    // legs: (38.20 - 37.80) + (3.65 - 4.10) = -0.05 -> -5; covered shares +35; gross 30, net 25.
+    expect(out?.unrealisedGross).toBe(30);
+    expect(out?.unrealisedNet).toBe(25);
+  });
+
+  it("reads a covered share position with no booked P&L as unpriced, not zero", () => {
+    const conn = db({
+      positions: [["A", "open", 5, 1]],
+      legs: [["A", "long_call", "Buy to Open", 37.8, "open"]],
+      marks: [["A", "long_call", 38.2, 1, 5, 72.1]],
+      assignments: [["A", "short", 100, 72.1, "disposed"]],
+    });
+    expect(unrealisedByPosition(conn as never, { ...OPTS, assignmentsTable: "a" }).get("A")?.unrealisedGross).toBeNull();
+  });
+
   it("refuses held shares it has no spot to price, rather than counting them as zero", () => {
     const conn = db({
       positions: [["A", "open", 0, 1]],

@@ -32,7 +32,12 @@ export const NO_UNREALISED: Unrealised = {
  *   - a delivered share position still held (`assignmentsTable`, status open) is priced at the
  *     latest spot the module itself recorded on that position's marks, through
  *     `core.settlement.share_pnl`'s arithmetic. Those shares were invisible too: 2026-09-07's
- *     assigned SPY week rode the weekend with 100 shares the page never showed.
+ *     assigned SPY week rode the weekend with 100 shares the page never showed;
+ *   - a share position already COVERED (status disposed) on a position still open counts at its
+ *     booked `share_pnl`. Until 2026-10-04 only held shares were read, which was enough while every
+ *     disposal also finished its position -- and stopped being enough when pmcc's held-long
+ *     positions began outliving their shorts: a covered assignment's result vanished from the
+ *     position's open P&L the moment its shares were bought back.
  *
  * Written once here rather than three times: the convention is identical across the modules, so a
  * per-module copy would be two chances to drift on a definition neither owns alone. bwb and curve
@@ -131,12 +136,20 @@ export function unrealisedByPosition(
     }
     for (const r of db
       .prepare<[], Record<string, unknown>>(
-        `SELECT position_id, direction, shares, basis FROM ${assignments} WHERE status = 'open'`,
+        // `SELECT *`: a ledger predating `share_pnl` must read a covered position as unpriced, not throw.
+        `SELECT * FROM ${assignments} WHERE status IN ('open', 'disposed')`,
       )
       .all()) {
       const id = str(r["position_id"]) ?? "";
       if (!meta.has(id)) continue;
       const acc = perPosition.get(id) ?? { total: 0, missing: false, dollars: 0 };
+      if (str(r["status"]) === "disposed") {
+        const booked = num(r["share_pnl"]);
+        if (booked === null) acc.missing = true;
+        else acc.dollars += booked;
+        perPosition.set(id, acc);
+        continue;
+      }
       const spot = spots.get(id);
       const basis = num(r["basis"]);
       const shares = num(r["shares"]);

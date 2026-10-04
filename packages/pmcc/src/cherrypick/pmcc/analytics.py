@@ -15,6 +15,15 @@ import statistics
 from cherrypick.core.metrics import excursions as _mae_mfe
 
 from cherrypick.pmcc import db
+from cherrypick.pmcc import tracker as _tracker
+
+# The held-long read (2026-10-04): one position week by week, the picker, the arms' weekly A/B, and
+# the open mark-to-market. Exposed here so every read surface still goes through this one layer.
+tracker = _tracker.tracker
+tracker_index = _tracker.tracker_index
+weekly_by_arm = _tracker.weekly_by_arm
+open_mtm = _tracker.open_mtm
+value_at = _tracker.value_at
 
 # The era the module counts as evidence, MEIC's `CURRENT_ERA` convention adopted verbatim. `era` on
 # `pmcc_positions` is an ADDED column (2026-08-23) — every row from before it existed reads back
@@ -63,7 +72,10 @@ def headline(conn, era: str | None = CURRENT_ERA) -> dict:
             "rolls": row["rolls"],
         }
     open_rows = conn.execute("SELECT COUNT(*) AS n FROM pmcc_positions WHERE status != 'closed'").fetchone()
-    return {"arms": arms, "open_positions": open_rows["n"]}
+    # Open positions marked to market (`tracker.value_at(now)`), beside the closed results rather
+    # than in them: a held-long position closes ~10 months after it opens, and until then this is
+    # the only number its arm has. Not era-scoped -- an open position is in the current era.
+    return {"arms": arms, "open_positions": open_rows["n"], "open_mtm": open_mtm(conn)}
 
 
 def worksheet(conn) -> list[dict]:
@@ -154,11 +166,18 @@ def excursions(conn, era: str | None = CURRENT_ERA) -> dict:
 
     positions = []
     for p in conn.execute(
-        f"SELECT position_id, symbol, arm, net_debit, quantity FROM pmcc_positions "
+        f"SELECT position_id, symbol, arm, net_debit, quantity, entry_long_dte FROM pmcc_positions "
         f"WHERE {where} ORDER BY symbol, arm",
         params,
     ):
         if p["net_debit"] is None:
+            continue
+        if (p["entry_long_dte"] or 0) > _HELD_LONG_DTE:
+            sampled = _held_long_excursion(conn, p["position_id"])
+            if sampled is not None:
+                positions.append(
+                    {"position_id": p["position_id"], "symbol": p["symbol"], "arm": p["arm"], **sampled}
+                )
             continue
         legs: dict[float, dict] = {}
         # The short's role is `short_call_<n>` (engine.plan_entry, db.next_short_role). This
@@ -201,6 +220,40 @@ def excursions(conn, era: str | None = CURRENT_ERA) -> dict:
         "mae_distribution": _distribution("mae"),
         "mfe_distribution": _distribution("mfe"),
     }
+
+
+# A long bought further out than this is a held-long position's (~1 year), never control's ~21 DTE:
+# the ledger's own shape decides which excursion path a position takes, so no config is needed here.
+_HELD_LONG_DTE = 120
+
+
+def _held_long_excursion(conn, position_id: str) -> dict | None:
+    """MAE/MFE of a held-long position's GROSS P&L, sampled at each session's close by
+    `tracker.value_at` -- the long, every short sold and rolled, and any delivered shares. The
+    long-minus-short pairing above cannot see a rolled short's realised P&L, and ten months of
+    minute ticks is a series nobody reads at that resolution."""
+    from datetime import date, timedelta
+
+    from cherrypick.core import calendar as _cal
+
+    position = dict(
+        conn.execute("SELECT * FROM pmcc_positions WHERE position_id = ?", (position_id,)).fetchone()
+    )
+    legs = db.legs_for(conn, position_id)
+    assignments = db.assignments_for(conn, position_id)
+    end = date.fromisoformat(position.get("closed_session") or position["entry_session"])
+    day = date.fromisoformat(position["entry_session"])
+    series = []
+    while day <= end:
+        if _cal.is_trading_day(day):
+            v = value_at(conn, position, legs, assignments, _tracker._close_epoch(day))
+            if v is not None:
+                series.append(v["gross"])
+        day += timedelta(days=1)
+    result = _mae_mfe(series, basis=0.0)
+    if result["n"] == 0:
+        return None
+    return {"mae": result["mae"], "mfe": result["mfe"], "n": result["n"], "sampled": "session_close"}
 
 
 # How good the day's mark substrate is (marks, refusal share, per-refusal counts) -- the ledger
