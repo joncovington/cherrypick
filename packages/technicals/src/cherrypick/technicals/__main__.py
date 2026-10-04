@@ -221,6 +221,72 @@ def cmd_report(args) -> int:
     return 0
 
 
+def cmd_history_land(_args) -> int:
+    from . import history
+
+    def progress(k, n, lo, bars):
+        if k % 12 == 0 or k == n:
+            print(f"window {k}/{n} from {lo}: {bars:,} bars", flush=True)
+
+    out = history.land(progress=progress)
+    print(json.dumps(out, indent=1))
+    return 0 if out.get("ok") else 1
+
+
+def cmd_history_check(args) -> int:
+    """The history store against the nightly one where they overlap, and what fifteen years of a
+    free dataset should be looked at for before it is trusted."""
+    from . import history, tuning_names
+
+    hist, eod = history.connect(), store.connect()
+    overlap = history.compare_overlap(hist, eod, sorted(tuning_names.NAMES))
+    jumps = {}
+    for sym in history.symbols_held(hist):
+        found = history.unexplained_jumps(hist, sym)
+        if found:
+            jumps[sym] = found
+    out = {
+        "overlap": {
+            **overlap,
+            "disagree": dict(sorted(overlap["disagree"].items(), key=lambda kv: -kv[1])[:30]),
+        },
+        "names_with_disagreement": len(overlap["disagree"]),
+        "unexplained_jumps": {"names": len(jumps), "jumps": sum(len(v) for v in jumps.values())},
+        "jump_examples": dict(list(sorted(jumps.items(), key=lambda kv: -len(kv[1])))[: args.examples]),
+    }
+    print(json.dumps(out, indent=1))
+    return 0
+
+
+def cmd_study_run(args) -> int:
+    from . import study
+
+    tradable, label_day = study.tradable_today()
+    result = study.run(
+        workers=args.workers, progress=lambda m: print(m, flush=True), tradable=tradable or None
+    )
+    result["tradable_view"] = {"day": label_day, "names": len(tradable)}
+    path = study.write(result)
+    rows = []
+    for setup_id, v in result["setups"].items():
+        d, t = v["describe"], v["test"]
+        rows.append(
+            {
+                "setup": setup_id,
+                "verdict": v["verdict"],
+                "entries": d.get("entries"),
+                "expectancy_r": round(d["expectancy_r"], 3) if d.get("entries") else None,
+                "baseline_r": round(d["baseline_r"], 3) if d.get("baseline_r") is not None else None,
+                "edge_r": round(t["edge_r"], 3) if "edge_r" in t else None,
+                "t": round(t["t"], 2) if "t" in t else None,
+                "p": t.get("p"),
+                "effective_entries": round(t.get("effective_entries", 0)),
+            }
+        )
+    print(json.dumps({"path": path, "seconds": result["seconds"], "summary": rows}, indent=1))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m cherrypick.technicals", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -265,6 +331,19 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("score-signals", help="our scan rules against every saved scan list").set_defaults(
         fn=cmd_score_signals
     )
+    hi = sub.add_parser("history", help="the historical study's store (docs/signal-log-plan.md)")
+    hs = hi.add_subparsers(dest="history_cmd", required=True)
+    hs.add_parser("land", help="land Dolt's whole daily history into history.db").set_defaults(
+        fn=cmd_history_land
+    )
+    hc = hs.add_parser("check", help="history.db against eod.db, and unexplained price jumps")
+    hc.add_argument("--examples", type=int, default=15)
+    hc.set_defaults(fn=cmd_history_check)
+    sy = sub.add_parser("study", help="the historical study (analysis plan v2)")
+    ss = sy.add_subparsers(dest="study_cmd", required=True)
+    sr_ = ss.add_parser("run", help="score every setup over the history against its random baseline")
+    sr_.add_argument("--workers", type=int, default=14)
+    sr_.set_defaults(fn=cmd_study_run)
     rp = sub.add_parser("report", help="write one session's market-report readings for the console")
     rp.add_argument("--session", help="ISO date (default: the latest session stored)")
     rp.set_defaults(fn=cmd_report)

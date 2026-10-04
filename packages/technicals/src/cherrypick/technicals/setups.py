@@ -230,60 +230,60 @@ def _walk(
     return trades
 
 
-def trend(r: Readings) -> list[Trade]:
-    def enter(i):
-        if i < 1 or not _defined(
-            r.ema9[i - 1], r.ema21[i - 1], r.ema9[i], r.ema21[i], r.ema50[i], r.adx14[i]
-        ):
-            return None
-        crossed = r.ema9[i - 1] <= r.ema21[i - 1] and r.ema9[i] > r.ema21[i]
-        return Trade(i) if crossed and r.closes[i] > r.ema50[i] and r.adx14[i] > ADX_MIN else None
-
-    def leave(i, t):
-        return "21 EMA" if r.closes[i] < r.ema21[i] else None
-
-    return _walk(len(r.closes), enter, leave)
+# Each setup is an entry rule, an exit rule and, for the pullbacks, a target set at entry -- module
+# functions over the readings, so the walk below and `exit_from` (which applies a setup's exit to an
+# entry the setup did not make, for the historical study's random baseline) run the same code.
 
 
-def pullback(r: Readings) -> list[Trade]:
+def _trend_enter(r: Readings, i: int) -> Trade | None:
+    if i < 1 or not _defined(r.ema9[i - 1], r.ema21[i - 1], r.ema9[i], r.ema21[i], r.ema50[i], r.adx14[i]):
+        return None
+    crossed = r.ema9[i - 1] <= r.ema21[i - 1] and r.ema9[i] > r.ema21[i]
+    return Trade(i) if crossed and r.closes[i] > r.ema50[i] and r.adx14[i] > ADX_MIN else None
+
+
+def _trend_leave(r: Readings, i: int, t: Trade) -> str | None:
+    return "21 EMA" if r.closes[i] < r.ema21[i] else None
+
+
+def _pullback_target(r: Readings, i: int) -> float | None:
+    target = max(r.highs[i - TARGET_LOOKBACK : i]) if i >= TARGET_LOOKBACK else None
+    return target if target is not None and target > r.closes[i] else None
+
+
+def _pullback_enter(r: Readings, i: int) -> Trade | None:
     lo, hi = PULLBACK_RSI
-
-    def enter(i):
-        recent = r.rsi14[max(0, i - PULLBACK_RSI_WINDOW + 1) : i + 1]
-        if i < TARGET_LOOKBACK or not _defined(r.ema9[i], r.ema21[i], r.ema50[i], *recent):
-            return None
-        stacked = r.ema9[i] > r.ema21[i] > r.ema50[i]
-        held = r.lows[i] <= r.ema21[i] < r.closes[i]
-        if not (stacked and held and lo <= min(recent) <= hi):
-            return None
-        target = max(r.highs[i - TARGET_LOOKBACK : i])
-        return Trade(i, target=target if target > r.closes[i] else None)
-
-    def leave(i, t):
-        a = r.atr22[i]
-        if a is not None and r.closes[i] < max(r.highs[t.entry : i + 1]) - CHANDELIER_MULT * a:
-            return "stop"
-        if t.target is not None and r.highs[i] >= t.target:
-            return "target"
+    recent = r.rsi14[max(0, i - PULLBACK_RSI_WINDOW + 1) : i + 1]
+    if i < TARGET_LOOKBACK or not _defined(r.ema9[i], r.ema21[i], r.ema50[i], *recent):
         return None
-
-    return _walk(len(r.closes), enter, leave)
-
-
-def reversion(r: Readings) -> list[Trade]:
-    def enter(i):
-        if not _defined(r.bb_lower[i], r.rsi14[i], r.atr14[i]):
-            return None
-        return Trade(i) if r.lows[i] <= r.bb_lower[i] and r.rsi14[i] < OVERSOLD_RSI else None
-
-    def leave(i, t):
-        if r.closes[i] < r.closes[t.entry] - REVERSION_STOP_ATR * r.atr14[t.entry]:
-            return "stop"
-        if r.closes[i] >= r.bb_mid[i]:
-            return "target"
+    stacked = r.ema9[i] > r.ema21[i] > r.ema50[i]
+    held = r.lows[i] <= r.ema21[i] < r.closes[i]
+    if not (stacked and held and lo <= min(recent) <= hi):
         return None
+    return Trade(i, target=_pullback_target(r, i))
 
-    return _walk(len(r.closes), enter, leave)
+
+def _pullback_leave(r: Readings, i: int, t: Trade) -> str | None:
+    a = r.atr22[i]
+    if a is not None and r.closes[i] < max(r.highs[t.entry : i + 1]) - CHANDELIER_MULT * a:
+        return "stop"
+    if t.target is not None and r.highs[i] >= t.target:
+        return "target"
+    return None
+
+
+def _reversion_enter(r: Readings, i: int) -> Trade | None:
+    if not _defined(r.bb_lower[i], r.rsi14[i], r.atr14[i]):
+        return None
+    return Trade(i) if r.lows[i] <= r.bb_lower[i] and r.rsi14[i] < OVERSOLD_RSI else None
+
+
+def _reversion_leave(r: Readings, i: int, t: Trade) -> str | None:
+    if r.closes[i] < r.closes[t.entry] - REVERSION_STOP_ATR * r.atr14[t.entry]:
+        return "stop"
+    if r.closes[i] >= r.bb_mid[i]:
+        return "target"
+    return None
 
 
 def volume_confirms(volumes: list[float | None], i: int) -> bool:
@@ -297,88 +297,142 @@ def volume_confirms(volumes: list[float | None], i: int) -> bool:
     return volumes[i] > VOLUME_MULT * sum(window) / VOLUME_AVG
 
 
+def _breakout_enter(r: Readings, i: int) -> Trade | None:
+    if not _defined(r.bb_upper[i]) or not any(r.squeeze[max(0, i - SQUEEZE_RECENT + 1) : i + 1]):
+        return None
+    # Supertrend must already be up: entered against it, the exit fired the next close on 33 of
+    # 45 such breakouts (2026-10-04) -- a one-day round trip, not a breakout failing.
+    on_side = r.supertrend_up[i] is True
+    return Trade(i) if on_side and r.closes[i] > r.bb_upper[i] and volume_confirms(r.volumes, i) else None
+
+
+def _breakout_leave(r: Readings, i: int, t: Trade) -> str | None:
+    return "supertrend" if r.supertrend_up[i] is False else None
+
+
+def _trend_short_enter(r: Readings, i: int) -> Trade | None:
+    if i < 1 or not _defined(r.ema9[i - 1], r.ema21[i - 1], r.ema9[i], r.ema21[i], r.ema50[i], r.adx14[i]):
+        return None
+    crossed = r.ema9[i - 1] >= r.ema21[i - 1] and r.ema9[i] < r.ema21[i]
+    return Trade(i) if crossed and r.closes[i] < r.ema50[i] and r.adx14[i] > ADX_MIN else None
+
+
+def _trend_short_leave(r: Readings, i: int, t: Trade) -> str | None:
+    return "21 EMA" if r.closes[i] > r.ema21[i] else None
+
+
+def _pullback_short_target(r: Readings, i: int) -> float | None:
+    target = min(r.lows[i - TARGET_LOOKBACK : i]) if i >= TARGET_LOOKBACK else None
+    return target if target is not None and target < r.closes[i] else None
+
+
+def _pullback_short_enter(r: Readings, i: int) -> Trade | None:
+    lo, hi = PULLBACK_RSI_SHORT
+    recent = r.rsi14[max(0, i - PULLBACK_RSI_WINDOW + 1) : i + 1]
+    if i < TARGET_LOOKBACK or not _defined(r.ema9[i], r.ema21[i], r.ema50[i], *recent):
+        return None
+    stacked = r.ema9[i] < r.ema21[i] < r.ema50[i]
+    rejected = r.highs[i] >= r.ema21[i] > r.closes[i]
+    if not (stacked and rejected and lo <= max(recent) <= hi):
+        return None
+    return Trade(i, target=_pullback_short_target(r, i))
+
+
+def _pullback_short_leave(r: Readings, i: int, t: Trade) -> str | None:
+    a = r.atr22[i]
+    if a is not None and r.closes[i] > min(r.lows[t.entry : i + 1]) + CHANDELIER_MULT * a:
+        return "stop"
+    if t.target is not None and r.lows[i] <= t.target:
+        return "target"
+    return None
+
+
+def _reversion_short_enter(r: Readings, i: int) -> Trade | None:
+    if not _defined(r.bb_upper[i], r.rsi14[i], r.atr14[i]):
+        return None
+    return Trade(i) if r.highs[i] >= r.bb_upper[i] and r.rsi14[i] > OVERBOUGHT_RSI else None
+
+
+def _reversion_short_leave(r: Readings, i: int, t: Trade) -> str | None:
+    if r.closes[i] > r.closes[t.entry] + REVERSION_STOP_ATR * r.atr14[t.entry]:
+        return "stop"
+    if r.closes[i] <= r.bb_mid[i]:
+        return "target"
+    return None
+
+
+def _breakout_short_enter(r: Readings, i: int) -> Trade | None:
+    if not _defined(r.bb_lower[i]) or not any(r.squeeze[max(0, i - SQUEEZE_RECENT + 1) : i + 1]):
+        return None
+    on_side = r.supertrend_up[i] is False  # the mirror: 47 of 57 entered against it covered next close
+    return Trade(i) if on_side and r.closes[i] < r.bb_lower[i] and volume_confirms(r.volumes, i) else None
+
+
+def _breakout_short_leave(r: Readings, i: int, t: Trade) -> str | None:
+    return "supertrend" if r.supertrend_up[i] is True else None
+
+
+# setup id -> (entry rule, exit rule, the target an entry sets, if any)
+RULES: dict[str, tuple[Callable, Callable, Callable | None]] = {
+    "trend": (_trend_enter, _trend_leave, None),
+    "pullback": (_pullback_enter, _pullback_leave, _pullback_target),
+    "reversion": (_reversion_enter, _reversion_leave, None),
+    "breakout": (_breakout_enter, _breakout_leave, None),
+    "trend-short": (_trend_short_enter, _trend_short_leave, None),
+    "pullback-short": (_pullback_short_enter, _pullback_short_leave, _pullback_short_target),
+    "reversion-short": (_reversion_short_enter, _reversion_short_leave, None),
+    "breakout-short": (_breakout_short_enter, _breakout_short_leave, None),
+}
+
+
+def run(setup_id: str, r: Readings) -> list[Trade]:
+    enter, leave, _ = RULES[setup_id]
+    return _walk(len(r.closes), lambda i: enter(r, i), lambda i, t: leave(r, i, t))
+
+
+def exit_from(setup_id: str, r: Readings, i: int) -> Trade:
+    """A position opened at bar `i` and held to the setup's own exit rule, whether or not the setup
+    would have entered there -- the random baseline's trade. The entry carries the target the setup
+    would set (the pullbacks'), and the exit is checked from the next bar on, as the walk does."""
+    _, leave, target = RULES[setup_id]
+    t = Trade(i, target=target(r, i) if target else None)
+    for j in range(i + 1, len(r.closes)):
+        reason = leave(r, j, t)
+        if reason is not None:
+            return replace(t, exit=j, reason=reason)
+    return t
+
+
+def trend(r: Readings) -> list[Trade]:
+    return run("trend", r)
+
+
+def pullback(r: Readings) -> list[Trade]:
+    return run("pullback", r)
+
+
+def reversion(r: Readings) -> list[Trade]:
+    return run("reversion", r)
+
+
 def breakout(r: Readings) -> list[Trade]:
-    def enter(i):
-        if not _defined(r.bb_upper[i]) or not any(r.squeeze[max(0, i - SQUEEZE_RECENT + 1) : i + 1]):
-            return None
-        # Supertrend must already be up: entered against it, the exit fired the next close on 33 of
-        # 45 such breakouts (2026-10-04) -- a one-day round trip, not a breakout failing.
-        on_side = r.supertrend_up[i] is True
-        return Trade(i) if on_side and r.closes[i] > r.bb_upper[i] and volume_confirms(r.volumes, i) else None
-
-    def leave(i, t):
-        return "supertrend" if r.supertrend_up[i] is False else None
-
-    return _walk(len(r.closes), enter, leave)
+    return run("breakout", r)
 
 
 def trend_short(r: Readings) -> list[Trade]:
-    def enter(i):
-        if i < 1 or not _defined(
-            r.ema9[i - 1], r.ema21[i - 1], r.ema9[i], r.ema21[i], r.ema50[i], r.adx14[i]
-        ):
-            return None
-        crossed = r.ema9[i - 1] >= r.ema21[i - 1] and r.ema9[i] < r.ema21[i]
-        return Trade(i) if crossed and r.closes[i] < r.ema50[i] and r.adx14[i] > ADX_MIN else None
-
-    def leave(i, t):
-        return "21 EMA" if r.closes[i] > r.ema21[i] else None
-
-    return _walk(len(r.closes), enter, leave)
+    return run("trend-short", r)
 
 
 def pullback_short(r: Readings) -> list[Trade]:
-    lo, hi = PULLBACK_RSI_SHORT
-
-    def enter(i):
-        recent = r.rsi14[max(0, i - PULLBACK_RSI_WINDOW + 1) : i + 1]
-        if i < TARGET_LOOKBACK or not _defined(r.ema9[i], r.ema21[i], r.ema50[i], *recent):
-            return None
-        stacked = r.ema9[i] < r.ema21[i] < r.ema50[i]
-        rejected = r.highs[i] >= r.ema21[i] > r.closes[i]
-        if not (stacked and rejected and lo <= max(recent) <= hi):
-            return None
-        target = min(r.lows[i - TARGET_LOOKBACK : i])
-        return Trade(i, target=target if target < r.closes[i] else None)
-
-    def leave(i, t):
-        a = r.atr22[i]
-        if a is not None and r.closes[i] > min(r.lows[t.entry : i + 1]) + CHANDELIER_MULT * a:
-            return "stop"
-        if t.target is not None and r.lows[i] <= t.target:
-            return "target"
-        return None
-
-    return _walk(len(r.closes), enter, leave)
+    return run("pullback-short", r)
 
 
 def reversion_short(r: Readings) -> list[Trade]:
-    def enter(i):
-        if not _defined(r.bb_upper[i], r.rsi14[i], r.atr14[i]):
-            return None
-        return Trade(i) if r.highs[i] >= r.bb_upper[i] and r.rsi14[i] > OVERBOUGHT_RSI else None
-
-    def leave(i, t):
-        if r.closes[i] > r.closes[t.entry] + REVERSION_STOP_ATR * r.atr14[t.entry]:
-            return "stop"
-        if r.closes[i] <= r.bb_mid[i]:
-            return "target"
-        return None
-
-    return _walk(len(r.closes), enter, leave)
+    return run("reversion-short", r)
 
 
 def breakout_short(r: Readings) -> list[Trade]:
-    def enter(i):
-        if not _defined(r.bb_lower[i]) or not any(r.squeeze[max(0, i - SQUEEZE_RECENT + 1) : i + 1]):
-            return None
-        on_side = r.supertrend_up[i] is False  # the mirror: 47 of 57 entered against it covered next close
-        return Trade(i) if on_side and r.closes[i] < r.bb_lower[i] and volume_confirms(r.volumes, i) else None
-
-    def leave(i, t):
-        return "supertrend" if r.supertrend_up[i] is True else None
-
-    return _walk(len(r.closes), enter, leave)
+    return run("breakout-short", r)
 
 
 RUN = {
