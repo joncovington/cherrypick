@@ -45,6 +45,12 @@ REVERSION_STOP_ATR = 2.0  # x ATR(14) at entry, under the entry close
 SQUEEZE_LOOKBACK, SQUEEZE_RECENT = 120, 5
 VOLUME_AVG, VOLUME_MULT = 50, 1.5
 SUPERTREND_N, SUPERTREND_MULT = 10, 3.0
+# Round 3 of the historical study (docs/signal-log-plan.md): the Vortex in its authors' period, and
+# the RSI divergence in TradingView's Divergence Indicator defaults (pivots 5 bars either side, 5 to
+# 60 bars apart). Study-only: the chart does not draw these setups.
+VORTEX_N = 14
+DIVERGENCE_PIVOT = 5
+DIVERGENCE_SPAN = (5, 60)
 
 
 @dataclass(frozen=True)
@@ -138,6 +144,87 @@ SETUPS = (
     ),
 )
 
+# Setups the historical study scores and the chart does not draw: round 3's two setups from published
+# infographics, declared before they were run (docs/signal-log-plan.md, "Round 3"), and each with one
+# of its two conditions removed, so the study can say which half does the work. A long and a short of
+# one family are separate positions, as on the chart.
+STUDIED = (
+    Setup(
+        "st-vortex",
+        "Supertrend + Vortex",
+        "Enter on the first close on which Supertrend(10, 3) is up and VI+(14) is above VI-, after a "
+        "close on which they were not both so. Exit on the first close with Supertrend down or VI+ "
+        "under VI-.",
+        ("supertrend",),
+    ),
+    Setup(
+        "st-vortex-short",
+        "Supertrend + Vortex (short)",
+        "Short on the first close on which Supertrend(10, 3) is down and VI+(14) is under VI-, after a "
+        "close on which they were not both so. Cover on the first close with Supertrend up or VI+ over "
+        "VI-.",
+        ("supertrend",),
+        "st-vortex",
+        "short",
+    ),
+    Setup(
+        "squeeze-div",
+        "Squeeze + RSI divergence",
+        "Enter on a close above the upper Bollinger band (20, 2) within 5 sessions of a squeeze, while "
+        "the latest two RSI(14) pivot lows confirmed by then are a bullish divergence. Exit on the "
+        "first close under the middle band.",
+        ("bb_upper", "bb_mid", "bb_lower"),
+    ),
+    Setup(
+        "squeeze-div-short",
+        "Squeeze + RSI divergence (short)",
+        "Short on a close under the lower Bollinger band (20, 2) within 5 sessions of a squeeze, while "
+        "the latest two RSI(14) pivot highs confirmed by then are a bearish divergence. Cover on the "
+        "first close over the middle band.",
+        ("bb_upper", "bb_mid", "bb_lower"),
+        "squeeze-div",
+        "short",
+    ),
+    Setup("st-only", "Supertrend alone", "Enter when Supertrend turns up; exit when it turns down.", ()),
+    Setup(
+        "st-only-short",
+        "Supertrend alone (short)",
+        "Short when Supertrend turns down; cover when up.",
+        (),
+        "st-only",
+        "short",
+    ),
+    Setup(
+        "vortex-only", "Vortex alone", "Enter when VI+ crosses above VI-; exit on a close with VI+ under.", ()
+    ),
+    Setup(
+        "vortex-only-short",
+        "Vortex alone (short)",
+        "Short when VI+ crosses under VI-; cover on VI+ over.",
+        (),
+        "vortex-only",
+        "short",
+    ),
+    Setup("squeeze-band", "Squeeze, no divergence", "squeeze-div without the divergence.", ()),
+    Setup(
+        "squeeze-band-short",
+        "Squeeze, no divergence (short)",
+        "squeeze-div-short without the divergence.",
+        (),
+        "squeeze-band",
+        "short",
+    ),
+    Setup("div-band", "Divergence, no squeeze", "squeeze-div without the squeeze.", ()),
+    Setup(
+        "div-band-short",
+        "Divergence, no squeeze (short)",
+        "squeeze-div-short without the squeeze.",
+        (),
+        "div-band",
+        "short",
+    ),
+)
+
 
 @dataclass(frozen=True)
 class Trade:
@@ -166,6 +253,10 @@ class Readings:
     squeeze: list[bool]
     supertrend: list[float | None]
     supertrend_up: list[bool | None]
+    vi_plus: list[float | None]
+    vi_minus: list[float | None]
+    bear_div: list[bool]  # the latest RSI(14) pivot highs confirmed by this bar diverge from price
+    bull_div: list[bool]
 
 
 def _squeezes(upper, mid, lower) -> list[bool]:
@@ -187,6 +278,9 @@ def readings(
 ) -> Readings:
     upper, mid, lower = indicators.bollinger(closes)
     line, up = indicators.supertrend(highs, lows, closes, SUPERTREND_N, SUPERTREND_MULT)
+    rsi14 = indicators.rsi(closes, 14)
+    vi_plus, vi_minus = indicators.vortex(highs, lows, closes, VORTEX_N)
+    bear, bull = indicators.divergence(highs, lows, rsi14, DIVERGENCE_PIVOT, DIVERGENCE_SPAN)
     return Readings(
         highs,
         lows,
@@ -196,7 +290,7 @@ def readings(
         indicators.ema(closes, 21),
         indicators.ema(closes, 50),
         indicators.adx(highs, lows, closes, 14),
-        indicators.rsi(closes, 14),
+        rsi14,
         indicators.atr(highs, lows, closes, 14),
         indicators.atr(highs, lows, closes, CHANDELIER_N),
         upper,
@@ -205,6 +299,10 @@ def readings(
         _squeezes(upper, mid, lower),
         line,
         up,
+        vi_plus,
+        vi_minus,
+        bear,
+        bull,
     )
 
 
@@ -372,6 +470,87 @@ def _breakout_short_leave(r: Readings, i: int, t: Trade) -> str | None:
     return "supertrend" if r.supertrend_up[i] is True else None
 
 
+# Round 3 (study-only). Supertrend + Vortex holds while the two agree: it enters on the first close
+# they agree after one they did not -- whichever of the two turned second is the trigger, the usual
+# reading of "Supertrend turns green and +VI crosses above -VI" -- and leaves on the first close
+# either disagrees. The squeeze + divergence setup leaves at the middle band, which for a position
+# entered outside the band is a stop that trails it.
+
+
+def agree(r: Readings, i: int, up: bool) -> bool:
+    """Supertrend and the Vortex both on the `up` side at bar `i` (False while either is undefined)."""
+    s, p, m = r.supertrend_up[i], r.vi_plus[i], r.vi_minus[i]
+    if s is None or p is None or m is None:
+        return False
+    return (s is True and p > m) if up else (s is False and p < m)
+
+
+def _observed(r: Readings, i: int) -> bool:
+    return r.supertrend_up[i] is not None and r.vi_plus[i] is not None and r.vi_minus[i] is not None
+
+
+def _st_vortex_enter(r: Readings, i: int, up: bool) -> Trade | None:
+    # The bar before must be readable: a first defined reading is not a turn.
+    if i < 1 or not _observed(r, i - 1):
+        return None
+    return Trade(i) if agree(r, i, up) and not agree(r, i - 1, up) else None
+
+
+def _st_vortex_leave(r: Readings, i: int, t: Trade, up: bool) -> str | None:
+    if r.supertrend_up[i] is (not up):
+        return "supertrend"
+    p, m = r.vi_plus[i], r.vi_minus[i]
+    if p is not None and m is not None and (p < m if up else p > m):
+        return "vortex"
+    return None
+
+
+def _st_only_enter(r: Readings, i: int, up: bool) -> Trade | None:
+    if i < 1:
+        return None
+    return Trade(i) if r.supertrend_up[i] is up and r.supertrend_up[i - 1] is (not up) else None
+
+
+def _st_only_leave(r: Readings, i: int, t: Trade, up: bool) -> str | None:
+    return "supertrend" if r.supertrend_up[i] is (not up) else None
+
+
+def _vortex_only_enter(r: Readings, i: int, up: bool) -> Trade | None:
+    if i < 1 or not _defined(r.vi_plus[i - 1], r.vi_minus[i - 1], r.vi_plus[i], r.vi_minus[i]):
+        return None
+    p0, m0, p, m = r.vi_plus[i - 1], r.vi_minus[i - 1], r.vi_plus[i], r.vi_minus[i]
+    crossed = (p0 <= m0 and p > m) if up else (p0 >= m0 and p < m)
+    return Trade(i) if crossed else None
+
+
+def _vortex_only_leave(r: Readings, i: int, t: Trade, up: bool) -> str | None:
+    p, m = r.vi_plus[i], r.vi_minus[i]
+    return "vortex" if p is not None and m is not None and (p < m if up else p > m) else None
+
+
+def _band_enter(r: Readings, i: int, up: bool, squeeze: bool = True, divergence: bool = True) -> Trade | None:
+    band = r.bb_upper[i] if up else r.bb_lower[i]
+    if band is None or not (r.closes[i] > band if up else r.closes[i] < band):
+        return None
+    if squeeze and not any(r.squeeze[max(0, i - SQUEEZE_RECENT + 1) : i + 1]):
+        return None
+    if divergence and not (r.bull_div[i] if up else r.bear_div[i]):
+        return None
+    return Trade(i)
+
+
+def _band_leave(r: Readings, i: int, t: Trade, up: bool) -> str | None:
+    return "middle band" if (r.closes[i] < r.bb_mid[i] if up else r.closes[i] > r.bb_mid[i]) else None
+
+
+def _sided(enter, leave, up: bool, **kw) -> tuple[Callable, Callable, None]:
+    return (
+        lambda r, i: enter(r, i, up, **kw),
+        lambda r, i, t: leave(r, i, t, up),
+        None,
+    )
+
+
 # setup id -> (entry rule, exit rule, the target an entry sets, if any)
 RULES: dict[str, tuple[Callable, Callable, Callable | None]] = {
     "trend": (_trend_enter, _trend_leave, None),
@@ -382,6 +561,19 @@ RULES: dict[str, tuple[Callable, Callable, Callable | None]] = {
     "pullback-short": (_pullback_short_enter, _pullback_short_leave, _pullback_short_target),
     "reversion-short": (_reversion_short_enter, _reversion_short_leave, None),
     "breakout-short": (_breakout_short_enter, _breakout_short_leave, None),
+    # round 3, study-only (`STUDIED`)
+    "st-vortex": _sided(_st_vortex_enter, _st_vortex_leave, True),
+    "st-vortex-short": _sided(_st_vortex_enter, _st_vortex_leave, False),
+    "squeeze-div": _sided(_band_enter, _band_leave, True),
+    "squeeze-div-short": _sided(_band_enter, _band_leave, False),
+    "st-only": _sided(_st_only_enter, _st_only_leave, True),
+    "st-only-short": _sided(_st_only_enter, _st_only_leave, False),
+    "vortex-only": _sided(_vortex_only_enter, _vortex_only_leave, True),
+    "vortex-only-short": _sided(_vortex_only_enter, _vortex_only_leave, False),
+    "squeeze-band": _sided(_band_enter, _band_leave, True, divergence=False),
+    "squeeze-band-short": _sided(_band_enter, _band_leave, False, divergence=False),
+    "div-band": _sided(_band_enter, _band_leave, True, squeeze=False),
+    "div-band-short": _sided(_band_enter, _band_leave, False, squeeze=False),
 }
 
 

@@ -375,3 +375,80 @@ clear $300M a day, and 191 of them carry the current options-tradable label.
 Results: `round2-stageA-20261004-141804.json` and `round2-stageB-20261004-142845.json` in the
 study folder. The watchlist lists the rule's own trades under "Tested edge"
 ([setups-watchlist.md](setups-watchlist.md)).
+
+## Round 3: two infographic setups, neither worth trading (2026-10-04)
+
+The user brought two setups from Fingrad's indicator-pair infographics. They were declared before
+running (`docs/signal-log-plan.md`, "Round 3") and scored like round 1, on every name over
+2011-01-03 to 2026-10-02 (4,633 names).
+
+- **Supertrend + Vortex** (`st-vortex`) enters on the first close Supertrend(10, 3) and VI+(14) > VI-
+  agree, and exits when either turns.
+- **Squeeze + RSI divergence** (`squeeze-div-short`, as drawn) shorts a close under the lower band
+  within 5 sessions of a squeeze, while the latest RSI(14) pivot highs diverge bearishly, and covers
+  on a close over the middle band. `squeeze-div` is the long mirror.
+
+The rules are study-only (`setups.STUDIED`); the chart does not draw them.
+
+Each setup-side was tested against two baselines from the same 40 draws:
+- **random** keeps every draw, as round 1 did;
+- **matched** keeps only the draws on days the setup's state already held: the two indicators
+  agreeing, or a close already outside the band.
+
+| Setup | Entries | Net R (net %) | Random: baseline · edge (t) | Matched: baseline · edge (t) | Verdict |
+|---|---|---|---|---|---|
+| Supertrend + Vortex | 199,678 | −0.027 (−0.20%) | +0.070 · −0.101 (−5.0) | +0.352 · −0.410 (−13.7) | worse than random, loses money |
+| Supertrend + Vortex (short) | 191,204 | −0.437 (−1.35%) | −0.332 · −0.071 (−5.3) | −0.464 · +0.045 (+3.9) | beats matched shorts, loses money |
+| Squeeze + divergence (long mirror) | 1,700 | −0.073 (−0.38%) | +0.086 · −0.246 (−2.6) | +0.051 · −0.254 (−1.8) | worse than random, loses money |
+| **Squeeze + divergence (short, as drawn)** | 3,949 | **−0.613 (−1.45%)** | −0.398 · −0.040 (−0.6) | −0.652 · +0.203 (+2.5) | beats matched shorts, loses money |
+
+Holm across the eight tests: only the two short "matched" edges are significant. Both lose money,
+so nothing passes. The full results are in `round3-20261004-173057.json` in the study folder.
+
+**What round 3 says:**
+- **Supertrend + Vortex.**
+  - **The Vortex makes it churn.** 161,471 of 199,678 longs (81%) closed because the Vortex turned
+    back, after a median of 9 sessions. Costs (0.205 R a trade) then take more than the gross gain
+    (+0.178 R).
+  - **The moment the two first agree is a poor time to buy.** A random day on which they already
+    agree, held to the same exit, earns +0.35 R. The trigger earns −0.03 R.
+  - **The long side is worse than random in both halves of the names**, and in 2019–26 it nets
+    only +0.007 R. On the $300M names it nets +0.048 R and is still behind both baselines.
+- **Squeeze + divergence.**
+  - **The short loses 0.61 R a trade.** It wins 26% of the time.
+  - **It beats shorting any close under the lower band** (+0.20 R, t 2.5), but both lose heavily.
+    The edge is +0.05 R (t 0.5) on half B, so it isn't stable either.
+  - **The mirror long loses too.**
+  - Bollinger's own rule reads a close outside the band after a squeeze as a continuation signal,
+    exited at the opposite band. The graphic's middle-band exit and RSI divergence are not his.
+
+**The ablations** each drop one of the two conditions. They are described without a baseline, so
+they are not tests.
+
+| Variant | Entries | Net R | Median hold |
+|---|---|---|---|
+| Supertrend + Vortex | 199,678 | −0.027 | 9 |
+| Supertrend alone | 86,167 | +0.266 | 27 |
+| Vortex alone | 304,844 | −0.070 | 5 |
+| Supertrend + Vortex (short) | 191,204 | −0.437 | 7 |
+| Supertrend alone (short) | 86,867 | −0.857 | 23 |
+| Vortex alone (short) | 305,117 | −0.397 | 4 |
+| Squeeze + divergence (short) | 3,949 | −0.613 | 9 |
+| without the divergence | 17,345 | −0.520 | 10 |
+| without the squeeze | 20,460 | −0.564 | 11 |
+| Squeeze + divergence (long) | 1,700 | −0.073 | 11 |
+| without the divergence | 19,720 | −0.111 | 11 |
+| without the squeeze | 14,034 | +0.010 | 14 |
+
+- **Supertrend alone is the best long here** (+0.27 R), and adding the Vortex takes it to −0.03.
+  That figure has no baseline, though, and round 1's random entries held to a Supertrend exit
+  earned about the same (+0.275 R, the breakout's baseline). It reads as 2011–26 rewarding any long
+  held through a trend, not as an entry with an edge.
+- **On the squeeze short, neither condition helps.** Each one removed leaves a smaller loss than
+  the full setup.
+
+**Limits:**
+- **Daily bars.** The graphics state no timeframe, and Supertrend tutorials lean intraday.
+- **The Vortex's authors entered on a stop at the cross bar's high**, not at the next open.
+- **The squeeze setup's matched baseline is thin.** Closes outside the band are rare, so it rests
+  on a median of 3 draws an entry. Its effective sample (828) only just clears the 780 threshold.

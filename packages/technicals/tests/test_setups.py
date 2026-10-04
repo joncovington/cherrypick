@@ -182,6 +182,10 @@ def _hand(n, **series):
         squeeze=[False] * n,
         supertrend=flat,
         supertrend_up=[True] * n,
+        vi_plus=[1.0] * n,
+        vi_minus=[1.0] * n,
+        bear_div=[False] * n,
+        bull_div=[False] * n,
     )
     return setups.Readings(**{**base, **series})
 
