@@ -1098,21 +1098,58 @@ def _calendars_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     return counts
 
 
-# cherrypick-pmcc keys on a text `position_id` and lives ~1-2 weeks with four notifiable moments:
-# it opens, its short may be ROLLED (the roll book's whole point — keyed position_id:roll_count so
-# every roll pings once), its short may settle at a Friday bell (assignment delivers short shares
-# that ride the weekend — the one moment the structure changes without a trade), and it closes.
+# cherrypick-pmcc keys on a text `position_id`. A weekly (control) position lives ~1-2 weeks; a
+# held-long one ~10 months, selling a weekly short against its long. Notifiable moments: it opens; a
+# NOTABLE short trade (an early roll on decay or breach, a deadline or ex-dividend buyback -- the
+# routine Friday roll is not pinged, or a held-long arm would ping every week); a short settling at a
+# bell (keyed per LEG, since a held-long position can settle many); and it closes.
+#
+# Rolls and buybacks are read from `pmcc_management_events`, which carries WHY; the position row only
+# says how many. Both newer keys are seeded from the ledger the first time a pass finds them missing
+# from an existing state, so a deploy never replays the settlements and rolls already on file.
+_PMCC_ROLL_SQL = (
+    "SELECT e.id AS event_id, e.action AS event_action, e.reason AS event_reason, e.detail_json, p.* "
+    "FROM pmcc_management_events e JOIN pmcc_positions p ON p.position_id = e.position_id "
+    "WHERE e.executed = 1 AND ((e.action = 'roll_short' AND e.reason != 'expiry') OR e.action = 'close_short')"
+)
+_PMCC_SETTLED_SQL = (
+    "SELECT l.leg_role, l.strike AS leg_strike, l.expiration AS leg_expiration, l.close_kind, "
+    "l.close_spot, p.* FROM pmcc_legs l JOIN pmcc_positions p ON p.position_id = l.position_id "
+    "WHERE l.status = 'settled' AND l.leg_role != 'long_call'"
+)
+
+
+def _pmcc_rows(conn, sql: str) -> list:
+    """Rows, or none from a ledger that predates the table (an old or hand-built one)."""
+    try:
+        return conn.execute(sql).fetchall()
+    except sqlite3.OperationalError as exc:
+        if str(exc).startswith("no such table"):
+            return []
+        raise
+
+
+def _pmcc_event_id(r) -> str:
+    return f"{r['position_id']}:{r['event_id']}"
+
+
+def _pmcc_leg_id(r) -> str:
+    return f"{r['position_id']}:{r['leg_role']}"
+
+
+def _pmcc_new_keys(conn) -> dict:
+    return {
+        "notified_roll_event_ids": [_pmcc_event_id(r) for r in _pmcc_rows(conn, _PMCC_ROLL_SQL)],
+        "notified_settled_leg_ids": [_pmcc_leg_id(r) for r in _pmcc_rows(conn, _PMCC_SETTLED_SQL)],
+    }
+
+
 def _pmcc_seed(conn) -> dict:
-    rows = conn.execute(
-        "SELECT position_id, roll_count, settlement_spot, status FROM pmcc_positions"
-    ).fetchall()
+    rows = conn.execute("SELECT position_id, status FROM pmcc_positions").fetchall()
     return {
         "notified_entry_ids": [r["position_id"] for r in rows],
-        "notified_roll_ids": [
-            f"{r['position_id']}:{n}" for r in rows for n in range(1, (r["roll_count"] or 0) + 1)
-        ],
-        "notified_settlement_ids": [r["position_id"] for r in rows if r["settlement_spot"] is not None],
         "notified_exit_ids": [r["position_id"] for r in rows if r["status"] == "closed"],
+        **_pmcc_new_keys(conn),
     }
 
 
@@ -1134,33 +1171,62 @@ def _embed_pmcc_entry(r) -> dict:
     return _embed(COLOR_ENTRY, title, details, footer=_arm(r))
 
 
+def _pmcc_detail(r) -> dict:
+    try:
+        return json.loads(r["detail_json"] or "{}")
+    except ValueError:
+        return {}
+
+
 def _fmt_pmcc_roll(r) -> str:
+    d = _pmcc_detail(r)
+    if r["event_action"] == "close_short":
+        return (
+            f"\u23f9 PMCC SHORT BOUGHT BACK — {r['symbol']} {d.get('strike', 0):.0f} "
+            f"({r['event_reason']}); no short until the next sale [{_arm(r)}]"
+        )
     return (
-        f"\U0001f504 PMCC ROLLED — {r['symbol']} short now {r['short_strike']:.0f} "
-        f"({r['short_expiration']}), roll #{r['roll_count']} [{_arm(r)}]"
+        f"\U0001f504 PMCC ROLLED ({r['event_reason']}) — {r['symbol']} {d.get('old_strike', 0):.0f} → "
+        f"{d.get('new_strike', 0):.0f} ({d.get('new_expiration', '?')}), net "
+        f"{d.get('net_roll_credit', 0) or 0:+.2f}/sh [{_arm(r)}]"
     )
 
 
 def _embed_pmcc_roll(r) -> dict:
-    details = f"short now {r['short_strike']:.0f} {r['short_expiration']} · roll #{r['roll_count']}"
-    title = f"ROLLED · {r['symbol']} PMCC short {r['short_strike']:.0f}"[:256]
+    d = _pmcc_detail(r)
+    if r["event_action"] == "close_short":
+        title = f"BOUGHT BACK · {r['symbol']} PMCC short {d.get('strike', 0):.0f}"
+        return _embed(COLOR_COMPLETE, title, f"{r['event_reason']} · no short until the next sale", footer=_arm(r))
+    details = (
+        f"{d.get('old_strike', 0):.0f} {d.get('old_expiration', '?')} → {d.get('new_strike', 0):.0f} "
+        f"{d.get('new_expiration', '?')} · {r['event_reason']} · net {d.get('net_roll_credit', 0) or 0:+.2f}/sh"
+    )
+    title = f"ROLLED · {r['symbol']} PMCC short {d.get('new_strike', 0):.0f}"
     return _embed(COLOR_COMPLETE, title, details, footer=_arm(r))
 
 
+def _pmcc_after_settlement(r) -> str:
+    """What happens to the long after its short settled -- which differs by lifecycle."""
+    if r["status"] == "short_settled":
+        return "the long rides to the next session's disposal"
+    if r["status"] == "open":
+        return "the long stays open; the next short sells next session"
+    return "the position closed"
+
+
 def _fmt_pmcc_settlement(r) -> str:
-    itm = "ITM (shares delivered)" if (r["itm_settlements"] or 0) > 0 else "OTM"
+    itm = {"assigned": "ITM (shares delivered)", "cash_settled": "ITM (cash)"}.get(r["close_kind"], "OTM")
+    spot = r["close_spot"] if r["close_spot"] is not None else r["settlement_spot"]
     return (
-        f"⚖️ PMCC SHORT SETTLED — {r['symbol']} {r['short_strike']:.0f} {itm} "
-        f"at {r['settlement_spot']:.2f}; the long rides to the next session [{_arm(r)}]"
+        f"⚖️ PMCC SHORT SETTLED — {r['symbol']} {r['leg_strike']:.0f} {itm} "
+        f"at {(spot or 0):.2f}; {_pmcc_after_settlement(r)} [{_arm(r)}]"
     )
 
 
 def _embed_pmcc_settlement(r) -> dict:
-    details = (
-        f"settled {r['settlement_spot']:.2f} · {r['itm_settlements'] or 0} ITM · "
-        f"long open to {r['long_expiration']}"
-    )
-    title = f"SHORT SETTLED · {r['symbol']} PMCC {r['short_strike']:.0f}"[:256]
+    spot = r["close_spot"] if r["close_spot"] is not None else r["settlement_spot"]
+    details = f"settled {(spot or 0):.2f} · {r['close_kind']} · {_pmcc_after_settlement(r)}"
+    title = f"SHORT SETTLED · {r['symbol']} PMCC {r['leg_strike']:.0f}"[:256]
     return _embed(COLOR_COMPLETE, title, details, footer=_arm(r))
 
 
@@ -1185,6 +1251,9 @@ def _embed_pmcc_exit(r) -> dict:
 
 def _pmcc_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     counts = {}
+    # Keys introduced after a module's state was first seeded start from the ledger as it stands.
+    for key, ids in _pmcc_new_keys(conn).items():
+        st.setdefault(key, ids)
     stages = [
         (
             "notified_entry_ids",
@@ -1196,22 +1265,22 @@ def _pmcc_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
             lambda r: r["position_id"],
         ),
         (
-            "notified_roll_ids",
+            "notified_roll_event_ids",
             "roll",
             "Short rolled",
             _fmt_pmcc_roll,
             _embed_pmcc_roll,
-            "SELECT * FROM pmcc_positions WHERE roll_count > 0",
-            lambda r: f"{r['position_id']}:{r['roll_count']}",
+            _PMCC_ROLL_SQL,
+            _pmcc_event_id,
         ),
         (
-            "notified_settlement_ids",
+            "notified_settled_leg_ids",
             "settlement",
             "Short settled",
             _fmt_pmcc_settlement,
             _embed_pmcc_settlement,
-            "SELECT * FROM pmcc_positions WHERE settlement_spot IS NOT NULL",
-            lambda r: r["position_id"],
+            _PMCC_SETTLED_SQL,
+            _pmcc_leg_id,
         ),
         (
             "notified_exit_ids",
@@ -1225,7 +1294,7 @@ def _pmcc_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     ]
     for key, event, title, fmt, embed_fn, query, notif_id in stages:
         notified = set(st.get(key, []))
-        rows = [r for r in conn.execute(query).fetchall() if notif_id(r) not in notified]
+        rows = [r for r in _pmcc_rows(conn, query) if notif_id(r) not in notified]
         for r in rows:
             notifier.notify("INFO", f"trade.{name}.{event}.{notif_id(r)}", title, fmt(r), embed=embed_fn(r))
             notified.add(notif_id(r))
