@@ -161,13 +161,17 @@ def excursions(conn, era: str | None = CURRENT_ERA) -> dict:
         if p["net_debit"] is None:
             continue
         legs: dict[float, dict] = {}
+        # The short's role is `short_call_<n>` (engine.plan_entry, db.next_short_role). This
+        # filtered on a bare `short_call` -- a role nothing writes -- until 2026-10-04, so it
+        # returned no position at all on the real ledger while its test seeded the same typo.
         for row in conn.execute(
             "SELECT leg_role, marked_at, mid FROM pmcc_marks WHERE position_id = ? "
-            "AND leg_role IN ('long_call', 'short_call') AND usable = 1 AND mid IS NOT NULL "
+            "AND leg_role IS NOT NULL AND usable = 1 AND mid IS NOT NULL "
             "ORDER BY marked_at",
             (p["position_id"],),
         ):
-            legs.setdefault(row["marked_at"], {})[row["leg_role"]] = row["mid"]
+            role = "long_call" if row["leg_role"] == "long_call" else "short_call"
+            legs.setdefault(row["marked_at"], {})[role] = row["mid"]
         mult = 100 * (p["quantity"] or 1)
         pnl_series = [
             round((tick["long_call"] - tick["short_call"] - p["net_debit"]) * mult, 2)
