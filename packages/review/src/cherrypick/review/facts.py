@@ -78,11 +78,29 @@ MODULES = {
 
 def _rows(conn, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
     """Query, or [] if the table doesn't exist in this module's ledger. A module that has never
-    written a table is not an error -- it is a module that has not done that thing yet."""
+    written a table is not an error -- it is a module that has not done that thing yet.
+
+    ONLY a missing table. This swallowed every `sqlite3.Error` until 2026-10-04, when four expected
+    readers (calendars, pmcc, bwb, curve) were found still filtering on `book` eleven days after the
+    2026-09-23 rename to `arm`: each raised "no such column", each was read as "no such table", and
+    each reported nothing every session without a word. A column that moved is a bug, and
+    `_guarded` puts it in the fact set where it can be seen."""
     try:
         return conn.execute(sql, params).fetchall()
-    except sqlite3.Error:
-        return []
+    except sqlite3.OperationalError as exc:
+        if str(exc).startswith("no such table"):
+            return []
+        raise
+
+
+def _guarded(reader, conn, session: str) -> dict:
+    """A per-module reader's result, or `{"error": ...}` when it raised. One module's schema drift
+    must not take the whole session's fact set down with it, and must not read as an empty result
+    either -- the error is the fact."""
+    try:
+        return reader(conn, session)
+    except sqlite3.Error as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
 
 
 def _scalar(conn, sql: str, params: tuple = ()):
@@ -370,11 +388,11 @@ def _earnings_expected(conn, session: str) -> dict:
 def _calendars_expected(conn, session: str) -> dict:
     """calendars' expectation is the expected move measured at entry; the observation is the move
     actually realized to the front expiration, which lands on the session the shorts settle. Read
-    off the path book only — every book shares the same entry, so counting three books would
+    off the path arm only — every arm shares the same entry, so counting three arms would
     triple-weight one measurement."""
     rows = _rows(
         conn,
-        "SELECT entry_em, entry_spot, settlement_spot FROM dc_positions WHERE book = 'path' "
+        "SELECT entry_em, entry_spot, settlement_spot FROM dc_positions WHERE arm = 'path' "
         "AND front_expiration = ? AND settlement_spot IS NOT NULL AND side = 'put'",
         (session,),
     )
@@ -394,12 +412,12 @@ def _calendars_expected(conn, session: str) -> dict:
 def _pmcc_expected(conn, session: str) -> dict:
     """pmcc's expectation is the weekly time-value yield priced at entry; the observation is the
     realised net return on capital per week held, which lands when positions close. Read off the
-    control book only — control and roll share fills by construction, so counting both would
-    double-weight one measurement, and keltner's entries are its own timing experiment."""
+    control arm only: it is the one arm whose cycle is a week, so a weekly yield measured at entry
+    has a weekly realisation to be compared with."""
     rows = _rows(
         conn,
         "SELECT entry_weekly_yield_pct, gross_pnl, fees, net_debit, quantity, entry_session "
-        "FROM pmcc_positions WHERE book = 'control' AND status = 'closed' AND closed_session = ?",
+        "FROM pmcc_positions WHERE arm = 'control' AND status = 'closed' AND closed_session = ?",
         (session,),
     )
     expected, observed = [], []
@@ -430,15 +448,15 @@ def _bwb_expected(conn, session: str) -> dict:
     The fly is entered for a NET CREDIT with a zero floor by design and held to expiry, so the
     credit is the whole thesis: if the structure works, the realised net should land at or near it.
 
-    Read off the `control` book only, for the reason `_pmcc_expected` gives: all four books trade the
-    IDENTICAL base structure and differ only in whether an add-on fires, so counting them would
-    weight one entry four times. The add-on books' divergence is the experiment, and it is measured
-    by comparing books, not by pooling them into one expectation.
+    Read off the `control` arm only: all four arms trade the IDENTICAL base structure and differ only
+    in whether an add-on fires, so counting them would weight one entry four times. The add-on arms'
+    divergence is the experiment, and it is measured by comparing arms, not by pooling them into one
+    expectation.
     """
     rows = _rows(
         conn,
         "SELECT entry_credit, quantity, gross_pnl, fees FROM bwb_positions"
-        " WHERE book = 'control' AND status = 'closed' AND closed_session = ?",
+        " WHERE arm = 'control' AND status = 'closed' AND closed_session = ?",
         (session,),
     )
     expected, observed = [], []
@@ -466,7 +484,7 @@ def _curve_expected(conn, session: str) -> dict:
     rows = _rows(
         conn,
         "SELECT entry_credit, quantity, gross_pnl, fees FROM curve_positions"
-        " WHERE book = 'control' AND status = 'closed' AND closed_session = ?",
+        " WHERE arm = 'control' AND status = 'closed' AND closed_session = ?",
         (session,),
     )
     expected, observed = [], []
@@ -702,8 +720,8 @@ def build_module_facts(module: str, session: str, db_path=None) -> dict:
             carried = [r for r in open_reader(conn) if r.get("session") == session]
         except sqlite3.Error:
             carried = []
-        health = HEALTH_READERS[module](conn, session)
-        expected = EXPECTED_READERS[module](conn, session)
+        health = _guarded(HEALTH_READERS[module], conn, session)
+        expected = _guarded(EXPECTED_READERS[module], conn, session)
         breaks = _measurement_breaks(conn)
         # Unbounded read: the suspicion is about how this session compares with the recent past,
         # so it needs the past. Cheap at these table sizes (MEIC's is the largest at ~2.6k rows).
