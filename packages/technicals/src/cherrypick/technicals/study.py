@@ -460,7 +460,7 @@ def describe(rows: list[dict]) -> dict:
         return {"entries": 0}
     r = [x["r"] for x in rows]
     wins, losses = [v for v in r if v > 0], [v for v in r if v <= 0]
-    base = [x["base"] for x in rows if x["base"] is not None]
+    base = [x["base"] for x in rows if x.get("base") is not None]
     return {
         "entries": len(rows),
         "expectancy_r": mean(r),

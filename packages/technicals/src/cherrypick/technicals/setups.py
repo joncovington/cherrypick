@@ -385,16 +385,33 @@ RULES: dict[str, tuple[Callable, Callable, Callable | None]] = {
 }
 
 
-def run(setup_id: str, r: Readings) -> list[Trade]:
-    enter, leave, _ = RULES[setup_id]
-    return _walk(len(r.closes), lambda i: enter(r, i), lambda i, t: leave(r, i, t))
+def run(
+    setup_id: str,
+    r: Readings,
+    allow: Callable[[int], bool] | None = None,
+    leave: Callable[[Readings, int, Trade], str | None] | None = None,
+) -> list[Trade]:
+    """The setup's positions. `allow`, if given, must also hold for an entry (a filter applied at
+    entry, so a filtered-out signal never blocks a later one); `leave`, if given, replaces the
+    setup's own exit rule. With neither, exactly the setup as declared."""
+    enter, own_leave, _ = RULES[setup_id]
+    out = leave or own_leave
+    return _walk(
+        len(r.closes),
+        (lambda i: enter(r, i) if allow(i) else None) if allow else (lambda i: enter(r, i)),
+        lambda i, t: out(r, i, t),
+    )
 
 
-def exit_from(setup_id: str, r: Readings, i: int) -> Trade:
-    """A position opened at bar `i` and held to the setup's own exit rule, whether or not the setup
-    would have entered there -- the random baseline's trade. The entry carries the target the setup
-    would set (the pullbacks'), and the exit is checked from the next bar on, as the walk does."""
-    _, leave, target = RULES[setup_id]
+def exit_from(
+    setup_id: str, r: Readings, i: int, leave: Callable[[Readings, int, Trade], str | None] | None = None
+) -> Trade:
+    """A position opened at bar `i` and held to the setup's own exit rule (or `leave`, replacing it),
+    whether or not the setup would have entered there -- the random baseline's trade. The entry
+    carries the target the setup would set (the pullbacks'), and the exit is checked from the next
+    bar on, as the walk does."""
+    _, own_leave, target = RULES[setup_id]
+    leave = leave or own_leave
     t = Trade(i, target=target(r, i) if target else None)
     for j in range(i + 1, len(r.closes)):
         reason = leave(r, j, t)
