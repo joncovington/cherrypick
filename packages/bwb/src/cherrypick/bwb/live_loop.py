@@ -44,6 +44,7 @@ from cherrypick.core import home as _home
 from cherrypick.core import live as _live
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
+from cherrypick.core import redact as _redact
 from cherrypick.core import settlement as _settlement
 
 from cherrypick.bwb import book as bookmod
@@ -104,7 +105,9 @@ def log_file():
 
 def _log(message: str) -> None:
     _logs.configure(_logger, log_file())
-    _logger.info(message)
+    # Masked at the sink, the flies rule (2026-09-25): order-placement lines log the broker's
+    # response whole, and it carries the full account number. bwb wrote it raw until 2026-10-04.
+    _logger.info(_redact.redact_accounts(message))
 
 
 def _data_dir() -> str:
