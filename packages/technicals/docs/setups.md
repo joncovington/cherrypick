@@ -282,3 +282,65 @@ The short rows, and both breakout rows after their Supertrend condition, were co
   should be traded.
 - The rules are textbook, not tuned. If they are ever tuned, do it on a declared sample and say
   which, as `docs/fitting-record.md` does for the vendor fits.
+
+## Historical evidence (2026-10-04, analysis plan v2)
+
+The historical study (`study run`, plan in `docs/signal-log-plan.md`) scored every setup over
+2011-01-03 to 2026-10-02. The universe was chosen as of each day: price ≥ $5 and 50-session median
+dollar volume ≥ $20M, which is 4,633 names over the period and 2,663 on the last day.
+
+- **Method:** fills at the next open, R per ATR(14) net of costs (Corwin–Schultz spread on every
+  fill, and 1% a year borrow on shorts), and a matched random baseline of 20 same-date and 20
+  same-name entries held to the setup's own exit.
+- **The holdout:** both pullbacks and both breakouts count only before 2023 or on names outside the
+  527 they were tuned on.
+- **Exclusions:** 1,590 positions were left out for suspected unrecorded corporate actions.
+- **The sample:** 284,770 counted entries against 11.4 million baseline draws. Every setup-side
+  cleared its minimum sample.
+
+| Setup | Entries | Net R | Gross R | Cost R | Hit rate | Payoff | Median hold | Baseline R | Edge R (t) | Verdict |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Trend following | 31,256 | +0.045 | +0.253 | 0.208 | 32.6% | 2.17 | 10 | +0.104 | −0.068 (−1.1) | no edge |
+| Pullback | 56,634 | −0.058 | +0.152 | 0.209 | 59.4% | 0.64 | 8 | +0.095 | −0.153 (−5.2) | no edge (worse than random) |
+| Mean reversion | 47,059 | +0.015 | +0.181 | 0.166 | 57.5% | 0.75 | 10 | −0.075 | +0.050 (+1.8) | no edge after correction |
+| Breakout | 4,328 | +0.138 | +0.349 | 0.212 | 36.9% | 1.86 | 25 | +0.258 | +0.108 (+0.7) | no edge |
+| Trend following (short) | 30,135 | −0.416 | −0.191 | 0.226 | 26.3% | 1.72 | 9 | −0.355 | −0.015 (−0.6) | no edge |
+| Pullback (short) | 40,227 | −0.363 | −0.133 | 0.230 | 50.5% | 0.69 | 9 | −0.415 | **+0.086 (+3.1)** | **edge over baseline** |
+| Mean reversion (short) | 70,838 | −0.369 | −0.131 | 0.239 | 49.3% | 0.72 | 10 | −0.268 | −0.167 (−7.0) | no edge (worse than random) |
+| Breakdown (short) | 4,293 | −0.867 | −0.591 | 0.276 | 27.8% | 1.44 | 24 | −0.629 | −0.144 (−1.6) | no edge |
+
+The edge is measured in calendar time (one figure per session, errors clustered by date), against a
+Holm-corrected one-sided test at a family-wise 5%. Only the short pullback passes.
+
+**What it says:**
+
+- **No setup is profitable after costs and better than random entry.** The one that beats its
+  baseline, the short pullback, still loses 0.36 R a trade in absolute terms. Shorting through
+  2011–2026 lost money, and this setup only loses less than random shorts. Its edge holds in both
+  halves (+0.047 R in 2011–18, +0.124 R in 2019–26) and without the Rule 201 entries.
+- **Two setups are reliably worse than random:**
+  - **The long pullback**, at −0.15 R a trade and worse after 2019 (−0.28 R, t −6.1). It wins 59% of
+    the time, but its winners are small (payoff 0.64), and it was judged in its holdout.
+  - **Fading strength (the short mean reversion)**, at −0.17 R in both halves: buying weakness and
+    selling strength runs against momentum.
+- **Mean reversion (long) is the only promising long.** It shows +0.05 R against random, stronger
+  after 2019 (+0.089, t 2.3) and among names trading $300M or more a day (+0.093, t 1.9, net
+  +0.215 R). That isn't significant once the eight tests are allowed for. It is the first
+  candidate for the filter and exit phases, as a declared new hypothesis, not a re-reading of
+  this one.
+- **Trend following flipped between the halves:** +0.19 R against random in 2011–18 (t 2.4), and
+  −0.32 R in 2019–26 (t −3.5). Over the whole period it has no edge.
+- **Costs are a large share of every trade** (0.17–0.28 R). The Corwin–Schultz estimate is noisy
+  and likely overstates spreads on the most liquid names. That affects the absolute net figures,
+  but barely affects the comparison with the baseline, which pays the same costs.
+
+**Limits:**
+- The study uses stock fills at the open, not options.
+- Delisting returns are missing.
+- Dividends before 2023 come from Dolt alone.
+- Unrecorded 4:3 and 5:4 splits on quiet days are not caught.
+- The "options-tradable today" view uses today's list on past dates (hindsight), and shows nothing
+  different.
+
+The full results, including every sub-period and view, are in
+`~/.cherrypick/data/technicals/study/history-results-20261004-074339.json`.

@@ -1,5 +1,16 @@
 # The chart setups' evidence: a historical study now, and a live signal log after it
 
+***Phase 1 built 2026-10-04** on branch `technicals-history-study`: `history.py` (the store),
+`universe.py`, `study.py` and `tuning_names.py`, with the `history land|check` and `study run`
+commands. Its six guards were each shown to fail.*
+
+***First results (2026-10-04, `packages/technicals/docs/setups.md`, "Historical evidence"):***
+- *No setup is profitable after costs and better than random entry.*
+- *Only the short pullback beats its baseline, and it still loses 0.36 R a trade.*
+- *The long pullback and the short mean reversion are reliably worse than random.*
+- *The long mean reversion is the one promising long, but it is not significant once eight tests
+  are allowed for.*
+
 *Drafted 2026-10-04; **revised the same day**, before anything was built or observed. The first
 draft took its evidence only from signals recorded live from now on, which put the verdict on the
 commoner setups one to four years away and on the breakouts decades away. The user's verdict:
@@ -120,6 +131,34 @@ A research store at `~/.cherrypick/data/technicals/history.db`, landed from the 
 - **Dividends** before the tastytrade set rely on Dolt alone. Dolt's dividends matched the vendor's
   adjusted prices on only 86.8% of prices when checked. That barely moves a 25-day return, but the
   study reports it.
+
+**What the checks found (2026-10-04):**
+
+- **The landing:** 29,229,043 bars (2011-01-03 to 2026-10-02), 4,105 splits, 499,338 dividends and
+  24,278 listed names, in 15½ minutes.
+- **The overlap matches exactly:** all 1,562,716 prices on the 527 names shared with `eod.db` agree
+  to the cent.
+- **Dolt's split table is badly incomplete before 2014.**
+  - 1,426 close-to-close moves beyond 40% with no recorded split fall on days a name was in the
+    universe. Most are real: earnings, biotech results, March 2020, the 2023 banks.
+  - But 254 open at a clean split ratio. They are unrecorded splits (KO, NKE, GILD, TJX, ROST,
+    LULU, FAST, CL 2:1; BEN, IBB, ACGL 3:1; DUK 1-for-3), and spin-offs priced like one (ABT and
+    AbbVie, MDLZ and Kraft).
+  - Left in, a missing 3:1 split reads as a 67% crash: a fake loss on a long held through it, a
+    fake gain on a short, and weeks of false signals after it. The nightly landing's guard only
+    restarts a series at a 3× jump, so a 3:1 split falls just inside it.
+- **How they're handled:** `history.suspected_actions` marks an unexplained jump whose OPENING gap
+  sits at a clean ratio.
+  - The tolerance is 3% for 2, 3, 4, 5, 10 and 20 and their reciprocals, and 1% for 3:2, 4:3 and
+    5:4.
+  - At 3% for all of them it flagged 4 of 8 known genuine moves; at these tolerances it catches 11
+    of 12 known unrecorded splits and flags 1 of 8 genuine moves.
+  - **The study leaves out any position, real or baseline draw, held through one, and any entry in
+    the 120 sessions after one.** The same rule applies to both, so the comparison stays fair.
+  - It excludes rather than repairs. The cost is about 0.5% of name-days, and the counts are
+    reported per setup.
+  - A 4:3 or 5:4 split on an otherwise quiet day moves the price less than 40%, so it is not caught.
+    Such splits are rare, but it is a known limit.
 
 ### The universe, chosen each day
 
@@ -420,6 +459,13 @@ looked at under v2.
 - **Spread:** the Corwin & Schultz (2012) estimator on our own bars.
 - **Shorts:** a borrow rate declared before the first scoring run (general collateral is cheap,
   specials are not; D'Avolio 2002), and a Rule 201 flag after a 10% drop.
+- **Declared 2026-10-04, before the first scoring run** (`study.py`):
+  - the spread is the mean daily Corwin–Schultz estimate over the 21 sessions up to the day before
+    each fill, and half of it is paid on every fill;
+  - borrow is 1.0% a year on shorts, conservative for names this liquid (D'Avolio's general
+    collateral was about 0.17%);
+  - a Rule 201 flag marks a short whose signal day's low was 10% or more under the prior close, and
+    each short setup-side is also reported without them.
 - Costs appear as separate columns under the suite's money layout. High-turnover signals rarely
   survive costs (Novy-Marx & Velikov 2016).
 

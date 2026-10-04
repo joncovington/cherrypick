@@ -55,10 +55,23 @@ def _pct(v) -> float | None:
     return None if v is None else round(float(v) * 100.0, 2)
 
 
+EXPIRY_HORIZON_DAYS = 35  # weeklies list four or more expiries in this many days; monthlies one or two
+
+
+def expiries_within(m, day, days: int = EXPIRY_HORIZON_DAYS) -> int | None:
+    """How many listed expiries fall in the next `days` -- the weekly-options test of the
+    options-tradable filter (docs/signal-log-plan.md). None when the row carries no expiry list."""
+    listed = m.option_expiration_implied_volatilities
+    if listed is None:
+        return None
+    return len({e.expiration_date for e in listed if 0 < (e.expiration_date - day).days <= days})
+
+
 def reading(m) -> tuple[str, dict]:
     """(session date, the fields worth keeping) for one market-metrics row."""
     stamp = m.implied_volatility_updated_at or m.updated_at or datetime.now(UTC)
-    day = stamp.astimezone(NY).date().isoformat()
+    on = stamp.astimezone(NY).date()
+    day = on.isoformat()
     return day, {
         "iv_rank": _pct(m.implied_volatility_index_rank),  # tastytrade's headline rank
         "iv_rank_source": m.implied_volatility_index_rank_source,
@@ -69,6 +82,9 @@ def reading(m) -> tuple[str, dict]:
         "hv_30": None if m.historical_volatility_30_day is None else float(m.historical_volatility_30_day),
         "liquidity_rating": m.liquidity_rating,
         "liquidity_rank": None if m.liquidity_rank is None else float(m.liquidity_rank),
+        # Arrives in the same response and was discarded until 2026-10-04: with the rating, the
+        # options-tradable label, recorded nightly so it builds up as point-in-time history.
+        "expiries_35d": expiries_within(m, on),
         "updated_at": stamp.isoformat(),
     }
 
@@ -98,6 +114,10 @@ async def fetch(session, todo: list[str], doc: dict) -> dict:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--limit", type=int, help="fetch at most this many symbols this run")
+    ap.add_argument(
+        "--symbols-file",
+        help="also fetch the symbols listed in this file, one a line (e.g. the study's liquid universe)",
+    )
     args = ap.parse_args(argv)
 
     store = CredentialStore(SHARED_SERVICE)
@@ -106,6 +126,11 @@ def main(argv=None) -> int:
         return 1
     doc = load()
     todo = symbols.all_symbols()
+    if args.symbols_file:
+        from pathlib import Path
+
+        extra = [s.strip().upper() for s in Path(args.symbols_file).read_text(encoding="utf-8").split()]
+        todo = list(dict.fromkeys([*todo, *(s for s in extra if s)]))
     if args.limit is not None:
         todo = todo[: args.limit]
     started = time.monotonic()

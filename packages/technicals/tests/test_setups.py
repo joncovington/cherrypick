@@ -345,6 +345,41 @@ def test_a_breakdown_needs_a_recent_squeeze_and_volume_and_covers_when_supertren
     )
 
 
+def test_exit_from_reproduces_every_exit_the_walk_makes():
+    """The historical study's baseline holds random entries to each setup's exit through
+    `exit_from`. It is only a fair baseline if, given the setup's own entries, it lands on exactly
+    the exits, reasons and targets the walk does."""
+    for r in (_readings(), _falling()):
+        for setup_id in setups.RUN:
+            trades = setups.run(setup_id, r)
+            assert trades == setups.RUN[setup_id](r)
+            for t in trades:
+                assert setups.exit_from(setup_id, r, t.entry) == t, (setup_id, t)
+
+
+def test_exit_from_never_exits_on_the_entry_bar_itself():
+    """A pullback whose entry bar spikes through its own target (high 111 over a target of 110) but
+    closes at 100.5: the walk checks the exit from the next bar, where the Chandelier stop takes it.
+    An `exit_from` that checked the entry bar would book a same-bar target instead."""
+    n = 30
+    highs, lows, closes = [101.0] * n, [99.5] * n, [100.0] * n
+    highs[10] = 110.0
+    highs[25], lows[25], closes[25] = 111.0, 98.0, 100.5
+    r = _hand(
+        n,
+        highs=highs,
+        lows=lows,
+        closes=closes,
+        ema9=[102.0] * n,
+        ema21=[99.0] * n,
+        ema50=[95.0] * n,
+        rsi14=[60.0] * 24 + [45.0] + [60.0] * 5,
+    )
+    walked = setups.pullback(r)
+    assert walked == [setups.Trade(25, 26, "stop", 110.0)]
+    assert setups.exit_from("pullback", r, 25) == walked[0]
+
+
 def test_missing_volume_never_confirms_a_breakout():
     vols = [100.0] * 60
     vols[-1] = 1000.0

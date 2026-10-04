@@ -23,6 +23,18 @@ def eod_db() -> Path:
     return data_dir() / "eod.db"
 
 
+def history_db() -> Path:
+    """The historical study's research store (docs/signal-log-plan.md, Phase 1): Dolt's whole daily
+    history in the same schema as `eod.db`, kept apart so the nightly store neither slows nor grows.
+    Rebuildable from Dolt at any time."""
+    return data_dir() / "history.db"
+
+
+def study_dir() -> Path:
+    """The historical study's results, one versioned file per run."""
+    return data_dir() / "study"
+
+
 def market_report_dir() -> Path:
     """Where scripts/build_stock_universe.py and the vendor collector write. Read-only here."""
     return _home.data_dir("market-report")

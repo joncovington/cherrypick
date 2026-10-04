@@ -12,7 +12,8 @@ way the vendor adjusts them.** The store (Phase 2) and the stage, rotation and c
 **Credential-free and network-free.** Reads the LOCAL `dolt sql-server` (the `stocks` and `options`
 clones, pulled at 05:30 by `scripts/refresh_dolt_data.py`, outside every package) and, read-only,
 the market-report store the scripts write (universe candidates, vendor chart captures). Writes only
-`~/.cherrypick/data/technicals/eod.db` and its report/chart files.
+`~/.cherrypick/data/technicals/`: `eod.db` and its report/chart files, and the historical study's
+`history.db` and `study/` results.
 
 ## The store holds raw; adjusted is computed
 
@@ -174,6 +175,31 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   cannot disagree with them. One row per setup position, long or short, open or traded in the last
   20 sessions, with our 1M/6M trend and five-step label, `trend_agrees`, RS (our rank -- a
   whole-market decile, NOT vs SPY), 1M vs SPY in points, and our own nearest levels.
+- **The historical study** (`history.py`, `universe.py`, `study.py`, `tuning_names.py`; plan and
+  reasons in [docs/signal-log-plan.md](../../docs/signal-log-plan.md), Phase 1, analysis plan v2).
+  - **`history.db`** is Dolt's whole daily history from 2011, every name, in `eod.db`'s schema. It
+    is a research store, rebuildable from Dolt and read by nothing nightly, so `store.adjusted_bars`
+    reads it unchanged.
+  - **`study run`** scores the eight setups over a universe chosen as of each day from the session
+    before (price ≥ $5, 50-session median dollar volume ≥ $20M, on RAW bars). Fills are at the next
+    open. The baseline is a seeded random one, 20 same-date and 20 same-name entries held to the
+    setup's own exit through `setups.exit_from`. The test is calendar-time and one-sided, with Holm
+    across the eight. Costs (Corwin–Schultz spread, 1%/yr borrow on shorts) were declared before the
+    first run.
+  - **The four tuned setup-sides** (both pullbacks, both breakouts) count only before `TUNING_END`,
+    or on names outside the frozen `tuning_names.NAMES`.
+  - Results go to `study/history-results-<stamp>.json`.
+  - **Dolt's split table misses many splits before 2014** (KO, NKE, GILD, TJX, IBB, BEN, DUK...;
+    254 suspects on in-universe days). `history.suspected_actions` flags an unexplained 40%+ jump
+    whose opening gap is a clean split ratio. The study excludes positions and draws held through
+    one, and entries in the 120 sessions after. Never feed `history.db` to anything that assumes
+    Dolt's splits are complete.
+  - The `peaks` table (each name's largest dollar-volume day) lets the study skip names that could
+    never qualify. Never find it with `GROUP BY` on `bars`: that walks the index and fetches 29M rows
+    one by one.
+  - **`setups.RULES` / `run` / `exit_from`** are the one implementation of each setup's entry, exit
+    and target; `exit_from` must reproduce every exit the walk makes (a test, and an audit on every
+    chart name).
 - **Report** (`report.py`): one session's stages by sector, 10-session breadth, rotation, scan
   signals, RS leaders and (v2) largest movers with volume against the 50-session average, into
   `data/technicals/report-<session>.json`. **Nothing downstream recomputes them.**
@@ -208,4 +234,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-level-selection` | Where vendor levels sit among grid points, each measure against chance. |
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank (stored whole-market cut-offs) vs the vendor's. |
 | `python -m cherrypick.technicals score-signals` | Our six scan rules vs every saved scan list. |
+| `python -m cherrypick.technicals history land` | Land Dolt's whole daily history (2011 on, every name) into `history.db`. Incremental. |
+| `python -m cherrypick.technicals history check` | `history.db` against `eod.db` on the overlap, to the cent, and price jumps no split explains. |
+| `python -m cherrypick.technicals study run [--workers N]` | The historical study under analysis plan v2; writes `study/history-results-<stamp>.json`. |
 | `python -m cherrypick.technicals report [--session D]` | Write one session's report readings and per-name chart files. |
