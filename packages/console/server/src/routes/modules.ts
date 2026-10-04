@@ -289,7 +289,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     if (session === false) return reply.code(400).send({ error: "session must be YYYY-MM-DD" });
     return readRegimeCuts(config, "meic", session);
   });
-  // PMCC-99. No `mode` on any of these: the module has no live loop and no live store, so a mode
+  // PMCC. No `mode` on any of these: the module has no live loop and no live store, so a mode
   // parameter could only ever name a book that does not exist.
   app.get("/api/pmcc", async () => readPmcc(config));
   app.get("/api/pmcc/meta", async () => readPmccMeta(config));

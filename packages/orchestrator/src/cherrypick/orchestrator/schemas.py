@@ -11,5 +11,18 @@ without extending a surface fails CI instead of vanishing silently from that sur
 
 from __future__ import annotations
 
-# One entry per paper-DB schema in the suite. Keys of every surface registry must match.
-SCHEMAS = ("meic_ic", "earnings", "fly_book", "dc_week", "pmcc_99", "curve_vx", "bwb_132")
+from cherrypick.core.ledgers import SCHEMA_ALIASES, canonical_schema
+
+# One entry per paper-DB schema in the suite. Keys of every surface registry must match. Ids only:
+# a retired spelling (`pmcc_99`) is resolved by `canonical` and never keys a registry.
+SCHEMAS = ("meic_ic", "earnings", "fly_book", "dc_week", "pmcc", "curve_vx", "bwb_132")
+
+
+def canonical(schema: str | None) -> str | None:
+    """The configured `paper.trade_schema` as the id the registries are keyed by. Every dispatch
+    read of `trade_schema` goes through this (tests/test_schema_registry.py scans for it), so a
+    config written before a rename keeps reading -- `pmcc_99`, every install before 2026-10-04."""
+    return canonical_schema(schema)
+
+
+__all__ = ["SCHEMAS", "SCHEMA_ALIASES", "canonical"]

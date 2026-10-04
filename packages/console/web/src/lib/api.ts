@@ -453,7 +453,7 @@ export function useFliesMeta(mode: TradingMode, era: string | null = null) {
 }
 
 /**
- * PMCC-99. No mode argument anywhere: the module is paper-only by construction, not by preference.
+ * PMCC. No mode argument anywhere: the module is paper-only by construction, not by preference.
  */
 export function usePmcc() {
   return useQuery<PmccPayload>({

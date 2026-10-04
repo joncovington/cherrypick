@@ -244,10 +244,10 @@ describe("a page the suite has turned off", () => {
 
   it("renders the turned-off card, not the module and not a 404", () => {
     const html = text(renderWith("/pmcc", base));
-    expect(html).toContain("PMCC-99 is turned off");
+    expect(html).toContain("PMCC is turned off");
     expect(html).toContain("switched off in the suite config");
     expect(html).not.toContain("Page not found");
-    expect(html).not.toContain("PMCC-99 / session");
+    expect(html).not.toContain("PMCC / session");
     expect(renderWith("/pmcc", base)).toContain('href="/config"');
   });
 
@@ -309,7 +309,7 @@ describe("a page the suite has turned off", () => {
 
   it("a failed features read shows everything (fail open)", () => {
     const html = text(renderWith("/pmcc", { ok: false, error: "bridge down" }));
-    expect(html).toContain("PMCC-99 / session");
+    expect(html).toContain("PMCC / session");
     expect(html).not.toContain("turned off");
   });
 });

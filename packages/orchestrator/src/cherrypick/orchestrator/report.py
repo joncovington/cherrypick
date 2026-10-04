@@ -33,6 +33,7 @@ from cherrypick.core import ledgers as _ledgers
 from cherrypick.core.profiles import group_by_tag
 
 from . import config as cfgmod
+from . import schemas
 
 # Untagged sentinels match each module's own schema convention (see cherrypick.core.profiles.attribution_tag).
 # The per-schema readers moved to cherrypick.core.ledgers so the review package reads modules
@@ -137,7 +138,7 @@ def run(
 
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         paper = mcfg.get("paper", {})
-        schema = paper.get("trade_schema", "meic_ic")
+        schema = schemas.canonical(paper.get("trade_schema", "meic_ic"))
         reader = _READERS.get(schema)
         db_path = cfgmod.paper_db_path(mcfg, name)
 
@@ -248,7 +249,7 @@ def live_run(cfg: dict | None = None, session: str | None = None) -> dict:
         if db_path is None:
             modules_out[name] = {"ok": False, "live": True, "reason": "no live_db configured"}
             continue
-        schema = (mcfg.get("paper", {}) or {}).get("trade_schema", "meic_ic")
+        schema = schemas.canonical((mcfg.get("paper", {}) or {}).get("trade_schema", "meic_ic"))
         reader = _READERS.get(schema)
         if reader is None:
             modules_out[name] = {"ok": False, "live": True, "reason": f"unknown schema {schema!r}"}
@@ -302,7 +303,7 @@ _LATEST_SQL = {
     "earnings": "SELECT MAX(closed_at) FROM trades WHERE closed_at IS NOT NULL",
     "fly_book": "SELECT MAX(trade_date) FROM fly_positions WHERE status = 'settled'",
     "dc_week": "SELECT MAX(closed_session) FROM dc_positions WHERE closed_session IS NOT NULL",
-    "pmcc_99": "SELECT MAX(closed_session) FROM pmcc_positions WHERE closed_session IS NOT NULL",
+    "pmcc": "SELECT MAX(closed_session) FROM pmcc_positions WHERE closed_session IS NOT NULL",
     "curve_vx": "SELECT MAX(closed_session) FROM curve_positions WHERE closed_session IS NOT NULL",
     "bwb_132": "SELECT MAX(closed_session) FROM bwb_positions WHERE closed_session IS NOT NULL",
 }
@@ -315,7 +316,7 @@ def latest_session(cfg: dict | None = None) -> str | None:
     cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     latest: str | None = None
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
-        schema = mcfg.get("paper", {}).get("trade_schema", "meic_ic")
+        schema = schemas.canonical(mcfg.get("paper", {}).get("trade_schema", "meic_ic"))
         sql = _LATEST_SQL.get(schema)
         db_path = cfgmod.paper_db_path(mcfg, name)
         if sql is None or not db_path.exists():

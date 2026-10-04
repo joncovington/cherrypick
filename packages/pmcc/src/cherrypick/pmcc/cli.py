@@ -250,7 +250,7 @@ def cmd_ladder(args) -> int:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="pmcc", description="PMCC-99 deep-ITM covered-call paper module")
+    ap = argparse.ArgumentParser(prog="pmcc", description="PMCC deep-ITM covered-call paper module")
     ap.add_argument("--config")
     ap.add_argument("--db")
     sub = ap.add_subparsers(dest="command", required=True)

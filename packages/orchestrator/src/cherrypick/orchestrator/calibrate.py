@@ -30,7 +30,7 @@ from cherrypick.core.profiles import (
 )
 
 from . import config as cfgmod
-from . import report
+from . import report, schemas
 
 # --------------------------------------------------------------------------- readings
 # The reading IS the shared bundle (cherrypick.core.metrics.calibration_reading): sample /
@@ -55,7 +55,7 @@ def run(cfg: dict | None = None) -> dict:
 
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         paper = mcfg.get("paper", {})
-        schema = paper.get("trade_schema", "meic_ic")
+        schema = schemas.canonical(paper.get("trade_schema", "meic_ic"))
         reader = report._READERS.get(schema)
         db_path = cfgmod.paper_db_path(mcfg, name)
         cal = mcfg.get("calibration", {}) or {}

@@ -5,7 +5,7 @@ import { GridCard, StatTile } from "../../components/grid/GridCard";
 import { fmtMoney } from "../../lib/format";
 
 /**
- * PMCC-99's session tab: the resolved session (`data.session`) and the book, as tiles and shapes
+ * PMCC's session tab: the resolved session (`data.session`) and the book, as tiles and shapes
  * whose every card links to the page in the rail that explains it -- nothing opens an overlay. The
  * header's symbol filter scopes it, as it scopes every page. Tones are signs, never verdicts.
  */
@@ -21,7 +21,7 @@ export function PmccSession({
   if (data !== undefined && !data.dbPresent) {
     return (
       <div className="cards cards-wide">
-        <Card title="PMCC-99" collapseKey="pmcc-absent">
+        <Card title="PMCC" collapseKey="pmcc-absent">
           <p className="muted">
             This module has not run on this machine — there is no paper store at{" "}
             <span className="mono">~/.cherrypick/data/pmcc/paper_trades.db</span> yet. Nothing is wrong; the page

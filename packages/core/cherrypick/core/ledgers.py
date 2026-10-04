@@ -29,7 +29,7 @@ experiment on that base reuses it.
 
 `max_profit` (added 2026-09, for `core.metrics.capture_rate`) is the structure's own defined
 ceiling at expiry -- only ever a number for a plain credit structure whose ceiling IS the credit
-received (meic_ic, curve_vx): `None` for a debit structure (dc_week, pmcc_99) whose profit depends
+received (meic_ic, curve_vx): `None` for a debit structure (dc_week, pmcc) whose profit depends
 on where the underlying settles, and `None` for a structure whose ceiling needs strike geometry
 this per-trade row does not carry (fly_book, bwb_132) or that mixes credit/debit shapes
 (earnings) -- see each reader's own comment for why. Deliberately not derived by guessing at a
@@ -49,7 +49,8 @@ formula from `capital` alone.
                  flies' arm tag); strategy = the structure tag (dc_4_7 vs dc_3_6), because holiday
                  variants are distinct trades that must never pool; capital = entry_debit x 100 x
                  quantity, a long calendar's defined max loss.
-  - "pmcc_99"  : pmcc's `pmcc_positions`; closed = status 'closed'; net = gross_pnl - fees (fees
+  - "pmcc"     : pmcc's `pmcc_positions` (`pmcc_99` until 2026-10-04, still resolved -- see
+                 SCHEMA_ALIASES); closed = status 'closed'; net = gross_pnl - fees (fees
                  is the TOTAL modeled cost, entry+exit+rolls+settlement, that module's own
                  convention); tag = book (control / advised:control); capital =
                  net_debit x 100 x quantity, the structure's defined max loss.
@@ -366,7 +367,7 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
             "arm": r["arm"] or PMCC_UNTAGGED,
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
-            "strategy": "pmcc_99",
+            "strategy": "pmcc",
             "gross_pnl": (r["gross_pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
             "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
@@ -545,7 +546,7 @@ READERS = {
     "earnings": _earnings_closed,
     "fly_book": _flies_closed,
     "dc_week": _calendars_closed,
-    "pmcc_99": _pmcc_closed,
+    "pmcc": _pmcc_closed,
     "curve_vx": _curve_closed,
     "bwb_132": _bwb_closed,
 }
@@ -629,7 +630,7 @@ def _pmcc_open(conn) -> list[dict]:
         {
             "arm": r["arm"] or PMCC_UNTAGGED,
             "symbol": r["symbol"],
-            "strategy": "pmcc_99",
+            "strategy": "pmcc",
             "capital": (
                 round(float(r["net_debit"]) * 100 * (r["quantity"] or 1), 2)
                 if r["net_debit"] is not None
@@ -646,10 +647,22 @@ OPEN_READERS = {
     "earnings": _earnings_open,
     "fly_book": _no_overnight,
     "dc_week": _calendars_open,
-    "pmcc_99": _pmcc_open,
+    "pmcc": _pmcc_open,
     "curve_vx": _curve_open,
     "bwb_132": _bwb_open,
 }
+
+
+# Retired spellings of a schema id, resolved for good. A config is a file a person keeps across
+# upgrades with no migration (root CLAUDE.md), so `"trade_schema": "pmcc_99"` -- every install before
+# 2026-10-04, when the module's name lost its "-99" -- must keep reading. Registries are keyed by the
+# canonical id only; every lookup by a configured or requested id goes through `canonical_schema`.
+SCHEMA_ALIASES = {"pmcc_99": "pmcc"}
+
+
+def canonical_schema(schema: str | None) -> str | None:
+    """The canonical id for `schema` -- itself, unless it is a retired spelling."""
+    return SCHEMA_ALIASES.get(schema, schema) if schema is not None else None
 
 
 # --------------------------------------------------------------------------- concentration

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "cherrypick-pmcc"
 version = "0.1.0"
-description = "PMCC-99 — deep-ITM covered-call paper module on leveraged ETFs"
+description = "PMCC — deep-ITM covered-call paper module on leveraged ETFs"
 requires-python = ">=3.11"
 license = "MIT"
 # cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.

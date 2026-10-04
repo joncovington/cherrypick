@@ -52,3 +52,27 @@ def test_calibrate_shares_reports_readers():
     """calibrate must never grow its own reader registry — it reads through report's, so
     the two can't drift (the audit found an alias here; pin that it stays one)."""
     assert calibrate.report._READERS is report._READERS
+
+
+def test_every_dispatch_read_of_trade_schema_goes_through_canonical():
+    """A config keeps a retired id forever (`pmcc_99`, every install before 2026-10-04). A new
+    surface that reads `trade_schema` without `schemas.canonical` would silently skip that module,
+    so this scans the package itself rather than trusting a list of known call sites."""
+    import pathlib
+    import re
+
+    pkg = pathlib.Path(report.__file__).parent
+    dispatch = re.compile(r"""get\(\s*["']trade_schema["']\s*,""")
+    offenders = [
+        f"{path.name}:{n}"
+        for path in sorted(pkg.glob("*.py"))
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if dispatch.search(line) and "canonical(" not in line
+    ]
+    assert offenders == []
+
+
+def test_a_retired_trade_schema_still_reaches_its_reader():
+    assert schemas.canonical("pmcc_99") == "pmcc"
+    assert report._READERS[schemas.canonical("pmcc_99")] is report._READERS["pmcc"]
+    assert schemas.canonical("pmcc_99") in trade_notifier._SCHEMAS

@@ -6,7 +6,7 @@
 
 cherrypick is an **experimental prototype**, written to learn about and research options strategies.
 It is not a finished product, a trading service, or a recommendation of any strategy. Parts of it are
-marked **EXPERIMENTAL** (calendars, PMCC-99, curve and the manual desk) and are less tested still.
+marked **EXPERIMENTAL** (calendars, PMCC, curve and the manual desk) and are less tested still.
 
 It is provided **"as is", without warranty of any kind**, under the MIT License ([LICENSE](LICENSE)).
 The authors are not liable for any loss or damage arising from its use.

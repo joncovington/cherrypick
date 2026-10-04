@@ -439,7 +439,7 @@ export interface ExperimentGuide {
   configMissing: boolean;
 }
 
-// ---- PMCC-99 ----
+// ---- PMCC ----
 //
 // Paper-only: there is no live DB and no live loop, so nothing here carries a `mode`. The module's
 // `live.enabled` is a documented placeholder (see packages/pmcc/CLAUDE.md), and offering a mode

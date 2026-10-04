@@ -3,7 +3,7 @@
 **What this covers:** a suite-level overview of what each trading strategy actually does, so you
 can decide which one(s) fit your goals before diving into an individual module's own docs. The suite
 ships seven strategy modules — MEIC, Earnings, Flies and BWB, which are on in a fresh install
-(Earnings only where Dolt is set up), and Calendars, PMCC-99 and Curve, which are **EXPERIMENTAL and
+(Earnings only where Dolt is set up), and Calendars, PMCC and Curve, which are **EXPERIMENTAL and
 off by default** — plus the GEX engine the console renders. MEIC, Earnings and Flies get a full
 section below; the others a short one. Each module's own docs (linked) are the source of truth for its
 internals.
@@ -15,10 +15,10 @@ internals.
 | Flies | 0DTE net-credit butterflies | on | per-day armed pilot |
 | BWB | ~7 DTE SPX put broken-wing butterflies, laddered daily | on | per-day armed pilot |
 | Calendars | weekly SPY double calendars | **off** (experimental) | none |
-| PMCC-99 | deep-ITM covered calls on TQQQ | **off** (experimental) | none |
+| PMCC | deep-ITM covered calls on TQQQ | **off** (experimental) | none |
 | Curve | VXX call credit spreads, regime-gated | **off** (experimental) | none |
 
-Every shipped example config declares only the `control` arm. MEIC, flies and PMCC-99 start on control
+Every shipped example config declares only the `control` arm. MEIC, flies and PMCC start on control
 alone, and any other arm named below is added in a machine's own config. BWB, calendars and curve build
 their comparison books into the module and run them unless the config sets that book's `enabled` to
 `false`.
@@ -132,7 +132,7 @@ physical settlement are modelled; ex-dividend weeks are skipped. Paper-only and 
 → Depth: [`calendars/README.md`](../packages/calendars/README.md),
 [`calendars/CLAUDE.md`](../packages/calendars/CLAUDE.md).
 
-## PMCC-99 — deep-ITM covered calls (EXPERIMENTAL, off by default)
+## PMCC — deep-ITM covered calls (EXPERIMENTAL, off by default)
 
 On TQQQ: buy an 85-90-delta ~21 DTE call as a stock substitute, sell the ATM ~7 DTE call nearest spot,
 hold to the short's expiry and close both legs together. Early assignment is measured, never modelled —

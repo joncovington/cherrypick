@@ -2205,7 +2205,7 @@ select.text-input {
   font-size: 12px;
 }
 
-/* ===== PMCC-99 =====================================================================
+/* ===== PMCC =====================================================================
    The page's own vocabulary. Warnings are amber (--warn) throughout and never the cherry
    accent: --accent is reserved for brand, live-mode and alert moments, and none of this
    module's caveats are alerts. A cold start and a lapsing dividend table are honest states

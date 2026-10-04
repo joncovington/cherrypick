@@ -106,7 +106,7 @@ suite once collected $4.00 of credit against $4.96 of fees.
   mechanical control book, a permissive path book recording every tick, and a read-side replay that
   scores profit targets, stops and exit timings over the recorded path — validated against the real
   books to the cent. Paper-only and credential-free. See [packages/calendars](packages/calendars).
-- **PMCC-99** — ⚠️ **EXPERIMENTAL, off by default.** Deep-ITM covered calls on TQQQ and XSP: buy an 85-90-delta ~21DTE call as a stock
+- **PMCC** — ⚠️ **EXPERIMENTAL, off by default.** Deep-ITM covered calls on TQQQ and XSP: buy an 85-90-delta ~21DTE call as a stock
   substitute, sell the ATM ~7DTE call nearest spot (no yield floor), hold to the short's own
   expiration and close both legs together. Single `control` book plus an advised A/B against the
   old early-tv-exit rule; early assignment is measured, never modelled, so paper results are an
@@ -397,7 +397,7 @@ ones. Paper and live ledgers are separate files, never queryable through one con
 - **Paper by default.** Every engine ships with live trading off, and the orchestrator that schedules
   them never places, cancels, or closes an order itself. Opening a module's live gate is on you — and
   once open, that module's loop trades within its own limits without asking again.
-- **Experimental modules are off.** Calendars, PMCC-99 and curve ship switched off, and the desk is not
+- **Experimental modules are off.** Calendars, PMCC and curve ship switched off, and the desk is not
   installed at all unless you ask for it.
 - **Your data stays yours.** Trades and credentials live on your machine (credentials in your operating
   system's secure keyring — never in a plain file).

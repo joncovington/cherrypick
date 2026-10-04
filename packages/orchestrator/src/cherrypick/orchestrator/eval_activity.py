@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import config as cfgmod
+from . import schemas
 
 OK, WARN = "OK", "WARN"
 
@@ -281,7 +282,7 @@ def _flies_activity(conn, day: str, window_min: int) -> dict[str, Any]:
     }
 
 
-# --------------------------------------------------------------------------- pmcc_99 (pmcc_snapshots)
+# --------------------------------------------------------------------------- pmcc (pmcc_snapshots)
 def _pmcc_activity(conn, day: str, window_min: int) -> dict[str, Any]:
     """pmcc evaluates entry most sessions (unlike calendars' once-a-week window), so it gets a real
     reader: its feed ledger `pmcc_snapshots` is the fly_snapshots shape, and entries come from
@@ -414,7 +415,7 @@ def _bwb_activity(conn, day: str, window_min: int) -> dict[str, Any]:
 _READERS = {
     "meic_ic": _meic_activity,
     "fly_book": _flies_activity,
-    "pmcc_99": _pmcc_activity,
+    "pmcc": _pmcc_activity,
     "curve_vx": _curve_activity,
     "bwb_132": _bwb_activity,
 }
@@ -460,7 +461,7 @@ def for_module(mcfg: dict[str, Any], name: str, day: str, window_min: int) -> di
     """Activity snapshot for one module, or None if its schema has no eval-activity reader (earnings)
     or its paper DB is absent. Read-only, files only."""
     paper = mcfg.get("paper", {})
-    reader = _READERS.get(paper.get("trade_schema", "meic_ic"))
+    reader = _READERS.get(schemas.canonical(paper.get("trade_schema", "meic_ic")))
     if reader is None:
         return None
     db = cfgmod.paper_db_path(mcfg, name)
