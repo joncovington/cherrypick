@@ -122,6 +122,10 @@ const KNOWN_COLUMNS: Record<string, string[]> = {
 /** Days before a declared dividend calendar lapses that the page starts asking for a refresh. */
 const DIVIDEND_WARN_DAYS = 14;
 
+export function pmccDbPath(config: ConsoleConfig): string {
+  return dbPath(config);
+}
+
 function dbPath(config: ConsoleConfig): string {
   return path.join(config.paths.pmccDir, DB_FILE);
 }

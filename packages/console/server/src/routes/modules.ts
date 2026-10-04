@@ -35,7 +35,20 @@ import {
   ERAS,
   type FliesFilter,
 } from "../readers/flies.js";
-import { readPmcc, readPmccAssignments, readPmccHistory, readPmccMeta, resolvePmccSession } from "../readers/pmcc.js";
+import {
+  pmccDbPath,
+  readPmcc,
+  readPmccAssignments,
+  readPmccHistory,
+  readPmccMeta,
+  resolvePmccSession,
+} from "../readers/pmcc.js";
+import {
+  POSITION_ID,
+  readPmccTracker,
+  readPmccTrackerIndex,
+  readPmccWeekly,
+} from "../services/pmccTrackerBridge.js";
 import { readCurve, readCurveHistory, readCurveMeta, resolveCurveSession } from "../readers/curve.js";
 import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
 import { readCalendars, readCalendarsWeek, readCalendarsWeeks } from "../readers/calendars.js";
@@ -305,6 +318,20 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       { arm: pick("arm", 40) ?? pick("book", 40), symbol: pick("symbol", 12), range: parseDateRange(q) },
       parsePage(req.query),
     );
+  });
+  // The position tracker and the arms' weekly A/B, bridged from the module's own analytics. The
+  // id is validated before it can reach the subprocess's argv.
+  app.get("/api/pmcc/tracker", async (req, reply) => {
+    const position = (req.query as Record<string, unknown> | undefined)?.["position"];
+    if (typeof position !== "string" || !POSITION_ID.test(position)) {
+      return reply.code(400).send({ error: "position must be SYMBOL:arm:YYYY-MM-DD" });
+    }
+    return readPmccTracker(pmccDbPath(config), position);
+  });
+  app.get("/api/pmcc/tracker/index", async () => readPmccTrackerIndex(pmccDbPath(config)));
+  app.get("/api/pmcc/weekly", async (req) => {
+    const era = (req.query as Record<string, unknown> | undefined)?.["era"];
+    return readPmccWeekly(pmccDbPath(config), typeof era === "string" && /^[A-Za-z0-9_-]{1,20}$/.test(era) ? era : null);
   });
 
   // curve (VXX term-structure roll-yield harvest). No `mode` here either -- paper-only, no live loop.

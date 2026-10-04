@@ -677,6 +677,183 @@ export interface PmccMeta {
   sessions: string[];
 }
 
+// ---- PMCC: the position tracker and the arms' weekly A/B (2026-10-04) ----
+//
+// Bridged, not mirrored (console CLAUDE.md: "mirror a query, bridge a derivation"): the module's
+// own `tracker.value_at` values a position as of any instant, and these are its JSON with keys
+// camelised by `services/pmccTrackerBridge.ts`. Money is the suite's layout: signed whole-position
+// dollars, net after every cost, null for "not recorded" or "not priceable" -- never zero.
+
+/** Costs booked by an instant, split the suite's way. `basis` says where they were read from. */
+export interface PmccTrackerCosts {
+  basis: "legs" | "position";
+  fees: number | null;
+  slippage: number | null;
+  settlement: number | null;
+  total: number | null;
+}
+
+export interface PmccTrackerHeader {
+  longCost: number | null;
+  longValue: number | null;
+  longGain: number | null;
+  shortRealised: number | null;
+  shortOpen: number | null;
+  shares: number | null;
+  gross: number | null;
+  costs: PmccTrackerCosts | null;
+  net: number | null;
+  returnOnLongCost: number | null;
+  returnOnNotional: number | null;
+  underlyingSinceOpen: number | null;
+  daysInTrade: number | null;
+  netDelta: number | null;
+  extrinsicCaptured: number | null;
+  longExtrinsicDecay: number | null;
+  netExtrinsic: number | null;
+  shortsSold: number;
+  notional: number | null;
+}
+
+export interface PmccTrackerLot {
+  opened: string;
+  expiration: string;
+  spotOpen: number | null;
+  strike: number;
+  quantity: number;
+  cost: number | null;
+  priceNow: number | null;
+  valueNow: number | null;
+  gain: number | null;
+  extrinsicPaid: number | null;
+  extrinsicNow: number | null;
+  deltaNow: number | null;
+  status: string;
+}
+
+export interface PmccTrackerCurrentShort {
+  stockAtSale: number | null;
+  strike: number;
+  expiration: string;
+  premium: number | null;
+  intrinsicAtSale: number | null;
+  extrinsicAtSale: number | null;
+  extrinsicNow: number | null;
+  decayedPct: number | null;
+  extrinsicOnLongCostPct: number | null;
+  projected: number | null;
+  breakeven: number | null;
+  dte: number;
+  next: { expiryRollAt: string; decayRollBelow: number | null; breachAt: number | null };
+}
+
+/** One short call the position sold, in the trade standard's order: entry + exit = gross; gross -
+ *  fees - slippage = net. An open short's `exit` is its mark, not a trade. */
+export interface PmccTrackerShort {
+  n: number;
+  legRole: string;
+  status: string;
+  opened: string | null;
+  closed: string | null;
+  daysHeld: number | null;
+  spotOpen: number | null;
+  spotClose: number | null;
+  strike: number;
+  expiration: string;
+  sold: number | null;
+  bought: number | null;
+  entry: number | null;
+  exit: number | null;
+  how: string | null;
+  why: string | null;
+  gross: number | null;
+  fees: number | null;
+  slippage: number | null;
+  net: number | null;
+  extrinsicSold: number | null;
+  extrinsicLeft: number | null;
+  extrinsicCaptured: number | null;
+}
+
+/** A week valued at its own close (the last row at "now", or at the position's close). */
+export interface PmccTrackerWeek {
+  week: string;
+  weekEnd: string;
+  priced: boolean;
+  spot: number | null;
+  longMark: number | null;
+  shortOpen: number | null;
+  shortRealised: number | null;
+  costs: number | null;
+  net: number | null;
+  change: number | null;
+  returnOnLongCost: number | null;
+  returnOnNotional: number | null;
+  netDelta: number | null;
+}
+
+export interface PmccTracker {
+  position: {
+    positionId: string;
+    symbol: string;
+    arm: string;
+    era: string | null;
+    status: string;
+    exitReason: string | null;
+    entrySession: string;
+    closedSession: string | null;
+    quantity: number;
+    entrySpot: number | null;
+    rollCount: number | null;
+    exposureTicks: number | null;
+    lifecycle: string;
+  };
+  header: PmccTrackerHeader;
+  longLots: PmccTrackerLot[];
+  currentShort: PmccTrackerCurrentShort | null;
+  shorts: PmccTrackerShort[];
+  weeks: PmccTrackerWeek[];
+  integrity: {
+    exposureTicks: number | null;
+    unpricedWeeks: number;
+    weeksWithoutAShort: string[];
+    costsBasis: string | null;
+  };
+  asOf: number;
+}
+
+export interface PmccTrackerIndexRow {
+  positionId: string;
+  symbol: string;
+  arm: string;
+  era: string | null;
+  lifecycle: string;
+  status: string;
+  entrySession: string;
+  closedSession: string | null;
+  shorts: number;
+  net: number | null;
+}
+
+/** Per (arm, symbol, ISO week): the change in net P&L over that week, and its running total. */
+export interface PmccWeeklyRow {
+  arm: string;
+  symbol: string;
+  week: string;
+  weekEnd: string;
+  change: number;
+  cumulative: number;
+  positions: number;
+  unpriced: number;
+}
+
+/** A bridged read: the module's answer, or the reason it could not give one. */
+export interface PmccBridged<T> {
+  ok: boolean;
+  data: T | null;
+  error: string | null;
+}
+
 // --------------------------------------------------------------------------- calendars (dc_week)
 //
 // The weekly double-calendar module is a forward EXIT-PARAMETER EXPERIMENT, so its read model is

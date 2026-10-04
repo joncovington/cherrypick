@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import type { PmccCycleRow } from "@console/shared";
 import { usePmccAssignments, usePmccHistory, usePmccMeta } from "../../lib/api";
 import { Card, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
@@ -111,6 +112,9 @@ function FeeSplit({ row }: { row: PmccCycleRow }) {
 function CycleDetail({ row }: { row: PmccCycleRow }) {
   return (
         <div className="pmcc-detail">
+          <p>
+            <Link to={`/pmcc/tracker?position=${encodeURIComponent(row.positionId)}`}>this cycle, week by week →</Link>
+          </p>
           <section>
             <h4>legs</h4>
             <p>
