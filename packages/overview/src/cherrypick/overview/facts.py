@@ -717,7 +717,9 @@ def _premarket(cache, session: str, now_ts: float) -> dict:
     cash indexes' prior-session moves. A future with no fresh print is `prior` like every other
     reading, and its change is then None -- a settle compared with itself is not a move."""
     futures = {}
-    legs = _symbols.futures_legs()
+    # The map's age is judged on the pack's own clock, not the wall's: a pack rebuilt later, or a
+    # test pinned to a session, would otherwise find a map that was fresh at the time stale.
+    legs = _symbols.futures_legs(now=datetime.fromtimestamp(now_ts, _ET))
     for reading, (product, label) in _symbols.PREMARKET_FUTURES.items():
         symbol = legs.get(reading)
         if symbol is None:
