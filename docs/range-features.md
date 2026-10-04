@@ -197,6 +197,11 @@ That code was committed before the run. The run read SPX bars from 2021-02-16 th
 (1,412 bars). The 2026-10-02 bar was not yet complete, so the evaluation segment has 937 sessions
 with an outcome at h = 1, not 938. `--bars-through 2026-10-01` reproduces the run exactly.
 
+> **On main the code commit is `07b3cecf`.** It was made as `9c3cb524` at 2026-10-03 11:31 MDT, a minute
+> before this result (11:32), and landed on 2026-10-04 with only its message changed: an attribution
+> line the repository does not carry was removed. Its dates and its files are the original's, so
+> the code still precedes the run, and `07b3cecf` reproduces it.
+
 **Verdict: closed. No feature × horizon passed the evaluation segment**, so the forward check has
 nothing to confirm.
 
