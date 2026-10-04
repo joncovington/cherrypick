@@ -26,7 +26,7 @@ from pathlib import Path
 
 from cherrypick.core import streamrequests as _sr
 
-from cherrypick.pmcc import clock, db, management, stream_window
+from cherrypick.pmcc import clock, db, management, provider, skew, stream_window
 
 _MODULE = "pmcc"
 _log = logging.getLogger("pmcc_paper_loop")
@@ -125,6 +125,15 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
             conn, cache_path, symbol, today, config, arms, max_positions
         ):
             extra.setdefault(symbol, set()).add(target)
+    # The skew sampler's dates (skew.py), every configured symbol, every session: a held-long arm
+    # stops asking for its year-long expiry once it holds the symbol, and the sampler must not lose
+    # it then. No hint is added -- the default window on the year-long grid already reaches the
+    # 10-delta put on every symbol traded (checked 2026-10-04).
+    if skew.settings(config)["enabled"]:
+        for symbol in entry_symbols:
+            dates = skew.dates(provider.listed_expirations(cache_path, symbol), today)
+            if dates is not None:
+                extra.setdefault(symbol, set()).update(dates.values())
     hints = stream_window.hints_for_symbols(
         conn,
         cache_path,

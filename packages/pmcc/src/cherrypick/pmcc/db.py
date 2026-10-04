@@ -308,6 +308,31 @@ CREATE TABLE IF NOT EXISTS pmcc_stream_window (
     updated_at                 TEXT
 );
 
+-- The skew sampler (2026-10-04, `skew.py`): once a session per symbol, what the market charged at the
+-- points the shield replay can only model -- the weekly short's skew and the year-long put skew.
+-- Telemetry: nothing reads it to trade. One row per (session, symbol, target), refusals included.
+CREATE TABLE IF NOT EXISTS pmcc_skew_samples (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_date       TEXT NOT NULL,
+    sampled_at         TEXT NOT NULL,
+    symbol             TEXT NOT NULL,
+    target             TEXT NOT NULL,
+    expiration         TEXT,
+    dte                INTEGER,
+    option_type        TEXT,
+    spot               REAL,
+    strike             REAL,
+    delta              REAL,
+    iv                 REAL,
+    bid                REAL,
+    ask                REAL,
+    mid                REAL,
+    quote_age_seconds  REAL,
+    usable             INTEGER,
+    refusal            TEXT,
+    UNIQUE(session_date, symbol, target)
+);
+
 -- Dates across which results must never be pooled (cadence changes, rule changes, structure
 -- redefinitions). A break is a row, not a memory — the suite review reads this table uniformly,
 -- which is why it keeps the suite-wide unprefixed name.
@@ -358,6 +383,51 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     "pmcc_marks": {},
     "pmcc_assignments": {},
 }
+
+
+def skew_sampled(conn, session_date: str, symbol: str) -> bool:
+    return (
+        conn.execute(
+            "SELECT 1 FROM pmcc_skew_samples WHERE session_date = ? AND symbol = ? LIMIT 1",
+            (session_date, symbol),
+        ).fetchone()
+        is not None
+    )
+
+
+def record_skew_samples(conn, *, session_date: str, symbol: str, spot: float, rows: list[dict]) -> int:
+    """Idempotent per (session, symbol, target): a second pass the same session writes nothing."""
+    cols = (
+        "expiration",
+        "dte",
+        "option_type",
+        "strike",
+        "delta",
+        "iv",
+        "bid",
+        "ask",
+        "mid",
+        "quote_age_seconds",
+    )
+    written = 0
+    for r in rows:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO pmcc_skew_samples (session_date, sampled_at, symbol, target, spot, "
+            f"{', '.join(cols)}, usable, refusal) VALUES ({', '.join('?' * (len(cols) + 7))})",
+            (
+                session_date,
+                _now(),
+                symbol,
+                r["target"],
+                spot,
+                *(r.get(c) for c in cols),
+                r.get("usable"),
+                r.get("refusal"),
+            ),
+        )
+        written += cur.rowcount
+    conn.commit()
+    return written
 
 
 def default_db_path() -> str:

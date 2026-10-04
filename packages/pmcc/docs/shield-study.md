@@ -112,6 +112,64 @@ rolls coming early (944). That the sign is unknown is the reason both arms run.
 fit the account), **not because of this table**, where it is the worst of the five. The pilot tests mechanics in an
 IRA (gate 0, plan Part 2). It is not a bet on the replay.
 
+## The put benchmark: the same starting delta, one trade a year
+
+Asked 2026-10-04: why not sell a 20-delta year-long put, which has the shield's net delta on the day
+it opens?
+
+**How it is defined.**
+- It is sold at the same third-Friday ~1-year expiry and sized to the same notional, which keeps it
+  cash-secured in an IRA.
+- It is held to 45 DTE and re-sold the next session.
+- It is priced on the same model.
+
+It is in every replay run now, beside the shield rows.
+
+**Matching delta at entry is all it matches.** By parity the shield is a short ~30-delta weekly put
+plus a long ~7.5-delta year put, so the two differ where it matters:
+- **gamma:** weekly against yearly;
+- **vega:** the shield is long it, the put short;
+- **tail:** the shield's loss stops at its debit, the put's runs to its strike.
+
+In a selloff the shield's net delta climbs toward the long's 0.9 within a week, while the put's
+climbs slowly. So SLV's worst week was −27% for `shield_hold` and −11% for the put.
+
+| | premium at sale | strike below spot | kept per ~10-month cycle | CAGR (incl. ~1.6% T-bills) | alpha | shield_hold alpha |
+|---|---|---|---|---|---|---|
+| XSP | 2.1% | 12% | +2.0% | 3.9% | −1.3 | +1.3 |
+| QQQ | 2.5% | 13% | +2.1% | 4.1% | −1.5 | −0.2 |
+| GLD | 2.0% | 10% | +1.1% (worst −12.7) | 2.7% | +0.1 | −0.3 |
+| IWM | 2.8% | 14% | +2.2% | 4.2% | +0.1 | −3.6 |
+| SLV | 3.7% | 17% | +2.1% (worst −16.7) | 3.8% | +1.3 | −6.3 |
+
+**What it says:**
+- **It earns little:** about 2–2.5 points a year above T-bills, over only 18 cycles per symbol.
+- **It is a bar, not a proposal.** The shield clears it only on XSP, ties on QQQ and GLD, and falls
+  short on IWM and SLV.
+- **The shield's real argument is capital.** The put ties up about 85–90% of notional as cash; the
+  shield ties up its debit, about 30%. Per dollar posted the shield's results are about three times
+  these, both ways: roughly +12% a year on XSP and −17% on SLV.
+- **Re-striking the put to hold 20 delta was the worst variant everywhere** (−1 to −6 alpha): it buys
+  back after each drop and sells again lower.
+
+**The finding that matters more is skew.** Both rows rest on it:
+
+| skew b | 0 | as modelled | ×2 |
+|---|---|---|---|
+| XSP `shield_hold` | −0.9 | +1.3 | +5.7 |
+| XSP put | −1.9 | −1.3 | −0.5 |
+
+The shield's 0.70-delta weekly short sits on the skew too. The model's `b` comes from 21-DTE calls,
+so the paper loop now samples the market's own skew once a session (`skew.py`), and `--skew-check`
+compares it with the model.
+
+**Decision, 2026-10-04:**
+- the put stays a replay benchmark;
+- it is not a paper arm at this boundary, because the module is call-only and adding puts would hold
+  the boundary;
+- it is to be reconsidered for the SLV live pilot once the skew is calibrated. One cash-secured put a
+  year is mechanically far simpler than 52 weekly rolls, at the cost of more cash and no loss floor.
+
 ## Why these five symbols
 
 From the 2026-10-04 scorecard over 24 candidates. OCC volume is averaged over 25 sessions. The spread

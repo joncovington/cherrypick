@@ -4,6 +4,7 @@
     python scripts/pmcc_shield_replay.py --symbols SLV GLD
     python scripts/pmcc_shield_replay.py --until 2026-10-02     # the window docs/shield-study.md states
     python scripts/pmcc_shield_replay.py --fetch                # fetch the Cboe vol-index files first
+    python scripts/pmcc_shield_replay.py --skew-check           # the model against the sampled quotes
 
 Read-only, except that `--fetch` writes the vol-index histories it needs under
 `$CHERRYPICK_HOME/data/pmcc/replay/` (VIX and VXN are read from the copies
@@ -46,6 +47,16 @@ assumption decides). The 30% stop is run on and off, to show what it does.
   at sale (85% decayed) or spot reaches its strike, at most once a session.
 - Ex-dividend (QQQ, IWM): a short whose life [sale day, expiry] spans an ex-date is refused, at entry
   (no position) and at a roll (the position runs without a short until a later day clears it).
+
+**The put benchmark** (asked 2026-10-04): a short 20-delta put at the same year-long expiry, held
+to 45 DTE and re-entered, on the same notional sizing (which keeps it cash-secured). It matches the
+shield's net delta on the day it opens and nothing after: by parity the shield is a short ~30-delta
+weekly put plus a long ~7.5-delta year put, so the two differ in gamma (weekly against yearly),
+vega (the shield is long it, the put short) and tail (the shield's loss stops at its debit, the
+put's runs to its strike). Its result rests on the model's year-long skew, which nothing here has
+calibrated -- b comes from 21-DTE calls and the term structure is flat past 30 days -- so it prints
+beside its own skew sensitivity, and `--skew-check` compares the model against the year-long put
+quotes the paper loop samples (`pmcc_skew_samples`) once they exist.
 
 **What it is not.** Daily closes, so an intraday roll trigger fires a session late and an intraday
 stop is missed. No early assignment, no pin risk, no gap between the roll time and the bell; an
@@ -276,6 +287,7 @@ class Market:
 
     def __init__(self, conn, symbol: str, *, total_return: bool = False):
         self.symbol, self.spec = symbol, SYMBOLS[symbol]
+        self.b = self.spec["b"]  # the skew term, overridable for the sensitivity rows
         self.px, self.pf = closes(conn, self.spec["source"], total_return=total_return)
         self.ix = index(self.spec["index"])
         if "bridge" in self.spec:
@@ -301,7 +313,7 @@ class Market:
         T = max(T, 1 / 365)
         a = self.atm(d, T, iv_scale)
         z = math.log(K / S) / (a * math.sqrt(T))
-        return a * (1 + self.spec["b"] * min(3.0, max(0.0, -z)))
+        return a * (1 + self.b * min(3.0, max(0.0, -z)))
 
     def price(self, d, S, K, T, iv_scale):
         if T <= 0:
@@ -315,6 +327,33 @@ class Market:
             return 1.0 if S > K else 0.0
         q = self.spec["q"]
         return math.exp(-q * T) * ncdf(_d1(S, K, T, rate(d), q, self.iv(d, S, K, T, iv_scale)))
+
+    def put_price(self, d, S, K, T, iv_scale):
+        """By parity off the call, so both rights share one IV surface."""
+        if T <= 0:
+            return max(K - S, 0.0)
+        q = self.spec["q"]
+        return self.price(d, S, K, T, iv_scale) - S * math.exp(-q * T) + K * math.exp(-rate(d) * T)
+
+    def put_delta(self, d, S, K, T, iv_scale):
+        """Negative, as a put's is."""
+        if T <= 0:
+            return -1.0 if S < K else 0.0
+        return self.delta(d, S, K, T, iv_scale) - math.exp(-self.spec["q"] * T)
+
+    def strike_for_put_delta(self, d, S, T, target, iv_scale):
+        """The grid strike whose put delta is nearest `-target`, searched down from spot."""
+        g, best = self.spec["grid"], None
+        for n in range(600):
+            K = S * (1 - g * n)
+            if K <= S * 0.05:
+                break
+            dl = -self.put_delta(d, S, K, T, iv_scale)
+            if best is None or abs(dl - target) < abs(best[1] - target):
+                best = (K, dl)
+            if dl < target - 0.05:
+                break
+        return best[0]
 
     def strike_for_delta(self, d, S, T, target, iv_scale):
         """The grid strike nearest `target`, searched down from spot."""
@@ -543,6 +582,62 @@ def run(m: Market, arm: Arm, *, iv_scale=1.0, cost_scale=1.0, since=None, until=
     return out
 
 
+def run_put(
+    m: Market, *, target=0.20, iv_scale=1.0, cost_scale=1.0, band=None, since=None, until=None
+) -> dict:
+    """The put benchmark: sell a `target`-delta put at the year-long expiry, hold it to 45 DTE, and
+    re-enter the next session. `band` re-strikes whenever the delta leaves it (tested 2026-10-04 and
+    the worst variant everywhere: it buys back after every drop and sells again lower)."""
+    days = [d for d in m.days if (since is None or d >= since) and (until is None or d <= until)]
+    sp = m.spec["spread"]["long_year"]
+    state = {"cash": 1.0, "pos": None, "last_close": None}
+    counts = {"entries": 0, "restrikes": 0}
+    navs = []
+
+    def fill_cost(d, S, mid):
+        return cost_scale * (min(SLIP * sp * S, 0.15 * mid) + COMM_OPEN * m.pf[d]) if mid > 0 else 0.0
+
+    def enter(d, S):
+        exp = year_expiry(d)
+        t = yrs(d, exp)
+        K = m.strike_for_put_delta(d, S, t, target, iv_scale)
+        u = state["cash"] / S  # the shield's notional sizing; K < S keeps it cash-secured
+        mid = m.put_price(d, S, K, t, iv_scale)
+        state["cash"] += u * (mid - fill_cost(d, S, mid))
+        state["pos"] = {"u": u, "K": K, "exp": exp}
+        counts["entries"] += 1
+
+    def close(d, S):
+        pos = state["pos"]
+        mid = m.put_price(d, S, pos["K"], max(yrs(d, pos["exp"]), 0.0), iv_scale)
+        state["cash"] -= pos["u"] * (mid + fill_cost(d, S, mid))
+        state["pos"], state["last_close"] = None, d
+
+    prev = None
+    for d in days:
+        S = m.px[d]
+        if prev is not None:
+            state["cash"] += state["cash"] * rate(prev) * yrs(prev, d)
+        prev = d
+        pos = state["pos"]
+        if pos is not None:
+            t = yrs(d, pos["exp"])
+            if (date.fromisoformat(pos["exp"]) - date.fromisoformat(d)).days <= 45:
+                close(d, S)
+            elif band is not None and not band[0] <= -m.put_delta(d, S, pos["K"], t, iv_scale) <= band[1]:
+                close(d, S)
+                enter(d, S)  # a re-strike is a same-day roll
+                counts["restrikes"] += 1
+        elif d != state["last_close"]:
+            enter(d, S)
+        pos = state["pos"]
+        mark = pos["u"] * m.put_price(d, S, pos["K"], max(yrs(d, pos["exp"]), 0.0), iv_scale) if pos else 0.0
+        navs.append((d, state["cash"] - mark))
+    weeks = [d for d in m.cycles if days[0] <= d <= days[-1]]
+    name = f"short {target * 100:.0f}D year put" + (", re-struck" if band else "")
+    return {**summarize(navs), "arm": name, "counts": counts, "alpha_beta": alpha_beta(navs, weeks, m.px)}
+
+
 # --------------------------------------------------------------------------- read-outs
 def summarize(navs: list[tuple[str, float]]) -> dict:
     vals, dates = [v for _, v in navs], [d for d, _ in navs]
@@ -633,16 +728,30 @@ def symbol_report(conn, symbol, args) -> dict:
     spec = m.spec
     rows = [buy_hold(m, args.since, args.until)]
     rows += [run(m, arm, since=args.since, until=args.until) for arm in ARMS]
+    rows.append(run_put(m, since=args.since, until=args.until))
+    put_name = rows[-1]["arm"]
     scales = {}
     for arm in (CONTROL, SHIELD_HOLD, SHIELD):
         scales[arm.name] = {
             s: run(m, arm, iv_scale=s, since=args.since, until=args.until)["alpha_beta"][0]
             for s in args.iv_scales
         }
+    scales[put_name] = {
+        s: run_put(m, iv_scale=s, since=args.since, until=args.until)["alpha_beta"][0] for s in args.iv_scales
+    }
     no_costs = {
         arm.name: run(m, arm, cost_scale=0.0, since=args.since, until=args.until)["alpha_beta"][0]
         for arm in (CONTROL, SHIELD_HOLD, SHIELD)
     }
+    # The year-long skew is the put's uncalibrated input, and the shield's long sits on it too.
+    skew = {}
+    for b in (0.0, m.spec["b"], 2 * m.spec["b"]):
+        m.b = b
+        skew[b] = {
+            SHIELD_HOLD.name: run(m, SHIELD_HOLD, since=args.since, until=args.until)["alpha_beta"][0],
+            put_name: run_put(m, since=args.since, until=args.until)["alpha_beta"][0],
+        }
+    m.b = m.spec["b"]
     bridge = f", bridged by {spec['bridge'][0]} x{spec['bridge'][1]}" if "bridge" in spec else ""
     start, end = rows[0]["start"], rows[0]["end"]
     in_window = sum(1 for x in m.ex_dates if start <= x <= end)
@@ -656,6 +765,7 @@ def symbol_report(conn, symbol, args) -> dict:
         "rows": rows,
         "iv_scales": scales,
         "no_costs": no_costs,
+        "skew": skew,
     }
 
 
@@ -675,6 +785,72 @@ def print_report(rep: dict, calibrated: bool) -> None:
         "  alpha a year with every cost removed: "
         + "  ".join(f"{k} {_pct(a, 5, True)}" for k, a in rep["no_costs"].items())
     )
+    print(
+        "  alpha a year by skew b: "
+        + " | ".join(
+            f"b {b:.2f}: " + ", ".join(f"{k} {_pct(a, 5, True)}" for k, a in cells.items())
+            for b, cells in rep["skew"].items()
+        )
+    )
+
+
+def skew_check(conn) -> list[str]:
+    """The model's IV against what the paper loop sampled (`pmcc_skew_samples`, skew.py), per symbol
+    and target: the observed IV, the model's at the same strike, expiry and session, and the skew `b`
+    that would have matched it. The ATM rows test the level, c and the flat term past 30 days; the
+    off-spot rows test b where the shield's weekly short and the put benchmark actually sit. Only
+    sessions the vol-index files already cover are compared (run `--fetch` for the latest)."""
+    path = _home.data_dir("pmcc") / "paper_trades.db"
+    if not path.exists():
+        return [f"skew check: no ledger at {path}"]
+    led = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    led.row_factory = sqlite3.Row
+    try:
+        rows = led.execute(
+            "SELECT session_date, symbol, target, dte, spot, strike, iv FROM pmcc_skew_samples "
+            "WHERE usable = 1 AND iv IS NOT NULL AND strike IS NOT NULL ORDER BY symbol, target"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    finally:
+        led.close()
+    if not rows:
+        return [
+            "skew check: no samples yet (the loop records them from 2026-10-05, an hour before each close)"
+        ]
+    out = ["skew check: observed IV against the model's at the same strike and expiry (medians)"]
+    by: dict[tuple[str, str], list] = {}
+    for r in rows:
+        by.setdefault((r["symbol"], r["target"]), []).append(r)
+    markets: dict[str, Market] = {}
+    for (symbol, target), group in sorted(by.items()):
+        if symbol not in SYMBOLS:
+            continue
+        m = markets.setdefault(symbol, Market(conn, symbol))
+        obs, mod, implied = [], [], []
+        for r in group:
+            d = r["session_date"]
+            if d not in m.ix or d not in m.vix or d not in m.v9:
+                continue
+            t = max(r["dte"], 1) / 365
+            obs.append(r["iv"])
+            mod.append(m.iv(d, r["spot"], r["strike"], t, 1.0))
+            a = m.atm(d, t, 1.0)
+            z = math.log(r["strike"] / r["spot"]) / (a * math.sqrt(t))
+            if z < -0.25:  # far enough off spot for the skew term to be measurable
+                implied.append((r["iv"] / a - 1) / -z)
+        if not obs:
+            out.append(
+                f"  {symbol:4} {target:14} {len(group)} sample(s), none yet inside the vol-index files"
+            )
+            continue
+        ratio = statistics.median(o / x for o, x in zip(obs, mod, strict=True))
+        b_txt = f", b that matches {statistics.median(implied):.2f} (model {m.spec['b']})" if implied else ""
+        out.append(
+            f"  {symbol:4} {target:14} n {len(obs):3}  observed {statistics.median(obs):.3f}  model "
+            f"{statistics.median(mod):.3f}  ratio {ratio:.2f}{b_txt}"
+        )
+    return out
 
 
 def main(argv=None) -> int:
@@ -684,6 +860,7 @@ def main(argv=None) -> int:
     ap.add_argument("--until", default=None)
     ap.add_argument("--iv-scales", nargs="*", type=float, default=[0.9, 1.0, 1.1])
     ap.add_argument("--fetch", action="store_true", help="fetch the Cboe vol-index files first")
+    ap.add_argument("--skew-check", action="store_true", help="compare the model with the sampled quotes")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
@@ -701,6 +878,10 @@ def main(argv=None) -> int:
 
     conn = sqlite3.connect(f"file:{_paths.history_db()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
+    if args.skew_check:
+        print("\n".join(skew_check(conn)))
+        conn.close()
+        return 0
     cal = calibration(conn, args.since, args.until)
     reports = [symbol_report(conn, s.upper(), args) for s in args.symbols]
     conn.close()
