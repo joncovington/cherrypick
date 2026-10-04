@@ -1110,7 +1110,8 @@ def _calendars_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
 _PMCC_ROLL_SQL = (
     "SELECT e.id AS event_id, e.action AS event_action, e.reason AS event_reason, e.detail_json, p.* "
     "FROM pmcc_management_events e JOIN pmcc_positions p ON p.position_id = e.position_id "
-    "WHERE e.executed = 1 AND ((e.action = 'roll_short' AND e.reason != 'expiry') OR e.action = 'close_short')"
+    "WHERE e.executed = 1 "
+    "AND ((e.action = 'roll_short' AND e.reason != 'expiry') OR e.action = 'close_short')"
 )
 _PMCC_SETTLED_SQL = (
     "SELECT l.leg_role, l.strike AS leg_strike, l.expiration AS leg_expiration, l.close_kind, "
@@ -1196,10 +1197,12 @@ def _embed_pmcc_roll(r) -> dict:
     d = _pmcc_detail(r)
     if r["event_action"] == "close_short":
         title = f"BOUGHT BACK · {r['symbol']} PMCC short {d.get('strike', 0):.0f}"
-        return _embed(COLOR_COMPLETE, title, f"{r['event_reason']} · no short until the next sale", footer=_arm(r))
+        body = f"{r['event_reason']} · no short until the next sale"
+        return _embed(COLOR_COMPLETE, title, body, footer=_arm(r))
     details = (
         f"{d.get('old_strike', 0):.0f} {d.get('old_expiration', '?')} → {d.get('new_strike', 0):.0f} "
-        f"{d.get('new_expiration', '?')} · {r['event_reason']} · net {d.get('net_roll_credit', 0) or 0:+.2f}/sh"
+        f"{d.get('new_expiration', '?')} · {r['event_reason']} · "
+        f"net {d.get('net_roll_credit', 0) or 0:+.2f}/sh"
     )
     title = f"ROLLED · {r['symbol']} PMCC short {d.get('new_strike', 0):.0f}"
     return _embed(COLOR_COMPLETE, title, details, footer=_arm(r))
