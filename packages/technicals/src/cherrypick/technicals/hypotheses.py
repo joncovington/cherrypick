@@ -293,7 +293,7 @@ def run(stage: str, ids: list[str] | None = None, workers: int = 14, path=None, 
         progress(f"stage {stage}: {sum(len(v) for v in work.values()):,} baseline candidates")
         acc: dict[int, list[float]] = {}
         for part in pool.map(_draws, study._chunks(sorted(work.items()), workers * 8)):
-            acc.update(part)
+            study.merge_sums(acc, part)
     for key, row in enumerate(rows):
         a = acc.get(key)
         n = (a[1] + a[3]) if a else 0

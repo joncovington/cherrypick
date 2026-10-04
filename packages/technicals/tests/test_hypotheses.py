@@ -75,6 +75,10 @@ def test_stage_a_reads_only_half_a_names(tmp_path):
     expected = sum(1 for k in range(8) if hy.half(f"S{k}") == "A")
     assert result["names_in_universe"] == expected
     assert set(result["hypotheses"]) == {"mr-above-200", "pullback-hold-10"}
+    held = result["hypotheses"]["pullback-hold-10"]
+    if held["describe"]["entries"]:
+        # no filter, so every candidate in the same half counts: its own name's other days at least
+        assert held["median_baseline_draws"] >= 20
 
 
 def test_a_baseline_draw_must_pass_the_hypothesis_filter():
