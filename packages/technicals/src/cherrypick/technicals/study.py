@@ -51,7 +51,7 @@ SUB_PERIODS = (("2011-2018", "2011-01-01", "2018-12-31"), ("2019-2026", "2019-01
 ALPHA = 0.05
 MIN_EFFECTIVE = 780  # independent entries for a 55% vs 50% hit rate at power 0.8 (the plan's sizing)
 ENDED_DAYS = 10  # a name whose last bar is this many days before the data's end has stopped trading
-SIDE = {s.id: (1 if s.side == "long" else -1) for s in setups.SETUPS}
+SIDE = {s.id: (1 if s.side == "long" else -1) for s in setups.SETUPS + setups.STUDIED}
 # Sessions after a suspected unrecorded corporate action (`history.suspected_actions`) whose signals
 # are not counted: the indicators read the false crash or surge for this long (the squeeze looks
 # back 120 sessions). Positions and baseline draws holding through one are not scored either. The

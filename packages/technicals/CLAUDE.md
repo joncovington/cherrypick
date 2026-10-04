@@ -195,6 +195,12 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   - **The four tuned setup-sides** (both pullbacks, both breakouts) count only before `TUNING_END`,
     or on names outside the frozen `tuning_names.NAMES`.
   - Results go to `study/history-results-<stamp>.json`.
+  - **Round 3** (`round3.py`, `study round3`) scored two infographic setups (Supertrend + Vortex;
+    squeeze + RSI divergence), long and short. Each was tested against a random baseline and one
+    matched to the state its trigger fires in. Nothing passed (docs/setups.md, "Round 3").
+    - Their rules are `setups.STUDIED`: study-only, and kept out of `SETUPS`/`RUN`, so the chart
+      and round 1 are unchanged.
+    - `Readings` carries the Vortex and RSI divergence they read.
   - **Dolt's split table misses many splits before 2014** (KO, NKE, GILD, TJX, IBB, BEN, DUK...;
     254 suspects on in-universe days). `history.suspected_actions` flags an unexplained 40%+ jump
     whose opening gap is a clean split ratio. The study excludes positions and draws held through
@@ -243,4 +249,6 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals history land` | Land Dolt's whole daily history (2011 on, every name) into `history.db`. Incremental. |
 | `python -m cherrypick.technicals history check` | `history.db` against `eod.db` on the overlap, to the cent, and price jumps no split explains. |
 | `python -m cherrypick.technicals study run [--workers N]` | The historical study under analysis plan v2; writes `study/history-results-<stamp>.json`. |
+| `python -m cherrypick.technicals study round2 --stage A\|B [--workers N]` | Round 2's declared improvements, discovery on half A, confirmation on half B. |
+| `python -m cherrypick.technicals study round3 [--workers N]` | Round 3: Supertrend + Vortex and squeeze + RSI divergence, long and short, against the random and the matched baseline; writes `study/round3-<stamp>.json`. |
 | `python -m cherrypick.technicals report [--session D]` | Write one session's report readings and per-name chart files. |

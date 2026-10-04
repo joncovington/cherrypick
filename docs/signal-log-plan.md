@@ -20,6 +20,9 @@ on history does. The design below stays as the record of what it would be.
 - *That meets the revisit condition above. Phase 2 stays dropped until the user decides otherwise:
   a live log would confirm one filter on one setup, and that is a narrower job than the one it was
   designed for.*
+- *Round 3 (two infographic setups, Supertrend + Vortex and squeeze + RSI divergence, long and
+  short): nothing passed. Every side loses money after costs. The Supertrend + Vortex long is worse
+  than random entry, and much worse than buying a random day the two already agree.*
 
 *Drafted 2026-10-04; **revised the same day**, before anything was built or observed. The first
 draft took its evidence only from signals recorded live from now on, which put the verdict on the
@@ -571,6 +574,108 @@ or a stage-B failure.
   a 1-month trend score above zero: 0 entries in half A. It stays in the family as declared, and is
   reported as not judged. The same fact means the watchlist's "Trend agrees" filter hides every long
   mean-reversion signal.
+
+## Round 3: two infographic setups, declared before they were run (2026-10-04)
+
+The user brought two setups from Fingrad's indicator-pair infographics (a trading-education
+publisher; no backtest stands behind either graphic). Neither was suggested by this history, so
+round 3 tests them as round 1 tested the chart's eight: on every name, in one stage. The rules are
+study-only (`setups.STUDIED`). The chart does not draw them, and round 1's eight are unchanged.
+
+**The setups, as declared** (`setups.py`; `round3.py`):
+
+| Id | Entry | Exit |
+|---|---|---|
+| `st-vortex` | the first close on which Supertrend(10, 3) is up AND VI+(14) is above VI-, after a close on which they were not both so | the first close with Supertrend down OR VI+ under VI- |
+| `st-vortex-short` | the mirror | the mirror |
+| `squeeze-div-short` (as drawn) | a close under the lower band (20, 2) within 5 sessions of a squeeze, while the latest two RSI(14) pivot highs confirmed by then are a bearish divergence | the first close over the middle band |
+| `squeeze-div` (the mirror) | a close over the upper band, squeeze as above, and a bullish divergence of the latest two RSI(14) pivot lows | the first close under the middle band |
+
+**The choices the graphics leave open, settled before running:**
+
+- **Supertrend + Vortex enters on the first bar the two agree**, whichever turned second. Both
+  turning on one bar would almost never happen. This is the only written-down version of the
+  combination found (a "both states" ruleset). The graphic lists two exit conditions, and **either
+  one exits**.
+- **The Vortex** is Botes & Siepman's (TASC, January 2010): VM+ = |high - prior low|,
+  VM- = |low - prior high|, each summed over 14 bars and divided by the summed true range (plain
+  sums, not Wilder's averages). 14 is the period their examples use. **Supertrend** is the chart's
+  own (10, 3 on Wilder's ATR), the TradingView default.
+- **The divergence** is TradingView's Divergence Indicator at its defaults:
+  - RSI(14) pivots with 5 bars on each side;
+  - the two pivots 5 to 60 bars apart;
+  - price read at the RSI pivot bars (the bar's high for a bearish divergence, its low for a
+    bullish one);
+  - known only 5 bars after the later pivot.
+
+  The pivot is `swings.py`'s (above the bars before, not passed by the bars after). TradingView
+  breaks a tie the other way and counts the span one bar differently. On a continuous RSI neither
+  matters.
+- **The divergence is current** while it is the latest confirmed pair. A newer RSI pivot replaces it.
+  No further age limit is added.
+- **The squeeze and the band break** are the chart's breakout definitions (band width at its
+  narrowest of 120 sessions, within 5 sessions; judged on the close). Unlike the chart's breakout,
+  there is no volume or Supertrend condition.
+- **The long mirror of the squeeze setup** is tested because the suite tests every setup both ways.
+  The graphic shows only the short.
+
+**What was looked at before declaring:**
+
+- **Frequencies only**, on the nightly store's 525 names over three years:
+  - `st-vortex` about 34 entries per 1,000 bars (13,328), its short 32;
+  - `squeeze-div` 0.30 (116), its short 0.46 (179).
+- **Round 1's breakdown result** (−0.867 R, no edge). Its entry is Bollinger's own squeeze
+  breakdown, so it is the nearest relative of `squeeze-div-short`. It was published before this
+  round and is disclosed here.
+
+**Two baselines, from the same draws.** For each counted entry, 20 same-date and 20 same-name
+draws (seeded from the entry's identity), held to the setup's own exit and scored like the entry.
+- **`random`** keeps every draw. This is plan v2's baseline, so the result sits beside round 1's
+  table.
+- **`matched`** keeps only the draws made on a day the setup's state already held:
+  - for `st-vortex`, Supertrend and the Vortex already agreeing on its side;
+  - for `squeeze-div`, a close already outside the band.
+
+  It asks whether the trigger adds anything over simply being in that state. Without it, a draw
+  outside the state leaves at the next close, a round trip that measures the spread, not an
+  entry. A test pins that every real entry fires inside its matched state.
+
+**The decision rule.**
+- **Eight tests:** four setup-sides, each against two baselines. Holm across all eight at a
+  family-wise α of 0.05.
+- **A test passes** with a Holm-significant positive edge AND a positive net R.
+- **A setup-side is confirmed** only when both of its tests pass.
+- **Too small a sample:** a setup-side short of 780 effective entries reads "not yet judged".
+
+**Views, never tests:**
+- 2011–18 and 2019–26;
+- the $300M names;
+- halves A and B;
+- the index funds (SPY, QQQ, IWM, DIA);
+- each setup with one of its two conditions removed, described without a baseline: Supertrend
+  alone, the Vortex alone, the squeeze without the divergence, the divergence without the squeeze.
+
+**Everything else is plan v2's:**
+- the universe as of each day;
+- the corporate-action exclusions;
+- next-open fills;
+- the declared costs;
+- the calendar-time one-sided test.
+
+**Known departures from the sources:**
+- **The Vortex's authors entered on a stop at the cross bar's high** (low for a short), not at
+  the next open. This tests the infographic's version.
+- **Bollinger's own squeeze method** (Method I) exits a breakdown short at a tag of the opposite
+  band or a parabolic stop, and picks direction with a volume indicator, not RSI. The middle-band
+  exit and the divergence are the graphic's.
+
+**Outcome (run once, after this declaration; `round3-20261004-173057.json`):**
+- **Nothing passed.** Every setup-side loses money after costs:
+  - Supertrend + Vortex −0.027 R long and −0.437 R short;
+  - the squeeze −0.073 R long and −0.613 R short.
+- Only the two short "matched" edges were Holm-significant (+0.045 R, t 3.9; +0.203 R, t 2.5).
+  Both sides lose money, so neither passes.
+- The results and what they say are in `packages/technicals/docs/setups.md`, "Round 3".
 
 ## Later phases: uses the study and log are shaped for, none committed
 

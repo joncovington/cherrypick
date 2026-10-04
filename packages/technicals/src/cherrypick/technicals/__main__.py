@@ -327,6 +327,38 @@ def cmd_study_round2(args) -> int:
     return 0
 
 
+def cmd_study_round3(args) -> int:
+    """Round 3 (docs/signal-log-plan.md): the two infographic setups, long and short, each against
+    the random and the matched baseline, on every name."""
+    from . import round3
+
+    result = round3.run(workers=args.workers, progress=lambda m: print(m, flush=True))
+    path = round3.write(result)
+    summary = []
+    for hid, v in result["hypotheses"].items():
+        d, t = v["describe"], v["test"]
+        summary.append(
+            {
+                "hypothesis": hid,
+                "passed": v["passed"],
+                "entries": d.get("entries"),
+                "net_r": round(d["expectancy_r"], 3) if d.get("entries") else None,
+                "baseline_r": round(d["baseline_r"], 3) if d.get("baseline_r") is not None else None,
+                "edge_r": round(t["edge_r"], 3) if "edge_r" in t else None,
+                "t": round(t["t"], 2) if "t" in t else None,
+                "p": t.get("p"),
+                "judged": t.get("judged"),
+            }
+        )
+    verdicts = {k: v["verdict"] for k, v in result["setups"].items()}
+    print(
+        json.dumps(
+            {"path": path, "seconds": result["seconds"], "summary": summary, "verdicts": verdicts}, indent=1
+        )
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m cherrypick.technicals", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -388,6 +420,9 @@ def main(argv: list[str] | None = None) -> int:
     s2.add_argument("--stage", choices=("A", "B"), required=True)
     s2.add_argument("--workers", type=int, default=14)
     s2.set_defaults(fn=cmd_study_round2)
+    s3 = ss.add_parser("round3", help="round 3: Supertrend + Vortex and squeeze + RSI divergence")
+    s3.add_argument("--workers", type=int, default=14)
+    s3.set_defaults(fn=cmd_study_round3)
     rp = sub.add_parser("report", help="write one session's market-report readings for the console")
     rp.add_argument("--session", help="ISO date (default: the latest session stored)")
     rp.set_defaults(fn=cmd_report)

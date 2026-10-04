@@ -2,7 +2,8 @@
 
 Each returns a list the same length as its input, with None where the window is not yet full, so a
 reading is never taken from a partial window. ATR, ADX and Supertrend serve the chart's entry/exit
-setups (`setups.py`); they are the textbook (Wilder) definitions, not fitted to any vendor.
+setups (`setups.py`); they are the textbook (Wilder) definitions, not fitted to any vendor. The
+Vortex and the RSI divergence serve the study's round 3 setups, in their authors' definitions.
 """
 
 from __future__ import annotations
@@ -178,6 +179,80 @@ def supertrend(
         up[i] = trend_up
         line[i] = fl if trend_up else fu
     return line, up
+
+
+def vortex(
+    highs: list[float], lows: list[float], closes: list[float], n: int = 14
+) -> tuple[list[float | None], list[float | None]]:
+    """(VI+, VI-): Botes & Siepman's Vortex Indicator (TASC, January 2010). VM+ is |high - prior low|
+    and VM- is |low - prior high|; each is summed over the last `n` bars and divided by the true range
+    summed over the same bars -- plain sums, not Wilder averages. The first value is at index `n`;
+    None where the summed range is zero (no movement says nothing about direction)."""
+    size = len(closes)
+    plus: list[float | None] = [None] * size
+    minus: list[float | None] = [None] * size
+    tr = true_range(highs, lows, closes)
+    vm_p = [None] + [abs(highs[i] - lows[i - 1]) for i in range(1, size)]
+    vm_m = [None] + [abs(lows[i] - highs[i - 1]) for i in range(1, size)]
+    for i in range(n, size):
+        span = sum(tr[i - n + 1 : i + 1])
+        if span > 0:
+            plus[i] = sum(vm_p[i - n + 1 : i + 1]) / span
+            minus[i] = sum(vm_m[i - n + 1 : i + 1]) / span
+    return plus, minus
+
+
+def _pivots(values: list[float | None], k: int, high: bool) -> list[int]:
+    """Indices whose value is beyond each of the `k` before it and not passed by any of the `k`
+    after it (above for highs, below for lows) -- `swings.py`'s rule, on any series. Every value in
+    the window must be defined."""
+    out = []
+    for p in range(k, len(values) - k):
+        window = values[p - k : p + k + 1]
+        if None in window:
+            continue
+        v, before, after = values[p], values[p - k : p], values[p + 1 : p + k + 1]
+        if high and v > max(before) and v >= max(after):
+            out.append(p)
+        elif not high and v < min(before) and v <= min(after):
+            out.append(p)
+    return out
+
+
+def divergence(
+    highs: list[float],
+    lows: list[float],
+    osc: list[float | None],
+    k: int = 5,
+    span: tuple[int, int] = (5, 60),
+) -> tuple[list[bool], list[bool]]:
+    """(bearish, bullish): at each bar, whether the latest two oscillator pivots confirmed by then
+    form a regular divergence. A pivot is confirmed `k` bars after it. Bearish: the later pivot high
+    of `osc` is lower than the one before while the price HIGH on its bar is higher (price is read
+    at the oscillator's pivot bars, as TradingView's Divergence Indicator does). Bullish: the later
+    pivot low is higher while the price LOW on its bar is lower. The two pivots must be between
+    `span` bars apart."""
+    lo, hi = span
+    size = len(osc)
+
+    def state(pivots: list[int], price: list[float], bearish: bool) -> list[bool]:
+        out = [False] * size
+        j = -1  # the latest pivot confirmed by bar i
+        for i in range(size):
+            while j + 1 < len(pivots) and pivots[j + 1] + k <= i:
+                j += 1
+            if j < 1:
+                continue
+            p1, p2 = pivots[j - 1], pivots[j]
+            if not lo <= p2 - p1 <= hi:
+                continue
+            if bearish:
+                out[i] = osc[p2] < osc[p1] and price[p2] > price[p1]
+            else:
+                out[i] = osc[p2] > osc[p1] and price[p2] < price[p1]
+        return out
+
+    return state(_pivots(osc, k, True), highs, True), state(_pivots(osc, k, False), lows, False)
 
 
 def cci(highs: list[float], lows: list[float], closes: list[float], n: int = 14) -> list[float | None]:
