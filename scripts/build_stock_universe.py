@@ -28,9 +28,15 @@ Three steps, each its own subcommand and its own schedule:
   both held.
 - **measure** (twice a session, inside regular hours only): for each candidate, tastytrade's
   liquidity rating (recorded as a guide), the stock's bid/ask, and the bid/ask of its at-the-money
-  call and put about 30 days out. A quote not stamped inside that day's regular session is
-  discarded rather than measured — a weekend snapshot of NMR read 9.55/10.98, the overnight book,
-  not the market.
+  call and put on the standard monthly expiry nearest 30 days out (`monthly_expiry`). Never a
+  weekly: weeklies quote wider than the monthly, so their spread is not the name's (the user's
+  direction, 2026-10-04). Until then it took whichever expiry was nearest 30 days, which was usually a
+  weekly (30 October for 188 of 190 names on 2026-10-02). Every listed candidate's options are
+  quoted, including names whose option volume already rules them out of the universe, because the
+  same spread is to decide the setups watchlist's options-tradable label, which admits names under
+  this volume bar (LOW and ABT, at about 7,600 contracts a day). A quote not stamped inside that
+  day's regular session is discarded rather than measured — a weekend snapshot of NMR read
+  9.55/10.98, the overnight book, not the market.
 - **build**: a pure function over every saved measurement and OCC session. A name is **in** only
   when its stock spread, option spread and option volume all hold on medians over at least
   `MIN_SESSIONS` sessions; fewer sessions is **pending**, never a pass. Every name gets its
@@ -70,7 +76,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -88,8 +94,9 @@ RULE = {
     "stock_max_spread_abs": 0.01,  # or one tick
     "option_max_spread_pct": 0.03,  # 3% of mid, worse of the ATM call and put
     "option_max_spread_abs": 0.05,  # or five cents
+    "option_expiry": "standard monthly",  # third Friday; never a weekly (see `monthly_expiry`)
     "option_target_dte": 30,
-    "option_dte_range": (14, 60),
+    "option_dte_range": (14, 60),  # 46 days always holds a monthly: they are at most 35 apart
     "min_sessions": 3,
     "lookback_sessions": 10,
 }
@@ -210,11 +217,31 @@ def spread_score(width: float, pct: float, max_pct: float, max_abs: float) -> fl
     return min(pct / max_pct, width / max_abs)
 
 
+def monthly_expiry(year: int, month: int) -> date:
+    """The standard monthly options expiry: the third Friday, or the trading day before it when that
+    Friday is a market holiday (Good Friday on 2025-04-18, Juneteenth observed on 2027-06-18).
+    Weeklies, end-of-month and quarterly expiries are not it."""
+    from cherrypick.core import calendar as cal
+
+    third = cal.nth_weekday(year, month, cal.FRI, 3)
+    return third if cal.is_trading_day(third) else cal.previous_trading_day(third)
+
+
+def is_monthly(expiration: str | None) -> bool:
+    """Whether an ISO expiration date is its month's standard monthly expiry."""
+    try:
+        d = date.fromisoformat(str(expiration))
+    except ValueError:
+        return False
+    return d == monthly_expiry(d.year, d.month)
+
+
 def choose_options(expirations: list[dict], spot: float, rule: dict = RULE) -> dict | None:
-    """The at-the-money call and put of the expiration nearest the target DTE, inside the range.
-    `expirations` is the cached chain: [{expiration, dte, strikes: [[strike, call, put], ...]}]."""
+    """The at-the-money call and put of the standard monthly expiry nearest the target DTE, inside
+    the range; None when the range holds no monthly. `expirations` is the cached chain:
+    [{expiration, dte, strikes: [[strike, call, put], ...]}]."""
     lo, hi = rule["option_dte_range"]
-    usable = [e for e in expirations if lo <= e["dte"] <= hi and e["strikes"]]
+    usable = [e for e in expirations if lo <= e["dte"] <= hi and e["strikes"] and is_monthly(e["expiration"])]
     if not usable or not spot:
         return None
     exp = min(usable, key=lambda e: (abs(e["dte"] - rule["option_target_dte"]), e["dte"]))
@@ -259,7 +286,10 @@ def reading(row: dict, measured_at: datetime, rule: dict = RULE) -> dict:
             }
         )
     if legs:
-        out["option"] = max(legs, key=lambda x: x["score"])  # the worse leg decides
+        out["option"] = {
+            **max(legs, key=lambda x: x["score"]),  # the worse leg decides
+            "monthly": is_monthly((row.get("options") or {}).get("expiration")),
+        }
     elif row.get("options"):
         out["notes"].append("option quote stale or one-sided")
     return out
@@ -281,33 +311,42 @@ def judge(
     tastytrade's liquidity rating and illiquid flag are **guides, never gates** (decided
     2026-09-27): on 2026-09-25 DELL (266k contracts), COST (121k) and ARM (113k) rated 2 while LYG
     rated 4 on 22 contracts. What decides is measured: the stock spread, the at-the-money option
-    spread, and option volume, each on a median over at least `min_sessions` sessions, and until
-    each has that many the name is `pending`."""
+    spread on the standard monthly expiry, and option volume, each on a median over at least
+    `min_sessions` sessions, and until each has that many the name is `pending`."""
     if not name.get("listed"):
         return "out", ["not a listed equity on tastytrade (an index, a future, or a retired symbol)"], {}
 
     recent = sorted(sessions)[-rule["lookback_sessions"] :]
-    medians: dict = {}
-    for kind in ("stock", "option"):
-        per_session = []
+
+    def per_session(kind: str, keep=lambda v: True) -> list[dict]:
+        out = []
         for day in recent:
-            vals = [r[kind] for r in sessions[day] if r.get(kind)]
+            vals = [r[kind] for r in sessions[day] if r.get(kind) and keep(r[kind])]
             if vals:
-                per_session.append(
-                    {
-                        "score": statistics.median(v["score"] for v in vals),
-                        "pct": statistics.median(v["pct"] for v in vals),
-                        "width": statistics.median(v["width"] for v in vals),
-                    }
-                )
-        medians[kind] = {
-            "sessions": len(per_session),
-            **(
-                {k: statistics.median(p[k] for p in per_session) for k in ("score", "pct", "width")}
-                if per_session
-                else {}
-            ),
+                out.append({k: statistics.median(v[k] for v in vals) for k in ("score", "pct", "width")})
+        return out
+
+    def summary(rows: list[dict]) -> dict:
+        return {
+            "sessions": len(rows),
+            **({k: statistics.median(p[k] for p in rows) for k in ("score", "pct", "width")} if rows else {}),
         }
+
+    # The option spread is the monthly's. The changeover (2026-10-05) is per name: a name with fewer
+    # than `min_sessions` sessions on the monthly is judged as before, on the readings taken nearest
+    # 30 days out, while it has enough of them; the two are never pooled. Once the older readings
+    # leave the lookback, every name is on the monthly and the second branch can no longer be taken.
+    monthly = per_session("option", lambda v: v.get("monthly"))
+    earlier = per_session("option", lambda v: not v.get("monthly"))
+    on_monthly = len(monthly) >= rule["min_sessions"] or len(earlier) < rule["min_sessions"]
+    medians: dict = {
+        "stock": summary(per_session("stock")),
+        "option": {
+            **summary(monthly if on_monthly else earlier),
+            "expiry": "monthly" if on_monthly else "nearest 30 days",
+            "monthly_sessions": len(monthly),
+        },
+    }
     vols = volumes[-rule["lookback_sessions"] :]
     medians["option_volume"] = {
         "sessions": len(vols),
@@ -321,12 +360,21 @@ def judge(
         ("option", "option_max_spread_pct", "option_max_spread_abs"),
     ):
         m = medians[kind]
+        # Until a name is on the monthly, its option reasons say which expiry they read.
+        note = (
+            f" (nearest 30 days; the monthly has {m['monthly_sessions']} of {rule['min_sessions']} sessions)"
+            if m.get("expiry") == "nearest 30 days"
+            else ""
+        )
         if m["sessions"] < rule["min_sessions"]:
-            pending.append(f"{kind} spread measured in {m['sessions']} of {rule['min_sessions']} sessions")
+            where = " on the monthly" if m.get("expiry") == "monthly" else ""
+            pending.append(
+                f"{kind} spread measured in {m['sessions']} of {rule['min_sessions']} sessions{where}"
+            )
         elif m["score"] > 1.0:
             reasons.append(
                 f"{kind} spread {m['pct']:.2%} / ${m['width']:.2f} wider than "
-                f"{rule[pct_key]:.2%} or ${rule[abs_key]:.2f}"
+                f"{rule[pct_key]:.2%} or ${rule[abs_key]:.2f}{note}"
             )
     v = medians["option_volume"]
     minimum = rule["min_option_volume"]
@@ -754,12 +802,11 @@ def _iso(value) -> str | None:
     return value.isoformat() if isinstance(value, datetime) else None
 
 
-async def _measure(
-    session, symbols: list[str], chain_cache: dict, limit_chains: int | None, thin: set[str]
-) -> dict:
-    """Instruments, metrics and stock quotes for every candidate; chains and option quotes only for
-    names whose option volume has not already ruled them out (`thin`), so the per-name chain calls
-    are spent where a spread can still decide."""
+async def _measure(session, symbols: list[str], chain_cache: dict, limit_chains: int | None) -> dict:
+    """Instruments, metrics, stock quotes, chains and option quotes for every listed candidate. The
+    chains are one call a name a day, a second apart (about ten minutes for the first measurement of
+    a day, cached for the second). They are spent on names the universe's volume bar already rules
+    out as well, because their monthly spread is still wanted (see the module note)."""
     from tastytrade.instruments import Equity, NestedOptionChain
     from tastytrade.market_data import get_market_data_by_type
     from tastytrade.metrics import get_market_metrics
@@ -796,10 +843,7 @@ async def _measure(
                 }
         await asyncio.sleep(TT_PAUSE_S)
 
-    for sym in listed:
-        if sym in thin:
-            names[sym]["options_skipped"] = "option volume already below the bar"
-    optionable = [s for s in listed if s not in thin]
+    optionable = listed
 
     fetched = 0
     lo, hi = RULE["option_dte_range"]
@@ -892,9 +936,7 @@ def cmd_measure(args) -> int:
     problem = None
     try:
         session = SessionManager(store).get_session()
-        volumes = load_volumes()
-        thin = {s for s in cands if volume_too_thin(volume_series(s, volumes))}
-        names = asyncio.run(_measure(session, sorted(cands), chain_cache, args.limit, thin))
+        names = asyncio.run(_measure(session, sorted(cands), chain_cache, args.limit))
     except Exception as exc:  # noqa: BLE001 — keep the chains gathered so far; warn and stop
         names, problem = None, f"{type(exc).__name__}: {exc}"
     _write_json(chain_path, chain_cache)

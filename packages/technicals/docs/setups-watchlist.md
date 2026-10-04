@@ -67,10 +67,16 @@ its share price. Among names with weeklies, the median close was $42 at rating 4
 had reached the same verdict on 2026-09-27 (`scripts/build_stock_universe.py`, "guides, never
 gates").
 
-**Measured bid/ask is the next step.** That script already snapshots the at-the-money call and put
-twice a session. As of 2026-10-02 it measures the expiry nearest 30 days, which was a weekly
-(30 October) for 188 of 190 names. Weeklies quote wider than the monthly, so the spread check is to
-move to the standard monthly before it feeds this label.
+**Measured bid/ask comes next.** That script snapshots the at-the-money call and put twice a
+session.
+- **Since 2026-10-05 it reads the standard monthly expiry.** Until then it read the expiry nearest
+  30 days, which was a weekly (30 October) for 188 of 190 names on 2026-10-02. Weeklies quote wider
+  than the monthly.
+- **It quotes every listed candidate**, including names under the universe's own volume bar, such
+  as LOW and ABT.
+- **The bar is not chosen yet.** Once three sessions of monthly readings exist, the spread
+  distribution across the label's names sets it. The universe's own bar (the worse leg within 3% of
+  mid or $0.05) passes only 14 of 558 candidates, which is too strict for this label.
 
 On 2026-10-02, 248 of the watchlist's 460 names were options-tradable, and 48 of the 77 tested
 rows. Most of the rest list monthly options only (MCO, CB, BNY, LIN).
