@@ -1,8 +1,9 @@
 # The setups watchlist
 
-The console's `/charts/setups` table lists every recent signal from the chart setups
-([setups.md](setups.md)), and every position they still hold, across all charted names. Each symbol
-opens that name's chart with the setup selected.
+The console's `/charts/setups` table lists every recent signal from the chart setups, long and
+short ([setups.md](setups.md)), and every position they still hold, across all charted names. Each
+symbol opens that name's chart with the setup and side selected. None of it is vendor data: the
+vendor only checks our trend scores and RS rank.
 
 `watchlist.py` builds it from the chart files as `chart.write_all` writes them, into
 `charts/setups-index.json`. The table and the charts therefore can't disagree about a trade. The
@@ -19,22 +20,25 @@ Each row carries the context the signal is read against, all as of the chart's l
 
 | Column | What it is |
 |---|---|
-| Move | Close to close: the exit against the entry, or the last close against the entry while open. **Not P&L** (no fill, no cost). |
-| 1M / 6M | Our trend scores (−4 to +4, which match the vendor's day by day), with the vendor page's three-way label. |
+| Side | Long or short. A short's entry reads "▼ short" and its exit "▲ cover". |
+| Move | Close to close **in the trade's direction**: the exit against the entry, or the last close against the entry while open. A fall is a positive move for a short. **Not P&L** (no fill, no cost). |
+| 1M / 6M | Our trend scores (−4 to +4) with our own five-step label (`trend.label`). The vendor checks the scores (99.7% day by day); its page's wording is not used. |
 | RS | Our 1–10 rank, the vendor's "Relative Strength": a decile across the whole US market of half the 1-month return plus the 6-month return. **Not a comparison with SPY.** It matched the vendor's page on 12 of 16 names and was within one on the rest (2026-10-03). |
 | 1M vs SPY | The name's 21-session return less SPY's over the same sessions, in percentage points. This is what RS is often taken to be. |
-| Support / Resistance | The nearest level below and above the last close among those the vendor's chart draws ([vendor-view.md](vendor-view.md)). Blank where the vendor's chart was never captured. |
+| Support / Resistance | The nearest of **our own** levels below and above the last close: swing points in our bars (`swings.py`, described in [setups.md](setups.md)). |
 
-**The three-way label** is how the vendor's page shows a score, measured on 18 names on 2026-10-03:
-−4 to −2 is Bearish, −1 is Neutral, and +3 to +4 is Bullish. Scores 0 to +2 weren't on that panel.
-`page_label` assumes the mirror image (0 and +1 Neutral, +2 Bullish). That's unconfirmed until a
-capture shows one of those scores. Our own chart page keeps the five-step label.
+**The vendor's page shows three labels** (measured on 18 names on 2026-10-03: −4 to −2 Bearish, −1
+Neutral, +3 to +4 Bullish). The first watchlist used that wording, guessing the 0 to +2 range. It was
+replaced on 2026-10-04 by our own five-step label, so nothing in the table rests on a vendor
+convention or a guess.
 
 ## Filters
 
-- **Setup:** one setup or all of them.
+- **Setup:** one setup family or all of them. A family includes its short.
+- **Side:** long, short, or both.
 - **Event:** entries, exits or both.
-- **Trend agrees:** 1M and 6M both read Bullish.
+- **Trend agrees:** both trend scores on the trade's side of zero, above it for a long and below
+  it for a short (`watchlist.trend_agrees`).
 - **RS ≥ 7:** only names in the top 30% of the market.
 - **Symbol search.**
 - **Sort:** most recent (the default), RS, Move, or 1M vs SPY.
@@ -43,7 +47,8 @@ capture shows one of those scores. Our own chart page keeps the five-step label.
 Nothing ranks signals by quality. These setups aren't scored for outcomes, so the table shouldn't
 imply which signal is better.
 
-## The numbers on 2026-10-03
+## The numbers
 
-403 rows across 527 charts: 183 open positions (114 mean reversion, 42 pullback, 15 trend following,
-12 breakout). 57 names had an entry in the last 5 sessions.
+On 2026-10-03, longs only: 403 rows across 527 charts, with 183 open positions (114 mean reversion,
+42 pullback, 15 trend following, 12 breakout), and 57 names with an entry in the last 5 sessions.
+With the shorts (2026-10-04): 730 rows.

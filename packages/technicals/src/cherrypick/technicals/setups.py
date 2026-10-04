@@ -1,4 +1,4 @@
-"""The chart's entry and exit setups: four textbook long-only pairings, each walked as one position.
+"""The chart's entry and exit setups: four textbook pairings, long and short, each walked as one position.
 
 The chart page used to mark the vendor's scan-rule matches with arrows. Those are patterns, not
 trades: nothing says where one ends. These four say both, so the arrows come in pairs -- an entry,
@@ -10,8 +10,12 @@ a second position, and a bar that exits does not also enter. The walk runs over 
 store holds, so a position opened before the chart's window still exits where its rule says.
 
 These are the textbook definitions, chosen with the user on 2026-10-03, not fitted to anything and
-not scored against outcomes. The parameters are the constants below; a change to one is a change to
-what every arrow means, so say so where it lands.
+not scored against outcomes. Each long setup has a short mirror (2026-10-04): every comparison
+reversed, highs for lows, the upper band for the lower, an overbought RSI for an oversold one. A long
+and a short of the same family are separate positions and never net against each other. Nothing
+here reads vendor data; the vendor only checks the trend scores and rank the watchlist shows.
+The parameters are the constants below; a change to one is a change to what every arrow means, so
+say so where it lands.
 
 The breakout setup needs volume. A cash index has none -- nothing trades as SPX, it is computed from
 its members -- so the chart builder passes SPY's volume for SPX and the chart says it did.
@@ -26,11 +30,15 @@ from . import indicators
 
 ADX_MIN = 20.0
 PULLBACK_RSI = (40.0, 50.0)
+PULLBACK_RSI_SHORT = (50.0, 60.0)  # the mirror: a rally that RSI(14) peaked between 50 and 60
 # The pullback's RSI is read as the dip's low over the last few sessions, not on the entry bar: on
 # bars where the EMAs are stacked and the 21 holds, RSI(14) was never under 50.5 (553 bars, eleven
 # names, three years -- 2026-10-03), so the rule as first written could not fire. docs/setups.md.
+# The short mirror is the same: on bars stacked down where the 21 rejected the close, RSI never
+# reached 50 (232 bars, peak 49.8).
 PULLBACK_RSI_WINDOW = 5
 OVERSOLD_RSI = 30.0
+OVERBOUGHT_RSI = 70.0
 TARGET_LOOKBACK = 20  # the pullback's target: the highest high of the sessions before entry
 CHANDELIER_N, CHANDELIER_MULT = 22, 3.0
 REVERSION_STOP_ATR = 2.0  # x ATR(14) at entry, under the entry close
@@ -45,6 +53,12 @@ class Setup:
     name: str
     rule: str
     lines: tuple[str, ...]  # the `lines` series the rule reads, for the chart to draw beside it
+    family: str = ""  # the setup a short mirrors; a long is its own family
+    side: str = "long"
+
+    def __post_init__(self):
+        if not self.family:
+            object.__setattr__(self, "family", self.id)
 
 
 SETUPS = (
@@ -79,6 +93,46 @@ SETUPS = (
         "the band's width at its narrowest of 120 sessions — on volume above 1.5 × its average of "
         "the 50 sessions before. Exit on the first close with Supertrend(10, 3) down.",
         ("bb_upper", "bb_mid", "bb_lower", "supertrend"),
+    ),
+    Setup(
+        "trend-short",
+        "Trend following (short)",
+        "Short when the 9 EMA crosses below the 21 EMA, with the close below the 50 EMA and ADX(14) "
+        "above 20. Cover on the first close over the 21 EMA.",
+        ("ema9", "ema21", "ema50"),
+        "trend",
+        "short",
+    ),
+    Setup(
+        "pullback-short",
+        "Pullback (short)",
+        "Short when the EMAs are stacked 9 < 21 < 50 and the bar rallies to the 21 EMA but closes under "
+        "it, after RSI(14) rallied to between 50 and 60 in the last 5 sessions. Cover when the low "
+        "reaches the lowest low of the 20 sessions before entry (target), or on a close over the "
+        "lowest low since entry plus 3 × ATR(22) (stop); a bar that does both counts as a stop.",
+        ("ema9", "ema21", "ema50"),
+        "pullback",
+        "short",
+    ),
+    Setup(
+        "reversion-short",
+        "Mean reversion (short)",
+        "Short when the high touches the upper Bollinger band (20, 2) with RSI(14) over 70. Cover on a "
+        "close at or under the middle band (target), or a close more than 2 × ATR(14) over the entry "
+        "close (stop).",
+        ("bb_upper", "bb_mid", "bb_lower"),
+        "reversion",
+        "short",
+    ),
+    Setup(
+        "breakout-short",
+        "Breakdown (short)",
+        "Short on a close under the lower Bollinger band (20, 2) within 5 sessions of a squeeze — the "
+        "band's width at its narrowest of 120 sessions — on volume above 1.5 × its average of the 50 "
+        "sessions before. Cover on the first close with Supertrend(10, 3) up.",
+        ("bb_upper", "bb_mid", "bb_lower", "supertrend"),
+        "breakout",
+        "short",
     ),
 )
 
@@ -253,7 +307,84 @@ def breakout(r: Readings) -> list[Trade]:
     return _walk(len(r.closes), enter, leave)
 
 
-RUN = {"trend": trend, "pullback": pullback, "reversion": reversion, "breakout": breakout}
+def trend_short(r: Readings) -> list[Trade]:
+    def enter(i):
+        if i < 1 or not _defined(
+            r.ema9[i - 1], r.ema21[i - 1], r.ema9[i], r.ema21[i], r.ema50[i], r.adx14[i]
+        ):
+            return None
+        crossed = r.ema9[i - 1] >= r.ema21[i - 1] and r.ema9[i] < r.ema21[i]
+        return Trade(i) if crossed and r.closes[i] < r.ema50[i] and r.adx14[i] > ADX_MIN else None
+
+    def leave(i, t):
+        return "21 EMA" if r.closes[i] > r.ema21[i] else None
+
+    return _walk(len(r.closes), enter, leave)
+
+
+def pullback_short(r: Readings) -> list[Trade]:
+    lo, hi = PULLBACK_RSI_SHORT
+
+    def enter(i):
+        recent = r.rsi14[max(0, i - PULLBACK_RSI_WINDOW + 1) : i + 1]
+        if i < TARGET_LOOKBACK or not _defined(r.ema9[i], r.ema21[i], r.ema50[i], *recent):
+            return None
+        stacked = r.ema9[i] < r.ema21[i] < r.ema50[i]
+        rejected = r.highs[i] >= r.ema21[i] > r.closes[i]
+        if not (stacked and rejected and lo <= max(recent) <= hi):
+            return None
+        target = min(r.lows[i - TARGET_LOOKBACK : i])
+        return Trade(i, target=target if target < r.closes[i] else None)
+
+    def leave(i, t):
+        a = r.atr22[i]
+        if a is not None and r.closes[i] > min(r.lows[t.entry : i + 1]) + CHANDELIER_MULT * a:
+            return "stop"
+        if t.target is not None and r.lows[i] <= t.target:
+            return "target"
+        return None
+
+    return _walk(len(r.closes), enter, leave)
+
+
+def reversion_short(r: Readings) -> list[Trade]:
+    def enter(i):
+        if not _defined(r.bb_upper[i], r.rsi14[i], r.atr14[i]):
+            return None
+        return Trade(i) if r.highs[i] >= r.bb_upper[i] and r.rsi14[i] > OVERBOUGHT_RSI else None
+
+    def leave(i, t):
+        if r.closes[i] > r.closes[t.entry] + REVERSION_STOP_ATR * r.atr14[t.entry]:
+            return "stop"
+        if r.closes[i] <= r.bb_mid[i]:
+            return "target"
+        return None
+
+    return _walk(len(r.closes), enter, leave)
+
+
+def breakout_short(r: Readings) -> list[Trade]:
+    def enter(i):
+        if not _defined(r.bb_lower[i]) or not any(r.squeeze[max(0, i - SQUEEZE_RECENT + 1) : i + 1]):
+            return None
+        return Trade(i) if r.closes[i] < r.bb_lower[i] and volume_confirms(r.volumes, i) else None
+
+    def leave(i, t):
+        return "supertrend" if r.supertrend_up[i] is True else None
+
+    return _walk(len(r.closes), enter, leave)
+
+
+RUN = {
+    "trend": trend,
+    "pullback": pullback,
+    "reversion": reversion,
+    "breakout": breakout,
+    "trend-short": trend_short,
+    "pullback-short": pullback_short,
+    "reversion-short": reversion_short,
+    "breakout-short": breakout_short,
+}
 
 
 def lines(r: Readings) -> dict[str, list[float | None]]:

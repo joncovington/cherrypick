@@ -134,6 +134,9 @@ function shapeSetup(raw: unknown): TechnicalsSetup[] {
     {
       id,
       name,
+      // A file from before the shorts has longs only, each its own family.
+      family: str(s["family"]) ?? id,
+      side: s["side"] === "short" ? "short" : "long",
       rule: str(s["rule"]) ?? "",
       lines: list(s["lines"]).filter((l): l is string => typeof l === "string"),
       trades: list(s["trades"]).flatMap((rt) => {
@@ -203,6 +206,12 @@ function shapeChart(doc: Record<string, unknown>): TechnicalsChart | null {
       return date === null ? [] : [{ date, rules }];
     }),
     setups: list(doc["setups"]).flatMap(shapeSetup),
+    ourLevels: list(doc["our_levels"]).flatMap((raw) => {
+      const l = rec(raw);
+      const kind = l["kind"];
+      const value = num(l["value"]);
+      return (kind === "support" || kind === "resistance") && value !== null ? [{ kind, value, date: str(l["date"]) }] : [];
+    }),
     setupLines: Object.fromEntries(Object.keys(lines).map((k) => [k, alignedIn(lines, k)])),
     volumeSource: str(doc["volume_source"]),
     vendor: shapeVendor(doc["vendor"]),
@@ -236,6 +245,9 @@ function shapeWatchRow(raw: unknown): TechnicalsWatchlistRow[] {
       session,
       setup,
       setupName: str(r["setup_name"]) ?? setup,
+      family: str(r["family"]) ?? setup,
+      side: r["side"] === "short" ? "short" : "long",
+      trendAgrees: typeof r["trend_agrees"] === "boolean" ? r["trend_agrees"] : null,
       entryDate,
       entryPrice: num(r["entry_price"]),
       entryAgo: num(r["entry_ago"]),

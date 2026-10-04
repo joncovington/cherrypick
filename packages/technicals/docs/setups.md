@@ -1,7 +1,7 @@
 # Entry and exit setups on the technicals chart
 
-The arrows on the console's technicals chart (`/charts/technicals`) are four textbook long-only
-setups. Each one opens a simulated position when its entry rule fires and closes it when its own
+The arrows on the console's technicals chart (`/charts/technicals`) are four textbook setups and
+their short mirrors. Each one opens a simulated position when its entry rule fires and closes it when its own
 exit rule fires. The engine is `src/cherrypick/technicals/setups.py`, the indicators it reads are in
 `indicators.py`, and `chart.py` writes the results into each name's chart file (`chart_version` 3).
 The console only draws what the file says.
@@ -153,8 +153,8 @@ Two things this means in practice (measured 2026-10-03):
 
 - **Daily bars, judged on the close.** An arrow sits on the bar whose close fired it, at that close.
   No fill, slippage or next-day open is modelled. These are signals, not trades.
-- **Long only.** An up arrow is an entry and a down arrow is the exit of that same position. A short
-  side would need a styling that can't be confused with a long exit, and it was not wanted.
+- **Long and short.** Each side is drawn in its own colour and labelled, and a long and a short
+  are separate positions (see "The short mirrors").
 - **One position per setup.** An entry signal while a position is open is not a second position,
   and a bar that exits does not also enter.
 - **Walked over the whole stored history** (about three years), then cut to the 250 sessions drawn.
@@ -166,6 +166,58 @@ Two things this means in practice (measured 2026-10-03):
 - **The parameters are constants at the top of `setups.py`.** Changing one changes what every arrow
   means, so say so in the commit and here.
 
+## The short mirrors (2026-10-04)
+
+Each long setup has a short mirror: every comparison reversed, highs for lows, the upper band for
+the lower, an overbought RSI for an oversold one. A long and a short of the same family are separate
+positions, and they never net against each other.
+
+| Short | Entry | Cover |
+|---|---|---|
+| Trend following | the 9 EMA crosses below the 21, close under the 50 EMA, ADX(14) > 20 | first close over the 21 EMA |
+| Pullback | EMAs stacked 9 < 21 < 50, the high reaches the 21 but the close is under it, RSI(14) rallied to 50–60 in the last 5 sessions | the low reaches the lowest low of the 20 sessions before entry (target), or a close over the lowest low since entry plus 3 × ATR(22) (stop); both on one bar is a stop |
+| Mean reversion | the high touches the upper band with RSI(14) over 70 | a close at or under the middle band (target), or more than 2 × ATR(14) over the entry close (stop) |
+| Breakdown | a close under the lower band within 5 sessions of a squeeze, volume > 1.5 × its 50-session average | the first close with Supertrend(10, 3) up |
+
+**The short pullback has the same problem as the long one, measured the same way.** On bars stacked
+down where the 21 EMA rejected the close, RSI(14) never reached 50: 232 bars on eleven names, peaking
+at 49.8, because a close back under a falling 21 pulls RSI under 50. The rally is read over the last
+5 sessions, as the long side's dip is, and fires on 87 of those bars.
+
+**On the chart**, a short is drawn in pale grey, never amber, so a short's entry (a down arrow) can't
+be read as a long's exit. The entry is a down arrow over the bar labelled "short", and the exit an
+up arrow under the bar labelled "cover · <reason>". A Long / Short / Both control picks which
+positions of the chosen setup are drawn (`?side=`). The watchlist has a Side column and filter.
+
+## Vendor data: none in the setups
+
+The setups, their indicators, the levels the chart and watchlist show, and the trend labels are all
+computed from our own bars. The vendor is used only to check our calculations:
+
+- **Our trend scores** match the vendor's day by day on 99.7% of days (`trend.py`).
+- **Our RS rank** matches exactly on 52 of 62 captures (`levels.py`).
+- **Our support and resistance** (`swings.py`) are compared with the levels the vendor's chart
+  draws, and the result is recorded below. The comparison is never a target.
+
+The vendor's levels remain on the chart as "Vendor's view" (and "All"), for comparison only.
+
+## Our own support and resistance (`swings.py`)
+
+A level is a confirmed swing point in our bars over the last 250 sessions:
+
+- **A swing high** is above the 10 highs before it and not exceeded by the 10 after. **A swing low**
+  is the mirror.
+- **Resistance** is a swing high above the last close. **Support** is a swing low below it. A broken
+  level is not turned into its opposite.
+- The two nearest on each side are kept, skipping any within 1% of one already kept.
+- Each level is dated on its swing bar and drawn from that date.
+
+**Why 10 bars either side:** a high or low the market respected for two trading weeks on each side,
+the textbook "major swing". As a check, against the levels the vendor's chart draws on 129 captures,
+one of ours lies within 1% of one of theirs on 20% of their levels with 5 bars, 26% with 10, and 25%
+with 20 (within 2%: 30%, 35%, 34%). The overlap is modest, as it should be: how the vendor picks its
+levels is unsolved, and ours are a different, stated rule, not an attempt to copy theirs.
+
 ## How often they fire (527 charts, 2026-10-03)
 
 These are frequencies, not results. Nothing here scores whether a setup makes money.
@@ -176,6 +228,12 @@ These are frequencies, not results. Nothing here scores whether a setup makes mo
 | Pullback | 4,123 | 524 | 1,504 | 42 | 2,595 target, 1,486 stop |
 | Mean reversion | 2,515 | 518 | 857 | 114 | 1,772 target, 629 stop |
 | Breakout | 291 | 232 | 79 | 12 | all Supertrend |
+| Trend following (short) | 1,857 | 505 | 643 | 59 | all at the 21 EMA |
+| Pullback (short) | 2,490 | 512 | 980 | 34 | 1,295 target, 1,161 stop |
+| Mean reversion (short) | 5,899 | 523 | 1,821 | 26 | 2,983 target, 2,890 stop |
+| Breakdown (short) | 286 | 230 | 97 | 16 | all Supertrend |
+
+The short rows were counted on 2026-10-04.
 
 ## How it is checked
 
@@ -203,8 +261,10 @@ These are frequencies, not results. Nothing here scores whether a setup makes mo
 
   The first version of the tests missed three of these. That is why the completeness check, the
   hand-built tie and the ADX case exist.
-- **The real store.** On 2026-10-03 an audit restated the four rules independently and ran them
-  over all 527 chart names and their full histories: every entry, every exit, every exit being the
+- **The shorts** are tested the same way on a walk that drifts down, and each was shown to fail
+  when broken (eight deliberate breaks, every one caught).
+- **The real store.** On 2026-10-03 an audit restated the four rules independently (all eight on
+  2026-10-04) and ran them over all 527 chart names and their full histories: every entry, every exit, every exit being the
   first allowed, no missed entries, the exit reasons, and each chart file against the engine. It
   found no discrepancies. The page was then checked in Chrome (`pnpm ui-check`) on SPX, QQQ, NVDA,
   TSLA, MSFT, AAPL and GME, covering every setup.

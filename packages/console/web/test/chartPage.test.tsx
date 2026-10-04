@@ -36,15 +36,18 @@ function chart(over: Partial<TechnicalsChart> = {}): TechnicalsChart {
     ivRank: null,
     signals: [],
     setups: [
-      { id: "trend", name: "Trend following", rule: "Exit on the first close under the 21 EMA.", lines: ["ema21"], trades: [] },
+      { id: "trend", name: "Trend following", family: "trend", side: "long", rule: "Exit on the first close under the 21 EMA.", lines: ["ema21"], trades: [] },
       {
         id: "breakout",
         name: "Breakout",
+        family: "breakout",
+        side: "long",
         rule: "Exit on the first close with Supertrend(10, 3) down.",
         lines: ["supertrend"],
         trades: [{ entryDate: "2026-10-01", entryPrice: 101.5, exitDate: null, exitPrice: null, reason: null, target: null }],
       },
     ],
+    ourLevels: [],
     setupLines: { ema21: [1, 2, 3], supertrend: [1, 2, 3] },
     volumeSource: "SPY",
     vendor: null,
@@ -98,7 +101,7 @@ describe("the technicals chart page", () => {
     expect(html).toContain("open since 2026-10-01");
   });
 
-  it("opens on the vendor's view where the vendor was captured, every level where it was not", () => {
+  it("opens on our own levels; the vendor's view is a comparison, and the fallback for an older file", () => {
     const vendor = {
       capture: "2026-10-02",
       fetchedAt: null,
@@ -115,15 +118,33 @@ describe("the technicals chart page", () => {
       barsCompared: null,
       barsAgree: null,
     };
-    const captured = render("/charts/technicals?symbol=SPX", chart({ vendor }));
-    expect(captured).toMatch(/class="mode-btn active">Vendor's view<\/button>/);
-    expect(captured).toContain("On their chart");
+    const ourLevels = [{ kind: "support" as const, value: 98, date: "2026-09-30" }];
+    // Ours whenever the file has them, with or without a vendor capture.
+    const ours = render("/charts/technicals?symbol=SPX", chart({ vendor, ourLevels }));
+    expect(ours).toContain('class="mode-btn active">Our levels</button>');
+    expect(ours).toContain("On their chart");
+    expect(render("/charts/technicals?symbol=SPX", chart({ ourLevels }))).toContain('class="mode-btn active">Our levels</button>');
+    // A file from before our levels: the vendor's view where captured, else everything.
+    expect(render("/charts/technicals?symbol=SPX", chart({ vendor }))).toMatch(/class="mode-btn active">Vendor's view<\/button>/);
     const uncaptured = render("/charts/technicals?symbol=SPX", chart());
-    expect(uncaptured).toContain('class="mode-btn active">All levels</button>');
+    expect(uncaptured).toContain('class="mode-btn active">All</button>');
     expect(uncaptured).not.toContain("Vendor's view</button>");
     // A link asking for the vendor's view on a name with no capture falls back rather than drawing nothing.
-    expect(render("/charts/technicals?symbol=SPX&levels=vendor", chart())).toContain('class="mode-btn active">All levels</button>');
+    expect(render("/charts/technicals?symbol=SPX&levels=vendor", chart({ ourLevels }))).toContain('class="mode-btn active">Our levels</button>');
     expect(render("/charts/technicals?symbol=SPX&levels=off", chart({ vendor }))).toContain('class="mode-btn active">Off</button>');
+  });
+
+  it("shows a family's short when the side asks for it, and a short's own id picks its side", () => {
+    const short = { id: "trend-short", name: "Trend following (short)", family: "trend", side: "short" as const, rule: "Cover on the first close over the 21 EMA.", lines: ["ema21"], trades: [] };
+    const c = chart({ setups: [...chart().setups, short] });
+    expect(render("/charts/technicals?symbol=SPX", c)).toContain('class="mode-btn active">Long</button>');
+    const shortSide = render("/charts/technicals?symbol=SPX&setup=trend&side=short", c);
+    expect(shortSide).toContain("Cover on the first close over the 21 EMA.");
+    expect(shortSide).not.toContain("Exit on the first close under the 21 EMA.");
+    expect(render("/charts/technicals?symbol=SPX&setup=trend-short", c)).toContain('class="mode-btn active">Short</button>');
+    const both = render("/charts/technicals?symbol=SPX&setup=trend&side=both", c);
+    expect(both).toContain("Long: ");
+    expect(both).toContain("Short: ");
   });
 
   it("a chart file from before the setups says so rather than drawing nothing silently", () => {

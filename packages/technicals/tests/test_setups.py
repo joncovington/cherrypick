@@ -14,14 +14,14 @@ import random
 from cherrypick.technicals import chart, indicators, setups, store
 
 
-def _walk(n=3000, seed=6):
+def _walk(n=3000, seed=6, sign=1):
     """Short swings riding a slow cycle and a small upward drift: seed 6 trades every setup at
     least three times (breakouts and pullbacks are rare in plain noise, as in real prices)."""
     rnd = random.Random(seed)
     closes, highs, lows, vols = [], [], [], []
     c = 100.0
     for i in range(n):
-        drift = 0.8 * math.sin(i / 15) + 0.4 * math.sin(i / 97) + 0.1
+        drift = sign * (0.8 * math.sin(i / 15) + 0.4 * math.sin(i / 97) + 0.1)
         c = max(5.0, c * (1 + (drift + rnd.gauss(0, 0.7)) / 100))
         span = c * rnd.uniform(0.004, 0.02)
         closes.append(c)
@@ -231,17 +231,16 @@ def test_a_breakout_needs_a_recent_squeeze_and_volume_and_leaves_when_supertrend
     r = _readings()
 
     def squeezed(i):
-        width = [
-            (u - lo) / m
-            for u, m, lo in zip(
-                r.bb_upper[i - 124 : i + 1],
-                r.bb_mid[i - 124 : i + 1],
-                r.bb_lower[i - 124 : i + 1],
-                strict=True,
-            )
-        ]
-        # a squeeze on day d (one of the last 5): its width is the least of the 120 ending at d
-        return any(width[-1 - k] <= min(width[len(width) - 120 - k : len(width) - k]) for k in range(5))
+        # a squeeze on day j, one of the last 5: its width is the least of the 120 ending at j
+        def width(x):
+            return (r.bb_upper[x] - r.bb_lower[x]) / r.bb_mid[x]
+
+        for j in range(i - 4, i + 1):
+            window = range(j - 119, j + 1)
+            if j - 119 >= 0 and all(r.bb_mid[x] is not None for x in window):
+                if width(j) <= min(width(x) for x in window):
+                    return True
+        return False
 
     def volume(i):
         return r.volumes[i] > 1.5 * sum(r.volumes[i - 50 : i]) / 50
@@ -250,6 +249,97 @@ def test_a_breakout_needs_a_recent_squeeze_and_volume_and_leaves_when_supertrend
         setups.breakout(r),
         lambda i: r.closes[i] > r.bb_upper[i] and squeezed(i) and volume(i),
         lambda j, t: r.supertrend_up[j] is False,
+        len(r.closes),
+    )
+
+
+# ------------------------------------------------------------------------------------ the shorts
+# Each mirrors its long: the same tests, every comparison reversed, on a walk that drifts down
+# (seed 1 of the falling walk trades every short setup at least four times).
+
+
+def _falling():
+    return _readings(seed=1, sign=-1)
+
+
+def test_trend_following_short_enters_on_the_cross_down_and_covers_on_a_close_over_the_21():
+    r = _falling()
+    _check(
+        setups.trend_short(r),
+        lambda i: (
+            r.ema9[i - 1] >= r.ema21[i - 1]
+            and r.ema9[i] < r.ema21[i]
+            and r.closes[i] < r.ema50[i]
+            and r.adx14[i] > 20
+        ),
+        lambda j, t: r.closes[j] > r.ema21[j],
+        len(r.closes),
+    )
+
+
+def test_a_short_pullback_is_rejected_at_the_21_and_covers_at_the_prior_low_or_its_stop():
+    r = _falling()
+
+    def stop(j, t):
+        return r.closes[j] > min(r.lows[t.entry : j + 1]) + 3 * r.atr22[j]
+
+    trades = setups.pullback_short(r)
+    _check(
+        trades,
+        lambda i: (
+            r.ema9[i] < r.ema21[i] < r.ema50[i]
+            and r.highs[i] >= r.ema21[i] > r.closes[i]
+            and 50 <= max(r.rsi14[i - 4 : i + 1]) <= 60
+        ),
+        lambda j, t: stop(j, t) or (t.target is not None and r.lows[j] <= t.target),
+        len(r.closes),
+    )
+    for t in trades:
+        prior = min(r.lows[t.entry - 20 : t.entry])
+        assert t.target == (prior if prior < r.closes[t.entry] else None)
+        if t.exit is not None:
+            assert t.reason == ("stop" if stop(t.exit, t) else "target")
+
+
+def test_mean_reversion_short_sells_the_upper_band_and_covers_at_the_middle_or_a_2_atr_stop():
+    r = _falling()
+
+    def stop(j, t):
+        return r.closes[j] > r.closes[t.entry] + 2 * r.atr14[t.entry]
+
+    trades = setups.reversion_short(r)
+    _check(
+        trades,
+        lambda i: r.highs[i] >= r.bb_upper[i] and r.rsi14[i] > 70,
+        lambda j, t: stop(j, t) or r.closes[j] <= r.bb_mid[j],
+        len(r.closes),
+    )
+    assert {t.reason for t in trades if t.exit is not None} >= {"target"}
+
+
+def test_a_breakdown_needs_a_recent_squeeze_and_volume_and_covers_when_supertrend_turns_up():
+    r = _falling()
+
+    def squeezed(i):
+        # a squeeze on day j, one of the last 5: its width is the least of the 120 ending at j
+        def width(x):
+            return (r.bb_upper[x] - r.bb_lower[x]) / r.bb_mid[x]
+
+        for j in range(i - 4, i + 1):
+            window = range(j - 119, j + 1)
+            if j - 119 >= 0 and all(r.bb_mid[x] is not None for x in window):
+                if width(j) <= min(width(x) for x in window):
+                    return True
+        return False
+
+    _check(
+        setups.breakout_short(r),
+        lambda i: (
+            r.closes[i] < r.bb_lower[i]
+            and squeezed(i)
+            and r.volumes[i] > 1.5 * sum(r.volumes[i - 50 : i]) / 50
+        ),
+        lambda j, t: r.supertrend_up[j] is True,
         len(r.closes),
     )
 
@@ -302,7 +392,19 @@ def test_the_chart_carries_every_setup_with_its_rule_lines_and_trades_in_the_win
     days = _land(conn, "ABC", closes, highs, lows, vols)
     doc = chart.build(conn, "ABC")
     assert doc["chart_version"] == chart.CHART_VERSION
-    assert [s["id"] for s in doc["setups"]] == ["trend", "pullback", "reversion", "breakout"]
+    assert [s["id"] for s in doc["setups"]] == [
+        "trend",
+        "pullback",
+        "reversion",
+        "breakout",
+        "trend-short",
+        "pullback-short",
+        "reversion-short",
+        "breakout-short",
+    ]
+    assert {(s["family"], s["side"]) for s in doc["setups"]} == {
+        (f, side) for f in ("trend", "pullback", "reversion", "breakout") for side in ("long", "short")
+    }
     shown = set(doc["bars"]["date"])
     for s in doc["setups"]:
         assert s["rule"] and set(s["lines"]) <= set(doc["setup_lines"])

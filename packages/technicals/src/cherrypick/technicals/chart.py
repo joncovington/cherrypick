@@ -26,9 +26,23 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from . import indicators, levels, paths, setups, signals, store, symbols, trend, vendor_check, watchlist
+from . import (
+    indicators,
+    levels,
+    paths,
+    setups,
+    signals,
+    store,
+    swings,
+    symbols,
+    trend,
+    vendor_check,
+    watchlist,
+)
 
-CHART_VERSION = 4  # 2: gap levels vs our gap edges; 3: entry/exit setups; 4: vendor_view per level
+# 2: gap levels vs our gap edges; 3: entry/exit setups; 4: vendor_view per level; 5: short setups
+# (each setup names its family and side) and our own swing levels
+CHART_VERSION = 5
 DISPLAY = levels.WINDOW  # the sessions the grid is built on, and so the ones worth drawing
 # The index funds charted beside the stocks. Named, not taken from `store.stocks`: that filter
 # drops funds on purpose, because breadth counts stocks only, and the chart page is not breadth.
@@ -81,6 +95,8 @@ def setup_trades(bars, r: setups.Readings, start: int) -> list[dict]:
             {
                 "id": s.id,
                 "name": s.name,
+                "family": s.family,
+                "side": s.side,
                 "rule": s.rule,
                 "lines": list(s.lines),
                 "trades": [
@@ -228,6 +244,8 @@ def build(conn, symbol: str, session: str | None = None) -> dict[str, Any] | Non
             "volume": [None if symbol in symbols.INDEXES else round(b.volume) for b in shown],
         },
         "grid": grid,
+        # Our own support and resistance (swings.py): the chart's default levels, the watchlist's.
+        "our_levels": swings.levels([b.date for b in bars], highs, lows, closes[-1]),
         "cci14": tail(indicators.cci(highs, lows, closes, 14)),
         "cci5": tail(indicators.cci(highs, lows, closes, 5)),
         "rsi14": tail(indicators.rsi(closes, 14)),

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   createChart,
@@ -36,8 +36,10 @@ import { fmtIvr } from "../../lib/format";
  * place is dotted, and any level we cannot produce is dashed.
  *
  * The arrows are one entry/exit setup at a time (`packages/technicals/setups.py`), picked by
- * `?setup=`: an up arrow where its long position opened, a down arrow where its own exit rule closed
- * it, with the lines that rule reads drawn beside them. The package walks the positions; the page
+ * `?setup=` (the family) and `?side=` (long, short or both): amber for a long -- up where it opened,
+ * down where its exit rule closed it -- and pale for a short -- down labelled "short" where it
+ * opened, up labelled "cover" where it closed -- with the lines that rule reads drawn beside them.
+ * The levels default to our own (swing points, `swings.py`); the vendor's stay as a comparison. The package walks the positions; the page
  * only places what the file says. The scan-rule matches are listed below the chart, not drawn on it.
  */
 
@@ -48,8 +50,12 @@ const OURS = SERIES_COLORS[0]!;
 const VENDOR = SERIES_COLORS[2]!;
 /** Both arrows are amber: an arrow marks an event, and green or red would read as a gain or a loss. */
 const ARROW = SERIES_COLORS[2]!;
+/** A short's arrows: pale, so a short entry (down) is never read as a long's exit (also down). */
+const SHORT_ARROW = "#e3e6ec";
 /** Twice the library's default: at 1 an entry arrow, which carries no label, was lost among the candles. */
 const ARROW_SIZE = 2;
+type Side = "long" | "short" | "both";
+const SIDES: readonly Side[] = ["long", "short", "both"];
 
 /** How each series a setup reads is drawn, keyed as the chart file's `setup_lines`. */
 const SETUP_LINE: Record<string, { title: string; color: string; style: LineStyle; width: 1 | 2 }> = {
@@ -131,9 +137,9 @@ interface LevelTitle {
 }
 
 /** Which horizontal levels are drawn: every one, only those the vendor's own chart draws, or none. */
-type LevelsMode = "all" | "vendor" | "off";
-const LEVELS_MODES: readonly LevelsMode[] = ["all", "vendor", "off"];
-const LEVELS_LABEL: Record<LevelsMode, string> = { all: "All levels", vendor: "Vendor's view", off: "Off" };
+type LevelsMode = "ours" | "vendor" | "all" | "off";
+const LEVELS_MODES: readonly LevelsMode[] = ["ours", "vendor", "all", "off"];
+const LEVELS_LABEL: Record<LevelsMode, string> = { ours: "Our levels", vendor: "Vendor's view", all: "All", off: "Off" };
 
 /** A series' last drawn value, for its chip; null when it has none. */
 function lastValue(values: readonly (number | null)[]): number | null {
@@ -216,7 +222,7 @@ class LeftTitles implements ISeriesPrimitive<Time> {
   }
 }
 
-function PriceChart({ c, setup, levels }: { c: TechnicalsChart; setup: TechnicalsSetup | null; levels: LevelsMode }) {
+function PriceChart({ c, shown, levels }: { c: TechnicalsChart; shown: TechnicalsSetup[]; levels: LevelsMode }) {
   const hostRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = hostRef.current;
@@ -241,9 +247,32 @@ function PriceChart({ c, setup, levels }: { c: TechnicalsChart; setup: Technical
     });
     candles.setData(c.bars.map((b) => ({ time: t(b.date), open: b.open, high: b.high, low: b.low, close: b.close })));
     const titles: LevelTitle[] = [];
-    // "All" draws our grid's extremes and every vendor level; "vendor" only the levels the vendor's own
-    // chart draws (the file's `vendorView`, a package rule; a file without it shows them all); "off"
-    // none. Never the setup lines, which are what the arrows are read against.
+    // "Ours" draws our own swing levels; "vendor" only the levels the vendor's own chart draws (the
+    // file's `vendorView`, a package rule; a file without it shows them all), for comparison; "all"
+    // ours, our grid's extremes and every vendor level; "off" none. Never the setup lines, which are
+    // what the arrows are read against.
+    const fromDate = (date: string | null) =>
+      date !== null && date > dates[0]! ? (dates.find((d) => d >= date) ?? dates[0]!) : dates[0]!;
+    const levelLine = (value: number, date: string | null, color: string, style: LineStyle, title: string) => {
+      // From the level's own date to the last bar, so a recent level is a short line, not one across
+      // the whole chart; kept out of the autoscale, as a price line would be.
+      const from = fromDate(date);
+      const series = chart.addSeries(LineSeries, {
+        color,
+        lineWidth: 1,
+        lineStyle: style,
+        title: "",
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        autoscaleInfoProvider: () => null,
+      });
+      series.setData(dates.filter((d) => d >= from).map((d) => ({ time: t(d), value })));
+      titles.push({ price: value, title, color, from: from === dates[0] ? undefined : t(from) });
+    };
+    if (levels === "ours" || levels === "all") {
+      for (const l of c.ourLevels) levelLine(l.value, l.date, l.kind === "support" ? UP : DOWN, LineStyle.Solid, l.kind);
+    }
     if (levels === "all" && c.grid) {
       for (const [price, title] of [
         [c.grid.high, "grid high"],
@@ -254,29 +283,11 @@ function PriceChart({ c, setup, levels }: { c: TechnicalsChart; setup: Technical
       }
     }
     const drawn = (c.vendor?.levels ?? []).filter((l) => levels === "all" || (levels === "vendor" && l.vendorView !== false));
-    for (const l of drawn) {
-      // As the vendor draws it: from the level's own date to the last bar, so a level set last week
-      // is a short line, not one across the whole chart. Kept out of the autoscale, as a price line
-      // would be, so a far-off level does not squash the candles.
-      const from = l.date !== null && l.date > dates[0]! ? (dates.find((d) => d >= l.date!) ?? dates[0]!) : dates[0]!;
-      const color = levelColor(l);
-      const s = chart.addSeries(LineSeries, {
-        color,
-        lineWidth: 1,
-        lineStyle: levelStyle(l),
-        title: "",
-        lastValueVisible: false,
-        priceLineVisible: false,
-        crosshairMarkerVisible: false,
-        autoscaleInfoProvider: () => null,
-      });
-      s.setData(dates.filter((d) => d >= from).map((d) => ({ time: t(d), value: l.value })));
-      titles.push({ price: l.value, title: `vendor ${KIND_LABEL[l.kind] ?? l.kind}`, color, from: from === dates[0] ? undefined : t(from) });
-    }
+    for (const l of drawn) levelLine(l.value, l.date, levelColor(l), levelStyle(l), `vendor ${KIND_LABEL[l.kind] ?? l.kind}`);
     // The chips draw with whichever pane-0 series carries them, so they go on the last one added:
     // over every line, and under the arrows, which draw on top.
     let topmost: ISeriesApi<SeriesType> = candles;
-    for (const key of setup?.lines ?? []) {
+    for (const key of shown[0]?.lines ?? []) {
       const look = SETUP_LINE[key];
       const values = c.setupLines[key];
       if (look === undefined || values === undefined) continue;
@@ -295,16 +306,30 @@ function PriceChart({ c, setup, levels }: { c: TechnicalsChart; setup: Technical
       if (last !== null) titles.push({ price: last, title: look.title, color: look.color });
     }
     topmost.attachPrimitive(new LeftTitles(titles));
-    // An entry is an up arrow under its bar; an exit a down arrow over its bar, labelled with what
-    // closed it. A position entered before the bars drawn shows only its exit.
+    // A long: an amber up arrow under its entry bar, a down arrow over its exit bar labelled with what
+    // closed it. A short, the mirror in pale: a down arrow labelled "short" over its entry bar, an up
+    // arrow labelled "cover" under its exit. A position entered before the bars drawn shows only its exit.
     const inRange = new Set(dates);
     const markers: SeriesMarker<Time>[] = [];
-    for (const tr of setup?.trades ?? []) {
-      if (inRange.has(tr.entryDate)) {
-        markers.push({ time: t(tr.entryDate), position: "belowBar", color: ARROW, shape: "arrowUp", size: ARROW_SIZE, text: "" });
-      }
-      if (tr.exitDate !== null && inRange.has(tr.exitDate)) {
-        markers.push({ time: t(tr.exitDate), position: "aboveBar", color: ARROW, shape: "arrowDown", size: ARROW_SIZE, text: tr.reason ?? "" });
+    for (const st of shown) {
+      const long = st.side === "long";
+      const color = long ? ARROW : SHORT_ARROW;
+      for (const tr of st.trades) {
+        if (inRange.has(tr.entryDate)) {
+          markers.push(
+            long
+              ? { time: t(tr.entryDate), position: "belowBar", color, shape: "arrowUp", size: ARROW_SIZE, text: "" }
+              : { time: t(tr.entryDate), position: "aboveBar", color, shape: "arrowDown", size: ARROW_SIZE, text: "short" },
+          );
+        }
+        if (tr.exitDate !== null && inRange.has(tr.exitDate)) {
+          const why = tr.reason ?? "";
+          markers.push(
+            long
+              ? { time: t(tr.exitDate), position: "aboveBar", color, shape: "arrowDown", size: ARROW_SIZE, text: why }
+              : { time: t(tr.exitDate), position: "belowBar", color, shape: "arrowUp", size: ARROW_SIZE, text: `cover · ${why}` },
+          );
+        }
       }
     }
     markers.sort((a, b) => (a.time as number) - (b.time as number));
@@ -356,7 +381,7 @@ function PriceChart({ c, setup, levels }: { c: TechnicalsChart; setup: Technical
     panes[2]?.setStretchFactor(0.18);
     chart.timeScale().fitContent();
     return () => chart.remove();
-  }, [c, setup, levels]);
+  }, [c, shown, levels]);
 
   if (c.bars.length < 2) return <p className="muted">Not enough bars to draw.</p>;
   return <div ref={hostRef} style={{ height: "620px" }} />;
@@ -367,11 +392,12 @@ function PriceChart({ c, setup, levels }: { c: TechnicalsChart; setup: Technical
  * Where the setups read another symbol's volume (SPX reads SPY's) it says so, whatever setup is shown.
  */
 function LevelsToggle({ c, mode, onChange }: { c: TechnicalsChart; mode: LevelsMode; onChange: (m: LevelsMode) => void }) {
-  const all = (c.grid ? 2 : 0) + (c.vendor?.levels.length ?? 0);
+  const all = c.ourLevels.length + (c.grid ? 2 : 0) + (c.vendor?.levels.length ?? 0);
   const theirs = c.vendor?.levels.filter((l) => l.vendorView !== false).length ?? 0;
   const tip: Record<LevelsMode, string> = {
-    all: `Our grid's high and low and every level in the vendor's data: ${all} lines`,
-    vendor: `Only what the vendor's own chart draws, the two nearest supports and resistances: ${theirs} lines`,
+    ours: `Our own support and resistance, swing points in our bars, the two nearest each side: ${c.ourLevels.length} lines`,
+    vendor: `For comparison: only what the vendor's own chart draws, the two nearest supports and resistances: ${theirs} lines`,
+    all: `Ours, our grid's high and low and every level in the vendor's data: ${all} lines`,
     off: "No levels",
   };
   // Without a vendor capture there is no vendor's view to show.
@@ -389,14 +415,20 @@ function LevelsToggle({ c, mode, onChange }: { c: TechnicalsChart; mode: LevelsM
 
 function SetupBar({
   c,
-  setup,
+  family,
+  side,
+  shown,
   onPick,
+  onSide,
   levels,
   onLevels,
 }: {
   c: TechnicalsChart;
-  setup: TechnicalsSetup | null;
-  onPick: (id: string) => void;
+  family: string | null;
+  side: Side;
+  shown: TechnicalsSetup[];
+  onPick: (family: string) => void;
+  onSide: (side: Side) => void;
   levels: LevelsMode;
   onLevels: (m: LevelsMode) => void;
 }) {
@@ -408,37 +440,48 @@ function SetupBar({
       </div>
     );
   }
-  const open = setup?.trades.find((tr) => tr.exitDate === null);
-  const shown = new Set(c.bars.map((b) => b.date));
-  const entries = (setup?.trades ?? []).filter((tr) => shown.has(tr.entryDate)).length;
+  // One button per family, named by its long setup; the side picks which of its positions are drawn.
+  const families = c.setups.filter((s) => s.side === "long");
+  const hasShorts = c.setups.some((s) => s.side === "short");
+  const drawn = new Set(c.bars.map((b) => b.date));
+  const entries = shown.reduce((n, st) => n + st.trades.filter((tr) => drawn.has(tr.entryDate)).length, 0);
+  const open = shown.flatMap((st) => st.trades.filter((tr) => tr.exitDate === null).map((tr) => ({ st, tr })));
   return (
     <div style={{ marginBottom: 8 }}>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
         <div className="mode-toggle" role="group" aria-label="setup" style={{ marginLeft: 0 }}>
-          {c.setups.map((s) => (
-            <button key={s.id} type="button" className={s.id === setup?.id ? "mode-btn active" : "mode-btn"} onClick={() => onPick(s.id)}>
+          {families.map((s) => (
+            <button key={s.family} type="button" className={s.family === family ? "mode-btn active" : "mode-btn"} onClick={() => onPick(s.family)}>
               {s.name}
             </button>
           ))}
         </div>
+        {hasShorts && (
+          <div className="mode-toggle" role="group" aria-label="side" style={{ marginLeft: 0 }}>
+            {SIDES.map((sd) => (
+              <button key={sd} type="button" className={sd === side ? "mode-btn active" : "mode-btn"} onClick={() => onSide(sd)}>
+                {sd === "long" ? "Long" : sd === "short" ? "Short" : "Both"}
+              </button>
+            ))}
+          </div>
+        )}
         <LevelsToggle c={c} mode={levels} onChange={onLevels} />
-        {setup && (
-          <span className="chip">
-            {entries} {entries === 1 ? "entry" : "entries"} in {c.bars.length} sessions
+        <span className="chip">
+          {entries} {entries === 1 ? "entry" : "entries"} in {c.bars.length} sessions
+        </span>
+        {open.map(({ st, tr }) => (
+          <span key={st.id} className="chip" title="The position this setup opened has not met its exit rule yet.">
+            {st.side === "short" ? "short" : "long"} open since {tr.entryDate} at {fmt(tr.entryPrice)}
+            {tr.target !== null ? `, target ${fmt(tr.target)}` : ""}
           </span>
-        )}
-        {open && (
-          <span className="chip" title="The position this setup opened has not met its exit rule yet.">
-            open since {open.entryDate} at {fmt(open.entryPrice)}
-            {open.target !== null ? `, target ${fmt(open.target)}` : ""}
-          </span>
-        )}
+        ))}
       </div>
-      {setup && (
-        <p className="muted" style={{ marginTop: 6 }}>
-          {setup.rule}
+      {shown.map((st) => (
+        <p key={st.id} className="muted" style={{ marginTop: 6 }}>
+          {shown.length > 1 && <strong>{st.side === "short" ? "Short: " : "Long: "}</strong>}
+          {st.rule}
         </p>
-      )}
+      ))}
       {c.volumeSource !== null && (
         <p className="muted" style={{ marginTop: 4 }}>
           <strong>Volume is {c.volumeSource}'s.</strong> {c.symbol} has no volume of its own: it is calculated from its
@@ -613,17 +656,35 @@ export function ChartPage() {
     setDraft("");
   };
   const last = c ? c.bars[c.bars.length - 1] : undefined;
-  // The first setup (trend following) unless the URL names another the file carries.
-  const setup = c ? (c.setups.find((s) => s.id === setupParam) ?? c.setups[0] ?? null) : null;
-  const pickSetup = (id: string) => {
+  // `?setup=` names a family (trend following unless the URL names another the file carries) and
+  // `?side=` which of its positions are drawn, long by default. A short's own id ("trend-short"), as a
+  // link may carry, picks its family and the short side.
+  const named = c?.setups.find((s) => s.id === setupParam) ?? null;
+  const family = named?.family ?? c?.setups[0]?.family ?? null;
+  const sideParam = params.get("side");
+  const side: Side =
+    sideParam === "short" || sideParam === "both" || sideParam === "long" ? sideParam : named?.side === "short" ? "short" : "long";
+  // Memoised: the chart is rebuilt whenever this changes, so it must not be a new array every render.
+  const shown = useMemo(
+    () => (c?.setups ?? []).filter((s) => s.family === family && (side === "both" || s.side === side)),
+    [c, family, side],
+  );
+  const pickSetup = (fam: string) => {
     const next = new URLSearchParams(params);
-    next.set("setup", id);
+    next.set("setup", fam);
     setParams(next, { replace: true });
   };
-  // The vendor's view where the vendor's chart was captured, else every level (our grid's two); a
-  // `?levels=` in the URL outranks that, so a link carries the view it was sent with.
+  const pickSide = (sd: Side) => {
+    const next = new URLSearchParams(params);
+    if (family !== null) next.set("setup", family);
+    if (sd === "long") next.delete("side");
+    else next.set("side", sd);
+    setParams(next, { replace: true });
+  };
+  // Our own levels, the vendor's kept for comparison; a chart file from before our levels falls back
+  // to the vendor's view or every level. A `?levels=` in the URL outranks that.
   const levelsParam = params.get("levels");
-  const fallback: LevelsMode = c?.vendor ? "vendor" : "all";
+  const fallback: LevelsMode = c && c.ourLevels.length > 0 ? "ours" : c?.vendor ? "vendor" : "all";
   const asked = LEVELS_MODES.find((m) => m === levelsParam);
   const levels: LevelsMode = asked === undefined || (asked === "vendor" && !c?.vendor) ? fallback : asked;
   const setLevels = (m: LevelsMode) => {
@@ -713,13 +774,23 @@ export function ChartPage() {
             )}
           </div>
           <Card title="Price, RSI and trend" asOf={last ? `close ${fmt(last.close)}` : undefined}>
-            <SetupBar c={c} setup={setup} onPick={pickSetup} levels={levels} onLevels={setLevels} />
-            <PriceChart c={c} setup={setup} levels={levels} />
+            <SetupBar
+              c={c}
+              family={family}
+              side={side}
+              shown={shown}
+              onPick={pickSetup}
+              onSide={pickSide}
+              levels={levels}
+              onLevels={setLevels}
+            />
+            <PriceChart c={c} shown={shown} levels={levels} />
             <p className="muted">
               {c.grid
                 ? `Grid over ${c.grid.window ?? 250} sessions: low ${fmt(c.grid.low)} (${c.grid.lowDate ?? "—"}), high ${fmt(c.grid.high)} (${c.grid.highDate ?? "—"}), step ${fmt(c.grid.step)}. `
                 : "Too few sessions for a grid. "}
-              Arrows: up where the setup's long position opened, down where its exit rule closed it, labelled
+              Arrows: amber for a long (up where it opened, down where it closed), pale for a short (down
+              labelled "short" where it opened, up labelled "cover" where it closed); each exit is labelled
               with what closed it. Middle pane: RSI 14 with 30, 50 and 70. Bottom: the short-term trend score (−4 to +4), ours solid
               {c.vendor ? ", the vendor's dashed" : ""}.
             </p>

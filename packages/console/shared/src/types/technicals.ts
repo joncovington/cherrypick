@@ -66,6 +66,9 @@ export interface TechnicalsSetupTrade {
 export interface TechnicalsSetup {
   id: string;
   name: string;
+  /** The long setup a short mirrors; a long is its own family. */
+  family: string;
+  side: "long" | "short";
   /** The rule in words, written by the package; the page shows it rather than restating it. */
   rule: string;
   /** Keys into `TechnicalsChart.setupLines`: the series the rule reads. */
@@ -95,6 +98,8 @@ export interface TechnicalsChart {
   signals: { date: string; rules: string[] }[];
   /** Empty on a chart file older than version 3. */
   setups: TechnicalsSetup[];
+  /** Our own support and resistance (swing points in our bars, nearest two per side); empty before version 5. */
+  ourLevels: { kind: "support" | "resistance"; value: number; date: string | null }[];
   /** ema9, ema21, ema50, bb_upper, bb_mid, bb_lower, supertrend — aligned with `bars`. */
   setupLines: Record<string, (number | null)[]>;
   /** Null when the setups read the name's own volume; the stand-in's symbol when not (SPX: SPY). */
@@ -129,6 +134,10 @@ export interface TechnicalsWatchlistRow {
   session: string;
   setup: string;
   setupName: string;
+  family: string;
+  side: "long" | "short";
+  /** Both trend scores on the trade's side of zero; null until both are defined. */
+  trendAgrees: boolean | null;
   entryDate: string;
   entryPrice: number | null;
   /** Sessions since entry; null when it was before the 250 drawn. */
@@ -140,17 +149,18 @@ export interface TechnicalsWatchlistRow {
   target: number | null;
   status: "open" | "closed";
   lastClose: number | null;
-  /** Close to close: exit against entry, or the last close against entry while open. Not P&L. */
+  /** Close to close in the trade's direction (a fall is positive for a short). Not P&L. */
   movePct: number | null;
   trend1m: number | null;
   trend6m: number | null;
-  /** The vendor page's three-way label for each score. */
+  /** Our five-step label for each score (Bullish, Mildly Bullish, Neutral, Mildly Bearish, Bearish). */
   trend1mLabel: string | null;
   trend6mLabel: string | null;
   /** Our 1-10 rank, the vendor's "Relative Strength": a whole-market decile, not a comparison with SPY. */
   rs: number | null;
   /** The 21-session return less SPY's over the same sessions, in points. */
   vsSpy1m: number | null;
+  /** The nearest of our own levels below and above the last close. */
   support: TechnicalsLevelNear | null;
   resistance: TechnicalsLevelNear | null;
 }

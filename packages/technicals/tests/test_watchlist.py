@@ -34,19 +34,12 @@ def _trade(entry, exit_=None, reason=None):
     }
 
 
-def test_the_vendor_page_label_is_three_way():
-    assert [watchlist.page_label(s) for s in (-4, -3, -2, -1, 0, 1, 2, 3, 4)] == [
-        "Bearish",
-        "Bearish",
-        "Bearish",  # -2 is Bearish on the vendor's page, where our five-step label says Mildly Bearish
-        "Neutral",  # -1 is Neutral there, Mildly Bearish in ours
-        "Neutral",
-        "Neutral",
-        "Bullish",
-        "Bullish",
-        "Bullish",
-    ]
-    assert watchlist.page_label(None) is None
+def test_trend_agrees_means_both_scores_on_the_trades_side_of_zero():
+    assert watchlist.trend_agrees("long", 1, 3) is True
+    assert watchlist.trend_agrees("long", 0, 3) is False  # zero is not on either side
+    assert watchlist.trend_agrees("short", -1, -4) is True
+    assert watchlist.trend_agrees("short", -1, 2) is False
+    assert watchlist.trend_agrees("long", None, 3) is None
 
 
 def test_it_lists_every_open_position_and_only_recent_closed_ones():
@@ -59,21 +52,30 @@ def test_it_lists_every_open_position_and_only_recent_closed_ones():
     assert closed["exit_ago"] == 2 and closed["entry_ago"] == len(DATES) - 11
     assert closed["move_pct"] == 10.0  # exit 110 against entry 100
     assert opened["move_pct"] == round(100 * (DATES.index(DATES[-1]) + 100.0) / 100 - 100, 2)
-    assert (
-        opened["trend_1m_label"] == "Neutral" and opened["trend_6m_label"] == "Bullish" and opened["rs"] == 8
-    )
+    # Our own five-step label, not the vendor page's three-way one (which reads -1 as Neutral).
+    assert opened["trend_1m_label"] == "Mildly Bearish" and opened["trend_6m_label"] == "Bullish"
+    assert opened["rs"] == 8 and opened["side"] == "long" and opened["trend_agrees"] is False
 
 
-def test_the_nearest_levels_are_only_those_the_vendors_chart_draws():
-    levels = [
-        {"kind": "support", "value": 150.0, "vendor_view": True},
-        {"kind": "support", "value": 154.0, "vendor_view": False},  # nearer, but not on their chart
-        {"kind": "resistance", "value": 160.0, "vendor_view": True},
-        {"kind": "gapResistance", "value": 156.0, "vendor_view": False},
+def test_the_nearest_levels_are_our_own_never_the_vendors():
+    ours = [
+        {"kind": "resistance", "value": 160.0},
+        {"kind": "resistance", "value": 171.0},
+        {"kind": "support", "value": 150.0},
     ]
-    s, r = watchlist.nearest_levels({"levels": levels}, 155.0)
+    s, r = watchlist.nearest_levels(ours, 155.0)
     assert s == {"value": 150.0, "pct": -3.23} and r == {"value": 160.0, "pct": 3.23}
-    assert watchlist.nearest_levels(None, 155.0) == (None, None)
+    # A chart with vendor levels but none of ours has none: the vendor's are never read.
+    doc = _doc([_trade(DATES[-2])], levels=[{"kind": "support", "value": 150.0, "vendor_view": True}])
+    assert watchlist.rows(doc, {})[0]["support"] is None
+
+
+def test_a_shorts_move_is_positive_when_the_price_falls():
+    doc = _doc([_trade(DATES[-6], DATES[-2], "target")])
+    doc["setups"][0].update(id="trend-short", family="trend", side="short")
+    row = watchlist.rows(doc, {})[0]
+    assert row["side"] == "short" and row["family"] == "trend"
+    assert row["move_pct"] == -10.0  # exit 110 against entry 100: a rise, so against a short
 
 
 def test_one_month_against_spy_is_the_difference_in_points_over_the_same_sessions():
