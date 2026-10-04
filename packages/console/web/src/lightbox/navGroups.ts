@@ -167,7 +167,7 @@ export const CURVE_SLIDES = [
 export type CurveSlideId = (typeof CURVE_SLIDES)[number]["id"];
 
 /**
- * PMCC-99's tabs, on the frame since 2026-09-25. `now` → `session`; its cards became pages:
+ * PMCC's tabs, on the frame since 2026-09-25. `now` → `session`; its cards became pages:
  * `decisions` (the arm rail, the attempt timeline, today's attempts and management verdicts, the
  * decision log), `arms` (the arm comparison) and `positions`. `history` is the completed cycles in
  * the suite's standard trade layout, each still expanding to its legs, rolls and settlement.

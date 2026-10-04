@@ -39,7 +39,7 @@ from typing import Any
 from cherrypick.notify import Notifier
 
 from . import config as cfgmod
-from . import timeutil, util
+from . import schemas, timeutil, util
 
 _STATE = cfgmod.STATE_DIR / "trade_notify.json"
 _ID_CAP = 4000  # bound the remembered-id lists (per schema, per direction)
@@ -1118,7 +1118,7 @@ def _pmcc_seed(conn) -> dict:
 
 def _fmt_pmcc_entry(r) -> str:
     return (
-        f"\U0001f7e2 PMCC-99 paper ENTRY — {r['symbol']} long {r['long_strike']:.0f} "
+        f"\U0001f7e2 PMCC paper ENTRY — {r['symbol']} long {r['long_strike']:.0f} "
         f"({r['long_expiration']}) / short {r['short_strike']:.0f} ({r['short_expiration']}) "
         f"for ${r['net_debit']:.2f} debit, TV ${r['entry_net_tv'] or 0:.2f} [{_arm(r)}]"
     )
@@ -1136,7 +1136,7 @@ def _embed_pmcc_entry(r) -> dict:
 
 def _fmt_pmcc_roll(r) -> str:
     return (
-        f"\U0001f504 PMCC-99 ROLLED — {r['symbol']} short now {r['short_strike']:.0f} "
+        f"\U0001f504 PMCC ROLLED — {r['symbol']} short now {r['short_strike']:.0f} "
         f"({r['short_expiration']}), roll #{r['roll_count']} [{_arm(r)}]"
     )
 
@@ -1150,7 +1150,7 @@ def _embed_pmcc_roll(r) -> dict:
 def _fmt_pmcc_settlement(r) -> str:
     itm = "ITM (shares delivered)" if (r["itm_settlements"] or 0) > 0 else "OTM"
     return (
-        f"⚖️ PMCC-99 SHORT SETTLED — {r['symbol']} {r['short_strike']:.0f} {itm} "
+        f"⚖️ PMCC SHORT SETTLED — {r['symbol']} {r['short_strike']:.0f} {itm} "
         f"at {r['settlement_spot']:.2f}; the long rides to the next session [{_arm(r)}]"
     )
 
@@ -1167,7 +1167,7 @@ def _embed_pmcc_settlement(r) -> dict:
 def _fmt_pmcc_exit(r) -> str:
     net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
     return (
-        f"\U0001f3c1 PMCC-99 paper CLOSED — {r['symbol']} "
+        f"\U0001f3c1 PMCC paper CLOSED — {r['symbol']} "
         f"{r['long_strike']:.0f}/{r['short_strike']:.0f} net ${net:+.2f} "
         f"({r['exit_reason']}) [{_arm(r)}]"
     )
@@ -1473,7 +1473,7 @@ _SCHEMAS = {
     "earnings": (_earnings_seed, _earnings_process),
     "fly_book": (_flies_seed, _flies_process),
     "dc_week": (_calendars_seed, _calendars_process),
-    "pmcc_99": (_pmcc_seed, _pmcc_process),
+    "pmcc": (_pmcc_seed, _pmcc_process),
     "curve_vx": (_curve_seed, _curve_process),
     "bwb_132": (_bwb_seed, _bwb_process),
 }
@@ -1573,7 +1573,7 @@ def run(cfg: dict | None = None, *, dry_run: bool = False) -> dict:
             db_path = cfgmod.paper_db_path(mcfg, name)
             if not db_path.exists():
                 continue
-            schema = paper.get("trade_schema", "meic_ic")
+            schema = schemas.canonical(paper.get("trade_schema", "meic_ic"))
             adapter = _SCHEMAS.get(schema)
             if adapter is None:  # unknown schema — skip cleanly
                 continue
@@ -1608,7 +1608,7 @@ def run(cfg: dict | None = None, *, dry_run: bool = False) -> dict:
             db_path = cfgmod.live_db_path(mcfg, name)
             if db_path is None or not db_path.exists():
                 continue
-            schema = mcfg.get("paper", {}).get("trade_schema", "meic_ic")
+            schema = schemas.canonical(mcfg.get("paper", {}).get("trade_schema", "meic_ic"))
             adapter = _SCHEMAS.get(schema)
             if adapter is None:
                 continue

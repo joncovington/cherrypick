@@ -64,7 +64,7 @@ MODULES = {
     "calendars": {"schema": "dc_week", "settles_intraday": False},
     # pmcc holds ~1-2 weeks, and a Friday short assignment leaves delivered shares riding to the
     # next session's disposal — same two-pass shape as calendars.
-    "pmcc": {"schema": "pmcc_99", "settles_intraday": False},
+    "pmcc": {"schema": "pmcc", "settles_intraday": False},
     # bwb and curve added 2026-08-26. Both had ledgers, `cherrypick.core.ledgers` readers and
     # console pages from the day they landed, and were simply never added to this dict — so the
     # suite's cross-module EOD did not know they existed while bwb was carrying twelve open

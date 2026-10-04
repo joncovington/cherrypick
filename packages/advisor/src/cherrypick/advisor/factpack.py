@@ -801,7 +801,7 @@ def _calendars(session: str) -> dict[str, Any]:
 
 
 def _pmcc(session: str) -> dict[str, Any]:
-    """PMCC-99 deep-ITM covered calls: the advisable surface is the tv-close threshold and the
+    """PMCC deep-ITM covered calls: the advisable surface is the tv-close threshold and the
     entry yield floor. The pack carries each open position's worksheet economics and its latest
     short time value (the number the exit rule reads), the closed books' results by exit reason,
     the assignment-exposure telemetry (the module measures early assignment, it does not model it —

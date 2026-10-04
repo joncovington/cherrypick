@@ -33,7 +33,7 @@ in parallel and compare which entry rules actually add edge — see
 | **Flies** | 0DTE **net-credit butterflies** on SPX/XSP: whether the manufactured credit survives real costs, arm by arm. Built so a negative answer is a usable result. | On |
 | **BWB** | A daily-laddered SPX **put broken-wing butterfly**, ~7 DTE, held to expiry; its arms differ only in whether and when a reversal-triggered add-on fires. | On |
 | **Calendars** | Weekly **SPY double calendars**, an exit-parameter experiment. **EXPERIMENTAL.** | Off |
-| **PMCC-99** | Deep-ITM **covered calls** on TQQQ. **EXPERIMENTAL.** | Off |
+| **PMCC** | Deep-ITM **covered calls** on TQQQ. **EXPERIMENTAL.** | Off |
 | **Curve** | **VXX call credit spreads** gated by a daily VIX/VIX3M regime read. **EXPERIMENTAL.** | Off |
 
 The experimental modules are newer and less tested; switch one on deliberately if you want it (the

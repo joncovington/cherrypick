@@ -5,7 +5,7 @@
 > symbols** section of the console's Config page, or set `modules.pmcc.enabled` to `true` in
 > `~/.cherrypick/config.json`. It is paper-only either way.
 
-PMCC-99: a paper-only module trading deep-ITM covered calls on TQQQ and XSP. Buy an 85-90-delta
+PMCC: a paper-only module trading deep-ITM covered calls on TQQQ and XSP. Buy an 85-90-delta
 call at ~21 DTE as a stock substitute, sell the call nearest spot at ~7 DTE (no yield floor, either
 side of spot); hold to the short's own expiration, then close both legs together. TQQQ settles
 physically and XSP in cash, so their results are not interchangeable. There is a single `control`

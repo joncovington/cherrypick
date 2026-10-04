@@ -22,7 +22,7 @@ from typing import Any
 from cherrypick.core import db as _db
 
 from . import config as cfgmod
-from . import doctor, report
+from . import doctor, report, schemas
 from .util import first_json, mask_account
 
 OK, WARN, FAIL = "ok", "warn", "fail"
@@ -76,7 +76,7 @@ _OPEN_READERS = {
     "earnings": _earnings_open,
     "fly_book": _flies_open,
     "dc_week": _calendars_open,
-    "pmcc_99": _pmcc_open,
+    "pmcc": _pmcc_open,
     "curve_vx": _curve_open,
     "bwb_132": _bwb_open,
 }
@@ -88,7 +88,7 @@ def _paper_open_positions(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         paper = mcfg.get("paper", {})
-        schema = paper.get("trade_schema", "meic_ic")
+        schema = schemas.canonical(paper.get("trade_schema", "meic_ic"))
         reader = _OPEN_READERS.get(schema)
         db_path = cfgmod.paper_db_path(mcfg, name)
         if reader is None:

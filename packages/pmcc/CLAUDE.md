@@ -3,10 +3,11 @@
 > **Vocabulary.** This module's **book** is the suite's **arm** (root `CLAUDE.md`). The column
 > (`pmcc_positions.book`) moves with the rest of the schema; prose and the console already say `arm`.
 
-PMCC-99 — deep-ITM covered calls on TQQQ and XSP (posture: root file). Buy an 85-90-delta call at
+PMCC — deep-ITM covered calls on TQQQ and XSP (posture: root file). Buy an 85-90-delta call at
 ~21 DTE — a stock substitute, deliberately NOT a LEAP — and sell the ATM call nearest spot at ~7 DTE,
 whichever side of spot it lands. Hold to the short's own expiration, close BOTH legs together,
-re-enter. Ledger schema: **`pmcc_99`**. History and incidents: [docs/history.md](docs/history.md);
+re-enter. Ledger schema: **`pmcc`** (`pmcc_99` until the 2026-10-04 rename; a config still
+naming it resolves through `core.ledgers.SCHEMA_ALIASES`). History and incidents: [docs/history.md](docs/history.md);
 window sizing: [docs/window-parameters.md](docs/window-parameters.md). Suite-wide context: the root
 [documentation index](../../docs/README.md).
 
@@ -17,7 +18,7 @@ window sizing: [docs/window-parameters.md](docs/window-parameters.md). Suite-wid
   rows (including TNA/UPRO symbols and `keltner`/`roll` books) are history, not comparable
   measurement.
 - **2026-08-23 XSP added** to the same `control` book (additive: TQQQ stays comparable across it).
-  **Always read `pmcc_99` grouped by `symbol`, never pooled** — XSP differs in settlement, risk and
+  **Always read `pmcc` grouped by `symbol`, never pooled** — XSP differs in settlement, risk and
   fees, so the two are comparable only as separate populations under one rule set.
 - **2026-08-28 entry spread gate**: `max_leg_spread_pct` is enforced at entry (`plan_entry`, as in
   curve and bwb) as well as at exit (`management.execution_gate`). Earlier entries were not
@@ -157,7 +158,7 @@ example is the design document — read its `_note` keys first.
 - Declared settlement only (`settlement_style`); a symbol declared as neither is refused.
 - **Orchestrator coupling — don't change silently:** the paper DB path
   (`~/.cherrypick/data/pmcc/paper_trades.db`, also load-bearing for review and the advisor fact pack)
-  and its `pmcc_99` schema, read through `cherrypick.core.ledgers`.
+  and its `pmcc` schema, read through `cherrypick.core.ledgers`.
 - **The console's `/pmcc` page mirrors `analytics.py` in TypeScript** rather than sharing it; the two
   are cross-checked by hand against `python run.py headline`. It shows state first, a
   measurement-integrity strip carrying rule 2's exposure bound above any P&L, the dividend calendar's

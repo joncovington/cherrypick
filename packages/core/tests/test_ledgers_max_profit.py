@@ -125,7 +125,7 @@ def test_pmcc_max_profit_is_always_none():
         "INSERT INTO pmcc_positions VALUES (?,?,?,?,?,?,?,?,?,'closed')",
         [("TQQQ", "control", 60.0, 3.0, None, None, 20.0, 1, "2026-08-20")],
     )
-    out = ledgers.READERS["pmcc_99"](conn)
+    out = ledgers.READERS["pmcc"](conn)
     assert out[0]["max_profit"] is None
 
 
@@ -138,3 +138,37 @@ def test_bwb_max_profit_is_always_none():
     )
     out = ledgers.READERS["bwb_132"](conn)
     assert out[0]["max_profit"] is None
+
+
+def test_the_retired_pmcc_99_id_resolves_to_pmcc_and_keys_no_registry():
+    """`"trade_schema": "pmcc_99"` is in every config written before 2026-10-04, and a config is
+    never migrated. It must resolve; it must not become a second registry key that drifts."""
+    assert ledgers.canonical_schema("pmcc_99") == "pmcc"
+    assert ledgers.canonical_schema("pmcc") == "pmcc"
+    assert ledgers.canonical_schema(None) is None
+    assert "pmcc_99" not in ledgers.READERS and "pmcc_99" not in ledgers.OPEN_READERS
+    assert set(ledgers.SCHEMA_ALIASES.values()) <= set(ledgers.READERS)
+
+
+def test_the_metrics_cli_reads_a_ledger_named_by_its_retired_id(tmp_path):
+    import sqlite3
+
+    from cherrypick.core.metrics import __main__ as metrics_cli
+
+    db = tmp_path / "paper_trades.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE pmcc_positions (symbol TEXT, arm TEXT, gross_pnl REAL, fees REAL, "
+        "entry_slippage REAL, exit_slippage REAL, net_debit REAL, quantity INTEGER, "
+        "closed_session TEXT, status TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO pmcc_positions VALUES ('XSP', 'control', 60.0, 3.0, NULL, NULL, 20.0, 1, "
+        "'2026-08-20', 'closed')"
+    )
+    conn.commit()
+    conn.close()
+    args = type("Args", (), {"db": str(db), "schema": "pmcc_99", "start": None, "end": None})()
+    out = metrics_cli.cmd_read(args)
+    assert out["ok"], out
+    assert out["n_records"] == 1

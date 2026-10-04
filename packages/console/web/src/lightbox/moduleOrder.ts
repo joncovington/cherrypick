@@ -27,7 +27,7 @@ export function isTradingModuleId(v: string): v is TradingModuleId {
 export const MODULE_LABEL: Record<ModuleId, string> = {
   meic: "MEIC",
   flies: "Flies",
-  pmcc: "PMCC-99",
+  pmcc: "PMCC",
   curve: "curve",
   bwb: "bwb",
   calendars: "Calendars",

@@ -19,7 +19,7 @@ import type { SlideDef } from "../types";
 const PMCC_LABEL = Object.fromEntries(PMCC_SLIDES.map((s) => [s.id, s.label])) as Record<PmccSlideId, string>;
 
 /**
- * PMCC-99, on the module frame since 2026-09-25: a left rail of pages, and nothing on the surface
+ * PMCC, on the module frame since 2026-09-25: a left rail of pages, and nothing on the surface
  * opens an overlay. No mode toggle -- structural: the module has no live loop and no live store.
  */
 export function PmccLightbox({ slide }: { slide: string }) {

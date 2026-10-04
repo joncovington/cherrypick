@@ -19,7 +19,7 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
   const cashSymbols = symbols.filter((s) => settlementStyle[s] === "cash");
   return (
     <div className="cards cards-wide">
-      <Card title="what PMCC-99 is" collapseKey="pmcc-help-what" defaultCollapsed className="view-fade">
+      <Card title="what PMCC is" collapseKey="pmcc-help-what" defaultCollapsed className="view-fade">
         <div className="pmcc-prose">
           <p>
             Buy a call inside an 85-90-delta band

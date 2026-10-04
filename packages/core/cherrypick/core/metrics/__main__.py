@@ -8,7 +8,7 @@ directly -- same pattern as `cherrypick.core.auth` and `cherrypick.core.calendar
 own profile tag.
 
 Command:
-    read --db PATH --schema {meic_ic|earnings|fly_book|dc_week|pmcc_99|curve_vx|bwb_132}
+    read --db PATH --schema {meic_ic|earnings|fly_book|dc_week|pmcc|curve_vx|bwb_132}
          [--start YYYY-MM-DD] [--end YYYY-MM-DD]
 
 Output: {"ok": true, "schema": ..., "n_records": N,
@@ -36,7 +36,7 @@ from . import calibration_reading, session_nets_dated
 
 
 def cmd_read(args) -> dict:
-    reader = ledgers.READERS.get(args.schema)
+    reader = ledgers.READERS.get(ledgers.canonical_schema(args.schema))
     if reader is None:
         return {"ok": False, "error": f"unknown schema {args.schema!r}"}
     try:
@@ -74,7 +74,9 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     rd = sub.add_parser("read")
     rd.add_argument("--db", required=True)
-    rd.add_argument("--schema", required=True, choices=sorted(ledgers.READERS))
+    rd.add_argument(
+        "--schema", required=True, choices=sorted(set(ledgers.READERS) | set(ledgers.SCHEMA_ALIASES))
+    )
     rd.add_argument("--start", default=None)
     rd.add_argument("--end", default=None)
     args = ap.parse_args(argv)

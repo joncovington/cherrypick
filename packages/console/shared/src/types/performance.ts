@@ -12,7 +12,7 @@ export const PERFORMANCE_MODULE_SCHEMA = {
   flies: "fly_book",
   earnings: "earnings",
   calendars: "dc_week",
-  pmcc: "pmcc_99",
+  pmcc: "pmcc",
   curve: "curve_vx",
   bwb: "bwb_132",
 } as const;

@@ -21,7 +21,7 @@ import { unrealisedByPosition, NO_UNREALISED } from "./unrealised.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 
 /**
- * PMCC-99's read layer.
+ * PMCC's read layer.
  *
  * Paper only, and that is structural rather than a default: the module has no live loop and no live
  * DB, so there is one store to read and no `mode` anywhere in this file. Its `live.enabled` is a
@@ -324,7 +324,7 @@ function readOpenPositions(db: DatabaseHandle): PmccOpenPosition[] {
  * `CURRENT_ERA` by default — `era="ALL"` pools every era for an explicit cross-era read.
  *
  * Net is `SUM(gross) - SUM(fees)` — the same single subtraction `cherrypick.core.ledgers` performs
- * for the `pmcc_99` schema. One convention, stated in one place, computed identically here.
+ * for the `pmcc` schema. One convention, stated in one place, computed identically here.
  */
 function readBooks(db: DatabaseHandle, era: string = CURRENT_ERA): PmccArmCell[] {
   const scoped = era !== "ALL" && hasColumn(db, "pmcc_positions", "era");

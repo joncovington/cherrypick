@@ -94,7 +94,7 @@ describe("performance db path resolution", () => {
     expect(MODULE_SCHEMA.flies).toBe("fly_book");
     expect(MODULE_SCHEMA.earnings).toBe("earnings");
     expect(MODULE_SCHEMA.calendars).toBe("dc_week");
-    expect(MODULE_SCHEMA.pmcc).toBe("pmcc_99");
+    expect(MODULE_SCHEMA.pmcc).toBe("pmcc");
     expect(MODULE_SCHEMA.curve).toBe("curve_vx");
     expect(MODULE_SCHEMA.bwb).toBe("bwb_132");
   });

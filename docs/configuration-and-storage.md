@@ -16,7 +16,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   config/flies.json               # Flies engine config
   config/bwb.json                 # BWB engine config
   config/calendars.json           # Calendars engine config (experimental)
-  config/pmcc.json                # PMCC-99 engine config (experimental)
+  config/pmcc.json                # PMCC engine config (experimental)
   config/curve.json               # Curve engine config (experimental)
   config/gex.json                 # GEX engine config
   config/streamer.json            # standalone streamer config
@@ -34,7 +34,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/bwb/paper_trades.db        # BWB paper ledger (bwb_positions)
   data/bwb/live_trades.db         # BWB live ledger (same schema as its paper file; armed per day; never read by a paper surface)
   data/calendars/paper_trades.db  # Calendars paper ledger (dc_positions / dc_legs / dc_marks)
-  data/pmcc/paper_trades.db       # PMCC-99 paper ledger (pmcc_positions / pmcc_legs / pmcc_marks)
+  data/pmcc/paper_trades.db       # PMCC paper ledger (pmcc_positions / pmcc_legs / pmcc_marks)
   data/curve/paper_trades.db      # Curve paper ledger (curve_positions)
   data/gex/gex_history.db         # GEX spot trail + regime history + the suite-level market-regime
                                   #   series (market_regime_history / daily_closes; read via
@@ -66,7 +66,7 @@ configure their own engine and nothing else:
 | `~/.cherrypick/config/flies.json` | Flies | `symbols`, wing/increment scaling, entry gates and floors, the experiment `arms`, and the `live` block for the narrow live pilot (armed per day via `/live-flies-start`, one arm / one symbol, sized by the `live.max_open_margin_dollars` cap, self-disarming at `live.disarm_time`). |
 | `~/.cherrypick/config/bwb.json` | BWB | The ladder's structure and strikes, the books and their add-on triggers, the opt-in call-wall book, `advice` bounds, and the `live` block for the narrow live path (armed per day via `/live-bwb-start`). |
 | `~/.cherrypick/config/calendars.json` | Calendars | Symbols (`SPY` since 2026-08-15), OCC roots, settlement style per symbol, the declared ex-dividend calendar, books, `advice` bounds. EXPERIMENTAL; the module is off in the orchestrator config by default. |
-| `~/.cherrypick/config/pmcc.json` | PMCC-99 | Symbols, the long/short delta and DTE windows, the declared ex-dividend spans, books, `advice` bounds. EXPERIMENTAL; off by default. |
+| `~/.cherrypick/config/pmcc.json` | PMCC | Symbols, the long/short delta and DTE windows, the declared ex-dividend spans, books, `advice` bounds. EXPERIMENTAL; off by default. |
 | `~/.cherrypick/config/curve.json` | Curve | The VXX spread construction, the VIX/VIX3M regime thresholds, books, `advice` bounds. EXPERIMENTAL; off by default. |
 | `~/.cherrypick/config/gex.json` | GEX | `symbols`, the shared stream-cache source path, serve host/port, history DB path. |
 | *(orchestrator `morning`, `technicals` blocks)* | Overview, Technicals | Neither has a config file of its own: the orchestrator's `morning` block schedules the overview's fact pack (and its optional narrative), and `technicals` schedules the end-of-day landing and report. Technicals reads the Dolt clones the earnings module's `paper.dolt_service` serves. |

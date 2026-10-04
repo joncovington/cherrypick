@@ -1,7 +1,7 @@
 # console (unified web UI)
 
 The suite's only read surface: one app over every module's read models — overview/watchdog, MEIC,
-flies, earnings, PMCC-99, calendars, curve, BWB, GEX — plus the advisor and the reports. Every module
+flies, earnings, PMCC, calendars, curve, BWB, GEX — plus the advisor and the reports. Every module
 remains a producer this package reads; it touches none of their code. The dashboards it replaced
 survive only at the `pre-console-only` tag, and the scout research surfaces are retired too, so **no
 path here touches an order** — `dry-run-only.test.ts` pins `postOrderDryRun` to the scope probe alone
