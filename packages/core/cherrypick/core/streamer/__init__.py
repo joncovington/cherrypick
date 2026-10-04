@@ -70,6 +70,10 @@ _CHAIN_FETCH_MAX_ATTEMPTS = 6
 # out) re-checks the full chain on this cooldown rather than every window pass — the retry IS the
 # next cooldown lapse, so there is no backoff loop to stall the window task.
 _EXTRA_CHAIN_REFETCH_COOLDOWN_S = 900.0
+# The listed-expirations table (`streamcache.stream_expirations`) is rewritten on every full-chain
+# fetch. A symbol whose requests are all already listed never fetches again, so the listing is also
+# refreshed on this slower cadence -- a LEAP month the broker adds mid-session still gets seen.
+_LISTED_EXPIRATIONS_REFRESH_S = 6 * 3600.0
 # Daily-candle backfill: the history arrives as one front-loaded burst after subscribe, so the
 # collector stops after a quiet gap once anything has arrived, bounded by a hard deadline either way.
 _HISTORY_QUIET_GAP_S = 5.0
@@ -1054,13 +1058,21 @@ class ChainStreamer:
         for key in [k for k in state.window_syms if k.startswith(prefix)]:
             if key[len(prefix) :] not in wanted:
                 await self._retire_extra_window(streamer, state, key, Quote, Greeks, Summary, Trade)
+        # A date that left the request takes its health row with it. Until 2026-10-04 a requested
+        # date the broker never listed kept its error row forever, and the watchdog read it as a
+        # stall on every pass.
+        try:
+            streamcache.retire_symbol_health(state.conn, prefix, {f"{prefix}{d}" for d in wanted})
+        except Exception as exc:
+            self.log.warning("[%s] health-row retire error: %s", symbol, exc)
         if not wanted:
             return
 
         known = state.full_chains.get(symbol) or {}
         missing = [d for d in wanted if d not in known]
         now = time.time()
-        if missing and now - state.last_full_fetch.get(symbol, 0.0) >= _EXTRA_CHAIN_REFETCH_COOLDOWN_S:
+        since = now - state.last_full_fetch.get(symbol, 0.0)
+        if (missing and since >= _EXTRA_CHAIN_REFETCH_COOLDOWN_S) or since >= _LISTED_EXPIRATIONS_REFRESH_S:
             state.last_full_fetch[symbol] = now
             try:
                 known = await self._fetch_full_chain(symbol)
@@ -1070,9 +1082,13 @@ class ChainStreamer:
                     streamcache.upsert_symbol_health(state.conn, f"{symbol}@{d}", chain_fetch_error=str(exc))
                 self.log.warning("[%s] full chain fetch failed: %s", symbol, exc)
                 return
+            try:
+                streamcache.write_listed_expirations(state.conn, symbol, known.keys())
+            except Exception as exc:
+                self.log.warning("[%s] listed-expirations write error: %s", symbol, exc)
             for d in [d for d in wanted if d not in known]:
                 streamcache.upsert_symbol_health(
-                    state.conn, f"{symbol}@{d}", chain_fetch_error="expiration not listed"
+                    state.conn, f"{symbol}@{d}", chain_fetch_error=streamcache.UNLISTED_EXPIRATION_ERROR
                 )
                 self.log.warning("[%s] requested expiration %s not listed yet", symbol, d)
 

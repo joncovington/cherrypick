@@ -119,7 +119,23 @@ CREATE TABLE IF NOT EXISTS stream_summary (
     updated_at      REAL NOT NULL,
     PRIMARY KEY (symbol, trade_date)
 );
+CREATE TABLE IF NOT EXISTS stream_expirations (
+    underlying_symbol TEXT NOT NULL,
+    expiration        TEXT NOT NULL,
+    fetched_at        REAL NOT NULL,
+    PRIMARY KEY (underlying_symbol, expiration)
+);
 """
+
+# Every expiration the broker LISTS for an underlying, written whole each time the producer fetches
+# its full chain (2026-10-04). `stream_chain` only ever holds the slices somebody asked for, so a
+# consumer that has to choose an expiration it has not seen -- pmcc's ~1-year long -- had no way to
+# learn which dates exist. A date asked for that is not in here gets UNLISTED_EXPIRATION_ERROR on
+# its health row instead of a window.
+
+# The health-row text for a requested expiration the broker does not list. Shared with the watchdog,
+# which must not read it as a feed stall: restarting the producer cannot list a date.
+UNLISTED_EXPIRATION_ERROR = "expiration not listed"
 
 
 def to_float(value) -> float | None:
@@ -271,6 +287,52 @@ def upsert_symbol_health(conn: sqlite3.Connection, symbol: str, **kwargs) -> Non
         list(fields.values()),
     )
     conn.commit()
+
+
+def write_listed_expirations(conn: sqlite3.Connection, underlying: str, expirations) -> int:
+    """Replace `underlying`'s listed expirations with this fetch's, whole. A date that stopped being
+    listed (it expired) leaves with the replace rather than lingering. Returns rows written."""
+    now = time.time()
+    rows = [(underlying, str(e), now) for e in sorted({str(e) for e in expirations})]
+    conn.execute("DELETE FROM stream_expirations WHERE underlying_symbol = ?", (underlying,))
+    conn.executemany(
+        "INSERT INTO stream_expirations (underlying_symbol, expiration, fetched_at) VALUES (?, ?, ?)", rows
+    )
+    conn.commit()
+    return len(rows)
+
+
+def listed_expirations(conn: sqlite3.Connection, underlying: str) -> tuple[list[str], float | None]:
+    """(the expirations the broker listed for `underlying` at its last full-chain fetch, ascending;
+    when that fetch was), or ([], None) when none is on file -- including a cache written by a
+    producer from before the table existed, which a read-only reader cannot migrate."""
+    try:
+        rows = conn.execute(
+            "SELECT expiration, fetched_at FROM stream_expirations WHERE underlying_symbol = ? "
+            "ORDER BY expiration",
+            (underlying,),
+        ).fetchall()
+    except sqlite3.OperationalError as exc:
+        if str(exc).startswith("no such table"):
+            return [], None
+        raise
+    if not rows:
+        return [], None
+    return [r[0] for r in rows], max(r[1] for r in rows)
+
+
+def retire_symbol_health(conn: sqlite3.Connection, prefix: str, keep: set[str]) -> int:
+    """Delete `prefix`-keyed health rows (`SYMBOL@date`) that are not in `keep`. An extra expiration
+    that left the request -- or was never listed -- otherwise keeps its health row, and its error,
+    forever: nothing else ever rewrote it. Returns rows deleted."""
+    rows = conn.execute(
+        "SELECT symbol FROM stream_symbol_health WHERE substr(symbol, 1, ?) = ?", (len(prefix), prefix)
+    ).fetchall()
+    gone = [r[0] for r in rows if r[0] not in keep]
+    if gone:
+        conn.executemany("DELETE FROM stream_symbol_health WHERE symbol = ?", [(g,) for g in gone])
+        conn.commit()
+    return len(gone)
 
 
 def write_chain(conn: sqlite3.Connection, option_map: dict) -> int:

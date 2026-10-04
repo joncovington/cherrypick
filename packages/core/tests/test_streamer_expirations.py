@@ -316,3 +316,68 @@ def test_window_syms_except_unions_all_other_windows(tmp_path):
     state.window_syms = {"XSP": ["A", "B"], f"XSP@{FRI}": ["C"], f"XSP@{MON}": ["D"]}
     assert engine._window_syms_except(state, f"XSP@{FRI}") == {"A", "B", "D"}
     assert engine._window_syms_except(state, "XSP") == {"C", "D"}
+
+
+LEAP = "2100-01-21"
+
+
+def test_every_full_chain_fetch_records_what_the_broker_lists(tmp_path, monkeypatch):
+    """`stream_chain` holds only the slices somebody asked for, so a module choosing a date it has
+    not seen -- pmcc's ~1-year long -- reads the listing from `stream_expirations` instead."""
+    full = {NEAREST: _slice(NEAREST, "N"), FRI: _slice(FRI, "F"), LEAP: _slice(LEAP, "L")}
+    engine, state = _engine_and_state(tmp_path, expirations_for=lambda sym: [FRI], full_chain=full)
+    asyncio.run(_run_one_pass(engine, state, _FakeStreamer(), monkeypatch))
+    listed, fetched_at = streamcache.listed_expirations(state.conn, "XSP")
+    assert listed == [NEAREST, FRI, LEAP]
+    assert fetched_at is not None
+    assert f"XSP@{LEAP}" not in state.window_syms  # listed is not subscribed
+
+
+def test_the_listing_refreshes_on_its_own_cadence_when_nothing_is_missing(tmp_path, monkeypatch):
+    full = {NEAREST: _slice(NEAREST, "N"), FRI: _slice(FRI, "F")}
+    engine, state = _engine_and_state(tmp_path, expirations_for=lambda sym: [FRI], full_chain=full)
+    asyncio.run(_run_one_pass(engine, state, _FakeStreamer(), monkeypatch))
+    assert streamcache.listed_expirations(state.conn, "XSP")[0] == [NEAREST, FRI]
+
+    # The broker adds a LEAP month. Every requested date is already known, so only the slower
+    # listing cadence fetches again.
+    engine._canned_full_chain = {**full, LEAP: _slice(LEAP, "L")}
+    state.stop_event = asyncio.Event()
+    asyncio.run(_run_one_pass(engine, state, _FakeStreamer(), monkeypatch))
+    assert LEAP not in streamcache.listed_expirations(state.conn, "XSP")[0]  # inside the cadence
+
+    state.last_full_fetch["XSP"] -= 7 * 3600
+    state.stop_event = asyncio.Event()
+    asyncio.run(_run_one_pass(engine, state, _FakeStreamer(), monkeypatch))
+    assert LEAP in streamcache.listed_expirations(state.conn, "XSP")[0]
+
+
+def test_an_unlisted_date_that_leaves_the_request_takes_its_error_row_with_it(tmp_path, monkeypatch):
+    """Until 2026-10-04 the error row outlived the request, and the watchdog restarted the producer
+    over it on every pass."""
+    full = {NEAREST: _slice(NEAREST, "N")}
+    wanted = {"dates": [FRI]}
+    engine, state = _engine_and_state(tmp_path, expirations_for=lambda sym: wanted["dates"], full_chain=full)
+    asyncio.run(_run_one_pass(engine, state, _FakeStreamer(), monkeypatch))
+    key = f"XSP@{FRI}"
+
+    def health(symbol):
+        sql = "SELECT chain_fetch_error FROM stream_symbol_health WHERE symbol = ?"
+        return state.conn.execute(sql, (symbol,)).fetchone()
+
+    assert health(key)["chain_fetch_error"] == streamcache.UNLISTED_EXPIRATION_ERROR
+    # The base window's own row is keyed by the bare symbol, and the retire must never touch it.
+    streamcache.upsert_symbol_health(state.conn, "XSP", chain_fetch_error=None)
+
+    wanted["dates"] = []
+    state.stop_event = asyncio.Event()
+    asyncio.run(_run_one_pass(engine, state, _FakeStreamer(), monkeypatch))
+    assert health(key) is None
+    assert health("XSP") is not None
+
+
+def test_a_reader_of_a_cache_from_before_the_listing_table_reads_nothing_listed(tmp_path):
+    import sqlite3
+
+    conn = sqlite3.connect(tmp_path / "old.db")
+    assert streamcache.listed_expirations(conn, "XSP") == ([], None)
