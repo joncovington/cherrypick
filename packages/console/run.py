@@ -98,7 +98,17 @@ def main() -> int:
             cfg_path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
             print(f"wrote serve.port={args.port} to {cfg_path}")
 
-    return subprocess.call([node, str(SERVER_ENTRY)], creationflags=CREATE_NO_WINDOW, env=_child_env())
+    # Hand node our stdout/stderr explicitly. Under pythonw with no console, an implicit inherit gave
+    # node no usable handles: the supervisor's logs/jobs/console.stderr.log received not one line of
+    # node's output in 100+ starts, so every crash's stack trace was lost. None (a stream pythonw
+    # could not open) falls back to the old implicit behaviour.
+    return subprocess.call(
+        [node, str(SERVER_ENTRY)],
+        creationflags=CREATE_NO_WINDOW,
+        env=_child_env(),
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
 
 
 if __name__ == "__main__":
