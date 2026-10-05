@@ -27,6 +27,8 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
+from cherrypick.core import regime as _regime
+
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET
 
@@ -56,6 +58,14 @@ DEFAULT_MAX_GEX_INPUT_AGE_SECONDS = 1800  # 30 minutes
 # Below this many contributing strikes the surface is too sparse to locate a wall or a flip on.
 # `compute_gex` already counts them (`strikes_with_data`); nothing consumed the number until now.
 DEFAULT_MIN_GEX_STRIKES = 20
+
+# The gex recorder's walls (`gex_regime_history`, one row per ~5 minutes), joined at-or-before this
+# far back. NOT this snapshot's own `gex` surface: the two disagree (2026-10-05 13:30 ET, put wall
+# 7750 here against the recorder's 7665), because this provider drops open interest older than
+# `max_gex_input_age_seconds` and the recorder does not -- 124 of 202 OI rows that afternoon. The
+# wall-clear gate was measured against the recorder's walls, so it reads them. 600 s is the join
+# the measurement used (scripts/flies_wall_clear_replay.py).
+RECORDED_GEX_MAX_AGE_SECONDS = 600
 
 
 def now_et() -> datetime:
@@ -292,9 +302,23 @@ def build_snapshot(
             # The same audit trail for the GEX surface. Without this, a session that centred every
             # butterfly on stale gamma is indistinguishable from one that centred on live gamma.
             "gex_stats": gex_stats,
+            # The recorder's own summary row as of this moment (walls, zero gamma, spot), or
+            # `{"status": "unmeasured", "reason"}`. Read by `engine.wall_clearance_refusal` only.
+            "recorded_gex": _recorded_gex(symbol, when),
         }
     finally:
         conn.close()
+
+
+def _recorded_gex(symbol: str, when: datetime) -> dict:
+    """The gex recorder's latest RTH row for `symbol` at or before `when`, through `core.regime` (the
+    suite's one join over that series, with its expired-chain and off-hours refusals). A local file
+    read, never the network. Any failure is unmeasured: a recorder outage must cost the gate its
+    signal, never cost a snapshot."""
+    try:
+        return _regime.gex_at(when.timestamp(), symbol, max_staleness_seconds=RECORDED_GEX_MAX_AGE_SECONDS)
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "unmeasured", "reason": f"read_failed: {type(exc).__name__}"}
 
 
 def _attach_deltas(conn, legs_by_symbol: dict[str, dict], now_ts: float, max_age_seconds: float) -> int:

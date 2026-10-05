@@ -276,6 +276,7 @@ def _note_completion_rule(conn, config: dict) -> None:
 
 VOL_FLOOR_ARM_FROM = "2026-10-05"
 SELECTOR_ARM_FROM = "2026-10-19"
+WALL_CLEAR_ARM_FROM = "2026-10-19"
 
 
 def _note_selector_arm(conn, config: dict) -> None:
@@ -322,6 +323,30 @@ def _note_vol_floor_arm(conn, config: dict) -> None:
         )
     except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
         _log(f"vol-floor arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
+def _note_wall_clear_arm(conn, config: dict) -> None:
+    """Journal the `wall-clear` arm's entry to the roster (an `arm_added` break dated its declared
+    first session, 2026-10-19), once a machine's config enables it. Idempotent and best-effort, as
+    the vol-floor note; a future-dated break binds nothing until it passes."""
+    try:
+        arm = (config.get("arms") or {}).get("wall-clear")
+        if not isinstance(arm, dict) or not arm.get("enabled", True):
+            return
+        dbmod.record_measurement_break(
+            conn,
+            break_date=WALL_CLEAR_ARM_FROM,
+            scope="wall-clear",
+            kind="arm_added",
+            reason=(
+                "wall-clear arm enters the roster: control plus no legged entry while the recorded GEX "
+                "wall on the completing side is under wall_clear_ahead_points "
+                f"({arm.get('wall_clear_ahead_points')}) ahead of spot or crossed by under "
+                f"wall_clear_past_points ({arm.get('wall_clear_past_points')})"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"wall-clear arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
 def _entry_cadence_state_path() -> str:
@@ -929,6 +954,7 @@ def main(argv=None) -> int:
             _note_completion_rule(conn, config)
             _note_vol_floor_arm(conn, config)
             _note_selector_arm(conn, config)
+            _note_wall_clear_arm(conn, config)
             # Stale-checkout guard (2026-08-05). The loop imports from the working tree, so a session
             # run from an older branch writes NULL to any regime column that branch predates --
             # silently, all day, with no backfill path afterwards. Logged rather than enforced: a

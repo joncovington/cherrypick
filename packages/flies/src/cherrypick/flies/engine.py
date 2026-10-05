@@ -112,6 +112,12 @@ ARMS = (
     # third of control's sessions completed 70% against a ~75% break-even; whether refusing them
     # pays is what this arm measures, forward, because the in-sample cut is not significant.
     "vol-floor",
+    # control plus a wall-clearance gate (declared for 2026-10-19): no legged entry while the GEX
+    # wall on the completing side -- the call wall for a put spread, which needs a rally, the put
+    # wall for a call spread -- sits under `wall_clear_ahead_points` ahead of spot or has been
+    # crossed by less than `wall_clear_past_points` (`wall_clearance_refusal`). One variable vs
+    # control. In-sample over 43 sessions the band lost; the thresholds were chosen on those rows.
+    "wall-clear",
     # The selector (2026-10-04, selector.py): one portfolio that, on each tick, asks its declared
     # source arms what they would do against ITS book and books the proposal the session's frozen
     # model scores best -- or control's, which is what it books with no model at all. Not a variant
@@ -920,6 +926,50 @@ def low_vol_refusal(snapshot: dict, params: dict) -> str | None:
     return "straddle_below_floor" if ratio < float(floor) else None
 
 
+def wall_clearance_refusal(snapshot: dict, params: dict, side: str, detail: dict | None = None) -> str | None:
+    """Refuse a legged entry while the GEX wall its completion must travel toward has not been
+    cleared (`wall_clear_ahead_points` null/absent = off). The `wall-clear` arm's one variable.
+
+    A put spread completes into a fly when spot RISES, a call spread when it FALLS. `room` is how
+    far spot may travel that way before reaching the wall on that side -- `call_wall - spot` for a
+    put spread, `spot - put_wall` for a call spread -- negative once spot is through it. Refused
+    while `-wall_clear_past_points < room < wall_clear_ahead_points`: the wall is close ahead, or
+    crossed but not yet by the clearance. Every later tick asks again, so a refusal is a wait.
+
+    Over control's 2026-08-03..10-02 SPX rows (scripts/flies_wall_clear_replay.py), entries with the
+    wall 0-10 points ahead completed 64% for -$34 a spread against 78% overall; entries 5-10 points
+    PAST it completed 100% for +$130 (13 rows), while 0-5 past was still flat (-$7, 14 rows).
+    Refusing -5 < room < 10 dropped 61 of 345 entries worth -$1,669 (p 0.11 within-session; the
+    nine other ATM legged arms, the same tape at other moments, p < 0.001). Both thresholds were
+    read off those rows, so this is an arm, not a default. The mechanism is NOT established: across
+    every recorded 5-minute reading, spot travelled as far toward a wall just ahead as toward none.
+
+    Reads the RECORDER's walls (`snapshot["recorded_gex"]`, at most 600 s old), the series the rule
+    was measured on, not this snapshot's own surface. Fails OPEN when they are unmeasured, so a
+    recorder outage trades control's trade; the read side recovers which entries those were by the
+    same join. `detail`, when given, receives the wall, room and sample age on a refusal.
+    """
+    ahead = params.get("wall_clear_ahead_points")
+    if ahead is None:
+        return None
+    past = float(params.get("wall_clear_past_points") or 0.0)
+    recorded = snapshot.get("recorded_gex") or {}
+    spot = snapshot.get("underlying_price")
+    if recorded.get("status") != "measured" or spot is None:
+        return None
+    wall = recorded.get("call_wall") if side == PUT else recorded.get("put_wall")
+    if wall is None:
+        return None
+    room = float(wall) - float(spot) if side == PUT else float(spot) - float(wall)
+    if not (-past < room < float(ahead)):
+        return None
+    if detail is not None:
+        detail["wall"] = float(wall)
+        detail["wall_room_points"] = round(room, 2)
+        detail["wall_age_seconds"] = recorded.get("age_seconds")
+    return "call_wall_not_cleared" if side == PUT else "put_wall_not_cleared"
+
+
 def miss_stop_refusal(params: dict, day_book: list, now_min: int | None) -> str | None:
     """Refuse a new entry once any of today's spreads has sat uncompleted for
     `miss_stop_minutes` or longer (null/absent = off).
@@ -1228,6 +1278,12 @@ def evaluate_credit_spread_entry(
     long_strike = center - width if side == PUT else center + width
     if not _have(snapshot, side, [center, long_strike]):
         return False, _miss_reason(snapshot, [center, long_strike]), None
+
+    # Wall-clearance gate (the `wall-clear` arm; off when `wall_clear_ahead_points` is unset). Here
+    # rather than with the day-level refusals above because it depends on the side just chosen.
+    refusal = wall_clearance_refusal(snapshot, params, side, gate_detail)
+    if refusal:
+        return False, refusal, None
 
     # Drift gate (opt-in per arm via `refuse_completion_against_trend`; off when unset).
     #

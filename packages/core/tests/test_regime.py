@@ -127,6 +127,24 @@ def test_missing_db_and_missing_tables_are_unmeasured_never_a_raise(tmp_path):
     assert out["gex"]["SPX"]["reason"] == "no_gex_regime_table"
 
 
+def test_gex_at_is_regime_at_for_one_symbol(history_db, tmp_path):
+    """gex_at is the tick-side reader (flies' snapshot): it must answer exactly what regime_at's gex
+    block answers, at every boundary -- measured, look-ahead, stale, missing."""
+    for ts in (T0 - 1, T0, T0 + 30, T0 + 901, T0 + 60 + 901):
+        assert (
+            regime.gex_at(ts, "spx", history_db=history_db)
+            == (regime.regime_at(ts, symbol="SPX", history_db=history_db)["gex"]["SPX"])
+        )
+    assert regime.gex_at(T0 + 30, "SPX", history_db=history_db)["call_wall"] == 6450.0
+    assert regime.gex_at(T0 + 601, "SPX", history_db=history_db, max_staleness_seconds=600)["reason"] == (
+        "stale_sample"
+    )
+    assert regime.gex_at(T0, "SPX", history_db=tmp_path / "absent.db")["reason"] == "no_history_db"
+    bare = tmp_path / "bare.db"
+    sqlite3.connect(bare).close()
+    assert regime.gex_at(T0, "SPX", history_db=bare)["reason"] == "no_gex_regime_table"
+
+
 def test_sector_dispersion_bounds_closes_before_the_sample_session(tmp_path):
     """The look-ahead trap specific to dispersion: a retroactive join runs after the sample day's
     OWN close landed in daily_closes, and 'latest close' would grade the morning against it."""
