@@ -238,7 +238,8 @@ def test_a_put_spread_bought_is_a_debit_short_its_delta():
         "group": None,
     }
     sold = {**nvda, "price": -1.10, "delta": 0.12, "premium": -2_750_000, "time_et": "11:30:00.000"}
-    odd = {**nvda, "price": 7.02, "delta": 0.23, "time_et": "12:00:00.000"}  # a debit long delta: no put spread
+    # A debit long its delta is no put spread bought: not read.
+    odd = {**nvda, "price": 7.02, "delta": 0.23, "time_et": "12:00:00.000"}
     doc = _flows(_capture(spreads=[nvda, sold, odd]))
     read = {f["time_et"]: (f["direction"], f["view"]) for f in doc["flows"]}
     assert read == {"11:12:13.000": ("bought", "bearish"), "11:30:00.000": ("sold", "bullish")}
