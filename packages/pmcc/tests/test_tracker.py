@@ -157,6 +157,17 @@ def test_the_header_is_every_leg_at_its_close_or_mark_less_every_cost(ledger):
     assert h["net_delta"] == pytest.approx(95.0 - 74.0)
 
 
+def test_a_held_long_header_states_its_two_exits_from_the_positions_own_rules(ledger):
+    """The stop (net to date at -stop_loss_frac x the long's cost) and the long roll (the long at
+    long_close_dte) close a shield position; the page could show neither. Both are read from the
+    position's effective params, so an arm that never stops says so with a null."""
+    exits = tracker.tracker(ledger, PID, {}, now=NOW)["header"]["exits"]
+    assert exits["stop_net_at"] == pytest.approx(-0.30 * 3780.0)
+    assert exits["stop_room"] == pytest.approx(175.0 - 15.39 + 0.30 * 3780.0)
+    assert exits["long_close_on"] == "2027-08-03"  # 2027-09-17 less 45 days
+    assert exits["long_dte"] == 373  # from Wednesday 2026-09-09
+
+
 def test_every_week_is_valued_at_its_own_close_and_the_last_is_the_header(ledger):
     t = tracker.tracker(ledger, PID, {}, now=NOW)
     weeks = [(w["week"], w["net"], w["change"]) for w in t["weeks"]]
