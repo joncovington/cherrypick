@@ -85,6 +85,38 @@ Found on the way:
 
 The era is `shield`. Pre-boundary rows stay under `redesign`.
 
+## Control retired, advice off (2026-10-06, measurement break)
+
+A day into the shield era, control was retired and the held-long pair made the base trade, with SLV
+the intended first live symbol. The reasoning: the strategy had changed in kind, from a ~21-DTE long
+re-bought weekly to a ~1-year long held for ten months. The replay put control last on every symbol
+(alpha −2.6 to −8 a year on the core names, almost all of it the long's re-buying). As a baseline, it
+answered a question the study had already settled.
+
+Its advisor experiment (`exp-2026-10-01-pmcc-1`, an early time-value exit on control's advised twin)
+was killed the same evening, after one session, with nothing closed. The precedent was the 08-23 kill
+whose reason read "premise retired with the old param space". pmcc's advice and the advisor's
+`modules.pmcc` were switched off: the twins shadow control only, and the advisor cannot judge a
+position that lasts ten months. Its verdicts count closed positions inside a 30-session window.
+
+Done in config, not code (`books.control.enabled: false`). Control and its twins run off under their
+own rules, and two `measurement_breaks` rows (`arms`, `advice`) are dated 2026-10-06. No new era:
+shield's rules and roster did not change.
+
+Built beside it:
+- the stream request asks for control's plan dates only while a weekly-lifecycle arm is on the
+  roster, and a held-long entry now asks for its own short date. Before, that date was covered only
+  because it equalled control's plan short.
+- the tracker states a held-long position's two exits (the stop's net level and room, and the
+  long-roll date).
+- the review's pmcc expectation reads the held-long shorts (time value sold against captured).
+- the console splits open trades by lifecycle, shows every expiry with its year, and files arms as
+  advised by their prefix. Shield had been listed among the advised arms.
+
+Left for after the run-off (about 10-23): remove control from `engine.ARMS` and the weekly entry
+path, flip `DEFAULT_ENABLED`, move the held-long values into `defaults`, and drop TQQQ from the
+settlement, root and dividend tables.
+
 ## Milestones
 
 Built 2026-08-16. `live.enabled` placeholder added 2026-08-16. The console's `/pmcc` page landed
