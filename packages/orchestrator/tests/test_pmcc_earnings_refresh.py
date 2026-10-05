@@ -18,11 +18,15 @@ def _load():
 
 
 def _home(tmp_path, monkeypatch) -> Path:
-    """A temp home with a minimal suite config (the editor loads it) and a config directory."""
+    """A temp home holding the pmcc config directory, with a minimal suite config handed to the editor."""
     managed_home = tmp_path / "cherrypick-home"
     managed_home.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("CHERRYPICK_HOME", str(managed_home))
-    (managed_home / "config.json").write_text(json.dumps({"modules": {}}), encoding="utf-8")
+    # The suite config's path is resolved at import, so the test hands the editor its config rather
+    # than relying on a file at the real home (CI has none; a developer's would be read).
+    from cherrypick.orchestrator import config as cfgmod
+
+    monkeypatch.setattr(cfgmod, "load_config", lambda *a, **k: {"modules": {}})
     cfg_dir = managed_home / "config"
     cfg_dir.mkdir()
     return cfg_dir
