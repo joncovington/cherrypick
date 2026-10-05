@@ -112,6 +112,12 @@ ARMS = (
     # third of control's sessions completed 70% against a ~75% break-even; whether refusing them
     # pays is what this arm measures, forward, because the in-sample cut is not significant.
     "vol-floor",
+    # The selector (2026-10-04, selector.py): one portfolio that, on each tick, asks its declared
+    # source arms what they would do against ITS book and books the proposal the session's frozen
+    # model scores best -- or control's, which is what it books with no model at all. Not a variant
+    # of one variable but a test of the choosing procedure itself, judged against control, each
+    # source and the best fixed gate. Off until it lands at a declared boundary.
+    "selector",
 )
 
 

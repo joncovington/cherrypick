@@ -1494,6 +1494,29 @@ def test_hedge_overlay_reprices_each_settled_spread_with_and_without_its_hedge(c
     assert out["sell_at"]["1.5"]["sold"] == 1  # P1 clears 1.5x too; P2 (0.20 < 0.255) does not
 
 
+def test_sell_at_completion_sells_a_completed_rows_hedge_at_its_stamped_sale(conn):
+    """Hold the hedge only while stranded: a completed fly sells it at the completion-tick sale
+    value; a stranded spread rides to the print; a completed row with no stamp is untracked for this
+    block and in neither total -- never a free sale."""
+    open_fee, close_fee, assign = (
+        fly.single_leg_open_fee("SPX"),
+        fly.single_leg_close_fee("SPX"),
+        fly.expire_fee(1),
+    )
+    base = {"strike": 5970.0, "premium": 0.17, "fee": open_fee, "best_mid": 0.2}
+    _legged_row(conn, "S", kind="short_vertical", pnl=-440.0, hedge={**base, "settle_value": 20.0})
+    _legged_row(conn, "C", pnl=60.0, hedge={**base, "settle_value": 0.0, "mid_at_completion": 0.08})
+    _legged_row(conn, "OLD", pnl=55.0, hedge={**base, "settle_value": 0.0})
+
+    out = analytics.hedge_overlay(conn, arm="control")["sell_at_completion"]
+    cost = 0.17 * 100 + open_fee
+    stranded = -440.0 + (20.0 * 100 - assign) - cost
+    completed = 60.0 + (0.08 - 0.17) * 100 - open_fee - close_fee
+    assert (out["n"], out["untracked"]) == (2, 1)
+    assert out["unhedged_net"] == pytest.approx(-380.0)
+    assert out["hedged_net"] == pytest.approx(stranded + completed, abs=0.01)
+
+
 def test_hedge_overlay_respects_the_void_rule(conn):
     _legged_row(
         conn, "P1", pnl=60.0, hedge={"strike": 5970.0, "premium": 0.17, "fee": 1.72, "settle_value": 0.0}

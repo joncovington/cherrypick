@@ -349,6 +349,64 @@ CREATE TABLE IF NOT EXISTS fly_order_path (
     UNIQUE (observed_at, order_id)
 );
 CREATE INDEX IF NOT EXISTS idx_fly_order_path_order ON fly_order_path(order_id, observed_at);
+
+-- The debit-first shadow ladder (2026-10-04). At every fill of an arm that declares
+-- `debit_ladder`, the same debit-first trade is priced k strikes out of the money in both
+-- directions, on the same tape and at the same moment, and each rung is carried to settlement by
+-- the arm's own completion rule (`engine.evaluate_debit_completion`). A rung is a SHADOW position:
+-- never booked, never cash, in no arm's P&L. It exists because a strike nobody traded cannot be
+-- priced afterwards -- the cache keeps no quote history -- so the distance question is recorded
+-- live or not at all. Telemetry only; nothing on a decision path reads it.
+--
+--   refusal          why the rung could not be stamped (an unquoted leg, a crossed quote); every
+--                    later column stays NULL on such a row, never zero.
+--   complete_credit  the completing credit on the FIRST tick the arm's gate cleared -- the price the
+--                    arm itself would have taken. `best_credit` is the running max over the rung's
+--                    life: best-ever, an upper bound, never a fill.
+--   pnl              settled at the print through `engine.settle`, completed or not, so fees and the
+--                    expiry fee are the module's own.
+CREATE TABLE IF NOT EXISTS fly_debit_ladder (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    stamped_at         TEXT NOT NULL,
+    trade_date         TEXT NOT NULL,
+    symbol             TEXT NOT NULL,
+    arm                TEXT NOT NULL,
+    anchor_position_id TEXT NOT NULL,
+    direction          TEXT NOT NULL,     -- up | down
+    k                  INTEGER NOT NULL,  -- strikes out of the money, centre vs the anchor's centre
+    side               TEXT,
+    center             REAL,
+    wing_width         REAL,
+    spot_at_stamp      REAL,
+    refusal            TEXT,
+    entry_debit        REAL,
+    entry_fee          REAL,
+    first_complete_at  TEXT,
+    complete_credit    REAL,
+    completion_fee     REAL,
+    best_credit        REAL,
+    best_credit_at     TEXT,
+    settlement_price   REAL,
+    pnl                REAL,
+    UNIQUE (anchor_position_id, direction, k)
+);
+CREATE INDEX IF NOT EXISTS idx_fly_debit_ladder_day ON fly_debit_ladder(trade_date, symbol, arm);
+
+-- The selector arm's per-tick record (2026-10-04): what every source arm proposed against the
+-- selector's own book, how each was scored, and what was chosen and why. The selector's
+-- fly_iterations -- it separates "the model chose skip" from "a thin cell fell back to control" from
+-- "every candidate was refused", which the position ledger alone cannot. Telemetry only.
+CREATE TABLE IF NOT EXISTS fly_selector_choices (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          TEXT NOT NULL,
+    trade_date  TEXT NOT NULL,
+    symbol      TEXT NOT NULL,
+    model_id    TEXT,
+    candidates  TEXT,                 -- JSON, one entry per source: refusal or plan summary + score
+    chosen      TEXT,                 -- the merged source label, or NULL for skip / nothing offered
+    reason      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fly_selector_choices_day ON fly_selector_choices(trade_date, symbol);
 """
 
 
@@ -493,6 +551,17 @@ _ADDED_POSITION_COLUMNS = {
     "hedge_best_mid": "REAL",
     "hedge_best_mid_at": "TEXT",
     "hedge_settle_value": "REAL",
+    # What selling the overlay's hedge would have fetched on the tick the legged completion filled
+    # (2026-10-04) -- the price a "hold the hedge only while stranded" rule would have sold at.
+    # NULL when the strike was unquoted on that tick or the row predates the column: never a zero,
+    # and never backfilled (the cache keeps no quote history).
+    "hedge_mid_at_completion": "REAL",
+    "hedge_mid_at_completion_at": "TEXT",
+    # The selector arm (2026-10-04): which source arm(s) proposed the plan it booked (a merged label
+    # such as `control+vol-floor` when identical plans collapsed), and the frozen model that chose
+    # it. NULL on every other arm's rows.
+    "selected_from": "TEXT",
+    "selector_model_id": "TEXT",
     # Signed `spot - day_open` in points. Unlike the offset pair above this canNOT be backfilled:
     # nothing on the row records where the session opened, and the cache keeps one summary row per
     # (symbol, trade_date) rather than a history -- so these start empty and fill forward only.
@@ -939,6 +1008,101 @@ def record_iteration(
         "INSERT OR REPLACE INTO fly_iterations (iteration_ts, trade_date, symbol, arm, center, "
         "center_reason, underlying_price) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (iteration_ts, trade_date, symbol, arm, center, center_reason, underlying_price),
+    )
+    conn.commit()
+
+
+_LADDER_STAMP_COLUMNS = (
+    "direction",
+    "k",
+    "side",
+    "center",
+    "wing_width",
+    "spot_at_stamp",
+    "refusal",
+    "entry_debit",
+    "entry_fee",
+)
+_LADDER_FOLD_COLUMNS = (
+    "first_complete_at",
+    "complete_credit",
+    "completion_fee",
+    "best_credit",
+    "best_credit_at",
+    "settlement_price",
+    "pnl",
+)
+
+
+def record_ladder_rungs(
+    conn, *, stamped_at: str, trade_date: str, symbol: str, arm: str, anchor_position_id: str, rungs: list
+) -> None:
+    """Stamp a fresh anchor fill's shadow rungs (`ladder.stamp`). Idempotent on (anchor, direction,
+    k): a re-run of the same fill writes nothing new."""
+    for r in rungs:
+        cols = ("stamped_at", "trade_date", "symbol", "arm", "anchor_position_id", *_LADDER_STAMP_COLUMNS)
+        vals = (
+            stamped_at,
+            trade_date,
+            symbol,
+            arm,
+            anchor_position_id,
+            *(r.get(c) for c in _LADDER_STAMP_COLUMNS),
+        )
+        conn.execute(
+            f"INSERT OR IGNORE INTO fly_debit_ladder ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})",
+            vals,
+        )
+    conn.commit()
+
+
+def live_ladder_rungs(conn, *, trade_date: str, symbol: str, arm: str) -> list[dict]:
+    """The day's stamped, unsettled rungs for one arm -- what the per-tick fold and settlement read."""
+    rows = conn.execute(
+        "SELECT * FROM fly_debit_ladder WHERE trade_date = ? AND symbol = ? AND arm = ? "
+        "AND refusal IS NULL AND settlement_price IS NULL ORDER BY id",
+        (trade_date, symbol, arm),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_ladder_rung(conn, rung_id: int, fields: dict) -> None:
+    """Write the columns one tick's fold (or settlement) moved. Unknown keys are a programming
+    error, not data, so they raise rather than silently widening the write."""
+    unknown = set(fields) - set(_LADDER_FOLD_COLUMNS)
+    if unknown:
+        raise ValueError(f"not a ladder fold column: {sorted(unknown)}")
+    if not fields:
+        return
+    sets = ", ".join(f"{c} = ?" for c in fields)
+    conn.execute(f"UPDATE fly_debit_ladder SET {sets} WHERE id = ?", (*fields.values(), rung_id))
+    conn.commit()
+
+
+def record_selector_choice(
+    conn,
+    *,
+    ts: str,
+    trade_date: str,
+    symbol: str,
+    model_id: str | None,
+    candidates: list,
+    chosen: str | None,
+    reason: str,
+) -> None:
+    """One row per selector tick: every source's refusal or scored plan, and the choice."""
+    conn.execute(
+        "INSERT INTO fly_selector_choices (ts, trade_date, symbol, model_id, candidates, chosen, reason) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            ts,
+            trade_date,
+            symbol,
+            model_id,
+            json.dumps(candidates, sort_keys=True, default=str),
+            chosen,
+            reason,
+        ),
     )
     conn.commit()
 

@@ -687,6 +687,56 @@ def test_settlement_values_an_otm_hedge_at_zero_not_null(conn):
     assert conn.execute("SELECT hedge_settle_value FROM fly_positions").fetchone()[0] == 0.0
 
 
+def _completing(far_put):
+    """The lifecycle test's completing tick (spot up, the 6000/6005 put spread cheap), with the
+    hedge's 5970 put quoted -- or not, when `far_put` is None."""
+    puts = {6000: q(1.0, 1.2), 6005: q(2.4, 2.6)}
+    if far_put is not None:
+        puts[5970] = q(*far_put)
+    return snapshot(underlying_price=6004.0, puts=puts)
+
+
+def test_a_completion_stamps_what_the_hedge_would_have_sold_for_on_that_tick(conn):
+    """The 'hold the hedge only while stranded' price: the sale value on the tick the completion
+    filled, read by the overlay's sell-at-completion block. The spread's own completion is
+    untouched by it."""
+    config = one_arm_config(entry_modes=["legged"], hedge_delta=0.05)
+    first = bookmod.process_snapshot(hedged_snapshot(), config, conn, "control")
+    second = bookmod.process_snapshot(_completing((0.04, 0.08)), config, conn, "control")
+    assert [a for a in second["actions"] if a["action"] == "completed"]
+    row = dbmod.book_positions(conn, first["book_id"])[0]
+    assert row["kind"] == "fly"
+    assert row["hedge_mid_at_completion"] == pytest.approx(0.06 - 0.125 * 0.04)
+    assert row["hedge_mid_at_completion_at"] == row["completed_at"]
+
+
+def test_an_unquoted_hedge_at_completion_stamps_null_not_zero(conn):
+    config = one_arm_config(entry_modes=["legged"], hedge_delta=0.05)
+    first = bookmod.process_snapshot(hedged_snapshot(), config, conn, "control")
+    bookmod.process_snapshot(_completing(None), config, conn, "control")
+    row = dbmod.book_positions(conn, first["book_id"])[0]
+    assert row["kind"] == "fly"
+    assert row["hedge_mid_at_completion"] is None
+
+
+def test_a_failing_hedge_stamp_never_costs_the_completion(conn, monkeypatch):
+    config = one_arm_config(entry_modes=["legged"], hedge_delta=0.05)
+    first = bookmod.process_snapshot(hedged_snapshot(), config, conn, "control")
+
+    real_save = dbmod.save_position
+
+    def save(conn_, fields):
+        if "hedge_mid_at_completion" in fields:
+            raise RuntimeError("telemetry down")
+        return real_save(conn_, fields)
+
+    monkeypatch.setattr(dbmod, "save_position", save)
+    bookmod.process_snapshot(_completing((0.04, 0.08)), config, conn, "control")
+    row = dbmod.book_positions(conn, first["book_id"])[0]
+    assert row["kind"] == "fly" and row["completed_at"] is not None
+    assert row["hedge_mid_at_completion"] is None
+
+
 def test_the_overlay_is_off_when_hedge_delta_is_null(conn):
     config = one_arm_config(entry_modes=["legged"], hedge_delta=None)
     bookmod.process_snapshot(hedged_snapshot(), config, conn, "control")

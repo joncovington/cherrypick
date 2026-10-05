@@ -15,6 +15,8 @@ from cherrypick.flies import (
     engine,  # noqa: E402
     fill_model,  # noqa: E402
     fly,  # noqa: E402
+    ladder,  # noqa: E402
+    selector,  # noqa: E402
 )
 from cherrypick.flies import db as dbmod  # noqa: E402
 
@@ -284,6 +286,8 @@ def _to_position(row: dict) -> dict:
         # The live-like completion shadow, so its first-touch record survives a restart.
         "shadow_completion_limit": dict(row).get("shadow_completion_limit"),
         "shadow_touches": fill_model.load_touches(dict(row).get("shadow_touches")),
+        # The selector arm's positions complete under the params of the source that proposed them.
+        "selected_from": dict(row).get("selected_from"),
     }
 
 
@@ -342,8 +346,71 @@ def _record_hedge_best(conn, position: dict, credit: float, when: str) -> None:
     )
 
 
+def _record_hedge_at_completion(conn, position: dict, snapshot: dict, slip: float, when: str) -> None:
+    """What selling the overlay's hedge would have fetched on the completion tick. Telemetry only,
+    and wrapped: a failure here is a gap in the data, never a reason to lose the completion that has
+    already been saved. An unquoted strike writes nothing, so the column stays NULL rather than 0."""
+    try:
+        if position.get("hedge_strike") is None:
+            return
+        hedge_q = engine.quote(snapshot, position["side"], position["hedge_strike"])
+        if hedge_q is None:
+            return
+        dbmod.save_position(
+            conn,
+            {
+                "position_id": position["position_id"],
+                "hedge_mid_at_completion": round(fly.leg_credit(hedge_q, slip), 4),
+                "hedge_mid_at_completion_at": when,
+            },
+        )
+    except Exception:  # noqa: BLE001 - telemetry must never break the loop
+        pass
+
+
+def _fold_ladder(
+    conn, snapshot: dict, params: dict, trade_date: str, symbol: str, arm: str, when: str
+) -> None:
+    """Carry the arm's live shadow rungs one tick forward (`ladder.fold`). Telemetry only, and
+    wrapped: a rung is never a position, so a failure here can cost a gap in the ladder and nothing
+    else."""
+    try:
+        for rung in dbmod.live_ladder_rungs(conn, trade_date=trade_date, symbol=symbol, arm=arm):
+            changed = ladder.fold(snapshot, params, rung, when)
+            if changed:
+                dbmod.update_ladder_rung(conn, rung["id"], changed)
+    except Exception:  # noqa: BLE001 - telemetry must never break the loop
+        pass
+
+
+def _stamp_ladder(
+    conn, snapshot: dict, params: dict, plan: dict, *, trade_date, symbol, arm, position_id, when
+) -> None:
+    """Stamp the shadow rungs for a fresh debit-first fill. Wrapped for the same reason as the fold:
+    the anchor is already saved, and losing its ladder is a gap in the data, never a lost fill."""
+    try:
+        dbmod.record_ladder_rungs(
+            conn,
+            stamped_at=when,
+            trade_date=trade_date,
+            symbol=symbol,
+            arm=arm,
+            anchor_position_id=position_id,
+            rungs=ladder.stamp(snapshot, params, plan),
+        )
+    except Exception:  # noqa: BLE001 - telemetry must never break the loop
+        pass
+
+
 def process_snapshot(
-    snapshot: dict, config: dict, conn, arm: str, *, experiment_id: str | None = None
+    snapshot: dict,
+    config: dict,
+    conn,
+    arm: str,
+    *,
+    experiment_id: str | None = None,
+    selector_model: dict | None = None,
+    selector_model_reason: str | None = None,
 ) -> dict:
     """Run one iteration of one arm against one snapshot. Returns a summary of what it did.
 
@@ -352,6 +419,13 @@ def process_snapshot(
     first could consume the position slot that the completion needs.
     """
     params = engine.merged_params(config, arm)
+
+    def pos_params(pos):
+        """The params a position completes under: its own arm's, except a selector position, which
+        completes exactly as the source that proposed it would."""
+        source = selector.booking_source(pos.get("selected_from"))
+        return engine.merged_params(config, source) if source else params
+
     symbol = snapshot["symbol"]
     trade_date = snapshot["date"]
     book_id = book_id_for(trade_date, arm, symbol)
@@ -483,7 +557,7 @@ def process_snapshot(
     # code stays because it is correct and tested, but note the floor tiebreak below is NOT valid
     # across kinds and must be fixed before anything re-enables this.
     for pos in [p for p in positions if p["kind"] == "short_vertical" and p["status"] == "open"]:
-        debit_done, debit_reason, debit_plan = engine.evaluate_completion(snapshot, pos, params)
+        debit_done, debit_reason, debit_plan = engine.evaluate_completion(snapshot, pos, pos_params(pos))
         if debit_plan is not None:
             # The MARKET's modelled debit, never the price a completion would pay: from 2026-10-05
             # a completion pays the limit, and a running minimum of limits would say nothing.
@@ -491,7 +565,9 @@ def process_snapshot(
 
         iron_done = iron_plan = None
         if "iron" in params.get("completion_modes", ["debit"]):
-            iron_done, _iron_reason, iron_plan = engine.evaluate_iron_completion(snapshot, pos, params)
+            iron_done, _iron_reason, iron_plan = engine.evaluate_iron_completion(
+                snapshot, pos, pos_params(pos)
+            )
 
         # NOT a valid comparison across kinds: each floor reserves its own kind's worst-case
         # assignment fee (fly 3 strikes, iron_fly 2) at its own worst-case settlement PRICE, so
@@ -602,6 +678,9 @@ def process_snapshot(
                 **leg_symbol_columns(snapshot, pos["side"], completing=plan["long_strike"]),
             },
         )
+        _record_hedge_at_completion(
+            conn, pos, snapshot, params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC), now
+        )
         journal(
             "completion",
             "completed",
@@ -624,7 +703,7 @@ def process_snapshot(
     # --- 1b. complete any open `debit_first` long vertical whose completing sale has richened
     # enough to beat the debit already paid -- the same idea as step 1, direction reversed.
     for pos in [p for p in positions if p["kind"] == "long_vertical" and p["status"] == "open"]:
-        done, reason, plan = engine.evaluate_debit_completion(snapshot, pos, params)
+        done, reason, plan = engine.evaluate_debit_completion(snapshot, pos, pos_params(pos))
         if plan is not None:
             _record_best_credit(conn, pos, plan["credit"], now)
         if not done:
@@ -794,6 +873,12 @@ def process_snapshot(
             continue
         _record_shadow_touches(conn, pos, snapshot, now)
 
+    # --- 1g. the debit-first shadow ladder (ladder.py): carry every rung this arm stamped today one
+    # tick forward under the arm's own completion rule. Same posture as 1d-1f -- records, never
+    # gates -- and only on an arm that declared `debit_ladder`.
+    if ladder.offsets(params):
+        _fold_ladder(conn, snapshot, params, trade_date, symbol, arm, now)
+
     open_positions = [p for p in positions if p["status"] == "open"]
     # Filled in by the engine's portfolio gates on a refusal: the strike that collided, or the
     # seconds still to wait. Passed as an out-dict because `plan is None on refusal` is an
@@ -801,99 +886,185 @@ def process_snapshot(
     # loosen a contract live-order code reads.
     gate_detail: dict = {}
 
+    def book_legged(plan, extra=None):
+        """Book a legged entry the engine has already approved. Split out of step 2 so the selector arm
+        books its chosen plan through exactly the code every legged arm uses; `extra` carries the
+        selector's own columns onto the row."""
+        extra = extra or {}
+        position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}"
+        hedge = engine.hedge_candidate(snapshot, plan["side"], plan["center"], plan["wing_width"], params)
+        hedge_columns = {}
+        if hedge is not None:
+            hedge_q = engine.quote(snapshot, plan["side"], hedge["strike"])
+            hedge_columns = {
+                "hedge_strike": hedge["strike"],
+                "hedge_delta": hedge["delta"],
+                "hedge_premium": hedge["premium"],
+                "hedge_fee": hedge["fee"],
+                "hedge_leg_symbol": hedge.get("leg_symbol"),
+                # Seeded at the entry-tick sale value so "never improved" reads as that level.
+                "hedge_best_mid": round(
+                    fly.leg_credit(hedge_q, params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)), 4
+                ),
+                "hedge_best_mid_at": now,
+            }
+        pos = {
+            "kind": "short_vertical",
+            "side": plan["side"],
+            "center": plan["center"],
+            "wing_width": plan["wing_width"],
+            "net": plan["credit"],
+            "quantity": plan["quantity"],
+            "fees": plan["open_fee"],
+            "slippage_dollars": _entry_slippage(plan),
+            "entry_mode": "legged",
+            "status": "open",
+            "position_id": position_id,
+            "hedge_strike": hedge_columns.get("hedge_strike"),
+            "hedge_best_mid": hedge_columns.get("hedge_best_mid"),
+            # Same reason as in `_to_position`: this dict is appended to the live list the entry
+            # gates read, so it has to carry the window or the per-window cap misses it until the
+            # next iteration re-reads from the DB.
+            "entry_window": plan["entry_window"],
+            # Same reason the window is carried: this dict joins the list the entry gates
+            # read, so without the fill minute the cadence clock would not see this entry
+            # until the next tick re-reads the ledger -- and a second mode could enter
+            # inside the spacing window it was meant to be held out of.
+            "entry_time_min": _minute_of_day(now),
+        }
+        pos["shadow_completion_limit"] = shadow_completion_limit(pos, symbol, params)
+        positions.append(pos)
+        open_positions.append(pos)
+        dbmod.save_position(
+            conn,
+            {
+                **entry_row_base("legged", "short_vertical", position_id, plan),
+                **extra,
+                "shadow_completion_limit": pos["shadow_completion_limit"],
+                "net": plan["credit"],
+                "credit": plan["credit"],
+                "entry_center_delta": plan.get("center_delta"),
+                "completing_direction": plan["completing_direction"],
+                **leg_symbol_columns(
+                    snapshot,
+                    plan["side"],
+                    **entry_leg_strikes("short_vertical", plan["side"], plan["center"], plan["wing_width"]),
+                ),
+                # Full defined risk (-W) net of trading fees AND the worst-case exercise-
+                # assignment fee (both legs ITM) -- the uncompleted branch's honest worst case,
+                # not left blank until (if ever) it completes into a fly.
+                "floor_dollars": fly.position_floor(pos),
+                "risk_free": 0,
+                **hedge_columns,
+            },
+        )
+        record_attempt("legged", "entered", accepted=True, plan=plan, position_id=position_id)
+        journal(
+            "legged",
+            "entered",
+            accepted=True,
+            center=plan["center"],
+            position_id=position_id,
+            detail=f"{plan['side']} spread for {plan['credit']:.2f} credit, needs spot "
+            f"{plan['completing_direction']} to complete",
+        )
+        actions.append(
+            {
+                "action": "credit_spread_opened",
+                "position_id": position_id,
+                "side": plan["side"],
+                "center": plan["center"],
+                "credit": plan["credit"],
+            }
+        )
+
+    def book_debit_first(plan, extra=None):
+        """Book a debit-first entry the engine has already approved -- step 2.5's booking, split out for
+        the same reason as `book_legged`."""
+        extra = extra or {}
+        position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-D"
+        pos = {
+            "kind": "long_vertical",
+            "side": plan["side"],
+            "center": plan["center"],
+            "wing_width": plan["wing_width"],
+            "net": -plan["debit"],
+            "quantity": plan["quantity"],
+            "fees": plan["open_fee"],
+            "slippage_dollars": _entry_slippage(plan),
+            "entry_mode": "debit_first",
+            "status": "open",
+            "position_id": position_id,
+            "entry_window": plan["entry_window"],
+            # Same reason the window is carried: this dict joins the list the entry gates
+            # read, so without the fill minute the cadence clock would not see this entry
+            # until the next tick re-reads the ledger -- and a second mode could enter
+            # inside the spacing window it was meant to be held out of.
+            "entry_time_min": _minute_of_day(now),
+        }
+        positions.append(pos)
+        open_positions.append(pos)
+        dbmod.save_position(
+            conn,
+            {
+                **entry_row_base("debit_first", "long_vertical", position_id, plan),
+                **extra,
+                "net": -plan["debit"],
+                "debit": plan["debit"],
+                "entry_center_delta": plan.get("center_delta"),
+                "completing_direction": plan["completing_direction"],
+                **leg_symbol_columns(
+                    snapshot,
+                    plan["side"],
+                    **entry_leg_strikes("long_vertical", plan["side"], plan["center"], plan["wing_width"]),
+                ),
+                # Bounded at 0, never a -W tail (a long vertical can't lose more than its
+                # debit) -- but negative, since the debit paid is a real cost with no credit
+                # collected yet. See fly.position_floor's long_vertical branch for the
+                # assignment-fee reserve this also carries.
+                "floor_dollars": fly.position_floor(pos),
+                "risk_free": 0,
+            },
+        )
+        if ladder.offsets(params):
+            _stamp_ladder(
+                conn,
+                snapshot,
+                params,
+                plan,
+                trade_date=trade_date,
+                symbol=symbol,
+                arm=arm,
+                position_id=position_id,
+                when=now,
+            )
+        record_attempt("debit_first", "entered", accepted=True, plan=plan, position_id=position_id)
+        journal(
+            "debit_first",
+            "entered",
+            accepted=True,
+            center=plan["center"],
+            position_id=position_id,
+            detail=f"{plan['side']} debit spread for {plan['debit']:.2f}, needs spot "
+            f"{plan['completing_direction']} to complete",
+        )
+        actions.append(
+            {
+                "action": "debit_vertical_opened",
+                "position_id": position_id,
+                "side": plan["side"],
+                "center": plan["center"],
+                "debit": plan["debit"],
+            }
+        )
+
     # --- 2. legged entry: sell a new credit spread
     if "legged" in params.get("entry_modes", ["legged"]):
         enter, reason, plan = engine.evaluate_credit_spread_entry(
             snapshot, params, open_positions, positions, gate_detail
         )
         if enter:
-            position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}"
-            hedge = engine.hedge_candidate(snapshot, plan["side"], plan["center"], plan["wing_width"], params)
-            hedge_columns = {}
-            if hedge is not None:
-                hedge_q = engine.quote(snapshot, plan["side"], hedge["strike"])
-                hedge_columns = {
-                    "hedge_strike": hedge["strike"],
-                    "hedge_delta": hedge["delta"],
-                    "hedge_premium": hedge["premium"],
-                    "hedge_fee": hedge["fee"],
-                    "hedge_leg_symbol": hedge.get("leg_symbol"),
-                    # Seeded at the entry-tick sale value so "never improved" reads as that level.
-                    "hedge_best_mid": round(
-                        fly.leg_credit(hedge_q, params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)), 4
-                    ),
-                    "hedge_best_mid_at": now,
-                }
-            pos = {
-                "kind": "short_vertical",
-                "side": plan["side"],
-                "center": plan["center"],
-                "wing_width": plan["wing_width"],
-                "net": plan["credit"],
-                "quantity": plan["quantity"],
-                "fees": plan["open_fee"],
-                "slippage_dollars": _entry_slippage(plan),
-                "entry_mode": "legged",
-                "status": "open",
-                "position_id": position_id,
-                "hedge_strike": hedge_columns.get("hedge_strike"),
-                "hedge_best_mid": hedge_columns.get("hedge_best_mid"),
-                # Same reason as in `_to_position`: this dict is appended to the live list the entry
-                # gates read, so it has to carry the window or the per-window cap misses it until the
-                # next iteration re-reads from the DB.
-                "entry_window": plan["entry_window"],
-                # Same reason the window is carried: this dict joins the list the entry gates
-                # read, so without the fill minute the cadence clock would not see this entry
-                # until the next tick re-reads the ledger -- and a second mode could enter
-                # inside the spacing window it was meant to be held out of.
-                "entry_time_min": _minute_of_day(now),
-            }
-            pos["shadow_completion_limit"] = shadow_completion_limit(pos, symbol, params)
-            positions.append(pos)
-            open_positions.append(pos)
-            dbmod.save_position(
-                conn,
-                {
-                    **entry_row_base("legged", "short_vertical", position_id, plan),
-                    "shadow_completion_limit": pos["shadow_completion_limit"],
-                    "net": plan["credit"],
-                    "credit": plan["credit"],
-                    "entry_center_delta": plan.get("center_delta"),
-                    "completing_direction": plan["completing_direction"],
-                    **leg_symbol_columns(
-                        snapshot,
-                        plan["side"],
-                        **entry_leg_strikes(
-                            "short_vertical", plan["side"], plan["center"], plan["wing_width"]
-                        ),
-                    ),
-                    # Full defined risk (-W) net of trading fees AND the worst-case exercise-
-                    # assignment fee (both legs ITM) -- the uncompleted branch's honest worst case,
-                    # not left blank until (if ever) it completes into a fly.
-                    "floor_dollars": fly.position_floor(pos),
-                    "risk_free": 0,
-                    **hedge_columns,
-                },
-            )
-            record_attempt("legged", "entered", accepted=True, plan=plan, position_id=position_id)
-            journal(
-                "legged",
-                "entered",
-                accepted=True,
-                center=plan["center"],
-                position_id=position_id,
-                detail=f"{plan['side']} spread for {plan['credit']:.2f} credit, needs spot "
-                f"{plan['completing_direction']} to complete",
-            )
-            actions.append(
-                {
-                    "action": "credit_spread_opened",
-                    "position_id": position_id,
-                    "side": plan["side"],
-                    "center": plan["center"],
-                    "credit": plan["credit"],
-                }
-            )
+            book_legged(plan)
         else:
             journal("legged", reason, center=wanted_center)
             record_attempt("legged", reason, plan=plan, center=wanted_center, detail=gate_detail)
@@ -908,70 +1079,7 @@ def process_snapshot(
             snapshot, params, open_positions, positions, gate_detail
         )
         if enter:
-            position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-D"
-            pos = {
-                "kind": "long_vertical",
-                "side": plan["side"],
-                "center": plan["center"],
-                "wing_width": plan["wing_width"],
-                "net": -plan["debit"],
-                "quantity": plan["quantity"],
-                "fees": plan["open_fee"],
-                "slippage_dollars": _entry_slippage(plan),
-                "entry_mode": "debit_first",
-                "status": "open",
-                "position_id": position_id,
-                "entry_window": plan["entry_window"],
-                # Same reason the window is carried: this dict joins the list the entry gates
-                # read, so without the fill minute the cadence clock would not see this entry
-                # until the next tick re-reads the ledger -- and a second mode could enter
-                # inside the spacing window it was meant to be held out of.
-                "entry_time_min": _minute_of_day(now),
-            }
-            positions.append(pos)
-            open_positions.append(pos)
-            dbmod.save_position(
-                conn,
-                {
-                    **entry_row_base("debit_first", "long_vertical", position_id, plan),
-                    "net": -plan["debit"],
-                    "debit": plan["debit"],
-                    "entry_center_delta": plan.get("center_delta"),
-                    "completing_direction": plan["completing_direction"],
-                    **leg_symbol_columns(
-                        snapshot,
-                        plan["side"],
-                        **entry_leg_strikes(
-                            "long_vertical", plan["side"], plan["center"], plan["wing_width"]
-                        ),
-                    ),
-                    # Bounded at 0, never a -W tail (a long vertical can't lose more than its
-                    # debit) -- but negative, since the debit paid is a real cost with no credit
-                    # collected yet. See fly.position_floor's long_vertical branch for the
-                    # assignment-fee reserve this also carries.
-                    "floor_dollars": fly.position_floor(pos),
-                    "risk_free": 0,
-                },
-            )
-            record_attempt("debit_first", "entered", accepted=True, plan=plan, position_id=position_id)
-            journal(
-                "debit_first",
-                "entered",
-                accepted=True,
-                center=plan["center"],
-                position_id=position_id,
-                detail=f"{plan['side']} debit spread for {plan['debit']:.2f}, needs spot "
-                f"{plan['completing_direction']} to complete",
-            )
-            actions.append(
-                {
-                    "action": "debit_vertical_opened",
-                    "position_id": position_id,
-                    "side": plan["side"],
-                    "center": plan["center"],
-                    "debit": plan["debit"],
-                }
-            )
+            book_debit_first(plan)
         else:
             journal("debit_first", reason, center=wanted_center)
             record_attempt("debit_first", reason, plan=plan, center=wanted_center, detail=gate_detail)
@@ -1125,6 +1233,55 @@ def process_snapshot(
             record_attempt("outright", reason, plan=plan, center=wanted_center, detail=gate_detail)
             actions.append({"action": "entry_skipped", "mode": "outright", "reason": reason})
 
+    # --- 4. the selector (selector.py): ask every source arm what it would do against THIS book,
+    # score the proposals on the session's frozen model, and book at most one through the same
+    # booking code its own arm uses. An arm declares itself a selector with a `selector` block and
+    # `entry_modes: []`, so steps 2-3 above never fire for it.
+    if params.get("selector"):
+        cfg = selector.settings(params)
+        sources = [s for s in cfg["sources"] if s != arm]
+        cands = selector.candidates(snapshot, config, sources, open_positions, positions)
+        merged = selector.merge(cands)
+        scored = [
+            (
+                c,
+                selector.score(
+                    c, engine.classify_regime(snapshot, params, center=c["plan"]["center"]), selector_model
+                ),
+            )
+            for c in merged
+        ]
+        choice, why = selector.choose(scored, selector_model, cfg["default"])
+        if selector_model is None and selector_model_reason:
+            why = f"{why}:{selector_model_reason}"
+        mid = selector.model_id(selector_model) if selector_model else None
+        try:
+            dbmod.record_selector_choice(
+                conn,
+                ts=now,
+                trade_date=trade_date,
+                symbol=symbol,
+                model_id=mid,
+                candidates=[
+                    {"label": s["label"], "mode": c["mode"], "center": c["plan"]["center"], **s}
+                    for c, s in scored
+                ]
+                + [{"source": c["source"], "refusal": c["reason"]} for c in cands if not c["enter"]],
+                chosen=selector.label(choice) if choice else None,
+                reason=why,
+            )
+        except Exception:  # noqa: BLE001 - telemetry must never break the loop
+            pass
+        if choice is not None:
+            extra = {"selected_from": selector.label(choice), "selector_model_id": mid}
+            if choice["mode"] == "legged":
+                book_legged(choice["plan"], extra)
+            else:
+                book_debit_first(choice["plan"], extra)
+            positions[-1]["selected_from"] = extra["selected_from"]
+        else:
+            actions.append({"action": "entry_skipped", "mode": "selector", "reason": why})
+
     summary = _save_book(conn, book_id, trade_date, arm, symbol, positions, params)
     return {"book_id": book_id, "actions": actions, **summary}
 
@@ -1209,6 +1366,18 @@ def settle_book(
         if p.get("hedge_strike") is not None:
             row["hedge_settle_value"] = fly.long_option_payoff(p["side"], p["hedge_strike"], settlement_price)
         dbmod.save_position(conn, row)
+
+    # The debit-first shadow ladder settles at the same print. Shadow rows only: nothing here
+    # touches a position or the book's figures.
+    try:
+        for rung in dbmod.live_ladder_rungs(conn, trade_date=trade_date, symbol=symbol, arm=arm):
+            dbmod.update_ladder_rung(
+                conn,
+                rung["id"],
+                {"settlement_price": settlement_price, "pnl": ladder.settle(rung, settlement_price)},
+            )
+    except Exception:  # noqa: BLE001 - telemetry must never break settlement
+        pass
 
     # Cancelled entries are dropped before the book is valued. They were never positions, so
     # crediting the book with their credit inflates the day by exactly the money it never
