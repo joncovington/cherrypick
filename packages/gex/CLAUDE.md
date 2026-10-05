@@ -109,7 +109,8 @@ file's directory.
   `repair-history --apply` (3,952 RTH rows kept); the full table is in
   `gex_history.db.bak-20261001001211` beside the DB. `repair-history` alone only reports.
 - **Leftover strikes are not summed.** A strike the producer's window re-centred away from keeps its
-  last greeks forever; `provider.LEFTOVER_ROW_SECONDS` drops rows that far behind their chain's newest
-  (the console's `gexProfile.ts` uses the same cut). Negligible on a 0DTE chain; on a multi-day extra
+  last greeks forever; `core.gex.LEFTOVER_ROW_SECONDS` (re-exported by `provider`) drops rows that far
+  behind their chain's newest. Flies' snapshot uses the same constant from 2026-10-06 and the
+  console's `gexProfile.ts` the same cut, so change it in core or not at all. Negligible on a 0DTE chain; on a multi-day extra
   window it moved zero-gamma 545 points.
 - **Scratch work lives in a git-ignored `.tmp/`.**

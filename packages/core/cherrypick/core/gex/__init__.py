@@ -17,6 +17,13 @@ from cherrypick.core import dxfeed as _dx
 
 DEFAULT_MULTIPLIER = 100
 
+# A strike whose gamma row stopped updating this long before its chain's newest row is a LEFTOVER of
+# an earlier streamer window, frozen at whatever it was when spot was nearby, and is not summed. One
+# constant for every provider that builds a surface from the stream cache (the gex recorder, flies'
+# snapshot) so their walls agree; the console's `gexProfile.ts` mirrors it. The measurements behind
+# 600 s are beside its first use in `cherrypick.gex.provider`.
+LEFTOVER_ROW_SECONDS = 600
+
 
 _num = _dx.num
 

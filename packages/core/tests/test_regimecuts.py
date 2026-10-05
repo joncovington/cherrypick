@@ -55,6 +55,15 @@ def test_partial_session_breaks_never_bound_the_era_but_are_listed_as_caveats():
     ]
 
 
+def test_a_gex_surface_correction_is_a_caveat_not_an_era_boundary():
+    """flies' 2026-10-06 GEX input fix moves one tag's meaning and no arm's decisions; bounding the era
+    on it would restart every arm's evidence clock over a tag."""
+    breaks = [_brk("2026-08-11", kind="cutover"), _brk("2026-10-06", kind="gex_surface", reason="oi rule")]
+    era = rc.era_bounds(breaks, "2026-10-20")
+    assert era["start"] == "2026-08-11"
+    assert era["caveats"] == [{"break_date": "2026-10-06", "kind": "gex_surface", "reason": "oi rule"}]
+
+
 def test_no_break_means_start_is_none_and_nothing_is_ignored():
     era = rc.era_bounds([], "2026-09-18")
     assert era["start"] is None and era["bounding_break"] is None and era["ignored_future"] == []

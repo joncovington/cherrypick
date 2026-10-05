@@ -55,6 +55,7 @@ def seed(
     expiration=None,
     quote_age=0.0,
     greek_age=0.0,
+    oi_age=0.0,
     symbol="SPX",
     oi=1000,
     gamma=0.001,
@@ -104,7 +105,7 @@ def seed(
             )
             conn.execute(
                 "INSERT OR REPLACE INTO stream_oi (symbol, open_interest, updated_at) VALUES (?, ?, ?)",
-                (streamer_symbol, oi, now),
+                (streamer_symbol, oi, now - oi_age),
             )
     conn.commit()
     conn.close()
@@ -233,6 +234,49 @@ def test_stale_greeks_are_rejected_from_the_gex_surface(cache):
     assert ok["gex"]["ok"] is True
     assert ok["gex_stats"]["greeks_stale"] == 0
     assert ok["gex_stats"]["oldest_input_age_seconds"] >= 60
+
+
+OLD_RULE, NEW_RULE = "9999-12-31", "0000-01-01"  # GEX_SURFACE_RULE_FROM, as a day before/after today
+
+
+def test_stale_open_interest_is_dropped_before_the_surface_rule_and_kept_after(cache, monkeypatch):
+    """OI is a once-a-day number the streamer rarely re-sends. Held to the gamma age limit it fell off
+    most strikes by the afternoon (124 of 202 on 2026-10-05) and flipped net GEX's sign against the
+    recorder's surface on 14% of control's entries. From GEX_SURFACE_RULE_FROM it is kept at any age
+    for a strike whose gamma is live; before it, the old rule still applies, so a replay is unchanged."""
+    wide = tuple(range(5900, 6101, 5))
+    seed(cache, strikes=wide, greek_age=60, oi_age=7200)
+
+    monkeypatch.setattr(provider, "GEX_SURFACE_RULE_FROM", OLD_RULE)
+    old = provider.build_snapshot(cache, "SPX")
+    assert old["gex_stats"]["input_rule"] == "fresh_oi"
+    assert old["gex_stats"]["oi_fresh"] == 0 and old["gex"]["ok"] is False
+
+    monkeypatch.setattr(provider, "GEX_SURFACE_RULE_FROM", NEW_RULE)
+    new = provider.build_snapshot(cache, "SPX")
+    assert new["gex_stats"]["input_rule"] == "session_oi"
+    assert new["gex"]["ok"] is True and new["gex"]["strikes_with_data"] == len(wide)
+    assert new["gex_stats"]["oi_stale"] == 2 * len(wide)  # still counted, no longer dropped
+    # The age is the gamma's: an OI row's age says nothing about whether the feed is alive.
+    assert 60 <= new["gex_stats"]["oldest_input_age_seconds"] < 7200
+
+
+def test_the_surface_rule_still_refuses_a_dead_feed_and_drops_leftover_gamma(cache, monkeypatch):
+    monkeypatch.setattr(provider, "GEX_SURFACE_RULE_FROM", NEW_RULE)
+    wide = tuple(range(5900, 6101, 5))
+    seed(cache, strikes=wide, greek_age=7200, oi_age=7200)
+    dead = provider.build_snapshot(cache, "SPX")
+    assert dead["gex"]["ok"] is False and dead["gex_stats"]["greeks_fresh"] == 0
+
+    # A live chain plus strikes a re-centred window left behind 20 minutes ago: the leftovers' gamma
+    # is inside the absolute limit but behind the chain's newest row, and is not summed.
+    seed(cache, strikes=tuple(range(5900, 5951, 5)), greek_age=1200)
+    seed(cache, strikes=tuple(range(5955, 6101, 5)), greek_age=5)
+    snap = provider.build_snapshot(cache, "SPX")
+    assert snap["gex_stats"]["leftovers_dropped"] == 2 * 11
+    assert snap["gex"]["ok"] is True and snap["gex"]["strikes_with_data"] == len(range(5955, 6101, 5))
+    monkeypatch.setattr(provider, "GEX_SURFACE_RULE_FROM", OLD_RULE)
+    assert provider.build_snapshot(cache, "SPX")["gex_stats"]["leftovers_dropped"] == 0
 
 
 # --------------------------------------------------------------------------- delta on the leg quote
@@ -428,3 +472,18 @@ def test_snapshot_declares_the_strikes_it_could_hold(cache):
         "high": round(6000.0 * (1 + pct), 4),
     }
     assert all(snap["strike_window"]["low"] <= k <= snap["strike_window"]["high"] for k in snap["puts"])
+
+
+def test_the_surface_rule_is_journaled_once_as_a_non_bounding_break(tmp_path):
+    from cherrypick.core import regimecuts
+
+    from cherrypick.flies import db as dbmod
+    from cherrypick.flies import paper_loop
+
+    conn = dbmod.connect(str(tmp_path / "paper_trades.db"))
+    paper_loop._note_gex_surface_rule(conn)
+    paper_loop._note_gex_surface_rule(conn)
+    rows = [r for r in dbmod.measurement_breaks(conn) if r["kind"] == "gex_surface"]
+    assert len(rows) == 1 and rows[0]["scope"] == "*"
+    assert rows[0]["break_date"] == provider.GEX_SURFACE_RULE_FROM == "2026-10-06"
+    assert "gex_surface" in regimecuts.NON_BOUNDING_KINDS

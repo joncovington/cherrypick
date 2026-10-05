@@ -303,6 +303,33 @@ def _note_selector_arm(conn, config: dict) -> None:
         _log(f"selector arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
+def _note_gex_surface_rule(conn) -> None:
+    """Journal the 2026-10-06 GEX input correction (`provider.GEX_SURFACE_RULE_FROM`): from that
+    session open interest is taken at any age for a live-gamma strike and leftover gamma is dropped,
+    the gex recorder's rule. Book-wide and kind `gex_surface`, which never bounds an era
+    (`core.regimecuts.NON_BOUNDING_KINDS`): every row's GEX tags change meaning, no arm's decisions
+    do. Idempotent and best-effort, as the other notes."""
+    try:
+        day = provider.GEX_SURFACE_RULE_FROM
+        dbmod.record_measurement_break(
+            conn,
+            break_date=day,
+            scope="*",
+            kind="gex_surface",
+            reason=(
+                f"GEX surface inputs from {day} (provider._greeks_and_oi): open interest kept at any age "
+                "for a strike with live gamma, leftover gamma dropped -- the gex recorder's rule; "
+                "entry_/completion_gex_* tags either side of it are not poolable"
+            ),
+            detail=(
+                "docs/experiment-log.md 2026-10-05: OI held to the 1800 s gamma limit dropped 124 of 202 "
+                "rows that afternoon; control's stored net GEX had the recorder's opposite sign on 47 of 348 entries"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"gex-surface journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
 def _note_vol_floor_arm(conn, config: dict) -> None:
     """Journal the `vol-floor` arm's entry to the roster (an `arm_added` break dated its first
     session), once a machine's config enables it. Idempotent; best-effort, never a reason to skip
@@ -952,6 +979,7 @@ def main(argv=None) -> int:
             _note_cadence_change(conn, args.interval)
             _note_entry_cadence_change(conn, config)
             _note_completion_rule(conn, config)
+            _note_gex_surface_rule(conn)
             _note_vol_floor_arm(conn, config)
             _note_selector_arm(conn, config)
             _note_wall_clear_arm(conn, config)
