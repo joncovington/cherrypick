@@ -126,13 +126,16 @@ Built and off (2026-10-04, [selector.md](selector.md)). **Declared for 2026-10-1
 judging rule in the experiment log (2026-10-04): the first read comes at 10 departing sessions, on
 per-session net against `control`. Before that date:
 
-- **The nightly fit job.** The orchestrator's scheduler knows only `regime_cuts_at` /
-  `regime_cuts_argv`, so `selector-fit --write` (after 16:40) needs its own scheduled entry there,
-  built and tested first.
-- **The `arm_added` break note** for `selector` on 10-19, following `_note_vol_floor_arm`.
-- **On the date:** merge to main, add the `selector` arm (`entry_modes: []`, its `selector` block)
-  to the machine config, and journal the break once, together with any other roster change that
-  fortnight.
+- **Built (2026-10-04):** the orchestrator's `selector_fit_at` / `selector_fit_argv` job, which
+  catches up only until midnight; a `selector-fit` that is a stated no-op until a `selector` arm is
+  declared, and fits one that is declared but disabled; and the `arm_added` break for 10-19
+  (`_note_selector_arm`), recorded once the arm is enabled.
+- **Staging, any time before the date:** add both keys to the machine orchestrator config
+  (`16:45`, `["-m", "cherrypick.flies.cli", "selector-fit", "--write"]`), and declare the
+  `selector` arm in the machine flies config with `enabled: false`, `entry_modes: []` and its
+  `selector` block. The nightly fit then has a model waiting.
+- **On the date:** merge to main and flip the arm to `enabled: true` before the first tick. The
+  break journals itself. Land any other roster change from that fortnight with it.
 - **Not live-eligible** until debit-first has a live order path (`live_orders.py` builds legged
   specs only). A legged-only selector is the live candidate if one is ever wanted.
 - **Extract to `cherrypick.core.selector`** (model file, `fit`, `arm_starts`, `validate_model`) when

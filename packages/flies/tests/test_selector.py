@@ -276,3 +276,62 @@ def test_the_model_decision_is_pinned_for_the_session(tmp_path, monkeypatch):
 
 def test_selector_is_a_registered_arm():
     assert "selector" in engine.ARMS
+
+
+# --------------------------------------------------------------------------- the nightly fit and the roster break
+def _run_fit(tmp_path, monkeypatch, capsys, arms, *extra):
+    from cherrypick.flies import cli
+
+    monkeypatch.setenv("FLIES_DB_PATH", str(tmp_path / "paper_trades.db"))
+    cfg_path = tmp_path / "flies.json"
+    cfg_path.write_text(
+        json.dumps({"defaults": dict(BASE_CONFIG["defaults"]), "arms": arms}), encoding="utf-8"
+    )
+    rc = cli.main(
+        ["--config", str(cfg_path), "--db", str(tmp_path / "paper_trades.db"), "selector-fit", *extra]
+    )
+    return rc, json.loads(capsys.readouterr().out)
+
+
+def test_selector_fit_is_a_noop_until_a_selector_arm_is_declared(tmp_path, monkeypatch, capsys):
+    """Scheduled ahead of its boundary, the nightly job must write nothing while the config has no
+    selector -- and say why, so a quiet log is never mistaken for a fitted model."""
+    rc, out = _run_fit(tmp_path, monkeypatch, capsys, {"control": {}}, "--write", "--session", "2026-10-19")
+    assert rc == 0 and "skipped" in out
+    assert not (tmp_path / "selector_model-2026-10-19.json").exists()
+
+
+def test_a_declared_but_disabled_selector_is_still_fitted(tmp_path, monkeypatch, capsys):
+    """So the model is waiting on the morning the arm is switched on."""
+    arms = {
+        "control": {},
+        "selector": {"enabled": False, "entry_modes": [], "selector": {"sources": ["control"]}},
+    }
+    rc, out = _run_fit(tmp_path, monkeypatch, capsys, arms, "--write", "--session", "2026-10-19")
+    assert rc == 0 and out["model_id"] == "selector-2026-10-19-v1"
+    assert (tmp_path / "selector_model-2026-10-19.json").exists()
+
+
+def test_next_session_never_writes_tomorrows_model_before_todays_open():
+    from datetime import datetime
+
+    from cherrypick.flies import cli
+    from cherrypick.flies.clock import ET
+
+    assert cli.next_session(datetime(2026, 10, 19, 8, 0, tzinfo=ET)) == "2026-10-19"
+    assert cli.next_session(datetime(2026, 10, 19, 16, 45, tzinfo=ET)) == "2026-10-20"
+    assert cli.next_session(datetime(2026, 10, 16, 16, 45, tzinfo=ET)) == "2026-10-19"  # Friday -> Monday
+    assert cli.next_session(datetime(2026, 10, 17, 8, 0, tzinfo=ET)) == "2026-10-19"  # Saturday
+
+
+def test_the_selector_arm_is_journaled_once_when_enabled(tmp_path):
+    conn = dbmod.connect(str(tmp_path / "paper_trades.db"))
+    cfg = {"arms": {"selector": {"enabled": True, "entry_modes": [], "selector": {"sources": SOURCES}}}}
+    paper_loop._note_selector_arm(conn, cfg)
+    paper_loop._note_selector_arm(conn, cfg)
+    rows = [r for r in dbmod.measurement_breaks(conn) if r["scope"] == "selector"]
+    assert len(rows) == 1 and rows[0]["kind"] == "arm_added" and rows[0]["break_date"] == "2026-10-19"
+    for absent in ({"control": {}}, {"selector": {**cfg["arms"]["selector"], "enabled": False}}):
+        other = dbmod.connect(str(tmp_path / f"other-{len(absent)}-{id(absent)}.db"))
+        paper_loop._note_selector_arm(other, {"arms": absent})
+        assert not [r for r in dbmod.measurement_breaks(other) if r["scope"] == "selector"]

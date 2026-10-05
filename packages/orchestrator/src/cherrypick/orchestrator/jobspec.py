@@ -113,6 +113,10 @@ CATCHUP_MINUTES = {
     # should still reconcile that morning's pending dates, and an unreconciled date is only
     # reachable for as long as `pending_reconciliation`'s lookback keeps listing it.
     "fee-reconcile": 480,
+    # Until midnight and no further: the model is for the NEXT session, and the scheduler keys a
+    # daily job on the ET date, so a fit caught up after midnight would be a new day's job anyway.
+    # A missed night costs one session run as the default's twin, which the choice record says.
+    "selector-fit": 7 * 60,
     # A close card caught up mid-evening still describes the settled day correctly; past that the
     # next morning's cards take over.
     "status-digest-close": 90,
@@ -661,6 +665,25 @@ def derive_jobs(
                     cwd=root,
                     at_et=str(cuts_at),
                     catchup_minutes=CATCHUP_MINUTES["regime-cuts"],
+                    trading_days_only=True,
+                ),
+            )
+
+        # The selector's nightly model (2026-10-04, flies): fitted after the session settles and the
+        # regime cuts are written, for the next session, which pins it at its first tick. Declared in
+        # the module's own paper block like the cuts; a module with no selector declares no keys.
+        fit_at = paper.get("selector_fit_at")
+        fit_argv = paper.get("selector_fit_argv")
+        if fit_at and fit_argv:
+            add(
+                f"{name}-selector-fit",
+                lambda name=name, root=root, fit_at=fit_at, fit_argv=fit_argv: JobSpec(
+                    id=f"{name}-selector-fit",
+                    argv=(pythonw, *fit_argv),
+                    kind=KIND_DAILY,
+                    cwd=root,
+                    at_et=str(fit_at),
+                    catchup_minutes=CATCHUP_MINUTES["selector-fit"],
                     trading_days_only=True,
                 ),
             )

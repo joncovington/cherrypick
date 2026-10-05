@@ -275,6 +275,31 @@ def _note_completion_rule(conn, config: dict) -> None:
 
 
 VOL_FLOOR_ARM_FROM = "2026-10-05"
+SELECTOR_ARM_FROM = "2026-10-19"
+
+
+def _note_selector_arm(conn, config: dict) -> None:
+    """Journal the `selector` arm's entry to the roster (an `arm_added` break dated its declared
+    first session, 2026-10-19), once a machine's config enables it. Idempotent and best-effort, as
+    the vol-floor note. Recorded early is harmless: a future-dated break binds nothing until it
+    passes (`core.regimecuts.era_bounds`)."""
+    try:
+        arm = (config.get("arms") or {}).get("selector")
+        if not isinstance(arm, dict) or not arm.get("enabled", True) or not arm.get("selector"):
+            return
+        dbmod.record_measurement_break(
+            conn,
+            break_date=SELECTOR_ARM_FROM,
+            scope="selector",
+            kind="arm_added",
+            reason=(
+                "selector arm enters the roster: one book choosing each tick among its sources "
+                f"({', '.join(arm['selector'].get('sources', []))}) on a nightly frozen model, "
+                f"procedure v{selectormod.PROCEDURE_VERSION}; control's twin when no model applies"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"selector arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
 def _note_vol_floor_arm(conn, config: dict) -> None:
@@ -903,6 +928,7 @@ def main(argv=None) -> int:
             _note_entry_cadence_change(conn, config)
             _note_completion_rule(conn, config)
             _note_vol_floor_arm(conn, config)
+            _note_selector_arm(conn, config)
             # Stale-checkout guard (2026-08-05). The loop imports from the working tree, so a session
             # run from an older branch writes NULL to any regime column that branch predates --
             # silently, all day, with no backfill path afterwards. Logged rather than enforced: a

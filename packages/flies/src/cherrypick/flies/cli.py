@@ -217,17 +217,21 @@ def cmd_debit_ladder(args) -> int:
 def cmd_selector_fit(args) -> int:
     """Fit the selector's model for a session from every settled row before it, each source scoped
     to its era by the ledger's own breaks. Prints it; with --write, persists it where the paper loop
-    reads it at that session's first tick (read-only otherwise)."""
-    from datetime import date
+    reads it at that session's first tick (read-only otherwise).
 
-    from cherrypick.core import calendar as _cal
+    A no-op that says so while the config declares no selector arm. Declared but disabled still
+    fits, so the model is ready on the morning the arm is switched on."""
     from cherrypick.core import jsonio as _jsonio
 
-    from cherrypick.flies import clock, engine, paper_loop, selector, selector_replay
+    from cherrypick.flies import engine, paper_loop, selector, selector_replay
 
     config = load_config(args.config)
-    cfg = selector.settings(engine.merged_params(config, args.arm))
-    session = args.session or _cal.next_trading_day(date.fromisoformat(clock.today_iso())).isoformat()
+    params = engine.merged_params(config, args.arm)
+    if args.arm not in _cfg.registry(config, label="flies") or not params.get("selector"):
+        print(json.dumps({"ok": True, "skipped": f"no `{args.arm}` arm with a selector block declared"}))
+        return 0
+    cfg = selector.settings(params)
+    session = args.session or next_session()
     conn = dbmod.connect(args.db)
     rows = selector_replay.load_rows(
         conn, start="0000-00-00", end=None, arms=cfg["sources"], symbol=args.symbol
@@ -246,6 +250,21 @@ def cmd_selector_fit(args) -> int:
     else:
         print(json.dumps({"ok": True, "model": model}, indent=2))
     return 0
+
+
+def next_session(now=None) -> str:
+    """The session a model fitted now is for: today when run before today's open on a trading day,
+    otherwise the next trading day. The nightly job always lands in the second case; a hand run at
+    08:00 lands in the first, and must not write tomorrow's model by mistake."""
+    from cherrypick.core import calendar as _cal
+
+    from cherrypick.flies import clock
+
+    now = now or clock.now_et()
+    today = now.date()
+    if _cal.is_trading_day(today) and now.hour * 60 + now.minute < 9 * 60 + 30:
+        return today.isoformat()
+    return _cal.next_trading_day(today).isoformat()
 
 
 def cmd_selector_replay(args) -> int:

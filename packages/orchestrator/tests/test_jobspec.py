@@ -760,6 +760,38 @@ def test_regime_cuts_job_is_absent_when_a_module_does_not_declare_it():
     assert "flies-regime-cuts" not in {j.id for j in jobs}
 
 
+def _with_selector_fit(cfg, module="flies", at="16:45"):
+    cfg["modules"][module]["paper"]["selector_fit_at"] = at
+    cfg["modules"][module]["paper"]["selector_fit_argv"] = [
+        "-m",
+        "cherrypick.flies.cli",
+        "selector-fit",
+        "--write",
+    ]
+    return cfg
+
+
+def test_selector_fit_job_is_derived_from_the_module_own_declaration():
+    """The job exists only because flies' paper block names a time and an argv -- shown to fail
+    with the declaration removed. Trading days only, after the 16:40 cuts, and it catches up no
+    later than midnight, because past it the scheduler would read a new day's job."""
+    jobs, errors = derive(_with_selector_fit(suite_cfg()))
+    assert errors == {}
+    job = {j.id: j for j in jobs}["flies-selector-fit"]
+    assert job.argv == ("pythonw", "-m", "cherrypick.flies.cli", "selector-fit", "--write")
+    assert job.kind == jobspec.KIND_DAILY and job.at_et == "16:45" and job.trading_days_only
+    assert job.cwd.endswith("flies")
+    h, m = (int(x) for x in job.at_et.split(":"))
+    assert h * 60 + m + job.catchup_minutes <= 24 * 60, "a catch-up past midnight is a different day's job"
+
+
+def test_selector_fit_job_is_absent_without_both_keys():
+    assert "flies-selector-fit" not in {j.id for j in derive(suite_cfg())[0]}
+    cfg = suite_cfg()
+    cfg["modules"]["flies"]["paper"]["selector_fit_at"] = "16:45"
+    assert "flies-selector-fit" not in {j.id for j in derive(cfg)[0]}
+
+
 def _with_fee_reconcile(cfg, module="flies", at="09:15"):
     cfg["modules"][module]["paper"]["fee_reconcile_at"] = at
     cfg["modules"][module]["paper"]["fee_reconcile_argv"] = [
