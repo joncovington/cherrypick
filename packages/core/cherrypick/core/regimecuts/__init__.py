@@ -65,9 +65,12 @@ PAIRED_ALPHA = 0.10
 STABILITY_WINDOW = 10  # prior dated snapshots a cell's history is read over
 _UNREAD_BUCKETS = ("untagged", "unknown")
 
-# Breaks of this kind journal one damaged session (a provider outage, a lost morning), not a change
-# in what the numbers mean. They never bound an era; those inside it are listed as caveats.
-NON_BOUNDING_KINDS = frozenset({"partial_session"})
+# Breaks of these kinds never bound an era; those inside it are listed as caveats. A
+# `partial_session` journals one damaged session (a provider outage, a lost morning). A
+# `gex_surface` journals a correction to how a module builds its GEX tags (flies, 2026-10-06): one
+# tag dimension's meaning moves, no arm's decisions or P&L do, so restarting every arm's era would
+# discard evidence for nothing. Read that dimension's cells across it with the caveat in hand.
+NON_BOUNDING_KINDS = frozenset({"partial_session", "gex_surface"})
 
 
 def dated_name(session: str) -> str:

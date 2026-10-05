@@ -24,6 +24,7 @@ from pathlib import Path
 # copies interpolated the path raw, where a '#' truncated the URI and opened a DIFFERENT,
 # empty database — which a provider reports as "nothing cached" rather than as an error.
 from cherrypick.core import clock as _clock
+from cherrypick.core import gex as _core_gex
 from cherrypick.core.db import connect_ro as _connect_ro
 from cherrypick.core.streamcache import read_spot as _core_read_spot
 
@@ -63,7 +64,7 @@ class GexSnapshot:
 # a week -- 284 leftovers up to 5.4 days old moved zero-gamma from 7,420 to 6,875. That is the chain
 # this provider falls forward to when the session's own chain is not live. Live rows refresh every
 # few seconds and a re-centred one is minutes to days behind, so the gap separates them cleanly.
-LEFTOVER_ROW_SECONDS = 600
+LEFTOVER_ROW_SECONDS = _core_gex.LEFTOVER_ROW_SECONDS  # 600; shared with flies' snapshot
 
 
 # SQLite's default host-parameter limit is 999; stay under it with room to spare.

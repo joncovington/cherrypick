@@ -959,3 +959,32 @@ once).
   beside them. It earns promotion only if ahead on both and not on one or two sessions.
 - **What kills it:** behind `control` on per-session net at 14 sessions.
 - **Its book starts at its own `arm_added` break** (`_note_wall_clear_arm`).
+
+## 2026-10-05 — correction: the put-wall gap is a definition, not stale OI; the OI fix, from 2026-10-06
+
+The entry above blamed the 7750-vs-7665 put wall on this module dropping stale open interest. That
+was wrong. Rebuilt from the live cache at the same minute:
+
+| surface | call wall | put wall | flip | net GEX | strikes |
+|---|---|---|---|---|---|
+| flies snapshot, old input rule | 7725 | 7750 | none | −4.1bn | 35 |
+| flies snapshot, new input rule | 7770 | 7750 | 7747.53 | +25.9bn | 87 |
+| recorder's inputs through `core.gex.compute_gex` | 7770 | 7750 | 7747.53 | +25.9bn | 87 |
+| recorder's stored row (`net_walls`, `nearest_zero_gamma`) | 7770 | 7665 | 7718.73 | | |
+
+- **Two differences, not one.** The input difference is real and worse than the entry said: the
+  old rule had net GEX on the wrong side of zero, a different call wall and no flip. The put wall
+  is a difference of definition: `compute_gex` takes gross call/put peaks, the recorder stores
+  gexbot-style net walls and the local zero gamma. That one is intended.
+- **`wall-clear` is unaffected.** It reads the recorder's stored net walls, the series it was
+  measured on.
+- **How often the old rule misled.** Control's stored `entry_net_gex` had the opposite sign to the
+  recorder's surface on 47 of 348 entries (14%), across 23 of 44 sessions.
+- **The fix, from 2026-10-06** (`provider.GEX_SURFACE_RULE_FROM`): open interest is kept at any age
+  for a strike with live gamma, leftover gamma rows are dropped (`core.gex.LEFTOVER_ROW_SECONDS`,
+  now shared with the recorder) and gamma keeps its absolute age bound. On the live cache this
+  reproduces the recorder's inputs exactly (the second and third rows). It is keyed on the session
+  date and journaled as a book-wide `gex_surface` break, which `core.regimecuts` lists as a caveat
+  rather than an era boundary (one tag dimension moves, no arm's decisions do).
+- **Never pool `entry_/completion_gex_*` across 2026-10-06.** No enabled arm centres on GEX and the
+  selector scores on vol and trend only, so no book trades differently.

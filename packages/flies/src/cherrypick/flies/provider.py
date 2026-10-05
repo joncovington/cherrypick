@@ -37,7 +37,7 @@ from cherrypick.core.clock import ET as _ET
 # copies interpolated the path raw, where a '#' truncated the URI and opened a DIFFERENT,
 # empty database — which a provider reports as "nothing cached" rather than as an error.
 from cherrypick.core.db import connect_ro as _connect_ro
-from cherrypick.core.gex import compute_gex
+from cherrypick.core.gex import LEFTOVER_ROW_SECONDS, compute_gex
 
 # Shared with every other provider — see cherrypick.core.streamcache.
 # read_spot is re-exported deliberately: the loops call provider.read_spot and their tests
@@ -59,11 +59,24 @@ DEFAULT_MAX_GEX_INPUT_AGE_SECONDS = 1800  # 30 minutes
 # `compute_gex` already counts them (`strikes_with_data`); nothing consumed the number until now.
 DEFAULT_MIN_GEX_STRIKES = 20
 
+# From this session the GEX surface takes open interest at any age for a strike whose gamma is live,
+# and drops leftover gamma rows -- the gex recorder's input rule, so the two surfaces agree (2026-10-06,
+# a `gex_surface` break; docs/experiment-log.md 2026-10-05). Before it, OI was held to
+# `max_gex_input_age_seconds` like gamma. OI is a once-a-day exchange number the streamer's Summary
+# events rarely refresh, so by the afternoon most strikes had lost theirs (124 of 202 on 2026-10-05)
+# and the surface moved: that afternoon net GEX read -4.1bn here against +25.9bn from the recorder's
+# inputs, the call wall 7725 against 7770, and no flip at all against 7747.53 -- the same chain, the
+# same minute; under this rule all four agree exactly. Keyed on the session date so no session mixes the rules and a replay of an earlier day is
+# unchanged. Gamma keeps its absolute age bound -- that is what catches a dead feed, which a relative
+# leftover cut alone cannot.
+GEX_SURFACE_RULE_FROM = "2026-10-06"
+
 # The gex recorder's walls (`gex_regime_history`, one row per ~5 minutes), joined at-or-before this
-# far back. NOT this snapshot's own `gex` surface: the two disagree (2026-10-05 13:30 ET, put wall
-# 7750 here against the recorder's 7665), because this provider drops open interest older than
-# `max_gex_input_age_seconds` and the recorder does not -- 124 of 202 OI rows that afternoon. The
-# wall-clear gate was measured against the recorder's walls, so it reads them. 600 s is the join
+# far back. NOT this snapshot's own `gex` walls, which are a different DEFINITION even on identical
+# inputs: `compute_gex` takes the largest call-side and put-side GEX (gross peaks, put wall 7750 on
+# 2026-10-05 13:30 ET), the recorder stores `net_walls` -- the most positive and most negative NET
+# GEX per strike (put wall 7665 at the same minute). The wall-clear gate was measured against the
+# recorder's walls, so it reads them. 600 s is the join
 # the measurement used (scripts/flies_wall_clear_replay.py).
 RECORDED_GEX_MAX_AGE_SECONDS = 600
 
@@ -229,11 +242,13 @@ def build_snapshot(
 
         # GEX is computed over the FULL chain, not the near-spot window: walls and the gamma flip are
         # properties of the whole surface, and truncating it would move them.
+        session_oi = when.date().isoformat() >= GEX_SURFACE_RULE_FROM
         greeks, oi, gex_input_stats = _greeks_and_oi(
             conn,
             [e["streamer_symbol"] for e in entries],
             now_ts=now_ts,
             max_age_seconds=max_gex_input_age_seconds,
+            session_oi=session_oi,
         )
         gex = compute_gex(entries, greeks, oi, spot)
         gex_stats = {
@@ -245,6 +260,8 @@ def build_snapshot(
             "greeks_stale": gex_input_stats["greeks_stale"],
             "oi_fresh": gex_input_stats["oi_fresh"],
             "oi_stale": gex_input_stats["oi_stale"],
+            "leftovers_dropped": gex_input_stats["leftovers_dropped"],
+            "input_rule": "session_oi" if session_oi else "fresh_oi",
         }
         # Coverage refusal. A GEX surface built from a handful of surviving strikes still returns
         # ok=True with a confident-looking wall and flip; downgrading it to a refusal here is what
@@ -445,8 +462,15 @@ def _greeks_and_oi(
     *,
     now_ts: float | None = None,
     max_age_seconds: float | None = None,
+    session_oi: bool = False,
 ) -> tuple[dict, dict, dict]:
     """Gamma and open interest for `chain_symbols`, dropping rows older than `max_age_seconds`.
+
+    `session_oi` (the rule from `GEX_SURFACE_RULE_FROM`): gamma must also not be a leftover
+    (`LEFTOVER_ROW_SECONDS` behind the chain's newest gamma row), and open interest is taken at any
+    age, but only for a strike whose gamma survived -- a strike with no live gamma has nothing to
+    weight. OI rows past `max_age_seconds` are still counted in `oi_stale`, and kept; `oldest_age`
+    is the gamma's alone, since an OI row's age says nothing about whether the feed is alive.
 
     Returns `(greeks, oi, stats)`. Until 2026-08-01 this read both tables with no age filter at all,
     so an hours-stale gamma produced a GEX number indistinguishable from a live one -- on a path
@@ -459,7 +483,14 @@ def _greeks_and_oi(
     """
     greeks: dict[str, dict] = {}
     oi: dict[str, int] = {}
-    stats = {"greeks_fresh": 0, "greeks_stale": 0, "oi_fresh": 0, "oi_stale": 0, "oldest_age": None}
+    stats = {
+        "greeks_fresh": 0,
+        "greeks_stale": 0,
+        "oi_fresh": 0,
+        "oi_stale": 0,
+        "leftovers_dropped": 0,
+        "oldest_age": None,
+    }
     if not chain_symbols:
         return greeks, oi, stats
 
@@ -478,25 +509,40 @@ def _greeks_and_oi(
             stats["oldest_age"] = round(age, 1)
 
     # Chunked: SQLite caps variables per statement (999 by default) and a full SPX chain exceeds it.
-    for i in range(0, len(chain_symbols), 900):
-        chunk = chain_symbols[i : i + 900]
+    chunks = [chain_symbols[i : i + 900] for i in range(0, len(chain_symbols), 900)]
+    gamma_rows = []
+    for chunk in chunks:
         placeholders = ", ".join("?" * len(chunk))
-        for r in conn.execute(
+        gamma_rows += conn.execute(
             f"SELECT symbol, gamma, updated_at FROM stream_greeks WHERE symbol IN ({placeholders})",
             chunk,
-        ):
-            ok, age = _fresh(r["updated_at"])
-            if not ok:
-                stats["greeks_stale"] += 1
-                continue
-            _note_age(age)
-            stats["greeks_fresh"] += 1
-            greeks[r["symbol"]] = {"gamma": float(r["gamma"] or 0)}
+        ).fetchall()
+    stamps = [float(r["updated_at"]) for r in gamma_rows if r["updated_at"] is not None]
+    leftover_cut = (max(stamps) - LEFTOVER_ROW_SECONDS) if (session_oi and stamps) else None
+    for r in gamma_rows:
+        ok, age = _fresh(r["updated_at"])
+        if not ok:
+            stats["greeks_stale"] += 1
+            continue
+        if leftover_cut is not None and r["updated_at"] is not None and float(r["updated_at"]) < leftover_cut:
+            stats["leftovers_dropped"] += 1
+            continue
+        _note_age(age)
+        stats["greeks_fresh"] += 1
+        greeks[r["symbol"]] = {"gamma": float(r["gamma"] or 0)}
+    for chunk in chunks:
+        placeholders = ", ".join("?" * len(chunk))
         for r in conn.execute(
             f"SELECT symbol, open_interest, updated_at FROM stream_oi WHERE symbol IN ({placeholders})",
             chunk,
         ):
             ok, age = _fresh(r["updated_at"])
+            if session_oi:
+                if r["symbol"] not in greeks:
+                    continue
+                stats["oi_fresh" if ok else "oi_stale"] += 1
+                oi[r["symbol"]] = int(r["open_interest"] or 0)
+                continue
             if not ok:
                 stats["oi_stale"] += 1
                 continue

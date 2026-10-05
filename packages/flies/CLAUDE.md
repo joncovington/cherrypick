@@ -218,10 +218,18 @@ missing spot, an empty chain — each returns `{"ok": False, "reason": ...}`, lo
 Refusals are ordinary, not errors. `quote_stats` is recorded on every snapshot so a barren session
 reads as "the data was thin", not "the strategy found nothing".
 
-**GEX inputs are refused when stale or thin.** `max_gex_input_age_seconds` (1800 — OI is a
-once-a-day snapshot) and `min_gex_strikes` (20); below that the surface is refused and
-`select_center` degrades to ATM. `snapshot["gex_stats"]` carries fresh/stale/coverage. Without the
-bound a dead feed produced a surface indistinguishable from a live one.
+**GEX inputs are refused when stale or thin.** Gamma older than `max_gex_input_age_seconds` (1800)
+is dropped, and below `min_gex_strikes` (20) the surface is refused and `select_center` degrades to
+ATM. Without the bound a dead feed produced a surface indistinguishable from a live one.
+`snapshot["gex_stats"]` carries fresh/stale/coverage and the `input_rule`.
+- **From 2026-10-06 (`provider.GEX_SURFACE_RULE_FROM`, a `gex_surface` break) the inputs are the gex
+  recorder's.** Open interest is kept at any age for a strike whose gamma is live, leftover gamma
+  (`core.gex.LEFTOVER_ROW_SECONDS`) is dropped, and `gex_input_age` is the gamma's age alone.
+- **Before that, OI was held to the gamma limit.** OI is a once-a-day number the streamer rarely
+  re-sends, so most strikes lost theirs by the afternoon. Control's stored net GEX had the opposite
+  sign to the recorder's on 47 of 348 entries. **Never pool `entry_/completion_gex_*` across 10-06.**
+- **The walls are still a different definition** from the recorder's: gross call/put peaks here,
+  net-GEX walls there. Same inputs, different walls, by design.
 
 `cherrypick.core.fees` supplies the fee schedule and `cherrypick.core.gex.compute_gex` the per-strike
 GEX profile — neither is reimplemented here.
@@ -340,8 +348,9 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
     The thresholds were read off those rows (`scripts/flies_wall_clear_replay.py`), and walls do not
     visibly stop spot, so it is a forward test.
   - **It reads the recorder's walls,** `snapshot["recorded_gex"]` via `core.regime.gex_at` (at most
-    600 s old), never the snapshot's own `gex` surface, which drops stale open interest and puts the
-    walls elsewhere (backlog). Fails open when unmeasured.
+    600 s old), never the snapshot's own `gex` walls: those are gross call/put peaks
+    (`compute_gex`), the recorder's are net-GEX walls (`net_walls`), and they differ on the same
+    inputs. Fails open when unmeasured.
   - **The one variable is pinned** by `tests/test_wall_clear.py`; the judging rule is in the
     experiment log (2026-10-05).
 
