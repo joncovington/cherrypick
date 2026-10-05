@@ -493,11 +493,16 @@ SIZE_BANDS = {
 }
 
 
-def spread_direction(price: float | None, delta: float | None) -> str | None:
-    """'bought' or 'sold', from the site's own signs. On every spread seen (2026-10-02) price and
-    delta share a sign: positive for a spread bought (a debit, long its delta), negative for one
-    sold. Where they disagree, or one is missing or zero, the direction is not read."""
-    if price is None or delta is None or price == 0 or delta == 0 or (price > 0) != (delta > 0):
+def spread_direction(price: float | None, delta: float | None, cp: str | None) -> str | None:
+    """'bought' or 'sold', from the site's own signs: the price's sign is the side (positive a debit
+    paid, negative a credit taken), and the delta's sign has to agree with it for the kind of spread.
+    A call spread bought is long delta, so price and delta share a sign; a put spread bought is short
+    delta, so they are opposite (2026-10-05, the first put spreads seen: NVDA 220/170 PS at +7.02
+    with delta -0.23). Where the signs do not fit, one is missing or zero, or call or put is not
+    known, the direction is not read."""
+    if price is None or delta is None or price == 0 or delta == 0 or cp not in ("call", "put"):
+        return None
+    if ((price > 0) == (delta > 0)) != (cp == "call"):
         return None
     return "bought" if price > 0 else "sold"
 
@@ -523,7 +528,7 @@ def derive(doc: dict) -> dict:
         row["premium_derived"] = True
     groups: dict[tuple, int] = {}
     for row in tables.get("spreads", []):
-        row["direction"] = spread_direction(row.get("price"), row.get("delta"))
+        row["direction"] = spread_direction(row.get("price"), row.get("delta"), row.get("cp"))
         key = (row.get("symbol"), row.get("time_et"), row.get("size"))
         groups[key] = groups.get(key, 0) + 1
     for row in tables.get("spreads", []):

@@ -191,6 +191,7 @@ def test_paired_prints_and_rolls_are_not_counted_as_bets():
         "time_et": "15:01:34.327",
         "size": 41_900,
         "type": "CS",
+        "cp": "call",
         "group": "AI 15:01:34.327 41900",
     }
     leg["underlying"] = {"last": 11.12}
@@ -217,6 +218,31 @@ def test_paired_prints_and_rolls_are_not_counted_as_bets():
     assert "near max" in doc["flows"][0]["flags"] or "near max" in doc["flows"][1]["flags"]  # 0.47 of 0.50
     ai = next(n for n in doc["names"] if n["symbol"] == "AI")
     assert ai["net"] == 0  # the two legs cancel: a roll, not a view
+
+
+def test_a_put_spread_bought_is_a_debit_short_its_delta():
+    """2026-10-05, the first put spreads seen: a debit with a negative delta is a put spread bought,
+    bearish — not a disagreement. The call-spread rule (signs alike) left NVDA's $17.5M unread."""
+    nvda = {
+        "symbol": "NVDA",
+        "time_et": "11:12:13.000",
+        "size": 25_000,
+        "expires": "2027-01-15",
+        "type": "PS",
+        "cp": "put",
+        "spread": "270115 220/170 PS",
+        "price": 7.02,
+        "delta": -0.23,
+        "premium": 17_550_000,
+        "underlying": {"last": 185.0},
+        "group": None,
+    }
+    sold = {**nvda, "price": -1.10, "delta": 0.12, "premium": -2_750_000, "time_et": "11:30:00.000"}
+    odd = {**nvda, "price": 7.02, "delta": 0.23, "time_et": "12:00:00.000"}  # a debit long delta: no put spread
+    doc = _flows(_capture(spreads=[nvda, sold, odd]))
+    read = {f["time_et"]: (f["direction"], f["view"]) for f in doc["flows"]}
+    assert read == {"11:12:13.000": ("bought", "bearish"), "11:30:00.000": ("sold", "bullish")}
+    assert [f["time_et"] for f in doc["unread"]] == ["12:00:00.000"]
 
 
 def test_deep_itm_lottery_sold_and_dividend_trades_lose_purity():
@@ -286,8 +312,12 @@ def test_every_flow_reads_date_strike_then_kind():
     legs = qf.spread_legs("261016 23/261030 22 CSCAL", "CSCAL")
     assert qf.describe("spread", legs, "261016 23/261030 22 CSCAL", "CSCAL") == (
         "16 Oct 26 23C / 30 Oct 26 22C",
-        "call calendar",
+        "call diagonal",  # two dates at two strikes: the site's CSCAL, but not a calendar
     )
+    legs = qf.spread_legs("261016 23/261030 23 CSCAL", "CSCAL")
+    assert qf.describe("spread", legs, "261016 23/261030 23 CSCAL", "CSCAL")[1] == "call calendar"
+    legs = qf.spread_legs("261030 28/261218 25 PSCAL", "PSCAL")  # CMG, 2026-10-05
+    assert qf.describe("spread", legs, "261030 28/261218 25 PSCAL", "PSCAL")[1] == "put diagonal"
     assert qf.describe("spread", [], "261016 23/25/27 BFLY", "BFLY") == (
         "261016 23/25/27 BFLY",
         "bfly",
