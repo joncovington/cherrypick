@@ -30,7 +30,7 @@ def test_a_held_long_arm_keeps_its_rules_with_a_bare_config_block(config):
     hold = engine.merged_params(cfg, "shield_hold")
     for p in (shield, hold):
         assert management.is_held_long(p)
-        assert (p["short_rule"], p["long_delta_min"], p["long_delta_max"]) == ("delta", 0.90, 0.95)
+        assert (p["short_rule"], p["long_delta_min"], p["long_delta_max"]) == ("delta", 0.88, 0.92)
         assert p["allow_extrinsic_fallback"] is False
         assert p["stop_loss_frac"] == 0.30
     assert (shield["early_roll_decay"], shield["breach_roll"]) == (0.85, True)

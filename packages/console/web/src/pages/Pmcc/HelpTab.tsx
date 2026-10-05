@@ -55,7 +55,7 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
             </dd>
             <dt>shield</dt>
             <dd>
-              Tom King's "Income Shield" (from 2026-10-05): hold a ~1-year call at 0.90-0.95 delta and sell a
+              Tom King's "Income Shield" (from 2026-10-05): hold a ~1-year call at about 0.90 delta (the broker's; 0.88–0.92) and sell a
               0.70-delta weekly call against it, rolled each Friday an hour before the close, until the long reaches 45
               DTE or the position loses 30% of the long's cost. Also rolls early once the short's extrinsic is 85%
               decayed or spot reaches its strike, at most once a session.

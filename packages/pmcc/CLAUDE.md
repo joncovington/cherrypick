@@ -42,13 +42,17 @@ Elsewhere:
   writes its own date. No new era: shield's rules and roster are untouched, and the two arms never
   shared a position. Control and its advised twins run off under their own rules (shorts 10-09 and
   10-16, the last longs disposed by about 10-19).
+- **2026-10-06 long delta 0.88–0.92** (was 0.90–0.95, nearest 0.925): Tom King's own ~90-delta long,
+  journaled as `long_delta`. Measured by the BROKER's delta, which the live loop will select by: on
+  American-style ETFs its deep-call delta runs below parity, so 0.90 sits ~36–41% in the money (parity
+  ~0.94–0.97); on XSP the two agree (~24%). The XSP pair entered 2026-10-05 at ~0.925 stays as entered.
 
 ## The experiment design
 
 | arm | long | short | management |
 |---|---|---|---|
 | `control` (retired 2026-10-06) | 17–25 DTE nearest 21, delta 0.85–0.90, re-bought every cycle | ATM, soonest Friday 5–11 DTE | held to the short's expiry; the long rides to the next session's disposal |
-| `shield_hold` | the standard monthly nearest 360 DTE in [240, 540], delta 0.90–0.95, no extrinsic fallback | 0.70 delta (band 0.65–0.78), soonest Friday 5–11 DTE, above the long's strike, never past its expiry | rolled on its expiry day; closed at 45 DTE on the long or on the 30% stop |
+| `shield_hold` | the standard monthly nearest 360 DTE in [240, 540], broker delta 0.88–0.92 nearest 0.90 (0.90–0.95 before 2026-10-06), no extrinsic fallback | 0.70 delta (band 0.65–0.78), soonest Friday 5–11 DTE, above the long's strike, never past its expiry | rolled on its expiry day; closed at 45 DTE on the long or on the 30% stop |
 | `shield` | as `shield_hold` | as `shield_hold` | also rolls early at 85% of the short's extrinsic decayed, or spot at its strike |
 
 **How the arms are defined and enabled.**

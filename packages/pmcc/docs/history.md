@@ -113,6 +113,14 @@ Built beside it:
 - the console splits open trades by lifecycle, shows every expiry with its year, and files arms as
   advised by their prefix. Shield had been listed among the advised arms.
 
+The same boundary moved the held-long long to Tom King's own ~90 delta: 0.88–0.92 nearest 0.90, from
+0.90–0.95 nearest 0.925, journaled as `long_delta`. It is the broker's delta, the one the live loop
+will select by. Measured that evening, the broker's deep-call delta on the American-style ETFs ran
+well below parity, and the old 0.925 sat 44–49% in the money (QQQ's at the 385 strike, below the
+fresh quotes). At 0.90 they sit 36–41% in the money, about 0.94–0.97 by parity. On XSP, which is
+European, the two deltas agree, and 0.90 sits about 24% in the money. SLV's long at broker 0.90 was
+the 33 strike, about $2,370 a contract. XSP's pair, entered on 10-05 near 0.925, stays as entered.
+
 Left for after the run-off (about 10-23): remove control from `engine.ARMS` and the weekly entry
 path, flip `DEFAULT_ENABLED`, move the held-long values into `defaults`, and drop TQQQ from the
 settlement, root and dividend tables.
