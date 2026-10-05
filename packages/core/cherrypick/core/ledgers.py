@@ -352,7 +352,8 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
     era_col = ", era" if has_era else ""
     rows = conn.execute(
         f"SELECT symbol, arm, gross_pnl, fees, entry_slippage, exit_slippage, "
-        f"net_debit, quantity, closed_session{exp_col}{era_col} FROM pmcc_positions WHERE status = 'closed'{where}",
+        f"net_debit, quantity, closed_session{exp_col}{era_col} "
+        f"FROM pmcc_positions WHERE status = 'closed'{where}",
         params,
     ).fetchall()
 

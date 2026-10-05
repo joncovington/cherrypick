@@ -393,16 +393,24 @@ def test_pmcc_held_long_expectation_is_each_short_s_extrinsic_sold_against_captu
         "CREATE TABLE pmcc_legs (position_id TEXT, leg_role TEXT, status TEXT, strike REAL, entry_mid REAL,"
         " entry_spot REAL, close_value REAL, close_spot REAL, closed_at TEXT);"
     )
-    conn.execute("INSERT INTO pmcc_positions VALUES ('S', 'shield', 'open', NULL, '2026-10-05', NULL, NULL,"
-                 " NULL, 230.0, 1, 347)")
-    conn.execute("INSERT INTO pmcc_positions VALUES ('W', 'control', 'closed', '2026-10-16', '2026-10-05',"
-                 " 0.02, 50.0, 5.0, 40.0, 1, 18)")
+    conn.execute(
+        "INSERT INTO pmcc_positions VALUES ('S', 'shield', 'open', NULL, '2026-10-05', NULL, NULL,"
+        " NULL, 230.0, 1, 347)"
+    )
+    conn.execute(
+        "INSERT INTO pmcc_positions VALUES ('W', 'control', 'closed', '2026-10-16', '2026-10-05',"
+        " 0.02, 50.0, 5.0, 40.0, 1, 18)"
+    )
     # Sold the 765 at 12.20 with spot 773 (intrinsic 8.00, extrinsic 4.20); bought back at 4.00 with
     # spot 768.50 (intrinsic 3.50, extrinsic 0.50 left): 3.70 captured.
-    conn.execute("INSERT INTO pmcc_legs VALUES ('S', 'short_call_1', 'closed', 765, 12.20, 773.0, 4.00,"
-                 " 768.5, '2026-10-16T15:00:02-04:00')")
-    conn.execute("INSERT INTO pmcc_legs VALUES ('W', 'short_call_1', 'closed', 750, 5.0, 750.0, 0.0,"
-                 " 740.0, '2026-10-16T16:20:00-04:00')")
+    conn.execute(
+        "INSERT INTO pmcc_legs VALUES ('S', 'short_call_1', 'closed', 765, 12.20, 773.0, 4.00,"
+        " 768.5, '2026-10-16T15:00:02-04:00')"
+    )
+    conn.execute(
+        "INSERT INTO pmcc_legs VALUES ('W', 'short_call_1', 'closed', 750, 5.0, 750.0, 0.0,"
+        " 740.0, '2026-10-16T16:20:00-04:00')"
+    )
     got = facts._pmcc_expected(conn, "2026-10-16")
     assert got["basis"] == "held_long_short_extrinsic_sold_vs_captured"
     assert got["shorts_closed"] == 1  # the control leg is not a held-long short
