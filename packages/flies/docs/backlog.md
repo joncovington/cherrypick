@@ -120,17 +120,19 @@ the slippage model, and that a lower floor's P&L split by side with the tape.
   ways (bwb-up +$109 unrolled → +$30 rolled; bwb-atm −$240 → −$144), so the replay overstates both
   tails. A positive result is not a rolled-arm result.
 
-## The selector arm: landing it
+## The selector arm: landing it on 2026-10-19
 
-Built and off (2026-10-04, [selector.md](selector.md)). Its walk-forward take/skip replay kept 183 of
-control's 218 entries for +$5,977 against +$4,437, with an interval that includes zero. That matches
-the hindsight-chosen fixed gates out of sample but does not beat them.
+Built and off (2026-10-04, [selector.md](selector.md)). **Declared for 2026-10-19**, with its
+judging rule in the experiment log (2026-10-04): the first read comes at 10 departing sessions, on
+per-session net against `control`. Before that date:
 
-- **Reopens when** the advised `no-entry-on-up-trend` twin and `vol-floor` have their own forward
-  reads (both answer part of what the selector learned). Then the selector lands at a declared
-  boundary with `sources: ["control", "vol-floor", "debit-first-atm"]`. Its judging rule (against
-  control, each source and the best fixed gate; sessions; robustness stamps) is written in the
-  experiment log first, and `selector-fit --write` is scheduled beside `regime_cuts_at`.
+- **The nightly fit job.** The orchestrator's scheduler knows only `regime_cuts_at` /
+  `regime_cuts_argv`, so `selector-fit --write` (after 16:40) needs its own scheduled entry there,
+  built and tested first.
+- **The `arm_added` break note** for `selector` on 10-19, following `_note_vol_floor_arm`.
+- **On the date:** merge to main, add the `selector` arm (`entry_modes: []`, its `selector` block)
+  to the machine config, and journal the break once, together with any other roster change that
+  fortnight.
 - **Not live-eligible** until debit-first has a live order path (`live_orders.py` builds legged
   specs only). A legged-only selector is the live candidate if one is ever wanted.
 - **Extract to `cherrypick.core.selector`** (model file, `fit`, `arm_starts`, `validate_model`) when

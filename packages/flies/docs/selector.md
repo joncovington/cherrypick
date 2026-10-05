@@ -10,7 +10,8 @@ that, on each tick, asks its declared source arms what they would do against **i
 each proposal from a model fitted on the sources' own settled rows, and books at most one. The
 variable under test is the choosing procedure itself.
 
-It is **off**. `selector` is registered in `engine.ARMS` and the code paths exist, but no config
+It is **off** until its declared boundary, **2026-10-19** (the judging rule is in the experiment log,
+2026-10-04). `selector` is registered in `engine.ARMS` and the code paths exist, but no config
 enables it. Enabling it changes which arms exist, so it lands at a declared boundary, journaled once,
 with its judging rule written in the experiment log beforehand.
 

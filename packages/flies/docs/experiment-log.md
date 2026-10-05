@@ -827,3 +827,27 @@ money to fees.
 by the arm's own completion function, and settles it at the print. A rung is never a position.
 `run.py debit-ladder` reads it, with a calibration against real delta-arm fills at the same centre.
 The first read is at 10 sessions.
+
+## 2026-10-04 — declared: the `selector` arm, from 2026-10-19
+
+- **The arm:** `selector`, with sources `control`, `vol-floor` and `debit-first-atm`. Procedure
+  version 1 (vol × trend buckets), `min_sessions` 5, `margin` 0, defaulting to `control`.
+  [selector.md](selector.md) holds the contract.
+- **Why 10-19 and not 10-05.** The 10-05 `completion_rule` break is book-wide, so from 10-05 the
+  selector's model learns only from rows on or after that date. Starting earlier would buy only
+  sessions as control's twin. By 10-19 the model is fitted on about ten new-era sessions, and the
+  nightly `selector-fit` job can be built and merged first. Any other roster change planned for the
+  fortnight lands at this same break.
+- **Its book starts at its own `arm_added` break on 10-19.** Changing the procedure (features,
+  shrinkage, decision rule) is a new break. Refitting nightly is not.
+- **How it will be read:**
+  - **Only departing sessions count:** sessions where it booked something other than exactly what
+    `control` booked. Twin sessions carry no information, the rule curve's `noflip` keeps.
+  - **The first read** comes after **10 departing sessions**, against `control` on the same
+    sessions, on **per-session net alone** (sign test).
+  - **Ahead:** the arm is kept and re-read at 20 departing sessions. **Behind:** it is retired and
+    written up as a negative result.
+  - Each source's own book, the best fixed gate over the same sessions and the robustness stamps
+    are reported beside the verdict but do not decide it.
+- **Stated now so it is not discovered later:** a sign test over 10 sessions has little power. A
+  "keep" at the first read means "not yet refuted", never "proven", and it says nothing about live.

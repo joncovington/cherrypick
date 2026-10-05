@@ -317,8 +317,9 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   a model fitted the night before and pinned for the session, and books at most one through the
   same booking code its source uses. **With no model it is control's exact twin**, and a test pins
   that through settlement. Its positions complete under the proposing source's params
-  (`selected_from`). Every tick writes `fly_selector_choices`. It lands only at a declared boundary;
-  not live-eligible while debit-first has no live order path.
+  (`selected_from`). Every tick writes `fly_selector_choices`. **Declared for 2026-10-19**; the
+  first read is at 10 departing sessions, on per-session net against control (experiment log,
+  2026-10-04). Not live-eligible while debit-first has no live order path.
 - `vol-floor` — `control` plus one variable (from 2026-10-05): no entry while the ATM straddle is
   under `min_entry_straddle_pct` (0.0022) of spot (`engine.low_vol_refusal`, refusal
   `straddle_below_floor`).
