@@ -40,6 +40,14 @@ backfilled (the cache keeps no volume history). The columns arrive by `ALTER TAB
 database, so every reader selects by name. They exist to ask whether call volume outweighing put
 volume at the walls moves spot. The whole-chain `net_gex_vol` sign could not answer that: it tracked
 spot against the open and predicted nothing after it.
+- **Volume covers the streamed window only:** today's 0DTE expiration, the contracts the streamer
+  subscribes (about ±300 SPX points, 204 of 484 listed on 2026-10-05). `volume_contracts` and
+  `volume_low_strike`/`volume_high_strike` record that window on every row, so a jump in a total can
+  be told apart from the window moving.
+- **The full per-strike profile is kept** in `gex_profile_history` (`service.PROFILE_COLUMNS`: OI,
+  volume, gamma and IV per side), one row per strike with any data, joined to its regime row on
+  `(symbol, ts)`. About 100 strikes × 78 readings a session. It is what lets a past session's walls,
+  flip or flow be recomputed under any definition; nothing before 2026-10-05 exists to rebuild.
 
 **The recorder publishes its liveness.** The daemon touches `data/gex/recorder.heartbeat` at the top of
 every tick, and `record --status` reports `stalled: true` past `RECORDER_STALL_SECONDS` — the signal

@@ -248,8 +248,44 @@ def test_an_existing_history_db_gains_the_flow_columns_and_keeps_its_rows(tmp_pa
     rows = conn.execute("SELECT * FROM gex_regime_history ORDER BY ts").fetchall()
     conn.close()
     assert len(rows) == 2 and rows[0]["call_wall"] == 7750
+    tables = {r[0] for r in sqlite3.connect(cfg["history_db_path"]).execute("SELECT name FROM sqlite_master")}
+    assert "gex_profile_history" in tables
     assert all(rows[0][c] is None for c in service.FLOW_COLUMNS)
     assert rows[1]["call_wall_volume"] == 5
+
+
+def test_record_regimes_records_coverage_and_the_per_strike_profile(tmp_path):
+    """Coverage says which contracts the totals could see; the profile keeps every strike with data,
+    keyed to the regime row by (symbol, ts), so a past session can be re-asked at any strike."""
+    import sqlite3
+
+    cfg = _cfg(tmp_path)
+    assert service.record_regimes(cfg, now_et=IN_SESSION) == 1
+    conn = sqlite3.connect(cfg["history_db_path"])
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM gex_regime_history").fetchone()
+    prof = conn.execute("SELECT * FROM gex_profile_history ORDER BY strike").fetchall()
+    conn.close()
+    assert (row["volume_contracts"], row["volume_low_strike"], row["volume_high_strike"]) == (3, 600, 610)
+    assert [p["strike"] for p in prof] == [600, 610]
+    assert all(p["symbol"] == "SPX" and p["ts"] == row["ts"] for p in prof)
+    at600, at610 = prof
+    assert (at600["call_oi"], at600["put_oi"], at600["call_vol"], at600["put_vol"]) == (100, 300, 10, 20)
+    assert (at610["call_oi"], at610["put_oi"], at610["call_vol"], at610["put_vol"]) == (50, 0, 5, 0)
+    assert at610["call_gamma"] == 0.05 and at600["put_iv"] == 22.0
+
+
+def test_an_all_zero_strike_is_not_stored_and_coverage_handles_no_trades():
+    zero = {c: 0 for c in service.PROFILE_COLUMNS}
+    series = [{"strike": 5000, **zero}, {"strike": 6000, **zero, "put_oi": 7}]
+    assert [s["strike"] for s in service.profile_rows(series)] == [6000]
+    entries = [{"streamer_symbol": ".X", "strike_price": 60.0}]
+    assert service.volume_coverage(entries, {}) == {
+        "volume_contracts": 0,
+        "volume_low_strike": None,
+        "volume_high_strike": None,
+    }
+    assert service.volume_coverage(entries, {".X": 0}, strike_scale=10)["volume_low_strike"] == 600.0
 
 
 def test_a_wall_with_no_series_row_records_null_not_zero():
