@@ -120,6 +120,49 @@ the slippage model, and that a lower floor's P&L split by side with the tape.
   ways (bwb-up +$109 unrolled → +$30 rolled; bwb-atm −$240 → −$144), so the replay overstates both
   tails. A positive result is not a rolled-arm result.
 
+## The selector arm: landing it
+
+Built and off (2026-10-04, [selector.md](selector.md)). Its walk-forward take/skip replay kept 183 of
+control's 218 entries for +$5,977 against +$4,437, with an interval that includes zero. That matches
+the hindsight-chosen fixed gates out of sample but does not beat them.
+
+- **Reopens when** the advised `no-entry-on-up-trend` twin and `vol-floor` have their own forward
+  reads (both answer part of what the selector learned). Then the selector lands at a declared
+  boundary with `sources: ["control", "vol-floor", "debit-first-atm"]`. Its judging rule (against
+  control, each source and the best fixed gate; sessions; robustness stamps) is written in the
+  experiment log first, and `selector-fit --write` is scheduled beside `regime_cuts_at`.
+- **Not live-eligible** until debit-first has a live order path (`live_orders.py` builds legged
+  specs only). A legged-only selector is the live candidate if one is ever wanted.
+- **Extract to `cherrypick.core.selector`** (model file, `fit`, `arm_starts`, `validate_model`) when
+  MEIC adopts it, and not before.
+
+## The shadow ladder and the hedge stamp: first reads
+
+Both are telemetry from 2026-10-05.
+- **The ladder** stamps only on an arm whose config sets `debit_ladder: {"offsets_strikes": [1, 2, 3,
+  4, 5, 6]}`, which is `debit-first-atm` by design. First read `run.py debit-ladder` at 10 sessions;
+  call it descriptive until 15–20. Read the calibration first: same-strike pairs with real delta-arm
+  fills must agree on debit and outcome, or the ladder is wrong and nothing else in it is read.
+- **`sell_at_completion`** in `hedge-overlay` (hold the hedge only while stranded): reopens the
+  "Sell-to-cover" question if, at 15 sessions of stamped completions, it recovers more than the
+  hedge costs **net of the completed branch**.
+
+## Freeing live buying power at the cap
+
+`scripts/flies_cap_swap_replay.py` (2026-10-04) could value only 3 of 58 refusal runs, and C1
+(force-complete at a small debit) on none: the order path had no quotes before 10-02.
+
+- **Reopens when** 15 live sessions of cap refusals have quoted `fly_order_path` rows. Re-run it. C1
+  becomes a proposal only if it pays net on the sessions it acted on **and** the freed slot's value
+  explains why it beats the general relaxed-completion result (0 of 24 cells). Even then it is a
+  live completion-gate change at a declared break. C2 (abort) is not a candidate.
+
+## Run-triggered book hedge
+
+`hedge-overlay --run-k` (2026-10-04): k=3 reliably loses; k=2 +$25 on one payout with more losing
+sessions. **Reopens when** the base book has ten or more losing sessions with stamped hedges. Re-run
+k=2. Nothing intraday is built on it before then.
+
 ## Done -- kept for the record
 
 Finished or reversed items stay here, so a later reader can see what was decided and on what evidence.
