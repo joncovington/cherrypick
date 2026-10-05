@@ -58,6 +58,28 @@ FLOW_COLUMNS = (
     "total_put_gex_vol",  # dollar gamma of the put volume, positive
     "call_wall_volume",  # calls traded at the stored call_wall strike
     "put_wall_volume",  # puts traded at the stored put_wall strike
+    # Coverage (2026-10-05): which contracts the totals above could see. Volume exists only for
+    # contracts the streamer subscribes -- a window around spot, about 204 of 484 listed on
+    # 2026-10-05 -- and the window moves with spot, so a jump in a total can be new flow or new
+    # strikes. These say which.
+    "volume_contracts",  # contracts on this expiration with a trade row (subscribed)
+    "volume_low_strike",  # lowest strike among them
+    "volume_high_strike",  # highest strike among them
+)
+
+# The full per-strike profile behind each regime row (2026-10-05), one row per strike with any data,
+# keyed by the regime row's (symbol, ts). The summary row keeps only walls and totals; without this,
+# flow at any strike but the current walls, or walls under another definition, can never be asked of
+# a past session -- the cache keeps no history. About 100 strikes x 78 readings a session.
+PROFILE_COLUMNS = (
+    "call_oi",
+    "put_oi",
+    "call_vol",
+    "put_vol",
+    "call_gamma",
+    "put_gamma",
+    "call_iv",
+    "put_iv",
 )
 
 
@@ -85,6 +107,13 @@ def _ensure_history_table(conn: sqlite3.Connection, db_path: Path | str | None =
         "expiration TEXT)"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_grh_sym_date ON gex_regime_history(symbol, trade_date)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS gex_profile_history ("
+        "symbol TEXT NOT NULL, trade_date TEXT NOT NULL, ts REAL NOT NULL, strike REAL NOT NULL, "
+        + ", ".join(f"{c} REAL" for c in PROFILE_COLUMNS)
+        + ")"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gph_sym_ts ON gex_profile_history(symbol, ts)")
     have = {r[1] for r in conn.execute("PRAGMA table_info(gex_regime_history)")}
     for column in FLOW_COLUMNS:
         if column not in have:
@@ -455,7 +484,10 @@ def record_regimes(
                 spot_disp = (snap.spot or 0) * snap.strike_scale
                 totals = {**profile["totals"], **volume_totals(series)}
                 call_wall, put_wall = net_walls(series, "net_gex")
-                flow = flow_measures(series, call_wall, put_wall, totals)
+                flow = {
+                    **flow_measures(series, call_wall, put_wall, totals),
+                    **volume_coverage(snap.chain_entries, snap.volume, snap.strike_scale),
+                }
                 conn.execute(
                     "INSERT INTO gex_regime_history (symbol, trade_date, ts, spot, net_gex, "
                     "net_gex_vol, zero_gamma, call_wall, put_wall, expiration, "
@@ -474,6 +506,14 @@ def record_regimes(
                         str(snap.expiration),
                         *(flow[c] for c in FLOW_COLUMNS),
                     ),
+                )
+                conn.executemany(
+                    "INSERT INTO gex_profile_history (symbol, trade_date, ts, strike, "
+                    f"{', '.join(PROFILE_COLUMNS)}) VALUES (?,?,?,?,{','.join('?' * len(PROFILE_COLUMNS))})",
+                    [
+                        (sym, today, now, s["strike"], *(s[c] for c in PROFILE_COLUMNS))
+                        for s in profile_rows(series)
+                    ],
                 )
                 written += 1
             except Exception:
@@ -497,6 +537,27 @@ def flow_measures(series: list[dict], call_wall: float | None, put_wall: float |
         "call_wall_volume": at[call_wall]["call_vol"] if call_wall in at else None,
         "put_wall_volume": at[put_wall]["put_vol"] if put_wall in at else None,
     }
+
+
+def volume_coverage(chain_entries: list[dict], volume: dict, strike_scale: float = 1.0) -> dict:
+    """How many of this expiration's contracts carry a trade row, and the strike range they span
+    (displayed strikes, like the walls). None throughout when no contract has one."""
+    strikes = [
+        float(e["strike_price"]) * strike_scale
+        for e in chain_entries
+        if e.get("streamer_symbol") in volume and e.get("strike_price") is not None
+    ]
+    return {
+        "volume_contracts": len(strikes),
+        "volume_low_strike": min(strikes) if strikes else None,
+        "volume_high_strike": max(strikes) if strikes else None,
+    }
+
+
+def profile_rows(series: list[dict]) -> list[dict]:
+    """The strikes worth keeping from a profile: any open interest, volume or gamma on either side. A
+    strike outside the streamed window is all zeros and would only bulk the table."""
+    return [s for s in series if any(s[c] for c in PROFILE_COLUMNS)]
 
 
 def repair_regime_history(db_path: Path | str, *, apply: bool = False) -> dict:
