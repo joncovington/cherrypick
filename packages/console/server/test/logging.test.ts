@@ -7,7 +7,38 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { rotateIfLarge, KEEP_BACKUPS } from "../src/logging.js";
+import { EventEmitter } from "node:events";
+import { rotateIfLarge, KEEP_BACKUPS, installFatalHandlers } from "../src/logging.js";
+
+describe("fatal handlers", () => {
+  // The console died with exit 1 and no record on 15 days; these pin that a fatal error is written
+  // down AND still ends the process, for both ways node reports one.
+  for (const [event, payload] of [
+    ["uncaughtException", new Error("boom-sync")],
+    ["unhandledRejection", new Error("boom-async")],
+  ] as const) {
+    it(`logs the stack and exits 1 on ${event}`, () => {
+      const proc = new EventEmitter();
+      const lines: string[] = [];
+      const exits: number[] = [];
+      installFatalHandlers(proc, (m) => lines.push(m), (c) => exits.push(c));
+      proc.emit(event, payload);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain(`fatal ${event}`);
+      expect(lines[0]).toContain(payload.message);
+      expect(lines[0]).toContain("logging.test"); // the stack, not just the message
+      expect(exits).toEqual([1]);
+    });
+  }
+
+  it("still exits when the logger itself throws", () => {
+    const proc = new EventEmitter();
+    const exits: number[] = [];
+    installFatalHandlers(proc, () => { throw new Error("log down"); }, (c) => exits.push(c));
+    proc.emit("unhandledRejection", "a bare string reason");
+    expect(exits).toEqual([1]);
+  });
+});
 
 function tmpLog(bytes: number): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "console-log-test-"));

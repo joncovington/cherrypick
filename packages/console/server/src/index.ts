@@ -24,7 +24,7 @@ import { registerWsHub } from "./ws/hub.js";
 import { registerSecurity } from "./security.js";
 import { registerConfigRoutes } from "./routes/configOps.js";
 import { startHeartbeat } from "./services/heartbeat.js";
-import { createLogStream } from "./logging.js";
+import { createLogStream, installFatalHandlers } from "./logging.js";
 
 const config = loadConfig();
 const app = Fastify({
@@ -34,6 +34,8 @@ const app = Fastify({
   // rotation. Routes that need to say something log it themselves.
   disableRequestLogging: true,
 });
+// Before anything else can throw: a crash with no record is what made the console's deaths undiagnosable.
+installFatalHandlers(process, (msg) => app.log.fatal(msg));
 const market = new MarketDataService(config);
 const candles = new CandleService(market);
 

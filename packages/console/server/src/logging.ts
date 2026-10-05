@@ -77,3 +77,37 @@ export function createLogStream(): Writable {
     },
   });
 }
+
+/**
+ * Make a fatal error leave a record before the process dies.
+ *
+ * Node's default for an uncaught exception or an unhandled rejection is to print the stack to stderr
+ * and exit 1. Under the supervisor that stderr never arrived anywhere, so the console died on 15
+ * separate days with exit 1 and nothing in either log. This keeps the exit -- a process in an unknown
+ * state should be restarted, not kept serving -- and writes the error through the logger (which
+ * appends synchronously, so the line lands before the exit) and to stderr, which the launcher now
+ * hands to node.
+ */
+export function installFatalHandlers(
+  proc: Pick<NodeJS.EventEmitter, "on">,
+  log: (msg: string) => void,
+  exit: (code: number) => void = (code) => process.exit(code),
+): void {
+  const fatal = (kind: string, err: unknown) => {
+    const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+    const line = `fatal ${kind}, exiting: ${detail}`;
+    try {
+      log(line);
+    } catch {
+      // The record is best-effort; the exit is not.
+    }
+    try {
+      process.stderr.write(`${line}\n`);
+    } catch {
+      // As above.
+    }
+    exit(1);
+  };
+  proc.on("uncaughtException", (err: unknown) => fatal("uncaughtException", err));
+  proc.on("unhandledRejection", (reason: unknown) => fatal("unhandledRejection", reason));
+}
