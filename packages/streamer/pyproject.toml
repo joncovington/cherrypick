@@ -12,7 +12,7 @@ license = "MIT"
 # Not on PyPI (Private :: Do Not Upload) -- packages/core must be installed first, or resolution fails.
 # tastytrade: the daemon opens a broker session and a DXLink stream through cherrypick.core.auth and
 # cherrypick.core.streamer, which import it lazily -- so core does not declare it, and this package must.
-dependencies = ["keyring>=24", "cherrypick-core", "tastytrade>=12.4.3"]
+dependencies = ["keyring>=24", "cherrypick-core", "tastytrade>=12.4.3,<13"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff==0.15.21"]

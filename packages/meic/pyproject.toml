@@ -9,7 +9,7 @@ description = "Autonomous 0DTE MEIC options trading agent"
 requires-python = ">=3.11"
 license = "MIT"
 dependencies = [
-    "tastytrade>=12.4.3",
+    "tastytrade>=12.4.3,<13",
     "keyring>=24",
     "python-dotenv>=1.0",
     "pytz>=2024",

@@ -14,7 +14,7 @@ license = "MIT"
 # earnings/options/stocks datasets (see docs/01-setup.md).
 dependencies = [
     "cherrypick-core",
-    "tastytrade",
+    "tastytrade>=12.4.3,<13",
     "keyring",
     "mysql-connector-python",
 ]

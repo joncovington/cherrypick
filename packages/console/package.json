@@ -13,6 +13,6 @@
   },
   "devDependencies": {
     "@console/shared": "workspace:*",
-    "puppeteer-core": "^23.0.0"
+    "puppeteer-core": "^23.11.1"
   }
 }

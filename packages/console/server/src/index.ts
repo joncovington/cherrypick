@@ -1,7 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import Fastify from "fastify";
+import Fastify, { LogController } from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import { listReaderFailures, setReaderFailureLogger } from "./readers/db.js";
@@ -31,8 +31,9 @@ const app = Fastify({
   logger: { level: "info", stream: createLogStream() },
   // The SPA polls several endpoints every 15s all day, so per-request logging would bury the lines
   // that matter (startup, credential scope, DXLink reconnects) under thousands of 200s and churn the
-  // rotation. Routes that need to say something log it themselves.
-  disableRequestLogging: true,
+  // rotation. Routes that need to say something log it themselves. Through `logController` since
+  // fastify 5.12: the top-level `disableRequestLogging` warns FSTDEP023 on every start and goes in 6.
+  logController: new LogController({ disableRequestLogging: true }),
 });
 // Before anything else can throw: a crash with no record is what made the console's deaths undiagnosable.
 installFatalHandlers(process, (msg) => app.log.fatal(msg));
