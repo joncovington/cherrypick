@@ -176,7 +176,116 @@ def cmd_hedge_overlay(args) -> int:
 
     conn = dbmod.connect(args.db)
     out = analytics.hedge_overlay(conn, start=args.start, end=args.end, symbol=args.symbol, arm=args.arm)
+    if args.run_k:
+        ks = tuple(int(k) for k in args.run_k.split(",") if k.strip())
+        out["run_hedge"] = analytics.run_hedge_overlay(
+            conn, start=args.start, end=args.end, symbol=args.symbol, arm=args.arm, ks=ks
+        )
     print(json.dumps({"ok": True, **out}, indent=2))
+    return 0
+
+
+def cmd_debit_first_offsets(args) -> int:
+    """Settled debit-first rows cut by how far out of the money the centre sat, in strikes and in
+    delta, side by side (read-only)."""
+    from cherrypick.flies import analytics
+
+    conn = dbmod.connect(args.db)
+    kwargs = {"start": args.start, "end": args.end, "symbol": args.symbol}
+    out = {
+        "ok": True,
+        "strikes": analytics.debit_first_by_offset(conn, unit="strikes", **kwargs),
+        "delta": analytics.debit_first_by_offset(conn, unit="delta", **kwargs),
+    }
+    print(json.dumps(out, indent=2))
+    return 0
+
+
+def cmd_debit_ladder(args) -> int:
+    """The settled debit-first shadow ladder per (direction, k), with the k = 0 anchor and the
+    calibration against real delta-arm fills (read-only)."""
+    from cherrypick.flies import analytics
+
+    conn = dbmod.connect(args.db)
+    out = analytics.debit_ladder(conn, start=args.start, end=args.end, symbol=args.symbol, arm=args.arm)
+    if not args.detail:
+        out["calibration"].pop("detail", None)
+    print(json.dumps({"ok": True, **out}, indent=2))
+    return 0
+
+
+def cmd_selector_fit(args) -> int:
+    """Fit the selector's model for a session from every settled row before it, each source scoped
+    to its era by the ledger's own breaks. Prints it; with --write, persists it where the paper loop
+    reads it at that session's first tick (read-only otherwise).
+
+    A no-op that says so while the config declares no selector arm. Declared but disabled still
+    fits, so the model is ready on the morning the arm is switched on."""
+    from cherrypick.core import jsonio as _jsonio
+
+    from cherrypick.flies import engine, paper_loop, selector, selector_replay
+
+    config = load_config(args.config)
+    params = engine.merged_params(config, args.arm)
+    if args.arm not in _cfg.registry(config, label="flies") or not params.get("selector"):
+        print(json.dumps({"ok": True, "skipped": f"no `{args.arm}` arm with a selector block declared"}))
+        return 0
+    cfg = selector.settings(params)
+    session = args.session or next_session()
+    conn = dbmod.connect(args.db)
+    rows = selector_replay.load_rows(
+        conn, start="0000-00-00", end=None, arms=cfg["sources"], symbol=args.symbol
+    )
+    model = selector.fit(
+        [r for r in rows if not r.get("void_reason")],
+        through=session,
+        sources=cfg["sources"],
+        arm_starts=selector.arm_starts(dbmod.measurement_breaks(conn), session, cfg["sources"]),
+        min_sessions=cfg["min_sessions"],
+        margin=cfg["margin"],
+    )
+    if args.write:
+        path = _jsonio.write_json_atomic(paper_loop.selector_model_path(session), model, default=None)
+        print(json.dumps({"ok": True, "written": str(path), "model_id": selector.model_id(model)}, indent=2))
+    else:
+        print(json.dumps({"ok": True, "model": model}, indent=2))
+    return 0
+
+
+def next_session(now=None) -> str:
+    """The session a model fitted now is for: today when run before today's open on a trading day,
+    otherwise the next trading day. The nightly job always lands in the second case; a hand run at
+    08:00 lands in the first, and must not write tomorrow's model by mistake."""
+    from cherrypick.core import calendar as _cal
+
+    from cherrypick.flies import clock
+
+    now = now or clock.now_et()
+    today = now.date()
+    if _cal.is_trading_day(today) and now.hour * 60 + now.minute < 9 * 60 + 30:
+        return today.isoformat()
+    return _cal.next_trading_day(today).isoformat()
+
+
+def cmd_selector_replay(args) -> int:
+    """Walk the selector forward over recorded sessions, out of sample, beside every benchmark it
+    has to beat (read-only)."""
+    from cherrypick.flies import selector_replay
+
+    conn = dbmod.connect(args.db)
+    out = selector_replay.run(
+        conn,
+        start=args.start,
+        end=args.end,
+        symbol=args.symbol,
+        history_start=args.history_start,
+        min_sessions=args.min_sessions,
+        margin=args.margin,
+    )
+    if not args.folds:
+        out["take_skip"]["selector"].pop("folds", None)
+        out["two_structure"]["selector"].pop("folds", None)
+    print(json.dumps(out, indent=2))
     return 0
 
 
@@ -354,7 +463,52 @@ def main(argv=None) -> int:
     p_hedge.add_argument("--end")
     p_hedge.add_argument("--arm", default="control")
     p_hedge.add_argument("--symbol")
+    p_hedge.add_argument(
+        "--run-k",
+        help="also replay one hedge per (session, side) run of k open spreads, e.g. 2,3 (adds run_hedge)",
+    )
     p_hedge.set_defaults(func=cmd_hedge_overlay)
+
+    p_dfo = sub.add_parser(
+        "debit-first-offsets",
+        help="settled debit-first rows cut by strikes and by delta out of the money, side by side",
+    )
+    p_dfo.add_argument("--start")
+    p_dfo.add_argument("--end")
+    p_dfo.add_argument("--symbol")
+    p_dfo.set_defaults(func=cmd_debit_first_offsets)
+
+    p_ladder = sub.add_parser(
+        "debit-ladder",
+        help="the debit-first shadow ladder per strikes out, with its calibration against real fills",
+    )
+    p_ladder.add_argument("--start")
+    p_ladder.add_argument("--end")
+    p_ladder.add_argument("--symbol")
+    p_ladder.add_argument("--arm", default="debit-first-atm")
+    p_ladder.add_argument("--detail", action="store_true", help="include every calibration pair")
+    p_ladder.set_defaults(func=cmd_debit_ladder)
+
+    p_sfit = sub.add_parser(
+        "selector-fit", help="fit the selector's frozen model for a session (prints; --write persists)"
+    )
+    p_sfit.add_argument("--session", help="the session the model is for (default: the next trading day)")
+    p_sfit.add_argument("--arm", default="selector")
+    p_sfit.add_argument("--symbol", default="SPX")
+    p_sfit.add_argument("--write", action="store_true")
+    p_sfit.set_defaults(func=cmd_selector_fit)
+
+    p_srep = sub.add_parser(
+        "selector-replay", help="walk the selector forward over recorded sessions, out of sample (read-only)"
+    )
+    p_srep.add_argument("--start", default="2026-08-21", help="first session replayed")
+    p_srep.add_argument("--end")
+    p_srep.add_argument("--symbol", default="SPX")
+    p_srep.add_argument("--history-start", dest="history_start", default="2026-08-21")
+    p_srep.add_argument("--min-sessions", dest="min_sessions", type=int, default=5)
+    p_srep.add_argument("--margin", type=float, default=0.0)
+    p_srep.add_argument("--folds", action="store_true", help="include each session's choice reasons")
+    p_srep.set_defaults(func=cmd_selector_replay)
 
     p_rev = sub.add_parser(
         "reversal-book", help="control paired with the same-side debit-first entry nearest in time"

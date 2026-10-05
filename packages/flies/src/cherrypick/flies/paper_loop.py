@@ -24,18 +24,21 @@ from cherrypick.core import advice as _core_advice
 from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import config as _cfg  # noqa: E402
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
 
 from cherrypick.flies import book as bookmod  # noqa: E402
 from cherrypick.flies import cli as climod  # noqa: E402
 from cherrypick.flies import db as dbmod  # noqa: E402
-from cherrypick.flies import eod as eodmod  # noqa: E402
 from cherrypick.flies import (
+    engine,  # noqa: E402
     provider,  # noqa: E402
     stream_request,  # noqa: E402
     stream_window,  # noqa: E402
 )
+from cherrypick.flies import eod as eodmod  # noqa: E402
+from cherrypick.flies import selector as selectormod  # noqa: E402
 
 # Regular trading hours, ET, as minutes of day. The engine's own entry windows sit inside this; the
 # session gate exists so an out-of-hours run is a clean no-op rather than an iteration against a
@@ -272,6 +275,31 @@ def _note_completion_rule(conn, config: dict) -> None:
 
 
 VOL_FLOOR_ARM_FROM = "2026-10-05"
+SELECTOR_ARM_FROM = "2026-10-19"
+
+
+def _note_selector_arm(conn, config: dict) -> None:
+    """Journal the `selector` arm's entry to the roster (an `arm_added` break dated its declared
+    first session, 2026-10-19), once a machine's config enables it. Idempotent and best-effort, as
+    the vol-floor note. Recorded early is harmless: a future-dated break binds nothing until it
+    passes (`core.regimecuts.era_bounds`)."""
+    try:
+        arm = (config.get("arms") or {}).get("selector")
+        if not isinstance(arm, dict) or not arm.get("enabled", True) or not arm.get("selector"):
+            return
+        dbmod.record_measurement_break(
+            conn,
+            break_date=SELECTOR_ARM_FROM,
+            scope="selector",
+            kind="arm_added",
+            reason=(
+                "selector arm enters the roster: one book choosing each tick among its sources "
+                f"({', '.join(arm['selector'].get('sources', []))}) on a nightly frozen model, "
+                f"procedure v{selectormod.PROCEDURE_VERSION}; control's twin when no model applies"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"selector arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
 def _note_vol_floor_arm(conn, config: dict) -> None:
@@ -393,6 +421,57 @@ def advice_decision(config: dict, today: str) -> dict:
         base_key="base_arm",
         log=_log,
     )
+
+
+# --------------------------------------------------------------------------- the selector's model
+# The selector reads a model fitted the night before (`cli selector-fit`), and reads it ONCE: the
+# first tick of the session pins what it found -- the model, or why there was none -- and every
+# later tick replays the pin. A model that lands at 11:00 therefore cannot switch the arm on
+# mid-session, and a session that started without one stays the default's twin all day, the same
+# read-once rule advice keeps. Unlike advice, the "no model" decision is pinned too: for the
+# selector, absent is a decision that must not change mid-session either.
+
+
+def selector_model_path(session: str) -> str:
+    return os.path.join(_paper_data_dir(), f"selector_model-{session}.json")
+
+
+def _selector_active_path() -> str:
+    return os.path.join(_paper_data_dir(), "selector_active.json")
+
+
+def selector_session_model(today: str) -> tuple[dict | None, str]:
+    """(model | None, reason) for today, pinned on first read. The reason says why there is no
+    model (absent, stale, malformed, wrong procedure) so the choice record can carry it."""
+    try:
+        with open(_selector_active_path(), encoding="utf-8") as handle:
+            pin = json.load(handle)
+        if pin.get("day") == today:
+            return pin.get("model"), pin.get("reason", "ok")
+    except (OSError, ValueError):
+        pass
+    try:
+        with open(selector_model_path(today), encoding="utf-8") as handle:
+            doc = json.load(handle)
+    except OSError:
+        doc = None
+    except ValueError:
+        doc = "malformed"
+    ok, reason = selectormod.validate_model(doc, today)
+    model = doc if ok else None
+    try:
+        _jsonio.write_json_atomic(
+            _selector_active_path(),
+            {
+                "day": today,
+                "reason": reason,
+                "model_id": selectormod.model_id(model) if model else None,
+                "model": model,
+            },
+        )
+    except OSError as exc:
+        _log(f"selector: could not pin today's model decision ({exc}) -- it will be re-read next tick")
+    return model, reason
 
 
 def _advised_arms_with_books(conn, trade_date: str) -> list[str]:
@@ -568,8 +647,17 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
         # the arm's tag against the decision; a control arm stamps None).
         decision = advice_decision(config, day)
         for arm in arms:
+            selector_kwargs = {}
+            if engine.merged_params(config, arm).get("selector"):
+                model, reason = selector_session_model(day)
+                selector_kwargs = {"selector_model": model, "selector_model_reason": reason}
             outcome = bookmod.process_snapshot(
-                snapshot, config, conn, arm, experiment_id=_core_advice.stamp_for(arm, decision)
+                snapshot,
+                config,
+                conn,
+                arm,
+                experiment_id=_core_advice.stamp_for(arm, decision),
+                **selector_kwargs,
             )
             for action in outcome["actions"]:
                 if action["action"] not in ("entry_skipped", "completion_skipped"):
@@ -840,6 +928,7 @@ def main(argv=None) -> int:
             _note_entry_cadence_change(conn, config)
             _note_completion_rule(conn, config)
             _note_vol_floor_arm(conn, config)
+            _note_selector_arm(conn, config)
             # Stale-checkout guard (2026-08-05). The loop imports from the working tree, so a session
             # run from an older branch writes NULL to any regime column that branch predates --
             # silently, all day, with no backfill path afterwards. Logged rather than enforced: a

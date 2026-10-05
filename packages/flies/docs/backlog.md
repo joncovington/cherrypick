@@ -120,6 +120,53 @@ the slippage model, and that a lower floor's P&L split by side with the tape.
   ways (bwb-up +$109 unrolled → +$30 rolled; bwb-atm −$240 → −$144), so the replay overstates both
   tails. A positive result is not a rolled-arm result.
 
+## The selector arm: landing it on 2026-10-19
+
+Built and off (2026-10-04, [selector.md](selector.md)). **Declared for 2026-10-19**, with its
+judging rule in the experiment log (2026-10-04): the first read comes at 10 departing sessions, on
+per-session net against `control`. Before that date:
+
+- **Built (2026-10-04):** the orchestrator's `selector_fit_at` / `selector_fit_argv` job, which
+  catches up only until midnight; a `selector-fit` that is a stated no-op until a `selector` arm is
+  declared, and fits one that is declared but disabled; and the `arm_added` break for 10-19
+  (`_note_selector_arm`), recorded once the arm is enabled.
+- **Staged (2026-10-04)** on this machine: both orchestrator keys, and the `selector` arm declared
+  `enabled: false`. The nightly fit writes a model from 10-05's close onward; nothing reads it until
+  the arm is enabled.
+- **On the date:** merge to main and flip the arm to `enabled: true` before the first tick. The
+  break journals itself. Land any other roster change from that fortnight with it.
+- **Not live-eligible** until debit-first has a live order path (`live_orders.py` builds legged
+  specs only). A legged-only selector is the live candidate if one is ever wanted.
+- **Extract to `cherrypick.core.selector`** (model file, `fit`, `arm_starts`, `validate_model`) when
+  MEIC adopts it, and not before.
+
+## The shadow ladder and the hedge stamp: first reads
+
+Both are telemetry from 2026-10-05.
+- **The ladder** stamps only on an arm whose config sets `debit_ladder: {"offsets_strikes": [1, 2, 3,
+  4, 5, 6]}`, which is `debit-first-atm` by design. First read `run.py debit-ladder` at 10 sessions;
+  call it descriptive until 15–20. Read the calibration first: same-strike pairs with real delta-arm
+  fills must agree on debit and outcome, or the ladder is wrong and nothing else in it is read.
+- **`sell_at_completion`** in `hedge-overlay` (hold the hedge only while stranded): reopens the
+  "Sell-to-cover" question if, at 15 sessions of stamped completions, it recovers more than the
+  hedge costs **net of the completed branch**.
+
+## Freeing live buying power at the cap
+
+`scripts/flies_cap_swap_replay.py` (2026-10-04) could value only 3 of 58 refusal runs, and C1
+(force-complete at a small debit) on none: the order path had no quotes before 10-02.
+
+- **Reopens when** 15 live sessions of cap refusals have quoted `fly_order_path` rows. Re-run it. C1
+  becomes a proposal only if it pays net on the sessions it acted on **and** the freed slot's value
+  explains why it beats the general relaxed-completion result (0 of 24 cells). Even then it is a
+  live completion-gate change at a declared break. C2 (abort) is not a candidate.
+
+## Run-triggered book hedge
+
+`hedge-overlay --run-k` (2026-10-04): k=3 reliably loses; k=2 +$25 on one payout with more losing
+sessions. **Reopens when** the base book has ten or more losing sessions with stamped hedges. Re-run
+k=2. Nothing intraday is built on it before then.
+
 ## Done -- kept for the record
 
 Finished or reversed items stay here, so a later reader can see what was decided and on what evidence.

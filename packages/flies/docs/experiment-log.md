@@ -759,3 +759,95 @@ ledger does not keep. Its figures therefore overstate both a winner and a loser.
 
 No conclusion and no floor change: three sessions, one down day. [backlog.md](backlog.md) holds the
 re-read condition.
+
+## 2026-10-04 — four first reads before anything trades: the selector walked forward, two hedge shapes, freeing the live cap, debit-first by distance
+
+Design record and first reads. No arm, gate or parameter changed; everything below is read-side
+replays plus two telemetry streams that start filling on 2026-10-05. Design:
+[selector.md](selector.md).
+
+**The selector, walked forward (`run.py selector-replay`).** It refits per session from everything
+before that session, scoped to its era by the ledger's breaks, and decides the session out of
+sample. Version 1 reads vol × trend buckets only.
+- **Take/skip on control, exact.** Over 08-21..10-02 (29 sessions) it kept 183 of 218 entries for
+  **+$5,976.74 against control's +$4,436.50**. Losing days went from 7 to 6, and the worst day from
+  −$836.05 to −$549.43.
+- **What it skipped:** all 35 skips fell in one cell, normal-vol and up-from-open. That cell
+  reached five sessions on 09-03 already negative and never recovered. The skipped entries had
+  netted −$1,540.24.
+- **Robustness:** the session-level difference is positive on 6 sessions. Its 90% interval,
+  [−$444, +$3,823], **includes zero**. It is the same finding `advised:no-entry-on-up-trend` is
+  testing forward, here reached without hindsight.
+- **Against the fixed gates:** up-from-open skip +$6,076.31, miss-stop 45 +$5,313.48, vol-floor's
+  gate on control's rows +$5,162.17. All three were chosen in hindsight over the same rows, so the
+  selector matching them out of sample is the result. Beating them is not established.
+- **Two structures** (control vs `debit-first-atm`, their 10 shared sessions; an upper bound): the
+  selector +$1,500.89, control +$1,129.81, `debit-first-atm` +$261.40, the oracle +$5,983.96. It
+  chooses only among filled trades, so at this size it checks the machinery and nothing more.
+
+**The run-triggered book hedge (`run.py hedge-overlay --run-k 2,3`).** It buys one ~5-delta hedge
+per (session, side) when the k-th open, uncompleted same-side spread opens, priced from that
+entry's own stamp. The window is control 09-21..10-02, 10 sessions with stamped hedges, unhedged
++$1,129.81 (the session-kept book, which includes 3 unstamped rows).
+- **k=2:** +$1,154.96, and the worst session improved from −$836.05 to −$683.53. But losing
+  sessions went from 2 to 4, the gain rests on one payout (09-21's 7750 call, 14.7 points in the
+  money), and the interval includes zero.
+- **k=3:** +$417.94, 0 positive sessions, interval [−$1,087, −$359]. **It reliably loses:** by the
+  third same-side entry the run has already happened.
+- This is a smoke test. The per-position hedge stays a no (backlog: "Sell-to-cover").
+
+**Hold the hedge only while stranded.** From 10-05 each legged completion stamps
+`hedge_mid_at_completion`, the sale value of the overlay's hedge on the completion tick.
+`hedge-overlay`'s `sell_at_completion` block reads it. Today every completed row is `untracked`
+there, by design, and there is no backfill.
+
+**Freeing the live cap (`scripts/flies_cap_swap_replay.py`).** At each `max_open_margin_reached`
+refusal run it values two options for the stalest uncompleted live spread, force-completing it (C1)
+or aborting it (C2), plus paper control's entry on that tick as the freed slot.
+- **Coverage:** 58 runs over 3 sessions; only 3 have a paper twin. Paper control's own gates had
+  stopped it entering on those afternoons.
+- **C1 is unmeasurable so far.** Every pre-10-02 `fly_order_path` row is a trail backfill with no
+  bid/ask. Valuing C1 at the resting limit gives an upper bound of +$216.60 (sign flips when one
+  session is dropped).
+- **C2 (abort):** −$287.40, as the 07-30 pre-close exit found.
+- Neither is supported. Real C1 readings come only from refusals recorded with quotes.
+
+**Debit-first by distance (`run.py debit-first-offsets --start 2026-09-21`).** 200 entries over 10
+sessions: gross **−$34.77**, fees $1,979.25, net −$2,014.02. As a family, debit-first loses its
+money to fees.
+- **By strikes out:** 0 (ATM) +$261.40 over 90; 3 out −$624.08, 0% completed over 7; 4 out −$509;
+  5 out +$307; 6 out −$805; 7 out −$321. One and two strikes out have **one row** between them.
+- **By delta:** 0.35–0.45 +$747.19 at 83% completion; at or above 0.45 −$644.68; 0.10–0.20
+  −$1,849.31.
+- These are descriptive. The two cuts share a vol confound (a 15-delta strike sits further out on
+  high-vol days), which is why both are shown.
+
+**The shadow ladder** fills the 1–6 strike gap from 10-05 if `debit_ladder` is set on
+`debit-first-atm`. At every fill it prices the same trade k strikes out each way, carries each rung
+by the arm's own completion function, and settles it at the print. A rung is never a position.
+`run.py debit-ladder` reads it, with a calibration against real delta-arm fills at the same centre.
+The first read is at 10 sessions.
+
+## 2026-10-04 — declared: the `selector` arm, from 2026-10-19
+
+- **The arm:** `selector`, with sources `control`, `vol-floor` and `debit-first-atm`. Procedure
+  version 1 (vol × trend buckets), `min_sessions` 5, `margin` 0, defaulting to `control`.
+  [selector.md](selector.md) holds the contract.
+- **Why 10-19 and not 10-05.** The 10-05 `completion_rule` break is book-wide, so from 10-05 the
+  selector's model learns only from rows on or after that date. Starting earlier would buy only
+  sessions as control's twin. By 10-19 the model is fitted on about ten new-era sessions, and the
+  nightly `selector-fit` job can be built and merged first. Any other roster change planned for the
+  fortnight lands at this same break.
+- **Its book starts at its own `arm_added` break on 10-19.** Changing the procedure (features,
+  shrinkage, decision rule) is a new break. Refitting nightly is not.
+- **How it will be read:**
+  - **Only departing sessions count:** sessions where it booked something other than exactly what
+    `control` booked. Twin sessions carry no information, the rule curve's `noflip` keeps.
+  - **The first read** comes after **10 departing sessions**, against `control` on the same
+    sessions, on **per-session net alone** (sign test).
+  - **Ahead:** the arm is kept and re-read at 20 departing sessions. **Behind:** it is retired and
+    written up as a negative result.
+  - Each source's own book, the best fixed gate over the same sessions and the robustness stamps
+    are reported beside the verdict but do not decide it.
+- **Stated now so it is not discovered later:** a sign test over 10 sessions has little power. A
+  "keep" at the first read means "not yet refuted", never "proven", and it says nothing about live.

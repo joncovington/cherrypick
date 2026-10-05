@@ -142,6 +142,14 @@
           "regime-cuts",
           "--write"
         ],
+        "_selector_fit_note": "The flies selector arm's nightly model (2026-10-04): at selector_fit_at (ET, trading days) the supervisor runs selector_fit_argv, which fits the model for the NEXT session from every settled row before it and writes data/flies/selector_model-<session>.json; the paper loop pins it at that session's first tick. 16:45 sits after the 16:40 cuts. A no-op that says so while no `selector` arm is declared in the flies config. Catches up until midnight only: a missed night means one session run as control's twin, which the choice record names. Remove both keys to drop the job.",
+        "selector_fit_at": "16:45",
+        "selector_fit_argv": [
+          "-m",
+          "cherrypick.flies.cli",
+          "selector-fit",
+          "--write"
+        ],
         "_fee_reconcile_note": "Broker-cash reconciliation of settled LIVE sessions (2026-09-22): at fee_reconcile_at (ET, trading days) the supervisor runs fee_reconcile_argv, which re-derives net/fees/gross_pnl/pnl for each settled live position from the broker's own transactions and snapshots the modeled values into modeled_* first. UNCONDITIONAL ON ARMING, which is the point: this used to ride the live tick, where it ran only under --live, sat behind the dead-man's switch, and stopped entirely once the loop disarmed -- so a session traded on Tuesday went unreconciled forever if Wednesday was never armed. 09:15 is after the broker posts the prior session's settlement lines overnight and before the entry window opens. Needs the module's broker credentials (GET-only). Remove both keys to drop the job.",
         "fee_reconcile_at": "09:15",
         "fee_reconcile_argv": [

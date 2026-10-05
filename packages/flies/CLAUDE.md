@@ -53,7 +53,10 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `cherrypick/flies/db.py` | `fly_positions` (ledger) and `fly_books` (roll-up with the floor's price band). |
 | `cherrypick/flies/analytics.py` | the one query layer every read surface goes through. Read-only. |
 | `cherrypick/flies/eod.py` | Report builders, retired 2026-08-13 (`packages/review` reports the session now). `logs_dir()` is still the loops' path helper. |
-| `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `regime` / `bands` / `replay-gates` / `hedge-overlay` / `reversal-book` / `fill-model` / `regime-cuts`. |
+| `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `regime` / `bands` / `replay-gates` / `hedge-overlay` (`--run-k`) / `reversal-book` / `fill-model` / `regime-cuts` / `debit-first-offsets` / `debit-ladder` / `selector-fit` / `selector-replay`. |
+| `cherrypick/flies/selector.py` | The selector arm, pure: candidates against its own book, the merge, scoring, the choice, `fit`, model validation. [docs/selector.md](docs/selector.md). |
+| `cherrypick/flies/selector_replay.py` | The selector walked forward over recorded sessions, out of sample, beside every benchmark it must beat. Read-only. |
+| `cherrypick/flies/ladder.py` | The debit-first shadow ladder, pure: rung geometry, the entry price, the per-tick fold through the arm's own completion function, settlement. |
 | `cherrypick/flies/live_loop.py` | The LIVE loop: a 1-min `--once --live` tick fired by the supervisor while the arm record (`state/flies-live-arm.json`, written per day via `/live-flies-start`) is valid; self-disarms at `live.disarm_time` by deleting the record. The arm record, both disarm reasons, the supervisor-heartbeat read and the record-only arming rule are `cherrypick.core.live` (thin wrappers here; the legacy schtasks fallback and pre-cutover record location stay flies-only); fill confirmation reads `cherrypick.core.execution.fill_state`. `--once` (dry-run default) is the rung-0 smoke; `--status`; `--settle --price` for the official print; burst fill-watchers `--watch-fills`. Every live tick marks each open position at mid into `fly_live_marks` — pure telemetry after every decision; an unquoted leg gets no row, never a zero. A mid is not a fill. Live only: paper's result is settled payoff by design. |
 | `cherrypick/flies/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor); `--live` double-gated. The loop's adapter is `cherrypick.core.execution.Broker` with this module's session, account, `live_gates`, serializer and deploy cap injected; only the REST re-quote remains here. `official_settlement_price` is `cherrypick.core.settlement`'s, kept as a module attribute so the adapter and tests patch one seam. |
 | `cherrypick/flies/live_orders.py` | Pure engine-decision → order-spec builders (OCC symbols from the provider). Tick rounding is `cherrypick.core.structures`. |
@@ -127,6 +130,17 @@ assumed:
   book-wide `completion_rule` break (`paper_loop._note_completion_rule`): **never pool completion
   P&L across 2026-10-05.** The trigger's timing is the next step, fitted from quoted live paths
   against the shadow, as a second break.
+
+**Two shadow streams from 2026-10-05, both tag-don't-gate:**
+- **`hedge_mid_at_completion`** is the overlay hedge's sale value on the legged completion tick.
+  `hedge-overlay`'s `sell_at_completion` block reads it ("hold the hedge only while stranded").
+  Completed rows without it are untracked there, never a free sale.
+- **The debit-first shadow ladder** (`ladder.py`, `fly_debit_ladder`). On an arm that sets
+  `debit_ladder`, every fill also prices the same trade k strikes out each way. Each rung is carried
+  by `engine.evaluate_debit_completion` itself and settled through `engine.settle`. A rung is never
+  a position, and a refused rung carries its reason and no price. `run.py debit-ladder` reads it,
+  calibrated against real delta-arm fills at the same centre; read the calibration before any cell.
+  A rung at k = 0 reproduces its anchor exactly, and a test pins it.
 
 **Two overlays on the legged book, both tag-don't-gate** (2026-09-19):
 - **The hedge overlay** (`engine.hedge_candidate`, `book.py` step 1e, `analytics.hedge_overlay`,
@@ -297,6 +311,15 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   (5/10 and 10/20) as separate arms, each with its own `max_bwb_tail_dollars`. **Paper only, never a
   live candidate.** Read the roll as the result (`best_roll_debit`, unrolled vs rolled P&L). No hedge
   overlay — insuring the far wing is the roll's job.
+- `selector` — **registered and off** (2026-10-04, [docs/selector.md](docs/selector.md)). One
+  portfolio that, each tick, runs its declared sources' own entry functions against ITS book,
+  merges identical plans (mode, side and geometry; never pooling the proposers' rows), scores them on
+  a model fitted the night before and pinned for the session, and books at most one through the
+  same booking code its source uses. **With no model it is control's exact twin**, and a test pins
+  that through settlement. Its positions complete under the proposing source's params
+  (`selected_from`). Every tick writes `fly_selector_choices`. **Declared for 2026-10-19**; the
+  first read is at 10 departing sessions, on per-session net against control (experiment log,
+  2026-10-04). Not live-eligible while debit-first has no live order path.
 - `vol-floor` — `control` plus one variable (from 2026-10-05): no entry while the ATM straddle is
   under `min_entry_straddle_pct` (0.0022) of spot (`engine.low_vol_refusal`, refusal
   `straddle_below_floor`).

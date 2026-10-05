@@ -15,7 +15,7 @@ this into MEIC's leg-counting — it would be wrong for this instrument.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from cherrypick.core import metrics as _metrics
 from cherrypick.core import regimecuts as _rc
@@ -24,6 +24,7 @@ from cherrypick.flies import (
     clock,  # noqa: E402
     fill_model,  # noqa: E402
     fly,  # noqa: E402
+    ladder,  # noqa: E402
 )
 
 GRANULARITIES = ("daily", "weekly", "monthly")
@@ -1057,6 +1058,14 @@ def completion_stats(conn, start=None, end=None, symbol=None, arm=None, entry_mo
     }
 
 
+def _debit_first_improvement(r) -> float | None:
+    """How much richer a completed debit-first row's completing sale got after the tick it was
+    taken, in price points, floored at 0. None when the tracker never ran on it."""
+    if r["post_best_completing_credit"] is None or r["credit"] is None:
+        return None
+    return max(0.0, r["post_best_completing_credit"] - r["credit"])
+
+
 def left_on_table(conn, start=None, end=None, symbol=None, arm=None, entry_mode="debit_first") -> dict:
     """How much better the completing price got AFTER the first qualifying tick was taken —
     the counterfactual behind any wait-for-better completion rule, measured from the
@@ -1099,9 +1108,7 @@ def left_on_table(conn, start=None, end=None, symbol=None, arm=None, entry_mode=
 
     def improvement(r):
         if entry_mode == "debit_first":
-            if r["post_best_completing_credit"] is None or r["credit"] is None:
-                return None
-            return max(0.0, r["post_best_completing_credit"] - r["credit"])
+            return _debit_first_improvement(r)
         if r["post_best_completing_debit"] is None or r["debit"] is None:
             return None
         return max(0.0, r["debit"] - r["post_best_completing_debit"])
@@ -1138,6 +1145,39 @@ def left_on_table(conn, start=None, end=None, symbol=None, arm=None, entry_mode=
     }
 
 
+def _hedge_leg(r) -> dict | None:
+    """One stamped hedge's cost and payout, or None when the row recorded no hedge. The single place
+    that arithmetic lives, so `hedge_overlay` and `run_hedge_overlay` cannot disagree about it.
+
+    `cost` is the modelled buy premium plus the single-leg open fee; `recovered` is the hedge's
+    intrinsic at the spread's own settlement print, less the assignment fee an ITM leg triggers.
+    """
+    if r["hedge_premium"] is None or r["hedge_settle_value"] is None:
+        return None
+    qty = r["quantity"] or 1
+    scale = fly.CONTRACT_MULTIPLIER * qty
+    return {
+        "cost": r["hedge_premium"] * scale + (r["hedge_fee"] or 0.0),
+        "recovered": r["hedge_settle_value"] * scale
+        - (fly.expire_fee(1) if r["hedge_settle_value"] > 0 else 0.0),
+        "premium": r["hedge_premium"],
+        "best_mid": r["hedge_best_mid"],
+        "scale": scale,
+        "open_fee": r["hedge_fee"] or 0.0,
+        "close_fee": fly.single_leg_close_fee(r["symbol"] or "SPX", qty),
+    }
+
+
+def _hedge_sale(leg: dict, multiple: float) -> float | None:
+    """What the hedge adds, net of what it cost, when sold at `multiple` x its premium -- or None
+    if its best-ever sale (`hedge_best_mid`) never reached that, in which case it rides to the print.
+    Best-ever telemetry, so an upper bound on a threshold rule, never a fill."""
+    target = multiple * leg["premium"]
+    if leg["best_mid"] is None or leg["best_mid"] < target:
+        return None
+    return (target - leg["premium"]) * leg["scale"] - leg["open_fee"] - leg["close_fee"]
+
+
 def hedge_overlay(conn, start=None, end=None, symbol=None, arm="control", multiples=(1.5, 2.0, 3.0)) -> dict:
     """Every settled legged position repriced with and without the far-OTM hedge the overlay
     recorded at its entry (book.py, `hedge_*` columns) -- the exact, per-position answer to
@@ -1159,35 +1199,24 @@ def hedge_overlay(conn, start=None, end=None, symbol=None, arm="control", multip
     where, params = _period_clause(start, end, arm, symbol)
     rows = conn.execute(
         f"SELECT position_id, kind, pnl, quantity, symbol, hedge_premium, hedge_fee, hedge_best_mid, "
-        f"hedge_settle_value FROM fly_positions WHERE {where} AND entry_mode = 'legged'",
+        f"hedge_settle_value, hedge_mid_at_completion FROM fly_positions WHERE {where} AND entry_mode = 'legged'",
         params,
     ).fetchall()
 
     tracked, untracked = [], 0
     for r in rows:
-        if r["hedge_premium"] is None or r["hedge_settle_value"] is None:
+        leg = _hedge_leg(r)
+        if leg is None:
             untracked += 1
             continue
-        qty = r["quantity"] or 1
-        scale = fly.CONTRACT_MULTIPLIER * qty
-        cost = r["hedge_premium"] * scale + (r["hedge_fee"] or 0.0)
-        recovered = r["hedge_settle_value"] * scale - (
-            fly.expire_fee(1) if r["hedge_settle_value"] > 0 else 0.0
-        )
-        close_fee = fly.single_leg_close_fee(r["symbol"] or "SPX", qty)
         tracked.append(
             {
                 "position_id": r["position_id"],
                 "branch": "completed" if r["kind"] in ("fly", "iron_fly") else "stranded",
                 "pnl": r["pnl"] or 0.0,
-                "cost": cost,
-                "recovered": recovered,
-                "hedged_pnl": (r["pnl"] or 0.0) + recovered - cost,
-                "premium": r["hedge_premium"],
-                "best_mid": r["hedge_best_mid"],
-                "scale": scale,
-                "open_fee": r["hedge_fee"] or 0.0,
-                "close_fee": close_fee,
+                "hedged_pnl": (r["pnl"] or 0.0) + leg["recovered"] - leg["cost"],
+                "mid_at_completion": r["hedge_mid_at_completion"],
+                **leg,
             }
         )
 
@@ -1205,10 +1234,10 @@ def hedge_overlay(conn, start=None, end=None, symbol=None, arm="control", multip
     for n in multiples:
         sold, net = 0, 0.0
         for i in tracked:
-            target = n * i["premium"]
-            if i["best_mid"] is not None and i["best_mid"] >= target:
+            sale = _hedge_sale(i, n)
+            if sale is not None:
                 sold += 1
-                net += i["pnl"] + (target - i["premium"]) * i["scale"] - i["open_fee"] - i["close_fee"]
+                net += i["pnl"] + sale
             else:
                 net += i["hedged_pnl"]
         sell_at[str(float(n))] = {
@@ -1216,6 +1245,26 @@ def hedge_overlay(conn, start=None, end=None, symbol=None, arm="control", multip
             "rode_to_expiry": len(tracked) - sold,
             "hedged_net": _round(net),
         }
+
+    # Hold the hedge only while the spread is stranded: a completed row sells it at the sale value
+    # stamped on its completion tick (less both single-leg fees, its intrinsic forgone), a stranded
+    # row rides to the print as above. Completed rows from before the stamp existed are counted
+    # `untracked` HERE only and left out of both totals -- never read as a free sale.
+    measurable, no_stamp = [], 0
+    for i in tracked:
+        if i["branch"] == "stranded":
+            measurable.append({**i, "early_pnl": i["hedged_pnl"]})
+        elif i["mid_at_completion"] is None:
+            no_stamp += 1
+        else:
+            sale = (i["mid_at_completion"] - i["premium"]) * i["scale"] - i["open_fee"] - i["close_fee"]
+            measurable.append({**i, "early_pnl": i["pnl"] + sale})
+    sell_at_completion = {
+        "n": len(measurable),
+        "untracked": no_stamp,
+        "unhedged_net": _round(sum(i["pnl"] for i in measurable)),
+        "hedged_net": _round(sum(i["early_pnl"] for i in measurable)),
+    }
 
     return {
         "arm": arm,
@@ -1226,6 +1275,276 @@ def hedge_overlay(conn, start=None, end=None, symbol=None, arm="control", multip
             for branch in ("stranded", "completed")
         },
         "sell_at": sell_at,
+        "sell_at_completion": sell_at_completion,
+    }
+
+
+def _instant(stamp) -> datetime | None:
+    """An ISO stamp as a comparable instant. Offset-aware stamps (every recorded row) are taken to
+    UTC and made naive, so `entry_time` and `completed_at` compare as moments rather than as strings
+    that only agree while they share an offset; naive stamps (test fixtures) are left as they are."""
+    if not stamp:
+        return None
+    try:
+        t = datetime.fromisoformat(str(stamp))
+    except (TypeError, ValueError):
+        return None
+    if t.tzinfo is not None:
+        t = t.astimezone(UTC).replace(tzinfo=None)
+    return t
+
+
+def run_hedge_overlay(
+    conn,
+    start=None,
+    end=None,
+    symbol=None,
+    arm="control",
+    ks=(2, 3),
+    multiples=(1.5, 2.0, 3.0),
+) -> dict:
+    """The book hedge `hedge_overlay` does not test: insure a RUN of stranded spreads on one side,
+    not each position. Losing sessions are runs (five calls on 09-21, four puts on 08-11), so the
+    question is whether one hedge per run pays where one per position plainly does not.
+
+    The rule, per (session, side) and for each k: buy ONE hedge the first time the number of open,
+    uncompleted same-side spreads reaches k, counting the new entry. At entry time t that count is
+    1 + the same-session, same-side legged positions with `entry_time < t` and `completed_at` NULL
+    or after t. The hedge bought is the k-th entry's own stamped one (`hedge_*`), so its price is
+    what the chain showed at that moment and hold-to-settlement is exact; its cost and payout come
+    from `_hedge_leg`, the arithmetic `hedge_overlay` uses. A k-th entry with no stamped hedge is
+    counted `unpriced` and nothing is bought for that run -- never a later entry's hedge in its place.
+
+    Sessions with no stamped hedge on any legged row (before the overlay, 2026-09-21) are left out
+    and counted, since there was nothing to buy on them. A session that is kept carries its whole
+    legged book, unstamped rows included, so its net is the day's and can differ from
+    `hedge_overlay`'s tracked-only total. `sell_at` reuses `hedge_best_mid` and is an
+    upper bound, as it is in `hedge_overlay`. A losing day is one whose UNHEDGED net was below zero:
+    the split asks what the hedge cost on the days it was never needed.
+
+    The window holds only a handful of losing days, so a first read is a smoke test, and the hedge
+    has to pay net of the sessions it did not save.
+    """
+    where, params = _period_clause(start, end, arm, symbol)
+    rows = conn.execute(
+        f"SELECT position_id, trade_date, side, entry_time, completed_at, pnl, quantity, symbol, "
+        f"hedge_premium, hedge_fee, hedge_best_mid, hedge_settle_value "
+        f"FROM fly_positions WHERE {where} AND entry_mode = 'legged'",
+        params,
+    ).fetchall()
+
+    by_session: dict[str, list] = {}
+    for r in rows:
+        by_session.setdefault(r["trade_date"], []).append(r)
+    sessions = {d: rs for d, rs in by_session.items() if any(_hedge_leg(r) is not None for r in rs)}
+    unhedged = {d: sum((r["pnl"] or 0.0) for r in rs) for d, rs in sessions.items()}
+
+    untimed = 0
+    runs: dict[tuple, list] = {}
+    for d, rs in sessions.items():
+        for r in rs:
+            entered = _instant(r["entry_time"])
+            if entered is None:
+                untimed += 1
+                continue
+            runs.setdefault((d, r["side"]), []).append((entered, _instant(r["completed_at"]), r))
+    for entries in runs.values():
+        entries.sort(key=lambda e: (e[0], e[2]["position_id"]))
+
+    def open_count(entries, t):
+        return 1 + sum(1 for entered, done, _ in entries if entered < t and (done is None or done > t))
+
+    def worst(nets: dict):
+        if not nets:
+            return None
+        day = min(nets, key=lambda d: nets[d])
+        return {"session": day, "net": _round(nets[day])}
+
+    def spend(items):
+        return {
+            "hedges": len(items),
+            "cost": _round(sum(h["leg"]["cost"] for h in items)),
+            "recovered": _round(sum(h["leg"]["recovered"] for h in items)),
+        }
+
+    by_k = {}
+    for k in ks:
+        bought, unpriced = [], 0
+        for (d, side), entries in sorted(runs.items()):
+            for t, _, r in entries:
+                if open_count(entries, t) >= k:
+                    leg = _hedge_leg(r)
+                    if leg is None:
+                        unpriced += 1
+                    else:
+                        bought.append(
+                            {"session": d, "side": side, "position_id": r["position_id"], "leg": leg}
+                        )
+                    break
+
+        hedged = dict(unhedged)
+        hedges_on: dict[str, int] = {}
+        for h in bought:
+            hedged[h["session"]] += h["leg"]["recovered"] - h["leg"]["cost"]
+            hedges_on[h["session"]] = hedges_on.get(h["session"], 0) + 1
+
+        sell_at = {}
+        for n in multiples:
+            sold, net = 0, sum(unhedged.values())
+            for h in bought:
+                sale = _hedge_sale(h["leg"], n)
+                if sale is not None:
+                    sold += 1
+                    net += sale
+                else:
+                    net += h["leg"]["recovered"] - h["leg"]["cost"]
+            sell_at[str(float(n))] = {
+                "sold": sold,
+                "rode_to_expiry": len(bought) - sold,
+                "hedged_net": _round(net),
+            }
+
+        difference = {d: [hedges_on.get(d, 0), round(hedged[d] - unhedged[d], 2)] for d in sorted(unhedged)}
+        by_k[str(k)] = {
+            "hedges_bought": len(bought),
+            "unpriced": unpriced,
+            "sessions_hedged": len(hedges_on),
+            "unhedged_net": _round(sum(unhedged.values())),
+            "hedged_net": _round(sum(hedged.values())),
+            "worst_session": {"unhedged": worst(unhedged), "hedged": worst(hedged)},
+            "losing_sessions": {
+                "unhedged": sum(1 for v in unhedged.values() if v < 0),
+                "hedged": sum(1 for v in hedged.values() if v < 0),
+            },
+            "on_losing_days": spend([h for h in bought if unhedged[h["session"]] < 0]),
+            "on_other_days": spend([h for h in bought if unhedged[h["session"]] >= 0]),
+            "sell_at": sell_at,
+            "robustness": _rc.robustness(difference),
+            # Which entry each hedge rode on, so a run can be checked against the ledger by hand.
+            "hedges": [
+                {
+                    "session": h["session"],
+                    "side": h["side"],
+                    "position_id": h["position_id"],
+                    "net": _round(h["leg"]["recovered"] - h["leg"]["cost"]),
+                }
+                for h in bought
+            ],
+        }
+
+    return {
+        "arm": arm,
+        "sessions": len(sessions),
+        "sessions_without_hedge": len(by_session) - len(sessions),
+        "untimed": untimed,
+        "sell_at_is_upper_bound": True,
+        "by_k": by_k,
+    }
+
+
+# --------------------------------------------------------------------------- debit-first by offset
+# The strike spacing behind each symbol's recorded offsets. The engine reads `strike_increment` from
+# config, but that is one value for the whole module and the XSP-era rows were built on a 1-point
+# chain; this layer reads no config, so the spacing the rows were actually chosen on is named here
+# (SPX: config.example.json's `_wing_width` note, measured at 5 points).
+STRIKE_INCREMENTS = {"SPX": 5.0, "XSP": 1.0}
+
+# |delta| edges for the delta cut. The 15-delta arms sit around 0.15 and the ATM arm near 0.5, so
+# the edges are finer where the OTM arms land and coarse through the middle.
+DEBIT_FIRST_DELTA_EDGES = (0.10, 0.15, 0.20, 0.25, 0.35, 0.45)
+
+
+def _left_on_table_dollars(r) -> float | None:
+    """`left_on_table`'s improvement for one completed debit-first row, in dollars."""
+    pts = _debit_first_improvement(r)
+    return None if pts is None else pts * fly.CONTRACT_MULTIPLIER * (r["quantity"] or 1)
+
+
+def debit_first_by_offset(
+    conn,
+    start=None,
+    end=None,
+    symbol=None,
+    unit="strikes",
+    delta_edges=DEBIT_FIRST_DELTA_EDGES,
+) -> dict:
+    """Every settled debit-first row, from every debit-first arm, cut by how far out of the money
+    its centre sat: in strikes (`|entry_center_offset_value|` over the symbol's strike spacing,
+    rounded) or by `|entry_center_delta|`. Descriptive only -- nothing is gated or armed from it.
+
+    Show both cuts. A 15-delta strike sits further out on a high-vol day, so a cut by strikes alone
+    partly measures volatility; reading the two side by side keeps that confound in view.
+
+    Not `by_regime`: that buckets the signed raw float of one column, has no delta dimension, and
+    carries none of the debit, miss or left-on-table figures a placement question needs. The
+    filter is still `_period_clause` (settled, voids excluded) and the money is still `_summarize`.
+
+    Per cell: `trades`, `sessions` (`thin` below the suite's THIN_BELOW_SESSIONS), completion,
+    net, the average debit paid (per share), `bounded_miss_cost` (net on the rows that never
+    completed -- the long vertical's loss, bounded by its debit and fees), and `left_on_table` over
+    the completed rows the tracker covered. `unknown` holds rows the offset or delta was never recorded on.
+    """
+    if unit not in ("strikes", "delta"):
+        raise ValueError(f"debit_first_by_offset: unit must be 'strikes' or 'delta', got {unit!r}")
+    where, params = _period_clause(start, end, symbol=symbol)
+    rows = conn.execute(
+        f"SELECT arm, symbol, trade_date, kind, completed_at, debit, credit, quantity, gross_pnl, fees, pnl, "
+        f"entry_center_offset_value, entry_center_delta, post_best_completing_credit "
+        f"FROM fly_positions WHERE {where} AND entry_mode = 'debit_first'",
+        params,
+    ).fetchall()
+
+    def bucket(r):
+        if unit == "strikes":
+            value, increment = r["entry_center_offset_value"], STRIKE_INCREMENTS.get(r["symbol"])
+            if value is None or not increment:
+                return "unknown", None, None
+            strikes = abs(value) / increment
+            return str(int(round(strikes))), round(strikes), strikes
+        value = r["entry_center_delta"]
+        if value is None:
+            return "unknown", None, None
+        label = _edge_label(list(delta_edges), abs(value))
+        order = next((i for i, edge in enumerate(delta_edges) if abs(value) < edge), len(delta_edges))
+        return label, order, abs(value)
+
+    grouped: dict[str, dict] = {}
+    for r in rows:
+        label, order, value = bucket(r)
+        cell = grouped.setdefault(label, {"order": order, "rows": [], "values": []})
+        cell["rows"].append(r)
+        if value is not None:
+            cell["values"].append(value)
+
+    def describe(label, rs, values):
+        missed = [r for r in rs if not r["completed_at"]]
+        debits = [r["debit"] for r in rs if r["debit"] is not None]
+        lot = [d for d in (_left_on_table_dollars(r) for r in rs if r["kind"] == "fly") if d is not None]
+        sessions = len({r["trade_date"] for r in rs if r["trade_date"]})
+        arms: dict[str, int] = {}
+        for r in rs:
+            arms[r["arm"]] = arms.get(r["arm"], 0) + 1
+        return {
+            "bucket": label,
+            "value_min": _round(min(values), 4) if values else None,
+            "value_max": _round(max(values), 4) if values else None,
+            "sessions": sessions,
+            "thin": sessions < _rc.THIN_BELOW_SESSIONS,
+            **_summarize(rs),
+            **_completion(rs),
+            "avg_debit": _round(sum(debits) / len(debits), 4) if debits else None,
+            "misses": len(missed),
+            "bounded_miss_cost": _round(sum((r["pnl"] or 0.0) for r in missed)),
+            "left_on_table": {"tracked": len(lot), "dollars": _round(sum(lot))},
+            "arms": dict(sorted(arms.items())),
+        }
+
+    ordered = sorted(grouped.items(), key=lambda kv: (kv[1]["order"] is None, kv[1]["order"] or 0))
+    return {
+        "unit": unit,
+        "edges": list(delta_edges) if unit == "delta" else None,
+        "cells": [describe(label, c["rows"], c["values"]) for label, c in ordered],
+        "total": describe("all", list(rows), []),
     }
 
 
@@ -2356,3 +2675,150 @@ def shadow_completion(
             "shadow": shadow,
         }
     return out
+
+
+# --------------------------------------------------------------------------- the debit-first shadow ladder
+LADDER_PAIR_SECONDS = 300  # a delta-arm fill and a rung are one trade within five minutes...
+LADDER_PAIR_STRIKES = 1  # ...and one strike of each other
+_LADDER_ARMS = {"debit-first-up": "up", "debit-first-down": "down"}
+
+
+def debit_ladder(conn, start=None, end=None, symbol=None, arm="debit-first-atm") -> dict:
+    """The settled shadow ladder (`fly_debit_ladder`, ladder.py), per (direction, k strikes out).
+
+    Each cell: rungs, sessions (`thin` below the suite's floor), completion rate, net at the arm's
+    first-touch rule (`pnl`: the debit, the completing credit on the first qualifying tick, fees and
+    the print), net had the rung been held uncompleted to the print, and per-session robustness.
+    `k = 0` is the anchor arm's own settled book over the same sessions -- real fills, not shadows.
+
+    `calibration` pairs each rung with a real `debit-first-up`/`-down` fill on the same side within
+    a strike and five minutes. Those arms place by delta, so wherever one lands on a rung's centre
+    the two are the same trade, and the rung's debit and outcome must land near the fill's. A rung
+    that systematically disagrees is a ladder defect to fix before any cell here is read.
+
+    Shadows are never positions, and nothing here is a fill: `pnl` is what the arm's rule would have
+    paid on the quotes the tick showed."""
+    clauses, args = ["arm = ?", "pnl IS NOT NULL"], [arm]
+    if start:
+        clauses.append("trade_date >= ?")
+        args.append(start)
+    if end:
+        clauses.append("trade_date <= ?")
+        args.append(end)
+    if symbol:
+        clauses.append("symbol = ?")
+        args.append(symbol)
+    rungs = [
+        dict(r) for r in conn.execute(f"SELECT * FROM fly_debit_ladder WHERE {' AND '.join(clauses)}", args)
+    ]
+
+    cells: dict = {}
+    for r in rungs:
+        cells.setdefault((r["direction"], r["k"]), []).append(r)
+    out_cells = []
+    for (direction, k), rs in sorted(cells.items()):
+        per_session = _rc.session_totals((r["trade_date"], r["pnl"]) for r in rs)
+        held = [ladder.settle({**r, "complete_credit": None}, r["settlement_price"]) for r in rs]
+        out_cells.append(
+            {
+                "direction": direction,
+                "k": k,
+                "rungs": len(rs),
+                "sessions": len(per_session),
+                "thin": len(per_session) < _rc.THIN_BELOW_SESSIONS,
+                "completion_rate": _round(sum(1 for r in rs if r["complete_credit"] is not None) / len(rs)),
+                "net_first_touch": _round(sum(r["pnl"] for r in rs)),
+                "net_held": _round(sum(h for h in held if h is not None)),
+                "avg_entry_debit": _round(sum(r["entry_debit"] for r in rs) / len(rs)),
+                "robustness": _rc.robustness(per_session),
+            }
+        )
+
+    sessions = sorted({r["trade_date"] for r in rungs})
+    anchor = None
+    if sessions:
+        where, params = _period_clause(None, None, arm, symbol)
+        marks = ", ".join("?" for _ in sessions)
+        rows = conn.execute(
+            f"SELECT kind, pnl FROM fly_positions WHERE {where} AND trade_date IN ({marks})",
+            [*params, *sessions],
+        ).fetchall()
+        anchor = {
+            "k": 0,
+            "positions": len(rows),
+            "completion_rate": _round(sum(1 for r in rows if r["kind"] == "fly") / len(rows))
+            if rows
+            else None,
+            "net": _round(sum((r["pnl"] or 0.0) for r in rows)),
+        }
+
+    return {
+        "arm": arm,
+        "label": "shadow positions priced at the arm's own rule; never fills, never in any book",
+        "sessions": len(sessions),
+        "anchor": anchor,
+        "cells": out_cells,
+        "calibration": _ladder_calibration(conn, rungs),
+    }
+
+
+def _ladder_calibration(conn, rungs: list) -> dict:
+    """Pair rungs with real delta-arm fills (same direction, within a strike and five minutes, each
+    fill used once, nearest first) and report how far apart the two sat."""
+    if not rungs:
+        return {"pairs": 0}
+    marks = ", ".join("?" for _ in _LADDER_ARMS)
+    fills = [
+        dict(r)
+        for r in conn.execute(
+            f"SELECT position_id, arm, trade_date, symbol, center, entry_time, debit, kind, pnl FROM fly_positions "
+            f"WHERE status = 'settled' AND void_reason IS NULL AND entry_mode = 'debit_first' AND arm IN ({marks})",
+            list(_LADDER_ARMS),
+        )
+    ]
+    pairs, used = [], set()
+    for r in sorted(rungs, key=lambda x: x["stamped_at"]):
+        t = _instant(r["stamped_at"])
+        increment = STRIKE_INCREMENTS.get(r["symbol"], 5.0)
+        best = None
+        for f in fills:
+            if (
+                f["position_id"] in used
+                or _LADDER_ARMS[f["arm"]] != r["direction"]
+                or f["trade_date"] != r["trade_date"]
+            ):
+                continue
+            if abs(f["center"] - r["center"]) > LADDER_PAIR_STRIKES * increment + 1e-9:
+                continue
+            gap = abs((_instant(f["entry_time"]) - t).total_seconds())
+            if gap <= LADDER_PAIR_SECONDS and (best is None or gap < best[0]):
+                best = (gap, f)
+        if best:
+            f = best[1]
+            used.add(f["position_id"])
+            pairs.append(
+                {
+                    "rung_k": r["k"],
+                    "direction": r["direction"],
+                    "seconds_apart": round(best[0]),
+                    "strikes_apart": round(abs(f["center"] - r["center"]) / increment),
+                    "debit_gap": _round(r["entry_debit"] - (f["debit"] or 0.0)),
+                    "rung_completed": r["complete_credit"] is not None,
+                    "fill_completed": f["kind"] == "fly",
+                    "pnl_gap": _round(r["pnl"] - (f["pnl"] or 0.0)),
+                }
+            )
+    same_strike = [p for p in pairs if p["strikes_apart"] == 0]
+    return {
+        "pairs": len(pairs),
+        "same_strike_pairs": len(same_strike),
+        "mean_debit_gap_same_strike": _round(sum(p["debit_gap"] for p in same_strike) / len(same_strike))
+        if same_strike
+        else None,
+        "outcome_agreement_same_strike": _round(
+            sum(1 for p in same_strike if p["rung_completed"] == p["fill_completed"]) / len(same_strike)
+        )
+        if same_strike
+        else None,
+        "detail": pairs,
+    }
