@@ -477,11 +477,16 @@ def test_derive_adds_bands_outright_premium_and_side_totals():
     }
 
 
-def test_spread_direction_reads_only_when_price_and_delta_agree():
-    assert fq.spread_direction(0.47, 0.24) == "bought"
-    assert fq.spread_direction(-0.22, -0.24) == "sold"
-    assert fq.spread_direction(0.47, -0.24) is None  # disagreeing signs: not read
-    assert fq.spread_direction(0.0, 0.1) is None and fq.spread_direction(None, 0.1) is None
+def test_spread_direction_reads_the_price_and_checks_the_delta_by_call_or_put():
+    assert fq.spread_direction(0.47, 0.24, "call") == "bought"
+    assert fq.spread_direction(-0.22, -0.24, "call") == "sold"
+    assert fq.spread_direction(0.47, -0.24, "call") is None  # a call spread debit short delta: not read
+    # A put spread bought is a debit short its delta (NVDA 220/170 PS, 2026-10-05); sold, the reverse.
+    assert fq.spread_direction(7.02, -0.23, "put") == "bought"
+    assert fq.spread_direction(-1.10, 0.12, "put") == "sold"
+    assert fq.spread_direction(7.02, 0.23, "put") is None
+    assert fq.spread_direction(0.0, 0.1, "call") is None and fq.spread_direction(None, 0.1, "call") is None
+    assert fq.spread_direction(0.47, 0.24, None) is None  # call or put unknown: not guessed at
 
 
 def test_spreads_printed_together_share_a_group_and_names_span_tables():

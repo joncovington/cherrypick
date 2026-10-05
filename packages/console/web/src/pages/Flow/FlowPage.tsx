@@ -255,7 +255,7 @@ function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: numbe
               <td className="muted">{r.timeEt?.slice(0, 8) ?? "—"}</td>
               <td title={r.type ?? undefined}>{r.spread ?? "—"}</td>
               <td className="num">{fmtCount(r.size)}</td>
-              <td className={directionTone(r.direction)} title="from the signs of price and delta, where they agree">
+              <td className={directionTone(r.direction)} title="price sign for the side (debit bought, credit sold); delta checked against it">
                 {r.direction ?? "—"}
               </td>
               <td className="num">{r.price === null ? "—" : fmtNum(Math.abs(r.price))}</td>
@@ -804,7 +804,7 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         span={6}
         h={304}
         to="/flow/spreads"
-        foot="⛓ printed together (same time and size); direction from the signs of price and delta"
+        foot="⛓ printed together (same time and size); direction from the price sign, checked against delta"
       >
         <SpreadsTable rows={day.spreads} limit={7} full={false} />
       </GridCard>
@@ -906,8 +906,9 @@ export function FlowSpreads({ day }: { day: OptionsFlowDay }) {
       </div>
       <SpreadsTable rows={day.spreads} full />
       <p className="muted">
-        Direction is read from the signs of price and delta — price and delta agree on every spread seen, positive for a spread
-        bought and negative for one sold — and is a dash where they do not. ⛓ marks rows printed together (same time and
+        Direction is read from the price's sign — a debit is a spread bought, a credit one sold — and checked against the
+        delta's: a call spread bought is long delta, a put spread bought short it. Where the signs do not fit, direction is a
+        dash. ⛓ marks rows printed together (same time and
         size), such as a roll. Price is the net per share; premium is whole-position dollars.
       </p>
     </section>

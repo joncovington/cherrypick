@@ -9,8 +9,9 @@ per order — and scores each on four factors the suite can check (docs/quikopti
 A derived flow is an outright, a sweep or a spread from the capture, with prints sharing a symbol and
 a timestamp grouped (they are one order) and spreads printed together grouped (a roll). Each gets:
 
-- **read**: bought / sold from where the fill sat (edge at or past +/-0.5), or the site's own sign for
-  a spread; `unread` when the fill is too near the middle. The view (bullish / bearish) combines that
+- **read**: bought / sold from where the fill sat (edge at or past +/-0.5), or the site's own signs for
+  a spread (price for the side, delta checked against it: the same sign for calls, opposite for
+  puts); `unread` when the fill is too near the middle or a spread's signs do not fit. The view (bullish / bearish) combines that
   with call or put, or a spread's signed delta. Unread flows are listed, never ranked.
 - **exposure**: delta, from the volatility the trade's own price implies at the session's close (the
   broker's), and **delta dollars** — contracts x 100 x |delta| x the stock's close — the stock-
@@ -191,8 +192,8 @@ def describe(
     kind: str, legs: list[dict], site_text: str | None = None, site_type: str | None = None
 ) -> tuple[str, str]:
     """(what, kind label) in one order for every flow — date, strike, then the kind: `15 Jan 27
-    16C` / `outright`, `09 Oct 26 43.5/45.5C` / `call spread`, `16 Oct 26 23C / 30 Oct 26 22C` /
-    `call calendar`. The site's own `261009 43.5/45.5 CS` is kept only where its legs cannot be
+    16C` / `outright`, `09 Oct 26 43.5/45.5C` / `call spread`, `16 Oct 26 23C / 30 Oct 26 23C` /
+    `call calendar`, `16 Oct 26 23C / 30 Oct 26 22C` / `call diagonal`. The site's own `261009 43.5/45.5 CS` is kept only where its legs cannot be
     named (decided 2026-10-03: one order, one date format, everywhere the table is shown)."""
     if kind != "spread":
         leg = legs[0] if legs else None
@@ -204,6 +205,9 @@ def describe(
     if a["expires"] == b["expires"]:
         cp = "C" if a["cp"] == "call" else "P"
         return f"{date.fromisoformat(a['expires']):%d %b %y} {a['strike']:g}/{b['strike']:g}{cp}", label
+    if a["strike"] != b["strike"]:
+        # The site's CSCAL / PSCAL covers both shapes: two dates at two strikes is a diagonal.
+        label = label.replace("calendar", "diagonal")
     return (
         f"{_leg_text(a['expires'], a['strike'], a['cp'])} / {_leg_text(b['expires'], b['strike'], b['cp'])}",
         label,
@@ -302,9 +306,12 @@ def _single(row: dict, table: str, session: str, market: dict) -> dict:
 
 def _spread(row: dict, session: str) -> dict:
     price, delta = row.get("price"), row.get("delta")
+    # The capture's rule (fetch_quikoptions.spread_direction): the price's sign is the side, and the
+    # delta's sign must fit it — the same sign for a call spread, the opposite for a put spread.
     direction = None
-    if price and delta and (price > 0) == (delta > 0):
-        direction = "bought" if price > 0 else "sold"
+    if price and delta and row.get("cp") in ("call", "put"):
+        if ((price > 0) == (delta > 0)) == (row["cp"] == "call"):
+            direction = "bought" if price > 0 else "sold"
     view = (
         "bullish"
         if delta and delta > 0 and direction
