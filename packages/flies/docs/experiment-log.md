@@ -851,3 +851,59 @@ The first read is at 10 sessions.
     are reported beside the verdict but do not decide it.
 - **Stated now so it is not discovered later:** a sign test over 10 sessions has little power. A
   "keep" at the first read means "not yet refuted", never "proven", and it says nothing about live.
+
+## 2026-10-04 — paying natural, the completion price, and entry windows: three reads, no change
+
+Asked: could the live pilot enter at natural (or natural rounded to the nickel) for faster fills,
+and what would raise the completion rate while keeping a credit after fees? Every read below is
+paper `control`, SPX 5-wide legged, read-only. Nothing was changed.
+
+**There is no live natural price yet.** Every live order through 10-02 came from `fill_facts`
+backfill, which cannot recover quotes, so `fill_natural` is null on all 133 orders and
+`fly_order_path` has no quotes on any of its 21,570 rows. The live path records them from 10-05.
+Until then, natural is inferred from paper's `slippage_dollars`. Since 09-25 the median bid-ask sum
+is 0.30 for the entry vertical and 0.30 for the completion vertical, so natural sits about 0.11
+beyond the modelled 0.125 concession on each order. SPX legs quote on nickels (dimes above $3), so
+"natural rounded to .05" is natural.
+
+**Entering at natural loses money.** The completion limit is relative to the credit actually taken
+(`max_safe_completion_debit`), so a worse entry lowers the completion bar by the same amount. The
+cost shows up as fewer completions, not a smaller locked credit. Replayed over 345 entries
+(08-03..10-02) with the full-session best completing debit (`best_completing_debit`,
+`post_best_completing_debit`):
+- Completion falls from 78% to about 62–65%, and 53 flies become open verticals averaging −$51.
+- Net goes from **+$2,932 to between −$4,900 and −$7,700**. The range is the 20 completed rows with
+  no post-completion debit.
+- Raising the floor by the 0.11 makes this worse, not better.
+
+**The completion price is already at the "credit after fees" limit.** The resting completion is
+credit − 0.25: fees of $3.44 to enter and $3.44 to complete, the $15 worst-case settlement reserve
+(3 ITM strikes) and the $1 floor make $22.88, which rounds down to 0.25 on the nickel. A $0 floor
+still rounds to 0.25.
+
+**More room barely helps:** room −0.05 gives 65%, today 78%, +0.05 78%, +0.10 79%. Misses are spot
+running through the short strike, not near-misses. Live entries already fill immediately (61
+fills, median 0 minutes, max 1.8). Completions take a median of 22 minutes (quartiles 8 / 69), set
+by when the market reaches a limit that already rests all session. Pricing is not the lever for
+completion rate or fill speed. Which entries are taken is the lever, and `vol-floor` (10-05) and
+`selector` (10-19) are the experiments testing that.
+
+**Skipping 11:00–12:30 is noise (a negative result).** By half-hour, 11:00–12:30 entries complete
+66% against 83% for 10:00–11:00, which looks like a gate. `replay_gates.replay_entry_windows` over
+37 sessions from 08-11:
+- Net +$4,299 against control's +$3,162; completion 82.7% against 78.7%; ahead in both halves.
+- But 13 days better and 14 worse, a 90% session-bootstrap range of −$1,696 to +$3,920, and −$287
+  with the two best days removed.
+- Stopping at 14:00 is −$457. No arm; do not re-propose from the half-hour table.
+
+**The live start (10:15 since 09-28), re-read with `scripts/flies_live_start_replay.py`** over 29
+sessions from 08-21:
+- 10:15 nets +$5,049, against 10:30's +$3,273 (22–3 days, p 0.0002) and 10:00's +$4,588.
+- Against 10:00 the edge is in the tail, not the typical day. 10:00 is better on 19 of 27 differing
+  days (p 0.05), but its worst day is −$818 against −$568, because 10:00–10:14 entries crowd the
+  margin cap (35 blocked against 16).
+- Over the four sessions since the move, 10:00 beat 10:15 on all four (+$682). That is too few to
+  act on.
+- `--validate` shows live admitting 27 structures against the replay's 19 over those four sessions,
+  so the admission model is drifting and should be checked at the same time.
+- The ten-session check already declared on 09-28 decides it, around 10-12.
