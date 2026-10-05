@@ -96,7 +96,10 @@ file's directory.
   Historical expired-chain rows are **filtered on read, not deleted**: `core.regime` requires
   `expiration >= trade_date`. This series (`gex_regime_history`) is not MEIC's gate input — the gate
   reads its own same-tick 0DTE snapshot — so it affects the advisor's pack, the console's GEX page and
-  `core.regime.regime_at`, not `meic.analytics.gex_gate_counterfactual`.
+  `core.regime.regime_at`, not `meic.analytics.gex_gate_counterfactual`. It **is** a gate input for
+  flies' `wall-clear` arm (from 2026-10-19), which reads the walls through `core.regime.gex_at` each
+  tick and fails open past 600 s: a recorder stall turns that arm into control, silently except in
+  the join. Keep the 5-minute cadence and the column meanings stable, or journal the change there.
 - **GEX regime rows are RTH only** (`core.clock.in_rth`). Off-hours the session's chain has no greeks
   yet, so the horizon falls forward to whatever chain is still streaming — another expiry — and until
   2026-09-30 the recorder filed that under today: 79% of the rows on disk, and the overview's pre-open

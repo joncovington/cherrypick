@@ -135,10 +135,29 @@ per-session net against `control`. Before that date:
   the arm is enabled.
 - **On the date:** merge to main and flip the arm to `enabled: true` before the first tick. The
   break journals itself. Land any other roster change from that fortnight with it.
+- **`wall-clear` lands with it** (declared 2026-10-05, experiment log): staged `enabled: false` on this
+  machine, `arm_added` break dated 10-19 (`_note_wall_clear_arm`). Flip it in the same edit.
 - **Not live-eligible** until debit-first has a live order path (`live_orders.py` builds legged
   specs only). A legged-only selector is the live candidate if one is ever wanted.
 - **Extract to `cherrypick.core.selector`** (model file, `fit`, `arm_starts`, `validate_model`) when
   MEIC adopts it, and not before.
+
+## The snapshot's GEX surface drops stale open interest
+
+Found 2026-10-05 (experiment log): `provider._greeks_and_oi` age-filters open interest at
+`max_gex_input_age_seconds` (1800), the same bound as gamma. OI is a once-a-day exchange number that
+the streamer's Summary events refresh rarely, so most strikes lose their OI by the afternoon (124 of
+202 that day) and the walls and flip move: put wall 7750 here, 7665 in the gex recorder, from the
+same cache at the same minute. The recorder age-filters gamma only (leftover rows) and takes OI at
+any age for a live-gamma strike.
+
+- **What it touches:** `gex`-centred arms' centres, and every row's `entry_/completion_gex_*` tags.
+  `wall-clear` is unaffected; it reads the recorder's walls on purpose.
+- **Why it is not simply fixed:** it changes what the GEX tags and centring mean, so it lands at a
+  declared boundary with a break. The likely fix keeps the age bound on gamma and takes OI from the
+  current session's Summary at any age, which is the recorder's rule; then the two surfaces should
+  agree and a test can pin that.
+- **Reopen:** before any GEX tag is used to fit a gate, or before a `gex`-centred arm returns.
 
 ## The shadow ladder and the hedge stamp: first reads
 

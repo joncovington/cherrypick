@@ -202,6 +202,30 @@ def _gex_block(conn, ts: float, max_staleness: float, symbol: str | None) -> dic
     return out
 
 
+def gex_at(
+    ts: float,
+    symbol: str,
+    *,
+    history_db: Path | str | None = None,
+    max_staleness_seconds: float = DEFAULT_MAX_STALENESS_SECONDS,
+) -> dict:
+    """One symbol's recorded GEX summary row as of ``ts``: ``regime_at(ts, symbol=...)["gex"][symbol]``
+    under the same rules, without reading the market series. For a caller on a tick (flies'
+    snapshot, every 15 s), where the market block's scan of ``market_regime_history`` buys nothing."""
+    sym = symbol.strip().upper()
+    path = Path(history_db) if history_db is not None else default_history_db()
+    if not path.exists():
+        return _unmeasured("no_history_db")
+    conn = _db.connect_ro(path)
+    try:
+        try:
+            return _gex_block(conn, float(ts), float(max_staleness_seconds), sym)[sym]
+        except Exception:  # noqa: BLE001 — an older DB without the table is unmeasured, not an error
+            return _unmeasured("no_gex_regime_table")
+    finally:
+        conn.close()
+
+
 def regime_at(
     ts: float,
     *,

@@ -907,3 +907,55 @@ sessions from 08-21:
 - `--validate` shows live admitting 27 structures against the replay's 19 over those four sessions,
   so the admission model is drifting and should be checked at the same time.
 - The ten-session check already declared on 09-28 decides it, around 10-12.
+
+## 2026-10-05 — the GEX wall on the completing side; the `wall-clear` arm declared for 2026-10-19
+
+The question was whether a GEX wall strands a legged entry. A put spread completes when spot rises,
+so the call wall is the one in its way; a call spread completes on a fall, so the put wall. Each
+settled `control` row (345, 43 sessions, 2026-08-03..10-02) was joined to the gex recorder's
+latest wall row at or before entry (`scripts/flies_wall_clear_replay.py`, through
+`core.regime.gex_at`, at most 600 s old). `room` is how far spot can travel toward that wall;
+negative once through it.
+
+- **Close ahead is the bad place, on both sides.** Wall 0–10 points ahead: put spreads completed
+  61% for −$60 a spread (23 rows), call spreads 67% for −$9 (24), against 78% overall.
+- **Through it by 5+ points is the good place.** Puts 91%, +$28 (32); calls 86%, +$126 (14). Crossed
+  by less than 5 points is still flat (14 rows, about −$7).
+- **Far ahead is not monotone.** Call spreads with the put wall 60+ points away completed 60% for
+  −$55. That is a different population (a wall that far off is a day the surface sits elsewhere) and
+  the gate does not touch it.
+- **As a gate,** refusing `-5 < room < 10` drops 61 of 345 entries (35 sessions) worth −$1,669 and
+  takes the kept rows to 80% and +$16 a spread against +$8.50. Within-session shuffle p 0.10; worse
+  in 20 of 35 sessions holding both kinds; same sign in both halves (p 0.22 and 0.15).
+- **The nine other ATM legged arms** (`time_window`, `control-drift`, `vol-floor` and the advised
+  twins) show it more strongly: 76 refused, −$7,347, p < 0.001, both halves. They are the same tape
+  at other moments, not an independent sample.
+- **Latency does not separate.** Refused rows that completed took a median 24 minutes (quartiles
+  13 / 40) against 29 (12 / 70) for the rest. Near a wall a spread completes quickly or not at all.
+- **The mechanism is not shown.** Across all 2,841 recorded 5-minute readings (10:00–15:00), spot
+  travelled 10 points toward a put wall 0–10 below it 58% of the time against 49% with no wall that
+  close — more, not less. Toward a call wall the read is mixed by hour. Walls do not visibly stop
+  spot, so the stranding is something correlated with standing just short of one, or noise.
+- **Both thresholds were read off these rows** (10 ahead from the bucket table; 5 past because a
+  clearance of 10 also refuses the good 5–10 zone). The p-values are optimistic for it.
+
+**Found on the way: this module's GEX surface is not the recorder's.** On 2026-10-05 at 13:30 ET
+both computed the same chain from the same cache: call wall 7770 in both, put wall 7750 here against
+the recorder's 7665. `provider._greeks_and_oi` drops open interest older than
+`max_gex_input_age_seconds` (1800); OI is a once-a-day number the streamer does not re-send often,
+and 124 of 202 OI rows were older than that. The recorder takes OI at any age for a strike whose
+gamma is live. Over the era, the gamma flip stored on control's rows differs from the recorder's by
+a median 35 points. This moves the `gex` arms' centring and every row's GEX tags, so it is
+backlogged, not changed here.
+
+**Declared: the `wall-clear` arm, from 2026-10-19** (the selector's boundary, so the roster changes
+once).
+- **The arm:** `control` plus `wall_clear_ahead_points: 10`, `wall_clear_past_points: 5`
+  (`engine.wall_clearance_refusal`). It reads the recorder's walls (`snapshot["recorded_gex"]`), the
+  series measured here, and fails open when they are unmeasured (a recorder outage trades
+  control's trade). A refusal is a wait: the next tick asks again.
+- **How it will be read:** against `control` on the same sessions after at least 14 sessions, on
+  per-session net (sign test) and completion rate, with refused-tick counts and completion latency
+  beside them. It earns promotion only if ahead on both and not on one or two sessions.
+- **What kills it:** behind `control` on per-session net at 14 sessions.
+- **Its book starts at its own `arm_added` break** (`_note_wall_clear_arm`).

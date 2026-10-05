@@ -331,6 +331,19 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   - **The one variable is pinned:** `tests/test_vol_floor.py` checks this machine's definition
     equals control's apart from the floor.
   - **The judging rule** is declared in the experiment log (2026-10-02).
+- `wall-clear` — `control` plus one variable, **declared for 2026-10-19** and staged off until then:
+  no legged entry while the GEX wall on the completing side (the call wall for a put spread, the put
+  wall for a call spread) is under `wall_clear_ahead_points` (10) ahead of spot or crossed by under
+  `wall_clear_past_points` (5) (`engine.wall_clearance_refusal`, refusals `call_wall_not_cleared` /
+  `put_wall_not_cleared`).
+  - **Why:** control's entries with that wall 0–10 points ahead completed 64% for −$34 a spread.
+    The thresholds were read off those rows (`scripts/flies_wall_clear_replay.py`), and walls do not
+    visibly stop spot, so it is a forward test.
+  - **It reads the recorder's walls,** `snapshot["recorded_gex"]` via `core.regime.gex_at` (at most
+    600 s old), never the snapshot's own `gex` surface, which drops stale open interest and puts the
+    walls elsewhere (backlog). Fails open when unmeasured.
+  - **The one variable is pinned** by `tests/test_wall_clear.py`; the judging rule is in the
+    experiment log (2026-10-05).
 
 ### Regime tagging
 
