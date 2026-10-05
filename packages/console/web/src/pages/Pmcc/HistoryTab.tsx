@@ -145,7 +145,7 @@ function CycleDetail({ row }: { row: PmccCycleRow }) {
               <ul className="integrity-plain-list">
                 {row.rolls.map((r, i) => (
                   <li key={`${r.session ?? "roll"}-${String(i)}`}>
-                    {r.session} · {fmtNum(r.oldStrike, 0)} → {fmtNum(r.newStrike, 0)}
+                    {r.session} · {fmtStrike(r.oldStrike)} → {fmtStrike(r.newStrike)}
                     {r.newExpiration !== null && <span className="muted"> @ {r.newExpiration}</span>} ·{" "}
                     <span className="muted">net credit</span> {fmtMoney(r.netRollCredit)}
                   </li>
@@ -207,7 +207,18 @@ const COLUMNS: ColumnDef<PmccCycleRow>[] = [
   },
   { id: "symbol", header: "symbol", kind: "describe", render: (r) => r.symbol },
   { id: "arm", header: "arm", kind: "describe", render: (r) => r.arm },
-  { id: "long", header: "long", kind: "describe", numeric: true, render: (r) => fmtStrike(r.longStrike) },
+  {
+    id: "long",
+    header: "long",
+    title: "strike · expiry -- a held-long cycle's long expires about a year out, so the date carries its year",
+    kind: "describe",
+    render: (r) => (
+      <>
+        {fmtStrike(r.longStrike)}
+        {r.longExpiration !== null && <span className="muted"> · {r.longExpiration}</span>}
+      </>
+    ),
+  },
   { id: "shorts", header: "short chain", kind: "describe", render: (r) => <ShortChain row={r} /> },
   {
     id: "yield",

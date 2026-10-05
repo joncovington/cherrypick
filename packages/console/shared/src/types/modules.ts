@@ -481,9 +481,12 @@ export interface PmccOpenPosition {
   entryWeeklyYieldPct: number | null;
   downsideProtectionPct: number | null;
   breakeven: number | null;
-  /** Always 0 on a row opened after the 2026-08-23 redesign — there is no more roll arm. A
-   *  pre-redesign row may carry a nonzero historical value. */
+  /** Shorts rolled so far. A held-long position rolls every week; a weekly (control) position never
+   *  rolls after the 2026-08-23 redesign, and a pre-redesign row may carry a historical value. */
   rollCount: number | null;
+  /** `held_long` (a ~1-year long, entered 240-540 days out) or `weekly` (control's ~21-DTE long),
+   *  read off the ledger's own `entry_long_dte`, the same rule the review's facts use. */
+  lifecycle: "held_long" | "weekly";
   /** Latest usable short-leg mark. Null means no usable mark yet — never render it as 0. */
   currentShortTv: number | null;
   currentSpot: number | null;
@@ -721,6 +724,19 @@ export interface PmccTrackerHeader {
   netExtrinsic: number | null;
   shortsSold: number;
   notional: number | null;
+  /** The two exits that close a held-long position, from its own effective params; null for a
+   *  weekly position. `stopNetAt` is null for an arm with no stop. */
+  exits: PmccTrackerExits | null;
+}
+
+export interface PmccTrackerExits {
+  /** Net to date at which the stop closes everything: -stop_loss_frac x the long's cost. */
+  stopNetAt: number | null;
+  /** Net to date less `stopNetAt`: how far the position is from its stop, in dollars. */
+  stopRoom: number | null;
+  /** The session the long reaches long_close_dte and the position closes for a new one. */
+  longCloseOn: string;
+  longDte: number;
 }
 
 export interface PmccTrackerLot {

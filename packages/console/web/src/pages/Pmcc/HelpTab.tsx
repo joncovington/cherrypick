@@ -22,8 +22,9 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
         <div className="pmcc-prose">
           <p>
             Hold a deep in-the-money call as a stock substitute and sell a shorter-dated call against it, collecting
-            the short's time value. The module runs that idea three ways at once, each its own portfolio on the same
-            symbols, so the difference between them is the measurement.
+            the short's time value. Since 2026-10-06 the module runs it two ways at once, shield and shield_hold, each
+            its own portfolio on the same symbols and the same entry days, so the difference between them is the
+            measurement. SLV is the intended first live symbol; nothing live is built yet.
           </p>
           <p>
             By put-call parity a deep call plus a short in-the-money weekly call is a short weekly put plus a far
@@ -42,14 +43,15 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
       <Card title="the arms" collapseKey="pmcc-help-arms" defaultCollapsed>
         <div className="pmcc-prose">
           <dl className="pmcc-defs">
-            <dt>control</dt>
+            <dt>control (retired 2026-10-06)</dt>
             <dd>
-              Buy a call inside an 85-90-delta band
+              History only: no new entries since 2026-10-06, its last positions run off under their own rules. It
+              bought a call inside an 85-90-delta band
               {p?.longDeltaMin != null && p?.longDeltaMax != null && (
                 <> ({fmtPct(p.longDeltaMin * 100, 0)}–{fmtPct(p.longDeltaMax * 100, 0)})</>
               )}{" "}
-              at ~21 DTE, sell the call nearest spot at ~7 DTE, hold to the short's expiration and close both. The long
-              is re-bought every cycle, which is where most of its cost goes.
+              at ~21 DTE, sold the call nearest spot at ~7 DTE, held to the short's expiration and closed both. The long
+              was re-bought every cycle, which is where most of its cost went.
             </dd>
             <dt>shield</dt>
             <dd>
@@ -63,10 +65,11 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
               The same entry as shield, on the same days, holding each short to Friday. The pair isolates the early
               roll.
             </dd>
-            <dt>advised:&lt;experiment name&gt;</dt>
+            <dt>advised:&lt;experiment name&gt; (off since 2026-10-06)</dt>
             <dd>
-              One arm per advisor experiment, shadowing control with that experiment's params frozen at entry. The one
-              thing currently worth advising is <span className="mono">tv_managed_exit</span>/
+              History only: pmcc&apos;s advice was switched off with control, and the last experiment killed. Each was one
+              arm per advisor experiment, shadowing control with that experiment's params frozen at entry. The last one
+              tested <span className="mono">tv_managed_exit</span>/
               <span className="mono">tv_close_threshold</span>
               {p?.tvCloseThreshold != null && <> (threshold ≈{fmtMoney(p.tvCloseThreshold)})</>} — the early
               time-value exit, as a paper A/B against hold-to-expiry
