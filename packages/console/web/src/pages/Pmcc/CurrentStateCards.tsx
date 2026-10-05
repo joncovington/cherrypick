@@ -3,20 +3,28 @@ import type { PmccArmCell, PmccOpenPosition, PmccPayload } from "@console/shared
 import { Card, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
-import { fmtStrike } from "../../lib/optionFormat";
+import { dteOf, fmtStrike } from "../../lib/optionFormat";
 import { fmtCash, fmtPrice } from "../../lib/format";
 import { EntrySpreadCell } from "./EntrySpread";
 
 /**
- * The one arm whose identity the page knows since the 2026-08-23 redesign. Anything else (each
- * advisor experiment's `advised:<name>` synthetic arm -- any number since 2026-09-17) rides along
- * generically.
+ * The arms the page knows by name, in the order it lists them: the held-long pair (the base trade
+ * since 2026-10-06) and control (retired that day, its history kept). An advisor experiment's
+ * `advised:<name>` synthetic arm is recognised by its prefix, never by being "not core": shield
+ * read as an advised arm for a day because the list held control alone.
  */
-const CORE_BOOKS = ["control"];
+const CORE_BOOKS = ["shield", "shield_hold", "control"];
+const isAdvised = (arm: string) => arm.startsWith("advised:");
 
-function strikeAt(strike: number | null, expiration: string | null): string {
+/**
+ * A leg as strike and FULL expiry date. A held-long position's long expires about a year out, so a
+ * month-day form read `09-17` for a long a year away and a short a week away alike.
+ */
+function strikeAt(strike: number | null, expiration: string | null, withDte = false): string {
   if (strike === null) return "—";
-  return `${fmtStrike(strike)}${expiration === null ? "" : ` @ ${expiration.slice(5)}`}`;
+  if (expiration === null) return fmtStrike(strike);
+  const dte = withDte ? dteOf(expiration) : null;
+  return `${fmtStrike(strike)} · ${expiration}${dte === null ? "" : ` · ${String(dte)}d`}`;
 }
 
 /**
@@ -44,7 +52,17 @@ function TvCell({ tv, threshold }: { tv: number | null; threshold: number | null
   );
 }
 
-function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: PmccPayload["params"] }) {
+function PositionRows({
+  rows,
+  params,
+  heldLong,
+}: {
+  rows: PmccOpenPosition[];
+  params: PmccPayload["params"];
+  /** Held-long rows: the long carries its days to expiry, and control's time-value exit threshold,
+   *  which never applies to them, is not drawn; the weekly yield and protection columns are control's. */
+  heldLong: boolean;
+}) {
   const settlementStyle = params.settlementStyle;
   return (
     <>
@@ -68,7 +86,7 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
                 </span>
               )}
             </td>
-            <td title={p.entrySession}>{p.entrySession === "" ? "—" : p.entrySession.slice(5)}</td>
+            <td>{p.entrySession === "" ? "—" : p.entrySession}</td>
             <td>{p.quantity ?? "—"}</td>
             <td title="the diagonal's net debit, per share">{fmtPrice(p.netDebit === null ? null : -p.netDebit)}</td>
             <td>{fmtCash(p.entryCash)}</td>
@@ -80,7 +98,7 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
                 detail={p.rollCount !== null && p.rollCount > 0 ? `${p.rollCount} roll(s) in fees` : undefined}
               />
             </td>
-            <td>{strikeAt(p.longStrike, p.longExpiration)}</td>
+            <td>{strikeAt(p.longStrike, p.longExpiration, heldLong)}</td>
             <td>
               {strikeAt(p.shortStrike, p.shortExpiration)}
               {p.rollCount !== null && p.rollCount > 0 && (
@@ -88,14 +106,16 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
               )}
             </td>
             <td>
-              <TvCell tv={p.currentShortTv} threshold={params.tvCloseThreshold} />
+              <TvCell tv={p.currentShortTv} threshold={heldLong ? null : params.tvCloseThreshold} />
             </td>
             <td>{fmtNum(p.currentSpot ?? p.entrySpot, 2)}</td>
-            <td>{fmtPct(p.entryWeeklyYieldPct === null ? null : p.entryWeeklyYieldPct * 100, 2)}</td>
+            {!heldLong && <td>{fmtPct(p.entryWeeklyYieldPct === null ? null : p.entryWeeklyYieldPct * 100, 2)}</td>}
             <td>
               <EntrySpreadCell pct={p.entryMaxSpreadPct} abs={p.entryMaxSpreadAbs} netTv={p.entryNetTv} />
             </td>
-            <td>{fmtPct(p.downsideProtectionPct === null ? null : p.downsideProtectionPct * 100, 1)}</td>
+            {!heldLong && (
+              <td>{fmtPct(p.downsideProtectionPct === null ? null : p.downsideProtectionPct * 100, 1)}</td>
+            )}
             <td>
               {p.exposedTicks > 0 ? (
                 <span
@@ -120,17 +140,16 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
 }
 
 /**
- * Every open PMCC, one row each.
+ * Every open PMCC, one row each, in one table per lifecycle.
  *
- * Was one card per symbol, titled with a bare ticker. Since the 2026-08-23 redesign the module
- * trades two symbols (TQQQ physical-settlement, XSP cash-settled) as separate populations in one
- * `control` arm each plus the advised arms -- so the split put four rows across two cards to say
- * something the symbol column now says per row, and the page already carries a symbol filter for
- * anyone who wants one population alone.
+ * A held-long position (the base trade since 2026-10-06) and a weekly control position are
+ * different structures: the first holds a ~1-year long and is judged on its roll triggers, the
+ * second re-buys a ~21-DTE long and exits on control's time-value threshold. One table drew
+ * control's threshold and yield columns across shield rows, where they never apply. Weekly rows
+ * remain only while control's last positions run off.
  *
- * The long and short expiries stay on their own strikes (`50 @ 09-18`) rather than becoming one
- * "expiry" column: a PMCC's two legs expire on DIFFERENT dates by construction, and collapsing
- * them would name one and hide the other.
+ * The long and short expiries stay on their own strikes, as full dates, rather than becoming one
+ * "expiry" column: a PMCC's two legs expire on DIFFERENT dates by construction.
  */
 export function OpenTradesCard({
   data,
@@ -152,8 +171,46 @@ export function OpenTradesCard({
         a.symbol.localeCompare(b.symbol) ||
         a.arm.localeCompare(b.arm),
     );
+  const held = rows.filter((p) => p.lifecycle === "held_long");
+  const weekly = rows.filter((p) => p.lifecycle !== "held_long");
   return (
     <Card title="open trades" collapseKey="pmcc-open-trades" updatedAt={updatedAt}>
+      {rows.length === 0 && (
+        <p className="muted">no open trades{filterSymbol === null ? "" : ` on ${filterSymbol}`}</p>
+      )}
+      {held.length > 0 && <OpenTable title="held long" rows={held} params={data.params} heldLong />}
+      {weekly.length > 0 && (
+        <OpenTable
+          title="weekly — control, running off"
+          note="Control retired on 2026-10-06: these finish under their own rules and nothing replaces them."
+          rows={weekly}
+          params={data.params}
+          heldLong={false}
+        />
+      )}
+      <div className="card-footer">
+        <Link to="/pmcc/tracker">every position, week by week →</Link>
+      </div>
+    </Card>
+  );
+}
+
+function OpenTable({
+  title,
+  note,
+  rows,
+  params,
+  heldLong,
+}: {
+  title: string;
+  note?: string;
+  rows: PmccOpenPosition[];
+  params: PmccPayload["params"];
+  heldLong: boolean;
+}) {
+  return (
+    <section className="pmcc-compare">
+      <h3>{title}</h3>
       <div className="table-scroll">
         <table className="data-table num-from-4">
           <thead>
@@ -169,29 +226,19 @@ export function OpenTradesCard({
               <th>short</th>
               <th>time value</th>
               <th>spot</th>
-              <th>weekly yield</th>
+              {!heldLong && <th>weekly yield</th>}
               <th>entry spread</th>
-              <th>protection</th>
+              {!heldLong && <th>protection</th>}
               <th>assignment</th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={15} className="muted">
-                  no open trades{filterSymbol === null ? "" : ` on ${filterSymbol}`}
-                </td>
-              </tr>
-            ) : (
-              <PositionRows rows={rows} params={data.params} />
-            )}
+            <PositionRows rows={rows} params={params} heldLong={heldLong} />
           </tbody>
         </table>
       </div>
-      <div className="card-footer">
-        <Link to="/pmcc/tracker">every position, week by week →</Link>
-      </div>
-    </Card>
+      {note !== undefined && <p className="integrity-note">{note}</p>}
+    </section>
   );
 }
 
@@ -225,12 +272,11 @@ function totalsByBook(arms: PmccArmCell[]): BookTotals[] {
 /**
  * The arm comparison.
  *
- * Since the 2026-08-23 redesign there is one arm (`control`) plus the advisor's optional synthetic
- * arms — one `advised:<experiment name>` per experiment since 2026-09-17 — and no more multi-arm
- * fill pairing to reason about (the old control/keltner/roll grid, and the caveat that keltner and
- * roll could not be read across the same seam, is retired). Every `control` cycle is directly
- * comparable to every other `control` cycle; the advised arms are called out separately because
- * their admitted params can differ position to position.
+ * The base trade since 2026-10-06 is the held-long pair, `shield` (rolls early) and `shield_hold`
+ * (holds each short to Friday): same entries on the same days, so their difference is the early
+ * roll. Control (retired that day) and the advisor's `advised:<experiment name>` arms remain as
+ * history; the advised ones are called out separately because their admitted params can differ
+ * position to position.
  */
 /** Open positions' mark-to-market per (arm, symbol): the module's `open_mtm`, which the mirror test
  *  pins this sum to. Null while any position in the cell is unpriceable. */
@@ -261,7 +307,7 @@ export function BookComparison({
   const arms = (data?.arms ?? []).filter((b) => symbol === null || b.symbol === symbol);
   const totals = totalsByBook(arms);
   const open = openMarkByArm((data?.openPositions ?? []).filter((p) => symbol === null || p.symbol === symbol));
-  const others = totals.filter((t) => !CORE_BOOKS.includes(t.arm));
+  const others = totals.filter((t) => isAdvised(t.arm));
   const maxAbs = Math.max(1, ...totals.map((t) => Math.abs(t.net ?? 0)));
   const hasClosed = arms.length > 0;
 
@@ -314,8 +360,8 @@ export function BookComparison({
               <h3>advised arms</h3>
               <p className="integrity-note">
                 One synthetic arm per advisor experiment (advised:&lt;experiment name&gt;), each running its own
-                admitted params beside the base arm it shadows. Excluded from the pairing above — their entries
-                are their own.
+                admitted params beside the base arm it shadowed. History only: pmcc&apos;s advice was switched off
+                on 2026-10-06 with control.
               </p>
               <ul className="integrity-plain-list">
                 {others.map((t) => (

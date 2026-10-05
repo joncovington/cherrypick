@@ -46,6 +46,7 @@ const T: PmccTracker = {
     netExtrinsic: 125,
     shortsSold: 2,
     notional: 7060,
+    exits: { stopNetAt: -1134, stopRoom: 1293.61, longCloseOn: "2027-08-03", longDte: 373 },
   },
   longLots: [
     {
@@ -111,6 +112,16 @@ describe("the PMCC position tracker", () => {
     expect(html).toContain("+4.22%"); // on the long's cost, the promoters' way
     expect(html).toContain("+2.26%"); // on the stock value controlled
     expect(html).toContain("held long");
+  });
+
+  it("states a held-long position's two exits: the stop's level and room, and the long-roll date", () => {
+    const html = text(<TrackerView t={T} />);
+    expect(html).toContain("-$1134.00"); // the stop, as a net-to-date level
+    expect(html).toContain("$1293.61 away");
+    expect(html).toContain("long rolls on");
+    expect(html).toContain("2027-08-03");
+    const before = { ...T, header: { ...T.header, exits: undefined } } as unknown as typeof T;
+    expect(text(<TrackerView t={before} />)).not.toContain("long rolls on"); // a module not yet restarted
   });
 
   it("states each short in the trade standard's money order, with slippage named as a charged cost", () => {

@@ -136,7 +136,8 @@ def _pmcc_db(tmp_path, with_era=True):
     era_col = ", era TEXT" if with_era else ""
     conn.execute(
         "CREATE TABLE pmcc_positions (symbol TEXT, arm TEXT, status TEXT, gross_pnl REAL, fees REAL, "
-        f"entry_slippage REAL, exit_slippage REAL, net_debit REAL, quantity INTEGER, closed_session TEXT{era_col})"
+        "entry_slippage REAL, exit_slippage REAL, net_debit REAL, quantity INTEGER, "
+        f"closed_session TEXT{era_col})"
     )
     rows = [
         ("TQQQ", "keltner", "closed", 50.0, 5.0, 1.0, 1.0, 20.0, 1, "2026-08-22", None),  # pre-stamp
@@ -146,9 +147,7 @@ def _pmcc_db(tmp_path, with_era=True):
         ("XSP", "shield", "open", 0.0, 0.0, 1.0, None, 20.0, 1, None, "shield"),  # open, excluded
     ]
     cols = 11 if with_era else 10
-    conn.executemany(
-        f"INSERT INTO pmcc_positions VALUES ({','.join('?' * cols)})", [r[:cols] for r in rows]
-    )
+    conn.executemany(f"INSERT INTO pmcc_positions VALUES ({','.join('?' * cols)})", [r[:cols] for r in rows])
     conn.commit()
     conn.close()
     return str(path)
@@ -162,7 +161,8 @@ def test_era_scopes_pmcc_by_the_stamp_not_the_close_date(tmp_path):
     assert shield["ok"] and shield["n_records"] == 1 and set(shield["groups"]) == {"shield"}
     redesign = cli.cmd_read(_args(db=db, schema="pmcc", era="redesign"))
     assert redesign["n_records"] == 2 and redesign["groups"]["control"]["trade_nets"] == [75.0, -45.0]
-    for everything in (cli.cmd_read(_args(db=db, schema="pmcc", era="ALL")), cli.cmd_read(_args(db=db, schema="pmcc"))):
+    every_era = cli.cmd_read(_args(db=db, schema="pmcc", era="ALL"))
+    for everything in (every_era, cli.cmd_read(_args(db=db, schema="pmcc"))):
         assert everything["n_records"] == 4
 
 

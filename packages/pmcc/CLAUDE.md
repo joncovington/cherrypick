@@ -4,9 +4,9 @@
 > resolve through `cherrypick.core.config`, as every existing spelling does.
 
 PMCC — a deep-ITM call with a short call sold against it, on XSP, QQQ, GLD, IWM and SLV (posture:
-root file). Three arms (below):
-- `control` re-buys a ~21-DTE long every cycle;
-- `shield` and `shield_hold` hold a ~1-year long while a weekly short rolls against it.
+root file). The base trade since 2026-10-06 is the held-long pair: `shield` and `shield_hold` hold a
+~1-year long while a weekly short rolls against it. SLV is the intended first live symbol (nothing live
+is built; see below). `control`, which re-bought a ~21-DTE long every cycle, is retired.
 
 Ledger schema: **`pmcc`** (`pmcc_99` until the 2026-10-04 rename; a config still naming it resolves
 through `core.ledgers.SCHEMA_ALIASES`).
@@ -36,13 +36,23 @@ Elsewhere:
 
   XSP control's rules are unchanged across it, but its roster and cap are not, so it is read per era.
   If the deploy slips past the date, move `SHIELD_FROM` with it.
+- **2026-10-06 control retired, advice off.** `books.control.enabled: false`, pmcc `advice.enabled:
+  false` and the advisor's `modules.pmcc` off; experiment `exp-2026-10-01-pmcc-1` killed. Journaled as
+  `measurement_breaks` `arms` and `advice` rows dated 2026-10-06, by hand: `_note_shield_boundary` only
+  writes its own date. No new era: shield's rules and roster are untouched, and the two arms never
+  shared a position. Control and its advised twins run off under their own rules (shorts 10-09 and
+  10-16, the last longs disposed by about 10-19).
+- **2026-10-06 long delta 0.88–0.92** (was 0.90–0.95, nearest 0.925): Tom King's own ~90-delta long,
+  journaled as `long_delta`. Measured by the BROKER's delta, which the live loop will select by: on
+  American-style ETFs its deep-call delta runs below parity, so 0.90 sits ~36–41% in the money (parity
+  ~0.94–0.97); on XSP the two agree (~24%). The XSP pair entered 2026-10-05 at ~0.925 stays as entered.
 
 ## The experiment design
 
 | arm | long | short | management |
 |---|---|---|---|
-| `control` | 17–25 DTE nearest 21, delta 0.85–0.90, re-bought every cycle | ATM, soonest Friday 5–11 DTE | held to the short's expiry; the long rides to the next session's disposal |
-| `shield_hold` | the standard monthly nearest 360 DTE in [240, 540], delta 0.90–0.95, no extrinsic fallback | 0.70 delta (band 0.65–0.78), soonest Friday 5–11 DTE, above the long's strike, never past its expiry | rolled on its expiry day; closed at 45 DTE on the long or on the 30% stop |
+| `control` (retired 2026-10-06) | 17–25 DTE nearest 21, delta 0.85–0.90, re-bought every cycle | ATM, soonest Friday 5–11 DTE | held to the short's expiry; the long rides to the next session's disposal |
+| `shield_hold` | the standard monthly nearest 360 DTE in [240, 540], broker delta 0.88–0.92 nearest 0.90 (0.90–0.95 before 2026-10-06), no extrinsic fallback | 0.70 delta (band 0.65–0.78), soonest Friday 5–11 DTE, above the long's strike, never past its expiry | rolled on its expiry day; closed at 45 DTE on the long or on the 30% stop |
 | `shield` | as `shield_hold` | as `shield_hold` | also rolls early at 85% of the short's extrinsic decayed, or spot at its strike |
 
 **How the arms are defined and enabled.**
@@ -50,6 +60,10 @@ Elsewhere:
   config block (`engine.merged_params`). A thin block cannot turn a held-long arm into a copy of
   control. An open position keeps its arm's rules even if the arm leaves the config.
 - An arm other than control that the config does not declare stays off (`engine.DEFAULT_ENABLED`).
+  Control is the exception: undeclared it turns ON, so retiring it takes `enabled: false`, never a
+  deleted block. The code default changes when the weekly entry path is removed after its run-off.
+- The stream request asks for control's ~7/~21-DTE plan dates only while a weekly-lifecycle arm is on
+  the roster; a held-long entry asks for its own short date (`stream_request.write`).
 
 **What the shield arms leave out**, declared rather than tuned later:
 - Tom King's discretionary entry setup;
@@ -59,7 +73,9 @@ Elsewhere:
 A stop followed by mechanical re-entry is a costly re-strike of the long. The replay finds the stop
 mixed (docs/shield-study.md); it is kept because it is the design's own rule, and it is measured.
 
-**Advised twins.** `advised:<experiment name>` (paper, off by default) shadows **control only**. The
+**Advised twins — off since 2026-10-06.** `advised:<experiment name>` (paper) shadowed **control
+only**, so the advisor has nothing to shadow until it is redesigned for the held-long arms: a position
+lasts ~10 months, and the advisor's verdicts count closed positions inside a 30-session window. The
 mechanism is in `packages/core/CLAUDE.md`, with params frozen at entry and restated through
 `management.effective_params`. The experiment worth running is `tv_managed_exit`/`tv_close_threshold`
 against hold-to-expiry; `tv_managed_exit` is a no-op for a held-long position. The pre-2026-09-17

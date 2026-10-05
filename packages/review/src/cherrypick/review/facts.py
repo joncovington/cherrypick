@@ -48,7 +48,10 @@ from cherrypick.review import paths as _paths
 # word for a variant across the suite (root CLAUDE.md). A RENAME, not an addition, which is the
 # whole reason it takes a version: the 22 sets already on disk say `by_profile` and are never
 # rewritten, so every reader takes both spellings and will keep doing so.
-FACT_VERSION = 8
+# 9 (2026-10-06): pmcc's `expected` reads the held-long shorts (`basis`
+# `held_long_short_extrinsic_sold_vs_captured`, counted in `shorts_closed`) once control retired.
+# Additive: a session with no held-long short closed still carries control's basis.
+FACT_VERSION = 9
 
 STATUS_PROVISIONAL = "provisional"
 STATUS_FINAL = "final"
@@ -409,11 +412,49 @@ def _calendars_expected(conn, session: str) -> dict:
     }
 
 
+def _pmcc_held_long_expected(conn, session: str) -> dict:
+    """Each held-long short closed this session: the extrinsic it sold (premium less intrinsic at
+    the sale spot) against what it kept (sold less the extrinsic still in it at the close), both as
+    a fraction of the sale spot. A held-long position closes ~10 months after entry, so its weekly
+    short is the only weekly realisation it has. Held-long is the ledger's own long DTE at entry
+    (the 240-540-day band), never an arm name."""
+    rows = _rows(
+        conn,
+        "SELECT l.strike, l.entry_mid, l.entry_spot, l.close_value, l.close_spot FROM pmcc_legs l "
+        "JOIN pmcc_positions p ON p.position_id = l.position_id "
+        "WHERE l.leg_role LIKE 'short_call%' AND l.status = 'closed' AND substr(l.closed_at, 1, 10) = ? "
+        "AND p.entry_long_dte >= 240",
+        (session,),
+    )
+    sold, kept = [], []
+    for r in rows:
+        if None in (r["strike"], r["entry_mid"], r["entry_spot"], r["close_value"], r["close_spot"]):
+            continue
+        if not r["entry_spot"]:
+            continue
+        extrinsic = r["entry_mid"] - max(r["entry_spot"] - r["strike"], 0.0)
+        left = r["close_value"] - max(r["close_spot"] - r["strike"], 0.0)
+        sold.append(extrinsic / r["entry_spot"])
+        kept.append((extrinsic - left) / r["entry_spot"])
+    return {
+        "basis": "held_long_short_extrinsic_sold_vs_captured",
+        "expected": (sum(sold) / len(sold)) if sold else None,
+        "observed": (sum(kept) / len(kept)) if kept else None,
+        "shorts_closed": len(sold) or None,
+    }
+
+
 def _pmcc_expected(conn, session: str) -> dict:
-    """pmcc's expectation is the weekly time-value yield priced at entry; the observation is the
-    realised net return on capital per week held, which lands when positions close. Read off the
-    control arm only: it is the one arm whose cycle is a week, so a weekly yield measured at entry
-    has a weekly realisation to be compared with."""
+    """The held-long shorts' expectation when any closed this session (control retired 2026-10-06);
+    otherwise control's, which its run-off still produces. `basis` says which.
+
+    Control's: the weekly time-value yield priced at entry against the realised net return on
+    capital per week held, which lands when positions close. Read off the control arm only: it is
+    the one arm whose cycle is a week, so a weekly yield measured at entry has a weekly realisation
+    to be compared with."""
+    held = _pmcc_held_long_expected(conn, session)
+    if held["shorts_closed"]:
+        return held
     rows = _rows(
         conn,
         "SELECT entry_weekly_yield_pct, gross_pnl, fees, net_debit, quantity, entry_session "

@@ -352,7 +352,8 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
     era_col = ", era" if has_era else ""
     rows = conn.execute(
         f"SELECT symbol, arm, gross_pnl, fees, entry_slippage, exit_slippage, "
-        f"net_debit, quantity, closed_session{exp_col}{era_col} FROM pmcc_positions WHERE status = 'closed'{where}",
+        f"net_debit, quantity, closed_session{exp_col}{era_col} "
+        f"FROM pmcc_positions WHERE status = 'closed'{where}",
         params,
     ).fetchall()
 
@@ -630,11 +631,12 @@ def _calendars_open(conn) -> list[dict]:
 
 
 def _pmcc_open(conn) -> list[dict]:
-    """pmcc's `pmcc_positions` still on the book — a position lives ~1–2 weeks and carries
-    overnight throughout, plus the assigned-shares weekend between a Friday settlement and the
-    Monday disposal. Capital at risk is the net debit (defined max loss); a `short_settled`
-    position's delivered shares are the one leg that bound does not cover, per the module's own
-    caveat — the debit stays the honest conservative bound without re-deriving marks here."""
+    """pmcc's `pmcc_positions` still on the book — a held-long position lives about ten months (a
+    retired weekly control one lived ~1–2 weeks) and carries overnight throughout, plus the
+    assigned-shares weekend between a Friday settlement and the Monday disposal. Capital at risk is
+    the net debit (defined max loss); a `short_settled` position's delivered shares are the one leg
+    that bound does not cover, per the module's own caveat — the debit stays the honest conservative
+    bound without re-deriving marks here."""
     rows = conn.execute(
         "SELECT symbol, arm, net_debit, quantity, entry_session FROM pmcc_positions WHERE status != 'closed'"
     ).fetchall()

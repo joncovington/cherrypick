@@ -411,6 +411,21 @@ def tracker(conn, position_id: str, config: dict | None = None, *, now: float | 
     if lots and lots[0]["extrinsic_paid"] is not None and lots[0]["extrinsic_now"] is not None:
         long_decay = round(lots[0]["extrinsic_paid"] - lots[0]["extrinsic_now"], 2)
     spot_now = (current or {}).get("spot")
+    # The two exits that close a held-long position, as `management.evaluate_held_long` tests them:
+    # net to date at or below -stop_loss_frac x the long's cost, and the long at long_close_dte.
+    exits = None
+    if management.is_held_long(params) and long_leg is not None:
+        stop = params.get("stop_loss_frac")
+        stop_at = round(-stop * long_cost, 2) if stop and long_cost else None
+        long_exp = date.fromisoformat(long_leg["expiration"])
+        exits = {
+            "stop_net_at": stop_at,
+            "stop_room": (
+                round(current["net"] - stop_at, 2) if stop_at is not None and current is not None else None
+            ),
+            "long_close_on": (long_exp - timedelta(days=int(params.get("long_close_dte", 45)))).isoformat(),
+            "long_dte": (long_exp - datetime.fromtimestamp(end_t, tz=clock.ET).date()).days,
+        }
     header = {
         "long_cost": -long_cost if long_cost is not None else None,
         "long_value": lots[0]["value_now"] if lots else None,
@@ -441,6 +456,7 @@ def tracker(conn, position_id: str, config: dict | None = None, *, now: float | 
         "net_extrinsic": round(ext_captured - long_decay, 2) if long_decay is not None else None,
         "shorts_sold": len(shorts),
         "notional": notional,
+        "exits": exits,
     }
     return {
         "position": {

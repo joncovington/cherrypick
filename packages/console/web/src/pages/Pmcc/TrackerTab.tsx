@@ -13,7 +13,7 @@ import { HistoryTable } from "../../components/table/HistoryTable";
 import type { ColumnDef } from "../../components/table/columns";
 import { TimeLineChart } from "../../components/chart/TimeLineChart";
 import { fmtCash, fmtMoney, fmtNum, fmtPct, fmtPctSigned, fmtPrice } from "../../lib/format";
-import { fmtStrike } from "../../lib/optionFormat";
+import { dteOf, fmtStrike } from "../../lib/optionFormat";
 
 /**
  * One PMCC position, week by week -- the spreadsheet a covered-call trader keeps (Tom King's layout,
@@ -115,6 +115,21 @@ export function TrackerView({ t, updatedAt }: { t: PmccTracker; updatedAt?: numb
           {p.lifecycle === "held_long" ? "held long" : "weekly"} · opened {p.entrySession} at {fmtNum(p.entrySpot, 2)} ·{" "}
           {h.shortsSold} short{h.shortsSold === 1 ? "" : "s"} sold · era {p.era ?? "—"} · <Link to="?">every position</Link>
         </p>
+        {h.exits != null && p.status !== "closed" && (
+          <p style={{ marginTop: 0 }} title="The two exits that close a held-long position, from its own rules (management.evaluate_held_long).">
+            <span className="muted">stop</span>{" "}
+            {h.exits.stopNetAt === null ? (
+              <span className="muted">none on this arm</span>
+            ) : (
+              <>
+                at net {fmtCash(h.exits.stopNetAt)}
+                {h.exits.stopRoom !== null && <span className="muted"> ({fmtMoney(h.exits.stopRoom)} away)</span>}
+              </>
+            )}{" "}
+            · <span className="muted">long rolls on</span> {h.exits.longCloseOn}{" "}
+            <span className="muted">(long at {h.exits.longDte} DTE)</span>
+          </p>
+        )}
         <TileGrid count={12}>
           <Tile label="long cost" value={fmtCash(h.longCost)} title="what the long call cost, a debit" />
           <Tile label="long value" value={fmtMoney(h.longValue)} title="the long at its latest usable mark" />
@@ -213,16 +228,17 @@ function LongLotsCard({ t }: { t: PmccTracker }) {
   return (
     <DataCard
       title="core position"
-      headers={["opened", "expiry", "stock", "strike", "qty", "cost", "value", "gain / loss", "extrinsic paid", "extrinsic now", "delta"]}
+      headers={["opened", "expiry", "DTE", "stock", "strike", "qty", "cost", "value", "gain / loss", "extrinsic paid", "extrinsic now", "delta"]}
       loading={false}
       rowCount={t.longLots.length}
-      numFrom={2}
+      numFrom={3}
       empty="no long on file"
     >
       {t.longLots.map((l) => (
         <tr key={`${l.opened}-${l.strike}`}>
           <td>{l.opened}</td>
           <td>{l.expiration}</td>
+          <td>{l.status === "open" ? (dteOf(l.expiration) ?? "—") : "—"}</td>
           <td>{fmtNum(l.spotOpen, 2)}</td>
           <td>{fmtStrike(l.strike)}</td>
           <td>{l.quantity}</td>

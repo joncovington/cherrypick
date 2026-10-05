@@ -41,6 +41,7 @@ def wanted_expirations(
     entry_symbols: list[str] | None = None,
     extra: dict[str, set[str]] | None = None,
     held_longs: dict[str, set[str]] | None = None,
+    weekly_plan: bool = True,
 ) -> dict[str, list[str]]:
     """Per-symbol expiration dates the cache must hold: the current plan's short/long pair for a
     symbol the module still ENTERS (`entry_symbols`, default all of `symbols`), plus whatever that
@@ -49,8 +50,12 @@ def wanted_expirations(
     Per symbol since 2026-10-04. Before, every symbol was handed the union of every symbol's dates,
     so one symbol's open long asked for a window on every other symbol -- and once longs sit on
     LEAP months that differ per symbol, for dates the other symbol does not even list, which the
-    producer records as an error on every pass."""
-    plan = clock.expiration_plan(today, params)
+    producer records as an error on every pass.
+
+    `weekly_plan` is False when no weekly-lifecycle arm is on the roster (control retired
+    2026-10-06): the plan's pair is control's entry and nothing else reads it; a held-long entry's
+    own dates come in through `extra`."""
+    plan = clock.expiration_plan(today, params) if weekly_plan else None
     planned = {plan["short_expiration"], plan["long_expiration"]} if plan is not None else set()
     entering = {s.upper() for s in (entry_symbols if entry_symbols is not None else symbols)}
     extra = extra or {}
@@ -120,6 +125,16 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
     # Held-long dates: the next weekly short of every held-long position, and the listed ~1-year
     # long a held-long arm would enter today -- asked for only while that arm can still enter.
     held_longs, extra = held_long_dates(conn, config, today)
+    kinds = {a: management.is_held_long(management.effective_params({"arm": a}, config)) for a in arms}
+    # A held-long entry's short, asked for in its own right: it used to ride on control's plan
+    # short, which it usually equals, and stopped being asked for when control retired.
+    for symbol in entry_symbols:
+        listed = None
+        for arm in (a for a, held in kinds.items() if held):
+            listed = listed if listed is not None else provider.listed_expirations(cache_path, symbol)
+            plan = clock.held_long_plan(today, listed, management.effective_params({"arm": arm}, config))
+            if plan is not None:
+                extra.setdefault(symbol, set()).add(plan["short_expiration"])
     for symbol in entry_symbols:
         for target, _pct in stream_window.entry_targets(
             conn, cache_path, symbol, today, config, arms, max_positions
@@ -149,7 +164,14 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
         leg_sources=leg_sources,
         window_hints=hints,
         expirations=wanted_expirations(
-            conn, symbols, today, defaults, entry_symbols=entry_symbols, extra=extra, held_longs=held_longs
+            conn,
+            symbols,
+            today,
+            defaults,
+            entry_symbols=entry_symbols,
+            extra=extra,
+            held_longs=held_longs,
+            weekly_plan=not all(kinds.values()),
         ),
         # What the loop reads off its windows (audited 2026-09-30): call quotes and greeks on the
         # plan's short and long dates -- the ATM short and the delta-band deep-ITM long. Never the

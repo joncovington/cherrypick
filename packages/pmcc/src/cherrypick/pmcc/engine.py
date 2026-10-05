@@ -28,14 +28,16 @@ ARMS = ("control", "shield", "shield_hold")
 # into a copy of control -- which `defaults` alone would make it, with a P&L that still looks
 # plausible. Open positions are managed through the same merge (`management.effective_params`), so
 # an arm dropped from the config still manages what it holds by its own rules. The values are the
-# shield study's (docs/shield-study.md): a 0.90-0.95-delta year-long long chosen by delta alone (no
-# extrinsic fallback), a 0.70-delta weekly short, Tom King's 30% stop; `shield` alone rolls early
-# (at 85% of the short's extrinsic decayed, or on a breach).
+# shield study's (docs/shield-study.md): a year-long long chosen by delta alone (no extrinsic
+# fallback) in 0.88-0.92, nearest 0.90 -- Tom King's own "90ish" (0.90-0.95, nearest 0.925, until the
+# 2026-10-06 boundary) -- a 0.70-delta weekly short, his 30% stop; `shield` alone rolls early (at 85%
+# of the short's extrinsic decayed, or on a breach). The delta is the broker's, as the live loop will
+# see it: on American-style ETFs its deep-call delta runs below parity, so 0.90 sits ~36-41% ITM.
 _HELD_LONG_RULES = {
     "lifecycle": "held_long",
     "short_rule": "delta",
-    "long_delta_min": 0.90,
-    "long_delta_max": 0.95,
+    "long_delta_min": 0.88,
+    "long_delta_max": 0.92,
     "allow_extrinsic_fallback": False,
     "stop_loss_frac": 0.30,
 }

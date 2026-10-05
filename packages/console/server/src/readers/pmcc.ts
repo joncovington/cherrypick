@@ -274,6 +274,9 @@ function entrySpreadByPosition(db: DatabaseHandle, ids: string[] | null): Map<st
   return out;
 }
 
+/** The low edge of the held-long entry band (`clock.leap_expiration`: [240, 540] days). */
+const HELD_LONG_MIN_DTE = 240;
+
 /** Mirrors `analytics.worksheet()` — open positions plus their latest USABLE short-leg mark. */
 function readOpenPositions(db: DatabaseHandle): PmccOpenPosition[] {
   const exposure = exposureByPosition(db);
@@ -319,6 +322,9 @@ function readOpenPositions(db: DatabaseHandle): PmccOpenPosition[] {
         downsideProtectionPct: num(p["entry_downside_protection_pct"]),
         breakeven: num(p["entry_breakeven"]),
         rollCount: num(p["roll_count"]),
+        // The held-long band is 240-540 days at entry; control's long is ~21. Read off the row, never
+        // off an arm name, so a retired or renamed arm still reads as what it held.
+        lifecycle: (num(p["entry_long_dte"]) ?? 0) >= HELD_LONG_MIN_DTE ? "held_long" : "weekly",
         // No usable mark yet is a real state (pre-open, or a refused feed). Null, never zero.
         currentShortTv: mark === undefined ? null : num(mark["short_tv"]),
         currentSpot: mark === undefined ? null : num(mark["spot"]),

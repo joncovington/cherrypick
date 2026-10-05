@@ -25,9 +25,10 @@ consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/ro
   live path.
 - **packages/pmcc** — PMCC deep-ITM calls with a short call against them, on XSP, QQQ, GLD, IWM and
   SLV; **paper-only, credential-free**, the calendars posture (chains via `expirations`/`window_hints`,
-  year-long dates from the streamer's listing). Arms `control` (a 21-DTE long re-bought each cycle)
-  and, from 2026-10-05, `shield`/`shield_hold` (a ~1-year long held while a weekly short rolls
-  against it, closed-only readers seeing them late), plus control's advised twins. **Early assignment
+  year-long dates from the streamer's listing). The base trade since 2026-10-06 is `shield`/
+  `shield_hold` (a ~1-year long held while a weekly short rolls against it, closed-only readers seeing
+  them late); `control` (a 21-DTE long re-bought each cycle) and its advised twins are retired and run
+  off, and pmcc's advice is off. SLV is the intended first live symbol. **Early assignment
   is measured, never modelled**: ex-dividend spans refused, near-zero-extrinsic marks flagged
   assignment-exposed, so the paper result is an explicit upper bound. No live path yet.
 - **packages/curve** — VXX call-credit spreads gated by a daily VIX/VIX3M regime read; **paper-only,

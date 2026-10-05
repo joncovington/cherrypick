@@ -212,7 +212,7 @@
       }
     },
     "pmcc": {
-      "_comment": "EXPERIMENTAL, off by default: switch on with modules.pmcc.enabled once you have read its package README. PMCC deep-ITM covered-call paper module (packages/pmcc): buys an 85-90-delta ~21DTE call, sells the ATM ~7DTE call nearest spot, on TQQQ (physically settled) and XSP (cash-settled); enters any day the (symbol, book) slot is free and holds to the short's own expiration (~1-2 weeks). Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache via the streamer's `expirations` and `window_hints` request fields.",
+      "_comment": "EXPERIMENTAL, off by default: switch on with modules.pmcc.enabled once you have read its package README. PMCC deep-ITM covered-call paper module (packages/pmcc): holds a ~1-year 0.90-0.95-delta call while a 0.70-delta weekly call rolls against it every Friday (the shield/shield_hold arms, the base trade since 2026-10-06), on XSP (cash-settled) and QQQ, GLD, IWM and SLV (physically settled); a position lives about ten months. Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache via the streamer's `expirations` and `window_hints` request fields.",
       "enabled": false,
       "path": "../pmcc",
       "paper": {

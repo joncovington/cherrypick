@@ -54,7 +54,8 @@ def cmd_read(args) -> dict:
     era = getattr(args, "era", None)
     if era and era != "ALL":
         if ledgers.canonical_schema(args.schema) not in ledgers.ERA_SCHEMAS:
-            return {"ok": False, "error": f"schema {args.schema!r} records carry no era; --era cannot scope it"}
+            why = f"schema {args.schema!r} records carry no era; --era cannot scope it"
+            return {"ok": False, "error": why}
         records = [r for r in records if r.get("era") == era]
 
     def summarize(group: list) -> dict:
