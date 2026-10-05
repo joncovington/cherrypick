@@ -42,6 +42,12 @@ Elsewhere:
   writes its own date. No new era: shield's rules and roster are untouched, and the two arms never
   shared a position. Control and its advised twins run off under their own rules (shorts 10-09 and
   10-16, the last longs disposed by about 10-19).
+- **2026-10-12 to 10-19, six symbols added**, one a market day (`symbol_from`): SMH, AMZN, TSLA, AMD,
+  NVDA, PLTR — the first single stocks, physical settlement, with the earnings refusal above.
+  Additive: each symbol is its own population, and no existing symbol's rules change. Journaled as
+  `symbols` (with `max_positions` raised for the larger roster) and `earnings` rows. A held-long
+  stock long sits deep (broker 0.90 is ~45–55% in the money on these IVs), and AMZN lists strikes
+  only down to about 48% below spot, which is where its long lands.
 - **2026-10-06 long delta 0.88–0.92** (was 0.90–0.95, nearest 0.925): Tom King's own ~90-delta long,
   journaled as `long_delta`. Measured by the BROKER's delta, which the live loop will select by: on
   American-style ETFs its deep-call delta runs below parity, so 0.90 sits ~36–41% in the money (parity
@@ -103,10 +109,19 @@ close):
 **What can refuse:**
 - a new short spanning a declared ex-date (`ex_dividend_span`); the position runs without a short
   until a later day clears it, and the tracker counts those weeks;
+- a new short spanning a declared earnings announcement (`earnings_span`), the same way, from
+  2026-10-06. The `earnings` config block is declared like `dividends` (an ETF is `kind: etf`, no
+  dates). A stock's dates are rewritten daily by `scripts/pmcc_earnings_refresh.py` (the
+  `pmcc-earnings-refresh` job, 06:00 ET) from the local Dolt calendar, declared through a week short
+  of its horizon. Once the key exists every symbol must be covered (`earnings_calendar_lapsed`); a
+  config without the key runs no check. The evidence: refusing beat selling through in 7 of 8
+  single-stock replays on their own Cboe vol index (docs/history.md);
 - an entry's long: the pick comes from the producer's own listing (`streamcache.stream_expirations`,
   via `provider.listed_expirations`), standard monthlies first, because on 2026-10-04 only they listed
   deep strikes (`scripts/pmcc_leap_probe.py`). Refusals: `no_leap_listed` (nothing in the band),
-  `no_listing` (no listing cached), `no_short_delta` (no greeks for the short), `entry_pacing`.
+  `no_listing` (no listing cached), `no_short_delta` (no greeks for the short), `entry_pacing`;
+- a symbol before its `symbol_from` date is neither entered nor subscribed for entry
+  (`engine.entry_symbols`), so new symbols join one market day at a time.
 
 **After a close or at the bell:**
 - a stop or long-roll close re-enters the **next session**;

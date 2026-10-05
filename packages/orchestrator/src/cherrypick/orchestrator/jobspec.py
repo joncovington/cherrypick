@@ -57,6 +57,9 @@ CATCHUP_MINUTES = {
     # Very generous: the calendar reaches weeks ahead, so a late pull is harmless while a skipped
     # one eventually starves the scanner. Catching up beats waiting for tomorrow.
     "earnings-dolt-pull": 12 * 60,
+    # pmcc's earnings calendar lapses a week before the Dolt horizon, so a day's miss is harmless and
+    # catching up through the morning keeps the open's entries answerable.
+    "pmcc-earnings-refresh": 6 * 60,
     # A missed review is worth catching up on: the fact set is the input to every read surface,
     # and a session with no artifact is a hole in the trend rather than a late report.
     "review-provisional": 180,
@@ -363,6 +366,10 @@ def _market_files_script(launcher: str) -> str:
 
 def _dolt_data_script(launcher: str) -> str:
     return _suite_script(launcher, "refresh_dolt_data.py")
+
+
+def _pmcc_earnings_script(launcher: str) -> str:
+    return _suite_script(launcher, "pmcc_earnings_refresh.py")
 
 
 def _vendor_collector_script(launcher: str) -> str:
@@ -952,6 +959,23 @@ def derive_jobs(
                 "" if (mv["enabled"] and mv["narrative"]) else "disabled in config (morning.narrative)"
             ),
             tags=("ai",),
+        ),
+    )
+    add(
+        "pmcc-earnings-refresh",
+        lambda: JobSpec(
+            id="pmcc-earnings-refresh",
+            # A script, not package code: it reads the local Dolt calendar, which nothing on a pmcc
+            # loop path may. It rewrites pmcc's declared `earnings` block (the `earnings_span`
+            # refusal, 2026-10-06) through the config editor. 06:00, after the 05:30 Dolt pull and
+            # before the open. A pmcc config declaring no calendar makes it a no-op.
+            argv=(pythonw, _pmcc_earnings_script(launcher)),
+            kind=KIND_DAILY,
+            at_et="06:00",
+            catchup_minutes=CATCHUP_MINUTES["pmcc-earnings-refresh"],
+            trading_days_only=False,
+            enabled="pmcc" in cfgmod.enabled_modules(cfg),
+            enabled_reason="" if "pmcc" in cfgmod.enabled_modules(cfg) else "pmcc module disabled",
         ),
     )
     add(

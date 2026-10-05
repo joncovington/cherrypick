@@ -89,8 +89,9 @@ def settle_time_min(config: dict, day: date | None = None) -> int:
     return clock.session_close_min(day) + (configured - RTH_CLOSE_MIN)
 
 
-def _symbols(config: dict) -> list[str]:
-    return [s.strip().upper() for s in (config.get("symbols") or ["TQQQ"])]
+def _symbols(config: dict, day: str) -> list[str]:
+    """The symbols entry walks on `day` (`engine.entry_symbols`: `symbol_from` applied)."""
+    return engine.entry_symbols(config, day)
 
 
 # --------------------------------------------------------------------------- loop lock + cadence
@@ -274,7 +275,7 @@ def _sample_skew(config: dict, conn, *, cache_path: str, when: datetime, day: st
         return 0
     written = 0
     roots = config.get("occ_roots") or {}
-    for symbol in [x.strip().upper() for x in config.get("symbols") or []]:
+    for symbol in engine.entry_symbols(config, day) if config.get("symbols") else []:
         try:
             if db.skew_sampled(conn, day, symbol):
                 continue
@@ -404,9 +405,10 @@ def _unsettled_today(conn, day: str) -> bool:
 
 # --------------------------------------------------------------------------- entry
 def _short_guard(config: dict, symbol: str, day: str, short_expiration: str) -> str | None:
-    """The refusals for selling one short: settlement declaration and the dividend span over the
-    short's life. Every new short runs it -- an entry's, and since 2026-10-04 a held-long roll's or
-    sale's, each of which sells a short spanning its own week."""
+    """The refusals for selling one short: settlement declaration, then the dividend span and (where
+    the config declares an earnings calendar, 2026-10-06) the earnings span over the short's life.
+    Every new short runs it -- an entry's, and since 2026-10-04 a held-long roll's or sale's, each
+    of which sells a short spanning its own week."""
     style = engine.settlement_style(config, symbol)
     if style is None:
         return "unknown_settlement"
@@ -416,6 +418,11 @@ def _short_guard(config: dict, symbol: str, day: str, short_expiration: str) -> 
         hit = engine.ex_date_in_span(config, symbol, day, short_expiration)
         if hit is not None:
             return "ex_dividend_span"
+    if engine.earnings_checked(config):
+        if not engine.earnings_coverage_ok(config, symbol, short_expiration):
+            return "earnings_calendar_lapsed"
+        if engine.earnings_in_span(config, symbol, day, short_expiration) is not None:
+            return "earnings_span"
     return None
 
 
@@ -469,7 +476,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
     params_by_arm = {b: arm_params(config, b, advised, decision) for b in arms}
     paced = _held_long_entries_today(conn, config, day)
 
-    for symbol in _symbols(config):
+    for symbol in _symbols(config, day):
         free = [b for b in arms if db.open_position_for(conn, symbol, b) is None]
         wanting = [b for b in free if db.open_position_count(conn, b) < max_positions]
         for b in free:

@@ -125,6 +125,28 @@ Left for after the run-off (about 10-23): remove control from `engine.ARMS` and 
 path, flip `DEFAULT_ENABLED`, move the held-long values into `defaults`, and drop TQQQ from the
 settlement, root and dividend tables.
 
+## Single stocks join, with an earnings refusal (2026-10-12 to 10-19, additive break)
+
+The user asked for the single stocks commonly used for covered calls. The candidates came from the
+options-volume leaders, the covered-call lists and the YieldMax underlyings. Replayed on the five
+stocks with their own Cboe vol index (VXAPL, VXAZN, VXGOG, VXGS, VXIBM, 2011 onward), every one lost
+to the shield: AMZN −2.8 a year, AAPL −5.8, GS and IBM about −12. GOOGL's −17 was void, because the
+technicals store misses the 2014-04-03 Class C split.
+
+Measured without a model, stock options carry a variance premium about as rich as the index ones
+(IV/RV 1.19–1.32). They also have three to five times the jump days, and the weekly short is the leg
+the jumps hurt. A realized-vol IV proxy missed the real index by up to 10 points (AMZN's sign flipped),
+so no proxy-graded stock alpha is to be trusted.
+
+The user added AMZN, TSLA, AMD, NVDA and PLTR anyway, on paper, as a measurement, together with SMH,
+the one credible ETF the candidate screen found. Built for them:
+- **An earnings refusal** (`earnings_span`). Over 2020–2026, on the A-grade stocks, refusing a short
+  across an announcement beat selling it through in 7 of 8 cases, AMZN −5.7 → −0.5, even though the
+  long then rides the announcement unhedged.
+- **A daily calendar refresh** from the local Dolt clone, since nothing on a loop path may read it.
+- **`symbol_from`, starting one symbol a market day after the ETF rollout:** six at once would have
+  added about 6,000 subscriptions to a ~10,000 load against a 12,000 budget.
+
 ## Milestones
 
 Built 2026-08-16. `live.enabled` placeholder added 2026-08-16. The console's `/pmcc` page landed

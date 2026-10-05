@@ -26,7 +26,7 @@ from pathlib import Path
 
 from cherrypick.core import streamrequests as _sr
 
-from cherrypick.pmcc import clock, db, management, provider, skew, stream_window
+from cherrypick.pmcc import clock, db, engine, management, provider, skew, stream_window
 
 _MODULE = "pmcc"
 _log = logging.getLogger("pmcc_paper_loop")
@@ -96,11 +96,12 @@ def held_long_dates(conn, config: dict, today: date) -> tuple[dict[str, set[str]
 
 
 def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | None = None) -> Path:
-    entry_symbols = [s.strip().upper() for s in (config.get("symbols") or ["TQQQ"])]
+    today = today or clock.now_et().date()
+    # `symbol_from` applied: a symbol whose start date is still ahead asks for nothing yet.
+    entry_symbols = engine.entry_symbols(config, today.isoformat())
     # A symbol retired from the config keeps its spot, its quotes and its own dates until its last
     # position closes -- otherwise its open legs could neither be marked nor managed out.
     symbols = entry_symbols + [s for s in db.open_position_symbols(conn) if s not in entry_symbols]
-    today = today or clock.now_et().date()
     defaults = config.get("defaults") or {}
     leg_sources = [
         _sr.leg_source(
