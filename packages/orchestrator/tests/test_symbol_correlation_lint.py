@@ -80,16 +80,35 @@ def test_the_lint_can_fail():
 # --------------------------------------------------------------------------- the live config
 
 
-def _declared() -> dict[str, list[str]]:
-    if not REQUEST_DIR.exists():
+def _declared(request_dir: Path = REQUEST_DIR) -> dict[str, list[str]]:
+    """Each module's trading roster as its own request file declares it: `entry_symbols` where the
+    module states it (what it still ENTERS), else every subscribed symbol. A symbol held only to run
+    off open positions -- pmcc's TQQQ beside QQQ from 2026-10-05 -- is not a roster that trades one
+    index twice, and must not trip the guard; a module that declares nothing is judged on all of
+    them, exactly as before `entry_symbols` existed."""
+    if not request_dir.exists():
         return {}
     out: dict[str, list[str]] = {}
-    for f in sorted(REQUEST_DIR.glob("*.json")):
+    for f in sorted(request_dir.glob("*.json")):
         try:
-            out[f.stem] = json.loads(f.read_text(encoding="utf-8")).get("symbols") or []
+            data = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
+        roster = data.get("entry_symbols")
+        out[f.stem] = (roster if isinstance(roster, list) else data.get("symbols")) or []
     return out
+
+
+def test_the_roster_is_what_a_module_enters_not_what_it_runs_off(tmp_path):
+    (tmp_path / "pmcc.json").write_text(
+        json.dumps({"symbols": ["QQQ", "TQQQ", "XSP"], "entry_symbols": ["QQQ", "XSP"]}), encoding="utf-8"
+    )
+    (tmp_path / "flies.json").write_text(json.dumps({"symbols": ["SPX", "XSP"]}), encoding="utf-8")
+    declared = _declared(tmp_path)
+    assert declared == {"flies": ["SPX", "XSP"], "pmcc": ["QQQ", "XSP"]}
+    # The guard still fires on a module that declares no roster, and on a roster that is the bet.
+    assert same_index_pairs(declared["flies"]) == [("SPX", "XSP")]
+    assert same_index_pairs(["QQQ", "TQQQ"])
 
 
 @pytest.mark.skipif(not REQUEST_DIR.exists(), reason="no deployed stream requests on this machine")

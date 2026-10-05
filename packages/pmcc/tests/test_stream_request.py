@@ -639,3 +639,31 @@ def test_a_symbol_retired_from_the_config_stays_declared_while_it_holds_a_positi
     assert set(payload["symbols"]) == {"XSP", "TQQQ"}
     assert payload["expirations"]["TQQQ"] == ["2026-09-11"]
     assert "TQQQ" not in payload.get("window_hints", {})  # no entries on it, so no deep window
+
+
+def test_a_run_off_symbol_is_subscribed_but_not_declared_as_entered(cache, config, tmp_path):
+    """The 2026-10-05 shield roster drops TQQQ while TQQQ positions are still open: it stays in
+    `symbols` so those legs can be marked and managed out, and is absent from `entry_symbols`, the
+    roster the orchestrator's same-index lint judges (QQQ + TQQQ would otherwise read as one index
+    traded twice)."""
+    db_path = str(tmp_path / "paper.db")
+    conn = db.connect(db_path)
+    db.save_position(
+        conn,
+        {
+            "position_id": "R",
+            "symbol": "TQQQ",
+            "arm": "control",
+            "entry_session": "2026-08-17",
+            "long_expiration": "2026-09-18",
+            "long_strike": 50.0,
+            "short_expiration": "2026-08-28",
+            "short_strike": 67.0,
+            "status": "open",
+        },
+    )
+    shield = {**config, "symbols": ["QQQ"]}
+    path = stream_request.write(shield, conn, db_path, cache_path=cache.path, today=date(2026, 8, 24))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["symbols"] == ["QQQ", "TQQQ"]
+    assert payload["entry_symbols"] == ["QQQ"]

@@ -366,3 +366,16 @@ def test_budget_ignores_past_expirations(home):
     _write("a", ["SPX"], expirations={"SPX": ["2000-01-01", "2099-01-15"]})
     est = streamrequests.estimate_subscriptions(default_strike_count=30)
     assert est["by_symbol"]["SPX"]["windows"] == 2  # nearest + the live extra, not the dead one
+
+
+def test_write_request_declares_entry_symbols_only_when_given(tmp_path, monkeypatch):
+    """`entry_symbols` is what a module still enters; a run-off symbol stays subscribed in `symbols`
+    but out of the roster the same-index lint judges. Absent unless declared, so every other
+    module's file reads exactly as before."""
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    path = streamrequests.write_request("demo", ["QQQ", "TQQQ"], entry_symbols=[" qqq "])
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["symbols"] == ["QQQ", "TQQQ"] and payload["entry_symbols"] == ["QQQ"]
+    assert streamrequests.union_symbols() == ["QQQ", "TQQQ"]  # the producer still subscribes both
+    path = streamrequests.write_request("demo", ["QQQ"])
+    assert "entry_symbols" not in json.loads(path.read_text(encoding="utf-8"))
