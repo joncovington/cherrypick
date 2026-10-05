@@ -11,8 +11,9 @@ a timestamp grouped (they are one order) and spreads printed together grouped (a
 
 - **read**: bought / sold from where the fill sat (edge at or past +/-0.5), or the site's own signs for
   a spread (price for the side, delta checked against it: the same sign for calls, opposite for
-  puts); `unread` when the fill is too near the middle or a spread's signs do not fit. The view (bullish / bearish) combines that
-  with call or put, or a spread's signed delta. Unread flows are listed, never ranked.
+  puts); `unread` when the fill is too near the middle or a spread's signs do not fit. The view
+  (bullish / bearish) combines that with call or put, or a spread's signed delta. Unread flows are
+  listed, never ranked.
 - **exposure**: delta, from the volatility the trade's own price implies at the session's close (the
   broker's), and **delta dollars** — contracts x 100 x |delta| x the stock's close — the stock-
   equivalent size of the bet. Ranked on this, with premium beside it.
@@ -193,8 +194,9 @@ def describe(
 ) -> tuple[str, str]:
     """(what, kind label) in one order for every flow — date, strike, then the kind: `15 Jan 27
     16C` / `outright`, `09 Oct 26 43.5/45.5C` / `call spread`, `16 Oct 26 23C / 30 Oct 26 23C` /
-    `call calendar`, `16 Oct 26 23C / 30 Oct 26 22C` / `call diagonal`. The site's own `261009 43.5/45.5 CS` is kept only where its legs cannot be
-    named (decided 2026-10-03: one order, one date format, everywhere the table is shown)."""
+    `call calendar`, `16 Oct 26 23C / 30 Oct 26 22C` / `call diagonal`. The site's own
+    `261009 43.5/45.5 CS` is kept only where its legs cannot be named (decided 2026-10-03: one
+    order, one date format, everywhere the table is shown)."""
     if kind != "spread":
         leg = legs[0] if legs else None
         return (_leg_text(leg["expires"], leg["strike"], leg["cp"]) if leg else (site_text or "")), kind
