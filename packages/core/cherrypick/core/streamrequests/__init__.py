@@ -232,8 +232,15 @@ def write_request(
     history_days=None,
     window_events=None,
     nearest_window=None,
+    entry_symbols=None,
 ) -> Path:
     """Atomically (over)write a module's request file and return its path.
+
+    ``entry_symbols``, when given, is the subset of ``symbols`` the module still ENTERS; the rest are
+    held only so open positions can be marked and managed out. The producer subscribes ``symbols``
+    either way and never reads this. It is declared for what judges a module's trading roster (the
+    orchestrator's same-index lint), which a run-off symbol would otherwise trip. Absent when not
+    given, so a module that does not declare it reads exactly as before.
 
     Write-then-rename so a concurrent reader never sees a partial file. Raises on I/O failure —
     best-effort behavior (log and continue) belongs in the module's ``register()`` adapter, which
@@ -250,6 +257,8 @@ def write_request(
         "window_events": clean_window_events(window_events),
         "nearest_window": clean_nearest_window(nearest_window),
     }
+    if entry_symbols is not None:
+        payload["entry_symbols"] = clean_symbols(entry_symbols)
     return write_json_atomic(path, payload, indent=None, default=None)
 
 

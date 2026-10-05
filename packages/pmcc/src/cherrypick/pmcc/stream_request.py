@@ -159,6 +159,9 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
         # symbols; that is the price of ~2,900 fewer subscriptions across TQQQ and XSP.
         window_events={s: ["Quote", "Greeks"] for s in symbols},
         nearest_window={s: False for s in symbols},
+        # What the module still enters, apart from what it only runs off (TQQQ from the 2026-10-05
+        # shield roster) -- read by the same-index lint, never by the producer.
+        entry_symbols=entry_symbols,
     )
 
 
