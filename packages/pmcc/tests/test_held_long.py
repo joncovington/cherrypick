@@ -490,6 +490,22 @@ def test_the_year_long_date_is_asked_for_only_while_a_held_long_arm_can_enter(ca
     assert "TQQQ" not in after.get("window_hints", {})
 
 
+def test_control_off_drops_its_plan_dates_but_keeps_the_held_long_entry_short(cache, shield, tmp_path):
+    """Control retired (2026-10-06): its ~21-DTE long date was still requested for every symbol,
+    and the held-long entry's short was only covered because it happened to equal control's plan
+    short. Each roster kind now asks for its own dates."""
+    conn = db.connect(str(tmp_path / "paper.db"))
+    _entry_market(cache)
+    control_long = clock.expiration_plan(MONDAY.date(), shield.get("defaults"))["long_expiration"]
+    dates = _request(cache, shield, conn, tmp_path)["expirations"]["TQQQ"]
+    assert control_long not in dates
+    assert "2026-09-04" in dates and LEAP in dates
+
+    with_control = copy.deepcopy(shield)
+    with_control["arms"]["control"] = {"enabled": True}
+    assert control_long in _request(cache, with_control, conn, tmp_path)["expirations"]["TQQQ"]
+
+
 def test_the_deep_window_is_sized_on_the_year_long_expiry_at_the_arms_own_depth(cache, shield, tmp_path):
     conn = db.connect(str(tmp_path / "paper.db"))
     _entry_market(cache)
