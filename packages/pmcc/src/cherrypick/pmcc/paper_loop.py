@@ -406,8 +406,9 @@ def _unsettled_today(conn, day: str) -> bool:
 # --------------------------------------------------------------------------- entry
 def _short_guard(config: dict, symbol: str, day: str, short_expiration: str) -> str | None:
     """The refusals for selling one short: settlement declaration, then the dividend span and (where
-    the config declares an earnings calendar, 2026-10-06) the earnings span over the short's life. Every new short runs it -- an entry's, and since 2026-10-04 a held-long roll's or
-    sale's, each of which sells a short spanning its own week."""
+    the config declares an earnings calendar, 2026-10-06) the earnings span over the short's life.
+    Every new short runs it -- an entry's, and since 2026-10-04 a held-long roll's or sale's, each
+    of which sells a short spanning its own week."""
     style = engine.settlement_style(config, symbol)
     if style is None:
         return "unknown_settlement"
