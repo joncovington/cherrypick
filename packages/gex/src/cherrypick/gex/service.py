@@ -44,6 +44,23 @@ def _market_open_close_ts() -> tuple[float, float]:
 _ensured_history_dbs: set[str] = set()
 
 
+# Flow beside positioning (2026-10-05): what traded, session-cumulative as the feed reports it,
+# recorded so "does call volume outweighing put volume move spot?" can be asked of the walls
+# themselves. Until then only `net_gex_vol` existed -- a whole-chain, gamma-weighted call-minus-put
+# net -- and over 47 sessions its sign tracked spot against the day's open (93% call-heavy 5+ points
+# up, 27% 5+ points down) and predicted nothing after it. Raw measures only; any ratio is a read-side
+# derivation. NULL on rows before the columns existed, never backfilled (the cache keeps no volume
+# history). Added by ALTER TABLE, so readers must select by name.
+FLOW_COLUMNS = (
+    "call_volume",  # contracts: every call on the chain
+    "put_volume",  # contracts: every put on the chain
+    "total_call_gex_vol",  # dollar gamma of the call volume (volume_totals)
+    "total_put_gex_vol",  # dollar gamma of the put volume, positive
+    "call_wall_volume",  # calls traded at the stored call_wall strike
+    "put_wall_volume",  # puts traded at the stored put_wall strike
+)
+
+
 def _ensure_history_table(conn: sqlite3.Connection, db_path: Path | str | None = None) -> None:
     """Create the history tables if absent. Idempotent, and skipped once a given file has been
     prepared in this process — the recorder calls this every tick for the life of the daemon, and
@@ -68,6 +85,10 @@ def _ensure_history_table(conn: sqlite3.Connection, db_path: Path | str | None =
         "expiration TEXT)"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_grh_sym_date ON gex_regime_history(symbol, trade_date)")
+    have = {r[1] for r in conn.execute("PRAGMA table_info(gex_regime_history)")}
+    for column in FLOW_COLUMNS:
+        if column not in have:
+            conn.execute(f"ALTER TABLE gex_regime_history ADD COLUMN {column} REAL")
     if db_path is not None:
         _ensured_history_dbs.add(str(Path(db_path).resolve()))
 
@@ -434,10 +455,12 @@ def record_regimes(
                 spot_disp = (snap.spot or 0) * snap.strike_scale
                 totals = {**profile["totals"], **volume_totals(series)}
                 call_wall, put_wall = net_walls(series, "net_gex")
+                flow = flow_measures(series, call_wall, put_wall, totals)
                 conn.execute(
                     "INSERT INTO gex_regime_history (symbol, trade_date, ts, spot, net_gex, "
-                    "net_gex_vol, zero_gamma, call_wall, put_wall, expiration) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "net_gex_vol, zero_gamma, call_wall, put_wall, expiration, "
+                    f"{', '.join(FLOW_COLUMNS)}) "
+                    f"VALUES (?,?,?,?,?,?,?,?,?,?,{','.join('?' * len(FLOW_COLUMNS))})",
                     (
                         sym,
                         today,
@@ -449,6 +472,7 @@ def record_regimes(
                         call_wall,
                         put_wall,
                         str(snap.expiration),
+                        *(flow[c] for c in FLOW_COLUMNS),
                     ),
                 )
                 written += 1
@@ -458,6 +482,21 @@ def record_regimes(
         return written
     finally:
         conn.close()
+
+
+def flow_measures(series: list[dict], call_wall: float | None, put_wall: float | None, totals: dict) -> dict:
+    """The `FLOW_COLUMNS` for one profile: chain-wide call and put contracts, their dollar gamma
+    (`volume_totals`), and the volume at the two stored walls -- calls at the call wall, puts at the
+    put wall. A wall with no series row records NULL, never zero."""
+    at = {s["strike"]: s for s in series}
+    return {
+        "call_volume": sum(s["call_vol"] for s in series),
+        "put_volume": sum(s["put_vol"] for s in series),
+        "total_call_gex_vol": totals.get("total_call_gex_vol"),
+        "total_put_gex_vol": totals.get("total_put_gex_vol"),
+        "call_wall_volume": at[call_wall]["call_vol"] if call_wall in at else None,
+        "put_wall_volume": at[put_wall]["put_vol"] if put_wall in at else None,
+    }
 
 
 def repair_regime_history(db_path: Path | str, *, apply: bool = False) -> dict:

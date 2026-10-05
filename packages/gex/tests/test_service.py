@@ -8,6 +8,7 @@ import sqlite3
 import time
 from datetime import date, datetime, timedelta
 
+import pytest
 from cherrypick.core import gex
 from cherrypick.core.clock import ET
 
@@ -206,6 +207,55 @@ def test_record_regimes_persists_a_compact_summary_row(tmp_path):
     assert row["net_gex"] is not None and row["net_gex_vol"] is not None
     assert row["call_wall"] == 610 and row["put_wall"] == 600
     assert row["spot"] is not None and row["expiration"]
+
+
+def test_record_regimes_records_flow_at_the_walls(tmp_path):
+    """Calls traded at the call wall (610: 5), puts at the put wall (600: 20), and chain totals."""
+    import sqlite3
+
+    cfg = _cfg(tmp_path)
+    assert service.record_regimes(cfg, now_et=IN_SESSION) == 1
+    conn = sqlite3.connect(cfg["history_db_path"])
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM gex_regime_history").fetchone()
+    conn.close()
+    assert (row["call_volume"], row["put_volume"]) == (15, 20)
+    assert (row["call_wall_volume"], row["put_wall_volume"]) == (5, 20)
+    assert row["total_call_gex_vol"] > 0 and row["total_put_gex_vol"] > 0
+    assert row["net_gex_vol"] == pytest.approx(row["total_call_gex_vol"] - row["total_put_gex_vol"], abs=2)
+
+
+def test_an_existing_history_db_gains_the_flow_columns_and_keeps_its_rows(tmp_path):
+    """The live database predates the columns: it must be migrated in place, its rows untouched and
+    NULL in the new columns (never backfilled), and the next reading must carry them."""
+    import sqlite3
+
+    cfg = _cfg(tmp_path)
+    old = sqlite3.connect(cfg["history_db_path"])
+    old.execute(
+        "CREATE TABLE gex_regime_history (symbol TEXT NOT NULL, trade_date TEXT NOT NULL, ts REAL NOT NULL, "
+        "spot REAL, net_gex REAL, net_gex_vol REAL, zero_gamma REAL, call_wall REAL, put_wall REAL, "
+        "expiration TEXT)"
+    )
+    old.execute(
+        "INSERT INTO gex_regime_history VALUES ('SPX','2026-10-02',1.0,7700,1,1,7690,7750,7650,'2026-10-02')"
+    )
+    old.commit()
+    old.close()
+    assert service.record_regimes(cfg, now_et=IN_SESSION) == 1
+    conn = sqlite3.connect(cfg["history_db_path"])
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM gex_regime_history ORDER BY ts").fetchall()
+    conn.close()
+    assert len(rows) == 2 and rows[0]["call_wall"] == 7750
+    assert all(rows[0][c] is None for c in service.FLOW_COLUMNS)
+    assert rows[1]["call_wall_volume"] == 5
+
+
+def test_a_wall_with_no_series_row_records_null_not_zero():
+    series = [{"strike": 600, "call_vol": 3, "put_vol": 4}]
+    flow = service.flow_measures(series, 610, 600, {})
+    assert flow["call_wall_volume"] is None and flow["put_wall_volume"] == 4
 
 
 def test_record_regimes_throttles_to_one_row_per_interval(tmp_path):

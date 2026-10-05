@@ -33,6 +33,14 @@ commodity proxies, the eleven SPDR sectors) into `market_regime_history`, plus a
 - **An entitlement probe answers "is this entitled", not "can this sustain a series".** Watch a new
   reading for a session before admitting it on one print.
 
+**Flow is recorded beside positioning** (2026-10-05, `service.FLOW_COLUMNS`): each regime row also
+carries chain-wide call and put contracts traded, their dollar gamma, and the calls traded at the call
+wall and the puts at the put wall, all session-cumulative. Raw measures, NULL before that date and never
+backfilled (the cache keeps no volume history). The columns arrive by `ALTER TABLE` on the live
+database, so every reader selects by name. They exist to ask whether call volume outweighing put
+volume at the walls moves spot. The whole-chain `net_gex_vol` sign could not answer that: it tracked
+spot against the open and predicted nothing after it.
+
 **The recorder publishes its liveness.** The daemon touches `data/gex/recorder.heartbeat` at the top of
 every tick, and `record --status` reports `stalled: true` past `RECORDER_STALL_SECONDS` — the signal
 the orchestrator's watchdog recycles on (stop, then start). A missing heartbeat degrades to "not
