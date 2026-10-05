@@ -130,10 +130,9 @@ per-session net against `control`. Before that date:
   catches up only until midnight; a `selector-fit` that is a stated no-op until a `selector` arm is
   declared, and fits one that is declared but disabled; and the `arm_added` break for 10-19
   (`_note_selector_arm`), recorded once the arm is enabled.
-- **Staging, any time before the date:** add both keys to the machine orchestrator config
-  (`16:45`, `["-m", "cherrypick.flies.cli", "selector-fit", "--write"]`), and declare the
-  `selector` arm in the machine flies config with `enabled: false`, `entry_modes: []` and its
-  `selector` block. The nightly fit then has a model waiting.
+- **Staged (2026-10-04)** on this machine: both orchestrator keys, and the `selector` arm declared
+  `enabled: false`. The nightly fit writes a model from 10-05's close onward; nothing reads it until
+  the arm is enabled.
 - **On the date:** merge to main and flip the arm to `enabled: true` before the first tick. The
   break journals itself. Land any other roster change from that fortnight with it.
 - **Not live-eligible** until debit-first has a live order path (`live_orders.py` builds legged
