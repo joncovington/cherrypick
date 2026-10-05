@@ -40,7 +40,7 @@ const READING = {
 describe("the metrics bridge", () => {
   it("passes the reading through with snake_case field names intact", () => {
     setMetricsCaller(() => READING);
-    const out = readModuleMetrics("/db/meic.db", "meic_ic", null, null, 1_000);
+    const out = readModuleMetrics("/db/meic.db", "meic_ic", null, null, null, 1_000);
     expect(out.ok).toBe(true);
     expect(out.metrics?.n_records).toBe(2);
     expect(out.metrics?.groups["control"]?.reading["net_pnl"]).toBe(50.0);
@@ -56,7 +56,7 @@ describe("the metrics bridge", () => {
       seen.push([dbPath, schema, start, end]);
       return READING;
     });
-    readModuleMetrics("/db/meic.db", "meic_ic", "2026-08-01", "2026-08-31", 1_000);
+    readModuleMetrics("/db/meic.db", "meic_ic", "2026-08-01", "2026-08-31", null, 1_000);
     expect(seen).toEqual([["/db/meic.db", "meic_ic", "2026-08-01", "2026-08-31"]]);
   });
 
@@ -65,7 +65,7 @@ describe("the metrics bridge", () => {
     // an unreadable db, per its own "never silent" contract -- an empty groups object here would
     // read as "no profiles traded", which is a finding and must never come from a refused read.
     setMetricsCaller(() => ({ ok: false, metrics: null, error: "unknown schema 'not_a_schema'" }));
-    const out = readModuleMetrics("/db/x.db", "not_a_schema", null, null, 1_000);
+    const out = readModuleMetrics("/db/x.db", "not_a_schema", null, null, null, 1_000);
     expect(out.ok).toBe(false);
     expect(out.metrics).toBeNull();
     expect(out.error).toContain("unknown schema");
@@ -77,11 +77,11 @@ describe("the metrics bridge", () => {
       calls += 1;
       return READING;
     });
-    readModuleMetrics("/db/meic.db", "meic_ic", null, null, 1_000);
-    readModuleMetrics("/db/meic.db", "meic_ic", null, null, 60_000);
+    readModuleMetrics("/db/meic.db", "meic_ic", null, null, null, 1_000);
+    readModuleMetrics("/db/meic.db", "meic_ic", null, null, null, 60_000);
     expect(calls).toBe(1);
     // Past the TTL it asks again -- a new closed trade since then would change the reading.
-    readModuleMetrics("/db/meic.db", "meic_ic", null, null, 1_000 + 200_000);
+    readModuleMetrics("/db/meic.db", "meic_ic", null, null, null, 1_000 + 200_000);
     expect(calls).toBe(2);
   });
 
@@ -91,9 +91,9 @@ describe("the metrics bridge", () => {
       calls += 1;
       return READING;
     });
-    readModuleMetrics("/db/meic.db", "meic_ic", null, null, 1_000);
-    readModuleMetrics("/db/curve.db", "curve_vx", null, null, 1_000);
-    readModuleMetrics("/db/meic.db", "meic_ic", "2026-08-01", null, 1_000);
+    readModuleMetrics("/db/meic.db", "meic_ic", null, null, null, 1_000);
+    readModuleMetrics("/db/curve.db", "curve_vx", null, null, null, 1_000);
+    readModuleMetrics("/db/meic.db", "meic_ic", "2026-08-01", null, null, 1_000);
     expect(calls).toBe(3);
   });
 });

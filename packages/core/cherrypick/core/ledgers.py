@@ -346,9 +346,13 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
     caveat, same as calendars' path book)."""
     where, params = _session_where("closed_session", start, end)
     exp_col, has_exp = _experiment_select(conn, "pmcc_positions")
+    # `era` is an ADDED column (2026-08-23); a row from before it reads NULL and never equals a
+    # stamped era, which is the module's own rule (`analytics.headline`). See ERA_SCHEMAS.
+    has_era = "era" in _table_cols(conn, "pmcc_positions")
+    era_col = ", era" if has_era else ""
     rows = conn.execute(
         f"SELECT symbol, arm, gross_pnl, fees, entry_slippage, exit_slippage, "
-        f"net_debit, quantity, closed_session{exp_col} FROM pmcc_positions WHERE status = 'closed'{where}",
+        f"net_debit, quantity, closed_session{exp_col}{era_col} FROM pmcc_positions WHERE status = 'closed'{where}",
         params,
     ).fetchall()
 
@@ -379,6 +383,7 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
             # at entry.
             "max_profit": None,
             "session": r["closed_session"] or "",
+            "era": r["era"] if has_era else None,
         }
         for r in rows
     ]
@@ -539,6 +544,13 @@ def _bwb_open(conn) -> list[dict]:
         }
         for r in rows
     ]
+
+
+# Schemas whose closed records carry the module's own stamped `era`, so a reader can scope to the
+# module's evidence window by the stamp rather than by a date guess that could disagree with it.
+# pmcc stamps every row at entry (`book.enter_position`) and moves eras on a roster change, not a
+# date a `start` bound could stand in for. A schema joins here only once its records carry `era`.
+ERA_SCHEMAS = frozenset({"pmcc"})
 
 
 READERS = {

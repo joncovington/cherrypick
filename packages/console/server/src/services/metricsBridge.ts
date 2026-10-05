@@ -40,10 +40,18 @@ export interface ModuleMetricsResult {
 const UNAVAILABLE =
   "calibration metrics unavailable — cherrypick-core must be installed (pip install -e packages/core)";
 
-function spawnCaller(dbPath: string, schema: string, start: string | null, end: string | null): ModuleMetricsResult {
+function spawnCaller(
+  dbPath: string,
+  schema: string,
+  start: string | null,
+  end: string | null,
+  era: string | null = null,
+): ModuleMetricsResult {
   const argv = ["-m", "cherrypick.core.metrics", "read", "--db", dbPath, "--schema", schema];
   if (start !== null) argv.push("--start", start);
   if (end !== null) argv.push("--end", end);
+  // The module's own stamped era (`ledgers.ERA_SCHEMAS` only -- the CLI refuses any other schema).
+  if (era !== null) argv.push("--era", era);
   const res = spawnModuleCli(argv, UNAVAILABLE);
   if (!res.ok || res.json === null) return { ok: false, metrics: null, error: res.error };
   // The CLI itself reports {"ok": false, "error": ...} for an unknown schema or an unreadable db
@@ -82,12 +90,13 @@ export function readModuleMetrics(
   schema: string,
   start: string | null,
   end: string | null,
+  era: string | null = null,
   now = Date.now(),
 ): ModuleMetricsResult {
-  const key = `${dbPath}|${schema}|${start ?? ""}|${end ?? ""}`;
+  const key = `${dbPath}|${schema}|${start ?? ""}|${end ?? ""}|${era ?? ""}`;
   const hit = cache.get(key);
   if (hit !== undefined && now - hit.at < TTL_MS) return hit.value;
-  const value = caller(dbPath, schema, start, end);
+  const value = caller(dbPath, schema, start, end, era);
   cache.set(key, { at: now, value });
   return value;
 }

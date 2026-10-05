@@ -28,7 +28,7 @@ import type {
 const UNAVAILABLE = "excursions unavailable — this module has no per-position mark path this console reads (see services/excursionsBridge.ts)";
 
 interface Spec {
-  argv: (dbPath: string) => string[];
+  argv: (dbPath: string, era: string | null) => string[];
   /** Pull `{positions, mae_distribution, mfe_distribution}` out of the CLI's own JSON, and the raw
    * position rows into the normalised shape -- the one place each module's own field names
    * (`book` vs `strategy`, `position_id` vs `order_id`, an `n` per position or none) are read. */
@@ -72,7 +72,7 @@ const SPECS: Partial<Record<PerformanceModuleId, Spec>> = {
     normalize: ledgerModuleNormalize("position_id", "arm"),
   },
   pmcc: {
-    argv: (dbPath) => ["-m", "cherrypick.pmcc.cli", "--db", dbPath, "excursions"],
+    argv: (dbPath, era) => ["-m", "cherrypick.pmcc.cli", "--db", dbPath, "excursions", ...(era === null ? [] : ["--era", era])],
     normalize: ledgerModuleNormalize("position_id", "arm"),
   },
   earnings: {
@@ -98,10 +98,10 @@ const SPECS: Partial<Record<PerformanceModuleId, Spec>> = {
   },
 };
 
-function spawnCaller(module: PerformanceModuleId, dbPath: string): ExcursionsResult {
+function spawnCaller(module: PerformanceModuleId, dbPath: string, era: string | null = null): ExcursionsResult {
   const spec = SPECS[module];
   if (spec === undefined) return { ok: false, data: null, error: UNAVAILABLE };
-  const res = spawnModuleCli(spec.argv(dbPath), UNAVAILABLE);
+  const res = spawnModuleCli(spec.argv(dbPath, era), UNAVAILABLE);
   if (!res.ok || res.json === null) return { ok: false, data: null, error: res.error };
   if (res.json["ok"] !== true) {
     const err = res.json["error"];
@@ -130,12 +130,13 @@ const cache = new Map<string, { at: number; value: ExcursionsResult }>();
 export function readExcursions(
   module: PerformanceModuleId,
   dbPath: string,
+  era: string | null = null,
   now = Date.now(),
 ): ExcursionsResult {
-  const key = `${module}|${dbPath}`;
+  const key = `${module}|${dbPath}|${era ?? ""}`;
   const hit = cache.get(key);
   if (hit !== undefined && now - hit.at < TTL_MS) return hit.value;
-  const value = caller(module, dbPath);
+  const value = caller(module, dbPath, era);
   cache.set(key, { at: now, value });
   return value;
 }
