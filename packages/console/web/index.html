@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>cherrypick console</title>
+    <!-- The theme's background (styles.css --bg), inline so it holds before or without the
+         stylesheet. A blank console then says which side failed: dark is the app (it loaded and
+         rendered nothing), white is the browser (the tab was never repainted, or it reloaded without
+         its build). -->
+    <style>
+      html,
+      body {
+        background: #0b0c0f;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
