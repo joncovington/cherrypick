@@ -12,19 +12,25 @@ from cherrypick.core import streamcache as _sc
 
 
 @pytest.fixture(autouse=True)
-def managed_home(tmp_path, monkeypatch):
+def managed_home(tmp_path):
     """Point `CHERRYPICK_HOME` at a temporary directory for every test in the suite.
 
     Autouse, and deliberately not something a test opts into — flies learned this on 2026-07-20,
     when three tests that skipped the opt-in fixture wrote into the real trading home mid-session
     and the day never settled. `PMCC_DB_PATH` and `PMCC_CONFIG` are cleared for the same reason: an
     operator's shell may carry them, and they resolve to real files.
+
+    The redirect is held on its own MonkeyPatch, not the test's `monkeypatch`: a test calling
+    `monkeypatch.undo()` to drop one patch also dropped this one, and from 2026-10-04 every run of
+    a held-long test wrote fake TQQQ shield fills into the real `pmcc_paper.log`.
     """
     home = tmp_path / "cherrypick-home"
-    monkeypatch.setenv("CHERRYPICK_HOME", str(home))
-    monkeypatch.delenv("PMCC_DB_PATH", raising=False)
-    monkeypatch.delenv("PMCC_CONFIG", raising=False)
-    return home
+    mp = pytest.MonkeyPatch()
+    mp.setenv("CHERRYPICK_HOME", str(home))
+    mp.delenv("PMCC_DB_PATH", raising=False)
+    mp.delenv("PMCC_CONFIG", raising=False)
+    yield home
+    mp.undo()
 
 
 def occ(root: str, expiration: str, strike: float, right: str = "C") -> str:

@@ -421,14 +421,14 @@ def test_a_settled_short_leaves_the_position_open_and_shares_block_the_next_sale
     _weekly(cache, "2026-09-18", [(71.0, 0.71, 2.80, 2.90), (72.0, 0.65, 2.20, 2.30)])
     cache.spot("TQQQ", 72.00)
     cache.option("TQQQ", LEAP, 35.0, bid=38.8, ask=39.6, delta=0.94)
-    monkeypatch.setattr(paper_loop.provider, "read_spot", lambda *a, **k: None)  # shares cannot be covered
-    paper_loop.run_once(shield, conn, cache_path=cache.path, when=datetime(2026, 9, 8, 10, 0))
+    with monkeypatch.context() as m:
+        m.setattr(paper_loop.provider, "read_spot", lambda *a, **k: None)  # shares cannot be covered
+        paper_loop.run_once(shield, conn, cache_path=cache.path, when=datetime(2026, 9, 8, 10, 0))
     assert "short_call_2" not in _legs(conn, "shield_hold")
     assert "sell_short:shares_open" in {
         r["reason"] for r in conn.execute("SELECT reason FROM pmcc_decisions")
     }
 
-    monkeypatch.undo()
     paper_loop.run_once(shield, conn, cache_path=cache.path, when=datetime(2026, 9, 8, 10, 5))
     assert db.open_assignment_count(conn, p["position_id"]) == 0
     assert _legs(conn, "shield_hold")["short_call_2"]["status"] == "open"
