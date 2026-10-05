@@ -303,6 +303,7 @@ def test_derive_full_suite_job_table():
         "futures-contracts",
         "guard-mutants",
         "earnings-dolt-pull",
+        "pmcc-earnings-refresh",
         "report-edition",
         "report-edition-retry",
         "report-charts",

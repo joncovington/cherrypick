@@ -406,6 +406,59 @@ def test_a_short_spanning_an_ex_date_is_refused_and_the_position_waits_without_o
     assert _legs(conn, "shield_hold")["short_call_2"]["status"] == "open"
 
 
+def test_a_short_spanning_an_announcement_is_refused_like_an_ex_date(cache, shield, tmp_path):
+    """The earnings span (2026-10-06): the same refuse-and-wait as the ex-date, on the declared
+    calendar's announcement dates."""
+    shield["earnings"] = {"TQQQ": {"declared_through": "2099-12-31", "dates": ["2026-09-08"]}}
+    conn = _enter(cache, shield, tmp_path)
+    _friday_market(cache)
+    paper_loop.run_once(shield, conn, cache_path=cache.path, when=datetime(2026, 9, 4, 15, 0))
+    old = _legs(conn, "shield_hold")["short_call_1"]
+    assert (old["status"], old["close_reason"]) == ("closed", "expiry:earnings_span")
+    assert "short_call_2" not in _legs(conn, "shield_hold")
+
+    _weekly(cache, "2026-09-18", [(70.0, 0.71, 2.80, 2.90), (71.0, 0.65, 2.20, 2.30)])
+    cache.option("TQQQ", LEAP, 35.0, bid=37.8, ask=38.6, delta=0.94)
+    paper_loop.run_once(shield, conn, cache_path=cache.path, when=datetime(2026, 9, 9, 10, 0))
+    assert _legs(conn, "shield_hold")["short_call_2"]["status"] == "open"
+
+
+def test_an_entry_whose_short_spans_an_announcement_is_refused(cache, shield, tmp_path):
+    shield["earnings"] = {"TQQQ": {"declared_through": "2099-12-31", "dates": ["2026-09-01"]}}
+    conn = _enter(cache, shield, tmp_path)
+    assert db.open_positions(conn) == []
+    reasons = {r["reason"] for r in conn.execute("SELECT reason FROM pmcc_decisions")}
+    assert "earnings_span" in reasons
+
+
+def test_a_symbol_the_earnings_calendar_does_not_cover_is_refused_never_assumed_clear(
+    cache, shield, tmp_path
+):
+    """Once the config declares an earnings calendar, a symbol missing from it, or a short past its
+    horizon, is refused: a lapsed table and "no announcement" must not look alike."""
+    shield["earnings"] = {}
+    conn = _enter(cache, shield, tmp_path)
+    assert db.open_positions(conn) == []
+    assert "earnings_calendar_lapsed" in {
+        r["reason"] for r in conn.execute("SELECT reason FROM pmcc_decisions")
+    }
+
+    shield["earnings"] = {"TQQQ": {"declared_through": "2026-08-31", "dates": []}}  # the short is 09-04
+    conn2 = _enter(cache, shield, tmp_path / "b")
+    assert db.open_positions(conn2) == []
+
+
+def test_a_symbol_before_its_start_date_is_neither_entered_nor_requested(cache, shield, tmp_path):
+    """`symbol_from` (2026-10-06): new symbols join one market day at a time, so their chain windows
+    are not all opened together."""
+    shield["symbol_from"] = {"TQQQ": "2026-08-25"}
+    conn = _enter(cache, shield, tmp_path)  # Monday 08-24, a day early
+    assert db.open_positions(conn) == []
+    assert "TQQQ" not in _request(cache, shield, conn, tmp_path).get("expirations", {})
+    paper_loop.run_once(shield, conn, cache_path=cache.path, when=datetime(2026, 8, 25, 11, 0))
+    assert {p["symbol"] for p in db.open_positions(conn)} == {"TQQQ"}
+
+
 def test_a_settled_short_leaves_the_position_open_and_shares_block_the_next_sale(
     cache, shield, tmp_path, monkeypatch
 ):

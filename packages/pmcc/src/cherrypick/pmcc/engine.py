@@ -62,6 +62,20 @@ DEFAULT_ENABLED = {"control": True}
 SETTLEMENT_STYLES = ("cash", "physical")
 
 
+def entry_symbols(config: dict, day: str) -> list[str]:
+    """The configured symbols live on `day`: `symbols`, less any whose `symbol_from` date is still
+    ahead. A symbol before its date is neither entered nor subscribed for entry, so a batch of new
+    symbols joins one market day at a time instead of opening every chain window at once (the six
+    added 2026-10-12..19 would have cost ~6,000 subscriptions together against a 12,000 budget).
+    An open position is unaffected: marks and management follow the ledger, not this list."""
+    starts = config.get("symbol_from") or {}
+    return [
+        s.strip().upper()
+        for s in (config.get("symbols") or ["TQQQ"])
+        if str(starts.get(s.strip().upper(), "")) <= str(day)
+    ]
+
+
 def settlement_style(config: dict, symbol: str) -> str | None:
     """How `symbol` settles, or None if nothing declares it — which is a refusal, not a default."""
     declared = config.get("settlement_style")
@@ -95,6 +109,43 @@ def dividend_coverage_ok(config: dict, symbol: str, through_day: str) -> bool:
     block = (config.get("dividends") or {}).get(symbol.upper()) or {}
     declared_through = block.get("declared_through")
     return isinstance(declared_through, str) and str(through_day) <= declared_through
+
+
+# --------------------------------------------------------------------------- the earnings calendar
+#
+# Single stocks gap on earnings, and a 0.70-delta weekly short is the leg the gap hurts: replayed on
+# the stocks with their own Cboe vol index (VXAZN, VXAPL, VXGS, VXIBM) over 2020-2026, refusing a
+# short across an announcement beat selling it through in 7 of 8 cases (AMZN alpha -5.7 -> -0.5 a
+# year), even though the long then rides the announcement unhedged. So a short spanning a declared
+# announcement is refused, exactly as one spanning an ex-date is, and the position runs short-less
+# until the date clears.
+#
+# Declared the dividends way: `earnings: {SYMBOL: {declared_through, dates}}`, refreshed daily from
+# the local Dolt calendar by `scripts/pmcc_earnings_refresh.py` (nothing on a loop path reads Dolt).
+# An ETF declares `dates: []` far ahead. A config with NO `earnings` key runs no check -- the absent
+# key is the pre-2026-10-06 config, not a declaration -- but once the key exists every symbol must
+# be covered, and a span past `declared_through` is refused rather than assumed announcement-free.
+
+
+def earnings_checked(config: dict) -> bool:
+    return isinstance(config.get("earnings"), dict)
+
+
+def earnings_coverage_ok(config: dict, symbol: str, through_day: str) -> bool:
+    block = (config.get("earnings") or {}).get(symbol.upper()) or {}
+    declared_through = block.get("declared_through")
+    return isinstance(declared_through, str) and str(through_day) <= declared_through
+
+
+def earnings_in_span(config: dict, symbol: str, start_day: str, end_day: str) -> str | None:
+    """The first declared announcement inside the CLOSED span [start_day, end_day], or None. Closed at
+    both ends: an after-close announcement on the sale day and a pre-open one on expiry day are both
+    held through."""
+    block = (config.get("earnings") or {}).get(symbol.upper()) or {}
+    for d in sorted(str(x) for x in (block.get("dates") or [])):
+        if str(start_day) <= d <= str(end_day):
+            return d
+    return None
 
 
 def ex_date_in_span(config: dict, symbol: str, start_day: str, end_day: str) -> str | None:

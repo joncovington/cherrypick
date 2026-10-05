@@ -28,6 +28,16 @@
     "SLV": "physical"
   },
   "_dividends_note": "PHYSICAL-settlement symbols only. A short whose life [sale day, expiration] spans a declared ex-dividend date is REFUSED (ex_dividend_span): an ITM short call is really assigned at the close before the ex-date, and this module deliberately does not model early assignment. At entry the whole entry is refused; on a held-long position the roll is, and the position runs without a short until a later day clears the date (the tracker counts those weeks). Skipped outright for `cash`-settled XSP. Dates are DECLARED from the issuer's own schedule and never computed or fetched; a non-paying trust (GLD, SLV) is declared with an empty list. REFRESH BEFORE declared_through: a span past it refuses entry (dividend_calendar_lapsed) rather than assuming itself dividend-free, so a lapsed table stops entries loudly, by design.",
+  "_earnings_note": "From 2026-10-06 a weekly short whose life spans a declared earnings announcement is refused (earnings_span), exactly as one spanning an ex-date is, and the position runs short-less until the date clears. Replayed on single stocks with their own Cboe vol index over 2020-2026, refusing beat selling through in 7 of 8 cases. Declared per symbol like dividends: an ETF is kind etf with no dates; a stock's dates and declared_through are rewritten daily by scripts/pmcc_earnings_refresh.py (the pmcc-earnings-refresh job, 06:00 ET) from the local Dolt calendar, declared through a week short of its horizon. Once this key exists every symbol must be covered: a missing entry or a short past declared_through is refused earnings_calendar_lapsed. Delete the whole key to run no check.",
+  "earnings": {
+    "XSP": {"kind": "etf", "declared_through": "2099-12-31", "dates": []},
+    "QQQ": {"kind": "etf", "declared_through": "2099-12-31", "dates": []},
+    "GLD": {"kind": "etf", "declared_through": "2099-12-31", "dates": []},
+    "IWM": {"kind": "etf", "declared_through": "2099-12-31", "dates": []},
+    "SLV": {"kind": "etf", "declared_through": "2099-12-31", "dates": []}
+  },
+  "_symbol_from_note": "Optional {SYMBOL: YYYY-MM-DD}: a symbol before its date is neither entered nor subscribed for entry, so a batch of new symbols joins one market day at a time rather than opening every chain window at once (about 1,000 subscriptions a symbol while it can still enter, against a 12,000 budget).",
+  "symbol_from": {},
   "dividends": {
     "TQQQ": {
       "_source": "ProShares own distribution schedule (proshares.com/resources/distributions/distribution-schedule), verified 2026-08-24: Q3 ex 9/23 payable 9/29, Q4 ex 12/23 payable 12/30, plus the POTENTIAL excise-tax distribution ex 12/31 payable 1/7/2027 (included deliberately -- refusing a week that might carry an ex-date is the safe direction). Cross-checked against an independent aggregator, which agreed on 9/23; this module's docs record that aggregators disagree by a day, so the issuer page is the authority and a second source is the check on it. DECLARED, never fetched -- nothing on a loop path may touch the network. Refresh by hand from the issuer page before an entry can span past declared_through; a lapse stops entries loudly, by design.",
