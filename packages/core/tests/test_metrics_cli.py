@@ -128,3 +128,50 @@ def test_stamped_advised_rows_group_per_experiment_and_unstamped_stay_on_the_tag
 def test_a_ledger_without_the_column_reads_with_no_experiment(meic_db):
     out = cli.cmd_read(_args(db=meic_db, schema="meic_ic"))
     assert out["ok"] and "@" not in "".join(out["groups"])
+
+
+def _pmcc_db(tmp_path, with_era=True):
+    path = tmp_path / "pmcc_paper.db"
+    conn = sqlite3.connect(path)
+    era_col = ", era TEXT" if with_era else ""
+    conn.execute(
+        "CREATE TABLE pmcc_positions (symbol TEXT, arm TEXT, status TEXT, gross_pnl REAL, fees REAL, "
+        f"entry_slippage REAL, exit_slippage REAL, net_debit REAL, quantity INTEGER, closed_session TEXT{era_col})"
+    )
+    rows = [
+        ("TQQQ", "keltner", "closed", 50.0, 5.0, 1.0, 1.0, 20.0, 1, "2026-08-22", None),  # pre-stamp
+        ("TQQQ", "control", "closed", 80.0, 5.0, 1.0, 1.0, 20.0, 1, "2026-09-10", "redesign"),
+        ("XSP", "control", "closed", -40.0, 5.0, 1.0, 1.0, 20.0, 1, "2026-10-09", "redesign"),
+        ("XSP", "shield", "closed", 30.0, 5.0, 1.0, 1.0, 20.0, 1, "2026-10-09", "shield"),
+        ("XSP", "shield", "open", 0.0, 0.0, 1.0, None, 20.0, 1, None, "shield"),  # open, excluded
+    ]
+    cols = 11 if with_era else 10
+    conn.executemany(
+        f"INSERT INTO pmcc_positions VALUES ({','.join('?' * cols)})", [r[:cols] for r in rows]
+    )
+    conn.commit()
+    conn.close()
+    return str(path)
+
+
+def test_era_scopes_pmcc_by_the_stamp_not_the_close_date(tmp_path):
+    """pmcc's eras are roster changes stamped at entry: a redesign position closing after the shield
+    boundary is still redesign, and an unstamped row never matches a stamped era."""
+    db = _pmcc_db(tmp_path)
+    shield = cli.cmd_read(_args(db=db, schema="pmcc", era="shield"))
+    assert shield["ok"] and shield["n_records"] == 1 and set(shield["groups"]) == {"shield"}
+    redesign = cli.cmd_read(_args(db=db, schema="pmcc", era="redesign"))
+    assert redesign["n_records"] == 2 and redesign["groups"]["control"]["trade_nets"] == [75.0, -45.0]
+    for everything in (cli.cmd_read(_args(db=db, schema="pmcc", era="ALL")), cli.cmd_read(_args(db=db, schema="pmcc"))):
+        assert everything["n_records"] == 4
+
+
+def test_era_on_a_pmcc_ledger_from_before_the_column_matches_nothing(tmp_path):
+    db = _pmcc_db(tmp_path, with_era=False)
+    out = cli.cmd_read(_args(db=db, schema="pmcc", era="shield"))
+    assert out["ok"] and out["n_records"] == 0
+
+
+def test_era_on_a_schema_without_one_is_refused_not_ignored(meic_db):
+    out = cli.cmd_read(_args(db=meic_db, schema="meic_ic", era="current"))
+    assert out["ok"] is False and "no era" in out["error"]

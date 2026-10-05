@@ -9,7 +9,11 @@ own profile tag.
 
 Command:
     read --db PATH --schema {meic_ic|earnings|fly_book|dc_week|pmcc|curve_vx|bwb_132}
-         [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+         [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--era ERA]
+
+`--era` keeps only records stamped with that era (a schema in `ledgers.ERA_SCHEMAS`; any other
+schema is refused rather than silently unfiltered). An unstamped row never matches. `ALL`, or no
+flag, applies no era filter.
 
 Output: {"ok": true, "schema": ..., "n_records": N,
          "groups": {tag: {"reading": <calibration_reading>,
@@ -47,6 +51,11 @@ def cmd_read(args) -> dict:
             conn.close()
     except sqlite3.OperationalError as exc:
         return {"ok": False, "error": f"cannot read {args.db!r}: {exc}"}
+    era = getattr(args, "era", None)
+    if era and era != "ALL":
+        if ledgers.canonical_schema(args.schema) not in ledgers.ERA_SCHEMAS:
+            return {"ok": False, "error": f"schema {args.schema!r} records carry no era; --era cannot scope it"}
+        records = [r for r in records if r.get("era") == era]
 
     def summarize(group: list) -> dict:
         return {
@@ -66,7 +75,7 @@ def cmd_read(args) -> dict:
         exp = r.get("experiment_id")
         r["group_tag"] = f"{r['arm']}@{exp}" if exp else r["arm"]
     groups = group_by_tag(records, tag_key="group_tag", summarize=summarize)
-    return {"ok": True, "schema": args.schema, "n_records": len(records), "groups": groups}
+    return {"ok": True, "schema": args.schema, "era": era, "n_records": len(records), "groups": groups}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -79,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     rd.add_argument("--start", default=None)
     rd.add_argument("--end", default=None)
+    rd.add_argument("--era", default=None, help="one stamped era (ERA_SCHEMAS only), or ALL")
     args = ap.parse_args(argv)
     fn = {"read": cmd_read}[args.cmd]
     result = fn(args)

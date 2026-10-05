@@ -19,6 +19,15 @@ import { readAdvisedPairs } from "./pairs.js";
 import { readMeasurementBreaks } from "./integrity.js";
 import { readExcursions } from "../services/excursionsBridge.js";
 import { onPeakRiskOver, peakRiskSessions } from "./fliesPeakRisk.js";
+import { CURRENT_ERA as PMCC_CURRENT_ERA } from "./pmcc.js";
+
+/**
+ * A module whose ledger stamps its own era on every row, and the era it counts as evidence. The
+ * suite epoch alone is not that module's window: pmcc's eras are roster changes stamped at entry,
+ * so a date bound would both admit earlier eras' rows and disagree with the module's own headline.
+ * Scoped by the stamp, through `core.metrics read --era` (`ledgers.ERA_SCHEMAS`).
+ */
+const MODULE_ERA: Partial<Record<PerformanceModuleId, string>> = { pmcc: PMCC_CURRENT_ERA };
 
 /**
  * The shared performance read: one module's calibration reading, per profile, via
@@ -86,12 +95,11 @@ function readBreaks(dbPath: string): MeasurementBreak[] {
 
 /**
  * `era="current"` (the default) bounds to the suite's own `data_epoch` (`suiteEra` -- the same
- * lever `calibrate` enforces); `era="ALL"` pools every session on file. This is deliberately the
- * SUITE-WIDE epoch only: a module with its own finer era table (MEIC's advisor-era cutover,
- * pmcc's 2026-08-23 redesign, stored as a ledger column rather than a date `core.metrics` can
- * bound on) is not yet integrated here -- widening `core.metrics read` to accept an era filter
- * directly (rather than only `--start`/`--end`) is a follow-up, not silently approximated by a
- * date guess that could disagree with the module's own boundary.
+ * lever `calibrate` enforces), and for a module in `MODULE_ERA` also to its own stamped era
+ * (`core.metrics read --era`, never a date guess that could disagree with the module's boundary).
+ * The exit-reason, held-back and excursion reads take the same era, so no card on the slide answers
+ * for a different window. `era="ALL"` pools every session and every era on file. MEIC's
+ * advisor-era cutover is a date, not a stamp, and is not integrated here yet.
  */
 export function readModulePerformance(
   config: ConsoleConfig,
@@ -102,6 +110,7 @@ export function readModulePerformance(
   const schema = MODULE_SCHEMA[module];
   const suite = suiteEra(config.paths.orchestratorConfig);
   const start = era === "current" ? suite.from : null;
+  const moduleEra = era === "current" ? (MODULE_ERA[module] ?? null) : null;
   const file = ledgerFile(module, mode);
   if (file === null) {
     return {
@@ -109,7 +118,7 @@ export function readModulePerformance(
       module,
       mode,
       schema,
-      era: { key: era, from: start, note: suite.note },
+      era: { key: era, from: start, note: suite.note, moduleEra },
       nRecords: 0,
       groups: [],
       exitReasons: { unavailable: `${module} has no live ledger` },
@@ -125,18 +134,19 @@ export function readModulePerformance(
   // Independent of the metrics reading -- a query straight off the ledger, not through
   // metricsBridge -- so it's read whether or not the calibration reading itself succeeds; a
   // module whose ledger schema `core.metrics` doesn't yet know should still show its exit reasons.
-  const exits = readExitReasons(config, module, file);
+  const exits = readExitReasons(config, module, file, moduleEra);
   const breaks = readBreaks(dbPath);
-  const excursions = readExcursions(module, dbPath);
+  // pmcc's own verb defaults to its current era, so ALL has to be asked for to widen it.
+  const excursions = readExcursions(module, dbPath, module in MODULE_ERA ? (moduleEra ?? "ALL") : null);
 
-  const res = readModuleMetrics(dbPath, schema, start, null);
+  const res = readModuleMetrics(dbPath, schema, start, null, moduleEra);
   if (!res.ok || res.metrics === null) {
     return {
       ok: false,
       module,
       mode,
       schema,
-      era: { key: era, from: start, note: suite.note },
+      era: { key: era, from: start, note: suite.note, moduleEra },
       nRecords: 0,
       groups: [],
       exitReasons: exits.exitReasons,
@@ -166,7 +176,7 @@ export function readModulePerformance(
     module,
     mode,
     schema,
-    era: { key: era, from: start, note: suite.note },
+    era: { key: era, from: start, note: suite.note, moduleEra },
     nRecords: res.metrics.n_records,
     groups,
     exitReasons: exits.exitReasons,

@@ -98,6 +98,7 @@ export function readExitReasons(
   config: ConsoleConfig,
   module: ExitReasonsModule,
   file: string = "paper_trades.db",
+  era: string | null = null,
 ): ExitReasonsResult {
   const spec = SPECS[module];
   // Flies genuinely has no concept to read, not merely an absent/unreadable ledger -- a distinct
@@ -115,17 +116,23 @@ export function readExitReasons(
     // Resolved per file: meic's and earnings' ledgers keep their old column name until each one's
     // own rename window, and nothing here may assume which side of it a file is on.
     const tagColumn = armColumnOf(db, spec.positionsTable);
+    // One stamped era, when the caller scopes to one (pmcc). A ledger from before the column has no
+    // stamped rows, so it matches nothing -- the same rule as the module's own headline.
+    const scoped = era !== null;
+    const eraOk = scoped && hasColumn(db, spec.positionsTable, "era");
+    const eraWhere = (alias: string) => (!scoped ? "" : eraOk ? ` AND ${alias}era = ?` : " AND 0");
+    const eraArgs: string[] = eraOk && era !== null ? [era] : [];
 
     const reasonRows = db
-      .prepare<[], Record<string, unknown>>(
+      .prepare<string[], Record<string, unknown>>(
         `SELECT ${tagColumn} AS tag, exit_reason AS reason, COUNT(*) AS n,
                 SUM(${spec.netExpr}) AS net, AVG(${spec.netExpr}) AS avg_net
            FROM ${spec.positionsTable}
-          WHERE ${spec.closedWhere} AND exit_reason IS NOT NULL
+          WHERE ${spec.closedWhere} AND exit_reason IS NOT NULL${eraWhere("")}
           GROUP BY tag, reason
           ORDER BY tag, reason`,
       )
-      .all();
+      .all(...eraArgs);
     const exitReasons: ExitReasonRow[] = reasonRows.map((r) => ({
       tag: str(r["tag"]) ?? "",
       reason: str(r["reason"]) ?? "",
@@ -138,16 +145,16 @@ export function readExitReasons(
     if (spec.events !== null && hasTable(db, spec.events.table) && hasColumn(db, spec.events.table, "executed")) {
       const ev = spec.events;
       const heldRows = db
-        .prepare<[], Record<string, unknown>>(
+        .prepare<string[], Record<string, unknown>>(
           `SELECT p.${tagColumn} AS tag, e.action AS action, e.reason AS reason, e.gate AS gate,
                   COUNT(*) AS n
              FROM ${ev.table} e
              JOIN ${spec.positionsTable} p ON e.${ev.eventKey} = p.${ev.positionKey}
-            WHERE e.executed = 0
+            WHERE e.executed = 0${eraWhere("p.")}
             GROUP BY tag, action, reason, gate
             ORDER BY tag, action, reason`,
         )
-        .all();
+        .all(...eraArgs);
       heldBack = heldRows.map((r) => ({
         tag: str(r["tag"]) ?? "",
         action: str(r["action"]) ?? "",

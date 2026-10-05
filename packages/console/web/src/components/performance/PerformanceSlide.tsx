@@ -61,11 +61,20 @@ export function PerformanceSlide({ module, mode = "paper" }: { module: Performan
       {data.era.note !== null && (
         <p className="muted" style={{ fontSize: 12 }}>
           scoped to the suite's current evidence window ({data.era.from ?? "all time"}) — {data.era.note}
+          {data.era.moduleEra !== null && (
+            <>
+              {" "}· and to this module's own <strong>{data.era.moduleEra}</strong> era, by the era stamped on each
+              position; earlier eras are in the history tab
+            </>
+          )}
         </p>
       )}
       {data.groups.length === 0 ? (
         <Card title="performance" updatedAt={dataUpdatedAt}>
-          <p className="muted">no closed trades in this window yet</p>
+          <p className="muted">
+            no closed trades in this window yet
+            {data.era.moduleEra !== null && <> (the {data.era.moduleEra} era)</>}
+          </p>
         </Card>
       ) : (
         <>

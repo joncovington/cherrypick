@@ -126,6 +126,43 @@ describe("readModulePerformance", () => {
     expect(seen).toEqual([["2026-08-21", null]]);
   });
 
+  it("scopes pmcc to its own stamped era as well as the suite epoch, and only pmcc", () => {
+    // pmcc's eras are roster changes stamped at entry; the suite epoch alone pooled the redesign and
+    // pre-redesign books into the shield era's slide (2026-10-05).
+    const seen: Array<[string, string | null]> = [];
+    setMetricsCaller((_db, schema, _start, _end, era) => {
+      seen.push([schema, era ?? null]);
+      return READING;
+    });
+    const excursionEras: Array<string | null> = [];
+    setExcursionsCaller((_module, _db, era) => {
+      excursionEras.push(era ?? null);
+      return { ok: false, data: null, error: "n/a" };
+    });
+    const pmcc = readModulePerformance(fakeConfig("2026-08-21"), "pmcc", "current");
+    readModulePerformance(fakeConfig("2026-08-21"), "curve", "current");
+    expect(seen).toEqual([["pmcc", "shield"], ["curve_vx", null]]);
+    expect(pmcc.era).toMatchObject({ key: "current", from: "2026-08-21", moduleEra: "shield" });
+    expect(excursionEras[0]).toBe("shield");
+  });
+
+  it("era='ALL' on pmcc widens its own era too, including the excursions verb's default", () => {
+    const seen: Array<string | null> = [];
+    setMetricsCaller((_db, _schema, _start, _end, era) => {
+      seen.push(era ?? null);
+      return READING;
+    });
+    const excursionEras: Array<string | null> = [];
+    setExcursionsCaller((_module, _db, era) => {
+      excursionEras.push(era ?? null);
+      return { ok: false, data: null, error: "n/a" };
+    });
+    const out = readModulePerformance(fakeConfig("2026-08-21"), "pmcc", "ALL");
+    expect(seen).toEqual([null]);
+    expect(out.era.moduleEra).toBeNull();
+    expect(excursionEras).toEqual(["ALL"]);
+  });
+
   it("era='ALL' passes no date bound at all", () => {
     const seen: Array<[string | null, string | null]> = [];
     setMetricsCaller((_db, _schema, start, end) => {

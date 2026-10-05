@@ -120,7 +120,9 @@ export interface ModulePerformanceResult {
   /** Which ledger this reads: paper (the promotion evidence) or the module's live book. */
   mode: TradingMode;
   schema: string;
-  era: { key: "current" | "ALL"; from: string | null; note: string | null };
+  /** `moduleEra`: the module's own stamped era the reading is also scoped to (pmcc's
+   * `CURRENT_ERA`), or null where the module has none or `key` is ALL. */
+  era: { key: "current" | "ALL"; from: string | null; note: string | null; moduleEra: string | null };
   nRecords: number;
   groups: ModulePerformanceGroup[];
   /** Realized exit reasons per tag, or `{unavailable}` for a module with no single exit-reason

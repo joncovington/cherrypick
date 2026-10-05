@@ -107,6 +107,44 @@ describe("readExitReasons", () => {
     expect(noflipHeld).toMatchObject({ action: "close", reason: "profit_take", gate: "spread_too_wide", n: 1 });
   });
 
+  it("scopes exit reasons and held-back verdicts to one stamped era when asked (pmcc)", () => {
+    const { config, tmp } = tmpConfig();
+    fs.mkdirSync(path.join(tmp, "pmcc"), { recursive: true });
+    const db = new Database(path.join(tmp, "pmcc", "paper_trades.db"));
+    db.exec(
+      "CREATE TABLE pmcc_positions (position_id TEXT, arm TEXT, status TEXT, exit_reason TEXT, gross_pnl REAL, fees REAL, era TEXT)",
+    );
+    db.exec(
+      "CREATE TABLE pmcc_management_events (position_id TEXT, action TEXT, reason TEXT, executed INTEGER, gate TEXT)",
+    );
+    db.prepare("INSERT INTO pmcc_positions VALUES ('old','keltner','closed','time_exit',10,1,NULL)").run();
+    db.prepare("INSERT INTO pmcc_positions VALUES ('r1','control','closed','time_exit',20,1,'redesign')").run();
+    db.prepare("INSERT INTO pmcc_positions VALUES ('s1','shield','closed','short_rolled',30,1,'shield')").run();
+    db.prepare("INSERT INTO pmcc_management_events VALUES ('r1','close','stop',0,'spread_too_wide')").run();
+    db.prepare("INSERT INTO pmcc_management_events VALUES ('s1','roll','short_dte',0,'spread_too_wide')").run();
+    db.close();
+
+    const shield = readExitReasons(config, "pmcc", "paper_trades.db", "shield");
+    const all = readExitReasons(config, "pmcc");
+    closePooledDbs();
+    expect(shield.exitReasons).toEqual([{ tag: "shield", reason: "short_rolled", n: 1, net: 29, avgNet: 29 }]);
+    expect(shield.heldBack.map((r) => r.tag)).toEqual(["shield"]);
+    expect(Array.isArray(all.exitReasons) && all.exitReasons.length).toBe(3);
+    expect(all.heldBack).toHaveLength(2);
+  });
+
+  it("an era asked of a ledger with no era column matches nothing rather than everything", () => {
+    const { config, tmp } = tmpConfig();
+    fs.mkdirSync(path.join(tmp, "pmcc"), { recursive: true });
+    const db = new Database(path.join(tmp, "pmcc", "paper_trades.db"));
+    db.exec("CREATE TABLE pmcc_positions (position_id TEXT, arm TEXT, status TEXT, exit_reason TEXT, gross_pnl REAL, fees REAL)");
+    db.prepare("INSERT INTO pmcc_positions VALUES ('old','keltner','closed','time_exit',10,1)").run();
+    db.close();
+    const out = readExitReasons(config, "pmcc", "paper_trades.db", "shield");
+    closePooledDbs();
+    expect(out.exitReasons).toEqual([]);
+  });
+
   it("reports flies as unavailable rather than a misleadingly empty table", () => {
     const { config } = tmpConfig();
     const out = readExitReasons(config, "flies");
