@@ -7,8 +7,9 @@ reads the packages' own pyproject files, so a new package declaring tastytrade i
 """
 
 import re
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 PACKAGES = Path(__file__).resolve().parents[2]
 
