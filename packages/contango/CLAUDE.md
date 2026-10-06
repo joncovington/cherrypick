@@ -96,4 +96,9 @@ due against decisions taken). It is in `eval_activity.NOT_APPLICABLE`: it acts o
 window, so an idle tick is the design and not a stall. It ships `enabled: false` in the
 orchestrator's example, like curve.
 
-**Not yet:** a console page.
+**Console** (2026-10-06): `/contango`. Session (today's read, each arm's holding and decision),
+regime, decisions, arms (each arm's daily-NAV tear sheet against buy-and-hold and against its own
+rule), performance (NAV, underwater, monthly heat map, rolling 60-session return, stress windows),
+costs (every fill's slippage against the 2 bps the replay assumed, missed windows, distributions),
+positions, history (closed stints and the daily NAV log), help. The ledger is read by
+`readers/contango.ts`; the tear sheet comes from `contango metrics` through `services/navBridge.ts`.

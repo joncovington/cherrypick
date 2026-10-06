@@ -167,6 +167,26 @@ export const CURVE_SLIDES = [
 export type CurveSlideId = (typeof CURVE_SLIDES)[number]["id"];
 
 /**
+ * contango's tabs (2026-10-06): the VIX/VIX3M switch held in shares. `session` is today's read and
+ * each arm's holding; `arms` and `performance` are the daily-NAV tear sheet against buy-and-hold
+ * and against the arm's own rule; `costs` is every fill's slippage against the replay's 2 bps,
+ * the missed windows and the distributions. No advisor tab: the module declares no advice bounds.
+ */
+export const CONTANGO_SLIDES = [
+  { id: "session", label: "session" },
+  { id: "regime", label: "regime" },
+  { id: "decisions", label: "decisions" },
+  { id: "arms", label: "arms" },
+  { id: "performance", label: "performance" },
+  { id: "costs", label: "costs" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
+  { id: "guide", label: "help" },
+] as const satisfies readonly NavSlide[];
+
+export type ContangoSlideId = (typeof CONTANGO_SLIDES)[number]["id"];
+
+/**
  * PMCC's tabs, on the frame since 2026-09-25. `now` → `session`; its cards became pages:
  * `decisions` (the arm rail, the attempt timeline, today's attempts and management verdicts, the
  * decision log), `arms` (the arm comparison) and `positions`. `history` is the completed cycles in
@@ -349,6 +369,17 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
       { label: "help", ids: ["guide"] },
     ],
     legacy: { now: "session" },
+  },
+  contango: {
+    slides: CONTANGO_SLIDES,
+    groups: [
+      { label: "today", ids: ["session", "regime"] },
+      { label: "evidence", ids: ["decisions", "arms"] },
+      { label: "study", ids: ["performance", "costs"] },
+      { label: "tables", ids: ["positions", "history"] },
+      { label: "help", ids: ["guide"] },
+    ],
+    legacy: {},
   },
   calendars: {
     slides: CALENDARS_SLIDES,

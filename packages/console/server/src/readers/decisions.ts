@@ -4,6 +4,7 @@ import { withReadOnlyDb, str, numLoose } from "./db.js";
 import { resolveCurveSession } from "./curve.js";
 import { resolvePmccSession } from "./pmcc.js";
 import { resolveBwbSession } from "./bwb.js";
+import { resolveContangoSession } from "./contango.js";
 
 /**
  * The collapsed decision journal (`core.ledgerstore.record_decision`'s own table) -- one row per
@@ -20,7 +21,7 @@ import { resolveBwbSession } from "./bwb.js";
  * could show for it without a change to the module's own engine first.
  */
 
-export type DecisionsModule = "curve" | "pmcc" | "bwb";
+export type DecisionsModule = "curve" | "pmcc" | "bwb" | "contango";
 
 export interface DecisionRow {
   book: string;
@@ -47,6 +48,11 @@ const SPECS: Record<DecisionsModule, Spec> = {
   curve: { dir: (c) => c.paths.curveDir, table: "curve_decisions", resolveSession: resolveCurveSession },
   pmcc: { dir: (c) => c.paths.pmccDir, table: "pmcc_decisions", resolveSession: resolvePmccSession },
   bwb: { dir: (c) => c.paths.bwbDir, table: "bwb_decisions", resolveSession: resolveBwbSession },
+  contango: {
+    dir: (c) => c.paths.contangoDir,
+    table: "contango_decisions",
+    resolveSession: resolveContangoSession,
+  },
 };
 
 /**
