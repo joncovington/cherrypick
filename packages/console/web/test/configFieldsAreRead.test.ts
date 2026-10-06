@@ -34,5 +34,7 @@ describe("the Config page's fields", () => {
       return !/^\d+$/.test(key) && !readByCode(key);
     });
     expect(dead).toEqual([]);
-  });
+    // One synchronous git grep per field: alone it takes about a second, but under the full parallel
+    // run it outlasted vitest's 5s default twice on 2026-10-05 -- a failure of the clock, not the check.
+  }, 30_000);
 });

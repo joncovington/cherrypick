@@ -3,6 +3,9 @@ import { Card } from "../../components/DataTable";
 import { DivergingBars } from "../../components/grid/DivergingBars";
 import { GridCard, StatTile } from "../../components/grid/GridCard";
 import { fmtMoney, fmtNum } from "../../lib/format";
+import { TimeLineChart } from "../../components/chart/TimeLineChart";
+import { SERIES_COLORS } from "../../components/Charts";
+import { useCurveEquity } from "../../lib/api";
 
 /**
  * curve's session tab: the resolved session (`data.session`) as tiles and shapes, every card linking
@@ -41,6 +44,14 @@ export function CurveSession({ data, loading }: { data: CurvePayload | undefined
   const closedNet = armRows.reduce((n, [, t]) => n + t.net, 0);
   const closedPositions = armRows.reduce((n, [, t]) => n + t.positions, 0);
   const recent = (data?.regimeSeries ?? []).filter((r) => r.ratio !== null).slice(-10);
+  const equity = useCurveEquity();
+  const equityLines = Object.entries(equity.data?.arms ?? {})
+    .filter(([, e]) => e.series.length > 1)
+    .map(([arm, e], i) => ({
+      label: arm,
+      color: SERIES_COLORS[i % SERIES_COLORS.length],
+      points: e.series.map(([x, y]) => ({ x, y })),
+    }));
 
   return (
     <div className="grid-12">
@@ -95,18 +106,18 @@ export function CurveSession({ data, loading }: { data: CurvePayload | undefined
       />
 
       <GridCard
-        label="closed net by arm"
+        label="marked equity by arm"
         span={6}
         h={304}
-        to="/curve/history"
-        toLabel="the completed cycles behind net by arm"
-        foot="after every cost"
+        to="/curve/performance"
+        toLabel="the marked equity, its drawdowns and the closed-trade metrics"
+        foot={`open spreads at their marks, after every cost · closed net ${armRows.length === 0 ? "—" : armRows.map(([arm, t]) => `${arm} ${fmtMoney(t.net)}`).join(", ")}`}
       >
-        <DivergingBars
-          rows={armRows.map(([arm, t]) => ({ label: arm, value: t.net, title: `${arm}: ${String(t.positions)} cycles` }))}
-          format={fmtMoney}
-          emptyText={loading ? "reading…" : "no cycle has completed yet"}
-        />
+        {equityLines.length === 0 ? (
+          <p className="muted">{loading || equity.isLoading ? "reading…" : "not enough sessions yet"}</p>
+        ) : (
+          <TimeLineChart series={equityLines} height={240} />
+        )}
       </GridCard>
 
       <GridCard
