@@ -84,19 +84,30 @@ built from the inputs it sees, the rule wins: it costs nothing and fails the sam
 | `enabled` | `false` | The master switch. Off: the agent never runs, and the live start never offers it. |
 | `model` | `"sonnet"` | The model alias, travelling on argv as the advisor's does. Never hardcoded. |
 | `paper` | `true` | Whether the paper arm `advised:intraday-agent` acts. Paper needs no daily yes. |
-| `live_mode` | `"shadow"` | What the agent may do on live when chosen: `off` or `shadow`. `gate` is reserved and refused until a written decision adds it. |
+| `live_mode_max` | `"shadow"` | The most the live start may offer: `off`, `shadow`, `gates` or `gates_and_closures`. A ceiling, not a choice: the per-day selection picks within it, and the qualification below has to allow it too. |
 | `trigger_band_points` | `10` | Run only within this distance of the trend band, or while a stranded vertical is open. |
 | `decision_ttl_minutes` | `10` | How long one decision is valid before the arm falls back to the rule. |
 | `max_calls_per_session` | `40` | A hard cap per session, so a stuck trigger cannot run up a bill. |
 
 **On live the agent is chosen per day, never by config alone.** `/live-flies-start` gains one step.
-After the live YES, and only when `enabled` is true and `live_mode` is not `off`, it asks a second,
-separate question with the AskUserQuestion tool, exactly two options:
+After the live YES, and only when `enabled` is true, it asks a second, separate question with the
+AskUserQuestion tool: a selection of the modes allowed today.
 
-- **"YES: run the intraday agent in shadow against today's live arm (Sonnet, about $1-2 today)"**
-- **"No, not today"**
+| Option | What the agent may do on live |
+|---|---|
+| **No agent today** | nothing (always offered) |
+| **Shadow** | records decisions against the live arm and acts on nothing |
+| **Gates** | may block live entries on the trend's losing side; never places an order |
+| **Gates and closures** | may also close stranded live verticals: model-chosen live orders |
 
-The answer is written onto the same per-day arm record (`state/flies-live-arm.json`):
+**A mode is offered only when both of these allow it:**
+- `live_mode_max` in config;
+- the qualification file (below).
+
+So the dialogue can never offer more than config, and config can never reach past the evidence. The
+question shows, for each locked mode, what it is still waiting for.
+
+The selection is written onto the same per-day arm record (`state/flies-live-arm.json`):
 `intraday_agent: {mode, model, confirmed_at}`. The record self-disarms at `live.disarm_time` like
 everything on it, so tomorrow needs a fresh yes.
 
@@ -108,6 +119,45 @@ everything on it, so tomorrow needs a fresh yes.
 
 The `--status` readout before the question shows the config block and today's agent state, so the
 yes is informed, the same rule as the live YES.
+
+## Unlocking gates and closures: how much evidence
+
+The agent is not trained: no weights change, and it reads each pack fresh. What it needs before
+acting on live is **evidence**: enough sessions to show it beats `trend-rule` by more than luck.
+
+**From flies' own paper `control`** (SPX, era from 2026-08-21, measured 2026-10-05):
+- 30 sessions, +$149 mean and a $385 standard deviation per session.
+- 23 of the 30 had a stranded vertical, costing about $497 on each.
+- Paired arms correlate at about 0.78 (control against `no-entry-on-up-trend`, 11 shared sessions).
+
+**Sessions to detect an agent edge D over `trend-rule`** (paired, one-sided 5%, 80% power, at 0.78):
+
+| D, per session | about 200 | about 150 | about 100 | about 50 |
+|---|---|---|---|---|
+| sessions | 11 | 19 | 42 | 170 |
+
+$100 is the working guess: about half the strand cost, less the good entries a gate also blocks.
+
+**The qualification file** (`data/flies/intraday_agent_qualification.json`) is written by a
+deterministic evaluation over the replay, the paper arms and the live shadow, never by the agent. It
+unlocks:
+
+- **`gates`:**
+  - at least 20 sessions with the agent's decisions recorded (the replay counts once its look-ahead
+    test passes);
+  - the agent arm beats `trend-rule` on net per session at one-sided 95%, and strands no more often;
+  - at least 5 of those sessions from the live shadow, agreeing in sign with paper.
+- **`gates_and_closures`:** everything above, plus:
+  - at least 60 stranded-vertical episodes with a close decision;
+  - the closes' edge survives the 2x spread haircut;
+  - the shadow's would-be live closes, re-priced at natural against real live quotes
+    (`fly_order_path`), are still positive.
+
+**The thresholds are re-derived** from the data at each evaluation (the 0.78 rests on 11 sessions).
+The file records the numbers it judged on, so an unlock can always be checked.
+
+**Expected timing:** the replay supplies about 30 sessions now. With about a month of forward
+sessions, gates could plausibly qualify. Closures need about two months.
 
 ## Paper fills against live fills
 
@@ -229,9 +279,14 @@ Days, not months, and nothing waits on anything it does not need:
   the first forward sessions to agree.
 - **Model: Sonnet.** The alias lives in config (`intraday_agent.model`), never in code, as the
   advisor's does.
-- **Configurable, and chosen per day on live.** The `intraday_agent` block is off by default, and on
-  live the agent runs only after a separate yes in `/live-flies-start`, recorded on that day's arm
-  record (above).
+- **Configurable, and chosen per day on live.** The `intraday_agent` block is off by default. On live
+  the agent's mode (none, shadow, gates, gates and closures) is a separate selection in
+  `/live-flies-start`, recorded on that day's arm record. Only the modes that config allows and the
+  qualification has unlocked are offered.
+- **The written exception (user decision, 2026-10-05).** `gates_and_closures` lets a model's output
+  place live orders, an exception to the suite's rule that AI stays out of live order paths. It is
+  allowed only through the qualification above, only when selected on the day, and only within the
+  live loop's own gates (arming, the buying-power cap, the halt flag).
 
 ## Open decisions
 
