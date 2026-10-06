@@ -31,7 +31,7 @@ from cherrypick.flies import intraday_pack
 
 DEFAULTS = {
     "enabled": False,
-    "model": "sonnet",
+    "model": "opus",
     "paper": True,
     "live_mode_max": "shadow",
     "trigger_band_points": 10.0,
