@@ -47,8 +47,8 @@ def test_a_valid_reply_maps_labels_back_to_real_ids(stores):  # noqa: F811
         ),
         ('{"trend_gate": "on", "close_stranded": [], "confidence": 1.5, "reason": "x"}', "confidence"),
         (
-            '{"trend_gate": "on", "close_stranded": [], "confidence": 0.5, "reason": "' + "w " * 41 + '"}',
-            "40 words",
+            '{"trend_gate": "on", "close_stranded": [], "confidence": 0.5, "reason": "  "}',
+            "reason is required",
         ),
         ("the trend looks strong", "JSON"),
     ],
@@ -56,6 +56,20 @@ def test_a_valid_reply_maps_labels_back_to_real_ids(stores):  # noqa: F811
 def test_an_inadmissible_reply_is_refused_with_its_reason(stores, reply, error):  # noqa: F811
     v = ia.validate(reply, _pack(*stores))
     assert not v["ok"] and error in v["error"]
+
+
+def test_a_long_reason_is_clipped_and_the_decision_kept(stores):  # noqa: F811
+    long = " ".join(f"w{i}" for i in range(55))
+    v = ia.validate(
+        '{"trend_gate": "off", "close_stranded": [], "confidence": 0.6, "reason": "' + long + '"}',
+        _pack(*stores),
+    )
+    assert v["ok"] and v["decision"]["trend_gate"] == "off" and v["decision"]["reason_clipped"] is True
+    assert v["decision"]["reason"].split() == [f"w{i}" for i in range(ia.REASON_MAX_WORDS)]
+    short = ia.validate(
+        '{"trend_gate": "on", "close_stranded": [], "confidence": 0.6, "reason": "chop"}', _pack(*stores)
+    )
+    assert short["decision"]["reason"] == "chop" and short["decision"]["reason_clipped"] is False
 
 
 def test_a_tick_is_worth_a_call_only_on_an_open_vertical_or_near_the_band():
