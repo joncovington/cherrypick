@@ -517,6 +517,8 @@ export interface PmccArmCell {
   symbol: string;
   positions: number;
   grossPnl: number | null;
+  /** The ledger's TOTAL cost (fees + slippage + settlement), NOT trading fees: never show it under a
+   *  "fees" header -- split it through the module's trade-cash function (calendars, 2026-10-06). */
   fees: number | null;
   /** `gross_pnl - fees`, the suite's one net convention. Null if either side is unrecorded. */
   netPnl: number | null;
@@ -954,7 +956,11 @@ export interface CalendarsArmCell {
   positions: number;
   weeks: number;
   grossPnl: number | null;
+  /** Trading fees only. Until 2026-10-06 this was the ledger's TOTAL cost, shown under "fees". */
   fees: number | null;
+  settlementFees: number | null;
+  slippage: number | null;
+  /** gross - fees - settlement - slippage. */
   netPnl: number | null;
   winRate: number | null;
 }
@@ -1358,6 +1364,8 @@ export interface BwbArmCell {
   symbol: string;
   positions: number;
   grossPnl: number | null;
+  /** The ledger's TOTAL cost (fees + slippage + settlement), NOT trading fees: never show it under a
+   *  "fees" header -- split it through the module's trade-cash function (calendars, 2026-10-06). */
   fees: number | null;
   netPnl: number | null;
   winRate: number | null;

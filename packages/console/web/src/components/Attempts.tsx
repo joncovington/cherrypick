@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 
 /** Modules with a per-arm entry decision. calendars has none — its books share one entry plan. */
-export type AttemptsModule = "meic" | "flies" | "pmcc";
+import type { AttemptsModule } from "@console/shared";
+export type { AttemptsModule };
 import { AXIS_MUTED } from "./Charts";
 // The two ledgers stamp their attempts differently and both mean ET — see etTime.ts for why
 // reading them with one rule silently slides a whole session sideways.

@@ -315,6 +315,18 @@ function readPositions(db: DatabaseHandle, where: string, params: string[]): Cal
  * `dc_week` schema.
  */
 function readBooks(db: DatabaseHandle): CalendarsArmCell[] {
+  // The ledger's `fees` is the TOTAL cost, so the split comes from `positionCash` -- the history
+  // table's own arithmetic -- per (arm, structure), and the cell's `fees` is trading fees only.
+  const split = new Map<string, ReturnType<typeof positionCash>[]>();
+  for (const r of db
+    .prepare<[], Record<string, unknown>>(
+      `SELECT arm, structure, entry_debit, ${positionCashColumns(db, "dc_")} FROM dc_positions WHERE status = 'closed'`,
+    )
+    .all()) {
+    const key = `${str(r["arm"]) ?? ""}|${str(r["structure"]) ?? ""}`;
+    const debit = num(r["entry_debit"]);
+    split.set(key, [...(split.get(key) ?? []), positionCash(r, debit === null ? null : -debit)]);
+  }
   return db
     .prepare<[], Record<string, unknown>>(
       `SELECT arm, structure, COUNT(*) AS n, COUNT(DISTINCT week_of) AS weeks,
@@ -327,13 +339,16 @@ function readBooks(db: DatabaseHandle): CalendarsArmCell[] {
     .map((r) => {
       const n = Number(r["n"] ?? 0);
       const wins = num(r["wins"]);
+      const t = tradeTotals(split.get(`${str(r["arm"]) ?? ""}|${str(r["structure"]) ?? ""}`) ?? []);
       return {
         arm: str(r["arm"]) ?? "",
         structure: str(r["structure"]) ?? "",
         positions: n,
         weeks: Number(r["weeks"] ?? 0),
         grossPnl: num(r["gross"]),
-        fees: num(r["fees"]),
+        fees: t.fees,
+        settlementFees: t.settlementFees,
+        slippage: t.slippage,
         netPnl: num(r["net"]),
         winRate: n > 0 && wins !== null ? wins / n : null,
       };

@@ -63,8 +63,8 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
           <td>{p.arm}</td>
           {/* MM-DD, the pmcc precedent — every row here is near-dated, so the year is noise.
               The full date rides the title so it is still recoverable. */}
-          <td title={p.entrySession}>{p.entrySession === "" ? "—" : p.entrySession.slice(5)}</td>
-          <td title={p.expiration ?? undefined}>{p.expiration === null ? "—" : p.expiration.slice(5)}</td>
+          <td>{p.entrySession === "" ? "—" : p.entrySession}</td>
+          <td>{p.expiration ?? "—"}</td>
           <td>{strikeSet(p.nearStrike, p.bodyStrike, p.farStrike)}</td>
           <td>{p.quantity ?? "—"}</td>
           <td title="the fly's own net credit, per share">{fmtPrice(p.entryCredit)}</td>

@@ -271,13 +271,13 @@ export function PositionsCard({
           <td>
             <span className="mono">{p.arm}</span>
           </td>
-          <td title={p.entrySession}>{p.entrySession === "" ? "—" : p.entrySession.slice(5)}</td>
+          <td>{p.entrySession === "" ? "—" : p.entrySession}</td>
           {/* Both legs: a double calendar's front and back expire on DIFFERENT dates by
               construction, and naming one would hide the other. */}
           <td title={`front ${p.frontExpiration} / back ${p.backExpiration}`}>
-            {p.frontExpiration.slice(5)}
+            {p.frontExpiration}
             <span className="muted"> / </span>
-            {p.backExpiration.slice(5)}
+            {p.backExpiration}
           </td>
           <td>
             {sideLabel(p)}
@@ -324,7 +324,7 @@ export function BookComparison({ data, updatedAt }: { data: CalendarsPayload | u
   return (
     <DataCard
       title="results by arm"
-      headers={["arm", "structure", "weeks", "positions", "gross", "fees", "net", "win rate"]}
+      headers={["arm", "structure", "weeks", "positions", "gross", "fees", "settle", "slip", "net", "win rate"]}
       loading={data === undefined}
       rowCount={arms.length}
       numFrom={2}
@@ -332,9 +332,8 @@ export function BookComparison({ data, updatedAt }: { data: CalendarsPayload | u
       updatedAt={updatedAt}
       footer={
         <p className="integrity-note">
-          Net is <span className="mono">gross − fees</span>, the suite&rsquo;s one convention, and every figure
-          is after the modeled fee and slippage stack. Rows are per structure tag and are never summed across
-          tags.
+          Each row adds up: <span className="mono">gross − fees − settle − slip = net</span>. Fills are modelled at
+          mid, so slippage is a charged cost here. Rows are per structure tag and are never summed across tags.
         </p>
       }
     >
@@ -349,7 +348,9 @@ export function BookComparison({ data, updatedAt }: { data: CalendarsPayload | u
           <td>{b.weeks}</td>
           <td>{b.positions}</td>
           <td>{fmtMoney(b.grossPnl)}</td>
-          <td>{fmtMoney(b.fees)}</td>
+          <td>{fmtMoney(b.fees === null ? null : -b.fees)}</td>
+          <td>{fmtMoney(b.settlementFees === null ? null : -b.settlementFees)}</td>
+          <td>{fmtMoney(b.slippage === null ? null : -b.slippage)}</td>
           <td>
             <PnlCell v={b.netPnl} />
           </td>
