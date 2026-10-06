@@ -50,14 +50,19 @@ def result_path() -> Path:
     return _home.data_dir("flies") / "intraday_agent_replay.json"
 
 
-def sessions(ledger_conn, *, start: str = REPLAY_FROM, end: str = REPLAY_TO) -> list[str]:
-    """The sessions `control` settled in the window, the only ones with outcomes to score."""
+def sessions(
+    ledger_conn, *, start: str = REPLAY_FROM, end: str = REPLAY_TO, arm: str | None = REPLAY_ARM
+) -> list[str]:
+    """The sessions `arm` settled in the window, the only ones with outcomes to score. `arm=None`
+    takes any arm: the live ledger, which holds one arm a session (the pilot's, `gex` before
+    2026-09-18 and `control` since)."""
+    clause, params = ("arm = ? AND ", [arm]) if arm else ("", [])
     return [
         r[0]
         for r in ledger_conn.execute(
-            "SELECT DISTINCT trade_date FROM fly_positions WHERE arm = ? AND symbol = 'SPX' AND status = 'settled' "
+            f"SELECT DISTINCT trade_date FROM fly_positions WHERE {clause}symbol = 'SPX' AND status = 'settled' "
             "AND void_reason IS NULL AND trade_date >= ? AND trade_date <= ? ORDER BY trade_date",
-            (REPLAY_ARM, start, end),
+            (*params, start, end),
         )
     ]
 
@@ -173,14 +178,16 @@ def decisions_of(recs: list[dict]) -> list[dict]:
     ]
 
 
-def load_rows(ledger_conn, session: str) -> list[dict]:
+def load_rows(ledger_conn, session: str, arm: str | None = REPLAY_ARM) -> list[dict]:
+    """The session's settled entries for `arm` (any arm with None, as `sessions`)."""
+    clause, params = ("arm = ? AND ", [arm]) if arm else ("", [])
     return [
         dict(r)
         for r in ledger_conn.execute(
-            "SELECT position_id, kind, side, entry_time, entry_trend_value, pnl FROM fly_positions "
-            "WHERE arm = ? AND symbol = 'SPX' AND status = 'settled' AND void_reason IS NULL AND trade_date = ? "
+            "SELECT position_id, arm, kind, side, entry_time, entry_trend_value, pnl FROM fly_positions "
+            f"WHERE {clause}symbol = 'SPX' AND status = 'settled' AND void_reason IS NULL AND trade_date = ? "
             "AND kind IN ('fly', 'short_vertical') ORDER BY entry_time",
-            (REPLAY_ARM, session),
+            (*params, session),
         )
     ]
 
