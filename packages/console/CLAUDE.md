@@ -368,8 +368,9 @@ net per period, the intraday series and the broker account. Rules, stated on the
   purpose — daily against per trade — and the page labels which is which.
 
 **Flies intraday agent tab** (`/flies/agent`, `pages/Flies/AgentSlide.tsx` over
-`GET /api/flies/agent[?session=]` → `readers/fliesAgent.ts`). Paper-only: a live read is refused
-on the page until the live shadow is scored (`web/test/fliesAgentSlide.test.tsx`).
+`GET /api/flies/agent[?session=]` → `readers/fliesAgent.ts`). It has no live view: a live read is
+refused on the page (`web/test/fliesAgentSlide.test.tsx`), and the live shadow, scored by the
+module, is the "live shadow" table in the Paper view, read off the same file.
 
 - **Every verdict and every settled figure is the module's qualification file**
   (`data/flies/intraday_agent_qualification.json`, `cherrypick.flies.intraday_eval`, rewritten at

@@ -692,6 +692,12 @@ _ADDED_POSITION_COLUMNS = {
     # The modelled fees of the vertical's round trip had it closed (open + close, two legs), recorded
     # at the tag so every reader values the close from the row alone and agrees to the cent.
     "close_tag_fees": "REAL",
+    # The intraday agent on a LIVE entry (intraday_advice.entry_stamp): the day's mode, the gate a
+    # fresh decision held at entry, and whether that gate would have refused this entry. Null with
+    # the agent off. What the live shadow is scored on (intraday_eval).
+    "agent_mode": "TEXT",
+    "agent_gate": "TEXT",
+    "agent_would_refuse": "INTEGER",
 }
 
 # Rows whose decisions rest on a defect, stamped once when `void_reason` is first added. Keyed on

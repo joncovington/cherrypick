@@ -133,6 +133,37 @@ everything on it, so tomorrow needs a fresh yes.
 The `--status` readout before the question shows the config block and today's agent state, so the
 yes is informed, the same rule as the live YES.
 
+**As built (step 4, 2026-10-06):**
+- `python -m cherrypick.flies.live_loop --agent-mode <mode>` writes the selection. It refuses, and
+  writes nothing, unless today's arm record exists and the mode is in
+  `intraday_eval.offered_live_modes`. Those are the qualification file's `offered_modes` (off and
+  shadow while there is no file), narrowed again by `live_mode_max` as config stands now.
+- `--status` carries an `intraday_agent` block: the config, `mode_today`, `offered_modes` and each
+  criterion with its value.
+- **There is no live closing-order path.** `intraday_advice.LIVE_CLOSES_BUILT` is false, so
+  `gates_and_closures` is never offered, and a record naming it runs as `gates`. On live, the
+  agent's named closes are tagged at live natural on the live rows (close_tags.py), exactly as on
+  paper. That is how the shadow's closes are scored against real live quotes. Building the order
+  path is its own change, and it flips that constant.
+- The live loop reads the live decision once a tick (`intraday_advice.live_tick`). In `shadow` it
+  changes nothing. From `gates` up, a fresh decision sets the live arm's trend gate. With no fresh
+  decision, the arm keeps its own declared gate.
+- Every live entry carries `agent_mode`, `agent_gate` and `agent_would_refuse`: whether the
+  decision in force would have refused it, by the gate's own test (`completion_opposes_drift`).
+- The supervisor job `flies-intraday-agent-live` runs the agent on the live arm each minute of the
+  session. It exits at once unless today's record names a mode.
+
+**How the shadow is scored** (`intraday_eval.shadow_scoring`):
+- Per live session run in `shadow`, the gate's live effect is minus the settled net of the entries
+  it would have refused.
+- The paper effect is the agent arm less control on the same session: the same gate, applied.
+- A session where neither moved is no evidence and is not counted.
+- `live_shadow` passes on at least 5 counted sessions with at least 80% agreeing in sign.
+- `shadow_closes_live` passes on at least 10 shadow closes tagged at live natural that still save
+  money.
+- Both thresholds are choices made here (the plan named the bar, not the numbers), recorded as
+  constants beside the others.
+
 ## Unlocking gates and closures: how much evidence
 
 The agent is not trained: no weights change, and it reads each pack fresh. What it needs before
@@ -314,6 +345,8 @@ Days, not months, and nothing waits on anything it does not need:
    - the paper arms `trend-rule` and `intraday-agent`, acting (from 2026-10-06; the supervisor's
      `flies-intraday-agent` job runs the agent each minute of the session, within its own budget);
    - the live shadow, recording.
+   - **Built (2026-10-06):** the selection, the live job, gates mode and the shadow's scoring
+     (above). Live closing orders are not.
 3. **Also in parallel:** the historical replay of `trend-rule` and the agent over the ~30 recorded
    sessions, **once per model** (Opus and Sonnet, about $255 together). Each is scored against
    `trend-rule` on the same sessions, and the cheaper model is kept unless the dearer one wins by

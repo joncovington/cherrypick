@@ -27,7 +27,7 @@ from pathlib import Path
 
 from cherrypick.core import home as _home
 
-from cherrypick.flies import intraday_pack
+from cherrypick.flies import engine, intraday_pack
 
 DEFAULTS = {
     "enabled": False,
@@ -41,6 +41,10 @@ DEFAULTS = {
     "min_minutes_between_calls": 4,
 }
 LIVE_MODES = ("off", "shadow", "gates", "gates_and_closures")
+#: No live closing-order path exists yet. Until one is built and this flips, `gates_and_closures` is
+#: never offered and never in force on live: a record naming it runs as `gates`. Closes stay tags
+#: (close_tags.py), on live as on paper, so the shadow's would-be closes are still scored.
+LIVE_CLOSES_BUILT = False
 TARGETS = ("paper", "live")
 REASON_MAX_WORDS = 40
 
@@ -69,7 +73,49 @@ def live_mode_today(acfg: dict, arm_record: dict | None, session: str) -> str:
     chosen = (arm_record.get("intraday_agent") or {}).get("mode") or "off"
     if chosen not in _LIVE_RANK:
         return "off"
-    return _capped(chosen, acfg["live_mode_max"])
+    return built_mode(_capped(chosen, acfg["live_mode_max"]))
+
+
+def built_mode(mode: str) -> str:
+    """`mode`, narrowed to what the live loop can actually do (LIVE_CLOSES_BUILT)."""
+    return "gates" if mode == "gates_and_closures" and not LIVE_CLOSES_BUILT else mode
+
+
+def live_tick(
+    params: dict, acfg: dict, arm_record: dict | None, session: str, now: float
+) -> tuple[dict, dict]:
+    """The live arm's params this tick, and the agent context to stamp on what it enters.
+
+    `shadow` never changes a param: the decision is read so each entry can carry what the agent's
+    gate would have done. From `gates` up, a fresh live decision sets the arm's trend gate; with no
+    fresh decision the arm keeps its own declared gate, so a missing agent costs advice, never a
+    change to the arm. Never mutates `params`."""
+    mode = live_mode_today(acfg, arm_record, session)
+    ctx = {"mode": mode, "decision": None}
+    if mode == "off":
+        return params, ctx
+    decision = read_decision("live", session=session, now=now)
+    ctx["decision"] = decision
+    if decision is not None and _LIVE_RANK[mode] >= _LIVE_RANK["gates"]:
+        params = {**params, "refuse_completion_against_trend": decision["trend_gate"] == "on"}
+    return params, ctx
+
+
+def entry_stamp(ctx: dict, snapshot: dict, params: dict, side: str) -> dict:
+    """The columns a live entry carries about the agent: the day's mode, the gate a fresh decision
+    held, and whether that gate would have refused THIS entry (`engine.completion_opposes_drift`,
+    the gate's own test). The live shadow is scored on the last one. Empty with the agent off."""
+    if ctx.get("mode", "off") == "off":
+        return {}
+    decision = ctx.get("decision")
+    if decision is None:
+        return {"agent_mode": ctx["mode"], "agent_gate": None, "agent_would_refuse": None}
+    opposes, _drift = engine.completion_opposes_drift(snapshot, params, side)
+    return {
+        "agent_mode": ctx["mode"],
+        "agent_gate": decision["trend_gate"],
+        "agent_would_refuse": int(decision["trend_gate"] == "on" and opposes),
+    }
 
 
 def _capped(chosen: str, ceiling: str) -> str:

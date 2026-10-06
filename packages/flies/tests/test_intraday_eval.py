@@ -141,12 +141,16 @@ def test_run_writes_the_file_the_console_reads(conn, tmp_path, monkeypatch):
     target = tmp_path / "q.json"
     monkeypatch.setattr(intraday_eval, "qualification_path", lambda: target)
     monkeypatch.setattr(intraday_eval, "load_records", dict)
+    monkeypatch.setattr(intraday_eval, "live_db_path", lambda: tmp_path / "no-live.db")
     _row(conn, "c", "control", "fly", 100.0)
     _row(conn, "r", "trend-rule", "short_vertical", -260.0, close_tag_natural=3.0, close_tag_mid=2.6)
     conn.commit()
     out = intraday_eval.run(conn, {"intraday_agent": {"enabled": True}}, write=True)
     assert json.loads(target.read_text(encoding="utf-8")) == out
-    assert out["arms"] == {"control": "control", **ARMS} and out["offered_modes"] == ["off", "shadow"]
+    assert out["arms"] == {"control": "control", **ARMS, "live": "control"} and out["offered_modes"] == [
+        "off",
+        "shadow",
+    ]
     assert out["trend_band_points"] == 20.0
     (day,) = out["per_session"]
     assert day["session"] == "2026-10-06" and day["decided"] is False and day["agent"] is None

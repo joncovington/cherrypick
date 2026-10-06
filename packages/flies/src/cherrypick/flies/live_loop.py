@@ -72,6 +72,7 @@ import sys
 import time
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import config as _cfg  # noqa: E402
@@ -84,10 +85,13 @@ from cherrypick.core import settlement as _settlement  # noqa: E402
 from cherrypick.flies import (
     alerts_db,  # noqa: E402
     clock,  # noqa: E402
+    close_tags,  # noqa: E402
     engine,  # noqa: E402
     fill_facts,  # noqa: E402
     fill_model,  # noqa: E402
     fly,  # noqa: E402
+    intraday_advice,  # noqa: E402
+    intraday_eval,  # noqa: E402
     live_orders,  # noqa: E402
     provider,  # noqa: E402
     stream_request,  # noqa: E402
@@ -758,6 +762,16 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
     params = _merged_live_params(config, arm)
     day = snapshot["date"]
     symbol = snapshot["symbol"]
+    # The intraday agent, in the mode today's arm record names (docs/intraday-agent-plan.md): off,
+    # shadow (read and stamped, never acted on) or gates (a fresh decision sets the trend gate).
+    # Anything going wrong here is the agent being off for the tick, never a failed tick.
+    try:
+        params, agent_ctx = intraday_advice.live_tick(
+            params, intraday_advice.agent_config(config), read_arm_record(), day, time.time()
+        )
+    except Exception as exc:  # noqa: BLE001
+        log(f"intraday agent context unavailable (agent off this tick): {type(exc).__name__}: {exc}")
+        agent_ctx = {"mode": "off", "decision": None}
     summary = {
         "arm": arm,
         "live": live,
@@ -766,6 +780,7 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
         "cancelled": 0,
         "pending_orders": 0,
         "skips": [],
+        "agent_mode": agent_ctx["mode"],
     }
 
     def journal(mode, reason, *, accepted=False, center=None, position_id=None, detail=None):
@@ -1160,6 +1175,7 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                             "entry_time": clock.now_iso(),
                             "entry_order_id": str(res["order_id"]),
                             "entry_fill_status": "pending",
+                            **_agent_stamp(agent_ctx, snapshot, params, plan["side"], log),
                         },
                     )
                     _telemetry(
@@ -1198,6 +1214,26 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                     journal("entry", decision_reason, center=plan["center"], detail=res.get("error"))
                 summary["entered"] += 1
 
+    # --- 4b. the agent's named closes, TAGGED on the live rows at live natural (close_tags.py) ---
+    # Never an order: no live closing path exists (intraday_advice.LIVE_CLOSES_BUILT). The tags are
+    # how the shadow's closes are scored against real live quotes.
+    decision = agent_ctx.get("decision")
+    if live and decision and decision.get("close_stranded"):
+        try:
+            tagged = close_tags.tag(
+                conn,
+                snapshot,
+                arm,
+                params,
+                source=close_tags.AGENT,
+                agent_ids=decision["close_stranded"],
+                now=clock.now_iso(),
+            )
+            for t in tagged:
+                log(f"agent close tagged (live {agent_ctx['mode']}, not executed): {t}")
+        except Exception as exc:  # noqa: BLE001
+            log(f"agent close tagging failed (non-fatal): {type(exc).__name__}: {exc}")
+
     # --- 5. live book roll-up (so the dashboard/analytics/settled-marker see the live day) ---
     if live:
         final_rows = conn.execute(
@@ -1219,6 +1255,15 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
         summary["marks"] = _record_marks(conn, snapshot, day, [dict(r) for r in final_rows], params)
 
     return summary
+
+
+def _agent_stamp(agent_ctx: dict, snapshot: dict, params: dict, side: str, log) -> dict:
+    """`intraday_advice.entry_stamp`, never allowed to cost the entry's row."""
+    try:
+        return intraday_advice.entry_stamp(agent_ctx, snapshot, params, side)
+    except Exception as exc:  # noqa: BLE001
+        log(f"agent entry stamp failed (non-fatal): {type(exc).__name__}: {exc}")
+        return {}
 
 
 def _record_marks(conn, snapshot: dict, day: str, rows: list[dict], params: dict) -> int:
@@ -1860,6 +1905,58 @@ def arm_stamp_date() -> str | None:
     return _live.arm_record_date("flies", legacy_paths=[_legacy_arm_stamp_path()])
 
 
+def read_arm_record() -> dict | None:
+    try:
+        with open(arm_stamp_path(), encoding="utf-8") as f:
+            rec = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return rec if isinstance(rec, dict) else None
+
+
+def set_agent_mode(config: dict, mode: str, *, today: str | None = None) -> dict:
+    """Write the day's intraday agent selection onto TODAY's arm record (/live-flies-start, after the
+    YES). Refuses -- writing nothing -- unless the record is for today and `mode` is one the
+    evidence offers (`intraday_eval.offered_live_modes`: the qualification file, capped by config
+    and by what the live loop can do). "off" is always accepted. The record's other keys are kept,
+    and the record still self-disarms with everything on it, so tomorrow needs a fresh choice."""
+    today = today or provider.now_et().date().isoformat()
+    record = read_arm_record()
+    if record is None or record.get("date") != today:
+        return {"ok": False, "error": f"no arm record for {today}: arm first (the YES), then choose"}
+    offered = intraday_eval.offered_live_modes(config, intraday_eval.read_qualification())
+    if mode not in offered:
+        return {"ok": False, "error": f"{mode!r} is not offered today", "offered": offered}
+    acfg = intraday_advice.agent_config(config)
+    record["intraday_agent"] = {"mode": mode, "model": acfg["model"], "confirmed_at": clock.now_iso()}
+    path = Path(arm_stamp_path())
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(record), encoding="utf-8")
+    os.replace(tmp, path)
+    return {"ok": True, "date": today, "intraday_agent": record["intraday_agent"], "offered": offered}
+
+
+def agent_status(config: dict) -> dict:
+    """The agent's block for `--status`: the config, today's mode in force, and what may be offered
+    and why -- the readout the selection is made from."""
+    acfg = intraday_advice.agent_config(config)
+    q = intraday_eval.read_qualification()
+    today = provider.now_et().date().isoformat()
+    return {
+        "enabled": acfg["enabled"],
+        "model": acfg["model"],
+        "live_mode_max": acfg["live_mode_max"],
+        "live_closes_built": intraday_advice.LIVE_CLOSES_BUILT,
+        "mode_today": intraday_advice.live_mode_today(acfg, read_arm_record(), today),
+        "offered_modes": intraday_eval.offered_live_modes(config, q),
+        "qualification_generated_at": (q or {}).get("generated_at"),
+        "criteria": [
+            {"id": c.get("id"), "mode": c.get("mode"), "value": c.get("value"), "pass": c.get("pass")}
+            for c in (q or {}).get("criteria", [])
+        ],
+    }
+
+
 def should_disarm(config: dict, now_min: int, today: str) -> str | None:
     """The dead-man's switch, pure (`cherrypick.core.live.should_disarm`): a reason string when
     the live task must disarm itself -- past `live.disarm_time` today, or the arm record is not
@@ -1921,7 +2018,15 @@ def run_status(config: dict, conn) -> dict:
         # The pilot's core instrument: live vs contemporaneous paper, with the plan doc's abort
         # rule evaluated. Files only (both ledgers are local SQLite); best-effort.
         "live_vs_paper": _live_vs_paper_safe(conn, arm),
+        "intraday_agent": _agent_status_safe(config),
     }
+
+
+def _agent_status_safe(config: dict):
+    try:
+        return agent_status(config)
+    except Exception as exc:  # noqa: BLE001 -- status is a read-only diagnostic
+        return {"error": f"{type(exc).__name__}: {exc}"}
 
 
 def _alert_daemon_status_safe():
@@ -1986,6 +2091,11 @@ def main() -> int:
     )
     ap.add_argument("--install-task", action="store_true", help=f"arm {_TASK_NAME} for TODAY (1/min)")
     ap.add_argument("--uninstall-task", action="store_true", help="disarm the live loop")
+    ap.add_argument(
+        "--agent-mode",
+        choices=intraday_advice.LIVE_MODES,
+        help="today's intraday agent selection, written onto today's arm record (after arming)",
+    )
     ap.add_argument("--config")
     ap.add_argument("--db")
     ap.add_argument("--stream-cache")
@@ -1999,6 +2109,10 @@ def main() -> int:
         return 0
 
     config = load_config(args.config)
+    if args.agent_mode:
+        out = set_agent_mode(config, args.agent_mode)
+        print(json.dumps(out, indent=2))
+        return 0 if out.get("ok") else 1
     cache_path = args.stream_cache or _pl.stream_cache_path(config)
     db_path = args.db or dbmod.live_db_path()
     conn = dbmod.connect(db_path)
