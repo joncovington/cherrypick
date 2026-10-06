@@ -101,6 +101,11 @@ def _ignore_as_of(rows, _as_of):
     return list(rows)
 
 
+def _uncapped(chosen, _ceiling):
+    """flies' live agent mode taking the day's choice whatever config allows."""
+    return chosen
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -115,6 +120,7 @@ REPLACEMENTS = {
     "features_read_ahead": _features_read_ahead,
     "decide_after_window": _decide_after_window,
     "ignore_as_of": lambda: _ignore_as_of,
+    "uncapped": lambda: _uncapped,
 }
 
 
@@ -282,6 +288,15 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.flies.intraday_pack",
         attr="_at_or_before",
         replacement="ignore_as_of",
+    ),
+    Mutant(
+        id="flies-intraday-live-mode-cap",
+        breaks="the agent's live mode exceeds what config's live_mode_max allows",
+        package="flies",
+        tests=("tests/test_intraday_advice.py::test_the_live_mode_is_the_days_choice_capped_by_config",),
+        module="cherrypick.flies.intraday_advice",
+        attr="_capped",
+        replacement="uncapped",
     ),
 )
 
