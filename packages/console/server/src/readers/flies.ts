@@ -1,4 +1,6 @@
 import { NO_RANGE, rangeClauses, type DateRange } from "./dateRange.js";
+import { concededArmMoney, entryOutcomes } from "./armCosts.js";
+import type { ArmCostsPayload } from "@console/shared";
 import path from "node:path";
 import type { FliesPayload, FliesBookRow, FliesPositionRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
@@ -2186,6 +2188,38 @@ export function readVoidedRows(config: ConsoleConfig, mode: TradingMode, filter:
       total: byReason.reduce((n, r) => n + r.rows, 0),
       pnl: byReason.reduce((n, r) => n + r.pnl, 0),
       byReason,
+    };
+  });
+}
+
+
+/**
+ * Flies' costs page: each arm's settled flies, judged against the credit received (a debit fly has
+ * no premium and adds none), and its entry outcomes per session. The modelled fill already concedes
+ * slippage, so it is shown beside the row and never subtracted again. Scoped to `era` like the
+ * trade log ("ALL" pools every era), from the paper or live ledger.
+ */
+export function readFliesCosts(config: ConsoleConfig, mode: TradingMode, era: string | null = null): ArmCostsPayload {
+  const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
+  const empty: ArmCostsPayload = { arms: [], slippageInGross: true, since: null, entryOutcomes: [], entryOutcomesAll: [] };
+  return withReadOnlyDb<ArmCostsPayload>(path.join(config.paths.fliesDir, file), empty, (db) => {
+    const ec = eraClause(era);
+    const rows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT arm, gross_pnl AS gross, fees AS fees_total,
+                ${costColumn(db, "settlement_fees")} AS settlement_fees,
+                ${costColumn(db, "slippage_dollars")} AS slippage_dollars,
+                MAX(net, 0) * 100 * COALESCE(quantity, 1) AS premium, trade_date
+           FROM fly_positions WHERE status = 'settled'${ec.sql === null ? "" : ` AND ${ec.sql}`}`,
+      )
+      .all(...ec.params);
+    const since = era === "ALL" ? null : (ERAS.find((e) => e.key === (era ?? DEFAULT_ERA))?.from ?? null);
+    return {
+      arms: concededArmMoney(rows),
+      slippageInGross: true,
+      since,
+      entryOutcomes: entryOutcomes(db, "fly_entry_attempts", since),
+      entryOutcomesAll: entryOutcomes(db, "fly_entry_attempts", null),
     };
   });
 }

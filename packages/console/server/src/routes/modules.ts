@@ -9,6 +9,7 @@ import { readFliesArmGuide, readMeicProfileGuide } from "../readers/experimentGu
 import { readOccupancy } from "../readers/occupancy.js";
 import {
   readMeic,
+  readMeicCosts,
   readMeicAnalytics,
   readMeicDivergence,
   readMeicDeepAnalytics,
@@ -31,6 +32,7 @@ import {
   readArmDivergence,
   readVoidedRows,
   readFliesTradeLog,
+  readFliesCosts,
   readFliesLoopStatus,
   ERAS,
   type FliesFilter,
@@ -254,6 +256,14 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   // The experiment guides: what each arm/profile is and how it got there. Config + ledger only, so
   // they cost nothing and never need the market.
   app.get("/api/flies/arms", async (req) => readFliesArmGuide(config, parseMode(req.query)));
+  // Costs pages (fee drag, where the premium went, entry outcomes per session), paper or live,
+  // scoped to an era like the trade logs: "ALL" pools every era, anything else is checked here.
+  const costsEra = (q: unknown): string | null => {
+    const era = (q as Record<string, unknown> | undefined)?.["era"];
+    return typeof era === "string" && /^[A-Za-z0-9_-]{1,20}$/.test(era) ? era : null;
+  };
+  app.get("/api/meic/costs", async (req) => readMeicCosts(config, parseMode(req.query), costsEra(req.query)));
+  app.get("/api/flies/costs", async (req) => readFliesCosts(config, parseMode(req.query), costsEra(req.query)));
   app.get("/api/meic/profiles", async (req) => readMeicProfileGuide(config, parseMode(req.query)));
 
   app.get("/api/flies/analytics", async (req) =>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ModuleCosts } from "../../components/costs/ModuleCosts";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { useMeic } from "../../lib/api";
@@ -210,6 +211,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
       render: () => <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />,
     },
     { id: "performance", label: MEIC_LABEL.performance, render: () => <PerformanceSlide module="meic" mode={mode} /> },
+    { id: "costs", label: MEIC_LABEL.costs, render: () => <ModuleCosts module="meic" mode={mode} era={era} /> },
     { id: "advisor", label: MEIC_LABEL.advisor, render: () => <AdvisorSlide module="meic" /> },
     { id: "positions", label: MEIC_LABEL.positions, render: () => <MeicPositionsTable mode={mode} scope={scopeArgs} /> },
     {

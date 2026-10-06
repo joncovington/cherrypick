@@ -843,7 +843,7 @@ export function readPmccMeta(config: ConsoleConfig): PmccMeta {
  */
 export function readPmccCosts(config: ConsoleConfig, era: string | null = null): ArmCostsPayload {
   const scope = era ?? CURRENT_ERA;
-  const empty: ArmCostsPayload = { arms: [], since: null, entryOutcomes: [], entryOutcomesAll: [] };
+  const empty: ArmCostsPayload = { arms: [], slippageInGross: false, since: null, entryOutcomes: [], entryOutcomesAll: [] };
   return withReadOnlyDb<ArmCostsPayload>(path.join(config.paths.pmccDir, "paper_trades.db"), empty, (db) => {
     const scoped = scope !== "ALL" && hasColumn(db, "pmcc_positions", "era");
     const eraClause = scoped ? ` AND COALESCE(p.era, '${UNSTAMPED_ERA}') = ?` : "";
@@ -866,6 +866,7 @@ export function readPmccCosts(config: ConsoleConfig, era: string | null = null):
       : null;
     return {
       arms: armMoney(rows),
+      slippageInGross: false,
       since,
       entryOutcomes: entryOutcomes(db, "pmcc_entry_attempts", since),
       entryOutcomesAll: entryOutcomes(db, "pmcc_entry_attempts", null),

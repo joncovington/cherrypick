@@ -30,11 +30,17 @@ export interface EntryOutcomes {
   entered: number;
   /** reason -> sessions whose last refusal it was. */
   refusals: Record<string, number>;
+  /** Filled attempts in all -- a 0DTE module enters many times a session, so "entered" alone
+   *  (sessions with at least one fill) undercounts what it did. */
+  fills: number;
 }
 
 /** A module's costs read. `since` is the latest measurement break (or era start), null for all time. */
 export interface ArmCostsPayload {
   arms: ArmMoneyRow[];
+  /** true where the modelled fill already concedes slippage (flies, meic): it is inside gross, a
+   *  measure, never subtracted again. false where fills are at mid and slippage is charged. */
+  slippageInGross: boolean;
   since: string | null;
   entryOutcomes: EntryOutcomes[];
   entryOutcomesAll: EntryOutcomes[];

@@ -55,7 +55,9 @@ export function entryOutcomes(db: DatabaseHandle, table: string, since: string |
     .prepare<[string], Record<string, unknown>>(`SELECT arm, trade_date, outcome FROM ${table} WHERE trade_date >= ? ORDER BY id`)
     .all(since ?? "");
   const last = new Map<string, { arm: string; filled: boolean; outcome: string }>();
+  const fills = new Map<string, number>();
   for (const r of rows) {
+    if (str(r["outcome"]) === "filled") fills.set(str(r["arm"]) ?? "", (fills.get(str(r["arm"]) ?? "") ?? 0) + 1);
     const arm = str(r["arm"]) ?? "";
     const key = `${arm}|${str(r["trade_date"]) ?? ""}`;
     const outcome = str(r["outcome"]) ?? "unknown";
@@ -64,11 +66,43 @@ export function entryOutcomes(db: DatabaseHandle, table: string, since: string |
   }
   const out = new Map<string, EntryOutcomes>();
   for (const s of last.values()) {
-    const o = out.get(s.arm) ?? { arm: s.arm, sessions: 0, entered: 0, refusals: {} };
+    const o = out.get(s.arm) ?? { arm: s.arm, sessions: 0, entered: 0, refusals: {}, fills: 0 };
     o.sessions += 1;
     if (s.filled) o.entered += 1;
     else o.refusals[s.outcome] = (o.refusals[s.outcome] ?? 0) + 1;
     out.set(s.arm, o);
   }
+  for (const o of out.values()) o.fills = fills.get(o.arm) ?? 0;
   return [...out.values()].sort((a, b) => a.arm.localeCompare(b.arm));
+}
+
+/**
+ * Per-arm money for a module whose modelled fill already CONCEDES slippage (flies, meic): gross is
+ * after the concession, `fees` in the ledger is the total of trading fees and settlement, and
+ * slippage is a recorded measure -- shown, never subtracted again (root CLAUDE.md). So here
+ * gross - fees - settlement = net, and `slippage` stands beside the row, not in it.
+ * `rows`: `arm`, `gross`, `fees_total`, `settlement_fees`, `slippage_dollars`, `premium`.
+ */
+export function concededArmMoney(rows: Array<Record<string, unknown>>): ArmMoneyRow[] {
+  const byArm = new Map<string, ArmMoneyRow>();
+  for (const r of rows) {
+    const arm = str(r["arm"]) ?? "—";
+    const gross = num(r["gross"]) ?? 0;
+    const total = num(r["fees_total"]) ?? 0;
+    const settle = num(r["settlement_fees"]) ?? 0;
+    const t = byArm.get(arm) ?? {
+      arm, positions: 0, wins: 0, premium: 0, grossPnl: 0, fees: 0, settlementFees: 0, slippage: 0, netPnl: 0, winRate: null,
+    };
+    t.positions += 1;
+    t.wins += gross - total > 0 ? 1 : 0;
+    t.premium = round2(t.premium + Math.max(0, num(r["premium"]) ?? 0));
+    t.grossPnl = round2(t.grossPnl + gross);
+    t.fees = round2(t.fees + total - settle);
+    t.settlementFees = round2(t.settlementFees + settle);
+    t.slippage = round2(t.slippage + (num(r["slippage_dollars"]) ?? 0));
+    t.netPnl = round2(t.netPnl + gross - total);
+    t.winRate = t.wins / t.positions;
+    byArm.set(arm, t);
+  }
+  return [...byArm.values()].sort((a, b) => a.arm.localeCompare(b.arm));
 }

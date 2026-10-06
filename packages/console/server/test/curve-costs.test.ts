@@ -50,7 +50,7 @@ describe.skipIf(!built)("curve costs over the module's own schema", () => {
 
     expect(out.outcomesSince).toBe("2026-10-06");
     const since = out.entryOutcomes.find((o) => o.arm === "control")!;
-    expect(since).toEqual({ arm: "control", sessions: 2, entered: 1, refusals: { net_credit_below_floor: 1 } });
+    expect(since).toEqual({ arm: "control", sessions: 2, entered: 1, fills: 1, refusals: { net_credit_below_floor: 1 } });
     expect(out.entryOutcomesAll.find((o) => o.arm === "control")!.sessions).toBe(3);
 
     const arm = out.arms.find((a) => a.arm === "control")!;
