@@ -92,7 +92,7 @@ describe("fail open", () => {
     expect(isSlideVisible("flies", "advisor", undefined)).toBe(true);
     expect(isFeatureOn("technicals", undefined)).toBe(true);
     expect(offReason("earnings", undefined)).toBeNull();
-    expect(visibleNavLinks(undefined).modules).toHaveLength(8);
+    expect(visibleNavLinks(undefined).modules).toHaveLength(9);
   });
 
   it("a failed bridge shows everything", () => {
@@ -101,7 +101,7 @@ describe("fail open", () => {
     expect(isFeatureOn("advisor", failed)).toBe(true);
     expect(isSlideVisible("charts", "technicals", failed)).toBe(true);
     expect(offReason("earnings", failed)).toBeNull();
-    expect(visibleNavLinks(failed).modules).toHaveLength(8);
+    expect(visibleNavLinks(failed).modules).toHaveLength(9);
   });
 });
 
@@ -128,10 +128,11 @@ describe("the nav lists", () => {
       ["/meic", "1"],
       ["/flies", "2"],
       ["/curve", "3"],
-      ["/bwb", "4"],
-      ["/calendars", "5"],
-      ["/earnings", "6"],
-      ["/gex", "7"],
+      ["/contango", "4"],
+      ["/bwb", "5"],
+      ["/calendars", "6"],
+      ["/earnings", "7"],
+      ["/gex", "8"],
     ]);
   });
 
