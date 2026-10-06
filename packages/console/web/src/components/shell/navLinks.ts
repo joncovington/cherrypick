@@ -32,16 +32,19 @@ export const SUITE_LINKS: readonly NavLinkDef[] = [
   { to: "/system", label: "System", key: "s" },
 ];
 
-/** The eight module pages, in the order the suite lists them everywhere. */
+/** The module pages, in the order the suite lists them everywhere (`TRADING_MODULE_ORDER`, then
+ *  GEX). Hand-kept for its labels and keys, so `test/navLinks.test.ts` fails when a trading module
+ *  has no link here: contango shipped 2026-10-05 with a route and no way to reach it. */
 export const MODULE_LINKS: readonly NavLinkDef[] = [
   { to: "/meic", label: "MEIC", key: "1" },
   { to: "/flies", label: "Flies", key: "2" },
   { to: "/pmcc", label: "PMCC", key: "3" },
   { to: "/curve", label: "Curve", key: "4" },
-  { to: "/bwb", label: "BWB", key: "5" },
-  { to: "/calendars", label: "Calendars", key: "6" },
-  { to: "/earnings", label: "Earnings", key: "7" },
-  { to: "/gex", label: "GEX", key: "8" },
+  { to: "/contango", label: "Contango", key: "5" },
+  { to: "/bwb", label: "BWB", key: "6" },
+  { to: "/calendars", label: "Calendars", key: "7" },
+  { to: "/earnings", label: "Earnings", key: "8" },
+  { to: "/gex", label: "GEX", key: "9" },
 ];
 
 export const CONFIG_LINK: NavLinkDef = { to: "/config", label: "Config" };

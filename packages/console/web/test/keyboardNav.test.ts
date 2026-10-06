@@ -46,16 +46,17 @@ describe("the module digits", () => {
   it("names the same modules the menu advertises, in the same order", () => {
     expect(press(IDLE, "1").action).toEqual({ kind: "navigate", to: "/meic" });
     expect(press(IDLE, "2").action).toEqual({ kind: "navigate", to: "/flies" });
-    expect(press(IDLE, "8").action).toEqual({ kind: "navigate", to: "/gex" });
+    expect(press(IDLE, "5").action).toEqual({ kind: "navigate", to: "/contango" });
+    expect(press(IDLE, "9").action).toEqual({ kind: "navigate", to: "/gex" });
   });
 
   it("ignores a digit no module claims", () => {
-    expect(press(IDLE, "9").action).toBeNull();
+    // nine module pages since contango (2026-10-05): every digit 1-9 is claimed, 0 never is.
     expect(press(IDLE, "0").action).toBeNull();
   });
 
   it("name the VISIBLE modules: an off module's digit goes to the next one shown", () => {
-    // pmcc off: 3 is curve now, 7 is gex, and 8 (gex's old digit) is nobody's.
+    // pmcc off: 3 is curve now, 8 is gex, and 9 (gex's old digit) is nobody's.
     const features = {
       ok: true as const,
       capabilities: {},
@@ -64,8 +65,8 @@ describe("the module digits", () => {
       features: {},
     };
     expect(press(IDLE, "3", { features }).action).toEqual({ kind: "navigate", to: "/curve" });
-    expect(press(IDLE, "7", { features }).action).toEqual({ kind: "navigate", to: "/gex" });
-    expect(press(IDLE, "8", { features }).action).toBeNull();
+    expect(press(IDLE, "8", { features }).action).toEqual({ kind: "navigate", to: "/gex" });
+    expect(press(IDLE, "9", { features }).action).toBeNull();
   });
 
   it("a chord to a hidden page does nothing", () => {
