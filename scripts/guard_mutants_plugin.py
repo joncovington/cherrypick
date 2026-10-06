@@ -84,6 +84,17 @@ def _features_read_ahead():
     return patched
 
 
+def _decide_after_window():
+    """contango's `record_misses` replaced by a full decision pass: the late fill after the decision
+    window that the after-window rule exists to forbid."""
+    loop = importlib.import_module("cherrypick.contango.paper_loop")
+
+    def patched(config, conn, *, cache_path, day):
+        return loop.run_decisions(config, conn, cache_path=cache_path, day=day, final=True)
+
+    return patched
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -96,6 +107,7 @@ REPLACEMENTS = {
     "no_groups": lambda: _no_groups,
     "unguarded": lambda: _unguarded,
     "features_read_ahead": _features_read_ahead,
+    "decide_after_window": _decide_after_window,
 }
 
 
@@ -241,6 +253,17 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.core.rangefeatures",
         attr="feature_series",
         replacement="features_read_ahead",
+    ),
+    Mutant(
+        id="contango-no-fill-after-window",
+        breaks="contango switches an arm after its decision window closed",
+        package="contango",
+        tests=(
+            "tests/test_paper_loop.py::test_after_the_window_an_undecided_arm_is_missed_and_never_trades",
+        ),
+        module="cherrypick.contango.paper_loop",
+        attr="record_misses",
+        replacement="decide_after_window",
     ),
 )
 

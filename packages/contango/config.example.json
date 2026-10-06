@@ -1,0 +1,37 @@
+{
+  "_header": "===== cherrypick-contango -- the VIX/VIX3M regime switch, held in shares (paper-only) =====",
+  "_what_this_is": "Each arm holds SVXY while VIX/VIX3M says contango and SHV (T-bills) while it does not, deciding once a session ten minutes before the close off the shared stream cache. Arms differ only in the switch's two thresholds. Copy to ~/.cherrypick/config/contango.json (or a git-ignored config.json here).",
+  "_source_note": "stream_cache_db overrides the shared stream cache path and technicals_db the technicals store (read only for fund distributions); null means the suite default.",
+  "source": {
+    "stream_cache_db": null,
+    "technicals_db": null
+  },
+  "defaults_header": "===== the switch, its fills, its window =====",
+  "_switch_note": "enter_below: hold the risk fund when the ratio is under this. exit_at_or_above: hold the cash fund when the ratio is at or over this. Between the two the arm keeps what it holds. Equal values make a plain one-threshold switch. An inverted pair (exit below entry) is refused at the first tick.",
+  "_fill_note": "Fills at mid; slippage is a separate cost, the larger of half the quoted spread and slippage_floor_bps of mid, per share. A quote wider than max_spread_bps is waited out to the next tick in the window. Fees: buys free, sells pay the SEC fee and FINRA TAF. Whole shares; the remainder stays as cash earning nothing.",
+  "_window_note": "The decision window opens decision_minutes_before_close before the regular close (15:50, or 12:50 on an early close) and stays open decision_window_minutes. An arm that cannot act by its end is recorded missed and keeps its holding; nothing fills after the window.",
+  "_capital_note": "starting_capital opens each arm's paper account the first time the arm is seen. Changing it later does not re-capitalise an existing account: that is a new arm.",
+  "defaults": {
+    "risk_symbol": "SVXY",
+    "cash_symbol": "SHV",
+    "starting_capital": 10000,
+    "enter_below": 0.97,
+    "exit_at_or_above": 0.97,
+    "decision_minutes_before_close": 10,
+    "decision_window_minutes": 8,
+    "max_quote_age_seconds": 120,
+    "max_spread_bps": 50,
+    "slippage_floor_bps": 2
+  },
+  "arms_header": "===== the arms -- one variable each =====",
+  "_arms_note": "control: the plain switch at 0.97, the rule curve gates its entries on. flipexit: in below 0.97, out only at a real inversion (1.0), holding through the band. Replayed on SVXY 2018-03..2026-10 with SHV as cash, see the package CLAUDE.md for the numbers. A leverage arm (SVIX, -1x) is a config block away -- risk_symbol SVIX -- and is deliberately not declared: SVIX replayed worse.",
+  "arms": {
+    "control": {
+      "enabled": true
+    },
+    "flipexit": {
+      "enabled": true,
+      "exit_at_or_above": 1.0
+    }
+  }
+}
