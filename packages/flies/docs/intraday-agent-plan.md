@@ -277,6 +277,28 @@ before any live session is spent on it.
   replace a forward session (mutant `flies-replay-keeps-forward`).
 - Paced and resumable on the Max plan: `--max-calls` per run, `--dry-run` to count, and a session
   counts once it has run to the bell.
+- **Targeted** (`--targeted`, 2026-10-06, the user's choice): minute by minute measured about 0.1% of
+  a 5-hour Max window a call, so the full 2,604 calls were about 2½ windows. Only an entry the rule
+  refuses can come out differently for the agent, and the model keeps no memory between calls, so
+  the targeted run asks once, the minute before each such entry (`intraday_replay.ask_minutes`),
+  through the same trigger. 55 entries, 54 calls.
+
+**Result (2026-10-06, Opus, 29 sessions 2026-08-24 to 10-05, 241 calls, about $37
+API-equivalent):**
+
+| Arm | Net | Stranded / entries |
+|---|---|---|
+| `control` (no gate) | **+$3,944** | 45 / 222 |
+| `trend-rule` (gate always on) | +$2,908 | 32 / 167 |
+| `intraday-agent` (Opus switches it) | +$3,111 | 34 / 177 |
+
+- The rule refused 55 entries. They netted +$1,037, so the gate cut strands (45 to 32) and cost
+  more than it saved. The gate's premise (7% completion against the drift) does not hold in this
+  window.
+- Opus let 10 of the 55 back in: +$204 against the rule over 29 sessions (+$7 a session,
+  one-sided 95% bound below zero, 8 sessions differing), and -$833 against control.
+- So on this evidence neither gate beats no gate. The agent's best possible result, admitting all
+  55, is control itself.
 
 `trend-rule` gets the same replay, for free. That makes it a paired, already-out-of-sample read
 over about 30 sessions, and the deciding evidence for whether the forward paper arm is worth

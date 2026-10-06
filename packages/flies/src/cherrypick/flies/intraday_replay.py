@@ -146,6 +146,25 @@ def score_session(rows: list[dict], decisions: list[dict], *, band: float, ttl_s
     }
 
 
+def ask_minutes(rows: list[dict], decisions: list[dict], *, band: float, ttl_seconds: float) -> list[float]:
+    """The targeted replay's minutes: for each entry the rule refuses, the minute before it, unless a
+    decision already recorded is in force at the entry. Only those entries can come out differently
+    for the agent (every other entry is admitted by both), and the model keeps no memory between
+    calls, so a decision anywhere else changes no score. A decision asked a minute before the entry
+    is fresher than the forward arm's would be (0-4 minutes old at its 4-minute cadence)."""
+    out: list[float] = []
+    known = list(decisions)
+    for r in rows:
+        at = _epoch(r["entry_time"])
+        if at is None or not opposes(r, band):
+            continue
+        if gate_at(known, at, ttl_seconds) is not None or any(m < at <= m + ttl_seconds for m in out):
+            continue
+        minute = (at // 60) * 60 - 60
+        out.append(minute)
+    return sorted(set(out))
+
+
 def decisions_of(recs: list[dict]) -> list[dict]:
     return [
         {"as_of": float(r["as_of"]), "trend_gate": r["decision"]["trend_gate"]}

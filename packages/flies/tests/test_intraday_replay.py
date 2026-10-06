@@ -146,3 +146,45 @@ def test_score_counts_only_sessions_run_to_the_bell(tmp_path, monkeypatch):
     assert (s["control"]["settled_net"], s["rule"]["settled_net"], s["decided"]) == (-260.0, 0.0, False)
     assert out["scores_closes"] is False and out["calls"] == 1 and out["cost_usd"] == 0.17
     assert json.loads(intraday_replay.result_path().read_text(encoding="utf-8")) == out
+
+
+def test_targeted_minutes_are_the_minute_before_each_refused_entry_not_already_covered():
+    rows = [
+        _row("with", "put", 25.0, 100.0, at="2026-09-30T10:30:13-04:00"),  # admitted by both: no call
+        _row("a", "call", 25.0, -260.0, at="2026-09-30T11:00:13-04:00"),
+        _row("b", "call", 26.0, -260.0, at="2026-09-30T11:05:40-04:00"),  # covered by a's minute
+        _row("c", "call", 27.0, 90.0, at="2026-09-30T12:00:13-04:00"),  # covered by a recorded decision
+    ]
+    c_at = intraday_replay._epoch("2026-09-30T12:00:13-04:00")
+    recorded = [{"as_of": c_at - 120, "trend_gate": "on"}]
+    got = intraday_replay.ask_minutes(rows, recorded, band=BAND, ttl_seconds=TTL)
+    assert got == [intraday_replay._epoch("2026-09-30T10:59:00-04:00")]
+
+
+def test_an_unpaced_tick_ignores_the_gap_and_the_cap(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    store = intraday_advice.REPLAY_STORE
+    day = "2026-09-30"
+    intraday_advice._append(day, {"target": "paper", "called": True, "as_of": 1000.0}, store)
+    calls = []
+
+    def fake_pack(**kw):
+        return {
+            "pack_version": 2,
+            "flies": {"open_verticals": 1, "positions": []},
+            "spx": {"vs_open_points": 25.0},
+        }
+
+    monkeypatch.setattr(intraday_advice.intraday_pack, "build_pack", fake_pack)
+
+    def ask(prompt, pack):
+        calls.append(1)
+        return {"reply": '{"trend_gate": "on", "close_stranded": [], "confidence": 0.5, "reason": "x"}'}
+
+    kw = {
+        "cfg": {"intraday_agent": {"enabled": True, "max_calls_per_session": 1}},
+        "target": "paper", "session": day, "as_of": 1060.0, "arm": "control", "gex_conn": None,
+        "ledger_conn": None, "ask": ask, "prompt": "p", "write_file": False, "store": store,
+    }  # fmt: skip
+    assert intraday_advice.run_tick(**kw)["skipped"] == "call_cap"  # paced: the forward cadence applies
+    assert intraday_advice.run_tick(**kw, pace=False)["called"] is True and calls == [1]

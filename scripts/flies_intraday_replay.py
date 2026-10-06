@@ -13,6 +13,7 @@ it has run to the bell. Records go to the replay's own store, never the forward 
     python scripts/flies_intraday_replay.py --max-calls 60     # one paced batch
     python scripts/flies_intraday_replay.py --max-calls 3000 --stop-at 08:45   # overnight, before the open
     python scripts/flies_intraday_replay.py --score-only       # re-score what has run
+    python scripts/flies_intraday_replay.py --targeted         # only the minutes that can change a score
 """
 
 from __future__ import annotations
@@ -139,10 +140,63 @@ def replay(cfg, gex_conn, ledger_conn, days, max_calls: int, stop_at: datetime |
     return {"calls": calls, "finished": finished}
 
 
+def targeted(cfg, gex_conn, ledger_conn, days, max_calls: int) -> dict:
+    """Ask only the minutes that can change the gate's score (`intraday_replay.ask_minutes`): the
+    minute before each entry the rule refuses, unless a recorded decision already covers it. About
+    55 calls over the window, against ~2,600 minute by minute (2026-10-06, the user's choice)."""
+    acfg = intraday_advice.agent_config(cfg)
+    ask = _strict(ask_claude(acfg["model"]))
+    store = intraday_advice.REPLAY_STORE
+    band = float(intraday_pack.TREND_BAND_POINTS)
+    ttl = float(acfg["decision_ttl_minutes"]) * 60
+    calls, finished = 0, []
+    for day in days:
+        recs = intraday_advice.records(day, store)
+        if intraday_replay.is_done(recs):
+            continue
+        rows = intraday_replay.load_rows(ledger_conn, day)
+        for at in intraday_replay.ask_minutes(
+            rows, intraday_replay.decisions_of(recs), band=band, ttl_seconds=ttl
+        ):
+            if calls >= max_calls:
+                return {"calls": calls, "finished": finished}
+            try:
+                out = intraday_advice.run_tick(
+                    cfg=cfg,
+                    target="paper",
+                    session=day,
+                    as_of=at,
+                    arm=intraday_replay.REPLAY_ARM,
+                    gex_conn=gex_conn,
+                    ledger_conn=ledger_conn,
+                    ask=ask,
+                    prompt=PROMPT,
+                    write_file=False,
+                    store=store,
+                    pace=False,
+                )
+            except CallFailed as exc:
+                print(json.dumps({"stopped": "model call failed; nothing recorded", "error": str(exc)[:300]}))
+                return {"calls": calls, "finished": finished, "stopped_on_error": True}
+            calls += bool(out.get("called"))
+            print(
+                json.dumps(
+                    {k: out.get(k) for k in ("session", "as_of", "called", "skipped", "ok", "decision")},
+                    default=str,
+                )
+            )
+        intraday_advice._append(day, {intraday_replay.DONE: True, "session": day, "mode": "targeted"}, store)
+        finished.append(day)
+    return {"calls": calls, "finished": finished}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--dry-run", action="store_true", help="count the calls it would make; no model")
     ap.add_argument("--score-only", action="store_true", help="re-score and re-judge; no model")
+    ap.add_argument(
+        "--targeted", action="store_true", help="ask only before the entries the rule refuses (~55 calls)"
+    )
     ap.add_argument("--max-calls", type=int, default=60, help="stop after this many model calls (pacing)")
     ap.add_argument("--session", action="append", help="only these sessions (YYYY-MM-DD; repeatable)")
     ap.add_argument(
@@ -169,7 +223,12 @@ def main(argv=None) -> int:
             stop_at = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
             if stop_at <= now:
                 stop_at += timedelta(days=1)
-        ran = {} if args.score_only else replay(cfg, gex_conn, ledger_conn, days, args.max_calls, stop_at)
+        if args.score_only:
+            ran = {}
+        elif args.targeted:
+            ran = targeted(cfg, gex_conn, ledger_conn, days, args.max_calls)
+        else:
+            ran = replay(cfg, gex_conn, ledger_conn, days, args.max_calls, stop_at)
     finally:
         gex_conn.close()
     ledger = dbmod.connect(str(data / "paper_trades.db"))
