@@ -82,7 +82,7 @@ built from the inputs it sees, the rule wins: it costs nothing and fails the sam
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `false` | The master switch. Off: the agent never runs, and the live start never offers it. |
-| `model` | `"sonnet"` | The model alias, travelling on argv as the advisor's does. Never hardcoded. |
+| `model` | `"opus"` | The model alias, travelling on argv as the advisor's does. Never hardcoded. |
 | `paper` | `true` | Whether the paper arm `advised:intraday-agent` acts. Paper needs no daily yes. |
 | `live_mode_max` | `"shadow"` | The most the live start may offer: `off`, `shadow`, `gates` or `gates_and_closures`. A ceiling, not a choice: the per-day selection picks within it, and the qualification below has to allow it too. |
 | `trigger_band_points` | `10` | Run only within this distance of the trend band, or while a stranded vertical is open. |
@@ -297,7 +297,9 @@ Days, not months, and nothing waits on anything it does not need:
    - the paper arms `trend-rule` and `advised:intraday-agent`, acting;
    - the live shadow, recording.
 3. **Also in parallel:** the historical replay of `trend-rule` and the agent over the ~30 recorded
-   sessions (about $60).
+   sessions, **once per model** (Opus and Sonnet, about $255 together). Each is scored against
+   `trend-rule` on the same sessions, and the cheaper model is kept unless the dearer one wins by
+   more than its cost.
 4. **When the replay and the first forward sessions agree:** the live gate (if not already on from
    day one), and later the closes.
 
@@ -306,8 +308,16 @@ Days, not months, and nothing waits on anything it does not need:
 - **Day one on live: shadow only.** The agent records decisions against the live arm and acts on
   nothing live. The paper `advised:intraday-agent` arm acts. The live gate waits for the replay and
   the first forward sessions to agree.
-- **Model: Sonnet.** The alias lives in config (`intraday_agent.model`), never in code, as the
-  advisor's does.
+- **Model: Opus 5.5** (changed from Sonnet on 2026-10-06). The alias lives in config
+  (`intraday_agent.model`), never in code, as the advisor's does. On the first two recorded moments
+  run through `run_tick`, Opus got the economics of a close right where Sonnet did not:
+  - On 2026-09-21 12:40 Sonnet closed verticals already 2-9x past their wing, which locks in a loss
+    that is already full. Opus closed only the one 0.12 points through its short.
+  - On 2026-08-28 13:00 Opus turned the gate off ("chop not trend") and declined a pointless close.
+
+  Opus costs $0.17 a call (11-13 s) against Sonnet's $0.11-0.125: about $36-110 a month
+  event-driven. Two moments are not evidence, so **the replay runs both models** over the same
+  sessions and scores each against `trend-rule`. The model is chosen on that result.
 - **Configurable, and chosen per day on live.** The `intraday_agent` block is off by default. On live
   the agent's mode (none, shadow, gates, gates and closures) is a separate selection in
   `/live-flies-start`, recorded on that day's arm record. Only the modes that config allows and the
