@@ -5,7 +5,6 @@ import type {
   CurveArmCell,
   CurveAssignmentRow,
   CurveCycleRow,
-  CurveEntryOutcomes,
   CurveHistory,
   CurveFlipDivergence,
   CurveMeta,
@@ -18,6 +17,7 @@ import type { ConsoleConfig } from "../config.js";
 import { hasTable, num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { NO_UNREALISED, unrealisedByPosition } from "./unrealised.js";
+import { armMoney, entryOutcomes } from "./armCosts.js";
 
 /**
  * curve's read layer.
@@ -254,75 +254,20 @@ function readOpenPositions(db: DatabaseHandle): CurveOpenPosition[] {
 }
 
 /**
- * Mirrors `analytics.headline()`'s per-arm net over CLOSED positions, split into the money layout's
- * columns through `positionCash` -- the history table's own arithmetic, so the arms page and the
- * history totals chip cannot disagree. `fees` in the ledger is the TOTAL cost; reading it raw (as
- * this did until 2026-10-06) put slippage and settlement inside "fees".
+ * Mirrors `analytics.headline()`'s per-arm net over CLOSED positions, split into the money layout
+ * through `armMoney` (`readers/armCosts.ts`) -- the ledger's `fees` is the TOTAL cost, so reading
+ * it raw (as this did until 2026-10-06) put slippage and settlement inside "fees".
  */
 function readArms(db: DatabaseHandle): CurveArmCell[] {
-  const rows = db
-    .prepare<[], Record<string, unknown>>(
-      `SELECT arm, entry_credit, ${positionCashColumns(db, "curve_")}
-         FROM curve_positions WHERE status = 'closed' ORDER BY arm`,
-    )
-    .all();
-  const byArm = new Map<string, ReturnType<typeof positionCash>[]>();
-  const premium = new Map<string, number>();
-  for (const r of rows) {
-    const arm = str(r["arm"]) ?? "";
-    const cash = positionCash(r, num(r["entry_credit"]));
-    byArm.set(arm, [...(byArm.get(arm) ?? []), cash]);
-    premium.set(arm, (premium.get(arm) ?? 0) + Math.max(0, cash.entryCash ?? 0));
-  }
-  return [...byArm.entries()].map(([arm, cash]) => {
-    const t = tradeTotals(cash);
-    const wins = cash.filter((c) => (c.netPnl ?? 0) > 0).length;
-    return {
-      premium: Math.round((premium.get(arm) ?? 0) * 100) / 100,
-      arm,
-      positions: t.positions,
-      wins,
-      grossPnl: t.gross,
-      fees: t.fees,
-      settlementFees: t.settlementFees,
-      slippage: t.slippage,
-      netPnl: t.net,
-      winRate: t.positions > 0 ? wins / t.positions : null,
-    };
-  });
-}
-
-/**
- * Entry outcomes per arm, per SESSION: `curve_entry_attempts` writes a row every tick the window is
- * open, so a raw count weights a gate by how many ticks it refused, not by how many sessions it
- * cost. A session is "entered" if any tick filled; otherwise it counts under its last refusal.
- * From `since` (the latest measurement break) when given, so a boundary's new floors are not
- * judged on the refusals of the structure they replaced.
- */
-function readEntryOutcomes(db: DatabaseHandle, since: string | null): CurveEntryOutcomes[] {
-  if (!hasTable(db, "curve_entry_attempts")) return [];
-  const rows = db
-    .prepare<[string], Record<string, unknown>>(
-      `SELECT arm, trade_date, outcome FROM curve_entry_attempts WHERE trade_date >= ? ORDER BY id`,
-    )
-    .all(since ?? "");
-  const last = new Map<string, { arm: string; filled: boolean; outcome: string }>();
-  for (const r of rows) {
-    const arm = str(r["arm"]) ?? "";
-    const key = `${arm}|${str(r["trade_date"]) ?? ""}`;
-    const outcome = str(r["outcome"]) ?? "unknown";
-    const prev = last.get(key);
-    last.set(key, { arm, filled: (prev?.filled ?? false) || outcome === "filled", outcome });
-  }
-  const out = new Map<string, CurveEntryOutcomes>();
-  for (const s of last.values()) {
-    const o = out.get(s.arm) ?? { arm: s.arm, sessions: 0, entered: 0, refusals: {} };
-    o.sessions += 1;
-    if (s.filled) o.entered += 1;
-    else o.refusals[s.outcome] = (o.refusals[s.outcome] ?? 0) + 1;
-    out.set(s.arm, o);
-  }
-  return [...out.values()].sort((a, b) => a.arm.localeCompare(b.arm));
+  return armMoney(
+    db
+      .prepare<[], Record<string, unknown>>(
+        `SELECT arm, entry_credit AS entry, entry_credit * 100 * COALESCE(quantity, 1) AS premium,
+                ${positionCashColumns(db, "curve_")}
+           FROM curve_positions WHERE status = 'closed' ORDER BY arm`,
+      )
+      .all(),
+  );
 }
 
 /** Shares delivered by an ITM leg, and their disposal -- the one exposure a spread's max loss does
@@ -505,9 +450,9 @@ export function readCurve(config: ConsoleConfig): CurvePayload {
       openPositions,
       openCount: openPositions.length,
       arms: readArms(db),
-      entryOutcomes: readEntryOutcomes(db, breaks[0]?.date ?? null),
+      entryOutcomes: entryOutcomes(db, "curve_entry_attempts", breaks[0]?.date ?? null),
       outcomesSince: breaks[0]?.date ?? null,
-      entryOutcomesAll: readEntryOutcomes(db, null),
+      entryOutcomesAll: entryOutcomes(db, "curve_entry_attempts", null),
       assignments: readAssignments(db),
       flipDivergence: readFlipDivergence(db),
       regimeSeries: readRegimeSeries(db),

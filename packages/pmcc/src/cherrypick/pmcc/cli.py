@@ -6,6 +6,7 @@ Subcommands (all read-only over the module's own ledger):
     worksheet  the live per-position worksheet (the user's spreadsheet, from the ledger)
     exposure   the early-assignment-exposure telemetry
     excursions per-closed-position MAE/MFE (docs/metrics-plan.md Phase 2) plus distributions
+    equity     each arm's daily marked equity (every position at each session's close) and its tear sheet
     ladder     the ITM call ladder as a selector would see it (the calibration read)
     tracker    one position week by week: header, the long, every short, the weekly roll-up
     tracker-index  every position the tracker can open, open ones first
@@ -70,6 +71,16 @@ def cmd_worksheet(args) -> int:
 
     conn = db.connect_ro(args.db)
     print(json.dumps({"ok": True, "worksheet": analytics.worksheet(conn)}, indent=2, default=str))
+    return 0
+
+
+def cmd_equity(args) -> int:
+    from cherrypick.pmcc import analytics, db
+
+    conn = db.connect_ro(args.db)
+    era = getattr(args, "era", None) or analytics.CURRENT_ERA
+    out = {"ok": True, "basis": "daily", "era": era, "arms": analytics.daily_equity(conn, era=era)}
+    print(json.dumps(out, indent=2, default=str))
     return 0
 
 
@@ -303,6 +314,9 @@ def main(argv=None) -> int:
     p_headline.set_defaults(func=cmd_headline)
     sub.add_parser("worksheet", help="the live per-position worksheet").set_defaults(func=cmd_worksheet)
     sub.add_parser("exposure", help="early-assignment-exposure telemetry").set_defaults(func=cmd_exposure)
+    p_eq = sub.add_parser("equity", help="each arm's daily marked equity and its tear sheet")
+    p_eq.add_argument("--era", default=None, help="scope to one era; 'ALL' pools every era.")
+    p_eq.set_defaults(func=cmd_equity)
     p_exc = sub.add_parser("excursions", help="per-closed-position MAE/MFE plus distributions")
     p_exc.add_argument(
         "--era",

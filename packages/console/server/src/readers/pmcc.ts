@@ -18,6 +18,8 @@ import type {
 import type { ConsoleConfig } from "../config.js";
 import { hasColumn, num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
 import { unrealisedByPosition, NO_UNREALISED } from "./unrealised.js";
+import { armMoney, entryOutcomes } from "./armCosts.js";
+import type { ArmCostsPayload } from "@console/shared";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 
 /**
@@ -828,6 +830,45 @@ export function readPmccMeta(config: ConsoleConfig): PmccMeta {
       arms: column("arm", "pmcc_positions"),
       symbols: column("symbol", "pmcc_positions"),
       sessions: column("entry_session", "pmcc_positions").reverse(),
+    };
+  });
+}
+
+
+/**
+ * pmcc's costs page: each arm's closed positions in the money layout, judged against the premium
+ * its shorts sold (every short, rolled ones included -- `Sell to Open` legs), and its entry
+ * outcomes per session. Scoped to `era` like the arm comparison ("ALL" pools every era); the
+ * outcomes run from the era's first entry, or all time when pooled.
+ */
+export function readPmccCosts(config: ConsoleConfig, era: string | null = null): ArmCostsPayload {
+  const scope = era ?? CURRENT_ERA;
+  const empty: ArmCostsPayload = { arms: [], since: null, entryOutcomes: [], entryOutcomesAll: [] };
+  return withReadOnlyDb<ArmCostsPayload>(path.join(config.paths.pmccDir, "paper_trades.db"), empty, (db) => {
+    const scoped = scope !== "ALL" && hasColumn(db, "pmcc_positions", "era");
+    const eraClause = scoped ? ` AND COALESCE(p.era, '${UNSTAMPED_ERA}') = ?` : "";
+    const args = scoped ? [scope] : [];
+    const rows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT p.arm, -p.net_debit AS entry,
+                (SELECT SUM(l.entry_mid * 100 * COALESCE(l.quantity, 1)) FROM pmcc_legs l
+                  WHERE l.position_id = p.position_id AND l.action = 'Sell to Open') AS premium,
+                ${positionCashColumns(db, "pmcc_").replace(/pmcc_positions\.position_id/g, "p.position_id")}
+           FROM pmcc_positions p WHERE p.status = 'closed'${eraClause} ORDER BY p.arm`,
+      )
+      .all(...args);
+    const since = scoped
+      ? (db
+          .prepare<string[], { d: string | null }>(
+            `SELECT MIN(entry_session) AS d FROM pmcc_positions WHERE COALESCE(era, '${UNSTAMPED_ERA}') = ?`,
+          )
+          .get(scope)?.d ?? null)
+      : null;
+    return {
+      arms: armMoney(rows),
+      since,
+      entryOutcomes: entryOutcomes(db, "pmcc_entry_attempts", since),
+      entryOutcomesAll: entryOutcomes(db, "pmcc_entry_attempts", null),
     };
   });
 }

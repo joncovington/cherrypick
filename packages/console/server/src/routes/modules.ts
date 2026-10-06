@@ -42,6 +42,7 @@ import {
   readPmccHistory,
   readPmccMeta,
   resolvePmccSession,
+  readPmccCosts,
 } from "../readers/pmcc.js";
 import {
   POSITION_ID,
@@ -50,7 +51,7 @@ import {
   readPmccWeekly,
 } from "../services/pmccTrackerBridge.js";
 import { readCurve, readCurveHistory, readCurveMeta, resolveCurveSession } from "../readers/curve.js";
-import { readContangoMetrics, readCurveEquity } from "../services/navBridge.js";
+import { readContangoMetrics, readCurveEquity, readPmccEquity } from "../services/navBridge.js";
 import { readContango } from "../readers/contango.js";
 import path from "node:path";
 import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
@@ -314,6 +315,18 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     return readPmcc(config, typeof era === "string" && /^[A-Za-z0-9_-]{1,20}$/.test(era) ? era : null);
   });
   app.get("/api/pmcc/meta", async () => readPmccMeta(config));
+  // The pmcc costs page and its marked equity, scoped to the same era rule as /api/pmcc.
+  app.get("/api/pmcc/costs", async (req) => {
+    const era = (req.query as Record<string, unknown> | undefined)?.["era"];
+    return readPmccCosts(config, typeof era === "string" && /^[A-Za-z0-9_-]{1,20}$/.test(era) ? era : null);
+  });
+  app.get("/api/pmcc/equity", async (req) => {
+    const era = (req.query as Record<string, unknown> | undefined)?.["era"];
+    return readPmccEquity(
+      path.join(config.paths.pmccDir, "paper_trades.db"),
+      typeof era === "string" && /^[A-Za-z0-9_-]{1,20}$/.test(era) ? era : null,
+    );
+  });
   app.get("/api/pmcc/assignments", async () => ({ rows: readPmccAssignments(config) }));
   app.get("/api/pmcc/history", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;

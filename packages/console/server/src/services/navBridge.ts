@@ -18,6 +18,7 @@ import { spawnModuleCli } from "./moduleCli.js";
 
 const CONTANGO_UNAVAILABLE = "contango metrics unavailable — is cherrypick-contango installed?";
 const CURVE_UNAVAILABLE = "curve equity unavailable — is cherrypick-curve installed?";
+const PMCC_UNAVAILABLE = "pmcc equity unavailable — is cherrypick-pmcc installed?";
 
 function camel(key: string): string {
   return key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
@@ -88,11 +89,32 @@ function curveCaller(dbPath: string): CurveEquity {
   }
 }
 
-let callers = { contango: contangoCaller, curve: curveCaller };
+/** pmcc's `equity` verb: every position valued at each session's close by `tracker.value_at`,
+ *  scoped to `era` like its arm comparison ("ALL" pools every era). */
+function pmccCaller(dbPath: string, era: string | null): CurveEquity {
+  const argv = ["-m", "cherrypick.pmcc.cli", "--db", dbPath, "equity", ...(era === null ? [] : ["--era", era])];
+  const res = spawnModuleCli(argv, PMCC_UNAVAILABLE);
+  if (!res.ok || res.json === null) return { ok: false, error: res.error, arms: {} };
+  try {
+    return { ok: true, error: null, ...normalizeCurve(res.json) };
+  } catch (err) {
+    return { ok: false, error: `${PMCC_UNAVAILABLE} — ${(err as Error).message}`, arms: {} };
+  }
+}
+
+let callers = { contango: contangoCaller, curve: curveCaller, pmcc: pmccCaller };
 
 /** Swap the subprocesses out in tests. Pass nothing to restore the real ones. */
 export function setNavCallers(fns?: Partial<typeof callers>): void {
-  callers = { contango: fns?.contango ?? contangoCaller, curve: fns?.curve ?? curveCaller };
+  callers = {
+    contango: fns?.contango ?? contangoCaller,
+    curve: fns?.curve ?? curveCaller,
+    pmcc: fns?.pmcc ?? pmccCaller,
+  };
+}
+
+export function readPmccEquity(dbPath: string, era: string | null): CurveEquity {
+  return callers.pmcc(dbPath, era);
 }
 
 export function readContangoMetrics(dbPath: string): ContangoMetrics {

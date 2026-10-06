@@ -13,6 +13,7 @@ from __future__ import annotations
 import statistics
 
 from cherrypick.core.metrics import excursions as _mae_mfe
+from cherrypick.core.metrics import nav as _nav
 
 from cherrypick.pmcc import db
 from cherrypick.pmcc import tracker as _tracker
@@ -264,3 +265,63 @@ def _held_long_excursion(conn, position_id: str) -> dict | None:
 # How good the day's mark substrate is (marks, refusal share, per-refusal counts) -- the ledger
 # store's reader, which calendars, pmcc and curve had each copied over their own prefix.
 mark_coverage = db._store.mark_coverage
+
+
+def _sessions(conn) -> list[str]:
+    """Every session the loop ran -- its own iterations, the days it marked anything."""
+    days = {r[0] for r in conn.execute("SELECT DISTINCT session_date FROM pmcc_loop_iterations")}
+    days |= {r[0] for r in conn.execute("SELECT DISTINCT session_date FROM pmcc_marks")}
+    return sorted(d for d in days if d)
+
+
+def daily_equity(conn, era: str | None = CURRENT_ERA) -> dict[str, dict]:
+    """Each arm's marked equity, one point per session, in dollars from 0, net of costs to date.
+
+    Every position is valued at each session's close by `tracker.value_at` -- the long at its mark,
+    every short sold (realised once rolled, marked while open), any delivered shares -- the same
+    arithmetic the tracker and the held-long excursions use, so this adds none of its own. A closed
+    position contributes its realised net from its close session on.
+
+    This is the view a held long needs: a year-long call can sit far below its cost for months while
+    every weekly short closes for a small win, and the closed-trade figures see only the wins until
+    the long itself is sold. A session where a position cannot be priced carries its previous value
+    and is counted in `carried`, so a stretch of stale marks reads as one, never as a flat market.
+
+    `era` scopes positions the way `headline` does; "ALL" pools every era.
+    """
+    from datetime import date
+
+    where, params = "1 = 1", []
+    if era and era != "ALL":
+        where, params = "era = ?", [era]
+    positions = [dict(r) for r in conn.execute(f"SELECT * FROM pmcc_positions WHERE {where}", params)]
+    sessions = _sessions(conn)
+    legs = {p["position_id"]: db.legs_for(conn, p["position_id"]) for p in positions}
+    assignments = {p["position_id"]: db.assignments_for(conn, p["position_id"]) for p in positions}
+    out: dict[str, dict] = {}
+    for arm in sorted({p["arm"] for p in positions}):
+        mine = [p for p in positions if p["arm"] == arm]
+        start = min(p["entry_session"] for p in mine)
+        series, carried, last = [], 0, {}
+        for day in (d for d in sessions if d >= start):
+            close_t = _tracker._close_epoch(date.fromisoformat(day))
+            equity = 0.0
+            for p in mine:
+                pid = p["position_id"]
+                if p["entry_session"] > day:
+                    continue
+                closed = p["status"] == "closed" and p.get("closed_session") and p["closed_session"] <= day
+                if closed:
+                    equity += (p["gross_pnl"] or 0.0) - (p["fees"] or 0.0)
+                    continue
+                v = value_at(conn, p, legs[pid], assignments[pid], close_t)
+                if v is None:
+                    if pid in last:
+                        carried += 1
+                        equity += last[pid]
+                    continue
+                last[pid] = v["net"]
+                equity += v["net"]
+            series.append((day, round(equity, 2)))
+        out[arm] = {"series": series, "carried": carried, "reading": _nav.equity_reading(series)}
+    return out

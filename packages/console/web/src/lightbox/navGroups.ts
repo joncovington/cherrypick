@@ -198,6 +198,7 @@ export const PMCC_SLIDES = [
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
   { id: "performance", label: "performance" },
+  { id: "costs", label: "costs" },
   { id: "advisor", label: "advisor" },
   { id: "positions", label: "positions" },
   { id: "tracker", label: "tracker" },
@@ -398,7 +399,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     groups: [
       { label: "today", ids: ["session"] },
       { label: "evidence", ids: ["decisions", "arms"] },
-      { label: "study", ids: ["performance", "advisor"] },
+      { label: "study", ids: ["performance", "costs", "advisor"] },
       { label: "tables", ids: ["positions", "tracker", "history"] },
       { label: "help", ids: ["guide"] },
     ],

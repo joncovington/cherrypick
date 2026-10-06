@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { normalizeAdvisorPayload } from "./advisorShape";
 import type {
+  ArmCostsPayload,
+  EquityPayload,
   ContangoMetrics,
   ContangoPayload,
   CurveEquity,
@@ -941,5 +943,23 @@ export function useContango() {
     queryKey: ["contango"],
     queryFn: () => getJson<ContangoPayload>("/api/contango"),
     refetchInterval: 30_000,
+  });
+}
+
+/** pmcc's costs read and marked equity, scoped to the page's era selector (null: the current era). */
+export function usePmccCosts(era: string | null) {
+  return useQuery<ArmCostsPayload>({
+    queryKey: ["pmcc-costs", era],
+    queryFn: () => getJson<ArmCostsPayload>(`/api/pmcc/costs${era === null ? "" : `?era=${encodeURIComponent(era)}`}`),
+    staleTime: 60_000,
+  });
+}
+
+export function usePmccEquity(era: string | null) {
+  return useQuery<EquityPayload>({
+    queryKey: ["pmcc-equity", era],
+    queryFn: () => getJson<EquityPayload>(`/api/pmcc/equity${era === null ? "" : `?era=${encodeURIComponent(era)}`}`),
+    staleTime: 60_000,
+    refetchInterval: 300_000,
   });
 }

@@ -281,3 +281,19 @@ def test_held_long_excursions_are_sampled_at_each_close(ledger):
 
 def test_an_unknown_position_is_none(ledger):
     assert tracker.tracker(ledger, "NOPE:control:2026-01-01", {}) is None
+
+
+def test_daily_equity_is_the_trackers_valuation_at_each_session_close(ledger):
+    """The console's marked equity reads the same `value_at` the tracker does, so on the sessions the
+    ledger marked it lands on the tracker's own week-end figures, and the last is the header."""
+    out = analytics.daily_equity(ledger, era="shield")["shield_hold"]
+    assert out["series"] == [("2026-08-28", 32.13), ("2026-09-04", 99.61), ("2026-09-09", 159.61)]
+    assert out["carried"] == 0
+    assert out["reading"]["net"] == 159.61 and out["reading"]["basis"] == "daily"
+
+
+def test_daily_equity_carries_an_unpriceable_session_and_counts_it(ledger):
+    ledger.execute("DELETE FROM pmcc_marks WHERE leg_role = 'short_call_2'")
+    out = analytics.daily_equity(ledger, era="shield")["shield_hold"]
+    assert [v for _, v in out["series"]] == [32.13, 32.13, 32.13]
+    assert out["carried"] == 2
