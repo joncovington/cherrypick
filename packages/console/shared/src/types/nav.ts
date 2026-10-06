@@ -75,6 +75,13 @@ export interface CurveArmEquity {
   reading: EquityReading;
 }
 
+/** A module's per-arm marked equity (curve, pmcc): `<module> equity` through navBridge. */
+export interface EquityPayload {
+  ok: boolean;
+  error: string | null;
+  arms: Record<string, CurveArmEquity>;
+}
+
 export interface CurveEquity {
   ok: boolean;
   error: string | null;

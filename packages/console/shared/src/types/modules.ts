@@ -1,3 +1,4 @@
+import type { ArmMoneyRow, EntryOutcomes } from "./costs.js";
 import type { TradingMode } from "./status.js";
 
 /**
@@ -1169,38 +1170,9 @@ export interface CurveOpenPosition {
   feesToDate: number | null;
 }
 
-/**
- * Per-arm results over CLOSED positions, in the suite's money layout (root CLAUDE.md): gross, then
- * trading fees, settlement and slippage as separate costs, so gross - fees - settlement - slippage =
- * net. Built through `positionCash`/`tradeTotals`, the same arithmetic as the history table, so the
- * two cannot disagree. One row per arm: VXX is the only underlying, and a per-symbol split was a
- * column that could hold one value (2026-10-06).
- */
-export interface CurveArmCell {
-  arm: string;
-  positions: number;
-  wins: number;
-  grossPnl: number;
-  /** Trading fees only -- commissions and pass-throughs. */
-  fees: number;
-  settlementFees: number;
-  slippage: number;
-  netPnl: number;
-  winRate: number | null;
-  /** Credit received at entry, whole-position dollars (entry_credit x 100 x qty) -- the premium the
-   *  costs are judged against. */
-  premium: number;
-}
-
-/** One arm's entry sessions, counted per SESSION not per tick: entered if any tick filled,
- *  otherwise the session's last refusal. A gate that refused 400 ticks is one session. */
-export interface CurveEntryOutcomes {
-  arm: string;
-  sessions: number;
-  entered: number;
-  /** reason -> sessions whose last refusal it was. */
-  refusals: Record<string, number>;
-}
+/** The curve names for the shared costs shapes (`types/costs.ts`), kept so existing imports read. */
+export type CurveArmCell = ArmMoneyRow;
+export type CurveEntryOutcomes = EntryOutcomes;
 
 export interface CurveAssignmentRow {
   positionId: string;

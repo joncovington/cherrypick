@@ -11,7 +11,7 @@ import { HistoryTab } from "../../pages/Pmcc/HistoryTab";
 import { TrackerTab } from "../../pages/Pmcc/TrackerTab";
 import { WeeklyByArmCard } from "../../pages/Pmcc/WeeklyByArmCard";
 import { HelpTab } from "../../pages/Pmcc/HelpTab";
-import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
+import { PmccCosts, PmccPerformance } from "../../pages/Pmcc/PmccStudy";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { ModuleFrame } from "../ModuleFrame";
 import { PMCC_SLIDES, type PmccSlideId } from "../navGroups";
@@ -120,7 +120,8 @@ export function PmccLightbox({ slide }: { slide: string }) {
         </div>
       ),
     },
-    { id: "performance", label: PMCC_LABEL.performance, render: () => <PerformanceSlide module="pmcc" /> },
+    { id: "performance", label: PMCC_LABEL.performance, render: () => <PmccPerformance era={era} /> },
+    { id: "costs", label: PMCC_LABEL.costs, render: () => <PmccCosts era={era} /> },
     { id: "advisor", label: PMCC_LABEL.advisor, render: () => <AdvisorSlide module="pmcc" /> },
     {
       id: "positions",
