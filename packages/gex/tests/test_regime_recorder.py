@@ -164,6 +164,27 @@ def test_every_reading_symbol_is_declared_to_the_streamer(cfg, managed_home):
         assert payload["history_days"].get(leg) == 270
 
 
+def test_dropped_readings_counts_chain_and_futures_readings_as_declared(cfg):
+    """The guard compared against the quote readings alone, so every chain reading (atm_iv, ...)
+    and futures reading (vx1, vx2, zn1) a session recorded was flagged as dropped on every start
+    -- six false alarms a day until 2026-10-05. Declared is all three groups."""
+    seed_cache(cfg, all_fresh_quotes(RTH_NOW.timestamp()))
+    regime.sample(cfg, now=RTH_NOW)
+    conn = sqlite3.connect(cfg["history_db_path"])
+    try:
+        for reading, symbol in (("atm_iv", "SPX"), ("gamma_concentration", "SPX"), ("vx1", "/VXV26")):
+            conn.execute(
+                "INSERT INTO market_regime_history "
+                "(trade_date, ts, reading, symbol, value, basis_ts, usable, reason) "
+                "VALUES ('2026-08-17', ?, ?, ?, 1.0, ?, 1, NULL)",
+                (RTH_NOW.timestamp() - 86400, reading, symbol, RTH_NOW.timestamp() - 86400),
+            )
+        conn.commit()
+        assert regime.dropped_readings(conn, today="2026-08-18") == set()
+    finally:
+        conn.close()
+
+
 def test_dropped_readings_flags_a_stale_checkout(cfg):
     seed_cache(cfg, all_fresh_quotes(RTH_NOW.timestamp()))
     regime.sample(cfg, now=RTH_NOW)
