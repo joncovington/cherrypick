@@ -414,7 +414,14 @@ def dropped_readings(conn: sqlite3.Connection, *, today: str) -> set[str]:
             "SELECT DISTINCT reading FROM market_regime_history WHERE trade_date = ?", (row[0],)
         )
     }
-    return recorded - set(READINGS)
+    return recorded - declared_readings()
+
+
+def declared_readings() -> set[str]:
+    """Every reading this code records: the quote readings, the futures readings and the chain
+    readings. The guard compared against the quote readings alone until 2026-10-05, so each chain
+    and futures reading a session recorded read as dropped on every start."""
+    return set(READINGS) | set(FUTURES_READINGS) | set(CHAIN_READINGS)
 
 
 # --------------------------------------------------------------------------- Tier 2: chain math
