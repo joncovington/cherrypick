@@ -79,10 +79,15 @@ def _session_stats(per_day: dict[str, float]) -> tuple[float, float, float, int]
 def depth(rows: list[dict]) -> None:
     done = [r for r in rows if r["kind"] == "fly"]
     left = [r for r in rows if r["kind"] != "fly"]
-    print(f"  entries {len(rows)}  sessions {len({r['trade_date'] for r in rows})}  "
-          f"completed {len(done)} ({len(done) / len(rows):.0%})  uncompleted {len(left)}")
+    print(
+        f"  entries {len(rows)}  sessions {len({r['trade_date'] for r in rows})}  "
+        f"completed {len(done)} ({len(done) / len(rows):.0%})  uncompleted {len(left)}"
+    )
     if done:
-        print(f"  completed   avg {st.mean(r['pnl'] for r in done):8.2f}  net {sum(r['pnl'] for r in done):9.2f}")
+        print(
+            f"  completed   avg {st.mean(r['pnl'] for r in done):8.2f}  "
+            f"net {sum(r['pnl'] for r in done):9.2f}"
+        )
     by = defaultdict(list)
     for r in left:
         if r["kind"] == "short_vertical":
@@ -120,8 +125,11 @@ def paths(rows: list[dict], paper: sqlite3.Connection, arm: str) -> None:
             continue
         sgn = 1 if r["side"] == "call" else -1
         end = r["completed_at"] or r["entry_time"][:11] + "16:00:00" + r["entry_time"][19:]
-        seg = [(t, sgn * (p - r["center"])) for t, p in _spot_path(paper, arm, r["trade_date"], cache)
-               if r["entry_time"] <= t <= end]
+        seg = [
+            (t, sgn * (p - r["center"]))
+            for t, p in _spot_path(paper, arm, r["trade_date"], cache)
+            if r["entry_time"] <= t <= end
+        ]
         if not seg:
             continue
         w = r["wing_width"]
@@ -132,26 +140,41 @@ def paths(rows: list[dict], paper: sqlite3.Connection, arm: str) -> None:
                 back += any(d <= 0 for t, d in seg if t > t_wing)
         else:
             m = max(d for _, d in seg)
-            comp_depth["never ITM" if m <= 0 else "ITM, inside the wing" if m < w else "past the long wing"] += 1
+            comp_depth[
+                "never ITM" if m <= 0 else "ITM, inside the wing" if m < w else "past the long wing"
+            ] += 1
     if wing_mins:
-        print(f"  stranded: crossed the long wing {len(wing_mins)}x, median {st.median(wing_mins):.0f} min after "
-              f"entry; came back OTM afterwards {back}x (and stranded anyway)")
+        print(
+            f"  stranded: crossed the long wing {len(wing_mins)}x, "
+            f"median {st.median(wing_mins):.0f} min after "
+            f"entry; came back OTM afterwards {back}x (and stranded anyway)"
+        )
     if comp_depth:
         print(f"  completed flies, deepest adverse excursion before completing: {dict(comp_depth)}")
 
 
 def timing(rows: list[dict]) -> None:
-    s = [_mins(r["entry_time"], r["best_debit_at"]) for r in rows
-         if r["kind"] == "short_vertical" and r["best_debit_at"]]
-    gaps = sorted(r["best_completing_debit"] - r["credit"] for r in rows
-                  if r["kind"] == "short_vertical" and r["best_completing_debit"] is not None)
+    s = [
+        _mins(r["entry_time"], r["best_debit_at"])
+        for r in rows
+        if r["kind"] == "short_vertical" and r["best_debit_at"]
+    ]
+    gaps = sorted(
+        r["best_completing_debit"] - r["credit"]
+        for r in rows
+        if r["kind"] == "short_vertical" and r["best_completing_debit"] is not None
+    )
     if s:
-        print(f"  stranded: best completing debit came a median {st.median(s):.1f} min after entry "
-              f"({sum(v <= 5 for v in s)}/{len(s)} within 5 min)")
+        print(
+            f"  stranded: best completing debit came a median {st.median(s):.1f} min after entry "
+            f"({sum(v <= 5 for v in s)}/{len(s)} within 5 min)"
+        )
     if gaps:
-        print("  best debit - credit reachable within: "
-              + "  ".join(f"+{x}: {sum(g <= x for g in gaps)}" for x in (0, 0.1, 0.25, 0.5, 1.0))
-              + f"  (of {len(gaps)})")
+        print(
+            "  best debit - credit reachable within: "
+            + "  ".join(f"+{x}: {sum(g <= x for g in gaps)}" for x in (0, 0.1, 0.25, 0.5, 1.0))
+            + f"  (of {len(gaps)})"
+        )
 
 
 def _salvage(rows: list[dict], t: float, x: float) -> tuple:
@@ -168,8 +191,16 @@ def _salvage(rows: list[dict], t: float, x: float) -> tuple:
             b, at = r["best_completing_debit"], r["best_debit_at"]
             if b is not None and at and b <= r["credit"] + x and _mins(r["entry_time"], at) >= t:
                 vfee = vfee if vfee is not None else fly.vertical_open_fee(r["symbol"])
-                pos = dict(kind="fly", side=r["side"], center=r["center"], wing_width=r["wing_width"],
-                           quantity=r["quantity"] or 1, net=-x, fees=2 * vfee * (r["quantity"] or 1), status="open")
+                pos = dict(
+                    kind="fly",
+                    side=r["side"],
+                    center=r["center"],
+                    wing_width=r["wing_width"],
+                    quantity=r["quantity"] or 1,
+                    net=-x,
+                    fees=2 * vfee * (r["quantity"] or 1),
+                    status="open",
+                )
                 p = fly.position_pnl(pos, r["settlement_price"])
                 rescued += 1
         per[r["trade_date"]] += p
@@ -183,16 +214,24 @@ def salvage(rows: list[dict]) -> None:
     for x in SALVAGE_X:
         for t in SALVAGE_T:
             n, w, dd, lose, res, ch = _salvage(legged, t, x)
-            print(f"  x={x:<4} T={t:<3} net {n:8.0f}  worst day {w:6.0f}  max DD {dd:7.0f}  losing days {lose:2d}  "
-                  f"rescued {res:2d}  completions charged {ch}")
+            print(
+                f"  x={x:<4} T={t:<3} net {n:8.0f}  worst day {w:6.0f}  max DD {dd:7.0f}  "
+                f"losing days {lose:2d}  "
+                f"rescued {res:2d}  completions charged {ch}"
+            )
 
 
 def sameside(rows: list[dict]) -> None:
     legged = [r for r in rows if r["kind"] in ("fly", "short_vertical")]
     groups, base, kept = defaultdict(list), defaultdict(float), defaultdict(float)
     for r in legged:
-        prior = [p for p in legged if p["trade_date"] == r["trade_date"] and p["entry_time"] < r["entry_time"]
-                 and (p["completed_at"] is None or p["completed_at"] > r["entry_time"])]
+        prior = [
+            p
+            for p in legged
+            if p["trade_date"] == r["trade_date"]
+            and p["entry_time"] < r["entry_time"]
+            and (p["completed_at"] is None or p["completed_at"] > r["entry_time"])
+        ]
         same = any(p["side"] == r["side"] for p in prior)
         groups["same side open" if same else "only opposite open" if prior else "nothing open"].append(r)
         base[r["trade_date"]] += r["pnl"]
@@ -201,8 +240,10 @@ def sameside(rows: list[dict]) -> None:
         c = sum(x["kind"] == "fly" for x in v)
         print(f"  {k:19} n {len(v):3d}  completion {c / len(v):.0%}  avg {st.mean(x['pnl'] for x in v):7.1f}")
     b, k = _session_stats(base), _session_stats({d: kept.get(d, 0.0) for d in base})
-    print(f"  refuse same-side: net {b[0]:.0f} -> {k[0]:.0f}, worst day {b[1]:.0f} -> {k[1]:.0f}, "
-          f"max DD {b[2]:.0f} -> {k[2]:.0f}, losing days {b[3]} -> {k[3]}")
+    print(
+        f"  refuse same-side: net {b[0]:.0f} -> {k[0]:.0f}, worst day {b[1]:.0f} -> {k[1]:.0f}, "
+        f"max DD {b[2]:.0f} -> {k[2]:.0f}, losing days {b[3]} -> {k[3]}"
+    )
 
 
 def main() -> None:
@@ -222,10 +263,15 @@ def main() -> None:
     paper = sqlite3.connect(_ledger("paper"))  # spot paths: the paper loop records every tick
     arms = a.arm or ["control"]
     if a.all:
-        arms = [r[0] for r in conn.execute(
-            """select arm from fly_positions where symbol=? and status='settled' and trade_date>=?
-               and void_reason is null group by arm having count(distinct trade_date)>=? order by count(*) desc""",
-            (a.symbol, a.since, a.min_sessions))]
+        arms = [
+            r[0]
+            for r in conn.execute(
+                "select arm from fly_positions where symbol=? and status='settled' and trade_date>=? "
+                "and void_reason is null group by arm having count(distinct trade_date)>=? "
+                "order by count(*) desc",
+                (a.symbol, a.since, a.min_sessions),
+            )
+        ]
     for arm in arms:
         rows = load(conn, arm, a.symbol, a.since, a.until)
         if not rows:

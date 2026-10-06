@@ -63,9 +63,15 @@ def _session_stats(per_day: dict[str, float]) -> tuple[float, float, float, int]
 def held_pnl(row: dict, open_fee: float) -> float:
     if row["kind"] == "long_vertical":
         return row["pnl"]
-    spread = {"kind": "long_vertical", "side": row["side"], "center": row["center"],
-              "wing_width": row["wing_width"], "net": -row["debit"], "quantity": row["quantity"],
-              "fees": open_fee}
+    spread = {
+        "kind": "long_vertical",
+        "side": row["side"],
+        "center": row["center"],
+        "wing_width": row["wing_width"],
+        "net": -row["debit"],
+        "quantity": row["quantity"],
+        "fees": open_fee,
+    }
     return fly.position_pnl(spread, row["settlement_price"])
 
 
@@ -101,38 +107,52 @@ def main() -> None:
         print("no session has the base and both sides of the pair")
         return
 
-    print(f"== {a.ledger} {a.base} + first {a.up}/{a.down}  {days[0]}..{days[-1]}  "
-          f"({len(days)} sessions; opening fee {open_fee:.2f})")
-    print(f"  {'session':10} {'base':>9} {'traded':>8} {'held':>8}   "
-          "first pair (entry, centre, how it ended, traded P&L)")
+    print(
+        f"== {a.ledger} {a.base} + first {a.up}/{a.down}  {days[0]}..{days[-1]}  "
+        f"({len(days)} sessions; opening fee {open_fee:.2f})"
+    )
+    print(
+        f"  {'session':10} {'base':>9} {'traded':>8} {'held':>8}   "
+        "first pair (entry, centre, how it ended, traded P&L)"
+    )
     traded: dict[str, float] = {}
     held: dict[str, float] = {}
     for d in days:
         u, w = first[("up", d)], first[("dn", d)]
         traded[d] = u["pnl"] + w["pnl"]
         held[d] = held_pnl(u, open_fee) + held_pnl(w, open_fee)
-        legs = " / ".join(f"{s} {r['entry_time'][11:16]} K{r['center']:.0f} "
-                          f"{'fly' if r['kind'] == 'fly' else 'open'} {r['pnl']:+.0f}"
-                          for s, r in (("up", u), ("dn", w)))
-        print(f"  {d:10} {base_day[d]:+9.2f} {traded[d]:+8.2f} {held[d]:+8.2f}   {legs}  "
-              f"spot {u['underlying_at_entry']:.0f}->{u['settlement_price']:.0f}")
+        legs = " / ".join(
+            f"{s} {r['entry_time'][11:16]} K{r['center']:.0f} "
+            f"{'fly' if r['kind'] == 'fly' else 'open'} {r['pnl']:+.0f}"
+            for s, r in (("up", u), ("dn", w))
+        )
+        print(
+            f"  {d:10} {base_day[d]:+9.2f} {traded[d]:+8.2f} {held[d]:+8.2f}   {legs}  "
+            f"spot {u['underlying_at_entry']:.0f}->{u['settlement_price']:.0f}"
+        )
 
     total = sum(base_day[d] for d in days)
     print(f"  {'total':10} {total:+9.2f} {sum(traded.values()):+8.2f} {sum(held.values()):+8.2f}")
     losing = [d for d in days if base_day[d] < 0]
-    print(f"\n  base losing days: {len(losing)} of {len(days)}"
-          + ("  -- too few to read the hedge; re-run later" if len(losing) < 5 else ""))
+    print(
+        f"\n  base losing days: {len(losing)} of {len(days)}"
+        + ("  -- too few to read the hedge; re-run later" if len(losing) < 5 else "")
+    )
     for name, pair in (("traded", traded), ("held", held)):
         on = [pair[d] for d in losing]
         off = [pair[d] for d in days if d not in losing]
-        print(f"  {name:7} on losing days {sum(on):+9.2f} (avg {st.mean(on) if on else 0:+7.2f})   "
-              f"other days {sum(off):+9.2f} (avg {st.mean(off) if off else 0:+7.2f})")
+        print(
+            f"  {name:7} on losing days {sum(on):+9.2f} (avg {st.mean(on) if on else 0:+7.2f})   "
+            f"other days {sum(off):+9.2f} (avg {st.mean(off) if off else 0:+7.2f})"
+        )
 
     b = _session_stats({d: base_day[d] for d in days})
     print(f"\n  {'book':16} {'net':>9} {'worst day':>10} {'max DD':>9} {'losing days':>12}")
-    for name, s in ((a.base, b),
-                    ("+ pair traded", _session_stats({d: base_day[d] + traded[d] for d in days})),
-                    ("+ pair held", _session_stats({d: base_day[d] + held[d] for d in days}))):
+    for name, s in (
+        (a.base, b),
+        ("+ pair traded", _session_stats({d: base_day[d] + traded[d] for d in days})),
+        ("+ pair held", _session_stats({d: base_day[d] + held[d] for d in days})),
+    ):
         print(f"  {name:16} {s[0]:+9.2f} {s[1]:+10.2f} {s[2]:+9.2f} {s[3]:12d}")
 
 

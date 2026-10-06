@@ -61,11 +61,14 @@ STORE = Path(
 # with an empty server list removes every MCP server the user's own settings would otherwise
 # attach; `--disable-slash-commands` removes skills. See `_claude_argv`.
 TOOL_FENCE = [
-    "--strict-mcp-config", "--mcp-config", '{"mcpServers": {}}',
+    "--strict-mcp-config",
+    "--mcp-config",
+    '{"mcpServers": {}}',
     "--disable-slash-commands",
     # Last on purpose: an empty argument is the one a Windows .cmd shim could mangle, and at the
     # end of argv a dropped value cannot swallow the flag after it.
-    "--tools", "",
+    "--tools",
+    "",
 ]
 TIMEOUT_SECONDS = 600
 LIGHT_SLOTS = ("open", "am1", "am2", "midday", "pm1", "pm2", "close")
@@ -225,8 +228,12 @@ def _advisor(*argv: str, timeout: int = 300) -> tuple[dict | None, str | None]:
     try:
         proc = subprocess.run(
             [sys.executable, "-m", "cherrypick.advisor", *argv],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=timeout, creationflags=CREATE_NO_WINDOW,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            creationflags=CREATE_NO_WINDOW,
         )
     except subprocess.TimeoutExpired:
         return None, f"advisor {argv[0]} timed out after {timeout}s"
@@ -286,10 +293,16 @@ def _run_claude(
     argv = _claude_argv(exe, prompt, model)
     try:
         proc = subprocess.run(
-            argv, input=payload, capture_output=True, text=True,
+            argv,
+            input=payload,
+            capture_output=True,
+            text=True,
             # UTF-8 explicitly: `text=True` alone decodes with the locale encoding (cp1252 on
             # Windows), which turns every em dash the model emits into mojibake.
-            encoding="utf-8", errors="replace", timeout=timeout, creationflags=CREATE_NO_WINDOW,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            creationflags=CREATE_NO_WINDOW,
         )
     except subprocess.TimeoutExpired:
         return None, None, f"claude timed out after {timeout}s"
@@ -338,8 +351,9 @@ def main() -> int:
     ap.add_argument("--timeout", type=int, default=TIMEOUT_SECONDS)
     ap.add_argument("--modules", default=None, help="csv subset of meic,flies,earnings")
     ap.add_argument("--force", action="store_true", help="re-run a slot that is already frozen")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="print the pack and the prompt; invoke nothing, write nothing")
+    ap.add_argument(
+        "--dry-run", action="store_true", help="print the pack and the prompt; invoke nothing, write nothing"
+    )
     args = ap.parse_args()
 
     session = args.session or _session_today()
@@ -416,12 +430,14 @@ def main() -> int:
                 _warn(session, slot, error)
                 result.update({"ok": False, "error": error, "raw": str(raw_path)})
             else:
-                result.update({
-                    "raw": str(raw_path),
-                    "pack": str(pack_path),
-                    "admitted": len(admitted.get("admitted") or []),
-                    "rejected": len(admitted.get("rejected") or []),
-                })
+                result.update(
+                    {
+                        "raw": str(raw_path),
+                        "pack": str(pack_path),
+                        "admitted": len(admitted.get("admitted") or []),
+                        "rejected": len(admitted.get("rejected") or []),
+                    }
+                )
     except Exception as exc:  # noqa: BLE001 -- every failure path is an envelope, never a traceback
         error = f"{type(exc).__name__}: {exc}"
         _warn(session, slot, error)

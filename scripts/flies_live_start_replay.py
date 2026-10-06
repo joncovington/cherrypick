@@ -64,7 +64,9 @@ def exposure_at(p: dict, t: datetime) -> float:
     if p["kind"] == "fly" and p["completed_at"] and datetime.fromisoformat(p["completed_at"]) <= t:
         return max(0.0, -fly.position_floor(p))
     entry_fees = (p["fees"] or 0.0) / (2 if p["kind"] == "fly" else 1)
-    return max(0.0, -fly.position_floor({**p, "kind": "short_vertical", "net": p["credit"], "fees": entry_fees}))
+    return max(
+        0.0, -fly.position_floor({**p, "kind": "short_vertical", "net": p["credit"], "fees": entry_fees})
+    )
 
 
 def replay(rows: list[dict], start: str, cap: float) -> dict:
@@ -79,7 +81,9 @@ def replay(rows: list[dict], start: str, cap: float) -> dict:
             if t.strftime("%H:%M") < start:
                 by_start += 1
                 continue
-            proposed = max(0.0, (r["wing_width"] - r["credit"]) * fly.CONTRACT_MULTIPLIER * (r["quantity"] or 1))
+            proposed = max(
+                0.0, (r["wing_width"] - r["credit"]) * fly.CONTRACT_MULTIPLIER * (r["quantity"] or 1)
+            )
             if sum(exposure_at(p, t) for p in taken) + proposed > cap:
                 by_cap += 1
                 continue
@@ -110,7 +114,9 @@ def main() -> None:
     ap.add_argument("--cap", type=float, default=1000.0, help="live.max_open_margin_dollars")
     ap.add_argument("--since", default="2026-08-21", help="default: the advisor-era cutover")
     ap.add_argument("--until")
-    ap.add_argument("--validate", action="store_true", help="live's actual sessions beside the replay of them")
+    ap.add_argument(
+        "--validate", action="store_true", help="live's actual sessions beside the replay of them"
+    )
     a = ap.parse_args()
     starts = a.start or list(DEFAULT_STARTS)
 
@@ -141,7 +147,9 @@ def main() -> None:
         if start != a.baseline:
             diffs = [out["per_day"][d] - base["per_day"][d] for d in out["per_day"]]
             better, worse = sum(1 for x in diffs if x > 0.01), sum(1 for x in diffs if x < -0.01)
-            line["vs_baseline"] = f"{better}-{worse} days, p {sign_test_p(better, worse)}, net {sum(diffs):+.0f}"
+            line["vs_baseline"] = (
+                f"{better}-{worse} days, p {sign_test_p(better, worse)}, net {sum(diffs):+.0f}"
+            )
         print(start, line)
 
 
