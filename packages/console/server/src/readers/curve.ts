@@ -3,7 +3,9 @@ import path from "node:path";
 import { EMPTY_TRADE_TOTALS, positionCash, positionCashColumns, tradeTotals } from "./positionCash.js";
 import type {
   CurveArmCell,
+  CurveAssignmentRow,
   CurveCycleRow,
+  CurveEntryOutcomes,
   CurveHistory,
   CurveFlipDivergence,
   CurveMeta,
@@ -13,7 +15,7 @@ import type {
   Paged,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
+import { hasTable, num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { NO_UNREALISED, unrealisedByPosition } from "./unrealised.js";
 
@@ -265,14 +267,18 @@ function readArms(db: DatabaseHandle): CurveArmCell[] {
     )
     .all();
   const byArm = new Map<string, ReturnType<typeof positionCash>[]>();
+  const premium = new Map<string, number>();
   for (const r of rows) {
     const arm = str(r["arm"]) ?? "";
-    byArm.set(arm, [...(byArm.get(arm) ?? []), positionCash(r, num(r["entry_credit"]))]);
+    const cash = positionCash(r, num(r["entry_credit"]));
+    byArm.set(arm, [...(byArm.get(arm) ?? []), cash]);
+    premium.set(arm, (premium.get(arm) ?? 0) + Math.max(0, cash.entryCash ?? 0));
   }
   return [...byArm.entries()].map(([arm, cash]) => {
     const t = tradeTotals(cash);
     const wins = cash.filter((c) => (c.netPnl ?? 0) > 0).length;
     return {
+      premium: Math.round((premium.get(arm) ?? 0) * 100) / 100,
       arm,
       positions: t.positions,
       wins,
@@ -284,6 +290,66 @@ function readArms(db: DatabaseHandle): CurveArmCell[] {
       winRate: t.positions > 0 ? wins / t.positions : null,
     };
   });
+}
+
+/**
+ * Entry outcomes per arm, per SESSION: `curve_entry_attempts` writes a row every tick the window is
+ * open, so a raw count weights a gate by how many ticks it refused, not by how many sessions it
+ * cost. A session is "entered" if any tick filled; otherwise it counts under its last refusal.
+ * From `since` (the latest measurement break) when given, so a boundary's new floors are not
+ * judged on the refusals of the structure they replaced.
+ */
+function readEntryOutcomes(db: DatabaseHandle, since: string | null): CurveEntryOutcomes[] {
+  if (!hasTable(db, "curve_entry_attempts")) return [];
+  const rows = db
+    .prepare<[string], Record<string, unknown>>(
+      `SELECT arm, trade_date, outcome FROM curve_entry_attempts WHERE trade_date >= ? ORDER BY id`,
+    )
+    .all(since ?? "");
+  const last = new Map<string, { arm: string; filled: boolean; outcome: string }>();
+  for (const r of rows) {
+    const arm = str(r["arm"]) ?? "";
+    const key = `${arm}|${str(r["trade_date"]) ?? ""}`;
+    const outcome = str(r["outcome"]) ?? "unknown";
+    const prev = last.get(key);
+    last.set(key, { arm, filled: (prev?.filled ?? false) || outcome === "filled", outcome });
+  }
+  const out = new Map<string, CurveEntryOutcomes>();
+  for (const s of last.values()) {
+    const o = out.get(s.arm) ?? { arm: s.arm, sessions: 0, entered: 0, refusals: {} };
+    o.sessions += 1;
+    if (s.filled) o.entered += 1;
+    else o.refusals[s.outcome] = (o.refusals[s.outcome] ?? 0) + 1;
+    out.set(s.arm, o);
+  }
+  return [...out.values()].sort((a, b) => a.arm.localeCompare(b.arm));
+}
+
+/** Shares delivered by an ITM leg, and their disposal -- the one exposure a spread's max loss does
+ *  not bound, and the reason the paper net is an upper bound. */
+function readAssignments(db: DatabaseHandle): CurveAssignmentRow[] {
+  if (!hasTable(db, "curve_assignments")) return [];
+  return db
+    // SELECT * and sort here: an ORDER BY on a named column would fail the whole payload on a
+    // ledger (or fixture) that lacks it, for the sake of a sort key.
+    .prepare<[], Record<string, unknown>>("SELECT * FROM curve_assignments ORDER BY id DESC")
+    .all()
+    .map((r) => ({
+      positionId: str(r["position_id"]) ?? "",
+      legRole: str(r["leg_role"]) ?? "",
+      symbol: str(r["symbol"]) ?? "",
+      assignedSession: str(r["assigned_session"]) ?? "",
+      direction: str(r["direction"]) ?? "",
+      shares: num(r["shares"]) ?? 0,
+      basis: num(r["basis"]),
+      strike: num(r["strike"]),
+      status: str(r["status"]) ?? "",
+      disposedSession: str(r["disposed_session"]),
+      disposalPrice: num(r["disposal_price"]),
+      sharePnl: num(r["share_pnl"]),
+      fees: num(r["fees"]),
+    }))
+    .sort((a, b) => b.assignedSession.localeCompare(a.assignedSession));
 }
 
 /**
@@ -395,6 +461,10 @@ export function readCurve(config: ConsoleConfig): CurvePayload {
     openPositions: [],
     openCount: 0,
     arms: [],
+    entryOutcomes: [],
+    outcomesSince: null,
+    entryOutcomesAll: [],
+    assignments: [],
     flipDivergence: {
       flipDivergenceCount: 0,
       controlFlipExits: 0,
@@ -435,6 +505,10 @@ export function readCurve(config: ConsoleConfig): CurvePayload {
       openPositions,
       openCount: openPositions.length,
       arms: readArms(db),
+      entryOutcomes: readEntryOutcomes(db, breaks[0]?.date ?? null),
+      outcomesSince: breaks[0]?.date ?? null,
+      entryOutcomesAll: readEntryOutcomes(db, null),
+      assignments: readAssignments(db),
       flipDivergence: readFlipDivergence(db),
       regimeSeries: readRegimeSeries(db),
       integrity: {

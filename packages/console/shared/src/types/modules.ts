@@ -1181,6 +1181,35 @@ export interface CurveArmCell {
   slippage: number;
   netPnl: number;
   winRate: number | null;
+  /** Credit received at entry, whole-position dollars (entry_credit x 100 x qty) -- the premium the
+   *  costs are judged against. */
+  premium: number;
+}
+
+/** One arm's entry sessions, counted per SESSION not per tick: entered if any tick filled,
+ *  otherwise the session's last refusal. A gate that refused 400 ticks is one session. */
+export interface CurveEntryOutcomes {
+  arm: string;
+  sessions: number;
+  entered: number;
+  /** reason -> sessions whose last refusal it was. */
+  refusals: Record<string, number>;
+}
+
+export interface CurveAssignmentRow {
+  positionId: string;
+  legRole: string;
+  symbol: string;
+  assignedSession: string;
+  direction: string;
+  shares: number;
+  basis: number | null;
+  strike: number | null;
+  status: string;
+  disposedSession: string | null;
+  disposalPrice: number | null;
+  sharePnl: number | null;
+  fees: number | null;
 }
 
 /** One session's regime row -- `curve_regime`, written every session, traded or not. */
@@ -1225,6 +1254,12 @@ export interface CurvePayload {
   openPositions: CurveOpenPosition[];
   openCount: number;
   arms: CurveArmCell[];
+  /** Entry outcomes per arm since `outcomesSince` (the latest measurement break, else all time). */
+  entryOutcomes: CurveEntryOutcomes[];
+  outcomesSince: string | null;
+  /** The same count over every session on file, the structures before the boundary included. */
+  entryOutcomesAll: CurveEntryOutcomes[];
+  assignments: CurveAssignmentRow[];
   flipDivergence: CurveFlipDivergence;
   /** The regime series, oldest first -- `analytics.regime_series()`. */
   regimeSeries: CurveRegimeRow[];

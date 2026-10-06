@@ -2,6 +2,7 @@ import type { CurveArmCell, CurveFlipDivergence, CurveOpenPosition, CurvePayload
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
+import { RegimeRatioChart } from "../../components/nav/NavViews";
 import { fmtStrike } from "../../lib/optionFormat";
 import { fmtCash, fmtPrice } from "../../lib/format";
 
@@ -157,7 +158,22 @@ export function OpenTradesCard({ data, updatedAt }: { data: CurvePayload | undef
 }
 
 /** Today's regime read: the module's second product, standing on its own beside any position. */
-export function RegimeCard({ series, today, updatedAt }: { series: CurveRegimeRow[]; today: CurveRegimeRow | undefined; updatedAt?: number }) {
+export function RegimeCard({
+  series,
+  today,
+  params,
+  updatedAt,
+}: {
+  series: CurveRegimeRow[];
+  today: CurveRegimeRow | undefined;
+  params?: CurvePayload["params"];
+  updatedAt?: number;
+}) {
+  const thresholds = [
+    { label: `entry gate (contango_max ${String(params?.contangoMax ?? 0.97)})`, value: params?.contangoMax ?? 0.97 },
+    { label: "flip exit (1.0)", value: 1.0 },
+    ...(params?.hookThreshold != null ? [{ label: `hook (${String(params.hookThreshold)})`, value: params.hookThreshold }] : []),
+  ];
   return (
     <Card title="VIX/VIX3M regime, recorded every session" collapseKey="curve-regime" updatedAt={updatedAt} className="view-fade">
       <p className="integrity-note">
@@ -181,6 +197,7 @@ export function RegimeCard({ series, today, updatedAt }: { series: CurveRegimeRo
           )}
         </p>
       )}
+      <RegimeRatioChart rows={series.filter((r) => r.usable)} thresholds={thresholds} height={220} />
       {series.length > 1 && (
         <div className="table-scroll">
           <table className="data-table num-from-1">

@@ -7,7 +7,8 @@ import { CurveSession } from "../../pages/Curve/CurveSession";
 import { DecisionsCard } from "../../components/DecisionsCard";
 import { HistoryTab } from "../../pages/Curve/HistoryTab";
 import { HelpTab } from "../../pages/Curve/HelpTab";
-import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
+import { CurvePerformance } from "../../pages/Curve/CurvePerformance";
+import { CurveCosts } from "../../pages/Curve/CurveCosts";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { ModuleFrame } from "../ModuleFrame";
 import { CURVE_SLIDES, type CurveSlideId } from "../navGroups";
@@ -32,7 +33,12 @@ export function CurveLightbox({ slide }: { slide: string }) {
       label: CURVE_LABEL.regime,
       render: () => (
         <div className="cards cards-wide">
-          <RegimeCard series={data?.regimeSeries ?? []} today={todayRegime} updatedAt={dataUpdatedAt} />
+          <RegimeCard
+            series={data?.regimeSeries ?? []}
+            today={todayRegime}
+            params={data?.params}
+            updatedAt={dataUpdatedAt}
+          />
         </div>
       ),
     },
@@ -54,7 +60,8 @@ export function CurveLightbox({ slide }: { slide: string }) {
         </div>
       ),
     },
-    { id: "performance", label: CURVE_LABEL.performance, render: () => <PerformanceSlide module="curve" /> },
+    { id: "performance", label: CURVE_LABEL.performance, render: () => <CurvePerformance data={data} /> },
+    { id: "costs", label: CURVE_LABEL.costs, render: () => <CurveCosts data={data} updatedAt={dataUpdatedAt} /> },
     { id: "advisor", label: CURVE_LABEL.advisor, render: () => <AdvisorSlide module="curve" /> },
     {
       id: "positions",
