@@ -299,6 +299,12 @@ API-equivalent):**
   one-sided 95% bound below zero, 8 sessions differing), and -$833 against control.
 - So on this evidence neither gate beats no gate. The agent's best possible result, admitting all
   55, is control itself.
+- **Read it as a paper result, not a verdict** (the user's objection, 2026-10-06). It is scored on
+  paper control's recorded outcomes. Paper fills completions the live loop never makes, and all 29
+  sessions predate 2026-10-05, when paper began paying the live limit. A refused entry that
+  "completed" on paper may have stranded live, so the +$1,037 the gate gave up is likely overstated,
+  and the gate looks worse than it would live. Both forward arms stay on, and the live shadow, scored
+  on live fills, is the comparison that settles it.
 
 `trend-rule` gets the same replay, for free. That makes it a paired, already-out-of-sample read
 over about 30 sessions, and the deciding evidence for whether the forward paper arm is worth
