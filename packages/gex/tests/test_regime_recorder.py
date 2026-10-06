@@ -71,7 +71,8 @@ def test_fresh_quotes_write_usable_rows(cfg):
     seed_cache(cfg, all_fresh_quotes(now_ts))
     out = regime.sample(cfg, now=RTH_NOW)
     assert out["status"] == "sampled"
-    assert out["written"] == len(regime.READINGS)
+    # Every quote reading, plus SPY's volume -- refused here, since this seed carries no volume.
+    assert out["written"] == len(regime.READINGS) + len(regime.VOLUME_READINGS)
     assert out["usable"] == len(regime.READINGS)
     rows = history_rows(cfg, "SELECT * FROM market_regime_history WHERE reading = 'vix'")
     assert len(rows) == 1
@@ -95,6 +96,31 @@ def test_frozen_quote_is_refused_not_recorded(cfg):
     assert row["reason"] == "stale_quote"
     assert row["value"] is None
     assert row["basis_ts"] is not None  # the evidence of HOW stale is kept
+
+
+def test_spy_volume_is_sampled_raw_and_refused_when_stale(cfg):
+    """SPY's session-cumulative volume rides beside its price, stored raw: the minute's volume and
+    VWAP are read-side differences. A stale volume is refused like a stale price, never recorded."""
+    now_ts = RTH_NOW.timestamp()
+    seed_cache(cfg, all_fresh_quotes(now_ts))
+    conn = sqlite3.connect(cfg["stream_cache_db"])
+    conn.execute("UPDATE stream_trades SET volume = 41234567 WHERE symbol = 'SPY'")
+    conn.commit()
+    conn.close()
+    out = regime.sample(cfg, now=RTH_NOW)
+    assert out["usable"] == len(regime.READINGS) + 1
+    row = history_rows(cfg, "SELECT * FROM market_regime_history WHERE reading = 'spy_volume'")[0]
+    assert (row["usable"], row["value"], row["symbol"]) == (1, 41234567.0, "SPY")
+    assert "spy_volume" in regime.declared_readings()
+
+    later = RTH_NOW.replace(minute=30)
+    conn = sqlite3.connect(cfg["stream_cache_db"])
+    conn.execute("UPDATE stream_trades SET updated_at = ? WHERE symbol = 'SPY'", (now_ts - 5,))
+    conn.commit()
+    conn.close()
+    regime.sample(cfg, now=later)  # SPY last traded 30 minutes ago: stale at `later`
+    rows = history_rows(cfg, "SELECT * FROM market_regime_history WHERE reading = 'spy_volume' ORDER BY ts")
+    assert (rows[-1]["usable"], rows[-1]["value"], rows[-1]["reason"]) == (0, None, "stale_quote")
 
 
 def test_missing_quote_is_refused(cfg):

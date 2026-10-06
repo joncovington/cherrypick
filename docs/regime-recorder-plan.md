@@ -20,6 +20,13 @@ short-premium book is paid for) rather than only across the middle. The same run
 and RVX** — not one print in 25s — so cross-asset VOL stays unreachable and GLD/USO/TLT remain price
 proxies, the same answer MOVE got on 2026-08-23. Frozen again after this amendment.*
 
+***AMENDED 2026-10-06: `spy_volume` admitted, the first volume reading.*** *SPY's session-cumulative
+traded volume (`stream_trades.volume`, DXLink's `day_volume`), sampled beside SPY's price from the
+same row with the same age gate. Stored raw; the minute's volume and SPY's VWAP are read-side
+differences. Admitted for the flies intraday agent (packages/flies/docs/intraday-agent-plan.md),
+which has options flow from the GEX recorder but no underlying volume. No new subscription: SPY was
+already a leg. No history before 2026-10-06.*
+
 ***The entitlement probe ran the same morning and the reading list is now FROZEN — results below
 ("What the 2026-08-24 probe settled"). Still open**: adding the three admitted readings, the /VX
 roll helper, Tier 2 chain math, and the fact-pack migration once the series has accumulated. When
