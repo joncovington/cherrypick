@@ -15,7 +15,7 @@ license = "MIT"
 dependencies = ["keyring>=24", "cherrypick-core", "tastytrade>=12.4.3,<14"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff==0.15.21"]
+dev = ["pytest>=8", "ruff==0.16.10"]
 
 [tool.pytest.ini_options]
 testpaths  = ["tests"]
