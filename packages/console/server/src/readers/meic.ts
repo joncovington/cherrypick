@@ -1,4 +1,6 @@
 import { hasRange, rangeClauses } from "./dateRange.js";
+import { concededArmMoney, entryOutcomes } from "./armCosts.js";
+import type { ArmCostsPayload } from "@console/shared";
 import path from "node:path";
 import type { MeicDivergence, MeicPayload, MeicTradeRow, MeicTradeTotals, MeicSummaryRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
@@ -1521,6 +1523,43 @@ export function readMeicDivergence(config: ConsoleConfig, mode: TradingMode, day
       outcomes: [...outcomeCounts.entries()]
         .map(([outcome, count]) => ({ outcome, count }))
         .sort((a, b) => b.count - a.count),
+    };
+  });
+}
+
+
+/**
+ * MEIC's costs page: each arm's closed condors, judged against the credit received, and its entry
+ * outcomes per session. The modelled fill already concedes slippage, so it is shown beside the row
+ * and never subtracted again. Scoped to `era` like the trade log ("ALL" pools every era), from the
+ * paper or live ledger.
+ */
+export function readMeicCosts(config: ConsoleConfig, mode: TradingMode, era: string | null = null): ArmCostsPayload {
+  const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
+  const empty: ArmCostsPayload = { arms: [], slippageInGross: true, since: null, entryOutcomes: [], entryOutcomesAll: [] };
+  return withReadOnlyDb<ArmCostsPayload>(path.join(config.paths.meicDir, file), empty, (db) => {
+    const sc = scopeSql(db, { era, symbol: null, profile: null } as MeicScopeFilter);
+    const mult = `COALESCE(${meicCol(db, "dollar_multiplier")}, 100) * COALESCE(quantity, 1)`;
+    const rows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT ${armColumnOf(db, "ic_trades")} AS arm, pnl AS gross, fees AS fees_total,
+                ${meicCol(db, "settlement_fees")} AS settlement_fees,
+                ${meicCol(db, "slippage_dollars")} AS slippage_dollars,
+                net_credit * ${mult} AS premium, trade_date
+           FROM ic_trades WHERE pnl IS NOT NULL AND COALESCE(status, '') != 'cancelled'${sc.and}`,
+      )
+      .all(...sc.params);
+    const since = rows.reduce<string | null>((m, r) => {
+      const d = str(r["trade_date"]);
+      return d !== null && (m === null || d < m) ? d : m;
+    }, null);
+    const scoped = (era ?? CURRENT_ERA) !== "ALL";
+    return {
+      arms: concededArmMoney(rows),
+      slippageInGross: true,
+      since: scoped ? since : null,
+      entryOutcomes: entryOutcomes(db, "entry_attempts", scoped ? since : null),
+      entryOutcomesAll: entryOutcomes(db, "entry_attempts", null),
     };
   });
 }

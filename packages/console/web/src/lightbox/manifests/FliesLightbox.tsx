@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ModuleCosts } from "../../components/costs/ModuleCosts";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useFlies, useFliesMeta, fliesQuery, type FliesFilter } from "../../lib/api";
@@ -167,6 +168,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
     { id: "completion", label: FLIES_LABEL.completion, render: () => <PerformanceTab mode={mode} filter={multiDayFilter} /> },
     { id: "advisor", label: FLIES_LABEL.advisor, render: () => <AdvisorSlide module="flies" /> },
     { id: "performance", label: FLIES_LABEL.performance, render: () => <PerformanceSlide module="flies" mode={mode} /> },
+    { id: "costs", label: FLIES_LABEL.costs, render: () => <ModuleCosts module="flies" mode={mode} era={era} /> },
     { id: "regime", label: FLIES_LABEL.regime, render: () => <RegimeCutsTab module="flies" /> },
     // The three dense tables (2026-09-24: pages in the rail's `tables` group, where they had been
     // overlay sheets). Same markup, pagers and queries as before -- they moved rather than changed.

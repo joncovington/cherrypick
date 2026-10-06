@@ -61,7 +61,7 @@ describe.skipIf(!built)("pmcc costs over the module's own schema", () => {
     expect(a.grossPnl - a.fees - a.settlementFees - a.slippage).toBeCloseTo(a.netPnl, 2);
     expect(shield.since).toBe("2026-10-06");
     expect(shield.entryOutcomes).toEqual([
-      { arm: "shield", sessions: 2, entered: 1, refusals: { ex_dividend_span: 1 } },
+      { arm: "shield", sessions: 2, entered: 1, fills: 1, refusals: { ex_dividend_span: 1 } },
     ]);
     expect(readPmccCosts(config, "ALL").arms.map((x) => x.arm).sort()).toEqual(["control", "shield"]);
   });

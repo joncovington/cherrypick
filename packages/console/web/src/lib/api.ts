@@ -963,3 +963,14 @@ export function usePmccEquity(era: string | null) {
     refetchInterval: 300_000,
   });
 }
+
+/** meic's and flies' costs reads (`/api/<module>/costs`), on the page's mode and era. */
+export function useModuleCosts(module: "meic" | "flies", mode: TradingMode, era: string | null) {
+  const params = new URLSearchParams({ mode });
+  if (era !== null) params.set("era", era);
+  return useQuery<ArmCostsPayload>({
+    queryKey: [`${module}-costs`, mode, era],
+    queryFn: () => getJson<ArmCostsPayload>(`/api/${module}/costs?${params.toString()}`),
+    staleTime: 60_000,
+  });
+}

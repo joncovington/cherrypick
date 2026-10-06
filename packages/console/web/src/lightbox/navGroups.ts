@@ -66,6 +66,7 @@ export const FLIES_SLIDES = [
   { id: "regime", label: "regime cuts" },
   { id: "completion", label: "completion" },
   { id: "performance", label: "performance" },
+  { id: "costs", label: "costs" },
   { id: "advisor", label: "advisor" },
   { id: "books", label: "books" },
   { id: "positions", label: "positions" },
@@ -96,6 +97,7 @@ export const MEIC_SLIDES = [
   { id: "regime", label: "regime cuts" },
   { id: "calibration", label: "calibration" },
   { id: "performance", label: "performance" },
+  { id: "costs", label: "costs" },
   { id: "advisor", label: "advisor" },
   { id: "positions", label: "positions" },
   { id: "history", label: "history" },
@@ -316,7 +318,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     groups: [
       { label: "today", ids: ["session", "forest", "timeline", "openingrange"] },
       { label: "evidence", ids: ["attempts", "decisions", "divergence", "regime"] },
-      { label: "study", ids: ["completion", "performance", "advisor"] },
+      { label: "study", ids: ["completion", "performance", "costs", "advisor"] },
       { label: "tables", ids: ["books", "positions", "history"] },
       { label: "help", ids: ["guide"] },
     ],
@@ -334,7 +336,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     groups: [
       { label: "today", ids: ["session", "forest", "attempts"] },
       { label: "evidence", ids: ["exits", "regime"] },
-      { label: "study", ids: ["calibration", "performance", "advisor"] },
+      { label: "study", ids: ["calibration", "performance", "costs", "advisor"] },
       { label: "tables", ids: ["positions", "history", "sessions"] },
       { label: "help", ids: ["guide"] },
     ],
