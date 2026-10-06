@@ -81,8 +81,13 @@ entitlement), `replay.py` (the rule over daily closes); all pure. `provider.py` 
 cache and technicals store), `db.py` (ledger), `paper_loop.py` (the tick), `stream_request.py`
 (the funds and VIX/VIX3M as quote-only legs, no underlyings), `cli.py` (status, nav, stints).
 
-## Not yet
+## Suite wiring
 
-Orchestrator registration (a trade schema across report, reconcile, notifier, eval_activity and
-the review), and a console page. Until the first lands, the loop runs only by hand
-(`python -m cherrypick.contango.paper_loop --once`).
+Trade schema **`contango_etf`**: `core.ledgers` closed and open readers (cost = fees + slippage,
+capital = the stint's purchase), report, reconcile, the trade notifier (a switch notifies as a
+close and an entry), and the review (health = each arm's decision outcome; expected = decisions
+due against decisions taken). It is in `eval_activity.NOT_APPLICABLE`: it acts only inside its
+window, so an idle tick is the design and not a stall. It ships `enabled: false` in the
+orchestrator's example, like curve.
+
+**Not yet:** a console page.

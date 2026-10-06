@@ -306,6 +306,7 @@ _LATEST_SQL = {
     "pmcc": "SELECT MAX(closed_session) FROM pmcc_positions WHERE closed_session IS NOT NULL",
     "curve_vx": "SELECT MAX(closed_session) FROM curve_positions WHERE closed_session IS NOT NULL",
     "bwb_132": "SELECT MAX(closed_session) FROM bwb_positions WHERE closed_session IS NOT NULL",
+    "contango_etf": "SELECT MAX(exit_session) FROM contango_positions WHERE exit_session IS NOT NULL",
 }
 
 

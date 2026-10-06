@@ -55,6 +55,12 @@ formula from `capital` alone.
                  convention); tag = book (control / advised:control); capital =
                  net_debit x 100 x quantity, the structure's defined max loss.
 
+  - "contango_etf": contango's `contango_positions`, one row per HOLDING STINT (the shares an arm
+                 bought on one switch and sold on the next); closed = status 'closed'; net =
+                 net_pnl as stored (gross - fees - slippage: fills are at mid and slippage is its
+                 own column there, so `cost` here is fees + slippage); tag = arm; capital = the
+                 stint's purchase (shares x entry mid), all of it at risk in a fund.
+
 `None` never means zero anywhere in here. A row written before an instrumentation column existed
 reports `slippage: None` and `capital: None`, because "not recorded" and "was zero" are different
 facts and averaging them together is how a cost model quietly flatters itself.
@@ -474,6 +480,51 @@ def _curve_open(conn) -> list[dict]:
     ]
 
 
+def _contango_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
+    """contango's closed holding stints. The module stores the whole money layout on the row
+    (entry + exit + distributions = gross; gross - fees - slippage = net), so this reads it rather
+    than re-deriving it. `max_profit` is None: a fund holding has no ceiling."""
+    where, params = _session_where("exit_session", start, end)
+    rows = conn.execute(
+        "SELECT arm, symbol, shares, entry_mid, gross_pnl, fees, slippage, net_pnl, exit_session "
+        f"FROM contango_positions WHERE status = 'closed'{where}",
+        params,
+    ).fetchall()
+    return [
+        {
+            "arm": r["arm"],
+            "experiment_id": None,
+            "symbol": r["symbol"],
+            "strategy": "contango_etf",
+            "gross_pnl": r["gross_pnl"] or 0.0,
+            "cost": round((r["fees"] or 0.0) + (r["slippage"] or 0.0), 2),
+            "net_pnl": r["net_pnl"] or 0.0,
+            "slippage": r["slippage"],
+            "capital": round(r["shares"] * r["entry_mid"], 2) if r["entry_mid"] is not None else None,
+            "max_profit": None,
+            "session": r["exit_session"] or "",
+        }
+        for r in rows
+    ]
+
+
+def _contango_open(conn) -> list[dict]:
+    """contango's open stint per arm: an arm always holds one fund, risk or cash, overnight."""
+    rows = conn.execute(
+        "SELECT arm, symbol, shares, entry_mid, entry_session FROM contango_positions WHERE status = 'open'"
+    ).fetchall()
+    return [
+        {
+            "arm": r["arm"],
+            "symbol": r["symbol"],
+            "strategy": "contango_etf",
+            "capital": round(r["shares"] * r["entry_mid"], 2) if r["entry_mid"] is not None else None,
+            "session": r["entry_session"] or "",
+        }
+        for r in rows
+    ]
+
+
 BWB_UNTAGGED = "unassigned"
 
 
@@ -562,6 +613,7 @@ READERS = {
     "pmcc": _pmcc_closed,
     "curve_vx": _curve_closed,
     "bwb_132": _bwb_closed,
+    "contango_etf": _contango_closed,
 }
 
 
@@ -664,6 +716,7 @@ OPEN_READERS = {
     "pmcc": _pmcc_open,
     "curve_vx": _curve_open,
     "bwb_132": _bwb_open,
+    "contango_etf": _contango_open,
 }
 
 

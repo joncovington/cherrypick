@@ -1409,6 +1409,79 @@ def _curve_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     return counts
 
 
+# cherrypick-contango keys on a text `position_id`, one per holding stint, with two notifiable
+# moments: a stint opens (the arm bought a fund) and it closes (the arm sold it on a switch). Every
+# switch is both, so one switch reads as a close and an entry on the same tick.
+def _contango_seed(conn) -> dict:
+    rows = conn.execute("SELECT position_id, status FROM contango_positions").fetchall()
+    return {
+        "notified_entry_ids": [r["position_id"] for r in rows],
+        "notified_exit_ids": [r["position_id"] for r in rows if r["status"] == "closed"],
+    }
+
+
+def _fmt_contango_entry(r) -> str:
+    return (
+        f"🟢 Contango paper SWITCH IN — bought {r['shares']} {r['symbol']} @ {r['entry_mid']:.2f} "
+        f"({r['role']}, VIX/VIX3M {r['entry_ratio']:.3f}) [{_arm(r)}]"
+    )
+
+
+def _embed_contango_entry(r) -> dict:
+    details = (
+        f"{r['shares']} {r['symbol']} @ {r['entry_mid']:.2f} · ratio {r['entry_ratio']:.3f} · {r['role']}"
+    )
+    return _embed(COLOR_ENTRY, f"SWITCH IN · {r['symbol']} contango"[:256], details, footer=_arm(r))
+
+
+def _fmt_contango_exit(r) -> str:
+    return (
+        f"🏁 Contango paper SWITCH OUT — sold {r['shares']} {r['symbol']} @ {r['exit_mid']:.2f}, "
+        f"net ${r['net_pnl'] or 0:+.2f} ({r['exit_reason']}) [{_arm(r)}]"
+    )
+
+
+def _embed_contango_exit(r) -> dict:
+    details = (
+        f"net ${r['net_pnl'] or 0:+.2f} (gross ${r['gross_pnl'] or 0:+.2f}, fees ${r['fees'] or 0:.2f}, "
+        f"slippage ${r['slippage'] or 0:.2f}) · held since {r['entry_session']}"
+    )
+    return _embed(COLOR_EXIT, f"SWITCH OUT · {r['symbol']} contango"[:256], details, footer=_arm(r))
+
+
+def _contango_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
+    counts = {}
+    stages = [
+        (
+            "notified_exit_ids",
+            "exit",
+            "Paper closed",
+            _fmt_contango_exit,
+            _embed_contango_exit,
+            "SELECT * FROM contango_positions WHERE status = 'closed'",
+        ),
+        (
+            "notified_entry_ids",
+            "entry",
+            "Paper entry",
+            _fmt_contango_entry,
+            _embed_contango_entry,
+            "SELECT * FROM contango_positions",
+        ),
+    ]
+    for key, event, title, fmt, embed_fn, query in stages:
+        notified = set(st.get(key, []))
+        rows = [r for r in conn.execute(query).fetchall() if r["position_id"] not in notified]
+        for r in rows:
+            notifier.notify(
+                "INFO", f"trade.{name}.{event}.{r['position_id']}", title, fmt(r), embed=embed_fn(r)
+            )
+            notified.add(r["position_id"])
+        st[key] = sorted(notified)[-_ID_CAP:]
+        counts[f"{event}s_notified"] = len(rows)
+    return counts
+
+
 # cherrypick-bwb keys on a text `position_id` and ladders daily like pmcc, with four notifiable
 # moments: it opens (the base 1-3-2 put broken-wing fly), its add-on may FIRE (the reversal
 # trigger — keyed by position_id since only one add-on ever fires per position), its short legs
@@ -1548,6 +1621,7 @@ _SCHEMAS = {
     "pmcc": (_pmcc_seed, _pmcc_process),
     "curve_vx": (_curve_seed, _curve_process),
     "bwb_132": (_bwb_seed, _bwb_process),
+    "contango_etf": (_contango_seed, _contango_process),
 }
 
 

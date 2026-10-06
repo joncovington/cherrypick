@@ -3,8 +3,8 @@
 **What this covers:** a suite-level overview of what each trading strategy actually does, so you
 can decide which one(s) fit your goals before diving into an individual module's own docs. The suite
 ships eight strategy modules — MEIC, Earnings, Flies and BWB, which are on in a fresh install
-(Earnings only where Dolt is set up), Calendars, PMCC and Curve, which are **EXPERIMENTAL and
-off by default**, and Contango, which is not yet scheduled — plus the GEX engine the console renders. MEIC, Earnings and Flies get a full
+(Earnings only where Dolt is set up), and Calendars, PMCC, Curve and Contango, which are
+**EXPERIMENTAL and off by default** — plus the GEX engine the console renders. MEIC, Earnings and Flies get a full
 section below; the others a short one. Each module's own docs (linked) are the source of truth for its
 internals.
 
@@ -150,7 +150,7 @@ splits are measured, never modelled. Paper-only and credential-free.
 
 → Depth: [`curve/README.md`](../packages/curve/README.md), [`curve/CLAUDE.md`](../packages/curve/CLAUDE.md).
 
-## Contango — the same signal, held in shares (EXPERIMENTAL, not yet scheduled)
+## Contango — the same signal, held in shares (EXPERIMENTAL, off by default)
 
 Holds SVXY while VIX/VIX3M is in contango and SHV (T-bills) while it isn't, deciding once a session
 ten minutes before the close. Its arms (`control` out at 0.97, `flipexit` out at 1.0) differ only in

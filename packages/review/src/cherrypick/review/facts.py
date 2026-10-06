@@ -76,6 +76,8 @@ MODULES = {
     # has a reader and no entry here, so the next module cannot land the same way.
     "bwb": {"schema": "bwb_132", "settles_intraday": False},
     "curve": {"schema": "curve_vx", "settles_intraday": False},
+    # contango (2026-10-06) always holds one fund per arm overnight; a stint closes only on a switch.
+    "contango": {"schema": "contango_etf", "settles_intraday": False},
 }
 
 
@@ -303,6 +305,33 @@ def _curve_health(conn, session: str) -> dict:
     }
 
 
+def _contango_health(conn, session: str) -> dict:
+    """contango decides once per arm per session inside a short window before the close, so the
+    finding is how each arm's decision ended: `hold` and `switch` are the rule working, `missed` is
+    the window closing unacted (with its refusal) and an arm with no row at all means the loop never
+    reached the window. A regime reading that never became usable is the usual cause of a miss."""
+    rows = _rows(
+        conn, "SELECT arm, action, refusal, nav FROM contango_sessions WHERE trade_date = ?", (session,)
+    )
+    regime = _rows(
+        conn, "SELECT usable, refusal, ratio FROM contango_regime WHERE trade_date = ?", (session,)
+    )
+    iterations = _scalar(
+        conn, "SELECT COUNT(*) FROM contango_loop_iterations WHERE session_date = ?", (session,)
+    )
+    return {
+        "loop_ticked": bool(iterations),
+        "iterations": iterations,
+        "regime_ratio": regime[0]["ratio"] if regime and regime[0]["usable"] else None,
+        "regime_refusal": regime[0]["refusal"] if regime and not regime[0]["usable"] else None,
+        "decisions": {r["arm"]: r["action"] for r in rows} or None,
+        "missed": {r["arm"]: r["refusal"] for r in rows if r["action"] == "missed"} or None,
+        "entries": _scalar(
+            conn, "SELECT COUNT(*) FROM contango_positions WHERE entry_session = ?", (session,)
+        ),
+    }
+
+
 HEALTH_READERS = {
     "meic": _meic_health,
     "flies": _flies_health,
@@ -311,6 +340,7 @@ HEALTH_READERS = {
     "pmcc": _pmcc_health,
     "bwb": _bwb_health,
     "curve": _curve_health,
+    "contango": _contango_health,
 }
 
 
@@ -542,6 +572,20 @@ def _curve_expected(conn, session: str) -> dict:
     }
 
 
+def _contango_expected(conn, session: str) -> dict:
+    """contango's expectation is that every arm takes its decision: the rule is deterministic given
+    the reading, so what can go wrong is the decision not happening (a stale feed, a wide quote, a
+    loop that never reached the window). Expected = arms with a session row, observed = arms whose
+    row is a hold or a switch rather than a miss. The money is the NAV series, read from the ledger,
+    not an expectation priced at entry -- a fund holding has none."""
+    rows = _rows(conn, "SELECT action FROM contango_sessions WHERE trade_date = ?", (session,))
+    return {
+        "basis": "decisions_due_vs_taken",
+        "expected": len(rows) or None,
+        "observed": sum(1 for r in rows if r["action"] in ("hold", "switch")) if rows else None,
+    }
+
+
 EXPECTED_READERS = {
     "meic": _meic_expected,
     "flies": _flies_expected,
@@ -550,6 +594,7 @@ EXPECTED_READERS = {
     "pmcc": _pmcc_expected,
     "bwb": _bwb_expected,
     "curve": _curve_expected,
+    "contango": _contango_expected,
 }
 
 

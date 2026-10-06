@@ -44,7 +44,7 @@ consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/ro
   a stream-cache consumer with fund distributions read from the local technicals store. Arms
   `control` (out at 0.97) and `flipexit` (out at 1.0) differ only in thresholds. Nothing fills
   after the decision window. Validated against `scripts/contango_replay.py`, which runs the loop's
-  own rule. Not yet registered with the orchestrator. No live path.
+  own rule. Trade schema `contango_etf`; off by default in the example. No live path.
 - **packages/bwb** — daily-laddered SPX put broken-wing butterflies, ~7 DTE, held to expiry; paper by
   default and credential-free. Four books differ only in whether/when a reversal-triggered put credit
   spread add-on fires; trigger latches persist on the position row. **A narrow live path exists** in

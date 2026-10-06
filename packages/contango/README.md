@@ -1,7 +1,7 @@
 # cherrypick-contango
 
-> **EXPERIMENTAL, paper-only.** It is not yet registered with the orchestrator, so nothing runs it
-> on a schedule.
+> **EXPERIMENTAL, paper-only, and off by default.** To run it, set `modules.contango.enabled` to
+> `true` in `~/.cherrypick/config.json`, and the supervisor ticks it through the session.
 
 contango holds SVXY while VIX/VIX3M is in contango and SHV (T-bills) while it isn't. It decides
 once a session, ten minutes before the close. Its two arms differ only in where they get out:
