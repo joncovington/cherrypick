@@ -100,6 +100,26 @@ confirmation, a current status readout, and a visible way to stop.
    quarter-end session: arming succeeded, but the loop places no new entries all day (fills,
    resting orders and settlement still run), and the watchdog posts the same warning to Discord.
 
+4b. **The intraday agent, chosen for today** (packages/flies/docs/intraday-agent-plan.md). Only when
+   `--status`'s `intraday_agent.enabled` is true; otherwise skip this step and say the agent is off.
+   - Show the `intraday_agent` block from `--status`: the model, `live_mode_max`, the modes on
+     offer (`offered_modes`), and for each criterion its value and pass. "null" means it cannot be
+     scored yet.
+   - Ask a SECOND, separate question with the AskUserQuestion tool, never folded into the YES.
+     Offer one option per mode in `offered_modes` and nothing else:
+     - **"No agent today"** (`off`);
+     - **"Shadow — record decisions, act on nothing"** (`shadow`);
+     - **"Gates — the agent may block live entries on the trend's losing side; it never places an
+       order"** (`gates`).
+     Mark "Shadow" as recommended while gates is not on offer. In the question, name each locked
+     mode and what it still waits for. `gates_and_closures` is never offered: there is no live
+     closing-order path.
+   - Write the answer with `python -m cherrypick.flies.live_loop --agent-mode <off|shadow|gates>`,
+     and report its JSON. A refusal (`ok: false`) leaves live exactly as armed, without the agent.
+     Say so, and do not retry with another mode unless the user asks.
+   - The choice is for today only. It lives on the arm record and goes with it at disarm or
+     `--stop`.
+
 5. **Verify + report**: confirm `--status` now shows `armed_for` = today, and (supervisor-driven)
    that `python packages/orchestrator/run.py status` shows the `flies-live` job enabled with a
    future `next_run`. Then report: the driver (supervisor job or legacy task), the armed-for

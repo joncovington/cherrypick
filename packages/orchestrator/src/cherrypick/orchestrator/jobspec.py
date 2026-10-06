@@ -560,6 +560,25 @@ def derive_jobs(
             tags=("ai",),
         ),
     )
+    add(
+        "flies-intraday-agent-live",
+        lambda: JobSpec(
+            id="flies-intraday-agent-live",
+            # The same script for the live arm. It exits at once unless TODAY's arm record names an
+            # agent mode (chosen in /live-flies-start after the YES) that config allows, so on an
+            # unarmed day this is a check that costs nothing. Its decision is advice the live loop
+            # reads in that mode only: shadow records it, gates sets the trend gate. Never an order.
+            argv=(pythonw, _suite_script(launcher, "flies_intraday_agent.py"), "--target", "live"),
+            kind=KIND_INTERVAL,
+            interval_seconds=60,
+            window_start="09:30",
+            window_end="16:00",
+            trading_days_only=True,
+            enabled=flies_on,
+            enabled_reason="" if flies_on else "flies module disabled",
+            tags=("ai", "live"),
+        ),
+    )
     # --- flies-payoff-post: the settled payoff chart to Discord, once per ledger per session
     fp = cfgmod.flies_payoff_post_settings(cfg)
     add(

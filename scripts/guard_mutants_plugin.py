@@ -131,6 +131,27 @@ def _unscored_passes(cid, mode, label, value, threshold, passed):
     }
 
 
+def _shadow_acts(params, acfg, arm_record, session, now):
+    """flies' live agent acting on its decision in shadow mode, which only records."""
+    from cherrypick.flies import intraday_advice
+
+    mode = intraday_advice.live_mode_today(acfg, arm_record, session)
+    decision = intraday_advice.read_decision("live", session=session, now=now) if mode != "off" else None
+    if decision is not None:
+        params = {**params, "refuse_completion_against_trend": decision["trend_gate"] == "on"}
+    return params, {"mode": mode, "decision": decision}
+
+
+def _every_mode_offered(_cfg, _qualification):
+    """flies' live selection offering every agent mode whatever the evidence says."""
+    return ["off", "shadow", "gates", "gates_and_closures"]
+
+
+def _identity(mode):
+    """flies' live agent treating a mode with no live implementation as if it had one."""
+    return mode
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -149,6 +170,9 @@ REPLACEMENTS = {
     "agent_fails_open": lambda: _agent_fails_open,
     "no_t": lambda: _no_t,
     "unscored_passes": lambda: _unscored_passes,
+    "shadow_acts": lambda: _shadow_acts,
+    "every_mode_offered": lambda: _every_mode_offered,
+    "identity": lambda: _identity,
 }
 
 
@@ -356,6 +380,41 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.flies.intraday_eval",
         attr="_criterion",
         replacement="unscored_passes",
+    ),
+    Mutant(
+        id="flies-live-agent-shadow-only-records",
+        breaks="the live agent acts on its decision on a shadow day",
+        package="flies",
+        tests=(
+            "tests/test_intraday_live.py::test_shadow_reads_the_decision_and_never_changes_a_param",
+            "tests/test_live_scaffold.py::test_the_live_shadow_enters_as_always_and_stamps_what_the_agents_gate_would_have_done",
+        ),
+        module="cherrypick.flies.intraday_advice",
+        attr="live_tick",
+        replacement="shadow_acts",
+    ),
+    Mutant(
+        id="flies-live-agent-mode-offered",
+        breaks="/live-flies-start can choose an agent mode the evidence does not offer",
+        package="flies",
+        tests=(
+            "tests/test_intraday_live.py::test_a_mode_the_evidence_does_not_offer_is_refused_and_nothing_is_written",
+        ),
+        module="cherrypick.flies.intraday_eval",
+        attr="offered_live_modes",
+        replacement="every_mode_offered",
+    ),
+    Mutant(
+        id="flies-live-closes-unbuilt",
+        breaks="a live agent mode with no live implementation (closes) is offered or put in force",
+        package="flies",
+        tests=(
+            "tests/test_intraday_live.py::test_offered_modes_are_the_evidence_narrowed_by_config_and_by_what_live_can_do",
+            "tests/test_intraday_live.py::test_config_caps_the_days_choice_and_an_unbuilt_mode_runs_as_gates",
+        ),
+        module="cherrypick.flies.intraday_advice",
+        attr="built_mode",
+        replacement="identity",
     ),
 )
 

@@ -139,7 +139,7 @@ def main(argv=None) -> int:
     if args.target == "paper":
         if not acfg["paper"]:
             return done(skipped="paper agent off")
-        arm, ledger = acfg.get("paper_arm", "advised:intraday-agent"), "paper_trades.db"
+        arm, ledger = acfg["paper_arm"], "paper_trades.db"
     else:
         mode = intraday_advice.live_mode_today(acfg, _arm_record(), session)
         if mode == "off":

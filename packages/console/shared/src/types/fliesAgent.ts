@@ -83,9 +83,34 @@ export interface AgentSpend {
   byModel: Record<string, { calls: number; costUsd: number }>;
 }
 
+/** One live session run in shadow mode, scored against paper (`intraday_eval.shadow_scoring`). */
+export interface AgentShadowSession {
+  session: string;
+  /** Live entries stamped with the shadow. */
+  entries: number;
+  /** Those the agent's gate would have refused. */
+  wouldRefuse: number;
+  /** Minus the settled net of the would-refuse entries: what refusing them was worth on live. */
+  liveEffect: number;
+  /** Agent arm less control on paper, the same session; null without both. */
+  paperEffect: number | null;
+  /** Whether either effect moved: a session where neither did is no evidence. */
+  counted: boolean;
+  agree: boolean | null;
+}
+
+export interface AgentShadow {
+  sessions: AgentShadowSession[];
+  counted: number;
+  agree: number;
+  agreement: number | null;
+  /** The shadow's named closes, tagged at live natural on the live rows (never executed). */
+  closes: { tagged: number; saved: number | null; saved2x: number | null };
+}
+
 export interface AgentQualification {
   generatedAt: string | null;
-  arms: { control: string; rule: string; agent: string };
+  arms: { control: string; rule: string; agent: string; live: string | null };
   liveModeMax: string | null;
   /** The trend band the agent arm's gate resolves to, in points from the open. */
   trendBandPoints: number | null;
@@ -93,6 +118,9 @@ export interface AgentQualification {
   gates: AgentPaired & { targetEdge: number | null };
   closes: AgentPaired & { episodes: number; saved2x: number | null };
   strandRate: { rule: number | null; agent: number | null };
+  shadow: AgentShadow;
+  /** Whether the live loop can place a closing order; until it can, closures are never offered. */
+  liveClosesBuilt: boolean | null;
   criteria: AgentCriterion[];
   unlocked: Record<string, boolean>;
   offeredModes: string[];

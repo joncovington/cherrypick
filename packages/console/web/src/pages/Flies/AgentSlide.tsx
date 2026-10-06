@@ -266,8 +266,8 @@ export function AgentSlide({ mode, date }: { mode: TradingMode; date: string | n
       <div className="cards cards-wide">
         <section className="card">
           <p className="muted">
-            The intraday agent is paper-only so far. Its live shadow, chosen per day at /live-flies-start, arrives with step 4 of
-            the plan; switch to Paper to see the agent arm.
+            This tab reads the paper arm and the module's qualification file, so it has no live view. The live shadow (chosen
+            per day at /live-flies-start) is scored there and shown under &quot;live shadow&quot; in the Paper view.
           </p>
         </section>
       </div>
@@ -433,6 +433,35 @@ export function AgentSlide({ mode, date }: { mode: TradingMode; date: string | n
             <td>{criterionValue(c)}</td>
             <td>{criterionThreshold(c)}</td>
             <td><PassCell pass={c.pass} /></td>
+          </tr>
+        ))}
+      </DataCard>
+
+      <DataCard
+        title="live shadow"
+        headers={["session", "entries", "gate would refuse", "live effect", "paper effect", "counted", "agree"]}
+        loading={false}
+        rowCount={q?.shadow.sessions.length ?? 0}
+        empty="no live session run with the agent in shadow yet"
+        numFrom={1}
+        footer={
+          q === null
+            ? undefined
+            : `Live effect: what refusing the entries the agent's gate would have refused was worth (minus their settled net). Paper effect: agent arm less control, same session. ` +
+              `${String(q.shadow.agree)} of ${String(q.shadow.counted)} counted sessions agree in sign` +
+              ` · shadow closes tagged at live natural: ${String(q.shadow.closes.tagged)}, saved ${fmtCash(q.shadow.closes.saved)}` +
+              (q.liveClosesBuilt === false ? " · live closing orders are not built, so closures are never offered" : "")
+        }
+      >
+        {[...(q?.shadow.sessions ?? [])].reverse().map((r) => (
+          <tr key={r.session}>
+            <td>{r.session}</td>
+            <td>{r.entries}</td>
+            <td>{r.wouldRefuse}</td>
+            <td><PnlCell v={r.liveEffect} /></td>
+            <td><PnlCell v={r.paperEffect} /></td>
+            <td>{r.counted ? "yes" : <span className="muted">no effect</span>}</td>
+            <td>{r.agree === null ? <span className="muted">—</span> : r.agree ? "yes" : "no"}</td>
           </tr>
         ))}
       </DataCard>

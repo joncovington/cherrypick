@@ -24,13 +24,15 @@ const payload: FliesAgentPayload = {
   now: "2026-10-06T14:00:00.000Z",
   qualification: {
     generatedAt: "2026-10-06T20:00:00+00:00",
-    arms: { control: "control", rule: "trend-rule", agent: "intraday-agent" },
+    arms: { control: "control", rule: "trend-rule", agent: "intraday-agent", live: "control" },
     liveModeMax: "gates",
     trendBandPoints: 20,
     sessions: { decided: 25, paired: [], shadow: [] },
     gates: { n: 25, mean: 150, sd: 20, lower95: 143, sessionsNeeded: 1, targetEdge: 100 },
     closes: { n: 25, mean: 0, sd: 0, lower95: null, sessionsNeeded: null, episodes: 0, saved2x: 0 },
     strandRate: { rule: 0.5, agent: 0.25 },
+    shadow: { sessions: [], counted: 0, agree: 0, agreement: null, closes: { tagged: 0, saved: null, saved2x: null } },
+    liveClosesBuilt: false,
     criteria: [
       { id: "decision_sessions", mode: "gates", label: "sessions recorded", value: 25, threshold: 20, pass: true },
       { id: "live_shadow", mode: "gates", label: "live-shadow sessions", value: 6, threshold: 5, pass: null },
@@ -63,7 +65,7 @@ describe("the intraday agent slide", () => {
 
   it("refuses a live read rather than showing the paper arm under a live badge", () => {
     const html = render("live");
-    expect(html).toContain("paper-only");
+    expect(html).toContain("no live view");
     expect(html).not.toContain("what live may offer");
   });
 });

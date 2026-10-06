@@ -184,6 +184,7 @@ row("a", "intraday-agent", "short_vertical", -260.0, close_tag_natural=3.0, clos
 conn.commit()
 target = root / "q.json"
 intraday_eval.qualification_path = lambda: target
+intraday_eval.live_db_path = lambda: root / "no-live.db"
 intraday_eval.load_records = lambda: {"2026-10-06": [{"target": "paper", "called": True, "ok": True, "model": "opus", "cost_usd": 0.17}]}
 intraday_eval.run(conn, {"intraday_agent": {"enabled": True}}, write=True)
 print(target.read_text(encoding="utf-8"))
@@ -227,6 +228,8 @@ describe.skipIf(written === null)("the reader carries intraday_eval's file uncha
       settledNet: close["settled_net"], closedNet: close["closed_net"], closedNet2x: close["closed_net_2x"], saved: close["saved"],
     });
     expect(q.spend[0]).toMatchObject({ session: DAY, target: "paper", calls: 1, costUsd: 0.17 });
+    const shadow = w["shadow"] as Record<string, unknown>;
+    expect([q.shadow.counted, q.shadow.agree, q.liveClosesBuilt]).toEqual([shadow["counted"], shadow["agree"], w["live_closes_built"]]);
     fs.rmSync(root, { recursive: true, force: true });
   });
 });

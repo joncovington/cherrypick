@@ -2275,3 +2275,57 @@ def test_the_live_log_never_holds_a_full_account_number(monkeypatch):
     monkeypatch.setattr(live_loop._logger, "info", seen.append)
     live_loop._log('entry order (LIVE): {"ok": true, "account_number": "5WT99991", "order_id": "O1"}')
     assert seen == ['entry order (LIVE): {"ok": true, "account_number": "****9991", "order_id": "O1"}']
+
+
+# --------------------------------------------------------------------------- the intraday agent on live
+def _agent_day(mode, cap, gate="on"):
+    """Today's arm record naming the agent `mode`, and a fresh live decision holding `gate`."""
+    import json
+    import time
+
+    from cherrypick.core import live as core_live
+
+    from cherrypick.flies import intraday_advice
+
+    path = core_live.write_arm_record("flies", date=DAY, at="t", armed_by="test")
+    rec = json.loads(path.read_text(encoding="utf-8"))
+    rec["intraday_agent"] = {"mode": mode}
+    path.write_text(json.dumps(rec), encoding="utf-8")
+    now = time.time()
+    intraday_advice.write_decision(
+        "live",
+        {"session": DAY, "as_of": now, "expires_at": now + 600, "ok": True,
+         "decision": {"trend_gate": gate, "close_stranded": []}},
+    )  # fmt: skip
+    return {**_loop_cfg(), "intraday_agent": {"enabled": True, "live_mode_max": cap}}
+
+
+# Spot 30 under the open: a put vertical completes on an UP move, so it opposes the committed drift.
+_DOWN_DAY = {"session": {"day_open": 7530.0}}
+
+
+def test_the_live_shadow_enters_as_always_and_stamps_what_the_agents_gate_would_have_done(live_conn):
+    cfg = _agent_day("shadow", "shadow")
+    summary = live_loop.run_once(
+        cfg, _snapshot(**_DOWN_DAY), live_conn, FakeBroker(), live=True, log=lambda *_: None
+    )
+    assert summary["entered"] == 1 and summary["agent_mode"] == "shadow"
+    row = live_conn.execute("SELECT agent_mode, agent_gate, agent_would_refuse FROM fly_positions").fetchone()
+    assert tuple(row) == ("shadow", "on", 1)
+
+
+def test_in_gates_mode_a_fresh_decision_refuses_the_entry_against_the_drift(live_conn):
+    cfg = _agent_day("gates", "gates")
+    summary = live_loop.run_once(
+        cfg, _snapshot(**_DOWN_DAY), live_conn, FakeBroker(), live=True, log=lambda *_: None
+    )
+    assert summary["entered"] == 0 and summary["agent_mode"] == "gates"
+    assert live_conn.execute("SELECT COUNT(*) FROM fly_positions").fetchone()[0] == 0
+
+
+def test_with_the_agent_off_nothing_is_stamped(live_conn):
+    summary = live_loop.run_once(
+        _loop_cfg(), _snapshot(**_DOWN_DAY), live_conn, FakeBroker(), live=True, log=lambda *_: None
+    )
+    assert summary["entered"] == 1 and summary["agent_mode"] == "off"
+    assert live_conn.execute("SELECT agent_mode FROM fly_positions").fetchone()[0] is None

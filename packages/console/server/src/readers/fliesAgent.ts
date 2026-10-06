@@ -10,6 +10,7 @@ import type {
   AgentOpenTag,
   AgentPaired,
   AgentQualification,
+  AgentShadow,
   AgentSpend,
   AgentTaggedClose,
   FliesAgentPack,
@@ -178,6 +179,33 @@ function spendRow(v: unknown): AgentSpend | null {
   };
 }
 
+function shadowOf(v: unknown): AgentShadow {
+  const o = obj(v);
+  const closes = obj(o["closes"]);
+  return {
+    sessions: (Array.isArray(o["sessions"]) ? o["sessions"] : [])
+      .map((x) => {
+        const r = obj(x);
+        const session = str(r["session"]);
+        if (session === null) return null;
+        return {
+          session,
+          entries: num(r["entries"]) ?? 0,
+          wouldRefuse: num(r["would_refuse"]) ?? 0,
+          liveEffect: num(r["live_effect"]) ?? 0,
+          paperEffect: num(r["paper_effect"]),
+          counted: r["counted"] === true,
+          agree: bool(r["agree"]),
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null),
+    counted: num(o["counted"]) ?? 0,
+    agree: num(o["agree"]) ?? 0,
+    agreement: num(o["agreement"]),
+    closes: { tagged: num(closes["tagged"]) ?? 0, saved: num(closes["saved"]), saved2x: num(closes["saved_2x"]) },
+  };
+}
+
 /** The file shaped into the shared type. Every value is the writer's; absent keys read as null. */
 export function shapeQualification(raw: Record<string, unknown>): AgentQualification {
   const arms = obj(raw["arms"]);
@@ -193,6 +221,7 @@ export function shapeQualification(raw: Record<string, unknown>): AgentQualifica
       control: str(arms["control"]) ?? "control",
       rule: str(arms["rule"]) ?? "trend-rule",
       agent: str(arms["agent"]) ?? "intraday-agent",
+      live: str(arms["live"]),
     },
     liveModeMax: str(raw["live_mode_max"]),
     trendBandPoints: num(raw["trend_band_points"]),
@@ -204,6 +233,8 @@ export function shapeQualification(raw: Record<string, unknown>): AgentQualifica
     gates: { ...paired(raw["gates"]), targetEdge: num(obj(raw["gates"])["target_edge"]) },
     closes: { ...paired(closes), episodes: num(closes["episodes"]) ?? 0, saved2x: num(closes["saved_2x"]) },
     strandRate: { rule: num(strand["rule"]), agent: num(strand["agent"]) },
+    shadow: shadowOf(raw["shadow"]),
+    liveClosesBuilt: bool(raw["live_closes_built"]),
     criteria: (Array.isArray(raw["criteria"]) ? raw["criteria"] : [])
       .map(criterion)
       .filter((c): c is AgentCriterion => c !== null),
