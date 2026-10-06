@@ -39,6 +39,12 @@ consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/ro
   delta; $2-wide from 2026-10-06, its credit floor net of entry costs against max loss. The daily classification is recorded every session,
   traded or not. Early assignment and VXX reverse splits are measured, never modelled (an upper
   bound). `regime-history` is a signal-separation benchmark, never suite P&L. No live path.
+- **packages/contango** — the same VIX/VIX3M signal held in shares: SVXY in contango, SHV
+  (T-bills) otherwise, one decision ten minutes before the close; **paper-only, credential-free**,
+  a stream-cache consumer with fund distributions read from the local technicals store. Arms
+  `control` (out at 0.97) and `flipexit` (out at 1.0) differ only in thresholds. Nothing fills
+  after the decision window. Validated against `scripts/contango_replay.py`, which runs the loop's
+  own rule. Not yet registered with the orchestrator. No live path.
 - **packages/bwb** — daily-laddered SPX put broken-wing butterflies, ~7 DTE, held to expiry; paper by
   default and credential-free. Four books differ only in whether/when a reversal-triggered put credit
   spread add-on fires; trigger latches persist on the position row. **A narrow live path exists** in

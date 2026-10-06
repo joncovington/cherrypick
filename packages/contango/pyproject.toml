@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cherrypick-contango"
+version = "0.1.0"
+description = "SVXY/T-bill switching paper module gated by the daily VIX/VIX3M term-structure read"
+requires-python = ">=3.11"
+license = "MIT"
+# cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
+# Deliberately NO broker dependency: paper-only, credential-free, a pure stream-cache consumer (the
+# curve posture) -- no keyring, no tastytrade, no REST.
+dependencies = ["cherrypick-core"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff==0.16.10"]
+
+[tool.pytest.ini_options]
+testpaths  = ["tests"]
+pythonpath = ["tests", "src"]
+
+[tool.ruff]
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
+target-version = "py311"
+
+[tool.hatch.build.targets.wheel]
+# src-layout PEP 420 namespace: src/cherrypick/ has NO __init__.py, so cherrypick.contango composes
+# with cherrypick.core (and every other module) under one cherrypick.* root.
+only-include = ["src/cherrypick"]
+sources = ["src"]

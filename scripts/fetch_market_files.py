@@ -1,7 +1,8 @@
-"""Fetch the daily market files the morning pack reads: Cboe's index histories (SKEW, VIX, VVIX,
-VXN), Cboe's delayed SPX chain (reduced to the 30-day 25-delta risk reversal), Treasury's par yield
-curve, the release calendars (BEA always, FRED when a key is stored), and OCC's option volume by
-underlying with Nasdaq Trader's symbol directory (the pack's `hot_options` ranking).
+"""Fetch the daily market files the morning pack reads: Cboe's index histories (SKEW, VIX, VIX3M,
+VVIX, VXN; VIX3M for `scripts/contango_replay.py`), Cboe's delayed SPX chain (reduced to the 30-day
+25-delta risk reversal), Treasury's par yield curve, the release calendars (BEA always, FRED when a
+key is stored), and OCC's option volume by underlying with Nasdaq Trader's symbol directory (the
+pack's `hot_options` ranking).
 
 Why a script: these are network fetches, and `packages/overview` is network-free by rule. It writes
 only `~/.cherrypick/data/market-files/`, and a failure leaves every file already there untouched.
