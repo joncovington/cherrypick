@@ -466,7 +466,9 @@ MUTANTS: tuple[Mutant, ...] = (
         id="flies-pack-completeness",
         breaks="a pack missing recorded blocks is reported as complete",
         package="flies",
-        tests=("tests/test_intraday_pack.py::test_completeness_judges_recorded_fields_not_facts_about_the_session",),
+        tests=(
+            "tests/test_intraday_pack.py::test_completeness_judges_recorded_fields_not_facts_about_the_session",
+        ),
         module="cherrypick.flies.intraday_pack",
         attr="completeness",
         replacement="always_filled",
