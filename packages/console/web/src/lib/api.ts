@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { normalizeAdvisorPayload } from "./advisorShape";
 import type {
+  ContangoMetrics,
+  CurveEquity,
   OverviewPayload,
   StatusPayload,
   MeicPayload,
@@ -909,5 +911,25 @@ export function useRegimeCuts(module: RegimeCutsModule, session: string | null =
     queryFn: () => getJson<RegimeCutsPayload>(`/api/${module}/regime-cuts${qs}`),
     refetchInterval: 300_000,
     placeholderData: (prev) => prev,
+  });
+}
+
+
+/** Daily-series readings (core.metrics.nav) -- slow-moving (one point per session), so a minute's staleness is fine. */
+export function useCurveEquity() {
+  return useQuery<CurveEquity>({
+    queryKey: ["curve-equity"],
+    queryFn: () => getJson<CurveEquity>("/api/curve/equity"),
+    staleTime: 60_000,
+    refetchInterval: 300_000,
+  });
+}
+
+export function useContangoMetrics() {
+  return useQuery<ContangoMetrics>({
+    queryKey: ["contango-metrics"],
+    queryFn: () => getJson<ContangoMetrics>("/api/contango/metrics"),
+    staleTime: 60_000,
+    refetchInterval: 300_000,
   });
 }
