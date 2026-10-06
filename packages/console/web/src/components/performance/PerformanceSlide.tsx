@@ -1,4 +1,5 @@
 import { Card } from "../DataTable";
+import { fmtMoney } from "../../lib/format";
 import type { TradingMode } from "@console/shared";
 import { useModulePerformance, type PerformanceModuleId } from "../../lib/api";
 import { MetricTiles } from "./MetricTiles";
@@ -117,7 +118,7 @@ export function PerformanceSlide({ module, mode = "paper" }: { module: Performan
                   <td>{r.reason}</td>
                   <td>{r.n}</td>
                   <td className={r.net === null ? "muted" : r.net >= 0 ? "pnl-pos" : "pnl-neg"}>
-                    {r.net === null ? "—" : `$${r.net.toFixed(2)}`}
+                    {fmtMoney(r.net)}
                   </td>
                 </tr>
               ))}

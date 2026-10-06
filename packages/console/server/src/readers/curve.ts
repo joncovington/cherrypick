@@ -251,29 +251,39 @@ function readOpenPositions(db: DatabaseHandle): CurveOpenPosition[] {
     });
 }
 
-/** Mirrors `analytics.headline()`: per-arm, per-symbol results over CLOSED positions. */
-function readBooks(db: DatabaseHandle): CurveArmCell[] {
-  return db
+/**
+ * Mirrors `analytics.headline()`'s per-arm net over CLOSED positions, split into the money layout's
+ * columns through `positionCash` -- the history table's own arithmetic, so the arms page and the
+ * history totals chip cannot disagree. `fees` in the ledger is the TOTAL cost; reading it raw (as
+ * this did until 2026-10-06) put slippage and settlement inside "fees".
+ */
+function readArms(db: DatabaseHandle): CurveArmCell[] {
+  const rows = db
     .prepare<[], Record<string, unknown>>(
-      `SELECT arm, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees,
-              SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins
-         FROM curve_positions WHERE status = 'closed'
-        GROUP BY arm, symbol ORDER BY arm, symbol`,
+      `SELECT arm, entry_credit, ${positionCashColumns(db, "curve_")}
+         FROM curve_positions WHERE status = 'closed' ORDER BY arm`,
     )
-    .all()
-    .map((r) => {
-      const n = Number(r["n"] ?? 0);
-      const wins = num(r["wins"]);
-      return {
-        arm: str(r["arm"]) ?? "",
-        symbol: str(r["symbol"]) ?? "",
-        positions: n,
-        grossPnl: num(r["gross"]),
-        fees: num(r["fees"]),
-        netPnl: num(r["net"]),
-        winRate: n > 0 && wins !== null ? wins / n : null,
-      };
-    });
+    .all();
+  const byArm = new Map<string, ReturnType<typeof positionCash>[]>();
+  for (const r of rows) {
+    const arm = str(r["arm"]) ?? "";
+    byArm.set(arm, [...(byArm.get(arm) ?? []), positionCash(r, num(r["entry_credit"]))]);
+  }
+  return [...byArm.entries()].map(([arm, cash]) => {
+    const t = tradeTotals(cash);
+    const wins = cash.filter((c) => (c.netPnl ?? 0) > 0).length;
+    return {
+      arm,
+      positions: t.positions,
+      wins,
+      grossPnl: t.gross,
+      fees: t.fees,
+      settlementFees: t.settlementFees,
+      slippage: t.slippage,
+      netPnl: t.net,
+      winRate: t.positions > 0 ? wins / t.positions : null,
+    };
+  });
 }
 
 /**
@@ -307,8 +317,9 @@ function readFlipDivergence(db: DatabaseHandle): CurveFlipDivergence {
   };
 }
 
-/** Mirrors `analytics.regime_series()`: the most recent rows, oldest first. */
-function readRegimeSeries(db: DatabaseHandle, limit = 60): CurveRegimeRow[] {
+/** Mirrors `analytics.regime_series()`: the most recent rows, oldest first. A year of sessions (it
+ * was 60, of which the page showed 20): the series' value is its continuity. */
+function readRegimeSeries(db: DatabaseHandle, limit = 260): CurveRegimeRow[] {
   return db
     .prepare<[number], Record<string, unknown>>("SELECT * FROM curve_regime ORDER BY trade_date DESC LIMIT ?")
     .all(limit)
@@ -423,7 +434,7 @@ export function readCurve(config: ConsoleConfig): CurvePayload {
       dbPresent: true,
       openPositions,
       openCount: openPositions.length,
-      arms: readBooks(db),
+      arms: readArms(db),
       flipDivergence: readFlipDivergence(db),
       regimeSeries: readRegimeSeries(db),
       integrity: {
@@ -499,7 +510,9 @@ export function readCurveHistory(
         from: "curve_positions",
         where,
         params,
-        orderBy: "entry_session DESC, id DESC",
+        // By close, like the date filter above: a range picked on close dates and paged by entry
+        // date put a late-closing cycle on a page the range seemed to say it was not on.
+        orderBy: "closed_session DESC, entry_session DESC, id DESC",
       },
       page,
       (r) => {

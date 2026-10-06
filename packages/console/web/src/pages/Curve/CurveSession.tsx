@@ -76,7 +76,7 @@ export function CurveSession({ data, loading }: { data: CurvePayload | undefined
       <StatTile
         label="closed net"
         value={data === undefined || closedPositions === 0 ? null : fmtMoney(closedNet)}
-        tone={closedNet >= 0 ? "pos" : "neg"}
+        tone={closedPositions === 0 ? "dim" : closedNet >= 0 ? "pos" : "neg"}
         to="/curve/history"
         toLabel="every completed cycle"
         foot={closedPositions === 0 ? "no cycle has completed yet" : `${String(closedPositions)} completed cycles · after every cost`}

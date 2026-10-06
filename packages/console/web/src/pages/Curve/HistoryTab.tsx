@@ -57,12 +57,12 @@ const COLUMNS: ColumnDef<CurveCycleRow>[] = [
 
 /** Completed cycles in the suite's standard trade layout (root CLAUDE.md). */
 export function HistoryTab() {
-  const [arm, setBook] = useState<string | null>(null);
+  const [arm, setArm] = useState<string | null>(null);
   const [symbol, setSymbol] = useState<string | null>(null);
   const { from, to } = useUrlDateRange();
   const meta = useCurveMeta();
   const { page, setOffset, setLimit } = usePage([arm, symbol, from, to]);
-  const { data, isLoading, isError, isPlaceholderData } = useCurveHistory({ arm, symbol, from, to }, page);
+  const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useCurveHistory({ arm, symbol, from, to }, page);
 
   return (
     <div className="cards cards-wide">
@@ -81,11 +81,11 @@ export function HistoryTab() {
             ? "no cycle closed in this date range"
             : "no completed cycles yet -- one position per arm at ~30-45 DTE, so the first closes a month in"
         }
-        updatedAt={data === undefined ? undefined : Date.now()}
+        updatedAt={data === undefined ? undefined : dataUpdatedAt}
         dateBasis="closed"
         filters={
           <>
-            <ScopeSelect label="arm filter" value={arm} options={meta.data?.arms} onChange={setBook} allLabel="all arms" />
+            <ScopeSelect label="arm filter" value={arm} options={meta.data?.arms} onChange={setArm} allLabel="all arms" />
             <ScopeSelect
               label="symbol filter"
               value={symbol}
