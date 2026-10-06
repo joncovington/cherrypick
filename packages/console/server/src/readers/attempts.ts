@@ -153,7 +153,8 @@ function downsampleTimeline(rows: AttemptRow[]): AttemptRow[] {
 }
 
 /** Modules with a per-arm entry decision. See SPECS for why calendars is not one. */
-export type AttemptsModule = "meic" | "flies" | "pmcc" | "curve";
+import type { AttemptsModule } from "@console/shared";
+export type { AttemptsModule };
 
 interface TableSpec {
   file: (mode: TradingMode) => string;

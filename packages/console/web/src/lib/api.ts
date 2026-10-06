@@ -619,7 +619,8 @@ export function useBwbMeta() {
 
 // ---- collapsed decision journal (curve/pmcc/bwb; readers/decisions.ts) ----
 
-export type DecisionsModule = "curve" | "pmcc" | "bwb" | "contango";
+import type { DecisionsModule } from "@console/shared";
+export type { DecisionsModule };
 
 export interface DecisionRow {
   arm: string;

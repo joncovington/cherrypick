@@ -4,6 +4,7 @@ export * from "./types/status.js";
 export * from "./types/modules.js";
 export * from "./types/nav.js";
 export * from "./types/contango.js";
+export * from "./types/moduleLists.js";
 export * from "./types/ws-protocol.js";
 export * from "./types/tt-watchlists.js";
 export * from "./types/config.js";

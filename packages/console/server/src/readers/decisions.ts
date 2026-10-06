@@ -21,7 +21,8 @@ import { resolveContangoSession } from "./contango.js";
  * could show for it without a change to the module's own engine first.
  */
 
-export type DecisionsModule = "curve" | "pmcc" | "bwb" | "contango";
+import type { DecisionsModule } from "@console/shared";
+export type { DecisionsModule };
 
 export interface DecisionRow {
   book: string;
