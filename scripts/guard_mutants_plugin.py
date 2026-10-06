@@ -152,6 +152,24 @@ def _identity(mode):
     return mode
 
 
+def _gate_sees_ahead(decisions, at, ttl_seconds):
+    """flies' replay letting an entry follow a decision made AFTER it (look-ahead)."""
+    near = [d for d in decisions if abs(d["as_of"] - at) <= ttl_seconds]
+    return max(near, key=lambda d: d["as_of"])["trend_gate"] if near else None
+
+
+def _replay_overwrites(values, decided, replay):
+    """flies' qualification letting a replayed session replace a forward one."""
+    taken = []
+    for day, s in sorted(((replay or {}).get("sessions") or {}).items()):
+        for k in ("control", "rule", "agent"):
+            values[k][day] = s[k]
+        if s.get("decided"):
+            decided.add(day)
+        taken.append(day)
+    return taken
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -173,6 +191,8 @@ REPLACEMENTS = {
     "shadow_acts": lambda: _shadow_acts,
     "every_mode_offered": lambda: _every_mode_offered,
     "identity": lambda: _identity,
+    "gate_sees_ahead": lambda: _gate_sees_ahead,
+    "replay_overwrites": lambda: _replay_overwrites,
 }
 
 
@@ -415,6 +435,26 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.flies.intraday_advice",
         attr="built_mode",
         replacement="identity",
+    ),
+    Mutant(
+        id="flies-replay-decision-lookahead",
+        breaks="the agent replay lets an entry follow a decision made after it",
+        package="flies",
+        tests=(
+            "tests/test_intraday_replay.py::test_a_decision_counts_only_after_it_was_made_and_while_it_is_fresh",
+        ),
+        module="cherrypick.flies.intraday_replay",
+        attr="gate_at",
+        replacement="gate_sees_ahead",
+    ),
+    Mutant(
+        id="flies-replay-keeps-forward",
+        breaks="a replayed session overwrites a forward one in the agent's qualification",
+        package="flies",
+        tests=("tests/test_intraday_replay.py::test_the_replay_never_overwrites_a_forward_session",),
+        module="cherrypick.flies.intraday_eval",
+        attr="merge_replay",
+        replacement="replay_overwrites",
     ),
 )
 

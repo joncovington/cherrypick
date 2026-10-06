@@ -100,7 +100,7 @@ built from the inputs it sees, the rule wins: it costs nothing and fails the sam
 | `live_mode_max` | `"shadow"` | The most the live start may offer: `off`, `shadow`, `gates` or `gates_and_closures`. A ceiling, not a choice: the per-day selection picks within it, and the qualification below has to allow it too. |
 | `trigger_band_points` | `10` | Run only within this distance of the trend band, or while a stranded vertical is open. |
 | `decision_ttl_minutes` | `10` | How long one decision is valid before the arm falls back to the rule. |
-| `max_calls_per_session` | `40` | A hard cap per session, so a stuck trigger cannot run up a bill. |
+| `max_calls_per_session` | `100` | A hard cap per session, so a stuck trigger cannot run up a bill. Raised from 40 on 2026-10-06, before the arms' first session: a vertical is open most of the day, so at a 4-minute gap a session asks about 95 times, and 40 ran out by about 12:20 on all 29 replayed sessions. |
 
 **On live the agent is chosen per day, never by config alone.** `/live-flies-start` gains one step.
 After the live YES, and only when `enabled` is true, it asks a second, separate question with the
@@ -263,9 +263,20 @@ before any live session is spent on it.
 - The pack at time T holds only what was recorded by T. A test checks this, the same rule as
   `core.rangefeatures`' look-ahead guard: the replay is only worth its look-ahead test.
 
-**The replay scores both decisions:**
+**The replay scores the gate, and only the gate** (as built 2026-10-06, `intraday_replay.py`,
+`scripts/flies_intraday_replay.py`, Opus only by the user's choice):
 - For the gate: which entries would not have been taken, valued from the ledger's settled outcome.
-- For the closes: the close cost at the recorded marks, priced at natural.
+  Each `control` entry stamped its drift and the direction it needed, so the gate's refusal is
+  exact. A decision counts only once made, and only within its expiry (mutant
+  `flies-replay-decision-lookahead`).
+- **Not the closes.** The plan assumed recorded marks to price a close at natural. Paper never
+  recorded intraday quotes (marks are live-only), so a past close cannot be priced honestly. The
+  model's close decisions are kept with their packs, and closes are valued by the forward arms only.
+- The packs show `control`'s positions, the arm being scored. The agent arm's own book did not exist.
+- Replayed sessions count toward the gate criteria in the qualification, marked `replay`, and never
+  replace a forward session (mutant `flies-replay-keeps-forward`).
+- Paced and resumable on the Max plan: `--max-calls` per run, `--dry-run` to count, and a session
+  counts once it has run to the bell.
 
 `trend-rule` gets the same replay, for free. That makes it a paired, already-out-of-sample read
 over about 30 sessions, and the deciding evidence for whether the forward paper arm is worth
@@ -293,6 +304,15 @@ event-driven cadence is about **$25-80 a month**, and the replay about **$100**)
 - These are API-equivalent costs. On a subscription they draw on usage limits instead.
 
 For scale: live strands about 8 verticals a month at about $250 each.
+
+**As configured from 2026-10-06 (Opus, about $0.17 a call, a 4-minute gap, cap 100):** the
+estimates above assumed calls only near the trend band. The open-vertical trigger fires whenever a
+vertical is open, which is most of the session: 1,020 of 1,160 calls in the replay's dry run.
+- So a session asks about 95 times, about **$16 a session** and **$340 a month** for the paper arm,
+  and as much again on each live-shadow day.
+- The replay, Opus only, is 2,604 calls by its dry run (**about $440 once**). It runs in paced batches
+  (`scripts/flies_intraday_replay.py --max-calls`), because on the Max plan these are usage limits,
+  not a bill.
 
 ## What counts as a result
 

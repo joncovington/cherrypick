@@ -250,6 +250,7 @@ export function shapeQualification(raw: Record<string, unknown>): AgentQualifica
         return {
           session,
           decided: o["decided"] === true,
+          source: o["source"] === "replay" ? ("replay" as const) : ("forward" as const),
           control: armDay(o["control"]),
           rule,
           agent,

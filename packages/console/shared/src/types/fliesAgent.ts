@@ -24,6 +24,8 @@ export interface AgentSessionRow {
   session: string;
   /** Whether the agent made at least one admissible paper decision that session. */
   decided: boolean;
+  /** Where the figures come from: the forward paper arms, or the historical replay (gate only). */
+  source: "forward" | "replay";
   control: AgentArmDay | null;
   rule: AgentArmDay | null;
   agent: AgentArmDay | null;

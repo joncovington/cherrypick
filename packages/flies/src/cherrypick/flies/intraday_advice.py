@@ -37,7 +37,10 @@ DEFAULTS = {
     "live_mode_max": "shadow",
     "trigger_band_points": 10.0,
     "decision_ttl_minutes": 10,
-    "max_calls_per_session": 40,
+    # 100, not 40 (2026-10-06): a vertical is open most of the session, so at a 4-minute gap the
+    # agent is asked ~95 times; 40 ran out by ~12:20 on all 29 replayed sessions, leaving every
+    # afternoon -- when verticals strand -- to the rule.
+    "max_calls_per_session": 100,
     "min_minutes_between_calls": 4,
 }
 LIVE_MODES = ("off", "shadow", "gates", "gates_and_closures")
@@ -229,13 +232,20 @@ def read_decision(target: str, *, session: str, now: float) -> dict | None:
 
 
 # --------------------------------------------------------------------------- the record of packs
-def record_path(session: str) -> Path:
-    return _home.data_dir("flies") / "intraday_agent" / f"{session}.jsonl"
+#: The historical replay's own store (intraday_replay.py), beside the forward records and never
+#: mixed with them: a replayed call must not count toward a live session's call cap, and the forward
+#: readers glob only the top folder.
+REPLAY_STORE = "replay"
 
 
-def records(session: str) -> list[dict]:
+def record_path(session: str, store: str = "") -> Path:
+    folder = _home.data_dir("flies") / "intraday_agent"
+    return (folder / store if store else folder) / f"{session}.jsonl"
+
+
+def records(session: str, store: str = "") -> list[dict]:
     try:
-        lines = record_path(session).read_text(encoding="utf-8").splitlines()
+        lines = record_path(session, store).read_text(encoding="utf-8").splitlines()
     except OSError:
         return []
     out = []
@@ -247,8 +257,8 @@ def records(session: str) -> list[dict]:
     return out
 
 
-def _append(session: str, rec: dict) -> None:
-    path = record_path(session)
+def _append(session: str, rec: dict, store: str = "") -> None:
+    path = record_path(session, store)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(rec, default=str) + "\n")
@@ -267,12 +277,14 @@ def run_tick(
     ask,
     prompt: str,
     write_file: bool = True,
+    store: str = "",
 ) -> dict:
     """One check: build the pack, decide whether it is worth a call, ask, validate, record.
 
     `ask(prompt, pack_json)` returns `{"reply", "model", "cost_usd", "error"}`; it is the script's
     model call, or a fake in a test or the replay. `write_file=False` (the replay) records the pack
-    and decision but never writes the decision file a loop reads."""
+    and decision but never writes the decision file a loop reads; `store` (the replay's
+    REPLAY_STORE) keeps its records, and so its call cap, apart from the forward record."""
     if target not in TARGETS:
         raise ValueError(f"target must be one of {TARGETS}")
     acfg = agent_config(cfg)
@@ -289,7 +301,7 @@ def run_tick(
     why = trigger(raw, acfg)
     if why is None:
         return {**base, "called": False, "skipped": "no_trigger"}
-    mine = [r for r in records(session) if r.get("target") == target and r.get("called")]
+    mine = [r for r in records(session, store) if r.get("target") == target and r.get("called")]
     if len(mine) >= int(acfg["max_calls_per_session"]):
         return {**base, "called": False, "skipped": "call_cap"}
     if mine and as_of - float(mine[-1]["as_of"]) < float(acfg["min_minutes_between_calls"]) * 60:
@@ -314,7 +326,7 @@ def run_tick(
         "error": verdict.get("error"),
         "pack": raw,
     }
-    _append(session, rec)
+    _append(session, rec, store)
     if write_file:
         write_decision(
             target,
