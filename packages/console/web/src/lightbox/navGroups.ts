@@ -64,6 +64,7 @@ export const FLIES_SLIDES = [
   { id: "decisions", label: "decisions" },
   { id: "divergence", label: "divergence" },
   { id: "regime", label: "regime cuts" },
+  { id: "agent", label: "intraday agent" },
   { id: "completion", label: "completion" },
   { id: "performance", label: "performance" },
   { id: "costs", label: "costs" },
@@ -317,7 +318,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     slides: FLIES_SLIDES,
     groups: [
       { label: "today", ids: ["session", "forest", "timeline", "openingrange"] },
-      { label: "evidence", ids: ["attempts", "decisions", "divergence", "regime"] },
+      { label: "evidence", ids: ["attempts", "decisions", "divergence", "regime", "agent"] },
       { label: "study", ids: ["completion", "performance", "costs", "advisor"] },
       { label: "tables", ids: ["books", "positions", "history"] },
       { label: "help", ids: ["guide"] },

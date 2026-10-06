@@ -15,6 +15,8 @@ against. The read side also reports a 2x haircut (one more spread's worth), the 
 
 from __future__ import annotations
 
+from cherrypick.core import fees as core_fees
+
 from cherrypick.flies import db as dbmod
 from cherrypick.flies import engine, fly
 from cherrypick.flies.book import book_id_for, entry_leg_strikes
@@ -65,6 +67,26 @@ def rule_wants_close(position: dict, snapshot: dict, params: dict) -> bool:
     return against
 
 
+def round_trip_fees(symbol: str, quantity: int) -> float:
+    """The modelled fees of a vertical opened and then closed: two legs each way, one sold."""
+    return round(
+        core_fees.ic_open_fee(symbol, quantity, legs=2, sell_legs=1)
+        + core_fees.ic_close_fee(symbol, quantity, legs=2, sell_legs=1),
+        2,
+    )
+
+
+def closed_value(credit: float, quantity: int, natural: float, mid: float | None, fees: float) -> dict:
+    """A tagged vertical valued as closed at the tag: its credit less the natural debit, less the round
+    trip's fees, in whole-position dollars. `closed_net_2x` charges one more spread's worth
+    (natural - mid), the plan's bar for an edge that survives worse fills."""
+    worse = natural + max(natural - (natural if mid is None else mid), 0.0)
+    return {
+        "closed_net": round((credit - natural) * 100 * quantity - fees, 2),
+        "closed_net_2x": round((credit - worse) * 100 * quantity - fees, 2),
+    }
+
+
 def tag(conn, snapshot: dict, arm: str, params: dict, *, source: str, agent_ids=(), now: str) -> list[dict]:
     """Stamp a close tag on each open, untagged short vertical of `arm`'s book that `source` wants
     closed (`rule`: `rule_wants_close`; `agent`: the ids in `agent_ids`). Returns what was tagged.
@@ -90,8 +112,16 @@ def tag(conn, snapshot: dict, arm: str, params: dict, *, source: str, agent_ids=
             continue
         conn.execute(
             "UPDATE fly_positions SET close_tag_at = ?, close_tag_source = ?, close_tag_natural = ?, "
-            "close_tag_mid = ?, close_tag_spot = ? WHERE id = ?",
-            (now, source, price["natural"], price["mid"], spot, pos["id"]),
+            "close_tag_mid = ?, close_tag_spot = ?, close_tag_fees = ? WHERE id = ?",
+            (
+                now,
+                source,
+                price["natural"],
+                price["mid"],
+                spot,
+                round_trip_fees(snapshot["symbol"], int(pos.get("quantity") or 1)),
+                pos["id"],
+            ),
         )
         out.append({"position_id": pos.get("position_id"), "source": source, **price})
     if out:

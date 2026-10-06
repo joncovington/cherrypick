@@ -114,6 +114,23 @@ def _agent_fails_open(config, arm, _day, _now):
     return {**config, "arms": arms}, None
 
 
+def _no_t(_df):
+    """flies' agent qualification judging a paired mean with no allowance for its noise."""
+    return 0.0
+
+
+def _unscored_passes(cid, mode, label, value, threshold, passed):
+    """flies' agent qualification counting a criterion it cannot score yet as passed."""
+    return {
+        "id": cid,
+        "mode": mode,
+        "label": label,
+        "value": value,
+        "threshold": threshold,
+        "pass": True if passed is None else passed,
+    }
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -130,6 +147,8 @@ REPLACEMENTS = {
     "ignore_as_of": lambda: _ignore_as_of,
     "uncapped": lambda: _uncapped,
     "agent_fails_open": lambda: _agent_fails_open,
+    "no_t": lambda: _no_t,
+    "unscored_passes": lambda: _unscored_passes,
 }
 
 
@@ -317,6 +336,26 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.flies.paper_loop",
         attr="tick_config",
         replacement="agent_fails_open",
+    ),
+    Mutant(
+        id="flies-agent-eval-t-bound",
+        breaks="the agent qualifies on a paired mean with no allowance for its noise",
+        package="flies",
+        tests=("tests/test_intraday_eval.py::test_a_noisy_positive_mean_does_not_pass_the_one_sided_bound",),
+        module="cherrypick.flies.intraday_eval",
+        attr="t95",
+        replacement="no_t",
+    ),
+    Mutant(
+        id="flies-agent-eval-unscored-locks",
+        breaks="a live agent mode unlocks on a criterion the suite cannot score yet",
+        package="flies",
+        tests=(
+            "tests/test_intraday_eval.py::test_nothing_past_shadow_unlocks_while_a_criterion_cannot_be_scored",
+        ),
+        module="cherrypick.flies.intraday_eval",
+        attr="_criterion",
+        replacement="unscored_passes",
     ),
 )
 

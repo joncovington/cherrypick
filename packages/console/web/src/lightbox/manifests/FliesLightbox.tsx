@@ -28,6 +28,7 @@ import { RegimeCutsTab } from "../../components/RegimeCutsTab";
 import { ModuleFrame } from "../ModuleFrame";
 import { FLIES_SLIDES, type FliesSlideId } from "../navGroups";
 import { FliesSession } from "../../pages/Flies/FliesSession";
+import { AgentSlide } from "../../pages/Flies/AgentSlide";
 import type { SlideDef } from "../types";
 
 /**
@@ -170,6 +171,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
     { id: "performance", label: FLIES_LABEL.performance, render: () => <PerformanceSlide module="flies" mode={mode} /> },
     { id: "costs", label: FLIES_LABEL.costs, render: () => <ModuleCosts module="flies" mode={mode} era={era} /> },
     { id: "regime", label: FLIES_LABEL.regime, render: () => <RegimeCutsTab module="flies" /> },
+    { id: "agent", label: FLIES_LABEL.agent, render: () => <AgentSlide mode={mode} date={date} /> },
     // The three dense tables (2026-09-24: pages in the rail's `tables` group, where they had been
     // overlay sheets). Same markup, pagers and queries as before -- they moved rather than changed.
     // The session cards whose numbers they explain link here: net today to history, net by arm to

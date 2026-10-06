@@ -59,6 +59,7 @@ import path from "node:path";
 import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
 import { readCalendars, readCalendarsWeek, readCalendarsWeeks } from "../readers/calendars.js";
 import { readRegimeCuts } from "../readers/regimeCuts.js";
+import { isAgentSession, readFliesAgent, readFliesAgentPack } from "../readers/fliesAgent.js";
 import { readOpeningRange } from "../readers/openingRange.js";
 import { readCalendarsPolicies } from "../services/calendarsBridge.js";
 import { readEarnings, readSymbolWatch, readEarningsAnalytics, readEarningsDetail } from "../readers/earnings.js";
@@ -310,6 +311,24 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const session = parseRegimeSession(req.query);
     if (session === false) return reply.code(400).send({ error: "session must be YYYY-MM-DD" });
     return readRegimeCuts(config, "flies", session);
+  });
+  // The intraday agent's page. Paper-only by construction: the agent's paper arm, its record and the
+  // module's qualification file. No `mode`; the live shadow arrives with its own page state (step 4).
+  app.get("/api/flies/agent", async (req, reply) => {
+    const session = (req.query as Record<string, unknown>)["session"];
+    if (session !== undefined && !isAgentSession(session)) {
+      return reply.code(400).send({ error: "session must be YYYY-MM-DD" });
+    }
+    return readFliesAgent(config, session ?? null);
+  });
+  app.get("/api/flies/agent/pack", async (req, reply) => {
+    const q = req.query as Record<string, unknown>;
+    const index = Number(q["index"]);
+    if (!isAgentSession(q["session"]) || !Number.isInteger(index) || index < 0) {
+      return reply.code(400).send({ error: "session must be YYYY-MM-DD and index a whole number" });
+    }
+    const pack = readFliesAgentPack(config, q["session"], index);
+    return pack ?? reply.code(404).send({ error: "no pack on that record" });
   });
   app.get("/api/meic/regime-cuts", async (req, reply) => {
     const session = parseRegimeSession(req.query);
