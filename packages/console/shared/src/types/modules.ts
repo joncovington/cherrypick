@@ -1163,15 +1163,23 @@ export interface CurveOpenPosition {
   feesToDate: number | null;
 }
 
-/** Per-arm, per-symbol results over CLOSED positions -- `analytics.headline()`. */
+/**
+ * Per-arm results over CLOSED positions, in the suite's money layout (root CLAUDE.md): gross, then
+ * trading fees, settlement and slippage as separate costs, so gross - fees - settlement - slippage =
+ * net. Built through `positionCash`/`tradeTotals`, the same arithmetic as the history table, so the
+ * two cannot disagree. One row per arm: VXX is the only underlying, and a per-symbol split was a
+ * column that could hold one value (2026-10-06).
+ */
 export interface CurveArmCell {
   arm: string;
-  symbol: string;
   positions: number;
-  grossPnl: number | null;
-  fees: number | null;
-  /** `gross_pnl - fees`. Null if either side is unrecorded. */
-  netPnl: number | null;
+  wins: number;
+  grossPnl: number;
+  /** Trading fees only -- commissions and pass-throughs. */
+  fees: number;
+  settlementFees: number;
+  slippage: number;
+  netPnl: number;
   winRate: number | null;
 }
 

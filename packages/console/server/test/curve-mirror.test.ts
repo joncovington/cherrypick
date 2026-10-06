@@ -69,9 +69,10 @@ describe.skipIf(!available)("the console's curve mirror agrees with the module i
     const mine = readCurve(loadConfig());
     const theirs = moduleHeadline()!.headline.arms as Record<string, Record<string, { net_pnl?: number }>>;
     for (const cell of mine.arms) {
-      const other = theirs[cell.arm]?.[cell.symbol];
-      if (other?.net_pnl === undefined) continue;
-      expect(cell.netPnl ?? 0).toBeCloseTo(other.net_pnl, 2);
+      // The module reports per arm per symbol; the console one row per arm (VXX is the only symbol).
+      const bySymbol = Object.values(theirs[cell.arm] ?? {});
+      if (bySymbol.length === 0 || bySymbol.some((s) => s.net_pnl === undefined)) continue;
+      expect(cell.netPnl).toBeCloseTo(bySymbol.reduce((n, s) => n + (s.net_pnl ?? 0), 0), 2);
     }
   });
 });
@@ -97,7 +98,9 @@ describe("readCurve against an empty ledger", () => {
     const db = new Database(dbFile);
     db.exec(`
       CREATE TABLE curve_positions (id INTEGER PRIMARY KEY, position_id TEXT, symbol TEXT, arm TEXT,
-        entry_session TEXT, status TEXT, exit_reason TEXT, gross_pnl REAL, fees REAL);
+        entry_session TEXT, status TEXT, exit_reason TEXT, gross_pnl REAL, fees REAL, quantity INTEGER,
+        entry_credit REAL);
+      CREATE TABLE curve_assignments (id INTEGER PRIMARY KEY, position_id TEXT, leg_role TEXT);
       CREATE TABLE curve_marks (id INTEGER PRIMARY KEY, position_id TEXT, session_date TEXT,
         close_cost REAL, short_tv REAL, spot REAL, assignment_exposed INTEGER, usable INTEGER, refusal TEXT,
         marked_at REAL);

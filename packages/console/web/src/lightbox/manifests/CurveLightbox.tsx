@@ -2,7 +2,7 @@ import { useCurve } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { LoopPill } from "../../components/ScopeBar";
 import { IntegrityStrip } from "../../pages/Curve/IntegrityStrip";
-import { BookComparison, RegimeCard, OpenTradesCard } from "../../pages/Curve/CurrentStateCards";
+import { ArmComparison, RegimeCard, OpenTradesCard } from "../../pages/Curve/CurrentStateCards";
 import { CurveSession } from "../../pages/Curve/CurveSession";
 import { DecisionsCard } from "../../components/DecisionsCard";
 import { HistoryTab } from "../../pages/Curve/HistoryTab";
@@ -50,7 +50,7 @@ export function CurveLightbox({ slide }: { slide: string }) {
       label: CURVE_LABEL.arms,
       render: () => (
         <div className="cards cards-wide">
-          <BookComparison data={data} flipDivergence={data?.flipDivergence} updatedAt={dataUpdatedAt} />
+          <ArmComparison data={data} flipDivergence={data?.flipDivergence} updatedAt={dataUpdatedAt} />
         </div>
       ),
     },
@@ -60,7 +60,9 @@ export function CurveLightbox({ slide }: { slide: string }) {
       id: "positions",
       label: CURVE_LABEL.positions,
       render: () => (
-        <div className="cards cards-wide">{isLoading ? null : <OpenTradesCard data={data} updatedAt={dataUpdatedAt} />}</div>
+        <div className="cards cards-wide">
+          <OpenTradesCard data={isLoading ? undefined : data} updatedAt={dataUpdatedAt} />
+        </div>
       ),
     },
     { id: "history", label: CURVE_LABEL.history, render: () => <HistoryTab /> },

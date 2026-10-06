@@ -2,7 +2,7 @@ import type { CurvePayload } from "@console/shared";
 import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
 
 /**
- * What this experiment is, in the module's own terms -- the pmcc HelpTab precedent: curve's three
+ * What this experiment is, in the module's own terms -- the pmcc HelpTab precedent: curve's four
  * arms differ by one stated rule each rather than by a set of overridden parameters, so this is
  * prose kept in one place rather than a derived diff view.
  */
@@ -82,14 +82,15 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
             about the flip rule.
           </p>
           <p>
-            <strong>hook is not.</strong> Its variable IS the entry condition, so it holds a different set of
-            fills by construction -- its own rare tick, its own variable. Read surfaces must not treat the
-            three as a fully paired grid.
+            <strong>near, hook and the advised arms are not.</strong> near is planned from its own 0.40-delta
+            strikes; hook's variable IS the entry condition, its own rare tick; an advised arm runs its own
+            admitted params. Each holds a different set of fills by construction, so compare them by net per
+            cycle, and never treat the arms as a fully paired grid.
           </p>
         </div>
       </Card>
 
-      <Card title="the regime series -- the module's second product" collapseKey="curve-help-regime" defaultCollapsed>
+      <Card title="the regime series, recorded every session" collapseKey="curve-help-regime" defaultCollapsed>
         <div className="pmcc-prose">
           <p>
             The daily VIX/VIX3M ratio, its contango/backwardation classification, and the hook flag are written

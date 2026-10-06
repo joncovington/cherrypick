@@ -5,15 +5,13 @@ import { SignedBar } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
 import { fmtCash, fmtPrice } from "../../lib/format";
 
-/** The arms whose identity the page knows (`near` from 2026-10-06). An advisor experiment's
- *  `advised:<name>` arm is recognised by its prefix, never by being "not core" -- pmcc listed its new
- *  arms as advised for a day because its list was short one name. */
-const CORE_BOOKS = ["control", "noflip", "hook", "near"];
-const isAdvised = (arm: string) => arm.startsWith("advised:");
+/** The arms whose identity the page knows (`near` from 2026-10-06), in the order the arm table
+ *  lists them; any other arm (an advisor experiment's `advised:<name>`) sorts after, by name. */
+const CORE_ARMS = ["control", "noflip", "near", "hook"];
 
 function strikeAt(strike: number | null, expiration: string | null): string {
   if (strike === null) return "—";
-  return `${fmtStrike(strike)}${expiration === null ? "" : ` @ ${expiration.slice(5)}`}`;
+  return `${fmtStrike(strike)}${expiration === null ? "" : ` @ ${expiration}`}`;
 }
 
 /**
@@ -38,6 +36,11 @@ function CloseCostCell({ cost, credit }: { cost: number | null; credit: number |
   );
 }
 
+const OPEN_HEADERS = [
+  "symbol", "arm", "opened", "expiry", "mark (net of costs to date)", "short/long", "spot", "qty", "price",
+  "entry", "max loss", "credit % of width", "ratio/regime", "assignment",
+];
+
 function PositionRows({ rows }: { rows: CurveOpenPosition[] }) {
   return (
     <>
@@ -45,8 +48,8 @@ function PositionRows({ rows }: { rows: CurveOpenPosition[] }) {
         <tr key={p.positionId}>
           <td>{p.symbol}</td>
           <td>{p.arm}</td>
-          <td title={p.entrySession}>{p.entrySession === "" ? "—" : p.entrySession.slice(5)}</td>
-          <td title={p.expiration ?? undefined}>{p.expiration === null ? "—" : p.expiration.slice(5)}</td>
+          <td>{p.entrySession === "" ? "—" : p.entrySession}</td>
+          <td>{p.expiration ?? "—"}</td>
           <td>
             <UnrealisedPnlCell
               gross={p.unrealisedGross}
@@ -64,6 +67,7 @@ function PositionRows({ rows }: { rows: CurveOpenPosition[] }) {
           <td>{p.quantity ?? "—"}</td>
           <td>{fmtPrice(p.entryCredit)}</td>
           <td>{fmtCash(p.entryCash)}</td>
+          <td>{p.entryMaxLoss === null ? "—" : fmtCash(-p.entryMaxLoss * 100 * (p.quantity ?? 1))}</td>
           <td>{fmtPct(p.entryCreditPctOfWidth === null ? null : p.entryCreditPctOfWidth * 100, 1)}</td>
           <td>
             {p.entryRatio === null ? "—" : fmtNum(p.entryRatio, 3)}
@@ -95,18 +99,24 @@ function PositionRows({ rows }: { rows: CurveOpenPosition[] }) {
 /**
  * One card per symbol, listing only the arms actually holding a position.
  *
- * VXX is the module's only underlying, so in practice this is one card -- but a arm holding
+ * VXX is the module's only underlying, so in practice this is one card -- but an arm holding
  * nothing is signal, not absence: the hook arm idling all week is the experiment working exactly
  * as designed (the pmcc keltner precedent, restated for curve's rarer entry).
  */
 export function OpenTradesCard({ data, updatedAt }: { data: CurvePayload | undefined; updatedAt?: number }) {
-  if (data === undefined) return null;
+  if (data === undefined) {
+    return (
+      <DataCard title="open trades" headers={OPEN_HEADERS} loading rowCount={0} numFrom={5} updatedAt={updatedAt}>
+        {null}
+      </DataCard>
+    );
+  }
   const symbols = [...new Set(data.openPositions.map((p) => p.symbol))];
   if (symbols.length === 0) {
     return (
       <DataCard
         title="open trades"
-        headers={["symbol", "arm", "opened", "expiry", "mark (net of costs to date)", "short/long", "spot", "qty", "price", "entry", "credit % of width", "ratio/regime", "assignment"]}
+        headers={OPEN_HEADERS}
         loading={false}
         rowCount={0}
         numFrom={5}
@@ -132,7 +142,7 @@ export function OpenTradesCard({ data, updatedAt }: { data: CurvePayload | undef
         <table className="data-table num-from-5">
           <thead>
             <tr>
-              {["symbol", "arm", "opened", "expiry", "mark (net of costs to date)", "short/long", "spot", "qty", "price", "entry", "credit % of width", "ratio/regime", "assignment"].map((h) => (
+              {OPEN_HEADERS.map((h) => (
                 <th key={h}>{h}</th>
               ))}
             </tr>
@@ -149,7 +159,7 @@ export function OpenTradesCard({ data, updatedAt }: { data: CurvePayload | undef
 /** Today's regime read: the module's second product, standing on its own beside any position. */
 export function RegimeCard({ series, today, updatedAt }: { series: CurveRegimeRow[]; today: CurveRegimeRow | undefined; updatedAt?: number }) {
   return (
-    <Card title="VIX/VIX3M regime -- the module's second product" collapseKey="curve-regime" updatedAt={updatedAt} className="view-fade">
+    <Card title="VIX/VIX3M regime, recorded every session" collapseKey="curve-regime" updatedAt={updatedAt} className="view-fade">
       <p className="integrity-note">
         Written every session, traded or not -- the series' value is its continuity, never only what fed a trade.
       </p>
@@ -178,6 +188,8 @@ export function RegimeCard({ series, today, updatedAt }: { series: CurveRegimeRo
               <tr>
                 <th>date</th>
                 <th>ratio</th>
+                <th>VIX</th>
+                <th>VIX3M</th>
                 <th>regime</th>
                 <th>hook</th>
                 <th>usable</th>
@@ -187,11 +199,13 @@ export function RegimeCard({ series, today, updatedAt }: { series: CurveRegimeRo
               {series
                 .slice()
                 .reverse()
-                .slice(0, 20)
+                .slice(0, 60)
                 .map((r) => (
                   <tr key={r.tradeDate}>
                     <td>{r.tradeDate}</td>
                     <td>{fmtNum(r.ratio, 3)}</td>
+                    <td>{fmtNum(r.vix, 2)}</td>
+                    <td>{fmtNum(r.vix3m, 2)}</td>
                     <td>{r.regime ?? "—"}</td>
                     <td>{r.hook === true ? "hook" : ""}</td>
                     <td>{r.usable ? "" : <span className="chip chip-warn integrity-chip">{r.refusal ?? "unusable"}</span>}</td>
@@ -205,37 +219,62 @@ export function RegimeCard({ series, today, updatedAt }: { series: CurveRegimeRo
   );
 }
 
-interface BookTotals {
-  arm: string;
-  positions: number;
-  net: number | null;
-  wins: number;
+/** The suite's arm-qualification floor (`core.profiles.QUALIFICATION_RULE.min_sample`): below it a
+ *  figure is shown, but flagged as too few cycles to judge an arm on. */
+const MIN_SAMPLE = 20;
+
+function armOrder(a: string, b: string): number {
+  const ia = CORE_ARMS.indexOf(a);
+  const ib = CORE_ARMS.indexOf(b);
+  if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  return a.localeCompare(b);
 }
 
-function totalsByBook(arms: CurveArmCell[]): BookTotals[] {
-  const map = new Map<string, BookTotals>();
-  for (const cell of arms) {
-    const t = map.get(cell.arm) ?? { arm: cell.arm, positions: 0, net: null, wins: 0 };
-    t.positions += cell.positions;
-    if (cell.netPnl !== null) t.net = (t.net ?? 0) + cell.netPnl;
-    if (cell.winRate !== null) t.wins += cell.winRate * cell.positions;
-    map.set(cell.arm, t);
-  }
-  return [...map.values()].sort((a, b) => {
-    const ia = CORE_BOOKS.indexOf(a.arm);
-    const ib = CORE_BOOKS.indexOf(b.arm);
-    if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-    return a.arm.localeCompare(b.arm);
-  });
+function SampleChip({ n }: { n: number }) {
+  if (n >= MIN_SAMPLE) return null;
+  return (
+    <span
+      className="chip chip-warn integrity-chip"
+      title={`${String(n)} of the ${String(MIN_SAMPLE)} closed cycles the suite asks for before judging an arm`}
+    >
+      n={n}
+    </span>
+  );
+}
+
+/** One arm's closed cycles in the money layout: the row adds up, gross - fees - settle - slip = net. */
+function ArmMoneyRow({ c }: { c: CurveArmCell }) {
+  return (
+    <tr>
+      <td>
+        {c.arm} <SampleChip n={c.positions} />
+      </td>
+      <td>{c.positions}</td>
+      <td>{fmtPct(c.winRate === null ? null : c.winRate * 100, 0)}</td>
+      <td>
+        <PnlCell v={c.grossPnl} />
+      </td>
+      <td>{fmtMoney(-c.fees)}</td>
+      <td>{fmtMoney(-c.settlementFees)}</td>
+      <td>{fmtMoney(-c.slippage)}</td>
+      <td>
+        <PnlCell v={c.netPnl} />
+      </td>
+      <td>
+        <PnlCell v={c.positions > 0 ? c.netPnl / c.positions : null} />
+      </td>
+    </tr>
+  );
 }
 
 /**
- * The arm comparison, split the way the module's own honesty rule requires: control/noflip are
- * exactly paired (same entry, same tick), but the FAIR sample for what the flip rule did is
- * `flip_divergence_count`, not the raw trade count -- until a flip fires the two arms are
- * byte-identical by construction. hook gets its own section because its variable IS the entry tick.
+ * The arm comparison. Every arm's closed cycles are one row in the suite's money layout, so where
+ * the money went is on the page: an arm can be net-negative on a positive gross, and that is
+ * curve's whole cost question. The pairing caveats follow the table: control/noflip are exactly
+ * paired and byte-identical until a flip fires, so their effective sample is `flip_divergence`, not
+ * the cycle count; near and hook enter on their own plans and are not row-comparable with control.
  */
-export function BookComparison({
+export function ArmComparison({
   data,
   flipDivergence,
   updatedAt,
@@ -244,19 +283,16 @@ export function BookComparison({
   flipDivergence: CurveFlipDivergence | undefined;
   updatedAt?: number;
 }) {
-  const arms = data?.arms ?? [];
-  const totals = totalsByBook(arms);
-  const symbols = [...new Set(arms.map((b) => b.symbol))].sort();
-  const cell = (arm: string, symbol: string): CurveArmCell | undefined =>
-    arms.find((b) => b.arm === arm && b.symbol === symbol);
-  const hook = totals.find((t) => t.arm === "hook");
-  const others = totals.filter((t) => isAdvised(t.arm));
-  const maxAbs = Math.max(1, ...totals.map((t) => Math.abs(t.net ?? 0)));
-  const hasClosed = arms.length > 0;
+  const arms = [...(data?.arms ?? [])].sort((a, b) => armOrder(a.arm, b.arm));
+  const control = arms.find((c) => c.arm === "control");
+  const noflip = arms.find((c) => c.arm === "noflip");
+  const maxAbs = Math.max(1, ...arms.map((c) => Math.abs(c.netPnl)));
+  const divergence = flipDivergence?.flipDivergenceCount ?? 0;
+  const flipExits = flipDivergence?.controlFlipExits ?? 0;
 
   return (
     <Card title="arm comparison" collapseKey="curve-arms" updatedAt={updatedAt}>
-      {!hasClosed ? (
+      {arms.length === 0 ? (
         <p className="muted">
           no completed cycles yet -- per-arm results fill in as positions close
           {data !== undefined && data.openCount > 0 && (
@@ -266,113 +302,76 @@ export function BookComparison({
       ) : (
         <>
           <section className="pmcc-compare">
-            <h3>control vs noflip -- the effective sample is flip_divergence, not trade count</h3>
-            <p className="integrity-note">
-              Both arms enter from the SAME plan on the SAME tick. Until a flip actually fires they are
-              byte-identical by construction, so the noflip comparison's real sample is{" "}
-              <strong>{flipDivergence?.flipDivergenceCount ?? 0}</strong> position
-              {(flipDivergence?.flipDivergenceCount ?? 0) === 1 ? "" : "s"} where control's flip fired while noflip
-              held -- against {flipDivergence?.controlFlipExits ?? 0} control flip exits recorded in total. A season
-              of pure contango with zero flips proves nothing about the flip rule.
-            </p>
+            <h3>closed cycles by arm, after every cost</h3>
             <div className="table-scroll">
               <table className="data-table num-from-1">
                 <thead>
                   <tr>
-                    <th>symbol</th>
-                    <th>control net</th>
-                    <th>noflip net</th>
-                    <th>delta</th>
-                    <th>control cycles</th>
-                    <th>noflip cycles</th>
+                    <th>arm</th>
+                    <th>cycles</th>
+                    <th>win rate</th>
+                    <th>gross</th>
+                    <th>fees</th>
+                    <th>settle</th>
+                    <th>slip</th>
+                    <th>net</th>
+                    <th>net / cycle</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {symbols.map((symbol) => {
-                    const c = cell("control", symbol);
-                    const n = cell("noflip", symbol);
-                    const delta =
-                      c?.netPnl === undefined || c.netPnl === null || n?.netPnl === undefined || n.netPnl === null
-                        ? null
-                        : n.netPnl - c.netPnl;
-                    return (
-                      <tr key={symbol}>
-                        <td>{symbol}</td>
-                        <td>
-                          <PnlCell v={c?.netPnl ?? null} />
-                        </td>
-                        <td>
-                          <PnlCell v={n?.netPnl ?? null} />
-                        </td>
-                        <td>
-                          <PnlCell v={delta} />
-                        </td>
-                        <td>{c?.positions ?? 0}</td>
-                        <td>{n?.positions ?? 0}</td>
-                      </tr>
-                    );
-                  })}
+                  {arms.map((c) => (
+                    <ArmMoneyRow key={c.arm} c={c} />
+                  ))}
                 </tbody>
               </table>
             </div>
+            <p className="integrity-note">
+              Each row adds up: gross - fees - settle - slip = net. Fills are modelled at mid, so slippage is a
+              charged cost here, not a concession inside gross. Every figure is still an upper bound while early
+              assignment sits unmodelled.
+            </p>
           </section>
 
           <section className="pmcc-compare">
-            <h3>hook -- not row-comparable, and expected to be nearly always idle</h3>
-            <p className="integrity-note">
-              Its variable IS the entry tick (the two-day-confirmed deep-backwardation spike), so its fill set
-              differs from control's by construction. Idleness here is the honest state, not a failure.
+            <h3>control vs noflip -- the effective sample is the flip divergence, not the cycle count</h3>
+            <p>
+              noflip minus control net: <PnlCell v={control && noflip ? noflip.netPnl - control.netPnl : null} />, over{" "}
+              <strong>{divergence}</strong> diverged position{divergence === 1 ? "" : "s"} ({flipExits} control flip exit
+              {flipExits === 1 ? "" : "s"} in total)
             </p>
-            {hook === undefined || hook.positions === 0 ? (
-              <p className="muted">no completed hook cycles -- the rare-event gate has not admitted an entry that closed yet</p>
-            ) : (
-              <p>
-                {hook.positions} cycle{hook.positions === 1 ? "" : "s"} · net <PnlCell v={hook.net} /> · win rate{" "}
-                {fmtPct(hook.positions > 0 ? (hook.wins / hook.positions) * 100 : null, 0)}
-              </p>
-            )}
+            <p className="integrity-note">
+              Both arms enter from the same plan on the same tick, so until a flip fires they are byte-identical
+              and every shared cycle counts twice. Only the diverged positions say anything about the flip rule.
+            </p>
           </section>
 
-          {others.length > 0 && (
-            <section className="pmcc-compare">
-              <h3>advised arms</h3>
-              <p className="integrity-note">
-                One synthetic arm per advisor experiment (advised:&lt;experiment name&gt;), each running its own
-                admitted params beside the base arm it shadows. Excluded from the pairing above -- their entries
-                are their own.
-              </p>
-              <ul className="integrity-plain-list">
-                {others.map((t) => (
-                  <li key={t.arm}>
-                    <span className="mono">{t.arm}</span> · {t.positions} cycle{t.positions === 1 ? "" : "s"} · net{" "}
-                    <PnlCell v={t.net} />
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+          <section className="pmcc-compare">
+            <h3>near, hook and advised arms -- their own entries, not paired with control</h3>
+            <p className="integrity-note">
+              near sells a 0.40-delta short (from 2026-10-06) on its own plan. hook enters only on the
+              two-day-confirmed deep-backwardation spike, so idleness is its honest state. An
+              advised:&lt;experiment&gt; arm runs its admitted params beside the base it shadows. Compare them by
+              net per cycle, never by summed net.
+            </p>
+          </section>
 
           <section className="pmcc-compare">
             <h3>net by arm</h3>
             <table className="data-table num-from-1">
               <tbody>
-                {totals.map((t) => (
-                  <tr key={t.arm}>
-                    <td>{t.arm}</td>
+                {arms.map((c) => (
+                  <tr key={c.arm}>
+                    <td>{c.arm}</td>
                     <td style={{ width: "50%" }}>
-                      <SignedBar value={t.net ?? 0} maxAbs={maxAbs} compact />
+                      <SignedBar value={c.netPnl} maxAbs={maxAbs} compact />
                     </td>
                     <td>
-                      <PnlCell v={t.net} />
+                      <PnlCell v={c.netPnl} />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className="integrity-note">
-              Every figure here is net of the modeled fee and slippage stack -- and is still an upper bound while
-              early assignment sits unmodelled.
-            </p>
           </section>
         </>
       )}
