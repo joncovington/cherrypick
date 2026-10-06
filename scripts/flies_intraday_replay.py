@@ -199,12 +199,15 @@ def score_live(cfg, ledger_conn, days, store: str) -> dict:
     acfg = intraday_advice.agent_config(cfg)
     ttl = float(acfg["decision_ttl_minutes"]) * 60
     band = float(intraday_pack.TREND_BAND_POINTS)
-    per, calls, cost = {}, 0, 0.0
+    per, calls, cost, blocks = {}, 0, 0.0, {}
     for day in days:
         recs = intraday_advice.records(day, store)
         called = [r for r in recs if r.get("called")]
         calls += len(called)
         cost += sum(float(r.get("cost_usd") or 0.0) for r in called)
+        for r in called:
+            for block, state in intraday_replay.pack_blocks(r).items():
+                blocks.setdefault(block, {"filled": 0, "partial": 0, "empty": 0})[state] += 1
         s = intraday_replay.score_session(
             intraday_replay.load_rows(ledger_conn, day, None),
             intraday_replay.decisions_of(recs),
@@ -217,7 +220,14 @@ def score_live(cfg, ledger_conn, days, store: str) -> dict:
             "admitted": s["admitted_by_agent"],
         }
     totals = {k: round(sum(v[k] for v in per.values()), 2) for k in ("control", "rule", "agent")}
-    return {"store": store, "calls": calls, "cost_usd": round(cost, 2), "totals": totals, "sessions": per}
+    return {
+        "store": store,
+        "calls": calls,
+        "cost_usd": round(cost, 2),
+        "pack_blocks": blocks,
+        "totals": totals,
+        "sessions": per,
+    }
 
 
 def main(argv=None) -> int:

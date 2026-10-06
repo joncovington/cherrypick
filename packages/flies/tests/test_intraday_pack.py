@@ -181,3 +181,49 @@ def test_candles_price_action_flow_and_vwap(stores):
     assert flow["put_volume"]["session"] == 600 * 180
     vw = pack["spy_vwap"]
     assert vw["volume_session"] == 100000 * 181 and vw["vwap"] < 660.0 + 180 * 0.001
+
+
+def test_completeness_judges_recorded_fields_not_facts_about_the_session():
+    ip = intraday_pack
+    pack = {
+        "pack_version": 2,
+        "now": "10:30",
+        "spx": {"open": 7700.0, "last": 7712.0, "candles_5min": [{"t": "09:30"}], "candle_gaps": [],
+                "price_action": {"opening_range": {"first_break": None}}},
+        "gex": {"now": {"net": 1.0}, "at_open": {"net": 0.5}, "path_15min": [{"t": "09:30"}]},
+        "flow": {"call_volume": {"session": None}, "put_volume": {"session": None},
+                 "call_wall_volume": {"session": None}, "put_wall_volume": {"session": None},
+                 "net_gex_vol_bn_path_15min": [{"t": "09:30", "v": 1.0}]},
+        "market": {"vix": {"now": 15.0}, "vvix": {"now": None}},
+        "spy_vwap": None,
+        "flies": {"arm": "control", "positions": [], "_position_ids": {}},
+    }  # fmt: skip
+    assert ip.completeness(pack) == {
+        "spx": "filled",  # no gaps and no break yet are facts, not missing data
+        "gex": "filled",
+        "flow": "partial",  # the volumes were not recorded; the net-GEX path was
+        "market": "partial",
+        "spy_vwap": "empty",
+        "flies": "filled",  # holding nothing is a fact
+    }
+    assert ip.completeness({"pack_version": 3, "new_block": None}) == {"new_block": "empty"}
+
+
+def test_completeness_rides_on_the_record_never_in_the_pack(stores, tmp_path, monkeypatch):
+    from cherrypick.flies import intraday_advice as ia
+
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    raw = _pack(*stores)
+    seen = []
+    g, led = sqlite3.connect(stores[0]), sqlite3.connect(stores[1])
+    try:
+        out = ia.run_tick(
+            cfg={"intraday_agent": {"enabled": True}}, target="paper", session=SESSION, as_of=T,
+            arm="control", gex_conn=g, ledger_conn=led,
+            ask=lambda prompt, pack: seen.append(pack) or {"reply": None}, prompt="p", write_file=False,
+        )  # fmt: skip
+    finally:
+        g.close()
+        led.close()
+    assert out["called"] and out["pack_blocks"] == intraday_pack.completeness(raw)
+    assert seen and all("pack_blocks" not in p and "filled" not in p for p in seen)

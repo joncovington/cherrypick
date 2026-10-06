@@ -406,6 +406,65 @@ def build_pack(*, gex_conn, ledger_conn, session: str, as_of: float, arm: str = 
     }
 
 
+#: Header keys, not evidence: never part of a completeness reading.
+_HEADER = ("pack_version", "now")
+
+#: Per block, the fields a recording feeds directly: one missing there means the data was not
+#: recorded. Derived fields are deliberately absent -- an empty `candle_gaps`, a null opening-range
+#: `first_break` before a break, an empty `positions` are facts about the session, not gaps in the
+#: record. `*` is every reading of a block of readings. A block not declared here (a later pack
+#: version) is judged whole: present or not.
+RECORDED_FIELDS = {
+    "spx": ("open", "last", "candles_5min"),
+    "gex": ("now", "at_open", "path_15min"),
+    "flow": (
+        "call_volume.session",
+        "put_volume.session",
+        "call_wall_volume.session",
+        "put_wall_volume.session",
+        "net_gex_vol_bn_path_15min",
+    ),
+    "market": ("*.now",),
+    "spy_vwap": ("",),
+    "flies": ("",),
+}
+
+
+def _at(value, path: str):
+    for part in [p for p in path.split(".") if p]:
+        value = value.get(part) if isinstance(value, dict) else None
+    return value
+
+
+def _missing(v) -> bool:
+    return v is None or v == {} or v == []
+
+
+def completeness(pack: dict) -> dict:
+    """Each evidence block of a pack as `filled`, `partial` or `empty`, over RECORDED_FIELDS.
+
+    `pack_version` says which blocks a pack HAS; this says which were RECORDED when it was built. A
+    block present but empty looks the same to `pack_version` (SPY VWAP and the options-flow volumes
+    before 2026-10-06), so results built on thinner packs could be pooled with fuller ones unnoticed.
+    Kept on the record beside the pack, never in it, so the model's input is unchanged."""
+    out = {}
+    for key, value in pack.items():
+        if str(key).startswith("_") or key in _HEADER:
+            continue
+        if _missing(value):
+            out[key] = "empty"
+            continue
+        probes = []
+        for path in RECORDED_FIELDS.get(key, ("",)):
+            if path.startswith("*."):
+                probes += [_at(v, path[2:]) for v in value.values()] if isinstance(value, dict) else [None]
+            else:
+                probes.append(_at(value, path))
+        missing = sum(_missing(v) for v in probes)
+        out[key] = "empty" if missing == len(probes) else ("partial" if missing else "filled")
+    return out
+
+
 def for_model(pack):
     """The pack as the model sees it: every `_`-prefixed key (the real position ids) removed."""
     if isinstance(pack, dict):
