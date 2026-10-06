@@ -149,7 +149,13 @@ def validate(reply: str | None, pack: dict) -> dict:
 
     Admissible means: one JSON object; `trend_gate` on/off; `close_stranded` naming only labels the
     pack showed as open verticals (mapped back to real position ids here, never by the model);
-    `confidence` in [0, 1]; a `reason` of at most REASON_MAX_WORDS words."""
+    `confidence` in [0, 1]; a non-empty `reason`.
+
+    A reason over REASON_MAX_WORDS words is CLIPPED to that length and flagged `reason_clipped`, not
+    refused (2026-10-06). The reason is a note for people; the gate and the closes are what an arm
+    acts on. Refusing the whole reply over its length threw away 11 of 43 Opus decisions on the
+    replay's first session, every one an open-vertical call, where the model has the most to say,
+    and each one cost its arm a tick of the fixed rule."""
     if not reply:
         return {"ok": False, "error": "empty reply"}
     text = _FENCE.sub("", reply.strip()).strip()
@@ -188,8 +194,8 @@ def validate(reply: str | None, pack: dict) -> dict:
     reason = obj.get("reason")
     if not isinstance(reason, str) or not reason.strip():
         return {"ok": False, "error": "reason is required"}
-    if len(reason.split()) > REASON_MAX_WORDS:
-        return {"ok": False, "error": f"reason is over {REASON_MAX_WORDS} words"}
+    words = reason.split()
+    clipped = len(words) > REASON_MAX_WORDS
     return {
         "ok": True,
         "decision": {
@@ -198,7 +204,8 @@ def validate(reply: str | None, pack: dict) -> dict:
             "close_labels": labels,
             "dropped_closes": [{"label": x, "why": "past_wing_width"} for x in dropped],
             "confidence": round(float(conf), 3),
-            "reason": reason.strip(),
+            "reason": " ".join(words[:REASON_MAX_WORDS]) if clipped else reason.strip(),
+            "reason_clipped": clipped,
         },
     }
 
