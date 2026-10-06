@@ -78,7 +78,7 @@ TWO = {
 def test_session_books_open_one_advised_book_per_experiment(monkeypatch):
     monkeypatch.setattr(paper_loop, "advice_decision", lambda cfg, day: TWO)
     arms, advised = paper_loop.session_books({}, "2026-09-17")
-    assert arms == ["control", "noflip", "hook", "advised:take-35", "advised:hook-take"]
+    assert arms == ["control", "noflip", "hook", "near", "advised:take-35", "advised:hook-take"]
     assert advised["advised:hook-take"]["experiment_id"] == "exp-b"
     assert "advised:rejected" not in advised  # that experiment's baseline day, nobody else's
 
@@ -95,7 +95,7 @@ def test_session_books_read_a_legacy_decision_as_the_single_advised_base_book(mo
         },
     )
     arms, advised = paper_loop.session_books({}, "2026-09-17")
-    assert arms == ["control", "noflip", "hook", "advised:control"]
+    assert arms == ["control", "noflip", "hook", "near", "advised:control"]
     assert advised["advised:control"]["experiment_id"] == "exp-old"
 
 
@@ -103,7 +103,7 @@ def test_session_books_are_the_base_roster_on_a_baseline_day(monkeypatch):
     monkeypatch.setattr(
         paper_loop, "advice_decision", lambda cfg, day: {"day": day, "params": None, "experiments": []}
     )
-    assert paper_loop.session_books({}, "2026-09-17") == (["control", "noflip", "hook"], {})
+    assert paper_loop.session_books({}, "2026-09-17") == (["control", "noflip", "hook", "near"], {})
 
 
 def test_a_twin_of_hook_is_gated_as_a_hook_by_its_entry_not_its_tag():

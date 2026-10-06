@@ -19,7 +19,10 @@ from cherrypick.core import config as _cfg
 from cherrypick.core import fees as _fees
 from cherrypick.core import settlement as _settlement
 
-ARMS = ("control", "noflip", "hook")
+# `near` (2026-10-06): control's entry gate and exits on a 0.40-delta short (declared in its config
+# block), promoted from the killed advisor experiment `short-delta-nearer-money`, which entered twice
+# where the 0.30-delta control could not.
+ARMS = ("control", "noflip", "hook", "near")
 
 # VXX is a standard American-style, physically-settled equity option — the calendars/pmcc
 # decomposition applies verbatim. No `cash` style is offered: this module trades exactly one
@@ -235,6 +238,36 @@ def plan_entry(snapshot: dict, params: dict, config: dict | None = None) -> dict
         long_mid=long_pick["mid"],
         long_strike=long_pick["strike"],
     )
+    # The net floor (2026-10-06): when declared it is the ONE credit floor, net of entry costs and
+    # against the max loss, so a wider spread is judged on what it keeps per dollar it risks. The
+    # two percentage-of-width floors below are the pre-2026-10-06 rule, still applied to a config
+    # that does not declare this one.
+    net_floor = params.get("min_net_credit_to_max_loss")
+    if net_floor is not None:
+        quantity = int(((config or {}).get("defaults") or {}).get("quantity", 1))
+        leg_quotes = [short_pick["entry"]["quote"], long_pick["entry"]["quote"]]
+        entry_costs = entry_cost(snapshot["symbol"], leg_quotes, quantity, config or {})
+        multiplier = 100 * quantity
+        gross_credit_dollars = round(metrics["credit"] * multiplier, 2)
+        net_credit_dollars = round(gross_credit_dollars - entry_costs["total"], 2)
+        max_loss_dollars = round((metrics["max_loss"] or 0.0) * multiplier, 2)
+        ratio = round(net_credit_dollars / max_loss_dollars, 4) if max_loss_dollars > 0 else None
+        if ratio is None or ratio < float(net_floor):
+            return {
+                "ok": False,
+                "reason": "net_credit_below_floor",
+                "detail": {
+                    "gross_credit_dollars": gross_credit_dollars,
+                    "entry_fee": entry_costs["fee"],
+                    "entry_slippage": entry_costs["slippage"],
+                    "net_credit_dollars": net_credit_dollars,
+                    "max_loss_dollars": max_loss_dollars,
+                    "net_to_max_loss": ratio,
+                    "floor": float(net_floor),
+                },
+            }
+        return _accepted(snapshot, short_pick, long_pick, metrics, greeks)
+
     min_pct = params.get("min_credit_pct_of_width", 0.15)
     if metrics["credit_pct_of_width"] is None or metrics["credit_pct_of_width"] < min_pct:
         return {
@@ -275,13 +308,35 @@ def plan_entry(snapshot: dict, params: dict, config: dict | None = None) -> dict
             },
         }
 
+    return _accepted(snapshot, short_pick, long_pick, metrics, greeks)
+
+
+def _leg(role: str, action: str, entry: dict, quote: dict, greeks: dict, expiration: str) -> dict:
+    return {
+        "leg_role": role,
+        "occ_symbol": entry["occ_symbol"],
+        "streamer_symbol": entry["streamer_symbol"],
+        "expiration": expiration,
+        "strike": entry["strike_price"],
+        "option_type": "call",
+        "action": action,
+        "bid": quote["bid"],
+        "ask": quote["ask"],
+        "mid": quote["mid"],
+        "iv": greeks.get("iv"),
+        "delta": greeks.get("delta"),
+    }
+
+
+def _accepted(snapshot: dict, short_pick: dict, long_pick: dict, metrics: dict, greeks: dict) -> dict:
+    """The plan both credit floors hand back on acceptance, built once."""
     short_greeks = greeks.get(short_pick["entry"]["streamer_symbol"]) or {}
     long_greeks = greeks.get(long_pick["entry"]["streamer_symbol"]) or {}
     return {
         "ok": True,
         "plan": {
             "symbol": snapshot["symbol"],
-            "spot": spot,
+            "spot": snapshot["spot"],
             "expiration": snapshot["expiration"],
             "dte": snapshot["dte"],
             "short_selected_by": short_pick["selected_by"],
@@ -305,23 +360,6 @@ def plan_entry(snapshot: dict, params: dict, config: dict | None = None) -> dict
                 ),
             ],
         },
-    }
-
-
-def _leg(role: str, action: str, entry: dict, quote: dict, greeks: dict, expiration: str) -> dict:
-    return {
-        "leg_role": role,
-        "occ_symbol": entry["occ_symbol"],
-        "streamer_symbol": entry["streamer_symbol"],
-        "expiration": expiration,
-        "strike": entry["strike_price"],
-        "option_type": "call",
-        "action": action,
-        "bid": quote["bid"],
-        "ask": quote["ask"],
-        "mid": quote["mid"],
-        "iv": greeks.get("iv"),
-        "delta": greeks.get("delta"),
     }
 
 

@@ -41,7 +41,7 @@ PARAM_DEFAULTS = {
     "allow_delta_computed_fallback": True,
 }
 
-FLIP_BOOKS = ("control", "hook")  # noflip is the one arm without the regime-flip exit
+FLIP_BOOKS = ("control", "hook", "near")  # noflip is the one arm without the regime-flip exit
 
 
 @dataclass(frozen=True)

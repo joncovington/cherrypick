@@ -11,6 +11,13 @@ Suite-wide context: the root [documentation index](../../docs/README.md).
 
 ## The structure's calibration (never pool across these breaks)
 
+- **2026-10-06 boundary** (journaled in `measurement_breaks`): `spread_width` 1.0 -> **2.0**; the
+  credit floor becomes **`min_net_credit_to_max_loss` 0.10** (net of entry costs, against max loss;
+  declared, it is the one credit floor and the two percentage-of-width floors below no longer apply);
+  `max_wing_spread_abs` 0.05 -> **0.25**; arm **`near`** added. Why: 26 of 27 sessions refused
+  (wings quote $0.11-0.30, so the 0.05 money test alone refused 60%); and replayed on VXX 2018-2026
+  the $1 spread lost 3.8% of max loss a trade after costs at 2026-10-05's credits, $2 made 2.5% (the
+  best width). Before 2026-10-06 is the $1 structure: one control trade, never pooled with what follows.
 - **`spread_width` 1.0** (was 5.0 until 2026-08-27). A credit spread's credit cannot exceed the
   short's premium, so `credit / width` is capped at `short_mid / width` whatever the wing costs; at
   5-wide the cap sat barely above the 15% floor. At 1-wide the short pays ~17% of width.
@@ -42,6 +49,11 @@ Suite-wide context: the root [documentation index](../../docs/README.md).
   fires the two are byte-identical — an expected `find_identical_readings` collision. Every read
   surface shows `flip_divergence_count` beside the pair: that, not trade count, is the effective
   sample. A season of contango with zero flips proves nothing about the flip rule.
+- **`near`** (2026-10-06) — control's gate and exits, flip exit included, on a **0.40-delta** short.
+  Promoted from the advisor experiment `short-delta-nearer-money` (killed at the boundary, base
+  redefined), which entered twice where control could not. Planned from its own params, so it is
+  NOT fill-paired with control; arms whose params resolve identically still share one plan
+  (`paper_loop.plan_arms`), which is what keeps control and noflip byte-identical.
 - **`hook`** — enters ONLY on the two-day-confirmed hook (`ratio > hook_threshold` AND below
   yesterday's), its own tick; exits by control's rules. **Nearly always idle** — honest, not a
   failure (~16% of days are backwardation, the hook rarer still); read surfaces must say so and carry
@@ -49,7 +61,9 @@ Suite-wide context: the root [documentation index](../../docs/README.md).
 - **`advised:<experiment name>`** (paper, off by default; mechanism in `packages/core/CLAUDE.md`).
   A twin is gated and planned as its base book (a `hook` twin waits for the hook), and its
   `base_book` is what the flip exit keys on (a `noflip` twin never flips). Pre-2026-09-17 tags
-  `advised:control` / `advised:hook` still resolve. **`advice.enabled` stays false by design.**
+  `advised:control` / `advised:hook` still resolve. Advice is ON in the live config (it was documented
+as off by design; it ran two experiments in September), bounded to `profit_take_pct`,
+`short_delta_target` and `contango_max`.
 
 **Pairing is partial, deliberately**: `control`/`noflip` share one plan and tick; `hook` enters on
 its own. Never treat the three as a fully paired grid.

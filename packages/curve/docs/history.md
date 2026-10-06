@@ -35,3 +35,23 @@ At one contract the fixed round-trip cost (~$2.24 fee plus ~$2 slippage a side) 
 ~$15–18 gross credit of a 1-wide spread, and the fee-adjusted floor refused every entry after the
 single 09-02 fill. Width was measured on 2026-09-15 against the 2026-10-16 chain: credit-of-width
 falls as width grows (13.0% at 1-wide, 11.75% at 2-wide, 9.3% at 3-wide), so width stayed at 1.
+
+## The 2026-10-06 boundary: $2 wide, a net credit floor, the wing gate, `near`
+
+Six weeks in, control had one trade: refused on 26 of 27 sessions, 587 times on spread width (60% of
+those the long wing, quoting $0.11-0.30 against a $0.05 money test) and 198 on the credit floor (a
+median 11.5% of width against 15%). Every session was contango, so the flip never fired and hook
+never woke.
+
+A replay on VXX's real closes (2018-01..2026-10) settled the shape. The contango gate is real (short
+VXX when the prior ratio < 0.97: CAGR 7.7% against 0.4% ungated). The $1 spread made +8.8% of width
+a trade before costs and -0.2% after them -- costs were half the credit. Per width, with 2026-10-05's
+credits and costs, $1 lost 3.8% of max loss a trade and $2 made 2.5%, the best of $1/$2/$5/$10:
+costs are near-fixed dollars, so a wider spread keeps more, up to where the credit stops keeping up.
+
+So: width 2.0; the credit floor becomes net credit after entry costs over max loss >= 0.10 (a
+percentage-of-width floor scores a wider spread as worse even when it keeps more per dollar risked);
+`max_wing_spread_abs` 0.25; and `near`, a 0.40-delta arm, promoted from the advisor experiment that
+had entered twice where control could not (killed at the boundary, base redefined). Capacity stays
+the limit on size: about ten contracts bid at the short strikes.
+

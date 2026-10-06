@@ -69,3 +69,31 @@ def test_the_guard_catches_the_structure_that_actually_shipped():
     assert ceiling < broken["min_credit_pct_of_width"] * 1.5, (
         "the 5-wide/15% pairing must trip this guard; it refused every entry for days"
     )
+
+
+# --- the net floor (2026-10-06) ------------------------------------------------------------------
+# When the config declares min_net_credit_to_max_loss it is the one credit floor, so the guard asks
+# the same question of it: with a FREE wing the credit is the short's whole premium P, entry costs
+# take ENTRY_COST a share (the observed ~$0.045 a share on a VXX spread), and the max loss is W - P.
+
+ENTRY_COST_PER_SHARE = 0.05
+
+
+def _net_ceiling(defaults: dict) -> float:
+    premium = REFERENCE_SPOT * SHORT_PREMIUM_PCT_OF_SPOT
+    return (premium - ENTRY_COST_PER_SHARE) / (defaults["spread_width"] - premium)
+
+
+def test_the_shipped_width_clears_the_net_floor_with_room_for_a_real_wing():
+    d = _defaults()
+    floor = d.get("min_net_credit_to_max_loss")
+    assert floor is not None, "the shipped example declares the net floor from 2026-10-06"
+    assert _net_ceiling(d) >= floor * 1.5, (
+        f"spread_width={d['spread_width']} reaches {_net_ceiling(d):.1%} net of entry cost on its "
+        f"max loss with a FREE wing -- under 1.5x the {floor:.0%} floor, no real wing fits"
+    )
+
+
+def test_the_net_guard_catches_a_width_too_wide_for_its_floor():
+    broken = {**_defaults(), "spread_width": 10.0, "min_net_credit_to_max_loss": 0.10}
+    assert _net_ceiling(broken) < broken["min_net_credit_to_max_loss"] * 1.5
