@@ -35,7 +35,8 @@ def _gex(path):
         """
         CREATE TABLE gex_spot_history (symbol TEXT, trade_date TEXT, ts REAL, spot REAL);
         CREATE TABLE gex_regime_history (symbol TEXT, trade_date TEXT, ts REAL, spot REAL, net_gex REAL,
-            zero_gamma REAL, call_wall REAL, put_wall REAL);
+            zero_gamma REAL, call_wall REAL, put_wall REAL, net_gex_vol REAL, call_volume REAL,
+            put_volume REAL, call_wall_volume REAL, put_wall_volume REAL);
         CREATE TABLE market_regime_history (trade_date TEXT, ts REAL, reading TEXT, symbol TEXT, value REAL,
             basis_ts REAL, usable INTEGER, reason TEXT);
         """
@@ -48,11 +49,27 @@ def _gex(path):
         if i % 5 == 0:
             gex = 3.0e9 - i * 1e7 if ts <= T else -2.0e9
             conn.execute(
-                "INSERT INTO gex_regime_history VALUES ('SPX', ?, ?, ?, ?, 7690, ?, 7650)",
-                (SESSION, ts, spot, gex, 7750 if ts <= T else 7720),
+                "INSERT INTO gex_regime_history VALUES ('SPX', ?, ?, ?, ?, 7690, ?, 7650, ?, ?, ?, ?, ?)",
+                (
+                    SESSION,
+                    ts,
+                    spot,
+                    gex,
+                    7750 if ts <= T else 7720,
+                    1e9 if ts <= T else -9e9,
+                    1000 * i,
+                    600 * i if ts <= T else 99999 * i,
+                    50 * i,
+                    20 * i,
+                ),
             )
         for reading, base in (("vix", 15.0), ("vix1d", 10.0), ("rsp", 180.0), ("spy", 660.0)):
             value = base + (i * 0.001 if ts <= T else 5.0)
+            if reading == "spy":
+                conn.execute(
+                    "INSERT INTO market_regime_history VALUES (?, ?, 'spy_volume', 'SPY', ?, ?, 1, NULL)",
+                    (SESSION, ts, 100000.0 * (i + 1) if ts <= T else 9e9, ts),
+                )
             conn.execute(
                 "INSERT INTO market_regime_history VALUES (?, ?, ?, 'SPX', ?, ?, 1, NULL)",
                 (SESSION, ts, reading, value, ts),
@@ -145,3 +162,22 @@ def test_the_pack_reads_the_session_as_it_stood(stores):
     ]
     assert flies["positions"][1]["spot_past_short_points"] == pytest.approx(spx["last"] - 7745)
     assert "gross_pnl" not in str(pack) and "settled" not in str(pack)
+
+
+def test_candles_price_action_flow_and_vwap(stores):
+    pack = intraday_pack.for_model(_pack(*stores))
+    spx = pack["spx"]
+    bars = spx["candles_5min"]
+    # 09:30 bucket: spot 7700 + 0.25 per minute over minutes 0-4.
+    assert bars[0] == {"t": "09:30", "o": 7700.0, "h": 7701.0, "l": 7700.0, "c": 7701.0}
+    assert bars[-1]["t"] == "12:30" and bars[-1]["partial"] is True  # the candle at the instant is forming
+    assert spx["candle_gaps"] == []
+    pa = spx["price_action"]
+    assert pa["opening_range"]["high"] == pytest.approx(7700 + 29 * 0.25)
+    assert pa["opening_range"]["first_break"] == {"side": "above", "t": "10:00"}
+    assert pa["higher_highs"] == pa["structure_bars"] and pa["lower_lows"] == 0  # a steady climb
+    flow = pack["flow"]
+    assert flow["call_volume"]["last_15min"] == 15000  # 1000 contracts a minute
+    assert flow["put_volume"]["session"] == 600 * 180
+    vw = pack["spy_vwap"]
+    assert vw["volume_session"] == 100000 * 181 and vw["vwap"] < 660.0 + 180 * 0.001
