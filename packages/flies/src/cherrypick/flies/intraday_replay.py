@@ -170,6 +170,14 @@ def ask_minutes(rows: list[dict], decisions: list[dict], *, band: float, ttl_sec
     return sorted(set(out))
 
 
+def pack_blocks(rec: dict) -> dict:
+    """A record's completeness: as recorded, or read off its stored pack for a record made before
+    the field existed (every called record keeps its pack)."""
+    if isinstance(rec.get("pack_blocks"), dict):
+        return rec["pack_blocks"]
+    return intraday_pack.completeness(rec["pack"]) if isinstance(rec.get("pack"), dict) else {}
+
+
 def decisions_of(recs: list[dict]) -> list[dict]:
     return [
         {"as_of": float(r["as_of"]), "trend_gate": r["decision"]["trend_gate"]}
@@ -205,6 +213,7 @@ def score(ledger_conn, cfg: dict, *, now: datetime | None = None, write: bool = 
     out: dict[str, dict] = {}
     calls = cost = 0.0
     models: set[str] = set()
+    blocks: dict[str, dict] = {}
     for session in sessions(ledger_conn):
         recs = intraday_advice.records(session, intraday_advice.REPLAY_STORE)
         if not is_done(recs):
@@ -214,6 +223,9 @@ def score(ledger_conn, cfg: dict, *, now: datetime | None = None, write: bool = 
         calls += len(called)
         cost += sum(float(r.get("cost_usd") or 0.0) for r in called)
         models |= {str(r["model"]) for r in called if r.get("model")}
+        for r in called:
+            for block, state in pack_blocks(r).items():
+                blocks.setdefault(block, {"filled": 0, "partial": 0, "empty": 0})[state] += 1
         out[session] = {
             **score_session(load_rows(ledger_conn, session), decisions, band=band, ttl_seconds=ttl),
             "decided": bool(decisions),
@@ -231,6 +243,9 @@ def score(ledger_conn, cfg: dict, *, now: datetime | None = None, write: bool = 
         "calls": int(calls),
         "cost_usd": round(cost, 2),
         "scores_closes": False,
+        # Which evidence the decisions were made on, per block over every call: a replay on thinner
+        # packs is a different experiment from the forward arms and must never be pooled as alike.
+        "pack_blocks": blocks,
         "sessions": out,
     }
     if write:

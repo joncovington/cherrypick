@@ -306,6 +306,31 @@ API-equivalent):**
   and the gate looks worse than it would live. Both forward arms stay on, and the live shadow, scored
   on live fills, is the comparison that settles it.
 
+**On live fills** (`flies_intraday_replay.py --ledger live [--model X]`, targeted, 2026-10-06): the
+same gate scored on the live loop's own fills over its 14 live sessions. These are printed only,
+never qualified.
+
+| Live sessions | as traded | `trend-rule` | Opus | Sonnet |
+|---|---|---|---|---|
+| all 14 | −$241 | −$156 | +$70 | +$188 |
+
+The models differed on 2 sessions (09-24, 09-30), where Sonnet switched the gate off. Three sessions
+separate the agent from the rule, which is too few to call an edge.
+
+**Every replayed decision so far was made on a thinner pack than the forward agent sees.** Each
+record carries `pack_blocks` (`intraday_pack.completeness`), which judges only the fields a recording
+feeds directly (`RECORDED_FIELDS`). A derived fact, such as no candle gaps or no break yet, is never
+counted as missing. Across the 241 paper and 14 live replay calls:
+- SPY VWAP was **empty** in every pack (`spy_volume` recording began 2026-10-06);
+- flow was **partial**: the net-GEX-by-volume path was there, the call/put and wall volumes were not;
+- SPX, GEX, the volatility complex, breadth and the book were filled.
+
+So the replay compared the models on an older pack. Its results are never pooled with forward
+results as if alike. The comparison is re-run on sessions recorded with the full pack, about two
+weeks in, before the model choice is revisited, and a rule fitted from the packs may use VWAP and
+flow features only once enough full sessions exist. The pack is about 3 KB against roughly 9,000
+tokens of CLI overhead a call, so a fuller pack barely moves the cost.
+
 `trend-rule` gets the same replay, for free. That makes it a paired, already-out-of-sample read
 over about 30 sessions, and the deciding evidence for whether the forward paper arm is worth
 building at all.

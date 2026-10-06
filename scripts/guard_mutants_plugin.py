@@ -170,6 +170,11 @@ def _replay_overwrites(values, decided, replay):
     return taken
 
 
+def _always_filled(pack):
+    """flies' pack completeness calling every block recorded, so thin packs pool with full ones."""
+    return {k: "filled" for k in pack if not str(k).startswith("_") and k not in ("pack_version", "now")}
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -193,6 +198,7 @@ REPLACEMENTS = {
     "identity": lambda: _identity,
     "gate_sees_ahead": lambda: _gate_sees_ahead,
     "replay_overwrites": lambda: _replay_overwrites,
+    "always_filled": lambda: _always_filled,
 }
 
 
@@ -455,6 +461,15 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.flies.intraday_eval",
         attr="merge_replay",
         replacement="replay_overwrites",
+    ),
+    Mutant(
+        id="flies-pack-completeness",
+        breaks="a pack missing recorded blocks is reported as complete",
+        package="flies",
+        tests=("tests/test_intraday_pack.py::test_completeness_judges_recorded_fields_not_facts_about_the_session",),
+        module="cherrypick.flies.intraday_pack",
+        attr="completeness",
+        replacement="always_filled",
     ),
 )
 

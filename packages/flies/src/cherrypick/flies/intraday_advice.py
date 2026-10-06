@@ -307,6 +307,7 @@ def run_tick(
         "as_of": as_of,
         "arm": arm,
         "pack_version": raw["pack_version"],
+        "pack_blocks": intraday_pack.completeness(raw),
     }
     why = trigger(raw, acfg)
     if why is None:
