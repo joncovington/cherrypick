@@ -75,6 +75,40 @@ That is about 10–30 calls a session.
 **The agent is judged against `trend-rule`, not just against `control`.** If it cannot beat a rule
 built from the inputs it sees, the rule wins: it costs nothing and fails the same way twice.
 
+## Configuration, and the daily yes on live
+
+**Config** (`~/.cherrypick/config/flies.json`, an `intraday_agent` block, off by default):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | The master switch. Off: the agent never runs, and the live start never offers it. |
+| `model` | `"sonnet"` | The model alias, travelling on argv as the advisor's does. Never hardcoded. |
+| `paper` | `true` | Whether the paper arm `advised:intraday-agent` acts. Paper needs no daily yes. |
+| `live_mode` | `"shadow"` | What the agent may do on live when chosen: `off` or `shadow`. `gate` is reserved and refused until a written decision adds it. |
+| `trigger_band_points` | `10` | Run only within this distance of the trend band, or while a stranded vertical is open. |
+| `decision_ttl_minutes` | `10` | How long one decision is valid before the arm falls back to the rule. |
+| `max_calls_per_session` | `40` | A hard cap per session, so a stuck trigger cannot run up a bill. |
+
+**On live the agent is chosen per day, never by config alone.** `/live-flies-start` gains one step.
+After the live YES, and only when `enabled` is true and `live_mode` is not `off`, it asks a second,
+separate question with the AskUserQuestion tool, exactly two options:
+
+- **"YES: run the intraday agent in shadow against today's live arm (Sonnet, about $1-2 today)"**
+- **"No, not today"**
+
+The answer is written onto the same per-day arm record (`state/flies-live-arm.json`):
+`intraday_agent: {mode, model, confirmed_at}`. The record self-disarms at `live.disarm_time` like
+everything on it, so tomorrow needs a fresh yes.
+
+**Where the yes is checked:**
+- The agent script reads the arm record and runs for the live arm only when the yes is on it.
+- The live loop reads a live decision only in the mode the record names.
+- A "No", no record, or a disarm leaves live exactly as it is without the agent.
+- `--stop` clears the agent with everything else.
+
+The `--status` readout before the question shows the config block and today's agent state, so the
+yes is informed, the same rule as the live YES.
+
 ## Paper fills against live fills
 
 Paper and live fill differently. The design answers this in three ways.
@@ -193,8 +227,11 @@ Days, not months, and nothing waits on anything it does not need:
 - **Day one on live: shadow only.** The agent records decisions against the live arm and acts on
   nothing live. The paper `advised:intraday-agent` arm acts. The live gate waits for the replay and
   the first forward sessions to agree.
-- **Model: Sonnet.** The alias lives in config (`flies.intraday_agent.model`), never in code, as the
+- **Model: Sonnet.** The alias lives in config (`intraday_agent.model`), never in code, as the
   advisor's does.
+- **Configurable, and chosen per day on live.** The `intraday_agent` block is off by default, and on
+  live the agent runs only after a separate yes in `/live-flies-start`, recorded on that day's arm
+  record (above).
 
 ## Open decisions
 
