@@ -91,6 +91,7 @@ COUPLED: tuple[str, ...] = ("paper_db", "trade_schema", "keyring_service")
 _MODULE_TARGETS: tuple[str, ...] = (
     "bwb",
     "calendars",
+    "contango",
     "curve",
     "earnings",
     "flies",
@@ -106,6 +107,7 @@ _EXAMPLE_REL: dict[str, str] = {
     "orchestrator": "config.example.json",
     "bwb": "../bwb/config.example.json",
     "calendars": "../calendars/config.example.json",
+    "contango": "../contango/config.example.json",
     "curve": "../curve/config.example.json",
     "earnings": "../earnings/config/config.example.json",
     "flies": "../flies/config.example.json",

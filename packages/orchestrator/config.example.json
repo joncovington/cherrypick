@@ -271,6 +271,33 @@
         "settlement_grace_minutes": 45
       }
     },
+    "contango": {
+      "_comment": "EXPERIMENTAL, off by default: switch on with modules.contango.enabled once you have read its package README. contango: the VIX/VIX3M regime switch held in shares (packages/contango) -- SVXY in contango, SHV (T-bills) otherwise, one decision per arm ten minutes before the close. Paper-only and credential-free: no keyring_service, no broker_tool, no live block. Its funds and VIX/VIX3M ride as quote-only stream legs, which the producer picks up on its next poll without a restart. It acts only inside its decision window, so it has no eval-activity reader (eval_activity.NOT_APPLICABLE); a missed window is on its own rows and in the review.",
+      "enabled": false,
+      "path": "../contango",
+      "paper": {
+        "kind": "self_healing",
+        "tick_interval_seconds": 60,
+        "silence_seconds": 240,
+        "resident_start": "09:30",
+        "resident_end": "16:00",
+        "status_argv": [
+          "-m",
+          "cherrypick.contango.paper_loop",
+          "--status"
+        ],
+        "once_argv": [
+          "-m",
+          "cherrypick.contango.paper_loop",
+          "--once"
+        ],
+        "paper_db": "~/.cherrypick/data/contango/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "contango_etf",
+        "log": "contango_paper.log",
+        "freshness_minutes": 10
+      }
+    },
     "bwb": {
       "_comment": "SPX daily-laddered put broken-wing-butterfly module (packages/bwb): enters one BWB per enabled book every session at the expected move, ~7DTE, PM-settled; the books differ only in whether/when a reversal-triggered put credit spread add-on turns the fly into a 1-3-2. Paper by default and the paper loop is credential-free; market data comes entirely from the shared stream cache via the streamer's `expirations`/`window_hints` request fields. Since 2026-09-18 it also has a narrow LIVE path (one arm, per-day armed via /live-bwb-start, the full daily ladder under a worst-case cap, no closing orders) -- the keyring_service/broker_tool/live_db/live keys below are that path's, and the paper loop touches none of them.",
       "enabled": true,

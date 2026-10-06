@@ -15,7 +15,7 @@ from cherrypick.core.ledgers import SCHEMA_ALIASES, canonical_schema
 
 # One entry per paper-DB schema in the suite. Keys of every surface registry must match. Ids only:
 # a retired spelling (`pmcc_99`) is resolved by `canonical` and never keys a registry.
-SCHEMAS = ("meic_ic", "earnings", "fly_book", "dc_week", "pmcc", "curve_vx", "bwb_132")
+SCHEMAS = ("meic_ic", "earnings", "fly_book", "dc_week", "pmcc", "curve_vx", "bwb_132", "contango_etf")
 
 
 def canonical(schema: str | None) -> str | None:

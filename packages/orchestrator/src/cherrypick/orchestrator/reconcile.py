@@ -70,6 +70,11 @@ def _bwb_open(conn) -> list[dict]:
     return [{"symbol": r["symbol"], "arm": r["arm"]} for r in rows]
 
 
+def _contango_open(conn) -> list[dict]:
+    rows = conn.execute("SELECT symbol, arm FROM contango_positions WHERE status = 'open'").fetchall()
+    return [{"symbol": r["symbol"], "arm": r["arm"]} for r in rows]
+
+
 # Same registry shape as report._READERS, but for OPEN (not-yet-closed) rows, keyed by paper.trade_schema.
 _OPEN_READERS = {
     "meic_ic": _meic_open,
@@ -79,6 +84,7 @@ _OPEN_READERS = {
     "pmcc": _pmcc_open,
     "curve_vx": _curve_open,
     "bwb_132": _bwb_open,
+    "contango_etf": _contango_open,
 }
 
 

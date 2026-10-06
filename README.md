@@ -116,7 +116,7 @@ suite once collected $4.00 of credit against $4.96 of fees.
   trade the identical structure and differ only in entry gate and exit rule; the daily regime
   classification is recorded every session as the module's second product. Paper-only and
   credential-free. See [packages/curve](packages/curve).
-- **Contango** — ⚠️ **EXPERIMENTAL, not yet scheduled.** The same VIX/VIX3M signal held in shares:
+- **Contango** — ⚠️ **EXPERIMENTAL, off by default.** The same VIX/VIX3M signal held in shares:
   SVXY in contango, T-bills (SHV) otherwise, one decision ten minutes before the close. Two arms
   differ only in where they get out (0.97 or 1.0). Replayed from 2018, the switch earns less than
   holding SVXY outright for about 20 points less drawdown, and the paper run measures whether that
@@ -221,7 +221,7 @@ read them.
 |---|---|
 | [packages/orchestrator](packages/orchestrator) | The supervisor, watchdog, notifications, and the read side (report / calibrate / EOD). Drives the engines by subprocess. |
 | [packages/core](packages/core) | The shared `cherrypick.core` library — calendar, fees, profiles, GEX math, broker, auth. Install it first. |
-| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/bwb](packages/bwb) | The eight strategy engines. Calendars, pmcc and curve are EXPERIMENTAL, paper-only and off by default, and contango is not yet scheduled; bwb is paper by default with a narrow live path; earnings needs the optional Dolt data. |
+| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/bwb](packages/bwb) | The eight strategy engines. Calendars, pmcc and curve are EXPERIMENTAL, paper-only and off by default, as is contango; bwb is paper by default with a narrow live path; earnings needs the optional Dolt data. |
 | [packages/streamer](packages/streamer) | The single market-data producer. Everything else reads the cache it writes; nothing else writes it. |
 | [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
 | [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Read-only. |

@@ -428,7 +428,10 @@ _READERS = {
 # dc_entry_attempts table, read by the review. The registry coverage test requires every
 # schema to appear in _READERS or here — a new schema wired nowhere fails CI instead of
 # silently reading as healthy.
-NOT_APPLICABLE = frozenset({"earnings", "dc_week"})
+# contango (2026-10-06) is calendars' case daily: one decision per arm inside an eight-minute window
+# before the close, so every tick outside it is idle by design. Its window misses are recorded on
+# its own rows (`contango_sessions.action = 'missed'`) and read by the review's health reader.
+NOT_APPLICABLE = frozenset({"earnings", "dc_week", "contango_etf"})
 
 
 def assess(
