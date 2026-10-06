@@ -142,6 +142,8 @@ assumed:
   calibrated against real delta-arm fills at the same centre; read the calibration before any cell.
   A rung at k = 0 reproduces its anchor exactly, and a test pins it.
 
+**Intraday agent (planned, 2026-10-05):** [docs/intraday-agent-plan.md](docs/intraday-agent-plan.md). A model reads the session and decides the trend gate and stranded-vertical closes for one paper `advised:` arm, beside a fixed `trend-rule` arm. On live it runs in shadow only until the evidence agrees. Not built yet.
+
 **Two overlays on the legged book, both tag-don't-gate** (2026-09-19):
 - **The hedge overlay** (`engine.hedge_candidate`, `book.py` step 1e, `analytics.hedge_overlay`,
   `run.py hedge-overlay`). At every legged entry the ~`hedge_delta` (0.05) option on the spread's
