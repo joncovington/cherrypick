@@ -1,9 +1,9 @@
 """Probe the broker's futures-option chain endpoints and report what a producer would have to handle.
 
 The streamer's chain path is equity/index only (`core.streamer._fetch_full_chain` calls
-`get_option_chain`, i.e. `/option-chains/{symbol}`). Before any producer work for /MNQ (docs/history/ivan-plan.md,
-Phase 3), this asks the two futures endpoints the SDK already wraps and reports the facts that design
-depends on, rather than assuming them:
+`get_option_chain`, i.e. `/option-chains/{symbol}`). Before any producer work for /MNQ
+(docs/history/ivan-plan.md, Phase 3), this asks the two futures endpoints the SDK already wraps
+and reports the facts that design depends on, rather than assuming them:
 
   - flat:   `get_future_option_chain`  -> /futures-option-chains/{product}         (one FutureOption per item)
   - nested: `NestedFutureOptionChain`  -> /futures-option-chains/{product}/nested  (futures + subchains)

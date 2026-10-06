@@ -74,6 +74,8 @@ HEADER_RE: re.Pattern[str] | None = None
 
 def header_re(title: str) -> re.Pattern[str]:
     return re.compile(re.escape(title.strip()) + r" - ([A-Z][a-z]+ \d{1,2}, \d{4})")
+
+
 MONTHS = {
     m: i
     for i, m in enumerate(
@@ -218,7 +220,8 @@ def load_config() -> dict:
     missing = [key for key, value in named if not (isinstance(value, str) and value.strip())]
     if missing:
         raise SystemExit(
-            "The collector is not configured: set " + " and ".join(missing)
+            "The collector is not configured: set "
+            + " and ".join(missing)
             + f" in the market_report block of {path}. It does not run without them."
         )
     HEADER_RE = header_re(title)

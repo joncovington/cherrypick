@@ -143,7 +143,8 @@ def _run_claude(payload: str) -> tuple[str | None, str | None]:
             # written out faithfully as UTF-8, baking the corruption into the note.
             encoding="utf-8",
             errors="replace",
-            timeout=TIMEOUT_SECONDS, creationflags=CREATE_NO_WINDOW,
+            timeout=TIMEOUT_SECONDS,
+            creationflags=CREATE_NO_WINDOW,
         )
     except subprocess.TimeoutExpired:
         return None, f"claude timed out after {TIMEOUT_SECONDS}s"
@@ -181,9 +182,25 @@ def _file_issues(recs: list[str], session: str, dry_run: bool) -> list[dict]:
         return [{"ok": False, "reason": "gh not on PATH"}]
     try:
         existing = subprocess.run(
-            [gh, "issue", "list", "--label", ISSUE_LABEL, "--state", "open",
-             "--json", "title", "--limit", "100"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, creationflags=CREATE_NO_WINDOW,
+            [
+                gh,
+                "issue",
+                "list",
+                "--label",
+                ISSUE_LABEL,
+                "--state",
+                "open",
+                "--json",
+                "title",
+                "--limit",
+                "100",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+            creationflags=CREATE_NO_WINDOW,
         )
         titles = {i["title"] for i in json.loads(existing.stdout or "[]")}
     except Exception:  # noqa: BLE001
@@ -203,11 +220,21 @@ def _file_issues(recs: list[str], session: str, dry_run: bool) -> list[dict]:
             body = f"{rec}\n\n---\nFrom the end-of-day review for {session}. Facts: `eod-{session}.json`."
             proc = subprocess.run(
                 [gh, "issue", "create", "--title", title, "--body", body, "--label", ISSUE_LABEL],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, creationflags=CREATE_NO_WINDOW,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=60,
+                creationflags=CREATE_NO_WINDOW,
             )
-            results.append({"ok": proc.returncode == 0, "title": title,
-                            "url": (proc.stdout or "").strip() or None,
-                            "error": None if proc.returncode == 0 else (proc.stderr or "")[:200]})
+            results.append(
+                {
+                    "ok": proc.returncode == 0,
+                    "title": title,
+                    "url": (proc.stdout or "").strip() or None,
+                    "error": None if proc.returncode == 0 else (proc.stderr or "")[:200],
+                }
+            )
         except Exception as exc:  # noqa: BLE001
             results.append({"ok": False, "title": title, "error": f"{type(exc).__name__}: {exc}"})
     return results

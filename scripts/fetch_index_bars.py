@@ -87,7 +87,9 @@ def start_for(held: dict[str, str], wanted, today: date, full: bool = False) -> 
     return min(starts)
 
 
-def store_bars(conn: sqlite3.Connection, symbol: str, raw: list[dict], today: str, source: str = "daily") -> int:
+def store_bars(
+    conn: sqlite3.Connection, symbol: str, raw: list[dict], today: str, source: str = "daily"
+) -> int:
     """Normalise with the producer's own rules (sorted, deduped, finished sessions only, no bar
     without a real close) and upsert: a refetched candle replaces the one held."""
     rows = streamcache.summary_backfill_rows(raw, today=today)
@@ -151,9 +153,18 @@ def gap_fill(daily: list[dict], hourly: dict[str, dict], gaps: list[str]) -> tup
     agree = [d for d in overlap if _same(hourly[d], by_date[d])]
     verdict = {"overlap": len(overlap), "agree": len(agree)}
     if not overlap or len(agree) != len(overlap):
-        return [], {**verdict, "filled": [], "unfilled": gaps, "reason": "hourly does not reproduce the daily bars"}
+        return [], {
+            **verdict,
+            "filled": [],
+            "unfilled": gaps,
+            "reason": "hourly does not reproduce the daily bars",
+        }
     filled = [hourly[d] for d in gaps if d in hourly]
-    return filled, {**verdict, "filled": [b["date"] for b in filled], "unfilled": [d for d in gaps if d not in hourly]}
+    return filled, {
+        **verdict,
+        "filled": [b["date"] for b in filled],
+        "unfilled": [d for d in gaps if d not in hourly],
+    }
 
 
 async def fetch(session, wanted: list[str], start: date, interval: str = "1d") -> dict[str, list[dict]]:
@@ -228,7 +239,8 @@ def main(argv=None) -> int:
     try:
         start = start_for(latest(conn), wanted, today, args.full)
         held_dates = {
-            sym: {r[0] for r in conn.execute("SELECT date FROM index_bars WHERE symbol = ?", (sym,))} for sym in wanted
+            sym: {r[0] for r in conn.execute("SELECT date FROM index_bars WHERE symbol = ?", (sym,))}
+            for sym in wanted
         }
         try:
             session = SessionManager(store).get_session()

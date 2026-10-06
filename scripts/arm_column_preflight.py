@@ -98,9 +98,9 @@ def main() -> int:
             continue
         print(f"[{kind}]")
         for r in sorted(group, key=lambda x: (x["module"], x["file"], x["table"])):
-            state = "done" if r["done"] else ("HALF-MIGRATED" if r["half"] else f'{r["from"]} -> {CANONICAL}')
-            idx = f'+{len(r["indexes"])} idx' if r["indexes"] else ""
-            where = f'{r["module"]}/{r["file"]}'
+            state = "done" if r["done"] else ("HALF-MIGRATED" if r["half"] else f"{r['from']} -> {CANONICAL}")
+            idx = f"+{len(r['indexes'])} idx" if r["indexes"] else ""
+            where = f"{r['module']}/{r['file']}"
             print(f"  {where:<52s} {r['table']:<22s} {r['rows']:>7,} rows  {idx:<7s} {state}")
         print()
 

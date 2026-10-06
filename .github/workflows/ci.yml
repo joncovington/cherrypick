@@ -59,6 +59,14 @@ jobs:
           python -m pytest tools/tests -q
       - name: Check docs guardrails
         run: python tools/check_docs.py
+      # The repo-root scripts/ belong to no package, so no package job linted them, and 17 findings
+      # and 8 unformatted files built up unseen (cleared 2026-10-05). The ruff version is read from
+      # core's own pin, so this can never lint scripts/ under a different ruff than the packages.
+      - name: Lint scripts (ruff)
+        run: |
+          pip install "$(grep -o 'ruff==[0-9.]*' packages/core/pyproject.toml)"
+          ruff check scripts
+          ruff format --check scripts
 
   test:
     needs: changes
