@@ -17,6 +17,13 @@ network-free and reads this table read-only (`store.public_splits`). A refetch r
 symbol's rows wholesale.
 
     python scripts/fetch_split_history.py TQQQ [SYMBOL ...] [--dry-run]
+    python scripts/fetch_split_history.py SVXY --declare 2018-09-18:1:4 [...] --source "<citation>"
+
+**Declared splits** (`--declare DATE:TO:FOR`, 2026-10-05) are for a symbol the public page does not
+carry (SVXY: 404). They need a `--source` citing where the split is recorded, and go through the SAME
+raw-price check as a fetched row: a declaration the prices contradict is stored `verified = 0` and
+never applied. All of a symbol's declared splits are given in one run, since a run replaces that
+symbol's rows wholesale.
 """
 
 from __future__ import annotations
@@ -65,6 +72,18 @@ def parse(html: str) -> list[tuple[str, float, float]]:
         if float(to) > 0 and float(fr) > 0
     }
     return [(d, to, fr) for d, (to, fr) in sorted(rows.items())]
+
+
+def declared(specs: list[str]) -> list[tuple[str, float, float]]:
+    """`DATE:TO:FOR` -> (ex_date, to_factor, for_factor); a malformed spec raises."""
+    out = []
+    for spec in specs:
+        ex, to, fr = spec.split(":")
+        date.fromisoformat(ex)
+        if float(to) <= 0 or float(fr) <= 0:
+            raise ValueError(f"split factors must be positive: {spec}")
+        out.append((ex, float(to), float(fr)))
+    return out
 
 
 def fetch(symbol: str) -> str:
@@ -127,7 +146,17 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("symbols", nargs="+", help="tickers to fetch")
     ap.add_argument("--dry-run", action="store_true", help="fetch, check and print; store nothing")
+    ap.add_argument(
+        "--declare",
+        action="append",
+        default=[],
+        metavar="DATE:TO:FOR",
+        help="declare a split instead of fetching (one symbol); checked against prices like a fetched one",
+    )
+    ap.add_argument("--source", help="where a declared split is recorded (required with --declare)")
     args = ap.parse_args(argv)
+    if args.declare and (len(args.symbols) != 1 or not args.source):
+        ap.error("--declare takes exactly one symbol and a --source")
 
     path = paths.split_history()
     conn = None
@@ -139,13 +168,17 @@ def main(argv=None) -> int:
     for i, symbol in enumerate(s.strip().upper() for s in args.symbols):
         if i:
             time.sleep(PAUSE_S)
-        source = SOURCE.format(symbol=symbol.lower())
-        try:
-            splits = parse(fetch(symbol))
-        except Exception as exc:  # noqa: BLE001 -- one symbol's failure keeps its previous rows
-            print(f"{symbol}: fetch failed ({type(exc).__name__}: {exc}); previous rows kept")
-            failed = 1
-            continue
+        if args.declare:
+            source = f"declared: {args.source}"
+            splits = sorted(declared(args.declare))
+        else:
+            source = SOURCE.format(symbol=symbol.lower())
+            try:
+                splits = parse(fetch(symbol))
+            except Exception as exc:  # noqa: BLE001 -- one symbol's failure keeps its previous rows
+                print(f"{symbol}: fetch failed ({type(exc).__name__}: {exc}); previous rows kept")
+                failed = 1
+                continue
         if not splits:
             print(f"{symbol}: no splits on the page; previous rows kept")
             continue
