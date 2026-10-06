@@ -95,6 +95,12 @@ def _decide_after_window():
     return patched
 
 
+def _ignore_as_of(rows, _as_of):
+    """flies' intraday pack reading every row regardless of its instant: the look-ahead the
+    truncation test exists to catch."""
+    return list(rows)
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -108,6 +114,7 @@ REPLACEMENTS = {
     "unguarded": lambda: _unguarded,
     "features_read_ahead": _features_read_ahead,
     "decide_after_window": _decide_after_window,
+    "ignore_as_of": lambda: _ignore_as_of,
 }
 
 
@@ -264,6 +271,17 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.contango.paper_loop",
         attr="record_misses",
         replacement="decide_after_window",
+    ),
+    Mutant(
+        id="flies-intraday-pack-lookahead",
+        breaks="the intraday agent's fact pack reads readings recorded after its own instant",
+        package="flies",
+        tests=(
+            "tests/test_intraday_pack.py::test_the_pack_is_identical_with_everything_after_its_instant_deleted",
+        ),
+        module="cherrypick.flies.intraday_pack",
+        attr="_at_or_before",
+        replacement="ignore_as_of",
     ),
 )
 

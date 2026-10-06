@@ -257,6 +257,31 @@ no more often, over at least 20 sessions that crossed the trend band. A tie goes
 
 The replay counts toward the 20 sessions only if its look-ahead test passes.
 
+## Every pack is kept, and the end goal is a rule
+
+**Every pack the agent reads is stored** with its decision, its reason and, once known, its outcome:
+whether a blocked entry would have stranded or completed, and whether a close beat riding to
+settlement. This happens on paper, in the replay and in the live shadow alike
+(`data/flies/intraday_agent/<session>.jsonl`).
+
+**The agent is a research instrument; the goal is a deterministic rule.**
+1. The agent's reasons on its correct calls name candidate features: the call wall moving since the
+   open, net GEX's change, VIX1D against its open.
+2. Those features become measurable columns over the stored packs.
+3. A plain rule is fitted on them (thresholds or a small tree, the way the 20-point trend band was
+   fitted), on the earlier sessions only.
+4. It is tested on the later sessions beside `control`, `trend-rule` and the agent.
+5. The simplest arm that is not measurably worse wins. If the derived rule keeps most of the agent's
+   edge, it replaces the agent: it costs nothing, it is reproducible, and it replays over any month.
+   If it does not, the gap is what the agent's judgement is worth, and that decides whether to keep it.
+
+**The fit/test split is declared before the fit.** About 40 sessions of evidence is small, and a rule
+fitted and scored on the same days flatters itself.
+
+**Paper does not depend on live.**
+- The paper arm, the stored packs and the replay run every session the module runs, armed or not.
+- Only the unlock bar's "5+ live-shadow sessions" needs armed days.
+
 ## Order of work
 
 Days, not months, and nothing waits on anything it does not need:
