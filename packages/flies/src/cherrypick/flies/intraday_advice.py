@@ -285,13 +285,16 @@ def run_tick(
     prompt: str,
     write_file: bool = True,
     store: str = "",
+    pace: bool = True,
 ) -> dict:
     """One check: build the pack, decide whether it is worth a call, ask, validate, record.
 
     `ask(prompt, pack_json)` returns `{"reply", "model", "cost_usd", "error"}`; it is the script's
     model call, or a fake in a test or the replay. `write_file=False` (the replay) records the pack
     and decision but never writes the decision file a loop reads; `store` (the replay's
-    REPLAY_STORE) keeps its records, and so its call cap, apart from the forward record."""
+    REPLAY_STORE) keeps its records, and so its call cap, apart from the forward record. `pace=False`
+    (the targeted replay, which samples only the minutes that can change a score) skips the cap and
+    the gap, which pace the forward job's cadence; the trigger still applies."""
     if target not in TARGETS:
         raise ValueError(f"target must be one of {TARGETS}")
     acfg = agent_config(cfg)
@@ -308,7 +311,9 @@ def run_tick(
     why = trigger(raw, acfg)
     if why is None:
         return {**base, "called": False, "skipped": "no_trigger"}
-    mine = [r for r in records(session, store) if r.get("target") == target and r.get("called")]
+    mine = (
+        [r for r in records(session, store) if r.get("target") == target and r.get("called")] if pace else []
+    )
     if len(mine) >= int(acfg["max_calls_per_session"]):
         return {**base, "called": False, "skipped": "call_cap"}
     if mine and as_of - float(mine[-1]["as_of"]) < float(acfg["min_minutes_between_calls"]) * 60:
