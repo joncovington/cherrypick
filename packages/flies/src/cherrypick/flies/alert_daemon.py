@@ -87,7 +87,7 @@ def _setup_logging() -> None:
     fh.setFormatter(fmt)
     _logger.addHandler(fh)
     _logger.setLevel(logging.INFO)
-    for noisy in ("tastytrade", "httpx", "httpcore", "websockets", "asyncio"):
+    for noisy in ("tastytrade", "httpx", "httpx2", "httpcore", "websockets", "asyncio"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
