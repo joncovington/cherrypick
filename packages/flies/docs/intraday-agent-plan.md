@@ -234,7 +234,11 @@ Measured on 2026-10-05 with one fenced call per model on a representative 4 KB s
 
 About 9,000 tokens of each call are the CLI's own overhead, so a larger pack barely moves the price.
 
-**Running cost:**
+**With the real pack (measured 2026-10-06 through `run_tick`):** $0.11-0.125 a call, 5-16 s, on
+recorded packs of about 1,700 tokens. That is above the probe's $0.069: the probe's pack was smaller.
+
+**Running cost** (the per-month figures below are at the probe's price; at the real price the
+event-driven cadence is about **$25-80 a month**, and the replay about **$100**):
 - At 10–30 calls a session (21 sessions a month), Sonnet costs about **$15–45 a month**.
 - A 5-minute cadence would be about $113.
 - The replay over 30 sessions is about 900 calls, about **$60 once**.
