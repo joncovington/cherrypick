@@ -117,6 +117,23 @@ not phase-1 material. The cheap, deterministic first rung ships instead:
 - Full DSR stays an open question at the bottom of this file until someone needs it enough to
   justify its inputs.
 
+## Daily-series readings (landed 2026-10-06)
+
+The bundle reads closed trades, which cannot see a drawdown inside an open position and says little
+about a module that trades rarely. `core.metrics.nav` reads a dated series instead, one point per
+session, and every count it reports is in days (`basis: "daily"`):
+
+- `nav_reading` for a compounding NAV (contango): CAGR, total return, annualised vol, Sharpe and
+  Sortino, max drawdown, MAR (CAGR ÷ max drawdown), ulcer index, drawdown span, best and worst
+  day, CVaR, skew and kurtosis, PSR, Minimum Track Record Length, and month-by-month returns;
+- `equity_reading` for a dollar P&L path that does not compound (curve's marked equity): net, max
+  drawdown, span, best and worst day and CVaR in dollars, daily Sharpe, PSR, MinTRL, monthly P&L.
+
+The refusal floors are the bundle's (`MIN_EFFECTIVE_N`, `CVAR_MIN_SESSIONS`). The sources are
+contango's `analytics.metrics` (each arm, buy-and-hold of its risk fund, and the path its own rule
+should have produced) and curve's `analytics.daily_equity` (each arm's closed nets on their close
+session plus open positions at that session's last usable mark).
+
 ## Phase 4 — console surfaces
 
 Conventions first: every number arrives computed from Python (reader or bridge per the rules

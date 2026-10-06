@@ -9,6 +9,7 @@ from __future__ import annotations
 import statistics
 
 from cherrypick.core.metrics import excursions as _mae_mfe
+from cherrypick.core.metrics import nav as _nav
 
 from cherrypick.curve import db
 
@@ -181,3 +182,63 @@ def excursions(conn) -> dict:
 # How good the day's mark substrate is (marks, refusal share, per-refusal counts) -- the ledger
 # store's reader, which calendars, pmcc and curve had each copied over their own prefix.
 mark_coverage = db._store.mark_coverage
+
+
+def _sessions(conn) -> list[str]:
+    """Every session the module ran: the loop's own iterations, and the regime series written every
+    session, traded or not."""
+    days = {r[0] for r in conn.execute("SELECT DISTINCT session_date FROM curve_loop_iterations")}
+    days |= {r[0] for r in conn.execute("SELECT DISTINCT trade_date FROM curve_regime")}
+    return sorted(d for d in days if d)
+
+
+def daily_equity(conn) -> dict[str, dict]:
+    """Each arm's marked equity, one point per session, in dollars from 0: every closed position's
+    net on and after the session it closed, plus each open position's mark that session.
+
+    The mark is the last usable close cost of the session -- (credit - close cost) x 100 x quantity,
+    less the entry's fee and slippage, which are already spent. A session with no usable mark carries
+    the previous one forward and is counted in `carried`, so a stretch of stale marks reads as one,
+    never as a flat market. A position whose legs have settled (shares awaiting disposal) keeps its
+    last pre-settlement mark until it closes: an approximation the count does not cover, and rare.
+
+    This is the series the closed-trade drawdown cannot see: a spread that is down 80% of its max
+    loss for three weeks and recovers to a small win shows as a win there, and as a drawdown here.
+    """
+    sessions = _sessions(conn)
+    positions = [dict(r) for r in conn.execute("SELECT * FROM curve_positions ORDER BY entry_session")]
+    marks: dict[str, dict[str, float]] = {}
+    for r in conn.execute(
+        "SELECT position_id, session_date, close_cost FROM curve_marks "
+        "WHERE leg_role = 'short_call' AND usable = 1 AND close_cost IS NOT NULL ORDER BY marked_at"
+    ):
+        marks.setdefault(r["position_id"], {})[r["session_date"]] = float(r["close_cost"])
+    out: dict[str, dict] = {}
+    for arm in sorted({p["arm"] for p in positions}):
+        mine = [p for p in positions if p["arm"] == arm]
+        start = min(p["entry_session"] for p in mine)
+        series, carried, last_mark = [], 0, {}
+        for day in (d for d in sessions if d >= start):
+            equity = 0.0
+            for p in mine:
+                if p["entry_session"] > day:
+                    continue
+                closed_by = (
+                    p["status"] == "closed" and p["closed_session"] is not None and p["closed_session"] <= day
+                )
+                if closed_by:
+                    equity += (p["gross_pnl"] or 0.0) - (p["fees"] or 0.0)
+                    continue
+                cost = marks.get(p["position_id"], {}).get(day)
+                if cost is None:
+                    cost = last_mark.get(p["position_id"])
+                    carried += cost is not None
+                if cost is None:
+                    continue  # entered today with no usable mark yet: nothing to mark
+                last_mark[p["position_id"]] = cost
+                qty = p["quantity"] or 1
+                spent = (p["entry_cost"] or 0.0) + (p["entry_slippage"] or 0.0)
+                equity += ((p["entry_credit"] or 0.0) - cost) * 100 * qty - spent
+            series.append((day, round(equity, 2)))
+        out[arm] = {"series": series, "carried": carried, "reading": _nav.equity_reading(series)}
+    return out

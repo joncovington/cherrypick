@@ -6,6 +6,7 @@ Subcommands (all read-only):
     worksheet       the live per-position worksheet
     exposure        the early-assignment-exposure telemetry
     excursions      per-closed-position MAE/MFE (docs/metrics-plan.md Phase 2) plus distributions
+    equity          each arm's daily marked equity (open positions at their marks) and its tear sheet
     regime-history  the VIX/VIX3M regime replay over stored history — a SEPARATION BENCHMARK for
                     the signal, never suite P&L; see `regime_history.py`.
 
@@ -81,6 +82,18 @@ def cmd_excursions(args) -> int:
     return 0
 
 
+def cmd_equity(args) -> int:
+    from cherrypick.curve import analytics, db
+
+    conn = db.connect_ro(args.db)
+    print(
+        json.dumps(
+            {"ok": True, "basis": "daily", "arms": analytics.daily_equity(conn)}, indent=2, default=str
+        )
+    )
+    return 0
+
+
 def cmd_headline(args) -> int:
     from cherrypick.curve import analytics, db
 
@@ -116,6 +129,9 @@ def main(argv=None) -> int:
     sub.add_parser("exposure", help="early-assignment-exposure telemetry").set_defaults(func=cmd_exposure)
     sub.add_parser("excursions", help="per-closed-position MAE/MFE plus distributions").set_defaults(
         func=cmd_excursions
+    )
+    sub.add_parser("equity", help="each arm's daily marked equity and its tear sheet").set_defaults(
+        func=cmd_equity
     )
     sub.add_parser("headline", help="per-arm results through the analytics layer").set_defaults(
         func=cmd_headline

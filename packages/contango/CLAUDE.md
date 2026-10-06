@@ -79,7 +79,13 @@ mid), and the series it is judged on: a stint's P&L can't show a drawdown inside
 `regime.py` (the reading and the switch rule), `engine.py` (fills, stint money, distribution
 entitlement), `replay.py` (the rule over daily closes); all pure. `provider.py` (read-only stream
 cache and technicals store), `db.py` (ledger), `paper_loop.py` (the tick), `stream_request.py`
-(the funds and VIX/VIX3M as quote-only legs, no underlyings), `cli.py` (status, nav, stints).
+(the funds and VIX/VIX3M as quote-only legs, no underlyings), `cli.py` (status, nav, stints,
+metrics). `analytics.py` is the read side's one query layer: each arm's daily-NAV reading
+(`core.metrics.nav`), buy-and-hold of its risk fund, and the **expected path**, which is `replay.run`
+over this module's own recorded ratios and fund marks (`contango_marks`, each fund's quote at the
+decision tick, from 2026-10-06), with the cash fund's distributions added back. The gap between an
+arm's NAV and its expected path (`tracking`) is execution, not the rule: spread paid over 2 bps,
+whole shares, missed windows.
 
 ## Suite wiring
 

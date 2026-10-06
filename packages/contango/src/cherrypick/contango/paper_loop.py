@@ -350,6 +350,18 @@ def run_decisions(config: dict, conn, *, cache_path: str, day: str, final: bool)
             quotes_stale=0 if q else 1,
             spot=q["mid"] if q else None,
         )
+        if q is not None:
+            db.save_mark(
+                conn,
+                {
+                    "trade_date": day,
+                    "symbol": sym,
+                    "bid": q["bid"],
+                    "ask": q["ask"],
+                    "mid": q["mid"],
+                    "age_s": q.get("age_seconds"),
+                },
+            )
     return {
         a: decide_arm(config, conn, a, day=day, reading=reading, quotes=quotes, final=final) for a in arms
     }
