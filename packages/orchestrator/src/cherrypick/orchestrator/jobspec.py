@@ -538,6 +538,28 @@ def derive_jobs(
         ),
     )
 
+    # --- flies-intraday-agent: the agent's paper decisions (packages/flies/docs/intraday-agent-plan.md)
+    flies_on = "flies" in cfgmod.enabled_modules(cfg)
+    add(
+        "flies-intraday-agent",
+        lambda: JobSpec(
+            id="flies-intraday-agent",
+            # scripts/, not a package: it calls a model, so a failure costs a decision file and
+            # never an entry -- with no fresh decision the intraday-agent arm runs the fixed rule.
+            # The script exits at once unless flies' intraday_agent block is enabled, and it holds
+            # its own call budget (trigger band, min gap, per-session cap), so a minute's cadence
+            # is a check, not a call.
+            argv=(pythonw, _suite_script(launcher, "flies_intraday_agent.py"), "--target", "paper"),
+            kind=KIND_INTERVAL,
+            interval_seconds=60,
+            window_start="09:30",
+            window_end="16:00",
+            trading_days_only=True,
+            enabled=flies_on,
+            enabled_reason="" if flies_on else "flies module disabled",
+            tags=("ai",),
+        ),
+    )
     # --- flies-payoff-post: the settled payoff chart to Discord, once per ledger per session
     fp = cfgmod.flies_payoff_post_settings(cfg)
     add(

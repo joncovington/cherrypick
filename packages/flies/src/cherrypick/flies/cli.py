@@ -185,6 +185,16 @@ def cmd_hedge_overlay(args) -> int:
     return 0
 
 
+def cmd_close_tags(args) -> int:
+    """An arm valued as if its tagged closes had been taken, at natural and at a 2x haircut."""
+    from cherrypick.flies import analytics
+
+    conn = dbmod.connect(args.db)
+    out = analytics.close_tag_result(conn, args.arm, start=args.start, end=args.end, symbol=args.symbol)
+    print(json.dumps({"ok": True, **out}, indent=2))
+    return 0
+
+
 def cmd_debit_first_offsets(args) -> int:
     """Settled debit-first rows cut by how far out of the money the centre sat, in strikes and in
     delta, side by side (read-only)."""
@@ -468,6 +478,15 @@ def main(argv=None) -> int:
         help="also replay one hedge per (session, side) run of k open spreads, e.g. 2,3 (adds run_hedge)",
     )
     p_hedge.set_defaults(func=cmd_hedge_overlay)
+    p_ct = sub.add_parser(
+        "close-tags",
+        help="an arm valued as if its tagged closes of stranded verticals had been taken (natural, 2x)",
+    )
+    p_ct.add_argument("--arm", default="trend-rule")
+    p_ct.add_argument("--start")
+    p_ct.add_argument("--end")
+    p_ct.add_argument("--symbol")
+    p_ct.set_defaults(func=cmd_close_tags)
 
     p_dfo = sub.add_parser(
         "debit-first-offsets",

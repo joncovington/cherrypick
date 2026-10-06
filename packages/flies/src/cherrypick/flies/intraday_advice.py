@@ -33,6 +33,7 @@ DEFAULTS = {
     "enabled": False,
     "model": "opus",
     "paper": True,
+    "paper_arm": "intraday-agent",
     "live_mode_max": "shadow",
     "trigger_band_points": 10.0,
     "decision_ttl_minutes": 10,

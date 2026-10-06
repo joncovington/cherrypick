@@ -66,11 +66,24 @@ That is about 10–30 calls a session.
 ## The arms (one variable each)
 
 - **`control`:** unchanged.
-- **`trend-rule`:** the fixed rule with a reversal clause. The gate goes off once spot falls back
-  below open + 10 after being past +20, or once net GEX turns negative while spot is still above the
-  open. Stranded verticals close when the gate goes off.
-- **`advised:intraday-agent`:** the same entry rules as `trend-rule`, but the agent decides both
-  calls.
+- **`trend-rule`:** control plus `refuse_completion_against_trend`, the existing drift gate. It
+  refuses an entry whose completion needs the day to reverse a drift beyond `regime_trend_points`
+  (20) from the open. It reads the drift fresh every tick, so it releases by itself once the day
+  falls back inside the band. That is the reversal clause as built, simpler than the one first
+  sketched here (fall back below +10, or net GEX turning negative). Its close rule
+  (`close_tags.rule_wants_close`) fires on a stranded vertical that is through its short but not yet
+  past its wing, on a day committed against it.
+- **`intraday-agent`:** the same entry rules, with the gate switched on or off per tick by the
+  agent's fresh decision (`paper_loop.tick_config`), and the closes it names. With no fresh decision
+  (none yet, expired, inadmissible) it is `trend-rule`'s gate exactly. It is a plain arm, not an
+  `advised:` book: the agent is the arm's variable, not advice applied on top of another arm.
+
+**Closes are tagged, not executed** (`close_tags.py`). Paper flies has no intraday close: the
+pre-close exit was removed in August, and settlement treats every position as open until the print.
+So, as the hedge overlay does, a close is recorded on the row at the decision tick: its natural
+debit, its mid and spot. The position settles as always. `run.py close-tags --arm <arm>`
+(`analytics.close_tag_result`) values the arm as if every tagged close had been taken, at natural
+and at the 2x haircut. A later completion is forgone, as a real close would forgo it.
 
 **The agent is judged against `trend-rule`, not just against `control`.** If it cannot beat a rule
 built from the inputs it sees, the rule wins: it costs nothing and fails the same way twice.
@@ -83,7 +96,7 @@ built from the inputs it sees, the rule wins: it costs nothing and fails the sam
 |---|---|---|
 | `enabled` | `false` | The master switch. Off: the agent never runs, and the live start never offers it. |
 | `model` | `"opus"` | The model alias, travelling on argv as the advisor's does. Never hardcoded. |
-| `paper` | `true` | Whether the paper arm `advised:intraday-agent` acts. Paper needs no daily yes. |
+| `paper` | `true` | Whether the paper arm `intraday-agent` acts. Paper needs no daily yes. |
 | `live_mode_max` | `"shadow"` | The most the live start may offer: `off`, `shadow`, `gates` or `gates_and_closures`. A ceiling, not a choice: the per-day selection picks within it, and the qualification below has to allow it too. |
 | `trigger_band_points` | `10` | Run only within this distance of the trend band, or while a stranded vertical is open. |
 | `decision_ttl_minutes` | `10` | How long one decision is valid before the arm falls back to the rule. |
@@ -294,7 +307,8 @@ Days, not months, and nothing waits on anything it does not need:
    below.
 2. **In parallel, from the first session after it lands:**
    - the agent script, the validation and the artifact;
-   - the paper arms `trend-rule` and `advised:intraday-agent`, acting;
+   - the paper arms `trend-rule` and `intraday-agent`, acting (from 2026-10-06; the supervisor's
+     `flies-intraday-agent` job runs the agent each minute of the session, within its own budget);
    - the live shadow, recording.
 3. **Also in parallel:** the historical replay of `trend-rule` and the agent over the ~30 recorded
    sessions, **once per model** (Opus and Sonnet, about $255 together). Each is scored against
@@ -306,7 +320,7 @@ Days, not months, and nothing waits on anything it does not need:
 ## Decided (2026-10-05)
 
 - **Day one on live: shadow only.** The agent records decisions against the live arm and acts on
-  nothing live. The paper `advised:intraday-agent` arm acts. The live gate waits for the replay and
+  nothing live. The paper `intraday-agent` arm acts. The live gate waits for the replay and
   the first forward sessions to agree.
 - **Model: Opus 5.5** (changed from Sonnet on 2026-10-06). The alias lives in config
   (`intraday_agent.model`), never in code, as the advisor's does. On the first two recorded moments

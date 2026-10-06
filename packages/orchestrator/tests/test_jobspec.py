@@ -287,6 +287,7 @@ def test_derive_full_suite_job_table():
         "status-digest",
         "status-digest-close",
         "flies-payoff-post",
+        "flies-intraday-agent",
         "console",
         "meic-paper",
         "flies-paper",

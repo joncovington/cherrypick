@@ -680,6 +680,15 @@ _ADDED_POSITION_COLUMNS = {
     "completion_event_labels": "TEXT",
     "shadow_completion_limit": "REAL",
     "shadow_touches": "TEXT",
+    # Tagged closes (2026-10-06, close_tags.py): the trend-rule and intraday-agent arms' decision
+    # to close a stranded vertical, recorded at its NATURAL price at the decision tick and never
+    # executed -- the position settles as always, and the read side values the arm as if it had
+    # closed. Source is 'rule' or 'agent'.
+    "close_tag_at": "TEXT",
+    "close_tag_source": "TEXT",
+    "close_tag_natural": "REAL",
+    "close_tag_mid": "REAL",
+    "close_tag_spot": "REAL",
 }
 
 # Rows whose decisions rest on a defect, stamped once when `void_reason` is first added. Keyed on

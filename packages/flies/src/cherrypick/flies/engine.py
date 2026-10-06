@@ -124,6 +124,11 @@ ARMS = (
     # of one variable but a test of the choosing procedure itself, judged against control, each
     # source and the best fixed gate. Off until it lands at a declared boundary.
     "selector",
+    # The intraday agent plan's two arms (2026-10-06, docs/intraday-agent-plan.md): control plus the
+    # trend gate and tagged closes (close_tags.py). trend-rule is the fixed rule; intraday-agent's gate
+    # follows the agent's fresh decision (paper_loop.tick_config) and falls back to the rule.
+    "trend-rule",
+    "intraday-agent",
 )
 
 
