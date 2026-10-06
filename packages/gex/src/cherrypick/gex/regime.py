@@ -136,6 +136,13 @@ MAX_QUOTE_AGE_SECONDS = 120
 # network-free. Never assemble a futures symbol here — the 2026-08-24 probe guessed `:XCFE`, saw
 # nothing, and would have concluded the exchange was not entitled; the MIC is `XCBF` and only the
 # endpoint knows that.
+# Session-cumulative traded volume (2026-10-06), sampled beside the price readings from the same
+# `stream_trades` row (`volume` is DXLink's `day_volume`). Stored raw, as everything here is: the
+# volume in a minute, and SPY's VWAP, are read-side differences between consecutive samples. SPY
+# rather than SPX because the index has no volume. Started for the flies intraday agent's pack
+# (packages/flies/docs/intraday-agent-plan.md); there is no history before it.
+VOLUME_READINGS: dict[str, str] = {"spy_volume": "SPY"}
+
 FUTURES_READINGS = {"vx1": ("VX", 0), "vx2": ("VX", 1), "zn1": ("ZN", 0)}
 
 # A map older than this is refused outright rather than sampled: futures roll, and a stale map names
@@ -307,6 +314,27 @@ def _closes_from_next_prev_day(src, symbols: list[str]) -> list[tuple[str, str, 
     return out
 
 
+def _read_volumes(cache_path: Path | str, symbols: list[str]) -> dict[str, tuple[float | None, float | None]]:
+    """{symbol: (day volume, updated_at)} from ``stream_trades``, unfiltered like `_read_trades`."""
+    cache_path = Path(cache_path)
+    out: dict[str, tuple[float | None, float | None]] = {}
+    if not cache_path.exists() or not symbols:
+        return out
+    conn = _provider._connect_ro(cache_path)
+    try:
+        placeholders = ",".join("?" for _ in symbols)
+        for r in conn.execute(
+            f"SELECT symbol, volume, updated_at FROM stream_trades WHERE symbol IN ({placeholders})",
+            symbols,
+        ):
+            vol = None if r["volume"] is None else float(r["volume"])
+            updated = None if r["updated_at"] is None else float(r["updated_at"])
+            out[str(r["symbol"]).upper()] = (vol, updated)
+    finally:
+        conn.close()
+    return out
+
+
 def sample(cfg: dict, *, now: datetime | None = None) -> dict:
     """One sampling pass: write a row per reading (usable or refused) plus the daily-close harvest.
     Self-throttled to SAMPLE_INTERVAL_SECONDS against the DB, RTH-gated, best-effort by contract —
@@ -349,6 +377,16 @@ def sample(cfg: dict, *, now: datetime | None = None) -> dict:
                 rows.append((today, now_ts, reading, symbol, None, basis_ts, 0, reason))
                 if reason == "intermittent_feed":
                     expected_unusable += 1
+            else:
+                rows.append((today, now_ts, reading, symbol, value, basis_ts, 1, None))
+                usable_count += 1
+        volumes = _read_volumes(cfg["stream_cache_db"], sorted(set(VOLUME_READINGS.values())))
+        for reading, symbol in VOLUME_READINGS.items():
+            value, basis_ts = volumes.get(symbol, (None, None))
+            if value is None or basis_ts is None:
+                rows.append((today, now_ts, reading, symbol, None, None, 0, "no_volume"))
+            elif (now_ts - basis_ts) > MAX_QUOTE_AGE_SECONDS:
+                rows.append((today, now_ts, reading, symbol, None, basis_ts, 0, "stale_quote"))
             else:
                 rows.append((today, now_ts, reading, symbol, value, basis_ts, 1, None))
                 usable_count += 1
@@ -421,7 +459,7 @@ def declared_readings() -> set[str]:
     """Every reading this code records: the quote readings, the futures readings and the chain
     readings. The guard compared against the quote readings alone until 2026-10-05, so each chain
     and futures reading a session recorded read as dropped on every start."""
-    return set(READINGS) | set(FUTURES_READINGS) | set(CHAIN_READINGS)
+    return set(READINGS) | set(FUTURES_READINGS) | set(CHAIN_READINGS) | set(VOLUME_READINGS)
 
 
 # --------------------------------------------------------------------------- Tier 2: chain math
