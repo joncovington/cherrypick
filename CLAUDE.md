@@ -34,8 +34,9 @@ consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/ro
   is measured, never modelled**: ex-dividend spans refused, near-zero-extrinsic marks flagged
   assignment-exposed, so the paper result is an explicit upper bound. No live path yet.
 - **packages/curve** — VXX call-credit spreads gated by a daily VIX/VIX3M regime read; **paper-only,
-  credential-free**. Books `control`, `noflip` (byte-identical to control until a flip fires) and
-  `hook` differ only in entry gate and exit rule. The daily classification is recorded every session,
+  credential-free**. Books `control`, `noflip` (byte-identical to control until a flip fires),
+  `hook` and (from 2026-10-06) `near`, a 0.40-delta short, differ in entry gate, exit rule or short
+  delta; $2-wide from 2026-10-06, its credit floor net of entry costs against max loss. The daily classification is recorded every session,
   traded or not. Early assignment and VXX reverse splits are measured, never modelled (an upper
   bound). `regime-history` is a signal-separation benchmark, never suite P&L. No live path.
 - **packages/bwb** — daily-laddered SPX put broken-wing butterflies, ~7 DTE, held to expiry; paper by

@@ -313,3 +313,40 @@ def test_a_refused_wing_reports_the_money_as_well_as_the_ratio():
     assert out["reason"] == "spread_too_wide"
     assert out["detail"]["leg"] == "long"
     assert out["detail"]["spread_abs"] == 0.40
+
+
+# --- the net-credit-to-max-loss floor (2026-10-06) ---------------------------------------------
+# What the arm keeps after entry costs, against what it can lose. A percentage-of-width floor reads
+# a wider spread as worse even when it keeps more money per dollar risked; this one does not.
+# Fixture: the 30/35 spread, 0.60 credit, 4.40 max loss a share ($440 for one contract).
+
+
+def test_net_floor_accepts_a_spread_that_keeps_enough_per_dollar_risked():
+    params = {**PARAMS, "min_net_credit_to_max_loss": 0.10}
+    result = engine.plan_entry(_fee_snapshot(), params, {"defaults": {"quantity": 1}})
+    assert result["ok"] is True
+
+
+def test_net_floor_refuses_with_a_detail_that_reconciles():
+    params = {**PARAMS, "min_net_credit_to_max_loss": 0.15}
+    result = engine.plan_entry(_fee_snapshot(), params, {"defaults": {"quantity": 1}})
+    assert (result["ok"], result["reason"]) == (False, "net_credit_below_floor")
+    d = result["detail"]
+    assert d["gross_credit_dollars"] == 60.0 and d["max_loss_dollars"] == 440.0
+    assert (
+        round(d["gross_credit_dollars"] - d["entry_fee"] - d["entry_slippage"], 2) == d["net_credit_dollars"]
+    )
+    assert d["net_to_max_loss"] == round(d["net_credit_dollars"] / d["max_loss_dollars"], 4)
+    assert d["net_to_max_loss"] < d["floor"] == 0.15
+
+
+def test_net_floor_replaces_the_percentage_of_width_floors():
+    """Declared, it is the one credit floor: a 20% of width floor that would refuse this 12% credit
+    is not applied on top of it."""
+    params = {**PARAMS, "min_credit_pct_of_width": 0.20, "min_net_credit_to_max_loss": 0.10}
+    assert engine.plan_entry(_fee_snapshot(), params, {"defaults": {"quantity": 1}})["ok"] is True
+    legacy = {**PARAMS, "min_credit_pct_of_width": 0.20}
+    assert (
+        engine.plan_entry(_fee_snapshot(), legacy, {"defaults": {"quantity": 1}})["reason"]
+        == "credit_below_floor"
+    )

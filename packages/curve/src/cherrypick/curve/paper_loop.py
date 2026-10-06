@@ -200,6 +200,28 @@ def advised_entries(decision: dict | None) -> dict[str, dict]:
     return {e["tag"]: e for e in _core_advice.advised_books(decision) if e.get("tag")}
 
 
+def plan_arms(snapshot: dict, config: dict, arms: list[str], *, advised: dict, decision: dict | None) -> dict:
+    """`{arm: plan_entry result}` for every arm entering off this snapshot, each from its OWN merged
+    params: an advised twin from its base's params under its overlay, a base arm from its own block.
+    Until 2026-10-06 every non-hook arm reused control's plan, which `near` (a 0.40-delta short)
+    would have silently traded under its own name. Arms whose params resolve identically share ONE
+    plan object -- control and noflip stay byte-identical until a flip fires."""
+    by_params: dict[str, dict] = {}
+    plans: dict[str, dict] = {}
+    for b in arms:
+        base = engine.base_book(b, config=config, decision=decision)
+        params = {**management.PARAM_DEFAULTS, **engine.merged_params(config, base)}
+        if advised.get(b) and advised[b].get("params"):
+            # Planned from the base arm the decision entry names, never from control regardless
+            # -- otherwise the row claims one base and the economics come from another.
+            params.update(advised[b]["params"])
+        key = json.dumps({k: v for k, v in params.items() if k != "arm"}, sort_keys=True, default=str)
+        if key not in by_params:
+            by_params[key] = engine.plan_entry(snapshot, params, config)
+        plans[b] = by_params[key]
+    return plans
+
+
 # --------------------------------------------------------------------------- the tick
 def run_once(
     config: dict, conn, *, cache_path: str, when: datetime | None = None, force: bool = False
@@ -391,29 +413,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
         spot=snapshot["spot"],
     )
 
-    base_params = {**management.PARAM_DEFAULTS, **engine.merged_params(config, "control")}
-    planned = engine.plan_entry(snapshot, base_params, config)
-    plans: dict[str, dict] = {}
-    for b in wanting:
-        base = engine.base_book(b, config=config, decision=decision)
-        if advised.get(b) and advised[b].get("params"):
-            # Planned from the base arm the decision entry names, never from control regardless
-            # -- otherwise the row claims one base and the economics come from another.
-            plans[b] = engine.plan_entry(
-                snapshot,
-                {
-                    **management.PARAM_DEFAULTS,
-                    **engine.merged_params(config, base),
-                    **advised[b]["params"],
-                },
-                config,
-            )
-        elif base == "hook":
-            plans[b] = engine.plan_entry(
-                snapshot, {**management.PARAM_DEFAULTS, **engine.merged_params(config, "hook")}, config
-            )
-        else:
-            plans[b] = planned
+    plans = plan_arms(snapshot, config, wanting, advised=advised, decision=decision)
 
     for b in wanting:
         result = plans[b]

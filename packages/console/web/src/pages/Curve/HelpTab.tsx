@@ -29,7 +29,7 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="the three arms -- one variable each" collapseKey="curve-help-arms" defaultCollapsed>
+      <Card title="the four arms -- one variable each" collapseKey="curve-help-arms" defaultCollapsed>
         <div className="pmcc-prose">
           <dl className="pmcc-defs">
             <dt>control</dt>
@@ -52,6 +52,13 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
               {p?.hookThreshold != null ? p.hookThreshold : "hook_threshold"} AND below yesterday's -- a deep
               backwardation spike that has started to mean-revert), exits by control's rules. Expected to be
               nearly always idle -- the idleness is the honest state, not a failure.
+            </dd>
+            <dt>near</dt>
+            <dd>
+              Control's gate and exits, flip exit included, on a 0.40-delta short instead of 0.30 (from
+              2026-10-06). It was the advisor experiment short-delta-nearer-money, which entered twice where
+              control could not: a short nearer the money pays a credit that clears the floor more often.
+              Planned from its own strikes, so it is NOT paired fill-for-fill with control.
             </dd>
             <dt>advised:&lt;experiment name&gt;</dt>
             <dd>

@@ -20,8 +20,11 @@
     "dte_max": 60,
     "dte_target": 35,
     "short_delta_target": 0.3,
-    "spread_width": 1.0,
+    "spread_width": 2.0,
     "min_credit_pct_of_width": 0.15,
+    "min_net_credit_to_max_loss": 0.10,
+    "_credit_floor_note": "From 2026-10-06 the credit floor is min_net_credit_to_max_loss: what the spread keeps after modelled ENTRY costs, against its max loss. Declared, it is the one credit floor and min_credit_pct_of_width is not applied (it stays for a config that does not declare the net floor). A percentage-of-width floor reads a wider spread as worse even when it keeps more per dollar risked: replayed on VXX 2018-2026 with 2026-10-05's credits and costs, $1-wide lost 3.8% of max loss a trade after costs and $2-wide made 2.5%.",
+    "_spread_width_note": "spread_width 2.0 from 2026-10-06 (1.0 from 2026-08-27, 5.0 before). Costs per spread are roughly fixed dollars, so a wider spread keeps more of its credit; $2 was the best width in the 2018-2026 replay ($5 and $10 kept less per dollar risked).",
     "profit_take_pct": 0.5,
     "close_dte": 7,
     "contango_max": 0.97,
@@ -36,9 +39,9 @@
     "max_quote_age_seconds": 300,
     "max_leg_spread_pct": 0.3,
     "allow_delta_computed_fallback": true,
-    "max_wing_spread_abs": 0.05,
+    "max_wing_spread_abs": 0.25,
     "_width_and_spread_note": "spread_width cut 5.0 -> 1.0 and max_leg_spread_pct 0.25 -> 0.30 on 2026-08-27, with ZERO recorded trades on the books -- the same reasoning as the dte_max change the day before, and the cheapest moment this could ever be done. The module had refused entry on every attempt since it began evaluating: 62 spread_too_wide and 31 no_hook_signal, no position ever opened. Two independent causes, both measured against the live 2026-10-16 chain (VXX 18.12, the 50-DTE target). (1) WIDTH: at the declared ~30-delta short the credit cannot exceed the short's own premium, so a 5-wide spread has a ceiling of 17.6% of width with a FREE wing, and the real wing (K=26 at 0.435) took it to 8.9% against a 15% floor -- the wing would have had to cost under $0.13. Sweeping every short strike, 5-wide clears 15% only at delta 0.46+, an essentially at-the-money short, which is a different strategy from the one this module documents. $5 on an $18 underlying is 27.6% of spot; MEIC's 5-point SPX wings are 0.06% of spot, and the 5.0 read as an index-scale number never rescaled to VXX. At 1-wide the same short pays 17.0% of width and clears the floor with headroom. VXX's monthly chain carries $1 strike increments, so 1-wide is a real structure rather than an artifact. Max loss per spread moves $500 -> $100. (2) SPREAD GATE: the 30-delta short itself quotes 0.27-0.28 wide on VXX, so 0.25 sat just inside the instrument's normal book and refused the leg the module exists to sell. Swept together, spread_width 1.0 + max_leg_spread_pct 0.30 is the ONLY combination that trades on that chain. Both numbers are calibrated against one session's chain: the ceiling argument (credit <= short premium) is structural and holds at any prices, the exact figures are 2026-08-27's.",
-    "_max_wing_spread_abs_note": "max_wing_spread_abs (2026-08-27): the LONG wing is refused only when its spread is wide in percent AND in money. A percentage test is meaningless on a near-worthless option -- a zero bid makes spread_pct exactly 2.0 whatever the wing costs, and 56 of that session's 62 refusals were exactly that, on far-OTM VXX calls quoting bid 0.00. Two cents of spread is two cents of risk however it reads as a ratio. The SHORT leg keeps the plain percentage test: it is the leg being sold, its premium is the entire credit, and paying up there is precisely what the gate exists to prevent."
+    "_max_wing_spread_abs_note": "max_wing_spread_abs (2026-08-27): the LONG wing is refused only when its spread is wide in percent AND in money. A percentage test is meaningless on a near-worthless option -- a zero bid makes spread_pct exactly 2.0 whatever the wing costs, and 56 of that session's 62 refusals were exactly that, on far-OTM VXX calls quoting bid 0.00. Two cents of spread is two cents of risk however it reads as a ratio. The SHORT leg keeps the plain percentage test: it is the leg being sold, its premium is the entire credit, and paying up there is precisely what the gate exists to prevent. Raised 0.05 -> 0.25 on 2026-10-06: the VXX wings at the strikes this structure buys quote $0.11-0.30 wide, so at 0.05 the money test refused 60% of all entries (355 of 587 spread refusals, 2026-08-27..10-05) on wings whose quotes were real."
   },
   "books_header": "===== the books \u2014 one variable each =====",
   "_books_note": "`control` is the strategy as pitched: enter on a contango day (buffered below 1.0 by contango_max, so a knife-edge 0.999 read doesn't count), close at profit_take_pct OR the regime-flip hard exit (a MEASURED ratio crossing >= 1.0 mid-trade closes next tick regardless of P&L \u2014 never on an unmeasured/stale read) OR close_dte. `noflip` shares control's entry EXACTLY, same tick, same fills (the exact-pairing property) \u2014 its exit is control's minus the flip rule, so it holds through backwardation to target or close_dte. Until a flip actually fires, control and noflip are byte-identical by construction (an expected `find_identical_readings` collision, not a defect); read surfaces present `flip_divergence_count` beside the pair as the noflip comparison's real sample size. `hook` enters ONLY on the two-day-confirmed hook signal (its own tick, its own variable) and exits by control's rules. hook_threshold and close_dte are declared here, NOT in the advice bounds below \u2014 the hook book's value is a fixed rare-event definition, and close_dte bounds the settlement path; both are journaled-break territory, not overlay territory.",
@@ -52,6 +55,11 @@
     },
     "hook": {
       "enabled": false
+    },
+    "near": {
+      "enabled": false,
+      "short_delta_target": 0.40,
+      "_note": "near (2026-10-06): control's gate and exits on a 0.40-delta short -- promoted from the killed advisor experiment short-delta-nearer-money, which entered twice where the 0.30-delta control could not. Planned from its own params; carries the regime-flip exit."
     }
   },
   "_stream_note": "VXX is the only `symbols` entry (an underlying: spot + chain). VIX/VIX3M are quote-only `legs` \u2014 declaring them as `symbols` would have the producer maintain 0DTE chains for two symbols nothing here reads (the overview 2026-08-17 incident this plan explicitly avoids repeating).",

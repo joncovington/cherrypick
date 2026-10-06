@@ -5,9 +5,11 @@ import { SignedBar } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
 import { fmtCash, fmtPrice } from "../../lib/format";
 
-/** The three arms whose identity the page knows. Each advisor experiment's `advised:<name>` arm
- *  rides along generically -- any number of them since 2026-09-17. */
-const CORE_BOOKS = ["control", "noflip", "hook"];
+/** The arms whose identity the page knows (`near` from 2026-10-06). An advisor experiment's
+ *  `advised:<name>` arm is recognised by its prefix, never by being "not core" -- pmcc listed its new
+ *  arms as advised for a day because its list was short one name. */
+const CORE_BOOKS = ["control", "noflip", "hook", "near"];
+const isAdvised = (arm: string) => arm.startsWith("advised:");
 
 function strikeAt(strike: number | null, expiration: string | null): string {
   if (strike === null) return "—";
@@ -248,7 +250,7 @@ export function BookComparison({
   const cell = (arm: string, symbol: string): CurveArmCell | undefined =>
     arms.find((b) => b.arm === arm && b.symbol === symbol);
   const hook = totals.find((t) => t.arm === "hook");
-  const others = totals.filter((t) => !CORE_BOOKS.includes(t.arm));
+  const others = totals.filter((t) => isAdvised(t.arm));
   const maxAbs = Math.max(1, ...totals.map((t) => Math.abs(t.net ?? 0)));
   const hasClosed = arms.length > 0;
 
