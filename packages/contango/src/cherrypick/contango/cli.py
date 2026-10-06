@@ -4,6 +4,8 @@ Subcommands (all read-only):
     status     each arm's account, holding and today's decision; today's regime read
     nav        the per-arm daily NAV series (contango_sessions)
     stints     every holding stint with its money laid out to add up
+    metrics    each arm's daily-NAV tear sheet, buy-and-hold of the risk fund, and the path the
+               arm's own rule should have produced (analytics.py) -- what the console reads
 
 The paper loop's own argv (`python -m cherrypick.contango.paper_loop --once|--interval|--status`)
 is what the orchestrator drives; this CLI is the human read side. The historical replay lives
@@ -52,6 +54,15 @@ def cmd_stints(args) -> int:
     return _print({"ok": True, "positions": db.positions(conn, args.arm)})
 
 
+def cmd_metrics(args) -> int:
+    from cherrypick.contango import analytics, db, provider
+
+    config = load_config(args.config)
+    conn = db.connect_ro(args.db)
+    out = analytics.metrics(conn, config, technicals_path=provider.technicals_db_path(config))
+    return _print({"ok": True, **out})
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="contango", description="cherrypick-contango read side")
     ap.add_argument("--config")
@@ -65,6 +76,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("stints")
     p.add_argument("--arm")
     p.set_defaults(fn=cmd_stints)
+    sub.add_parser("metrics").set_defaults(fn=cmd_metrics)
     args = ap.parse_args(argv)
     return args.fn(args)
 

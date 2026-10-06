@@ -157,6 +157,22 @@ CREATE TABLE IF NOT EXISTS contango_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_contango_snapshots_date ON contango_snapshots(trade_date);
 
+-- Each fund's quote at the session's decision tick, whether or not any arm holds it (2026-10-06).
+-- Buy-and-hold of the risk fund and the forward replay are both read off these, so the benchmark
+-- and the expected path are priced at the same tick as the arms' own fills.
+CREATE TABLE IF NOT EXISTS contango_marks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    trade_date  TEXT NOT NULL,
+    symbol      TEXT NOT NULL,
+    bid         REAL,
+    ask         REAL,
+    mid         REAL,
+    age_s       REAL,
+    created_at  TEXT,
+    updated_at  TEXT,
+    UNIQUE(trade_date, symbol)
+);
+
 -- One row per in-session tick: the loop's own vital signs.
 CREATE TABLE IF NOT EXISTS contango_loop_iterations (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -323,6 +339,24 @@ def save_regime(conn, row: dict) -> None:
 def regime_for(conn, trade_date: str) -> dict | None:
     r = conn.execute("SELECT * FROM contango_regime WHERE trade_date = ?", (trade_date,)).fetchone()
     return dict(r) if r else None
+
+
+def save_mark(conn, row: dict) -> None:
+    _upsert(conn, "contango_marks", ("trade_date", "symbol"), row)
+
+
+def marks(conn, symbol: str) -> dict[str, float]:
+    """{trade_date: mid} for one fund. Empty on a ledger opened read-only before the table existed
+    (2026-10-06): the next loop tick creates it, and a read must not fail in the meantime."""
+    try:
+        rows = conn.execute(
+            "SELECT trade_date, mid FROM contango_marks WHERE symbol = ? AND mid IS NOT NULL "
+            "ORDER BY trade_date",
+            (symbol,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    return {r["trade_date"]: float(r["mid"]) for r in rows}
 
 
 def save_session(conn, row: dict) -> None:
