@@ -30,13 +30,15 @@ from cherrypick.core import looplock
 
 from cherrypick.flies import book as bookmod  # noqa: E402
 from cherrypick.flies import cli as climod  # noqa: E402
-from cherrypick.flies import db as dbmod  # noqa: E402
 from cherrypick.flies import (
+    close_tags,  # noqa: E402
     engine,  # noqa: E402
+    intraday_advice,  # noqa: E402
     provider,  # noqa: E402
     stream_request,  # noqa: E402
     stream_window,  # noqa: E402
 )
+from cherrypick.flies import db as dbmod  # noqa: E402
 from cherrypick.flies import eod as eodmod  # noqa: E402
 from cherrypick.flies import selector as selectormod  # noqa: E402
 
@@ -275,6 +277,51 @@ def _note_completion_rule(conn, config: dict) -> None:
 
 
 VOL_FLOOR_ARM_FROM = "2026-10-05"
+INTRADAY_ARMS_FROM = "2026-10-06"
+INTRADAY_ARMS = ("trend-rule", "intraday-agent")
+
+
+def _note_intraday_arms(conn, config: dict) -> None:
+    """Journal the intraday-agent plan's two arms onto the roster (docs/intraday-agent-plan.md), once
+    a machine's config enables them. Each is control plus one variable, so control's numbers mean
+    what they meant; the arms' own books start at their first session. Idempotent, best-effort."""
+    try:
+        for name in INTRADAY_ARMS:
+            arm = (config.get("arms") or {}).get(name)
+            if not isinstance(arm, dict) or not arm.get("enabled", True):
+                continue
+            dbmod.record_measurement_break(
+                conn,
+                break_date=INTRADAY_ARMS_FROM,
+                scope=name,
+                kind="arm_added",
+                reason=(
+                    f"{name} enters the roster: control plus the trend gate "
+                    f"({arm.get('trend_gate_source', 'rule')}) and tagged closes ({arm.get('tag_closes')})"
+                ),
+            )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"intraday arms journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
+def tick_config(config: dict, arm: str, day: str, now: float) -> tuple[dict, dict | None]:
+    """The config this tick runs `arm` under, and the agent decision it used (None if none).
+
+    Only an arm declaring `trend_gate_source: "agent"` changes: its `refuse_completion_against_trend`
+    becomes the agent's fresh `trend_gate`. With no fresh decision (none yet, expired, another
+    session's, inadmissible) it keeps its own declared value -- the fixed rule -- so a missing agent
+    costs a tick's advice and never an entry the rule would have refused."""
+    params = engine.merged_params(config, arm)
+    if params.get("trend_gate_source") != "agent":
+        return config, None
+    decision = intraday_advice.read_decision("paper", session=day, now=now)
+    if decision is None:
+        return config, None
+    arms = dict(config.get("arms") or {})
+    arms[arm] = {**(arms.get(arm) or {}), "refuse_completion_against_trend": decision["trend_gate"] == "on"}
+    return {**config, "arms": arms}, decision
+
+
 SELECTOR_ARM_FROM = "2026-10-19"
 WALL_CLEAR_ARM_FROM = "2026-10-19"
 
@@ -698,14 +745,16 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
         # Each advised arm's OWN experiment, stamped on its rows only (the shared rule resolves
         # the arm's tag against the decision; a control arm stamps None).
         decision = advice_decision(config, day)
+        now_epoch = time.time() if when is None else when.timestamp()
         for arm in arms:
+            arm_config, agent_decision = tick_config(config, arm, day, now_epoch)
             selector_kwargs = {}
             if engine.merged_params(config, arm).get("selector"):
                 model, reason = selector_session_model(day)
                 selector_kwargs = {"selector_model": model, "selector_model_reason": reason}
             outcome = bookmod.process_snapshot(
                 snapshot,
-                config,
+                arm_config,
                 conn,
                 arm,
                 experiment_id=_core_advice.stamp_for(arm, decision),
@@ -714,6 +763,23 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
             for action in outcome["actions"]:
                 if action["action"] not in ("entry_skipped", "completion_skipped"):
                     _log(f"  [{arm}] {action}")
+            # After the arm's own tick, so a completion this tick is never tagged as a close.
+            source = engine.merged_params(config, arm).get("tag_closes")
+            if source in (close_tags.RULE, close_tags.AGENT):
+                try:
+                    tagged = close_tags.tag(
+                        conn,
+                        snapshot,
+                        arm,
+                        engine.merged_params(config, arm),
+                        source=source,
+                        agent_ids=(agent_decision or {}).get("close_stranded", ()),
+                        now=bookmod._now(),
+                    )
+                    for t in tagged:
+                        _log(f"  [{arm}] close tagged ({t['source']}): {t}")
+                except Exception as exc:  # noqa: BLE001 -- a tag is telemetry; never cost the tick
+                    _log(f"  [{arm}] close tagging failed (non-fatal): {type(exc).__name__}: {exc}")
             results.append({"symbol": symbol, "arm": arm, "ok": True, **outcome})
     return {"ok": True, "iterations": len(results), "results": results}
 
@@ -981,6 +1047,7 @@ def main(argv=None) -> int:
             _note_completion_rule(conn, config)
             _note_gex_surface_rule(conn)
             _note_vol_floor_arm(conn, config)
+            _note_intraday_arms(conn, config)
             _note_selector_arm(conn, config)
             _note_wall_clear_arm(conn, config)
             # Stale-checkout guard (2026-08-05). The loop imports from the working tree, so a session

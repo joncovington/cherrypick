@@ -106,6 +106,14 @@ def _uncapped(chosen, _ceiling):
     return chosen
 
 
+def _agent_fails_open(config, arm, _day, _now):
+    """flies' intraday-agent arm dropping its gate when there is no fresh decision, rather than
+    falling back to the fixed rule."""
+    arms = dict(config.get("arms") or {})
+    arms[arm] = {**(arms.get(arm) or {}), "refuse_completion_against_trend": False}
+    return {**config, "arms": arms}, None
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -121,6 +129,7 @@ REPLACEMENTS = {
     "decide_after_window": _decide_after_window,
     "ignore_as_of": lambda: _ignore_as_of,
     "uncapped": lambda: _uncapped,
+    "agent_fails_open": lambda: _agent_fails_open,
 }
 
 
@@ -297,6 +306,17 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.flies.intraday_advice",
         attr="_capped",
         replacement="uncapped",
+    ),
+    Mutant(
+        id="flies-intraday-agent-falls-back",
+        breaks="the intraday-agent arm runs ungated when the agent has no fresh decision",
+        package="flies",
+        tests=(
+            "tests/test_intraday_arms.py::test_the_agent_arms_gate_follows_a_fresh_decision_and_falls_back_to_the_rule",
+        ),
+        module="cherrypick.flies.paper_loop",
+        attr="tick_config",
+        replacement="agent_fails_open",
     ),
 )
 
