@@ -390,16 +390,17 @@ export function AgentSlide({ mode, date }: { mode: TradingMode; date: string | n
 
       <DataCard
         title="arms by session"
-        headers={["session", "decided", "control", "trend-rule", "agent", "agent − rule", "rule strands", "agent strands", "agent if closed (2x)"]}
+        headers={["session", "source", "decided", "control", "trend-rule", "agent", "agent − rule", "rule strands", "agent strands", "agent if closed (2x)"]}
         loading={false}
         rowCount={perSession.length}
         empty={data.qualificationStatus === "absent" ? "not evaluated yet: `run.py agent-eval --write`, or the next settlement" : "no settled session for the rule or agent arm yet"}
-        numFrom={2}
-        footer="Settled net, after fees. Strands are uncompleted verticals over entries. The last column values the agent arm's tagged closes at natural plus one more spread's worth."
+        numFrom={3}
+        footer="Settled net, after fees. Strands are uncompleted verticals over entries. The last column values the agent arm's tagged closes at natural plus one more spread's worth. Replay rows are control's recorded entries less those each gate refuses; past sessions kept no quotes, so they value no close."
       >
         {perSession.map((r) => (
           <tr key={r.session}>
             <td>{r.session}</td>
+            <td>{r.source === "replay" ? <span className="muted" title="historical replay: the gate only, no closes valued">replay</span> : "forward"}</td>
             <td>{r.decided ? "yes" : <span className="muted">no</span>}</td>
             <td><ArmNet day={r.control} /></td>
             <td><ArmNet day={r.rule} /></td>

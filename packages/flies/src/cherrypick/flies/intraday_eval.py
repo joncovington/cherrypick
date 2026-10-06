@@ -71,6 +71,35 @@ def qualification_path() -> Path:
     return _home.data_dir("flies") / "intraday_agent_qualification.json"
 
 
+def read_replay() -> dict | None:
+    """The historical replay's scored sessions (intraday_replay.py), or None before it has run."""
+    from cherrypick.flies import intraday_replay
+
+    try:
+        r = json.loads(intraday_replay.result_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return r if isinstance(r, dict) and isinstance(r.get("sessions"), dict) else None
+
+
+def merge_replay(values: dict, decided: set, replay: dict | None) -> list[str]:
+    """Fold the replay's sessions into the forward arms' values and the decided set, in place. The
+    plan counts the replay toward the gate criteria (its pack has a look-ahead test). A session the
+    forward arms also traded keeps the forward figures; the replay never overwrites a real one.
+    Returns the sessions taken from the replay."""
+    taken = []
+    for day, s in sorted(((replay or {}).get("sessions") or {}).items()):
+        if day in values["rule"] or day in values["agent"]:
+            continue
+        for k in ("control", "rule", "agent"):
+            if s.get(k) is not None:
+                values[k][day] = s[k]
+        if s.get("decided"):
+            decided.add(day)
+        taken.append(day)
+    return taken
+
+
 def live_db_path() -> Path:
     from cherrypick.flies import db as dbmod
 
@@ -417,6 +446,9 @@ def run(conn, cfg: dict, *, write: bool = False, now: datetime | None = None) ->
     summary = record_summary(records)
     values = {"control": session_values(conn, CONTROL_ARM), "rule": session_values(conn, RULE_ARM)}
     values["agent"] = session_values(conn, agent_arm)
+    decided_set = set(summary["paper_sessions"])
+    replayed = merge_replay(values, decided_set, read_replay())
+    summary = {**summary, "paper_sessions": sorted(decided_set)}
     live_arm = (cfg.get("live") or {}).get("arm", "control")
     live_rows, live_closes = _shadow_inputs(live_db_path(), live_arm)
     result = evaluate(
@@ -433,9 +465,15 @@ def run(conn, cfg: dict, *, write: bool = False, now: datetime | None = None) ->
     days = sorted(set(values["rule"]) | set(values["agent"]))
     decided = set(summary["paper_sessions"])
     result["per_session"] = [
-        {"session": d, "decided": d in decided, **{k: values[k].get(d) for k in ("control", "rule", "agent")}}
+        {
+            "session": d,
+            "decided": d in decided,
+            "source": "replay" if d in replayed else "forward",
+            **{k: values[k].get(d) for k in ("control", "rule", "agent")},
+        }
         for d in days
     ]
+    result["replayed_sessions"] = replayed
     result["tagged_closes"] = [
         {"arm": arm, **c}
         for arm in (RULE_ARM, agent_arm)

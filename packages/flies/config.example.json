@@ -6,7 +6,7 @@
     "stream_cache_db": "~/.cherrypick/data/marketdata/stream_cache.db"
   },
   "intraday_agent_header": "===== Intraday agent (packages/flies/docs/intraday-agent-plan.md) =====",
-  "_intraday_agent_note": "Off by default. A model reads the session (cherrypick.flies.intraday_pack) and decides the trend gate and stranded-vertical closes for the intraday-agent paper arm; scripts/flies_intraday_agent.py makes the call, fenced like the advisor, and everything else is deterministic (intraday_advice.py). paper: whether the paper arm acts (needs no daily yes). live_mode_max: the most /live-flies-start may offer on live -- off | shadow | gates | gates_and_closures -- and a mode is offered only when this AND the qualification file allow it; the day's choice is written on that day's arm record. model is a CLI alias. trigger_band_points: call only within this of the 20-point trend line, or while a vertical is open. decision_ttl_minutes: how long a decision stands before the arm falls back to the rule. max_calls_per_session and min_minutes_between_calls bound the spend (about $0.17 a call on Opus).",
+  "_intraday_agent_note": "Off by default. A model reads the session (cherrypick.flies.intraday_pack) and decides the trend gate and stranded-vertical closes for the intraday-agent paper arm; scripts/flies_intraday_agent.py makes the call, fenced like the advisor, and everything else is deterministic (intraday_advice.py). paper: whether the paper arm acts (needs no daily yes). live_mode_max: the most /live-flies-start may offer on live -- off | shadow | gates | gates_and_closures -- and a mode is offered only when this AND the qualification file allow it; the day's choice is written on that day's arm record. model is a CLI alias. trigger_band_points: call only within this of the 20-point trend line, or while a vertical is open. decision_ttl_minutes: how long a decision stands before the arm falls back to the rule. max_calls_per_session and min_minutes_between_calls bound the spend (about $0.17 a call on Opus): a vertical is open most of the day, so at a 4-minute gap a session makes about 95 calls, and the cap is 100 so the agent lasts to the bell (at 40 it ran out by about 12:20 on every replayed session).",
   "intraday_agent": {
     "enabled": false,
     "model": "opus",
@@ -15,7 +15,7 @@
     "live_mode_max": "shadow",
     "trigger_band_points": 10,
     "decision_ttl_minutes": 10,
-    "max_calls_per_session": 40,
+    "max_calls_per_session": 100,
     "min_minutes_between_calls": 4
   },
   "live_header": "===== Live Gates (guarded) =====",
