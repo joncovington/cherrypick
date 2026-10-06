@@ -51,6 +51,7 @@ import {
 } from "../services/pmccTrackerBridge.js";
 import { readCurve, readCurveHistory, readCurveMeta, resolveCurveSession } from "../readers/curve.js";
 import { readContangoMetrics, readCurveEquity } from "../services/navBridge.js";
+import { readContango } from "../readers/contango.js";
 import path from "node:path";
 import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
 import { readCalendars, readCalendarsWeek, readCalendarsWeeks } from "../readers/calendars.js";
@@ -346,6 +347,9 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/curve/meta", async () => readCurveMeta(config));
   // Each arm's daily marked equity and its tear sheet (`curve equity`, core.metrics.nav).
   app.get("/api/curve/equity", async () => readCurveEquity(path.join(config.paths.curveDir, "paper_trades.db")));
+  // contango (the VIX/VIX3M switch held in shares). Paper-only, no `mode`.
+  app.get("/api/contango", async () => readContango(config));
+  app.get("/api/contango/decisions", async () => readDecisions(config, "contango", null));
   // contango's arms, buy-and-hold and expected path (`contango metrics`, core.metrics.nav).
   app.get("/api/contango/metrics", async () =>
     readContangoMetrics(path.join(config.paths.contangoDir, "paper_trades.db")),

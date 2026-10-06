@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { normalizeAdvisorPayload } from "./advisorShape";
 import type {
   ContangoMetrics,
+  ContangoPayload,
   CurveEquity,
   OverviewPayload,
   StatusPayload,
@@ -618,7 +619,7 @@ export function useBwbMeta() {
 
 // ---- collapsed decision journal (curve/pmcc/bwb; readers/decisions.ts) ----
 
-export type DecisionsModule = "curve" | "pmcc" | "bwb";
+export type DecisionsModule = "curve" | "pmcc" | "bwb" | "contango";
 
 export interface DecisionRow {
   arm: string;
@@ -931,5 +932,13 @@ export function useContangoMetrics() {
     queryFn: () => getJson<ContangoMetrics>("/api/contango/metrics"),
     staleTime: 60_000,
     refetchInterval: 300_000,
+  });
+}
+
+export function useContango() {
+  return useQuery<ContangoPayload>({
+    queryKey: ["contango"],
+    queryFn: () => getJson<ContangoPayload>("/api/contango"),
+    refetchInterval: 30_000,
   });
 }

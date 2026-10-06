@@ -7,7 +7,7 @@ contango holds SVXY while VIX/VIX3M is in contango and SHV (T-bills) while it is
 once a session, ten minutes before the close. Its two arms differ only in where they get out:
 `control` exits at 0.97 and `flipexit` at 1.0.
 
-See [CLAUDE.md](CLAUDE.md) for the replay numbers (the gate buys drawdown, not return), the
+Its console page is `/contango`. See [CLAUDE.md](CLAUDE.md) for the replay numbers (the gate buys drawdown, not return), the
 honesty rules and the money layout.
 
 ```bash

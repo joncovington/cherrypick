@@ -1,5 +1,6 @@
-/** The seven trading modules, in the order the suite lists them. */
-export const TRADING_MODULE_ORDER = ["meic", "flies", "pmcc", "curve", "bwb", "calendars", "earnings"] as const;
+/** The eight trading modules, in the order the suite lists them. contango sits beside curve: the
+ *  same VIX/VIX3M signal, held in shares rather than traded in VXX options. */
+export const TRADING_MODULE_ORDER = ["meic", "flies", "pmcc", "curve", "contango", "bwb", "calendars", "earnings"] as const;
 
 export type TradingModuleId = (typeof TRADING_MODULE_ORDER)[number];
 
@@ -29,6 +30,7 @@ export const MODULE_LABEL: Record<ModuleId, string> = {
   flies: "Flies",
   pmcc: "PMCC",
   curve: "curve",
+  contango: "contango",
   bwb: "bwb",
   calendars: "Calendars",
   earnings: "Earnings",
@@ -47,7 +49,7 @@ export const MODULE_LABEL: Record<ModuleId, string> = {
  * One list, read by the rail, the header menu and each page's title, so the chip cannot appear in
  * one place and not another.
  */
-export const EXPERIMENTAL_MODULES: ReadonlySet<string> = new Set<ModuleId>(["calendars", "pmcc", "curve"]);
+export const EXPERIMENTAL_MODULES: ReadonlySet<string> = new Set<ModuleId>(["calendars", "pmcc", "curve", "contango"]);
 
 export function isExperimental(id: string): boolean {
   return EXPERIMENTAL_MODULES.has(id);

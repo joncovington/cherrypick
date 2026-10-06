@@ -20,6 +20,7 @@ export const MODULE_FRAMES: Record<ModuleId, ComponentType<{ slide: string }>> =
   bwb: lazy(() => import("./manifests/BwbLightbox").then((m) => ({ default: m.BwbLightbox }))),
   earnings: lazy(() => import("./manifests/EarningsLightbox").then((m) => ({ default: m.EarningsLightbox }))),
   curve: lazy(() => import("./manifests/CurveLightbox").then((m) => ({ default: m.CurveLightbox }))),
+  contango: lazy(() => import("./manifests/ContangoLightbox").then((m) => ({ default: m.ContangoLightbox }))),
   pmcc: lazy(() => import("./manifests/PmccLightbox").then((m) => ({ default: m.PmccLightbox }))),
   calendars: lazy(() => import("./manifests/CalendarsLightbox").then((m) => ({ default: m.CalendarsLightbox }))),
   gex: lazy(() => import("./manifests/GexLightbox").then((m) => ({ default: m.GexLightbox }))),
