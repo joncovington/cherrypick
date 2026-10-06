@@ -14,7 +14,7 @@ license = "MIT"
 # tests exercise it directly -- undeclared until now (discovered via a from-scratch venv install; the
 # shared dev venv had it already, transitively, from meic/earnings, which masked the gap). Pinned to
 # match meic's floor, the suite's other live-trading module.
-dependencies = ["keyring>=24", "cherrypick-core", "tastytrade>=12.4.3,<13"]
+dependencies = ["keyring>=24", "cherrypick-core", "tastytrade>=12.4.3,<14"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff==0.15.21"]

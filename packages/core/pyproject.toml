@@ -33,12 +33,13 @@ Repository = "https://github.com/joncovington/cherrypick"
 # tastytrade is a runtime dependency of consumers, not of importing the library: auth.session
 # imports it lazily (only when building a real session), so cherrypick-core imports and unit-tests
 # without it. Install the `broker` extra where a live Session is actually constructed.
-# Capped below 13 in every package (2026-10-05): tastytrade 13 rewrote order placement into
-# per-type order classes and moved httpx -> httpx2, the exact API core.broker / core.execution and
-# the live loops submit through. Moving to 13 is its own change; core/tests/test_tastytrade_cap.py
-# keeps every declaration capped until then.
+# Capped below 14 in every package. 13 (2026-07) rewrote order placement and moved httpx -> httpx2;
+# the suite was moved onto it on 2026-10-05 after checking the order path end to end (identical
+# serialized orders and broker dry-run replies on 12.4.3 and 13.2.3; core/tests/test_order_sdk.py
+# pins the credit/debit an order serializes to). A new major gets the same check before its cap
+# moves: core/tests/test_tastytrade_cap.py keeps every declaration capped.
 [project.optional-dependencies]
-broker = ["tastytrade>=12.4.3,<13"]
+broker = ["tastytrade>=12.4.3,<14"]
 # anyio is a dev-only test dependency of test_broker.py (its docstring is explicit: "No tastytrade,
 # no network" -- it drives async via asyncio.run() and only reaches for anyio.sleep_forever() in one
 # fake-streamer helper). It belongs here, not in `broker`, so testing broker's primitives never pulls

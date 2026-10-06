@@ -99,7 +99,7 @@ def _setup_logging() -> None:
     root.addHandler(sh)
     # Belt-and-suspenders: silence the chattiest third-party loggers at the source
     # (the DXLink message dump, per-poll HTTP request lines, websocket frames).
-    for _noisy in ("tastytrade", "httpx", "httpcore", "websockets", "asyncio"):
+    for _noisy in ("tastytrade", "httpx", "httpx2", "httpcore", "websockets", "asyncio"):
         logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 
