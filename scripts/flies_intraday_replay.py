@@ -14,6 +14,7 @@ it has run to the bell. Records go to the replay's own store, never the forward 
     python scripts/flies_intraday_replay.py --max-calls 3000 --stop-at 08:45   # overnight, before the open
     python scripts/flies_intraday_replay.py --score-only       # re-score what has run
     python scripts/flies_intraday_replay.py --targeted         # only the minutes that can change a score
+    python scripts/flies_intraday_replay.py --ledger live [--model sonnet]   # the gate on live fills
 """
 
 from __future__ import annotations
@@ -140,13 +141,13 @@ def replay(cfg, gex_conn, ledger_conn, days, max_calls: int, stop_at: datetime |
     return {"calls": calls, "finished": finished}
 
 
-def targeted(cfg, gex_conn, ledger_conn, days, max_calls: int) -> dict:
+def targeted(cfg, gex_conn, ledger_conn, days, max_calls: int, *, model=None, store=None, arm=None) -> dict:
     """Ask only the minutes that can change the gate's score (`intraday_replay.ask_minutes`): the
     minute before each entry the rule refuses, unless a recorded decision already covers it. About
     55 calls over the window, against ~2,600 minute by minute (2026-10-06, the user's choice)."""
     acfg = intraday_advice.agent_config(cfg)
-    ask = _strict(ask_claude(acfg["model"]))
-    store = intraday_advice.REPLAY_STORE
+    ask = _strict(ask_claude(model or acfg["model"]))
+    store = store or intraday_advice.REPLAY_STORE
     band = float(intraday_pack.TREND_BAND_POINTS)
     ttl = float(acfg["decision_ttl_minutes"]) * 60
     calls, finished = 0, []
@@ -154,7 +155,8 @@ def targeted(cfg, gex_conn, ledger_conn, days, max_calls: int) -> dict:
         recs = intraday_advice.records(day, store)
         if intraday_replay.is_done(recs):
             continue
-        rows = intraday_replay.load_rows(ledger_conn, day)
+        rows = intraday_replay.load_rows(ledger_conn, day, arm)
+        day_arm = rows[0]["arm"] if rows else intraday_replay.REPLAY_ARM
         for at in intraday_replay.ask_minutes(
             rows, intraday_replay.decisions_of(recs), band=band, ttl_seconds=ttl
         ):
@@ -166,7 +168,7 @@ def targeted(cfg, gex_conn, ledger_conn, days, max_calls: int) -> dict:
                     target="paper",
                     session=day,
                     as_of=at,
-                    arm=intraday_replay.REPLAY_ARM,
+                    arm=day_arm,
                     gex_conn=gex_conn,
                     ledger_conn=ledger_conn,
                     ask=ask,
@@ -190,7 +192,42 @@ def targeted(cfg, gex_conn, ledger_conn, days, max_calls: int) -> dict:
     return {"calls": calls, "finished": finished}
 
 
+def score_live(cfg, ledger_conn, days, store: str) -> dict:
+    """The live-fill score: each live session under control (as traded), the rule and the agent, from
+    the decisions in `store`. Printed only: never written to the replay result or the qualification,
+    which are scored on paper."""
+    acfg = intraday_advice.agent_config(cfg)
+    ttl = float(acfg["decision_ttl_minutes"]) * 60
+    band = float(intraday_pack.TREND_BAND_POINTS)
+    per, calls, cost = {}, 0, 0.0
+    for day in days:
+        recs = intraday_advice.records(day, store)
+        called = [r for r in recs if r.get("called")]
+        calls += len(called)
+        cost += sum(float(r.get("cost_usd") or 0.0) for r in called)
+        s = intraday_replay.score_session(
+            intraday_replay.load_rows(ledger_conn, day, None),
+            intraday_replay.decisions_of(recs),
+            band=band,
+            ttl_seconds=ttl,
+        )
+        per[day] = {
+            **{k: s[k]["settled_net"] for k in ("control", "rule", "agent")},
+            "refused": s["refused_by_rule"],
+            "admitted": s["admitted_by_agent"],
+        }
+    totals = {k: round(sum(v[k] for v in per.values()), 2) for k in ("control", "rule", "agent")}
+    return {"store": store, "calls": calls, "cost_usd": round(cost, 2), "totals": totals, "sessions": per}
+
+
 def main(argv=None) -> int:
+    # Model reasons carry characters a cp1252 console cannot encode (an arrow ended a run on
+    # 2026-10-06); print UTF-8, and replace rather than crash on anything a terminal still refuses.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError):
+            pass
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--dry-run", action="store_true", help="count the calls it would make; no model")
     ap.add_argument("--score-only", action="store_true", help="re-score and re-judge; no model")
@@ -198,6 +235,13 @@ def main(argv=None) -> int:
         "--targeted", action="store_true", help="ask only before the entries the rule refuses (~55 calls)"
     )
     ap.add_argument("--max-calls", type=int, default=60, help="stop after this many model calls (pacing)")
+    ap.add_argument(
+        "--ledger",
+        choices=("paper", "live"),
+        default="paper",
+        help="live: score the gate on the live loop's own fills (targeted only; printed, never qualified)",
+    )
+    ap.add_argument("--model", help="a model alias other than the config's (its own store, so runs compare)")
     ap.add_argument("--session", action="append", help="only these sessions (YYYY-MM-DD; repeatable)")
     ap.add_argument(
         "--stop-at",
@@ -208,6 +252,27 @@ def main(argv=None) -> int:
     cfg = load_config()
     data = _home.data_dir("flies")
     gex_conn = connect_ro(_home.data_dir("gex") / "gex_history.db")
+    if args.ledger == "live":
+        store = "replay-live" + (f"-{args.model}" if args.model else "")
+        live_conn = connect_ro(Path(dbmod.live_db_path()))
+        try:
+            days = intraday_replay.sessions(live_conn, start="2026-07-01", end="9999-12-31", arm=None)
+            if args.session:
+                days = [d for d in days if d in set(args.session)]
+            ran = (
+                {}
+                if args.score_only
+                else targeted(
+                    cfg, gex_conn, live_conn, days, args.max_calls, model=args.model, store=store, arm=None
+                )
+            )
+            print(json.dumps({**ran, **score_live(cfg, live_conn, days, store)}, indent=2))
+        finally:
+            gex_conn.close()
+            live_conn.close()
+        return 0
+    if args.model:
+        ap.error("--model applies to --ledger live; the paper replay is scored on the config model")
     ledger_conn = connect_ro(data / "paper_trades.db")
     try:
         days = intraday_replay.sessions(ledger_conn)

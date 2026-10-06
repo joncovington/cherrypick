@@ -114,6 +114,11 @@ def _arm_record() -> dict | None:
 
 
 def main(argv=None) -> int:
+    for stream in (sys.stdout, sys.stderr):  # model text in output; never die on a cp1252 console
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError):
+            pass
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--target", choices=intraday_advice.TARGETS, required=True)
     ap.add_argument("--session", help="YYYY-MM-DD; defaults to today (ET)")
