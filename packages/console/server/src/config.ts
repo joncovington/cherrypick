@@ -30,6 +30,7 @@ export interface ConsoleConfig {
     calendarsDir: string;
     pmccDir: string;
     curveDir: string;
+    contangoDir: string;
     bwbDir: string;
     gexDir: string;
     reviewDir: string;
@@ -71,6 +72,7 @@ export interface ConsoleConfig {
         a page showing a contango_max or hook_threshold the module isn't running would be worse
         than none. */
     curveConfigCandidates: string[];
+    contangoConfigCandidates: string[];
   };
 }
 
@@ -90,6 +92,7 @@ export function loadConfig(): ConsoleConfig {
       calendarsDir: path.join(data, "calendars"),
       pmccDir: path.join(data, "pmcc"),
       curveDir: path.join(data, "curve"),
+      contangoDir: path.join(data, "contango"),
       bwbDir: path.join(data, "bwb"),
       gexDir: path.join(data, "gex"),
       reviewDir: path.join(data, "review"),
@@ -114,6 +117,11 @@ export function loadConfig(): ConsoleConfig {
         path.join(CHERRYPICK, "config", "curve.json"),
         path.join(REPO_ROOT, "packages", "curve", "config.json"),
         path.join(REPO_ROOT, "packages", "curve", "config.example.json"),
+      ],
+      contangoConfigCandidates: [
+        path.join(CHERRYPICK, "config", "contango.json"),
+        path.join(REPO_ROOT, "packages", "contango", "config.json"),
+        path.join(REPO_ROOT, "packages", "contango", "config.example.json"),
       ],
     },
   };

@@ -50,6 +50,8 @@ import {
   readPmccWeekly,
 } from "../services/pmccTrackerBridge.js";
 import { readCurve, readCurveHistory, readCurveMeta, resolveCurveSession } from "../readers/curve.js";
+import { readContangoMetrics, readCurveEquity } from "../services/navBridge.js";
+import path from "node:path";
 import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
 import { readCalendars, readCalendarsWeek, readCalendarsWeeks } from "../readers/calendars.js";
 import { readRegimeCuts } from "../readers/regimeCuts.js";
@@ -342,6 +344,12 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   // curve (VXX term-structure roll-yield harvest). No `mode` here either -- paper-only, no live loop.
   app.get("/api/curve", async () => readCurve(config));
   app.get("/api/curve/meta", async () => readCurveMeta(config));
+  // Each arm's daily marked equity and its tear sheet (`curve equity`, core.metrics.nav).
+  app.get("/api/curve/equity", async () => readCurveEquity(path.join(config.paths.curveDir, "paper_trades.db")));
+  // contango's arms, buy-and-hold and expected path (`contango metrics`, core.metrics.nav).
+  app.get("/api/contango/metrics", async () =>
+    readContangoMetrics(path.join(config.paths.contangoDir, "paper_trades.db")),
+  );
   app.get("/api/curve/history", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const pick = (k: string, max: number): string | null => {
