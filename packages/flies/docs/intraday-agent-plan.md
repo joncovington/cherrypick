@@ -152,8 +152,12 @@ acting on live is **evidence**: enough sessions to show it beats `trend-rule` by
 $100 is the working guess: about half the strand cost, less the good entries a gate also blocks.
 
 **The qualification file** (`data/flies/intraday_agent_qualification.json`) is written by a
-deterministic evaluation over the replay, the paper arms and the live shadow, never by the agent. It
-unlocks:
+deterministic evaluation over the replay, the paper arms and the live shadow, never by the agent
+(`intraday_eval.py`; the paper loop rewrites it after each settlement, and `run.py agent-eval
+--write` on demand). The console's `/flies/agent` tab reads it, and step 4's live selection will
+read the same `offered_modes`, so the page and the dialogue cannot disagree. A criterion the suite
+cannot score yet (the live shadow's sign agreement, its re-priced closes) is `pass: null`, and null
+never unlocks. It unlocks:
 
 - **`gates`:**
   - at least 20 sessions with the agent's decisions recorded (the replay counts once its look-ahead

@@ -34,6 +34,7 @@ from cherrypick.flies import (
     close_tags,  # noqa: E402
     engine,  # noqa: E402
     intraday_advice,  # noqa: E402
+    intraday_eval,  # noqa: E402
     provider,  # noqa: E402
     stream_request,  # noqa: E402
     stream_window,  # noqa: E402
@@ -835,6 +836,14 @@ def run_settle(config: dict, conn, *, cache_path: str, when=None, price: float |
     if not settled_any:
         _log("nothing settled — not writing EOD reports; will retry on the next tick")
         return {"ok": False, "settled": 0, "results": out, "reason": "no_settlement_price"}
+
+    # The agent's qualification moves only when a session settles, so it is re-judged here. A file
+    # the console and the live selection read; never allowed to cost the settlement.
+    if intraday_advice.agent_config(config)["enabled"]:
+        try:
+            intraday_eval.run(conn, config, write=True)
+        except Exception as exc:  # noqa: BLE001
+            _log(f"intraday agent qualification failed (non-fatal): {type(exc).__name__}: {exc}")
 
     # The per-module EOD reports were retired 2026-08-13: packages/review builds one fact set
     # across every module and renders from that, so a module writing its own prose was a second,

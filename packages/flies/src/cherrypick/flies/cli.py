@@ -185,6 +185,15 @@ def cmd_hedge_overlay(args) -> int:
     return 0
 
 
+def cmd_agent_eval(args) -> int:
+    """The intraday agent's qualification: what the evidence lets /live-flies-start offer."""
+    from cherrypick.flies import intraday_eval
+
+    out = intraday_eval.run(dbmod.connect(args.db), load_config(args.config), write=args.write)
+    print(json.dumps({"ok": True, **out}, indent=2))
+    return 0
+
+
 def cmd_close_tags(args) -> int:
     """An arm valued as if its tagged closes had been taken, at natural and at a 2x haircut."""
     from cherrypick.flies import analytics
@@ -487,6 +496,12 @@ def main(argv=None) -> int:
     p_ct.add_argument("--end")
     p_ct.add_argument("--symbol")
     p_ct.set_defaults(func=cmd_close_tags)
+    p_ae = sub.add_parser(
+        "agent-eval",
+        help="the intraday agent's qualification (docs/intraday-agent-plan.md); --write replaces the file",
+    )
+    p_ae.add_argument("--write", action="store_true")
+    p_ae.set_defaults(func=cmd_agent_eval)
 
     p_dfo = sub.add_parser(
         "debit-first-offsets",

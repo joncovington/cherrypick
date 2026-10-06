@@ -689,6 +689,9 @@ _ADDED_POSITION_COLUMNS = {
     "close_tag_natural": "REAL",
     "close_tag_mid": "REAL",
     "close_tag_spot": "REAL",
+    # The modelled fees of the vertical's round trip had it closed (open + close, two legs), recorded
+    # at the tag so every reader values the close from the row alone and agrees to the cent.
+    "close_tag_fees": "REAL",
 }
 
 # Rows whose decisions rest on a defect, stamped once when `void_reason` is first added. Keyed on

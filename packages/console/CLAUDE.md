@@ -367,6 +367,26 @@ net per period, the intraday series and the broker account. Rules, stated on the
   (`core.metrics` over `live_trades.db`, rendered by `MetricTiles`). Their two max drawdowns differ on
   purpose — daily against per trade — and the page labels which is which.
 
+**Flies intraday agent tab** (`/flies/agent`, `pages/Flies/AgentSlide.tsx` over
+`GET /api/flies/agent[?session=]` → `readers/fliesAgent.ts`). Paper-only: a live read is refused
+on the page until the live shadow is scored (`web/test/fliesAgentSlide.test.tsx`).
+
+- **Every verdict and every settled figure is the module's qualification file**
+  (`data/flies/intraday_agent_qualification.json`, `cherrypick.flies.intraday_eval`, rewritten at
+  each settlement and by `run.py agent-eval --write`): criteria, the paired bound, offered modes,
+  each session's three arms, the settled tagged closes and the spend. A `pass: null` (the suite
+  cannot score it yet) is shown as "not scored" and never unlocks.
+  `server/test/flies-agent-reader.test.ts` runs the real writer and checks the reader carries its
+  numbers unchanged; a fixture case is deliberately inconsistent so a re-derived list would fail.
+- What the file cannot hold yet is read directly: the session's checks (the agent's jsonl, shaped,
+  never summed except the session spend tile, on the server), the decision file under
+  `read_decision`'s rule (session, expiry, admissible), and from the paper ledger the closes tagged
+  on still-open positions and the trend gate's refusals.
+- Check times are written as New York wall clock (`etWallClock`): the chart family's `minuteOf`
+  reads characters 11-16, and a UTC ISO string there reads four or five hours out.
+- A pack is served as the model saw it, `_` keys removed as `intraday_pack.for_model` removes them.
+  A close is a tag priced at natural, never a fill, and the page says so.
+
 **Regime-cuts slide** (flies and MEIC) — `components/RegimeCutsTab.tsx` over
 `GET /api/<module>/regime-cuts[?session=YYYY-MM-DD]` (`routes/modules.ts` → `readers/regimeCuts.ts`).
 The module writes the artifact nightly (contract: `cherrypick.core.regimecuts`); the reader derives

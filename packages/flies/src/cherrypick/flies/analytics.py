@@ -2824,52 +2824,74 @@ def _ladder_calibration(conn, rungs: list) -> dict:
     }
 
 
+def close_valued(row) -> dict:
+    """One settled position's net, and its net had its close tag been taken (natural and 2x).
+
+    Untagged rows keep their settled net in all three. A tagged one is revalued from the row alone
+    (`close_tags.closed_value`, with the fees recorded at the tag), whatever happened after: a later
+    completion is forgone, as a real close would forgo it."""
+    from cherrypick.flies import close_tags
+
+    keys = row.keys()
+    pnl = row["pnl"] if "pnl" in keys else None
+    net = float(pnl) if pnl is not None else (row["gross_pnl"] or 0.0) - (row["fees"] or 0.0)
+    if row["close_tag_natural"] is None:
+        return {"settled_net": net, "closed_net": net, "closed_net_2x": net, "tagged": False}
+    qty = int(row["quantity"] or 1)
+    fees = row["close_tag_fees"]
+    if fees is None:  # a tag written before the fee was recorded
+        fees = close_tags.round_trip_fees(row["symbol"], qty)
+    mid = row["close_tag_mid"]
+    value = close_tags.closed_value(
+        float(row["credit"] or 0.0),
+        qty,
+        float(row["close_tag_natural"]),
+        None if mid is None else float(mid),
+        fees,
+    )
+    return {"settled_net": net, **value, "tagged": True}
+
+
+_CLOSE_COLUMNS = (
+    "position_id, trade_date, symbol, kind, side, center, wing_width, quantity, credit, gross_pnl, fees, pnl, "
+    "close_tag_at, close_tag_natural, close_tag_mid, close_tag_fees, close_tag_source, close_tag_spot"
+)
+
+
 def close_tag_result(conn, arm: str, start=None, end=None, symbol=None) -> dict:
-    """An arm valued as if its tagged closes had been taken (close_tags.py; tag, don't gate).
-
-    Each settled position keeps its settled net, except one carrying a close tag: that one is
-    revalued as closed at the tag -- its entry credit less the NATURAL close debit, less the modelled
-    entry and close fees -- whatever happened after (a later completion is forgone, as a real close
-    would forgo it). Also at a 2x haircut: one more spread's worth (natural - mid) on every close,
-    the plan's bar for an edge that survives worse fills. `saved` is the difference from settled.
-    """
-    from cherrypick.core import fees as _core_fees
-
+    """An arm valued as if its tagged closes had been taken (close_tags.py; tag, don't gate), at
+    natural and at the 2x haircut. `saved` is the difference from settled."""
     where, params = _period_clause(start, end, arm, symbol)
-    rows = conn.execute(
-        f"SELECT position_id, symbol, quantity, credit, gross_pnl, fees, close_tag_natural, close_tag_mid, "
-        f"close_tag_source, close_tag_spot FROM fly_positions WHERE {where}",
-        params,
-    ).fetchall()
+    rows = conn.execute(f"SELECT {_CLOSE_COLUMNS} FROM fly_positions WHERE {where}", params).fetchall()
     settled_net = with_closes = with_2x = 0.0
     tagged = []
     for r in rows:
-        net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
-        settled_net += net
-        if r["close_tag_natural"] is None:
-            with_closes += net
-            with_2x += net
-            continue
-        qty = r["quantity"] or 1
-        fees = _core_fees.ic_open_fee(r["symbol"], qty, legs=2, sell_legs=1) + _core_fees.ic_close_fee(
-            r["symbol"], qty, legs=2, sell_legs=1
-        )
-        natural = float(r["close_tag_natural"])
-        worse = natural + max(natural - float(r["close_tag_mid"] or natural), 0.0)
-        closed = round((float(r["credit"] or 0.0) - natural) * 100 * qty - fees, 2)
-        closed_2x = round((float(r["credit"] or 0.0) - worse) * 100 * qty - fees, 2)
-        with_closes += closed
-        with_2x += closed_2x
-        tagged.append(
-            {
-                "position_id": r["position_id"],
-                "source": r["close_tag_source"],
-                "settled_net": round(net, 2),
-                "closed_net": closed,
-                "closed_net_2x": closed_2x,
-                "saved": round(closed - net, 2),
-            }
-        )
+        v = close_valued(r)
+        settled_net += v["settled_net"]
+        with_closes += v["closed_net"]
+        with_2x += v["closed_net_2x"]
+        if v["tagged"]:
+            tagged.append(
+                {
+                    "position_id": r["position_id"],
+                    "trade_date": r["trade_date"],
+                    "side": r["side"],
+                    "center": r["center"],
+                    "wing_width": r["wing_width"],
+                    "quantity": r["quantity"],
+                    "credit": r["credit"],
+                    "source": r["close_tag_source"],
+                    "tagged_at": r["close_tag_at"],
+                    "spot": r["close_tag_spot"],
+                    "natural": r["close_tag_natural"],
+                    "mid": r["close_tag_mid"],
+                    "fees": r["close_tag_fees"],
+                    "settled_net": round(v["settled_net"], 2),
+                    "closed_net": v["closed_net"],
+                    "closed_net_2x": v["closed_net_2x"],
+                    "saved": round(v["closed_net"] - v["settled_net"], 2),
+                }
+            )
     return {
         "arm": arm,
         "positions": len(rows),
