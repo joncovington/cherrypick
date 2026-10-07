@@ -150,9 +150,9 @@ export function MeicLightbox({ slide }: { slide: string }) {
       label: MEIC_LABEL.attempts,
       render: () => (
         <div className="cards cards-wide">
-          <ArmRail module="meic" mode={mode} date={day} />
-          <AttemptTimeline module="meic" mode={mode} date={day} />
-          <OccupancyMap module="meic" mode={mode} date={day} />
+          <ArmRail module="meic" mode={mode} date={day} era={resolvedEra} />
+          <AttemptTimeline module="meic" mode={mode} date={day} era={resolvedEra} />
+          <OccupancyMap module="meic" mode={mode} date={day} era={resolvedEra} />
         </div>
       ),
     },
@@ -178,7 +178,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
               </tr>
             ))}
           </DataCard>
-          <MeicDivergenceCard mode={mode} date={null} />
+          <MeicDivergenceCard mode={mode} date={null} era={resolvedEra} />
           <Card title="Fee drag (this era)" updatedAt={analytics.dataUpdatedAt}>
             <div className="stats-grid">
               <div className="stat-tile">

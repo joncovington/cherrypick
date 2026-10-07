@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { useAttempts, type AttemptsPayload } from "./Attempts";
+import { sessionQuery, useAttempts, type AttemptsPayload } from "./Attempts";
 
 /**
  * The strike-occupancy map: which contracts each arm holds, and on which side.
@@ -36,13 +36,11 @@ interface OccupancyLeg {
  * and a page that renders occupancy differently from the gate enforcing it is
  * worse than no page.
  */
-function useOccupancy(module: "meic" | "flies", mode: TradingMode, date: string | null) {
+function useOccupancy(module: "meic" | "flies", mode: TradingMode, date: string | null, era: string | null) {
   return useQuery<{ tradeDate: string | null; legs: OccupancyLeg[] }>({
-    queryKey: ["occupancy", module, mode, date],
+    queryKey: ["occupancy", module, mode, date, era],
     queryFn: async () => {
-      const qs = new URLSearchParams({ mode });
-      if (date !== null) qs.set("date", date);
-      const res = await fetch(`/api/${module}/occupancy?${qs.toString()}`);
+      const res = await fetch(`/api/${module}/occupancy?${sessionQuery(mode, date, era)}`);
       if (!res.ok) throw new Error(`occupancy: HTTP ${res.status}`);
       return (await res.json()) as { tradeDate: string | null; legs: OccupancyLeg[] };
     },
@@ -57,13 +55,16 @@ export function OccupancyMap({
   module,
   mode,
   date = null,
+  era = null,
 }: {
   module: "meic" | "flies";
   mode: TradingMode;
   date?: string | null;
+  /** meic only: the page's era, so the default session resolves within it. */
+  era?: string | null;
 }) {
-  const { data: occupancy, isLoading } = useOccupancy(module, mode, date);
-  const { data: attempts } = useAttempts(module, mode, date);
+  const { data: occupancy, isLoading } = useOccupancy(module, mode, date, era);
+  const { data: attempts } = useAttempts(module, mode, date, era);
 
   const all = occupancy?.legs ?? [];
   const arms = [...new Set(all.map((l) => l.arm))].sort();

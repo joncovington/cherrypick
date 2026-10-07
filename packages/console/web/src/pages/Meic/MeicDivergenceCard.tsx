@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { MeicDivergence, TradingMode } from "@console/shared";
 import { DataCard, fmtPct } from "../../components/DataTable";
+import { sessionQuery } from "../../components/Attempts";
 
 /**
  * Profile divergence: how often MEIC's arms reached DIFFERENT entry decisions on the same tick.
@@ -15,13 +16,20 @@ import { DataCard, fmtPct } from "../../components/DataTable";
  * matter most here are the ones that go dark on a low-IV day, and a table of fills alone cannot
  * see them.
  */
-export function MeicDivergenceCard({ mode, date }: { mode: TradingMode; date: string | null }) {
+export function MeicDivergenceCard({
+  mode,
+  date,
+  era = null,
+}: {
+  mode: TradingMode;
+  date: string | null;
+  /** The page's era: with no `date`, the server resolves the latest session within it. */
+  era?: string | null;
+}) {
   const { data, isLoading, dataUpdatedAt } = useQuery<MeicDivergence>({
-    queryKey: ["meic-divergence", mode, date],
+    queryKey: ["meic-divergence", mode, date, era],
     queryFn: async () => {
-      const params = new URLSearchParams({ mode });
-      if (date !== null) params.set("date", date);
-      const res = await fetch(`/api/meic/divergence?${params.toString()}`);
+      const res = await fetch(`/api/meic/divergence?${sessionQuery(mode, date, era)}`);
       if (!res.ok) throw new Error(`divergence: HTTP ${res.status}`);
       return (await res.json()) as MeicDivergence;
     },

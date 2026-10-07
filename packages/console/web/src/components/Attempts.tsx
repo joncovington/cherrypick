@@ -74,16 +74,28 @@ export interface AttemptsPayload {
 const COLOR_OF: Record<string, string> = Object.fromEntries(OUTCOMES.map((o) => [o.key, o.color]));
 const LABEL_OF: Record<string, string> = Object.fromEntries(OUTCOMES.map((o) => [o.key, o.label]));
 
+/**
+ * The query string every session-resolved card sends: attempts, occupancy and meic's divergence.
+ * Exported so the wiring is pinned without a DOM.
+ */
+export function sessionQuery(mode: TradingMode, date: string | null, era: string | null): string {
+  const qs = new URLSearchParams({ mode });
+  if (date !== null) qs.set("date", date);
+  if (era !== null) qs.set("era", era);
+  return qs.toString();
+}
+
 /** Exported for OccupancyMap, which needs the same day's timeline to derive which strikes
     refused an entry -- sharing this hook (rather than a second near-identical query on the
-    same endpoint) means one interval, one in-flight request, one type. */
-export function useAttempts(module: AttemptsModule, mode: TradingMode, date: string | null) {
+    same endpoint) means one interval, one in-flight request, one type.
+
+    `era` is meic's: with no `date`, the server resolves the latest session WITHIN that era, so
+    under an older era these cards name the same day as the forest and the trade log. */
+export function useAttempts(module: AttemptsModule, mode: TradingMode, date: string | null, era: string | null = null) {
   return useQuery<AttemptsPayload>({
-    queryKey: ["attempts", module, mode, date],
+    queryKey: ["attempts", module, mode, date, era],
     queryFn: async () => {
-      const qs = new URLSearchParams({ mode });
-      if (date !== null) qs.set("date", date);
-      const res = await fetch(`/api/${module}/attempts?${qs.toString()}`);
+      const res = await fetch(`/api/${module}/attempts?${sessionQuery(mode, date, era)}`);
       if (!res.ok) throw new Error(`attempts: HTTP ${res.status}`);
       return (await res.json()) as AttemptsPayload;
     },
@@ -149,12 +161,15 @@ export function ArmRail({
   module,
   mode,
   date = null,
+  era = null,
 }: {
   module: AttemptsModule;
   mode: TradingMode;
   date?: string | null;
+  /** meic only: the page's era, so the default session resolves within it. */
+  era?: string | null;
 }) {
-  const { data, isLoading } = useAttempts(module, mode, date);
+  const { data, isLoading } = useAttempts(module, mode, date, era);
   const arms = data?.arms ?? [];
   const now = useNow(arms.length > 0);
 
@@ -359,12 +374,15 @@ export function AttemptTimeline({
   module,
   mode,
   date = null,
+  era = null,
 }: {
   module: AttemptsModule;
   mode: TradingMode;
   date?: string | null;
+  /** meic only: the page's era, so the default session resolves within it. */
+  era?: string | null;
 }) {
-  const { data, isLoading } = useAttempts(module, mode, date);
+  const { data, isLoading } = useAttempts(module, mode, date, era);
   const [hover, setHover] = useState<AttemptRow | null>(null);
   const rows = data?.timeline ?? [];
   const arms = (data?.arms ?? []).map((a) => a.arm);
