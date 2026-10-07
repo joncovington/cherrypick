@@ -173,10 +173,12 @@ function meicDbPath(config: ConsoleConfig, mode: TradingMode): string {
 
 /**
  * The session every MEIC card names when the request names none. Exported for the shared
- * attempts/occupancy readers, which otherwise resolve their own day off one table.
+ * attempts/occupancy readers, which otherwise resolve their own day off one table. Takes the
+ * page's era so those cards name the same day the forest and the trade log resolve under an older
+ * era, rather than the current era's latest.
  */
-export function resolveMeicSession(config: ConsoleConfig, mode: TradingMode): string | null {
-  const outcome = readOnlyDb<string | null>(meicDbPath(config, mode), latestMeicSessionIn);
+export function resolveMeicSession(config: ConsoleConfig, mode: TradingMode, era: string | null = null): string | null {
+  const outcome = readOnlyDb<string | null>(meicDbPath(config, mode), (db) => latestMeicSessionIn(db, era));
   if (outcome.status === "ok") return outcome.value;
   if (outcome.status === "absent") return null;
   return UNRESOLVABLE_DAY;
@@ -425,7 +427,7 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
   // The day the log is scoped to, named so the picker can say which day "latest session" is.
   const session = hasRange({ from: query.from ?? null, to: query.to ?? null })
     ? null
-    : (query.day ?? resolveMeicSession(config, mode));
+    : (query.day ?? resolveMeicSession(config, mode, query.era));
   return { mode, trades, totals, summaries, integrity, session };
 }
 

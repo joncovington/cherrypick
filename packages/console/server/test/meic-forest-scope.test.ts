@@ -8,7 +8,7 @@ import type { ConsoleConfig } from "../src/config.js";
 import { registerSecurity } from "../src/security.js";
 import { registerModuleRoutes } from "../src/routes/modules.js";
 import { closePooledDbs } from "../src/readers/db.js";
-import { NO_SCOPE, readMeicForest, type MeicForest } from "../src/readers/meic.js";
+import { NO_SCOPE, NO_TRADE_QUERY, readMeic, readMeicForest, type MeicForest } from "../src/readers/meic.js";
 
 /**
  * The forest drew every arm and every symbol of the resolved day: the header's arm/symbol/era
@@ -104,6 +104,14 @@ describe("the forest honours the page scope", () => {
     expect(f.tradeDate).toBe("2026-08-13");
     expect(profiles(f)).toEqual(["armA"]);
     expect(f.tradesToday).toBe(1);
+  });
+
+  it("names the same day in the header's session label", () => {
+    // The trade log resolved the era's own day, but the "latest session (X)" label named the
+    // current era's, so the picker disagreed with the cards beneath it.
+    const p = readMeic(config, "paper", { ...NO_TRADE_QUERY, era: "sample" });
+    expect(p.session).toBe("2026-08-13");
+    expect(p.session).toBe(readMeicForest(config, "paper", null, { ...NO_SCOPE, era: "sample" }).tradeDate);
   });
 });
 
