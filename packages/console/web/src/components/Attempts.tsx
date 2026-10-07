@@ -85,17 +85,41 @@ export function sessionQuery(mode: TradingMode, date: string | null, era: string
   return qs.toString();
 }
 
+/** The page-level arm/symbol/era narrowing for the attempts page. The server reader filters the
+    timeline, the rail's lifetime counts and the occupancy legs by arm and symbol; the era bounds
+    which session a no-date request resolves to (attempts tables carry no era column). The header's
+    dropdowns used to move every MEIC slide but this one (2026-10-07). */
+export interface AttemptsScope {
+  arm: string | null;
+  symbol: string | null;
+  era: string | null;
+}
+
+export const NO_ATTEMPTS_SCOPE: AttemptsScope = { arm: null, symbol: null, era: null };
+
+/** The attempts request URL. Exported so a test can pin that the page scope is actually sent. */
+export function attemptsQuery(mode: TradingMode, date: string | null, scope: AttemptsScope): string {
+  const qs = new URLSearchParams({ mode });
+  if (date !== null) qs.set("date", date);
+  if (scope.arm !== null) qs.set("arm", scope.arm);
+  if (scope.symbol !== null) qs.set("symbol", scope.symbol);
+  if (scope.era !== null) qs.set("era", scope.era);
+  return qs.toString();
+}
+
 /** Exported for OccupancyMap, which needs the same day's timeline to derive which strikes
     refused an entry -- sharing this hook (rather than a second near-identical query on the
-    same endpoint) means one interval, one in-flight request, one type.
-
-    `era` is meic's: with no `date`, the server resolves the latest session WITHIN that era, so
-    under an older era these cards name the same day as the forest and the trade log. */
-export function useAttempts(module: AttemptsModule, mode: TradingMode, date: string | null, era: string | null = null) {
+    same endpoint) means one interval, one in-flight request, one type. */
+export function useAttempts(
+  module: AttemptsModule,
+  mode: TradingMode,
+  date: string | null,
+  scope: AttemptsScope = NO_ATTEMPTS_SCOPE,
+) {
   return useQuery<AttemptsPayload>({
-    queryKey: ["attempts", module, mode, date, era],
+    queryKey: ["attempts", module, mode, date, scope.arm, scope.symbol, scope.era],
     queryFn: async () => {
-      const res = await fetch(`/api/${module}/attempts?${sessionQuery(mode, date, era)}`);
+      const res = await fetch(`/api/${module}/attempts?${attemptsQuery(mode, date, scope)}`);
       if (!res.ok) throw new Error(`attempts: HTTP ${res.status}`);
       return (await res.json()) as AttemptsPayload;
     },
@@ -161,15 +185,14 @@ export function ArmRail({
   module,
   mode,
   date = null,
-  era = null,
+  scope = NO_ATTEMPTS_SCOPE,
 }: {
   module: AttemptsModule;
   mode: TradingMode;
   date?: string | null;
-  /** meic only: the page's era, so the default session resolves within it. */
-  era?: string | null;
+  scope?: AttemptsScope;
 }) {
-  const { data, isLoading } = useAttempts(module, mode, date, era);
+  const { data, isLoading } = useAttempts(module, mode, date, scope);
   const arms = data?.arms ?? [];
   const now = useNow(arms.length > 0);
 
@@ -374,15 +397,14 @@ export function AttemptTimeline({
   module,
   mode,
   date = null,
-  era = null,
+  scope = NO_ATTEMPTS_SCOPE,
 }: {
   module: AttemptsModule;
   mode: TradingMode;
   date?: string | null;
-  /** meic only: the page's era, so the default session resolves within it. */
-  era?: string | null;
+  scope?: AttemptsScope;
 }) {
-  const { data, isLoading } = useAttempts(module, mode, date, era);
+  const { data, isLoading } = useAttempts(module, mode, date, scope);
   const [hover, setHover] = useState<AttemptRow | null>(null);
   const rows = data?.timeline ?? [];
   const arms = (data?.arms ?? []).map((a) => a.arm);

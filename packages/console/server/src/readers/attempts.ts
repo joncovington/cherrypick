@@ -47,6 +47,18 @@ export interface AttemptRow {
   spot: number | null;
 }
 
+/** The page-level narrowing for one module's attempts: the arm (and symbol) the header selects.
+ *  The column is `arm` in every ledger this reader serves (via `armColumnOf`) -- MEIC's page calls
+ *  its own scope key `profile`, and the route maps it before it reaches here. Era is deliberately
+ *  absent: no attempts table carries an era column, so an era narrows the resolved DAY (the route's
+ *  job, through `resolveMeicSession`), never the rows. */
+export interface AttemptsScope {
+  arm: string | null;
+  symbol: string | null;
+}
+
+export const NO_ATTEMPTS_SCOPE: AttemptsScope = { arm: null, symbol: null };
+
 export interface ArmRailEntry {
   arm: string;
   attempts: number;
@@ -233,6 +245,7 @@ export function readEntryAttempts(
   module: AttemptsModule,
   mode: TradingMode,
   day: string | null,
+  scope: AttemptsScope = NO_ATTEMPTS_SCOPE,
 ): AttemptsPayload {
   const spec = SPECS[module];
   const dbPath = path.join(spec.dir(config), spec.file(mode));
@@ -252,6 +265,23 @@ export function readEntryAttempts(
     // and a live ledger can be on the other side of that window from its paper twin.
     const armColumn = armColumnOf(db, spec.table);
 
+    // The page's arm/symbol narrowing, applied to EVERY query below that answers for "this day" --
+    // the timeline, the rail's lifetime counts and MEIC's double-stop read -- so no two describe
+    // different scopes. The header's dropdowns used to move the other MEIC slides while this page
+    // drew every arm (2026-10-07, the forest's own bug on a second surface).
+    const scopeClauses: string[] = [];
+    const scopeParams: string[] = [];
+    if (scope.arm !== null) {
+      scopeClauses.push(`${armColumn} = ?`);
+      scopeParams.push(scope.arm);
+    }
+    if (scope.symbol !== null) {
+      scopeClauses.push("symbol = ?");
+      scopeParams.push(scope.symbol);
+    }
+    const scopeAnd = scopeClauses.length > 0 ? ` AND ${scopeClauses.join(" AND ")}` : "";
+    const scopeWhere = scopeClauses.length > 0 ? ` WHERE ${scopeClauses.join(" AND ")}` : "";
+
     const dayRow = day
       ? { d: day }
       : db.prepare<[], { d: string }>(`SELECT MAX(trade_date) AS d FROM ${spec.table}`).get();
@@ -259,17 +289,17 @@ export function readEntryAttempts(
     if (tradeDate === null) return empty;
 
     const rows = db
-      .prepare<[string], Record<string, unknown>>(
+      .prepare<unknown[], Record<string, unknown>>(
         `SELECT ts, trade_date, ${armColumn} AS arm, symbol, outcome, block_detail,
                 ${spec.centerColumn} AS center,
                 ${spec.blockingStrikeColumn ?? "NULL"} AS blocking_strike,
                 ${spec.cadenceColumn ?? "NULL"} AS seconds_until_cadence_clear,
                 ${spec.spotColumn} AS spot
            FROM ${spec.table}
-          WHERE trade_date = ?
+          WHERE trade_date = ?${scopeAnd}
           ORDER BY ts ASC, id ASC`,
       )
-      .all(tradeDate);
+      .all(tradeDate, ...scopeParams);
 
     const timeline: AttemptRow[] = rows.map((r) => ({
       ts: normalizeTs(str(r["ts"]), str(r["trade_date"])),
@@ -323,19 +353,26 @@ export function readEntryAttempts(
     // ledger predating either lane is a legitimate state.
     let breaks: MeasurementBreak[] = [];
     try {
+      // A break is a property of the DAY, so a module-wide row (flies: null arm; MEIC: '*') stays
+      // visible under any arm scope; a row naming another arm does not.
+      const armParam = scope.arm !== null ? [scope.arm] : [];
       breaks =
         module === "flies"
           ? db
-              .prepare<[string], { arm: string | null; reason: string | null }>(
-                "SELECT arm, reason FROM fly_decisions WHERE trade_date = ? AND mode = 'cadence'",
+              .prepare<unknown[], { arm: string | null; reason: string | null }>(
+                `SELECT arm, reason FROM fly_decisions WHERE trade_date = ? AND mode = 'cadence'${
+                  scope.arm !== null ? " AND (arm = ? OR arm IS NULL)" : ""
+                }`,
               )
-              .all(tradeDate)
+              .all(tradeDate, ...armParam)
               .map((r) => ({ arm: r.arm ?? "*", reason: r.reason ?? "" }))
           : db
-              .prepare<[string], { arm: string | null; reason: string | null }>(
-                "SELECT scope AS arm, reason FROM measurement_breaks WHERE break_date = ? ORDER BY id",
+              .prepare<unknown[], { arm: string | null; reason: string | null }>(
+                `SELECT scope AS arm, reason FROM measurement_breaks WHERE break_date = ?${
+                  scope.arm !== null ? " AND (scope = ? OR scope = '*' OR scope IS NULL)" : ""
+                } ORDER BY id`,
               )
-              .all(tradeDate)
+              .all(tradeDate, ...armParam)
               .map((r) => ({ arm: r.arm ?? "*", reason: r.reason ?? "" }));
       breaks = breaks.filter((b) => b.reason !== "");
     } catch {
@@ -347,13 +384,13 @@ export function readEntryAttempts(
     // not traded since it was added".
     try {
       const lifetime = db
-        .prepare<[], { arm: string; seen: number; filled: number }>(
+        .prepare<unknown[], { arm: string; seen: number; filled: number }>(
           `SELECT ${armColumn} AS arm,
                   COUNT(DISTINCT trade_date) AS seen,
                   COUNT(DISTINCT CASE WHEN outcome = 'filled' THEN trade_date END) AS filled
-             FROM ${spec.table} GROUP BY 1`,
+             FROM ${spec.table}${scopeWhere} GROUP BY 1`,
         )
-        .all();
+        .all(...scopeParams);
       for (const row of lifetime) {
         const entry = byArm.get(row.arm);
         if (entry !== undefined) {
@@ -371,8 +408,14 @@ export function readEntryAttempts(
     if (module === "meic") {
       try {
         const icArm = armColumnOf(db, "ic_trades");
+        const pairClauses = scope.arm !== null ? [` AND t.${icArm} = ?`] : [];
+        const pairParams = scope.arm !== null ? [scope.arm] : [];
+        if (scope.symbol !== null) {
+          pairClauses.push(" AND t.symbol = ?");
+          pairParams.push(scope.symbol);
+        }
         const pairs = db
-          .prepare<[string], { arm: string; resolved: number; doubles: number }>(
+          .prepare<unknown[], { arm: string; resolved: number; doubles: number }>(
             `SELECT ${icArm} AS arm,
                     COUNT(*) AS resolved,
                     SUM(CASE WHEN put_status = 'stopped' AND call_status = 'stopped' THEN 1 ELSE 0 END) AS doubles
@@ -380,10 +423,10 @@ export function readEntryAttempts(
                             MAX(CASE WHEN l.side = 'put' THEN l.status END) AS put_status,
                             MAX(CASE WHEN l.side = 'call' THEN l.status END) AS call_status
                        FROM ic_trades t JOIN ic_spread_legs l ON l.ic_order_id = t.ic_order_id
-                      WHERE t.trade_date = ? GROUP BY t.ic_order_id)
+                      WHERE t.trade_date = ?${pairClauses.join("")} GROUP BY t.ic_order_id)
               GROUP BY 1`,
           )
-          .all(tradeDate);
+          .all(tradeDate, ...pairParams);
         for (const row of pairs) {
           const entry = byArm.get(row.arm);
           if (entry !== undefined) {

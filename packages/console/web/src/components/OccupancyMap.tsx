@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { sessionQuery, useAttempts, type AttemptsPayload } from "./Attempts";
+import { useAttempts, NO_ATTEMPTS_SCOPE, type AttemptsScope } from "./Attempts";
 
 /**
  * The strike-occupancy map: which contracts each arm holds, and on which side.
@@ -36,11 +36,21 @@ interface OccupancyLeg {
  * and a page that renders occupancy differently from the gate enforcing it is
  * worse than no page.
  */
-function useOccupancy(module: "meic" | "flies", mode: TradingMode, date: string | null, era: string | null) {
+function useOccupancy(
+  module: "meic" | "flies",
+  mode: TradingMode,
+  date: string | null,
+  scope: AttemptsScope = NO_ATTEMPTS_SCOPE,
+) {
   return useQuery<{ tradeDate: string | null; legs: OccupancyLeg[] }>({
-    queryKey: ["occupancy", module, mode, date, era],
+    queryKey: ["occupancy", module, mode, date, scope.arm, scope.symbol, scope.era],
     queryFn: async () => {
-      const res = await fetch(`/api/${module}/occupancy?${sessionQuery(mode, date, era)}`);
+      const qs = new URLSearchParams({ mode });
+      if (date !== null) qs.set("date", date);
+      if (scope.arm !== null) qs.set("arm", scope.arm);
+      if (scope.symbol !== null) qs.set("symbol", scope.symbol);
+      if (scope.era !== null) qs.set("era", scope.era);
+      const res = await fetch(`/api/${module}/occupancy?${qs.toString()}`);
       if (!res.ok) throw new Error(`occupancy: HTTP ${res.status}`);
       return (await res.json()) as { tradeDate: string | null; legs: OccupancyLeg[] };
     },
@@ -55,16 +65,15 @@ export function OccupancyMap({
   module,
   mode,
   date = null,
-  era = null,
+  scope = NO_ATTEMPTS_SCOPE,
 }: {
   module: "meic" | "flies";
   mode: TradingMode;
   date?: string | null;
-  /** meic only: the page's era, so the default session resolves within it. */
-  era?: string | null;
+  scope?: AttemptsScope;
 }) {
-  const { data: occupancy, isLoading } = useOccupancy(module, mode, date, era);
-  const { data: attempts } = useAttempts(module, mode, date, era);
+  const { data: occupancy, isLoading } = useOccupancy(module, mode, date, scope);
+  const { data: attempts } = useAttempts(module, mode, date, scope);
 
   const all = occupancy?.legs ?? [];
   const arms = [...new Set(all.map((l) => l.arm))].sort();

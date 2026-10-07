@@ -156,9 +156,9 @@ export function FliesLightbox({ slide }: { slide: string }) {
       label: FLIES_LABEL.attempts,
       render: () => (
         <div className="cards cards-wide">
-          <ArmRail module="flies" mode={mode} date={filter.date} />
-          <AttemptTimeline module="flies" mode={mode} date={filter.date} />
-          <OccupancyMap module="flies" mode={mode} date={filter.date} />
+          <ArmRail module="flies" mode={mode} date={filter.date} scope={{ arm, symbol, era }} />
+          <AttemptTimeline module="flies" mode={mode} date={filter.date} scope={{ arm, symbol, era }} />
+          <OccupancyMap module="flies" mode={mode} date={filter.date} scope={{ arm, symbol, era }} />
         </div>
       ),
     },
