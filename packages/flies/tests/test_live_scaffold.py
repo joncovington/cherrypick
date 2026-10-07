@@ -1686,6 +1686,95 @@ def test_provisional_settle_marks_source_and_official_overwrites(live_conn, monk
     assert out4["ok"]
 
 
+def _settled_fly(live_conn, monkeypatch, *, position_ids=("E1",), at=7491.0):
+    """A put fly 7490/7495/7500 settled provisionally at `at` -- at 7491 two strikes finish ITM."""
+    from cherrypick.flies import provider as providermod
+
+    for pid in position_ids:
+        dbmod.save_position(
+            live_conn,
+            {
+                **_open_entry_row(entry_fill_status="filled"),
+                "position_id": pid,
+                "kind": "fly",
+                "net": 0.25,
+                "debit": 0.80,
+            },
+        )
+    monkeypatch.setattr(providermod, "read_spot", lambda *a, **k: at)
+    assert live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused")["ok"]
+
+
+def _money(live_conn, pid="E1"):
+    row = live_conn.execute(
+        "SELECT fees, settlement_fees, gross_pnl, pnl FROM fly_positions WHERE position_id = ?", (pid,)
+    ).fetchone()
+    return dict(row)
+
+
+def test_resettle_at_the_same_print_changes_no_money(live_conn, monkeypatch):
+    """The official upgrade of a provisional settlement used to charge every ITM strike's $5 again:
+    the first settlement had folded it into `fees`, and the re-settle added another on top."""
+    _settled_fly(live_conn, monkeypatch)
+    first = _money(live_conn)
+    assert first["settlement_fees"] == 10.0  # two ITM strikes
+
+    out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", price=7491.0)
+    assert out["ok"] and out["source"] == "official"
+    assert _money(live_conn) == first
+
+
+def test_resettle_recomputes_the_prior_fee_for_rows_that_never_recorded_it(live_conn, monkeypatch):
+    """Rows settled before `settlement_fees` existed carry the fee only inside `fees`."""
+    _settled_fly(live_conn, monkeypatch)
+    first = _money(live_conn)
+    live_conn.execute("UPDATE fly_positions SET settlement_fees = NULL WHERE position_id = 'E1'")
+    live_conn.commit()
+
+    assert live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", price=7491.0)["ok"]
+    assert _money(live_conn) == first
+
+
+def test_resettle_of_a_broker_reconciled_book_keeps_the_brokers_money(live_conn, monkeypatch):
+    _settled_fly(live_conn, monkeypatch)
+    live_conn.execute(
+        "UPDATE fly_positions SET fees = 9.99, gross_pnl = 133.44, pnl = 123.45, "
+        "broker_reconciliation_status = 'reconciled' WHERE position_id = 'E1'"
+    )
+    live_conn.commit()
+    broker_money = _money(live_conn)
+
+    out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", price=7492.0)
+    assert out["ok"] and out["money"] == "broker_reconciled_unchanged"
+    assert _money(live_conn) == broker_money
+    pos = live_conn.execute(
+        "SELECT settlement_price, settlement_source, status FROM fly_positions"
+    ).fetchone()
+    assert (pos["settlement_price"], pos["settlement_source"], pos["status"]) == (
+        7492.0,
+        "official",
+        "settled",
+    )
+    book = live_conn.execute("SELECT settlement_price, settlement_source FROM fly_books").fetchone()
+    assert (book["settlement_price"], book["settlement_source"]) == (7492.0, "official")
+
+
+def test_resettle_of_a_partly_reconciled_book_is_refused(live_conn, monkeypatch):
+    _settled_fly(live_conn, monkeypatch, position_ids=("E1", "E2"))
+    live_conn.execute(
+        "UPDATE fly_positions SET broker_reconciliation_status = 'reconciled' WHERE position_id = 'E1'"
+    )
+    live_conn.commit()
+    before = (_money(live_conn, "E1"), _money(live_conn, "E2"))
+
+    out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", price=7492.0)
+    assert not out["ok"] and "1 of 2" in out["reason"]
+    assert (_money(live_conn, "E1"), _money(live_conn, "E2")) == before
+    assert {
+        r["settlement_price"] for r in live_conn.execute("SELECT settlement_price FROM fly_positions")
+    } == {7491.0}
+
+
 def test_settle_auto_fetches_official_price_and_skips_provisional_entirely(live_conn, monkeypatch):
     """When a broker is given and it can answer, the settlement goes straight to 'official' --
     the provisional (last-trade) path is never even consulted."""
