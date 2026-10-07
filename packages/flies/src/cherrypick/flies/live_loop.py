@@ -1339,6 +1339,45 @@ def session_officially_settled(conn, day: str) -> bool:
     return total > 0 and total == official
 
 
+def _relabel_reconciled_settlement(conn, book_id, held, reconciled, settlement, source) -> dict:
+    """Re-settle a book the broker has already confirmed: correct the recorded print, keep the money.
+
+    After `fee_reconcile` a row's net, fees, gross and P&L are the broker's own cash, not the model's,
+    and the settlement price no longer decides any of them. Recomputing them at a new print would
+    overwrite real cash with the model, so only the price and its source change. A book reconciled
+    only in part is refused: its unconfirmed rows would need the model and its confirmed ones must
+    not get it, and no single settlement does both.
+    """
+    if len(reconciled) != len(held):
+        return {
+            "ok": False,
+            "book_id": book_id,
+            "reason": (
+                f"{len(reconciled)} of {len(held)} positions are broker-reconciled; re-settle refused "
+                "until fee_reconcile confirms the rest"
+            ),
+        }
+    conn.execute(
+        "UPDATE fly_positions SET settlement_price = ?, settlement_source = ? WHERE book_id = ? AND status = 'settled'",
+        (settlement, source, book_id),
+    )
+    conn.execute(
+        "UPDATE fly_books SET settlement_price = ?, settlement_source = ? WHERE book_id = ?",
+        (settlement, source, book_id),
+    )
+    conn.commit()
+    book = conn.execute("SELECT pnl FROM fly_books WHERE book_id = ?", (book_id,)).fetchone()
+    _log(f"LIVE re-labelled {book_id} at {settlement:.2f} ({source}); broker-reconciled money unchanged")
+    return {
+        "ok": True,
+        "book_id": book_id,
+        "settlement": settlement,
+        "source": source,
+        "money": "broker_reconciled_unchanged",
+        "pnl": book["pnl"] if book is not None else None,
+    }
+
+
 def run_settle_live(
     config: dict,
     conn,
@@ -1411,12 +1450,28 @@ def run_settle_live(
         # official for `session_officially_settled`'s retry gate.
         source = auto_source if auto_source is not None else "official"
         if already_settled:
+            held = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM fly_positions WHERE book_id = ? AND status = 'settled'", (book_id,)
+                ).fetchall()
+            ]
+            reconciled = [r for r in held if r["broker_reconciliation_status"] == "reconciled"]
+            if reconciled:
+                return _relabel_reconciled_settlement(conn, book_id, held, reconciled, settlement, source)
             # Re-settle: flip the book's rows back to open so settle_book recomputes at the
-            # official print through the exact same tested path as the first settlement.
-            conn.execute(
-                "UPDATE fly_positions SET status = 'open' WHERE book_id = ? AND status = 'settled'",
-                (book_id,),
-            )
+            # official print through the exact same tested path as the first settlement. The first
+            # settlement folded its expiry fee into `fees`, and settling again adds one, so it comes
+            # out first -- left in, every re-settle charged each ITM strike twice. Rows settled
+            # before `settlement_fees` was recorded get theirs recomputed at the price they settled at.
+            for r in held:
+                prior = r["settlement_fees"]
+                if prior is None:
+                    prior = fly.expire_fee(fly.itm_legs_at_settlement(r, r["settlement_price"]))
+                conn.execute(
+                    "UPDATE fly_positions SET status = 'open', fees = ? WHERE position_id = ?",
+                    (round((r["fees"] or 0.0) - prior, 2), r["position_id"]),
+                )
             conn.execute("UPDATE fly_books SET status = 'open' WHERE book_id = ?", (book_id,))
             conn.commit()
 
