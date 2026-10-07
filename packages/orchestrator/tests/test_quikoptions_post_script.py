@@ -76,7 +76,7 @@ def harness(tmp_path, monkeypatch):
         "urls": {"discord": "https://d/notify", "discord_reporting": "https://d/own"},
     }
 
-    def post(url, payload, files):
+    def post(url, payload, files, **record):
         if state["fail_at"] is not None and len(state["posted"]) == state["fail_at"]:
             return "discord HTTP 500"
         state["posted"].append({"url": url, "payload": payload, "files": [f.name for f in files]})

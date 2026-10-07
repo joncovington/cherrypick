@@ -63,7 +63,6 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
-import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -720,48 +719,55 @@ def with_files(payload: dict, files: list[Path]) -> dict:
     return out
 
 
-def _multipart(payload: dict, files: list[Path]) -> tuple[bytes, str]:
-    boundary = uuid.uuid4().hex
-    parts = [
-        f"--{boundary}\r\n".encode(),
-        b'Content-Disposition: form-data; name="payload_json"\r\nContent-Type: application/json\r\n\r\n',
-        json.dumps(payload).encode(),
+def post(
+    url: str,
+    payload: dict,
+    files: list[Path],
+    opener=urllib.request.urlopen,
+    *,
+    channel: str = "discord_reporting",
+    session: str | None = None,
+    kind: str = "report",
+    inputs: list[Path] = (),
+) -> str | None:
+    """One message to the webhook; None on success, else why not. Sent through the notifier's
+    `send_webhook`, so it is in the outbound record (`run.py sent`) with the files it was built
+    from; a 429 is waited out once there. Anything else is reported and left for the next run,
+    which resumes from the marker."""
+    from cherrypick.notify import notifier
+
+    sent = notifier.send_webhook(
+        url, payload, files, channel=channel, source="quikoptions-post", kind=kind, session=session,
+        inputs=inputs, timeout=30, opener=opener,
+    )  # fmt: skip
+    if sent["ok"]:
+        return None
+    return (
+        f"discord {sent['error']}"
+        if str(sent["error"]).startswith("HTTP")
+        else f"discord post failed: {sent['error']}"
+    )
+
+
+def webhook_entry(choice: str) -> str | None:
+    """The keyring name a webhook choice resolves to (`discord`, `discord_reporting`), or None."""
+    from cherrypick.orchestrator import config as cfgmod
+
+    return cfgmod.QUIKOPTIONS_WEBHOOKS.get(cfgmod.QUIKOPTIONS_WEBHOOK_ALIASES.get(choice, choice))
+
+
+def inputs_of(session: str) -> list[Path]:
+    """The files a session's series is built from: its capture, its scored flows, the calendar
+    captured with it, and the previous session's flows (the header's yesterday)."""
+    earlier = [d for d in _capture_sessions() if d < session]
+    out = [
+        capture_path(session),
+        capture_path(session).with_name(f"{session}.flow.json"),
+        calendar_path(session),
     ]
-    for i, path in enumerate(files):
-        parts += [
-            f"\r\n--{boundary}\r\n".encode(),
-            f'Content-Disposition: form-data; name="files[{i}]"; filename="{path.name}"\r\n'.encode(),
-            b"Content-Type: image/png\r\n\r\n",
-            path.read_bytes(),
-        ]
-    parts.append(f"\r\n--{boundary}--\r\n".encode())
-    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
-
-
-def post(url: str, payload: dict, files: list[Path], opener=urllib.request.urlopen) -> str | None:
-    """One message to the webhook; None on success, else why not. A 429 is waited out once, for the
-    time Discord asks (at most 30 s), then retried; anything else is reported and left for the next
-    run, which resumes from the marker."""
-    body, ctype = _multipart(payload, files)
-    for attempt in (1, 2):
-        req = urllib.request.Request(
-            url, data=body, headers={"Content-Type": ctype, "User-Agent": USER_AGENT}
-        )
-        try:
-            with opener(req, timeout=30) as resp:
-                return None if 200 <= resp.status < 300 else f"discord HTTP {resp.status}"
-        except urllib.error.HTTPError as exc:
-            if exc.code == 429 and attempt == 1:
-                try:
-                    wait = float(json.loads(exc.read().decode() or "{}").get("retry_after", 5))
-                except (ValueError, AttributeError):
-                    wait = 5.0
-                time.sleep(min(max(wait, 0.5), 30.0))
-                continue
-            return f"discord HTTP {exc.code}"
-        except Exception as exc:  # noqa: BLE001 - a failed post is reported, and retried next run
-            return f"discord post failed: {exc}"
-    return "discord kept answering 429"
+    if earlier:
+        out.append(capture_path(earlier[-1]).with_name(f"{earlier[-1]}.flow.json"))
+    return out
 
 
 def webhook_url(choice: str) -> tuple[str | None, str | None]:
@@ -857,7 +863,14 @@ def run(
         for index, message in enumerate(messages):
             if index in sent:
                 continue
-            why = post(url, with_files(message["payload"], files[index]), files[index])
+            why = post(
+                url,
+                with_files(message["payload"], files[index]),
+                files[index],
+                channel=webhook_entry(webhook or settings["webhook"]) or "discord_reporting",
+                session=session,
+                inputs=inputs_of(session),
+            )
             if why is not None:
                 _log(f"{session}: message {index + 1} of {len(messages)}: {why}; the next run resumes here")
                 return "failed"
@@ -895,7 +908,18 @@ def run_text(
     if url is None:
         _log(f"{key}: {why_not}; nothing posted")
         return "failed"
-    why = post(url, with_files({"content": text[:2000]}, []), [])
+    # A morning key is `<session>:morning`; a weekly one is `<YYYY-Www>:weekly`, which names no session.
+    day = key.split(":", 1)[0]
+    session = day if len(day) == 10 else None
+    why = post(
+        url,
+        with_files({"content": text[:2000]}, []),
+        [],
+        channel=webhook_entry(webhook or settings["webhook"]) or "discord_reporting",
+        session=session,
+        kind=what,
+        inputs=inputs_of(session) if session else [],
+    )
     if why is not None:
         _log(f"{key}: {why}")
         return "failed"

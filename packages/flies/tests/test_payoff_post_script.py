@@ -27,7 +27,7 @@ def script(monkeypatch):
         calls["captured"].append((mode, session))
         return None
 
-    def post(image, text):
+    def post(image, text, **record):
         calls["posted"].append(text)
         return None
 

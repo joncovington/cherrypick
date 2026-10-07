@@ -11,16 +11,30 @@ Channels:
 No push channel may raise; failures are swallowed after the floor has been written. This module
 uses only the stdlib + the OS shell — no MCP, no third-party client — so it is safe to call from
 the watchdog (which must have no network/AI failure mode on its own reliability path).
+
+**Every webhook send in the suite goes through `send_webhook`** — this class's pushes, the
+QuikOptions series, the flies payoff chart, and anything a person or a session posts by hand
+(`run.py notify-send`). Each send, landed or not, appends one record to
+`data/outbound/YYYY-MM.jsonl`: what was sent (text, card fields, attachment fingerprints), where
+(the webhook's name, never its URL), the message id Discord returns, and fingerprints of the files
+the message was built from. `run.py sent` reads it back: `--stale` names a post whose inputs have
+changed since it went out, `--verify` asks Discord whether the message still exists. Recording is
+best-effort like every push: it can never stop or fail a send.
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.request
+import uuid
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -44,6 +58,232 @@ _LOG = _default_log_dir() / "notify.log"
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# -- the outbound record ---------------------------------------------------------------------------
+# Discord (behind Cloudflare) rejects the default "Python-urllib" User-Agent with 403, so every send
+# carries an explicit one. Harmless for Slack.
+USER_AGENT = "cherrypick-notifier/1.0 (+https://github.com/cherrypick)"
+_REPO = Path(__file__).resolve().parents[5]  # packages/orchestrator/src/cherrypick/notify -> root
+
+
+def outbound_dir() -> Path:
+    """Under data/, not logs/: the log archive compresses and moves logs, and this record has to
+    stay readable for as long as a post can be questioned."""
+    return _home.home() / "data" / "outbound"
+
+
+def fingerprint(path: str | Path) -> dict[str, Any]:
+    """A file as it stands now: its sha256 and modification time, or that it is missing."""
+    p = Path(path)
+    try:
+        data = p.read_bytes()
+        mtime = datetime.fromtimestamp(p.stat().st_mtime, timezone.utc).isoformat(timespec="seconds")
+    except OSError:
+        return {"path": str(p), "missing": True}
+    return {"path": str(p), "sha256": hashlib.sha256(data).hexdigest(), "mtime": mtime}
+
+
+def _code_version() -> str | None:
+    """The checkout's commit, read from .git directly: no subprocess on the reliability path."""
+    try:
+        git = _REPO / ".git"
+        if git.is_file():  # a worktree: `gitdir: <path>`
+            git = Path(git.read_text(encoding="utf-8").split(":", 1)[1].strip())
+        head = (git / "HEAD").read_text(encoding="utf-8").strip()
+        if not head.startswith("ref: "):
+            return head[:12]
+        ref = head[5:]
+        common = (
+            Path((git / "commondir").read_text(encoding="utf-8").strip())
+            if (git / "commondir").exists()
+            else None
+        )
+        for root in (git, (git / common) if common else None):
+            if root is not None and (root / ref).exists():
+                return (root / ref).read_text(encoding="utf-8").strip()[:12]
+            if root is not None and (root / "packed-refs").exists():
+                for line in (root / "packed-refs").read_text(encoding="utf-8").splitlines():
+                    if line.endswith(" " + ref):
+                        return line.split(" ", 1)[0][:12]
+    except (OSError, IndexError, ValueError):
+        pass
+    return None
+
+
+def record_outbound(entry: dict[str, Any]) -> None:
+    """Append one send to this month's record. Never raises: a record that cannot be written costs
+    the record, never the send."""
+    try:
+        folder = outbound_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        with (folder / f"{entry['ts'][:7]}.jsonl").open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:  # noqa: BLE001 -- the record is best-effort, like every push
+        pass
+
+
+def _multipart(payload: dict, files: list[Path]) -> tuple[bytes, str]:
+    boundary = uuid.uuid4().hex
+    parts = [
+        f"--{boundary}\r\n".encode(),
+        b'Content-Disposition: form-data; name="payload_json"\r\nContent-Type: application/json\r\n\r\n',
+        json.dumps(payload).encode(),
+    ]
+    for i, path in enumerate(files):
+        parts += [
+            f"\r\n--{boundary}\r\n".encode(),
+            f'Content-Disposition: form-data; name="files[{i}]"; filename="{path.name}"\r\n'.encode(),
+            b"Content-Type: image/png\r\n\r\n",
+            path.read_bytes(),
+        ]
+    parts.append(f"\r\n--{boundary}--\r\n".encode())
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def _waiting(url: str) -> str:
+    """Discord answers `?wait=true` with the message it created, so the record gets its id."""
+    return url + ("&" if "?" in url else "?") + "wait=true"
+
+
+def send_webhook(
+    url: str,
+    payload: dict[str, Any],
+    files: Iterable[str | Path] = (),
+    *,
+    channel: str,
+    source: str,
+    kind: str,
+    session: str | None = None,
+    refers_to: str | None = None,
+    inputs: Iterable[str | Path] = (),
+    timeout: float = 20,
+    opener=None,
+) -> dict[str, Any]:
+    """POST one message to a webhook and record it. Returns {"ok", "status", "message_id", "error"}.
+
+    `channel` is the webhook's keyring name (`discord`, `discord_reporting`, `slack`), never its URL.
+    `source` names the sender (a job id or a notification key), `kind` what it is (`notify`,
+    `digest`, `report`, `payoff`, `correction`, `note`). `inputs` are the files the message was built
+    from; their fingerprints at send time are what `run.py sent --stale` compares against. A Discord
+    429 is waited out once, for the time it asks (at most 30 s), then retried."""
+    opener = opener or urllib.request.urlopen
+    files = [Path(f) for f in files]
+    discord = channel.startswith("discord")
+    target = _waiting(url) if discord else url
+    if files:
+        body, ctype = _multipart(payload, files)
+    else:
+        body, ctype = json.dumps(payload).encode("utf-8"), "application/json"
+    result: dict[str, Any] = {"ok": False, "status": None, "message_id": None, "error": None}
+    for attempt in (1, 2):
+        req = urllib.request.Request(
+            target, data=body, headers={"Content-Type": ctype, "User-Agent": USER_AGENT}
+        )
+        try:
+            with opener(req, timeout=timeout) as resp:
+                result["status"] = resp.status
+                result["ok"] = 200 <= resp.status < 300
+                if not result["ok"]:
+                    result["error"] = f"HTTP {resp.status}"
+                try:
+                    raw = resp.read() if hasattr(resp, "read") else b""
+                    result["message_id"] = (json.loads(raw or b"{}") or {}).get("id")
+                except (ValueError, AttributeError, OSError):
+                    pass
+            break
+        except urllib.error.HTTPError as exc:
+            result["status"] = exc.code
+            if exc.code == 429 and attempt == 1:
+                try:
+                    wait = float(json.loads(exc.read().decode() or "{}").get("retry_after", 5))
+                except (ValueError, AttributeError):
+                    wait = 5.0
+                time.sleep(min(max(wait, 0.5), 30.0))
+                continue
+            result["error"] = f"HTTP {exc.code}"
+            break
+        except Exception as exc:  # noqa: BLE001 -- a failed send is reported, never raised
+            result["error"] = f"{type(exc).__name__}: {exc}"
+            break
+    try:
+        attachments = [
+            {"name": f.name, **{k: v for k, v in fingerprint(f).items() if k != "path"}} for f in files
+        ]
+        record_outbound(
+            {
+                "ts": _utcnow(),
+                "channel": channel,
+                "source": source,
+                "kind": kind,
+                "session": session,
+                "refers_to": refers_to,
+                **result,
+                "content": payload.get("content") if discord else payload.get("text"),
+                "embeds": payload.get("embeds"),
+                "attachments": attachments,
+                "inputs": [fingerprint(p) for p in inputs],
+                "code": _code_version(),
+            }
+        )
+    except Exception:  # noqa: BLE001 -- never let the record cost the send's result
+        pass
+    return result
+
+
+def read_outbound(
+    session: str | None = None, since: str | None = None, kind: str | None = None
+) -> list[dict[str, Any]]:
+    """Every recorded send, oldest first, narrowed to a session, a UTC start time and a kind."""
+    out: list[dict[str, Any]] = []
+    folder = outbound_dir()
+    for path in sorted(folder.glob("????-??.jsonl")) if folder.exists() else []:
+        if since and path.stem < since[:7]:
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if session and entry.get("session") != session:
+                continue
+            if since and str(entry.get("ts", "")) < since:
+                continue
+            if kind and entry.get("kind") != kind:
+                continue
+            out.append(entry)
+    return out
+
+
+def changed_inputs(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """The inputs whose file is not what it was when the message was sent: changed, gone, or back."""
+    changed = []
+    for then in entry.get("inputs") or []:
+        now = fingerprint(then["path"])
+        if now.get("missing") != then.get("missing") or now.get("sha256") != then.get("sha256"):
+            changed.append({"path": then["path"], "then": then, "now": now})
+    return changed
+
+
+def verify_message(entry: dict[str, Any], opener=None) -> str:
+    """Whether Discord still holds the sent message: `present`, `deleted`, or why it is unknown."""
+    if not str(entry.get("channel", "")).startswith("discord"):
+        return "unknown: not a Discord send"
+    if not entry.get("message_id"):
+        return "unknown: no message id recorded"
+    url = secrets.read_entry(entry["channel"])
+    if not url or url is secrets.KEYRING_UNAVAILABLE:
+        return f"unknown: no {entry['channel']} webhook readable"
+    req = urllib.request.Request(
+        f"{str(url).split('?', 1)[0]}/messages/{entry['message_id']}", headers={"User-Agent": USER_AGENT}
+    )
+    try:
+        with (opener or urllib.request.urlopen)(req, timeout=10) as resp:
+            return "present" if 200 <= resp.status < 300 else f"unknown: HTTP {resp.status}"
+    except urllib.error.HTTPError as exc:
+        return "deleted" if exc.code == 404 else f"unknown: HTTP {exc.code}"
+    except Exception as exc:  # noqa: BLE001
+        return f"unknown: {type(exc).__name__}"
 
 
 class Notifier:
@@ -133,32 +373,21 @@ class Notifier:
             return {"ok": False, "error": str(exc)}
 
     @staticmethod
-    def _post_json(url: str, payload: dict[str, Any]) -> dict[str, Any]:
-        data = json.dumps(payload).encode("utf-8")
-        # Discord (behind Cloudflare) rejects the default "Python-urllib" User-Agent with 403, so send
-        # an explicit one. Harmless for Slack.
-        req = urllib.request.Request(
-            url,
-            data=data,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "cherrypick-notifier/1.0 (+https://github.com/cherrypick)",
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=6) as resp:
-                return {"ok": 200 <= resp.status < 300, "status": resp.status}
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
+    def _post_json(url: str, payload: dict[str, Any], **record: Any) -> dict[str, Any]:
+        """The one seam every push crosses: `send_webhook`, which sends and records it."""
+        out = send_webhook(url, payload, timeout=6, **record)
+        return {"ok": out["ok"], "status": out["status"], **({"error": out["error"]} if out["error"] else {})}
 
-    def _push_slack(self, level: str, title: str, message: str) -> dict[str, Any]:
+    def _push_slack(self, level: str, title: str, message: str, **record: Any) -> dict[str, Any]:
         url = secrets.get_webhook("slack")
         if not url:
             return {
                 "ok": False,
                 "skipped": "slack webhook not set (run: cherrypick secrets-set --channel slack)",
             }
-        return self._post_json(url, {"text": f"[{level}] {self.app_name} — {title}\n{message}"})
+        return self._post_json(
+            url, {"text": f"[{level}] {self.app_name} — {title}\n{message}"}, channel="slack", **record
+        )
 
     def _push_discord(
         self,
@@ -166,6 +395,7 @@ class Notifier:
         title: str,
         message: str,
         embed: dict | None = None,
+        **record: Any,
     ) -> dict[str, Any]:
         url = secrets.get_webhook("discord")
         if not url:
@@ -183,7 +413,7 @@ class Notifier:
         else:
             # Discord caps `content` at 2000 chars; keep well under with a margin for the prefix.
             payload = {"content": f"**[{level}] {self.app_name} — {title}**\n{message}"[:1900]}
-        return self._post_json(url, payload)
+        return self._post_json(url, payload, channel="discord", **record)
 
     # -- public --------------------------------------------------------------------
     def notify(
@@ -193,16 +423,24 @@ class Notifier:
         title: str,
         message: str,
         embed: dict | None = None,
+        *,
+        kind: str = "notify",
+        session: str | None = None,
+        inputs: Iterable[str | Path] = (),
     ) -> dict[str, Any]:
         """Emit a notification. Always writes the log floor first, then any push channels.
 
         `embed` is a Discord-only enrichment (a colored card), ignored everywhere else. `message`
         stays the canonical text: it is what the log floor records and what every non-Discord
         channel receives, so a channel that can't render a card loses nothing but layout.
+
+        `kind`, `session` and `inputs` go to the outbound record of each webhook push, with `key` as
+        its source (see `send_webhook`).
         """
         level = level.upper()
         self._write_log(level, key, title, message)  # the guarantee
         results: dict[str, Any] = {"log": {"ok": True}}
+        record = {"source": key, "kind": kind, "session": session, "inputs": list(inputs)}
         for ch in self.channels:
             if ch == "log":
                 continue
@@ -210,9 +448,9 @@ class Notifier:
                 if ch == "desktop":
                     results["desktop"] = self._push_desktop(level, title, message)
                 elif ch == "slack":
-                    results["slack"] = self._push_slack(level, title, message)
+                    results["slack"] = self._push_slack(level, title, message, **record)
                 elif ch == "discord":
-                    results["discord"] = self._push_discord(level, title, message, embed=embed)
+                    results["discord"] = self._push_discord(level, title, message, embed=embed, **record)
                 else:
                     results[ch] = {"ok": False, "skipped": f"unknown channel '{ch}'"}
             except Exception as exc:
@@ -227,9 +465,10 @@ def notify(
     title: str,
     message: str,
     embed: dict | None = None,
+    **record: Any,
 ) -> dict[str, Any]:
     """Module-level convenience: construct a Notifier and emit one notification."""
-    return Notifier(notify_cfg).notify(level, key, title, message, embed=embed)
+    return Notifier(notify_cfg).notify(level, key, title, message, embed=embed, **record)
 
 
 if __name__ == "__main__":  # `python notify/notifier.py "message"` fires a test notification
