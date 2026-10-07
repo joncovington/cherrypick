@@ -2903,3 +2903,85 @@ def close_tag_result(conn, arm: str, start=None, end=None, symbol=None) -> dict:
         "saved_2x": round(with_2x - settled_net, 2),
         "closes": tagged,
     }
+
+
+# How a tagged vertical actually ended, which is what decides whether closing it helped: a strand
+# that ran to a loss is what the close is for; one that completed into a fly, or expired out of the
+# money with its whole credit, is what the close gives up.
+OUTCOME_COMPLETED = "completed"
+OUTCOME_STRANDED = "stranded"
+OUTCOME_EXPIRED_OTM = "expired_otm"
+
+
+def _tag_outcome(row) -> str:
+    if row["kind"] == "fly" or row["completed_at"] is not None:
+        return OUTCOME_COMPLETED
+    payoff = row["expiry_payoff"]
+    return OUTCOME_STRANDED if payoff is not None and float(payoff) < 0 else OUTCOME_EXPIRED_OTM
+
+
+def _live_twin(live_conn, close: dict) -> str | None:
+    """Did live hold the same vertical that day (session, side, centre), and did it complete? Paper
+    completes off its own modelled entry credit, so a tag scored against a paper completion live
+    never made is the comparison this flags. None when live held no such position."""
+    row = live_conn.execute(
+        "SELECT kind, completed_at FROM fly_positions WHERE trade_date = ? AND side = ? AND center = ?"
+        " AND status = 'settled' AND void_reason IS NULL ORDER BY entry_time LIMIT 1",
+        (close["trade_date"], close["side"], close["center"]),
+    ).fetchone()
+    if row is None:
+        return None
+    return OUTCOME_COMPLETED if (row["kind"] == "fly" or row["completed_at"] is not None) else "not_completed"
+
+
+def close_tag_tracker(ledgers: dict, start=None, end=None, symbol=None) -> dict:
+    """Every arm that tags closes, in every ledger given ({"live": conn, "paper": conn}), valued as
+    if its closes had been taken (`close_tag_result`), each tag classed by how the position really
+    ended. Paper tags that completed carry `live_twin`: whether live held that vertical and completed
+    it, since a close that only "cost" a paper completion live never made cost nothing on live.
+
+    Read-only, and it only reads tags the loops already write -- so the evidence for executing the
+    closer accumulates without anything changing what a session does."""
+    live_conn = ledgers.get("live")
+    out = []
+    for ledger, conn in ledgers.items():
+        if conn is None:
+            continue
+        arms = [
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT arm FROM fly_positions WHERE close_tag_at IS NOT NULL ORDER BY arm"
+            ).fetchall()
+        ]
+        for arm in arms:
+            result = close_tag_result(conn, arm, start=start, end=end, symbol=symbol)
+            if not result["closes"]:
+                continue
+            by_outcome: dict[str, dict] = {}
+            for close in result["closes"]:
+                row = conn.execute(
+                    "SELECT kind, completed_at, expiry_payoff FROM fly_positions WHERE position_id = ?",
+                    (close["position_id"],),
+                ).fetchone()
+                close["outcome"] = _tag_outcome(row)
+                if ledger != "live" and close["outcome"] == OUTCOME_COMPLETED and live_conn is not None:
+                    close["live_twin"] = _live_twin(live_conn, close)
+                bucket = by_outcome.setdefault(close["outcome"], {"tags": 0, "saved": 0.0})
+                bucket["tags"] += 1
+                bucket["saved"] = round(bucket["saved"] + close["saved"], 2)
+            days = sorted({c["trade_date"] for c in result["closes"]})
+            out.append(
+                {
+                    "ledger": ledger,
+                    "arm": arm,
+                    "tags": result["tagged"],
+                    "sessions": len(days),
+                    "first": days[0],
+                    "last": days[-1],
+                    "saved": result["saved"],
+                    "saved_2x": result["saved_2x"],
+                    "by_outcome": by_outcome,
+                    "closes": result["closes"],
+                }
+            )
+    return {"arms": out}
