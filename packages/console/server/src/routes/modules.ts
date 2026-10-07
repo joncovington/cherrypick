@@ -153,16 +153,19 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   });
   // Both take meic's resolved session when no date is asked for, not their own one-table
   // MAX(trade_date): on a no-trade day the attempts table and the trade log name different days
-  // (see resolveMeicSession).
+  // (see resolveMeicSession). Only the era narrows the resolved day; the cards themselves still
+  // draw every arm and symbol of it.
   app.get("/api/meic/attempts", async (req) => {
     const f = parseFliesFilter(req.query);
     const mode = parseMode(req.query);
-    return readEntryAttempts(config, "meic", mode, f.date ?? resolveMeicSession(config, mode));
+    const era = parseMeicScope(req.query).era;
+    return readEntryAttempts(config, "meic", mode, f.date ?? resolveMeicSession(config, mode, era));
   });
   app.get("/api/meic/occupancy", async (req) => {
     const f = parseFliesFilter(req.query);
     const mode = parseMode(req.query);
-    return readOccupancy(config, "meic", mode, f.date ?? resolveMeicSession(config, mode));
+    const era = parseMeicScope(req.query).era;
+    return readOccupancy(config, "meic", mode, f.date ?? resolveMeicSession(config, mode, era));
   });
   app.get("/api/flies/occupancy", async (req) => {
     const f = parseFliesFilter(req.query);
