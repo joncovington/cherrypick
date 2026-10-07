@@ -132,20 +132,24 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     readMeicAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),
   );
   // `date` is not part of MeicScopeFilter (symbol/profile/era), so it is read on its own here --
-  // null means "the latest session", which the reader resolves as every meic card does.
+  // null means "the latest session IN THE SCOPED ERA", which the reader resolves as every meic card
+  // does. Only era is passed on: the divergence buckets pool every arm and symbol on purpose.
   app.get("/api/meic/divergence", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const raw = q["date"];
     const date = typeof raw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
-    return readMeicDivergence(config, parseMode(req.query), date);
+    return readMeicDivergence(config, parseMode(req.query), date, parseMeicScope(req.query).era);
   });
   app.get("/api/meic/deep", async (req) =>
     readMeicDeepAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),
   );
   app.get("/api/meic/scope", async (req) => readMeicScope(config, parseMode(req.query), parseMeicScope(req.query).era));
+  // Scope (era x symbol x profile) reaches the forest, so the header's arm/symbol/era controls
+  // narrow the curves the way they already narrow the session, history and calibration slides.
+  // `date` is not part of MeicScopeFilter, so it stays on parseFliesFilter's own read.
   app.get("/api/meic/forest", async (req) => {
     const f = parseFliesFilter(req.query);
-    return readMeicForest(config, parseMode(req.query), f.date);
+    return readMeicForest(config, parseMode(req.query), f.date, parseMeicScope(req.query));
   });
   // Both take meic's resolved session when no date is asked for, not their own one-table
   // MAX(trade_date): on a no-trade day the attempts table and the trade log name different days
