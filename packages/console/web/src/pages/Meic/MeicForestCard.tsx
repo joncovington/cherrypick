@@ -7,6 +7,7 @@ import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
 import { SpotMarker } from "../../components/chart/Tooltip";
 import { useHoverX } from "../../components/chart/useHoverX";
+import type { MeicScope } from "./MeicTables";
 
 /**
  * MEIC's profit forest: expiry payoff for each arm's open book.
@@ -56,13 +57,25 @@ interface MeicForest {
   lastSpot: number | null;
 }
 
-function useMeicForest(mode: TradingMode, date: string | null) {
+/**
+ * The forest's query string: `date` is the session; symbol/profile/era are the page-wide scope, so
+ * the header's controls narrow the forest the way they already narrow the session and history
+ * slides. Exported so the wiring is pinned without a DOM.
+ */
+export function meicForestQuery(mode: TradingMode, scope: MeicScope): string {
+  const qs = new URLSearchParams({ mode });
+  if (scope.day !== null) qs.set("date", scope.day);
+  if (scope.symbol !== null) qs.set("symbol", scope.symbol);
+  if (scope.profile !== null) qs.set("profile", scope.profile);
+  if (scope.era !== null) qs.set("era", scope.era);
+  return qs.toString();
+}
+
+function useMeicForest(mode: TradingMode, scope: MeicScope) {
   return useQuery<MeicForest>({
-    queryKey: ["meic-forest", mode, date],
+    queryKey: ["meic-forest", mode, scope],
     queryFn: async () => {
-      const qs = new URLSearchParams({ mode });
-      if (date !== null) qs.set("date", date);
-      const res = await fetch(`/api/meic/forest?${qs.toString()}`);
+      const res = await fetch(`/api/meic/forest?${meicForestQuery(mode, scope)}`);
       if (!res.ok) throw new Error(`meic forest: HTTP ${res.status}`);
       return (await res.json()) as MeicForest;
     },
@@ -74,8 +87,8 @@ function path(prices: number[], pnl: number[], X: (v: number) => number, Y: (v: 
   return prices.map((p, i) => `${i === 0 ? "M" : "L"}${X(p).toFixed(1)},${Y(pnl[i] ?? 0).toFixed(1)}`).join(" ");
 }
 
-export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?: string | null }) {
-  const { data, isLoading } = useMeicForest(mode, date);
+export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: MeicScope }) {
+  const { data, isLoading } = useMeicForest(mode, scope);
   const [showNested, setShowNested] = useState(true);
   // A MEIC book resolves ENTIRELY at settlement — every trade ends stopped or expired — so after
   // 16:00 there is no open book and an expiry-payoff curve has nothing left to describe. The card

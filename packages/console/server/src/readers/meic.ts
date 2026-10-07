@@ -141,13 +141,30 @@ const MEIC_SESSION_SOURCES: ReadonlyArray<readonly [table: string, column: strin
  * the era (readers/flies.ts' UNRESOLVABLE_DAY, same reasoning). */
 const UNRESOLVABLE_DAY = "unresolved";
 
-function latestMeicSessionIn(db: DatabaseHandle): string | null {
+function latestMeicSessionIn(db: DatabaseHandle, era: string | null = null): string | null {
   // Only what this ledger has: a live book, an older paper book and a fixture differ in which
   // journal tables exist, and naming a missing one throws.
   const usable = MEIC_SESSION_SOURCES.filter(([t, c]) => hasTable(db, t) && hasColumn(db, t, c));
   if (usable.length === 0) return null;
-  const sql = usable.map(([t, c]) => `SELECT MAX(${c}) AS d FROM ${t}`).join(" UNION ALL ");
-  return db.prepare<[], { d: string | null }>(`SELECT MAX(d) AS d FROM (${sql})`).get()?.d ?? null;
+  // Bound each source to the scope's era, so the resolved default day is the LATEST session IN
+  // THAT ERA. Without it, picking an older era with no session chosen named the current era's
+  // latest day, which has no rows in the selected era and drew an empty card (2026-10-06).
+  // `eraDateSql` widens to unbounded for "ALL" and for an unknown key, matching `scopeSql`. Only a
+  // ledger that carries the era column has eras at all -- an older `risk_profile`-only book must
+  // keep resolving its latest session unbounded, exactly as it did before.
+  const hasEras = hasColumn(db, "ic_trades", "era");
+  const parts: string[] = [];
+  const params: string[] = [];
+  for (const [t, c] of usable) {
+    const e = hasEras ? eraDateSql(era, c) : { sql: null, params: [] };
+    parts.push(`SELECT MAX(${c}) AS d FROM ${t}${e.sql !== null ? ` WHERE ${e.sql}` : ""}`);
+    params.push(...e.params);
+  }
+  return (
+    db
+      .prepare<string[], { d: string | null }>(`SELECT MAX(d) AS d FROM (${parts.join(" UNION ALL ")})`)
+      .get(...params)?.d ?? null
+  );
 }
 
 function meicDbPath(config: ConsoleConfig, mode: TradingMode): string {
@@ -182,7 +199,7 @@ function tradeFilterSql(db: DatabaseHandle, q: MeicTradeQuery): { where: string;
     params.push(...r.params);
   }
   // The loop's last session, the one every other card resolves, so no two can name different days.
-  const day = hasRange(range) ? null : (q.day ?? latestMeicSessionIn(db));
+  const day = hasRange(range) ? null : (q.day ?? latestMeicSessionIn(db, q.era));
   if (day !== null) {
     clauses.push("trade_date = ?");
     params.push(day);
@@ -1321,7 +1338,7 @@ export function readMeicForest(
 
   return withReadOnlyDb<MeicForest>(dbPath, empty, (db) => {
     const { and, params: scopeParams } = scopeSql(db, scope);
-    const tradeDate = day ?? latestMeicSessionIn(db);
+    const tradeDate = day ?? latestMeicSessionIn(db, scope.era);
     if (tradeDate === null) return empty;
 
     const rows = db
@@ -1456,13 +1473,18 @@ export function readMeicForest(
  * Bucketed on (ts, symbol): the loop stamps every profile in one tick with the same HH:MM, so a
  * tick is directly comparable across arms.
  */
-export function readMeicDivergence(config: ConsoleConfig, mode: TradingMode, day: string | null): MeicDivergence {
+export function readMeicDivergence(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  day: string | null,
+  era: string | null = null,
+): MeicDivergence {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
   const empty: MeicDivergence = { date: null, ticks: 0, allAgreeRatePct: null, pairs: [], outcomes: [] };
   return withReadOnlyDb<MeicDivergence>(dbPath, empty, (db) => {
     if (!hasTable(db, "entry_attempts")) return empty;
-    const date = day ?? latestMeicSessionIn(db);
+    const date = day ?? latestMeicSessionIn(db, era);
     if (date === null) return empty;
 
     const rows = db

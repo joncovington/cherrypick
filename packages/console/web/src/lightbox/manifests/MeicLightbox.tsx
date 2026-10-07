@@ -141,7 +141,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
 
   const slides: Array<SlideDef & { id: MeicSlideId }> = [
     { id: "session", label: MEIC_LABEL.session, render: () => <MeicSession mode={mode} scope={scopeArgs} /> },
-    { id: "forest", label: MEIC_LABEL.forest, render: () => <MeicForestCard mode={mode} date={day} /> },
+    { id: "forest", label: MEIC_LABEL.forest, render: () => <MeicForestCard mode={mode} scope={scopeArgs} /> },
     {
       // Attempts and occupancy merged (2026-09): both are bounded snapshots regardless of session
       // activity -- AttemptTimeline's SVG height depends only on arm count, and OccupancyMap shows
