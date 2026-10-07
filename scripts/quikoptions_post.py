@@ -280,7 +280,9 @@ def _spread_cells(r: dict) -> list[str]:
         r.get("spread") or "—",
         _count(r.get("size")),
         r.get("direction") or "—",
-        _dollars(r.get("premium")),
+        # A mixed structure's premium is the site's figure, which price x size x 100 does not
+        # reproduce (fetch_quikoptions.validate_report), so it is shown as unchecked.
+        _dollars(r.get("premium")) + (" unverified" if r.get("premium_unverified") else ""),
     ]
 
 

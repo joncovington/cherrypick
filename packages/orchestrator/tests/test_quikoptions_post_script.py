@@ -480,3 +480,15 @@ def test_the_webhook_choices_earlier_name_still_resolves(harness):
     assert c.quikoptions_settings({})["post_webhook"] == "reporting"
     assert _run(cfg=_cfg(post_webhook="dedicated")) == "posted"
     assert {p["url"] for p in harness["posted"]} == {"https://d/own"}
+
+
+def test_an_unverified_spread_premium_is_labelled_in_the_post():
+    row = {
+        "symbol": "VALE",
+        "spread": "270115 10/17 RR",
+        "size": 10_000,
+        "direction": None,
+        "premium": 10_000,
+    }
+    assert qp._spread_cells({**row, "premium_unverified": True})[-1].endswith(" unverified")
+    assert not qp._spread_cells(row)[-1].endswith(" unverified")

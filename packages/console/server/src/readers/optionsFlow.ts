@@ -57,6 +57,11 @@ function cp(v: unknown): "call" | "put" | null {
   return v === "call" || v === "put" ? v : null;
 }
 
+/** A spread's side may also be `mixed` (the site's `M`); a single leg never is. */
+function spreadCp(v: unknown): "call" | "put" | "mixed" | null {
+  return v === "mixed" ? v : cp(v);
+}
+
 export function flowDir(config: ConsoleConfig): string {
   return path.join(config.paths.quikoptionsDir ?? path.join(config.paths.cherrypick, "data", "quikoptions"), "hot-options");
 }
@@ -124,11 +129,12 @@ function shapeSpread(v: unknown): FlowSpread {
     size: num(r["size"]),
     expires: str(r["expires"]),
     type: str(r["type"]),
-    cp: cp(r["cp"]),
+    cp: spreadCp(r["cp"]),
     spread: str(r["spread"]),
     price: num(r["price"]),
     delta: num(r["delta"]),
     premium: num(r["premium"]),
+    premiumUnverified: r["premium_unverified"] === true,
     direction,
     group: str(r["group"]),
     underlying: r["underlying"] === undefined ? null : { last: num(u["last"]), bid: num(u["bid"]), ask: num(u["ask"]) },

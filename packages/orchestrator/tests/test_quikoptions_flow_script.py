@@ -358,3 +358,27 @@ def test_a_step_waits_for_the_one_before_it_and_gives_up_at_the_bound(monkeypatc
     clock.update(t=0.0, polls=0)
     assert qf.wait_for(lambda: False, minutes=2) is False
     assert clock["polls"] == 4  # 2 minutes of 30-second polls, then it stops
+
+
+def test_a_mixed_spread_premium_is_carried_but_never_sizes_a_flow():
+    """2026-10-07, the first risk reversals and strangle: the site's premium for a mixed structure
+    fails price x size x 100, so it is kept as `site_premium` and the flow's own premium is empty."""
+    rr = {
+        "symbol": "RUN",
+        "time_et": "13:58:32.550",
+        "size": 113_000,
+        "expires": "2027-05-21",
+        "type": "RR",
+        "cp": "mixed",
+        "spread": "270521 6/12 RR",
+        "price": 0.16,
+        "delta": -0.58,
+        "premium": 1_130,
+        "premium_unverified": True,
+        "underlying": {"last": 7.53},
+        "group": None,
+    }
+    doc = _flows(_capture(spreads=[rr]))
+    flow = next(f for f in doc["flows"] + doc["unread"] if f["symbol"] == "RUN")
+    assert flow["premium"] is None and flow["site_premium"] == 1_130
+    assert flow["legs"] == []  # a structure that cannot be named is never guessed at

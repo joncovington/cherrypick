@@ -57,7 +57,8 @@ export interface FlowSpread {
   expires: string | null;
   /** The site's structure code, e.g. `CS` (call spread), `CSCAL` (call spread calendar). */
   type: string | null;
-  cp: "call" | "put" | null;
+  /** `mixed` is the site's `M`: a structure with a call and a put leg (a risk reversal, a strangle). */
+  cp: "call" | "put" | "mixed" | null;
   /** The site's leg description, e.g. `261009 11/11.5 CS`. */
   spread: string | null;
   /** The site's net price, with its sign. */
@@ -65,6 +66,8 @@ export interface FlowSpread {
   delta: number | null;
   /** Whole-position dollars, with the site's sign. */
   premium: number | null;
+  /** The site's figure, unchecked: on a mixed structure it does not equal size × price × 100. */
+  premiumUnverified: boolean;
   /** The capture's reading of the site's signs: `bought`, `sold`, or null when they disagree. */
   direction: "bought" | "sold" | null;
   /** Rows printed together (same symbol, time and size, e.g. a roll) share a group; null alone. */

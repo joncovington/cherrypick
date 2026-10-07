@@ -119,6 +119,13 @@ attributes say: the full company name, the call/put badge, and the side tooltip.
   Calls + Puts = Total (462.9K + 299.6K = 762.5K). The page shows only rounded counts, so the
   tolerance is the sum of each cell's own rounding (±0.05K on a `K` cell, 0 on a whole number).
 - Spreads and sweeps: Premium = |price| × size × 100 (AI: 0.47 × 41,900 × 100 = 1,969,300).
+  The one exception is a **mixed** spread, a structure with a call and a put leg (the site's `M`:
+  a risk reversal, a strangle), first seen 2026-10-07. Its premium does not satisfy the identity
+  (RUN 6/12 RR at 0.16 × 113,000 printed 1,130; VALE and BABA off by other factors, no formula fits
+  all three), so it is kept as the site's figure with `premium_unverified`. It is still required to
+  read. It never sizes, scores or ranks a derived flow, is never the largest trade, and is marked
+  "unverified" in the console and the Discord post. `reparse` promotes a rejected day whose own
+  HTML passes after a parser fix.
 - Vol/OI: V/OI = Volume ÷ OI (SPCX: 135,071 ÷ 119 = 1,135.05); the Openings table has OI = 0.
 - The session date the page states is the session being saved, and every table is present and
   non-empty.

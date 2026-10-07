@@ -49,7 +49,8 @@ def _symbol(sym: str, name: str) -> str:
 
 
 def _cp(cp: str) -> str:
-    return f'<td><div class="custom-icon" title="{"Call" if cp == "C" else "Put"}">{cp}</div></td>'
+    title = {"C": "Call", "P": "Put", "M": "Mixed"}[cp]
+    return f'<td><div class="custom-icon" title="{title}">{cp}</div></td>'
 
 
 def _side(sentiment: str = "Bullish", fill: str = "On Ask", edge: str = "1.00") -> str:
@@ -93,7 +94,20 @@ def report(
     drop: str | None = None,
     sweep_headers: list[str] | None = None,
     expiry: str = "21-Jan-28",
+    mixed_premium: str | None = None,
 ) -> str:
+    # VALE's risk reversal as the site drew it on 2026-10-07: 0.08 x 10,000 printed a premium of
+    # 10,000, which price x size x 100 (80,000) does not reproduce.
+    mixed = (
+        [
+            MENU + _symbol("VALE", "Vale S.A.") + _td("12:45:54.837", "10/2/2026 12:45:54 PM")
+            + _td("10,000") + _td("15-Jan-27") + _td("RR", "RR - Risk Reversal") + _cp("M")
+            + _td("270115 10/17 RR") + _td("0.08") + _td("0.17") + _td(mixed_premium) + _td("*")
+            + _td("13.63", "13.62 / 13.63") + _td("BOST")
+        ]
+        if mixed_premium is not None
+        else []
+    )  # fmt: skip
     tables = {
         "Birdseye": (
             BIRDSEYE_HEAD,
@@ -121,7 +135,8 @@ def report(
                 MENU + _symbol("AI", "C3.ai, Inc.") + _td("15:01:34.327", "10/2/2026 3:01:34 PM")
                 + _td("41,900") + _td("09-Oct-26") + _td("CS", "CS - Call Spread") + _cp("C")
                 + _td("261009 11/11.5 CS") + _td("-0.22") + _td("-0.24") + _td(spread_premium) + _td("")
-                + _td("11.12", "11.11 / 11.12") + _td("EDGX")
+                + _td("11.12", "11.11 / 11.12") + _td("EDGX"),
+                *mixed,
             ],
         ),
         "Top VolOverOI (OI &gt; 100)": (
@@ -501,3 +516,67 @@ def test_spreads_printed_together_share_a_group_and_names_span_tables():
     doc["tables"]["voloi"][0]["symbol"] = "TSLA"
     names = fq.derive(doc)["derived"]["names"]
     assert names == [{"symbol": "TSLA", "name": "Tesla, Inc.", "tables": ["birdseye", "voloi"]}]
+
+
+# ------------------------------------------------------------------------------------------------
+# A mixed structure (call and put legs, the site's `M`), first seen 2026-10-07.
+# ------------------------------------------------------------------------------------------------
+
+
+def _report_doc(**kw) -> dict:
+    return fq.derive(fq.parse_report(fq.tables_fragment(report(**kw), fq.HEADINGS, with_date=True)))
+
+
+def test_a_mixed_spread_reads_as_mixed_and_its_premium_is_not_checked():
+    assert _check(report(mixed_premium="10,000")) == []
+    vale = next(r for r in _report_doc(mixed_premium="10,000")["tables"]["spreads"] if r["symbol"] == "VALE")
+    assert vale["cp"] == "mixed" and vale["premium"] == 10_000 and vale["premium_unverified"] is True
+
+
+def test_a_mixed_spread_still_needs_its_numbers():
+    assert _check(report(mixed_premium="")) == ["spreads VALE: price, size or premium did not read"]
+
+
+def test_a_one_sided_spread_is_still_checked_beside_a_mixed_one():
+    problems = _check(report(mixed_premium="10,000", spread_premium="921,800"))
+    assert len(problems) == 1 and problems[0].startswith("spreads AI")
+
+
+def test_an_unverified_premium_is_never_the_largest_trade():
+    doc = _report_doc(mixed_premium="99,999,999")
+    ai = next(r for r in doc["tables"]["spreads"] if r["symbol"] == "AI")
+    assert ai["premium_unverified"] is False
+    assert doc["derived"]["largest_trade"]["symbol"] != "VALE"
+
+
+def _store(tmp_path, monkeypatch):
+    monkeypatch.setattr(fq, "store_dir", lambda: tmp_path)
+    folder = tmp_path / "hot-options"
+    folder.mkdir()
+    return folder
+
+
+def _reject(folder, day: str, page: str) -> None:
+    fragment = fq.tables_fragment(page, fq.HEADINGS, with_date=True)
+    (folder / f"{day}.rejected.html").write_text(fragment, encoding="utf-8")
+    (folder / f"{day}.rejected.json").write_text(
+        json.dumps({"saved_at": "2026-10-02T20:00:00+00:00"}), encoding="utf-8"
+    )
+
+
+def test_reparse_promotes_a_rejected_day_that_now_passes(tmp_path, monkeypatch):
+    folder = _store(tmp_path, monkeypatch)
+    _reject(folder, "2026-10-02", report(mixed_premium="10,000"))
+    assert fq.cmd_reparse(type("A", (), {"session": None})()) == 0
+    doc = json.loads((folder / "2026-10-02.json").read_text(encoding="utf-8"))
+    assert doc["problems"] == [] and doc["promoted_from_rejected"] is True
+    assert doc["saved_at"] == "2026-10-02T20:00:00+00:00"
+    assert (folder / "2026-10-02.html").exists()
+    assert not list(folder.glob("*.rejected.*"))
+
+
+def test_reparse_never_replaces_a_saved_day_and_keeps_a_still_failing_reject(tmp_path, monkeypatch):
+    folder = _store(tmp_path, monkeypatch)
+    _reject(folder, "2026-10-02", report(mixed_premium=""))  # still fails: premium did not read
+    assert fq.cmd_reparse(type("A", (), {"session": None})()) == 1
+    assert (folder / "2026-10-02.rejected.html").exists() and not (folder / "2026-10-02.json").exists()
