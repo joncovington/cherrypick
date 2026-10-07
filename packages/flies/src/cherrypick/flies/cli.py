@@ -204,6 +204,28 @@ def cmd_close_tags(args) -> int:
     return 0
 
 
+def cmd_close_tag_tracker(args) -> int:
+    """Every tagging arm in the paper and live ledgers, valued as if its closes had been taken, each
+    tag classed by how it ended, paper completions checked against live (read-only)."""
+    import sqlite3
+
+    from cherrypick.flies import analytics
+
+    # Read-only opens, not dbmod.connect: that migrates, and this command never writes either ledger.
+    ledgers = {}
+    for name, path in (("live", dbmod.live_db_path()), ("paper", args.db or dbmod.default_db_path())):
+        if pathlib.Path(path).exists():
+            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            conn.row_factory = sqlite3.Row
+            ledgers[name] = conn
+    out = analytics.close_tag_tracker(ledgers, start=args.start, end=args.end, symbol=args.symbol)
+    if not args.detail:
+        for arm in out["arms"]:
+            arm.pop("closes", None)
+    print(json.dumps({"ok": True, **out}, indent=2))
+    return 0
+
+
 def cmd_debit_first_offsets(args) -> int:
     """Settled debit-first rows cut by how far out of the money the centre sat, in strikes and in
     delta, side by side (read-only)."""
@@ -496,6 +518,15 @@ def main(argv=None) -> int:
     p_ct.add_argument("--end")
     p_ct.add_argument("--symbol")
     p_ct.set_defaults(func=cmd_close_tags)
+    p_ctt = sub.add_parser(
+        "close-tag-tracker",
+        help="every tagging arm, paper and live, valued as if its closes were taken; tags by outcome",
+    )
+    p_ctt.add_argument("--start")
+    p_ctt.add_argument("--end")
+    p_ctt.add_argument("--symbol")
+    p_ctt.add_argument("--detail", action="store_true", help="list every tag")
+    p_ctt.set_defaults(func=cmd_close_tag_tracker)
     p_ae = sub.add_parser(
         "agent-eval",
         help="the intraday agent's qualification (docs/intraday-agent-plan.md); --write replaces the file",

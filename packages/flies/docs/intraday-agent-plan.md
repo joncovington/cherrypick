@@ -84,6 +84,10 @@ So, as the hedge overlay does, a close is recorded on the row at the decision ti
 debit, its mid and spot. The position settles as always. `run.py close-tags --arm <arm>`
 (`analytics.close_tag_result`) values the arm as if every tagged close had been taken, at natural
 and at the 2x haircut. A later completion is forgone, as a real close would forgo it.
+`run.py close-tag-tracker` (`analytics.close_tag_tracker`) does the same for every tagging arm in
+both ledgers at once, classes each tag by how the position really ended (`stranded`, `completed`,
+`expired_otm`), and checks each paper tag that completed against live's same vertical that day
+(`live_twin`). A close that only "cost" a paper completion live never made cost nothing on live.
 
 **The agent is judged against `trend-rule`, not just against `control`.** If it cannot beat a rule
 built from the inputs it sees, the rule wins: it costs nothing and fails the same way twice.
