@@ -558,7 +558,15 @@
     "interval_minutes": 10,
     "start": "16:25",
     "end": "19:00",
-    "_window_note": "ET wall-clock, trading days only. Both ledgers settle at 16:20; each run posts whatever has settled and not been posted, so the window covers a late official print."
+    "_window_note": "ET wall-clock, trading days only. Both ledgers settle at 16:20; each run posts whatever has settled and not been posted, so the window covers a late official print.",
+    "intraday": {
+      "_comment": "The same chart while the book is still open, hourly through the session (job flies-payoff-intraday, scripts/flies_payoff_post.py --intraday), for the modes above. Captioned INTRADAY with each arm's open flies, net cash after fees, and the worst case at expiry with the band the floor holds over. One post per ledger per ET hour (state/flies-payoff-intraday.json); stands down once a ledger has settled. Independent of enabled above. OFF by default.",
+      "enabled": false,
+      "interval_minutes": 60,
+      "start": "10:01",
+      "end": "15:30",
+      "_window_note": "ET wall-clock, trading days only. 10:01 lands a minute after the status digest's hourly card; the last fire is 15:01."
+    }
   },
   "notify": {
     "_channels_note": "Push channels are OFF by default: only 'log' (always on, the floor) is listed, and the console's own on-screen toasts need no setting. Add 'desktop', 'slack' or 'discord' to turn one on. push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord), never in this file or env vars.",

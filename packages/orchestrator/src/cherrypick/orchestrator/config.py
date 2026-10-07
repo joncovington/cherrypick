@@ -792,6 +792,21 @@ def flies_payoff_post_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # Both ledgers settle at 16:20; live keeps retrying until the official print lands.
         "start": fp.get("start", "16:25"),
         "end": fp.get("end", "19:00"),
+        "intraday": flies_payoff_intraday_settings(fp),
+    }
+
+
+def flies_payoff_intraday_settings(fp: dict[str, Any]) -> dict[str, Any]:
+    """The same chart while the book is open (`flies_payoff_post.py --intraday`), its own job. OFF
+    by default and independent of the settled post's `enabled`, so either can run alone. Hourly, a
+    minute after the status digest's top-of-hour card so the picture lands beside it; the last fire
+    is 15:01, after which the settled post takes over."""
+    it = fp.get("intraday", {}) or {}
+    return {
+        "enabled": bool(it.get("enabled", False)),
+        "interval_minutes": int(it.get("interval_minutes", 60)),
+        "start": it.get("start", "10:01"),
+        "end": it.get("end", "15:30"),
     }
 
 
