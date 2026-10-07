@@ -40,8 +40,6 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
-import urllib.request
-import uuid
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -59,7 +57,6 @@ MODES = ("live", "paper")
 MARKER_KEEP = 30  # sessions of posted-markers kept; older ones can never be re-run by the job
 SETTLED_MARKERS = "flies-payoff-post.json"
 INTRADAY_MARKERS = "flies-payoff-intraday.json"
-USER_AGENT = "cherrypick-notifier/1.0 (+https://github.com/cherrypick)"  # notifier.py's; see _post
 
 
 def _now_et() -> datetime:
@@ -218,36 +215,26 @@ def capture(mode: str, session: str, out: Path) -> str | None:
     return None
 
 
-def post(image: Path, text: str) -> str | None:
-    """Upload one image with a caption to the Discord webhook; None on success, else why not."""
-    from cherrypick.notify import secrets  # the orchestrator's keyring entry; imported late for tests
+def post(image: Path, text: str, *, session: str | None = None, kind: str = "payoff") -> str | None:
+    """Upload one image with a caption to the Discord webhook; None on success, else why not. Sent
+    through the notifier's `send_webhook`, so the post is in the outbound record (`run.py sent`).
+    No inputs are fingerprinted: the ledger is a live SQLite file that changes every tick, so a
+    fingerprint of it would call every post stale."""
+    from cherrypick.notify import notifier, secrets  # the orchestrator's; imported late for tests
 
     url = secrets.get_webhook("discord")
     if not url:
         return "discord webhook not set (cherrypick secrets-set --channel discord)"
-    boundary = uuid.uuid4().hex
-    body = b"".join(
-        [
-            f"--{boundary}\r\n".encode(),
-            b'Content-Disposition: form-data; name="payload_json"\r\nContent-Type: application/json\r\n\r\n',
-            json.dumps({"content": text}).encode(),
-            f"\r\n--{boundary}\r\n".encode(),
-            f'Content-Disposition: form-data; name="files[0]"; filename="{image.name}"\r\n'.encode(),
-            b"Content-Type: image/png\r\n\r\n",
-            image.read_bytes(),
-            f"\r\n--{boundary}--\r\n".encode(),
-        ]
+    sent = notifier.send_webhook(
+        url,
+        {"content": text},
+        [image],
+        channel="discord",
+        source="flies-payoff-intraday" if kind == "payoff-intraday" else "flies-payoff-post",
+        kind=kind,
+        session=session,
     )
-    # Discord's Cloudflare front rejects urllib's default User-Agent with a 403 (notifier.py).
-    req = urllib.request.Request(
-        url, data=body,
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}", "User-Agent": USER_AGENT},
-    )  # fmt: skip
-    try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            return None if 200 <= resp.status < 300 else f"discord HTTP {resp.status}"
-    except Exception as exc:  # noqa: BLE001 - a failed post is reported, and retried next run
-        return f"discord post failed: {exc}"
+    return None if sent["ok"] else f"discord post failed: {sent['error']}"
 
 
 def run_mode(
@@ -294,7 +281,7 @@ def run_mode(
         if dry_run:
             _log(f"{mode}: dry run, captured {shot}, not posted:\n{text}")
             return "skipped"
-        why = post(shot, text)
+        why = post(shot, text, session=session, kind="payoff-intraday" if intraday else "payoff")
     if why is not None:
         _log(f"{mode}: {why}")
         return "failed"

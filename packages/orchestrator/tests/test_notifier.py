@@ -59,7 +59,7 @@ def test_discord_skips_when_webhook_unset(temp_floor, monkeypatch):
 def test_discord_posts_content_payload_from_keyring(temp_floor, monkeypatch):
     captured = {}
 
-    def fake_post(url, payload):
+    def fake_post(url, payload, **record):
         captured["url"], captured["payload"] = url, payload
         return {"ok": True, "status": 204}
 
@@ -86,7 +86,7 @@ def test_discord_embed_needs_no_content_beside_it(temp_floor, monkeypatch):
     monkeypatch.setattr(
         Notifier,
         "_post_json",
-        staticmethod(lambda url, payload: captured.update(payload) or {"ok": True, "status": 204}),
+        staticmethod(lambda url, payload, **record: captured.update(payload) or {"ok": True, "status": 204}),
     )
     n = Notifier({"channels": ["discord"]})
     n.notify("INFO", "k", "T", "B", embed={"title": "card"})

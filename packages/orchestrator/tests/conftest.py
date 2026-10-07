@@ -66,4 +66,10 @@ def isolated_state(request, tmp_path, monkeypatch):
     logs.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(cfgmod, "LOGS_DIR", logs, raising=False)
     monkeypatch.setattr(cfgmod, "log_file", lambda name: logs / name)
+    # And the outbound record (notifier.send_webhook): on 2026-10-07 the QuikOptions 429 test wrote
+    # two fake sends into the developer's real data/outbound, where `run.py sent` would list them.
+    from cherrypick.notify import notifier
+
+    outbound = tmp_path / "cherrypick-outbound"
+    monkeypatch.setattr(notifier, "outbound_dir", lambda: outbound)
     return state

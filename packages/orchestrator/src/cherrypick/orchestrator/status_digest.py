@@ -297,7 +297,11 @@ def run(cfg: dict | None = None, force: bool = False, close: bool = False) -> di
         session, hhmm, facts, watchdog, morning, halted, prev, close=close
     )
     notifier = Notifier({**cfg.get("notify", {}), "channels": settings["channels"]})
-    results = notifier.notify("INFO", "status.digest", title, message, embed=embed)
+    # No inputs fingerprinted: the provisional fact set is rebuilt every hour by design, so every
+    # earlier card would read as stale. The card is a snapshot of its hour, and says so.
+    results = notifier.notify(
+        "INFO", "status.digest", title, message, embed=embed, kind="digest", session=session
+    )
 
     state_path = _state_path()
     state_path.parent.mkdir(parents=True, exist_ok=True)

@@ -69,6 +69,12 @@ Subcommands:
   notify-desk          Card manual-desk orders and watch them to fill (own task, broker + network call).
   notify-status        Post the hourly suite-status digest card (own job, webhook push). --close posts
                        the day's CLOSE card (the daily 16:35 job); --force posts on a non-trading day too.
+  notify-send          Post a hand-written message (--channel, --file; --kind correction|note,
+                       --refers-to <message id>, --image, --date <session>, --dry-run) through the
+                       same send and outbound record as every scheduled post.
+  sent                 What the suite sent to webhooks: a session's (--date) or the last --days.
+                       --stale names inputs changed since a post went out; --verify asks Discord
+                       whether each message still exists; --kind narrows; --json for the records.
   secrets-set          Store a webhook URL in the keyring (--channel; --url or prompt).
   secrets-status       Show which push-channel secrets are configured (secret-free).
   secrets-delete       Remove a stored secret (--channel).
@@ -1296,6 +1302,126 @@ def cmd_notify_test(cfg) -> None:
     _emit({"ok": True, "channels": res})
 
 
+def cmd_sent(args) -> None:
+    """Everything the suite sent to a webhook (notify.notifier's outbound record): a session's with
+    --date, else the last --days. --stale names the inputs that changed after a post went out;
+    --verify asks Discord whether each message still exists. --json for the raw records."""
+    from datetime import UTC, datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.notify import notifier
+
+    et = ZoneInfo("America/New_York")
+    since = None
+    if not args.date:
+        since = (datetime.now(UTC) - timedelta(days=args.days)).isoformat()
+    entries = notifier.read_outbound(session=args.date, since=since, kind=args.kind)
+    corrected_by: dict[str, list[str]] = {}
+    for e in entries:
+        if e.get("refers_to"):
+            corrected_by.setdefault(e["refers_to"], []).append(e["ts"])
+    for e in entries:
+        if args.stale:
+            e["changed_inputs"] = notifier.changed_inputs(e)
+        if args.verify:
+            e["on_discord"] = notifier.verify_message(e)
+        if e.get("message_id") in corrected_by:
+            e["followed_by"] = corrected_by[e["message_id"]]
+    if args.json:
+        _emit(entries)
+        return
+    if not entries:
+        print("nothing sent" + (f" for {args.date}" if args.date else f" in the last {args.days} day(s)"))
+        return
+    for e in entries:
+        when = datetime.fromisoformat(e["ts"]).astimezone(et).strftime("%m-%d %H:%M:%S ET")
+        state = "sent" if e.get("ok") else f"FAILED ({e.get('error')})"
+        text = (e.get("content") or "").strip().splitlines() or [
+            ((e.get("embeds") or [{}])[0].get("title") or "") if e.get("embeds") else ""
+        ]
+        head = f"{when}  {e.get('kind', '?'):<15} {e.get('source', '?'):<22} {e.get('channel', '?'):<18}"
+        print(f"{head} {e.get('session') or '-':<10} {state}")
+        bits = [f"msg {e['message_id']}"] if e.get("message_id") else []
+        if e.get("attachments"):
+            bits.append(f"{len(e['attachments'])} image(s)")
+        if e.get("refers_to"):
+            bits.append(f"follows up {e['refers_to']}")
+        if e.get("followed_by"):
+            bits.append("followed up " + ", ".join(e["followed_by"]))
+        if args.verify:
+            bits.append(f"on Discord: {e['on_discord']}")
+        print(f"    {text[0][:100]}" + (f"  [{'; '.join(bits)}]" if bits else ""))
+        if args.stale:
+            if not e.get("inputs"):
+                print("    inputs: none recorded (cannot say whether it is stale)")
+            for c in e["changed_inputs"]:
+                now = "gone" if c["now"].get("missing") else f"changed {c['now'].get('mtime')}"
+                print(f"    STALE: {c['path']} {now}")
+
+
+def cmd_notify_send(args) -> None:
+    """Post a hand-written message (a correction, a note) to a webhook through the same send and
+    record as every scheduled post. The text comes from --file, so nothing a shell would expand
+    (a `$1` in `$17.55M`) can be lost on the way. --dry-run shows what would go."""
+    from cherrypick.notify import notifier
+
+    if not args.channel or not args.file:
+        _emit({"ok": False, "error": "notify-send needs --channel and --file"})
+        sys.exit(2)
+    text = Path(args.file).read_text(encoding="utf-8").strip()
+    images = [Path(p) for p in (args.image or [])]
+    missing = [str(p) for p in images if not p.exists()]
+    if not text or missing or len(text) > 2000:
+        why = (
+            "empty message"
+            if not text
+            else f"missing image(s): {missing}"
+            if missing
+            else "over 2000 characters"
+        )
+        _emit({"ok": False, "error": why})
+        sys.exit(2)
+    payload = {"content": text, "allowed_mentions": {"parse": []}}
+    if images:
+        payload["attachments"] = [{"id": i, "filename": p.name} for i, p in enumerate(images)]
+    if args.dry_run:
+        _emit(
+            {
+                "ok": True,
+                "dry_run": True,
+                "channel": args.channel,
+                "payload": payload,
+                "images": [str(p) for p in images],
+            }
+        )
+        return
+    url = notify_secrets.read_entry(args.channel)
+    if not url or url is notify_secrets.KEYRING_UNAVAILABLE:
+        _emit(
+            {
+                "ok": False,
+                "error": f"no {args.channel} webhook readable "
+                f"(cherrypick secrets-set --channel {args.channel})",
+            }
+        )
+        sys.exit(1)
+    if not str(args.channel).startswith("discord"):
+        payload = {"text": text}
+    sent = notifier.send_webhook(
+        str(url),
+        payload,
+        images,
+        channel=args.channel,
+        source="notify-send",
+        kind=args.kind or "note",
+        session=args.date,
+        refers_to=args.refers_to,
+    )
+    _emit({"ok": sent["ok"], "message_id": sent["message_id"], "error": sent["error"]})
+    if not sent["ok"]:
+        sys.exit(1)
+
+
 def cmd_secrets_set(channel: str | None, url: str | None) -> None:
     if channel not in notify_secrets.WEBHOOKS:
         _emit({"ok": False, "error": f"--channel must be one of {list(notify_secrets.WEBHOOKS)}"})
@@ -1371,6 +1497,8 @@ def build_parser() -> argparse.ArgumentParser:
             "notify-trades",
             "notify-desk",
             "notify-status",
+            "notify-send",
+            "sent",
             "secrets-set",
             "secrets-status",
             "secrets-delete",
@@ -1393,7 +1521,10 @@ def build_parser() -> argparse.ArgumentParser:
         "live-armed today. For notify-status: post on a non-trading day too.",
     )
     parser.add_argument(
-        "--date", default=None, help="For report/eod-digest: a session day 'YYYY-MM-DD' (default today)"
+        "--date",
+        default=None,
+        help="For report/eod-digest: a session day 'YYYY-MM-DD' (default today). For sent: that "
+        "session's posts. For notify-send: the session the message is about",
     )
     parser.add_argument(
         "--eod", action="store_true", help="For report: restrict to today's (ET) session instead of all-time"
@@ -1511,7 +1642,36 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--list", action="store_true", help="For backup: show the backup on hand")
-    parser.add_argument("--verify", action="store_true", help="For backup: re-check the backup on hand")
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="For backup: re-check the backup on hand. "
+        "For sent: ask Discord whether each message still exists",
+    )
+    parser.add_argument(
+        "--stale",
+        action="store_true",
+        help="For sent: name each post's inputs that changed after it went out",
+    )
+    parser.add_argument(
+        "--days", type=int, default=7, help="For sent: how far back, without --date (default 7)"
+    )
+    parser.add_argument(
+        "--kind",
+        default=None,
+        help="For sent: only this kind (notify, digest, report, morning, weekly, payoff, payoff-intraday, "
+        "correction, note). For notify-send: correction or note (default note)",
+    )
+    parser.add_argument("--file", default=None, help="For notify-send: the message text, from a file")
+    parser.add_argument(
+        "--image", action="append", default=None, help="For notify-send: attach an image (repeatable)"
+    )
+    parser.add_argument(
+        "--refers-to",
+        dest="refers_to",
+        default=None,
+        help="For notify-send: the Discord message id this one corrects or follows up (see `sent`)",
+    )
     parser.add_argument(
         "--restore-to",
         dest="restore_to",
@@ -1586,6 +1746,8 @@ def main() -> None:
         "notify-trades": lambda: cmd_notify_trades(cfg, dry_run=args.dry_run),
         "notify-desk": lambda: cmd_notify_desk(cfg),
         "notify-status": lambda: cmd_notify_status(cfg, force=args.force, close=args.close),
+        "notify-send": lambda: cmd_notify_send(args),
+        "sent": lambda: cmd_sent(args),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),
         "run-earnings-symbol-watch": lambda: _run_earnings_symbol_watch(cfg),

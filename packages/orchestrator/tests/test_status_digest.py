@@ -243,8 +243,8 @@ def test_run_discards_a_prior_days_watermark(isolated_state, tmp_path, monkeypat
         def __init__(self, _cfg):
             pass
 
-        def notify(self, level, key, title, message, embed=None):
-            sent.update({"message": message, "embed": embed})
+        def notify(self, level, key, title, message, embed=None, **record):
+            sent.update({"message": message, "embed": embed, **record})
             return {"log": {"ok": True}}
 
     monkeypatch.setattr(status_digest, "Notifier", Spy)
@@ -252,6 +252,8 @@ def test_run_discards_a_prior_days_watermark(isolated_state, tmp_path, monkeypat
     res = status_digest.run(cfg={"notify": {}}, force=True)
     assert res["ok"]
     assert "Δ" not in json.dumps(sent["embed"])
+    # The outbound record knows it as the day's digest (notifier.send_webhook).
+    assert (sent["kind"], sent["session"]) == ("digest", res["session"])
     # The watermark now names today's session, so the NEXT run deltas correctly.
     saved = json.loads((isolated_state / "status_digest.json").read_text(encoding="utf-8"))
     assert saved["session"] == res["session"]

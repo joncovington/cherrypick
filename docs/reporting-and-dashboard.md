@@ -139,6 +139,26 @@ A digest line reads `MEIC digest 13:45 ET — SPX: 30 entries (open×10 width-10
 net +$48 · day 7 trades net +$61`, with a matching Discord card. Arms are **counted, not listed** — a
 30-entry window would otherwise repeat the same three labels ten times each.
 
+## What was sent: the outbound record
+
+Every webhook send in the suite goes through one function, `notify.notifier.send_webhook`: the
+QuikOptions series, the flies payoff charts, the status digest, trade and watchdog notifications,
+and anything posted by hand with `run.py notify-send`. Each send, landed or not, appends a line to
+`~/.cherrypick/data/outbound/YYYY-MM.jsonl` (under `data/`, so the log archive never moves it):
+the text and card fields sent, a fingerprint of each image, the webhook's name (never its URL), the
+message id Discord returns, the session, and fingerprints of the files the message was built from.
+
+`run.py sent` reads it back. `--stale` names a post whose inputs changed after it went out — the
+question that took a rebuilt parser and a backup to answer for the 10-05 QuikOptions post.
+`--verify` asks Discord whether each message is still there. A correction sent with
+`notify-send --refers-to <message id>` is shown against the post it corrects. Two senders record no
+inputs, by design: the flies payoff chart (its ledger is a live SQLite file that changes every tick)
+and the hourly status digest (its provisional fact set is rebuilt every hour). For those, `--stale`
+says it cannot tell rather than calling every post stale.
+
+Recording is best-effort, like every push: a record that cannot be written never stops or fails a
+send.
+
 ## The console
 
 The suite's **one read surface**: `packages/console`, a Node + TypeScript server and a React SPA on
