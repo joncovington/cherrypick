@@ -103,3 +103,80 @@ def test_no_book_for_the_session_is_nothing_to_do(script):
     dbmod.connect(dbmod.live_db_path())
     assert script.main(["--mode", "live", "--session", DAY]) == 0
     assert script.calls["captured"] == []
+
+
+# --------------------------------------------------------------------------- --intraday
+# The same chart while the book is open, hourly through the session. It never waits for settlement,
+# stops once a ledger has settled, and posts at most once per ledger per ET hour.
+
+
+def _open_book(conn, arm, *, net_cash, worst, band=(7710.0, 7782.0), unbounded=0):
+    conn.execute(
+        "INSERT INTO fly_books (book_id, trade_date, arm, symbol, status, net_cash, worst, band_low, band_high,"
+        " unbounded_below) VALUES (?, ?, ?, 'SPX', 'open', ?, ?, ?, ?, ?)",
+        (f"{DAY}:{arm}:SPX", DAY, arm, net_cash, worst, band[0], band[1], unbounded),
+    )
+    conn.commit()
+
+
+def _open_position(conn, arm, n):
+    conn.execute(
+        "INSERT INTO fly_positions (position_id, trade_date, arm, symbol, status) VALUES (?, ?, ?, 'SPX', 'open')",
+        (f"O-{arm}-{n}", DAY, arm),
+    )
+    conn.commit()
+
+
+@pytest.fixture
+def at(script, monkeypatch):
+    """Set the script's ET wall clock to HH:MM on DAY."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    def set_clock(hhmm: str):
+        h, m = map(int, hhmm.split(":"))
+        now = datetime(2026, 9, 30, h, m, tzinfo=ZoneInfo("America/New_York"))
+        monkeypatch.setattr(script, "_now_et", lambda: now)
+
+    return set_clock
+
+
+def test_intraday_posts_the_open_book_and_says_it_is_not_a_result(script, at):
+    at("11:01")
+    conn = dbmod.connect(dbmod.default_db_path())
+    _open_book(conn, "control", net_cash=347.1, worst=-207.9)
+    _open_book(conn, "bwb-up", net_cash=0.0, worst=0.0, band=(None, None))
+    _open_book(conn, "debit-first-down", net_cash=-574.73, worst=-578.73, band=(7655.0, 7784.0), unbounded=1)
+    for n in range(3):
+        _open_position(conn, "control", n)
+    _open_position(conn, "debit-first-down", 0)
+    assert script.run_mode("paper", DAY, dry_run=False, force=False, keep=None, intraday=True) == "posted"
+    lines = script.calls["posted"][0].splitlines()
+    assert "11:01 ET (INTRADAY, open book)" in lines[0]
+    assert lines[1:] == [
+        "`control` 3 open · net cash +$347.10 · worst at expiry -$207.90 · ≥0 7710–7782",
+        "`debit-first-down` 1 open · net cash -$574.73 · worst at expiry -$578.73 · ≥0 7655–7784 (unbounded below)",
+        "no open flies: `bwb-up`",
+    ]
+
+
+def test_intraday_posts_once_an_hour_and_never_marks_the_settled_post(script, at):
+    conn = dbmod.connect(dbmod.default_db_path())
+    _open_book(conn, "control", net_cash=10.0, worst=-5.0)
+    _open_position(conn, "control", 0)
+    at("11:01")
+    assert script.run_mode("paper", DAY, dry_run=False, force=False, keep=None, intraday=True) == "posted"
+    at("11:40")  # a supervisor restart re-fires the job inside the same hour
+    assert script.run_mode("paper", DAY, dry_run=False, force=False, keep=None, intraday=True) == "skipped"
+    at("12:01")
+    assert script.run_mode("paper", DAY, dry_run=False, force=False, keep=None, intraday=True) == "posted"
+    assert len(script.calls["posted"]) == 2
+    assert not script.already_posted(DAY, "paper")  # the after-bell post still has its turn
+
+
+def test_intraday_stands_down_once_the_ledger_has_settled(script, at):
+    at("16:01")
+    conn = dbmod.connect(dbmod.default_db_path())
+    _book(conn, "control")
+    assert script.run_mode("paper", DAY, dry_run=False, force=False, keep=None, intraday=True) == "skipped"
+    assert script.calls["captured"] == []

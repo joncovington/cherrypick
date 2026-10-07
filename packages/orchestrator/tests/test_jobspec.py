@@ -287,6 +287,7 @@ def test_derive_full_suite_job_table():
         "status-digest",
         "status-digest-close",
         "flies-payoff-post",
+        "flies-payoff-intraday",
         "flies-intraday-agent",
         "flies-intraday-agent-live",
         "console",
@@ -1139,3 +1140,22 @@ def test_quikoptions_jobs_run_the_suite_scripts_with_the_configured_capture():
     assert by_id["quikoptions-post"].argv[1].endswith("quikoptions_post.py")
     assert by_id["quikoptions-morning"].argv[2:4] == ("--kind", "morning")
     assert by_id["quikoptions-weekly"].argv[2:] == ("--kind", "weekly")
+
+
+def test_flies_payoff_intraday_is_its_own_job_off_by_default():
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    job = by_id["flies-payoff-intraday"]
+    assert not job.enabled
+    assert job.enabled_reason == "disabled in config (flies_payoff_post.intraday)"
+    assert "--intraday" in job.argv
+    assert (job.window_start, job.window_end, job.interval_seconds) == ("10:01", "15:30", 3600)
+    # The after-bell post never carries the flag.
+    assert "--intraday" not in by_id["flies-payoff-post"].argv
+
+
+def test_flies_payoff_intraday_runs_without_the_settled_post():
+    cfg = suite_cfg(flies_payoff_post={"enabled": False, "modes": ["paper"], "intraday": {"enabled": True}})
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert by_id["flies-payoff-intraday"].enabled
+    assert not by_id["flies-payoff-post"].enabled
+    assert by_id["flies-payoff-intraday"].argv[-2:] == ("--mode", "paper")

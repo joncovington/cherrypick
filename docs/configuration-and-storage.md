@@ -141,7 +141,7 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | `advisor` | **off twice** (suite + per-module `advice` bounds), and needs `claude` | `advisor-deep` (17:00 ET) |
 | `status_digest` | **off** | `status-digest` (hourly), `status-digest-close` 16:35 ET |
 | `desk_notify` | **off** | `desk-notify` |
-| `flies_payoff_post` | **off** | `flies-payoff-post` |
+| `flies_payoff_post` | **off**; its `intraday` block is off separately | `flies-payoff-post`, `flies-payoff-intraday` (hourly, 10:01–15:30 ET) |
 | `symbol_watch` | **off**, daily 06:30 when enabled | `symbol-watch` |
 | `backup` | **on**, daily 01:30 | `suite-backup` |
 | `config_backup` | **off** (opt in; `run.py config-backup --init --enable`, the installer, or the Config page) | `config-backup` |

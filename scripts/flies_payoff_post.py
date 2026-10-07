@@ -18,8 +18,16 @@ rather than crops the wrong thing. The card's title carries the session date and
 the ledger's latest session, so a run for a day the page no longer shows fails loudly rather than
 posting another day's chart under this one's caption.
 
+`--intraday` is the same chart while the book is still open, posted hourly through the session
+(its own job, `flies-payoff-intraday`). It never waits for settlement and stops once a ledger has
+settled, where the after-bell post takes over. Its caption states only what the book already
+records -- each arm's open flies, net cash (credit - debits - fees) and the worst case at expiry
+with the band the floor holds over -- and says INTRADAY, so it is never read as a result. One post
+per ledger per ET hour, marked in `state/flies-payoff-intraday.json`, so a supervisor restart that
+re-fires the job inside the hour does not post twice.
+
     python scripts/flies_payoff_post.py [--mode live --mode paper] [--session YYYY-MM-DD]
-                                        [--dry-run] [--force] [--keep DIR]
+                                        [--intraday] [--dry-run] [--force] [--keep DIR]
 """
 
 from __future__ import annotations
@@ -49,6 +57,8 @@ CONSOLE = REPO / "packages" / "console"
 UI_CHECK = CONSOLE / "tools" / "ui-check.mjs"
 MODES = ("live", "paper")
 MARKER_KEEP = 30  # sessions of posted-markers kept; older ones can never be re-run by the job
+SETTLED_MARKERS = "flies-payoff-post.json"
+INTRADAY_MARKERS = "flies-payoff-intraday.json"
 USER_AGENT = "cherrypick-notifier/1.0 (+https://github.com/cherrypick)"  # notifier.py's; see _post
 
 
@@ -112,22 +122,59 @@ def caption(mode: str, conn, session: str) -> str:
     return "\n".join([head, *lines])[:1900]  # Discord caps content at 2000
 
 
-def _markers() -> dict:
+def intraday_caption(mode: str, conn, session: str, hhmm: str) -> str:
+    """The open book in one message, from what the module itself recorded on `fly_books`. Net cash
+    is already after fees; the worst case is the book's own scan over every settlement price, and
+    the band beside it is where that floor holds -- a floor is never quoted without its band."""
+    open_by_arm = dict(
+        conn.execute(
+            "SELECT arm, COUNT(*) FROM fly_positions WHERE trade_date = ? AND status = 'open' GROUP BY arm",
+            (session,),
+        ).fetchall()
+    )
+    books = conn.execute(
+        "SELECT arm, net_cash, worst, band_low, band_high, unbounded_below FROM fly_books"
+        " WHERE trade_date = ? ORDER BY arm",
+        (session,),
+    ).fetchall()
+    ledger = "LIVE" if mode == "live" else "paper"
+    head = f"**Flies {ledger} — payoff at expiry, {session} {hhmm} ET (INTRADAY, open book)**"
+    lines: list[str] = []
+    idle: list[str] = []
+    for b in sorted(books, key=lambda b: (-(b["net_cash"] or 0.0), b["arm"])):
+        n = open_by_arm.get(b["arm"], 0)
+        if n == 0:
+            idle.append(b["arm"])
+            continue
+        line = f"`{b['arm']}` {n} open · net cash {_money(b['net_cash'] or 0.0)}"
+        if b["worst"] is not None:
+            line += f" · worst at expiry {_money(b['worst'])}"
+        if b["band_low"] is not None and b["band_high"] is not None:
+            line += f" · ≥0 {b['band_low']:.0f}–{b['band_high']:.0f}"
+        if b["unbounded_below"]:
+            line += " (unbounded below)"
+        lines.append(line)
+    if idle:
+        lines.append("no open flies: " + ", ".join(f"`{a}`" for a in idle))
+    return "\n".join([head, *lines])[:1900]  # Discord caps content at 2000
+
+
+def _markers(name: str = SETTLED_MARKERS) -> dict:
     try:
-        return json.loads((_home.state_dir() / "flies-payoff-post.json").read_text(encoding="utf-8"))
+        return json.loads((_home.state_dir() / name).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 
 
-def already_posted(session: str, mode: str) -> bool:
-    return mode in (_markers().get(session) or {})
+def already_posted(session: str, mode: str, name: str = SETTLED_MARKERS) -> bool:
+    return mode in (_markers(name).get(session) or {})
 
 
-def mark_posted(session: str, mode: str) -> None:
-    markers = _markers()
+def mark_posted(session: str, mode: str, name: str = SETTLED_MARKERS) -> None:
+    markers = _markers(name)
     markers.setdefault(session, {})[mode] = _now_et().isoformat(timespec="seconds")
     kept = dict(sorted(markers.items())[-MARKER_KEEP:])
-    path = _home.state_dir() / "flies-payoff-post.json"
+    path = _home.state_dir() / name
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(kept, indent=1), encoding="utf-8")
@@ -203,8 +250,15 @@ def post(image: Path, text: str) -> str | None:
         return f"discord post failed: {exc}"
 
 
-def run_mode(mode: str, session: str, *, dry_run: bool, force: bool, keep: Path | None) -> str:
+def run_mode(
+    mode: str, session: str, *, dry_run: bool, force: bool, keep: Path | None, intraday: bool = False
+) -> str:
     """One ledger's turn. Returns 'posted', 'skipped' (nothing to do, now or ever) or 'failed'."""
+    # Intraday markers are per ledger per ET hour: the key is "<mode>@<HH>", in their own file, so
+    # the settled post's once-per-session marker is never touched by an hourly one.
+    hhmm = _now_et().strftime("%H:%M")
+    key = f"{mode}@{hhmm[:2]}" if intraday else mode
+    markers = INTRADAY_MARKERS if intraday else SETTLED_MARKERS
     path = ledger_path(mode)
     if not Path(path).exists():
         _log(f"{mode}: no ledger at {path}")
@@ -215,18 +269,23 @@ def run_mode(mode: str, session: str, *, dry_run: bool, force: bool, keep: Path 
         if conn.execute("SELECT COUNT(*) FROM fly_books WHERE trade_date = ?", (session,)).fetchone()[0] == 0:
             _log(f"{mode}: no book for {session}")
             return "skipped"
-        if not is_settled(mode, conn, session):
+        settled = is_settled(mode, conn, session)
+        if intraday and settled:
+            _log(f"{mode}: {session} has settled; the after-bell post covers it")
+            return "skipped"
+        if not intraday and not settled:
             _log(f"{mode}: {session} not settled yet" + (" on an official print" if mode == "live" else ""))
             return "skipped"
-        if already_posted(session, mode) and not force:
-            _log(f"{mode}: {session} already posted")
+        if already_posted(session, key, markers) and not force:
+            _log(f"{mode}: {session} already posted" + (f" this hour ({hhmm[:2]}h)" if intraday else ""))
             return "skipped"
-        text = caption(mode, conn, session)
+        text = intraday_caption(mode, conn, session, hhmm) if intraday else caption(mode, conn, session)
     finally:
         conn.close()
 
     with tempfile.TemporaryDirectory() as tmp:
-        shot = (keep or Path(tmp)) / f"flies-payoff-{mode}-{session}.png"
+        stem = f"flies-payoff-{mode}-{session}" + (f"-{hhmm.replace(':', '')}" if intraday else "")
+        shot = (keep or Path(tmp)) / f"{stem}.png"
         shot.parent.mkdir(parents=True, exist_ok=True)
         why = capture(mode, session, shot)
         if why is not None:
@@ -239,8 +298,8 @@ def run_mode(mode: str, session: str, *, dry_run: bool, force: bool, keep: Path 
     if why is not None:
         _log(f"{mode}: {why}")
         return "failed"
-    mark_posted(session, mode)
-    _log(f"{mode}: posted {session}")
+    mark_posted(session, key, markers)
+    _log(f"{mode}: posted {session}" + (f" intraday {hhmm}" if intraday else ""))
     return "posted"
 
 
@@ -250,11 +309,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--session", default=None, help="YYYY-MM-DD; default today (ET)")
     ap.add_argument("--dry-run", action="store_true", help="capture and caption, post nothing")
     ap.add_argument("--force", action="store_true", help="post even if this session was posted")
+    ap.add_argument(
+        "--intraday", action="store_true", help="the open book, hourly; skips once a ledger has settled"
+    )
     ap.add_argument("--keep", type=Path, default=None, help="keep the screenshots in this directory")
     args = ap.parse_args(argv)
     session = args.session or _now_et().date().isoformat()
     outcomes = [
-        run_mode(m, session, dry_run=args.dry_run, force=args.force, keep=args.keep)
+        run_mode(m, session, dry_run=args.dry_run, force=args.force, keep=args.keep, intraday=args.intraday)
         for m in (args.mode or MODES)
     ]
     return 1 if "failed" in outcomes else 0

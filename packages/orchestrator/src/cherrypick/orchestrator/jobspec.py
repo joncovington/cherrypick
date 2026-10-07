@@ -599,6 +599,25 @@ def derive_jobs(
             enabled_reason="" if fp["enabled"] else "disabled in config (flies_payoff_post)",
         ),
     )
+    # --- flies-payoff-intraday: the same chart while the book is open, hourly through the session
+    fpi = fp["intraday"]
+    add(
+        "flies-payoff-intraday",
+        lambda: JobSpec(
+            id="flies-payoff-intraday",
+            # The same script with --intraday: no settlement wait, one post per ledger per ET hour
+            # (its own marker file), and it stands down once a ledger has settled.
+            argv=(pythonw, _suite_script(launcher, "flies_payoff_post.py"), "--intraday")
+            + tuple(arg for m in fp["modes"] for arg in ("--mode", m)),
+            kind=KIND_INTERVAL,
+            interval_seconds=fpi["interval_minutes"] * 60,
+            window_start=fpi["start"],
+            window_end=fpi["end"],
+            trading_days_only=True,
+            enabled=fpi["enabled"],
+            enabled_reason="" if fpi["enabled"] else "disabled in config (flies_payoff_post.intraday)",
+        ),
+    )
 
     # --- console (the suite's read surface): the one job with no window at all
     con = cfgmod.console_settings(cfg)

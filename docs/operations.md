@@ -47,6 +47,7 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `status-digest-close` | daily **16:35**, trading days | `run.py notify-status --close` | off | the day's CLOSE card after the 0DTE books settle and the 16:30 review-provisional build |
 | `desk-notify` | every **60 s** | `run.py notify-desk` | off | cards each manual-desk order; reads the desk's journal as a file and never imports the desk |
 | `flies-payoff-post` | every **10 min**, 16:25–19:00, trading days | `scripts/flies_payoff_post.py --mode live --mode paper` | off | the settled flies payoff chart to Discord, once per ledger per session; captured from the console, so it needs the console up |
+| `flies-payoff-intraday` | every **60 min**, 10:01–15:30, trading days | `scripts/flies_payoff_post.py --intraday --mode live --mode paper` | off | the same chart while the book is open, captioned INTRADAY with each arm's open flies, net cash and worst case at expiry; once per ledger per ET hour, standing down once a ledger settles (`flies_payoff_post.intraday.enabled`) |
 | `guard-mutants` | daily **08:50**, trading days — **skips when nothing changed** | `scripts/guard_mutants.py --if-changed` | on | re-runs each guard's test clean (must pass) and under a mutant that breaks it in memory (must fail on an assertion); a guard that can no longer fail is a WARNING. Runs only when the checkout differs from the last passing run. Writes `state/guard-mutants.last.json` |
 
 **Module loops**
