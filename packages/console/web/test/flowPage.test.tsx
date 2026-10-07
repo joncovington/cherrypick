@@ -75,6 +75,7 @@ const DAY: OptionsFlowDay = {
       group: "AI 15:01:34.327 41900",
       underlying: { last: 11.12, bid: 11.11, ask: 11.12 },
       exchange: "EDGX",
+      premiumUnverified: false,
     },
   ],
   voloi: [{ symbol: "SPCX", name: null, volume: 135071, oi: 119, vOi: 1135.05, expires: "2026-10-02", strike: 157.5, cp: "put" }],
@@ -147,6 +148,28 @@ describe("the Options flow page", () => {
     expect(html).toContain("⛓");
     expect(html).toContain(">0.22<");
     expect(html).toContain("bid 11.11 / ask 11.12");
+  });
+
+  it("a mixed structure's premium is marked unverified and draws no bar", () => {
+    const vale = {
+      ...DAY.spreads[0]!,
+      symbol: "VALE",
+      type: "RR",
+      cp: "mixed" as const,
+      spread: "270115 10/17 RR",
+      price: 0.08,
+      premium: 10000,
+      premiumUnverified: true,
+      direction: null,
+      group: null,
+    };
+    const one = render(<FlowSpreads day={{ ...DAY, spreads: [DAY.spreads[0]!] }} />);
+    const both = render(<FlowSpreads day={{ ...DAY, spreads: [DAY.spreads[0]!, vale] }} />);
+    expect(both).toContain("so it is unverified");
+    expect(one).not.toContain("so it is unverified");
+    // One bar either way: the unverified row neither draws one nor rescales the others.
+    const bars = (html: string) => html.split("<svg").length - 1;
+    expect(bars(both)).toBe(bars(one));
   });
 
   it("the derived flow card shows the confirmed score when there is one, toned by the view", () => {

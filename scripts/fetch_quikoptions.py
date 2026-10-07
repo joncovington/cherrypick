@@ -324,7 +324,9 @@ def _cell_value(kind: str, cell: dict):
     if kind == EXPIRY:
         return _expiry(text)
     if kind == CP:
-        return {"C": "call", "P": "put"}.get(text)
+        # M is the site's own word for a structure with both a call and a put leg (a risk reversal,
+        # a strangle), first seen 2026-10-07: read, not missing.
+        return {"C": "call", "P": "put", "M": "mixed"}.get(text)
     if kind == SIDE:
         return parse_side(cell["tips"][0]) if cell["tips"] else None
     if kind == TIME:
@@ -406,7 +408,8 @@ def validate_report(doc: dict, expected: date | None = None) -> list[str]:
     rounding; Premium = price x size x 100 on sweeps and spreads (signed, on spreads); V/OI =
     Volume / OI, and Openings rows have OI 0 and V/OI = Volume. Plus: the session the page states
     is the one expected, every table is there with at least one row, every expiry and call/put
-    reads."""
+    reads. A mixed spread (call and put legs, `M`) is the one row the premium identity is not
+    checked on: the site's premium for one does not satisfy it."""
     problems = list(doc.get("problems", []))
     if expected is not None and doc.get("session") != expected.isoformat():
         problems.append(f"page shows session {doc.get('session')}, expected {expected.isoformat()}")
@@ -452,6 +455,12 @@ def validate_report(doc: dict, expected: date | None = None) -> list[str]:
             )
             if None in (price, size, premium):
                 problems.append(f"{name} {sym}: price, size or premium did not read")
+            elif row.get("cp") == "mixed":
+                # The site's premium for a mixed structure is not price x size x 100 (2026-10-07:
+                # RUN 6/12 RR at 0.16 x 113,000 printed 1,130; VALE and BABA off by other factors),
+                # and no formula fits all three. It is kept as the site's figure and marked
+                # unverified in `derive`, never checked against an identity it does not satisfy.
+                pass
             elif abs(price * size * 100 - premium) > tol:
                 problems.append(f"{name} {sym}: {price} x {size} x 100 != premium {premium:,.0f}")
 
@@ -484,7 +493,7 @@ def validate_report(doc: dict, expected: date | None = None) -> list[str]:
 # What the console and the Discord series show beyond the site's own cells. Computed here, at
 # capture, because the console derives no verdicts of its own; recomputable for every saved day
 # from its HTML (`reparse`), so a change to a rule here is a re-run, never a lost day.
-DERIVED_VERSION = 1
+DERIVED_VERSION = 2  # 2: spreads carry premium_unverified (mixed), kept out of largest_trade
 SIZE_BANDS = {
     "1": ("1s",),
     "2-10": ("2s", "3s", "4s", "5s", "6s", "7s", "8s", "9s", "10s"),
@@ -529,6 +538,7 @@ def derive(doc: dict) -> dict:
     groups: dict[tuple, int] = {}
     for row in tables.get("spreads", []):
         row["direction"] = spread_direction(row.get("price"), row.get("delta"), row.get("cp"))
+        row["premium_unverified"] = row.get("cp") == "mixed"
         key = (row.get("symbol"), row.get("time_et"), row.get("size"))
         groups[key] = groups.get(key, 0) + 1
     for row in tables.get("spreads", []):
@@ -557,8 +567,10 @@ def derive(doc: dict) -> dict:
     largest = None
     for name in ("outrights", "sweeps", "spreads"):
         for row in tables.get(name, []):
-            if row.get("premium") is not None and (
-                largest is None or abs(row["premium"]) > largest["premium"]
+            if (
+                row.get("premium") is not None
+                and not row.get("premium_unverified")
+                and (largest is None or abs(row["premium"]) > largest["premium"])
             ):
                 largest = {"table": name, "symbol": row.get("symbol"), "premium": abs(row["premium"])}
     doc["derived"] = {
@@ -1004,6 +1016,42 @@ def cmd_reparse(args) -> int:
     if args.session:
         days = [p for p in days if p.stem in args.session]
     bad = 0
+    # A rejected day whose own HTML now passes (a parser fix, as on 2026-10-07) becomes the day:
+    # its tables and JSON are written under the day's name and the rejected pair is removed. A day
+    # that already has a saved capture is never replaced by a rejected one.
+    rejected = sorted(folder.glob("????-??-??.rejected.html")) if folder.exists() else []
+    for html_path in rejected:
+        day = html_path.name.split(".", 1)[0]
+        if args.session and day not in args.session:
+            continue
+        if (folder / f"{day}.json").exists():
+            continue
+        fragment = html_path.read_text(encoding="utf-8")
+        doc = derive(parse_report(fragment))
+        problems = validate_report(doc, date.fromisoformat(day))
+        if problems:
+            bad += 1
+            print(f"{day}: still rejected — {'; '.join(problems[:3])}")
+            continue
+        try:
+            old = json.loads(html_path.with_suffix(".json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            old = {}
+        now = datetime.now(UTC).isoformat(timespec="seconds")
+        (folder / f"{day}.html").write_text(fragment, encoding="utf-8")
+        write_json_atomic(
+            folder / f"{day}.json",
+            {
+                **doc,
+                "problems": [],
+                "saved_at": old.get("saved_at"),
+                "reparsed_at": now,
+                "promoted_from_rejected": True,
+            },
+        )
+        html_path.unlink()
+        html_path.with_suffix(".json").unlink(missing_ok=True)
+        print(f"{day}: promoted from rejected")
     for html_path in days:
         json_path = html_path.with_suffix(".json")
         doc = derive(parse_report(html_path.read_text(encoding="utf-8")))

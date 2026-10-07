@@ -40,6 +40,7 @@ function capture(session: string): Record<string, unknown> {
       spreads: [
         { symbol: "AI", time_et: "15:01:34.327", size: 41900, price: 0.47, delta: 0.24, premium: 1969300, direction: "bought", group: "AI 15:01:34.327 41900", underlying: { last: 11.12, bid: 11.11, ask: 11.12 } },
         { symbol: "AI", time_et: "15:01:34.327", size: 41900, price: -0.22, delta: -0.24, premium: -921800, direction: "sold", group: "AI 15:01:34.327 41900" },
+        { symbol: "VALE", time_et: "12:45:54.837", size: 10000, type: "RR", cp: "mixed", price: 0.08, delta: 0.17, premium: 10000, premium_unverified: true, direction: null, group: null },
       ],
       voloi: [{ symbol: "SPCX", volume: 135071, oi: 119, v_oi: 1135.05 }],
       openings: [{ symbol: "AXGN", volume: 11105, oi: 0, v_oi: 11105 }],
@@ -89,6 +90,13 @@ describe("options flow reader", () => {
     expect(day.spreads.map((s) => [s.direction, s.group])).toEqual([
       ["bought", "AI 15:01:34.327 41900"],
       ["sold", "AI 15:01:34.327 41900"],
+      [null, null],
+    ]);
+    // A mixed structure (the site's M, 2026-10-07) keeps its side and says its premium is the site's.
+    expect(day.spreads.map((s) => [s.cp, s.premiumUnverified])).toEqual([
+      [null, false],
+      [null, false],
+      ["mixed", true],
     ]);
     expect(day.spreads[1]?.underlying).toBeNull();
     expect(day.openings[0]).toMatchObject({ oi: 0, vOi: 11105 });

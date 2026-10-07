@@ -346,7 +346,15 @@ def _spread(row: dict, session: str) -> dict:
         ],
         "size": row.get("size"),
         "price": price,
-        "premium": abs(row["premium"]) if row.get("premium") is not None else None,
+        # A mixed structure's premium is the site's figure and fails price x size x 100
+        # (fetch_quikoptions.validate_report), so it never sizes, scores or ranks a flow: it is
+        # carried beside the row as `site_premium`, unverified, for display only.
+        "premium": abs(row["premium"])
+        if row.get("premium") is not None and not row.get("premium_unverified")
+        else None,
+        "site_premium": abs(row["premium"])
+        if row.get("premium") is not None and row.get("premium_unverified")
+        else None,
         "fill": None,
         "edge": None,
         "site": None,

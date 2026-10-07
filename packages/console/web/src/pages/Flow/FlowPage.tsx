@@ -220,7 +220,8 @@ function directionTone(d: FlowSpread["direction"]): string {
 function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: number; full: boolean }) {
   const shown = limit === undefined ? rows : rows.slice(0, limit);
   // Scaled to the rows on show: one huge trade below the cut would flatten every bar above it.
-  const max = maxOf(shown.map((r) => r.premium));
+  // An unverified premium is the site's figure, not a checked size: it neither scales nor draws a bar.
+  const max = maxOf(shown.map((r) => (r.premiumUnverified ? null : r.premium)));
   return (
     <table className="data-table flow-table">
       <thead>
@@ -260,10 +261,18 @@ function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: numbe
               </td>
               <td className="num">{r.price === null ? "—" : fmtNum(Math.abs(r.price))}</td>
               {full && <td className="num">{fmtNum(r.delta)}</td>}
-              <td className="num">{fmtDollarsShort(r.premium)}</td>
-              <td>
-                <Bar value={r.premium} max={max} tone={directionTone(r.direction)} />
+              <td
+                className="num"
+                title={
+                  r.premiumUnverified
+                    ? "the site's figure for a structure with a call and a put leg; it does not equal size × price × 100, so it is unverified"
+                    : undefined
+                }
+              >
+                {fmtDollarsShort(r.premium)}
+                {r.premiumUnverified ? <span className="muted">?</span> : null}
               </td>
+              <td>{r.premiumUnverified ? null : <Bar value={r.premium} max={max} tone={directionTone(r.direction)} />}</td>
               {full && (
                 <td className="num" title={u !== null && u.bid !== null ? `bid ${fmtNum(u.bid)} / ask ${fmtNum(u.ask)}` : undefined}>
                   {u === null ? "—" : fmtNum(u.last)}
