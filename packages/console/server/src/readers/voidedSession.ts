@@ -51,3 +51,23 @@ export function isVoidedSession(db: DatabaseHandle, module: string, day: string)
     return false;
   }
 }
+
+/**
+ * Every voided session of a module: the dates with a whole-book `partial_session` break that pass
+ * `isVoidedSession`. A list view that spans days (the flies books table) leaves these dates out
+ * whole, empty books included -- a struck day shows nothing, not four zero rows.
+ */
+export function voidedDates(db: DatabaseHandle, module: string): string[] {
+  if (!["break_date", "scope", "kind"].every((c) => hasColumn(db, "measurement_breaks", c))) return [];
+  try {
+    const dates = db
+      .prepare<[], { d: string }>(
+        "SELECT DISTINCT break_date AS d FROM measurement_breaks WHERE scope = '*' AND kind = 'partial_session'",
+      )
+      .all()
+      .map((r) => r.d);
+    return dates.filter((d) => isVoidedSession(db, module, d));
+  } catch {
+    return [];
+  }
+}
