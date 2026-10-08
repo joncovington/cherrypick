@@ -4,9 +4,12 @@ Channels:
   - "log"     : always on, the floor. Structured NOTIFY line to logs/notify.log.
   - "desktop" : Windows tray balloon via a short-lived PowerShell process (best-effort).
   - "slack"   : POST to an Incoming Webhook whose URL is stored in the OS keyring (see notify.secrets;
-                set via `cherrypick secrets-set --channel slack`). Never in config/files/env vars.
+                 set via `cherrypick secrets-set --channel slack`). Never in config/files/env vars.
   - "discord" : POST to a Discord Incoming Webhook whose URL is stored in the OS keyring
-                (`cherrypick secrets-set --channel discord`). Never in config/files/env vars.
+                 (`cherrypick secrets-set --channel discord`). Never in config/files/env vars.
+  - "telegram": POST to the Telegram Bot API (`sendMessage`) using a bot token and chat ID stored
+                 in the OS keyring (`cherrypick secrets-set --channel telegram`). Never in
+                 config/files/env vars.
 
 No push channel may raise; failures are swallowed after the floor has been written. This module
 uses only the stdlib + the OS shell — no MCP, no third-party client — so it is safe to call from
@@ -415,6 +418,24 @@ class Notifier:
             payload = {"content": f"**[{level}] {self.app_name} — {title}**\n{message}"[:1900]}
         return self._post_json(url, payload, channel="discord", **record)
 
+    def _push_telegram(self, level: str, title: str, message: str, **record: Any) -> dict[str, Any]:
+        token = secrets.get_telegram_token()
+        chat_id = secrets.get_telegram_chat_id()
+        if not token or not chat_id:
+            return {
+                "ok": False,
+                "skipped": "telegram not configured (run: cherrypick secrets-set --channel telegram)",
+            }
+        import html
+
+        text = (
+            f"<b>[{level}] {html.escape(self.app_name)} — {html.escape(title)}</b>\n"
+            f"{html.escape(message)}"
+        )[:4000]
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+        return self._post_json(url, payload, channel="telegram", **record)
+
     # -- public --------------------------------------------------------------------
     def notify(
         self,
@@ -451,6 +472,8 @@ class Notifier:
                     results["slack"] = self._push_slack(level, title, message, **record)
                 elif ch == "discord":
                     results["discord"] = self._push_discord(level, title, message, embed=embed, **record)
+                elif ch == "telegram":
+                    results["telegram"] = self._push_telegram(level, title, message, **record)
                 else:
                     results[ch] = {"ok": False, "skipped": f"unknown channel '{ch}'"}
             except Exception as exc:

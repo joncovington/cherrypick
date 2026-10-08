@@ -22,7 +22,7 @@ import keyring
 import keyring.errors
 
 SERVICE_NAME = "cherrypick-notify"
-SUPPORTED = ("slack", "discord")
+SUPPORTED = ("slack", "discord", "telegram")
 # Webhooks one job posts to and nothing else: never a push channel, so none can be listed in
 # `notify.channels` (the notifier skips an unknown name; `doctor` warns), and no suite alert can
 # land in them. `discord_reporting` is the reporting channel the QuikOptions series posts to
@@ -33,6 +33,11 @@ WEBHOOKS = SUPPORTED + DEDICATED
 
 def _entry(channel: str) -> str:
     # The historical "<channel>_webhook" entry names — renaming them would orphan stored secrets.
+    # Telegram uses two separate entries (bot token + chat ID) rather than a single webhook URL.
+    if channel == "telegram_token":
+        return "telegram_token"
+    if channel == "telegram_chat_id":
+        return "telegram_chat_id"
     return f"{channel}_webhook"
 
 
@@ -72,6 +77,18 @@ def delete_webhook(channel: str) -> bool:
         return False
     except keyring.errors.KeyringError:
         return False
+
+
+def get_telegram_token() -> str | None:
+    """The Telegram bot token, or None if unset / keyring unavailable."""
+    value = read_entry("telegram_token")
+    return None if value is KEYRING_UNAVAILABLE else value
+
+
+def get_telegram_chat_id() -> str | None:
+    """The Telegram chat ID to post to, or None if unset / keyring unavailable."""
+    value = read_entry("telegram_chat_id")
+    return None if value is KEYRING_UNAVAILABLE else value
 
 
 def is_set(channel: str) -> bool:

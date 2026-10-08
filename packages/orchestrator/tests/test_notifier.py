@@ -91,3 +91,32 @@ def test_discord_embed_needs_no_content_beside_it(temp_floor, monkeypatch):
     n = Notifier({"channels": ["discord"]})
     n.notify("INFO", "k", "T", "B", embed={"title": "card"})
     assert captured == {"embeds": [{"title": "card"}]}
+
+
+def test_telegram_skips_when_token_or_chat_id_unset(temp_floor, monkeypatch):
+    monkeypatch.setattr(secrets_mod, "get_telegram_token", lambda: None)
+    monkeypatch.setattr(secrets_mod, "get_telegram_chat_id", lambda: None)
+    res = Notifier({"channels": ["log", "telegram"]}).notify("WARN", "k", "T", "B")
+    assert res["telegram"]["ok"] is False and "skipped" in res["telegram"]
+    assert temp_floor.exists()
+
+
+def test_telegram_posts_html_payload_to_bot_api(temp_floor, monkeypatch):
+    captured = {}
+
+    def fake_post(url, payload, **record):
+        captured["url"], captured["payload"] = url, payload
+        return {"ok": True, "status": 200}
+
+    monkeypatch.setattr(secrets_mod, "get_telegram_token", lambda: "123:abc")
+    monkeypatch.setattr(secrets_mod, "get_telegram_chat_id", lambda: "456")
+    monkeypatch.setattr(Notifier, "_post_json", staticmethod(fake_post))
+    res = Notifier({"channels": ["telegram"]}).notify(
+        "CRITICAL", "meic.task", "Task missing", "not registered"
+    )
+    assert res["telegram"]["ok"] is True
+    assert "bot123:abc" in captured["url"]
+    assert "sendMessage" in captured["url"]
+    assert captured["payload"]["chat_id"] == "456"
+    assert "CRITICAL" in captured["payload"]["text"]
+    assert "parse_mode" in captured["payload"]
