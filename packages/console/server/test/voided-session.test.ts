@@ -64,6 +64,13 @@ function seedFlies(dir: string): void {
   attempt.run(`${NO_TRADE}T10:00:00-04:00`, NO_TRADE, "gate_blocked");
   brk.run(VOIDED, `${VOIDED}T19:30:00-04:00`);
   brk.run(KEPT, `${KEPT}T19:30:00-04:00`);
+  // An arm that ran and took nothing: a settled book with no positions at all (2026-10-07's four
+  // bwb books). Listed as it always was.
+  db.prepare(
+    `INSERT INTO fly_books (book_id, trade_date, arm, symbol, credit_collected, debits_paid, fees,
+       net_cash, pnl, status, created_at, updated_at)
+     VALUES (?, ?, 'bwb-up', 'SPX', 0, 0, 0, 0, 0, 'settled', ?, ?)`,
+  ).run(`${NORMAL}:bwb-up:SPX`, NORMAL, `${NORMAL}T16:20:00-04:00`, `${NORMAL}T16:20:00-04:00`);
   db.close();
 }
 
@@ -137,7 +144,7 @@ describe("a voided session shows nothing", () => {
 
 describe("and nothing else is hidden", () => {
   it("still lists an ordinary day's book and attempts", () => {
-    expect(fliesBooks(NORMAL)).toEqual([`${NORMAL}:control:SPX`]);
+    expect(fliesBooks(NORMAL).sort()).toEqual([`${NORMAL}:bwb-up:SPX`, `${NORMAL}:control:SPX`]);
     for (const module of ["flies", "meic"] as const) {
       expect(readEntryAttempts(config, module, "paper", NORMAL).timeline, module).toHaveLength(1);
     }
