@@ -35,8 +35,11 @@ without both (the scheduler does not even create its jobs):
 Credentials live only in the OS keyring (service `cherrypick-vendor-report`).
 
     python scripts/fetch_vendor_edition.py credentials       # store username/password once
-    python scripts/fetch_vendor_edition.py login             # sign in by hand in a visible browser
+    python scripts/fetch_vendor_edition.py login             # sign in by hand, then run missed fetches
+    python scripts/fetch_vendor_edition.py session-alert     # hourly expired-session reminder, offline
     python scripts/fetch_vendor_edition.py edition [--backfill N] [--headed]
+    python scripts/fetch_vendor_edition.py charts [TICKER...]  # evening: screeners, then chart pages
+    python scripts/fetch_vendor_edition.py screeners         # the three income screener lists only
     python scripts/fetch_vendor_edition.py validate FILE...  # check saved files, offline
     python scripts/fetch_vendor_edition.py probe-chart TICKER  # record a chart page for parser design
 """
@@ -246,6 +249,106 @@ def start_cooldown(reason: str) -> None:
     _state_path().write_text(
         json.dumps({"cooldown_until": until.isoformat(), "reason": reason}, indent=2), encoding="utf-8"
     )
+
+
+# An expired session that the one auto-login could not renew stops every fetch until a person signs
+# in. One warning at the time is easy to miss, so it repeats hourly (the `session-alert` job, which
+# never contacts the vendor) until a fetch that was missed has run on a working session again.
+SESSION_ALERT_EVERY = timedelta(hours=1)
+
+
+def _session_alert_path() -> Path:
+    return store_dir() / "session_alert.json"
+
+
+def read_session_alert() -> dict | None:
+    try:
+        state = json.loads(_session_alert_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return state if state.get("pending") else None
+
+
+def _write_session_alert(state: dict | None) -> None:
+    path = _session_alert_path()
+    if not state or not state.get("pending"):
+        path.unlink(missing_ok=True)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def mark_session_expired(fetch: str, reason: str, now: datetime | None = None) -> tuple[dict, bool]:
+    """Record that `fetch` could not run for want of a session. The time first noticed is kept
+    across later failures; returns (state, first) where `first` says this is a new outage."""
+    now = now or datetime.now(UTC)
+    state = read_session_alert()
+    first = state is None
+    state = state or {"noticed_at": now.isoformat(), "pending": [], "last_alert_at": None}
+    if fetch not in state["pending"]:
+        state["pending"].append(fetch)
+    state["reason"] = reason
+    _write_session_alert(state)
+    return state, first
+
+
+def clear_session_fetch(fetch: str) -> None:
+    """`fetch` has run on a working session: it is no longer waiting. The alert ends with the last."""
+    state = read_session_alert()
+    if state and fetch in state["pending"]:
+        state["pending"].remove(fetch)
+        _write_session_alert(state)
+
+
+def session_alert_due(state: dict | None, now: datetime) -> bool:
+    if not state or not state.get("pending"):
+        return False
+    last = state.get("last_alert_at")
+    return last is None or now - datetime.fromisoformat(last) >= SESSION_ALERT_EVERY
+
+
+def _et(moment: datetime) -> str:
+    from zoneinfo import ZoneInfo
+
+    return f"{moment.astimezone(ZoneInfo('America/New_York')):%a %Y-%m-%d %H:%M} ET"
+
+
+def session_alert_text(state: dict, now: datetime) -> tuple[str, str]:
+    noticed = datetime.fromisoformat(state["noticed_at"])
+    hours = (now - noticed).total_seconds() / 3600
+    return (
+        "Report collector: vendor session expired",
+        f"Expired session noticed {_et(noticed)} ({hours:.1f} h ago); "
+        f"not fetched since: {', '.join(state['pending'])}.\n"
+        f"Reason: {state.get('reason') or 'unknown'}\n"
+        "Run: python scripts/fetch_vendor_edition.py login -- it signs in, then runs the missed "
+        "fetches. This repeats every hour until they have run.",
+    )
+
+
+def _session_expired(fetch: str, exc: Exception) -> None:
+    """The NeedsPerson path of every fetch: record it, and warn now only if this is a new outage
+    (a later failure in the same outage waits for the hourly reminder)."""
+    now = datetime.now(UTC)
+    state, first = mark_session_expired(fetch, str(exc), now)
+    if first:
+        _warn(*session_alert_text(state, now))
+        state["last_alert_at"] = now.isoformat()
+        _write_session_alert(state)
+
+
+def cmd_session_alert(_args) -> int:
+    """The hourly reminder, run by the supervisor every few minutes: offline, no browser."""
+    now = datetime.now(UTC)
+    state = read_session_alert()
+    if not session_alert_due(state, now):
+        return 0
+    _warn(*session_alert_text(state, now))
+    state["last_alert_at"] = now.isoformat()
+    _write_session_alert(state)
+    return 0
 
 
 def _warn(title: str, message: str) -> None:
@@ -510,7 +613,32 @@ def cmd_login(_args) -> int:
         ok = not _login_needed(page)
         ctx.close()
     print("session saved" if ok else "still on the login page; nothing saved")
-    return 0 if ok else 1
+    if not ok:
+        return 1
+    return _run_missed_fetches()
+
+
+def _run_missed_fetches() -> int:
+    """After a sign-in, run each fetch an expired session stopped, a reading pause apart; each clears
+    itself from the hourly alert when it completes. Editions backfill, so a missed morning is
+    fetched too while the site still lists it."""
+    state = read_session_alert()
+    if not state:
+        return 0
+    runs = {
+        "edition": lambda: cmd_edition(argparse.Namespace(backfill=MAX_BACKFILL, headed=False)),
+        "charts": lambda: cmd_charts(argparse.Namespace(tickers=[], headed=False)),
+        "screeners": lambda: cmd_screeners(argparse.Namespace(headed=False)),
+    }
+    rc = 0
+    for i, fetch in enumerate(list(state["pending"])):
+        if fetch not in runs:
+            continue
+        if i:
+            _pause()
+        print(f"running the missed {fetch} fetch")
+        rc |= runs[fetch]()
+    return rc
 
 
 def cmd_edition(args) -> int:
@@ -554,6 +682,7 @@ def cmd_edition(args) -> int:
                 )
             if hits:
                 raise Throttled("; ".join(hits[:3]))
+            clear_session_fetch("edition")
         except Throttled as exc:
             start_cooldown(str(exc))
             _warn(
@@ -562,10 +691,7 @@ def cmd_edition(args) -> int:
             )
             return 1
         except NeedsPerson as exc:
-            _warn(
-                "Report collector needs a person",
-                f"{exc}.\nRun: python scripts/fetch_vendor_edition.py login",
-            )
+            _session_expired("edition", exc)
             return 1
         except Exception as exc:  # noqa: BLE001 -- anything else is a page that changed shape
             where = _snapshot(page)
@@ -761,7 +887,25 @@ def cmd_charts(args) -> int:
                         pass
 
         page.on("response", on_response)
+        lists: dict[str, dict] = {}
+        _listen_for_screeners(page, lists)
+        screener_failed: list[tuple[str, list[str]]] = []
         try:
+            # The evening visit starts where a person's would: the dashboard, the income screeners,
+            # then the chart pages. Opening the dashboard first also renews a lapsed session before
+            # any chart page is asked for; on 2026-10-06 a lapsed session's chart-page 403s were
+            # read as throttling and cost a day of charts and the next morning's edition.
+            _open_authenticated(page, cfg["dashboard_url"], hits)
+            try:
+                _browse_screeners(page, lists, hits)
+            except Throttled:
+                raise
+            except Exception as exc:  # noqa: BLE001 -- the screeners failing must not cost the charts
+                screener_failed.append(
+                    ("screeners", [f"{type(exc).__name__}: {(str(exc).splitlines() or [''])[0]}"])
+                )
+            screener_failed += _save_screeners(lists)
+            visited = 1  # the dashboard was a page: the first chart page waits its pause like the rest
             for ticker in panel:
                 if hits:
                     raise Throttled("; ".join(hits[:3]))
@@ -813,12 +957,18 @@ def cmd_charts(args) -> int:
                 )
             if hits:
                 raise Throttled("; ".join(hits[:3]))
+            clear_session_fetch("charts")
+            if not screener_failed:
+                clear_session_fetch("screeners")
         except Throttled as exc:
             start_cooldown(str(exc))
             _warn(
                 "Chart collector: vendor throttled or refused a request",
                 f"{exc}\nNo further requests for 24 hours.",
             )
+            return 1
+        except NeedsPerson as exc:
+            _session_expired("charts", exc)
             return 1
         except Exception as exc:  # noqa: BLE001
             where = _snapshot(page)
@@ -833,6 +983,200 @@ def cmd_charts(args) -> int:
     print(f"{len(saved)} saved, {len(failed)} rejected, {visited} pages visited")
     if failed:
         _warn("Chart collector rejected some captures", "\n".join(f"{t}: {'; '.join(p)}" for t, p in failed))
+    if screener_failed:
+        _warn(
+            "Chart collector missed or rejected a screener list",
+            "\n".join(f"{n}: {'; '.join(p)}" for n, p in screener_failed),
+        )
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------
+# Income screeners: the dashboard's Reports Explorer, three lists the app loads as JSON.
+# ------------------------------------------------------------------------------------------------
+
+# (store name, the app's own request path, the list's key in that response, the tab's label). The
+# credit-spread list arrives with the dashboard itself (its default tab); the other two load when
+# their tab is clicked. Each response is the WHOLE list (766 covered calls on 2026-10-07, where the
+# widget shows a filtered page), with the screen's own parameters on every row.
+SCREENERS = (
+    ("credit-spreads", "/reports/creditspreads/all", "creditSpreads", "Credit Spreads"),
+    ("covered-calls", "/reports/coveredcalls/all", "coveredCalls", "Covered Calls"),
+    ("short-puts", "/reports/shortputs/all", "shortPuts", "Short Puts"),
+)
+SCREENER_READY_TIMEOUT_S = 45
+
+
+def screener_session(body: dict) -> str | None:
+    """The day a list was built, from its own `created` stamp ('10/07/2026 03:48 PM')."""
+    try:
+        return datetime.strptime(str(body.get("created", ""))[:10], "%m/%d/%Y").date().isoformat()
+    except ValueError:
+        return None
+
+
+def validate_screener(name: str, body: dict) -> list[str]:
+    """Every reason a captured list is not usable; empty means it is."""
+    key = {n: k for n, _, k, _ in SCREENERS}[name]
+    rows = body.get(key)
+    if not isinstance(rows, list) or not rows:
+        return [f"no rows under '{key}'"]
+    problems = []
+    if screener_session(body) is None:
+        problems.append(f"unreadable 'created' stamp: {body.get('created')!r}")
+    bad = 0
+    for row in rows:
+        if name == "credit-spreads":
+            strike = row.get("strike") or {}
+            numbers = (strike.get("sell"), strike.get("buy"), (row.get("premium") or {}).get("value"))
+        else:
+            numbers = (row.get("strikePrice"), row.get("midPrice"))
+        if not (isinstance(row.get("symbol"), str) and row.get("expiry")) or not all(
+            isinstance(x, (int, float)) for x in numbers
+        ):
+            bad += 1
+    if bad:
+        problems.append(f"{bad} of {len(rows)} rows lack a symbol, an expiry or a numeric strike/premium")
+    return problems
+
+
+def screeners_dir() -> Path:
+    return store_dir() / "vendor-screeners"
+
+
+def save_screener(name: str, body: dict, out_root: Path) -> tuple[bool, list[str]]:
+    """Write `<session>/<name>.json` if it validates and that day's list is not saved yet; a failure
+    goes to `<name>.rejected.json`. The lists re-price through the day, so the first capture after
+    the close is the day's record and a later one never replaces it. Returns (saved, problems)."""
+    session = screener_session(body) or datetime.now().date().isoformat()
+    out = out_root / session
+    target = out / f"{name}.json"
+    if target.exists():
+        return False, [f"{session}/{target.name} already exists; not overwritten"]
+    problems = validate_screener(name, body)
+    out.mkdir(parents=True, exist_ok=True)
+    dest = out / f"{name}.rejected.json" if problems else target
+    record = {"name": name, "fetched_at": datetime.now(UTC).isoformat(), "body": body}
+    tmp = dest.with_suffix(".tmp")
+    tmp.write_text(json.dumps(record), encoding="utf-8")
+    tmp.replace(dest)
+    return not problems, problems
+
+
+def screener_of(url: str) -> str | None:
+    for name, path, _, _ in SCREENERS:
+        if path in url:
+            return name
+    return None
+
+
+def _browse_screeners(page, lists: dict[str, dict], hits: list[str]) -> None:
+    """On an open dashboard, look through the Reports Explorer as a person would: bring it into
+    view, then open each tab whose list has not arrived yet, a reading pause apart. `lists` is
+    filled by the page's response listener; nothing here makes a request of its own."""
+    page.wait_for_timeout(random.uniform(8000, 14000))  # the dashboard settles before anyone reads it
+    explorer = page.get_by_text("Reports Explorer", exact=True)
+    if not explorer.count():
+        raise RuntimeError("no Reports Explorer on the dashboard")
+    explorer.first.scroll_into_view_if_needed()
+    page.wait_for_timeout(random.uniform(3000, 6000))
+    clicked = 0
+    for name, _, _, label in SCREENERS:
+        if hits:
+            raise Throttled("; ".join(hits[:3]))
+        if name in lists:
+            continue
+        if clicked:
+            page.wait_for_timeout(random.uniform(*PAUSE_RANGE_S) * 1000)
+        tab = page.get_by_text(label, exact=True)
+        if not tab.count():
+            raise RuntimeError(f"no '{label}' tab in the Reports Explorer")
+        tab.first.click()
+        clicked += 1
+        deadline = time.monotonic() + SCREENER_READY_TIMEOUT_S
+        while name not in lists and time.monotonic() < deadline:
+            page.wait_for_timeout(2000)  # not time.sleep: events only arrive inside Playwright calls
+
+
+def _save_screeners(lists: dict[str, dict]) -> list[tuple[str, list[str]]]:
+    """Save what arrived; return (name, problems) for every list missing or rejected."""
+    failed = []
+    for name, *_ in SCREENERS:
+        if name not in lists:
+            failed.append((name, ["the list never arrived"]))
+            print(f"screener {name}: not captured")
+            continue
+        ok, problems = save_screener(name, lists[name], screeners_dir())
+        key = {n: k for n, _, k, _ in SCREENERS}[name]
+        print(
+            f"screener {name} {screener_session(lists[name])}: "
+            f"{'saved' if ok else 'not saved'} ({len(lists[name].get(key) or [])} rows)"
+            + "".join(f"\n  - {p}" for p in problems)
+        )
+        if problems and not problems[0].endswith("not overwritten"):
+            failed.append((name, problems))
+    return failed
+
+
+def _listen_for_screeners(page, lists: dict[str, dict]) -> None:
+    def on_response(resp):
+        name = screener_of(resp.url)
+        if name and resp.status == 200 and "json" in resp.headers.get("content-type", ""):
+            try:
+                lists[name] = json.loads(resp.text())
+            except Exception:  # noqa: BLE001
+                pass
+
+    page.on("response", on_response)
+
+
+def cmd_screeners(args) -> int:
+    """Capture the three income screener lists: one dashboard visit, the tabs a pause apart."""
+    until = cooldown_until()
+    if until and until > datetime.now(UTC):
+        print(f"cooling down until {until:%Y-%m-%d %H:%M} UTC; skipping this run")
+        return 0
+    from playwright.sync_api import sync_playwright
+
+    cfg = load_config()
+    hits: list[str] = []
+    lists: dict[str, dict] = {}
+    with sync_playwright() as pw:
+        ctx = _open_browser(pw, headed=args.headed)
+        page = ctx.new_page()
+        _watch_for_throttling(page, hits)
+        _listen_for_screeners(page, lists)
+        try:
+            _open_authenticated(page, cfg["dashboard_url"], hits)
+            _browse_screeners(page, lists, hits)
+            if hits:
+                raise Throttled("; ".join(hits[:3]))
+            clear_session_fetch("screeners")
+        except Throttled as exc:
+            start_cooldown(str(exc))
+            _warn(
+                "Screener collector: vendor throttled or refused a request",
+                f"{exc}\nNo further requests for 24 hours.",
+            )
+            return 1
+        except NeedsPerson as exc:
+            _session_expired("screeners", exc)
+            return 1
+        except Exception as exc:  # noqa: BLE001
+            where = _snapshot(page)
+            _warn(
+                "Screener collector failed",
+                f"{type(exc).__name__}: {(str(exc).splitlines() or [''])[0]}\nPage snapshot: {where}",
+            )
+        finally:
+            ctx.close()
+    failed = _save_screeners(lists)
+    if failed:
+        _warn(
+            "Screener collector missed or rejected a list",
+            "\n".join(f"{n}: {'; '.join(p)}" for n, p in failed),
+        )
+        return 1
     return 0
 
 
@@ -873,6 +1217,10 @@ def main(argv: list[str] | None = None) -> int:
     ch.add_argument("tickers", nargs="*", help="override the panel (default: fixed + edition names)")
     ch.add_argument("--headed", action="store_true")
     ch.set_defaults(fn=cmd_charts)
+    sub.add_parser("session-alert").set_defaults(fn=cmd_session_alert)
+    sc = sub.add_parser("screeners")
+    sc.add_argument("--headed", action="store_true")
+    sc.set_defaults(fn=cmd_screeners)
     pr = sub.add_parser("probe-chart")
     pr.add_argument("ticker")
     pr.add_argument("--headed", action="store_true")
