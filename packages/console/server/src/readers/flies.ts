@@ -243,6 +243,19 @@ function perBookSum(db: DatabaseHandle, aggregate: string, column: string): stri
               AND COALESCE(p.status, '') != 'cancelled')`;
 }
 
+/**
+ * Only books that held something. A book whose every position was voided (or never filled) was
+ * struck from the record whole -- the 2026-10-08 power outage's fifteen are the first -- and its
+ * stored credit, fees and pnl still count the voided rows, so listing it would put struck money
+ * back on the page. A positions table too old to say gives every book through ("1=1").
+ */
+function heldBook(db: DatabaseHandle): string {
+  if (!["book_id", "void_reason", "status"].every((c) => hasColumn(db, "fly_positions", c))) return "1=1";
+  return `EXISTS (SELECT 1 FROM fly_positions p
+                   WHERE p.book_id = fly_books.book_id AND p.void_reason IS NULL
+                     AND COALESCE(p.status, '') NOT IN ('cancelled', 'voided'))`;
+}
+
 export function readFlies(
   config: ConsoleConfig,
   mode: TradingMode,
@@ -270,7 +283,7 @@ export function readFlies(
                   ${perBookSum(db, "SUM(p.settlement_fees)", "settlement_fees")} AS settlement_fees,
                   ${perBookSum(db, "CASE WHEN COUNT(*) = COUNT(p.slippage_dollars) THEN SUM(p.slippage_dollars) END", "slippage_dollars")} AS slippage`,
         from: "fly_books",
-        where,
+        where: `${where} AND ${heldBook(db)}`,
         params,
         orderBy: "id DESC",
       },
