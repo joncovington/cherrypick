@@ -436,6 +436,10 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     `universe_watchlist` mirrors the members to a private tastytrade watchlist at
     `universe_watchlist_at`. A separate switch, OFF by default even with `universe` on, because it
     is the suite's one scheduled write to the broker account (a watchlist, never an order).
+
+    `screener_greeks` records the broker's chain around every row of the evening's income screener
+    lists (scripts/fetch_screener_greeks.py) at `screener_greeks_at`, after the chart capture that
+    saves them. Its own switch, OFF by default: it reads the shared broker credential.
     """
     mr = cfg.get("market_report", {}) or {}
     # The collector signs in to a subscription site, so nothing about that site is in the code: its
@@ -456,6 +460,8 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "universe_daily_at": mr.get("universe_daily_at", "18:00"),
         "universe_watchlist": bool(mr.get("universe_watchlist", False)),
         "universe_watchlist_at": mr.get("universe_watchlist_at", "18:30"),
+        "screener_greeks": bool(mr.get("screener_greeks", False)),
+        "screener_greeks_at": mr.get("screener_greeks_at", "19:00"),
     }
 
 

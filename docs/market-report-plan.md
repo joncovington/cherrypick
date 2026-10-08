@@ -574,6 +574,21 @@ levels': work out how the vendor screens — which names make a list, and which 
 each gets — from data we hold, and score that rule against these lists out of sample. Where a row
 carries no IV rank, the broker's (`scripts/fetch_iv_rank.py`) stands in.
 
+**The end state is the vendor's screen re-created from broker or Dolt data alone** (decided
+2026-10-07), with the vendor's lists as the fixture it is scored against. Dolt's option chain
+carries only a few expiries per name and no weeklies, where most short-put rows sit, so
+`scripts/fetch_screener_greeks.py` records the broker's chain after each capture
+(`screener-greeks/<date>.json`): every listed strike for each row's expiry, and delta, IV, bid/ask
+and open interest for the four strikes either side of the vendor's. That is the input the
+re-created rule must reproduce each row from. The answer key comes free with the chart pages: each
+loads the symbol's whole option chain with the vendor's own greeks, now kept as the capture's
+`how` (about 35 screener names a night), so where the two disagree it is clear whether the rule or
+the broker's greeks are at fault. First findings, short puts on Oct 7: raw return is mid ÷ share
+price, annualized is raw × 365 ÷ DTE, and the expiry is the listed one nearest 30 days. The strike
+is the first listed one below spot in 157 of 193 rows tested, and exactly one strike lower in the
+rest — not explained by the build-time price, the prior close, a Dolt delta cap, open interest or
+the spread, so it waits on the vendor's own deltas.
+
 **This settles the adjustment question outright.** The vendor's MSFT bars put the 52-week low at
 348.54 on 2026-06-25 and the high at 549.20 on 2025-10-28 — exactly the support and resistance
 prices, against the header's raw 349.20 and 553.72. The bars are dividend-adjusted, and the

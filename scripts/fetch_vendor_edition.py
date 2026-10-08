@@ -785,6 +785,7 @@ DEFAULT_PANEL = (
     "ANET KEYS AME ETN AMD META MSFT ISRG MGM ORCL DTE MS AVGO ARE MTN SPY QQQ IWM IGV XLI XLE TLT RSP"
 ).split()
 MAX_CHARTS = 40
+HOW_WAIT_S = 12  # how long a chart page is given to deliver its strategy response
 
 
 def edition_symbols(page_html: str) -> list[str]:
@@ -879,7 +880,7 @@ def cmd_charts(args) -> int:
             url = resp.url
             if resp.status != 200 or "json" not in resp.headers.get("content-type", ""):
                 return
-            for kind in ("/why/", "/ranks/", "/tradeIdeas"):
+            for kind in ("/why/", "/ranks/", "/how/", "/tradeIdeas"):
                 if kind in url:
                     try:
                         captured[f"{kind}|{url}"] = json.loads(resp.text())
@@ -921,7 +922,18 @@ def cmd_charts(args) -> int:
                     for key, body in list(captured.items()):
                         if key.startswith("/why/") and f"/{ticker}." in key:
                             why = body
-                page.wait_for_timeout(2000)  # not time.sleep: events only arrive inside Playwright calls
+                # The strategy response (the whole option chain with the vendor's own greeks, the
+                # answer key for the income screeners' strike rule) is the page's heaviest and can
+                # land after the chart data; a reader is still on the page, so wait a little for it.
+                how = None
+                how_deadline = time.monotonic() + HOW_WAIT_S
+                while how is None:
+                    page.wait_for_timeout(2000)  # not time.sleep: events only arrive inside Playwright calls
+                    how = next(
+                        (b for k, b in captured.items() if k.startswith("/how/") and f"/{ticker}." in k), None
+                    )
+                    if time.monotonic() > how_deadline:
+                        break
                 for key, body in list(captured.items()):
                     if key.startswith("/ranks/") and f"/{ticker}." in key:
                         ranks = body
@@ -943,9 +955,11 @@ def cmd_charts(args) -> int:
                 record = {
                     "ticker": ticker,
                     "fetched_at": datetime.now(UTC).isoformat(),
-                    "notes": chart_capture_notes(why),
+                    "notes": chart_capture_notes(why)
+                    + ([] if how else ["no strategy response (option chain)"]),
                     "why": why,
                     "ranks": ranks,
+                    "how": how,
                 }
                 dest.write_text(json.dumps(record), encoding="utf-8")
                 (failed if problems else saved).append((ticker, problems))

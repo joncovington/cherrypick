@@ -110,6 +110,7 @@ CATCHUP_MINUTES = {
     "universe-measure-1": 90,
     "universe-measure-2": 60,
     "universe-daily": 300,
+    "report-screener-greeks": 180,
     "universe-watchlist": 300,
     # Broker-cash reconciliation of a settled live session. Generous, because the whole point is
     # that it must not depend on anyone arming the live loop: a box asleep until mid-afternoon
@@ -1108,6 +1109,24 @@ def derive_jobs(
             interval_seconds=600,
             enabled=mr["collector"],
             enabled_reason=mr_reason,
+        ),
+    )
+    add(
+        "report-screener-greeks",
+        lambda: JobSpec(
+            id="report-screener-greeks",
+            # A script, not a package: it reads the broker (chain listings and one DXLink session
+            # for the options around each screener row). Read-only and paced; a day without saved
+            # lists exits quietly, so it is harmless on a night the chart capture failed.
+            argv=(pythonw, _suite_script(launcher, "fetch_screener_greeks.py")),
+            kind=KIND_DAILY,
+            at_et=mr["screener_greeks_at"],
+            catchup_minutes=CATCHUP_MINUTES["report-screener-greeks"],
+            trading_days_only=True,
+            enabled=mr["screener_greeks"],
+            enabled_reason=""
+            if mr["screener_greeks"]
+            else "disabled in config (market_report.screener_greeks)",
         ),
     )
     uv_reason = "" if mr["universe"] else "disabled in config (market_report.universe)"
