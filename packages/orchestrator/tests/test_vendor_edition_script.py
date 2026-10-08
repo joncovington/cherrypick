@@ -13,7 +13,7 @@ once that package exists (docs/market-report-plan.md, "Where the code goes").
 from __future__ import annotations
 
 import importlib.util
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -278,3 +278,171 @@ def test_the_script_refuses_without_its_generic_vendor_keys(tmp_path, monkeypatc
         "edition_title": "Example Report",
     }
     assert fve.HEADER_RE.search("Example Report - September 25, 2026").group(1) == "September 25, 2026"
+
+
+# --- income screener lists ---------------------------------------------------------------------
+
+
+def _spreads(rows=None, created="10/07/2026 03:15 PM"):
+    if rows is None:
+        rows = [
+            {
+                "symbol": "MU",
+                "type": "Put",
+                "expiry": "11/20/2026",
+                "strike": {"sell": 1080.0, "buy": 990.0},
+                "premium": {"value": 37.1, "width": 90.0, "percentage": "41.22%"},
+            }
+        ]
+    return {"created": created, "creditSpreads": rows}
+
+
+def _puts(rows=None):
+    if rows is None:
+        rows = [{"symbol": "AR", "expiry": "11/06/2026", "strikePrice": 35.0, "midPrice": 1.23}]
+    return {"created": "10/07/2026 03:48 PM", "shortPuts": rows}
+
+
+def test_a_complete_screener_list_passes():
+    assert fve.validate_screener("credit-spreads", _spreads()) == []
+    assert fve.validate_screener("short-puts", _puts()) == []
+
+
+def test_an_empty_screener_list_fails():
+    assert fve.validate_screener("credit-spreads", _spreads(rows=[])) == ["no rows under 'creditSpreads'"]
+
+
+def test_a_list_under_the_wrong_key_fails():
+    """A short-put response saved as covered calls finds no rows under the covered-call key."""
+    assert fve.validate_screener("covered-calls", _puts()) == ["no rows under 'coveredCalls'"]
+
+
+def test_an_unreadable_created_stamp_fails():
+    problems = fve.validate_screener("credit-spreads", _spreads(created="yesterday"))
+    assert problems and "created" in problems[0]
+
+
+def test_a_row_without_a_numeric_strike_fails():
+    row = {"symbol": "AR", "expiry": "11/06/2026", "strikePrice": "35", "midPrice": 1.23}
+    problems = fve.validate_screener("short-puts", _puts(rows=[row, *_puts()["shortPuts"]]))
+    assert problems == ["1 of 2 rows lack a symbol, an expiry or a numeric strike/premium"]
+
+
+def test_a_screener_list_is_filed_under_its_own_created_date(tmp_path):
+    ok, problems = fve.save_screener("credit-spreads", _spreads(), tmp_path)
+    assert ok and problems == []
+    assert (tmp_path / "2026-10-07" / "credit-spreads.json").exists()
+
+
+def test_a_saved_screener_list_is_never_overwritten(tmp_path):
+    fve.save_screener("credit-spreads", _spreads(), tmp_path)
+    ok, problems = fve.save_screener("credit-spreads", _spreads(), tmp_path)
+    assert not ok and "not overwritten" in problems[0]
+
+
+def test_a_failing_screener_list_is_kept_aside(tmp_path):
+    ok, _ = fve.save_screener("credit-spreads", _spreads(rows=[{"symbol": "MU"}]), tmp_path)
+    assert not ok
+    assert (tmp_path / "2026-10-07" / "credit-spreads.rejected.json").exists()
+    assert not (tmp_path / "2026-10-07" / "credit-spreads.json").exists()
+
+
+def test_screener_responses_are_recognised_by_path_only():
+    assert (
+        fve.screener_of("https://x.example/api/a/api/v1/reports/shortputs/all?showURL=true") == "short-puts"
+    )
+    assert fve.screener_of("https://x.example/api/a/api/v1/reports/earnings?startDate=2026-10-07") is None
+
+
+SCREENERS_REAL = Path.home() / ".cherrypick" / "data" / "market-report" / "vendor-screeners"
+
+
+@pytest.mark.skipif(
+    not list(SCREENERS_REAL.glob("*/*.json")), reason="no saved screener lists on this machine"
+)
+def test_every_saved_screener_list_passes_its_own_checks():
+    import json
+
+    for path in sorted(SCREENERS_REAL.glob("*/*.json")):
+        if path.name.endswith(".rejected.json"):
+            continue
+        record = json.loads(path.read_text(encoding="utf-8"))
+        assert fve.validate_screener(record["name"], record["body"]) == [], path
+
+
+# --- the expired-session alert -----------------------------------------------------------------
+
+
+@pytest.fixture
+def alerts(tmp_path, monkeypatch):
+    """The collector's store in a temp dir, and every warning it would send collected instead."""
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(fve, "store_dir", lambda: tmp_path)
+    monkeypatch.setattr(fve, "_warn", lambda title, message: sent.append((title, message)))
+    return sent
+
+
+NOTICED = datetime(2026, 10, 7, 23, 56, tzinfo=UTC)  # 19:56 ET
+
+
+def test_an_expired_session_warns_with_the_time_it_was_noticed(alerts, monkeypatch):
+    monkeypatch.setattr(fve, "datetime", _frozen(NOTICED))
+    fve._session_expired("charts", fve.NeedsPerson("the login did not complete"))
+    assert len(alerts) == 1
+    assert "noticed Wed 2026-10-07 19:56 ET" in alerts[0][1]
+    assert "charts" in alerts[0][1]
+
+
+def test_a_second_failure_in_the_same_outage_keeps_the_first_time_and_does_not_warn_again(
+    alerts, monkeypatch
+):
+    monkeypatch.setattr(fve, "datetime", _frozen(NOTICED))
+    fve._session_expired("charts", fve.NeedsPerson("x"))
+    monkeypatch.setattr(fve, "datetime", _frozen(NOTICED + timedelta(hours=8)))
+    fve._session_expired("edition", fve.NeedsPerson("x"))
+    assert len(alerts) == 1
+    state = fve.read_session_alert()
+    assert state["noticed_at"] == NOTICED.isoformat()
+    assert state["pending"] == ["charts", "edition"]
+
+
+def test_the_reminder_repeats_hourly_and_not_sooner(alerts, monkeypatch):
+    monkeypatch.setattr(fve, "datetime", _frozen(NOTICED))
+    fve._session_expired("charts", fve.NeedsPerson("x"))
+    for minutes, expected in ((10, 1), (59, 1), (60, 2), (70, 2), (120, 3)):
+        monkeypatch.setattr(fve, "datetime", _frozen(NOTICED + timedelta(minutes=minutes)))
+        fve.cmd_session_alert(None)
+        assert len(alerts) == expected, minutes
+    assert "noticed Wed 2026-10-07 19:56 ET (2.0 h ago)" in alerts[-1][1]
+
+
+def test_the_reminder_stops_only_when_every_missed_fetch_has_run(alerts, monkeypatch):
+    monkeypatch.setattr(fve, "datetime", _frozen(NOTICED))
+    fve._session_expired("charts", fve.NeedsPerson("x"))
+    fve._session_expired("edition", fve.NeedsPerson("x"))
+    fve.clear_session_fetch("charts")
+    monkeypatch.setattr(fve, "datetime", _frozen(NOTICED + timedelta(hours=1)))
+    fve.cmd_session_alert(None)
+    assert len(alerts) == 2  # edition is still waiting
+    fve.clear_session_fetch("edition")
+    monkeypatch.setattr(fve, "datetime", _frozen(NOTICED + timedelta(hours=3)))
+    fve.cmd_session_alert(None)
+    assert len(alerts) == 2
+    assert fve.read_session_alert() is None
+
+
+def test_no_outage_sends_nothing(alerts):
+    fve.cmd_session_alert(None)
+    fve.clear_session_fetch("charts")
+    assert alerts == []
+
+
+def _frozen(moment):
+    """`datetime` with `now()` pinned; everything else is the real class."""
+
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return moment if tz else moment.replace(tzinfo=None)
+
+    return Frozen

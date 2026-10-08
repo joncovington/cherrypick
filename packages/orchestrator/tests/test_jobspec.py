@@ -310,6 +310,7 @@ def test_derive_full_suite_job_table():
         "report-edition",
         "report-edition-retry",
         "report-charts",
+        "report-session-alert",
         "universe-measure-1",
         "universe-measure-2",
         "universe-daily",
@@ -869,7 +870,7 @@ def test_vendor_collector_jobs_are_off_until_a_login_is_stored():
     fresh box and notify about a login nobody has stored."""
     jobs, _ = derive(suite_cfg())
     by_id = {j.id: j for j in jobs}
-    for job_id in ("report-edition", "report-edition-retry", "report-charts"):
+    for job_id in ("report-edition", "report-edition-retry", "report-charts", "report-session-alert"):
         assert not by_id[job_id].enabled
         assert "market_report.collector" in by_id[job_id].enabled_reason
 
@@ -898,6 +899,10 @@ def test_vendor_collector_runs_after_publication_and_after_the_close():
     assert minutes("report-charts") >= 16 * 60 + 20
     assert by_id["report-edition"].argv[-1] == "edition"
     assert by_id["report-charts"].argv[-1] == "charts"
+    alert = by_id["report-session-alert"]
+    assert alert.enabled and alert.argv[-1] == "session-alert"
+    assert not alert.trading_days_only  # an outage that starts Friday evening still reminds on Saturday
+    assert alert.interval_seconds <= 15 * 60  # it bounds how late an hourly reminder can be
 
 
 def test_the_collector_never_runs_without_its_generic_vendor_keys():

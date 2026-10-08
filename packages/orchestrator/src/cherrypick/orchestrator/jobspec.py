@@ -1095,6 +1095,21 @@ def derive_jobs(
                 enabled_reason=mr_reason,
             ),
         )
+    add(
+        "report-session-alert",
+        lambda: JobSpec(
+            id="report-session-alert",
+            # Offline: reads the collector's own state file and, while an expired session has a
+            # fetch waiting, repeats the warning once an hour (the script keeps the hour, so this
+            # interval only bounds how late a reminder can be). Every day, not trading days only:
+            # an outage that starts Friday evening is still one on Saturday.
+            argv=(pythonw, _vendor_collector_script(launcher), "session-alert"),
+            kind=KIND_INTERVAL,
+            interval_seconds=600,
+            enabled=mr["collector"],
+            enabled_reason=mr_reason,
+        ),
+    )
     uv_reason = "" if mr["universe"] else "disabled in config (market_report.universe)"
     uv_jobs = [
         (f"universe-measure-{i}", at, "measure") for i, at in enumerate(mr["universe_measure_at"][:2], 1)

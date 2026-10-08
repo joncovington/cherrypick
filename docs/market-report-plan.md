@@ -560,6 +560,20 @@ returns the day's whole scanner list — 185 names on Sept 25, each with its rul
 the session of the latest bar. Nothing is called directly: the pages are loaded as a person would,
 and the responses the app already makes are recorded.
 
+**The income screeners are collected too (2026-10-07).** The dashboard's Reports Explorer has three
+tabs — credit spreads, covered calls, short puts — and each loads its whole list as JSON, not just
+the filtered page the widget shows: 45 spreads, 766 covered calls and 741 short puts on Oct 7, one
+row per symbol, each with the screen's own parameters (`expiryThreshold`, `deltaThreshold`,
+`liquidityRank`, `sentiment`), its strike, bid/mid/ask, IV rank, earnings date and return. The
+evening `charts` run now starts on the dashboard and looks through the three tabs, a reading pause
+apart, before its chart pages; the lists are saved as
+`vendor-screeners/<created date>/{credit-spreads,covered-calls,short-puts}.json`, checked like the
+other captures, never overwritten (they re-price through the day, so the first capture after the
+close is the day's record). `screeners` runs the same step on its own. The point is the same as the
+levels': work out how the vendor screens — which names make a list, and which strike and expiry
+each gets — from data we hold, and score that rule against these lists out of sample. Where a row
+carries no IV rank, the broker's (`scripts/fetch_iv_rank.py`) stands in.
+
 **This settles the adjustment question outright.** The vendor's MSFT bars put the 52-week low at
 348.54 on 2026-06-25 and the high at 549.20 on 2025-10-28 — exactly the support and resistance
 prices, against the header's raw 349.20 and 553.72. The bars are dividend-adjusted, and the
