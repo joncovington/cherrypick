@@ -16,6 +16,7 @@ import {
 } from "../analytics/riskMetrics.js";
 import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
+import { voidedDates } from "./voidedSession.js";
 import { readRegimeCuts } from "./regimeCuts.js";
 import { peakRiskSessions } from "./fliesPeakRisk.js";
 
@@ -253,6 +254,11 @@ function perBookSum(db: DatabaseHandle, aggregate: string, column: string): stri
  * any book without a held position, and took four empty bwb books off 2026-10-07. A positions
  * table too old to say gives every book through ("1=1").
  */
+/** ` AND trade_date NOT IN (?, ...)` for the given dates, or nothing when there are none. */
+function notVoidedDates(dates: string[]): string {
+  return dates.length > 0 ? ` AND trade_date NOT IN (${dates.map(() => "?").join(", ")})` : "";
+}
+
 function heldBook(db: DatabaseHandle): string {
   if (!["book_id", "void_reason", "status"].every((c) => hasColumn(db, "fly_positions", c))) return "1=1";
   return `NOT (EXISTS (SELECT 1 FROM fly_positions p
@@ -278,8 +284,9 @@ export function readFlies(
   const scoped: FliesFilter = { ...filter, date: filter.date ?? latestTradeDate(dbPath) };
   const { where, params } = filterSql(scoped);
 
-  const books = withReadOnlyDb<Paged<FliesBookRow>>(dbPath, emptyPage(page.books), (db) =>
-    pagedQuery<FliesBookRow>(
+  const books = withReadOnlyDb<Paged<FliesBookRow>>(dbPath, emptyPage(page.books), (db) => {
+    const voided = voidedDates(db, "flies");
+    return pagedQuery<FliesBookRow>(
       db,
       {
         // Settlement and slippage live on the positions: summed per book over the ones that were
@@ -289,8 +296,9 @@ export function readFlies(
                   ${perBookSum(db, "SUM(p.settlement_fees)", "settlement_fees")} AS settlement_fees,
                   ${perBookSum(db, "CASE WHEN COUNT(*) = COUNT(p.slippage_dollars) THEN SUM(p.slippage_dollars) END", "slippage_dollars")} AS slippage`,
         from: "fly_books",
-        where: `${where} AND ${heldBook(db)}`,
-        params,
+        // A voided session lists no book at all -- its struck ones and its empty ones alike.
+        where: `${where} AND ${heldBook(db)}${notVoidedDates(voided)}`,
+        params: [...params, ...voided],
         orderBy: "id DESC",
       },
       page.books,
@@ -306,8 +314,8 @@ export function readFlies(
         bandHigh: num(r["band_high"]),
         pnl: num(r["pnl"]),
         status: str(r["status"]) ?? "",
-      })),
-  );
+      }));
+  });
 
   // A cancelled entry never filled and a voided row was struck from the record: neither was ever a
   // position, so neither is listed as one (the books table already leaves both out of its pnl).

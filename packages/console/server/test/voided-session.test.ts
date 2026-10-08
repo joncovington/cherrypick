@@ -71,6 +71,12 @@ function seedFlies(dir: string): void {
        net_cash, pnl, status, created_at, updated_at)
      VALUES (?, ?, 'bwb-up', 'SPX', 0, 0, 0, 0, 0, 'settled', ?, ?)`,
   ).run(`${NORMAL}:bwb-up:SPX`, NORMAL, `${NORMAL}T16:20:00-04:00`, `${NORMAL}T16:20:00-04:00`);
+  // The voided day had empty books too (2026-10-08's four bwb arms): a struck day lists none.
+  db.prepare(
+    `INSERT INTO fly_books (book_id, trade_date, arm, symbol, credit_collected, debits_paid, fees,
+       net_cash, pnl, status, created_at, updated_at)
+     VALUES (?, ?, 'bwb-up', 'SPX', 0, 0, 0, 0, 0, 'settled', ?, ?)`,
+  ).run(`${VOIDED}:bwb-up:SPX`, VOIDED, `${VOIDED}T16:20:00-04:00`, `${VOIDED}T16:20:00-04:00`);
   db.close();
 }
 
@@ -128,8 +134,13 @@ const fliesBooks = (date: string) =>
   readFlies(config, "paper", { arm: null, date, symbol: null, era: "ALL" }).books.rows.map((b) => b.bookId);
 
 describe("a voided session shows nothing", () => {
-  it("lists no flies book for the voided day", () => {
+  it("lists no flies book for the voided day, its empty books included", () => {
     expect(fliesBooks(VOIDED)).toEqual([]);
+  });
+
+  it("leaves the voided day out of a list that spans days", () => {
+    const all = readFlies(config, "paper", { arm: null, date: null, symbol: null, era: "ALL" }).books.rows;
+    expect(all.some((b) => b.tradeDate === VOIDED)).toBe(false);
   });
 
   it("draws no attempts timeline for the voided day, in either module", () => {
