@@ -628,7 +628,9 @@
     "dividends_at": "19:30",
     "_comment_iv_rank": "scripts/fetch_iv_rank.py: tastytrade's IV rank (and liquidity rating) for every stored name, one reading per session. The technicals store ranks Dolt's IV itself and falls back to this where Dolt has no IV for a name. Reads the shared broker credential, read-only, 50 symbols a request. Trading days, after the close.",
     "iv_rank": true,
-    "iv_rank_at": "18:50"
+    "iv_rank_at": "18:50",
+    "_comment_liquidity_at": "The nightly liquidity verdict (python -m cherrypick.technicals liquidity, local data only): a name failing the options-tradable test (weekly options, $100M a day) is held illiquid until the monthly sweep on the first trading day of the month. Broker-spending scripts skip it and listed views hide it; its bars and every count keep it. After iv_rank_at, before the 19:00 screener greeks run. Trading days, ET.",
+    "liquidity_at": "18:57"
   },
   "quikoptions": {
     "_comment": "QuikOptions' Hot Options Report (scripts/fetch_quikoptions.py; docs/quikoptions-plan.md): one paced load a day after the close in the installed Chrome, on a profile a person signs in to by hand, then the economic calendar through the menu. Kept only when the page's own sums hold, into data/quikoptions/. 'enabled' also shows the console's Options flow page. A 429, or a 403 once signed in, starts a 24-hour cooldown; an expired session notifies and stops. OFF by default: sign in first (`python scripts/fetch_quikoptions.py login`), then set enabled=true. Scheduled, trading days only: the capture at 'at' (plus 0-jitter_minutes), scoring at score_at, and the next morning the open-interest confirmation at confirm_at; each later step waits up to 45 minutes for the one before it. You are responsible for complying with the site's terms. Times are ET.",

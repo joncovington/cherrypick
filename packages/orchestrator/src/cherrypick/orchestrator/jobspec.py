@@ -80,6 +80,7 @@ CATCHUP_MINUTES = {
     # A reading of the day's close: a run after the next open would record the next session instead,
     # which the file keys correctly but is not the day that was missed.
     "technicals-iv-rank": 600,
+    "technicals-liquidity": 120,
     # Ahead of the 06:15 landing; a late fetch is the same fetch, and the landing after it picks it up.
     "technicals-index-bars": 12 * 60,
     "market-files": 600,
@@ -940,6 +941,22 @@ def derive_jobs(
             trading_days_only=True,
             enabled=ivr_on,
             enabled_reason="" if ivr_on else "disabled in config (technicals.iv_rank)",
+        ),
+    )
+    add(
+        "technicals-liquidity",
+        lambda: JobSpec(
+            id="technicals-liquidity",
+            # A package command: judges every stored and listed screener name liquid or not from
+            # local data (the IV-rank file, the store's bars, the local Dolt clone) and writes the
+            # verdicts the broker-spending scripts skip by and the listed views hide by.
+            argv=(pythonw, "-m", "cherrypick.technicals", "liquidity"),
+            kind=KIND_DAILY,
+            at_et=tc["liquidity_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-liquidity"],
+            trading_days_only=True,
+            enabled=tc_on,
+            enabled_reason="" if tc_on else "disabled in config (technicals), or no dolt sql-server to read",
         ),
     )
     mv = cfgmod.morning_settings(cfg)

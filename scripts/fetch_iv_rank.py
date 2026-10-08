@@ -125,7 +125,12 @@ def main(argv=None) -> int:
         print(json.dumps({"ok": False, "reason": "credentials_missing"}))
         return 1
     doc = load()
-    todo = symbols.all_symbols()
+    from cherrypick.technicals import liquidity
+
+    # Every name the store holds and every listed screener name (the liquidity verdict judges both),
+    # less the names held illiquid: between sweeps their expiry count is not re-read (2026-10-07).
+    skip = liquidity.skip()
+    todo = [s for s in sorted({*symbols.all_symbols(), *liquidity.screener_names()}) if s not in skip]
     if args.symbols_file:
         from pathlib import Path
 

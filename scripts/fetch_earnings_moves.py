@@ -91,10 +91,11 @@ def out_path() -> Path:
 def upcoming(days: int, today: date) -> list[tuple[str, date, str | None]]:
     """(symbol, date, when) for the store's stocks with an announcement in the window."""
     import mysql.connector
-    from cherrypick.technicals import store, symbols
+    from cherrypick.technicals import liquidity, store, symbols
 
     conn = store.connect()
-    wanted = set(store.stocks(conn, symbols.all_symbols()))
+    # A listed view that prices options: names held illiquid are neither priced nor listed.
+    wanted = set(store.stocks(conn, symbols.all_symbols())) - liquidity.illiquid()
     conn.close()
     cn = mysql.connector.connect(
         host="127.0.0.1", port=3306, user="root", database="earnings", connection_timeout=15

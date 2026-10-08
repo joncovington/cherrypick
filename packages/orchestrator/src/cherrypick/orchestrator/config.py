@@ -406,6 +406,10 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # day's IV has posted.
         "iv_rank": bool(tc.get("iv_rank", True)),
         "iv_rank_at": tc.get("iv_rank_at", "18:50"),
+        # `liquidity_at`: the nightly liquidity verdict (`python -m cherrypick.technicals liquidity`,
+        # local data only). After the IV-rank fetch it judges from, before the 19:00 screener greeks
+        # run that reads it; every broker-spending job skips the names it holds illiquid.
+        "liquidity_at": tc.get("liquidity_at", "18:57"),
         # `index_bars_at`: scripts/fetch_index_bars.py, the cash indexes' daily bars (SPX) from the
         # broker's candles, which Dolt does not carry. Ahead of `land_at`, so the previous session's
         # candle is final and lands the same morning.

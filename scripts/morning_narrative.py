@@ -163,8 +163,10 @@ def _technicals(session: str) -> dict | None:
             {
                 "sector": s.get("sector"),
                 "net": s.get("net"),
-                "leaders": len(s.get("leaders") or []),
-                "laggards": len(s.get("laggards") or []),
+                # The full counts where the report gives them: its lists leave out illiquid names
+                # (2026-10-07), its counts do not.
+                "leaders": s.get("leaders_count", len(s.get("leaders") or [])),
+                "laggards": s.get("laggards_count", len(s.get("laggards") or [])),
             }
             for s in doc.get("stages") or []
         ],

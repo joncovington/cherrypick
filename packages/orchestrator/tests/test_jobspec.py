@@ -324,6 +324,7 @@ def test_derive_full_suite_job_table():
         "technicals-dividends",
         "technicals-index-bars",
         "technicals-iv-rank",
+        "technicals-liquidity",
         "technicals-report",
         "earnings-moves",
         "fetch-headlines",
@@ -924,6 +925,22 @@ def test_the_collector_never_runs_without_its_generic_vendor_keys():
         for job_id in ("report-edition", "report-edition-retry", "report-charts"):
             assert by_id[job_id].enabled is False, job_id
             assert missing in by_id[job_id].enabled_reason
+
+
+def test_the_liquidity_verdict_runs_after_its_inputs_and_before_its_readers():
+    """It judges from tonight's IV-rank fetch (weekly expiries), and the 19:00 screener greeks run
+    skips by it; out of that order, every reader would act on yesterday's verdict."""
+    cfg = suite_cfg()
+    by_id = {j.id: j for j in derive(cfg)[0]}
+
+    def minutes(at):
+        h, m = (int(x) for x in at.split(":"))
+        return h * 60 + m
+
+    job = by_id["technicals-liquidity"]
+    assert job.argv[-1] == "liquidity" and job.trading_days_only
+    assert minutes(job.at_et) > minutes(by_id["technicals-iv-rank"].at_et)
+    assert minutes(job.at_et) < minutes(by_id["report-screener-greeks"].at_et)
 
 
 def test_screener_greeks_is_its_own_switch_and_runs_after_the_chart_capture():

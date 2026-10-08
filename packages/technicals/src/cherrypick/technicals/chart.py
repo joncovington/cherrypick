@@ -31,6 +31,7 @@ from . import (
     hypotheses,
     indicators,
     levels,
+    liquidity,
     paths,
     setups,
     signals,
@@ -382,7 +383,9 @@ def write_all(session: str | None = None, conn=None) -> dict:
     spy = {b.date: b.close for b in store.adjusted_bars(conn, "SPY")}
     spy_above = hypotheses.spy_regime(conn)
     weekly, label_day = tradable.weeklies()
-    names = store.stocks(conn, symbols.all_symbols())
+    # Names held illiquid get no chart, no picker entry and no watchlist row (liquidity.py): their
+    # bars stay in the store for scoring, but nothing lists them until a sweep re-admits them.
+    names = liquidity.listed(store.stocks(conn, symbols.all_symbols()))
     for sym in [*symbols.INDEXES, *INDEX_FUNDS, *(s for s in names if s not in INDEX_FUNDS)]:
         doc = build(conn, sym, session, spy_above)
         if doc is None:
