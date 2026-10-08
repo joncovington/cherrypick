@@ -91,6 +91,23 @@ def get_telegram_chat_id() -> str | None:
     return None if value is KEYRING_UNAVAILABLE else value
 
 
+def set_telegram(token: str, chat_id: str) -> None:
+    keyring.set_password(SERVICE_NAME, "telegram_token", token)
+    keyring.set_password(SERVICE_NAME, "telegram_chat_id", chat_id)
+
+
+def delete_telegram() -> bool:
+    ok = True
+    for entry in ("telegram_token", "telegram_chat_id"):
+        try:
+            keyring.delete_password(SERVICE_NAME, entry)
+        except keyring.errors.PasswordDeleteError:
+            pass
+        except keyring.errors.KeyringError:
+            ok = False
+    return ok
+
+
 def is_set(channel: str) -> bool:
     return bool(get_webhook(channel))
 

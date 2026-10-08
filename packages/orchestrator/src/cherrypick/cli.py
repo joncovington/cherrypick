@@ -1426,6 +1426,18 @@ def cmd_secrets_set(channel: str | None, url: str | None) -> None:
     if channel not in notify_secrets.WEBHOOKS:
         _emit({"ok": False, "error": f"--channel must be one of {list(notify_secrets.WEBHOOKS)}"})
         sys.exit(2)
+    if channel == "telegram":
+        if not url:
+            token = getpass.getpass("Paste the Telegram bot token (input hidden): ").strip()
+            chat_id = getpass.getpass("Paste the Telegram chat ID (input hidden): ").strip()
+        else:
+            token, chat_id = url, ""
+        if not token or not chat_id:
+            _emit({"ok": False, "error": "both bot token and chat ID are required"})
+            sys.exit(2)
+        notify_secrets.set_telegram(token, chat_id)
+        _emit({"ok": True, "channel": channel, "stored_in": "OS keyring", "status": notify_secrets.status()})
+        return
     if not url:
         # Read without echo / shell history. A webhook URL is a bearer secret.
         url = getpass.getpass(f"Paste the {channel} webhook URL (input hidden): ").strip()
