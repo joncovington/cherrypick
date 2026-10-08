@@ -15,7 +15,15 @@ writes). One DXLink session, options in batches; chain listings a short pause ap
 **One file per list date, never overwritten**: `screener-greeks/<date>.json`. It runs after the
 evening capture; a day without saved lists exits quietly, and an existing file is left as it was.
 
+**`measure`: the spread in regular hours.** The evening quotes are after the close, so they say
+nothing about a name's real spread. `measure` runs inside the universe builder's window (10:00 ET to
+half an hour before the close) and records, for every name on the latest lists that the universe
+does not already measure, the at-the-money call and put of the standard monthly nearest 30 days --
+the builder's own `_measure`, so the two sets of readings are taken the same way and read together.
+Written to `screener-greeks/measurements/<date>/<HHMM>.json`, the builder's file shape.
+
     python scripts/fetch_screener_greeks.py [--date YYYY-MM-DD] [--limit N]
+    python scripts/fetch_screener_greeks.py measure [--force] [--limit N]
 """
 
 from __future__ import annotations
@@ -230,11 +238,91 @@ def latest_list_day() -> str | None:
     return days[-1] if days else None
 
 
+def _universe_builder():
+    """The universe builder, loaded from beside this script: its measurement is reused as it is."""
+    import importlib.util
+
+    path = Path(__file__).resolve().with_name("build_stock_universe.py")
+    spec = importlib.util.spec_from_file_location("build_stock_universe", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def measure_names(lists: dict[str, dict], universe_candidates: set[str]) -> list[str]:
+    """Every name on the lists, in the builder's spelling (BRK.B), less the ones it measures anyway."""
+    names = {
+        row["symbol"].replace("/", ".")
+        for name, key in LISTS
+        for row in (lists.get(name) or {}).get(key) or []
+        if isinstance(row.get("symbol"), str)
+    }
+    return sorted(names - universe_candidates)
+
+
+def cmd_measure(args) -> int:
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.core import calendar as cal
+    from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
+
+    ub = _universe_builder()
+    et = ZoneInfo("America/New_York")
+    now = datetime.now(et)
+    today = now.date()
+    if not args.force and not ub.in_window(now, cal.is_trading_day(today), cal.session_close_hhmm(today)):
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "skipped": f"outside the measuring window ({ub.WINDOW_START} ET to 30 min before close)",
+                }
+            )
+        )
+        return 0
+    day = latest_list_day()
+    lists = load_lists(day) if day else {}
+    if not lists:
+        print(json.dumps({"ok": True, "skipped": "no saved screener lists"}))
+        return 0
+    cands = set(ub._read_json(ub.store_dir() / "candidates.json", {}).get("names") or {})
+    names = measure_names(lists, cands)[: args.limit]
+    store = CredentialStore(SHARED_SERVICE)
+    if store.missing_secrets():
+        print(json.dumps({"ok": False, "reason": "credentials_missing"}))
+        return 1
+    root = store_dir() / "screener-greeks"
+    chain_path = root / "chains" / f"{today.isoformat()}.json"
+    chain_cache = ub._read_json(chain_path, {})
+    started = datetime.now(UTC)
+    try:
+        session = SessionManager(store).get_session()
+        measured = asyncio.run(ub._measure(session, names, chain_cache, None))
+    except Exception as exc:  # noqa: BLE001 -- keep the chains gathered so far for the next run
+        ub._write_json(chain_path, chain_cache)
+        print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:300]}))
+        return 1
+    ub._write_json(chain_path, chain_cache)
+    out = root / "measurements" / today.isoformat() / f"{started.astimezone(et):%H%M}.json"
+    ub._write_json(out, {"measured_at": started.isoformat(), "list_date": day, "names": measured})
+    usable = sum(1 for row in measured.values() if ub.reading(row, started)["option"])
+    print(
+        json.dumps(
+            {"ok": True, "path": str(out), "names": len(measured), "with_option_reading": usable}, indent=1
+        )
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("--date", help="the list date to record (default: the latest saved)")
+    ap.add_argument("mode", nargs="?", choices=("greeks", "measure"), default="greeks")
+    ap.add_argument("--date", help="greeks: the list date to record (default: the latest saved)")
     ap.add_argument("--limit", type=int, help="record at most this many symbols (a trial run)")
+    ap.add_argument("--force", action="store_true", help="measure: run outside the measuring window")
     args = ap.parse_args(argv)
+    if args.mode == "measure":
+        return cmd_measure(args)
 
     day = args.date or latest_list_day()
     lists = load_lists(day) if day else {}

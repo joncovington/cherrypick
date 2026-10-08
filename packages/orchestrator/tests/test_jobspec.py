@@ -311,6 +311,8 @@ def test_derive_full_suite_job_table():
         "report-edition-retry",
         "report-charts",
         "report-session-alert",
+        "report-screener-measure-1",
+        "report-screener-measure-2",
         "report-screener-greeks",
         "universe-measure-1",
         "universe-measure-2",
@@ -947,6 +949,13 @@ def test_screener_greeks_is_its_own_switch_and_runs_after_the_chart_capture():
         return h * 60 + m
 
     assert minutes(job.at_et) >= minutes(by_id["report-charts"].at_et) + 60
+    # The spread readings: regular hours, inside the measuring window, never on top of the
+    # universe builder's own readings.
+    for i in (1, 2):
+        m = by_id[f"report-screener-measure-{i}"]
+        assert m.enabled and m.trading_days_only and m.argv[-1] == "measure"
+        assert 10 * 60 <= minutes(m.at_et) <= 15 * 60 + 30
+        assert m.at_et not in {by_id["universe-measure-1"].at_et, by_id["universe-measure-2"].at_et}
 
 
 # --------------------------------------------------------------------------- stock universe (2026-09-27)

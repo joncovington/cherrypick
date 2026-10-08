@@ -670,7 +670,9 @@
     "universe_watchlist_at": "18:30",
     "_comment_screener_greeks": "Record the broker's option chain around every row of the evening's income screener lists (scripts/fetch_screener_greeks.py): every listed strike for the row's expiry, and delta, IV, bid/ask and open interest for the strikes around the vendor's. The input for re-creating the vendor's screen from broker data. Writes data/market-report/screener-greeks/<date>.json at 'screener_greeks_at', after the chart capture that saves the lists. Read-only against the broker. OFF by default: it reads the shared tastytrade credential. Times are ET.",
     "screener_greeks": false,
-    "screener_greeks_at": "19:00"
+    "screener_greeks_at": "19:00",
+    "_comment_screener_measure_at": "With screener_greeks on: two regular-hours readings (fetch_screener_greeks.py measure) of the ATM monthly call and put spread for every listed name the universe builder does not already measure. After-hours quotes say nothing about a name's spread. Half an hour after the universe's own readings, inside the same 10:00-to-30-minutes-before-the-close window. Times are ET.",
+    "screener_measure_at": ["11:30", "14:30"]
   },
   "data_header": "x",
   "data_epoch": {
