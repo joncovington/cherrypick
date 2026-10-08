@@ -667,7 +667,10 @@
     "universe_daily_at": "18:00",
     "_comment_universe_watchlist": "Mirror the universe's members to a private tastytrade watchlist named 'cherrypick universe' (scripts/build_stock_universe.py watchlist --apply) at 'universe_watchlist_at', after the daily rebuild. The suite's one scheduled write to the broker account - a watchlist, never an order - so it is its own switch, OFF by default even with universe=true. SPX, NDX, SPY, QQQ and IWM are pinned to the list and never removed. It only replaces the list it created (group 'cherrypick'), and refuses to strip the list to its pins or remove more than half of the universe's names in one sync. Preview any time with `python scripts/build_stock_universe.py watchlist`.",
     "universe_watchlist": false,
-    "universe_watchlist_at": "18:30"
+    "universe_watchlist_at": "18:30",
+    "_comment_screener_greeks": "Record the broker's option chain around every row of the evening's income screener lists (scripts/fetch_screener_greeks.py): every listed strike for the row's expiry, and delta, IV, bid/ask and open interest for the strikes around the vendor's. The input for re-creating the vendor's screen from broker data. Writes data/market-report/screener-greeks/<date>.json at 'screener_greeks_at', after the chart capture that saves the lists. Read-only against the broker. OFF by default: it reads the shared tastytrade credential. Times are ET.",
+    "screener_greeks": false,
+    "screener_greeks_at": "19:00"
   },
   "data_header": "x",
   "data_epoch": {

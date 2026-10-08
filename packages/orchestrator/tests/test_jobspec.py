@@ -311,6 +311,7 @@ def test_derive_full_suite_job_table():
         "report-edition-retry",
         "report-charts",
         "report-session-alert",
+        "report-screener-greeks",
         "universe-measure-1",
         "universe-measure-2",
         "universe-daily",
@@ -921,6 +922,31 @@ def test_the_collector_never_runs_without_its_generic_vendor_keys():
         for job_id in ("report-edition", "report-edition-retry", "report-charts"):
             assert by_id[job_id].enabled is False, job_id
             assert missing in by_id[job_id].enabled_reason
+
+
+def test_screener_greeks_is_its_own_switch_and_runs_after_the_chart_capture():
+    """It reads the shared broker credential, so it is off until switched on, even with the
+    collector on; and it records the lists the chart capture saves, so it runs after it."""
+    cfg = suite_cfg()
+    cfg["market_report"] = {
+        "collector": True,
+        "vendor_dashboard_url": "https://example.invalid/dashboard",
+        "vendor_edition_title": "Example Report",
+    }
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert not by_id["report-screener-greeks"].enabled
+    assert "market_report.screener_greeks" in by_id["report-screener-greeks"].enabled_reason
+    cfg["market_report"]["screener_greeks"] = True
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    job = by_id["report-screener-greeks"]
+    assert job.enabled and job.trading_days_only
+    assert job.argv[-1].endswith("fetch_screener_greeks.py")
+
+    def minutes(at):
+        h, m = (int(x) for x in at.split(":"))
+        return h * 60 + m
+
+    assert minutes(job.at_et) >= minutes(by_id["report-charts"].at_et) + 60
 
 
 # --------------------------------------------------------------------------- stock universe (2026-09-27)
