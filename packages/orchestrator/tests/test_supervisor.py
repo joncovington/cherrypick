@@ -75,6 +75,8 @@ def spawned(monkeypatch, tmp_path):
     monkeypatch.setattr(supervisor, "_terminate_tree", fake_tree)
     # Fake PIDs have no creation time; identity tests set one explicitly.
     monkeypatch.setattr(supervisor._looplock, "process_start_time", lambda pid: None)
+    # No test resolves a real hostname: DNS "answers" unless a test says otherwise.
+    monkeypatch.setattr(supervisor, "dns_resolves", lambda *a, **k: True)
     logs = tmp_path / "logs"
     logs.mkdir()
     monkeypatch.setattr(cfgmod, "LOGS_DIR", logs, raising=False)
@@ -722,3 +724,164 @@ def test_cli_supervise_does_not_pin_the_daemon_to_a_config_snapshot(monkeypatch)
     monkeypatch.setattr(supervisor, "run", fake_run)
     cli.cmd_supervise({"anything": True}, stop=False)
     assert seen["cfg"] is None, "supervise must let the daemon load (and reload) its own config"
+
+
+# --------------------------------------------------------------------------- starting fixed-time jobs safely
+# 2026-10-08: power came back at 19:08 ET and the supervisor started every evening job still inside
+# its catch-up window in the same second, before DNS was up. A daily job counts as fired the moment
+# it starts, so market-files died on getaddrinfo and was never retried, and two browser jobs started
+# together and one crashed.
+
+from cherrypick.orchestrator import jobspec  # noqa: E402
+
+EVENING = datetime(2026, 8, 10, 19, 8, tzinfo=ET)
+
+
+def _daily(job_id, script=None, at="17:15", catchup=300):
+    argv = (
+        ("pythonw", f"C:/repo/scripts/{script}")
+        if script
+        else ("pythonw", "-m", "cherrypick.technicals", "land")
+    )
+    return jobspec.JobSpec(id=job_id, argv=argv, kind=jobspec.KIND_DAILY, at_et=at, catchup_minutes=catchup)
+
+
+@pytest.fixture
+def fixed_jobs(monkeypatch):
+    """Drive the supervisor over a hand-built job table instead of the derived one."""
+    table: list[jobspec.JobSpec] = []
+    monkeypatch.setattr(supervisor.jobspec, "derive_jobs", lambda cfg, **kw: (list(table), {}))
+    monkeypatch.setattr(supervisor, "FIXED_SPAWN_SPACING_SECONDS", 0.0)
+    monkeypatch.setattr(supervisor, "NETWORK_RECHECK_SECONDS", 0.0)
+    return table
+
+
+def test_a_network_job_waits_for_dns_without_being_stamped_fired(spawned, fixed_jobs, monkeypatch):
+    fixed_jobs.append(_daily("market-files", "fetch_market_files.py"))
+    dns = {"up": False}
+    monkeypatch.setattr(supervisor, "dns_resolves", lambda *a, **k: dns["up"])
+    sup = supervisor.Supervisor(base_cfg())
+
+    res = sup.pass_once(now=EVENING)
+    assert res["started"] == []
+    st = sup._state["market-files"]
+    assert st["waiting"] == "network" and st.get("last_fire_day") is None  # still due
+
+    dns["up"] = True
+    res = sup.pass_once(now=EVENING)
+    assert res["started"] == ["market-files"]
+    assert "waiting" not in sup._state["market-files"]
+
+
+def test_a_local_job_is_not_held_for_the_network(spawned, fixed_jobs, monkeypatch):
+    fixed_jobs.append(_daily("technicals-land"))  # runs `-m cherrypick.technicals land`: local Dolt only
+    monkeypatch.setattr(supervisor, "dns_resolves", lambda *a, **k: False)
+    res = supervisor.Supervisor(base_cfg()).pass_once(now=EVENING)
+    assert res["started"] == ["technicals-land"]
+
+
+def test_a_held_job_still_misses_once_its_catch_up_window_closes(spawned, fixed_jobs, monkeypatch):
+    fixed_jobs.append(_daily("market-files", "fetch_market_files.py", at="17:15", catchup=60))
+    monkeypatch.setattr(supervisor, "dns_resolves", lambda *a, **k: False)
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=EVENING.replace(hour=17, minute=20))
+    late = EVENING.replace(hour=18, minute=30)  # past 17:15 + 60 min
+    res = sup.pass_once(now=late)
+    assert res["started"] == []
+    assert sup._state["market-files"].get("last_fire_day") == late.strftime("%Y-%m-%d")  # stamped missed
+
+
+def test_fixed_time_starts_are_spaced_apart(spawned, fixed_jobs, monkeypatch):
+    fixed_jobs.extend([_daily("a", "fetch_a.py"), _daily("b", "fetch_b.py")])
+    monkeypatch.setattr(supervisor, "FIXED_SPAWN_SPACING_SECONDS", 10.0)
+    sup = supervisor.Supervisor(base_cfg())
+    res = sup.pass_once(now=EVENING)
+    assert res["started"] == ["a"] and sup._state["b"]["waiting"] == "spacing"
+    sup._last_fixed_spawn -= 11
+    assert sup.pass_once(now=EVENING)["started"] == ["b"]
+
+
+def test_two_browser_jobs_never_run_at_once(spawned, fixed_jobs):
+    fixed_jobs.extend(
+        [
+            _daily("report-charts", "fetch_vendor_edition.py"),
+            _daily("quikoptions-capture", "fetch_quikoptions.py"),
+        ]
+    )
+    sup = supervisor.Supervisor(base_cfg())
+    assert sup.pass_once(now=EVENING)["started"] == ["report-charts"]
+    assert sup._state["quikoptions-capture"]["waiting"] == "browser"
+    assert sup.pass_once(now=EVENING)["started"] == []  # the vendor browser is still up
+    next(p for p in spawned if "fetch_vendor_edition.py" in p.argv[-1]).exit(0)
+    assert sup.pass_once(now=EVENING)["started"] == ["quikoptions-capture"]
+
+
+def test_a_repeatable_fetch_retries_after_a_failure_and_others_do_not(spawned, fixed_jobs):
+    fixed_jobs.extend(
+        [_daily("market-files", "fetch_market_files.py"), _daily("report-charts", "fetch_vendor_edition.py")]
+    )
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=EVENING)  # both start: one browser job, spacing off in this fixture
+    for p in spawned:
+        p.exit(1)
+    sup.pass_once(now=EVENING)  # records both failures
+    for jid in ("market-files", "report-charts"):
+        sup._state[jid]["backoff_until"] = time.time() - 1
+    res = sup.pass_once(now=EVENING)
+    assert "market-files" in res["started"]  # retried inside its window
+    assert "report-charts" not in res["started"]  # the vendor collector's cooldown decides, not us
+
+
+def test_the_network_warning_is_sent_once_after_fifteen_minutes(spawned, fixed_jobs, monkeypatch):
+    fixed_jobs.append(_daily("market-files", "fetch_market_files.py"))
+    monkeypatch.setattr(supervisor, "dns_resolves", lambda *a, **k: False)
+    warned: list[int] = []
+    monkeypatch.setattr(supervisor.Supervisor, "_warn_network", lambda self, s: warned.append(s))
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=EVENING)
+    assert warned == []
+    sup._net_down_since -= supervisor.NETWORK_WARN_AFTER_SECONDS + 1
+    sup.pass_once(now=EVENING)
+    sup.pass_once(now=EVENING)
+    assert len(warned) == 1
+
+
+def test_the_rules_read_the_job_table():
+    """Which jobs the holds apply to, from what each job runs -- not a hand-kept list."""
+    assert jobspec.needs_network(_daily("x", "fetch_iv_rank.py"))
+    assert not jobspec.needs_network(_daily("technicals-land"))
+    assert jobspec.uses_browser(_daily("x", "fetch_quikoptions.py"))
+    assert not jobspec.uses_browser(_daily("x", "fetch_market_files.py"))
+    tagged = jobspec.JobSpec(
+        id="reconcile",
+        argv=("pythonw", "run.py", "reconcile"),
+        kind=jobspec.KIND_DAILY,
+        at_et="16:30",
+        tags=("network",),
+    )
+    assert jobspec.needs_network(tagged)
+
+
+def test_every_real_network_job_is_gated():
+    """The suite's own job table: jobs that reach the broker or the web through a package module
+    (not a scripts/ file) carry the network tag, so the DNS gate does not miss them."""
+    cfg = base_cfg(
+        modules={
+            "flies": {
+                "enabled": True,
+                "path": "C:/repo/flies",
+                "paper": {
+                    "kind": "self_healing",
+                    "once_argv": ["-m", "cherrypick.flies.paper_loop", "--once"],
+                    "fee_reconcile_at": "09:15",
+                    "fee_reconcile_argv": ["-m", "cherrypick.flies.fee_reconcile", "--symbol", "SPX"],
+                },
+            }
+        }
+    )
+    jobs, _ = jobspec.derive_jobs(
+        cfg, pythonw="pythonw", launcher="C:/repo/packages/orchestrator/run.py", now=EVENING
+    )
+    by_id = {j.id: j for j in jobs}
+    assert jobspec.needs_network(by_id["flies-fee-reconcile"])
+    assert jobspec.needs_network(by_id["reconcile"])

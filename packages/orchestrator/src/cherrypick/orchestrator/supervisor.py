@@ -32,6 +32,7 @@ import atexit
 import faulthandler
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -392,6 +393,24 @@ def _terminate_tree(pid: int) -> bool:
         return False
 
 
+# Starting fixed-time jobs safely (see jobspec's note of 2026-10-08).
+NETWORK_PROBE_HOSTS = ("api.tastyworks.com", "github.com")
+NETWORK_RECHECK_SECONDS = 30.0
+NETWORK_WARN_AFTER_SECONDS = 15 * 60
+FIXED_SPAWN_SPACING_SECONDS = 10.0
+
+
+def dns_resolves(hosts=NETWORK_PROBE_HOSTS, resolver=socket.getaddrinfo) -> bool:
+    """Whether DNS answers for any probe host. Resolution only -- no connection, no request."""
+    for host in hosts:
+        try:
+            resolver(host, 443)
+            return True
+        except OSError:
+            continue
+    return False
+
+
 class Supervisor:
     """The daemon's state machine, factored so tests can drive single passes with a fake clock."""
 
@@ -407,6 +426,11 @@ class Supervisor:
         self._started_at = datetime.now().astimezone().isoformat(timespec="seconds")
         self._loop_seq = 0
         self._last_heartbeat = 0.0
+        self._net_ok: bool | None = None
+        self._net_checked = 0.0
+        self._net_down_since: float | None = None
+        self._net_warned = False
+        self._last_fixed_spawn = 0.0
 
     # ----------------------------------------------------------------- config / derivation
     def _load_cfg(self) -> dict[str, Any]:
@@ -529,6 +553,15 @@ class Supervisor:
             delay = min(cap, _BACKOFF_BASE_SECONDS * (2 ** (n - 1)))
             st["backoff_until"] = time.time() + delay
             _log(f"{spec.id}: exit {code} (failure #{n}), backoff {delay}s")
+            retries = jobspec.RETRY_ON_FAILURE.get(spec.id, 0)
+            if jobspec.is_fixed_time(spec) and n <= retries:
+                # Un-stamp the occurrence so it fires again once the backoff lapses -- still only
+                # inside its catch-up window, which should_start keeps enforcing.
+                st.pop("last_fire_day", None)
+                st.pop("last_fire_month", None)
+                _log(
+                    f"{spec.id}: will retry ({n} of {retries}) after the backoff, inside its catch-up window"
+                )
             # What the child said on the way out, where people already look: this log, the job
             # registry (`status`), and the watchdog's churn finding. A bare "exit 1" was all
             # `report-edition` left on 2026-09-30; its own stderr held the reason.
@@ -759,6 +792,11 @@ class Supervisor:
 
         started: list[str] = []
         held = _holds.all_holds()
+        browser_busy = any(
+            self._job_running(spec, self._state.setdefault(spec.id, {}))
+            for spec in jobs
+            if jobspec.uses_browser(spec)
+        )
         for spec in jobs:
             st = self._state.setdefault(spec.id, {})
             st.update(
@@ -793,16 +831,79 @@ class Supervisor:
             if st.get("backoff_until") and time.time() < float(st["backoff_until"]):
                 continue
             fire, reason, patch = jobspec.should_start(spec, st, now, holidays)
+            if fire and jobspec.is_fixed_time(spec):
+                hold = self._fixed_start_hold(spec, browser_busy)
+                if hold is not None:
+                    # The patch is NOT applied, so the job is not stamped fired: it stays due and is
+                    # asked again next pass, until it starts or its catch-up window closes.
+                    st["waiting"] = hold
+                    continue
+            st.pop("waiting", None)
             st.update(patch)
             if spec.kind == jobspec.KIND_INTERVAL and spec.enabled:
                 st["next_run"] = _epoch_iso(st.get("next_run_epoch"))
             if fire and self._spawn(spec, st):
                 started.append(spec.id)
+                if jobspec.is_fixed_time(spec):
+                    self._last_fixed_spawn = time.time()
+                    browser_busy = browser_busy or jobspec.uses_browser(spec)
 
         self._loop_seq += 1
         self._write_registry(errors)
         self._write_heartbeat(now, len(jobs))
         return {"started": started, "jobs": len(jobs), "errors": errors}
+
+    def _fixed_start_hold(self, spec: jobspec.JobSpec, browser_busy: bool) -> str | None:
+        """Why a due fixed-time job must wait this pass, or None to start it."""
+        if jobspec.needs_network(spec) and not self._network_ok():
+            return "network"
+        if jobspec.uses_browser(spec) and browser_busy:
+            return "browser"
+        if time.time() - self._last_fixed_spawn < FIXED_SPAWN_SPACING_SECONDS:
+            return "spacing"
+        return None
+
+    def _network_ok(self) -> bool:
+        """DNS, re-probed at most every NETWORK_RECHECK_SECONDS. Logs each change; warns once when it
+        stays down past NETWORK_WARN_AFTER_SECONDS."""
+        t = time.time()
+        if self._net_ok is None or t - self._net_checked >= NETWORK_RECHECK_SECONDS:
+            ok = dns_resolves()
+            self._net_checked = t
+            if ok and self._net_ok is False:
+                down = int(t - (self._net_down_since or t))
+                _log(f"network back after {down}s -- releasing the jobs held for it")
+            if not ok and self._net_ok is not False:
+                _log("network unavailable (DNS does not resolve) -- holding fixed-time jobs that need it")
+                self._net_down_since = t
+            if ok:
+                self._net_down_since = None
+                self._net_warned = False
+            self._net_ok = ok
+        if (
+            not self._net_ok
+            and not self._net_warned
+            and self._net_down_since is not None
+            and t - self._net_down_since >= NETWORK_WARN_AFTER_SECONDS
+        ):
+            self._net_warned = True
+            self._warn_network(int(t - self._net_down_since))
+        return bool(self._net_ok)
+
+    def _warn_network(self, seconds: int) -> None:
+        msg = (
+            f"DNS has not resolved for {seconds // 60} min; scheduled fetches are held until it does "
+            "(each until its catch-up window closes)."
+        )
+        _log(f"WARNING: {msg}")
+        try:  # best effort: the warning is about the network, so a push may well fail too
+            from cherrypick.notify.notifier import Notifier
+
+            Notifier(self._load_cfg().get("notify")).notify(
+                "WARNING", "supervisor", "Network unavailable", msg
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     def _manage_resident(
         self, spec: jobspec.JobSpec, st: dict[str, Any], now: datetime, holidays: set[str]
