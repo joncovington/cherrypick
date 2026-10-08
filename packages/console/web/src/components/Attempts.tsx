@@ -75,10 +75,10 @@ const COLOR_OF: Record<string, string> = Object.fromEntries(OUTCOMES.map((o) => 
 const LABEL_OF: Record<string, string> = Object.fromEntries(OUTCOMES.map((o) => [o.key, o.label]));
 
 /**
- * The query string every session-resolved card sends: attempts, occupancy and meic's divergence.
+ * Builds the query string for the divergence/session request (MeicDivergenceCard).
  * Exported so the wiring is pinned without a DOM.
  */
-export function sessionQuery(mode: TradingMode, date: string | null, era: string | null): string {
+export function sessionQuery(mode: TradingMode, date: string | null, era: string | null = null): string {
   const qs = new URLSearchParams({ mode });
   if (date !== null) qs.set("date", date);
   if (era !== null) qs.set("era", era);

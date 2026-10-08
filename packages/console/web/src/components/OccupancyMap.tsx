@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { useAttempts, NO_ATTEMPTS_SCOPE, type AttemptsScope } from "./Attempts";
+import { useAttempts, attemptsQuery, NO_ATTEMPTS_SCOPE, type AttemptsScope } from "./Attempts";
 
 /**
  * The strike-occupancy map: which contracts each arm holds, and on which side.
@@ -45,12 +45,7 @@ function useOccupancy(
   return useQuery<{ tradeDate: string | null; legs: OccupancyLeg[] }>({
     queryKey: ["occupancy", module, mode, date, scope.arm, scope.symbol, scope.era],
     queryFn: async () => {
-      const qs = new URLSearchParams({ mode });
-      if (date !== null) qs.set("date", date);
-      if (scope.arm !== null) qs.set("arm", scope.arm);
-      if (scope.symbol !== null) qs.set("symbol", scope.symbol);
-      if (scope.era !== null) qs.set("era", scope.era);
-      const res = await fetch(`/api/${module}/occupancy?${qs.toString()}`);
+      const res = await fetch(`/api/${module}/occupancy?${attemptsQuery(mode, date, scope)}`);
       if (!res.ok) throw new Error(`occupancy: HTTP ${res.status}`);
       return (await res.json()) as { tradeDate: string | null; legs: OccupancyLeg[] };
     },

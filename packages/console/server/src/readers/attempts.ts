@@ -280,6 +280,8 @@ export function readEntryAttempts(
       scopeParams.push(scope.symbol);
     }
     const scopeAnd = scopeClauses.length > 0 ? ` AND ${scopeClauses.join(" AND ")}` : "";
+    // When symbol is scoped, the rail's lifetime counts ("days seen / days filled") describe days
+    // that produced attempts for that symbol (consistent with the page scope), not all symbols.
     const scopeWhere = scopeClauses.length > 0 ? ` WHERE ${scopeClauses.join(" AND ")}` : "";
 
     const dayRow = day

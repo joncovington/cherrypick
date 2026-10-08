@@ -9,6 +9,7 @@ import { registerSecurity } from "../src/security.js";
 import { registerModuleRoutes } from "../src/routes/modules.js";
 import { closePooledDbs } from "../src/readers/db.js";
 import { NO_ATTEMPTS_SCOPE, readEntryAttempts, type AttemptsPayload } from "../src/readers/attempts.js";
+import { readOccupancy } from "../src/readers/occupancy.js";
 
 /**
  * The attempts page drew every arm of the resolved day: the header's arm/symbol/era controls set the
@@ -35,7 +36,7 @@ beforeAll(async () => {
   const trade = db.prepare(
     `INSERT INTO ic_trades (trade_date, symbol, ic_order_id, status, arm, era, put_strike, call_strike,
        wing_width, net_credit, quantity, pnl, fees, underlying_price_entry, created_at, updated_at)
-     VALUES (?, ?, ?, 'expired', ?, ?, 5950, 6050, 5, 1.2, 1, 100, 5, 6000, ?, ?)`,
+     VALUES (?, ?, ?, 'open', ?, ?, 5950, 6050, 5, 1.2, 1, 100, 5, 6000, ?, ?)`,
   );
   const adv = "2026-09-25 16:00:00-04:00";
   trade.run("2026-09-25", "SPX", "adv-a-spx", "armA", "advisor", adv, adv);
@@ -110,6 +111,13 @@ describe("the attempts reader honours the page scope", () => {
     const p = readEntryAttempts(config, "meic", "paper", null, { ...NO_ATTEMPTS_SCOPE, symbol: "NDX" });
     expect(p.timeline).toHaveLength(1);
     expect(p.timeline[0]?.symbol).toBe("NDX");
+  });
+
+  it("narrows occupancy to the selected arm", () => {
+    const occ = readOccupancy(config, "meic", "paper", null, { ...NO_ATTEMPTS_SCOPE, arm: "armA" });
+    expect(occ.tradeDate).toBe("2026-09-25");
+    expect(occ.legs.length).toBeGreaterThan(0);
+    expect(occ.legs.every((l) => l.arm === "armA")).toBe(true);
   });
 });
 
