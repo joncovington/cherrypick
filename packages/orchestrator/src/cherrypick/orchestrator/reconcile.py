@@ -35,7 +35,14 @@ _VERDICT_RANK = {FLAT: 0, UNKNOWN: 1, DRIFT: 2}
 # --------------------------------------------------------------------------- paper-DB open positions
 def _meic_open(conn) -> list[dict]:
     arm = _db.arm_column(conn, "ic_trades")  # `risk_profile` until meic's column moves
-    rows = conn.execute(f"SELECT symbol, {arm} AS arm FROM ic_trades WHERE exit_time IS NULL").fetchall()
+    # A cancelled entry was never a position: it has no exit time because it never had an entry
+    # fill, or because a session was struck whole (the 2026-10-08 outage cancelled 184 unmanaged
+    # entries), and counting it would report paper positions the module does not hold.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(ic_trades)")}
+    held = " AND COALESCE(status, '') != 'cancelled'" if "status" in cols else ""
+    rows = conn.execute(
+        f"SELECT symbol, {arm} AS arm FROM ic_trades WHERE exit_time IS NULL{held}"
+    ).fetchall()
     return [{"symbol": r["symbol"], "arm": r["arm"]} for r in rows]
 
 

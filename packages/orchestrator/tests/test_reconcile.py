@@ -55,6 +55,24 @@ def test_paper_open_positions_counts_only_unclosed(env):
     assert paper["meic"]["symbols"] == ["SPX", "XSP"]
 
 
+def test_a_cancelled_meic_entry_is_not_an_open_position(tmp_path):
+    """2026-10-08: the power outage left 184 unmanaged entries, cancelled as not evidence. They have
+    no exit time, and this reader counted them as open paper positions."""
+    path = tmp_path / "p.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE ic_trades (id INTEGER PRIMARY KEY, symbol TEXT, risk_profile TEXT, status TEXT, "
+        "exit_time TEXT)"
+    )
+    conn.executemany(
+        "INSERT INTO ic_trades (symbol, risk_profile, status, exit_time) VALUES (?, 'control', ?, NULL)",
+        [("SPX", "open"), ("SPX", "cancelled"), ("NDX", "cancelled")],
+    )
+    conn.commit()
+    conn.row_factory = sqlite3.Row
+    assert reconcile._meic_open(conn) == [{"symbol": "SPX", "arm": "control"}]
+
+
 def _flat_acct(account, designated=False):
     return {
         "account": account,

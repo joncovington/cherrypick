@@ -2,6 +2,7 @@ import path from "node:path";
 import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, num, str, hasColumn, armColumnOf } from "./db.js";
+import { isVoidedSession } from "./voidedSession.js";
 
 /**
  * The entry-attempts ledger — one row per evaluated entry opportunity per arm.
@@ -257,6 +258,9 @@ export function readEntryAttempts(
       : db.prepare<[], { d: string }>(`SELECT MAX(trade_date) AS d FROM ${spec.table}`).get();
     const tradeDate = dayRow?.d ?? null;
     if (tradeDate === null) return empty;
+    // A voided session (voidedSession.ts) lists nothing: every fill it made became no position, so
+    // a timeline of them would read as trading that never counted.
+    if (isVoidedSession(db, module, tradeDate)) return { ...empty, tradeDate };
 
     const rows = db
       .prepare<[string], Record<string, unknown>>(
