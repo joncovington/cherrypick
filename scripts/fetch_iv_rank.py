@@ -89,23 +89,52 @@ def reading(m) -> tuple[str, dict]:
     }
 
 
-async def fetch(session, todo: list[str], doc: dict) -> dict:
-    from tastytrade.metrics import get_market_metrics
+def calendar_fields(raw: dict) -> dict:
+    """The announcement and ex-dividend dates from one RAW market-metrics item. The SDK's model drops
+    `earnings.expected-report-date` and its `estimated` flag (tastytrade 13.x keeps only the last
+    report), so they are read from the response itself. Recorded from 2026-10-08 for the planned
+    "no earnings within the trade cycle" filter: the local Dolt calendar reaches only ~5 weeks,
+    short of a 45-60 day cycle. Same request, no extra call."""
+    earnings = raw.get("earnings") or {}
+    estimated = earnings.get("estimated")
+    return {
+        "earnings_date": _real_date(earnings.get("expected-report-date")),
+        "earnings_estimated": None if estimated is None else bool(estimated),
+        "ex_dividend_date": _real_date(raw.get("dividend-ex-date")),
+    }
 
+
+def _real_date(value) -> str | None:
+    """An ISO date, or None for a missing one. The broker sends 1970-01-01 for "none" (a name that
+    pays no dividend), which read as a date would sit in every past span."""
+    v = str(value or "")[:10]
+    return v if len(v) == 10 and v > "1990" else None
+
+
+async def get_metrics_raw(session, symbols: list[str]) -> list[tuple]:
+    """(the SDK's model, the raw item) per symbol: the SDK's own request, keeping the raw item."""
+    from tastytrade.metrics import MarketMetricInfo
+
+    data = await session._get("/market-metrics", params={"symbols": ",".join(symbols)})
+    return [(MarketMetricInfo(**i), i) for i in data["items"]]
+
+
+async def fetch(session, todo: list[str], doc: dict) -> dict:
     report = {"fetched": 0, "failed": []}
     for k in range(0, len(todo), BATCH):
         if k:
             await asyncio.sleep(PAUSE_S)
         batch = todo[k : k + BATCH]
         try:
-            rows = await get_market_metrics(session, [s.replace(".", "/") for s in batch])
+            rows = await get_metrics_raw(session, [s.replace(".", "/") for s in batch])
         except Exception as exc:  # noqa: BLE001 -- keep what the file holds; report and go on
             report["failed"].append(f"{batch[0]}..{batch[-1]}: {type(exc).__name__}: {str(exc)[:120]}")
             if "429" in str(exc):
                 break
             continue
-        for m in rows:
+        for m, raw in rows:
             day, fields = reading(m)
+            fields.update(calendar_fields(raw))
             doc["days"].setdefault(day, {})[m.symbol.replace("/", ".")] = fields
             report["fetched"] += 1
     return report

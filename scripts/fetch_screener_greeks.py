@@ -260,6 +260,158 @@ def measure_names(lists: dict[str, dict], universe_candidates: set[str]) -> list
     return sorted(names - universe_candidates)
 
 
+# ------------------------------------------------------------------------------------------------
+# Legs: the vendor's own option against the monthly the user would trade instead (2026-10-07).
+#
+# The user's rule: recommend the vendor's strike only when THAT option is liquid -- a tight bid/ask,
+# decent open interest and volume -- and otherwise the standard monthly on the user's cycle, 45-60
+# days out where one is listed, else 30-60. Weeklies usually quote wider and trade thinner. The bars
+# are not chosen yet (they wait on complete readings, like the tradable spread bar), so until LEG_BARS
+# is set every row records both legs' readings and no recommendation.
+
+CYCLE_PREFERRED = (45, 60)
+CYCLE_ALLOWED = (30, 60)
+# {"max_spread_pct", "max_spread_abs", "min_open_interest", "min_volume"} once chosen.
+LEG_BARS: dict | None = None
+EPS = 1e-9
+
+
+def cycle_expiry(expirations: list[dict], is_monthly) -> dict | None:
+    """The standard monthly the user trades: inside 45-60 days if one is listed, else inside 30-60
+    (the latest there, nearest the preferred range). None when neither range holds a monthly --
+    monthlies are 28 or 35 days apart, so after a 35-day gap 30-60 can be empty."""
+    monthly = [e for e in expirations if is_monthly(e["expiration"])]
+    for lo, hi in (CYCLE_PREFERRED, CYCLE_ALLOWED):
+        inside = [e for e in monthly if lo <= e["dte"] <= hi]
+        if inside:
+            return max(inside, key=lambda e: e["dte"])
+    return None
+
+
+def option_symbol(root: str, expiry_iso: str, right: str, strike: float) -> str:
+    """The broker's option symbol: OCC with the root padded to six (`AAPL  261120P00230000`)."""
+    yymmdd = expiry_iso[2:4] + expiry_iso[5:7] + expiry_iso[8:10]
+    return f"{root.replace('.', '/'):<6}{yymmdd}{right}{round(strike * 1000):08d}"
+
+
+def row_legs(name: str, row: dict) -> list[dict]:
+    """The vendor's option(s) for one row: one leg for a short put or covered call, the short and
+    long legs of a credit spread."""
+    sym = row["symbol"].replace("/", ".")
+    exp = datetime.strptime(row["expiry"], "%m/%d/%Y").date().isoformat()
+    if name == "credit-spreads":
+        right = "P" if row.get("type") == "Put" else "C"
+        strikes = row.get("strike") or {}
+        return [
+            {"symbol": sym, "role": role, "right": right, "expiry": exp, "strike": float(strikes[side])}
+            for role, side in (("short", "sell"), ("long", "buy"))
+            if isinstance(strikes.get(side), (int, float))
+        ]
+    right = "P" if name == "short-puts" else "C"
+    k = row.get("strikePrice")
+    if not isinstance(k, (int, float)):
+        return []
+    return [{"symbol": sym, "role": "short", "right": right, "expiry": exp, "strike": float(k)}]
+
+
+def leg_passes(q: dict, bars: dict) -> bool:
+    """A quoted option against the bars: two-sided and tight enough on either leg of the spread
+    rule (percent of mid OR absolute), with enough open interest and volume."""
+    bid, ask = q.get("bid"), q.get("ask")
+    if bid is None or ask is None or bid <= 0 or ask < bid:
+        return False
+    width, mid = ask - bid, (ask + bid) / 2
+    # A cent-priced width compared in floats: 0.23 - 0.18 is 0.0500000000000000017, one nickel.
+    tight = width / mid <= bars["max_spread_pct"] + EPS or width <= bars["max_spread_abs"] + EPS
+    return (
+        tight
+        and (q.get("open_interest") or 0) >= bars["min_open_interest"]
+        and (q.get("volume") or 0) >= bars["min_volume"]
+    )
+
+
+def recommend(vendor: list[dict], monthly: list[dict] | None, bars: dict | None) -> str | None:
+    """'vendor' when every vendor leg passes, else 'monthly' when the user's cycle lists one, else
+    'none'; None while the bars are unset (readings only)."""
+    if bars is None:
+        return None
+    if vendor and all(leg_passes(q, bars) for q in vendor):
+        return "vendor"
+    return "monthly" if monthly else "none"
+
+
+async def _quote_legs(session, ub, rows: list[dict]) -> None:
+    """Fill each leg's broker quote in place: bid, ask, volume, open interest. REST snapshots in the
+    builder's batches and pacing."""
+    from tastytrade.market_data import get_market_data_by_type
+
+    wanted: dict[str, list[dict]] = {}
+    for r in rows:
+        for leg in [*r["vendor"], *(r["monthly"] or [])]:
+            wanted.setdefault(leg["option"], []).append(leg)
+    for batch in ub._batches(list(wanted), ub.TT_QUOTE_BATCH):
+        for q in await get_market_data_by_type(session, options=batch):
+            for leg in wanted.get(q.symbol, []):
+                leg["quote"] = {
+                    "bid": _f(q.bid),
+                    "ask": _f(q.ask),
+                    "volume": _f(q.volume),
+                    "open_interest": _f(q.open_interest),
+                    "updated_at": ub._iso(q.updated_at),
+                    "fetched_at": datetime.now(UTC).isoformat(),
+                }
+        await asyncio.sleep(ub.TT_PAUSE_S)
+
+
+def plan_legs(lists: dict[str, dict], chains: dict[str, list], skip: set[str], is_monthly) -> list[dict]:
+    """One entry per row of a name not held illiquid: the vendor's legs and the same strikes on the
+    user's cycle monthly (the nearest listed strike), or None when the chain holds no such monthly."""
+    out = []
+    for name, key in LISTS:
+        for row in (lists.get(name) or {}).get(key) or []:
+            legs = row_legs(name, row)
+            if not legs or legs[0]["symbol"] in skip:
+                continue
+            for leg in legs:
+                leg["option"] = option_symbol(leg["symbol"], leg["expiry"], leg["right"], leg["strike"])
+            cyc = cycle_expiry(chains.get(legs[0]["symbol"]) or [], is_monthly)
+            monthly = None
+            if cyc and cyc["strikes"]:
+                monthly = []
+                for leg in legs:
+                    k, call, put = min(
+                        cyc["strikes"], key=lambda s, leg=leg: abs(float(s[0]) - leg["strike"])
+                    )
+                    monthly.append(
+                        {
+                            "symbol": leg["symbol"],
+                            "role": leg["role"],
+                            "right": leg["right"],
+                            "expiry": cyc["expiration"],
+                            "dte": cyc["dte"],
+                            "strike": float(k),
+                            "option": put if leg["right"] == "P" else call,
+                        }
+                    )
+            out.append({"list": name, "symbol": legs[0]["symbol"], "vendor": legs, "monthly": monthly})
+    return out
+
+
+async def _measure_then_legs(session, ub, names, chain_cache, lists, today, skip, limit):
+    """The spread readings, then the legs, in one event loop. The legs: every row of a name not held
+    illiquid, the vendor's option against the monthly on the user's cycle, with chains from this
+    run's cache and the universe builder's (it measured the candidates half an hour earlier); a name
+    in neither gets its vendor legs only. A failure in the legs keeps the spread readings."""
+    measured = await ub._measure(session, names, chain_cache, None)
+    chains = {**ub._read_json(ub.store_dir() / "chains" / f"{today.isoformat()}.json", {}), **chain_cache}
+    legs = plan_legs(lists, chains, skip, ub.is_monthly)[:limit]
+    try:
+        await _quote_legs(session, ub, legs)
+    except Exception as exc:  # noqa: BLE001 -- reported by the caller, after the readings are saved
+        return measured, legs, f"{type(exc).__name__}: {exc}"[:300]
+    return measured, legs, None
+
+
 def cmd_measure(args) -> int:
     from zoneinfo import ZoneInfo
 
@@ -300,7 +452,13 @@ def cmd_measure(args) -> int:
     started = datetime.now(UTC)
     try:
         session = SessionManager(store).get_session()
-        measured = asyncio.run(ub._measure(session, names, chain_cache, None))
+        # One event loop for both steps: the broker session's connection belongs to the loop it was
+        # first used in, and a second asyncio.run fails with "Event loop is closed".
+        measured, legs, legs_error = asyncio.run(
+            _measure_then_legs(
+                session, ub, names, chain_cache, lists, today, liquidity.skip(today), args.limit
+            )
+        )
     except Exception as exc:  # noqa: BLE001 -- keep the chains gathered so far for the next run
         ub._write_json(chain_path, chain_cache)
         print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:300]}))
@@ -309,9 +467,30 @@ def cmd_measure(args) -> int:
     out = root / "measurements" / today.isoformat() / f"{started.astimezone(et):%H%M}.json"
     ub._write_json(out, {"measured_at": started.isoformat(), "list_date": day, "names": measured})
     usable = sum(1 for row in measured.values() if ub.reading(row, started)["option"])
+    if legs_error:
+        print(json.dumps({"ok": False, "path": str(out), "legs_error": legs_error}))
+        return 1
+    for r in legs:
+        vendor_q = [leg.get("quote") or {} for leg in r["vendor"]]
+        monthly_q = [leg.get("quote") or {} for leg in r["monthly"]] if r["monthly"] else None
+        r["recommendation"] = recommend(vendor_q, monthly_q, LEG_BARS)
+    legs_out = root / "legs" / today.isoformat() / f"{started.astimezone(et):%H%M}.json"
+    ub._write_json(
+        legs_out, {"measured_at": started.isoformat(), "list_date": day, "bars": LEG_BARS, "rows": legs}
+    )
     print(
         json.dumps(
-            {"ok": True, "path": str(out), "names": len(measured), "with_option_reading": usable}, indent=1
+            {
+                "ok": True,
+                "path": str(out),
+                "names": len(measured),
+                "with_option_reading": usable,
+                "legs_path": str(legs_out),
+                "rows": len(legs),
+                "with_monthly": sum(1 for r in legs if r["monthly"]),
+                "quoted_vendor_legs": sum(1 for r in legs for leg in r["vendor"] if leg.get("quote")),
+            },
+            indent=1,
         )
     )
     return 0

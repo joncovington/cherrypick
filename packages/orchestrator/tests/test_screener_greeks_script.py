@@ -99,3 +99,94 @@ def test_measure_skips_names_the_universe_already_measures_and_uses_its_spelling
         "covered-calls": {"coveredCalls": [{"symbol": "AAPL"}, {"symbol": "SLS"}]},
     }
     assert fsg.measure_names(lists, {"AAPL"}) == ["BRK.B", "SLS"]
+
+
+# --- legs: the vendor's option against the user's monthly ------------------------------------
+
+MONTHLIES = {"2026-11-20", "2026-12-18", "2027-01-15"}
+
+
+def _is_monthly(iso):
+    return iso in MONTHLIES
+
+
+def _exp(iso, dte, strikes=((100.0, "C100", "P100"), (105.0, "C105", "P105"))):
+    return {"expiration": iso, "dte": dte, "strikes": [list(s) for s in strikes]}
+
+
+def test_the_cycle_prefers_a_monthly_45_to_60_days_out():
+    exps = [_exp("2026-11-06", 30), _exp("2026-11-20", 44), _exp("2026-12-18", 50)]
+    assert fsg.cycle_expiry(exps, _is_monthly)["expiration"] == "2026-12-18"
+
+
+def test_the_cycle_falls_back_to_a_monthly_30_to_60_days_out():
+    exps = [_exp("2026-11-06", 30), _exp("2026-11-20", 44), _exp("2026-12-18", 72)]
+    assert fsg.cycle_expiry(exps, _is_monthly)["expiration"] == "2026-11-20"
+
+
+def test_a_weekly_is_never_the_cycle_and_an_empty_range_is_none():
+    assert fsg.cycle_expiry([_exp("2026-11-06", 45)], _is_monthly) is None
+    assert fsg.cycle_expiry([_exp("2026-11-20", 29), _exp("2026-12-18", 64)], _is_monthly) is None
+
+
+def test_the_option_symbol_is_the_brokers_padded_occ():
+    assert fsg.option_symbol("VPG", "2026-11-20", "C", 105.0) == "VPG   261120C00105000"
+    assert fsg.option_symbol("BRK.B", "2026-11-20", "P", 7.5) == "BRK/B 261120P00007500"
+
+
+def test_a_credit_spread_has_a_short_and_a_long_leg():
+    row = {"symbol": "MU", "type": "Put", "expiry": "11/20/2026", "strike": {"sell": 1080.0, "buy": 990.0}}
+    legs = fsg.row_legs("credit-spreads", row)
+    assert [(leg["role"], leg["right"], leg["strike"]) for leg in legs] == [
+        ("short", "P", 1080.0),
+        ("long", "P", 990.0),
+    ]
+
+
+def test_plan_skips_held_names_and_takes_the_nearest_monthly_strike():
+    lists = {
+        "short-puts": {
+            "shortPuts": [
+                {"symbol": "AAA", "expiry": "11/06/2026", "strikePrice": 103.0},
+                {"symbol": "ILQ", "expiry": "11/06/2026", "strikePrice": 10.0},
+            ]
+        }
+    }
+    chains = {"AAA": [_exp("2026-11-06", 30), _exp("2026-12-18", 50)]}
+    plan = fsg.plan_legs(lists, chains, {"ILQ"}, _is_monthly)
+    assert [r["symbol"] for r in plan] == ["AAA"]
+    m = plan[0]["monthly"][0]
+    assert (m["expiry"], m["strike"], m["option"]) == ("2026-12-18", 105.0, "P105")
+    assert plan[0]["vendor"][0]["option"] == "AAA   261106P00103000"
+
+
+def test_a_name_without_a_cycle_monthly_keeps_its_vendor_leg_only():
+    lists = {"short-puts": {"shortPuts": [{"symbol": "AAA", "expiry": "11/06/2026", "strikePrice": 103.0}]}}
+    assert fsg.plan_legs(lists, {}, set(), _is_monthly)[0]["monthly"] is None
+
+
+BARS = {"max_spread_pct": 0.10, "max_spread_abs": 0.05, "min_open_interest": 100, "min_volume": 10}
+GOOD = {"bid": 1.00, "ask": 1.05, "open_interest": 500, "volume": 50}
+
+
+def test_no_recommendation_until_the_bars_are_chosen():
+    assert fsg.recommend([GOOD], [GOOD], None) is None
+
+
+def test_a_liquid_vendor_leg_is_recommended():
+    assert fsg.recommend([GOOD], [GOOD], BARS) == "vendor"
+
+
+def test_each_failing_input_sends_the_trade_to_the_monthly():
+    for broken in ({"ask": 1.60}, {"open_interest": 20}, {"volume": 2}, {"bid": 0.0}):
+        assert fsg.recommend([{**GOOD, **broken}], [GOOD], BARS) == "monthly", broken
+
+
+def test_a_spread_passes_only_when_both_legs_do_and_no_monthly_is_none():
+    assert fsg.recommend([GOOD, {**GOOD, "volume": 0}], [GOOD, GOOD], BARS) == "monthly"
+    assert fsg.recommend([{**GOOD, "volume": 0}], None, BARS) == "none"
+
+
+def test_a_cheap_option_passes_on_the_absolute_width():
+    """$0.05 wide on a $0.20 option is 25% of mid but one nickel: the OR rule lets it through."""
+    assert fsg.leg_passes({"bid": 0.18, "ask": 0.23, "open_interest": 500, "volume": 50}, BARS)
