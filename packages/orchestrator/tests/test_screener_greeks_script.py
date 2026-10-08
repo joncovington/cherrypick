@@ -72,7 +72,22 @@ def test_two_anchors_share_one_window():
 
 
 def test_the_subscription_pacing_is_not_loosened():
-    """DXLink kills a socket subscribed too fast (the suite streamer, 2026-08-24)."""
-    assert fsg.BATCH <= 200
-    assert fsg.SUBSCRIBE_PACE_S >= 0.15
+    """DXLink kills a socket subscribed too fast: this script's first full run (2026-10-07, unpaced)
+    was cut off with 'Your subscription rate is too high'."""
+    assert fsg.BATCH <= 100
+    assert fsg.SUBSCRIBE_PACE_S >= 1.0
+    assert fsg.MIN_BATCH_S >= 3.0
     assert fsg.CHAIN_PAUSE_S >= 0.3
+    assert fsg.RECONNECT_PAUSE_S >= 60
+
+
+def test_the_wrapped_feed_error_is_reported_by_its_own_message():
+    inner = RuntimeError("Fatal streamer error: Your subscription rate is too high")
+
+    class Group(Exception):
+        def __init__(self, *exceptions):
+            super().__init__("unhandled errors in a TaskGroup")
+            self.exceptions = exceptions
+
+    wrapped = Group(Group(inner))
+    assert fsg._innermost(wrapped) == str(inner)

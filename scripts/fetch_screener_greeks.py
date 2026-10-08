@@ -35,13 +35,19 @@ LISTS = (
 )
 WINDOW = 4  # strikes recorded either side of each anchor (the vendor's strike)
 # The broker publishes no hard numbers, but it limits both paths: REST answers 429, and DXLink kills
-# the socket on too fast a subscription rate (the suite streamer, 2026-08-24). So chain listings are
-# spaced, the first 429 ends the run with what it has, and option subscriptions go in chunks no
-# larger than the suite streamer's, spaced the same way (core.streamer SUBSCRIBE_CHUNK / _PACE_S).
+# the socket on too fast a subscription rate. The first full run of this script (2026-10-07,
+# unpaced: three event types subscribed and unsubscribed per 100-option batch, batches back to
+# back) was killed with "Your subscription rate is too high" after ~10k subscriptions. So chain
+# listings are spaced and the first 429 ends them; every subscribe or unsubscribe call waits
+# SUBSCRIBE_PACE_S, and a batch never takes less than MIN_BATCH_S, which caps the rate at a few
+# hundred subscriptions a second at the very worst. A socket killed anyway is reopened once, after
+# a pause, at half the rate, from the batch it died in; whatever is still missing is saved as such.
 CHAIN_PAUSE_S = 0.3
 BATCH = 100
-SUBSCRIBE_PACE_S = 0.15
+SUBSCRIBE_PACE_S = 1.0
+MIN_BATCH_S = 3.0
 BATCH_TIMEOUT_S = 12.0
+RECONNECT_PAUSE_S = 60.0
 
 
 def store_dir() -> Path:
@@ -152,23 +158,46 @@ async def collect(session, wanted: dict, limit: int | None) -> dict:
     events: dict[str, dict] = {}
     names = sorted(streamer_of)
     kinds = ((Greeks, "Greeks"), (Quote, "Quote"), (Summary, "Summary"))
-    async with DXLinkStreamer(session) as streamer:
-        for i in range(0, len(names), BATCH):
-            chunk = names[i : i + BATCH]
-            for cls in (Greeks, Quote, Summary):
-                await streamer.subscribe(cls, chunk)
-                await asyncio.sleep(SUBSCRIBE_PACE_S)
-            deadline = time.monotonic() + BATCH_TIMEOUT_S
-            await asyncio.gather(
-                *(_drain(streamer, cls, label, len(chunk), deadline, events) for cls, label in kinds)
-            )
-            for cls in (Greeks, Quote, Summary):
-                await streamer.unsubscribe(cls, chunk)
-                await asyncio.sleep(SUBSCRIBE_PACE_S)
+    batches = [names[i : i + BATCH] for i in range(0, len(names), BATCH)]
+    done = 0
+    problem = None
+    for attempt, pace in enumerate((SUBSCRIBE_PACE_S, 2 * SUBSCRIBE_PACE_S)):
+        if attempt:
+            print(f"DXLink closed ({problem}); reopening once in {RECONNECT_PAUSE_S:.0f}s", file=sys.stderr)
+            await asyncio.sleep(RECONNECT_PAUSE_S)
+        try:
+            async with DXLinkStreamer(session) as streamer:
+                while done < len(batches):
+                    chunk, started = batches[done], time.monotonic()
+                    for cls, _ in kinds:
+                        await streamer.subscribe(cls, chunk)
+                        await asyncio.sleep(pace)
+                    deadline = time.monotonic() + BATCH_TIMEOUT_S
+                    await asyncio.gather(
+                        *(_drain(streamer, cls, label, len(chunk), deadline, events) for cls, label in kinds)
+                    )
+                    for cls, _ in kinds:
+                        await streamer.unsubscribe(cls, chunk)
+                        await asyncio.sleep(pace)
+                    await asyncio.sleep(max(0.0, MIN_BATCH_S - (time.monotonic() - started)))
+                    done += 1
+            problem = None
+            break
+        except Exception as exc:  # noqa: BLE001 -- a killed socket keeps what it delivered
+            problem = f"{type(exc).__name__}: {_innermost(exc)}"[:200]
 
     for ss, (sym, exp, k, right) in streamer_of.items():
         result[sym]["expiries"][exp]["strikes"][f"{k:g}"][right].update(events.get(ss, {}))
-    return result
+    if problem:
+        problem = f"options feed stopped after {done}/{len(batches)} batches: {problem}"
+    return result, problem
+
+
+def _innermost(exc: BaseException) -> str:
+    """The message a TaskGroup wraps: 'Your subscription rate is too high', not 'unhandled errors'."""
+    while getattr(exc, "exceptions", None):  # an exception group, by shape
+        exc = exc.exceptions[0]
+    return str(exc)
 
 
 async def _drain(streamer, cls, label: str, wanted: int, deadline: float, events: dict[str, dict]) -> None:
@@ -214,8 +243,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     out = store_dir() / "screener-greeks" / f"{day}.json"
     if out.exists() and not args.limit:
-        print(f"{out.name} already exists; not overwritten")
-        return 0
+        try:
+            complete = json.loads(out.read_text(encoding="utf-8")).get("complete", True)
+        except (OSError, ValueError):
+            complete = False
+        if complete:
+            print(f"{out.name} already exists; not overwritten")
+            return 0
+        print(f"{out.name} is incomplete; recording again")
 
     from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 
@@ -223,11 +258,15 @@ def main(argv: list[str] | None = None) -> int:
     session = SessionManager(store).get_session()
     wanted = anchors(lists)
     started = time.monotonic()
-    result = asyncio.run(collect(session, wanted, args.limit))
+    result, problem = asyncio.run(collect(session, wanted, args.limit))
     doc = {
         "list_date": day,
         "fetched_at": datetime.now(UTC).isoformat(),
         "window": WINDOW,
+        # An incomplete file is kept (the chain listings alone are most of the run) and recorded
+        # again by the next run, which overwrites only a file marked incomplete.
+        "complete": problem is None,
+        "problem": problem,
         "symbols": result,
     }
     if args.limit:
@@ -248,7 +287,8 @@ def main(argv: list[str] | None = None) -> int:
     print(
         json.dumps(
             {
-                "ok": True,
+                "ok": problem is None,
+                "problem": problem,
                 "list_date": day,
                 "symbols": len(result),
                 "chain_errors": errors,
@@ -260,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
             indent=1,
         )
     )
-    return 0
+    return 0 if problem is None else 1
 
 
 if __name__ == "__main__":
