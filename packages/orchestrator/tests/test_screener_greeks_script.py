@@ -91,3 +91,11 @@ def test_the_wrapped_feed_error_is_reported_by_its_own_message():
 
     wrapped = Group(Group(inner))
     assert fsg._innermost(wrapped) == str(inner)
+
+
+def test_measure_skips_names_the_universe_already_measures_and_uses_its_spelling():
+    lists = {
+        "short-puts": {"shortPuts": [{"symbol": "BRK/B"}, {"symbol": "AAPL"}]},
+        "covered-calls": {"coveredCalls": [{"symbol": "AAPL"}, {"symbol": "SLS"}]},
+    }
+    assert fsg.measure_names(lists, {"AAPL"}) == ["BRK.B", "SLS"]

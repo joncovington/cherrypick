@@ -111,6 +111,8 @@ CATCHUP_MINUTES = {
     "universe-measure-2": 60,
     "universe-daily": 300,
     "report-screener-greeks": 180,
+    "report-screener-measure-1": 60,
+    "report-screener-measure-2": 60,
     "universe-watchlist": 300,
     # Broker-cash reconciliation of a settled live session. Generous, because the whole point is
     # that it must not depend on anyone arming the live loop: a box asleep until mid-afternoon
@@ -1129,6 +1131,24 @@ def derive_jobs(
             else "disabled in config (market_report.screener_greeks)",
         ),
     )
+    sg_reason = "" if mr["screener_greeks"] else "disabled in config (market_report.screener_greeks)"
+    for i, at in enumerate(mr["screener_measure_at"][:2], 1):
+        add(
+            f"report-screener-measure-{i}",
+            lambda i=i, at=at: JobSpec(
+                id=f"report-screener-measure-{i}",
+                # The listed names' ATM monthly spreads in regular hours (the evening quotes are after
+                # the close). Read-only REST quotes; the script refuses outside its window, so a late
+                # catch-up cannot record an after-hours book.
+                argv=(pythonw, _suite_script(launcher, "fetch_screener_greeks.py"), "measure"),
+                kind=KIND_DAILY,
+                at_et=at,
+                catchup_minutes=CATCHUP_MINUTES[f"report-screener-measure-{i}"],
+                trading_days_only=True,
+                enabled=mr["screener_greeks"],
+                enabled_reason=sg_reason,
+            ),
+        )
     uv_reason = "" if mr["universe"] else "disabled in config (market_report.universe)"
     uv_jobs = [
         (f"universe-measure-{i}", at, "measure") for i, at in enumerate(mr["universe_measure_at"][:2], 1)
