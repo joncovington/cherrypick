@@ -16,7 +16,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from . import levels, paths, rotation, signals, stage, store, symbols, trend
+from . import levels, liquidity, paths, rotation, signals, stage, store, symbols, trend
 
 REPORT_VERSION = 2  # 2: `movers`
 BREADTH_SESSIONS = 10
@@ -58,13 +58,25 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
              "bullish_share": round(lead / (lead + lag), 3) if lead + lag else None}
         )  # fmt: skip
     today = stage.stages_on(day, closes, bench)
+    # Names held illiquid (liquidity.py) still count -- breadth, sector net and rank are scored
+    # against the vendor's, whose tables are mostly illiquid names -- but no list below names them.
+    hidden = liquidity.illiquid()
     sector_of = _sectors()
     by_sector: dict[str, dict[str, list]] = {}
     for sym, v in sorted(today.items()):
         row = by_sector.setdefault(sector_of.get(sym, "Unassigned"), {"leaders": [], "laggards": []})
         row["leaders" if v.side == "leader" else "laggards"].append({"symbol": sym, "stage": v.stage})
     stages = [
-        {"sector": sec, "net": len(r["leaders"]) - len(r["laggards"]), **r}
+        {
+            "sector": sec,
+            "net": len(r["leaders"]) - len(r["laggards"]),
+            # The full counts, every name (vendor-comparable); the lists name the liquid ones only.
+            "leaders_count": len(r["leaders"]),
+            "laggards_count": len(r["laggards"]),
+            "leaders": [x for x in r["leaders"] if x["symbol"] not in hidden],
+            "laggards": [x for x in r["laggards"] if x["symbol"] not in hidden],
+            "hidden_illiquid": sum(x["symbol"] in hidden for x in r["leaders"] + r["laggards"]),
+        }
         for sec, r in sorted(
             by_sector.items(), key=lambda kv: -(len(kv[1]["leaders"]) - len(kv[1]["laggards"]))
         )
@@ -87,7 +99,8 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
         r = signals.readings([b.high for b in bs], [b.low for b in bs], [b.close for b in bs])
         if r is not None:
             for rule in signals.matches(r):
-                sig[rule].append(sym)
+                if sym not in hidden:
+                    sig[rule].append(sym)
         if len(bs) > levels.RANK_SESSIONS:
             returns[sym] = bs[-1].close / bs[-1 - levels.RANK_SESSIONS].close - 1
     # The 1-10 rank across the whole market, from the cut-offs the landing stored for the session;
@@ -107,7 +120,7 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
     # so a move on no volume reads differently from one on three times it.
     moves = []
     for sym, bs in bars.items():
-        if bs[-1].date != day or len(bs) < 2 or bs[-2].close <= 0:
+        if bs[-1].date != day or len(bs) < 2 or bs[-2].close <= 0 or sym in hidden:
             continue
         prior = [b.volume for b in bs[-1 - MOVER_VOLUME_SESSIONS : -1]]
         avg = sum(prior) / len(prior) if prior else 0
@@ -126,7 +139,7 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
         "gainers": [m for m in moves[:TOP_MOVERS] if m["change_pct"] > 0],
         "losers": [m for m in reversed(moves[-TOP_MOVERS:]) if m["change_pct"] < 0],
     }
-    top = sorted(returns, key=lambda s: -returns[s])[:TOP_LEADERS]
+    top = sorted(liquidity.listed(returns, hidden), key=lambda s: -returns[s])[:TOP_LEADERS]
     leaders = []
     for sym in top:
         c = [b.close for b in bars[sym]]
@@ -149,6 +162,7 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
         "session": day,
         "generated_at": datetime.now(UTC).isoformat(),
         "universe": len(bars),
+        "hidden_illiquid": len(hidden & set(bars)),
         "rules": {"stage": stage.DEFAULT_RULE.name, "rotation": rrule.name},
         "breadth": history,
         "stages": stages,

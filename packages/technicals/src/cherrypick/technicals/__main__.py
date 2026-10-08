@@ -34,6 +34,18 @@ def cmd_land(args) -> int:
     return 0 if report.get("ok") else 1
 
 
+def cmd_liquidity(_args) -> int:
+    """Tonight's liquidity verdicts (liquidity.py): local data only."""
+    from . import liquidity
+
+    report = liquidity.build(_config().get("dolt") or {})
+    for key in ("newly_illiquid", "readmitted"):
+        if len(report[key]) > 30:
+            report[key] = report[key][:30] + [f"... {len(report[key]) - 30} more"]
+    print(json.dumps(report, indent=1))
+    return 0
+
+
 def cmd_status(_args) -> int:
     conn = store.connect()
     row = conn.execute(
@@ -368,6 +380,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     la.set_defaults(fn=cmd_land)
     sub.add_parser("status").set_defaults(fn=cmd_status)
+    sub.add_parser(
+        "liquidity", help="judge every name liquid or not (local data); the illiquid are skipped and hidden"
+    ).set_defaults(fn=cmd_liquidity)
     ba = sub.add_parser("bars")
     ba.add_argument("symbol")
     ba.add_argument("--raw", action="store_true")

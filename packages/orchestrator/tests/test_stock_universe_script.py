@@ -504,3 +504,21 @@ def test_hand_set_sectors_fill_gaps_and_an_edition_that_contradicts_one_is_a_cha
     assert doc["sectors"]["AAPL"] == {"sector": "Technology", "source": "manual"}
     assert doc["sectors"]["MSFT"]["sector"] == "Technology"
     assert any(c.startswith("MSFT is hand-set") for c in doc["changes"])
+
+
+def test_a_name_judged_illiquid_is_out_whatever_its_readings_say():
+    """Decided 2026-10-07: a name the liquidity verdict holds illiquid is not measured between sweeps,
+    so it must be out on the verdict -- left to its ageing readings it would drift to pending."""
+    verdict = {
+        "verdict": "illiquid",
+        "reasons": ["no weekly options (1 expiries in 35 days)"],
+        "judged_on": "D",
+    }
+    doc = bsu.build_universe({"AAA": {"vendor": {}}}, _measurements(), _volumes(), illiquid={"AAA": verdict})
+    assert doc["names"]["AAA"]["status"] == "out"
+    assert doc["names"]["AAA"]["reasons"] == [
+        "judged illiquid on D: no weekly options (1 expiries in 35 days)"
+    ]
+    assert doc["members"] == []
+    # The same name without the verdict is in, so it is the verdict that moved it.
+    assert bsu.build_universe({"AAA": {"vendor": {}}}, _measurements(), _volumes())["members"] == ["AAA"]

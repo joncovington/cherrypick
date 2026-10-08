@@ -46,9 +46,42 @@ def _label_day() -> tuple[dict[str, dict], str | None]:
     return doc["days"][day], day
 
 
+# How old a name's own reading may be and still label it. Since 2026-10-07 the nightly fetch skips
+# names judged illiquid (liquidity.py), so no single day labels every name any more; each name is
+# read from its own latest reading instead, and one older than this is no reading at all.
+MAX_READING_AGE_DAYS = 10
+
+
+def latest_rows() -> tuple[dict[str, dict], str | None]:
+    """(each name's most recent row that carries an expiry count, the newest day read). Rows more
+    than MAX_READING_AGE_DAYS before the newest day are left out."""
+    from datetime import date, timedelta
+
+    try:
+        doc = json.loads(paths.tastytrade_iv_rank().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}, None
+    days = sorted(
+        d
+        for d, rows in (doc.get("days") or {}).items()
+        if any(v.get("expiries_35d") is not None for v in rows.values())
+    )
+    if not days:
+        return {}, None
+    oldest = (date.fromisoformat(days[-1]) - timedelta(days=MAX_READING_AGE_DAYS)).isoformat()
+    out: dict[str, dict] = {}
+    for d in days:
+        if d < oldest:
+            continue
+        for s, v in doc["days"][d].items():
+            if v.get("expiries_35d") is not None:
+                out[s] = v
+    return out, days[-1]
+
+
 def weeklies() -> tuple[set[str], str | None]:
-    """(names listing weekly options on the label's day, that day)."""
-    rows, day = _label_day()
+    """(names listing weekly options on their latest reading, the newest day read)."""
+    rows, day = latest_rows()
     return {s for s, v in rows.items() if (v.get("expiries_35d") or 0) >= WEEKLY_EXPIRIES}, day
 
 

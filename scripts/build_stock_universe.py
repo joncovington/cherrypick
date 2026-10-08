@@ -417,11 +417,18 @@ def build_universe(
     measurements: list[dict],
     volumes: dict[str, dict[str, int]] | None = None,
     rule: dict = RULE,
+    illiquid: dict[str, dict] | None = None,
 ) -> dict:
     """The universe document from the candidate list, every saved measurement, and the OCC volume
     by session (`{ISO date: {OCC underlying: contracts}}`). Pure: the same files give the same
-    universe, so it can be rebuilt after any rule change."""
+    universe, so it can be rebuilt after any rule change.
+
+    `illiquid` is the liquidity verdict's illiquid names with their verdicts (packages/technicals,
+    `liquidity.py`): they are `out` with its reasons, whatever their readings say. They are no longer
+    measured between sweeps (decided 2026-10-07), so left to the readings they would drift to
+    `pending` as their last readings age out of the lookback."""
     volumes = volumes or {}
+    illiquid = illiquid or {}
     facts: dict[str, dict] = {}
     sessions: dict[str, dict[str, list[dict]]] = {}
     for m in sorted(measurements, key=lambda m: m["measured_at"]):
@@ -440,6 +447,14 @@ def build_universe(
     names: dict[str, dict] = {}
     for sym in sorted(candidates):
         vols = volume_series(sym, volumes)
+        if sym in illiquid:
+            v = illiquid[sym]
+            names[sym] = {
+                "status": "out",
+                "reasons": [f"judged illiquid on {v.get('judged_on')}: " + "; ".join(v.get("reasons") or [])],
+                "sources": candidates[sym],
+            }
+            continue
         if sym not in facts:
             if volume_too_thin(vols, rule):
                 median = statistics.median(vols[-rule["lookback_sessions"] :])
@@ -905,6 +920,14 @@ async def _measure(session, symbols: list[str], chain_cache: dict, limit_chains:
     return names
 
 
+def _illiquid_verdicts() -> dict[str, dict]:
+    """The names the liquidity verdict holds illiquid, with their verdicts."""
+    from cherrypick.technicals import liquidity
+
+    names = liquidity.load()
+    return {s: names[s] for s in liquidity.illiquid(names)}
+
+
 def cmd_measure(args) -> int:
     from cherrypick.core import calendar as cal
     from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
@@ -936,7 +959,11 @@ def cmd_measure(args) -> int:
     problem = None
     try:
         session = SessionManager(store).get_session()
-        names = asyncio.run(_measure(session, sorted(cands), chain_cache, args.limit))
+        # Names held illiquid are not measured between sweeps (technicals `liquidity.skip`).
+        from cherrypick.technicals import liquidity
+
+        todo = sorted(set(cands) - liquidity.skip(today))
+        names = asyncio.run(_measure(session, todo, chain_cache, args.limit))
     except Exception as exc:  # noqa: BLE001 — keep the chains gathered so far; warn and stop
         names, problem = None, f"{type(exc).__name__}: {exc}"
     _write_json(chain_path, chain_cache)
@@ -993,7 +1020,7 @@ def cmd_build(_args) -> int:
     measurements = [
         m for p in sorted((store_dir() / "measurements").glob("*/*.json")) if (m := _read_json(p, None))
     ]
-    universe = build_universe(cands, measurements, load_volumes())
+    universe = build_universe(cands, measurements, load_volumes(), illiquid=_illiquid_verdicts())
     universe["built_at"] = datetime.now(UTC).isoformat()
     sectors = build_sectors()
     for sym, row in universe["names"].items():

@@ -165,13 +165,20 @@ DAYS = {
 }
 
 
-def test_weeklies_are_read_from_the_day_that_labels_most_names(monkeypatch, tmp_path):
-    """4+ expiries in 35 days, on the day with the most labelled names -- not the newest day, which a
-    weekend fetch leaves nearly empty. Tastytrade's rating plays no part."""
+def test_weeklies_are_read_from_each_names_latest_reading(monkeypatch, tmp_path):
+    """4+ expiries in 35 days, on each name's own latest reading: since the nightly fetch skips
+    illiquid names (2026-10-07) no single day labels everyone, and a near-empty weekend day must not
+    blank the rest. Tastytrade's rating plays no part."""
     _label(monkeypatch, tmp_path, None)
     assert tradable.weeklies() == (set(), None)
     _label(monkeypatch, tmp_path, DAYS)
-    assert tradable.weeklies() == ({"RATED", "PRICEY"}, "2026-10-02")
+    assert tradable.weeklies() == ({"RATED", "PRICEY", "LATE"}, "2026-10-03")
+
+
+def test_a_reading_too_old_labels_nothing(monkeypatch, tmp_path):
+    days = {**DAYS, "2026-10-20": {"NEW": {"expiries_35d": 5}}}
+    _label(monkeypatch, tmp_path, days)
+    assert tradable.weeklies() == ({"NEW"}, "2026-10-20")
 
 
 def test_the_studys_view_keeps_the_rating_it_declared(monkeypatch, tmp_path):

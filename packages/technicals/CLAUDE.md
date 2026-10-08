@@ -179,8 +179,16 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   walked with the study's own code into each chart file's `tested` and gets its own rows, marked
   `tested`; they overlap the setup's rows, so a reader shows one kind or the other.
   **Options-tradable** (`tradable.py`) is weekly options plus $100M a day in the stock. It is read
-  from the IV-rank file's busiest day; tastytrade's rating is not part of it, because the rating
-  marks a name down for its share price.
+  from each name's own latest IV-rank reading (no older than 10 days); tastytrade's rating is not
+  part of it, because the rating marks a name down for its share price.
+- **Liquidity verdicts** (`liquidity.py`, `liquidity` command, nightly 18:57 ET) hold a name that
+  fails the options-tradable test **illiquid until the monthly sweep** (the first trading day of the
+  month). Every broker-spending script skips those names (universe measurement, the IV-rank fetch,
+  the screener spread readings and greeks, the earnings moves), and no listed view names them:
+  chart files, the picker, the watchlist, and the report's lists. Their bars stay in the store and
+  every count still includes them -- breadth, sector net, rank cut-offs -- because the engines are
+  scored against the vendor's tables, which are mostly illiquid names. Benchmarks, rotation funds
+  and cash indexes are reference series and are never judged.
 - **The historical study** (`history.py`, `universe.py`, `study.py`, `tuning_names.py`; plan and
   reasons in [docs/signal-log-plan.md](../../docs/signal-log-plan.md), Phase 1, analysis plan v2).
   - **`history.db`** is Dolt's whole daily history from 2011, every name, in `eod.db`'s schema. It

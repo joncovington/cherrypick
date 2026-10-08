@@ -286,7 +286,10 @@ def cmd_measure(args) -> int:
         print(json.dumps({"ok": True, "skipped": "no saved screener lists"}))
         return 0
     cands = set(ub._read_json(ub.store_dir() / "candidates.json", {}).get("names") or {})
-    names = measure_names(lists, cands)[: args.limit]
+    from cherrypick.technicals import liquidity
+
+    # Names held illiquid are not measured between sweeps (technicals `liquidity.skip`).
+    names = measure_names(lists, cands | liquidity.skip(today))[: args.limit]
     store = CredentialStore(SHARED_SERVICE)
     if store.missing_secrets():
         print(json.dumps({"ok": False, "reason": "credentials_missing"}))
@@ -344,7 +347,12 @@ def main(argv: list[str] | None = None) -> int:
 
     store = CredentialStore(SHARED_SERVICE)
     session = SessionManager(store).get_session()
-    wanted = anchors(lists)
+    from cherrypick.technicals import liquidity
+
+    # The vendor's strike rule is studied on names worth trading: rows of names held illiquid are
+    # skipped (decided 2026-10-07), except on a sweep day.
+    skip = liquidity.skip()
+    wanted = {k: v for k, v in anchors(lists).items() if k[0].replace("/", ".") not in skip}
     started = time.monotonic()
     result, problem = asyncio.run(collect(session, wanted, args.limit))
     doc = {
