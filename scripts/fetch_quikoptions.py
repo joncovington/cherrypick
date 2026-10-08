@@ -760,16 +760,46 @@ class NeedsPerson(RuntimeError):
 # ------------------------------------------------------------------------------------------------
 
 
+def _chrome_user_agent(version: str) -> str:
+    """The user-agent a regular (headed) Chrome of this version sends -- the vendor collector's own
+    rule (`fetch_vendor_edition.chrome_user_agent`), loaded from beside this script so the two
+    collectors present the same way and cannot drift apart."""
+    import importlib.util
+
+    path = Path(__file__).resolve().with_name("fetch_vendor_edition.py")
+    spec = importlib.util.spec_from_file_location("fetch_vendor_edition", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.chrome_user_agent(version)
+
+
+def _installed_chrome_version(pw) -> str:
+    """The installed Chrome's own version (a local launch, no page, no network), so the user-agent
+    keeps matching the browser after Chrome updates itself."""
+    browser = pw.chromium.launch(channel="chrome", headless=True)
+    try:
+        return browser.version
+    finally:
+        browser.close()
+
+
 def _open_browser(pw, headed: bool = True):
     """The installed Chrome, not Playwright's bundled Chromium, on the store's own profile — so the
-    site sees the same browser a person uses, and the session a person left behind."""
+    site sees the same browser a person uses, and the session a person left behind.
+
+    Headless (the scheduled default since 2026-10-08) presents as the headed Chrome it is: headless
+    Chrome says "HeadlessChrome" in its user-agent, so a site that ever began refusing headless
+    browsers would refuse the capture for that word alone. Only the user-agent changes --
+    `navigator.webdriver` is left as the browser sets it, the vendor collector's rule."""
     profile = store_dir() / "browser-profile"
     profile.mkdir(parents=True, exist_ok=True)
+    extra = {} if headed else {"user_agent": _chrome_user_agent(_installed_chrome_version(pw))}
     return pw.chromium.launch_persistent_context(
         str(profile),
         channel="chrome",
         headless=not headed,
         viewport={"width": 1600, "height": 1000},
+        **extra,
     )
 
 
