@@ -589,6 +589,17 @@ is the first listed one below spot in 157 of 193 rows tested, and exactly one st
 rest — not explained by the build-time price, the prior close, a Dolt delta cap, open interest or
 the spread, so it waits on the vendor's own deltas.
 
+**Two layers, two expiries (decided 2026-10-07).** Reproducing the vendor's screen reads its own
+expiry and strike, weeklies included. Trading is the user's: the standard monthly 45-60 days out
+where one is listed, else 30-60, and no premium sold through an earnings announcement. The rule
+between them is the user's too: take the vendor's strike only when that option is liquid (a tight
+bid/ask, decent open interest and volume), and otherwise the same strike on the cycle monthly.
+`fetch_screener_greeks.py measure` records both options for every row in regular hours, into
+`screener-greeks/legs/`, and `recommend` applies the rule once its bars are chosen from those
+readings. The nightly IV-rank fetch now keeps the broker's expected report date (confirmed or
+estimated) and ex-dividend date, which reach past the local Dolt calendar's ~5 weeks, for the
+"no earnings within the trade cycle" filter the screener view will carry.
+
 **This settles the adjustment question outright.** The vendor's MSFT bars put the 52-week low at
 348.54 on 2026-06-25 and the high at 549.20 on 2025-10-28 — exactly the support and resistance
 prices, against the header's raw 349.20 and 553.72. The bars are dividend-adjusted, and the
