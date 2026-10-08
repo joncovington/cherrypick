@@ -36,7 +36,7 @@ beforeAll(() => {
 
   const pos = db.prepare(
     `INSERT INTO fly_positions (trade_date, arm, symbol, kind, side, center, wing_width, far_width, status, void_reason)
-     VALUES (?, ?, ?, 'call', 1, 6000, 1, 2, 'open', NULL)`,
+     VALUES (?, ?, ?, 'fly', 'call', 6000, 1, 2, 'open', NULL)`,
   );
   pos.run("2026-09-25", "armA", "SPX");
   pos.run("2026-09-25", "armB", "SPX");
@@ -88,8 +88,12 @@ describe("flies attempts honours the page scope", () => {
   });
 
   it("occupancy honours arm scope", () => {
+    const unscoped = readOccupancy(config, "flies", "paper", null, NO_ATTEMPTS_SCOPE);
+    expect(unscoped.tradeDate).toBe("2026-09-25");
+    expect(unscoped.legs.some((l) => l.arm === "armB")).toBe(true);
     const occ = readOccupancy(config, "flies", "paper", null, { ...NO_ATTEMPTS_SCOPE, arm: "armA" });
     expect(occ.tradeDate).toBe("2026-09-25");
+    expect(occ.legs.length).toBeGreaterThan(0);
     expect(occ.legs.every((l) => l.arm === "armA")).toBe(true);
   });
 });
