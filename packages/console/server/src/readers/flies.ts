@@ -244,16 +244,22 @@ function perBookSum(db: DatabaseHandle, aggregate: string, column: string): stri
 }
 
 /**
- * Only books that held something. A book whose every position was voided (or never filled) was
- * struck from the record whole -- the 2026-10-08 power outage's fifteen are the first -- and its
- * stored credit, fees and pnl still count the voided rows, so listing it would put struck money
- * back on the page. A positions table too old to say gives every book through ("1=1").
+ * Leave out a struck book: one with a voided position and nothing held. Its stored credit, fees and
+ * pnl still count the voided rows -- the 2026-10-08 power outage's fifteen are the first -- so
+ * listing it would put struck money back on the page.
+ *
+ * Only that. An EMPTY book (an arm that ran and took nothing, settled at zero) and a book whose
+ * only entries were cancelled are listed as they always were: the first version of this filter hid
+ * any book without a held position, and took four empty bwb books off 2026-10-07. A positions
+ * table too old to say gives every book through ("1=1").
  */
 function heldBook(db: DatabaseHandle): string {
   if (!["book_id", "void_reason", "status"].every((c) => hasColumn(db, "fly_positions", c))) return "1=1";
-  return `EXISTS (SELECT 1 FROM fly_positions p
-                   WHERE p.book_id = fly_books.book_id AND p.void_reason IS NULL
-                     AND COALESCE(p.status, '') NOT IN ('cancelled', 'voided'))`;
+  return `NOT (EXISTS (SELECT 1 FROM fly_positions p
+                         WHERE p.book_id = fly_books.book_id AND p.void_reason IS NOT NULL)
+              AND NOT EXISTS (SELECT 1 FROM fly_positions p
+                               WHERE p.book_id = fly_books.book_id AND p.void_reason IS NULL
+                                 AND COALESCE(p.status, '') NOT IN ('cancelled', 'voided')))`;
 }
 
 export function readFlies(
