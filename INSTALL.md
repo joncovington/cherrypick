@@ -200,8 +200,8 @@ python packages/orchestrator/run.py report        # paper P&L once data has accu
 Modules are switched on and off on the console's **Config** page, or under `modules.<name>.enabled`
 in `~/.cherrypick/config.json`. Calendars, PMCC and curve are EXPERIMENTAL and ship switched off.
 Push notifications are off by default too: alerts go only to the suite's log until you add
-`desktop`, `discord` or `slack` to the `notify` channel lists (the console's own on-screen toasts need
-no setting).
+`desktop`, `discord`, `slack` or `telegram` to the `notify` channel lists (the console's own on-screen
+toasts need no setting).
 
 ## After installing: viewing the console
 

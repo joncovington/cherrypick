@@ -468,6 +468,8 @@ async function renderSecrets(quiet) {
     }
   }
   h += `</div><div class="card"><h2>Notification webhooks</h2>`;
+  h += `<p class="note">Telegram takes a bot token and a chat ID, not a URL — set it with ` +
+    `\`cherrypick secrets-set --channel telegram\` in a terminal. Rows here set a URL.</p>`;
   for (const [ch, st] of Object.entries(data.webhooks)) {
     h += `<div class="row"><span class="k">${esc(ch)}
         <span class="badge ${st === "set" ? "set" : "unset"}">${esc(st)}</span></span>

@@ -488,10 +488,10 @@ class Notifier:
             }
         import html
 
-        text = (
-            f"<b>[{level}] {html.escape(self.app_name)} — {html.escape(title)}</b>\n"
-            f"{html.escape(message)}"
-        )[:4000]
+        # Two parts, then joined: one f-string would be a line the formatter and the linter cannot
+        # both accept. The [level] prefix rides the bold header; the body is escaped on its own.
+        header = f"<b>[{level}] {html.escape(self.app_name)} — {html.escape(title)}</b>"
+        text = f"{header}\n{html.escape(message)}"[:4000]
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
         return self._post_json(url, payload, channel="telegram", **record)

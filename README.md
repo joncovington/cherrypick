@@ -317,6 +317,7 @@ only — it never places a trade, and it does not enable live trading.
 
 ```bash
 python run.py secrets-set --channel discord    # prompts without echo; also: slack
+python run.py secrets-set --channel telegram   # prompts for the bot token, then the chat ID
 python run.py secrets-status                   # which channels are configured (prints no secrets)
 ```
 
@@ -359,9 +360,10 @@ holds against what your broker actually shows, and flags anything a paper-only s
 **Push notifications are off by default.** The template's `notify.channels` and
 `notify.trade_channels` (and the desk and status-digest channel lists) are all `["log"]`, so out of the
 box every alert lands only in the suite's log, and the console shows its own on-screen trade toasts,
-which are always on and need no setting. Add `desktop`, `discord` or `slack` to a channel list in
-`~/.cherrypick/config.json` to be told elsewhere (Discord and Slack also need their webhook stored with
-`secrets-set`, above). The `log` channel always stays on as a floor, so a failed push never means a lost
+which are always on and need no setting. Add `desktop`, `discord`, `slack` or `telegram` to a channel list
+in `~/.cherrypick/config.json` to be told elsewhere (Discord and Slack also need their webhook stored with
+`secrets-set`, above; Telegram needs its bot token and chat ID the same way). The `log` channel always stays
+on as a floor, so a failed push never means a lost
 record. With channels set, you are notified when a paper trade fills and warned if the system stalls, so
 it can run unattended. Test any time with `python run.py notify-test`.
 

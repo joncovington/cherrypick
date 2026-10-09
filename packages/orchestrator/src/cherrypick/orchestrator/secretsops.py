@@ -125,6 +125,16 @@ def delete_secret(cfg: dict[str, Any], service: str, key: str, store_factory=Cre
 
 
 def set_webhook(channel: str, url: str) -> dict[str, Any]:
+    if channel == "telegram":
+        # The settings page renders a URL field per status() row, and telegram has one, but a
+        # Telegram bot takes a bot token and a chat ID — never a URL. Say so rather than storing
+        # a `telegram_webhook` entry nothing reads.
+        return {
+            "ok": False,
+            "error": "telegram takes a bot token and a chat ID, not a URL "
+            "(run: cherrypick secrets-set --channel telegram)",
+            "webhooks": notify_secrets.status(),
+        }
     if channel not in notify_secrets.WEBHOOKS:
         known = list(notify_secrets.WEBHOOKS)
         return {"ok": False, "error": f"unknown channel: {channel!r} (known: {known})"}
@@ -135,8 +145,11 @@ def set_webhook(channel: str, url: str) -> dict[str, Any]:
 
 
 def delete_webhook(channel: str) -> dict[str, Any]:
-    if channel not in notify_secrets.WEBHOOKS:
-        known = list(notify_secrets.WEBHOOKS)
+    # Deleting works for every push channel, telegram included (its two entries), plus the
+    # dedicated webhooks — a superset of what `set_webhook` accepts, since delete must be able to
+    # remove anything `status()` shows.
+    known = list(notify_secrets.PUSH_CHANNELS) + list(notify_secrets.DEDICATED)
+    if channel not in known:
         return {"ok": False, "error": f"unknown channel: {channel!r} (known: {known})"}
     notify_secrets.delete_webhook(channel)
     return {"ok": True, "webhooks": notify_secrets.status()}

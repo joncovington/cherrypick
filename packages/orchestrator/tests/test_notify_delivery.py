@@ -79,3 +79,18 @@ def test_delivery_findings_name_a_missing_webhook_and_a_channel_that_keeps_faili
     mixed = failing + [{"channel": "discord", "ok": True}]
     assert wd._delivery_findings(["discord"], mixed, lambda ch: True) == []
     assert wd._delivery_findings(["discord"], failing[:2], lambda ch: True) == []
+
+
+def test_delivery_findings_cover_telegram_too():
+    """Telegram rides the same delivery health as the webhook channels: configured-but-unset is
+    named (every push skipped), and a window of failures is named (a dead bot must not read as a
+    quiet suite)."""
+    failing = [{"channel": "telegram", "ok": False, "status": 401, "error": "Unauthorized"} for _ in range(3)]
+    keys = {f.key for f in wd._delivery_findings(["log", "telegram"], failing, lambda ch: False)}
+    assert keys == {"notify.telegram_unconfigured", "notify.telegram_failing"}
+    # Configured: the not-configured finding drops, the failing one stays.
+    keys = {f.key for f in wd._delivery_findings(["log", "telegram"], failing, lambda ch: True)}
+    assert keys == {"notify.telegram_failing"}
+    # One success in the window: the failing one drops too.
+    mixed = failing + [{"channel": "telegram", "ok": True}]
+    assert wd._delivery_findings(["telegram"], mixed, lambda ch: True) == []

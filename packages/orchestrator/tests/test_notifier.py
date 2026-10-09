@@ -6,6 +6,7 @@ must neither suppress the floor nor propagate to the caller.
 
 import json
 
+import keyring.errors
 import pytest
 
 import cherrypick.notify.notifier as notifier_mod
@@ -13,6 +14,33 @@ import cherrypick.notify.secrets as secrets_mod
 from cherrypick.notify.notifier import Notifier
 
 pytestmark = pytest.mark.unit
+
+
+class _FakeKeyring:
+    """Dict-backed stand-in for the keyring calls the secrets module makes."""
+
+    def __init__(self):
+        self.store = {}
+
+    def get(self, _service, entry):
+        return self.store.get(entry)
+
+    def set(self, _service, entry, value):
+        self.store[entry] = value
+
+    def delete(self, _service, entry):
+        if entry not in self.store:
+            raise keyring.errors.PasswordDeleteError(entry)
+        del self.store[entry]
+
+
+@pytest.fixture
+def fake_keyring(monkeypatch):
+    fake = _FakeKeyring()
+    monkeypatch.setattr(secrets_mod.keyring, "get_password", fake.get)
+    monkeypatch.setattr(secrets_mod.keyring, "set_password", fake.set)
+    monkeypatch.setattr(secrets_mod.keyring, "delete_password", fake.delete)
+    return fake
 
 
 @pytest.fixture
@@ -91,6 +119,32 @@ def test_discord_embed_needs_no_content_beside_it(temp_floor, monkeypatch):
     n = Notifier({"channels": ["discord"]})
     n.notify("INFO", "k", "T", "B", embed={"title": "card"})
     assert captured == {"embeds": [{"title": "card"}]}
+
+
+def test_telegram_set_means_both_entries_stored(fake_keyring):
+    secrets_mod.set_telegram("123:ABC", "456")
+    assert fake_keyring.store == {"telegram_token": "123:ABC", "telegram_chat_id": "456"}
+    assert secrets_mod.is_set("telegram") is True
+    assert secrets_mod.status(["telegram"]) == {"telegram": "set"}
+
+
+def test_telegram_is_set_needs_both_entries(fake_keyring):
+    secrets_mod.set_telegram("123:ABC", "456")
+    del fake_keyring.store["telegram_chat_id"]
+    assert secrets_mod.is_set("telegram") is False
+
+
+def test_deleting_telegram_removes_both_entries(fake_keyring):
+    secrets_mod.set_telegram("123:ABC", "456")
+    assert secrets_mod.delete_webhook("telegram") is True
+    assert fake_keyring.store == {}
+    assert secrets_mod.is_set("telegram") is False
+
+
+def test_a_url_is_never_stored_as_a_telegram_webhook(fake_keyring):
+    with pytest.raises(ValueError):
+        secrets_mod.set_webhook("telegram", "https://example/tg")
+    assert "telegram_webhook" not in fake_keyring.store
 
 
 def test_telegram_skips_when_token_or_chat_id_unset(temp_floor, monkeypatch):

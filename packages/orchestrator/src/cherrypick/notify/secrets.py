@@ -22,7 +22,11 @@ import keyring
 import keyring.errors
 
 SERVICE_NAME = "cherrypick-notify"
-SUPPORTED = ("slack", "discord", "telegram")
+# Push channels whose secret is a single webhook URL. TELEGRAM is a push channel too but stores TWO
+# entries (a bot token and a chat ID), so it is deliberately absent here: `status()` and the settings
+# page render one URL field per name in this tuple, and a URL is not what a Telegram bot takes.
+SUPPORTED = ("slack", "discord")
+PUSH_CHANNELS = SUPPORTED + ("telegram",)
 # Webhooks one job posts to and nothing else: never a push channel, so none can be listed in
 # `notify.channels` (the notifier skips an unknown name; `doctor` warns), and no suite alert can
 # land in them. `discord_reporting` is the reporting channel the QuikOptions series posts to
@@ -33,11 +37,6 @@ WEBHOOKS = SUPPORTED + DEDICATED
 
 def _entry(channel: str) -> str:
     # The historical "<channel>_webhook" entry names — renaming them would orphan stored secrets.
-    # Telegram uses two separate entries (bot token + chat ID) rather than a single webhook URL.
-    if channel == "telegram_token":
-        return "telegram_token"
-    if channel == "telegram_chat_id":
-        return "telegram_chat_id"
     return f"{channel}_webhook"
 
 
@@ -66,10 +65,16 @@ def get_webhook(channel: str) -> str | None:
 
 
 def set_webhook(channel: str, url: str) -> None:
+    # Telegram has no webhook URL — `set_telegram` stores its two entries. Raising (rather than
+    # silently writing a `telegram_webhook` nothing reads) keeps every generic set path honest.
+    if channel == "telegram":
+        raise ValueError("telegram takes a bot token and chat ID (cherrypick secrets-set --channel telegram)")
     keyring.set_password(SERVICE_NAME, _entry(channel), url)
 
 
 def delete_webhook(channel: str) -> bool:
+    if channel == "telegram":
+        return delete_telegram()
     try:
         keyring.delete_password(SERVICE_NAME, _entry(channel))
         return True
@@ -81,13 +86,19 @@ def delete_webhook(channel: str) -> bool:
 
 def get_telegram_token() -> str | None:
     """The Telegram bot token, or None if unset / keyring unavailable."""
-    value = read_entry("telegram_token")
+    try:
+        value = keyring.get_password(SERVICE_NAME, "telegram_token")
+    except keyring.errors.KeyringError:
+        value = KEYRING_UNAVAILABLE
     return None if value is KEYRING_UNAVAILABLE else value
 
 
 def get_telegram_chat_id() -> str | None:
     """The Telegram chat ID to post to, or None if unset / keyring unavailable."""
-    value = read_entry("telegram_chat_id")
+    try:
+        value = keyring.get_password(SERVICE_NAME, "telegram_chat_id")
+    except keyring.errors.KeyringError:
+        value = KEYRING_UNAVAILABLE
     return None if value is KEYRING_UNAVAILABLE else value
 
 
@@ -109,9 +120,13 @@ def delete_telegram() -> bool:
 
 
 def is_set(channel: str) -> bool:
+    """Whether a channel can post. Telegram is set only when BOTH of its entries are stored —
+    `get_webhook` cannot answer this, because a Telegram bot has no webhook URL."""
+    if channel == "telegram":
+        return bool(get_telegram_token()) and bool(get_telegram_chat_id())
     return bool(get_webhook(channel))
 
 
-def status(channels=WEBHOOKS) -> dict[str, str]:
+def status(channels=PUSH_CHANNELS + DEDICATED) -> dict[str, str]:
     """A loggable, secret-free view: {channel: 'set' | 'not set'}."""
     return {ch: ("set" if is_set(ch) else "not set") for ch in channels}

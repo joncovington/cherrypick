@@ -2545,15 +2545,26 @@ _DELIVERY_WINDOW_SECONDS = 2 * 3600
 _DELIVERY_MIN_FAILURES = 3
 
 
-def _delivery_findings(cfg_channels: list[str], sent: list[dict[str, Any]], webhook_set) -> list[Finding]:
-    """Is notification delivery itself working? Pure over the outbound record and a webhook probe.
-    - a configured slack/discord channel with no webhook stored: every push to it is skipped, and
-      skipped pushes are not even recorded -- the one failure the outbound record cannot show;
+def _delivery_findings(cfg_channels: list[str], sent: list[dict[str, Any]], push_secret_set) -> list[Finding]:
+    """Is notification delivery itself working? Pure over the outbound record and a secret probe.
+    - a configured push channel with no secret stored: every push to it is skipped, and skipped
+      pushes are not even recorded -- the one failure the outbound record cannot show;
     - every recorded push in the window failed (at least `_DELIVERY_MIN_FAILURES`): the webhook is
-      revoked, the service is down, or the network is."""
+      revoked, the bot is dead, the service is down, or the network is."""
     findings = []
-    for ch in ("discord", "slack"):
-        if ch in cfg_channels and not webhook_set(ch):
+    for ch in ("discord", "slack", "telegram"):
+        if ch in cfg_channels and not push_secret_set(ch):
+            if ch == "telegram":
+                findings.append(
+                    Finding(
+                        "notify.telegram_unconfigured",
+                        WARN,
+                        "telegram is a notification channel but is not configured",
+                        "every telegram push is skipped. `run.py secrets-set --channel telegram` stores "
+                        "the bot token and chat ID.",
+                    )
+                )
+                continue
             findings.append(
                 Finding(
                     f"notify.{ch}_webhook",
@@ -2564,7 +2575,7 @@ def _delivery_findings(cfg_channels: list[str], sent: list[dict[str, Any]], webh
             )
     by_channel: dict[str, list[dict[str, Any]]] = {}
     for e in sent:
-        if e.get("channel") in ("discord", "slack"):
+        if e.get("channel") in ("discord", "slack", "telegram"):
             by_channel.setdefault(e["channel"], []).append(e)
     for ch, entries in sorted(by_channel.items()):
         if len(entries) >= _DELIVERY_MIN_FAILURES and not any(e.get("ok") for e in entries):
@@ -2641,7 +2652,7 @@ def _check_notify_delivery(cfg: dict[str, Any]) -> list[Finding]:
     except OSError:
         sent = []
     channels = list((cfg.get("notify") or {}).get("channels") or [])
-    return _delivery_findings(channels, sent, lambda ch: bool(_secrets.get_webhook(ch)))
+    return _delivery_findings(channels, sent, lambda ch: bool(_secrets.is_set(ch)))
 
 
 def _process_notifications(

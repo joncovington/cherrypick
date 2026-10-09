@@ -56,11 +56,18 @@ class _FakeStore:
 def env(monkeypatch):
     _FakeStore._mem = {}
     webhooks: dict[str, str] = {}
+    # The double mirrors the real status()'s channel default (push channels + dedicated), which is
+    # what the settings page renders -- not WEBHOOKS, which is only the URL-shaped set.
     monkeypatch.setattr(
         secretsops.notify_secrets,
         "status",
-        lambda channels=secretsops.notify_secrets.WEBHOOKS: {
-            ch: ("set" if ch in webhooks else "not set") for ch in channels
+        lambda channels=None: {
+            ch: ("set" if ch in webhooks else "not set")
+            for ch in (
+                channels
+                if channels is not None
+                else secretsops.notify_secrets.PUSH_CHANNELS + secretsops.notify_secrets.DEDICATED
+            )
         },
     )
     monkeypatch.setattr(secretsops.notify_secrets, "set_webhook", webhooks.__setitem__)
@@ -131,6 +138,24 @@ def test_webhooks_set_delete_and_url_floor(env):
     assert "hooks.slack.com" not in json.dumps(out["webhooks"])
     assert secretsops.delete_webhook("slack")["webhooks"]["slack"] == "not set"
     assert secretsops.set_webhook("teams", "https://x")["ok"] is False
+
+
+def test_the_settings_page_never_offers_a_telegram_url_field(env):
+    """Telegram takes a bot token and a chat ID, not a URL: `status()` lists it (so the page shows
+    whether it is configured), but `set_webhook` must refuse to store a URL under its name."""
+    out = secretsops.set_webhook("telegram", "https://example/tg")
+    assert out["ok"] is False and "telegram" in out["error"]
+    assert out["webhooks"]["telegram"] == "not set"
+    # And the settings page still renders a row per listed channel, including telegram's status.
+    assert set(secretsops.status(env[0])["webhooks"]) == {"slack", "discord", "telegram", "discord_reporting"}
+
+
+def test_delete_accepts_every_channel_the_status_page_lists(env):
+    """Delete must reach anything the settings page can render a Delete button for -- telegram
+    included (its two entries; the secrets layer routes it)."""
+    for ch in secretsops.status(env[0])["webhooks"]:
+        out = secretsops.delete_webhook(ch)
+        assert out["ok"] is True, (ch, out)
 
 
 def test_the_reporting_webhook_is_settable_but_never_a_push_channel(env):

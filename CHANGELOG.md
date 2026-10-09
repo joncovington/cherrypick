@@ -11,6 +11,14 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: Telegram as a push channel.** `telegram` joins `desktop`, `slack` and `discord` in the
+  `notify` channel lists. It takes a bot token and a chat ID, stored in the OS keyring with
+  `cherrypick secrets-set --channel telegram` (prompted without echo, never in config files or env
+  vars) — there is no webhook URL to store, so the settings page deliberately offers no Telegram
+  URL field, and the notification secrets live on only for its two entries. Same best-effort
+  posture as every other channel: the log floor is written first, push failures are swallowed, and
+  the watchdog now watches Telegram delivery like the webhook channels', naming a configured
+  Telegram channel with no token stored and a window of failed posts.
 - **Changed: the QuikOptions weekly scorecard goes to the Discord notify channel only.** It is the
   suite's measurement of the derived flow, not part of the options report, so it never posts to the
   reporting webhook, whatever `quikoptions.post_webhook` says.

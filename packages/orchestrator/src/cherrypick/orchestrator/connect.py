@@ -199,6 +199,15 @@ def _offer_webhooks(prompt_fn=input) -> None:
         if url:
             notify_secrets.set_webhook(channel, url)
             print(f"      {channel}: stored.")
+    # Telegram takes a bot token and a chat ID, not a URL, so it prompts separately.
+    token = getpass.getpass("      telegram bot token (hidden, Enter to skip): ").strip()
+    if token:
+        chat_id = getpass.getpass("      telegram chat ID (hidden, Enter to skip): ").strip()
+        if chat_id:
+            notify_secrets.set_telegram(token, chat_id)
+            print("      telegram: stored.")
+        else:
+            print("      telegram: skipped (a chat ID is required alongside the token).")
 
 
 def _status_panel(cfg: dict[str, Any]) -> None:

@@ -106,9 +106,11 @@ when the record and the machine disagree.
 
 **Push channels are off by default.** The template's `notify.channels`, `notify.trade_channels`,
 `desk_notify.channels` and `status_digest.channels` are all `["log"]`, and so are the code fallbacks.
-Desktop, Slack and Discord are opt-in: add the channel to the list, and for Slack or Discord store the
-webhook with `run.py secrets-set --channel slack|discord`. The `log` channel is always kept as the
-floor. The console's on-screen trade toasts are always on and need no setting.
+Desktop, Slack, Discord and Telegram are opt-in: add the channel to the list, and for Slack or Discord
+store the webhook with `run.py secrets-set --channel slack|discord` — for Telegram, store the bot token
+and chat ID with `run.py secrets-set --channel telegram` (prompted separately, never a URL). The `log`
+channel is always kept as the floor. The console's on-screen trade toasts are always on and need no
+setting.
 
 ### Orchestrator scheduling knobs
 

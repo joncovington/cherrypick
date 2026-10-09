@@ -1525,6 +1525,17 @@ def cmd_notify_send(args) -> None:
     if not args.channel or not args.file:
         _emit({"ok": False, "error": "notify-send needs --channel and --file"})
         sys.exit(2)
+    if args.channel == "telegram":
+        # A Telegram bot takes a bot token and a chat ID, not a webhook URL: there is nothing this
+        # Discord-shaped hand post can resolve to. Say so rather than failing on the keyring read.
+        _emit(
+            {
+                "ok": False,
+                "error": "notify-send posts a webhook message; telegram takes a bot token and a "
+                "chat ID and is not a hand-post target",
+            }
+        )
+        sys.exit(2)
     text = Path(args.file).read_text(encoding="utf-8").strip()
     images = [Path(p) for p in (args.image or [])]
     missing = [str(p) for p in images if not p.exists()]
@@ -1580,8 +1591,9 @@ def cmd_notify_send(args) -> None:
 
 
 def cmd_secrets_set(channel: str | None, url: str | None) -> None:
-    if channel not in notify_secrets.WEBHOOKS:
-        _emit({"ok": False, "error": f"--channel must be one of {list(notify_secrets.WEBHOOKS)}"})
+    secret_channels = notify_secrets.PUSH_CHANNELS + notify_secrets.DEDICATED
+    if channel not in secret_channels:
+        _emit({"ok": False, "error": f"--channel must be one of {list(secret_channels)}"})
         sys.exit(2)
     if channel == "telegram":
         if not url:
@@ -1610,8 +1622,9 @@ def cmd_secrets_status() -> None:
 
 
 def cmd_secrets_delete(channel: str | None) -> None:
-    if channel not in notify_secrets.WEBHOOKS:
-        _emit({"ok": False, "error": f"--channel must be one of {list(notify_secrets.WEBHOOKS)}"})
+    secret_channels = notify_secrets.PUSH_CHANNELS + notify_secrets.DEDICATED
+    if channel not in secret_channels:
+        _emit({"ok": False, "error": f"--channel must be one of {list(secret_channels)}"})
         sys.exit(2)
     removed = notify_secrets.delete_webhook(channel)
     _emit({"ok": removed, "channel": channel, "status": notify_secrets.status()})
@@ -1680,8 +1693,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--channel",
-        choices=list(notify_secrets.WEBHOOKS),
-        help="Webhook for secrets-set/secrets-delete: a push channel, or a dedicated one "
+        choices=list(notify_secrets.PUSH_CHANNELS + notify_secrets.DEDICATED),
+        help="Secrets-set/secrets-delete: a push channel, or a dedicated one "
         "(discord_reporting: the reporting channel the QuikOptions series posts to, never suite alerts)",
     )
     parser.add_argument(
