@@ -342,6 +342,18 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   - **The one variable is pinned:** `tests/test_vol_floor.py` checks this machine's definition
     equals control's apart from the floor.
   - **The judging rule** is declared in the experiment log (2026-10-02).
+- `range-high` — `control` plus one variable (from 2026-10-12): no entry while spot is at or above
+  `range_high_pct` (0.9) of a session range narrower than `range_high_max_points` (30)
+  (`engine.range_high_refusal`, refusal `near_session_high`; the range is `stream_summary`'s
+  day high and low, the row the trend tag reads).
+  - **Why:** over control's 386 SPX entries (07-20..10-09), entries at a new high of a quiet
+    session completed 70% for -$2,548 (47 entries, 26 sessions). Gating both ends of the range
+    lost, and at-the-high entries on travelled days made money.
+  - **Found by search** over about 25 cuts on the rows that measure it, and it hurt more sessions
+    (16) than it helped (10): a test, not a default. Fails open with no session range.
+  - **The one variable is pinned:** `tests/test_range_high.py` checks this machine's definition
+    equals control's apart from the gate's two settings.
+  - **The judging rule** is declared in the experiment log (2026-10-09).
 - `wall-clear` — `control` plus one variable, **declared for 2026-10-19** and staged off until then:
   no legged entry while the GEX wall on the completing side (the call wall for a put spread, the put
   wall for a call spread) is under `wall_clear_ahead_points` (10) ahead of spot or crossed by under

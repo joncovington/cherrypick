@@ -129,4 +129,14 @@ file's directory.
   behind their chain's newest. Flies' snapshot uses the same constant from 2026-10-06 and the
   console's `gexProfile.ts` the same cut, so change it in core or not at all. Negligible on a 0DTE chain; on a multi-day extra
   window it moved zero-gamma 545 points.
+- **One gamma per strike (from 2026-10-12).** `core.gex.strike_gamma` gives a strike's call and put
+  the out-of-the-money side's gamma, so net GEX is gamma x (call OI - put OI). Netting each side
+  with its own feed gamma let 0DTE quote noise pick a balanced at-the-money strike's sign: on
+  2026-10-09 SPX 7790 flickered between +301M and a negative net, and with it the console's put
+  wall (7730 to 7790) and nearest zero gamma (7765 to 7791). Over 215 recorded snapshots it cut
+  zero-gamma jumps of more than 15 points from 6 to 2 and the cumulative flip's from 7 to 2, and
+  left the flip unchanged in 180 of 191. It does NOT steady the put wall (37 jumps before, 43
+  after): that is the arg-min over many similar far-OTM put strikes, a different cause. The
+  recorded `call_gamma`/`put_gamma` are still the feed's own. The console's `gexProfile.ts` mirrors
+  it (`strikeGamma`); change both or neither. Journaled in flies (`gex_surface`) and bwb (its flip).
 - **Scratch work lives in a git-ignored `.tmp/`.**

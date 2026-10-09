@@ -10,7 +10,14 @@ import fs from "node:fs";
 import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../config.js";
 import path from "node:path";
-import { computeGexProfile, volumeTotals, nearestZeroGamma, netWalls, type ChainEntryInput } from "../analytics/gex.js";
+import {
+  computeGexProfile,
+  contestedWalls,
+  volumeTotals,
+  nearestZeroGamma,
+  netWalls,
+  type ChainEntryInput,
+} from "../analytics/gex.js";
 
 /** Epoch seconds of an ET wall-clock time on a date, DST-aware via Intl. */
 function etEpoch(date: string, time: string): number {
@@ -230,6 +237,11 @@ export function buildGexProfile(
         series: profile.series,
         totals: profile.totals,
         volumeTotals: volumeTotals(profile.series, spot),
+        // A runner-up within WALL_NEAR_TIE of a wall, per basis: shown beside the wall, never instead.
+        wallAlternates: {
+          oi: contestedWalls(profile.series, "net_gex"),
+          vol: contestedWalls(profile.series, "net_gex_vol"),
+        },
         spotHistory: trail,
         spotSession,
       };

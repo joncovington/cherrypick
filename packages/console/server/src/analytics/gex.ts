@@ -39,6 +39,17 @@ export function dollarGamma(gamma: number, quantity: number, multiplier: number,
 }
 
 /** Strike where the CUMULATIVE net crosses zero (aggregate dealer flip). */
+/**
+ * The ONE gamma a strike's call and put both carry: the out-of-the-money side's, else the other's.
+ * Mirrors `cherrypick.core.gex.strike_gamma` (the reasoning lives there): netting each side with its
+ * own feed gamma let 0DTE quote noise flip a balanced at-the-money strike's sign, and with it the
+ * put wall and the nearest zero gamma (SPX 7790, 2026-10-09). At a strike equal to spot, the call.
+ */
+export function strikeGamma(strike: number, spot: number, callGamma: number, putGamma: number): number {
+  const [otm, itm] = strike >= spot ? [callGamma, putGamma] : [putGamma, callGamma];
+  return otm ? otm : itm || 0;
+}
+
 export function interpolateZeroGamma(strikes: Array<{ strike: number }>, key: string): number | null {
   let cumulative = 0;
   let prevCumulative = 0;
@@ -88,6 +99,42 @@ export function netWalls(series: GexStrikeRow[], key: "net_gex" | "net_gex_vol")
   return [call.strike, put.strike];
 }
 
+/** How close a runner-up must be to the wall, as a fraction of its net, to be shown beside it. */
+export const WALL_NEAR_TIE = 0.8;
+
+export interface WallRunnerUp {
+  strike: number;
+  /** The runner-up's net as a fraction of the wall's, above WALL_NEAR_TIE and at most 1. */
+  strength: number;
+}
+
+/**
+ * The second strongest strike on each side, when it is within WALL_NEAR_TIE of the wall; else null.
+ *
+ * A wall is the single most positive (call) or most negative (put) strike, and when two strikes are
+ * nearly tied it hops between them on noise: over 229 recorded SPX snapshots, 52 of 53 put-wall
+ * hops went to the previous runner-up or came from a near-tie, and on 2026-10-06 the put wall
+ * swapped between 7740 and 7600 -- 140 points apart -- about a dozen times. Neither number alone is
+ * the read; both are. The wall itself is unchanged (`netWalls`, the recorder's and wall-clear's).
+ */
+export function contestedWalls(
+  series: GexStrikeRow[],
+  key: "net_gex" | "net_gex_vol",
+): { call: WallRunnerUp | null; put: WallRunnerUp | null } {
+  const ranked = [...series].sort((a, b) => b[key] - a[key]);
+  const runnerUp = (wall: GexStrikeRow | undefined, next: GexStrikeRow | undefined): WallRunnerUp | null => {
+    if (wall === undefined || next === undefined || wall[key] === 0) return null;
+    const strength = next[key] / wall[key];
+    return strength > WALL_NEAR_TIE ? { strike: next.strike, strength: Math.round(strength * 100) / 100 } : null;
+  };
+  const top = ranked[0];
+  const bottom = ranked[ranked.length - 1];
+  return {
+    call: top !== undefined && top[key] > 0 ? runnerUp(top, ranked[1]) : null,
+    put: bottom !== undefined && bottom[key] < 0 ? runnerUp(bottom, ranked[ranked.length - 2]) : null,
+  };
+}
+
 export interface ChainEntryInput {
   strikePrice: number;
   streamerSymbol: string;
@@ -104,8 +151,9 @@ export function computeGexProfile(
   defaultMultiplier = 100,
 ): { ok: true; series: GexStrikeRow[]; totals: GexTotals } | { ok: false; error: string } {
   interface Acc {
-    call_iv: number; call_oi: number; call_vol: number; call_gex: number; call_gex_vol: number;
-    put_iv: number; put_oi: number; put_vol: number; put_gex: number; put_gex_vol: number;
+    call_gamma: number; call_iv: number; call_oi: number; call_vol: number; call_gex: number; call_gex_vol: number;
+    put_gamma: number; put_iv: number; put_oi: number; put_vol: number; put_gex: number; put_gex_vol: number;
+    mult: number;
   }
   const strikes = new Map<number, Acc>();
 
@@ -120,31 +168,34 @@ export function computeGexProfile(
     const gamma = g?.gamma ?? 0;
     const iv = g?.iv ?? 0;
 
-    let gex = dollarGamma(gamma, oiVal, mult, spot);
-    let gexVol = dollarGamma(gamma, volVal, mult, spot);
-    if (otype.includes("P")) {
-      gex = -gex;
-      gexVol = -gexVol;
-    }
-
     let d = strikes.get(strike);
     if (d === undefined) {
-      d = { call_iv: 0, call_oi: 0, call_vol: 0, call_gex: 0, call_gex_vol: 0, put_iv: 0, put_oi: 0, put_vol: 0, put_gex: 0, put_gex_vol: 0 };
+      d = {
+        call_gamma: 0, call_iv: 0, call_oi: 0, call_vol: 0, call_gex: 0, call_gex_vol: 0,
+        put_gamma: 0, put_iv: 0, put_oi: 0, put_vol: 0, put_gex: 0, put_gex_vol: 0, mult,
+      };
       strikes.set(strike, d);
     }
     if (otype.includes("C")) {
+      d.call_gamma = gamma;
       d.call_iv = Math.round(iv * 100) / 100;
       d.call_oi = oiVal;
       d.call_vol = volVal;
-      d.call_gex = gex;
-      d.call_gex_vol = gexVol;
     } else if (otype.includes("P")) {
+      d.put_gamma = gamma;
       d.put_iv = Math.round(iv * 100) / 100;
       d.put_oi = oiVal;
       d.put_vol = volVal;
-      d.put_gex = gex;
-      d.put_gex_vol = gexVol;
     }
+  }
+
+  // One gamma per strike, the out-of-the-money side's (`strikeGamma`, mirroring core.gex.strike_gamma).
+  for (const [strike, d] of strikes) {
+    const gamma = strikeGamma(strike, spot, d.call_gamma, d.put_gamma);
+    d.call_gex = dollarGamma(gamma, d.call_oi, d.mult, spot);
+    d.call_gex_vol = dollarGamma(gamma, d.call_vol, d.mult, spot);
+    d.put_gex = -dollarGamma(gamma, d.put_oi, d.mult, spot);
+    d.put_gex_vol = -dollarGamma(gamma, d.put_vol, d.mult, spot);
   }
 
   if (strikes.size === 0) {
