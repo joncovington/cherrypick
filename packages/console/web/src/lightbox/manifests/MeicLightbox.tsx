@@ -137,6 +137,10 @@ export function MeicLightbox({ slide }: { slide: string }) {
   const emptyEra = era !== "ALL" && eras.length > 0 && activeEraCount === 0 && otherEraCount > 0;
 
   const scopeArgs: MeicScope = { day, symbol, profile, era: resolvedEra };
+  // The attempts cards take the arm/symbol/era scope too, so the header's dropdowns narrow this page
+  // the way they already narrow the session, forest, history and calibration slides. The shared
+  // attempts transport spells the arm `arm` (MEIC's own scope calls it `profile`).
+  const attemptsScope = { arm: profile, symbol, era: resolvedEra };
   const reasons = (a?.exitReasons ?? []).map((r) => r.reason);
 
   const slides: Array<SlideDef & { id: MeicSlideId }> = [
@@ -150,9 +154,9 @@ export function MeicLightbox({ slide }: { slide: string }) {
       label: MEIC_LABEL.attempts,
       render: () => (
         <div className="cards cards-wide">
-          <ArmRail module="meic" mode={mode} date={day} era={resolvedEra} />
-          <AttemptTimeline module="meic" mode={mode} date={day} era={resolvedEra} />
-          <OccupancyMap module="meic" mode={mode} date={day} era={resolvedEra} />
+          <ArmRail module="meic" mode={mode} date={day} scope={attemptsScope} />
+          <AttemptTimeline module="meic" mode={mode} date={day} scope={attemptsScope} />
+          <OccupancyMap module="meic" mode={mode} date={day} scope={attemptsScope} />
         </div>
       ),
     },

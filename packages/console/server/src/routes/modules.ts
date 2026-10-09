@@ -153,27 +153,37 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   });
   // Both take meic's resolved session when no date is asked for, not their own one-table
   // MAX(trade_date): on a no-trade day the attempts table and the trade log name different days
-  // (see resolveMeicSession). Only the era narrows the resolved day; the cards themselves still
-  // draw every arm and symbol of it.
+  // (see resolveMeicSession).
+  // The header's arm/symbol/era controls narrow the attempts page the way they already narrow the
+  // session, forest, history and calibration slides. `arm` is the shared attempts transport key
+  // (the same one the flies page sends); MEIC's own scope calls the same thing `profile`, so it is
+  // mapped here. `era` bounds the resolved day (`resolveMeicSession(..., era)`), matching the
+  // forest -- otherwise an older era with no session picked named the current era's latest day.
   app.get("/api/meic/attempts", async (req) => {
     const f = parseFliesFilter(req.query);
     const mode = parseMode(req.query);
     const era = parseMeicScope(req.query).era;
-    return readEntryAttempts(config, "meic", mode, f.date ?? resolveMeicSession(config, mode, era));
+    return readEntryAttempts(config, "meic", mode, f.date ?? resolveMeicSession(config, mode, era), {
+      arm: f.arm,
+      symbol: f.symbol,
+    });
   });
   app.get("/api/meic/occupancy", async (req) => {
     const f = parseFliesFilter(req.query);
     const mode = parseMode(req.query);
     const era = parseMeicScope(req.query).era;
-    return readOccupancy(config, "meic", mode, f.date ?? resolveMeicSession(config, mode, era));
+    return readOccupancy(config, "meic", mode, f.date ?? resolveMeicSession(config, mode, era), {
+      arm: f.arm,
+      symbol: f.symbol,
+    });
   });
   app.get("/api/flies/occupancy", async (req) => {
     const f = parseFliesFilter(req.query);
-    return readOccupancy(config, "flies", parseMode(req.query), f.date);
+    return readOccupancy(config, "flies", parseMode(req.query), f.date, { arm: f.arm, symbol: f.symbol });
   });
   app.get("/api/flies/attempts", async (req) => {
     const f = parseFliesFilter(req.query);
-    return readEntryAttempts(config, "flies", parseMode(req.query), f.date);
+    return readEntryAttempts(config, "flies", parseMode(req.query), f.date, { arm: f.arm, symbol: f.symbol });
   });
   // pmcc is paper-only, so mode is fixed rather than parsed. calendars has no equivalent route:
   // its books share one entry plan, so there is no per-arm entry decision to show.
