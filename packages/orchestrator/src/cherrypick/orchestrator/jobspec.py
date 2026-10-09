@@ -1169,6 +1169,23 @@ def derive_jobs(
                 enabled_reason=mr_reason,
             ),
         )
+    from . import powerwatch as _powerwatch
+
+    pw = _powerwatch.settings(cfg)
+    add(
+        "power-watch",
+        lambda: JobSpec(
+            id="power-watch",
+            # Offline and local: Windows' power status and one state file. Every minute, every day --
+            # a laptop runs down on a Saturday too -- and the script keeps the 15-minute repeat, so
+            # this interval only bounds how late the first alert can be (2026-10-08 outage).
+            argv=_run_py(pythonw, launcher, "power-watch"),
+            kind=KIND_INTERVAL,
+            interval_seconds=60,
+            enabled=bool(pw["enabled"]),
+            enabled_reason="" if pw["enabled"] else "disabled in config (power_watch.enabled)",
+        ),
+    )
     add(
         "report-session-alert",
         lambda: JobSpec(
