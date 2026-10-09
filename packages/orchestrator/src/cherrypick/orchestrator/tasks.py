@@ -8,14 +8,17 @@ idempotently.
 
 The cron line construction and crontab editing are pure functions (`_minute_schedule`,
 `_daily_schedule`, `_cron_line`, `_cron_upsert`, `_cron_remove`, `_cron_has`) so they're unit-tested
-cross-platform; only the thin `crontab -l` / `crontab -` I/O is platform-bound. End-to-end cron
-*execution* (environment, notifications) still wants validation on a real POSIX host.
+cross-platform; only the thin `crontab -l` / `crontab -` I/O is platform-bound. Each managed line
+carries the registering shell's PATH, the session bus and the suite's time zone (`_cron_env`), since
+cron's own environment has none of them. End-to-end cron *execution* still wants validation on a real
+POSIX host.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 from typing import Any
 
@@ -97,6 +100,44 @@ def _cron_line(schedule: str, command: str, name: str) -> str:
     return f"{schedule} {command} >/dev/null 2>&1 {_cron_marker(name)}"
 
 
+# Carried from the registering (interactive) shell onto every managed cron line. Cron runs a job with
+# PATH=/usr/bin:/bin and no session bus, and the supervisor and all its jobs inherit that: `node` (the
+# console), `dolt` and `claude` went unfound and the console crash-looped, and the Linux keyring (Secret
+# Service, over D-Bus) was unreachable, so no broker credential and no webhook (2026-10-08 OS audit).
+_CRON_PASSTHROUGH = ("PATH", "PYTHON_KEYRING_BACKEND", "XDG_RUNTIME_DIR")
+SUITE_TZ = "America/New_York"
+
+
+def _cron_env(
+    environ: dict[str, str] | None = None,
+    uid: int | None = None,
+    exists=os.path.exists,
+    tz: str = SUITE_TZ,
+) -> str:
+    """The `VAR=value ...` prefix for a managed cron command (pure; tests pass a fake environment).
+
+    - PATH, PYTHON_KEYRING_BACKEND and XDG_RUNTIME_DIR as the registering shell had them.
+    - DBUS_SESSION_BUS_ADDRESS: the systemd user bus (`/run/user/<uid>/bus`) when it exists -- stable
+      across logins -- else the registering shell's own value. A login keyring still has to be
+      unlocked by a session; this only makes it reachable.
+    - TZ: the suite's market time zone. Many call sites take `date.today()` as the session date, and
+      on a UTC host the date turns over at 19:00/20:00 ET, inside the evening jobs.
+
+    Values are shell-quoted; `%` is escaped because cron turns a bare one into a newline.
+    """
+    env = dict(os.environ if environ is None else environ)
+    if uid is None:
+        uid = os.getuid() if hasattr(os, "getuid") else -1
+    pairs = [(k, env[k]) for k in _CRON_PASSTHROUGH if env.get(k)]
+    bus = f"/run/user/{uid}/bus"
+    if uid >= 0 and exists(bus):
+        pairs.append(("DBUS_SESSION_BUS_ADDRESS", f"unix:path={bus}"))
+    elif env.get("DBUS_SESSION_BUS_ADDRESS"):
+        pairs.append(("DBUS_SESSION_BUS_ADDRESS", env["DBUS_SESSION_BUS_ADDRESS"]))
+    pairs.append(("TZ", tz))
+    return " ".join(f"{k}={shlex.quote(v)}" for k, v in pairs).replace("%", "\\%")
+
+
 def _cron_remove(text: str, name: str) -> str:
     """Drop any cherrypick-owned line(s) for `name`; leave everything else untouched."""
     marker = _cron_marker(name)
@@ -140,7 +181,7 @@ def _crontab_write(text: str) -> tuple[bool, str]:
 
 
 def _cron_create(name: str, schedule: str, command: str) -> dict[str, Any]:
-    line = _cron_line(schedule, command, name)
+    line = _cron_line(schedule, f"{_cron_env()} {command}", name)
     ok, detail = _crontab_write(_cron_upsert(_crontab_read(), name, line))
     return {"ok": ok, "task": name, "detail": detail or f"cron: {line}"}
 

@@ -232,3 +232,45 @@ def test_windowed_minute_schedule_refuses_what_it_cannot_express(interval, start
     guards a window that cannot be recovered once missed."""
     with pytest.raises(ValueError):
         tasks._windowed_minute_schedule(interval, start, end)
+
+
+# --------------------------------------------------------------- the environment a cron job runs with
+# Cron runs with PATH=/usr/bin:/bin, no session bus and the host's clock zone; the supervisor and every
+# job inherit that (2026-10-08 OS audit). Each managed line now carries what the installing shell had.
+
+
+def test_cron_env_carries_path_keyring_backend_and_the_suite_time_zone():
+    env = {
+        "PATH": "/home/u/.nvm/bin:/usr/local/bin:/usr/bin",
+        "PYTHON_KEYRING_BACKEND": "keyrings.alt.file.PlaintextKeyring",
+        "HOME": "/home/u",
+    }
+    out = tasks._cron_env(env, uid=1000, exists=lambda p: False)
+    assert out == (
+        "PATH=/home/u/.nvm/bin:/usr/local/bin:/usr/bin "
+        "PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring TZ=America/New_York"
+    )
+
+
+def test_cron_env_prefers_the_systemd_user_bus_over_a_session_address():
+    env = {"PATH": "/usr/bin", "DBUS_SESSION_BUS_ADDRESS": "unix:abstract=/tmp/dbus-stale"}
+    with_bus = tasks._cron_env(env, uid=1000, exists=lambda p: p == "/run/user/1000/bus")
+    assert "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus" in with_bus
+    without = tasks._cron_env(env, uid=1000, exists=lambda p: False)
+    assert "DBUS_SESSION_BUS_ADDRESS=unix:abstract=/tmp/dbus-stale" in without
+
+
+def test_cron_env_quotes_spaces_and_escapes_cron_percent():
+    out = tasks._cron_env({"PATH": "/opt/My Tools/bin:/x%y"}, uid=1, exists=lambda p: False)
+    assert out.startswith(r"PATH='/opt/My Tools/bin:/x\%y' ")
+
+
+def test_a_created_cron_line_runs_its_command_under_that_environment(monkeypatch):
+    written = {}
+    monkeypatch.setattr(tasks, "_crontab_read", lambda: "")
+    monkeypatch.setattr(tasks, "_crontab_write", lambda text: (written.setdefault("t", text), (True, ""))[1])
+    monkeypatch.setattr(tasks, "_cron_env", lambda: "PATH=/usr/local/bin TZ=America/New_York")
+    assert tasks._cron_create(NAME, "*/2 * * * *", CMD)["ok"]
+    assert tasks._cron_command_for(written["t"], NAME) == (
+        f"PATH=/usr/local/bin TZ=America/New_York {CMD} >/dev/null 2>&1"
+    )
