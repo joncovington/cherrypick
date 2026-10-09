@@ -5,7 +5,8 @@ ET and nothing had said it was on battery. `run.py power-watch` (the `power-watc
 every day) reads the power status and, while on battery, notifies ALL channels -- the moment it
 switches, then every `repeat_minutes` (15) -- as a WARNING that turns CRITICAL at `critical_percent`
 (20%) or `critical_minutes` (30) of estimated time left. When AC returns it says so once, with how long
-it ran on battery. Offline and local: it reads the OS power status (Windows, Linux sysfs, macOS pmset) and one state file.
+it ran on battery. Offline and local: it reads the OS power status (Windows, Linux sysfs, macOS pmset)
+and one state file.
 
 `decide` is the whole rule, pure, so it is tested with a fake clock; `run` is the wiring.
 """
