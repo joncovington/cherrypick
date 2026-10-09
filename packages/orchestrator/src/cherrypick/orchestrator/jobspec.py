@@ -103,6 +103,9 @@ CATCHUP_MINUTES = {
     # still the same edition, so the morning pair catches up to mid-morning; the retry is the
     # second chance, not a second request (a day already saved is skipped). The evening chart
     # capture keys its files by the session of the latest bar, so a late one still files right.
+    # The browser checks (2026-10-09): only useful before the run they check, so a short window.
+    "report-browser-check": 15,
+    "quikoptions-browser-check": 25,
     "report-edition": 180,
     "report-edition-retry": 180,
     "report-charts": 300,
@@ -169,6 +172,8 @@ NOTIFIES_OWN_FAILURE = frozenset(
         "report-edition-retry",
         "report-charts",
         "quikoptions-capture",  # its own throttle / needs-a-person warnings
+        "report-browser-check",  # `smoke` warns on its own: browser would not start / signed out
+        "quikoptions-browser-check",
         "review-provisional",  # "Suite review (...) failed"
         "review-final",
         "reconcile",  # its scheduled run pushes every non-FLAT verdict; the exit code is the verdict
@@ -444,6 +449,13 @@ def _dolt_data_script(launcher: str) -> str:
 
 def _pmcc_earnings_script(launcher: str) -> str:
     return _suite_script(launcher, "pmcc_earnings_refresh.py")
+
+
+def _minutes_before(hhmm: str, minutes: int) -> str:
+    """ "HH:MM" `minutes` earlier, wrapping at midnight. Pure."""
+    h, m = (int(x) for x in str(hhmm).split(":"))
+    total = (h * 60 + m - minutes) % (24 * 60)
+    return f"{total // 60:02d}:{total % 60:02d}"
 
 
 def _vendor_collector_script(launcher: str) -> str:
@@ -1167,6 +1179,10 @@ def derive_jobs(
     else:
         mr_reason = "disabled in config (market_report.collector)"
     for job_id, at, sub in (
+        # A local check ~20 min before the morning fetch: the browser starts under the service and
+        # the session is still signed in -- warned in time for a person to sign in (`smoke`, never
+        # a site visit).
+        ("report-browser-check", _minutes_before(mr["edition_at"], 20), "smoke"),
         ("report-edition", mr["edition_at"], "edition"),
         ("report-edition-retry", mr["edition_retry_at"], "edition"),
         ("report-charts", mr["charts_at"], "charts"),
@@ -1327,6 +1343,15 @@ def derive_jobs(
         # Scripts, not packages: the capture signs in to a third-party site (paced, one session, a
         # 24-hour cooldown after a refusal), scoring and confirming read the broker (read-only market
         # data), and the posts push a webhook. A day with no capture leaves the rest nothing to do.
+        # The same local check, half an hour before the capture (`smoke`, never a site visit).
+        (
+            "quikoptions-browser-check",
+            _minutes_before(qo["at"], 30),
+            "fetch",
+            ("smoke",),
+            qo["enabled"],
+            qo_off,
+        ),
         ("quikoptions-capture", qo["at"], "fetch", capture_argv, qo["enabled"], qo_off),
         (
             "quikoptions-score",

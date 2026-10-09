@@ -626,3 +626,16 @@ def test_a_headed_run_leaves_the_user_agent_alone(tmp_path, monkeypatch):
     pw = _FakePlaywright()
     fq._open_browser(pw, headed=True)
     assert "user_agent" not in pw.chromium.persistent and pw.chromium.launches == []
+
+
+def test_quikoptions_browser_commands_share_the_collector_lock(monkeypatch, tmp_path):
+    # 2026-10-09: the same profile lock as the vendor collector (loaded from beside it).
+    monkeypatch.setattr(fq, "store_dir", lambda: tmp_path)
+    shared = fq._shared()
+    seen = []
+    monkeypatch.setattr(
+        fq, "cmd_smoke", lambda args: seen.append(shared.profile_holder(tmp_path / "browser-profile")) or 0
+    )
+    assert fq.main(["smoke"]) == 0 and seen[0] is not None
+    assert not shared.profile_lock_path(tmp_path / "browser-profile").exists()
+    assert {"login", "hot-options", "probe", "smoke"} <= fq.BROWSER_COMMANDS

@@ -307,6 +307,7 @@ def test_derive_full_suite_job_table():
         "guard-mutants",
         "earnings-dolt-pull",
         "pmcc-earnings-refresh",
+        "report-browser-check",
         "report-edition",
         "report-edition-retry",
         "report-charts",
@@ -1129,6 +1130,7 @@ def test_headlines_are_fetched_before_the_narrative_reads_them():
 
 # --------------------------------------------------------------------------- QuikOptions (2026-10-03)
 QUIKOPTIONS_JOBS = (
+    "quikoptions-browser-check",
     "quikoptions-capture",
     "quikoptions-score",
     "quikoptions-post",
@@ -1221,3 +1223,19 @@ def test_flies_payoff_intraday_runs_without_the_settled_post():
     assert by_id["flies-payoff-intraday"].enabled
     assert not by_id["flies-payoff-post"].enabled
     assert by_id["flies-payoff-intraday"].argv[-2:] == ("--mode", "paper")
+
+
+def test_each_browser_collector_is_checked_shortly_before_its_first_run():
+    # 2026-10-09: a local `smoke` (the browser starts, the session is signed in) ahead of the run it
+    # protects, so an expired sign-in is warned while there is still time to sign in.
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    for check, run, gap in (
+        ("report-browser-check", "report-edition", 20),
+        ("quikoptions-browser-check", "quikoptions-capture", 30),
+    ):
+        c, r = by_id[check], by_id[run]
+        assert c.argv[-1] == "smoke" and c.argv[1] == r.argv[1]
+        assert c.enabled == r.enabled and c.trading_days_only
+        ch, cm = (int(x) for x in c.at_et.split(":"))
+        rh, rm = (int(x) for x in r.at_et.split(":"))
+        assert (rh * 60 + rm) - (ch * 60 + cm) == gap

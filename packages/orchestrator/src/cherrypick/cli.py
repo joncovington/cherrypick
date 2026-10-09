@@ -983,20 +983,23 @@ def cmd_streamer_health(cfg) -> None:
 
 
 # --------------------------------------------------------------------------- supervisor
-def cmd_supervise(cfg, stop: bool = False) -> None:
+def cmd_supervise(cfg, stop: bool = False, restart: bool = False) -> None:
     """Run the supervisor daemon loop in THIS process (the anchor task launches it detached via
     ensure-supervisor; running it foreground is the manual/diagnostic path). --stop asks a running
     daemon to exit via its stop file."""
     from cherrypick.orchestrator import supervisor
 
-    if stop:
-        _emit(supervisor.request_stop())
+    if stop or restart:
+        _emit(supervisor.request_stop(restart=restart))
         return
     # Deliberately NOT the pre-loaded cfg: a non-None cfg PINS the daemon to that snapshot (the
     # test affordance in Supervisor.__init__), and passing it here silently disabled the mtime
     # reload — every config edit needed a daemon restart nobody knew to perform. The daemon loads
     # its own config so edits apply on the next pass, as the scheduling docs promise.
-    _emit(supervisor.run())
+    result = supervisor.run()
+    _emit(result)
+    if result.get("restart"):
+        sys.exit(supervisor.RESTART_EXIT)
 
 
 def _service_mode(cfg) -> dict | None:
@@ -1010,7 +1013,13 @@ def _service_mode(cfg) -> dict | None:
     return s if winservice.query(s["id"]).get("installed") else None
 
 
-def _start_supervisor(cfg) -> bool:
+# How long the anchor lets a stopped service restart itself before starting a supervisor outside
+# it: longer than its longest restart delay (2 min). A fallback started inside that gap holds the lock,
+# and the service's own supervisor then refuses to start (2026-10-09).
+SERVICE_RESTART_GRACE_S = 300
+
+
+def _start_supervisor(cfg, state: dict | None = None) -> bool:
     """Start the supervisor the way this machine runs it: through the service in service mode (a
     detached spawn there would be a rival the service cannot see), else the detached daemon."""
     service = _service_mode(cfg)
@@ -1023,6 +1032,12 @@ def _start_supervisor(cfg) -> bool:
         # a fallback then would start a rival beside it (2026-10-08). Running or starting is started.
         if winservice.query(service["id"]).get("state") in ("RUNNING", "START_PENDING"):
             return True
+        if state is not None:  # the anchor: give the service its own restart first
+            import time as _time
+
+            since = float(state.setdefault("service_down_since", _time.time()))
+            if _time.time() - since < SERVICE_RESTART_GRACE_S:
+                return False
         # The service would not start (a logon failure, a refused `sc start`): a supervisor outside
         # it beats none at all -- the single-instance lock still stops the service from adding a
         # second once it is fixed. Said loudly, because the machine is no longer running as chosen.
@@ -1138,7 +1153,7 @@ def cmd_ensure_supervisor(cfg) -> None:
         except Exception:
             pass
 
-    started = _start_supervisor(cfg)
+    started = _start_supervisor(cfg, state)
     failures = int(state.get("failures") or 0) + 1
     notified = bool(state.get("notified"))
     if failures >= 3 and not notified:
@@ -1155,7 +1170,8 @@ def cmd_ensure_supervisor(cfg) -> None:
             notified = True
         except Exception:
             pass
-    state_path.write_text(json.dumps({"failures": failures, "notified": notified}), encoding="utf-8")
+    keep = {k: state[k] for k in ("service_down_since",) if k in state}
+    state_path.write_text(json.dumps({"failures": failures, "notified": notified, **keep}), encoding="utf-8")
     _emit(
         {
             "ok": started,
@@ -1817,6 +1833,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="For supervise: ask the running supervisor daemon to exit (via its stop file)",
     )
     parser.add_argument(
+        "--restart",
+        action="store_true",
+        help="For supervise: ask the running supervisor to exit so it is started again with fresh code "
+        "(by the Windows service after its restart delay, else by the anchor's next probe)",
+    )
+    parser.add_argument(
         "--close",
         action="store_true",
         help="For notify-status: post the day's CLOSE card (what the daily status-digest-close job passes)",
@@ -1883,7 +1905,7 @@ def main() -> None:
         "watchdog": lambda: cmd_watchdog(cfg),
         "preopen-check": lambda: cmd_preopen_check(cfg),
         "streamer-health": lambda: cmd_streamer_health(cfg),
-        "supervise": lambda: cmd_supervise(cfg, stop=args.stop),
+        "supervise": lambda: cmd_supervise(cfg, stop=args.stop, restart=args.restart),
         "ensure-supervisor": lambda: cmd_ensure_supervisor(cfg),
         "report": lambda: cmd_report(cfg, args),
         "archive": lambda: cmd_archive(cfg, args),
