@@ -311,6 +311,7 @@ def test_derive_full_suite_job_table():
         "report-edition-retry",
         "report-charts",
         "power-watch",
+        "live-positions",
         "report-session-alert",
         "report-screener-measure-1",
         "report-screener-measure-2",

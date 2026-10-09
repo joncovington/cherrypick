@@ -814,3 +814,23 @@ def test_fill_state_and_fee_estimate_are_read_defensively():
     assert live_loop._fee_estimate({"response": {}}) is None and live_loop._fee_estimate({}) is None
     assert live_loop._fee_estimate({"response": {"fee_calculation": {"total_fees": "x"}}}) is None
     assert _execution.fill_state({"status": "Filled", "price": "0.5"}) == ("filled", 0.5)
+
+
+# --------------------------------------------------------------------------- expected legs (2026-10-08)
+def test_expected_legs_count_a_filled_position_and_never_a_pending_or_cancelled_one(conn, live_config):
+    # The orchestrator's positions-vs-ledger check reads this; a pending entry's legs are written
+    # `open` before anything fills, and a cancelled one's legs stay `open` -- the position decides.
+    from cherrypick.bwb import book as bookmod
+
+    pid = "SPX:control:2026-09-16"
+    bookmod.enter_position(conn, _plan(), live_config, "control", entry_session=DAY, advice_params=None)
+    db.save_position(conn, {"position_id": pid, "status": "open"})
+    got = live_loop.expected_legs(live_config, conn)
+    net = {}
+    for leg in got["legs"]:
+        net[(leg["right"], leg["strike"])] = net.get((leg["right"], leg["strike"]), 0) + leg["qty"]
+    assert net == {("P", BODY + 5): 1, ("P", BODY): -2, ("P", BODY - 10): 1}
+    assert {leg["expiry"] for leg in got["legs"]} == {EXP} and got["underlyings"] == ["SPX"]
+    for status in ("pending", "cancelled"):
+        db.save_position(conn, {"position_id": pid, "status": status})
+        assert live_loop.expected_legs(live_config, conn)["legs"] == []

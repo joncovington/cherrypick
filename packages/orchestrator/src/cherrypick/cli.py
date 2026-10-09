@@ -1198,6 +1198,13 @@ def cmd_power_watch(cfg) -> None:
     _emit(powerwatch.run(cfg))
 
 
+def cmd_live_positions(cfg) -> None:
+    """Live accounts' positions vs the live ledgers (orchestrator/livepositions.py). Read-only."""
+    from cherrypick.orchestrator import livepositions
+
+    _emit(livepositions.run(cfg))
+
+
 def cmd_notify_status(cfg, force: bool = False, close: bool = False) -> None:
     _emit(status_digest.run(cfg, force=force, close=close))
 
@@ -1501,6 +1508,7 @@ def build_parser() -> argparse.ArgumentParser:
             "morning",
             "restart-console",
             "power-watch",
+            "live-positions",
             "ps",
             "restart",
             "stop",
@@ -1778,6 +1786,7 @@ def main() -> None:
         "notify-desk": lambda: cmd_notify_desk(cfg),
         "notify-status": lambda: cmd_notify_status(cfg, force=args.force, close=args.close),
         "power-watch": lambda: cmd_power_watch(cfg),
+        "live-positions": lambda: cmd_live_positions(cfg),
         "notify-send": lambda: cmd_notify_send(args),
         "sent": lambda: cmd_sent(args),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),

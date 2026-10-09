@@ -2113,6 +2113,60 @@ def _tick_failed(info: dict[str, Any]) -> bool:
 _HOLD_FORGOTTEN_HOURS = 12
 
 
+# The live-positions job runs every 5 minutes in session; older than this, its verdict is history.
+_LIVE_POSITIONS_FRESH_SECONDS = 20 * 60
+
+
+def _check_live_positions(in_session: bool) -> list[Finding]:
+    """The broker's positions against the live ledgers, as the `live-positions` job last saw them
+    (orchestrator/livepositions.py). A disagreement seen on two checks running is CRITICAL: a live
+    loop is deciding from a book that is not the account's. File-only, like every check here."""
+    from . import livepositions as _lp
+
+    if not in_session:
+        return []
+    state = _lp.read_state()
+    if not state:
+        return []
+    try:
+        at = datetime.fromisoformat(str(state.get("generated_at")))
+        age = (datetime.now(timezone.utc) - at).total_seconds()
+    except (TypeError, ValueError):
+        return []
+    if age > _LIVE_POSITIONS_FRESH_SECONDS:
+        return []
+    verdict = state.get("verdict")
+    if verdict == _lp.MISMATCH:
+        lines = [
+            f"{a['account']} ({', '.join(a.get('modules') or [])}): "
+            + "; ".join(_lp.describe(d) for d in a.get("confirmed") or [])
+            for a in state.get("accounts") or []
+            if a.get("confirmed")
+        ]
+        return [
+            Finding(
+                "live_positions",
+                CRITICAL,
+                "Broker positions do not match the live ledger",
+                " | ".join(lines)
+                + " -- seen on two checks running. Find the fill or close the ledger missed before the "
+                "next entry; `run.py live-positions` re-checks.",
+            )
+        ]
+    if verdict == _lp.UNKNOWN:
+        return [
+            Finding(
+                "live_positions",
+                WARN,
+                "Live positions could not be checked",
+                "; ".join(state.get("unknown") or []) or "unknown",
+            )
+        ]
+    if verdict in (_lp.MATCH, _lp.SETTLING):
+        return [Finding("live_positions", OK, "Live positions match the ledger", str(verdict))]
+    return []
+
+
 def _check_holds() -> list[Finding]:
     """Everything stopped on purpose (`run.py stop`). Listed at OK -- a stop someone asked for is not
     news, and alarming on it is what this replaced -- until it outlives `_HOLD_FORGOTTEN_HOURS`, when
@@ -2479,6 +2533,7 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     # Keep generic background services (e.g. the gex spot-trail recorder) alive.
     findings += _check_services(cfg)
     findings += _check_holds()
+    findings += _check_live_positions(in_session)
     try:
         findings += _check_duplicate_processes(cfg)
     except Exception as exc:

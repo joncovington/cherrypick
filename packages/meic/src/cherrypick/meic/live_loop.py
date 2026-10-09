@@ -630,9 +630,70 @@ def _build_snapshot(cfg: dict, symbol: str):
     return snapshot, None
 
 
+def expected_legs(cfg: dict, db_path: str) -> dict:
+    """The contracts this LIVE ledger says the broker holds right now, for the orchestrator's
+    positions-vs-ledger check (`cherrypick.core.livepositions`, 2026-10-08). Read-only.
+
+    Counted: each side still held of an `open`/`partial` IC -- held means no recorded stop cost,
+    the same rule the exit path uses -- as its short and its long (`paper.ic_legs`, wings derived).
+    A `pending` entry has filled nothing yet and is not counted; a working stop's close is counted as
+    still held until its fill is confirmed. `pending` counts both."""
+    import sqlite3
+
+    legs, pending, symbols = [], 0, set()
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        con.row_factory = sqlite3.Row
+        try:
+            rows = [
+                dict(r)
+                for r in con.execute(
+                    "SELECT * FROM ic_trades WHERE status IN ('pending', 'open', 'partial', 'partial_entry')"
+                )
+            ]
+        finally:
+            con.close()
+    except sqlite3.Error:
+        rows = []  # no live ledger yet: nothing held
+    for t in rows:
+        symbols.add(t["symbol"])
+        if t["status"] == "pending":
+            pending += 1
+            continue
+        if t.get("put_stop_fill_status") == "pending" or t.get("call_stop_fill_status") == "pending":
+            pending += 1
+        held = {"P": t.get("put_stop_cost") is None, "C": t.get("call_stop_cost") is None}
+        qty = int(t.get("quantity") or 1)
+        for _, right, strike, sign in paper.ic_legs(t):
+            if held[right]:
+                legs.append(
+                    {
+                        "underlying": t["symbol"],
+                        "expiry": str(t.get("expiration")),
+                        "right": right,
+                        "strike": strike,
+                        "qty": sign * qty,
+                    }
+                )
+    live_symbol = (cfg.get("live") or {}).get("symbol")
+    return {
+        "ok": True,
+        "module": "meic",
+        "underlyings": sorted(symbols | ({live_symbol} if live_symbol else set())),
+        "armed_today": bool(cfg.get("enable_live_trading")),
+        "legs": legs,
+        "pending": pending,
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--once", action="store_true", required=True, help="Single iteration (the only mode)")
+    ap.add_argument("--once", action="store_true", help="Single iteration (the trading mode)")
+    ap.add_argument(
+        "--expected-legs",
+        action="store_true",
+        help="the filled open legs the live ledger holds (JSON; read-only)",
+    )
     ap.add_argument(
         "--dry-run",
         dest="dry_run",
@@ -649,6 +710,11 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg = paper.load_base_config()
+    if args.expected_legs:
+        print(json.dumps(expected_legs(cfg, str(_paths.live_db_path())), default=str))
+        return 0
+    if not args.once:
+        ap.error("--once is required (or --expected-legs)")
     designated = _designated_account()
     unmet = readiness(cfg, designated=designated)
     live = not args.dry_run

@@ -1222,6 +1222,40 @@ def _pythonw() -> str:
     return exe
 
 
+def expected_legs(config: dict, conn) -> dict:
+    """The contracts this ledger says the broker holds right now, for the orchestrator's
+    positions-vs-ledger check (`cherrypick.core.livepositions`, 2026-10-08). Files and DB only.
+
+    Counted: `open` legs of positions whose entry fill is confirmed (`open`/`short_settled`). A
+    pending entry's legs are written `open` before anything fills, and a cancelled entry's legs stay
+    `open` -- the position's status is what says whether they exist, so the join decides. An add-on's
+    legs are written only once it fills. `pending` counts orders still working."""
+    rows = conn.execute(
+        "SELECT p.symbol AS underlying, l.expiration, l.option_type, l.strike, l.action, l.quantity "
+        "FROM bwb_legs l JOIN bwb_positions p ON p.position_id = l.position_id "
+        "WHERE l.status = 'open' AND p.status IN ('open', 'short_settled')"
+    ).fetchall()
+    legs = [
+        {
+            "underlying": r["underlying"],
+            "expiry": str(r["expiration"])[:10],
+            "right": "C" if str(r["option_type"]).lower().startswith("c") else "P",
+            "strike": float(r["strike"]),
+            "qty": (-1 if str(r["action"]).lower().startswith("sell") else 1) * int(r["quantity"] or 1),
+        }
+        for r in rows
+    ]
+    underlyings = sorted({leg["underlying"] for leg in legs} | {_pl._symbol(config)})
+    return {
+        "ok": True,
+        "module": "bwb",
+        "underlyings": underlyings,
+        "armed_today": arm_stamp_date() == clock.now_et().date().isoformat(),
+        "legs": legs,
+        "pending": len(db.pending_entries(conn)) + len(db.pending_addons(conn)),
+    }
+
+
 def arm_stamp_date() -> str | None:
     return _live.arm_record_date("bwb")
 
@@ -1311,6 +1345,11 @@ def main(argv=None) -> int:
     ap.add_argument("--once", action="store_true", help="one tick (dry-run unless --live)")
     ap.add_argument("--live", action="store_true", help="place real orders (every gate must be met)")
     ap.add_argument("--status", action="store_true")
+    ap.add_argument(
+        "--expected-legs",
+        action="store_true",
+        help="the filled open legs the ledger holds (JSON; files/DB only)",
+    )
     ap.add_argument("--settle", action="store_true")
     ap.add_argument("--price", type=float, help="the official settlement print, by hand")
     ap.add_argument("--date", help="YYYY-MM-DD")
@@ -1335,6 +1374,9 @@ def main(argv=None) -> int:
         return out(uninstall_task())
     if args.status:
         return out(run_status(config, conn, cache_path=cache_path))
+    if args.expected_legs:
+        print(json.dumps(expected_legs(config, conn), default=str))
+        return 0
     if args.settle:
         broker = None
         if args.price is None:
