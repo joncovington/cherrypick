@@ -91,12 +91,16 @@ export function nearestZeroGamma(series: GexStrikeRow[], spot: number, key: "net
   return crossings.reduce((best, z) => (Math.abs(z - spot) < Math.abs(best - spot) ? z : best));
 }
 
-/** (call_wall, put_wall) = strikes of max/min `key` — the net-GEX walls. */
+/**
+ * (call_wall, put_wall) = strikes of max/min `key` — the net-GEX walls. Mirrors core's `net_walls`:
+ * a wall needs a strike on its own side of zero, so a chain with no negative strike has no put wall
+ * (an expired 0DTE chain after the bell named its first row, 3000, as the put wall on 2026-10-09).
+ */
 export function netWalls(series: GexStrikeRow[], key: "net_gex" | "net_gex_vol"): [number | null, number | null] {
   if (series.length === 0) return [null, null];
   const call = series.reduce((a, b) => (b[key] > a[key] ? b : a));
   const put = series.reduce((a, b) => (b[key] < a[key] ? b : a));
-  return [call.strike, put.strike];
+  return [call[key] > 0 ? call.strike : null, put[key] < 0 ? put.strike : null];
 }
 
 /** How close a runner-up must be to the wall, as a fraction of its net, to be shown beside it. */
