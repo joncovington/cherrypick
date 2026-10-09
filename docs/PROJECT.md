@@ -107,7 +107,7 @@ any text editor — every key is documented inline in `packages/orchestrator/con
 
 **2. Your tastytrade login.** The installer stored it in your operating system's secure keyring (never
 in a file). To change it, choose which account the suite would use *if* you ever enable live trading,
-or add Discord/Slack alerts, run the wizard:
+or add Discord/Slack/Telegram alerts, run the wizard:
 
 ```bash
 python run.py connect
@@ -307,7 +307,7 @@ next.
   the engines correctly sit on their hands. Check `status` to confirm the supervisor is running.
 - **No alerts arriving?** Run `notify-test`; if desktop/Discord do not show up, re-check the `notify`
   channels in `~/.cherrypick/config.json` and (for Discord/Slack) that you stored the webhook with
-  `secrets-set`.
+  `secrets-set`, or (for Telegram) the bot token and chat ID the same command prompts for.
 - **Laptop keeps sleeping.** `packages/orchestrator/tools/setup-walkaway-durability.ps1` keeps a
   Windows machine awake and running scheduled tasks while you are away.
 
