@@ -177,6 +177,12 @@ Built to test whether the paper result survives a fill without disturbing the pa
   per-expiration worst-case margin caps from expiry payoffs, RESERVING an unfired position's future
   add-on whenever the arm can fire; the settled-net breaker; and the mark-drawdown breaker, which
   blocks the NEXT entry only, never an exit.
+- **The term-structure gate** (`live.vix9d_vix_max`, 2026-10-09; null = off): a live entry is refused
+  `regime_inverted` when VIX9D/VIX at the entry tick is at or above the bar, and `regime_unmeasured`
+  when either print is missing or stale. Missing data blocks an entry and never allows one. The
+  reading that decided is the one stored on the row. Live only: every paper arm still enters
+  every session, so `bwb regime-split` keeps measuring the gate against them. Setting or changing
+  it is a live measurement break: journal it.
 - **No new live risk on a quarter-end session** (`core.calendar.is_quarterly_expiry`, refusal
   `core.live.QUARTER_END_REASON`): the entry refuses, and an armed add-on is deferred (not lost: it
   fires on the next session's first credit tick). Paper is untouched; arming warns. First binding

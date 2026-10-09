@@ -77,6 +77,7 @@ GUARDED: dict[str, dict[str, str]] = {
         "/live/max_open_margin_dollars": "live worst-case cap — hand-edit deliberately, never from here",
         "/live/max_open_margin_per_expiration_dollars": "live per-Friday cap — hand-edit deliberately",
         "/live/mark_drawdown_halt_dollars": "live entry breaker — hand-edit deliberately, never from here",
+        "/live/vix9d_vix_max": "live term-structure entry gate — a journaled live break, by hand",
         "/live/daily_loss_halt_dollars": "live loss halt — hand-edit deliberately, not from this surface",
         "/live/account_deploy_limit_pct": "live risk cap — hand-edit deliberately, not from this surface",
     },
