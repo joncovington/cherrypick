@@ -266,7 +266,11 @@ def _claude_argv(exe: str, prompt: str, model: str | None) -> list[str]:
 def _parse_claude_output(stdout: str) -> tuple[str | None, str | None]:
     """(reply text, resolved model id). `--output-format json` wraps the reply in one object whose
     `result` is the text and whose `modelUsage` is keyed by the exact model id; an older CLI, or a
-    shim, may still print bare text, which is accepted as the reply with no id."""
+    shim, may still print bare text, which is accepted as the reply with no id.
+
+    `modelUsage` also carries the CLI's own housekeeping calls (Haiku, from 2026-10-06), which can
+    out-produce the answer in output tokens on a short reply, so the id is the entry that cost the
+    most."""
     text = (stdout or "").strip()
     if not text:
         return None, None
@@ -279,7 +283,11 @@ def _parse_claude_output(stdout: str) -> tuple[str | None, str | None]:
     reply = obj.get("result")
     reply = reply.strip() if isinstance(reply, str) else None
     usage = obj.get("modelUsage")
-    model_id = ",".join(sorted(usage)) if isinstance(usage, dict) and usage else None
+    model_id = (
+        max(usage, key=lambda m: float((usage[m] or {}).get("costUSD") or 0.0))
+        if isinstance(usage, dict) and usage
+        else None
+    )
     return (reply or None), model_id
 
 
