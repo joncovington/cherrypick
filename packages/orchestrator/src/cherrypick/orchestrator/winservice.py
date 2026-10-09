@@ -201,9 +201,11 @@ def undo_steps(service_exe: str, anchor_task: str) -> list[str]:
     ]
 
 
-def prepare(cfg: dict[str, Any], *, launcher: str, workdir: str, anchor_task: str) -> dict[str, Any]:
+def prepare(
+    cfg: dict[str, Any], *, launcher: str, workdir: str, anchor_task: str, platform: str | None = None
+) -> dict[str, Any]:
     s = settings(cfg)
-    if os.name != "nt":
+    if (platform or os.name) != "nt":
         return {"ok": False, "error": "Windows only; on Linux and macOS the cron anchor runs without a login"}
     if not s["enabled"]:
         return {
