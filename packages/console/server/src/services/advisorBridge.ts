@@ -1,3 +1,4 @@
+import { suitePython } from "@console/shared";
 import { spawnSync } from "node:child_process";
 
 /**
@@ -46,7 +47,7 @@ export interface AdvisorRun {
 
 function spawnCaller(op: AdvisorOp): AdvisorRun {
   try {
-    const out = spawnSync("python", argvFor(op), {
+    const out = spawnSync(suitePython(), argvFor(op), {
       encoding: "utf-8",
       timeout: 20_000,
       windowsHide: true,

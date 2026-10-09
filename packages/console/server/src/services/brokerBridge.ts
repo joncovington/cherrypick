@@ -12,6 +12,7 @@
  * failure is memoised too (shorter), so a broker outage costs one call a minute, not one a poll.
  * Never fatal: the tile degrades to the local figure and says why.
  */
+import { suitePython } from "@console/shared";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,7 +66,7 @@ function spawnPositions(): Promise<BrokerRead> {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn("python", [RUN_PY, "positions", "--json"], { windowsHide: true });
+      child = spawn(suitePython(), [RUN_PY, "positions", "--json"], { windowsHide: true });
     } catch (err) {
       resolve({ ok: false, account: null, error: `positions bridge failed: ${(err as Error).message}` });
       return;
