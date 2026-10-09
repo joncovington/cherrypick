@@ -119,7 +119,13 @@ from cherrypick.orchestrator import (
     positions as positions_mod,
 )
 from cherrypick.orchestrator import proc as _proc
-from cherrypick.orchestrator.util import CREATE_NO_WINDOW, NEW_SESSION, atomic_write_json, first_json
+from cherrypick.orchestrator.util import (
+    CREATE_NO_WINDOW,
+    NEW_SESSION,
+    atomic_write_json,
+    first_json,
+    port_owner_pid,
+)
 
 # The OS scheduler invokes the in-place launcher `pythonw <repo>/run.py <cmd>`. This module is
 # <repo>/src/cherrypick/cli.py, so the repo-root launcher is two parents up. (Renamed from
@@ -504,7 +510,10 @@ def _ensure_dolt(cfg) -> None:
     `dolt_service` keep-alive task. Decision is stdlib-only (socket reachability); remediation is a
     benign, non-trading subprocess start — it never touches the broker or a paper DB. Keeping the port
     occupied also stops a module runner from self-starting an empty Dolt in the wrong directory."""
+    from cherrypick.orchestrator import holds
+
     results = {}
+    held = holds.is_held(_proc.DOLT_DAEMON)
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         paper = mcfg.get("paper", {})
         svc = paper.get("dolt_service")
@@ -515,6 +524,10 @@ def _ensure_dolt(cfg) -> None:
         if watchdog._dolt_reachable(host, port):
             results[name] = {"ok": True, "detail": "already up"}
             continue
+        if held:
+            # Stopped on purpose (`run.py stop dolt-server`, or a restart's gap): not ours to undo.
+            results[name] = {"ok": True, "detail": f"held -- {holds.describe(_proc.DOLT_DAEMON, held)}"}
+            continue
         data_dir = _dolt_service_dir(svc)
         started = _start_dolt(data_dir)
         results[name] = {
@@ -522,6 +535,148 @@ def _ensure_dolt(cfg) -> None:
             "detail": f"started in {data_dir}" if started else f"start failed (missing dir? {data_dir})",
         }
     _emit({"ok": all(v["ok"] for v in results.values()) if results else True, "dolt": results})
+
+
+def _dolt_target(cfg) -> dict | None:
+    """The one Dolt sql-server the suite runs: the first enabled module declaring `dolt_service`
+    (every module that reads Dolt shares the one server and port)."""
+    for mcfg in cfgmod.enabled_modules(cfg).values():
+        paper = mcfg.get("paper", {})
+        if paper.get("dolt_service"):
+            return {
+                "data_dir": _dolt_service_dir(paper["dolt_service"]),
+                "host": paper.get("dolt_host", "127.0.0.1"),
+                "port": int(paper.get("dolt_port", 3306)),
+            }
+    return None
+
+
+def cmd_dolt_server(cfg, action: str) -> None:
+    """`dolt-server-status|start|stop`: the managed-daemon contract (`proc.daemons`) for the Dolt
+    sql-server, so `run.py status|start|stop|restart dolt-server` work like the streamer's -- and
+    under the Windows service go through the supervisor (`daemonreq`), the only process allowed to
+    stop a server it started from session 0 (2026-10-09). Status and start print one JSON object.
+
+    Stop ends the process LISTENING on the Dolt port, and only if that process is dolt: a guess is
+    never acted on (`util.port_owner_pid` returns None rather than one). Dolt's storage is journaled,
+    so a stop is what a crash would be, which it recovers from on start."""
+    target = _dolt_target(cfg)
+    if target is None:
+        _emit({"ok": False, "running": False, "error": "no enabled module declares a dolt_service"})
+        sys.exit(1)
+    host, port = target["host"], target["port"]
+    up = watchdog._dolt_reachable(host, port)
+    pid = port_owner_pid(port) if up else None
+    if action == "status":
+        _emit({"ok": True, "running": up, "pid": pid, "port": port, "data_dir": str(target["data_dir"])})
+        return
+    if action == "start":
+        if up:
+            _emit({"ok": True, "running": True, "pid": pid, "detail": "already running"})
+            return
+        started = _start_dolt(target["data_dir"])
+        _emit({"ok": started, "detail": "started" if started else f"start failed in {target['data_dir']}"})
+        sys.exit(0 if started else 1)
+    if not up:
+        _emit({"ok": True, "running": False, "detail": "not running"})
+        return
+    rec = _stop_dolt_pid(pid)
+    _emit(rec)
+    sys.exit(0 if rec["ok"] else 1)
+
+
+def _image_name(pid: int) -> str | None:
+    """A process's executable name, or None when it cannot be read (never a guess)."""
+    try:
+        import psutil  # type: ignore
+
+        return psutil.Process(pid).name()
+    except ImportError:
+        pass
+    except Exception:
+        return None
+    try:
+        if os.name == "nt":
+            r = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                creationflags=CREATE_NO_WINDOW,
+            )
+            first = (r.stdout or "").strip().splitlines()[:1]
+            name = first[0].split(",")[0].strip('"') if first and first[0].startswith('"') else ""
+            return name or None
+        comm = Path(f"/proc/{pid}/comm")
+        return comm.read_text().strip() if comm.exists() else None
+    except Exception:
+        return None
+
+
+def _stop_dolt_pid(pid: int | None, *, terminate=None, name_of=None) -> dict:
+    """End `pid` if it is a dolt process; refuse anything else, and an unknown owner."""
+    from cherrypick.orchestrator import supervisor as _sup
+
+    terminate = terminate or _sup._terminate_tree
+    name_of = name_of or _image_name
+    if pid is None:
+        return {
+            "ok": False,
+            "error": "the Dolt port is open but its owner could not be identified; nothing stopped",
+        }
+    name = (name_of(pid) or "").lower()
+    if not name.startswith("dolt"):
+        shown = name or "unreadable"
+        return {"ok": False, "error": f"pid {pid} on the Dolt port is {shown!r}, not dolt; nothing stopped"}
+    if not terminate(pid):
+        return {"ok": False, "error": f"could not stop dolt pid {pid}", "pid": pid}
+    return {"ok": True, "stopped_pid": pid}
+
+
+def dolt_sql_argv(target: dict, database: str, query: str) -> list[str]:
+    """A `dolt sql` that connects to the running server by address -- never by the
+    `.dolt/sql-server.info` file, which a bare `dolt` command reads and, on Windows, DELETES when the
+    server was started by the service: dolt's liveness check treats OpenProcess's Access Denied as a
+    dead process (dolt 2.4 `process_windows.go`), and without the file the CLI opens the clone
+    read-only while the server holds its lock (2026-10-09: every `dolt pull` failed)."""
+    return [
+        "dolt",
+        "--host",
+        str(target["host"]),
+        "--port",
+        str(target["port"]),
+        "--no-tls",
+        "-u",
+        "root",
+        "-p",
+        "",
+        "--use-db",
+        database,
+        "sql",
+        "-q",
+        query,
+    ]
+
+
+def cmd_dolt_sql(cfg, database: str | None, query: str | None) -> None:
+    """`run.py dolt-sql <database> --query "..."`: a query through the running server, the safe way
+    to look at the suite's Dolt clones by hand (`dolt_sql_argv` says why a bare `dolt` is not)."""
+    target = _dolt_target(cfg)
+    if target is None or not database or not query:
+        _emit(
+            {"ok": False, "error": 'usage: run.py dolt-sql <database> --query "<sql>" (needs a dolt_service)'}
+        )
+        sys.exit(2)
+    r = subprocess.run(
+        dolt_sql_argv(target, database, query),
+        capture_output=True,
+        text=True,
+        timeout=600,
+        creationflags=CREATE_NO_WINDOW,
+    )
+    sys.stdout.write(r.stdout)
+    sys.stderr.write(r.stderr)
+    sys.exit(r.returncode)
 
 
 # --------------------------------------------------------------------------- earnings runners
@@ -1683,6 +1838,10 @@ def build_parser() -> argparse.ArgumentParser:
             "stop",
             "start",
             "ensure-dolt",
+            "dolt-server-status",
+            "dolt-server-start",
+            "dolt-server-stop",
+            "dolt-sql",
             "notify-test",
             "notify-trades",
             "notify-desk",
@@ -1892,6 +2051,11 @@ def build_parser() -> argparse.ArgumentParser:
         "service id -- `ps` lists them. For service: prepare | status | uninstall",
     )
     parser.add_argument(
+        "--query",
+        default=None,
+        help="For dolt-sql: the SQL to run, through the running Dolt server (name the database as NAME)",
+    )
+    parser.add_argument(
         "--direct",
         action="store_true",
         help="For restart/stop/start of a daemon: act from this process even under the Windows service "
@@ -1988,6 +2152,10 @@ def main() -> None:
         "stop": lambda: cmd_stop(cfg, args.name, everything=args.all, direct=args.direct, result=args.result),
         "start": lambda: cmd_start(cfg, args.name, direct=args.direct, result=args.result),
         "ensure-dolt": lambda: _ensure_dolt(cfg),
+        "dolt-server-status": lambda: cmd_dolt_server(cfg, "status"),
+        "dolt-server-start": lambda: cmd_dolt_server(cfg, "start"),
+        "dolt-server-stop": lambda: cmd_dolt_server(cfg, "stop"),
+        "dolt-sql": lambda: cmd_dolt_sql(cfg, args.name, args.query),
         "notify-test": lambda: cmd_notify_test(cfg),
         "secrets-set": lambda: cmd_secrets_set(args.channel, args.url),
         "secrets-status": lambda: cmd_secrets_status(),
