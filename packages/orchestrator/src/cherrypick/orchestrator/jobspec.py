@@ -157,6 +157,24 @@ ADVISOR_LIGHT_SLOTS = ("open", "am1", "am2", "midday", "pm1", "pm2", "close")
 # The browser-driven collectors: one browser session on this machine at a time.
 BROWSER_SCRIPTS = frozenset({"fetch_vendor_edition.py", "fetch_quikoptions.py"})
 
+# Fixed-time jobs that send their OWN alert when they fail (2026-10-08). The watchdog's generic
+# failed-job check skips their failures so one fault is one message; a MISSED run is still reported
+# for them, since a job that never started cannot say anything.
+NOTIFIES_OWN_FAILURE = frozenset(
+    {
+        "suite-backup",  # "Nightly backup FAILED"
+        "market-files",  # "Market files incomplete"
+        "market-files-retry",
+        "report-edition",  # the vendor collector's own warnings
+        "report-edition-retry",
+        "report-charts",
+        "quikoptions-capture",  # its own throttle / needs-a-person warnings
+        "review-provisional",  # "Suite review (...) failed"
+        "review-final",
+        "reconcile",  # its scheduled run pushes every non-FLAT verdict; the exit code is the verdict
+    }
+)
+
 # Fixed-time jobs that may run again after a failure, inside their catch-up window: fetchers that
 # are safe to repeat (each writes per-day files, or replaces the day it already wrote). The vendor
 # collector is deliberately absent -- its own cooldown decides when it may try again.

@@ -2233,6 +2233,82 @@ def _check_live_positions(in_session: bool) -> list[Finding]:
     return []
 
 
+# A daily or monthly job's failure or miss stays news for a day; after that the next scheduled run
+# is the one to judge.
+_FIXED_JOB_LOOKBACK_SECONDS = 24 * 3600
+
+
+def _fixed_time_job_findings(jobs: dict[str, dict[str, Any]], now: datetime) -> list[Finding]:
+    """Daily and monthly jobs that FAILED (non-zero exit, no retry left) or were MISSED (their window
+    closed before they could start) in the last day. Pure over the registry rows.
+
+    The supervisor has always recorded both and told no one (2026-10-08): a nightly fetch could fail
+    or never run for days with only the console's job table to show it. A failure with a retry still
+    pending (`RETRY_ON_FAILURE` cleared its fire stamp) is not news yet; a job that alerts on its own
+    failure (`jobspec.NOTIFIES_OWN_FAILURE`) is not repeated; a stop someone asked for is not a failure."""
+    now_utc = now.astimezone(timezone.utc)
+
+    def recent(stamp) -> bool:
+        try:
+            at = datetime.fromisoformat(str(stamp))
+        except (TypeError, ValueError):
+            return False
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=timezone.utc)
+        return 0 <= (now_utc - at).total_seconds() <= _FIXED_JOB_LOOKBACK_SECONDS
+
+    missed, failed = [], []
+    for jid, st in sorted(jobs.items()):
+        if st.get("kind") not in (jobspec.KIND_DAILY, jobspec.KIND_MONTHLY) or not st.get("enabled", True):
+            continue
+        if st.get("held") or st.get("running_pid"):
+            continue
+        if st.get("missed") and recent(st["missed"]):
+            missed.append(jid)
+            continue
+        code = st.get("last_exit_code")
+        retry_pending = not (st.get("last_fire_day") or st.get("last_fire_month"))
+        if (
+            code not in (0, None)
+            and not st.get("last_exit_requested")
+            and not retry_pending
+            and jid not in jobspec.NOTIFIES_OWN_FAILURE
+            and recent(st.get("last_exit_at"))
+        ):
+            said = (str(st.get("last_error") or "").strip().splitlines() or [""])[-1][:120]
+            failed.append(f"{jid} (exit {code}{': ' + said if said else ''})")
+    # One finding per kind, not per job: after an outage every window of the day closes at once, and
+    # twenty-six separate warnings bury the one that matters.
+    findings = []
+    if failed:
+        findings.append(
+            Finding(
+                "jobs.failed",
+                WARN,
+                f"{len(failed)} scheduled job(s) failed",
+                "; ".join(failed) + ". `run.py ps` shows each job; logs/supervisor.log has the runs.",
+            )
+        )
+    if missed:
+        findings.append(
+            Finding(
+                "jobs.missed",
+                WARN,
+                f"{len(missed)} scheduled job(s) did not run",
+                ", ".join(missed) + " -- each window closed before the job could start (machine off, "
+                "network down, or held). Today's output of each is missing; run one by hand where it "
+                "matters.",
+            )
+        )
+    return findings
+
+
+def _check_fixed_time_jobs(now: datetime) -> list[Finding]:
+    from . import supersnap
+
+    return _fixed_time_job_findings(supersnap.all_job_states(), now)
+
+
 def _check_holds() -> list[Finding]:
     """Everything stopped on purpose (`run.py stop`). Listed at OK -- a stop someone asked for is not
     news, and alarming on it is what this replaced -- until it outlives `_HOLD_FORGOTTEN_HOURS`, when
@@ -2600,6 +2676,7 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     findings += _check_services(cfg)
     findings += _check_holds()
     findings += _check_live_positions(in_session)
+    findings += _check_fixed_time_jobs(now)
     try:
         findings += _check_duplicate_processes(cfg)
     except Exception as exc:
