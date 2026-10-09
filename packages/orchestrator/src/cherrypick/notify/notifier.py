@@ -28,6 +28,7 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -286,6 +287,29 @@ def verify_message(entry: dict[str, Any], opener=None) -> str:
         return f"unknown: {type(exc).__name__}"
 
 
+def _applescript_str(text: str) -> str:
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def desktop_argv(platform: str, level: str, title: str, message: str, which) -> list[str] | None:
+    """The desktop-notification command off Windows, or None when this host has none (pure; `which`
+    is `shutil.which`, faked in tests). Added in the 2026-10-08 OS audit: the channel was Windows-only,
+    so on a Mac or a Linux desktop it was silently skipped.
+
+    - macOS: `osascript -e 'display notification ...'` (always present). Strings go in as AppleScript
+      literals, in an argv list, so nothing reaches a shell.
+    - Linux: `notify-send` (libnotify), with CRITICAL urgency for WARN/CRITICAL so it stays up. It
+      needs the session bus, which the cron lines carry.
+    """
+    if platform == "darwin":
+        script = f"display notification {_applescript_str(message)} with title {_applescript_str(title)}"
+        return ["osascript", "-e", script]
+    if platform.startswith("linux") and which("notify-send"):
+        urgency = "critical" if level in ("WARN", "CRITICAL") else "normal"
+        return ["notify-send", "-u", urgency, title, message]
+    return None
+
+
 class Notifier:
     def __init__(self, notify_cfg: dict[str, Any] | None = None):
         cfg = notify_cfg or {}
@@ -336,7 +360,14 @@ class Notifier:
     # -- push channels (best-effort) -----------------------------------------------
     def _push_desktop(self, level: str, title: str, message: str) -> dict[str, Any]:
         if os.name != "nt":
-            return {"ok": False, "skipped": "desktop notifications are Windows-only"}
+            argv = desktop_argv(sys.platform, level, f"{self.app_name}: {title}", message, shutil.which)
+            if argv is None:
+                return {"ok": False, "skipped": f"no desktop notifier on {sys.platform} (notify-send?)"}
+            try:
+                subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0)
+                return {"ok": True}
+            except Exception as exc:  # never let a push failure escape
+                return {"ok": False, "error": str(exc)}
         icon = "Warning" if level in ("WARN", "CRITICAL") else "Info"
         safe_title = f"{self.app_name}: {title}"
         ps = (
