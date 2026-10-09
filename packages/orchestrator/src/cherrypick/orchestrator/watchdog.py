@@ -31,7 +31,7 @@ from cherrypick.notify import Notifier
 from . import config as cfgmod
 from . import eval_activity, jobspec, servicecfg, tasks, timeutil, util
 from . import holds as _holds
-from .util import CREATE_NO_WINDOW, first_json
+from .util import CREATE_NO_WINDOW, NEW_SESSION, first_json
 
 _WATCHDOG_LOG = cfgmod.LOGS_DIR / "watchdog.log"
 _STATE_FILE = cfgmod.STATE_DIR / "watchdog_state.json"
@@ -557,6 +557,7 @@ def _start_streamer(module_root: Path, start_argv: list[str]) -> bool:
             stderr=subprocess.DEVNULL,
             creationflags=flags,
             close_fds=True,
+            start_new_session=NEW_SESSION,  # POSIX: out of the caller's process group
         )
         return True
     except Exception:

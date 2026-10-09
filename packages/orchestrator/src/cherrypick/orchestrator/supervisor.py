@@ -47,7 +47,15 @@ from cherrypick.core import looplock as _looplock
 from . import config as cfgmod
 from . import holds as _holds
 from . import jobspec, timeutil
-from .util import CREATE_NO_WINDOW, atomic_write_json, pid_alive, port_owner_pid, read_json, rotate_if_large
+from .util import (
+    CREATE_NO_WINDOW,
+    NEW_SESSION,
+    atomic_write_json,
+    pid_alive,
+    port_owner_pid,
+    read_json,
+    rotate_if_large,
+)
 
 HEARTBEAT_FILE = "supervisor.last.json"
 JOBS_FILE = "supervisor-jobs.json"
@@ -387,7 +395,15 @@ def _terminate_tree(pid: int) -> bool:
                 timeout=15,
             )
             return True
-        os.killpg(os.getpgid(pid), 15)
+        # POSIX without psutil: signal the child's process group -- but only when the child LEADS
+        # it (spawned with NEW_SESSION). A child still in the supervisor's own group (an adopted
+        # orphan from an older supervisor, or a daemon some other path started) gets a plain kill
+        # instead: killpg there would end the supervisor and every sibling job (2026-10-08 OS audit).
+        pgid = os.getpgid(pid)
+        if pgid == pid and pgid != os.getpgrp():
+            os.killpg(pgid, 15)
+        else:
+            os.kill(pid, 15)
         return True
     except (OSError, SystemError, subprocess.SubprocessError):
         return False
@@ -754,6 +770,8 @@ class Supervisor:
                 stdout=subprocess.DEVNULL,
                 stderr=err,
                 creationflags=CREATE_NO_WINDOW,
+                # POSIX: its own process group, so a tree kill of this child is a kill of this child.
+                start_new_session=NEW_SESSION,
             )
         except OSError as exc:
             self._record_exit(spec, st, -1)
