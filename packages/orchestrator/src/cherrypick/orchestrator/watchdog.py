@@ -2520,6 +2520,25 @@ def _delivery_findings(cfg_channels: list[str], sent: list[dict[str, Any]], webh
     return findings
 
 
+def _check_config_health() -> list[Finding]:
+    """CRITICAL while `config.json` cannot be parsed: the suite is running on the last good copy, so
+    no edit made since then is in effect -- including the one that broke it (2026-10-08 audit)."""
+    marker = util.read_json(cfgmod.broken_marker_path(), default=None)
+    if not marker:
+        return []
+    return [
+        Finding(
+            "config.unreadable",
+            CRITICAL,
+            "config.json is unreadable -- running on the last good copy",
+            f"{marker.get('path')}: {marker.get('error')} (noticed {marker.get('noticed_at')}). Every job "
+            f"is using {marker.get('running_on')}, so changes since it was saved are NOT in effect. "
+            "Fix the file (`run.py config-backup` keeps history if enabled); the warning clears on the "
+            "first good read.",
+        )
+    ]
+
+
 def _check_notify_delivery(cfg: dict[str, Any]) -> list[Finding]:
     from cherrypick.notify import notifier as _notifier
     from cherrypick.notify import secrets as _secrets
@@ -2743,6 +2762,7 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     findings += _check_live_positions(in_session)
     findings += _check_fixed_time_jobs(now)
     findings += _check_notify_delivery(cfg)
+    findings += _check_config_health()
     try:
         findings += _check_duplicate_processes(cfg)
     except Exception as exc:
