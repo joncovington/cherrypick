@@ -38,6 +38,7 @@ def enter_position(
     experiment_id: str | dict | None = None,
     position_id_override: str | None = None,
     extra: dict | None = None,
+    implied: dict | None = None,
 ) -> dict | None:
     """Open one arm's base BWB from a plan. Idempotent per position_id.
 
@@ -58,6 +59,8 @@ def enter_position(
     db.save_position(
         conn,
         {
+            # Recording only (2026-10-09): the expiration's implied variance at this instant.
+            **{c: v for c, v in (implied or {}).items() if c.startswith("entry_iv_")},
             "position_id": pid,
             "symbol": plan["symbol"],
             "arm": arm,

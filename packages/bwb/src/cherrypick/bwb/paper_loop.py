@@ -32,7 +32,7 @@ from cherrypick.core import looplock
 
 from cherrypick.bwb import book as bookmod
 from cherrypick.bwb import cli as climod
-from cherrypick.bwb import clock, db, engine, management, provider, stream_request
+from cherrypick.bwb import clock, db, engine, entry_iv, management, provider, stream_request
 
 RTH_OPEN_MIN = 9 * 60 + 30
 RTH_CLOSE_MIN = 16 * 60
@@ -282,6 +282,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
     planned = engine.plan_entry(snapshot, base_params)
     plans: dict[str, dict] = {}
     wall_reading: dict | None = None
+    implied_by_exp: dict[str, dict] = {}  # entry_iv readings, one per expiration this tick
     for b in wanting:
         if b == "wall":
             # The wall comes off the SAME reading the flip trigger uses — one compute, one basis —
@@ -338,6 +339,15 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             )
             continue
         plan = result["plan"]
+        if plan["expiration"] not in implied_by_exp:  # one cache read per expiration per tick
+            implied_by_exp[plan["expiration"]] = entry_iv.measure(
+                cache_path,
+                symbol,
+                root,
+                plan["expiration"],
+                rate=float(defaults.get("risk_free_rate", entry_iv.DEFAULT_RATE)),
+                max_age_seconds=defaults.get("max_quote_age_seconds", 300),
+            )
         opened = bookmod.enter_position(
             conn,
             plan,
@@ -346,6 +356,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             entry_session=day,
             advice_params=(advised.get(b) or {}).get("params"),
             experiment_id=decision,
+            implied=implied_by_exp[plan["expiration"]],
         )
         if opened is None:
             continue
