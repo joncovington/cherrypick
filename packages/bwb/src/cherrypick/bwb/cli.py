@@ -8,6 +8,7 @@ Subcommands (all read-only):
     headline    per-arm results through the analytics layer
     replay      the read-side threshold replay over bwb_trigger_ticks (see replay.py)
     addon-replay  the add-on scored as its own trade, with no fly (see addon_replay.py)
+    iv-premium  implied vol at entry against realised vol to expiry, per window (see iv_premium.py)
 
 The paper loop's own argv (`python -m cherrypick.bwb.paper_loop --once|--interval|--settle|
 --status`) is what the orchestrator drives; this CLI is the human read side.
@@ -108,6 +109,17 @@ def cmd_addon_replay(args) -> int:
     return 0
 
 
+def cmd_iv_premium(args) -> int:
+    from cherrypick.bwb import db, iv_premium
+
+    conn = db.connect(args.db)
+    result = iv_premium.run(conn, sample_seconds=args.sample_seconds)
+    if not args.windows:
+        result.pop("windows")
+    print(json.dumps({"ok": True, **result}, indent=2, default=str))
+    return 0
+
+
 def addon_missed_plan(conn, position_ids: list[str]) -> list[dict]:
     """For each named position, whether it can be marked missed and why not. Pure over the ledger."""
     out = []
@@ -193,6 +205,10 @@ def main(argv=None) -> int:
     p_addon = sub.add_parser("addon-replay", help="the add-on scored as its own trade, with no fly")
     p_addon.add_argument("--trades", action="store_true", help="include every trade, not just the totals")
     p_addon.set_defaults(func=cmd_addon_replay)
+    p_ivp = sub.add_parser("iv-premium", help="implied vol at entry against realised vol to expiry")
+    p_ivp.add_argument("--windows", action="store_true", help="include every window, not just the summary")
+    p_ivp.add_argument("--sample-seconds", dest="sample_seconds", type=float, default=300)
+    p_ivp.set_defaults(func=cmd_iv_premium)
 
     args = ap.parse_args(argv)
     return args.func(args)

@@ -209,6 +209,7 @@ Built to test whether the paper result survives a fill without disturbing the pa
 | `book.py` | decisions -> ledger rows; add-on legs; cash settlement. |
 | `paper_loop.py` | entry tick, 60s trigger/mark loop, expiry settle. |
 | `entry_iv.py` | the expiration's model-free implied variance (`cherrypick.core.impliedvar`), read from the cache at entry and stored on the position row (`entry_iv_*`). Recording only; a cut-off strip is `entry_iv_complete = 0`, a lower bound; a reading not taken stores its reason and no number. |
+| `iv_premium.py` | read-side: implied at entry against realised to expiry from the position's own spot marks (5-min samples, ending on the settlement print), one row per (entry session, expiration) window, arms counted once. A path that starts late, ends early or has an in-session hole over 15 min is refused, never estimated (`bwb iv-premium`). |
 | `analytics.py` | the one query layer: nets, fire counts, trigger-tick coverage. |
 | `replay.py` | read-side threshold replay over `bwb_trigger_ticks` — a stubbed fast-follow. |
 | `addon_replay.py` | the add-on scored as its own trade (`bwb addon-replay`). |
@@ -226,6 +227,7 @@ python -m cherrypick.bwb.paper_loop --interval 60 # the in-session resident loop
 python -m cherrypick.bwb.paper_loop --status      # one JSON health object (watchdog contract)
 python -m cherrypick.bwb.paper_loop --settle --date 2026-09-18 --price 6400.10  # official print
 python run.py status | worksheet | fires          # positions + expiration / worksheet / fire counts
+python run.py iv-premium [--windows]            # implied at entry vs realised to expiry, per window
 python -m pytest                                  # temp CHERRYPICK_HOME; no broker, no streamer
 ruff check . && ruff format .                     # line-length 110
 
