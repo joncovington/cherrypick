@@ -580,3 +580,49 @@ def test_reparse_never_replaces_a_saved_day_and_keeps_a_still_failing_reject(tmp
     _reject(folder, "2026-10-02", report(mixed_premium=""))  # still fails: premium did not read
     assert fq.cmd_reparse(type("A", (), {"session": None})()) == 1
     assert (folder / "2026-10-02.rejected.html").exists() and not (folder / "2026-10-02.json").exists()
+
+
+class _FakeBrowser:
+    version = "151.0.7922.34"
+
+    def close(self):
+        pass
+
+
+class _FakeChromium:
+    def __init__(self):
+        self.persistent: dict = {}
+        self.launches: list[dict] = []
+
+    def launch(self, **kw):
+        self.launches.append(kw)
+        return _FakeBrowser()
+
+    def launch_persistent_context(self, profile, **kw):
+        self.persistent = kw
+        return object()
+
+
+class _FakePlaywright:
+    def __init__(self):
+        self.chromium = _FakeChromium()
+
+
+def test_headless_presents_as_the_headed_chrome_it_is(tmp_path, monkeypatch):
+    """2026-10-08: the scheduled capture went headless. Headless Chrome announces itself in its
+    user-agent; this one sends the regular Chrome user-agent of the installed version instead, so a
+    site that began refusing headless browsers would not refuse it for that word alone."""
+    monkeypatch.setattr(fq, "store_dir", lambda: tmp_path)
+    pw = _FakePlaywright()
+    fq._open_browser(pw, headed=False)
+    ua = pw.chromium.persistent["user_agent"]
+    assert "Headless" not in ua and "Chrome/151.0.0.0 " in ua
+    assert pw.chromium.persistent["headless"] is True
+    assert pw.chromium.launches == [{"channel": "chrome", "headless": True}]  # the INSTALLED Chrome's version
+
+
+def test_a_headed_run_leaves_the_user_agent_alone(tmp_path, monkeypatch):
+    monkeypatch.setattr(fq, "store_dir", lambda: tmp_path)
+    pw = _FakePlaywright()
+    fq._open_browser(pw, headed=True)
+    assert "user_agent" not in pw.chromium.persistent and pw.chromium.launches == []

@@ -559,7 +559,9 @@ def quikoptions_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "enabled": enabled,
         "at": q.get("at", "16:30"),
         "jitter_minutes": int(q.get("jitter_minutes", 10)),
-        "headed": bool(q.get("headed", True)),
+        # Headless unless asked (decided 2026-10-08): a window opening on the desktop is disruptive,
+        # and the visible browser is for a session a person is watching for errors.
+        "headed": bool(q.get("headed", False)),
         "score_at": q.get("score_at", "16:50"),
         "confirm_at": q.get("confirm_at", "08:30"),
         "post": enabled and bool(q.get("post", False)),

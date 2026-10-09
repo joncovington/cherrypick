@@ -1191,7 +1191,9 @@ def test_quikoptions_jobs_run_the_suite_scripts_with_the_configured_capture():
     assert capture.argv[1].replace("\\", "/").endswith("scripts/fetch_quikoptions.py")
     assert capture.argv[2:] == ("hot-options", "--jitter", "5", "--headless")
     assert capture.at_et == "16:40"
-    assert "--headless" not in _qo(enabled=True)["quikoptions-capture"].argv
+    # Headless unless asked (2026-10-08): the default passes --headless; headed=true is the opt-in.
+    assert "--headless" in _qo(enabled=True)["quikoptions-capture"].argv
+    assert "--headless" not in _qo(enabled=True, headed=True)["quikoptions-capture"].argv
     assert by_id["quikoptions-score"].argv[1].endswith("quikoptions_flow.py")
     assert by_id["quikoptions-confirm"].argv[2:] == ("confirm",)
     assert by_id["quikoptions-post"].argv[1].endswith("quikoptions_post.py")

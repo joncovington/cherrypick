@@ -130,9 +130,10 @@ attributes say: the full company name, the call/put badge, and the side tooltip.
 - The session date the page states is the session being saved, and every table is present and
   non-empty.
 
-**Browser mode.** Headed real Chrome is the most faithful presentation; a window opening on the
-desktop at 16:30 is the cost. The default is headed with the window started minimised; a config
-switch drops to headless with the matching Chrome user-agent, the vendor collector's mode.
+**Browser mode.** Headless with the matching Chrome user-agent (the vendor collector's mode) by
+default since 2026-10-08: a window opening on the desktop is disruptive, and nothing showed the site
+treating headless differently. `headed: true` runs it visibly, for a session someone is watching for
+errors; a hand-run `hot-options` is visible unless given `--headless`.
 
 ## Phase 2 — the calendar check
 
@@ -409,8 +410,6 @@ saved captures when they are on the machine, and skip elsewhere.
 
 - Is Playwright a declared dependency anywhere, or only installed by hand for the vendor collector?
   It should be declared once, for both scripts.
-- Headed (minimised) or headless by default, once the probe shows whether the site treats them
-  differently.
 - Whether the side markers (price dots, spread sign) are readable — if so, a later decision on
   whether this feeds the market report's section 7 as a partial, free stand-in, labelled as such.
 - A weekly week-ahead post to the channel (our calendar, with any disagreement marked)? Not in the
