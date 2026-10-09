@@ -132,6 +132,31 @@ def test_find_listening_pid_returns_none_when_nothing_matches(monkeypatch):
     assert cli._find_listening_pid(5070) is None
 
 
-def test_find_listening_pid_is_a_noop_off_windows(monkeypatch):
+def test_find_listening_pid_off_windows_asks_the_suite_probe(monkeypatch):
+    # 2026-10-08 OS audit: it returned None off Windows; now /proc (Linux) or lsof (macOS).
+    from cherrypick.orchestrator import util
+
     monkeypatch.setattr(cli.os, "name", "posix")
-    assert cli._find_listening_pid(5070) is None
+    monkeypatch.setattr(util, "port_owner_pid", lambda port: 4321 if port == 5070 else None)
+    assert cli._find_listening_pid(5070) == 4321
+    assert cli._find_listening_pid(5071) is None
+
+
+def test_market_clock_is_set_on_posix_only_when_no_zone_was_chosen(monkeypatch):
+    monkeypatch.setattr(cli.os, "name", "posix")
+    env: dict[str, str] = {}
+    assert cli._market_clock_on_posix(env) is True and env["TZ"] == "America/New_York"
+    chosen = {"TZ": "Europe/London"}
+    assert cli._market_clock_on_posix(chosen) is False and chosen["TZ"] == "Europe/London"
+    monkeypatch.setattr(cli.os, "name", "nt")
+    untouched: dict[str, str] = {}
+    assert cli._market_clock_on_posix(untouched) is False and untouched == {}
+
+
+def test_main_puts_the_process_on_the_market_clock(monkeypatch):
+    seen = []
+    monkeypatch.setattr(cli, "_market_clock_on_posix", lambda environ=None: seen.append(True) or True)
+    monkeypatch.setattr(cli.sys, "argv", ["run.py", "--help"])
+    with pytest.raises(SystemExit):
+        cli.main()
+    assert seen == [True]

@@ -1207,6 +1207,7 @@ def _spawn_first_tick() -> None:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         creationflags=flags,
+        start_new_session=(os.name != "nt"),  # POSIX: out of the arming caller's group
     )
 
 

@@ -8,6 +8,7 @@ signals a group only when the child leads it.
 
 from __future__ import annotations
 
+import os
 import sys
 
 import pytest
@@ -85,3 +86,26 @@ def test_a_supervised_job_spawns_in_its_own_session(monkeypatch, tmp_path):
 
 def test_new_session_is_off_on_windows_and_on_elsewhere():
     assert util.NEW_SESSION is (util.os.name != "nt")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the resource module is POSIX-only")
+def test_rss_reads_macos_maxrss_as_bytes_and_linux_proc_as_current(monkeypatch):
+    import builtins
+    import resource
+
+    class Usage:
+        ru_maxrss = 200 * 1024 * 1024  # bytes on macOS
+
+    real_open = builtins.open
+
+    def no_proc(path, *a, **k):
+        if str(path).startswith("/proc/"):
+            raise OSError("no /proc")
+        return real_open(path, *a, **k)
+
+    monkeypatch.setattr(builtins, "open", no_proc)
+    monkeypatch.setattr(resource, "getrusage", lambda who: Usage())
+    monkeypatch.setattr(supervisor.sys, "platform", "darwin")
+    assert supervisor._rss_mb() == 200.0
+    monkeypatch.setattr(supervisor.sys, "platform", "linux")
+    assert supervisor._rss_mb() == 200.0 * 1024  # Linux KB, when /proc is unreadable
