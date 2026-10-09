@@ -70,3 +70,26 @@ def test_success_resets_the_streak_and_the_notice(probe):
     for _ in range(3):
         cli.cmd_ensure_supervisor({})
     assert len(probe["notifier"].sent) == 2  # a NEW streak earns a new escalation
+
+
+def test_a_wedged_supervisor_is_ended_alone_then_replaced_and_announced(probe, monkeypatch):
+    # 2026-10-08 audit: alive but not beating, it held the lock and every restart refused.
+    from cherrypick.orchestrator import supervisor
+
+    ended = []
+    monkeypatch.setattr(supersnap, "wedged_supervisor_pid", lambda hb, **kw: 4242)
+    monkeypatch.setattr(supervisor, "_terminate_pid", lambda pid: ended.append(pid) or True)
+    monkeypatch.setattr("cherrypick.core.looplock.pid_alive", lambda pid: False)
+    cli.cmd_ensure_supervisor({})
+    assert ended == [4242] and probe["spawns"] == 1
+    assert any("hung" in str(n) for n in probe["notifier"].sent)
+
+
+def test_a_supervisor_that_is_merely_down_is_never_terminated(probe, monkeypatch):
+    from cherrypick.orchestrator import supervisor
+
+    ended = []
+    monkeypatch.setattr(supersnap, "wedged_supervisor_pid", lambda hb, **kw: None)
+    monkeypatch.setattr(supervisor, "_terminate_pid", lambda pid: ended.append(pid) or True)
+    cli.cmd_ensure_supervisor({})
+    assert ended == [] and probe["spawns"] == 1

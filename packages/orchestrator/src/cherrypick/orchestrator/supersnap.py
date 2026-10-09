@@ -41,6 +41,36 @@ def supervisor_alive(hb: dict[str, Any] | None = None) -> bool:
     return pid_alive((hb or {}).get("pid"))
 
 
+# A live supervisor whose heartbeat is this old is wedged, not slow: a pass writes it every few
+# seconds, and a long job runs in its own process.
+WEDGED_SECONDS = 600
+
+
+def wedged_supervisor_pid(hb: dict[str, Any] | None, *, start_time_fn, alive_fn, now=None) -> int | None:
+    """The PID of a supervisor that is alive but has stopped beating (2026-10-08 audit), or None.
+
+    A wedged one holds the lock, so every restart the anchor tries refuses ("already running") and
+    the suite stays down with the process sitting there. Returned only when the PID is PROVABLY the
+    process that wrote the heartbeat: created at most 120 s before the heartbeat's `started_at` and
+    never after it -- Windows reuses PIDs (2026-09-13, the lock PID came back as NordVPN.exe), and a
+    reused one was created after. An unknown creation time is not proof; None then."""
+    from datetime import datetime
+
+    if not hb or not hb.get("pid") or not alive_fn(hb["pid"]):
+        return None
+    age = heartbeat_age_seconds(hb)
+    if age is None or age < WEDGED_SECONDS:
+        return None
+    try:
+        started = datetime.fromisoformat(str(hb.get("started_at"))).timestamp()
+    except (TypeError, ValueError):
+        return None
+    created = start_time_fn(hb["pid"])
+    if created is None or not (started - 120 <= created <= started + 2):
+        return None
+    return int(hb["pid"])
+
+
 def supervisor_snapshot(cfg: dict[str, Any] | None = None, *, query_anchor: bool = True) -> dict[str, Any]:
     """Everything a status surface needs: daemon liveness, the anchor task's OS-truth, the per-job
     registry, and any derivation errors. `query_anchor=False` skips the one schtasks spawn for

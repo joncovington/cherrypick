@@ -1035,6 +1035,38 @@ def cmd_ensure_supervisor(cfg) -> None:
         _emit({"ok": True, "detail": "supervisor running"})
         return
 
+    # Alive but not beating: it holds the lock, so a fresh start would refuse forever. End that one
+    # process -- never its children, which the new supervisor adopts (a live tick may be mid-order)
+    # -- and say so (2026-10-08 audit).
+    import time
+
+    from cherrypick.core import looplock as _looplock
+
+    from cherrypick.orchestrator.util import read_json
+
+    hb = read_json(supervisor.heartbeat_path())
+    wedged = supersnap.wedged_supervisor_pid(
+        hb, start_time_fn=_looplock.process_start_time, alive_fn=_looplock.pid_alive
+    )
+    if wedged is not None:
+        supervisor._terminate_pid(wedged)
+        for _ in range(20):
+            if not _looplock.pid_alive(wedged):
+                break
+            time.sleep(0.5)
+        try:
+            Notifier(cfg.get("notify")).notify(
+                "WARNING",
+                "supervisor.wedged",
+                "Supervisor was hung -- restarted",
+                f"pid {wedged} was alive with a heartbeat {supersnap.heartbeat_age_seconds(hb) or 0:.0f} s "
+                "old, holding the lock so no restart could take it. Ended that process alone (its "
+                "jobs keep running and are adopted) and started a new supervisor. logs/supervisor.log "
+                "and logs/supervisor-fault.log may say why it stopped.",
+            )
+        except Exception:
+            pass
+
     started = _spawn_supervisor_detached()
     failures = int(state.get("failures") or 0) + 1
     notified = bool(state.get("notified"))
