@@ -17,7 +17,7 @@ import os
 import socket
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -52,6 +52,9 @@ class Finding:
     status: str
     title: str
     message: str
+    # For a finding that lists incidents (failed or missed jobs): one id per incident. It is
+    # re-announced only when a new one joins, never on the clock while the list just shrinks.
+    members: tuple[str, ...] = field(default=())
 
 
 # --------------------------------------------------------------------------- helpers
@@ -2301,7 +2304,7 @@ def _fixed_time_job_findings(jobs: dict[str, dict[str, Any]], now: datetime) -> 
             at = at.replace(tzinfo=timezone.utc)
         return 0 <= (now_utc - at).total_seconds() <= _FIXED_JOB_LOOKBACK_SECONDS
 
-    missed, failed = [], []
+    missed, failed, missed_ids, failed_ids = [], [], [], []
     for jid, st in sorted(jobs.items()):
         if st.get("kind") not in (jobspec.KIND_DAILY, jobspec.KIND_MONTHLY) or not st.get("enabled", True):
             continue
@@ -2309,6 +2312,7 @@ def _fixed_time_job_findings(jobs: dict[str, dict[str, Any]], now: datetime) -> 
             continue
         if st.get("missed") and recent(st["missed"]):
             missed.append(jid)
+            missed_ids.append(f"{jid}@{st['missed']}")
             continue
         code = st.get("last_exit_code")
         retry_pending = not (st.get("last_fire_day") or st.get("last_fire_month"))
@@ -2321,8 +2325,11 @@ def _fixed_time_job_findings(jobs: dict[str, dict[str, Any]], now: datetime) -> 
         ):
             said = (str(st.get("last_error") or "").strip().splitlines() or [""])[-1][:120]
             failed.append(f"{jid} (exit {code}{': ' + said if said else ''})")
+            failed_ids.append(f"{jid}@{st.get('last_exit_at')}")
     # One finding per kind, not per job: after an outage every window of the day closes at once, and
     # twenty-six separate warnings bury the one that matters.
+    # An empty list is an OK finding, not no finding: that is what lets the notifier say "cleared"
+    # once, instead of leaving the warning's state behind with nothing ever announcing the end.
     findings = []
     if failed:
         findings.append(
@@ -2331,8 +2338,11 @@ def _fixed_time_job_findings(jobs: dict[str, dict[str, Any]], now: datetime) -> 
                 WARN,
                 f"{len(failed)} scheduled job(s) failed",
                 _first_few(failed, sep="; ") + ". logs/supervisor.log has the runs.",
+                members=tuple(failed_ids),
             )
         )
+    else:
+        findings.append(Finding("jobs.failed", OK, "Scheduled job failures", "none in the last day"))
     if missed:
         findings.append(
             Finding(
@@ -2341,8 +2351,11 @@ def _fixed_time_job_findings(jobs: dict[str, dict[str, Any]], now: datetime) -> 
                 f"{len(missed)} scheduled job(s) did not run",
                 f"{_first_few(missed)}. Their windows closed before they could start (machine off, "
                 "network down, or held); `run.py ps` lists them.",
+                members=tuple(missed_ids),
             )
         )
+    else:
+        findings.append(Finding("jobs.missed", OK, "Missed scheduled jobs", "none in the last day"))
     return findings
 
 
@@ -2649,6 +2662,14 @@ def _process_notifications(
                 except ValueError:
                     elapsed_ok = True
             changed = (prev is None) or (prev.get("status") != f.status)
+            told = set((prev or {}).get("members_told") or ())
+            if f.members and prev and prev.get("last_notified") and "members_told" not in prev:
+                told = set(f.members)  # state saved before members existed: already announced
+            if f.members:
+                # A list of incidents (2026-10-09): re-announced when one joins, never on the clock.
+                # After an outage the list only shrinks through the day as jobs run again, and an
+                # hourly repost of the shrinking list read as a new problem each time.
+                elapsed_ok = bool(set(f.members) - told) or not (prev and prev.get("last_notified"))
             if changed or elapsed_ok:
                 sent = _delivered(notifier.notify(f.status, f.key, f.title, f.message))
                 # Stamped as notified only when a push landed (2026-10-08): a failed one is tried
@@ -2658,8 +2679,12 @@ def _process_notifications(
                     "first_seen": (prev or {}).get("first_seen", now.isoformat()),
                     "last_notified": now.isoformat() if sent else None,
                 }
+                if f.members:
+                    state[f.key]["members_told"] = sorted(set(f.members) if sent else told)
             else:
                 state[f.key] = {**prev, "status": f.status}
+                if f.members:  # saved even unchanged: an adopted pre-upgrade list must stick
+                    state[f.key]["members_told"] = sorted(told)
         else:  # OK
             if prev and prev.get("status") in (WARN, CRITICAL):
                 if not _delivered(notifier.notify("INFO", f.key, f"Recovered: {f.title}", f.message)):
