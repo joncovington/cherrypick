@@ -35,7 +35,6 @@ from datetime import datetime
 from typing import Any
 
 from cherrypick.core import home as corehome
-from cherrypick.core import live as corelive
 from cherrypick.core.config import first_present as _first_present
 
 from cherrypick.notify import Notifier
@@ -119,22 +118,38 @@ def _fly_intraday(db_path, session: str) -> dict:
     """Flies' live day in its own terms: structures by kind, the book roll-up (net cash, the true
     worst case and the band it settles green over) and the latest net-of-fees mark. The generic
     ledger readers see none of this — a 0DTE book has no closes and no overnight carry until the
-    bell. Best-effort per table: an older ledger missing one degrades to fewer facts, not an error."""
+    bell. Best-effort per table: an older ledger missing one degrades to fewer facts, not an error,
+    and a ledger that will not open comes back as {"error": ...} for the card to show.
+
+    An entry still working at the broker (`entry_fill_status = 'pending'`) is not a held structure,
+    the same exclusion the module's own `fly.held` makes. Marks are kept per (arm, symbol), so a
+    second book never borrows the first one's mark or spot."""
     out: dict[str, Any] = {}
-    conn = report._connect_ro(db_path)
     try:
+        conn = report._connect_ro(db_path)
+    except sqlite3.Error as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"[:200]}
+    try:
+        try:
+            pos_cols = {r[1] for r in conn.execute("PRAGMA table_info(fly_positions)")}
+        except sqlite3.Error:
+            pos_cols = set()
+        held = (
+            " AND COALESCE(p.entry_fill_status, '') != 'pending'" if "entry_fill_status" in pos_cols else ""
+        )
         try:
             kinds: dict[str, int] = {}
             for kind, n in conn.execute(
-                "SELECT kind, COUNT(*) FROM fly_positions WHERE trade_date = ?"
-                " AND status NOT IN ('cancelled', 'voided') GROUP BY kind",
+                "SELECT p.kind, COUNT(*) FROM fly_positions p WHERE p.trade_date = ?"
+                " AND p.status NOT IN ('cancelled', 'voided')" + held + " GROUP BY p.kind",
                 (session,),
             ):
                 label = _FLY_KINDS.get(kind, kind)
                 kinds[label] = kinds.get(label, 0) + int(n)
             out["kinds"] = kinds
             open_n = conn.execute(
-                "SELECT COUNT(*) FROM fly_positions WHERE trade_date = ? AND status = 'open'", (session,)
+                "SELECT COUNT(*) FROM fly_positions p WHERE p.trade_date = ? AND p.status = 'open'" + held,
+                (session,),
             ).fetchone()[0]
             out["open"] = int(open_n)
         except sqlite3.Error:
@@ -149,6 +164,7 @@ def _fly_intraday(db_path, session: str) -> dict:
                 "floor_holds",
                 "band_low",
                 "band_high",
+                "unbounded_below",
                 "pnl",
             )
             out["books"] = [
@@ -160,16 +176,22 @@ def _fly_intraday(db_path, session: str) -> dict:
         except sqlite3.Error:
             pass
         try:
-            row = conn.execute(
-                "SELECT SUM(mark_pnl), MAX(spot), MAX(iteration_ts) FROM fly_live_marks"
-                " WHERE trade_date = ? AND iteration_ts ="
-                " (SELECT MAX(iteration_ts) FROM fly_live_marks WHERE trade_date = ?)",
+            marks = {}
+            for arm, symbol, pnl, spot, ts in conn.execute(
+                "SELECT p.arm, p.symbol, SUM(m.mark_pnl), MAX(m.spot), m.iteration_ts"
+                " FROM fly_live_marks m JOIN fly_positions p ON p.position_id = m.position_id"
+                " WHERE m.trade_date = ? AND m.iteration_ts ="
+                " (SELECT MAX(iteration_ts) FROM fly_live_marks WHERE trade_date = ?)"
+                + held
+                + " GROUP BY p.arm, p.symbol",
                 (session, session),
-            ).fetchone()
-            if row and row[2] is not None:
-                out["mark"] = {"pnl": row[0], "spot": row[1], "ts": row[2]}
+            ):
+                marks[f"{arm}:{symbol}"] = {"pnl": pnl, "spot": spot, "ts": ts}
+            out["marks"] = marks
         except sqlite3.Error:
             pass
+    except sqlite3.Error as exc:
+        out["error"] = f"{type(exc).__name__}: {exc}"[:200]
     finally:
         conn.close()
     return out
@@ -178,42 +200,60 @@ def _fly_intraday(db_path, session: str) -> dict:
 def _live_inputs(cfg: dict, session: str) -> dict:
     """Everything the LIVE field needs, from files only. A module appears when it is armed today
     or has live rows today/on the book; one that is live-enabled but unarmed is named once, so a
-    forgotten arm is visible without a block of its own."""
+    forgotten arm is visible without a block of its own. A ledger that fails to read is always
+    shown, armed or not — it may hold open positions, and a broken input has to look broken.
+    Each module is read on its own: one failure costs that module's lines, never the post."""
+    from .supervisor import read_arm_records  # lazy: the supervisor module is heavy to import
+
     modules: dict[str, dict] = {}
     not_armed: list[str] = []
     try:
         lr = report.live_run(cfg, session)
     except Exception as exc:  # a broken live read must say so, never read as "no live today"
         return {"error": f"{type(exc).__name__}: {exc}"[:200]}
+    try:
+        arm_records = read_arm_records(cfg)
+    except Exception:
+        arm_records = {}
     for name, env in (lr.get("modules") or {}).items():
-        if not env.get("ok") and env.get("reason") == "no live_db configured":
+        reason = env.get("reason")
+        if not env.get("ok") and reason == "no live_db configured":
             continue
-        rec = read_json(cfgmod.state_file(corelive.arm_record_name(name))) or {}
-        armed = isinstance(rec, dict) and rec.get("date") == session
-        block: dict[str, Any] = {"armed": armed, "ok": bool(env.get("ok"))}
+        rec = arm_records.get(name) or {}
+        armed = rec.get("date") == session
+        block: dict[str, Any] = {"armed": armed, "ok": True}
         if armed and isinstance(rec.get("intraday_agent"), dict):
             block["agent"] = rec["intraday_agent"].get("mode")
-        if not env.get("ok"):
-            block["reason"] = env.get("reason")
-        else:
-            block["closed"] = {k: env.get(k) for k in ("trades", "net_pnl", "wins", "losses")}
-            block["carried"] = env.get("open") or {}
-            if env.get("schema") == "fly_book":
-                db_path = cfgmod.live_db_path(cfg["modules"][name], name)
-                block["fly"] = _fly_intraday(db_path, session)
+        try:
+            if env.get("ok"):
+                block["closed"] = {k: env.get(k) for k in ("trades", "net_pnl", "wins", "losses")}
+                block["carried"] = env.get("open") or {}
+                if env.get("schema") == "fly_book":
+                    db_path = cfgmod.live_db_path(cfg["modules"][name], name)
+                    block["fly"] = _fly_intraday(db_path, session)
+                    if block["fly"].get("error"):
+                        block.update(ok=False, reason=f"read failed: {block['fly']['error']}")
+            elif reason != "no live ledger yet":  # a missing file before the first trade is normal
+                block.update(ok=False, reason=reason)
+        except Exception as exc:
+            block.update(ok=False, reason=f"{type(exc).__name__}: {exc}"[:200])
         active = (
             armed
+            or not block["ok"]
             or (block.get("closed") or {}).get("trades")
             or (block.get("carried") or {}).get("positions")
             or (block.get("fly") or {}).get("kinds")
         )
         if active:
             modules[name] = block
-        elif env.get("ok") or env.get("reason") == "no live ledger yet":
+            continue
+        try:
             root = cfgmod.module_root(cfg["modules"][name], name)
             flag, _src = liveops._live_enabled(name, root) if root.exists() else (None, None)
-            if flag:
-                not_armed.append(name)
+        except Exception:
+            flag = None
+        if flag:
+            not_armed.append(name)
     broker = read_json(cfgmod.STATE_DIR / "live_positions.last.json")
     return {
         "modules": modules,
@@ -275,10 +315,16 @@ def _closed_bit(trades, net, wins, losses) -> str:
     return f"{trades} closed{wl} {_money(net)}"
 
 
-def _broker_line(broker: dict | None) -> tuple[str, bool]:
-    """(line, mismatch). The reconcile's word and its age; a non-MATCH verdict turns the card red."""
+# The reconcile's verdicts (livepositions.py) by how loudly the card should say them. IDLE is "nothing
+# armed, the broker was not asked" and SETTLING a difference seen once (by design not an alarm, it
+# usually clears on the next pass); only a held MISMATCH turns the card red, as the watchdog grades it.
+_BROKER_SEVERITY = {"MATCH": None, "IDLE": None, "SETTLING": "amber", "UNKNOWN": "amber", "MISMATCH": "red"}
+
+
+def _broker_line(broker: dict | None) -> tuple[str, str | None]:
+    """(line, severity: None / 'amber' / 'red'). The reconcile's word and its age."""
     if not broker:
-        return f"broker {_DASH} (no reconcile snapshot)", False
+        return f"broker {_DASH} (no reconcile snapshot)", None
     verdict = str(broker.get("verdict") or _DASH)
     pending = sum(int(a.get("pending_orders") or 0) for a in broker.get("accounts") or [])
     line = f"broker {verdict}"
@@ -287,7 +333,7 @@ def _broker_line(broker: dict | None) -> tuple[str, bool]:
     age = _age_minutes(broker.get("generated_at"))
     if age is not None and age > _STALE_MINUTES:
         line += f" ({age}m old)"
-    return line, verdict not in ("MATCH", _DASH)
+    return line, _BROKER_SEVERITY.get(verdict, "amber")
 
 
 def _plural(kind: str, n: int) -> str:
@@ -302,41 +348,56 @@ def _fly_live_lines(fly: dict) -> list[str]:
     if kinds:
         order = sorted(kinds.items(), key=lambda kv: (kv[0] == "open vertical", kv[0]))
         lines.append(" · ".join(f"{n} {_plural(k, n)}" for k, n in order))
-    mark = fly.get("mark")
-    for b in fly.get("books") or []:
+    books = fly.get("books") or []
+    marks = fly.get("marks") or {}
+    for b in books:
         if b.get("pnl") is not None:
             lines.append(f"{b.get('arm')} {b.get('symbol')} settled {_money(b['pnl'])}")
             continue
+        mark = marks.get(f"{b.get('arm')}:{b.get('symbol')}") if fly.get("open") else None
         parts = []
-        if mark and fly.get("open"):
-            parts.append(f"mark {_money(mark.get('pnl'))}")
+        if mark:
+            s = f"mark {_money(mark.get('pnl'))}"
+            age = _age_minutes(mark.get("ts"))
+            if age is not None and age > _STALE_MINUTES:
+                s += f" ({age}m old)"  # a dead loop's last mark must not read as current
+            parts.append(s)
+        # A book-level floor always carries the band over which it holds (root CLAUDE.md).
+        band = None
+        if b.get("band_low") is not None and b.get("band_high") is not None:
+            band = f"{b['band_low']:.0f}–{b['band_high']:.0f}"
         if b.get("floor_holds"):
-            parts.append(f"floor holds, worst {_money(b.get('worst'))}")
-        else:
-            if b.get("band_low") is not None and b.get("band_high") is not None:
-                parts.append(f"green {b['band_low']:.0f}–{b['band_high']:.0f}")
-            if b.get("worst") is not None:
-                at = f" @{b['worst_at']:.0f}" if b.get("worst_at") is not None else ""
-                parts.append(f"worst {_money(b['worst'])}{at}")
-        if mark and mark.get("spot") is not None and fly.get("open"):
+            s = "floor holds" + (f" {band}" if band else "")
+            if b.get("unbounded_below"):
+                s += " (unbounded below)"
+            parts.append(s)
+        elif band:
+            parts.append(f"green {band}")
+        if b.get("worst") is not None:
+            at = f" @{b['worst_at']:.0f}" if b.get("worst_at") is not None else ""
+            parts.append(f"worst {_money(b['worst'])}{at}")
+        if mark and mark.get("spot") is not None:
             parts.append(f"spot {mark['spot']:.0f}")
         if parts:
-            prefix = f"{b.get('arm')} " if len(fly.get("books") or []) > 1 else ""
+            prefix = f"{b.get('arm')} {b.get('symbol')} · " if len(books) > 1 else ""
             lines.append(prefix + " · ".join(parts))
     return lines
 
 
-def _live_field(live: dict | None, halted: bool) -> tuple[str, bool]:
-    """(field value, broker mismatch)."""
+_HALT_LINE = "\U0001f6d1 LIVE HALT FLAG IS SET"
+
+
+def _live_field(live: dict | None, halted: bool) -> tuple[str, str | None]:
+    """(field value, broker severity)."""
     lines: list[str] = []
     if halted:
-        lines.append("\U0001f6d1 LIVE HALT FLAG IS SET")
+        lines.append(_HALT_LINE)
     if live is None:
         lines.append(f"live {_DASH} (not read)")
-        return "\n".join(lines), False
+        return "\n".join(lines), None
     if live.get("error"):
         lines.append(f"live read failed: {live['error']}")
-        return "\n".join(lines), False
+        return "\n".join(lines), None
 
     modules = live.get("modules") or {}
     for name, b in modules.items():
@@ -371,11 +432,11 @@ def _live_field(live: dict | None, halted: bool) -> tuple[str, bool]:
         lines.append("nothing live today")
     if live.get("not_armed"):
         lines.append("not armed: " + ", ".join(live["not_armed"]))
-    mismatch = False
+    severity = None
     if modules or live.get("broker"):
-        bline, mismatch = _broker_line(live.get("broker"))
-        lines.append(("⚠ " if mismatch else "") + bline)
-    return "\n".join(lines), mismatch
+        bline, severity = _broker_line(live.get("broker"))
+        lines.append(("⚠ " if severity else "") + bline)
+    return "\n".join(lines), severity
 
 
 def _paper_line(name: str, block: dict, prev_mod: dict | None) -> tuple[str, bool]:
@@ -426,10 +487,10 @@ def _paper_line(name: str, block: dict, prev_mod: dict | None) -> tuple[str, boo
     return f"**{name}** " + " · ".join(parts + flags), False
 
 
-def _card_color(phase: str, overall: str, broker_mismatch: bool = False, halted: bool = False) -> int:
-    if broker_mismatch or overall == "CRITICAL" or phase == "red":
+def _card_color(phase: str, overall: str, broker: str | None = None, halted: bool = False) -> int:
+    if broker == "red" or overall == "CRITICAL" or phase == "red":
         return _COLOR_RED
-    if halted or overall == "WARN" or phase == "yellow":
+    if broker == "amber" or halted or overall == "WARN" or phase == "yellow":
         return _COLOR_AMBER
     if overall == "OK" and phase == "green":
         return _COLOR_GREEN
@@ -456,7 +517,7 @@ def build_digest(
     # 16:35, so its figures are the day's final intraday word, delta'd against the last hourly post.
     title = f"{'CLOSE' if close else 'DIGEST'} · SUITE {hhmm} ET"
     status, phase, overall = _status_line(morning, watchdog, facts, session)
-    live_value, mismatch = _live_field(live, halted)
+    live_value, broker_severity = _live_field(live, halted)
 
     fields = [{"name": "Live", "value": live_value[:_FIELD_MAX]}]
     snapshot: dict[str, Any] = {"session": session, "hhmm": hhmm, "modules": {}}
@@ -470,13 +531,8 @@ def build_digest(
         (quiet if is_quiet else paper_lines).append(line)
         results = block.get("results") or {}
         if block.get("ok"):
-            health = block.get("health") or {}
-            snapshot["modules"][name] = {
-                "closed": results.get("closed"),
-                "net": results.get("net"),
-                "entries": health.get("entries"),
-                "completions": health.get("completions"),
-            }
+            # Only what the next post's "since last" reads.
+            snapshot["modules"][name] = {"closed": results.get("closed"), "net": results.get("net")}
             closed = results.get("closed")
             if closed:
                 msg_bits.append(f"{name} {_money(results.get('net'))}/{closed}")
@@ -493,7 +549,8 @@ def build_digest(
     if attention:
         fields.append({"name": "Attention", "value": "\n".join(attention)[:_FIELD_MAX]})
 
-    live_bits = [ln for ln in live_value.splitlines() if ln and not ln.startswith("**")]
+    # The halt is already in the message as LIVE HALTED; don't spend a live slot repeating it.
+    live_bits = [ln for ln in live_value.splitlines() if ln and not ln.startswith("**") and ln != _HALT_LINE]
     message = f"Suite {'close' if close else 'digest'} {hhmm} ET — {status}"
     if halted:
         message += " · LIVE HALTED"
@@ -505,7 +562,7 @@ def build_digest(
     embed = {
         "title": title[:256],
         "description": status[:4096],
-        "color": _card_color(phase, overall, mismatch, halted),
+        "color": _card_color(phase, overall, broker_severity, halted),
         "fields": fields[:25],
     }
     return title, message, embed, snapshot

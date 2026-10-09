@@ -73,7 +73,8 @@ def fly_live(**overrides) -> dict:
                     "pnl": None,
                 }
             ],
-            "mark": {"pnl": 99.67, "spot": 7810.14, "ts": "2026-09-01T13:04:26-04:00"},
+            # ts None = age unknown, so no "(Nm old)" — the stale case has its own test.
+            "marks": {"control:SPX": {"pnl": 99.67, "spot": 7810.14, "ts": None}},
         },
     }
     block.update(overrides)
@@ -250,10 +251,28 @@ def test_card_color_tracks_the_worst_of_phase_watchdog_and_broker():
     assert build(facts(), ok, {"phase": {"phase": "yellow"}})[2]["color"] == status_digest._COLOR_AMBER
     # A missing input can never look green — the morning pack's own missing-data rule.
     assert build(facts(), ok, None)[2]["color"] == status_digest._COLOR_SLATE
-    # The broker disagreeing with the ledger outranks a green morning.
-    mismatch = live({"flies": fly_live()}, broker={"verdict": "MISMATCH", "accounts": []})
-    assert build(facts(), ok, green, live_doc=mismatch)[2]["color"] == status_digest._COLOR_RED
     assert build(facts(), ok, green, halted=True)[2]["color"] == status_digest._COLOR_AMBER
+
+
+@pytest.mark.parametrize(
+    "verdict, color, warned",
+    [
+        ("MISMATCH", status_digest._COLOR_RED, True),  # held disagreement: the one red verdict
+        ("SETTLING", status_digest._COLOR_AMBER, True),  # seen once, usually clears next pass
+        ("UNKNOWN", status_digest._COLOR_AMBER, True),
+        ("IDLE", status_digest._COLOR_GREEN, False),  # nothing armed, broker not asked: no alarm
+        ("MATCH", status_digest._COLOR_GREEN, False),
+    ],
+)
+def test_broker_verdicts_are_graded_not_all_red(verdict, color, warned):
+    """IDLE is the normal state on a day nothing is armed; grading it as a mismatch would turn every
+    such card red all day (verified: the earlier `verdict != MATCH` rule fails IDLE and SETTLING)."""
+    green = {"phase": {"phase": "green", "gates_met": 5, "gates_total": 5}}
+    ok = {"overall": "OK", "findings": []}
+    lv = live({"flies": fly_live()}, broker={"verdict": verdict, "accounts": []})
+    _, _, embed, _ = build(facts(), ok, green, live_doc=lv)
+    assert embed["color"] == color
+    assert (f"⚠ broker {verdict}" in field(embed, "Live")) is warned
 
 
 # --------------------------------------------------------------------------- the live field
@@ -299,6 +318,45 @@ def test_an_unread_or_failed_live_read_never_reads_as_quiet():
     assert value == "live read failed: OperationalError: locked"
 
 
+def test_a_stale_mark_says_its_age():
+    fly = fly_live()["fly"]
+    fly["marks"]["control:SPX"]["ts"] = "2020-01-01T11:00:00-04:00"
+    value = field(build(facts(), live_doc=live({"flies": fly_live(fly=fly)}))[2], "Live")
+    assert "mark +$100 (" in value and "m old)" in value
+
+
+def test_each_book_carries_its_own_mark_and_spot():
+    fly = fly_live()["fly"]
+    fly["books"].append(
+        {
+            **fly["books"][0],
+            "symbol": "XSP",
+            "band_low": 775.0,
+            "band_high": 781.0,
+            "worst": -50.0,
+            "worst_at": 782.0,
+        }
+    )
+    fly["marks"]["control:XSP"] = {"pnl": -7.0, "spot": 781.0, "ts": None}
+    value = field(build(facts(), live_doc=live({"flies": fly_live(fly=fly)}))[2], "Live")
+    assert "control SPX · mark +$100 · green 7755–7810 · worst -$503 @7815 · spot 7810" in value
+    assert "control XSP · mark -$7 · green 775–781 · worst -$50 @782 · spot 781" in value
+
+
+def test_a_holding_floor_still_carries_its_band():
+    """Root CLAUDE.md: a book-level floor always carries the price band over which it holds."""
+    fly = fly_live()["fly"]
+    fly["books"][0].update(floor_holds=1, worst=40.0, unbounded_below=1)
+    value = field(build(facts(), live_doc=live({"flies": fly_live(fly=fly)}))[2], "Live")
+    assert "floor holds 7755–7810 (unbounded below) · worst +$40" in value
+
+
+def test_the_halt_is_said_once_in_the_message():
+    _, message, _, _ = build(facts(), halted=True, live_doc=live({"flies": fly_live()}))
+    assert message.count("HALT") == 1
+    assert "broker MATCH" in message  # the slot the repeated halt line used to take
+
+
 def test_a_stale_broker_snapshot_says_its_age():
     broker = {"verdict": "MATCH", "accounts": [], "generated_at": "2020-01-01T00:00:00+00:00"}
     value = field(build(facts(), live_doc=live({"flies": fly_live()}, broker=broker))[2], "Live")
@@ -308,30 +366,38 @@ def test_a_stale_broker_snapshot_says_its_age():
 def _fly_ledger(path, session="2026-09-01"):
     conn = sqlite3.connect(path)
     conn.executescript(
-        "CREATE TABLE fly_positions (trade_date TEXT, kind TEXT, status TEXT);"
+        "CREATE TABLE fly_positions (position_id TEXT, trade_date TEXT, arm TEXT, symbol TEXT, kind TEXT,"
+        " status TEXT, entry_fill_status TEXT);"
         "CREATE TABLE fly_books (trade_date TEXT, arm TEXT, symbol TEXT, net_cash REAL, worst REAL,"
-        " worst_at REAL, floor_holds INTEGER, band_low REAL, band_high REAL, pnl REAL);"
-        "CREATE TABLE fly_live_marks (trade_date TEXT, iteration_ts TEXT, mark_pnl REAL, spot REAL);"
+        " worst_at REAL, floor_holds INTEGER, band_low REAL, band_high REAL, unbounded_below INTEGER,"
+        " pnl REAL);"
+        "CREATE TABLE fly_live_marks (position_id TEXT, trade_date TEXT, iteration_ts TEXT, mark_pnl REAL,"
+        " spot REAL);"
     )
     conn.executemany(
-        "INSERT INTO fly_positions VALUES (?, ?, ?)",
+        "INSERT INTO fly_positions VALUES (?, ?, 'control', ?, ?, ?, ?)",
         [
-            (session, "fly", "open"),
-            (session, "fly", "open"),
-            (session, "short_vertical", "open"),
-            (session, "short_vertical", "cancelled"),  # never placed: not a structure on the book
-            ("2026-08-31", "fly", "settled"),  # yesterday's: not today's count
+            ("a", session, "SPX", "fly", "open", "filled"),
+            ("b", session, "SPX", "fly", "open", None),  # pre-live-path row: no fill status, still held
+            ("c", session, "SPX", "short_vertical", "open", "filled"),
+            ("d", session, "SPX", "short_vertical", "cancelled", None),  # never placed
+            ("e", session, "SPX", "short_vertical", "open", "pending"),  # working at the broker: not held
+            ("f", session, "XSP", "fly", "open", "filled"),  # a second book
+            ("y", "2026-08-31", "SPX", "fly", "settled", "filled"),  # yesterday's
         ],
     )
     conn.execute(
-        "INSERT INTO fly_books VALUES (?, 'control', 'SPX', 500, -300, 7815, 0, 7755, 7810, NULL)", (session,)
+        "INSERT INTO fly_books VALUES (?, 'control', 'SPX', 500, -300, 7815, 0, 7755, 7810, 0, NULL)",
+        (session,),
     )
     conn.executemany(
-        "INSERT INTO fly_live_marks VALUES (?, ?, ?, ?)",
+        "INSERT INTO fly_live_marks VALUES (?, ?, ?, ?, ?)",
         [
-            (session, "2026-09-01T13:00:00", 10.0, 7800.0),
-            (session, "2026-09-01T13:05:00", 40.0, 7808.0),
-            (session, "2026-09-01T13:05:00", 25.0, 7808.0),
+            ("a", session, "2026-09-01T13:00:00", 10.0, 7800.0),
+            ("a", session, "2026-09-01T13:05:00", 40.0, 7808.0),
+            ("c", session, "2026-09-01T13:05:00", 25.0, 7808.0),
+            ("e", session, "2026-09-01T13:05:00", 999.0, 7808.0),  # pending: must not reach the mark
+            ("f", session, "2026-09-01T13:05:00", -3.0, 781.0),
         ],
     )
     conn.commit()
@@ -344,10 +410,56 @@ def test_fly_intraday_reads_today_only_and_the_latest_mark_alone(tmp_path):
     db = tmp_path / "live_trades.db"
     _fly_ledger(db)
     out = status_digest._fly_intraday(db, "2026-09-01")
-    assert out["kinds"] == {"fly": 2, "open vertical": 1}
-    assert out["open"] == 3
-    assert out["mark"]["pnl"] == 65.0 and out["mark"]["spot"] == 7808.0
+    assert out["kinds"] == {"fly": 3, "open vertical": 1}  # the pending entry is not a held vertical
+    assert out["open"] == 4
+    assert out["marks"]["control:SPX"]["pnl"] == 65.0 and out["marks"]["control:SPX"]["spot"] == 7808.0
+    assert out["marks"]["control:XSP"] == {"pnl": -3.0, "spot": 781.0, "ts": "2026-09-01T13:05:00"}
     assert out["books"][0]["worst"] == -300
+
+
+def test_fly_intraday_reports_a_ledger_it_cannot_open(tmp_path):
+    out = status_digest._fly_intraday(tmp_path / "missing" / "live_trades.db", "2026-09-01")
+    assert set(out) == {"error"} and "OperationalError" in out["error"]
+
+
+def _live_env(monkeypatch, modules, arm_records=None):
+    """Drive `_live_inputs` with a canned `report.live_run` envelope and arm records."""
+    from cherrypick.orchestrator import supervisor
+
+    monkeypatch.setattr(status_digest.report, "live_run", lambda cfg, session: {"modules": modules})
+    monkeypatch.setattr(supervisor, "read_arm_records", lambda cfg: arm_records or {})
+
+
+def test_an_unreadable_unarmed_ledger_is_shown_never_dropped(monkeypatch):
+    """It may hold open positions from an earlier session; 'nothing live today' would hide them."""
+    _live_env(monkeypatch, {"bwb": {"ok": False, "live": True, "reason": "read failed: database is locked"}})
+    lv = status_digest._live_inputs({"modules": {}}, "2026-09-01")
+    value = field(build(facts(), live_doc=lv)[2], "Live")
+    assert "**bwb** not armed today\nunreadable: read failed: database is locked" in value
+    assert "nothing live today" not in value
+
+
+def test_armed_before_the_first_trade_is_not_a_fault(monkeypatch):
+    _live_env(
+        monkeypatch,
+        {"bwb": {"ok": False, "live": True, "reason": "no live ledger yet"}},
+        {"bwb": {"date": "2026-09-01"}},
+    )
+    lv = status_digest._live_inputs({"modules": {}}, "2026-09-01")
+    value = field(build(facts(), live_doc=lv)[2], "Live")
+    assert "**bwb** armed\nno live entries yet" in value
+    assert "unreadable" not in value
+
+
+def test_one_failing_module_costs_its_own_lines_not_the_post(monkeypatch, tmp_path):
+    """A flies ledger that will not open (locked mid-write) must show as unreadable on the card."""
+    _live_env(
+        monkeypatch, {"flies": {"ok": True, "live": True, "schema": "fly_book", "trades": 0, "open": {}}}
+    )
+    cfg = {"modules": {"flies": {"live_db": str(tmp_path / "nope" / "live_trades.db")}}}
+    lv = status_digest._live_inputs(cfg, "2026-09-01")
+    assert lv["modules"]["flies"]["ok"] is False
+    assert "read failed" in lv["modules"]["flies"]["reason"]
 
 
 def test_fly_intraday_degrades_on_an_older_ledger(tmp_path):
@@ -365,7 +477,7 @@ def test_a_new_close_carries_the_net_moved_since_the_last_post():
     doc = facts(meic=module_block(results={"closed": 3, "net": 480.0, "wins": 2, "losses": 1}))
     _, _, embed, snapshot = build(doc, prev=prev)
     assert "3 closed 2W/1L +$480 (+$380 since last)" in field(embed, "Paper")
-    assert snapshot["modules"]["meic"] == {"closed": 3, "net": 480.0, "entries": 4, "completions": None}
+    assert snapshot["modules"]["meic"] == {"closed": 3, "net": 480.0}
 
 
 def test_unchanged_module_shows_no_delta():
