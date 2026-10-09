@@ -105,7 +105,9 @@ watch:
 present, data fresh in-session, streamer alive, earnings SLA met), the supervisor/anchor, and the
 console's resident-job state (its only signal, since the console writes no trade data), logs findings
 and pushes alerts through `notify/notifier.py`, with a dedup / re-notify / recovery state machine
-(`_process_notifications`, state in `state/watchdog_state.json`).
+(`_process_notifications`, state in `state/watchdog_state.json`). A finding that lists incidents
+(`members`: `jobs.failed`, `jobs.missed`, one id per job and stamp) is re-posted only when a new
+incident joins, never on the `renotify_minutes` clock, and posts one all-clear when the list empties.
 
 **Read side.** `report.py` (`run(session=…)` scopes to one settlement day) and `calibrate.py`, over the
 ledger readers in **`cherrypick.core.ledgers`**. Read-only and file-only. The console is the one page
