@@ -52,9 +52,53 @@ def _data_dir() -> Path:
     return _home.data_dir("earnings")
 
 
-def _pull(repo: Path) -> dict:
+def _pull_via_server(name: str) -> str:
+    """`CALL DOLT_PULL('origin')` on the running sql-server; its one-line message.
+
+    Through the server, not the CLI, because the server holds the clone's storage lock. Dolt's CLI
+    reaches a running server only through a `sql-server.info` file in the data directory; on
+    2026-10-09 the server the Windows service had started after a reboot left none, so every
+    `dolt pull` opened the clone read-only and failed ("cannot update manifest: database is read
+    only") with nothing on its output, while the same pull through the server landed."""
+    import mysql.connector as _mysql
+
+    cn = _mysql.connect(host="127.0.0.1", port=3306, user="root", database=name, connection_timeout=30)
+    try:
+        cur = cn.cursor()
+        cur.execute("CALL DOLT_PULL('origin')")
+        rows = cur.fetchall()
+        cols = [c[0] for c in cur.description or ()]
+    finally:
+        cn.close()
+    row = dict(zip(cols, rows[0], strict=False)) if rows else {}
+    return str(row.get("message") or "pulled")
+
+
+def _server_unreachable(exc: Exception) -> bool:
+    """A connection that never opened -- the one case the CLI pull is the right fallback for. A
+    pull the server ran and refused is the answer, not a reason to try again another way."""
+    return isinstance(exc, ImportError) or getattr(exc, "errno", None) in _CANNOT_CONNECT
+
+
+# MySQL client codes for a connection that never opened: no socket (2002), refused (2003), unknown host
+# (2005). mysql-connector raises a refused connection as a DatabaseError, so the code is what counts.
+_CANNOT_CONNECT = frozenset({2002, 2003, 2005})
+
+
+def _pull(repo: Path, via_server=_pull_via_server) -> dict:
     if not (repo / ".dolt").is_dir():
         return {"ok": False, "reason": "not_a_dolt_clone"}
+    try:
+        message = via_server(repo.name)
+        return {"ok": True, "via": "server", "tail": [message]}
+    except Exception as exc:  # noqa: BLE001 -- recorded below; a failed pull leaves the data where it was
+        if not _server_unreachable(exc):
+            return {"ok": False, "via": "server", "reason": f"{type(exc).__name__}: {exc}"[:300]}
+    return _pull_cli(repo)
+
+
+def _pull_cli(repo: Path) -> dict:
+    """`dolt pull` in the clone: only when no server is listening, so nothing holds its lock."""
     try:
         res = subprocess.run(["dolt", "pull"], cwd=repo, capture_output=True, text=True, timeout=1800)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -69,6 +113,7 @@ def _pull(repo: Path) -> dict:
             lines.append(seg)
     return {
         "ok": res.returncode == 0,
+        "via": "cli",
         "returncode": res.returncode,
         "tail": lines[-3:],
     }
