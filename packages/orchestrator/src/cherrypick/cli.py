@@ -803,12 +803,14 @@ def _find_listening_pid(port: int) -> int | None:
     """Whoever is listening on `port` right now, independent of what the supervisor's own registry
     believes.
 
-    Windows only (`netstat -ano`): every box this suite runs unattended on is Windows, and this is a
-    manual dev command, never a scheduled one, so a POSIX gap here costs nothing on the reliability
-    path. Returns None rather than guessing when nothing matches or the probe itself fails.
+    Windows parses `netstat -ano`; elsewhere it is `util.port_owner_pid` (/proc on Linux, lsof on
+    macOS -- 2026-10-08 OS audit). Returns None rather than guessing when nothing matches or the probe
+    itself fails.
     """
     if os.name != "nt":
-        return None
+        from cherrypick.orchestrator.util import port_owner_pid
+
+        return port_owner_pid(port)
     try:
         out = subprocess.run(
             ["netstat", "-ano"],
@@ -1714,7 +1716,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _market_clock_on_posix(environ=None) -> bool:
+    """Run this process (and every child it starts) on the suite's market clock when nothing chose a
+    zone: many call sites take `date.today()` as the session date, and on a UTC host the date turns
+    over at 19:00/20:00 ET, inside the evening jobs. The cron lines carry TZ already; this covers a
+    run.py started by hand or by anything else. An explicit TZ always wins. Windows has no tzset and
+    keeps the machine's own zone. True when it set the zone."""
+    environ = os.environ if environ is None else environ
+    if os.name == "nt" or environ.get("TZ"):
+        return False
+    environ["TZ"] = "America/New_York"
+    import time as _time
+
+    if hasattr(_time, "tzset"):
+        _time.tzset()
+    return True
+
+
 def main() -> None:
+    _market_clock_on_posix()
     # A default Windows console is cp1252, and the help text and several reports carry glyphs it
     # cannot encode (↔, ×, –) — argparse printing usage tracebacked before any command ran, which
     # made `--help` the first command a new user saw fail. Degrade the odd glyph to '?' instead;

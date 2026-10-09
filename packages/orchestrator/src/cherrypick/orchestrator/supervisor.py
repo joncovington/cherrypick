@@ -293,7 +293,16 @@ def _rss_mb() -> float | None:
         else:
             import resource
 
-            return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
+            # Linux: the CURRENT resident set from /proc (ru_maxrss is the peak). macOS has no /proc
+            # and reports ru_maxrss in BYTES, not Linux's KB -- read as KB it was 1024x too large.
+            try:
+                with open("/proc/self/statm", encoding="ascii") as fh:
+                    pages = int(fh.read().split()[1])
+                return round(pages * os.sysconf("SC_PAGE_SIZE") / (1024 * 1024), 1)
+            except (OSError, ValueError, IndexError):
+                pass
+            peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            return round(peak / (1024 * 1024 if sys.platform == "darwin" else 1024), 1)
     except Exception:
         pass
     return None
