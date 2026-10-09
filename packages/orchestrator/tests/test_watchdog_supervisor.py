@@ -358,7 +358,8 @@ def test_a_job_the_running_supervisor_never_derived_is_reported(monkeypatch, no_
 
     assert f.status == watchdog.WARN
     assert "earnings-dolt-pull" in f.message and "futures-contracts" in f.message
-    assert "supervise --stop" in f.message, "the finding has to say how to fix it"
+    # The fix that works under the Windows service too (2026-10-09): a clean stop leaves it stopped.
+    assert "supervise --restart" in f.message, "the finding has to say how to fix it"
 
 
 def test_a_matching_job_table_is_ok(monkeypatch, no_schtasks):

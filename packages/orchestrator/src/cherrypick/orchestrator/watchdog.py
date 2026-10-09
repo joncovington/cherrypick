@@ -1633,7 +1633,8 @@ def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trad
         return []
     open_count = status.get("positions_today") or 0
     if status.get("session_settled") is False and open_count > 0:
-        reason = _REASON_WORDS.get(str(status.get("data_reason")), "no settlement price yet")
+        code = str(status.get("data_reason") or "")
+        reason = _REASON_WORDS.get(code) or code.replace("_", " ") or "no settlement price yet"
         return [
             Finding(
                 f"{name}.settle_overdue",

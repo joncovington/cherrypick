@@ -142,23 +142,26 @@ def test_supervisor_down_while_armed_is_critical(monkeypatch, tmp_path):
     assert down.status == CRITICAL and "no live ticks are being fired" in down.message
 
 
-def test_disarm_backstop_fires_on_surviving_arm_record(monkeypatch, tmp_path):
+def test_a_surviving_arm_record_nothing_obeys_is_removed_not_halted(monkeypatch, tmp_path):
+    """2026-10-09: the supervisor has already turned the live job off past disarm, so a record that
+    outlives the window (the machine was off when the tick would have deleted it) drives nothing.
+    Halting on it re-set the suite halt every pass and blocked the next day's live entries."""
     _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY})
     _arm()
     _jobs({"flies-live": {"enabled": False, "enabled_reason": "past disarm 17:00 (+30m grace)"}})
     out = wd._check_live("flies", _mcfg(), _PAST_DISARM, False)
     disarm = next(f for f in out if f.key == "flies.live_disarm")
-    assert disarm.status == CRITICAL and "arm record present" in disarm.message
-    assert (tmp_path / "halt-live.flag").exists()
+    assert disarm.status == OK and "removed" in disarm.message
+    assert not (tmp_path / "halt-live.flag").exists()
 
 
-def test_disarm_backstop_fires_on_stale_arm_date_even_mid_morning(monkeypatch, tmp_path):
+def test_a_previous_days_arm_record_is_removed_even_mid_morning(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path, status_obj={"armed_for": "2026-07-29"})
     _arm(date="2026-07-29")
     _jobs({})
     out = wd._check_live("flies", _mcfg(), _MIDDAY, True)
-    assert any(f.key == "flies.live_disarm" and f.status == CRITICAL for f in out)
-    assert (tmp_path / "halt-live.flag").exists()
+    assert any(f.key == "flies.live_disarm" and f.status == OK for f in out)
+    assert not (tmp_path / "halt-live.flag").exists()
 
 
 def test_no_backstop_when_record_already_removed(monkeypatch, tmp_path):
