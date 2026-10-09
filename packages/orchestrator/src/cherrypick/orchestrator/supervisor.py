@@ -1168,6 +1168,7 @@ def run(cfg: dict[str, Any] | None = None, *, max_passes: int | None = None) -> 
         passes = 0
         last_alive_log = time.time()
         restart = False
+        previous = _take_last_exit() if max_passes is None else None
         try:
             while True:
                 if stop_path().exists():
@@ -1177,6 +1178,8 @@ def run(cfg: dict[str, Any] | None = None, *, max_passes: int | None = None) -> 
                     break
                 sup.pass_once()
                 passes += 1
+                if passes == 1 and max_passes is None:
+                    _announce_start(sup, previous)
                 if time.time() - last_alive_log >= _ALIVE_LOG_SECONDS:
                     _log(f"alive (pid {os.getpid()}, loop_seq {sup._loop_seq}, rss {_rss_mb() or '?'} MB)")
                     last_alive_log = time.time()
@@ -1192,11 +1195,151 @@ def run(cfg: dict[str, Any] | None = None, *, max_passes: int | None = None) -> 
                 f"FATAL: unhandled {type(exc).__name__} escaped the loop (pid {os.getpid()}) — daemon exiting"
             )
             _log(traceback.format_exc().rstrip())
+            if max_passes is None and isinstance(exc, Exception):
+                _note_exit(f"crashed ({type(exc).__name__})")
+                _announce_crash(exc, sup._load_cfg())
             raise
+        if max_passes is None:
+            _note_exit("was restarted on request" if restart else "was stopped")
         return {"ok": True, "passes": passes, **({"restart": True} if restart else {})}
     finally:
         if not os.environ.get("CHERRYPICK_SUPERVISOR_NO_LOCK"):
             release_pid_lock(lock_path())
+
+
+# ---------------------------------------------------------------- start and crash announcements
+# The owner asked (2026-10-09) to see every supervisor start on Discord -- after a reboot, a power
+# cut, a code update -- with what matters at that moment, and every crash. One message per start,
+# sent after the first pass so it can say how many jobs are scheduled; a crash at most every 15 min.
+_CRASH_NOTIFY_EVERY_S = 15 * 60
+
+
+def last_exit_path() -> Path:
+    return cfgmod.state_file("supervisor.last_exit.json")
+
+
+def _note_exit(why: str) -> None:
+    try:
+        atomic_write_json(last_exit_path(), {"why": why, "at": _utc_iso()})
+    except OSError:
+        pass
+
+
+def _take_last_exit() -> str | None:
+    rec = read_json(last_exit_path())
+    try:
+        last_exit_path().unlink()
+    except OSError:
+        pass
+    return (rec or {}).get("why") if isinstance(rec, dict) else None
+
+
+def _system_uptime_s() -> float | None:
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            k32 = ctypes.WinDLL("kernel32")
+            k32.GetTickCount64.restype = ctypes.c_uint64
+            return k32.GetTickCount64() / 1000.0
+        with open("/proc/uptime", encoding="ascii") as fh:
+            return float(fh.read().split()[0])
+    except Exception:  # noqa: BLE001 -- a detail of an announcement, never a failure
+        return None
+
+
+def _code_version() -> str | None:
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(_LAUNCHER.parents[2]),
+            capture_output=True,
+            text=True,
+            timeout=5,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        return r.stdout.strip() or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def startup_message(info: dict[str, Any]) -> tuple[str, str, str]:
+    """(level, title, message) announcing a start. Pure; `info` is gathered by `_announce_start`."""
+    up = info.get("uptime_s")
+    after_boot = up is not None and up < 15 * 60
+    how = "as a Windows service" if info.get("service") else "as a background process"
+    title = "Supervisor started" + (" after a reboot" if after_boot else "")
+    first = [f"Running {how}"]
+    if after_boot:
+        first.append(f"{up / 60:.0f} min after boot")
+    if info.get("previous"):
+        first.append(f"previous one {info['previous']}")
+    second = []
+    if info.get("code"):
+        second.append(f"code {info['code']}")
+    second.append(f"{info.get('jobs', 0)} jobs scheduled")
+    second.append("network ok" if info.get("dns_ok") else "NO NETWORK (DNS fails): jobs that need it wait")
+    armed = info.get("armed") or []
+    live = ("Live: HALT SET (no new live entries until cleared)" if info.get("halt") else "Live: no halt") + (
+        f"; armed today: {', '.join(armed)}" if armed else "; nothing armed today"
+    )
+    level = "WARNING" if (not info.get("dns_ok") or info.get("halt")) else "INFO"
+    return level, title, ". ".join([", ".join(first), ", ".join(second), live]) + "."
+
+
+def _announce_start(sup: Supervisor, previous: str | None) -> None:
+    try:
+        from cherrypick.notify import Notifier
+        from cherrypick.notify.notifier import _windows_session_id
+
+        from . import liveops
+
+        cfg = sup._load_cfg()
+        today = timeutil.now_et(cfg.get("timezone", "America/New_York")).date().isoformat()
+        armed = sorted(
+            m for m, rec in (read_arm_records(cfg) or {}).items() if str((rec or {}).get("date")) == today
+        )
+        info = {
+            "service": _windows_session_id() == 0,
+            "uptime_s": _system_uptime_s(),
+            "previous": previous,
+            "code": _code_version(),
+            "jobs": sum(1 for st in sup._state.values() if st.get("enabled")),
+            "dns_ok": dns_resolves(),
+            "halt": liveops.halt_flag_path().exists(),
+            "armed": armed,
+        }
+        level, title, message = startup_message(info)
+        Notifier(cfg.get("notify")).notify(level, "supervisor.started", title, message)
+    except Exception as exc:  # noqa: BLE001 -- an announcement must never stop the daemon
+        _log(f"start announcement failed: {type(exc).__name__}: {exc}")
+
+
+def _announce_crash(exc: BaseException, cfg: dict[str, Any]) -> None:
+    """CRITICAL for a crash, at most every 15 min (a crash loop is one message, not one a minute)."""
+    try:
+        marker = cfgmod.state_file("supervisor.crash_notified.json")
+        last = (read_json(marker) or {}).get("at_epoch") or 0
+        if time.time() - float(last) < _CRASH_NOTIFY_EVERY_S:
+            return
+        from cherrypick.notify import Notifier
+        from cherrypick.notify.notifier import _windows_session_id
+
+        back = (
+            "The Windows service restarts it in 30 s to 2 min."
+            if _windows_session_id() == 0
+            else "The 2-minute check restarts it."
+        )
+        Notifier(cfg.get("notify")).notify(
+            "CRITICAL",
+            "supervisor.crashed",
+            "Supervisor crashed",
+            f"{type(exc).__name__}: {str(exc)[:200]}. {back} No jobs start until it is back; "
+            "logs/supervisor.log has the traceback.",
+        )
+        atomic_write_json(marker, {"at_epoch": time.time()})
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # The exit code of a supervisor asked to RESTART (`supervise --restart`). Non-zero on purpose: the

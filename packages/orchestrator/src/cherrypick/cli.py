@@ -1292,7 +1292,7 @@ def cmd_reconcile(cfg, scheduled: bool = False) -> None:
             else "Reconcile: could not verify accounts"
         )
         try:
-            Notifier(cfg.get("notify")).notify(level, "reconcile.scheduled", title, report_text[:1500])
+            Notifier(cfg.get("notify")).notify(level, "reconcile.scheduled", title, reconcile.summary(result))
         except Exception:
             pass  # the report is already printed/logged; notification is best-effort
     # exit by verdict: FLAT -> 0, DRIFT (real account not flat) -> 1, UNKNOWN (couldn't check) -> 2
