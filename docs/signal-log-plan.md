@@ -743,7 +743,7 @@ positive net R. A setup short of 780 effective entries reads "not yet judged".
   - `rs-break`: +0.090 R net against a +0.138 R baseline, edge −0.085 R (t −3.4).
   - `rs-break-vol`: +0.033 R, edge −0.127 R (t −3.8).
   - Against the breakout at any volume: −0.039 R (t −0.9).
-- **The exploratory volume lead did not survive** on the names it never saw.
+- **The exploratory volume lead did not survive** on the slice it never saw.
 - The results and what they say are in `packages/technicals/docs/setups.md`, "Round 4".
 
 ## Later phases: uses the study and log are shaped for, none committed

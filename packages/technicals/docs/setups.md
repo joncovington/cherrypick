@@ -481,7 +481,7 @@ effective entries. The full results are in `round4-20261009-152840.json` in the 
 - **The result is stable.** Both halves of the names come out worse than random (t −2.6 and −2.8),
   and so do 2011–18 (t −1.8) and 2019–26 (t −2.9).
 - **The volume rule makes it worse.** Volume breakouts trail random by 0.127 R, and the
-  exploratory lead (t near 1 on the $300M names) did not survive on names it never saw.
+  exploratory lead (t near 1 on the $300M names) did not survive on the slice it never saw.
 - **On the $300M names, already seen,** neither setup differs from random: −0.018 R (t −0.4)
   without volume, +0.031 R (t +0.4) with it.
 
