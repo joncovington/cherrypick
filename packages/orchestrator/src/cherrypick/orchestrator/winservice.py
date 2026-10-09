@@ -13,7 +13,8 @@ How it fits together (2026-10-08 design):
 - It runs as **the user**, so Credential Manager (the broker login, the webhooks) stays readable. The
   password is asked for by WinSW's `install /p` and stored by Windows; it never sits in the XML.
 - A service gets the SYSTEM PATH, not the user's: `node` (the console), `dolt` and `claude` would go
-  missing. The XML carries the PATH of the shell `prepare` ran in -- the cron lesson (#120) again.
+  missing. The XML carries the PATH Windows builds at logon (machine, then user, from the registry) --
+  never the PATH of the shell `prepare` happened to run in (`logon_path`).
 - The **anchor** stays: WinSW restarts a supervisor that exits, not one that hangs, and the hung check
   lives in `ensure-supervisor` (#135). With nobody logged on the anchor only runs if it is set to run
   whether the user is logged on or not -- one of the printed elevated steps. In service mode the
@@ -66,6 +67,43 @@ def console_python(exe: str | None = None) -> str:
     p = Path(exe or sys.executable)
     candidate = p.with_name("python.exe" if p.suffix.lower() == ".exe" else "python")
     return str(candidate) if candidate.exists() else str(p)
+
+
+def logon_path(read=None, expand=os.path.expandvars) -> str | None:
+    """The PATH Windows gives the user at logon: the machine PATH, then the user's, from the registry,
+    variables expanded, duplicates dropped. NOT the PATH of whatever shell ran `prepare`: run from Git
+    Bash, that one put Git's Unix tools ahead of System32, so `find`, `sort` and `timeout` inside the
+    service would have been the wrong programs (caught on the first real prepare, 2026-10-08). None
+    when the registry cannot be read. `read(hive, key)` is injected for tests."""
+    if read is None:
+        if os.name != "nt":
+            return None
+        import winreg
+
+        def read(hive, key):
+            root = winreg.HKEY_LOCAL_MACHINE if hive == "machine" else winreg.HKEY_CURRENT_USER
+            try:
+                with winreg.OpenKey(root, key) as k:
+                    return str(winreg.QueryValueEx(k, "Path")[0])
+            except OSError:
+                return ""
+
+    machine = read("machine", r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")
+    user = read("user", "Environment")
+    if not machine and not user:
+        return None
+    import ntpath  # Windows path rules on any host, so the tests read the same on Linux CI
+
+    seen, out = set(), []
+    for part in f"{machine};{user}".split(";"):
+        part = expand(part.strip())
+        if not part:
+            continue
+        part = ntpath.normpath(part)  # a doubled or trailing separator is still the same directory
+        if part.lower() not in seen:
+            seen.add(part.lower())
+            out.append(part)
+    return ";".join(out)
 
 
 def build_xml(
@@ -190,7 +228,7 @@ def prepare(cfg: dict[str, Any], *, launcher: str, workdir: str, anchor_task: st
         python=console_python(),
         launcher=launcher,
         workdir=workdir,
-        path_env=os.environ.get("PATH", ""),
+        path_env=logon_path() or os.environ.get("PATH", ""),
         logdir=str(logdir),
     )
     (d / f"{s['id']}.xml").write_text(xml, encoding="utf-8")
