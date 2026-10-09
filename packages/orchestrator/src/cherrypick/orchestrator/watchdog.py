@@ -1983,10 +1983,60 @@ def _duplicate_groups(processes: list[dict[str, Any]], signatures: dict[str, str
     return out
 
 
+def _is_python_or_node(exe: str) -> bool:
+    base = os.path.basename(exe.replace("\\", "/")).lower()
+    return base.startswith("python") or base.startswith("node")
+
+
+def _list_processes_proc(proc: str = "/proc") -> list[dict[str, Any]] | None:
+    """Linux: the same rows from /proc (cmdline is NUL-separated argv; the parent PID is the second
+    field after the ")" that closes the command name in `stat`). None when /proc cannot be read."""
+    try:
+        pids = [d for d in os.listdir(proc) if d.isdigit()]
+    except OSError:
+        return None
+    rows = []
+    for pid in pids:
+        try:
+            with open(os.path.join(proc, pid, "cmdline"), "rb") as fh:
+                argv = [a.decode("utf-8", "replace") for a in fh.read().split(b"\0") if a]
+            with open(os.path.join(proc, pid, "stat"), encoding="utf-8", errors="replace") as fh:
+                ppid = int(fh.read().rsplit(")", 1)[1].split()[1])
+        except (OSError, IndexError, ValueError):
+            continue  # gone, or a kernel thread
+        if argv and _is_python_or_node(argv[0]):
+            rows.append({"pid": int(pid), "ppid": ppid, "cmd": " ".join(argv)})
+    return rows
+
+
+def parse_ps(text: str) -> list[dict[str, Any]]:
+    """macOS: rows from `ps -axww -o pid=,ppid=,command=` (pure)."""
+    rows = []
+    for line in text.splitlines():
+        f = line.split(None, 2)
+        if len(f) == 3 and f[0].isdigit() and f[1].isdigit() and _is_python_or_node(f[2].split()[0]):
+            rows.append({"pid": int(f[0]), "ppid": int(f[1]), "cmd": f[2]})
+    return rows
+
+
 def _list_processes() -> list[dict[str, Any]] | None:
     """[{pid, ppid, cmd}] for every python and node process, from the OS itself; None when it cannot
-    say (not Windows, PowerShell failed). One CIM query: stdlib and the OS shell, as the watchdog's
-    reliability path requires."""
+    say. Windows: one CIM query. Linux: /proc. macOS: `ps` (2026-10-08 OS audit -- the duplicate check
+    was Windows-only). Stdlib and the OS shell, as the watchdog's reliability path requires."""
+    if sys.platform.startswith("linux"):
+        return _list_processes_proc()
+    if sys.platform == "darwin":
+        try:
+            r = subprocess.run(
+                ["ps", "-axww", "-o", "pid=,ppid=,command="],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                creationflags=CREATE_NO_WINDOW,
+            )
+            return parse_ps(r.stdout) if r.returncode == 0 else None
+        except Exception:  # noqa: BLE001 -- "cannot say" is an answer
+            return None
     if os.name != "nt":
         return None
     query = (

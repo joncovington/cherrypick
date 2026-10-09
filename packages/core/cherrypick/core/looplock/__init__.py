@@ -24,6 +24,7 @@ that probe; where it cannot answer, the strong (never-steal) behaviour stands.
 from __future__ import annotations
 
 import os
+import sys
 import time
 
 __all__ = ["DEFAULT_STALE_SECONDS", "acquire", "pid_alive", "pid_reused", "process_start_time", "release"]
@@ -83,7 +84,8 @@ def pid_alive(pid: int | None) -> bool:
 def process_start_time(pid: int | None) -> float | None:
     """Unix-epoch creation time of process `pid`, or None when it cannot be determined.
 
-    psutil when present, then Win32 GetProcessTimes, then Linux /proc. None (never a guess) for a
+    psutil when present, then Win32 GetProcessTimes, then macOS `ps -o lstart=`, then Linux /proc.
+    None (never a guess) for a
     dead PID, a permission failure, or a platform with no probe — the caller keeps the strong
     never-steal behaviour in that case.
     """
@@ -132,6 +134,21 @@ def process_start_time(pid: int | None) -> float | None:
                 k32.CloseHandle(handle)
         except Exception:
             return None
+    if sys.platform == "darwin":
+        # No /proc on macOS (2026-10-08 OS audit): without this, PID-reuse detection was off there.
+        try:
+            import subprocess
+
+            out = subprocess.run(
+                ["ps", "-o", "lstart=", "-p", str(int(pid))],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                env={**os.environ, "LC_ALL": "C"},  # English day and month names
+            ).stdout
+            return parse_lstart(out)
+        except Exception:
+            return None
     try:
         with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
             stat = fh.read()
@@ -141,6 +158,15 @@ def process_start_time(pid: int | None) -> float | None:
             btime = next(int(line.split()[1]) for line in fh if line.startswith("btime "))
         return btime + start_ticks / os.sysconf("SC_CLK_TCK")
     except Exception:
+        return None
+
+
+def parse_lstart(text: str) -> float | None:
+    """Unix epoch from `ps -o lstart=` ("Thu Oct  8 09:31:02 2026", host-local time), or None.
+    Whole seconds, truncated -- an early reading, so it can only understate a reuse, never invent one."""
+    try:
+        return time.mktime(time.strptime(" ".join(text.split()), "%a %b %d %H:%M:%S %Y"))
+    except (ValueError, OverflowError):
         return None
 
 
