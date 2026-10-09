@@ -845,3 +845,19 @@ def test_status_carries_the_seams_broker_contact_record(live_config, conn, cache
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"failing_since": "2026-09-16T14:00:00+00:00", "failures": 3}, f)
     assert live_loop.run_status(live_config, conn, cache_path=cache)["broker_health"]["failures"] == 3
+
+
+def test_overdue_settlement_names_an_expiry_already_past_and_a_stale_pending_entry(conn, live_config):
+    from cherrypick.bwb import book as bookmod
+
+    pid = "SPX:control:2026-09-16"
+    bookmod.enter_position(conn, _plan(), live_config, "control", entry_session=DAY, advice_params=None)
+    db.save_position(conn, {"position_id": pid, "status": "open"})
+    assert live_loop.overdue_settlement(conn, EXP) == []  # expiry day itself: not yet overdue
+    assert live_loop.overdue_settlement(conn, "2026-09-21") == [
+        {"session": EXP, "positions": 1, "pending_entries": 0}
+    ]
+    db.save_position(conn, {"position_id": pid, "status": "pending"})
+    assert live_loop.overdue_settlement(conn, "2026-09-17") == [
+        {"session": DAY, "positions": 0, "pending_entries": 1}
+    ]

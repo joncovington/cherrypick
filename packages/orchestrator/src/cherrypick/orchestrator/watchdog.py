@@ -1924,6 +1924,28 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
             )
         )
 
+    # (c5) a past session's live book still open (2026-10-08): settlement runs only inside an armed
+    # day's ticks, so a machine down between the close and the disarm left it open, silently. Not
+    # gated on arming or the session -- the point is that nothing is running to notice.
+    overdue = (status or {}).get("overdue_settlement") or []
+    if overdue:
+        days = ", ".join(
+            f"{o.get('session')} ({o.get('positions', 0)} open, "
+            f"{o.get('pending_entries', 0)} pending entries)"
+            for o in overdue
+        )
+        findings.append(
+            Finding(
+                f"{name}.live_overdue",
+                CRITICAL,
+                f"{label} LIVE book from a past session never settled",
+                f"{days}. Settle each with the official close: "
+                f"`python -m cherrypick.{name}.live_loop --settle --date <session> --price <close>`; "
+                "cancel a pending entry whose order expired. Until then the ledger's net, the "
+                "daily-loss breaker and the margin cap read positions that no longer exist.",
+            )
+        )
+
     # (c4) the broker unreachable while armed and in session (2026-10-08). The seam swallows every
     # broker failure and the tick exits 0, so neither the supervisor nor the freshness check above
     # can see an expired login, a dead network or a broker outage -- only this record can.
