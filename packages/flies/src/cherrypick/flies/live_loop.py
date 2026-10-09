@@ -2011,6 +2011,32 @@ def should_disarm(config: dict, now_min: int, today: str) -> str | None:
 
 
 # --------------------------------------------------------------------------- status
+def settle_overdue(config: dict, conn, *, cache_path: str, today: str, close_fn=None) -> dict:
+    """Settle every past session the live ledger still holds open, at THAT session's official close
+    (`core.settlement.dated_index_close`, source `yahoo_daily`) -- never a provisional price. The
+    catch-up for a machine that was down between the close and the disarm (2026-10-08; the owner
+    chose official-print-only). A session with a pending entry is left for a person: whether that
+    order filled is the broker's word, not this function's. No close found: left, still alerting."""
+    close_fn = close_fn or _settlement.dated_index_close
+    symbol = _live_cfg(config).get("symbol", "XSP")
+    done, left = [], []
+    for item in overdue_settlement(conn, today):
+        session = item["session"]
+        if item["pending_entries"]:
+            left.append({"session": session, "reason": "pending_entries"})
+            continue
+        price = close_fn(symbol, session)
+        if price is None:
+            left.append({"session": session, "reason": "no_official_close"})
+            continue
+        when = datetime.fromisoformat(f"{session}T16:30:00")
+        out = run_settle_live(
+            config, conn, cache_path=cache_path, when=when, broker=_settlement.DatedClose(price)
+        )
+        (done if out.get("ok") else left).append({"session": session, "price": price, **out})
+    return {"ok": True, "settled": done, "left": left}
+
+
 def overdue_settlement(conn, today: str) -> list[dict]:
     """Past sessions the live ledger still holds open, oldest first: `{session, positions,
     pending_entries}`. These are 0DTE, so every one has expired. Settlement happens only inside an
@@ -2147,6 +2173,11 @@ def main() -> int:
         action="store_true",
         help="the filled open legs the ledger holds (JSON; files/DB only)",
     )
+    ap.add_argument(
+        "--settle-overdue",
+        action="store_true",
+        help="settle past sessions still open, at each one's official close",
+    )
     ap.add_argument("--settle", action="store_true", help="settle the live book (see --price)")
     ap.add_argument("--price", type=float, help="official settlement print (marks source='official')")
     ap.add_argument("--force", action="store_true", help="allow re-settling an official settlement")
@@ -2191,6 +2222,10 @@ def main() -> int:
             return 0
         if args.expected_legs:
             print(json.dumps(expected_legs(config, conn), default=str))
+            return 0
+        if args.settle_overdue:
+            today = provider.now_et().date().isoformat()
+            print(json.dumps(settle_overdue(config, conn, cache_path=cache_path, today=today), default=str))
             return 0
         if args.settle:
             when = None

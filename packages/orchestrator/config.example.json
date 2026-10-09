@@ -639,6 +639,11 @@
     "start": "09:31",
     "end": "16:10"
   },
+  "live_settle_overdue": {
+    "_comment": "run.py settle-overdue-live, every interval_seconds, every day: settles any past session a flies/bwb live ledger still holds open (a machine down between the close and the disarm) at THAT session's official close (Yahoo daily bar, source yahoo_daily) -- never a provisional price. A session with a pending entry, or no official close found, stays open and the watchdog keeps alerting. Each settlement is announced on every channel. Safeguard item 4, 2026-10-08 (the owner chose official-print-only).",
+    "enabled": true,
+    "interval_seconds": 3600
+  },
   "power_watch": {
     "_comment": "run.py power-watch, every 60 s, every day: while this machine runs on battery, notify ALL channels (log, desktop, discord, slack -- any without a webhook is skipped) the moment it switches and every repeat_minutes, WARNING turning CRITICAL at critical_percent charge or critical_minutes of estimated time left; one message when AC returns. Reads Windows (GetSystemPowerStatus), Linux (/sys/class/power_supply; a machine with no battery entry never alerts) and macOS (pmset -g batt); a reading it cannot take stays quiet. Added after the 2026-10-08 power outage ran the laptop down mid-session.",
     "enabled": true,

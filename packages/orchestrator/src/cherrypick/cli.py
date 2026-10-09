@@ -1205,6 +1205,13 @@ def cmd_live_positions(cfg) -> None:
     _emit(livepositions.run(cfg))
 
 
+def cmd_settle_overdue_live(cfg) -> None:
+    """Catch-up settlement of past live sessions at the official close (orchestrator/livesettle.py)."""
+    from cherrypick.orchestrator import livesettle
+
+    _emit(livesettle.run(cfg))
+
+
 def cmd_notify_status(cfg, force: bool = False, close: bool = False) -> None:
     _emit(status_digest.run(cfg, force=force, close=close))
 
@@ -1509,6 +1516,7 @@ def build_parser() -> argparse.ArgumentParser:
             "restart-console",
             "power-watch",
             "live-positions",
+            "settle-overdue-live",
             "ps",
             "restart",
             "stop",
@@ -1787,6 +1795,7 @@ def main() -> None:
         "notify-status": lambda: cmd_notify_status(cfg, force=args.force, close=args.close),
         "power-watch": lambda: cmd_power_watch(cfg),
         "live-positions": lambda: cmd_live_positions(cfg),
+        "settle-overdue-live": lambda: cmd_settle_overdue_live(cfg),
         "notify-send": lambda: cmd_notify_send(args),
         "sent": lambda: cmd_sent(args),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),

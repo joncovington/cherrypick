@@ -146,7 +146,8 @@ def test_official_index_close_reports_no_source_when_every_source_fails(monkeypa
 
 
 def test_official_sources_is_the_posted_close_set():
-    assert settlement.OFFICIAL_SOURCES == {"official", "tastytrade_close", "yahoo", "barchart"}
+    # yahoo_daily: a PAST session's posted daily close, the catch-up settlement (2026-10-08).
+    assert settlement.OFFICIAL_SOURCES == {"official", "tastytrade_close", "yahoo", "barchart", "yahoo_daily"}
     assert settlement.is_official_source("yahoo") and not settlement.is_official_source(
         "tastytrade_last_provisional"
     )
