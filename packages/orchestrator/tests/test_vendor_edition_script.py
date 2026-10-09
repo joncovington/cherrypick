@@ -446,3 +446,65 @@ def _frozen(moment):
             return moment if tz else moment.replace(tzinfo=None)
 
     return Frozen
+
+
+# --------------------------------------------------------------------------- one browser profile, one process
+# 2026-10-09: a person's login or a hand-run capture beside a scheduled run opened the same profile, and
+# the second Chrome died ("Target page, context or browser has been closed").
+
+
+def test_cookie_report_reads_the_session_locally_and_only_calls_certain_signed_out():
+    now = 1_800_000_000.0
+    cookies = [
+        {"domain": ".app.example.com", "expires": now + 3600},
+        {"domain": "app.example.com", "expires": now + 86400 * 365},
+        {"domain": "app.example.com", "expires": -1},  # a session cookie: not persistent
+        {"domain": "tracker.other.net", "expires": now + 999},
+        {"domain": "example.com", "expires": now - 10},  # the parent domain, already expired
+    ]
+    r = fve.cookie_report(cookies, "app.example.com", now)
+    assert (r["site_cookies"], r["persistent"], r["unexpired"], r["signed_out"]) == (4, 3, 2, False)
+    gone = fve.cookie_report([{"domain": "app.example.com", "expires": now - 1}], "app.example.com", now)
+    assert gone["signed_out"] and gone["soonest_expiry"] is None
+
+
+def test_a_second_browser_command_waits_then_gives_up_plainly(tmp_path):
+    import os
+
+    profile = tmp_path / "browser-profile"
+    fve.profile_lock_path(profile).write_text(str(os.getpid()), encoding="utf-8")  # held by a live pid
+    slept = []
+    with pytest.raises(fve.ProfileBusy, match="in use by pid"):
+        with fve.profile_lock(profile, wait_s=15, sleep=slept.append, log=lambda m: None):
+            pass
+    assert sum(slept) == 15
+
+
+def test_the_lock_is_released_and_a_dead_holders_lock_is_taken_over(tmp_path):
+    profile = tmp_path / "browser-profile"
+    fve.profile_lock_path(profile).write_text("999999991", encoding="utf-8")  # no such process
+    with fve.profile_lock(profile, wait_s=0, log=lambda m: None):
+        assert fve.profile_holder(profile) is not None
+    assert not fve.profile_lock_path(profile).exists()
+
+
+def test_main_runs_a_browser_command_under_the_lock_and_returns_75_when_busy(monkeypatch, tmp_path):
+    monkeypatch.setattr(fve, "store_dir", lambda: tmp_path)
+    seen = []
+    monkeypatch.setattr(
+        fve, "cmd_smoke", lambda args: seen.append(fve.profile_holder(tmp_path / "browser-profile")) or 0
+    )
+
+    class Busy:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            raise fve.ProfileBusy("in use")
+
+        def __exit__(self, *e):
+            return False
+
+    assert fve.main(["smoke"]) == 0 and seen and seen[0] is not None  # held while it ran
+    monkeypatch.setattr(fve, "profile_lock", Busy)
+    assert fve.main(["smoke"]) == fve.PROFILE_BUSY_EXIT

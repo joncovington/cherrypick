@@ -64,3 +64,41 @@ def test_a_replace_held_for_a_moment_is_retried_and_one_held_for_good_still_rais
     monkeypatch.setattr(util.os, "replace", held)
     with pytest.raises(PermissionError):
         util.atomic_write_json(tmp_path / "y.json", {"a": 1})
+
+
+def test_a_restart_request_exits_with_the_restart_code(monkeypatch):
+    # 2026-10-09: the service restarts its program only after a FAILURE, so `--restart` must not be a
+    # clean exit -- or the service stays stopped and only an administrator can start it again.
+    from cherrypick.orchestrator import supervisor
+
+    class Fake:
+        def __init__(self, cfg):
+            self._loop_seq = 0
+
+        def adopt_prior_state(self):
+            pass
+
+        def pass_once(self):
+            supervisor.request_stop(restart=True)
+
+    monkeypatch.setenv("CHERRYPICK_SUPERVISOR_NO_LOCK", "1")
+    monkeypatch.setattr(supervisor, "Supervisor", Fake)
+    monkeypatch.setattr(supervisor.time, "sleep", lambda s: None)
+    assert supervisor.run(max_passes=5).get("restart") is True
+    monkeypatch.setattr(supervisor, "run", lambda: {"ok": True, "restart": True})
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_supervise({})
+    assert exc.value.code == supervisor.RESTART_EXIT
+
+
+def test_the_anchor_lets_a_stopped_service_restart_itself_before_falling_back(monkeypatch):
+    spawned = []
+    monkeypatch.setattr(cli, "_spawn_supervisor_detached", lambda: spawned.append(1) or True)
+    monkeypatch.setattr(cli, "Notifier", lambda c: type("N", (), {"notify": lambda *a, **k: {}})())
+    monkeypatch.setattr(cli.os, "name", "nt")
+    monkeypatch.setattr(winservice, "query", lambda sid: {"installed": True, "state": "STOPPED"})
+    monkeypatch.setattr(winservice, "start", lambda sid: False)
+    cfg, state = {"service": {"enabled": True}}, {}
+    assert cli._start_supervisor(cfg, state) is False and spawned == []  # inside the grace: wait
+    state["service_down_since"] -= cli.SERVICE_RESTART_GRACE_S + 1
+    assert cli._start_supervisor(cfg, state) is True and spawned == [1]  # past it: fall back

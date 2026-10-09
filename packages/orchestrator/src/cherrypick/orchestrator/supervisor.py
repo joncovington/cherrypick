@@ -1167,10 +1167,12 @@ def run(cfg: dict[str, Any] | None = None, *, max_passes: int | None = None) -> 
         _log(f"supervisor started (pid {os.getpid()})")
         passes = 0
         last_alive_log = time.time()
+        restart = False
         try:
             while True:
                 if stop_path().exists():
-                    _log("stop file seen — shutting down")
+                    restart = bool((read_json(stop_path()) or {}).get("restart"))
+                    _log("stop file seen — " + ("restarting" if restart else "shutting down"))
                     stop_path().unlink(missing_ok=True)
                     break
                 sup.pass_once()
@@ -1191,17 +1193,28 @@ def run(cfg: dict[str, Any] | None = None, *, max_passes: int | None = None) -> 
             )
             _log(traceback.format_exc().rstrip())
             raise
-        return {"ok": True, "passes": passes}
+        return {"ok": True, "passes": passes, **({"restart": True} if restart else {})}
     finally:
         if not os.environ.get("CHERRYPICK_SUPERVISOR_NO_LOCK"):
             release_pid_lock(lock_path())
 
 
-def request_stop() -> dict[str, Any]:
-    """Ask a running supervisor to exit (it polls the stop file every pass)."""
+# The exit code of a supervisor asked to RESTART (`supervise --restart`). Non-zero on purpose: the
+# optional Windows service restarts its program only after a failure, so a clean exit would leave
+# it stopped -- and restarting it needs administrator rights nobody has at 2 a.m. (2026-10-09).
+RESTART_EXIT = 3
+
+
+def request_stop(restart: bool = False) -> dict[str, Any]:
+    """Ask a running supervisor to exit (it polls the stop file every pass). With `restart`, it
+    exits with RESTART_EXIT so whatever runs it starts it again with fresh code: the service after
+    its restart delay, or the anchor's next probe."""
     cfgmod.ensure_dirs()
-    stop_path().write_text(json.dumps({"requested_at": _utc_iso()}), encoding="utf-8")
-    return {"ok": True, "detail": f"stop requested via {stop_path().name}"}
+    stop_path().write_text(
+        json.dumps({"requested_at": _utc_iso(), **({"restart": True} if restart else {})}), encoding="utf-8"
+    )
+    word = "restart" if restart else "stop"
+    return {"ok": True, "detail": f"{word} requested via {stop_path().name}"}
 
 
 if __name__ == "__main__":

@@ -760,17 +760,27 @@ class NeedsPerson(RuntimeError):
 # ------------------------------------------------------------------------------------------------
 
 
-def _chrome_user_agent(version: str) -> str:
-    """The user-agent a regular (headed) Chrome of this version sends -- the vendor collector's own
-    rule (`fetch_vendor_edition.chrome_user_agent`), loaded from beside this script so the two
-    collectors present the same way and cannot drift apart."""
-    import importlib.util
+_SHARED = None
 
-    path = Path(__file__).resolve().with_name("fetch_vendor_edition.py")
-    spec = importlib.util.spec_from_file_location("fetch_vendor_edition", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.chrome_user_agent(version)
+
+def _shared():
+    """The vendor collector's module, loaded from beside this script: the two collectors share its
+    browser rules (the user-agent, the profile lock, the smoke check) so they cannot drift apart."""
+    global _SHARED
+    if _SHARED is None:
+        import importlib.util
+
+        path = Path(__file__).resolve().with_name("fetch_vendor_edition.py")
+        spec = importlib.util.spec_from_file_location("fetch_vendor_edition", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _SHARED = module
+    return _SHARED
+
+
+def _chrome_user_agent(version: str) -> str:
+    """The user-agent a regular (headed) Chrome of this version sends -- the vendor collector's rule."""
+    return _shared().chrome_user_agent(version)
 
 
 def _installed_chrome_version(pw) -> str:
@@ -1284,9 +1294,23 @@ def cmd_probe(args) -> int:
     return 0
 
 
+def cmd_smoke(_args) -> int:
+    """Is the installed Chrome able to start here, and is the session still signed in? Local only."""
+    from urllib.parse import urlparse
+
+    return _shared().smoke(
+        lambda pw: _open_browser(pw, headed=False), urlparse(SITE).hostname or "", "QuikOptions", _warn
+    )
+
+
+# The commands that open the browser profile, and so take its lock first.
+BROWSER_COMMANDS = {"login", "hot-options", "probe", "smoke"}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("smoke").set_defaults(fn=cmd_smoke)
     sub.add_parser("login").set_defaults(fn=cmd_login)
     ho = sub.add_parser("hot-options")
     ho.add_argument(
@@ -1305,7 +1329,15 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--linger", type=int, default=120, help="seconds to keep recording at the end")
     pr.set_defaults(fn=cmd_probe)
     args = ap.parse_args(argv)
-    return args.fn(args)
+    if args.cmd not in BROWSER_COMMANDS:
+        return args.fn(args)
+    shared = _shared()
+    try:
+        with shared.profile_lock(store_dir() / "browser-profile"):
+            return args.fn(args)
+    except shared.ProfileBusy as exc:
+        print(f"not run: {exc}", file=sys.stderr)
+        return shared.PROFILE_BUSY_EXIT
 
 
 if __name__ == "__main__":

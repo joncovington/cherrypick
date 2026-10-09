@@ -257,7 +257,9 @@ supervisor can run as a Windows service. This is opt-in and off until you turn i
 As a service, nothing appears on screen: desktop notifications are skipped (use Discord or Slack),
 and a collector whose sign-in has expired needs you to log in and sign in by hand. Your Windows
 password is stored for the service, so after changing it (for a Microsoft account, changing it
-online counts) run step 4 again. To undo it, run
+online counts) run step 4 again. After updating the code, `run.py supervise --restart` has the
+service start the supervisor again with it (about 30 seconds); a plain `--stop` would leave the
+service stopped until an administrator starts it. To undo it, run
 `run.py service uninstall` and follow what it prints.
 
 ## Stopping and uninstalling
