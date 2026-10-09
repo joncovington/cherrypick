@@ -644,6 +644,16 @@
     "enabled": true,
     "interval_seconds": 3600
   },
+  "service": {
+    "_comment": "OPTIONAL Windows-service mode (run.py service): the supervisor as a WinSW v2 service, so the suite runs with nobody logged on. Off by default -- the default posture is auto-logon plus the logged-on anchor task. To use: download WinSW-x64.exe (v2.x, github.com/winsw/winsw/releases), set winsw_exe to its path and enabled to true, run `run.py service prepare`, then the printed commands in an administrator prompt. The service runs as you (Credential Manager stays readable); its password is asked for at install and stored by Windows, never in a file.",
+    "enabled": false,
+    "id": "cherrypick-supervisor-svc",
+    "winsw_exe": null,
+    "delayed_start": true,
+    "restart_delays_seconds": [30, 60, 120],
+    "reset_failure_hours": 1,
+    "stop_timeout_seconds": 30
+  },
   "power_watch": {
     "_comment": "run.py power-watch, every 60 s, every day: while this machine runs on battery, notify ALL channels (log, desktop, discord, slack -- any without a webhook is skipped) the moment it switches and every repeat_minutes, WARNING turning CRITICAL at critical_percent charge or critical_minutes of estimated time left; one message when AC returns. Reads Windows (GetSystemPowerStatus), Linux (/sys/class/power_supply; a machine with no battery entry never alerts) and macOS (pmset -g batt); a reading it cannot take stays quiet. Added after the 2026-10-08 power outage ran the laptop down mid-session.",
     "enabled": true,

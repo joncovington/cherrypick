@@ -39,3 +39,13 @@ def test_the_channel_launches_the_command_off_windows(monkeypatch):
     n = notifier.Notifier({"channels": ["log", "desktop"]})
     assert n._push_desktop("WARN", "On battery", "62% left") == {"ok": True}
     assert launched and launched[0][0] == "notify-send" and launched[0][-1] == "62% left"
+
+
+def test_a_windows_service_session_has_no_desktop_and_says_so(monkeypatch):
+    # Session 0 is where the optional `run.py service` mode runs: a balloon there reaches no one.
+    launched = []
+    monkeypatch.setattr(notifier.os, "name", "nt")
+    monkeypatch.setattr(notifier, "_windows_session_id", lambda: 0)
+    monkeypatch.setattr(notifier.subprocess, "Popen", lambda argv, **kw: launched.append(argv))
+    out = notifier.Notifier({"channels": ["log", "desktop"]})._push_desktop("WARN", "t", "m")
+    assert out["ok"] is False and "session 0" in out["skipped"] and launched == []
