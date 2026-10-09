@@ -885,3 +885,38 @@ def test_every_real_network_job_is_gated():
     by_id = {j.id: j for j in jobs}
     assert jobspec.needs_network(by_id["flies-fee-reconcile"])
     assert jobspec.needs_network(by_id["reconcile"])
+
+
+def test_restart_of_a_daily_job_runs_it_once_now_without_stealing_its_scheduled_run(spawned, monkeypatch):
+    # 2026-10-09: `run.py restart <daily job>` recorded the request, said "started", and ran nothing.
+    from cherrypick.orchestrator import jobspec
+
+    spec = jobspec.JobSpec(
+        id="report-browser-check",
+        argv=("py", "fetch_vendor_edition.py", "smoke"),
+        kind=jobspec.KIND_DAILY,
+        at_et="06:40",
+        catchup_minutes=15,
+    )
+    monkeypatch.setattr(jobspec, "derive_jobs", lambda cfg, **kw: ([spec], {}))
+
+    def runs():
+        return [p for p in spawned if "smoke" in p.argv]
+
+    early = MONDAY_NOON.replace(hour=5, minute=0)
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=early)  # 05:00: not due yet
+    assert runs() == []
+
+    supervisor.request_restart("report-browser-check", by="test", request_id="r1")
+    sup.pass_once(now=early)
+    st = sup._state["report-browser-check"]
+    assert len(runs()) == 1 and st["last_restart"]["result"] == "queued to run now" and "run_now" not in st
+
+    runs()[0].exit(0)
+    sup.pass_once(now=early)
+    assert len(runs()) == 1  # once, not every pass
+
+    sup._last_fixed_spawn = 0.0  # the start-spacing guard counts real seconds; these passes are an hour apart
+    sup.pass_once(now=MONDAY_NOON.replace(hour=6, minute=41))
+    assert len(runs()) == 2  # the scheduled 06:40 run still came

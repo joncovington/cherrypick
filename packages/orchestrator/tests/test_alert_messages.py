@@ -57,6 +57,7 @@ def test_the_start_announcement_says_what_matters():
     assert "as a Windows service" in message and "2 min after boot" in message
     assert "previous one crashed (PermissionError)" in message and "74 jobs scheduled" in message
     assert "HALT SET" in message
+    assert ". Code c8516825, 74 jobs scheduled" in message  # every sentence starts with a capital
     quiet = supervisor.startup_message({**info, "uptime_s": 86400, "halt": False, "previous": None})
     assert quiet[0] == "INFO" and quiet[1] == "Supervisor started" and "nothing armed today" in quiet[2]
     offline = supervisor.startup_message({**info, "halt": False, "dns_ok": False})
