@@ -300,6 +300,12 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         # as separate columns. `fees` stays the TOTAL. On a reconciled live row, the broker's own
         # settlement fees. NULL where it was never recorded.
         "settlement_fees": "REAL",
+        # An add-on skipped for good because its trigger could have been met while it went
+        # unmeasured (2026-10-08: a power outage took the loop down 10:35-16:00 ET, and SPX traded
+        # through some near wings meanwhile). Set by `bwb addon-missed`; management never arms or
+        # fires such a position. Its latches keep updating, as control's do.
+        "addon_missed_at": "TEXT",
+        "addon_missed_reason": "TEXT",
     },
     "bwb_legs": {},
     "bwb_marks": {},
