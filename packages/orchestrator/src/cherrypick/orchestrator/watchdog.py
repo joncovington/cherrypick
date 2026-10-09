@@ -2471,6 +2471,68 @@ def _recycle_if_stale(svc: dict[str, Any], root: Path, sid: str) -> Finding:
     )
 
 
+def _delivered(results: Any) -> bool:
+    """`notify.delivered`, tolerant of a test double that returns nothing (counted as delivered)."""
+    from cherrypick.notify import delivered
+
+    return delivered(results) if isinstance(results, dict) else True
+
+
+# Pushes that all failed over this window, with at least this many tries, mean delivery is broken.
+_DELIVERY_WINDOW_SECONDS = 2 * 3600
+_DELIVERY_MIN_FAILURES = 3
+
+
+def _delivery_findings(cfg_channels: list[str], sent: list[dict[str, Any]], webhook_set) -> list[Finding]:
+    """Is notification delivery itself working? Pure over the outbound record and a webhook probe.
+    - a configured slack/discord channel with no webhook stored: every push to it is skipped, and
+      skipped pushes are not even recorded -- the one failure the outbound record cannot show;
+    - every recorded push in the window failed (at least `_DELIVERY_MIN_FAILURES`): the webhook is
+      revoked, the service is down, or the network is."""
+    findings = []
+    for ch in ("discord", "slack"):
+        if ch in cfg_channels and not webhook_set(ch):
+            findings.append(
+                Finding(
+                    f"notify.{ch}_webhook",
+                    WARN,
+                    f"{ch} is a notification channel but has no webhook",
+                    f"every {ch} push is skipped. `run.py secrets-set --channel {ch}` stores one.",
+                )
+            )
+    by_channel: dict[str, list[dict[str, Any]]] = {}
+    for e in sent:
+        if e.get("channel") in ("discord", "slack"):
+            by_channel.setdefault(e["channel"], []).append(e)
+    for ch, entries in sorted(by_channel.items()):
+        if len(entries) >= _DELIVERY_MIN_FAILURES and not any(e.get("ok") for e in entries):
+            last = entries[-1]
+            findings.append(
+                Finding(
+                    f"notify.{ch}_failing",
+                    WARN,
+                    f"{ch} pushes are failing",
+                    f"all {len(entries)} {ch} posts in the last {_DELIVERY_WINDOW_SECONDS // 3600} h failed "
+                    f"(last: {last.get('status') or ''} {last.get('error') or ''}). Alerts are reaching the "
+                    "log and any other channel only. `run.py notify-test` tries every channel.",
+                )
+            )
+    return findings
+
+
+def _check_notify_delivery(cfg: dict[str, Any]) -> list[Finding]:
+    from cherrypick.notify import notifier as _notifier
+    from cherrypick.notify import secrets as _secrets
+
+    since = (datetime.now(timezone.utc) - timedelta(seconds=_DELIVERY_WINDOW_SECONDS)).isoformat()
+    try:
+        sent = _notifier.read_outbound(since=since)
+    except OSError:
+        sent = []
+    channels = list((cfg.get("notify") or {}).get("channels") or [])
+    return _delivery_findings(channels, sent, lambda ch: bool(_secrets.get_webhook(ch)))
+
+
 def _process_notifications(
     findings: list[Finding], notifier: Notifier, renotify_minutes: int, now: datetime | None = None
 ) -> None:
@@ -2490,17 +2552,20 @@ def _process_notifications(
                     elapsed_ok = True
             changed = (prev is None) or (prev.get("status") != f.status)
             if changed or elapsed_ok:
-                notifier.notify(f.status, f.key, f.title, f.message)
+                sent = _delivered(notifier.notify(f.status, f.key, f.title, f.message))
+                # Stamped as notified only when a push landed (2026-10-08): a failed one is tried
+                # again next tick rather than waiting out `renotify_minutes` -- or forever.
                 state[f.key] = {
                     "status": f.status,
                     "first_seen": (prev or {}).get("first_seen", now.isoformat()),
-                    "last_notified": now.isoformat(),
+                    "last_notified": now.isoformat() if sent else None,
                 }
             else:
                 state[f.key] = {**prev, "status": f.status}
         else:  # OK
             if prev and prev.get("status") in (WARN, CRITICAL):
-                notifier.notify("INFO", f.key, f"Recovered: {f.title}", f.message)
+                if not _delivered(notifier.notify("INFO", f.key, f"Recovered: {f.title}", f.message)):
+                    continue  # keep the entry: the recovery is announced again next tick
             state.pop(f.key, None)
     _save_state(state)
 
@@ -2677,6 +2742,7 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     findings += _check_holds()
     findings += _check_live_positions(in_session)
     findings += _check_fixed_time_jobs(now)
+    findings += _check_notify_delivery(cfg)
     try:
         findings += _check_duplicate_processes(cfg)
     except Exception as exc:
