@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from . import config as cfgmod
@@ -143,6 +144,57 @@ CATCHUP_MINUTES = {
 # fence) -- so the two lists are kept in sync by hand, the same way advisor_checkpoint.py carries
 # its own copy rather than importing the package.
 ADVISOR_LIGHT_SLOTS = ("open", "am1", "am2", "midday", "pm1", "pm2", "close")
+
+
+# ---------------------------------------------------------------- starting fixed-time jobs safely
+# Learned 2026-10-08: power returned at 19:08 ET, the supervisor started every evening job whose
+# catch-up window was still open IN THE SAME SECOND, before DNS was up, and a daily job counts as
+# fired the moment it starts -- so market-files died on getaddrinfo and was never tried again, and
+# two browser jobs launched together and one crashed. The supervisor now holds a due fixed-time job
+# (without stamping it fired) while it needs the network and DNS does not resolve, spaces fixed-time
+# starts apart, never runs two browser jobs at once, and lets a repeatable fetch retry.
+
+# The browser-driven collectors: one browser session on this machine at a time.
+BROWSER_SCRIPTS = frozenset({"fetch_vendor_edition.py", "fetch_quikoptions.py"})
+
+# Fixed-time jobs that may run again after a failure, inside their catch-up window: fetchers that
+# are safe to repeat (each writes per-day files, or replaces the day it already wrote). The vendor
+# collector is deliberately absent -- its own cooldown decides when it may try again.
+RETRY_ON_FAILURE = {
+    "earnings-dolt-pull": 2,
+    "market-files": 2,
+    "market-files-retry": 2,
+    "technicals-index-bars": 2,
+    "technicals-iv-rank": 2,
+    "technicals-dividends": 2,
+    "earnings-moves": 2,
+    "futures-contracts": 2,
+    "report-screener-greeks": 1,
+}
+
+
+def is_fixed_time(spec: JobSpec) -> bool:
+    return spec.kind in (KIND_DAILY, KIND_MONTHLY)
+
+
+def script_of(spec: JobSpec) -> str | None:
+    """The `scripts/` file a job runs, or None. The suite keeps everything that reaches the network
+    in `scripts/` (packages stay network-free), so this is also the network question's answer."""
+    for arg in spec.argv[1:]:
+        path = Path(str(arg))
+        if path.suffix == ".py" and path.parent.name == "scripts":
+            return path.name
+    return None
+
+
+def needs_network(spec: JobSpec) -> bool:
+    """A fixed-time job that reaches the network: one that runs a `scripts/` file, or a `run.py`
+    verb tagged `network` (the broker reconcile, the Discord digest)."""
+    return is_fixed_time(spec) and (script_of(spec) is not None or "network" in spec.tags)
+
+
+def uses_browser(spec: JobSpec) -> bool:
+    return is_fixed_time(spec) and script_of(spec) in BROWSER_SCRIPTS
 
 
 @dataclass(frozen=True)
@@ -533,6 +585,7 @@ def derive_jobs(
         lambda: JobSpec(
             id="status-digest-close",
             argv=_run_py(pythonw, launcher, "notify-status", "--close"),
+            tags=("network",),  # posts to Discord
             kind=KIND_DAILY,
             at_et=sd["close_at"],
             catchup_minutes=CATCHUP_MINUTES["status-digest-close"],
@@ -778,6 +831,7 @@ def derive_jobs(
                     at_et=str(recon_at),
                     catchup_minutes=CATCHUP_MINUTES["fee-reconcile"],
                     trading_days_only=True,
+                    tags=("network",),  # reads the broker's transaction history
                 ),
             )
 
@@ -1364,6 +1418,7 @@ def derive_jobs(
         lambda: JobSpec(
             id="reconcile",
             argv=_run_py(pythonw, launcher, "reconcile", "--scheduled"),
+            tags=("network",),  # reads the broker accounts
             kind=KIND_DAILY,
             at_et=rs["at"],
             catchup_minutes=CATCHUP_MINUTES["reconcile"],
