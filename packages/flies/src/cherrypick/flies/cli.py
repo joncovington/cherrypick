@@ -435,6 +435,61 @@ def cmd_backfill_events(args) -> int:
     return 0
 
 
+def cmd_close_or_hold(args) -> int:
+    """Each open position: close now at natural, or hold to the print? Read-only on the ledger, the
+    stream cache and the gex recorder's history; places nothing (close_or_hold.py)."""
+    from cherrypick.core import db as _core_db
+    from cherrypick.core import regime as _regime
+
+    from cherrypick.flies import clock, close_or_hold, paper_loop, provider
+
+    config = load_config(args.config)
+    if args.ledger:
+        ledger = args.ledger
+    elif args.paper:
+        ledger = args.db or dbmod.default_db_path()
+    else:
+        ledger = dbmod.live_db_path()
+    gex_path = args.gex_db or _regime.default_history_db()
+    for label, path in (("ledger", ledger), ("gex history", gex_path)):
+        if not pathlib.Path(path).exists():
+            print(json.dumps({"ok": False, "error": f"{label} not found: {path}"}))
+            return 2
+    cache_path = args.stream_cache or paper_loop.stream_cache_path(config)
+    kwargs = provider.snapshot_kwargs(config)
+
+    def snapshot_for(symbol: str) -> dict:
+        snap = provider.build_snapshot(cache_path, symbol, **kwargs)
+        if not snap.get("ok"):
+            spot = provider.read_spot(cache_path, symbol, max_age_seconds=kwargs["max_quote_age_seconds"])
+            snap = {**snap, "underlying_price": spot}
+        return snap
+
+    clock_min = None
+    if args.at:
+        clock_min = clock.hhmm_to_min(args.at, -1)
+        if not 0 <= clock_min < 24 * 60:
+            print(json.dumps({"ok": False, "error": f"--at wants HH:MM, got {args.at!r}"}))
+            return 2
+    ledger_conn = _core_db.connect_ro(ledger)
+    gex_conn = _core_db.connect_ro(gex_path)
+    try:
+        out = close_or_hold.report(
+            ledger_conn,
+            snapshot_for=snapshot_for,
+            gex_conn=gex_conn,
+            now=clock.now_et(),
+            clock_min=clock_min,
+            min_sessions=args.min_sessions,
+        )
+    finally:
+        ledger_conn.close()
+        gex_conn.close()
+    out["ledger"] = "paper" if args.paper and not args.ledger else ("live" if not args.ledger else ledger)
+    print(json.dumps(out, indent=2, default=str))
+    return 0
+
+
 def regime_cuts_dir() -> str:
     """Where the artifact lands: beside advice_active.json, resolved the way paper_loop resolves it."""
     from cherrypick.flies import paper_loop
@@ -527,6 +582,17 @@ def main(argv=None) -> int:
     p_ctt.add_argument("--symbol")
     p_ctt.add_argument("--detail", action="store_true", help="list every tag")
     p_ctt.set_defaults(func=cmd_close_tag_tracker)
+    p_coh = sub.add_parser(
+        "close-or-hold",
+        help="each open position: close now at natural, or hold to expiry on the empirical move to the close",
+    )
+    p_coh.add_argument("--paper", action="store_true", help="read the paper ledger (default: live)")
+    p_coh.add_argument("--ledger", help="an explicit ledger path (overrides --paper)")
+    p_coh.add_argument("--at", help="HH:MM ET clock time for the move window (testing; quotes stay current)")
+    p_coh.add_argument("--min-sessions", dest="min_sessions", type=int, default=20)
+    p_coh.add_argument("--stream-cache", dest="stream_cache", help="override the shared cache path")
+    p_coh.add_argument("--gex-db", dest="gex_db", help="override the gex recorder's history db")
+    p_coh.set_defaults(func=cmd_close_or_hold)
     p_ae = sub.add_parser(
         "agent-eval",
         help="the intraday agent's qualification (docs/intraday-agent-plan.md); --write replaces the file",
