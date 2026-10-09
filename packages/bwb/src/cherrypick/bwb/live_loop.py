@@ -184,6 +184,8 @@ class BrokerAdapter(_execution.Broker):
             designated_account=credentials.designated_account,
             live_gates=lambda: broker_cli.live_gates(self._config),
             deploy_limit_pct=_live_cfg(config).get("account_deploy_limit_pct") or None,
+            # An uncertain submit's hold outlives this tick's process (2026-10-08).
+            hold_path=os.path.join(_data_dir(), "live_held.json"),
         )
 
     def official_settlement_price(self, symbol: str) -> tuple[float | None, str]:
@@ -214,7 +216,7 @@ def _fee_estimate(result: dict) -> float | None:
 
 
 # --------------------------------------------------------------------------- orphans
-def _sweep_orphans(conn, broker, log, symbol: str) -> int:
+def _sweep_orphans(conn, broker, log, symbol: str) -> int | None:
     """Broker truth against ledger belief, first thing every tick: a working order this ledger
     never recorded is the one crash window nothing else covers (a tick dying between a placement
     and its row). Persisted for `--status` and the arm command's stop rule; detection only --
@@ -223,7 +225,7 @@ def _sweep_orphans(conn, broker, log, symbol: str) -> int:
         orphans = _execution.orphans(broker, db.known_order_ids(conn))
     except Exception as exc:  # noqa: BLE001 -- a failed sweep must not break the tick
         log(f"orphan sweep failed ({type(exc).__name__}: {exc}) -- will retry next tick")
-        return 0
+        return None  # unknown -- and unknown blocks the entry
     orphans = [o for o in orphans if o.get("underlying_symbol") in (None, symbol)]
     try:
         os.makedirs(_data_dir(), exist_ok=True)
@@ -647,6 +649,7 @@ def _try_live_entry(
     live: bool,
     log,
     halted: bool = False,
+    orphans: int | None = 0,
 ) -> dict:
     """ONE entry attempt for the live arm, gated in the order the money cares about: the day's
     budget, a working order, the breakers, the plan itself, the live floor, the margin caps -- and
@@ -667,6 +670,12 @@ def _try_live_entry(
         return refuse(QUARTER_END_REASON)
     if halted:
         return refuse("halt_flag_present")
+    # Orders at the broker the ledger never recorded -- or a sweep that could not look -- stop the
+    # entry (2026-10-08): detection alone let the same tick place another order beside them.
+    if orphans is None:
+        return refuse("orphan_sweep_failed")
+    if orphans:
+        return refuse("orphaned_orders", f"{orphans} unrecorded working order(s)")
     per_day = int(live_cfg.get("max_structures_per_day", 1))
     if db.established_today(conn, arm, day) >= per_day:
         return {"entry": "done", "reason": "max_structures_per_day_reached"}
@@ -1109,7 +1118,16 @@ def run_once(
     # 5. one entry attempt inside the window
     placed: dict[str, dict] = {}
     entry = _try_live_entry(
-        config, conn, broker, cache_path=cache_path, when=when, day=day, live=live, log=log, halted=halted
+        config,
+        conn,
+        broker,
+        cache_path=cache_path,
+        when=when,
+        day=day,
+        live=live,
+        log=log,
+        halted=halted,
+        orphans=summary.get("orphans", 0),
     )
     summary["entry"] = entry
     if entry.get("entry") == "placed" and entry.get("order_id"):
@@ -1264,7 +1282,8 @@ def run_status(config: dict, conn, *, cache_path: str, broker=None) -> dict:
         "breaker_tripped": daily_loss_tripped(conn, today, live_cfg.get("daily_loss_halt_dollars")),
         "open_marked_loss": marked,
         "orphaned_orders": read_orphans(),
-        "broker_held": broker.held if broker is not None and hasattr(broker, "held") else None,
+        # From the seam's persisted hold file (status never talks to the broker).
+        "broker_held": _execution.read_hold(os.path.join(_data_dir(), "live_held.json")),
         "last_log_write": last_log,
         "log_file": str(lf),
         "live_db": db.live_db_path(),

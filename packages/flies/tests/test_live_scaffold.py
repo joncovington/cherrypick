@@ -2271,9 +2271,20 @@ def test_orphan_sweep_failure_does_not_break_the_tick(live_conn):
     summary = live_loop.run_once(
         _loop_cfg(), _snapshot(), live_conn, SweepFails(), live=True, log=logs.append
     )
-    assert summary["orphaned_orders"] == 0
+    # Unknown, not zero (2026-10-08): a sweep that could not look cannot say nothing is orphaned,
+    # so the tick runs everything else and enters nothing.
+    assert summary["orphaned_orders"] is None
     assert any("orphan sweep failed" in m for m in logs)
-    assert summary["entered"] == 1  # the rest of the tick ran normally
+    assert summary["entered"] == 0
+    journal = live_conn.execute("SELECT reason, detail FROM fly_decisions WHERE mode = 'entry'").fetchone()
+    assert (journal["reason"], journal["detail"]) == ("entries_blocked", "orphan_sweep_failed")
+
+
+def test_an_orphaned_order_blocks_new_entries(live_conn):
+    """Detection alone let the same tick place another order beside an order nothing recorded."""
+    broker = FakeBroker(working=[{"order_id": "GHOST", "underlying_symbol": "SPX"}])
+    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert summary["orphaned_orders"] == 1 and summary["entered"] == 0 and broker.placed == []
 
 
 # --------------------------------------------------------------------------- locks and disarm

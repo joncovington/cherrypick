@@ -38,9 +38,12 @@ from importing it. This layer is for loops the desk exists to keep separate from
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import uuid
 from collections.abc import Callable, Iterable
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from cherrypick.core import broker as _broker
@@ -121,6 +124,7 @@ class Broker:
         live_gates: Callable[[], list[str]] | None = None,
         serialize: Callable[[Any], Any] | None = None,
         deploy_limit_pct: float | None = None,
+        hold_path: str | os.PathLike | None = None,
     ):
         self._get_session = get_session
         self._designated_account = designated_account
@@ -134,6 +138,12 @@ class Broker:
         # refuses every further live submission from this adapter -- see `place`.
         self._unresolved: dict[str, str] = {}
         self._unrecorded: dict[str, dict] = {}
+        # The hold OUTLIVES the process when `hold_path` is given (2026-10-08). Each live tick is a
+        # short-lived `--once` process, so a hold kept only in memory lifted itself 60 s later and
+        # the next tick could submit the duplicate the hold exists to prevent. Loaded here, saved on
+        # every change; an unreadable file holds (it cannot show nothing is held).
+        self._hold_path = Path(hold_path) if hold_path else None
+        self._load_hold()
 
     # --- lifecycle -------------------------------------------------------------------------
     def run(self, coro):
@@ -168,6 +178,31 @@ class Broker:
     def _reset(self):
         self._session = None
         self._account = None
+
+    def _load_hold(self) -> None:
+        if self._hold_path is None or not self._hold_path.exists():
+            return
+        try:
+            doc = json.loads(self._hold_path.read_text(encoding="utf-8"))
+            self._unresolved = dict(doc.get("unresolved") or {})
+            self._unrecorded = dict(doc.get("unrecorded") or {})
+        except (OSError, ValueError) as exc:
+            # Fail closed: a hold file that cannot be read may be hiding an unresolved submission.
+            self._unresolved = {"<unreadable hold file>": f"{type(exc).__name__}: {exc}"}
+
+    def _save_hold(self) -> None:
+        if self._hold_path is None:
+            return
+        if not self._unresolved and not self._unrecorded:
+            self._hold_path.unlink(missing_ok=True)
+            return
+        self._hold_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self._hold_path.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps({"unresolved": self._unresolved, "unrecorded": self._unrecorded}, default=str),
+            encoding="utf-8",
+        )
+        tmp.replace(self._hold_path)
 
     @property
     def session(self):
@@ -249,6 +284,7 @@ class Broker:
                     }
                 if not read_ok:
                     self._unresolved[ext] = f"{type(exc).__name__}: {exc}"
+                    self._save_hold()
                     return {
                         "ok": False,
                         "uncertain": True,
@@ -305,6 +341,7 @@ class Broker:
                 if found is not None:
                     self._unrecorded[ext] = found
                 del self._unresolved[ext]
+            self._save_hold()
         if self._unrecorded:
             listing = ", ".join(f"{ext} -> order {o.get('order_id')}" for ext, o in self._unrecorded.items())
             return {
@@ -320,7 +357,9 @@ class Broker:
     def acknowledge(self, external_identifier: str) -> bool:
         """Lift the hold on an unrecorded order a caller has now accounted for (recorded, or
         cancelled at the broker by a human). True if it was held."""
-        return self._unrecorded.pop(external_identifier, None) is not None
+        held = self._unrecorded.pop(external_identifier, None) is not None
+        self._save_hold()
+        return held
 
     @property
     def held(self) -> dict:
@@ -432,6 +471,25 @@ class Broker:
 
 
 # --------------------------------------------------------------------------- sweeps and watches
+def read_hold(path: str | os.PathLike) -> dict:
+    """What a persisted hold holds, from the file alone -- for status surfaces, which never talk to
+    the broker. `{unresolved: [...], unrecorded: {ext: order_id}}`; empty lists when nothing is held,
+    and an unreadable file reported as held (it cannot show that nothing is)."""
+    p = Path(path)
+    if not p.exists():
+        return {"unresolved": [], "unrecorded": {}}
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {"unresolved": [f"<unreadable hold file: {type(exc).__name__}>"], "unrecorded": {}}
+    return {
+        "unresolved": sorted(doc.get("unresolved") or {}),
+        "unrecorded": {
+            ext: str((o or {}).get("order_id")) for ext, o in (doc.get("unrecorded") or {}).items()
+        },
+    }
+
+
 def orphans(broker: Any, known_order_ids: Iterable[Any]) -> list[dict]:
     """Working orders at the broker that `known_order_ids` (the ledger's) does not contain.
 

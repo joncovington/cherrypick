@@ -1907,6 +1907,22 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
     elif status and "orphaned_orders" in status:
         findings.append(Finding(f"{name}.live_orphans", OK, f"{label} live orders", "all accounted for"))
 
+    # (c3) a held submission: the broker seam refuses every live order until a submit of unknown
+    # outcome is resolved, or an order found at the broker that nothing recorded is acknowledged.
+    # Persisted since 2026-10-08, so it survives the tick -- and someone has to hear about it.
+    held = (status or {}).get("broker_held") or {}
+    if held.get("unresolved") or held.get("unrecorded"):
+        findings.append(
+            Finding(
+                f"{name}.live_held",
+                CRITICAL,
+                f"{label} live submissions HELD",
+                f"unresolved {held.get('unresolved') or []}, unrecorded {held.get('unrecorded') or {}} -- "
+                "no live order goes out until a read of today's orders resolves it or a human "
+                "acknowledges the unrecorded order.",
+            )
+        )
+
     # (c) live settlement overdue: same shape as the paper check, over the live status.
     close_min = timeutil.MARKET_CLOSE.hour * 60 + timeutil.MARKET_CLOSE.minute
     settle_grace = int(live.get("settlement_grace_minutes", 30))
