@@ -34,6 +34,25 @@ def dollar_gamma(gamma: float, quantity: float, multiplier: float, spot: float) 
     return gamma * quantity * multiplier * spot * spot * 0.01
 
 
+def strike_gamma(strike: float, spot: float, call_gamma: float | None, put_gamma: float | None) -> float:
+    """The ONE gamma a strike's call and put both carry: the out-of-the-money side's, else the other's.
+
+    A call and a put at the same strike and expiration have the same gamma in theory; the feed
+    reports each from its own quoted implied volatility, and on 0DTE quotes those wobble apart.
+    Right at the money the two sides' dollar gamma are large and nearly equal, so netting them with
+    their own gammas let quote noise pick the sign: on 2026-10-09 SPX 7790 carried +2.58B calls
+    against -2.37B puts, a 0.26-point move in one put IV took the net from +301M to +133M inside a
+    minute, and a slightly larger one made 7790 the chain's put wall and moved the nearest zero gamma
+    from 7765 to 7791 and back. With one gamma the net is gamma x (call OI - put OI), which moves only
+    when positions do. The out-of-the-money side is the one whose quote carries the vol (the
+    in-the-money side is mostly intrinsic), the usual convention; at a strike equal to spot, the call.
+    """
+    otm, itm = (call_gamma, put_gamma) if strike >= spot else (put_gamma, call_gamma)
+    if otm:
+        return float(otm)
+    return float(itm or 0.0)
+
+
 def interpolate_zero_gamma(strikes: list[dict]) -> float | None:
     """Interpolate the strike where CUMULATIVE net GEX crosses zero.
 
@@ -138,21 +157,26 @@ def compute_gex(
             # all, and the one that is a caller bug rather than a cold cache.
             missing["gamma"] += 1
             continue
-        gex_val = dollar_gamma(gamma, open_interest, multiplier, spot)
         opt_type = entry.get("option_type", "")
-        is_call = "C" in opt_type.upper()
+        side = "call" if "C" in opt_type.upper() else "put"
         if strike not in per_strike:
-            per_strike[strike] = {"strike": strike, "call_gex": 0.0, "put_gex": 0.0}
-        if is_call:
-            per_strike[strike]["call_gex"] += gex_val
-        else:
-            per_strike[strike]["put_gex"] += gex_val
+            per_strike[strike] = {"strike": strike, "call_oi": 0.0, "put_oi": 0.0, "call_g": [], "put_g": []}
+        per_strike[strike][f"{side}_oi"] += open_interest
+        per_strike[strike][f"{side}_g"].append((gamma, open_interest))
 
     if not per_strike:
         return {"ok": False, "error": _no_data_reason(missing), "missing": dict(missing)}
 
     strikes_sorted = sorted(per_strike.values(), key=lambda x: x["strike"])
     for s in strikes_sorted:
+        # One gamma per strike (`strike_gamma`); a side listed under two roots is OI-weighted first.
+        side_gamma = {
+            side: (sum(g * q for g, q in s[f"{side}_g"]) / s[f"{side}_oi"]) if s[f"{side}_oi"] else None
+            for side in ("call", "put")
+        }
+        gamma = strike_gamma(s["strike"], spot, side_gamma["call"], side_gamma["put"])
+        s["call_gex"] = dollar_gamma(gamma, s["call_oi"], multiplier, spot)
+        s["put_gex"] = dollar_gamma(gamma, s["put_oi"], multiplier, spot)
         s["net_gex"] = s["call_gex"] - s["put_gex"]
 
     net_gex = sum(s["net_gex"] for s in strikes_sorted)
@@ -229,12 +253,6 @@ def compute_gex_profile(
         gamma = _num(g.get("gamma") if isinstance(g, dict) else getattr(g, "gamma", None)) or 0.0
         iv = _num(g.get("iv") if isinstance(g, dict) else getattr(g, "iv", None)) or 0.0
 
-        gex = dollar_gamma(gamma, oi_val, mult, spot)
-        gex_vol = dollar_gamma(gamma, vol_val, mult, spot)
-        if "P" in otype:
-            gex = -gex
-            gex_vol = -gex_vol
-
         d = strikes.setdefault(
             strike,
             {
@@ -250,14 +268,22 @@ def compute_gex_profile(
                 "put_vol": 0,
                 "put_gex": 0.0,
                 "put_gex_vol": 0.0,
+                "mult": mult,
             },
         )
         if "C" in otype:
             d["call_gamma"], d["call_iv"], d["call_oi"], d["call_vol"] = gamma, round(iv, 2), oi_val, vol_val
-            d["call_gex"], d["call_gex_vol"] = gex, gex_vol
         elif "P" in otype:
             d["put_gamma"], d["put_iv"], d["put_oi"], d["put_vol"] = gamma, round(iv, 2), oi_val, vol_val
-            d["put_gex"], d["put_gex_vol"] = gex, gex_vol
+
+    # Dollar gamma after every side is in: both sides of a strike carry ONE gamma (`strike_gamma`).
+    # The feed's own per-side gammas stay in the series as recorded, for audit.
+    for strike, d in strikes.items():
+        gamma = strike_gamma(strike, spot, d["call_gamma"], d["put_gamma"])
+        d["call_gex"] = dollar_gamma(gamma, d["call_oi"], d["mult"], spot)
+        d["call_gex_vol"] = dollar_gamma(gamma, d["call_vol"], d["mult"], spot)
+        d["put_gex"] = -dollar_gamma(gamma, d["put_oi"], d["mult"], spot)
+        d["put_gex_vol"] = -dollar_gamma(gamma, d["put_vol"], d["mult"], spot)
 
     if not strikes:
         return {
