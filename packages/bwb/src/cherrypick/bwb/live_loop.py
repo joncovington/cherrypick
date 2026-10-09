@@ -49,7 +49,17 @@ from cherrypick.core import settlement as _settlement
 
 from cherrypick.bwb import book as bookmod
 from cherrypick.bwb import cli as climod
-from cherrypick.bwb import clock, db, engine, entry_iv, live_orders, management, provider, stream_request
+from cherrypick.bwb import (
+    clock,
+    db,
+    engine,
+    entry_iv,
+    entry_regime,
+    live_orders,
+    management,
+    provider,
+    stream_request,
+)
 from cherrypick.bwb import paper_loop as _pl
 
 DEFAULT_ARM = "control"
@@ -800,6 +810,7 @@ def _try_live_entry(
         rate=float(defaults.get("risk_free_rate", entry_iv.DEFAULT_RATE)),
         max_age_seconds=defaults.get("max_quote_age_seconds", 300),
     )
+    regime = entry_regime.measure(cache_path, max_age_seconds=defaults.get("max_quote_age_seconds", 300))
     opened = bookmod.enter_position(
         conn,
         plan,
@@ -808,6 +819,7 @@ def _try_live_entry(
         entry_session=day,
         advice_params=None,
         implied=implied,
+        regime=regime,
         position_id_override=pid,
         extra={
             "status": "pending",

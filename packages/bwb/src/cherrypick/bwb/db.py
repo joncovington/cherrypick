@@ -264,6 +264,15 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "entry_iv_years": "REAL",
         "entry_iv_rate": "REAL",
         "entry_iv_reason": "TEXT",
+        # The vol term structure at entry (2026-10-09, `entry_regime.py`): recording only, raw
+        # prints with their ages; a missing or stale print is no number plus its reason.
+        "entry_vix9d": "REAL",
+        "entry_vix9d_age": "REAL",
+        "entry_vix": "REAL",
+        "entry_vix_age": "REAL",
+        "entry_vix3m": "REAL",
+        "entry_vix3m_age": "REAL",
+        "entry_regime_reason": "TEXT",
         "experiment_id": "TEXT",  # The base arm an advised row shadows, stamped at entry from the session decision (2026-09-17): the tag no longer carries it, and after the session the decision file is gone. Management prefers this over the configured advice.base_book, so a twin of a non-default base keeps its rules.
         "advice_base": "TEXT",
         # ---- LIVE scaffold (2026-09-18). Same schema on both ledgers; paper rows leave all of

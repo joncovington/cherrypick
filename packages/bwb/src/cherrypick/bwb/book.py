@@ -11,7 +11,7 @@ import json
 
 from cherrypick.core import advice as _core_advice
 
-from cherrypick.bwb import clock, db, engine
+from cherrypick.bwb import clock, db, engine, entry_regime
 
 
 def position_id(symbol: str, arm: str, entry_session: str) -> str:
@@ -39,6 +39,7 @@ def enter_position(
     position_id_override: str | None = None,
     extra: dict | None = None,
     implied: dict | None = None,
+    regime: dict | None = None,
 ) -> dict | None:
     """Open one arm's base BWB from a plan. Idempotent per position_id.
 
@@ -61,6 +62,8 @@ def enter_position(
         {
             # Recording only (2026-10-09): the expiration's implied variance at this instant.
             **{c: v for c, v in (implied or {}).items() if c.startswith("entry_iv_")},
+            # Recording only (2026-10-09): VIX9D / VIX / VIX3M at this instant (entry_regime.py).
+            **{c: v for c, v in (regime or {}).items() if c in entry_regime.COLUMNS},
             "position_id": pid,
             "symbol": plan["symbol"],
             "arm": arm,
