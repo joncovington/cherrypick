@@ -68,8 +68,9 @@ def test_prepare_refuses_until_chosen_and_until_winsw_is_there():
 
 def test_the_elevated_steps_install_with_a_prompted_password_and_free_the_anchor():
     steps = winservice.elevated_steps(r"C:\h\service\svc.exe", "cherrypick-supervisor", "jonco")
-    assert steps[0].endswith("install /p") and steps[1].endswith(" start")
-    assert "Set-ScheduledTask -TaskName 'cherrypick-supervisor'" in steps[2] and "Get-Credential" in steps[2]
+    assert steps[0].endswith("install /p") and "supervise --stop" in steps[1] and steps[2].endswith(" start")
+    assert "Set-ScheduledTask -TaskName 'cherrypick-supervisor'" in steps[3]
+    assert r"Get-Credential '.\jonco'" in steps[3]  # the service manager refuses a bare account name
 
 
 @pytest.mark.parametrize(
@@ -137,8 +138,26 @@ def test_prepare_writes_the_definition_with_the_logon_path(monkeypatch, tmp_path
         platform="nt",
     )
     assert out["ok"], out
-    assert len(out["run_these_in_an_administrator_prompt"]) == 3
+    assert len(out["run_these_in_an_administrator_prompt"]) == 4
     root = ET.parse(out["xml"]).getroot()
     assert (
         root.find("env").get("value") == r"C:\WINDOWS\system32;C:\Program Files\nodejs"
     )  # never the shell's
+
+
+def test_a_service_that_will_not_start_falls_back_to_the_usual_supervisor_and_says_so(monkeypatch):
+    # 2026-10-08, the first real install: a logon failure left the suite with no supervisor at all.
+    spawned, sent = [], []
+
+    class Note:
+        def notify(self, level, key, title, message, **kw):
+            sent.append((level, key))
+            return {"log": {"ok": True}}
+
+    monkeypatch.setattr(cli, "_spawn_supervisor_detached", lambda: spawned.append(1) or True)
+    monkeypatch.setattr(cli, "Notifier", lambda c: Note())
+    monkeypatch.setattr(cli.os, "name", "nt")
+    monkeypatch.setattr(winservice, "query", lambda sid: {"installed": True, "state": "STOPPED"})
+    monkeypatch.setattr(winservice, "start", lambda sid: False)
+    assert cli._start_supervisor(ON) and spawned == [1]
+    assert sent == [("CRITICAL", "service.start_failed")]

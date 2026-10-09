@@ -241,15 +241,23 @@ supervisor can run as a Windows service. This is opt-in and off until you turn i
    downloaded file's path.
 3. Run `python packages/orchestrator/run.py service prepare`. It writes the service definition and
    prints three commands.
-4. Run those three commands in an **administrator** prompt. The first asks for your Windows account
-   and password (stored by Windows, never in a file); the last lets the 2-minute check run while you
-   are logged off.
+4. Run the printed commands in that order, in an **administrator** prompt. The first asks for your
+   Windows account and password (stored by Windows, never in a file): enter the account as
+   **`.\yourname`** (a bare name is refused), and if your Windows account is a Microsoft account, use
+   your **Microsoft account password**, not your PIN. The second stops the running supervisor so the
+   service can take over; the last lets the 2-minute check run while you are logged off.
+
+   If the service then will not start and Windows' System event log shows "logon failure" (7038),
+   Windows has never seen that password on this PC, which happens if you always sign in with a PIN.
+   Sign out, sign in once with the password (Sign-in options on the login screen), and start the
+   service again. Until then the suite keeps running the usual way and says so with a CRITICAL.
 5. Reboot once with auto-logon still on, and check `run.py service status` and `run.py doctor`.
    Then you can turn auto-logon off.
 
 As a service, nothing appears on screen: desktop notifications are skipped (use Discord or Slack),
 and a collector whose sign-in has expired needs you to log in and sign in by hand. Your Windows
-password is stored for the service, so after changing it run step 4 again. To undo it, run
+password is stored for the service, so after changing it (for a Microsoft account, changing it
+online counts) run step 4 again. To undo it, run
 `run.py service uninstall` and follow what it prints.
 
 ## Stopping and uninstalling

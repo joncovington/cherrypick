@@ -181,12 +181,19 @@ def start(service_id: str) -> bool:
 
 
 def elevated_steps(service_exe: str, anchor_task: str, user: str) -> list[str]:
-    """What a person runs in an ADMINISTRATOR prompt after `prepare`. Pure."""
+    """What a person runs in an ADMINISTRATOR prompt after `prepare`, in order. Pure.
+
+    The account is `.\\<user>`: the service manager refuses a bare name. On a Microsoft-linked account
+    the password is the Microsoft account's, and Windows must have seen it at a sign-in on this
+    machine -- a PIN-only user gets "logon failure" (event 7038) at start, though the install itself
+    succeeds (both learned on the first real install, 2026-10-08). The running supervisor holds the
+    lock, so it is stopped before the service starts."""
     return [
-        f'"{service_exe}" install /p',  # asks for the account (.\\{user}) and its password
+        f'"{service_exe}" install /p',  # account: .\\{user}; on a Microsoft account, its password
+        "python packages/orchestrator/run.py supervise --stop   (no elevation needed; wait ~15 s)",
         f'"{service_exe}" start',
         # The anchor must run with nobody logged on, so the hung-supervisor check survives logoff.
-        "powershell -NoProfile -Command \"$c = Get-Credential '" + user + "'; "
+        "powershell -NoProfile -Command \"$c = Get-Credential '.\\" + user + "'; "
         f"Set-ScheduledTask -TaskName '{anchor_task}' -User $c.UserName "
         '-Password $c.GetNetworkCredential().Password"',
     ]

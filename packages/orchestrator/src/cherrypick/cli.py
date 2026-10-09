@@ -1017,7 +1017,27 @@ def _start_supervisor(cfg) -> bool:
     if service:
         from cherrypick.orchestrator import winservice
 
-        return winservice.start(service["id"])
+        if winservice.start(service["id"]):
+            return True
+        # The service would not start (a logon failure, a refused `sc start`): a supervisor outside
+        # it beats none at all -- the single-instance lock still stops the service from adding a
+        # second once it is fixed. Said loudly, because the machine is no longer running as chosen.
+        # Found on the first real install (2026-10-08): this path gave up, and nothing restarted the
+        # suite after the old supervisor had been stopped for the service to take over.
+        started = _spawn_supervisor_detached()
+        try:
+            Notifier(cfg.get("notify")).notify(
+                "CRITICAL",
+                "service.start_failed",
+                "Supervisor service would not start -- running it the usual way",
+                f"`sc start {service['id']}` failed, so the supervisor was started outside the service "
+                f"({'started' if started else 'that failed too'}). Windows' System event log (Service "
+                "Control Manager, 7000/7038) says why -- most often the service account's password. "
+                "`run.py service status` and `run.py doctor` show the state.",
+            )
+        except Exception:
+            pass
+        return started
     return _spawn_supervisor_detached()
 
 
