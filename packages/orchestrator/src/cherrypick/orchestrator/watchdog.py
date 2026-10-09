@@ -70,6 +70,24 @@ def _supervisor_driving() -> bool:
     return supersnap.supervisor_alive()
 
 
+# Module reason codes, said in words for a message a person reads.
+_REASON_WORDS = {
+    "no_fresh_quotes": "no fresh price quote to settle at",
+    "no_snapshot": "no market snapshot",
+    "stale_cache": "the market data is stale",
+}
+
+
+def _pre_cutover() -> bool:
+    """A box that has never run the supervisor (no heartbeat file ever written): only there do the
+    legacy scheduled tasks drive anything. On a supervisor box whose supervisor is down -- restarting,
+    or not yet back after a power cut -- a missing legacy task is not news, and reporting it raised
+    false "paper task missing" CRITICALs on 2026-10-08. `_check_supervisor` owns that alarm."""
+    from . import supervisor
+
+    return not supervisor.heartbeat_path().exists()
+
+
 def _supervisor_job(job_id: str) -> dict[str, Any] | None:
     from . import supersnap
 
@@ -178,9 +196,7 @@ def _check_job_registry_drift(cfg: dict[str, Any]) -> list[Finding]:
             WARN,
             "Supervisor is running a stale job table",
             f"{len(missing)} job(s) derived from config that the running supervisor has never seen: "
-            f"{', '.join(missing)}. It loads jobspec once at startup, so these are not scheduled and "
-            "will not fire. Restart it to pick them up: cherrypick supervise --stop, then "
-            "cherrypick ensure-supervisor.",
+            f"{', '.join(missing)}. They will not run until it restarts: `run.py supervise --restart`.",
         ),
     ]
 
@@ -1112,6 +1128,8 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
             )
         else:
             findings.append(Finding(f"{name}.task", OK, f"{label} paper job", "supervised"))
+    elif not _pre_cutover():
+        pass  # supervisor box, supervisor down: `_check_supervisor` says so, once
     elif task_name and not tasks.exists(task_name):
         findings.append(
             Finding(
@@ -1222,6 +1240,8 @@ def _check_scheduled_entry_exit_jobs(name: str, paper: dict[str, Any]) -> list[F
                 )
             else:
                 findings.append(Finding(f"{name}.task.{label}", OK, f"Earnings {label} job", "supervised"))
+        elif not _pre_cutover():
+            pass  # supervisor box, supervisor down: `_check_supervisor` says so, once
         elif not tasks.exists(tn):
             findings.append(
                 Finding(
@@ -1613,13 +1633,14 @@ def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trad
         return []
     open_count = status.get("positions_today") or 0
     if status.get("session_settled") is False and open_count > 0:
-        reason = status.get("data_reason") or "settlement price unavailable"
+        code = str(status.get("data_reason") or "")
+        reason = _REASON_WORDS.get(code) or code.replace("_", " ") or "no settlement price yet"
         return [
             Finding(
                 f"{name}.settle_overdue",
                 WARN,
                 f"{label} settlement overdue",
-                f"{open_count} open position(s) past the close still unsettled ({reason}).",
+                f"{open_count} open position(s) not settled after the close: {reason}. It retries each tick.",
             )
         ]
     return [Finding(f"{name}.settle_overdue", OK, f"{label} settlement", "settled or no open positions")]
@@ -1735,6 +1756,30 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
     grace = int(live.get("disarm_grace_minutes", 30))
     now_minute = now_et.hour * 60 + now_et.minute
     past_disarm_window = now_minute >= disarm_minute + grace or (armed_for and armed_for != today)
+    # A record the supervisor no longer acts on (a past day's, or today's past the window) while no
+    # live tick is running and no legacy task exists is INERT: the job that would read it is off. It
+    # outlives the window only when the machine was off at disarm time -- the tick that deletes it
+    # never ran. Remove it, and do NOT halt: halting on it re-set the suite halt on every pass after
+    # the 2026-10-08 power cut, blocking the next day's live entries for a record nothing obeyed.
+    if registered and past_disarm_window and hb_exists and arm_rec and not tasks.exists(task_name):
+        info = supersnap.job_run_info(f"{name}-live") or {}
+        if not info.get("still_running"):
+            try:
+                supervisor.arm_record_path(name).unlink()
+                removed = True
+            except OSError:
+                removed = False
+            findings.append(
+                Finding(
+                    f"{name}.live_disarm",
+                    OK,
+                    f"{label} live disarmed (stale arm record removed)",
+                    f"The arm record for {arm_rec.get('date')} outlived its {disarm_hhmm} disarm because no "
+                    f"live tick ran then (machine off?). Nothing was trading; "
+                    + ("it was removed." if removed else "removing it failed -- delete it by hand."),
+                )
+            )
+            return findings
     if registered and past_disarm_window:
         from . import liveops
 
@@ -1748,11 +1793,10 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
             Finding(
                 f"{name}.live_disarm",
                 CRITICAL,
-                f"{label} LIVE armed signal survived past disarm",
-                f"{armed_desc} past {disarm_hhmm}+{grace}m (armed_for={armed_for}); "
-                "halt flag set — live ticks now refuse. Investigate why self-disarm failed, then "
-                "disarm (--uninstall-task removes the arm record and any legacy task) and clear "
-                "the halt flag before re-arming.",
+                f"{label} LIVE still running past disarm",
+                f"{armed_desc} after {disarm_hhmm}+{grace}m (armed for {armed_for}). Halt set: no new "
+                f"live entries. Disarm (`live_loop --uninstall-task`), find why it did not stop, then "
+                "clear the halt.",
             )
         )
         return findings  # halted state — the armed-window checks below would only add noise
@@ -2286,7 +2330,7 @@ def _fixed_time_job_findings(jobs: dict[str, dict[str, Any]], now: datetime) -> 
                 "jobs.failed",
                 WARN,
                 f"{len(failed)} scheduled job(s) failed",
-                "; ".join(failed) + ". `run.py ps` shows each job; logs/supervisor.log has the runs.",
+                _first_few(failed, sep="; ") + ". logs/supervisor.log has the runs.",
             )
         )
     if missed:
@@ -2295,12 +2339,17 @@ def _fixed_time_job_findings(jobs: dict[str, dict[str, Any]], now: datetime) -> 
                 "jobs.missed",
                 WARN,
                 f"{len(missed)} scheduled job(s) did not run",
-                ", ".join(missed) + " -- each window closed before the job could start (machine off, "
-                "network down, or held). Today's output of each is missing; run one by hand where it "
-                "matters.",
+                f"{_first_few(missed)}. Their windows closed before they could start (machine off, "
+                "network down, or held); `run.py ps` lists them.",
             )
         )
     return findings
+
+
+def _first_few(items: list[str], n: int = 8, sep: str = ", ") -> str:
+    """The first `n` items and how many more -- a list a person can read on a phone."""
+    head = sep.join(items[:n])
+    return head + (f" and {len(items) - n} more" if len(items) > n else "")
 
 
 def _check_fixed_time_jobs(now: datetime) -> list[Finding]:

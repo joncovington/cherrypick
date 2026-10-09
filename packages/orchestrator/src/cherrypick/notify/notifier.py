@@ -498,6 +498,7 @@ class Notifier:
         its source (see `send_webhook`).
         """
         level = level.upper()
+        title, message = _portable(title), _portable(message)
         results: dict[str, Any] = {"log": self._write_log_safe(level, key, title, message)}
         record = {"source": key, "kind": kind, "session": session, "inputs": list(inputs)}
         for ch in self.channels:
@@ -515,6 +516,18 @@ class Notifier:
             except Exception as exc:
                 results[ch] = {"ok": False, "error": str(exc)}
         return results
+
+
+def _portable(text: str) -> str:
+    """The user's home folder as `~` -- a pushed message never carries a username (the suite's
+    portable-paths rule; a backup failure and a reconcile timeout both printed full paths to Discord,
+    2026-10-08). Covers both slash directions and the doubled backslashes of a repr()'d path."""
+    home = os.path.expanduser("~")
+    if not text or not home or home == "~":
+        return text
+    for form in {home, home.replace("\\", "/"), home.replace("\\", "\\\\")}:
+        text = text.replace(form, "~")
+    return text
 
 
 def delivered(results: dict[str, Any]) -> bool:
