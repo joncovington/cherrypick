@@ -69,6 +69,7 @@ _LAUNCHER = Path(__file__).resolve().parents[3] / "run.py"
 # How stale the heartbeat may be before ensure-supervisor treats the daemon as dead. The loop writes
 # it every HEARTBEAT_WRITE_SECONDS; 90s tolerates a slow pass or a paused clock without flapping.
 HEARTBEAT_WRITE_SECONDS = 5
+STATE_WRITE_LOG_SECONDS = 300  # at most one "write skipped" line per this, however many skips
 HEARTBEAT_FRESH_SECONDS = 90
 
 # A resident orphan (adopted from a prior supervisor) that died while we held no handle. Not a real
@@ -894,9 +895,27 @@ class Supervisor:
                     browser_busy = browser_busy or jobspec.uses_browser(spec)
 
         self._loop_seq += 1
-        self._write_registry(errors)
-        self._write_heartbeat(now, len(jobs))
+        self._write_state_file("job registry", lambda: self._write_registry(errors))
+        self._write_state_file("heartbeat", lambda: self._write_heartbeat(now, len(jobs)))
         return {"started": started, "jobs": len(jobs), "errors": errors}
+
+    def _write_state_file(self, what: str, write) -> None:
+        """One of the per-pass state writes, skipped rather than fatal when Windows refuses the
+        replace past its retries (2026-10-09: the heartbeat's target held open for over 2 s killed the
+        daemon, the third such death in a day). Both files are rewritten on the next pass from the
+        state in memory, so a skipped write loses nothing; one held for good leaves the heartbeat to
+        go stale, which is what the anchor's wedged-supervisor check acts on."""
+        try:
+            write()
+        except PermissionError as exc:
+            self._state_write_skips = getattr(self, "_state_write_skips", 0) + 1
+            last = getattr(self, "_state_write_logged", 0.0)
+            if time.time() - last >= STATE_WRITE_LOG_SECONDS:
+                self._state_write_logged = time.time()
+                _log(
+                    f"{what} write skipped this pass ({self._state_write_skips} so far): another "
+                    f"process held the file -- {exc}"
+                )
 
     def _fixed_start_hold(self, spec: jobspec.JobSpec, browser_busy: bool) -> str | None:
         """Why a due fixed-time job must wait this pass, or None to start it."""

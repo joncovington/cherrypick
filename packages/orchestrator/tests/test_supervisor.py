@@ -625,6 +625,31 @@ def test_heartbeat_carries_the_daemons_own_memory(spawned):
     assert isinstance(hb["rss_mb"], (int, float)) and hb["rss_mb"] > 0
 
 
+def test_a_state_file_windows_will_not_replace_is_skipped_not_fatal(spawned, monkeypatch):
+    """2026-10-09: the heartbeat's target was held open past the replace retries and the
+    PermissionError killed the daemon. A pass now skips that write, says so once, and the next pass
+    writes it."""
+    real = supervisor.atomic_write_json
+    held = {supervisor.heartbeat_path(), supervisor.jobs_path()}
+
+    def refuse(path, obj):
+        if path in held:
+            raise PermissionError(5, "Access is denied", str(path))
+        real(path, obj)
+
+    monkeypatch.setattr(supervisor, "atomic_write_json", refuse)
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=MONDAY_NOON)  # must not raise
+    sup.pass_once(now=MONDAY_NOON)
+    log = cfgmod.log_file("supervisor.log").read_text(encoding="utf-8")
+    assert log.count("write skipped this pass") == 1  # throttled: one line, not one per pass
+    assert "job registry write skipped" in log and "another process held the file" in log
+    held.clear()
+    sup._last_heartbeat = 0.0
+    sup.pass_once(now=MONDAY_NOON)
+    assert json.loads(supervisor.heartbeat_path().read_text(encoding="utf-8"))["pid"] == os.getpid()
+
+
 def test_breadcrumbs_are_not_armed_for_a_bounded_test_run(spawned, monkeypatch):
     """A bounded (test) run must never register the atexit marker: at interpreter exit it would
     write 'process exiting' into the LIVE supervisor.log — noise in exactly the diagnostic trail
