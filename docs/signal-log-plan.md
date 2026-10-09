@@ -746,6 +746,92 @@ positive net R. A setup short of 780 effective entries reads "not yet judged".
 - **The exploratory volume lead did not survive** on the slice it never saw.
 - The results and what they say are in `packages/technicals/docs/setups.md`, "Round 4".
 
+## Round 5: the 1-10 score inside the vendor's fundamentals, declared before it was run (2026-10-09)
+
+Round 4 tested the relative-strength breakout as an entry on its own. The user's correction is that
+the vendor never uses it that way. The 1-10 relative-strength score is read only where the
+fundamentals are very good (bullish) or very bad (bearish), together with the directional
+indicators. A 10 means "entering too late to capture significant value", and a 1 means "the price
+action is ignoring the fundamentals". The vendor's 2026 sessions say the same: "a relative strength
+of two while having compelling fundamentals is what we are looking for," and a 10 is "late to the
+game". Round 5 asks whether a low score adds anything once the fundamentals and the direction
+already agree.
+
+**What was looked at before declaring (2026-10-09):**
+- **The vendor's own words**: 192 transcripts and the 2026 slides, read for how they define
+  fundamentals and use the score. The findings and the year-by-year changes are recorded outside
+  the repo.
+- **Frequencies only**, with no returns computed (the build ran with scoring off, and asserted it):
+  - entries per test in the sector version: 826 (bullish, stage), 1,194 (bullish, trend), 1,327
+    (bearish, stage) and 1,426 (bearish, trend);
+  - the median comparison pool per entry: 10 to 49;
+  - about 122 sector-map names labelled each week.
+- **Round 4** (the breakout without fundamentals, worse than random) and its exploratory look at
+  breakouts. No return by score decile or by fundamentals label has been seen.
+
+**The fundamentals label** (`fundamentals.py`) uses Dolt's weekly consensus snapshots, as each stood
+that week, from 2017-10:
+- **Valuation:** forward P/E, the raw close over the next fiscal year's consensus EPS. A name with
+  that EPS at zero or below ranks behind every profitable name, ordered among themselves by
+  price/sales.
+- **Estimated EPS growth and estimated revenue growth:** next fiscal year's consensus against the
+  current year's, measured as (next − prior) / |prior|.
+- **Net margin:** the last four reported quarters. A quarter counts only 45 days after it ends,
+  because Dolt keeps period ends, not filing dates.
+- **The score:** each measure's percentile within the name's sector that week (cheaper is better
+  for valuation), with net margin counted twice. The vendor weights margin most and never states
+  the weights. A name missing a measure, or in a sector of fewer than 5 scored names, has no score.
+- **The label:** the top 15% of the week's scores are compelling and the bottom 15% are weak. The
+  vendor labels only the clear tails; 15% is estimated from their list sizes.
+- **The label in force on a session** is the latest snapshot strictly before it. A Sunday's snapshot
+  first applies on Monday.
+
+**The 1-10 score** is our reproduction (`levels.rank_score`, 52 of 62 exact against the vendor's).
+It is computed on history exactly as `land.land_rank_cutoffs` builds it live: the whole listed
+market, raw closes, at least $100k a day, and names with a split inside the window left out.
+
+**Triggers, each both ways:**
+- **Stage:** the name becomes an early leader under the live stage rule, with no leader reading of
+  any stage in the 10 sessions before. The bearish trigger is an early laggard, likewise. The
+  vendor's 2026 trigger is this early breakout.
+- **Trend:** the short-term trend score reaches Bullish (3 or more) from below. The bearish trigger
+  reaches Bearish (−3 or less) from above.
+
+**Four tests, Holm across the four at a family-wise α of 0.05:**
+
+| Id | Entry | Against |
+|---|---|---|
+| `bull:stage` | compelling + early-leader trigger + score 1-3, long | the same label and trigger at scores 4-10 |
+| `bull:trend` | compelling + Bullish-trend trigger + score 1-3, long | the same at scores 4-10 |
+| `bear:stage` | weak + early-laggard trigger + score 8-10, short | the same at scores 1-7 |
+| `bear:trend` | weak + Bearish-trend trigger + score 8-10, short | the same at scores 1-7 |
+
+- **The comparison pool** is the mean net R of the comparison entries made within 10 sessions
+  either side. It is the other scores, not every score, so the test asks what the low (or high)
+  score adds over the rest.
+- **Every trigger is an entry.** Positions may overlap, and the calendar-time test weighs a day once.
+- **A test passes** with a Holm-significant positive edge AND a positive net R.
+- **Too small a sample:** fewer than 780 effective entries reads "not yet judged". The bullish
+  stage test may land there.
+
+**Views, never tests:**
+- the whole-universe version (percentiles across every name with estimates, not within sectors);
+- the "late" side: compelling + bullish trigger at scores 8-10, and weak + bearish trigger at 1-3.
+
+**Known biases, stated now:**
+- **The sector map is today's 489 names.** A name that scored low and then collapsed and delisted
+  is missing, which flatters the bullish tests. The whole-universe view does not have this bias.
+- **The data starts in October 2017.** That is about nine years, against fifteen for rounds 1-4.
+- **The fundamentals are ours, not the vendor's.** Their scale, weights, threshold, estimate horizon
+  and per-industry multiple are unstated. The sectors are broader than their industries.
+
+**Everything else is plan v2's:**
+- the universe as of each day;
+- the corporate-action exclusions;
+- next-open fills and the 21-session hold;
+- R net of the declared costs (borrow on the shorts);
+- the calendar-time one-sided test.
+
 ## Later phases: uses the study and log are shaped for, none committed
 
 History makes most of these **runnable now, not someday**.
