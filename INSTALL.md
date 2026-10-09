@@ -229,6 +229,29 @@ running. Double-click **`console-desktop.cmd`** in the installation folder on Wi
 `packages/console/desktop`, which builds the shell first, so the first launch takes a minute. Keep the
 terminal it opens; closing the console window ends it.
 
+## Optional: run as a Windows service (nobody logged on)
+
+By default the suite starts from a scheduled task that runs only while you are logged on, so an
+unattended Windows machine needs auto-logon. To have it run at the login screen instead, the
+supervisor can run as a Windows service. This is opt-in and off until you turn it on.
+
+1. Download `WinSW-x64.exe` (version 2.x) from the
+   [WinSW releases page](https://github.com/winsw/winsw/releases).
+2. In `~/.cherrypick/config.json`, set `service.enabled` to `true` and `service.winsw_exe` to the
+   downloaded file's path.
+3. Run `python packages/orchestrator/run.py service prepare`. It writes the service definition and
+   prints three commands.
+4. Run those three commands in an **administrator** prompt. The first asks for your Windows account
+   and password (stored by Windows, never in a file); the last lets the 2-minute check run while you
+   are logged off.
+5. Reboot once with auto-logon still on, and check `run.py service status` and `run.py doctor`.
+   Then you can turn auto-logon off.
+
+As a service, nothing appears on screen: desktop notifications are skipped (use Discord or Slack),
+and a collector whose sign-in has expired needs you to log in and sign in by hand. Your Windows
+password is stored for the service, so after changing it run step 4 again. To undo it, run
+`run.py service uninstall` and follow what it prints.
+
 ## Stopping and uninstalling
 
 Double-click **`uninstall.cmd`** on Windows, or run **`./uninstall.sh`** on macOS and Linux. It is a

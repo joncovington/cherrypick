@@ -229,13 +229,19 @@ def cmd_install(cfg, force: bool = False) -> None:
     # The one remaining OS task: a 2-minute keep-alive probe that (re)starts the supervisor.
     # The OS guarantees the probe; the probe guarantees the daemon; the daemon fires everything.
     anchor_tr = tasks.build_tr(pyw, str(_LAUNCHER), "ensure-supervisor")
-    results["anchor_task"] = tasks.create_minute_task(supersnap.ANCHOR_TASK, anchor_tr, 2, run_now=False)
+    service = _service_mode(cfg)
+    if service and tasks.exists(supersnap.ANCHOR_TASK):
+        # Service mode (optional, `run.py service`): the anchor was set to run with nobody logged on;
+        # re-creating it here would quietly put it back to logged-on only.
+        results["anchor_task"] = {"ok": True, "detail": "kept as configured (service mode)"}
+    else:
+        results["anchor_task"] = tasks.create_minute_task(supersnap.ANCHOR_TASK, anchor_tr, 2, run_now=False)
 
     # Start the supervisor now rather than waiting for the anchor's first fire.
     if supersnap.supervisor_alive():
         results["supervisor"] = {"ok": True, "detail": "already running"}
     else:
-        started = _spawn_supervisor_detached()
+        started = _start_supervisor(cfg)
         results["supervisor"] = {"ok": started, "detail": "started" if started else "start failed"}
 
     # Unconditionally delete every legacy per-job task (idempotent — deleting an absent task is a
@@ -993,6 +999,47 @@ def cmd_supervise(cfg, stop: bool = False) -> None:
     _emit(supervisor.run())
 
 
+def _service_mode(cfg) -> dict | None:
+    """The service's settings when the optional Windows-service mode is on AND the service is
+    installed (`run.py service`), else None -- the default, logged-on-anchor posture."""
+    from cherrypick.orchestrator import winservice
+
+    s = winservice.settings(cfg or {})
+    if not s["enabled"] or os.name != "nt":
+        return None
+    return s if winservice.query(s["id"]).get("installed") else None
+
+
+def _start_supervisor(cfg) -> bool:
+    """Start the supervisor the way this machine runs it: through the service in service mode (a
+    detached spawn there would be a rival the service cannot see), else the detached daemon."""
+    service = _service_mode(cfg)
+    if service:
+        from cherrypick.orchestrator import winservice
+
+        return winservice.start(service["id"])
+    return _spawn_supervisor_detached()
+
+
+def cmd_service(cfg, action: str | None) -> None:
+    """OPTIONAL Windows-service mode (orchestrator/winservice.py): prepare | status | uninstall."""
+    from cherrypick.orchestrator import supersnap, winservice
+
+    if action == "prepare":
+        out = winservice.prepare(
+            cfg, launcher=str(_LAUNCHER), workdir=str(_LAUNCHER.parents[2]), anchor_task=supersnap.ANCHOR_TASK
+        )
+    elif action == "uninstall":
+        out = winservice.uninstall(cfg, anchor_task=supersnap.ANCHOR_TASK)
+    elif action in (None, "status"):
+        out = winservice.status(cfg)
+    else:
+        out = {"ok": False, "error": f"unknown service action {action!r}: prepare | status | uninstall"}
+    _emit(out)
+    if out.get("ok") is False:
+        sys.exit(1)
+
+
 def _spawn_supervisor_detached() -> bool:
     """Launch `run.py supervise` as a detached, windowless daemon — the same flags every other
     daemon start here uses (DETACHED | NO_WINDOW | NEW_GROUP), so it survives this process and
@@ -1067,7 +1114,7 @@ def cmd_ensure_supervisor(cfg) -> None:
         except Exception:
             pass
 
-    started = _spawn_supervisor_detached()
+    started = _start_supervisor(cfg)
     failures = int(state.get("failures") or 0) + 1
     notified = bool(state.get("notified"))
     if failures >= 3 and not notified:
@@ -1549,6 +1596,7 @@ def build_parser() -> argparse.ArgumentParser:
             "power-watch",
             "live-positions",
             "settle-overdue-live",
+            "service",
             "ps",
             "restart",
             "stop",
@@ -1754,7 +1802,7 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default=None,
         help="For restart/stop/start: a supervisor job (console, flies-paper, ...), `streamer`, or a "
-        "service id -- `ps` lists them",
+        "service id -- `ps` lists them. For service: prepare | status | uninstall",
     )
     parser.add_argument(
         "--all",
@@ -1827,6 +1875,7 @@ def main() -> None:
         "notify-status": lambda: cmd_notify_status(cfg, force=args.force, close=args.close),
         "power-watch": lambda: cmd_power_watch(cfg),
         "live-positions": lambda: cmd_live_positions(cfg),
+        "service": lambda: cmd_service(cfg, args.name),
         "settle-overdue-live": lambda: cmd_settle_overdue_live(cfg),
         "notify-send": lambda: cmd_notify_send(args),
         "sent": lambda: cmd_sent(args),

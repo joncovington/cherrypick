@@ -287,6 +287,23 @@ def verify_message(entry: dict[str, Any], opener=None) -> str:
         return f"unknown: {type(exc).__name__}"
 
 
+def _windows_session_id() -> int | None:
+    """This process's Windows session (0 = services, no desktop), or None off Windows / unknown."""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        sid = wintypes.DWORD()
+        k32 = ctypes.WinDLL("kernel32")
+        if k32.ProcessIdToSessionId(k32.GetCurrentProcessId(), ctypes.byref(sid)):
+            return int(sid.value)
+    except Exception:  # noqa: BLE001 -- unknown is "not session 0": try the toast as before
+        return None
+    return None
+
+
 def _applescript_str(text: str) -> str:
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -376,6 +393,10 @@ class Notifier:
                 return {"ok": True}
             except Exception as exc:  # never let a push failure escape
                 return {"ok": False, "error": str(exc)}
+        if _windows_session_id() == 0:
+            # Session 0 is where services run (the optional `run.py service` mode): it has no desktop,
+            # so a balloon there reaches no one. Say so rather than report a toast nobody saw.
+            return {"ok": False, "skipped": "no desktop in session 0 (running as a Windows service)"}
         icon = "Warning" if level in ("WARN", "CRITICAL") else "Info"
         safe_title = f"{self.app_name}: {title}"
         ps = (
