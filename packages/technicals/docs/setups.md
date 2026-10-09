@@ -492,3 +492,55 @@ effective entries. The full results are in `round4-20261009-152840.json` in the 
   entry. This tests the signal, not their whole method.
 - **The 21-session hold was chosen after the exploratory look.** It is one of three horizons that
   look tried, and the look found no edge at the other two either.
+
+## Round 5: the 1-10 score inside the fundamentals, no help and sometimes worse (2026-10-09)
+
+The vendor reads its 1-10 relative-strength score only where the fundamentals are clear. Their
+claim is that a low score with compelling fundamentals means the price has not caught up, while a
+10 is "late to the game". Round 5 asks whether a low score adds anything once compelling
+fundamentals and a bullish trigger agree, and the mirror for shorts. It was declared before running
+(`docs/signal-log-plan.md`, "Round 5"; `fundamentals.py`, `round5.py`, `study round5`).
+
+**The setup:**
+- **Fundamentals:** our version of their four measures, each a percentile within the name's sector
+  that week, from Dolt's weekly consensus estimates (2017-10 to 2026-10). Net margin is counted twice.
+  The top and bottom 15% are compelling and weak.
+- **The 1-10 score:** rebuilt on history the way the live landing builds it.
+- **The triggers:** an early leader under the stage rule, or the short-term trend reaching Bullish
+  (and the bearish mirrors).
+- **The entries:** compelling + bullish trigger + score 1-3 (long), and weak + bearish trigger +
+  score 8-10 (short). Each is compared with the same label and trigger at the other scores, entered
+  within 10 sessions. All are held 21 sessions.
+
+| Test | Entries (effective) | Net R (net %) | Other scores R | Edge R (t) | Verdict |
+|---|---|---|---|---|---|
+| Compelling, early leader, score 1-3 | 824 (633) | +0.196 (+1.20%) | +0.205 | −0.055 (−0.4) | not yet judged |
+| Compelling, Bullish trend, score 1-3 | 1,189 (849) | +0.222 (+1.00%) | +0.569 | −0.393 (−3.3) | worse than the other scores |
+| Weak, early laggard, score 8-10 (short) | 1,308 (874) | −0.623 (−2.04%) | −0.835 | +0.187 (+1.6) | loses money; not significant |
+| Weak, Bearish trend, score 8-10 (short) | 1,401 (936) | −0.890 (−3.25%) | −0.833 | +0.121 (+1.1) | loses money; not significant |
+
+Nothing passes. The full results are in `round5-20261009-202437.json` in the study folder. Edge is
+the calendar-time mean, one value per session, so it can differ in sign from net minus baseline
+when entries cluster (the Bearish-trend row).
+
+**What round 5 says:**
+- **A low score does not help a bullish entry, and on the trend trigger it hurts.** Compelling names
+  turning Bullish earned +0.57 R at scores 4-10 and +0.22 R at 1-3. That is momentum, the opposite
+  of "price ignoring the fundamentals".
+  - The whole-universe view says the same (−0.198 R, t −2.9).
+  - The sector map holds only today's names, which flatters the low scores, and they lost anyway.
+- **"10 is late" is not supported.** Compelling names on a Bullish-trend trigger at scores 8-10
+  earned +0.275 R (2,975 entries), more than the low scores' +0.222 R.
+- **Shorting weak fundamentals loses money at every score.** It lost −0.62 to −0.89 R a trade in
+  the sector version, in a market that rose over 2017-2026. A high score made it less bad on the
+  stage trigger (+0.187 R, t 1.6), but that falls short after Holm and the trade still loses.
+- **The bullish entries make money as a group** (+0.2 R, about 1% in 21 sessions), but nothing here
+  compares them with random entry. Round 5 asks what the score adds, not whether the long side beats
+  the market.
+
+**Limits:**
+- **The fundamentals are ours.** Their scale, weights, 15% threshold, horizon and per-industry
+  multiple are unstated, and sectors are broader than their industries.
+- **Nine years**, from the first estimate snapshots (2017-10).
+- **The stage test is too small to judge** (633 effective entries against 780).
+- **Fixed 21-session holds**, where the vendor manages option positions.

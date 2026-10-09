@@ -86,7 +86,11 @@ report files they produce.
 | `run-earnings-entry` | Run the Earnings paper **entry** pass now (the daily ~15:45 ET job). |
 | `run-earnings-exit` | Run the legacy Earnings paper **exit** sweep now. Manual/backfill only since the 2026-08-12 lifecycle cutover — the managed loop (`earnings-paper`, every 60s) owns exits. |
 | `run-earnings-symbol-watch` | Run the Earnings forward-preview scan now (`symbol_watch.py refresh`) — the source of the console's read-only Earnings page "Upcoming" section. Purely informational; off by default (`symbol_watch.enabled`). |
-| `ensure-dolt` | Start a module's declared Dolt server if down (the earnings keep-alive job). |
+| `ensure-dolt` | Start a module's declared Dolt server if down (the earnings keep-alive job); leaves it down while `dolt-server` is held. |
+| `dolt-server-status` | The `dolt-server` daemon's status contract (JSON `running`/`pid`): what `status dolt-server` reads. |
+| `dolt-server-start` | Start the Dolt server if it is down: what `start`/`restart dolt-server` call (under the Windows service, through the supervisor). |
+| `dolt-server-stop` | Stop the Dolt server: ends only a dolt process listening on the Dolt port, never a guess. |
+| `dolt-sql` | `dolt-sql <database> --query "..."`: a query through the running Dolt server by address. Use it instead of a bare `dolt sql` in the data folder, which on Windows deletes a service-started server's `sql-server.info`. |
 
 The module paper loops are supervisor jobs too: MEIC as a 60 s `--once` spawn
 (`modules.meic.paper.tick_interval_seconds`), flies as the one **resident** child (its own

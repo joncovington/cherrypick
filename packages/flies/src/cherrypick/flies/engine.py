@@ -112,6 +112,10 @@ ARMS = (
     # third of control's sessions completed 70% against a ~75% break-even; whether refusing them
     # pays is what this arm measures, forward, because the in-sample cut is not significant.
     "vol-floor",
+    # control plus a range gate (declared 2026-10-09, from 2026-10-12): no entry while spot sits at
+    # or above `range_high_pct` of a session range narrower than `range_high_max_points`
+    # (`range_high_refusal`). One variable vs control; in-sample, found by search, hence an arm.
+    "range-high",
     # control plus a wall-clearance gate (declared for 2026-10-19): no legged entry while the GEX
     # wall on the completing side -- the call wall for a put spread, which needs a rally, the put
     # wall for a call spread -- sits under `wall_clear_ahead_points` ahead of spot or has been
@@ -931,6 +935,37 @@ def low_vol_refusal(snapshot: dict, params: dict) -> str | None:
     return "straddle_below_floor" if ratio < float(floor) else None
 
 
+def range_high_refusal(snapshot: dict, params: dict) -> str | None:
+    """Refuse an entry while spot sits at the top of a NARROW session range (`range_high_pct`
+    null/absent = off). The `range-high` arm's one variable (declared 2026-10-09, from 2026-10-12).
+
+    Position in the range so far is (spot - day_low) / (day_high - day_low), off the same
+    `stream_summary` row the trend tag reads. Over control's 386 SPX paper entries, 2026-07-20..10-09,
+    gating BOTH ends of the range lost at every threshold (entries at the session low made +$3,050),
+    and so did refusing at the high on its own once the day had travelled: at-the-high entries on
+    up-from-open days made +$446, and those with a range of 30 points or more made +$1,018. The
+    losers were entries at a new high of a quiet session -- position >= 0.9 with a range under 30
+    points, 47 entries completing 70% for -$2,548, spread over 26 sessions (-$1,437 without the worst
+    two), ahead in both halves; the cut-off holds anywhere from 20 to 40 points. Live control
+    pointed the same way on 8 entries. It was found by searching about 25 cuts on the rows that
+    measure it and hurt more sessions (16) than it helped (10), so it is an arm, not a default.
+
+    Fails OPEN: no session row, a high or low missing, or a range of zero (the first ticks of the
+    day) is no reading, and an unread range is not a reason to refuse.
+    """
+    pct = params.get("range_high_pct")
+    if not pct:
+        return None
+    session = snapshot.get("session") or {}
+    spot, high, low = snapshot.get("underlying_price"), session.get("day_high"), session.get("day_low")
+    if spot is None or high is None or low is None or high <= low:
+        return None
+    width = high - low
+    if width >= float(params.get("range_high_max_points", 30.0)):
+        return None
+    return "near_session_high" if (spot - low) / width >= float(pct) else None
+
+
 def wall_clearance_refusal(snapshot: dict, params: dict, side: str, detail: dict | None = None) -> str | None:
     """Refuse a legged entry while the GEX wall its completion must travel toward has not been
     cleared (`wall_clear_ahead_points` null/absent = off). The `wall-clear` arm's one variable.
@@ -1266,6 +1301,9 @@ def evaluate_credit_spread_entry(
     if refusal:
         return False, refusal, None
     refusal = low_vol_refusal(snapshot, params)
+    if refusal:
+        return False, refusal, None
+    refusal = range_high_refusal(snapshot, params)
     if refusal:
         return False, refusal, None
 

@@ -245,6 +245,19 @@ def cmd_history_land(_args) -> int:
     return 0 if out.get("ok") else 1
 
 
+def cmd_history_fundamentals(_args) -> int:
+    """Round 5's inputs: Dolt's next-year EPS and sales estimates and quarterly income statements."""
+    from . import fundamentals
+
+    def progress(k, n, lo, rows):
+        if k % 12 == 0 or k == n:
+            print(f"window {k}/{n} from {lo}: {rows:,} estimate rows", flush=True)
+
+    out = fundamentals.land(progress=progress)
+    print(json.dumps(out, indent=1))
+    return 0 if out.get("ok") else 1
+
+
 def cmd_history_check(args) -> int:
     """The history store against the nightly one where they overlap, and what fifteen years of a
     free dataset should be looked at for before it is trusted."""
@@ -378,10 +391,27 @@ def cmd_study_round4(args) -> int:
 
     result = round4.run(workers=args.workers, progress=lambda m: print(m, flush=True))
     path = round4.write(result)
-    summary = []
+    print(json.dumps({"path": path, "seconds": result["seconds"], "summary": _tests(result)}, indent=1))
+    return 0
+
+
+def cmd_study_round5(args) -> int:
+    """Round 5 (docs/signal-log-plan.md): the 1-10 score inside the fundamentals label, against the
+    same label and trigger at the other scores."""
+    from . import round5
+
+    result = round5.run(workers=args.workers, progress=lambda m: print(m, flush=True))
+    path = round5.write(result)
+    print(json.dumps({"path": path, "seconds": result["seconds"], "summary": _tests(result)}, indent=1))
+    return 0
+
+
+def _tests(result: dict) -> list[dict]:
+    """One line per declared test: verdict, size, net R, baseline, edge and its t."""
+    out = []
     for hid, v in result["hypotheses"].items():
         d, t = v["describe"], v["test"]
-        summary.append(
+        out.append(
             {
                 "hypothesis": hid,
                 "passed": v["passed"],
@@ -394,8 +424,7 @@ def cmd_study_round4(args) -> int:
                 "judged": t.get("judged"),
             }
         )
-    print(json.dumps({"path": path, "seconds": result["seconds"], "summary": summary}, indent=1))
-    return 0
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -450,6 +479,9 @@ def main(argv: list[str] | None = None) -> int:
     hs.add_parser("land", help="land Dolt's whole daily history into history.db").set_defaults(
         fn=cmd_history_land
     )
+    hs.add_parser("fundamentals", help="land round 5's estimates and income statements").set_defaults(
+        fn=cmd_history_fundamentals
+    )
     hc = hs.add_parser("check", help="history.db against eod.db, and unexplained price jumps")
     hc.add_argument("--examples", type=int, default=15)
     hc.set_defaults(fn=cmd_history_check)
@@ -468,6 +500,9 @@ def main(argv: list[str] | None = None) -> int:
     s4 = ss.add_parser("round4", help="round 4: the relative-strength breakout, with and without volume")
     s4.add_argument("--workers", type=int, default=14)
     s4.set_defaults(fn=cmd_study_round4)
+    s5 = ss.add_parser("round5", help="round 5: the 1-10 score inside the fundamentals label")
+    s5.add_argument("--workers", type=int, default=14)
+    s5.set_defaults(fn=cmd_study_round5)
     rp = sub.add_parser("report", help="write one session's market-report readings for the console")
     rp.add_argument("--session", help="ISO date (default: the latest session stored)")
     rp.set_defaults(fn=cmd_report)

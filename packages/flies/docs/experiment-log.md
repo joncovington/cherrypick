@@ -1026,3 +1026,31 @@ side, and are never applied at placement except as the reference row. Each trigg
 live-scored one.
 
 **Re-run** at about 20 quoted live strands. Any change it supports is measurement-affecting.
+
+## 2026-10-09 — where spot sits in the session range; the `range-high` arm declared, from 2026-10-12
+
+The question was whether to gate entries on spot's position in the day's high-low range. Read over
+paper `control` (386 settled SPX entries, 51 sessions, 2026-07-20..10-09), the position taken from the
+gex spot trail at the entry instant: (spot - low) / (high - low), the range so far, no look-ahead.
+
+- **Two thirds of entries sit at an end** of the range so far (255 of 386 within 10% of it).
+- **Gating both ends loses at every threshold** from 0.75 to 0.95. Entries at the session low made
+  +$3,050.
+- **At the high, the losers are not the trend days.** At-the-high entries on up-from-open days made
+  +$446 (the up-from-open gate alone would cost $396), and those in a range of 30 points or more
+  made +$1,018. After about 12:00 they made money too.
+- **The losers are a new high of a quiet session:** position >= 0.9 with a range under 30 points,
+  47 entries completing 70% for -$2,548 over 26 sessions; -$1,437 without the worst two. Ahead in
+  both halves (+$1,578 / +$970). The cut-off holds from 20 to 40 points.
+- **Live control pointed the same way:** 8 such entries, -$498. Too few to count.
+- **Against it:** the cut was found by searching about 25 variants on the same rows, and it hurt
+  more sessions than it helped (16 to 10). The gain comes from avoiding a handful of bad mornings.
+
+**Declared: the `range-high` arm, from 2026-10-12.**
+- **The arm:** `control` plus no entry while spot is at or above 0.9 of a session range narrower
+  than 30 points. Fails open with no session row or a zero range.
+- **How it will be read:** against `control` on the same sessions after at least 14 sessions
+  (`MIN_EFFECTIVE_N`), on per-session net (sign test) and completion rate. Because the in-sample
+  gain came from few sessions, a forward result carried by one or two sessions does not count.
+- **Its book starts at its own `arm_added` break.** It lands with the 10-12 GEX arithmetic change
+  (`gex_surface`, non-bounding: no enabled arm decides on GEX).

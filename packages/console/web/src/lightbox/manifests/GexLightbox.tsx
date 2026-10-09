@@ -48,6 +48,18 @@ interface GexProfilePayload {
     call_wall_vol: number | null;
     put_wall_vol: number | null;
   };
+  /** A runner-up within 20% of a wall, per basis (server `contestedWalls`); null when the wall is clear. */
+  wallAlternates?: Record<"oi" | "vol", Record<"call" | "put", { strike: number; strength: number } | null>>;
+}
+
+/**
+ * A wall, with its runner-up when the two are nearly tied: "7740 / 7600". One number reads as a
+ * level; on a near-tie it hops between the two on noise (52 of 53 recorded put-wall hops), so the
+ * honest read is both.
+ */
+export function fmtWall(wall: number | null | undefined, alt: { strike: number } | null | undefined): string {
+  if (wall === null || wall === undefined) return "—";
+  return alt ? `${wall} / ${alt.strike}` : String(wall);
 }
 
 function useGexProfile(symbol: string, enabled: boolean) {
@@ -202,8 +214,8 @@ export function GexLightbox({ slide }: { slide: string }) {
                     <Metric label="total put GEX" value={fmtGexDollars(-p.totals.total_put_gex)} tone="neg" />
                     <Metric label="net GEX" value={fmtGexDollars(p.totals.net_gex)} colored={p.totals.net_gex} flashValue={p.totals.net_gex} emphasis />
                     <Metric label="max GEX strike" value={String(p.totals.max_gex_strike ?? "—")} />
-                    <Metric label="call wall" value={String(p.totals.call_wall ?? "—")} tone="pos" />
-                    <Metric label="put wall" value={String(p.totals.put_wall ?? "—")} tone="neg" />
+                    <Metric label="call wall" value={fmtWall(p.totals.call_wall, p.wallAlternates?.oi.call)} tone="pos" />
+                    <Metric label="put wall" value={fmtWall(p.totals.put_wall, p.wallAlternates?.oi.put)} tone="neg" />
                     <Metric label="zero gamma (flip)" value={p.totals.zero_gamma !== null ? p.totals.zero_gamma.toFixed(0) : "—"} />
                   </div>
                   <div className="gex-panel">
@@ -211,8 +223,8 @@ export function GexLightbox({ slide }: { slide: string }) {
                     <Metric label="total call GEX" value={fmtGexDollars(p.volumeTotals?.total_call_gex_vol ?? 0)} tone="pos" />
                     <Metric label="total put GEX" value={fmtGexDollars(-(p.volumeTotals?.total_put_gex_vol ?? 0))} tone="neg" />
                     <Metric label="net GEX" value={fmtGexDollars(p.volumeTotals?.net_gex_vol ?? 0)} colored={p.volumeTotals?.net_gex_vol} flashValue={p.volumeTotals?.net_gex_vol} emphasis />
-                    <Metric label="call wall" value={String(p.volumeTotals?.call_wall_vol ?? "—")} tone="pos" />
-                    <Metric label="put wall" value={String(p.volumeTotals?.put_wall_vol ?? "—")} tone="neg" />
+                    <Metric label="call wall" value={fmtWall(p.volumeTotals?.call_wall_vol, p.wallAlternates?.vol.call)} tone="pos" />
+                    <Metric label="put wall" value={fmtWall(p.volumeTotals?.put_wall_vol, p.wallAlternates?.vol.put)} tone="neg" />
                     <Metric label="zero gamma" value={p.volumeTotals?.zero_gamma_vol != null ? p.volumeTotals.zero_gamma_vol.toFixed(0) : "—"} />
                   </div>
                 </div>
