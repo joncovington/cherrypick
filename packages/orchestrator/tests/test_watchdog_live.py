@@ -278,3 +278,23 @@ def test_a_broker_failing_while_armed_in_session_is_critical(monkeypatch, tmp_pa
     ok = {"failing_since": None, "last_ok_at": "2026-07-30T14:59:00+00:00"}
     _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY, "broker_health": ok}, registered=True)
     assert not [f for f in wd._check_live("flies", _mcfg(), _MIDDAY, True) if f.key == "flies.live_broker"]
+
+
+def test_a_past_sessions_open_live_book_is_critical_armed_or_not(monkeypatch, tmp_path):
+    """Item 4 of the 2026-10-08 audit: settlement runs only inside an armed day's ticks, so a
+    machine down between the close and the disarm left a book open with nothing running to notice."""
+    overdue = [{"session": "2026-07-29", "positions": 2, "pending_entries": 1}]
+    _setup(
+        monkeypatch, tmp_path, status_obj={"armed_for": None, "overdue_settlement": overdue}, registered=False
+    )
+    found = [
+        f for f in wd._check_live("flies", _mcfg(), _AFTER_CLOSE, False) if f.key == "flies.live_overdue"
+    ]
+    assert found and found[0].status == CRITICAL
+    assert (
+        "2026-07-29 (2 open, 1 pending entries)" in found[0].message and "--settle --date" in found[0].message
+    )
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": None, "overdue_settlement": []}, registered=False)
+    assert not [
+        f for f in wd._check_live("flies", _mcfg(), _AFTER_CLOSE, False) if f.key == "flies.live_overdue"
+    ]

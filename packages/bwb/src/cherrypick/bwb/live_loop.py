@@ -1288,6 +1288,30 @@ def uninstall_task() -> dict:
 
 
 # --------------------------------------------------------------------------- status
+def overdue_settlement(conn, today: str) -> list[dict]:
+    """Expirations already past that the live ledger still holds open legs for, plus entries still
+    `pending` from a past session (their order died at that day's cutoff), oldest first:
+    `{session, positions, pending_entries}`. Settlement runs only in an armed day's ticks, so a
+    machine down on an expiry afternoon left those legs open with nothing to say so (2026-10-08)."""
+    out: dict[str, dict] = {}
+    for r in conn.execute(
+        "SELECT l.expiration AS day, COUNT(DISTINCT p.position_id) AS n FROM bwb_legs l "
+        "JOIN bwb_positions p ON p.position_id = l.position_id "
+        "WHERE l.status = 'open' AND p.status IN ('open', 'short_settled') AND l.expiration < ? "
+        "GROUP BY l.expiration",
+        (today,),
+    ):
+        out[str(r["day"])[:10]] = {"session": str(r["day"])[:10], "positions": r["n"], "pending_entries": 0}
+    for r in conn.execute(
+        "SELECT entry_session AS day, COUNT(*) AS n FROM bwb_positions "
+        "WHERE status = 'pending' AND entry_session < ? GROUP BY entry_session",
+        (today,),
+    ):
+        row = out.setdefault(str(r["day"]), {"session": str(r["day"]), "positions": 0, "pending_entries": 0})
+        row["pending_entries"] = r["n"]
+    return [out[k] for k in sorted(out)]
+
+
 def run_status(config: dict, conn, *, cache_path: str, broker=None) -> dict:
     """One merged JSON object -- files and DB only; the broker is consulted only for `held`."""
     when = clock.now_et()
@@ -1321,6 +1345,7 @@ def run_status(config: dict, conn, *, cache_path: str, broker=None) -> dict:
         "broker_held": _execution.read_hold(os.path.join(_data_dir(), "live_held.json")),
         # Broker contact across ticks: `failing_since` set while every call fails (2026-10-08).
         "broker_health": _execution.read_broker_health(os.path.join(_data_dir(), _execution.HEALTH_FILENAME)),
+        "overdue_settlement": overdue_settlement(conn, today),
         "last_log_write": last_log,
         "log_file": str(lf),
         "live_db": db.live_db_path(),

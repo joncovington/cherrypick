@@ -2011,6 +2011,22 @@ def should_disarm(config: dict, now_min: int, today: str) -> str | None:
 
 
 # --------------------------------------------------------------------------- status
+def overdue_settlement(conn, today: str) -> list[dict]:
+    """Past sessions the live ledger still holds open, oldest first: `{session, positions,
+    pending_entries}`. These are 0DTE, so every one has expired. Settlement happens only inside an
+    armed day's own ticks, and the next morning's stale arm record disarms the loop at once -- so a
+    machine down between the close and the disarm left the book open forever, silently (2026-10-08)."""
+    rows = conn.execute(
+        "SELECT trade_date, COUNT(*) AS n, SUM(entry_fill_status = 'pending') AS pend FROM fly_positions "
+        "WHERE status = 'open' AND trade_date < ? GROUP BY trade_date ORDER BY trade_date",
+        (today,),
+    ).fetchall()
+    return [
+        {"session": r["trade_date"], "positions": r["n"], "pending_entries": int(r["pend"] or 0)}
+        for r in rows
+    ]
+
+
 def run_status(config: dict, conn) -> dict:
     """One merged JSON object (the streamer convention) — files and DB only, no broker."""
     when = provider.now_et()
@@ -2053,6 +2069,7 @@ def run_status(config: dict, conn) -> dict:
         "broker_health": _execution.read_broker_health(
             os.path.join(os.path.dirname(_held_path()), _execution.HEALTH_FILENAME)
         ),
+        "overdue_settlement": overdue_settlement(conn, today),
         "last_log_write": last_tick,
         "log_file": str(lf),
         # The order-alert daemon's own view of itself (PID probe + its heartbeat file). Only

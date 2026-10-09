@@ -61,3 +61,20 @@ def test_pending_entries_cancelled_and_settled_rows_hold_nothing(tmp_path):
     _save(conn, "s", status="settled")
     out = ll.expected_legs({}, conn)
     assert out["legs"] == [] and out["pending"] == 1
+
+
+def test_overdue_settlement_lists_past_sessions_still_open(tmp_path):
+    # 2026-10-08: a book left open past its session is named, with its stuck pending entries.
+    conn = dbmod.connect(str(tmp_path / "live.db"))
+    for pid, day, status, entry in (
+        ("a", "2026-10-06", "open", "filled"),
+        ("b", "2026-10-06", "open", "pending"),
+        ("c", "2026-10-07", "settled", "filled"),
+        ("d", "2026-10-08", "open", "filled"),  # today's: not overdue
+    ):
+        _save(conn, pid, status=status, entry=entry)
+        conn.execute("UPDATE fly_positions SET trade_date = ? WHERE position_id = ?", (day, pid))
+    conn.commit()
+    assert ll.overdue_settlement(conn, "2026-10-08") == [
+        {"session": "2026-10-06", "positions": 2, "pending_entries": 1}
+    ]
