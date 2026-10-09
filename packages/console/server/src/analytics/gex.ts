@@ -99,6 +99,42 @@ export function netWalls(series: GexStrikeRow[], key: "net_gex" | "net_gex_vol")
   return [call.strike, put.strike];
 }
 
+/** How close a runner-up must be to the wall, as a fraction of its net, to be shown beside it. */
+export const WALL_NEAR_TIE = 0.8;
+
+export interface WallRunnerUp {
+  strike: number;
+  /** The runner-up's net as a fraction of the wall's, above WALL_NEAR_TIE and at most 1. */
+  strength: number;
+}
+
+/**
+ * The second strongest strike on each side, when it is within WALL_NEAR_TIE of the wall; else null.
+ *
+ * A wall is the single most positive (call) or most negative (put) strike, and when two strikes are
+ * nearly tied it hops between them on noise: over 229 recorded SPX snapshots, 52 of 53 put-wall
+ * hops went to the previous runner-up or came from a near-tie, and on 2026-10-06 the put wall
+ * swapped between 7740 and 7600 -- 140 points apart -- about a dozen times. Neither number alone is
+ * the read; both are. The wall itself is unchanged (`netWalls`, the recorder's and wall-clear's).
+ */
+export function contestedWalls(
+  series: GexStrikeRow[],
+  key: "net_gex" | "net_gex_vol",
+): { call: WallRunnerUp | null; put: WallRunnerUp | null } {
+  const ranked = [...series].sort((a, b) => b[key] - a[key]);
+  const runnerUp = (wall: GexStrikeRow | undefined, next: GexStrikeRow | undefined): WallRunnerUp | null => {
+    if (wall === undefined || next === undefined || wall[key] === 0) return null;
+    const strength = next[key] / wall[key];
+    return strength > WALL_NEAR_TIE ? { strike: next.strike, strength: Math.round(strength * 100) / 100 } : null;
+  };
+  const top = ranked[0];
+  const bottom = ranked[ranked.length - 1];
+  return {
+    call: top !== undefined && top[key] > 0 ? runnerUp(top, ranked[1]) : null,
+    put: bottom !== undefined && bottom[key] < 0 ? runnerUp(bottom, ranked[ranked.length - 2]) : null,
+  };
+}
+
 export interface ChainEntryInput {
   strikePrice: number;
   streamerSymbol: string;
