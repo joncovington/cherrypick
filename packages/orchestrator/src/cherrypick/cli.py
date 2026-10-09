@@ -1019,6 +1019,10 @@ def _start_supervisor(cfg) -> bool:
 
         if winservice.start(service["id"]):
             return True
+        # `sc start` is refused without administrator rights even when the service is already up --
+        # a fallback then would start a rival beside it (2026-10-08). Running or starting is started.
+        if winservice.query(service["id"]).get("state") in ("RUNNING", "START_PENDING"):
+            return True
         # The service would not start (a logon failure, a refused `sc start`): a supervisor outside
         # it beats none at all -- the single-instance lock still stops the service from adding a
         # second once it is fixed. Said loudly, because the machine is no longer running as chosen.

@@ -102,7 +102,29 @@ def atomic_write_json(path, obj: Any) -> None:
     tmp = path.with_name(path.name + ".tmp")
     with tmp.open("w", encoding="utf-8") as fh:
         json.dump(obj, fh, indent=2, default=str)
-    os.replace(tmp, path)
+    _replace_with_retry(tmp, path)
+
+
+# On Windows a replace onto a file another process holds open (a reader without delete-sharing,
+# antivirus scanning it) fails with PermissionError for a moment. Unretried, that one moment killed
+# the supervisor: seven "FATAL: unhandled PermissionError" exits in supervisor.log, 2026-09-21 to
+# 2026-10-08, every one in this replace.
+_REPLACE_TRIES = 20
+_REPLACE_PAUSE_S = 0.1
+
+
+def _replace_with_retry(src, dst, *, sleep=None) -> None:
+    import time as _time
+
+    sleep = sleep or _time.sleep
+    for attempt in range(_REPLACE_TRIES):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == _REPLACE_TRIES - 1:
+                raise
+            sleep(_REPLACE_PAUSE_S)
 
 
 pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
