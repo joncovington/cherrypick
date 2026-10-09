@@ -2520,6 +2520,36 @@ def _delivery_findings(cfg_channels: list[str], sent: list[dict[str, Any]], webh
     return findings
 
 
+def _disk_finding(
+    free_bytes: int, total_bytes: int, warn_gb: float, critical_gb: float, where: str
+) -> Finding:
+    """Free space on the suite's home drive (2026-10-08 audit: nothing watched it). A full disk stops
+    every ledger write, the backup and the logs at once -- and the log floor of every alert with them."""
+    free_gb = free_bytes / 1024**3
+    detail = f"{free_gb:.1f} GB free of {total_bytes / 1024**3:.0f} GB on {where}"
+    if free_gb < critical_gb:
+        return Finding("disk.free", CRITICAL, "Disk almost full", f"{detail}: ledgers and logs fail next.")
+    if free_gb < warn_gb:
+        return Finding("disk.free", WARN, "Disk space low", f"{detail} (warns under {warn_gb:g} GB).")
+    return Finding("disk.free", OK, "Disk space", detail)
+
+
+def _check_disk_space(cfg: dict[str, Any]) -> list[Finding]:
+    import shutil
+
+    ds = cfg.get("disk_space") or {}
+    where = core_home.home()
+    try:
+        usage = shutil.disk_usage(where)
+    except OSError:
+        return []
+    return [
+        _disk_finding(
+            usage.free, usage.total, float(ds.get("warn_gb", 10)), float(ds.get("critical_gb", 2)), str(where)
+        )
+    ]
+
+
 def _check_config_health() -> list[Finding]:
     """CRITICAL while `config.json` cannot be parsed: the suite is running on the last good copy, so
     no edit made since then is in effect -- including the one that broke it (2026-10-08 audit)."""
@@ -2763,6 +2793,7 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     findings += _check_fixed_time_jobs(now)
     findings += _check_notify_delivery(cfg)
     findings += _check_config_health()
+    findings += _check_disk_space(cfg)
     try:
         findings += _check_duplicate_processes(cfg)
     except Exception as exc:
