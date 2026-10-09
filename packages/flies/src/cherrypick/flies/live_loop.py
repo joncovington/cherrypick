@@ -1248,7 +1248,10 @@ def run_once(
                     else:
                         decision_reason = "order_id_missing"  # placed but unrecordable — investigate
                     journal("entry", decision_reason, center=plan["center"], detail=res.get("error"))
-                summary["entered"] += 1
+                # A live order that never reached the ledger was not entered: counting it spawned a
+                # fill watcher with nothing to watch (2026-10-08). A dry run still counts its would-be entry.
+                if not live or (res.get("ok") and res.get("order_id")):
+                    summary["entered"] += 1
 
     # --- 4b. the agent's named closes, TAGGED on the live rows at live natural (close_tags.py) ---
     # Never an order: no live closing path exists (intraday_advice.LIVE_CLOSES_BUILT). The tags are
