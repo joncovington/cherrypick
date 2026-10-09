@@ -452,3 +452,43 @@ they are not tests.
 - **The Vortex's authors entered on a stop at the cross bar's high**, not at the next open.
 - **The squeeze setup's matched baseline is thin.** Closes outside the band are rare, so it rests
   on a median of 3 draws an entry. Its effective sample (828) only just clears the 780 threshold.
+
+## Round 4: the vendor's relative-strength breakout, worse than random (2026-10-09)
+
+The vendor's relative strength is price divided by the S&P 500, and its signal is that ratio at a
+new high with a price breakout. Fitted to their dated calls, the lookback is about 21 sessions.
+Round 4 asks whether the signal makes money, with and without the vendor's volume rule (at least
+1.5x the prior 30 sessions' average). It was declared before running (`docs/signal-log-plan.md`,
+"Round 4"; `round4.py`, `study round4`).
+
+An exploratory look had already seen every entry on names trading at least $300M a day. So the
+tests count only the $20M–$300M slice, 2011-01-03 to 2026-10-02, with baseline draws from the same
+slice. Every position is held 21 sessions.
+
+| Test | Entries | Net R (net %) | Baseline R | Edge R (t) | Verdict |
+|---|---|---|---|---|---|
+| Breakout vs random entry | 81,070 | +0.090 (+0.14%) | +0.138 | −0.085 (−3.4) | worse than random |
+| Breakout on volume vs random entry | 23,524 | +0.033 (+0.04%) | +0.139 | −0.127 (−3.8) | worse than random |
+| Breakout on volume vs the breakout at any volume | 23,524 | +0.033 | +0.037 | −0.039 (−0.9) | volume adds nothing |
+
+Nothing passes. Each setup clears the sample threshold many times over: 20,503 and 12,670
+effective entries. The full results are in `round4-20261009-152840.json` in the study folder.
+
+**What round 4 says:**
+- **The breakout is a poor time to buy.** Random liquid names held the same 21 sessions earned
+  +0.138 R; the breakout earned +0.090 R. Its small profit is the market's, and costs (0.22 R) take
+  most of its gross +0.31 R.
+- **The result is stable.** Both halves of the names come out worse than random (t −2.6 and −2.8),
+  and so do 2011–18 (t −1.8) and 2019–26 (t −2.9).
+- **The volume rule makes it worse.** Volume breakouts trail random by 0.127 R, and the
+  exploratory lead (t near 1 on the $300M names) did not survive on the slice it never saw.
+- **On the $300M names, already seen,** neither setup differs from random: −0.018 R (t −0.4)
+  without volume, +0.031 R (t +0.4) with it.
+
+**Limits:**
+- **The matched baseline is thin.** A random day is rarely a 21-session high in both price and
+  ratio, so it rests on a median of 6–7 draws an entry.
+- **The vendor uses the signal as one input to a ranked list of option trades,** not as a stock
+  entry. This tests the signal, not their whole method.
+- **The 21-session hold was chosen after the exploratory look.** It is one of three horizons that
+  look tried, and the look found no edge at the other two either.
