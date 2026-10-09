@@ -83,10 +83,74 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
         raise FileNotFoundError(
             f"cherrypick config not found at {cfg_path}. Copy config.example.json there to create it."
         )
-    with cfg_path.open("r", encoding="utf-8") as fh:
-        cfg = json.load(fh)
-    if "modules" not in cfg:
-        raise ValueError("config.json missing 'modules' section")
+    raw = cfg_path.read_text(encoding="utf-8")
+    try:
+        cfg = json.loads(raw)
+        if not isinstance(cfg, dict) or "modules" not in cfg:
+            raise ValueError("config.json missing 'modules' section")
+    except ValueError as exc:
+        # The live config only: an explicit path is a caller's own file and fails as it always did.
+        fallback = None if path is not None else _last_good_fallback(cfg_path, exc)
+        if fallback is None:
+            raise
+        return fallback
+    if path is None:
+        _remember_good(raw)
+    return cfg
+
+
+# A config that cannot be parsed used to take the whole suite down with it (2026-10-08 audit): the
+# supervisor kept its in-memory copy, but every job, the watchdog and every notifier load the file
+# fresh, crashed, and could not even read which channels to warn on. Every good load of the live
+# config now keeps a copy; a broken one runs on that copy and leaves a marker the watchdog raises.
+# Beside the config file itself, never in a separately-resolved state dir: a test that points
+# CONFIG_PATH at a temporary file must not overwrite the real home's fallback copy with its fixture.
+def last_good_path() -> Path:
+    return effective_config_path().with_name("config.last-good.json")
+
+
+def broken_marker_path() -> Path:
+    return effective_config_path().with_name("config.broken.json")
+
+
+def _remember_good(raw: str) -> None:
+    try:
+        lg = last_good_path()
+        if not lg.exists() or lg.read_text(encoding="utf-8") != raw:
+            lg.parent.mkdir(parents=True, exist_ok=True)
+            tmp = lg.with_suffix(".tmp")
+            tmp.write_text(raw, encoding="utf-8")
+            tmp.replace(lg)
+        broken_marker_path().unlink(missing_ok=True)
+    except OSError:
+        pass  # keeping a copy is insurance; failing to must never fail a load
+
+
+def _last_good_fallback(cfg_path: Path, exc: Exception) -> dict[str, Any] | None:
+    lg = last_good_path()
+    try:
+        cfg = json.loads(lg.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None  # no good copy (a first install): fail loudly, as before
+    try:
+        from datetime import datetime, timezone
+
+        marker = broken_marker_path()
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(
+            json.dumps(
+                {
+                    "path": str(cfg_path),
+                    "error": f"{type(exc).__name__}: {exc}"[:300],
+                    "noticed_at": datetime.now(timezone.utc).isoformat(),
+                    "running_on": str(lg),
+                }
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+    print(f"WARNING: {cfg_path} is unreadable ({exc}); running on {lg}", file=sys.stderr)
     return cfg
 
 
