@@ -119,7 +119,7 @@ from cherrypick.orchestrator import (
     positions as positions_mod,
 )
 from cherrypick.orchestrator import proc as _proc
-from cherrypick.orchestrator.util import CREATE_NO_WINDOW, first_json
+from cherrypick.orchestrator.util import CREATE_NO_WINDOW, NEW_SESSION, first_json
 
 # The OS scheduler invokes the in-place launcher `pythonw <repo>/run.py <cmd>`. This module is
 # <repo>/src/cherrypick/cli.py, so the repo-root launcher is two parents up. (Renamed from
@@ -474,6 +474,7 @@ def _start_dolt(data_dir: Path) -> bool:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=flags,
+            start_new_session=NEW_SESSION,  # POSIX: out of this process's group (DETACHED's twin)
         )
         return True
     except OSError:
@@ -1003,6 +1004,8 @@ def _spawn_supervisor_detached() -> bool:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=flags,
+            # POSIX: its own session, so a Ctrl-C in the installer's terminal does not reach it.
+            start_new_session=NEW_SESSION,
         )
         return True
     except OSError:

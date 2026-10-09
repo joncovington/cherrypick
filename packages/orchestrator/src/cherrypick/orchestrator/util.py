@@ -16,6 +16,12 @@ from cherrypick.core.redact import (
 # CREATE_NO_WINDOW)`. 0 elsewhere (the subprocess default), so the same call is cross-platform-safe.
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
+# POSIX: start a child in its OWN session (and so its own process group). Pass as `start_new_session=
+# NEW_SESSION`. Without it every child shares the supervisor's group, and the tree kill's killpg fallback
+# signals that group -- one console restart would take down the supervisor and every job with it
+# (2026-10-08 OS audit). The Windows counterpart is CREATE_NEW_PROCESS_GROUP; False there.
+NEW_SESSION = os.name != "nt"
+
 
 def first_json(text: str | None) -> dict[str, Any]:
     """Parse the first JSON object from command output.
