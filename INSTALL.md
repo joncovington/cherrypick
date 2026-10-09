@@ -90,6 +90,17 @@ The `desktop` notification channel uses the notification centre on macOS and `no
 and only reaches you while you are logged in. For an alert that always arrives, set up a Discord or
 Slack webhook (`run.py connect`, or `run.py secrets-set --channel discord`).
 
+The optional browser collectors use Playwright, which no installer adds. Install it into `.venv`
+yourself (`.venv/bin/pip install playwright`), then add the browsers:
+- **QuikOptions** needs Google Chrome itself: install it the usual way on macOS, or run
+  `.venv/bin/playwright install chrome` on x86-64 Linux. There is no Chrome for Linux on ARM.
+- **The screener collector** uses Playwright's own Chromium:
+  `.venv/bin/playwright install --with-deps chromium`. On Linux this installs system libraries and
+  needs sudo.
+
+Both run headless on schedule. Signing in the first time opens a visible browser, so a headless
+server needs a display for that one step (a desktop session, VNC or `xvfb-run`).
+
 Install from a release, not from `main`: `main` is where development happens and is often ahead of
 the latest release. The git lines above check out the newest release tag, which leaves git in
 "detached HEAD", as expected. How releases are cut: [docs/releasing.md](docs/releasing.md).
