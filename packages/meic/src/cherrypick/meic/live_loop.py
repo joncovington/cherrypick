@@ -579,6 +579,9 @@ def make_broker(config: dict, designated: str | None) -> _execution.Broker:
         live_gates=lambda: readiness(config, designated=designated),
         serialize=_tt._serialize,
         deploy_limit_pct=config.get("account_deploy_limit_pct") or None,
+        # An uncertain submit's hold outlives this tick's process (2026-10-08): each tick is its own
+        # process, and an in-memory hold let the next tick submit the duplicate it exists to prevent.
+        hold_path=os.path.join(os.path.dirname(str(_paths.live_db_path())), "live_held.json"),
     )
 
 

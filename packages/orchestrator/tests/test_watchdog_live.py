@@ -251,3 +251,16 @@ def test_live_settled_reports_ok(monkeypatch, tmp_path):
     out = wd._check_live("flies", _mcfg(), _AFTER_CLOSE, False)
     settle = [f for f in out if f.key == "flies.live_settle_overdue"]
     assert settle and settle[0].status == OK
+
+
+def test_a_held_submission_is_critical_and_an_empty_hold_says_nothing(monkeypatch, tmp_path):
+    """The seam's hold (a submit of unknown outcome, or an unrecorded order found at the broker)
+    refuses every live order and, since 2026-10-08, outlives the tick -- so someone must hear."""
+    held = {"unresolved": ["ext-1"], "unrecorded": {"ext-0": "99"}}
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY, "broker_held": held}, registered=False)
+    out = wd._check_live("flies", _mcfg(), _MIDDAY, True)
+    found = [f for f in out if f.key == "flies.live_held"]
+    assert found and found[0].status == CRITICAL and "ext-1" in found[0].message
+    empty = {"unresolved": [], "unrecorded": {}}
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY, "broker_held": empty}, registered=False)
+    assert not [f for f in wd._check_live("flies", _mcfg(), _MIDDAY, True) if f.key == "flies.live_held"]

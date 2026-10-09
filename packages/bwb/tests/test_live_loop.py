@@ -685,15 +685,16 @@ def test_the_orphan_sweep_reports_unknown_working_orders_and_never_invents_a_cle
     ]
     out = _tick(live_config, conn, broker, cache, when=datetime(2026, 9, 16, 10, 6))
     assert out["orphans"] == 1 and [o["order_id"] for o in live_loop.read_orphans()] == ["GHOST"]
+    assert ("entry", "orphaned_orders", 0) in _decisions(conn, "entry")  # and the entry is refused
 
     def boom():
         raise RuntimeError("broker down")
 
     broker.working_orders = boom
     out = _tick(live_config, conn, broker, cache, when=datetime(2026, 9, 16, 10, 7))
-    assert out["orphans"] == 0 and [o["order_id"] for o in live_loop.read_orphans()] == [
-        "GHOST"
-    ]  # the file stands
+    # Unknown, not zero (2026-10-08): the file stands, and a sweep that could not look blocks the
+    # entry rather than inventing a clean book.
+    assert out["orphans"] is None and [o["order_id"] for o in live_loop.read_orphans()] == ["GHOST"]
 
 
 def test_settlement_needs_an_official_print_and_stamps_its_source(live_config, conn, cache, planned):

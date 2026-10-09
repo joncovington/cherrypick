@@ -707,7 +707,13 @@ def _orphans_path() -> str:
     return os.path.join(_data_dir(), "live_orphans.json")
 
 
-def _sweep_orphans(conn, broker, log, symbol: str) -> int:
+def _held_path() -> str:
+    """The broker seam's persisted hold: a submit whose outcome is unknown, or an order found at
+    the broker that no caller recorded. Refuses every live submit until resolved or acknowledged."""
+    return os.path.join(_data_dir(), "live_held.json")
+
+
+def _sweep_orphans(conn, broker, log, symbol: str) -> int | None:
     """Diff the broker's working orders (truth) against the ledger's order ids (belief),
     scoped to `symbol` — the one this arm actually trades.
 
@@ -730,7 +736,7 @@ def _sweep_orphans(conn, broker, log, symbol: str) -> int:
         working = broker.working_orders()
     except Exception as exc:  # noqa: BLE001 — a failed sweep must not break the tick
         log(f"orphan sweep failed ({type(exc).__name__}: {exc}) — will retry next tick")
-        return 0
+        return None  # unknown -- and unknown blocks new entries (run_once step 4)
     working = [o for o in working if o.get("underlying_symbol") == symbol]
     known = {
         str(r[0])
@@ -976,6 +982,14 @@ def run_once(
         journal("entry", QUARTER_END_REASON, center=wanted_center)
     # The halt flag and the daily-loss breaker (`entry_blockers`): no new entry, and nothing else
     # held back -- every step above this one has already run.
+    # Orders at the broker the ledger never recorded -- or a sweep that could not look -- stop new
+    # entries (2026-10-08): detection alone let the same tick place another order beside them.
+    orphan_count = summary.get("orphaned_orders", 0)
+    if live and orphan_count != 0:
+        entry_block = [
+            *(entry_block or []),
+            "orphan_sweep_failed" if orphan_count is None else "orphaned_orders",
+        ]
     if entry_block and not day_capped:
         day_capped = True
         summary["skips"].append({"entry": f"entries blocked: {', '.join(entry_block)}"})
@@ -1784,6 +1798,8 @@ class BrokerAdapter(_execution.Broker):
             designated_account=_designated_account,
             live_gates=self._gates,
             deploy_limit_pct=_live_cfg(config).get("account_deploy_limit_pct") or None,
+            # An uncertain submit's hold outlives this tick's process (2026-10-08).
+            hold_path=_held_path(),
         )
 
     def _gates(self) -> list[str]:
@@ -2087,6 +2103,8 @@ def run_status(config: dict, conn) -> dict:
         "breaker_tripped": daily_loss_tripped(conn, today, live_cfg.get("daily_loss_halt_dollars")),
         # From the last tick's broker-truth sweep (files only here — status never talks to the broker).
         "orphaned_orders": len(read_orphans()),
+        # The seam's persisted hold (a submit of unknown outcome, or an unrecorded order found).
+        "broker_held": _execution.read_hold(_held_path()),
         "last_log_write": last_tick,
         "log_file": str(lf),
         # The order-alert daemon's own view of itself (PID probe + its heartbeat file). Only

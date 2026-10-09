@@ -467,3 +467,52 @@ def test_a_read_that_finds_the_prior_order_refuses_until_acknowledged(monkeypatc
     assert adapter.acknowledge("ext-1") is True and adapter.acknowledge("ext-1") is False
     out = adapter.place({"legs": [], "external_identifier": "ext-4"}, live=True)
     assert out["ok"] is True and out["order_id"] == "7"
+
+
+# --- the hold outlives the process (2026-10-08) --------------------------------------------------
+# Each live tick is its own `--once` process. A hold kept only in memory lifted itself when the tick
+# ended, so the NEXT tick could submit the duplicate the hold exists to prevent.
+
+
+def test_an_unresolved_hold_survives_into_the_next_process(monkeypatch, tmp_path):
+    hold = tmp_path / "live_held.json"
+    _, placed = _held_adapter(monkeypatch, at_broker=[], read_ok=[False])
+    first_tick = _adapter(monkeypatch, hold_path=hold)
+    assert first_tick.place({"legs": [], "external_identifier": "ext-1"}, live=True)["uncertain"] is True
+    assert hold.exists()
+    next_tick = _adapter(monkeypatch, hold_path=hold)  # a new process: nothing carried in memory
+    out = next_tick.place({"legs": [], "external_identifier": "ext-2"}, live=True)
+    assert out["ok"] is False and out["unresolved"] == ["ext-1"]
+    assert len(placed) == 1  # ext-2 was never sent
+
+
+def test_a_later_process_that_reads_the_identity_absent_clears_the_file(monkeypatch, tmp_path):
+    hold = tmp_path / "live_held.json"
+    _held_adapter(monkeypatch, at_broker=[], read_ok=[False, True])
+    _adapter(monkeypatch, hold_path=hold).place({"legs": [], "external_identifier": "ext-1"}, live=True)
+    monkeypatch.setattr(_broker, "place_order", _ok_place)
+    out = _adapter(monkeypatch, hold_path=hold).place({"legs": [], "external_identifier": "ext-2"}, live=True)
+    assert out["ok"] is True and not hold.exists()
+
+
+def test_an_unrecorded_order_stays_held_across_processes_until_acknowledged(monkeypatch, tmp_path):
+    hold = tmp_path / "live_held.json"
+    at_broker = [{"order_id": 99, "status": "Live", "external_identifier": "ext-1", "terminal": False}]
+    _held_adapter(monkeypatch, at_broker=at_broker, read_ok=[False, True])
+    _adapter(monkeypatch, hold_path=hold).place({"legs": [], "external_identifier": "ext-1"}, live=True)
+    monkeypatch.setattr(_broker, "place_order", _ok_place)
+    assert _adapter(monkeypatch, hold_path=hold).place({"legs": []}, live=True)["unrecorded"] == {
+        "ext-1": "99"
+    }
+    later = _adapter(monkeypatch, hold_path=hold)
+    assert later.held["unrecorded"] == {"ext-1": "99"}
+    assert later.acknowledge("ext-1") is True and not hold.exists()
+
+
+def test_an_unreadable_hold_file_holds(monkeypatch, tmp_path):
+    """It cannot show nothing is held, so it holds."""
+    hold = tmp_path / "live_held.json"
+    hold.write_text("{not json", encoding="utf-8")
+    _held_adapter(monkeypatch, at_broker=[], read_ok=[False])
+    out = _adapter(monkeypatch, hold_path=hold).place({"legs": []}, live=True)
+    assert out["ok"] is False and out.get("uncertain") is True
