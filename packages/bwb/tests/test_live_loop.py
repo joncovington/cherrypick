@@ -861,3 +861,24 @@ def test_overdue_settlement_names_an_expiry_already_past_and_a_stale_pending_ent
     assert live_loop.overdue_settlement(conn, "2026-09-17") == [
         {"session": DAY, "positions": 0, "pending_entries": 1}
     ]
+
+
+def test_settle_overdue_settles_a_past_expiry_at_that_days_official_close(conn, live_config, cache):
+    # 2026-10-08, the owner's choice: catch-up settlement on the official print only.
+    from cherrypick.bwb import book as bookmod
+
+    pid = "SPX:control:2026-09-16"
+    bookmod.enter_position(conn, _plan(), live_config, "control", entry_session=DAY, advice_params=None)
+    db.save_position(conn, {"position_id": pid, "status": "open"})
+    asked = []
+
+    def close(symbol, session):
+        asked.append((symbol, session))
+        return None if not asked[1:] else 7650.0
+
+    out = live_loop.settle_overdue(live_config, conn, cache_path=cache, today="2026-09-21", close_fn=close)
+    assert out["settled"] == [] and out["left"] == [{"session": EXP, "reason": "no_official_close"}]
+    out = live_loop.settle_overdue(live_config, conn, cache_path=cache, today="2026-09-21", close_fn=close)
+    assert [s["session"] for s in out["settled"]] == [EXP] and asked == [("SPX", EXP), ("SPX", EXP)]
+    assert _row(conn, pid)["settlement_source"] == "yahoo_daily"
+    assert live_loop.overdue_settlement(conn, "2026-09-21") == []

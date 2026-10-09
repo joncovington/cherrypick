@@ -1288,6 +1288,31 @@ def uninstall_task() -> dict:
 
 
 # --------------------------------------------------------------------------- status
+def settle_overdue(config: dict, conn, *, cache_path: str, today: str, close_fn=None) -> dict:
+    """Settle every expiry already past that the live ledger still holds open legs for, at THAT
+    day's official close (`core.settlement.dated_index_close`, source `yahoo_daily`) -- official
+    print only, the owner's choice (2026-10-08). A stale pending entry is left for a person; no
+    close found leaves the day open and alerting."""
+    close_fn = close_fn or _settlement.dated_index_close
+    symbol = _pl._symbol(config)
+    done, left = [], []
+    for item in overdue_settlement(conn, today):
+        session = item["session"]
+        if item["pending_entries"]:
+            left.append({"session": session, "reason": "pending_entries"})
+        if not item["positions"]:
+            continue
+        price = close_fn(symbol, session)
+        if price is None:
+            left.append({"session": session, "reason": "no_official_close"})
+            continue
+        out = run_settle_live(
+            config, conn, cache_path=cache_path, day=session, broker=_settlement.DatedClose(price)
+        )
+        (done if out.get("ok") else left).append({"session": session, "price": price, **out})
+    return {"ok": True, "settled": done, "left": left}
+
+
 def overdue_settlement(conn, today: str) -> list[dict]:
     """Expirations already past that the live ledger still holds open legs for, plus entries still
     `pending` from a past session (their order died at that day's cutoff), oldest first:
@@ -1377,6 +1402,11 @@ def main(argv=None) -> int:
         action="store_true",
         help="the filled open legs the ledger holds (JSON; files/DB only)",
     )
+    ap.add_argument(
+        "--settle-overdue",
+        action="store_true",
+        help="settle past expiries still open, at each day's official close",
+    )
     ap.add_argument("--settle", action="store_true")
     ap.add_argument("--price", type=float, help="the official settlement print, by hand")
     ap.add_argument("--date", help="YYYY-MM-DD")
@@ -1404,6 +1434,9 @@ def main(argv=None) -> int:
     if args.expected_legs:
         print(json.dumps(expected_legs(config, conn), default=str))
         return 0
+    if args.settle_overdue:
+        today = clock.now_et().date().isoformat()
+        return out(settle_overdue(config, conn, cache_path=cache_path, today=today))
     if args.settle:
         broker = None
         if args.price is None:

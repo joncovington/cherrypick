@@ -1206,6 +1206,23 @@ def derive_jobs(
             enabled_reason="" if lp["enabled"] else "disabled in config (live_positions.enabled)",
         ),
     )
+    los = cfg.get("live_settle_overdue") or {}
+    add(
+        "settle-overdue-live",
+        lambda: JobSpec(
+            id="settle-overdue-live",
+            # Catch-up settlement of a past live session left open (item 4, 2026-10-08): official
+            # close only. Hourly, every day -- the ledgers are read locally and the network is asked
+            # only when a session is overdue, so a quiet hour costs two SQLite queries.
+            argv=_run_py(pythonw, launcher, "settle-overdue-live"),
+            kind=KIND_INTERVAL,
+            interval_seconds=int(los.get("interval_seconds", 3600)),
+            enabled=bool(los.get("enabled", True)),
+            enabled_reason=""
+            if los.get("enabled", True)
+            else "disabled in config (live_settle_overdue.enabled)",
+        ),
+    )
     add(
         "report-session-alert",
         lambda: JobSpec(

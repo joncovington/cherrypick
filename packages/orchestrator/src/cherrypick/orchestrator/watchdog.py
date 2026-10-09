@@ -1939,7 +1939,8 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                 f"{name}.live_overdue",
                 CRITICAL,
                 f"{label} LIVE book from a past session never settled",
-                f"{days}. Settle each with the official close: "
+                f"{days}. The hourly `settle-overdue-live` job settles a session at its official "
+                "close once one is published and no entry is pending; by hand: "
                 f"`python -m cherrypick.{name}.live_loop --settle --date <session> --price <close>`; "
                 "cancel a pending entry whose order expired. Until then the ledger's net, the "
                 "daily-loss breaker and the margin cap read positions that no longer exist.",
