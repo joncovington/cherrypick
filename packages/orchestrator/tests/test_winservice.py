@@ -67,10 +67,17 @@ def test_prepare_refuses_until_chosen_and_until_winsw_is_there():
 
 
 def test_the_elevated_steps_install_with_a_prompted_password_and_free_the_anchor():
-    steps = winservice.elevated_steps(r"C:\h\service\svc.exe", "cherrypick-supervisor", "jonco")
-    assert steps[0].endswith("install /p") and "supervise --stop" in steps[1] and steps[2].endswith(" start")
-    assert "Set-ScheduledTask -TaskName 'cherrypick-supervisor'" in steps[3]
-    assert r"Get-Credential '.\jonco'" in steps[3]  # the service manager refuses a bare account name
+    steps = winservice.elevated_steps(
+        r"C:\h\service\svc.exe",
+        "cherrypick-supervisor",
+        "jonco",
+        r"C:\repo\scripts\windows\grant-logon-as-service.ps1",
+    )
+    assert steps[0].endswith("install /p")
+    assert "grant-logon-as-service.ps1" in steps[1]  # the right the install did not grant (event 7041)
+    assert "supervise --stop" in steps[2] and steps[3].endswith(" start")
+    assert "Set-ScheduledTask -TaskName 'cherrypick-supervisor'" in steps[4]
+    assert r"Get-Credential '.\jonco'" in steps[4]  # the service manager refuses a bare account name
 
 
 @pytest.mark.parametrize(
@@ -138,7 +145,7 @@ def test_prepare_writes_the_definition_with_the_logon_path(monkeypatch, tmp_path
         platform="nt",
     )
     assert out["ok"], out
-    assert len(out["run_these_in_an_administrator_prompt"]) == 4
+    assert len(out["run_these_in_an_administrator_prompt"]) == 5
     root = ET.parse(out["xml"]).getroot()
     assert (
         root.find("env").get("value") == r"C:\WINDOWS\system32;C:\Program Files\nodejs"

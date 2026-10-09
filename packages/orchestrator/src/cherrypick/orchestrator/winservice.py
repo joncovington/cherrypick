@@ -180,7 +180,7 @@ def start(service_id: str) -> bool:
     return r.returncode == 0 or "1056" in (r.stdout + r.stderr)  # 1056: already running
 
 
-def elevated_steps(service_exe: str, anchor_task: str, user: str) -> list[str]:
+def elevated_steps(service_exe: str, anchor_task: str, user: str, grant_script: str = "") -> list[str]:
     """What a person runs in an ADMINISTRATOR prompt after `prepare`, in order. Pure.
 
     The account is `.\\<user>`: the service manager refuses a bare name. On a Microsoft-linked account
@@ -190,6 +190,9 @@ def elevated_steps(service_exe: str, anchor_task: str, user: str) -> list[str]:
     lock, so it is stopped before the service starts."""
     return [
         f'"{service_exe}" install /p',  # account: .\\{user}; on a Microsoft account, its password
+        # "Log on as a service": the install does not always grant it (event 7041 at start), and
+        # Windows Home has no secpol.msc to grant it by hand. Idempotent.
+        f'powershell -ExecutionPolicy Bypass -File "{grant_script}"',
         "python packages/orchestrator/run.py supervise --stop   (no elevation needed; wait ~15 s)",
         f'"{service_exe}" start',
         # The anchor must run with nobody logged on, so the hung-supervisor check survives logoff.
@@ -246,7 +249,12 @@ def prepare(
         "ok": True,
         "service_exe": str(exe),
         "xml": str(d / f"{s['id']}.xml"),
-        "run_these_in_an_administrator_prompt": elevated_steps(str(exe), anchor_task, user),
+        "run_these_in_an_administrator_prompt": elevated_steps(
+            str(exe),
+            anchor_task,
+            user,
+            str(Path(workdir) / "scripts" / "windows" / "grant-logon-as-service.ps1"),
+        ),
         "then": "reboot once and check `run.py service status` and `run.py doctor` before turning "
         "auto-logon off",
     }
