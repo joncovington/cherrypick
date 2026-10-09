@@ -57,10 +57,12 @@ _SKIP_TOP = {"archive", "logs", "backups", "modules", "worktrees"}
 # Dolt keeps a database's whole store inside `.dolt/` (and server state in `.doltcfg/`); only those
 # are skipped, never the directory holding them (see the module docstring).
 _DOLT_DIRS = {".dolt", ".doltcfg"}
-# A file whose name says it is already a copy, a scratch file, or a SQLite sidecar (the database
-# itself is copied through the backup API, which reads the WAL).
+# A file whose name says it is already a copy, a scratch file, a SQLite sidecar (the database
+# itself is copied through the backup API, which reads the WAL), or a running process's PID file --
+# runtime state that is meaningless once restored (it would name a dead process) and that comes and
+# goes as daemons stop: one vanishing mid-run failed the 2026-10-08 night.
 _SKIP_FILE_RE = re.compile(
-    r"(\.bak|\.pre-|\.pre_|pre-prune|advisor-bak|pre-reset|\.retired|\.tmp$|\.partial$|\.lock$"
+    r"(\.bak|\.pre-|\.pre_|pre-prune|advisor-bak|pre-reset|\.retired|\.tmp$|\.partial$|\.lock$|\.pid$"
     r"|-wal$|-shm$|-journal$)",
     re.I,
 )
@@ -151,6 +153,7 @@ def run(cfg: dict[str, Any], *, dry_run: bool = False, today: date | None = None
     partial = s["dest"] / (LATEST + ".partial")
     entries: list[dict[str, Any]] = []
     problems: list[str] = []
+    vanished: list[str] = []
     raw_bytes = 0
     started = datetime.now(timezone.utc).isoformat()
     with (
@@ -171,6 +174,12 @@ def run(cfg: dict[str, Any], *, dry_run: bool = False, today: date | None = None
                 else:
                     data = f.read_bytes()
                     entry = {"path": arc, "kind": "file"}
+            except FileNotFoundError:
+                # Listed by the walk, gone by the copy: something deleted it in between (a daemon
+                # stopping, a rotation). Nothing was lost that existed when the copy ran, so it is
+                # recorded, not a failed night. A file that exists and cannot be read still is.
+                vanished.append(arc)
+                continue
             except (OSError, sqlite3.Error) as exc:
                 problems.append(f"{arc}: {type(exc).__name__}: {exc}")
                 continue
@@ -183,6 +192,7 @@ def run(cfg: dict[str, Any], *, dry_run: bool = False, today: date | None = None
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "home": cfgmod.portable_path(root),
             "files": entries,
+            "vanished": vanished,
             "skipped": skipped,
             "problems": problems,
         }

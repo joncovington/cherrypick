@@ -3,6 +3,7 @@ kept, that a bad night never replaces a good one, and that restore can never tou
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import time
@@ -116,3 +117,29 @@ def test_doctor_warns_when_the_backup_is_missing_or_stale(home):
     old = time.time() - 40 * 3600
     os.utime(backup.latest_path(CFG), (old, old))
     assert doctor._backup_check(CFG).status == doctor.WARN
+
+
+def test_a_pid_file_is_never_backed_up(home):
+    # Runtime state: restored it would name a dead process; it comes and goes as daemons stop.
+    (home / "data" / "marketdata" / "streamer.pid").write_text("123", encoding="utf-8")
+    files, _ = backup.collect(home)
+    assert "data/marketdata/streamer.pid" not in {f.relative_to(home).as_posix() for f in files}
+
+
+def test_a_file_that_vanishes_mid_run_is_recorded_not_a_failed_night(home, monkeypatch):
+    # 2026-10-08: a daemon's file deleted between the walk and the copy failed the whole night.
+    gone = home / "state" / "transient.json"
+    gone.write_text("{}", encoding="utf-8")
+    real_collect = backup.collect
+
+    def collect_then_delete(root):
+        files, skipped = real_collect(root)
+        gone.unlink()
+        return files, skipped
+
+    monkeypatch.setattr(backup, "collect", collect_then_delete)
+    res = backup.run(CFG)
+    assert res["ok"], res
+    with zipfile.ZipFile(backup.latest_path(CFG)) as zf:
+        manifest = json.loads(zf.read(backup.MANIFEST))
+    assert manifest["vanished"] == ["state/transient.json"]
