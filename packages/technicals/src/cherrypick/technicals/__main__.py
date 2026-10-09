@@ -371,6 +371,33 @@ def cmd_study_round3(args) -> int:
     return 0
 
 
+def cmd_study_round4(args) -> int:
+    """Round 4 (docs/signal-log-plan.md): the relative-strength breakout, with and without its volume
+    rule, on the $20M-$300M slice the exploratory look never saw."""
+    from . import round4
+
+    result = round4.run(workers=args.workers, progress=lambda m: print(m, flush=True))
+    path = round4.write(result)
+    summary = []
+    for hid, v in result["hypotheses"].items():
+        d, t = v["describe"], v["test"]
+        summary.append(
+            {
+                "hypothesis": hid,
+                "passed": v["passed"],
+                "entries": d.get("entries"),
+                "net_r": round(d["expectancy_r"], 3) if d.get("entries") else None,
+                "baseline_r": round(d["baseline_r"], 3) if d.get("baseline_r") is not None else None,
+                "edge_r": round(t["edge_r"], 3) if "edge_r" in t else None,
+                "t": round(t["t"], 2) if "t" in t else None,
+                "p": t.get("p"),
+                "judged": t.get("judged"),
+            }
+        )
+    print(json.dumps({"path": path, "seconds": result["seconds"], "summary": summary}, indent=1))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m cherrypick.technicals", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -438,6 +465,9 @@ def main(argv: list[str] | None = None) -> int:
     s3 = ss.add_parser("round3", help="round 3: Supertrend + Vortex and squeeze + RSI divergence")
     s3.add_argument("--workers", type=int, default=14)
     s3.set_defaults(fn=cmd_study_round3)
+    s4 = ss.add_parser("round4", help="round 4: the relative-strength breakout, with and without volume")
+    s4.add_argument("--workers", type=int, default=14)
+    s4.set_defaults(fn=cmd_study_round4)
     rp = sub.add_parser("report", help="write one session's market-report readings for the console")
     rp.add_argument("--session", help="ISO date (default: the latest session stored)")
     rp.set_defaults(fn=cmd_report)

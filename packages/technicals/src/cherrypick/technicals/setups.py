@@ -223,6 +223,21 @@ STUDIED = (
         "div-band",
         "short",
     ),
+    # round 4: the rules read SPY as well as the name, so they live in round4.py, not in RULES
+    Setup(
+        "rs-break",
+        "Relative-strength breakout",
+        "Enter on a close above the highest close of the prior 21 sessions on which close / SPY's close "
+        "is also above its highest of the prior 21, with no such close in the prior 10 sessions. Exit "
+        "on the close 21 sessions after entry.",
+        (),
+    ),
+    Setup(
+        "rs-break-vol",
+        "Relative-strength breakout on volume",
+        "rs-break, on a session whose volume is at least 1.5x the mean of the prior 30 sessions'.",
+        (),
+    ),
 )
 
 
