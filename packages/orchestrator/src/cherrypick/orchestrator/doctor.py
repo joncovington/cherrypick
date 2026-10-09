@@ -357,6 +357,23 @@ def _capability_checks(cfg: dict[str, Any]) -> list[Check]:
     return out
 
 
+def service_check(settings: dict[str, Any], state: dict[str, Any]) -> Check | None:
+    """The optional Windows-service mode (`run.py service`), from its settings and `sc query`. Pure.
+    Nothing to say when it is off and not installed -- the default."""
+    sid = settings.get("id")
+    if not settings.get("enabled"):
+        if state.get("installed"):
+            return Check("service", WARN, f"'{sid}' is installed but service mode is off in config")
+        return None
+    if not state.get("installed"):
+        return Check(
+            "service", WARN, f"service mode is on but '{sid}' is not installed: run.py service prepare"
+        )
+    if state.get("state") != "RUNNING":
+        return Check("service", FAIL, f"'{sid}' is installed but {state.get('state') or 'not running'}")
+    return Check("service", OK, f"'{sid}' running (the supervisor runs with nobody logged on)")
+
+
 def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     """Run the readiness checks. `fast=True` skips the broker/keyring check — the only one that makes
     an authenticated broker round-trip (a 35s-timeout subprocess) — so it's safe to poll on a short
@@ -374,6 +391,25 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     # home on Windows, so the raw value carries the username onto the dashboard's System card — the
     # one surface in the suite that renders doctor's details verbatim to a browser.
     checks.append(Check("python", OK, f"{sys.version.split()[0]} @ {cfgmod.portable_path(sys.executable)}"))
+
+    from . import winservice
+
+    if os.name == "nt":
+        # Windows Update's automatic restarts against the suite's day (2026-10-09).
+        from . import winupdate
+
+        try:
+            wu = winupdate.check_config(cfg)
+        except Exception as exc:  # noqa: BLE001 -- a diagnostic must not break doctor
+            wu = {"status": "unknown", "detail": f"{type(exc).__name__}: {exc}"}
+        checks.append(Check("windows_update", {"ok": OK, "warn": WARN}.get(wu["status"], WARN), wu["detail"]))
+
+    svc_settings = winservice.settings(cfg)
+    svc = service_check(
+        svc_settings, winservice.query(svc_settings["id"]) if os.name == "nt" else {"installed": False}
+    )
+    if svc is not None:
+        checks.append(svc)
 
     # cherrypick-core is a required, installed dependency (packages/core) -- not a submodule with a
     # graceful degrade path. Without it, every module and most of this orchestrator's own read

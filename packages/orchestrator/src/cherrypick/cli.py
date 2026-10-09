@@ -119,7 +119,7 @@ from cherrypick.orchestrator import (
     positions as positions_mod,
 )
 from cherrypick.orchestrator import proc as _proc
-from cherrypick.orchestrator.util import CREATE_NO_WINDOW, first_json
+from cherrypick.orchestrator.util import CREATE_NO_WINDOW, NEW_SESSION, first_json
 
 # The OS scheduler invokes the in-place launcher `pythonw <repo>/run.py <cmd>`. This module is
 # <repo>/src/cherrypick/cli.py, so the repo-root launcher is two parents up. (Renamed from
@@ -229,13 +229,31 @@ def cmd_install(cfg, force: bool = False) -> None:
     # The one remaining OS task: a 2-minute keep-alive probe that (re)starts the supervisor.
     # The OS guarantees the probe; the probe guarantees the daemon; the daemon fires everything.
     anchor_tr = tasks.build_tr(pyw, str(_LAUNCHER), "ensure-supervisor")
-    results["anchor_task"] = tasks.create_minute_task(supersnap.ANCHOR_TASK, anchor_tr, 2, run_now=False)
+    service = _service_mode(cfg)
+    if service and tasks.exists(supersnap.ANCHOR_TASK):
+        # Service mode (optional, `run.py service`): the anchor was set to run with nobody logged on;
+        # re-creating it here would quietly put it back to logged-on only.
+        results["anchor_task"] = {"ok": True, "detail": "kept as configured (service mode)"}
+    else:
+        results["anchor_task"] = tasks.create_minute_task(supersnap.ANCHOR_TASK, anchor_tr, 2, run_now=False)
+
+    if os.name == "nt":
+        # An unattended Windows PC restarts itself for updates outside its active hours: say so now if
+        # that window falls on the suite's day, while the person installing is there (2026-10-09).
+        from cherrypick.orchestrator import winupdate
+
+        try:
+            results["windows_update"] = winupdate.check_config(cfg)
+        except Exception as exc:  # noqa: BLE001 -- advice only; never fails an install
+            results["windows_update"] = {"status": "unknown", "detail": f"{type(exc).__name__}: {exc}"}
+        if results["windows_update"].get("status") == "warn":
+            print(f"WARNING: {results['windows_update']['detail']}", file=sys.stderr)
 
     # Start the supervisor now rather than waiting for the anchor's first fire.
     if supersnap.supervisor_alive():
         results["supervisor"] = {"ok": True, "detail": "already running"}
     else:
-        started = _spawn_supervisor_detached()
+        started = _start_supervisor(cfg)
         results["supervisor"] = {"ok": started, "detail": "started" if started else "start failed"}
 
     # Unconditionally delete every legacy per-job task (idempotent — deleting an absent task is a
@@ -474,6 +492,7 @@ def _start_dolt(data_dir: Path) -> bool:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=flags,
+            start_new_session=NEW_SESSION,  # POSIX: out of this process's group (DETACHED's twin)
         )
         return True
     except OSError:
@@ -802,12 +821,14 @@ def _find_listening_pid(port: int) -> int | None:
     """Whoever is listening on `port` right now, independent of what the supervisor's own registry
     believes.
 
-    Windows only (`netstat -ano`): every box this suite runs unattended on is Windows, and this is a
-    manual dev command, never a scheduled one, so a POSIX gap here costs nothing on the reliability
-    path. Returns None rather than guessing when nothing matches or the probe itself fails.
+    Windows parses `netstat -ano`; elsewhere it is `util.port_owner_pid` (/proc on Linux, lsof on
+    macOS -- 2026-10-08 OS audit). Returns None rather than guessing when nothing matches or the probe
+    itself fails.
     """
     if os.name != "nt":
-        return None
+        from cherrypick.orchestrator.util import port_owner_pid
+
+        return port_owner_pid(port)
     try:
         out = subprocess.run(
             ["netstat", "-ano"],
@@ -974,20 +995,100 @@ def cmd_streamer_health(cfg) -> None:
 
 
 # --------------------------------------------------------------------------- supervisor
-def cmd_supervise(cfg, stop: bool = False) -> None:
+def cmd_supervise(cfg, stop: bool = False, restart: bool = False) -> None:
     """Run the supervisor daemon loop in THIS process (the anchor task launches it detached via
     ensure-supervisor; running it foreground is the manual/diagnostic path). --stop asks a running
     daemon to exit via its stop file."""
     from cherrypick.orchestrator import supervisor
 
-    if stop:
-        _emit(supervisor.request_stop())
+    if stop or restart:
+        _emit(supervisor.request_stop(restart=restart))
         return
     # Deliberately NOT the pre-loaded cfg: a non-None cfg PINS the daemon to that snapshot (the
     # test affordance in Supervisor.__init__), and passing it here silently disabled the mtime
     # reload — every config edit needed a daemon restart nobody knew to perform. The daemon loads
     # its own config so edits apply on the next pass, as the scheduling docs promise.
-    _emit(supervisor.run())
+    result = supervisor.run()
+    _emit(result)
+    if result.get("restart"):
+        sys.exit(supervisor.RESTART_EXIT)
+
+
+def _service_mode(cfg) -> dict | None:
+    """The service's settings when the optional Windows-service mode is on AND the service is
+    installed (`run.py service`), else None -- the default, logged-on-anchor posture."""
+    from cherrypick.orchestrator import winservice
+
+    s = winservice.settings(cfg or {})
+    if not s["enabled"] or os.name != "nt":
+        return None
+    return s if winservice.query(s["id"]).get("installed") else None
+
+
+# How long the anchor lets a stopped service restart itself before starting a supervisor outside
+# it: longer than its longest restart delay (2 min). A fallback started inside that gap holds the lock,
+# and the service's own supervisor then refuses to start (2026-10-09).
+SERVICE_RESTART_GRACE_S = 300
+
+
+def _start_supervisor(cfg, state: dict | None = None) -> bool:
+    """Start the supervisor the way this machine runs it: through the service in service mode (a
+    detached spawn there would be a rival the service cannot see), else the detached daemon."""
+    service = _service_mode(cfg)
+    if service:
+        from cherrypick.orchestrator import winservice
+
+        if winservice.start(service["id"]):
+            return True
+        # `sc start` is refused without administrator rights even when the service is already up --
+        # a fallback then would start a rival beside it (2026-10-08). Running or starting is started.
+        if winservice.query(service["id"]).get("state") in ("RUNNING", "START_PENDING"):
+            return True
+        if state is not None:  # the anchor: give the service its own restart first
+            import time as _time
+
+            since = float(state.setdefault("service_down_since", _time.time()))
+            if _time.time() - since < SERVICE_RESTART_GRACE_S:
+                return False
+        # The service would not start (a logon failure, a refused `sc start`): a supervisor outside
+        # it beats none at all -- the single-instance lock still stops the service from adding a
+        # second once it is fixed. Said loudly, because the machine is no longer running as chosen.
+        # Found on the first real install (2026-10-08): this path gave up, and nothing restarted the
+        # suite after the old supervisor had been stopped for the service to take over.
+        started = _spawn_supervisor_detached()
+        try:
+            Notifier(cfg.get("notify")).notify(
+                "CRITICAL",
+                "service.start_failed",
+                "Supervisor service would not start -- running it the usual way",
+                f"`sc start {service['id']}` failed, so the supervisor was started outside the service "
+                f"({'started' if started else 'that failed too'}). Windows' System event log (Service "
+                "Control Manager, 7000/7038) says why -- most often the service account's password. "
+                "`run.py service status` and `run.py doctor` show the state.",
+            )
+        except Exception:
+            pass
+        return started
+    return _spawn_supervisor_detached()
+
+
+def cmd_service(cfg, action: str | None) -> None:
+    """OPTIONAL Windows-service mode (orchestrator/winservice.py): prepare | status | uninstall."""
+    from cherrypick.orchestrator import supersnap, winservice
+
+    if action == "prepare":
+        out = winservice.prepare(
+            cfg, launcher=str(_LAUNCHER), workdir=str(_LAUNCHER.parents[2]), anchor_task=supersnap.ANCHOR_TASK
+        )
+    elif action == "uninstall":
+        out = winservice.uninstall(cfg, anchor_task=supersnap.ANCHOR_TASK)
+    elif action in (None, "status"):
+        out = winservice.status(cfg)
+    else:
+        out = {"ok": False, "error": f"unknown service action {action!r}: prepare | status | uninstall"}
+    _emit(out)
+    if out.get("ok") is False:
+        sys.exit(1)
 
 
 def _spawn_supervisor_detached() -> bool:
@@ -1003,6 +1104,8 @@ def _spawn_supervisor_detached() -> bool:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=flags,
+            # POSIX: its own session, so a Ctrl-C in the installer's terminal does not reach it.
+            start_new_session=NEW_SESSION,
         )
         return True
     except OSError:
@@ -1030,7 +1133,39 @@ def cmd_ensure_supervisor(cfg) -> None:
         _emit({"ok": True, "detail": "supervisor running"})
         return
 
-    started = _spawn_supervisor_detached()
+    # Alive but not beating: it holds the lock, so a fresh start would refuse forever. End that one
+    # process -- never its children, which the new supervisor adopts (a live tick may be mid-order)
+    # -- and say so (2026-10-08 audit).
+    import time
+
+    from cherrypick.core import looplock as _looplock
+
+    from cherrypick.orchestrator.util import read_json
+
+    hb = read_json(supervisor.heartbeat_path())
+    wedged = supersnap.wedged_supervisor_pid(
+        hb, start_time_fn=_looplock.process_start_time, alive_fn=_looplock.pid_alive
+    )
+    if wedged is not None:
+        supervisor._terminate_pid(wedged)
+        for _ in range(20):
+            if not _looplock.pid_alive(wedged):
+                break
+            time.sleep(0.5)
+        try:
+            Notifier(cfg.get("notify")).notify(
+                "WARNING",
+                "supervisor.wedged",
+                "Supervisor was hung -- restarted",
+                f"pid {wedged} was alive with a heartbeat {supersnap.heartbeat_age_seconds(hb) or 0:.0f} s "
+                "old, holding the lock so no restart could take it. Ended that process alone (its "
+                "jobs keep running and are adopted) and started a new supervisor. logs/supervisor.log "
+                "and logs/supervisor-fault.log may say why it stopped.",
+            )
+        except Exception:
+            pass
+
+    started = _start_supervisor(cfg, state)
     failures = int(state.get("failures") or 0) + 1
     notified = bool(state.get("notified"))
     if failures >= 3 and not notified:
@@ -1047,7 +1182,8 @@ def cmd_ensure_supervisor(cfg) -> None:
             notified = True
         except Exception:
             pass
-    state_path.write_text(json.dumps({"failures": failures, "notified": notified}), encoding="utf-8")
+    keep = {k: state[k] for k in ("service_down_since",) if k in state}
+    state_path.write_text(json.dumps({"failures": failures, "notified": notified, **keep}), encoding="utf-8")
     _emit(
         {
             "ok": started,
@@ -1156,7 +1292,7 @@ def cmd_reconcile(cfg, scheduled: bool = False) -> None:
             else "Reconcile: could not verify accounts"
         )
         try:
-            Notifier(cfg.get("notify")).notify(level, "reconcile.scheduled", title, report_text[:1500])
+            Notifier(cfg.get("notify")).notify(level, "reconcile.scheduled", title, reconcile.summary(result))
         except Exception:
             pass  # the report is already printed/logged; notification is best-effort
     # exit by verdict: FLAT -> 0, DRIFT (real account not flat) -> 1, UNKNOWN (couldn't check) -> 2
@@ -1184,6 +1320,27 @@ def cmd_notify_trades(cfg, dry_run: bool = False) -> None:
 
 def cmd_notify_desk(cfg) -> None:
     _emit(desk_notifier.run(cfg))
+
+
+def cmd_power_watch(cfg) -> None:
+    """Notify every channel while this machine is on battery (orchestrator/powerwatch.py)."""
+    from cherrypick.orchestrator import powerwatch
+
+    _emit(powerwatch.run(cfg))
+
+
+def cmd_live_positions(cfg) -> None:
+    """Live accounts' positions vs the live ledgers (orchestrator/livepositions.py). Read-only."""
+    from cherrypick.orchestrator import livepositions
+
+    _emit(livepositions.run(cfg))
+
+
+def cmd_settle_overdue_live(cfg) -> None:
+    """Catch-up settlement of past live sessions at the official close (orchestrator/livesettle.py)."""
+    from cherrypick.orchestrator import livesettle
+
+    _emit(livesettle.run(cfg))
 
 
 def cmd_notify_status(cfg, force: bool = False, close: bool = False) -> None:
@@ -1500,6 +1657,10 @@ def build_parser() -> argparse.ArgumentParser:
             "review",
             "morning",
             "restart-console",
+            "power-watch",
+            "live-positions",
+            "settle-overdue-live",
+            "service",
             "ps",
             "restart",
             "stop",
@@ -1696,6 +1857,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="For supervise: ask the running supervisor daemon to exit (via its stop file)",
     )
     parser.add_argument(
+        "--restart",
+        action="store_true",
+        help="For supervise: ask the running supervisor to exit so it is started again with fresh code "
+        "(by the Windows service after its restart delay, else by the anchor's next probe)",
+    )
+    parser.add_argument(
         "--close",
         action="store_true",
         help="For notify-status: post the day's CLOSE card (what the daily status-digest-close job passes)",
@@ -1705,7 +1872,7 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default=None,
         help="For restart/stop/start: a supervisor job (console, flies-paper, ...), `streamer`, or a "
-        "service id -- `ps` lists them",
+        "service id -- `ps` lists them. For service: prepare | status | uninstall",
     )
     parser.add_argument(
         "--all",
@@ -1715,7 +1882,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _market_clock_on_posix(environ=None) -> bool:
+    """Run this process (and every child it starts) on the suite's market clock when nothing chose a
+    zone: many call sites take `date.today()` as the session date, and on a UTC host the date turns
+    over at 19:00/20:00 ET, inside the evening jobs. The cron lines carry TZ already; this covers a
+    run.py started by hand or by anything else. An explicit TZ always wins. Windows has no tzset and
+    keeps the machine's own zone. True when it set the zone."""
+    environ = os.environ if environ is None else environ
+    if os.name == "nt" or environ.get("TZ"):
+        return False
+    environ["TZ"] = "America/New_York"
+    import time as _time
+
+    if hasattr(_time, "tzset"):
+        _time.tzset()
+    return True
+
+
 def main() -> None:
+    _market_clock_on_posix()
     # A default Windows console is cp1252, and the help text and several reports carry glyphs it
     # cannot encode (↔, ×, –) — argparse printing usage tracebacked before any command ran, which
     # made `--help` the first command a new user saw fail. Degrade the odd glyph to '?' instead;
@@ -1744,7 +1929,7 @@ def main() -> None:
         "watchdog": lambda: cmd_watchdog(cfg),
         "preopen-check": lambda: cmd_preopen_check(cfg),
         "streamer-health": lambda: cmd_streamer_health(cfg),
-        "supervise": lambda: cmd_supervise(cfg, stop=args.stop),
+        "supervise": lambda: cmd_supervise(cfg, stop=args.stop, restart=args.restart),
         "ensure-supervisor": lambda: cmd_ensure_supervisor(cfg),
         "report": lambda: cmd_report(cfg, args),
         "archive": lambda: cmd_archive(cfg, args),
@@ -1758,6 +1943,10 @@ def main() -> None:
         "notify-trades": lambda: cmd_notify_trades(cfg, dry_run=args.dry_run),
         "notify-desk": lambda: cmd_notify_desk(cfg),
         "notify-status": lambda: cmd_notify_status(cfg, force=args.force, close=args.close),
+        "power-watch": lambda: cmd_power_watch(cfg),
+        "live-positions": lambda: cmd_live_positions(cfg),
+        "service": lambda: cmd_service(cfg, args.name),
+        "settle-overdue-live": lambda: cmd_settle_overdue_live(cfg),
         "notify-send": lambda: cmd_notify_send(args),
         "sent": lambda: cmd_sent(args),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),

@@ -23,7 +23,9 @@ __all__ = ["OFFICIAL_SOURCES", "official_index_close", "share_pnl"]
 # Which `official_index_close` sources count as a POSTED close a cash-settled ledger may settle on.
 # Anything else -- an intraday last/mark tick tagged provisional, or nothing at all -- means the
 # caller keeps retrying. "official" is the tag a hand-supplied `--price` carries.
-OFFICIAL_SOURCES = frozenset({"official", "tastytrade_close", "yahoo", "barchart"})
+# "yahoo_daily": that session's posted daily close, fetched for a PAST session by date
+# (`dated_index_close`) -- the catch-up settlement of a book a machine outage left open (2026-10-08).
+OFFICIAL_SOURCES = frozenset({"official", "tastytrade_close", "yahoo", "barchart", "yahoo_daily"})
 
 
 def is_official_source(source: str | None) -> bool:
@@ -159,3 +161,58 @@ async def official_index_close(session, symbol: str) -> tuple[float | None, str]
     if price is not None:
         return price, f"tastytrade_{field}_provisional"
     return None, "no_source_available"
+
+
+def daily_close_on(chart: dict, session: str) -> float | None:
+    """The close of the daily bar dated `session` (YYYY-MM-DD, exchange-local) in a Yahoo chart
+    response, or None. Pure. The bar's date is read in the exchange's own zone (`gmtoffset`), so a
+    bar stamped at the 09:30 ET open is that session whatever the reader's clock says."""
+    from datetime import datetime, timedelta, timezone
+
+    try:
+        result = chart["chart"]["result"][0]
+        offset = timedelta(seconds=int(result["meta"].get("gmtoffset") or 0))
+        stamps = result["timestamp"]
+        closes = result["indicators"]["quote"][0]["close"]
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+    for ts, close in zip(stamps, closes, strict=False):
+        day = (datetime.fromtimestamp(int(ts), tz=timezone.utc) + offset).date().isoformat()
+        if day == session and close is not None:
+            return round(float(close), 2)
+    return None
+
+
+def dated_index_close(symbol: str, session: str) -> float | None:
+    """`symbol`'s official close on a PAST session (Yahoo's daily bar for `^SYMBOL`), or None.
+    Only for sessions already over: a bar for today is still forming. Blocking."""
+    import json
+    import urllib.request
+    from datetime import date, datetime, time, timedelta, timezone
+
+    day = date.fromisoformat(session)
+    if day >= datetime.now(timezone.utc).date():
+        return None
+    start = int(datetime.combine(day - timedelta(days=3), time(), tzinfo=timezone.utc).timestamp())
+    end = int(datetime.combine(day + timedelta(days=3), time(), tzinfo=timezone.utc).timestamp())
+    url = (
+        f"https://query1.finance.yahoo.com/v8/finance/chart/%5E{symbol}"
+        f"?interval=1d&period1={start}&period2={end}"
+    )
+    try:
+        req = urllib.request.Request(url, headers=_HTTP_HEADERS)
+        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT_SECONDS) as resp:
+            return daily_close_on(json.load(resp), session)
+    except Exception:  # noqa: BLE001 -- no answer is None; the caller keeps alerting
+        return None
+
+
+class DatedClose:
+    """A stand-in for a module broker's `official_settlement_price(symbol)` that answers with one
+    past session's close, so the module's own settle path settles a catch-up day unchanged."""
+
+    def __init__(self, price: float):
+        self._price = price
+
+    def official_settlement_price(self, symbol: str) -> tuple[float, str]:
+        return self._price, "yahoo_daily"

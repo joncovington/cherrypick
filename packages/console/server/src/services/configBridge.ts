@@ -1,3 +1,4 @@
+import { suitePython } from "@console/shared";
 import { spawnSync } from "node:child_process";
 
 /**
@@ -42,7 +43,7 @@ const UNAVAILABLE =
 function spawnCaller(req: BridgeRequest): BridgeResult {
   let out;
   try {
-    out = spawnSync("python", ["-m", "cherrypick.orchestrator.configcli"], {
+    out = spawnSync(suitePython(), ["-m", "cherrypick.orchestrator.configcli"], {
       input: JSON.stringify(req),
       encoding: "utf-8",
       timeout: 20_000,

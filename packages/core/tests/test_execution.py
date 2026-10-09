@@ -467,3 +467,119 @@ def test_a_read_that_finds_the_prior_order_refuses_until_acknowledged(monkeypatc
     assert adapter.acknowledge("ext-1") is True and adapter.acknowledge("ext-1") is False
     out = adapter.place({"legs": [], "external_identifier": "ext-4"}, live=True)
     assert out["ok"] is True and out["order_id"] == "7"
+
+
+# --- the hold outlives the process (2026-10-08) --------------------------------------------------
+# Each live tick is its own `--once` process. A hold kept only in memory lifted itself when the tick
+# ended, so the NEXT tick could submit the duplicate the hold exists to prevent.
+
+
+def test_an_unresolved_hold_survives_into_the_next_process(monkeypatch, tmp_path):
+    hold = tmp_path / "live_held.json"
+    _, placed = _held_adapter(monkeypatch, at_broker=[], read_ok=[False])
+    first_tick = _adapter(monkeypatch, hold_path=hold)
+    assert first_tick.place({"legs": [], "external_identifier": "ext-1"}, live=True)["uncertain"] is True
+    assert hold.exists()
+    next_tick = _adapter(monkeypatch, hold_path=hold)  # a new process: nothing carried in memory
+    out = next_tick.place({"legs": [], "external_identifier": "ext-2"}, live=True)
+    assert out["ok"] is False and out["unresolved"] == ["ext-1"]
+    assert len(placed) == 1  # ext-2 was never sent
+
+
+def test_a_later_process_that_reads_the_identity_absent_clears_the_file(monkeypatch, tmp_path):
+    hold = tmp_path / "live_held.json"
+    _held_adapter(monkeypatch, at_broker=[], read_ok=[False, True])
+    _adapter(monkeypatch, hold_path=hold).place({"legs": [], "external_identifier": "ext-1"}, live=True)
+    monkeypatch.setattr(_broker, "place_order", _ok_place)
+    out = _adapter(monkeypatch, hold_path=hold).place({"legs": [], "external_identifier": "ext-2"}, live=True)
+    assert out["ok"] is True and not hold.exists()
+
+
+def test_an_unrecorded_order_stays_held_across_processes_until_acknowledged(monkeypatch, tmp_path):
+    hold = tmp_path / "live_held.json"
+    at_broker = [{"order_id": 99, "status": "Live", "external_identifier": "ext-1", "terminal": False}]
+    _held_adapter(monkeypatch, at_broker=at_broker, read_ok=[False, True])
+    _adapter(monkeypatch, hold_path=hold).place({"legs": [], "external_identifier": "ext-1"}, live=True)
+    monkeypatch.setattr(_broker, "place_order", _ok_place)
+    assert _adapter(monkeypatch, hold_path=hold).place({"legs": []}, live=True)["unrecorded"] == {
+        "ext-1": "99"
+    }
+    later = _adapter(monkeypatch, hold_path=hold)
+    assert later.held["unrecorded"] == {"ext-1": "99"}
+    assert later.acknowledge("ext-1") is True and not hold.exists()
+
+
+def test_an_unreadable_hold_file_holds(monkeypatch, tmp_path):
+    """It cannot show nothing is held, so it holds."""
+    hold = tmp_path / "live_held.json"
+    hold.write_text("{not json", encoding="utf-8")
+    _held_adapter(monkeypatch, at_broker=[], read_ok=[False])
+    out = _adapter(monkeypatch, hold_path=hold).place({"legs": []}, live=True)
+    assert out["ok"] is False and out.get("uncertain") is True
+
+
+# --------------------------------------------------------------------------- broker contact (2026-10-08)
+# Every failure is swallowed into data here, so a tick against a dead broker exited 0 and looked
+# healthy. The health file is the trace an outage leaves, carried across ticks.
+
+
+def test_a_failing_broker_starts_a_streak_that_the_next_tick_continues(monkeypatch, tmp_path):
+    async def down(account, session):
+        raise ConnectionError("Temporary failure in name resolution")
+
+    monkeypatch.setattr(_broker, "working_orders", down)
+    hold = tmp_path / "live_held.json"
+    first = _adapter(monkeypatch, hold_path=hold)
+    with pytest.raises(ConnectionError):
+        first.working_orders()
+    h1 = execution.read_broker_health(tmp_path / execution.HEALTH_FILENAME)
+    assert h1["failing_since"] and h1["failures"] >= 1 and "name resolution" in h1["last_error"]
+
+    second = _adapter(monkeypatch, hold_path=hold)  # the next tick: a new process, a new adapter
+    with pytest.raises(ConnectionError):
+        second.working_orders()
+    h2 = execution.read_broker_health(tmp_path / execution.HEALTH_FILENAME)
+    assert h2["failing_since"] == h1["failing_since"] and h2["failures"] > h1["failures"]
+
+
+def test_a_login_that_cannot_be_built_is_recorded(monkeypatch, tmp_path):
+    def expired():
+        raise RuntimeError("invalid_grant: refresh token expired")
+
+    adapter = execution.Broker(
+        get_session=expired, designated_account=lambda: "x", hold_path=tmp_path / "h.json"
+    )
+    with pytest.raises(RuntimeError):
+        _ = adapter.session
+    assert "invalid_grant" in execution.read_broker_health(tmp_path / execution.HEALTH_FILENAME)["last_error"]
+
+
+def test_one_success_ends_the_streak(monkeypatch, tmp_path):
+    state = {"up": False}
+
+    async def flaky(account, session):
+        if not state["up"]:
+            raise TimeoutError("read timed out")
+        return []
+
+    monkeypatch.setattr(_broker, "working_orders", flaky)
+    adapter = _adapter(monkeypatch, hold_path=tmp_path / "live_held.json")
+    with pytest.raises(TimeoutError):
+        adapter.working_orders()
+    state["up"] = True
+    assert adapter.working_orders() == []
+    h = execution.read_broker_health(tmp_path / execution.HEALTH_FILENAME)
+    assert h["failing_since"] is None and h["failures"] == 0 and h["last_ok_at"]
+
+
+def test_no_hold_path_writes_nothing_and_an_unreadable_file_reads_empty(monkeypatch, tmp_path):
+    async def down(account, session):
+        raise ConnectionError("x")
+
+    monkeypatch.setattr(_broker, "working_orders", down)
+    with pytest.raises(ConnectionError):
+        _adapter(monkeypatch).working_orders()
+    assert list(tmp_path.iterdir()) == []
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json", encoding="utf-8")
+    assert execution.read_broker_health(bad) == {}

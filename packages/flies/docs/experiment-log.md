@@ -988,3 +988,41 @@ was wrong. Rebuilt from the live cache at the same minute:
   rather than an era boundary (one tag dimension moves, no arm's decisions do).
 - **Never pool `entry_/completion_gex_*` across 2026-10-06.** No enabled arm centres on GEX and the
   selector scores on vol and trend only, so no book trades differently.
+
+## 2026-10-07 — raising an unfilled live completion's limit, on its own quotes (a negative lead)
+
+Asked whether the credit a completed fly locks in could pay for a higher completion debit. Nothing
+was changed. The replay is `scripts/flies_completion_replay.py` (`flies.completion_escalation`), and
+it is meant to be re-run as quoted sessions accumulate.
+
+**The premise is smaller than it looks.** Every live fly since 09-18 locked in exactly $25. After
+fees and the worst-case settlement reserve, though, its floor is $3.11, so a day of completed flies
+banks about $12. A raise is a per-position decision, from the position's own credit, fees and
+reserve. Completed flies cannot fund it.
+
+**What is new against 2026-09-28.** The `salvage` family above priced completions with paper's
+modelled debit. This replay walks the live order path's own quotes (`fly_order_path`, from 10-02)
+under the fill rule they were measured to obey: a resting completion fills once its mid is within
+0.05 of the limit, which held for 16 of 16 resolved orders. At the live limit the baseline must
+reproduce every position's outcome and price, or the script refuses to report.
+
+**The grid.** Raises are triggered by time unfilled, or by spot moving away from the completing
+side, and are never applied at placement except as the reference row. Each trigger is shown at a
++0.25 and a +0.50 cap.
+
+**First run: 10-05 and 10-06, 12 positions, 4 strands.**
+- **Every +0.25 cell loses money and rescues nothing.** The near misses needed more than 0.25.
+- **The best +0.50 cell (`away 1.0w`) reads +$221, but it is not a result:**
+  - one real rescue: 10-05 7745, from −$253 to −$47;
+  - one lucky pin: 10-06 7820, a strand that had already settled out of the money for +$242,
+    completed into a fly that pinned for +$356;
+  - $100 overpaid on two flies that would have filled anyway.
+- **Each fly filled at +0.50 has a floor of −$47**, against +$3 at today's limit.
+- **2 of the 4 live strands expired out of the money as profits.** The 09-28 paper study saw none.
+
+**The entries a rescue frees.** Live sizes by the $1,000 margin cap, and every refusal is logged in
+`fly_decisions`. Re-totalled under each policy, the rescues let in at most one scorable entry: 10-05
+7780, which paper control scores at +$4.36. That column is paper-scored and kept separate from the
+live-scored one.
+
+**Re-run** at about 20 quoted live strands. Any change it supports is measurement-affecting.

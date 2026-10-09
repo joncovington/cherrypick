@@ -41,8 +41,9 @@ Order lifecycle:
     watchdog backstops this by setting the halt flag if the task somehow survives.
 
 Gates checked every live tick (`readiness()`): `live.enabled`, a non-empty `gate0_confirmed`
-attestation, one configured arm, a designated account, halt flag absent — plus the daily-loss
-breaker on the live ledger. Live concurrency (2026-09-25): no count limit by default -- the
+attestation, one configured arm and a designated account -- unmet, the tick does nothing. The halt
+flag and the daily-loss breaker are ENTRY blockers (`entry_blockers()`, 2026-10-08): they stop new
+structures only, while fills are confirmed, completions placed and cut off, and the book settled. Live concurrency (2026-09-25): no count limit by default -- the
 buying-power cap below is the sizing gate, and an uncompleted vertical or a negative-floor fly
 counts against it at its worst case. `live.max_incomplete_spreads` restores a count limit (1 was
 the pilot's rule until 2026-09-25), with `live.negative_floor_override` still naming a stuck
@@ -105,7 +106,6 @@ from cherrypick.flies.cli import load_config  # noqa: E402
 DEFAULT_ARM = "gex"
 _TERMINAL_UNFILLED = _execution.TERMINAL_UNFILLED  # one reading of a dead order, suite-wide
 
-_TASK_NAME = "cherrypick-flies-live-loop"
 _TASK_INTERVAL_MIN = 1
 _NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
@@ -150,7 +150,7 @@ def _watch_lock_path() -> str:
 def arm_stamp_path() -> str:
     """The live ARM RECORD — 'armed for today' as a file, in the SHARED state dir so the module
     (self-disarm), the supervisor (job enablement), and the watchdog (dead-man's backstop) all read
-    the one file. Under the supervisor, this record — not a schtasks registration — IS the armed
+    the one file. Under the supervisor, this record IS the armed
     signal: present-and-dated-today enables the `flies-live` job; deleting it disarms within one
     supervisor pass. Only this module's human-confirmed arm command ever writes it. The
     convention is `cherrypick.core.live` (2026-09-18), so a second armed module cannot drift."""
@@ -277,8 +277,12 @@ def _merged_live_params(config: dict, arm: str) -> dict:
 
 
 # --------------------------------------------------------------------------- gates
-def readiness(config: dict, *, halt_present: bool, designated: str | None) -> list[str]:
-    """The unmet live gates, checked every tick — empty means the loop may act. Pure."""
+def readiness(config: dict, *, designated: str | None) -> list[str]:
+    """The unmet ACCOUNT gates, checked every tick -- empty means the loop may act on the account
+    at all. Pure. The halt flag and the daily-loss breaker are not here: they stop NEW ENTRIES only
+    (`entry_blockers`), so fills are still confirmed, completions placed and cut off, and the book
+    settled while either is in force (2026-10-08 -- before that the halt returned ahead of all of it,
+    so a halt mid-session left resting orders unwatched and the day unsettled)."""
     live = _live_cfg(config)
     unmet = []
     if not live.get("enabled"):
@@ -289,11 +293,21 @@ def readiness(config: dict, *, halt_present: bool, designated: str | None) -> li
     arms = _cfg.registry(config, label="flies")
     if arm not in arms:
         unmet.append(f"live.arm {arm!r} is not a configured arm")
-    if halt_present:
-        unmet.append("halt flag present (state/halt-live.flag) — live entries halted")
     if not designated:
         unmet.append("no designated account — run `cherrypick account --module flies --set <last4>`")
     return unmet
+
+
+def entry_blockers(config: dict, conn, day: str, *, halt_present: bool) -> list[str]:
+    """Why no NEW live entry may be placed this tick; empty means entries may proceed. Everything
+    that manages what is already open -- fill confirmation, completions, cutoff cancels, settlement
+    -- runs regardless."""
+    blockers = []
+    if halt_present:
+        blockers.append("halt_flag_present")
+    if daily_loss_tripped(conn, day, _live_cfg(config).get("daily_loss_halt_dollars")):
+        blockers.append("daily_loss_breaker")
+    return blockers
 
 
 def daily_loss_tripped(conn, day: str, limit_dollars: float | None) -> bool:
@@ -692,7 +706,13 @@ def _orphans_path() -> str:
     return os.path.join(_data_dir(), "live_orphans.json")
 
 
-def _sweep_orphans(conn, broker, log, symbol: str) -> int:
+def _held_path() -> str:
+    """The broker seam's persisted hold: a submit whose outcome is unknown, or an order found at
+    the broker that no caller recorded. Refuses every live submit until resolved or acknowledged."""
+    return os.path.join(_data_dir(), "live_held.json")
+
+
+def _sweep_orphans(conn, broker, log, symbol: str) -> int | None:
     """Diff the broker's working orders (truth) against the ledger's order ids (belief),
     scoped to `symbol` — the one this arm actually trades.
 
@@ -715,7 +735,7 @@ def _sweep_orphans(conn, broker, log, symbol: str) -> int:
         working = broker.working_orders()
     except Exception as exc:  # noqa: BLE001 — a failed sweep must not break the tick
         log(f"orphan sweep failed ({type(exc).__name__}: {exc}) — will retry next tick")
-        return 0
+        return None  # unknown -- and unknown blocks new entries (run_once step 4)
     working = [o for o in working if o.get("underlying_symbol") == symbol]
     known = {
         str(r[0])
@@ -750,7 +770,9 @@ def read_orphans() -> list[dict]:
         return []
 
 
-def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=print) -> dict:
+def run_once(
+    config: dict, snapshot: dict, conn, broker, *, live: bool, log=print, entry_block: list[str] | None = None
+) -> dict:
     """One live iteration for the pinned arm — the full state machine.
 
     `broker` is the injected submission seam: place(spec, live) -> {ok, order_id?, ...},
@@ -957,6 +979,20 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
         day_capped = True
         summary["skips"].append({"entry": "quarter-end session: no new live entries"})
         journal("entry", QUARTER_END_REASON, center=wanted_center)
+    # The halt flag and the daily-loss breaker (`entry_blockers`): no new entry, and nothing else
+    # held back -- every step above this one has already run.
+    # Orders at the broker the ledger never recorded -- or a sweep that could not look -- stop new
+    # entries (2026-10-08): detection alone let the same tick place another order beside them.
+    orphan_count = summary.get("orphaned_orders", 0)
+    if live and orphan_count != 0:
+        entry_block = [
+            *(entry_block or []),
+            "orphan_sweep_failed" if orphan_count is None else "orphaned_orders",
+        ]
+    if entry_block and not day_capped:
+        day_capped = True
+        summary["skips"].append({"entry": f"entries blocked: {', '.join(entry_block)}"})
+        journal("entry", "entries_blocked", center=wanted_center, detail=", ".join(entry_block))
     day_cap = live_cfg.get("max_structures_per_day")
     if live and day_cap and not day_capped:
         established = conn.execute(
@@ -1212,7 +1248,10 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                     else:
                         decision_reason = "order_id_missing"  # placed but unrecordable — investigate
                     journal("entry", decision_reason, center=plan["center"], detail=res.get("error"))
-                summary["entered"] += 1
+                # A live order that never reached the ledger was not entered: counting it spawned a
+                # fill watcher with nothing to watch (2026-10-08). A dry run still counts its would-be entry.
+                if not live or (res.get("ok") and res.get("order_id")):
+                    summary["entered"] += 1
 
     # --- 4b. the agent's named closes, TAGGED on the live rows at live natural (close_tags.py) ---
     # Never an order: no live closing path exists (intraday_advice.LIVE_CLOSES_BUILT). The tags are
@@ -1761,6 +1800,8 @@ class BrokerAdapter(_execution.Broker):
             designated_account=_designated_account,
             live_gates=self._gates,
             deploy_limit_pct=_live_cfg(config).get("account_deploy_limit_pct") or None,
+            # An uncertain submit's hold outlives this tick's process (2026-10-08).
+            hold_path=_held_path(),
         )
 
     def _gates(self) -> list[str]:
@@ -1800,50 +1841,15 @@ class BrokerAdapter(_execution.Broker):
 
 
 # --------------------------------------------------------------------------- scheduled task
-def task_installed() -> bool:
-    if os.name != "nt":
-        return False
-    r = subprocess.run(
-        ["schtasks", "/Query", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
-    )
-    return r.returncode == 0
-
-
-def _allow_on_battery() -> dict:
-    """Clear Task Scheduler's default battery guards (DisallowStartIfOnBatteries /
-    StopIfGoingOnBatteries). schtasks can't set these; the orchestrator patches its own tasks
-    the same way (`tasks.allow_on_battery`), but the live task is registered HERE, module-side,
-    so it must patch itself — a laptop dropping to battery would otherwise silently stop the
-    loop with real working orders resting at the broker. Best-effort: a failure is reported
-    but never invalidates the registration (the watchdog freshness check is the backstop)."""
-    ps = (
-        "$ErrorActionPreference='Stop';"
-        f"$s=(Get-ScheduledTask -TaskName '{_TASK_NAME}').Settings;"
-        "$s.DisallowStartIfOnBatteries=$false;$s.StopIfGoingOnBatteries=$false;"
-        f"Set-ScheduledTask -TaskName '{_TASK_NAME}' -Settings $s | Out-Null"
-    )
-    try:
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            creationflags=_NO_WINDOW,
-        )
-        return {"ok": r.returncode == 0, "detail": (r.stderr.strip()[:200] or "battery guards cleared")}
-    except OSError as exc:
-        return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
-
-
 def _supervisor_heartbeat_fresh(max_age_seconds: int = 90) -> bool:
     """Is the orchestrator's supervisor daemon driving this box? (`cherrypick.core.live`.) Fresh
-    heartbeat → arming is a record write; stale/absent → the legacy schtasks path still applies."""
+    heartbeat → arming is a record write; stale/absent → arming is refused."""
     return _live.supervisor_heartbeat_fresh(max_age_seconds)
 
 
 def _spawn_first_tick() -> None:
     """Fire one detached `--once --live` immediately so arming doesn't wait up to a full interval
-    for the first tick — the same behavior `schtasks /Run` gave the legacy registration."""
+    for the first tick."""
     flags = 0
     if os.name == "nt":
         flags = 0x00000008 | 0x08000000 | 0x00000200  # DETACHED | NO_WINDOW | NEW_GROUP
@@ -1853,99 +1859,39 @@ def _spawn_first_tick() -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=flags,
+            start_new_session=(os.name != "nt"),  # POSIX: out of the arming caller's group
         )
     except OSError:
         pass  # the next scheduled tick covers it
 
 
 def install_task() -> dict:
-    """Arm the live loop FOR TODAY by writing the arm record. The record is what makes arming
-    per-day — a tick that finds a stale record disarms itself, and the watchdog's backstop keys on
-    the same file.
-
-    Driver dispatch: when the orchestrator's supervisor is running, the record alone arms (the
-    supervisor derives the `flies-live` job from it within one pass) and NO schtasks entry is
-    created. Otherwise the legacy every-minute task is registered exactly as before. Both paths
-    fire one immediate tick."""
-    armed_for = provider.now_et().date().isoformat()
-    if _supervisor_heartbeat_fresh():
-        out = _live.arm(
-            "flies",
-            date=armed_for,
-            at=clock.now_iso(),
-            armed_by="live-flies-start",
-            spawn_first_tick=_spawn_first_tick,
-            heartbeat_fresh=lambda: True,  # checked just above through this module's own seam
-        )
-        out["cadence"] = "every 60s (supervisor job flies-live)"
-        return out
-    if os.name != "nt":
-        return {"ok": False, "error": "no supervisor running, and scheduled-task install is Windows-only"}
-    tr = f'"{_pl._pythonw()}" -m cherrypick.flies.live_loop --once --live'
-    r = subprocess.run(
-        [
-            "schtasks",
-            "/Create",
-            "/TN",
-            _TASK_NAME,
-            "/TR",
-            tr,
-            "/SC",
-            "MINUTE",
-            "/MO",
-            str(_TASK_INTERVAL_MIN),
-            "/F",
-            "/IT",
-        ],
-        capture_output=True,
-        text=True,
-        creationflags=_NO_WINDOW,
+    """Arm the live loop FOR TODAY: the arm record, under a live supervisor, and nothing else
+    (`cherrypick.core.live.arm`; the supervisor derives the `flies-live` job from it within one pass
+    and one tick fires at once). No supervisor, no arming -- the Windows-only scheduled-task fallback
+    was removed on 2026-10-08, after every box had run under the supervisor for two months; it was a
+    second, less-watched way to drive a live loop."""
+    out = _live.arm(
+        "flies",
+        date=provider.now_et().date().isoformat(),
+        at=clock.now_iso(),
+        armed_by="live-flies-start",
+        spawn_first_tick=_spawn_first_tick,
+        heartbeat_fresh=_supervisor_heartbeat_fresh,
     )
-    ok = r.returncode == 0
-    battery = None
-    if ok:
-        _write_arm_stamp()
-        battery = _allow_on_battery()
-        subprocess.run(
-            ["schtasks", "/Run", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
-        )
-    out = {
-        "ok": ok,
-        "driver": "schtasks",
-        "task": _TASK_NAME,
-        "cadence": f"every {_TASK_INTERVAL_MIN} min",
-        "armed_for": armed_for,
-        "battery": battery,
-        "detail": (r.stdout or r.stderr).strip(),
-    }
-    warning = _live.quarter_end_warning(armed_for) if ok else None
-    if warning is not None:
-        out["warning"] = warning
+    if out.get("ok"):
+        out["cadence"] = "every 60s (supervisor job flies-live)"
     return out
 
 
 def uninstall_task() -> dict:
-    """Disarm: delete the arm record (which disables the supervisor's `flies-live` job within one
-    pass), and remove the legacy scheduled task if one is registered. Record deletion is the
-    authoritative act; the schtasks removal is transition-window hygiene."""
+    """Disarm: delete the arm record, which disables the supervisor's `flies-live` job within one
+    pass. A legacy scheduled task still registered on an old box is the orchestrator's to remove
+    (`run.py install` deletes every legacy task; `doctor` reports one)."""
     removed = _live.disarm("flies", legacy_paths=[_legacy_arm_stamp_path()])["arm_record_removed"]
-    task_result = None
-    if os.name == "nt" and task_installed():
-        subprocess.run(
-            ["schtasks", "/End", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
-        )
-        r = subprocess.run(
-            ["schtasks", "/Delete", "/TN", _TASK_NAME, "/F"],
-            capture_output=True,
-            text=True,
-            creationflags=_NO_WINDOW,
-        )
-        task_result = {"ok": r.returncode == 0, "detail": (r.stdout or r.stderr).strip()}
     return {
-        "ok": removed or task_result is not None,
-        "task": _TASK_NAME,
+        "ok": removed,
         "arm_record_removed": removed,
-        "legacy_task": task_result,
         "detail": "disarmed (arm record removed)" if removed else "nothing was armed",
     }
 
@@ -1954,6 +1900,45 @@ def _write_arm_stamp() -> None:
     _live.write_arm_record(
         "flies", date=provider.now_et().date().isoformat(), at=clock.now_iso(), armed_by="live-flies-start"
     )
+
+
+def expected_legs(config: dict, conn) -> dict:
+    """The contracts this ledger says the broker holds right now, for the orchestrator's
+    positions-vs-ledger check (`cherrypick.core.livepositions`, 2026-10-08). Files and DB only.
+
+    Counted: open rows whose entry FILL is confirmed, expanded by `fly.position_legs` (a pending
+    completion leaves `kind` a vertical, so its unfilled leg is not counted). Not counted: a pending
+    entry (nothing filled yet), cancelled and settled rows, and the paper-only hedge leg. `pending`
+    says how many orders are still working, so a reader knows the book may be mid-change."""
+    rows = [dict(r) for r in conn.execute("SELECT * FROM fly_positions WHERE status = 'open'").fetchall()]
+    legs, pending = [], 0
+    for row in rows:
+        if row.get("entry_fill_status") == "pending":
+            pending += 1
+            continue
+        if row.get("completion_fill_status") == "pending":
+            pending += 1
+        qty = int(row.get("quantity") or 1)
+        for expiry, right, strike, sign in fly.position_legs(row):
+            legs.append(
+                {
+                    "underlying": row["symbol"],
+                    "expiry": expiry,
+                    "right": right,
+                    "strike": strike,
+                    "qty": sign * qty,
+                }
+            )
+    symbol = _live_cfg(config).get("symbol")
+    underlyings = sorted({r["symbol"] for r in rows} | ({symbol} if symbol else set()))
+    return {
+        "ok": True,
+        "module": "flies",
+        "underlyings": underlyings,
+        "armed_today": arm_stamp_date() == provider.now_et().date().isoformat(),
+        "legs": legs,
+        "pending": pending,
+    }
 
 
 def arm_stamp_date() -> str | None:
@@ -2026,6 +2011,48 @@ def should_disarm(config: dict, now_min: int, today: str) -> str | None:
 
 
 # --------------------------------------------------------------------------- status
+def settle_overdue(config: dict, conn, *, cache_path: str, today: str, close_fn=None) -> dict:
+    """Settle every past session the live ledger still holds open, at THAT session's official close
+    (`core.settlement.dated_index_close`, source `yahoo_daily`) -- never a provisional price. The
+    catch-up for a machine that was down between the close and the disarm (2026-10-08; the owner
+    chose official-print-only). A session with a pending entry is left for a person: whether that
+    order filled is the broker's word, not this function's. No close found: left, still alerting."""
+    close_fn = close_fn or _settlement.dated_index_close
+    symbol = _live_cfg(config).get("symbol", "XSP")
+    done, left = [], []
+    for item in overdue_settlement(conn, today):
+        session = item["session"]
+        if item["pending_entries"]:
+            left.append({"session": session, "reason": "pending_entries"})
+            continue
+        price = close_fn(symbol, session)
+        if price is None:
+            left.append({"session": session, "reason": "no_official_close"})
+            continue
+        when = datetime.fromisoformat(f"{session}T16:30:00")
+        out = run_settle_live(
+            config, conn, cache_path=cache_path, when=when, broker=_settlement.DatedClose(price)
+        )
+        (done if out.get("ok") else left).append({"session": session, "price": price, **out})
+    return {"ok": True, "settled": done, "left": left}
+
+
+def overdue_settlement(conn, today: str) -> list[dict]:
+    """Past sessions the live ledger still holds open, oldest first: `{session, positions,
+    pending_entries}`. These are 0DTE, so every one has expired. Settlement happens only inside an
+    armed day's own ticks, and the next morning's stale arm record disarms the loop at once -- so a
+    machine down between the close and the disarm left the book open forever, silently (2026-10-08)."""
+    rows = conn.execute(
+        "SELECT trade_date, COUNT(*) AS n, SUM(entry_fill_status = 'pending') AS pend FROM fly_positions "
+        "WHERE status = 'open' AND trade_date < ? GROUP BY trade_date ORDER BY trade_date",
+        (today,),
+    ).fetchall()
+    return [
+        {"session": r["trade_date"], "positions": r["n"], "pending_entries": int(r["pend"] or 0)}
+        for r in rows
+    ]
+
+
 def run_status(config: dict, conn) -> dict:
     """One merged JSON object (the streamer convention) — files and DB only, no broker."""
     when = provider.now_et()
@@ -2051,8 +2078,6 @@ def run_status(config: dict, conn) -> dict:
         "ok": True,
         "date": today,
         "in_session": _pl.in_session(provider.minute_of_day(when)),
-        "scheduled_task": task_installed(),
-        "task_name": _TASK_NAME,
         "armed_for": arm_stamp_date(),
         "arm": arm,
         "symbol": live_cfg.get("symbol"),
@@ -2064,6 +2089,13 @@ def run_status(config: dict, conn) -> dict:
         "breaker_tripped": daily_loss_tripped(conn, today, live_cfg.get("daily_loss_halt_dollars")),
         # From the last tick's broker-truth sweep (files only here — status never talks to the broker).
         "orphaned_orders": len(read_orphans()),
+        # The seam's persisted hold (a submit of unknown outcome, or an unrecorded order found).
+        "broker_held": _execution.read_hold(_held_path()),
+        # Broker contact across ticks: `failing_since` set while every call fails (2026-10-08).
+        "broker_health": _execution.read_broker_health(
+            os.path.join(os.path.dirname(_held_path()), _execution.HEALTH_FILENAME)
+        ),
+        "overdue_settlement": overdue_settlement(conn, today),
         "last_log_write": last_tick,
         "log_file": str(lf),
         # The order-alert daemon's own view of itself (PID probe + its heartbeat file). Only
@@ -2136,6 +2168,16 @@ def main() -> int:
     )
     ap.add_argument("--watch-fills", action="store_true", help="burst fill-watcher (spawned by ticks)")
     ap.add_argument("--status", action="store_true", help="one JSON health object, files/DB only")
+    ap.add_argument(
+        "--expected-legs",
+        action="store_true",
+        help="the filled open legs the ledger holds (JSON; files/DB only)",
+    )
+    ap.add_argument(
+        "--settle-overdue",
+        action="store_true",
+        help="settle past sessions still open, at each one's official close",
+    )
     ap.add_argument("--settle", action="store_true", help="settle the live book (see --price)")
     ap.add_argument("--price", type=float, help="official settlement print (marks source='official')")
     ap.add_argument("--force", action="store_true", help="allow re-settling an official settlement")
@@ -2144,7 +2186,9 @@ def main() -> int:
         help="with --settle: the session to settle (YYYY-MM-DD, default today) — the next-morning "
         "official-print confirm targets YESTERDAY's book",
     )
-    ap.add_argument("--install-task", action="store_true", help=f"arm {_TASK_NAME} for TODAY (1/min)")
+    ap.add_argument(
+        "--install-task", action="store_true", help="arm the live loop for TODAY (supervisor job)"
+    )
     ap.add_argument("--uninstall-task", action="store_true", help="disarm the live loop")
     ap.add_argument(
         "--agent-mode",
@@ -2175,6 +2219,13 @@ def main() -> int:
     try:
         if args.status:
             print(json.dumps(run_status(config, conn), indent=2, default=str))
+            return 0
+        if args.expected_legs:
+            print(json.dumps(expected_legs(config, conn), default=str))
+            return 0
+        if args.settle_overdue:
+            today = provider.now_et().date().isoformat()
+            print(json.dumps(settle_overdue(config, conn, cache_path=cache_path, today=today), default=str))
             return 0
         if args.settle:
             when = None
@@ -2210,7 +2261,7 @@ def main() -> int:
         from cherrypick.flies import credentials as creds
 
         designated = creds.designated_account()
-        unmet = readiness(config, halt_present=os.path.exists(halt_flag_path()), designated=designated)
+        unmet = readiness(config, designated=designated)
         if live and unmet:
             _log(f"live gates unmet: {unmet}")
             print(json.dumps({"ok": False, "error": "live gates unmet", "unmet": unmet}))
@@ -2305,13 +2356,15 @@ def main() -> int:
                 print(json.dumps({"ok": False, "error": f"no snapshot: {snapshot.get('reason')}"}))
                 return 1
 
-            limit = _live_cfg(config).get("daily_loss_halt_dollars")
-            if live and daily_loss_tripped(conn, day, limit):
-                _log("daily-loss breaker tripped — no new entries")
-                print(json.dumps({"ok": False, "error": "daily-loss breaker tripped — no new entries"}))
-                return 1
+            # The halt flag and the daily-loss breaker stop NEW entries only: the tick still
+            # confirms fills, places and cuts off completions, and the book still settles.
+            blockers = entry_blockers(config, conn, day, halt_present=os.path.exists(halt_flag_path()))
+            if blockers:
+                _log(f"new entries blocked ({', '.join(blockers)}) -- managing what is open")
 
-            summary = run_once(config, snapshot, conn, BrokerAdapter(config), live=live, log=_log)
+            summary = run_once(
+                config, snapshot, conn, BrokerAdapter(config), live=live, log=_log, entry_block=blockers
+            )
             if live and (summary.get("pending_orders") or summary.get("entered")):
                 _spawn_watcher(live)
                 summary["watcher_spawned"] = True

@@ -421,6 +421,123 @@ def _installed_chrome_version(pw) -> str:
         browser.close()
 
 
+# ------------------------------------------------------------------------------------------------
+# One browser profile, one process (2026-10-09). The supervisor runs one browser job at a time, but
+# a person's `login`, a hand-run capture or a probe started beside a scheduled run all open the SAME
+# profile -- and a second Chrome on a profile in use dies ("Target page, context or browser has been
+# closed"). Every browser command of both collectors takes this lock first; a second one waits a few
+# minutes, then gives up with a plain message instead of crashing Chrome. Shared with the QuikOptions
+# collector (loaded from beside it), so the two cannot drift apart.
+# ------------------------------------------------------------------------------------------------
+PROFILE_LOCK_WAIT_S = 600
+PROFILE_BUSY_EXIT = 75  # EX_TEMPFAIL: try again later
+
+
+class ProfileBusy(RuntimeError):
+    pass
+
+
+def profile_lock_path(profile: Path) -> Path:
+    return profile.with_name(profile.name + ".lock")
+
+
+def profile_holder(profile: Path) -> int | None:
+    try:
+        return int(profile_lock_path(profile).read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+class profile_lock:  # noqa: N801 -- used as `with profile_lock(...)`
+    """Hold `profile`'s lock for the life of the `with`; wait up to `wait_s` for another holder."""
+
+    def __init__(self, profile: Path, wait_s: float = PROFILE_LOCK_WAIT_S, *, sleep=None, log=None):
+        self.profile, self.wait_s = Path(profile), wait_s
+        self.sleep = sleep or time.sleep
+        self.log = log or (lambda m: print(m, file=sys.stderr))
+
+    def __enter__(self):
+        from cherrypick.core import looplock
+
+        path, waited = profile_lock_path(self.profile), 0.0
+        # The lock is the holder's PID; a dead holder's lock is taken over at once (core.looplock).
+        while not looplock.acquire(path, stale_seconds=6 * 3600):
+            if waited >= self.wait_s:
+                raise ProfileBusy(
+                    f"the browser profile {self.profile} is in use by pid {profile_holder(self.profile)}; "
+                    f"waited {waited:.0f} s. Let that run finish (or close its browser), then try again."
+                )
+            if waited == 0:
+                self.log(f"browser profile in use by pid {profile_holder(self.profile)}; waiting")
+            self.sleep(5)
+            waited += 5
+        return self
+
+    def __exit__(self, *exc):
+        from cherrypick.core import looplock
+
+        looplock.release(profile_lock_path(self.profile))
+        return False
+
+
+def cookie_report(cookies: list[dict], host: str, now: float) -> dict:
+    """What the profile's cookies say about the session on `host`, read locally: how many the site
+    set, how many are persistent and unexpired, and the soonest and latest expiry. `signed_out` only
+    when NO unexpired persistent cookie for the site remains -- certain; anything finer would be a
+    guess about which cookie is the login. Pure."""
+    host = (host or "").lower()
+
+    def for_host(c: dict) -> bool:
+        d = str(c.get("domain") or "").lstrip(".").lower()
+        return bool(d) and (host == d or host.endswith("." + d))
+
+    site = [c for c in cookies if for_host(c)]
+    persistent = [c for c in site if float(c.get("expires") or -1) > 0]
+    live = sorted(float(c["expires"]) for c in persistent if float(c["expires"]) > now)
+
+    def iso(ts):
+        return datetime.fromtimestamp(ts, UTC).isoformat(timespec="minutes") if ts else None
+
+    return {
+        "site_cookies": len(site),
+        "persistent": len(persistent),
+        "unexpired": len(live),
+        "soonest_expiry": iso(live[0]) if live else None,
+        "latest_expiry": iso(live[-1]) if live else None,
+        "signed_out": not live,
+    }
+
+
+def smoke(open_browser, host: str, collector: str, warn) -> int:
+    """Open the collector's browser exactly as its scheduled run does (same profile, headless), read
+    the session cookies, close it. Never navigates: nothing is requested from the site and nothing is
+    recorded. Exit 0 ready; 3 signed out (warned: a person must sign in before the next run); 1 the
+    browser would not start (warned)."""
+    from playwright.sync_api import sync_playwright
+
+    try:
+        with sync_playwright() as pw:
+            ctx = open_browser(pw)
+            try:
+                cookies = ctx.cookies()
+            finally:
+                ctx.close()
+    except Exception as exc:  # noqa: BLE001 -- the failure IS the finding
+        warn(f"{collector}: the browser would not start", f"{type(exc).__name__}: {exc}"[:500])
+        print(json.dumps({"ok": False, "browser": "failed", "error": f"{type(exc).__name__}: {exc}"[:300]}))
+        return 1
+    report = cookie_report(cookies, host, time.time())
+    print(json.dumps({"ok": not report["signed_out"], "browser": "started", **report}, indent=1))
+    if report["signed_out"]:
+        warn(
+            f"{collector}: signed out -- sign in before the next run",
+            f"No unexpired session cookie for {host} in the collector's browser profile. Run its "
+            "`login` command from your desktop session.",
+        )
+        return 3
+    return 0
+
+
 def _open_browser(pw, headed: bool):
     profile = store_dir() / "browser-profile"
     profile.mkdir(parents=True, exist_ok=True)
@@ -1210,9 +1327,22 @@ def _save_trade_ideas(body: dict) -> None:
         target.write_text(json.dumps(body), encoding="utf-8")
 
 
+def cmd_smoke(_args) -> int:
+    """Is the browser able to start here, and is the session still signed in? Local only."""
+    from urllib.parse import urlparse
+
+    host = urlparse(load_config()["dashboard_url"]).hostname or ""
+    return smoke(lambda pw: _open_browser(pw, headed=False), host, "market-report collector", _warn)
+
+
+# The commands that open the browser profile, and so take its lock first.
+BROWSER_COMMANDS = {"login", "edition", "charts", "screeners", "probe-chart", "smoke"}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("smoke").set_defaults(fn=cmd_smoke)
     sub.add_parser("credentials").set_defaults(fn=cmd_credentials)
     sub.add_parser("login").set_defaults(fn=cmd_login)
     ed = sub.add_parser("edition")
@@ -1240,7 +1370,14 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--headed", action="store_true")
     pr.set_defaults(fn=cmd_probe_chart)
     args = ap.parse_args(argv)
-    return args.fn(args)
+    if args.cmd not in BROWSER_COMMANDS:
+        return args.fn(args)
+    try:
+        with profile_lock(store_dir() / "browser-profile"):
+            return args.fn(args)
+    except ProfileBusy as exc:
+        print(f"not run: {exc}", file=sys.stderr)
+        return PROFILE_BUSY_EXIT
 
 
 if __name__ == "__main__":

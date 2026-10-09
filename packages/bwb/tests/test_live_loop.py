@@ -205,7 +205,7 @@ def planned(monkeypatch):
     return state
 
 
-def _tick(config, conn, broker, cache, *, when=WHEN, live=True, armed=True):
+def _tick(config, conn, broker, cache, *, when=WHEN, live=True, armed=True, halted=False):
     if armed:
         _live.write_arm_record("bwb", date=when.date().isoformat(), at="t", armed_by="live-bwb-start")
     return live_loop.run_once(
@@ -218,6 +218,7 @@ def _tick(config, conn, broker, cache, *, when=WHEN, live=True, armed=True):
         force=True,
         log=lambda *_: None,
         clock_fn=lambda: 0.0,
+        halted=halted,
         sleep_fn=lambda s: None,
     )
 
@@ -235,11 +236,32 @@ def _decisions(conn, mode=None):
 
 # --------------------------------------------------------------------------- readiness
 def test_readiness_names_every_unmet_gate_and_passes_only_when_all_are_met(live_config):
-    unmet = live_loop.readiness({"live": {}}, halt_present=True, designated=None)
-    assert len(unmet) == 4 and any("halt flag" in g for g in unmet)  # arm defaults to control
-    assert live_loop.readiness(live_config, halt_present=False, designated="5WX1234") == []
+    unmet = live_loop.readiness({"live": {}}, designated=None)
+    # enabled, gate0, designated (arm defaults to control). The halt flag is NOT a readiness gate
+    # since 2026-10-08: it stops new risk only, and the tick still manages what is open.
+    assert len(unmet) == 3 and not any("halt" in g for g in unmet)
+    assert live_loop.readiness(live_config, designated="5WX1234") == []
     bad = {**live_config, "live": {**live_config["live"], "arm": "wall"}}
-    assert any("not a base arm" in g for g in live_loop.readiness(bad, halt_present=False, designated="x"))
+    assert any("not a base arm" in g for g in live_loop.readiness(bad, designated="x"))
+
+
+def test_a_halted_tick_refuses_the_entry_and_says_why(live_config, conn, cache, planned):
+    broker = FakeBroker()
+    out = _tick(live_config, conn, broker, cache, halted=True)
+    assert out["entry"]["reason"] == "halt_flag_present"
+    assert broker.placed == []
+    assert ("entry", "halt_flag_present", 0) in _decisions(conn, "entry")
+
+
+def test_a_halted_tick_still_confirms_a_pending_fill(live_config, conn, cache, planned):
+    """2026-10-08: the halt returned the tick before anything ran, so a halt with an order resting
+    left it unwatched. Now a halted tick still reads the broker and records the fill."""
+    broker = FakeBroker()
+    _tick(live_config, conn, broker, cache)  # places ORD1, pending
+    broker.statuses["ORD1"] = {"status": "Filled", "price": "0.90"}
+    _tick(live_config, conn, broker, cache, halted=True)
+    row = _row(conn, "SPX:control:2026-09-16:1")
+    assert row["entry_fill_status"] == "filled" and row["status"] == "open"
 
 
 # --------------------------------------------------------------------------- entry
@@ -274,6 +296,8 @@ def test_live_entry_is_a_three_leg_limit_with_the_ledger_key_as_its_identifier(
     assert row["entry_credit"] == pytest.approx(0.9)  # the modeled credit until the broker says otherwise
     assert row["fees_source"] == "broker_estimate" and row["entry_fee_estimate"] == pytest.approx(6.89)
     assert row["entry_live_floor"] == pytest.approx(0.25)
+    # the implied-variance reading is taken at entry; an empty cache stores why, never a number
+    assert row["entry_iv_rate"] == 0.04 and row["entry_iv_vol"] is None and row["entry_iv_reason"]
     # a pending row is NOT an open position: nothing marks or manages it until it fills
     assert db.open_positions(conn) == []
     assert db.established_today(conn, "control", DAY) == 1
@@ -382,6 +406,20 @@ def test_a_quarter_end_session_defers_a_live_add_on(live_config, conn):
     assert fire(conn, position, {}, {}) is False
     assert broker.placed == []
     assert ("addon", live_loop.QUARTER_END_REASON, 0) in _decisions(conn, "addon")
+
+
+def test_a_halt_defers_a_live_add_on(live_config, conn):
+    """An add-on is new risk: while the halt flag is up the fire hook places nothing and reports not
+    fired, so the trigger stays armed until the flag clears."""
+    broker = FakeBroker()
+    fire = live_loop._make_fire(
+        broker, live_config, live=True, day="2026-09-17", when=datetime(2026, 9, 17, 11, 0),
+        log=lambda *_: None, placed={}, halted=True,
+    )  # fmt: skip
+    position = {"position_id": "SPX:control:2026-09-16:1", "symbol": "SPX", "arm": "control"}
+    assert fire(conn, position, {}, {}) is False
+    assert broker.placed == []
+    assert ("addon", "halt_flag_present", 0) in _decisions(conn, "addon")
 
 
 def test_the_mark_drawdown_breaker_blocks_the_next_entry_and_touches_no_position(
@@ -649,15 +687,16 @@ def test_the_orphan_sweep_reports_unknown_working_orders_and_never_invents_a_cle
     ]
     out = _tick(live_config, conn, broker, cache, when=datetime(2026, 9, 16, 10, 6))
     assert out["orphans"] == 1 and [o["order_id"] for o in live_loop.read_orphans()] == ["GHOST"]
+    assert ("entry", "orphaned_orders", 0) in _decisions(conn, "entry")  # and the entry is refused
 
     def boom():
         raise RuntimeError("broker down")
 
     broker.working_orders = boom
     out = _tick(live_config, conn, broker, cache, when=datetime(2026, 9, 16, 10, 7))
-    assert out["orphans"] == 0 and [o["order_id"] for o in live_loop.read_orphans()] == [
-        "GHOST"
-    ]  # the file stands
+    # Unknown, not zero (2026-10-08): the file stands, and a sweep that could not look blocks the
+    # entry rather than inventing a clean book.
+    assert out["orphans"] is None and [o["order_id"] for o in live_loop.read_orphans()] == ["GHOST"]
 
 
 def test_settlement_needs_an_official_print_and_stamps_its_source(live_config, conn, cache, planned):
@@ -777,3 +816,71 @@ def test_fill_state_and_fee_estimate_are_read_defensively():
     assert live_loop._fee_estimate({"response": {}}) is None and live_loop._fee_estimate({}) is None
     assert live_loop._fee_estimate({"response": {"fee_calculation": {"total_fees": "x"}}}) is None
     assert _execution.fill_state({"status": "Filled", "price": "0.5"}) == ("filled", 0.5)
+
+
+# --------------------------------------------------------------------------- expected legs (2026-10-08)
+def test_expected_legs_count_a_filled_position_and_never_a_pending_or_cancelled_one(conn, live_config):
+    # The orchestrator's positions-vs-ledger check reads this; a pending entry's legs are written
+    # `open` before anything fills, and a cancelled one's legs stay `open` -- the position decides.
+    from cherrypick.bwb import book as bookmod
+
+    pid = "SPX:control:2026-09-16"
+    bookmod.enter_position(conn, _plan(), live_config, "control", entry_session=DAY, advice_params=None)
+    db.save_position(conn, {"position_id": pid, "status": "open"})
+    got = live_loop.expected_legs(live_config, conn)
+    net = {}
+    for leg in got["legs"]:
+        net[(leg["right"], leg["strike"])] = net.get((leg["right"], leg["strike"]), 0) + leg["qty"]
+    assert net == {("P", BODY + 5): 1, ("P", BODY): -2, ("P", BODY - 10): 1}
+    assert {leg["expiry"] for leg in got["legs"]} == {EXP} and got["underlyings"] == ["SPX"]
+    for status in ("pending", "cancelled"):
+        db.save_position(conn, {"position_id": pid, "status": status})
+        assert live_loop.expected_legs(live_config, conn)["legs"] == []
+
+
+def test_status_carries_the_seams_broker_contact_record(live_config, conn, cache, planned):
+    # The watchdog's only view of a broker outage (2026-10-08): the tick itself exits 0.
+    from cherrypick.core import execution as _execution
+
+    path = os.path.join(live_loop._data_dir(), _execution.HEALTH_FILENAME)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"failing_since": "2026-09-16T14:00:00+00:00", "failures": 3}, f)
+    assert live_loop.run_status(live_config, conn, cache_path=cache)["broker_health"]["failures"] == 3
+
+
+def test_overdue_settlement_names_an_expiry_already_past_and_a_stale_pending_entry(conn, live_config):
+    from cherrypick.bwb import book as bookmod
+
+    pid = "SPX:control:2026-09-16"
+    bookmod.enter_position(conn, _plan(), live_config, "control", entry_session=DAY, advice_params=None)
+    db.save_position(conn, {"position_id": pid, "status": "open"})
+    assert live_loop.overdue_settlement(conn, EXP) == []  # expiry day itself: not yet overdue
+    assert live_loop.overdue_settlement(conn, "2026-09-21") == [
+        {"session": EXP, "positions": 1, "pending_entries": 0}
+    ]
+    db.save_position(conn, {"position_id": pid, "status": "pending"})
+    assert live_loop.overdue_settlement(conn, "2026-09-17") == [
+        {"session": DAY, "positions": 0, "pending_entries": 1}
+    ]
+
+
+def test_settle_overdue_settles_a_past_expiry_at_that_days_official_close(conn, live_config, cache):
+    # 2026-10-08, the owner's choice: catch-up settlement on the official print only.
+    from cherrypick.bwb import book as bookmod
+
+    pid = "SPX:control:2026-09-16"
+    bookmod.enter_position(conn, _plan(), live_config, "control", entry_session=DAY, advice_params=None)
+    db.save_position(conn, {"position_id": pid, "status": "open"})
+    asked = []
+
+    def close(symbol, session):
+        asked.append((symbol, session))
+        return None if not asked[1:] else 7650.0
+
+    out = live_loop.settle_overdue(live_config, conn, cache_path=cache, today="2026-09-21", close_fn=close)
+    assert out["settled"] == [] and out["left"] == [{"session": EXP, "reason": "no_official_close"}]
+    out = live_loop.settle_overdue(live_config, conn, cache_path=cache, today="2026-09-21", close_fn=close)
+    assert [s["session"] for s in out["settled"]] == [EXP] and asked == [("SPX", EXP), ("SPX", EXP)]
+    assert _row(conn, pid)["settlement_source"] == "yahoo_daily"
+    assert live_loop.overdue_settlement(conn, "2026-09-21") == []

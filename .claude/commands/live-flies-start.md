@@ -85,8 +85,8 @@ confirmation, a current status readout, and a visible way to stop.
      python -m cherrypick.flies.live_loop --install-task
      ```
      This writes today's arm record (the supervisor enables its `flies-live` job within one
-     pass — the JSON output's `driver` field says which path armed: `supervisor` or the legacy
-     `schtasks`) and fires the first tick immediately.
+     pass) and fires the first tick immediately. With no supervisor running it refuses
+     (`ok: false`, "no supervisor running"): start it with `run.py ensure-supervisor`, then retry.
    - **Only if `live.use_order_alert_daemon` is true**, also start the order-alert daemon,
      detached and headless, after first stopping any stale one:
      ```bash

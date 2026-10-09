@@ -49,7 +49,7 @@ from cherrypick.core import settlement as _settlement
 
 from cherrypick.bwb import book as bookmod
 from cherrypick.bwb import cli as climod
-from cherrypick.bwb import clock, db, engine, live_orders, management, provider, stream_request
+from cherrypick.bwb import clock, db, engine, entry_iv, live_orders, management, provider, stream_request
 from cherrypick.bwb import paper_loop as _pl
 
 DEFAULT_ARM = "control"
@@ -131,9 +131,12 @@ def arm_record_path() -> str:
 
 
 # --------------------------------------------------------------------------- gates
-def readiness(config: dict, *, halt_present: bool, designated: str | None) -> list[str]:
-    """The unmet live gates, checked every tick -- empty means the loop may act. Pure. bwb's own
-    list (the suite keeps these per module on purpose: the gates ARE the module's posture)."""
+def readiness(config: dict, *, designated: str | None) -> list[str]:
+    """The unmet ACCOUNT gates, checked every tick -- empty means the loop may act on the account at
+    all. Pure. bwb's own list (the suite keeps these per module on purpose: the gates ARE the
+    module's posture). The halt flag is not here (2026-10-08): it stops new risk only -- the entry
+    and the add-on -- while fills are still confirmed, resting orders managed and the ladder
+    settled (`run_once(halted=...)`)."""
     live = _live_cfg(config)
     unmet = []
     if not live.get("enabled"):
@@ -142,8 +145,6 @@ def readiness(config: dict, *, halt_present: bool, designated: str | None) -> li
         unmet.append("live.gate0_confirmed is empty -- a human must attest Gate 0 passed (who/when)")
     if _arm(config) not in engine.ARMS:
         unmet.append(f"live.arm {_arm(config)!r} is not a base arm (one of {', '.join(engine.ARMS)})")
-    if halt_present:
-        unmet.append("halt flag present (state/halt-live.flag) -- live entries halted")
     if not designated:
         unmet.append("no designated account -- run `cherrypick account --module bwb --set <last4>`")
     return unmet
@@ -183,6 +184,8 @@ class BrokerAdapter(_execution.Broker):
             designated_account=credentials.designated_account,
             live_gates=lambda: broker_cli.live_gates(self._config),
             deploy_limit_pct=_live_cfg(config).get("account_deploy_limit_pct") or None,
+            # An uncertain submit's hold outlives this tick's process (2026-10-08).
+            hold_path=os.path.join(_data_dir(), "live_held.json"),
         )
 
     def official_settlement_price(self, symbol: str) -> tuple[float | None, str]:
@@ -213,7 +216,7 @@ def _fee_estimate(result: dict) -> float | None:
 
 
 # --------------------------------------------------------------------------- orphans
-def _sweep_orphans(conn, broker, log, symbol: str) -> int:
+def _sweep_orphans(conn, broker, log, symbol: str) -> int | None:
     """Broker truth against ledger belief, first thing every tick: a working order this ledger
     never recorded is the one crash window nothing else covers (a tick dying between a placement
     and its row). Persisted for `--status` and the arm command's stop rule; detection only --
@@ -222,7 +225,7 @@ def _sweep_orphans(conn, broker, log, symbol: str) -> int:
         orphans = _execution.orphans(broker, db.known_order_ids(conn))
     except Exception as exc:  # noqa: BLE001 -- a failed sweep must not break the tick
         log(f"orphan sweep failed ({type(exc).__name__}: {exc}) -- will retry next tick")
-        return 0
+        return None  # unknown -- and unknown blocks the entry
     orphans = [o for o in orphans if o.get("underlying_symbol") in (None, symbol)]
     try:
         os.makedirs(_data_dir(), exist_ok=True)
@@ -636,7 +639,17 @@ def _refuse(conn, *, day: str, arm: str, symbol: str, reason: str, log, detail: 
 
 
 def _try_live_entry(
-    config: dict, conn, broker, *, cache_path: str, when: datetime, day: str, live: bool, log
+    config: dict,
+    conn,
+    broker,
+    *,
+    cache_path: str,
+    when: datetime,
+    day: str,
+    live: bool,
+    log,
+    halted: bool = False,
+    orphans: int | None = 0,
 ) -> dict:
     """ONE entry attempt for the live arm, gated in the order the money cares about: the day's
     budget, a working order, the breakers, the plan itself, the live floor, the margin caps -- and
@@ -655,6 +668,14 @@ def _try_live_entry(
     # Live-only: paper plans its entries in paper_loop and never reaches this function.
     if _cal.is_quarterly_expiry(when.date()):
         return refuse(QUARTER_END_REASON)
+    if halted:
+        return refuse("halt_flag_present")
+    # Orders at the broker the ledger never recorded -- or a sweep that could not look -- stop the
+    # entry (2026-10-08): detection alone let the same tick place another order beside them.
+    if orphans is None:
+        return refuse("orphan_sweep_failed")
+    if orphans:
+        return refuse("orphaned_orders", f"{orphans} unrecorded working order(s)")
     per_day = int(live_cfg.get("max_structures_per_day", 1))
     if db.established_today(conn, arm, day) >= per_day:
         return {"entry": "done", "reason": "max_structures_per_day_reached"}
@@ -769,6 +790,16 @@ def _try_live_entry(
     if order_id is None:
         log(f"CRITICAL: live entry {pid} accepted but no order id came back -- orphan sweep will find it")
         return refuse("no_order_id", str(result))
+    # Recording only, read AFTER the order is accepted so it adds nothing to the order path.
+    defaults = config.get("defaults") or {}
+    implied = entry_iv.measure(
+        cache_path,
+        symbol,
+        config.get("occ_root") or symbol,
+        plan["expiration"],
+        rate=float(defaults.get("risk_free_rate", entry_iv.DEFAULT_RATE)),
+        max_age_seconds=defaults.get("max_quote_age_seconds", 300),
+    )
     opened = bookmod.enter_position(
         conn,
         plan,
@@ -776,6 +807,7 @@ def _try_live_entry(
         arm,
         entry_session=day,
         advice_params=None,
+        implied=implied,
         position_id_override=pid,
         extra={
             "status": "pending",
@@ -829,7 +861,9 @@ def _try_live_entry(
 
 
 # --------------------------------------------------------------------------- the add-on seam
-def _make_fire(broker, config: dict, *, live: bool, day: str, when: datetime, log, placed: dict):
+def _make_fire(
+    broker, config: dict, *, live: bool, day: str, when: datetime, log, placed: dict, halted: bool = False
+):
     """The `fire` hook for `paper_loop._manage_positions`: place the add-on, stash the plan, and
     return False -- nothing is recorded fired until the broker confirms. One add-on order per
     tick across the ladder (a flip reclaim can arm several positions in the same second)."""
@@ -852,6 +886,18 @@ def _make_fire(broker, config: dict, *, live: bool, day: str, when: datetime, lo
                 symbol=symbol,
                 mode="addon",
                 reason=QUARTER_END_REASON,
+                accepted=False,
+            )
+            return False
+        # The halt flag is new risk's stop too: the add-on waits, armed, for the flag to clear.
+        if halted:
+            db.record_decision(
+                conn,
+                trade_date=day,
+                arm=position["arm"],
+                symbol=symbol,
+                mode="addon",
+                reason="halt_flag_present",
                 accepted=False,
             )
             return False
@@ -1016,6 +1062,7 @@ def run_once(
     log=_log,
     clock_fn=time.time,
     sleep_fn=time.sleep,
+    halted: bool = False,
 ) -> dict:
     """One live tick. `broker` is the injected seam (`BrokerAdapter` in production, a fake in
     tests). `live=False` is the dry-run posture: the preflight runs against the real account and
@@ -1082,7 +1129,16 @@ def run_once(
     # 5. one entry attempt inside the window
     placed: dict[str, dict] = {}
     entry = _try_live_entry(
-        config, conn, broker, cache_path=cache_path, when=when, day=day, live=live, log=log
+        config,
+        conn,
+        broker,
+        cache_path=cache_path,
+        when=when,
+        day=day,
+        live=live,
+        log=log,
+        halted=halted,
+        orphans=summary.get("orphans", 0),
     )
     summary["entry"] = entry
     if entry.get("entry") == "placed" and entry.get("order_id"):
@@ -1098,7 +1154,7 @@ def run_once(
         cache_path=cache_path,
         when=when,
         day=day,
-        fire=_make_fire(broker, config, live=live, day=day, when=when, log=log, placed=placed),
+        fire=_make_fire(broker, config, live=live, day=day, when=when, log=log, placed=placed, halted=halted),
         log=log,
     )
     summary.update(
@@ -1162,6 +1218,7 @@ def _spawn_first_tick() -> None:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         creationflags=flags,
+        start_new_session=(os.name != "nt"),  # POSIX: out of the arming caller's group
     )
 
 
@@ -1174,6 +1231,40 @@ def _pythonw() -> str:
         if os.path.exists(candidate):
             return candidate
     return exe
+
+
+def expected_legs(config: dict, conn) -> dict:
+    """The contracts this ledger says the broker holds right now, for the orchestrator's
+    positions-vs-ledger check (`cherrypick.core.livepositions`, 2026-10-08). Files and DB only.
+
+    Counted: `open` legs of positions whose entry fill is confirmed (`open`/`short_settled`). A
+    pending entry's legs are written `open` before anything fills, and a cancelled entry's legs stay
+    `open` -- the position's status is what says whether they exist, so the join decides. An add-on's
+    legs are written only once it fills. `pending` counts orders still working."""
+    rows = conn.execute(
+        "SELECT p.symbol AS underlying, l.expiration, l.option_type, l.strike, l.action, l.quantity "
+        "FROM bwb_legs l JOIN bwb_positions p ON p.position_id = l.position_id "
+        "WHERE l.status = 'open' AND p.status IN ('open', 'short_settled')"
+    ).fetchall()
+    legs = [
+        {
+            "underlying": r["underlying"],
+            "expiry": str(r["expiration"])[:10],
+            "right": "C" if str(r["option_type"]).lower().startswith("c") else "P",
+            "strike": float(r["strike"]),
+            "qty": (-1 if str(r["action"]).lower().startswith("sell") else 1) * int(r["quantity"] or 1),
+        }
+        for r in rows
+    ]
+    underlyings = sorted({leg["underlying"] for leg in legs} | {_pl._symbol(config)})
+    return {
+        "ok": True,
+        "module": "bwb",
+        "underlyings": underlyings,
+        "armed_today": arm_stamp_date() == clock.now_et().date().isoformat(),
+        "legs": legs,
+        "pending": len(db.pending_entries(conn)) + len(db.pending_addons(conn)),
+    }
 
 
 def arm_stamp_date() -> str | None:
@@ -1208,6 +1299,55 @@ def uninstall_task() -> dict:
 
 
 # --------------------------------------------------------------------------- status
+def settle_overdue(config: dict, conn, *, cache_path: str, today: str, close_fn=None) -> dict:
+    """Settle every expiry already past that the live ledger still holds open legs for, at THAT
+    day's official close (`core.settlement.dated_index_close`, source `yahoo_daily`) -- official
+    print only, the owner's choice (2026-10-08). A stale pending entry is left for a person; no
+    close found leaves the day open and alerting."""
+    close_fn = close_fn or _settlement.dated_index_close
+    symbol = _pl._symbol(config)
+    done, left = [], []
+    for item in overdue_settlement(conn, today):
+        session = item["session"]
+        if item["pending_entries"]:
+            left.append({"session": session, "reason": "pending_entries"})
+        if not item["positions"]:
+            continue
+        price = close_fn(symbol, session)
+        if price is None:
+            left.append({"session": session, "reason": "no_official_close"})
+            continue
+        out = run_settle_live(
+            config, conn, cache_path=cache_path, day=session, broker=_settlement.DatedClose(price)
+        )
+        (done if out.get("ok") else left).append({"session": session, "price": price, **out})
+    return {"ok": True, "settled": done, "left": left}
+
+
+def overdue_settlement(conn, today: str) -> list[dict]:
+    """Expirations already past that the live ledger still holds open legs for, plus entries still
+    `pending` from a past session (their order died at that day's cutoff), oldest first:
+    `{session, positions, pending_entries}`. Settlement runs only in an armed day's ticks, so a
+    machine down on an expiry afternoon left those legs open with nothing to say so (2026-10-08)."""
+    out: dict[str, dict] = {}
+    for r in conn.execute(
+        "SELECT l.expiration AS day, COUNT(DISTINCT p.position_id) AS n FROM bwb_legs l "
+        "JOIN bwb_positions p ON p.position_id = l.position_id "
+        "WHERE l.status = 'open' AND p.status IN ('open', 'short_settled') AND l.expiration < ? "
+        "GROUP BY l.expiration",
+        (today,),
+    ):
+        out[str(r["day"])[:10]] = {"session": str(r["day"])[:10], "positions": r["n"], "pending_entries": 0}
+    for r in conn.execute(
+        "SELECT entry_session AS day, COUNT(*) AS n FROM bwb_positions "
+        "WHERE status = 'pending' AND entry_session < ? GROUP BY entry_session",
+        (today,),
+    ):
+        row = out.setdefault(str(r["day"]), {"session": str(r["day"]), "positions": 0, "pending_entries": 0})
+        row["pending_entries"] = r["n"]
+    return [out[k] for k in sorted(out)]
+
+
 def run_status(config: dict, conn, *, cache_path: str, broker=None) -> dict:
     """One merged JSON object -- files and DB only; the broker is consulted only for `held`."""
     when = clock.now_et()
@@ -1237,7 +1377,11 @@ def run_status(config: dict, conn, *, cache_path: str, broker=None) -> dict:
         "breaker_tripped": daily_loss_tripped(conn, today, live_cfg.get("daily_loss_halt_dollars")),
         "open_marked_loss": marked,
         "orphaned_orders": read_orphans(),
-        "broker_held": broker.held if broker is not None and hasattr(broker, "held") else None,
+        # From the seam's persisted hold file (status never talks to the broker).
+        "broker_held": _execution.read_hold(os.path.join(_data_dir(), "live_held.json")),
+        # Broker contact across ticks: `failing_since` set while every call fails (2026-10-08).
+        "broker_health": _execution.read_broker_health(os.path.join(_data_dir(), _execution.HEALTH_FILENAME)),
+        "overdue_settlement": overdue_settlement(conn, today),
         "last_log_write": last_log,
         "log_file": str(lf),
         "live_db": db.live_db_path(),
@@ -1264,6 +1408,16 @@ def main(argv=None) -> int:
     ap.add_argument("--once", action="store_true", help="one tick (dry-run unless --live)")
     ap.add_argument("--live", action="store_true", help="place real orders (every gate must be met)")
     ap.add_argument("--status", action="store_true")
+    ap.add_argument(
+        "--expected-legs",
+        action="store_true",
+        help="the filled open legs the ledger holds (JSON; files/DB only)",
+    )
+    ap.add_argument(
+        "--settle-overdue",
+        action="store_true",
+        help="settle past expiries still open, at each day's official close",
+    )
     ap.add_argument("--settle", action="store_true")
     ap.add_argument("--price", type=float, help="the official settlement print, by hand")
     ap.add_argument("--date", help="YYYY-MM-DD")
@@ -1288,6 +1442,12 @@ def main(argv=None) -> int:
         return out(uninstall_task())
     if args.status:
         return out(run_status(config, conn, cache_path=cache_path))
+    if args.expected_legs:
+        print(json.dumps(expected_legs(config, conn), default=str))
+        return 0
+    if args.settle_overdue:
+        today = clock.now_et().date().isoformat()
+        return out(settle_overdue(config, conn, cache_path=cache_path, today=today))
     if args.settle:
         broker = None
         if args.price is None:
@@ -1301,11 +1461,7 @@ def main(argv=None) -> int:
         if args.live:
             from cherrypick.bwb import credentials
 
-            unmet = readiness(
-                config,
-                halt_present=os.path.exists(halt_flag_path()),
-                designated=credentials.designated_account(),
-            )
+            unmet = readiness(config, designated=credentials.designated_account())
             if unmet:
                 return out({"ok": False, "error": "live gates unmet", "unmet_gates": unmet})
             reason = should_disarm(
@@ -1318,8 +1474,19 @@ def main(argv=None) -> int:
             return out({"ok": True, "skipped": "another live tick is running"})
         try:
             broker = BrokerAdapter(config)
+            # The halt flag stops new risk only (the entry and the add-on): the tick still
+            # confirms fills, manages resting orders and settles the ladder.
+            halted = bool(args.live) and os.path.exists(halt_flag_path())
             return out(
-                run_once(config, conn, broker, cache_path=cache_path, live=args.live, force=args.force)
+                run_once(
+                    config,
+                    conn,
+                    broker,
+                    cache_path=cache_path,
+                    live=args.live,
+                    force=args.force,
+                    halted=halted,
+                )
             )
         finally:
             looplock.release(_once_lock_path())

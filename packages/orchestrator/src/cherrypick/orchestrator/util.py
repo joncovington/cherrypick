@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from typing import Any
 
 from cherrypick.core import looplock
@@ -15,6 +16,12 @@ from cherrypick.core.redact import (
 # parent is windowless (pythonw, as the scheduled tasks run). Pass as `subprocess.run(..., creationflags=
 # CREATE_NO_WINDOW)`. 0 elsewhere (the subprocess default), so the same call is cross-platform-safe.
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
+# POSIX: start a child in its OWN session (and so its own process group). Pass as `start_new_session=
+# NEW_SESSION`. Without it every child shares the supervisor's group, and the tree kill's killpg fallback
+# signals that group -- one console restart would take down the supervisor and every job with it
+# (2026-10-08 OS audit). The Windows counterpart is CREATE_NEW_PROCESS_GROUP; False there.
+NEW_SESSION = os.name != "nt"
 
 
 def first_json(text: str | None) -> dict[str, Any]:
@@ -95,7 +102,29 @@ def atomic_write_json(path, obj: Any) -> None:
     tmp = path.with_name(path.name + ".tmp")
     with tmp.open("w", encoding="utf-8") as fh:
         json.dump(obj, fh, indent=2, default=str)
-    os.replace(tmp, path)
+    _replace_with_retry(tmp, path)
+
+
+# On Windows a replace onto a file another process holds open (a reader without delete-sharing,
+# antivirus scanning it) fails with PermissionError for a moment. Unretried, that one moment killed
+# the supervisor: seven "FATAL: unhandled PermissionError" exits in supervisor.log, 2026-09-21 to
+# 2026-10-08, every one in this replace.
+_REPLACE_TRIES = 20
+_REPLACE_PAUSE_S = 0.1
+
+
+def _replace_with_retry(src, dst, *, sleep=None) -> None:
+    import time as _time
+
+    sleep = sleep or _time.sleep
+    for attempt in range(_REPLACE_TRIES):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == _REPLACE_TRIES - 1:
+                raise
+            sleep(_REPLACE_PAUSE_S)
 
 
 pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
@@ -121,6 +150,10 @@ def port_owner_pid(port: int) -> int | None:
     except Exception:
         return None
 
+    if sys.platform.startswith("linux"):
+        return _linux_port_owner(port)
+    if sys.platform == "darwin":
+        return _macos_port_owner(port)
     if os.name != "nt":
         return None
     try:
@@ -141,6 +174,77 @@ def port_owner_pid(port: int) -> int | None:
     except Exception:
         return None
     return None
+
+
+# POSIX without psutil (2026-10-08 OS audit): the stuck-port reclaim never fired off Windows, so a
+# stray process on the console's port left it in backoff for good -- the 2026-08-23 failure. Same
+# contract as above: any doubt is None, never a guess.
+def listen_inodes(proc_net_tcp: str, port: int) -> set[str]:
+    """Socket inodes LISTENing on `port`, from the text of /proc/net/tcp or tcp6 (pure)."""
+    inodes = set()
+    for line in proc_net_tcp.splitlines()[1:]:
+        f = line.split()
+        if len(f) < 10 or f[3] != "0A":  # 0A = TCP_LISTEN
+            continue
+        try:
+            if int(f[1].rsplit(":", 1)[1], 16) == port:
+                inodes.add(f[9])
+        except (IndexError, ValueError):
+            continue
+    return inodes
+
+
+def _linux_port_owner(port: int, proc: str = "/proc") -> int | None:
+    try:
+        inodes: set[str] = set()
+        for name in ("tcp", "tcp6"):
+            try:
+                with open(os.path.join(proc, "net", name), encoding="utf-8") as fh:
+                    inodes |= listen_inodes(fh.read(), port)
+            except OSError:
+                continue
+        if not inodes:
+            return None
+        wanted = {f"socket:[{i}]" for i in inodes}
+        for pid in (d for d in os.listdir(proc) if d.isdigit()):
+            fd_dir = os.path.join(proc, pid, "fd")
+            try:
+                fds = os.listdir(fd_dir)
+            except OSError:
+                continue  # another user's process, or gone
+            for fd in fds:
+                try:
+                    if os.readlink(os.path.join(fd_dir, fd)) in wanted:
+                        return int(pid)
+                except OSError:
+                    continue
+    except Exception:
+        return None
+    return None
+
+
+def first_pid(lsof_t_output: str) -> int | None:
+    """The first PID of `lsof -t` output (one PID per line), or None (pure)."""
+    for line in (lsof_t_output or "").splitlines():
+        if line.strip().isdigit():
+            return int(line.strip())
+    return None
+
+
+def _macos_port_owner(port: int) -> int | None:
+    try:
+        import subprocess
+
+        out = subprocess.run(
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+            capture_output=True,
+            text=True,
+            creationflags=CREATE_NO_WINDOW,
+            timeout=15,
+        ).stdout
+        return first_pid(out)
+    except Exception:
+        return None
 
 
 def acquire_pid_lock(path, stale_seconds: int = 180) -> bool:

@@ -38,9 +38,12 @@ from importing it. This layer is for loops the desk exists to keep separate from
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import uuid
 from collections.abc import Callable, Iterable
-from datetime import date
+from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any
 
 from cherrypick.core import broker as _broker
@@ -121,6 +124,8 @@ class Broker:
         live_gates: Callable[[], list[str]] | None = None,
         serialize: Callable[[Any], Any] | None = None,
         deploy_limit_pct: float | None = None,
+        hold_path: str | os.PathLike | None = None,
+        health_path: str | os.PathLike | None = None,
     ):
         self._get_session = get_session
         self._designated_account = designated_account
@@ -134,16 +139,67 @@ class Broker:
         # refuses every further live submission from this adapter -- see `place`.
         self._unresolved: dict[str, str] = {}
         self._unrecorded: dict[str, dict] = {}
+        # The hold OUTLIVES the process when `hold_path` is given (2026-10-08). Each live tick is a
+        # short-lived `--once` process, so a hold kept only in memory lifted itself 60 s later and
+        # the next tick could submit the duplicate the hold exists to prevent. Loaded here, saved on
+        # every change; an unreadable file holds (it cannot show nothing is held).
+        self._hold_path = Path(hold_path) if hold_path else None
+        self._load_hold()
+        # Broker contact, persisted beside the hold (2026-10-08). Every failure here is caught and
+        # returned as data -- the seam's job -- so a tick against a dead broker, an expired login or
+        # no network exited 0 and read as healthy to the supervisor and the watchdog. This file is
+        # the one place an outage leaves a trace: `failing_since` is set by the first failure after
+        # a success and cleared by the next success, across ticks (`read_broker_health`).
+        if health_path is None and self._hold_path is not None:
+            health_path = self._hold_path.with_name(HEALTH_FILENAME)
+        self._health_path = Path(health_path) if health_path else None
+        self._health = read_broker_health(self._health_path) if self._health_path else {}
+        self._health_written = 0.0
 
     # --- lifecycle -------------------------------------------------------------------------
-    def run(self, coro):
+    def run(self, coro, *, _counts_as_contact: bool = True):
         """Drive a coroutine on the process-wide loop. Public so a module can run its OWN
         broker-side coroutine (a REST quote refresh, a settlement-print fetch) on the same loop
         the cached session is bound to, without a second adapter."""
         cls = type(self)
         if cls._shared_loop is None:
             cls._shared_loop = asyncio.new_event_loop()
-        return cls._shared_loop.run_until_complete(coro)
+        try:
+            out = cls._shared_loop.run_until_complete(coro)
+        except Exception as exc:
+            self._note_contact(exc)
+            raise
+        if _counts_as_contact:
+            self._note_contact(None)
+        return out
+
+    def _note_contact(self, error: BaseException | None) -> None:
+        """Record one broker call's outcome. A success rewrites the file only when it ends a
+        failure streak or every 30 s; a failure always does."""
+        if self._health_path is None:
+            return
+        now = datetime.now(UTC)
+        h = self._health
+        if error is None:
+            h["last_ok_at"] = now.isoformat()
+            if not h.get("failing_since") and now.timestamp() - self._health_written < 30:
+                return
+            h["failing_since"], h["failures"] = None, 0
+        else:
+            h.setdefault("failing_since", None)
+            if not h["failing_since"]:
+                h["failing_since"] = now.isoformat()
+            h["failures"] = int(h.get("failures") or 0) + 1
+            h["last_error_at"] = now.isoformat()
+            h["last_error"] = f"{type(error).__name__}: {error}"[:300]
+        try:
+            self._health_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._health_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(h), encoding="utf-8")
+            tmp.replace(self._health_path)
+            self._health_written = now.timestamp()
+        except OSError:
+            pass  # a health note must never break a broker call
 
     def _ensure(self):
         """Build session+account, or raise having changed nothing.
@@ -159,7 +215,16 @@ class Broker:
             return
         try:
             session = self._get_session()
-            account = self.run(_broker.resolve_account(session, self._designated_account()))
+        except Exception as exc:  # an expired login or no network fails here, before any call
+            self._note_contact(exc)
+            self._reset()
+            raise
+        try:
+            # Its failure is recorded; its success is not proof of health -- an account lookup that
+            # works while every orders call fails would otherwise clear the streak each tick.
+            account = self.run(
+                _broker.resolve_account(session, self._designated_account()), _counts_as_contact=False
+            )
         except Exception:
             self._reset()
             raise
@@ -168,6 +233,31 @@ class Broker:
     def _reset(self):
         self._session = None
         self._account = None
+
+    def _load_hold(self) -> None:
+        if self._hold_path is None or not self._hold_path.exists():
+            return
+        try:
+            doc = json.loads(self._hold_path.read_text(encoding="utf-8"))
+            self._unresolved = dict(doc.get("unresolved") or {})
+            self._unrecorded = dict(doc.get("unrecorded") or {})
+        except (OSError, ValueError) as exc:
+            # Fail closed: a hold file that cannot be read may be hiding an unresolved submission.
+            self._unresolved = {"<unreadable hold file>": f"{type(exc).__name__}: {exc}"}
+
+    def _save_hold(self) -> None:
+        if self._hold_path is None:
+            return
+        if not self._unresolved and not self._unrecorded:
+            self._hold_path.unlink(missing_ok=True)
+            return
+        self._hold_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self._hold_path.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps({"unresolved": self._unresolved, "unrecorded": self._unrecorded}, default=str),
+            encoding="utf-8",
+        )
+        tmp.replace(self._hold_path)
 
     @property
     def session(self):
@@ -249,6 +339,7 @@ class Broker:
                     }
                 if not read_ok:
                     self._unresolved[ext] = f"{type(exc).__name__}: {exc}"
+                    self._save_hold()
                     return {
                         "ok": False,
                         "uncertain": True,
@@ -305,6 +396,7 @@ class Broker:
                 if found is not None:
                     self._unrecorded[ext] = found
                 del self._unresolved[ext]
+            self._save_hold()
         if self._unrecorded:
             listing = ", ".join(f"{ext} -> order {o.get('order_id')}" for ext, o in self._unrecorded.items())
             return {
@@ -320,7 +412,9 @@ class Broker:
     def acknowledge(self, external_identifier: str) -> bool:
         """Lift the hold on an unrecorded order a caller has now accounted for (recorded, or
         cancelled at the broker by a human). True if it was held."""
-        return self._unrecorded.pop(external_identifier, None) is not None
+        held = self._unrecorded.pop(external_identifier, None) is not None
+        self._save_hold()
+        return held
 
     @property
     def held(self) -> dict:
@@ -432,6 +526,39 @@ class Broker:
 
 
 # --------------------------------------------------------------------------- sweeps and watches
+HEALTH_FILENAME = "live_broker_health.json"
+
+
+def read_broker_health(path: str | os.PathLike) -> dict:
+    """The persisted broker-contact record (`{last_ok_at, failing_since, failures, last_error_at,
+    last_error}`), or {} when there is none or it cannot be read -- for status surfaces and the
+    watchdog, which never talk to the broker."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+        return doc if isinstance(doc, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def read_hold(path: str | os.PathLike) -> dict:
+    """What a persisted hold holds, from the file alone -- for status surfaces, which never talk to
+    the broker. `{unresolved: [...], unrecorded: {ext: order_id}}`; empty lists when nothing is held,
+    and an unreadable file reported as held (it cannot show that nothing is)."""
+    p = Path(path)
+    if not p.exists():
+        return {"unresolved": [], "unrecorded": {}}
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {"unresolved": [f"<unreadable hold file: {type(exc).__name__}>"], "unrecorded": {}}
+    return {
+        "unresolved": sorted(doc.get("unresolved") or {}),
+        "unrecorded": {
+            ext: str((o or {}).get("order_id")) for ext, o in (doc.get("unrecorded") or {}).items()
+        },
+    }
+
+
 def orphans(broker: Any, known_order_ids: Iterable[Any]) -> list[dict]:
     """Working orders at the broker that `known_order_ids` (the ledger's) does not contain.
 

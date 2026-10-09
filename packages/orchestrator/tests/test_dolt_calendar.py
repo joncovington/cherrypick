@@ -112,3 +112,40 @@ def test_a_failed_compaction_is_recorded_not_raised(tmp_path):
     out = rdd.compact_loose(tmp_path, ["stocks"], threshold=500, gc=boom)
     assert out["stocks"]["compacted"] is False
     assert out["stocks"]["error"] == "RuntimeError: server busy"
+
+
+def _bare_clone(tmp_path, name="earnings"):
+    repo = tmp_path / name
+    (repo / ".dolt").mkdir(parents=True)
+    return repo
+
+
+class _Refused(Exception):
+    errno = 2003
+
+
+def test_the_pull_goes_through_the_running_server(tmp_path, monkeypatch):
+    """2026-10-09: the CLI pull opened a server-held clone read-only and failed; through the server
+    it lands, and the CLI is never run while a server answers."""
+    monkeypatch.setattr(rdd, "_pull_cli", lambda repo: (_ for _ in ()).throw(AssertionError("cli ran")))
+    got = rdd._pull(_bare_clone(tmp_path), via_server=lambda name: f"{name}: merge successful")
+    assert got == {"ok": True, "via": "server", "tail": ["earnings: merge successful"]}
+
+
+def test_only_an_unreachable_server_falls_back_to_the_cli(tmp_path, monkeypatch):
+    monkeypatch.setattr(rdd, "_pull_cli", lambda repo: {"ok": True, "via": "cli"})
+
+    def refused(name):
+        raise _Refused("Can't connect to MySQL server on '127.0.0.1:3306'")
+
+    assert rdd._pull(_bare_clone(tmp_path), via_server=refused) == {"ok": True, "via": "cli"}
+
+
+def test_a_pull_the_server_refuses_is_recorded_not_retried_by_the_cli(tmp_path, monkeypatch):
+    monkeypatch.setattr(rdd, "_pull_cli", lambda repo: (_ for _ in ()).throw(AssertionError("cli ran")))
+
+    def conflicted(name):
+        raise RuntimeError("merge conflict in earnings_calendar")
+
+    got = rdd._pull(_bare_clone(tmp_path), via_server=conflicted)
+    assert got["ok"] is False and got["via"] == "server" and "merge conflict" in got["reason"]

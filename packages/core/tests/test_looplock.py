@@ -201,3 +201,23 @@ def test_the_liveness_probe_is_injectable(lock_path):
 
     assert looplock.acquire(lock_path, stale_seconds=86_400, alive=lambda _pid: True) is False
     assert looplock.acquire(lock_path, stale_seconds=86_400, alive=lambda _pid: False) is True
+
+
+def test_macos_lstart_parses_to_local_epoch_and_garbage_is_none():
+    # `ps -o lstart=` pads single-digit days; host-local time, whole seconds (2026-10-08 OS audit).
+    got = looplock.parse_lstart("Thu Oct  8 09:31:02 2026\n")
+    assert got == time.mktime((2026, 10, 8, 9, 31, 2, 0, 0, -1))
+    assert looplock.parse_lstart("") is None
+    assert looplock.parse_lstart("ps: no such process") is None
+
+
+def test_macos_start_time_comes_from_ps(monkeypatch):
+    monkeypatch.setitem(sys.modules, "psutil", None)
+    monkeypatch.setattr(looplock.os, "name", "posix")
+    monkeypatch.setattr(looplock.sys, "platform", "darwin")
+
+    class R:
+        stdout = "Thu Oct  8 09:31:02 2026\n"
+
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: R())
+    assert looplock.process_start_time(4242) == looplock.parse_lstart(R.stdout)

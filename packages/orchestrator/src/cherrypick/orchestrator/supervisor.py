@@ -47,7 +47,15 @@ from cherrypick.core import looplock as _looplock
 from . import config as cfgmod
 from . import holds as _holds
 from . import jobspec, timeutil
-from .util import CREATE_NO_WINDOW, atomic_write_json, pid_alive, port_owner_pid, read_json, rotate_if_large
+from .util import (
+    CREATE_NO_WINDOW,
+    NEW_SESSION,
+    atomic_write_json,
+    pid_alive,
+    port_owner_pid,
+    read_json,
+    rotate_if_large,
+)
 
 HEARTBEAT_FILE = "supervisor.last.json"
 JOBS_FILE = "supervisor-jobs.json"
@@ -61,6 +69,7 @@ _LAUNCHER = Path(__file__).resolve().parents[3] / "run.py"
 # How stale the heartbeat may be before ensure-supervisor treats the daemon as dead. The loop writes
 # it every HEARTBEAT_WRITE_SECONDS; 90s tolerates a slow pass or a paused clock without flapping.
 HEARTBEAT_WRITE_SECONDS = 5
+STATE_WRITE_LOG_SECONDS = 300  # at most one "write skipped" line per this, however many skips
 HEARTBEAT_FRESH_SECONDS = 90
 
 # A resident orphan (adopted from a prior supervisor) that died while we held no handle. Not a real
@@ -285,7 +294,16 @@ def _rss_mb() -> float | None:
         else:
             import resource
 
-            return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
+            # Linux: the CURRENT resident set from /proc (ru_maxrss is the peak). macOS has no /proc
+            # and reports ru_maxrss in BYTES, not Linux's KB -- read as KB it was 1024x too large.
+            try:
+                with open("/proc/self/statm", encoding="ascii") as fh:
+                    pages = int(fh.read().split()[1])
+                return round(pages * os.sysconf("SC_PAGE_SIZE") / (1024 * 1024), 1)
+            except (OSError, ValueError, IndexError):
+                pass
+            peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            return round(peak / (1024 * 1024 if sys.platform == "darwin" else 1024), 1)
     except Exception:
         pass
     return None
@@ -387,7 +405,15 @@ def _terminate_tree(pid: int) -> bool:
                 timeout=15,
             )
             return True
-        os.killpg(os.getpgid(pid), 15)
+        # POSIX without psutil: signal the child's process group -- but only when the child LEADS
+        # it (spawned with NEW_SESSION). A child still in the supervisor's own group (an adopted
+        # orphan from an older supervisor, or a daemon some other path started) gets a plain kill
+        # instead: killpg there would end the supervisor and every sibling job (2026-10-08 OS audit).
+        pgid = os.getpgid(pid)
+        if pgid == pid and pgid != os.getpgrp():
+            os.killpg(pgid, 15)
+        else:
+            os.kill(pid, 15)
         return True
     except (OSError, SystemError, subprocess.SubprocessError):
         return False
@@ -650,7 +676,17 @@ class Supervisor:
             self._mark_requested(
                 spec, st, 0, f"restart requested by {req.get('by') or 'unknown'} while not running"
             )
-            st["last_restart"] = {"id": req.get("id"), "at": time.time(), "result": "started"}
+            if jobspec.is_fixed_time(spec):
+                # A daily or monthly job is not running between its times, so "restart" means: run it
+                # once now (2026-10-09 -- it used to record the request, say "started", and run
+                # nothing). An EXTRA run: the day is not stamped fired, so its scheduled run still
+                # comes; the usual holds (network, one browser job, overlap) still apply.
+                st["run_now"] = req.get("id") or True
+                _log(f"{spec.id}: run-now requested by {req.get('by') or 'unknown'}")
+                result = "queued to run now"
+            else:
+                result = "started"
+            st["last_restart"] = {"id": req.get("id"), "at": time.time(), "result": result}
         if spec.kind == jobspec.KIND_INTERVAL:
             st["next_run_epoch"] = 0  # "restart" of a periodic job means: run it now
 
@@ -754,6 +790,8 @@ class Supervisor:
                 stdout=subprocess.DEVNULL,
                 stderr=err,
                 creationflags=CREATE_NO_WINDOW,
+                # POSIX: its own process group, so a tree kill of this child is a kill of this child.
+                start_new_session=NEW_SESSION,
             )
         except OSError as exc:
             self._record_exit(spec, st, -1)
@@ -831,6 +869,13 @@ class Supervisor:
             if st.get("backoff_until") and time.time() < float(st["backoff_until"]):
                 continue
             fire, reason, patch = jobspec.should_start(spec, st, now, holidays)
+            run_now = bool(st.get("run_now")) and jobspec.is_fixed_time(spec)
+            if run_now and not spec.enabled:
+                _log(f"{spec.id}: run-now dropped -- the job is disabled ({spec.enabled_reason})")
+                st.pop("run_now", None)
+                run_now = False
+            if run_now and not fire:
+                fire, patch = True, {}  # out of schedule: nothing stamped, the scheduled run still comes
             if fire and jobspec.is_fixed_time(spec):
                 hold = self._fixed_start_hold(spec, browser_busy)
                 if hold is not None:
@@ -844,14 +889,33 @@ class Supervisor:
                 st["next_run"] = _epoch_iso(st.get("next_run_epoch"))
             if fire and self._spawn(spec, st):
                 started.append(spec.id)
+                st.pop("run_now", None)
                 if jobspec.is_fixed_time(spec):
                     self._last_fixed_spawn = time.time()
                     browser_busy = browser_busy or jobspec.uses_browser(spec)
 
         self._loop_seq += 1
-        self._write_registry(errors)
-        self._write_heartbeat(now, len(jobs))
+        self._write_state_file("job registry", lambda: self._write_registry(errors))
+        self._write_state_file("heartbeat", lambda: self._write_heartbeat(now, len(jobs)))
         return {"started": started, "jobs": len(jobs), "errors": errors}
+
+    def _write_state_file(self, what: str, write) -> None:
+        """One of the per-pass state writes, skipped rather than fatal when Windows refuses the
+        replace past its retries (2026-10-09: the heartbeat's target held open for over 2 s killed the
+        daemon, the third such death in a day). Both files are rewritten on the next pass from the
+        state in memory, so a skipped write loses nothing; one held for good leaves the heartbeat to
+        go stale, which is what the anchor's wedged-supervisor check acts on."""
+        try:
+            write()
+        except PermissionError as exc:
+            self._state_write_skips = getattr(self, "_state_write_skips", 0) + 1
+            last = getattr(self, "_state_write_logged", 0.0)
+            if time.time() - last >= STATE_WRITE_LOG_SECONDS:
+                self._state_write_logged = time.time()
+                _log(
+                    f"{what} write skipped this pass ({self._state_write_skips} so far): another "
+                    f"process held the file -- {exc}"
+                )
 
     def _fixed_start_hold(self, spec: jobspec.JobSpec, browser_busy: bool) -> str | None:
         """Why a due fixed-time job must wait this pass, or None to start it."""
@@ -1140,14 +1204,19 @@ def run(cfg: dict[str, Any] | None = None, *, max_passes: int | None = None) -> 
         _log(f"supervisor started (pid {os.getpid()})")
         passes = 0
         last_alive_log = time.time()
+        restart = False
+        previous = _take_last_exit() if max_passes is None else None
         try:
             while True:
                 if stop_path().exists():
-                    _log("stop file seen — shutting down")
+                    restart = bool((read_json(stop_path()) or {}).get("restart"))
+                    _log("stop file seen — " + ("restarting" if restart else "shutting down"))
                     stop_path().unlink(missing_ok=True)
                     break
                 sup.pass_once()
                 passes += 1
+                if passes == 1 and max_passes is None:
+                    _announce_start(sup, previous)
                 if time.time() - last_alive_log >= _ALIVE_LOG_SECONDS:
                     _log(f"alive (pid {os.getpid()}, loop_seq {sup._loop_seq}, rss {_rss_mb() or '?'} MB)")
                     last_alive_log = time.time()
@@ -1163,18 +1232,170 @@ def run(cfg: dict[str, Any] | None = None, *, max_passes: int | None = None) -> 
                 f"FATAL: unhandled {type(exc).__name__} escaped the loop (pid {os.getpid()}) — daemon exiting"
             )
             _log(traceback.format_exc().rstrip())
+            if max_passes is None and isinstance(exc, Exception):
+                _note_exit(f"crashed ({type(exc).__name__})")
+                _announce_crash(exc, sup._load_cfg())
             raise
-        return {"ok": True, "passes": passes}
+        if max_passes is None:
+            _note_exit("was restarted on request" if restart else "was stopped")
+        return {"ok": True, "passes": passes, **({"restart": True} if restart else {})}
     finally:
         if not os.environ.get("CHERRYPICK_SUPERVISOR_NO_LOCK"):
             release_pid_lock(lock_path())
 
 
-def request_stop() -> dict[str, Any]:
-    """Ask a running supervisor to exit (it polls the stop file every pass)."""
+# ---------------------------------------------------------------- start and crash announcements
+# The owner asked (2026-10-09) to see every supervisor start on Discord -- after a reboot, a power
+# cut, a code update -- with what matters at that moment, and every crash. One message per start,
+# sent after the first pass so it can say how many jobs are scheduled; a crash at most every 15 min.
+_CRASH_NOTIFY_EVERY_S = 15 * 60
+
+
+def last_exit_path() -> Path:
+    return cfgmod.state_file("supervisor.last_exit.json")
+
+
+def _note_exit(why: str) -> None:
+    try:
+        atomic_write_json(last_exit_path(), {"why": why, "at": _utc_iso()})
+    except OSError:
+        pass
+
+
+def _take_last_exit() -> str | None:
+    rec = read_json(last_exit_path())
+    try:
+        last_exit_path().unlink()
+    except OSError:
+        pass
+    return (rec or {}).get("why") if isinstance(rec, dict) else None
+
+
+def _system_uptime_s() -> float | None:
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            k32 = ctypes.WinDLL("kernel32")
+            k32.GetTickCount64.restype = ctypes.c_uint64
+            return k32.GetTickCount64() / 1000.0
+        with open("/proc/uptime", encoding="ascii") as fh:
+            return float(fh.read().split()[0])
+    except Exception:  # noqa: BLE001 -- a detail of an announcement, never a failure
+        return None
+
+
+def _code_version() -> str | None:
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(_LAUNCHER.parents[2]),
+            capture_output=True,
+            text=True,
+            timeout=5,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        return r.stdout.strip() or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def startup_message(info: dict[str, Any]) -> tuple[str, str, str]:
+    """(level, title, message) announcing a start. Pure; `info` is gathered by `_announce_start`."""
+    up = info.get("uptime_s")
+    after_boot = up is not None and up < 15 * 60
+    how = "as a Windows service" if info.get("service") else "as a background process"
+    title = "Supervisor started" + (" after a reboot" if after_boot else "")
+    first = [f"Running {how}"]
+    if after_boot:
+        first.append(f"{up / 60:.0f} min after boot")
+    if info.get("previous"):
+        first.append(f"previous one {info['previous']}")
+    second = []
+    if info.get("code"):
+        second.append(f"code {info['code']}")
+    second.append(f"{info.get('jobs', 0)} jobs scheduled")
+    second.append("network ok" if info.get("dns_ok") else "NO NETWORK (DNS fails): jobs that need it wait")
+    armed = info.get("armed") or []
+    live = ("Live: HALT SET (no new live entries until cleared)" if info.get("halt") else "Live: no halt") + (
+        f"; armed today: {', '.join(armed)}" if armed else "; nothing armed today"
+    )
+    level = "WARNING" if (not info.get("dns_ok") or info.get("halt")) else "INFO"
+    sentences = [", ".join(first), ", ".join(second), live]
+    return level, title, ". ".join(t[:1].upper() + t[1:] for t in sentences) + "."
+
+
+def _announce_start(sup: Supervisor, previous: str | None) -> None:
+    try:
+        from cherrypick.notify import Notifier
+        from cherrypick.notify.notifier import _windows_session_id
+
+        from . import liveops
+
+        cfg = sup._load_cfg()
+        today = timeutil.now_et(cfg.get("timezone", "America/New_York")).date().isoformat()
+        armed = sorted(
+            m for m, rec in (read_arm_records(cfg) or {}).items() if str((rec or {}).get("date")) == today
+        )
+        info = {
+            "service": _windows_session_id() == 0,
+            "uptime_s": _system_uptime_s(),
+            "previous": previous,
+            "code": _code_version(),
+            "jobs": sum(1 for st in sup._state.values() if st.get("enabled")),
+            "dns_ok": dns_resolves(),
+            "halt": liveops.halt_flag_path().exists(),
+            "armed": armed,
+        }
+        level, title, message = startup_message(info)
+        Notifier(cfg.get("notify")).notify(level, "supervisor.started", title, message)
+    except Exception as exc:  # noqa: BLE001 -- an announcement must never stop the daemon
+        _log(f"start announcement failed: {type(exc).__name__}: {exc}")
+
+
+def _announce_crash(exc: BaseException, cfg: dict[str, Any]) -> None:
+    """CRITICAL for a crash, at most every 15 min (a crash loop is one message, not one a minute)."""
+    try:
+        marker = cfgmod.state_file("supervisor.crash_notified.json")
+        last = (read_json(marker) or {}).get("at_epoch") or 0
+        if time.time() - float(last) < _CRASH_NOTIFY_EVERY_S:
+            return
+        from cherrypick.notify import Notifier
+        from cherrypick.notify.notifier import _windows_session_id
+
+        back = (
+            "The Windows service restarts it in 30 s to 2 min."
+            if _windows_session_id() == 0
+            else "The 2-minute check restarts it."
+        )
+        Notifier(cfg.get("notify")).notify(
+            "CRITICAL",
+            "supervisor.crashed",
+            "Supervisor crashed",
+            f"{type(exc).__name__}: {str(exc)[:200]}. {back} No jobs start until it is back; "
+            "logs/supervisor.log has the traceback.",
+        )
+        atomic_write_json(marker, {"at_epoch": time.time()})
+    except Exception:  # noqa: BLE001
+        pass
+
+
+# The exit code of a supervisor asked to RESTART (`supervise --restart`). Non-zero on purpose: the
+# optional Windows service restarts its program only after a failure, so a clean exit would leave
+# it stopped -- and restarting it needs administrator rights nobody has at 2 a.m. (2026-10-09).
+RESTART_EXIT = 3
+
+
+def request_stop(restart: bool = False) -> dict[str, Any]:
+    """Ask a running supervisor to exit (it polls the stop file every pass). With `restart`, it
+    exits with RESTART_EXIT so whatever runs it starts it again with fresh code: the service after
+    its restart delay, or the anchor's next probe."""
     cfgmod.ensure_dirs()
-    stop_path().write_text(json.dumps({"requested_at": _utc_iso()}), encoding="utf-8")
-    return {"ok": True, "detail": f"stop requested via {stop_path().name}"}
+    stop_path().write_text(
+        json.dumps({"requested_at": _utc_iso(), **({"restart": True} if restart else {})}), encoding="utf-8"
+    )
+    word = "restart" if restart else "stop"
+    return {"ok": True, "detail": f"{word} requested via {stop_path().name}"}
 
 
 if __name__ == "__main__":

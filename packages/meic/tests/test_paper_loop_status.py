@@ -38,7 +38,6 @@ def ledger(tmp_path, monkeypatch):
     monkeypatch.setattr(paper_loop, "_PAPER_DB", path)
     monkeypatch.setattr(paper_loop, "_DB", [sys.executable, "-m", "cherrypick.meic.db", "--db", path])
     monkeypatch.setattr(paper_loop, "_running_pid", lambda: None)
-    monkeypatch.setattr(paper_loop, "_task_installed", lambda: False)
     return path
 
 
@@ -127,5 +126,5 @@ def test_the_existing_status_fields_are_unchanged(ledger, capsys):
     """Additive only: `--status` is the orchestrator's configured `status_argv` for this module and
     predates the settlement fields."""
     status = _status(capsys)
-    assert set(status) >= {"daemon_running", "pid", "scheduled_task", "open_positions"}
+    assert set(status) >= {"daemon_running", "pid", "open_positions"}
     assert status["open_positions"] == status["positions_today"]

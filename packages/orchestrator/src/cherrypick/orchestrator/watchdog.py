@@ -17,7 +17,7 @@ import os
 import socket
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -31,7 +31,7 @@ from cherrypick.notify import Notifier
 from . import config as cfgmod
 from . import eval_activity, jobspec, servicecfg, tasks, timeutil, util
 from . import holds as _holds
-from .util import CREATE_NO_WINDOW, first_json
+from .util import CREATE_NO_WINDOW, NEW_SESSION, first_json
 
 _WATCHDOG_LOG = cfgmod.LOGS_DIR / "watchdog.log"
 _STATE_FILE = cfgmod.STATE_DIR / "watchdog_state.json"
@@ -52,6 +52,9 @@ class Finding:
     status: str
     title: str
     message: str
+    # For a finding that lists incidents (failed or missed jobs): one id per incident. It is
+    # re-announced only when a new one joins, never on the clock while the list just shrinks.
+    members: tuple[str, ...] = field(default=())
 
 
 # --------------------------------------------------------------------------- helpers
@@ -68,6 +71,24 @@ def _supervisor_driving() -> bool:
     from . import supersnap  # local import: avoids a cycle at module load
 
     return supersnap.supervisor_alive()
+
+
+# Module reason codes, said in words for a message a person reads.
+_REASON_WORDS = {
+    "no_fresh_quotes": "no fresh price quote to settle at",
+    "no_snapshot": "no market snapshot",
+    "stale_cache": "the market data is stale",
+}
+
+
+def _pre_cutover() -> bool:
+    """A box that has never run the supervisor (no heartbeat file ever written): only there do the
+    legacy scheduled tasks drive anything. On a supervisor box whose supervisor is down -- restarting,
+    or not yet back after a power cut -- a missing legacy task is not news, and reporting it raised
+    false "paper task missing" CRITICALs on 2026-10-08. `_check_supervisor` owns that alarm."""
+    from . import supervisor
+
+    return not supervisor.heartbeat_path().exists()
 
 
 def _supervisor_job(job_id: str) -> dict[str, Any] | None:
@@ -178,9 +199,7 @@ def _check_job_registry_drift(cfg: dict[str, Any]) -> list[Finding]:
             WARN,
             "Supervisor is running a stale job table",
             f"{len(missing)} job(s) derived from config that the running supervisor has never seen: "
-            f"{', '.join(missing)}. It loads jobspec once at startup, so these are not scheduled and "
-            "will not fire. Restart it to pick them up: cherrypick supervise --stop, then "
-            "cherrypick ensure-supervisor.",
+            f"{', '.join(missing)}. They will not run until it restarts: `run.py supervise --restart`.",
         ),
     ]
 
@@ -557,6 +576,7 @@ def _start_streamer(module_root: Path, start_argv: list[str]) -> bool:
             stderr=subprocess.DEVNULL,
             creationflags=flags,
             close_fds=True,
+            start_new_session=NEW_SESSION,  # POSIX: out of the caller's process group
         )
         return True
     except Exception:
@@ -1111,6 +1131,8 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
             )
         else:
             findings.append(Finding(f"{name}.task", OK, f"{label} paper job", "supervised"))
+    elif not _pre_cutover():
+        pass  # supervisor box, supervisor down: `_check_supervisor` says so, once
     elif task_name and not tasks.exists(task_name):
         findings.append(
             Finding(
@@ -1221,6 +1243,8 @@ def _check_scheduled_entry_exit_jobs(name: str, paper: dict[str, Any]) -> list[F
                 )
             else:
                 findings.append(Finding(f"{name}.task.{label}", OK, f"Earnings {label} job", "supervised"))
+        elif not _pre_cutover():
+            pass  # supervisor box, supervisor down: `_check_supervisor` says so, once
         elif not tasks.exists(tn):
             findings.append(
                 Finding(
@@ -1612,13 +1636,14 @@ def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trad
         return []
     open_count = status.get("positions_today") or 0
     if status.get("session_settled") is False and open_count > 0:
-        reason = status.get("data_reason") or "settlement price unavailable"
+        code = str(status.get("data_reason") or "")
+        reason = _REASON_WORDS.get(code) or code.replace("_", " ") or "no settlement price yet"
         return [
             Finding(
                 f"{name}.settle_overdue",
                 WARN,
                 f"{label} settlement overdue",
-                f"{open_count} open position(s) past the close still unsettled ({reason}).",
+                f"{open_count} open position(s) not settled after the close: {reason}. It retries each tick.",
             )
         ]
     return [Finding(f"{name}.settle_overdue", OK, f"{label} settlement", "settled or no open positions")]
@@ -1734,6 +1759,30 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
     grace = int(live.get("disarm_grace_minutes", 30))
     now_minute = now_et.hour * 60 + now_et.minute
     past_disarm_window = now_minute >= disarm_minute + grace or (armed_for and armed_for != today)
+    # A record the supervisor no longer acts on (a past day's, or today's past the window) while no
+    # live tick is running and no legacy task exists is INERT: the job that would read it is off. It
+    # outlives the window only when the machine was off at disarm time -- the tick that deletes it
+    # never ran. Remove it, and do NOT halt: halting on it re-set the suite halt on every pass after
+    # the 2026-10-08 power cut, blocking the next day's live entries for a record nothing obeyed.
+    if registered and past_disarm_window and hb_exists and arm_rec and not tasks.exists(task_name):
+        info = supersnap.job_run_info(f"{name}-live") or {}
+        if not info.get("still_running"):
+            try:
+                supervisor.arm_record_path(name).unlink()
+                removed = True
+            except OSError:
+                removed = False
+            findings.append(
+                Finding(
+                    f"{name}.live_disarm",
+                    OK,
+                    f"{label} live disarmed (stale arm record removed)",
+                    f"The arm record for {arm_rec.get('date')} outlived its {disarm_hhmm} disarm because no "
+                    f"live tick ran then (machine off?). Nothing was trading; "
+                    + ("it was removed." if removed else "removing it failed -- delete it by hand."),
+                )
+            )
+            return findings
     if registered and past_disarm_window:
         from . import liveops
 
@@ -1747,11 +1796,10 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
             Finding(
                 f"{name}.live_disarm",
                 CRITICAL,
-                f"{label} LIVE armed signal survived past disarm",
-                f"{armed_desc} past {disarm_hhmm}+{grace}m (armed_for={armed_for}); "
-                "halt flag set — live ticks now refuse. Investigate why self-disarm failed, then "
-                "disarm (--uninstall-task removes the arm record and any legacy task) and clear "
-                "the halt flag before re-arming.",
+                f"{label} LIVE still running past disarm",
+                f"{armed_desc} after {disarm_hhmm}+{grace}m (armed for {armed_for}). Halt set: no new "
+                f"live entries. Disarm (`live_loop --uninstall-task`), find why it did not stop, then "
+                "clear the halt.",
             )
         )
         return findings  # halted state — the armed-window checks below would only add noise
@@ -1907,6 +1955,59 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
     elif status and "orphaned_orders" in status:
         findings.append(Finding(f"{name}.live_orphans", OK, f"{label} live orders", "all accounted for"))
 
+    # (c3) a held submission: the broker seam refuses every live order until a submit of unknown
+    # outcome is resolved, or an order found at the broker that nothing recorded is acknowledged.
+    # Persisted since 2026-10-08, so it survives the tick -- and someone has to hear about it.
+    held = (status or {}).get("broker_held") or {}
+    if held.get("unresolved") or held.get("unrecorded"):
+        findings.append(
+            Finding(
+                f"{name}.live_held",
+                CRITICAL,
+                f"{label} live submissions HELD",
+                f"unresolved {held.get('unresolved') or []}, unrecorded {held.get('unrecorded') or {}} -- "
+                "no live order goes out until a read of today's orders resolves it or a human "
+                "acknowledges the unrecorded order.",
+            )
+        )
+
+    # (c5) a past session's live book still open (2026-10-08): settlement runs only inside an armed
+    # day's ticks, so a machine down between the close and the disarm left it open, silently. Not
+    # gated on arming or the session -- the point is that nothing is running to notice.
+    overdue = (status or {}).get("overdue_settlement") or []
+    if overdue:
+        days = ", ".join(
+            f"{o.get('session')} ({o.get('positions', 0)} open, "
+            f"{o.get('pending_entries', 0)} pending entries)"
+            for o in overdue
+        )
+        findings.append(
+            Finding(
+                f"{name}.live_overdue",
+                CRITICAL,
+                f"{label} LIVE book from a past session never settled",
+                f"{days}. The hourly `settle-overdue-live` job settles a session at its official "
+                "close once one is published and no entry is pending; by hand: "
+                f"`python -m cherrypick.{name}.live_loop --settle --date <session> --price <close>`; "
+                "cancel a pending entry whose order expired. Until then the ledger's net, the "
+                "daily-loss breaker and the margin cap read positions that no longer exist.",
+            )
+        )
+
+    # (c4) the broker unreachable while armed and in session (2026-10-08). The seam swallows every
+    # broker failure and the tick exits 0, so neither the supervisor nor the freshness check above
+    # can see an expired login, a dead network or a broker outage -- only this record can.
+    if registered and in_session:
+        outage = _broker_outage_finding(
+            name,
+            label,
+            (status or {}).get("broker_health") or {},
+            now_et,
+            int(live.get("broker_outage_minutes", 3)),
+        )
+        if outage is not None:
+            findings.append(outage)
+
     # (c) live settlement overdue: same shape as the paper check, over the live status.
     close_min = timeutil.MARKET_CLOSE.hour * 60 + timeutil.MARKET_CLOSE.minute
     settle_grace = int(live.get("settlement_grace_minutes", 30))
@@ -1966,10 +2067,60 @@ def _duplicate_groups(processes: list[dict[str, Any]], signatures: dict[str, str
     return out
 
 
+def _is_python_or_node(exe: str) -> bool:
+    base = os.path.basename(exe.replace("\\", "/")).lower()
+    return base.startswith("python") or base.startswith("node")
+
+
+def _list_processes_proc(proc: str = "/proc") -> list[dict[str, Any]] | None:
+    """Linux: the same rows from /proc (cmdline is NUL-separated argv; the parent PID is the second
+    field after the ")" that closes the command name in `stat`). None when /proc cannot be read."""
+    try:
+        pids = [d for d in os.listdir(proc) if d.isdigit()]
+    except OSError:
+        return None
+    rows = []
+    for pid in pids:
+        try:
+            with open(os.path.join(proc, pid, "cmdline"), "rb") as fh:
+                argv = [a.decode("utf-8", "replace") for a in fh.read().split(b"\0") if a]
+            with open(os.path.join(proc, pid, "stat"), encoding="utf-8", errors="replace") as fh:
+                ppid = int(fh.read().rsplit(")", 1)[1].split()[1])
+        except (OSError, IndexError, ValueError):
+            continue  # gone, or a kernel thread
+        if argv and _is_python_or_node(argv[0]):
+            rows.append({"pid": int(pid), "ppid": ppid, "cmd": " ".join(argv)})
+    return rows
+
+
+def parse_ps(text: str) -> list[dict[str, Any]]:
+    """macOS: rows from `ps -axww -o pid=,ppid=,command=` (pure)."""
+    rows = []
+    for line in text.splitlines():
+        f = line.split(None, 2)
+        if len(f) == 3 and f[0].isdigit() and f[1].isdigit() and _is_python_or_node(f[2].split()[0]):
+            rows.append({"pid": int(f[0]), "ppid": int(f[1]), "cmd": f[2]})
+    return rows
+
+
 def _list_processes() -> list[dict[str, Any]] | None:
     """[{pid, ppid, cmd}] for every python and node process, from the OS itself; None when it cannot
-    say (not Windows, PowerShell failed). One CIM query: stdlib and the OS shell, as the watchdog's
-    reliability path requires."""
+    say. Windows: one CIM query. Linux: /proc. macOS: `ps` (2026-10-08 OS audit -- the duplicate check
+    was Windows-only). Stdlib and the OS shell, as the watchdog's reliability path requires."""
+    if sys.platform.startswith("linux"):
+        return _list_processes_proc()
+    if sys.platform == "darwin":
+        try:
+            r = subprocess.run(
+                ["ps", "-axww", "-o", "pid=,ppid=,command="],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                creationflags=CREATE_NO_WINDOW,
+            )
+            return parse_ps(r.stdout) if r.returncode == 0 else None
+        except Exception:  # noqa: BLE001 -- "cannot say" is an answer
+            return None
     if os.name != "nt":
         return None
     query = (
@@ -2035,6 +2186,35 @@ def _check_duplicate_processes(cfg: dict[str, Any]) -> list[Finding]:
     return findings
 
 
+def _broker_outage_finding(
+    name: str, label: str, health: dict[str, Any], now_et: datetime, minutes: int
+) -> Finding | None:
+    """CRITICAL when every broker call has failed for `minutes` or more (`failing_since` survives
+    from the first failure to the next success), else None. One failed call is not an outage: the
+    next tick's orphan sweep is another try a minute later."""
+    since = health.get("failing_since")
+    if not since:
+        return None
+    try:
+        start = datetime.fromisoformat(str(since))
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        age_min = (now_et.astimezone(timezone.utc) - start).total_seconds() / 60
+    except ValueError:
+        return None
+    if age_min < minutes:
+        return None
+    return Finding(
+        f"{name}.live_broker",
+        CRITICAL,
+        f"{label} LIVE loop cannot reach the broker",
+        f"every broker call has failed for {age_min:.0f} min ({health.get('failures')} failures; last: "
+        f"{health.get('last_error')}) while live is armed and the market is open -- fills are not "
+        "being confirmed and resting orders are unwatched. Check the login (`cherrypick.core.auth "
+        "status`), the network and the broker's status page.",
+    )
+
+
 def _tick_failed(info: dict[str, Any]) -> bool:
     """Did a job's last run FAIL? A non-zero exit, unless that exit was a stop or restart someone
     asked for -- its code is the kill's, not a failure's, and alarming on it is what made every
@@ -2044,6 +2224,151 @@ def _tick_failed(info: dict[str, Any]) -> bool:
 
 # A hold this old was not a deliberate pause any more; it was forgotten.
 _HOLD_FORGOTTEN_HOURS = 12
+
+
+# The live-positions job runs every 5 minutes in session; older than this, its verdict is history.
+_LIVE_POSITIONS_FRESH_SECONDS = 20 * 60
+
+
+def _check_live_positions(in_session: bool) -> list[Finding]:
+    """The broker's positions against the live ledgers, as the `live-positions` job last saw them
+    (orchestrator/livepositions.py). A disagreement seen on two checks running is CRITICAL: a live
+    loop is deciding from a book that is not the account's. File-only, like every check here."""
+    from . import livepositions as _lp
+
+    if not in_session:
+        return []
+    state = _lp.read_state()
+    if not state:
+        return []
+    try:
+        at = datetime.fromisoformat(str(state.get("generated_at")))
+        age = (datetime.now(timezone.utc) - at).total_seconds()
+    except (TypeError, ValueError):
+        return []
+    if age > _LIVE_POSITIONS_FRESH_SECONDS:
+        return []
+    verdict = state.get("verdict")
+    if verdict == _lp.MISMATCH:
+        lines = [
+            f"{a['account']} ({', '.join(a.get('modules') or [])}): "
+            + "; ".join(_lp.describe(d) for d in a.get("confirmed") or [])
+            for a in state.get("accounts") or []
+            if a.get("confirmed")
+        ]
+        return [
+            Finding(
+                "live_positions",
+                CRITICAL,
+                "Broker positions do not match the live ledger",
+                " | ".join(lines)
+                + " -- seen on two checks running. Find the fill or close the ledger missed before the "
+                "next entry; `run.py live-positions` re-checks.",
+            )
+        ]
+    if verdict == _lp.UNKNOWN:
+        return [
+            Finding(
+                "live_positions",
+                WARN,
+                "Live positions could not be checked",
+                "; ".join(state.get("unknown") or []) or "unknown",
+            )
+        ]
+    if verdict in (_lp.MATCH, _lp.SETTLING):
+        return [Finding("live_positions", OK, "Live positions match the ledger", str(verdict))]
+    return []
+
+
+# A daily or monthly job's failure or miss stays news for a day; after that the next scheduled run
+# is the one to judge.
+_FIXED_JOB_LOOKBACK_SECONDS = 24 * 3600
+
+
+def _fixed_time_job_findings(jobs: dict[str, dict[str, Any]], now: datetime) -> list[Finding]:
+    """Daily and monthly jobs that FAILED (non-zero exit, no retry left) or were MISSED (their window
+    closed before they could start) in the last day. Pure over the registry rows.
+
+    The supervisor has always recorded both and told no one (2026-10-08): a nightly fetch could fail
+    or never run for days with only the console's job table to show it. A failure with a retry still
+    pending (`RETRY_ON_FAILURE` cleared its fire stamp) is not news yet; a job that alerts on its own
+    failure (`jobspec.NOTIFIES_OWN_FAILURE`) is not repeated; a stop someone asked for is not a failure."""
+    now_utc = now.astimezone(timezone.utc)
+
+    def recent(stamp) -> bool:
+        try:
+            at = datetime.fromisoformat(str(stamp))
+        except (TypeError, ValueError):
+            return False
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=timezone.utc)
+        return 0 <= (now_utc - at).total_seconds() <= _FIXED_JOB_LOOKBACK_SECONDS
+
+    missed, failed, missed_ids, failed_ids = [], [], [], []
+    for jid, st in sorted(jobs.items()):
+        if st.get("kind") not in (jobspec.KIND_DAILY, jobspec.KIND_MONTHLY) or not st.get("enabled", True):
+            continue
+        if st.get("held") or st.get("running_pid"):
+            continue
+        if st.get("missed") and recent(st["missed"]):
+            missed.append(jid)
+            missed_ids.append(f"{jid}@{st['missed']}")
+            continue
+        code = st.get("last_exit_code")
+        retry_pending = not (st.get("last_fire_day") or st.get("last_fire_month"))
+        if (
+            code not in (0, None)
+            and not st.get("last_exit_requested")
+            and not retry_pending
+            and jid not in jobspec.NOTIFIES_OWN_FAILURE
+            and recent(st.get("last_exit_at"))
+        ):
+            said = (str(st.get("last_error") or "").strip().splitlines() or [""])[-1][:120]
+            failed.append(f"{jid} (exit {code}{': ' + said if said else ''})")
+            failed_ids.append(f"{jid}@{st.get('last_exit_at')}")
+    # One finding per kind, not per job: after an outage every window of the day closes at once, and
+    # twenty-six separate warnings bury the one that matters.
+    # An empty list is an OK finding, not no finding: that is what lets the notifier say "cleared"
+    # once, instead of leaving the warning's state behind with nothing ever announcing the end.
+    findings = []
+    if failed:
+        findings.append(
+            Finding(
+                "jobs.failed",
+                WARN,
+                f"{len(failed)} scheduled job(s) failed",
+                _first_few(failed, sep="; ") + ". logs/supervisor.log has the runs.",
+                members=tuple(failed_ids),
+            )
+        )
+    else:
+        findings.append(Finding("jobs.failed", OK, "Scheduled job failures", "none in the last day"))
+    if missed:
+        findings.append(
+            Finding(
+                "jobs.missed",
+                WARN,
+                f"{len(missed)} scheduled job(s) did not run",
+                f"{_first_few(missed)}. Their windows closed before they could start (machine off, "
+                "network down, or held); `run.py ps` lists them.",
+                members=tuple(missed_ids),
+            )
+        )
+    else:
+        findings.append(Finding("jobs.missed", OK, "Missed scheduled jobs", "none in the last day"))
+    return findings
+
+
+def _first_few(items: list[str], n: int = 8, sep: str = ", ") -> str:
+    """The first `n` items and how many more -- a list a person can read on a phone."""
+    head = sep.join(items[:n])
+    return head + (f" and {len(items) - n} more" if len(items) > n else "")
+
+
+def _check_fixed_time_jobs(now: datetime) -> list[Finding]:
+    from . import supersnap
+
+    return _fixed_time_job_findings(supersnap.all_job_states(), now)
 
 
 def _check_holds() -> list[Finding]:
@@ -2208,6 +2533,117 @@ def _recycle_if_stale(svc: dict[str, Any], root: Path, sid: str) -> Finding:
     )
 
 
+def _delivered(results: Any) -> bool:
+    """`notify.delivered`, tolerant of a test double that returns nothing (counted as delivered)."""
+    from cherrypick.notify import delivered
+
+    return delivered(results) if isinstance(results, dict) else True
+
+
+# Pushes that all failed over this window, with at least this many tries, mean delivery is broken.
+_DELIVERY_WINDOW_SECONDS = 2 * 3600
+_DELIVERY_MIN_FAILURES = 3
+
+
+def _delivery_findings(cfg_channels: list[str], sent: list[dict[str, Any]], webhook_set) -> list[Finding]:
+    """Is notification delivery itself working? Pure over the outbound record and a webhook probe.
+    - a configured slack/discord channel with no webhook stored: every push to it is skipped, and
+      skipped pushes are not even recorded -- the one failure the outbound record cannot show;
+    - every recorded push in the window failed (at least `_DELIVERY_MIN_FAILURES`): the webhook is
+      revoked, the service is down, or the network is."""
+    findings = []
+    for ch in ("discord", "slack"):
+        if ch in cfg_channels and not webhook_set(ch):
+            findings.append(
+                Finding(
+                    f"notify.{ch}_webhook",
+                    WARN,
+                    f"{ch} is a notification channel but has no webhook",
+                    f"every {ch} push is skipped. `run.py secrets-set --channel {ch}` stores one.",
+                )
+            )
+    by_channel: dict[str, list[dict[str, Any]]] = {}
+    for e in sent:
+        if e.get("channel") in ("discord", "slack"):
+            by_channel.setdefault(e["channel"], []).append(e)
+    for ch, entries in sorted(by_channel.items()):
+        if len(entries) >= _DELIVERY_MIN_FAILURES and not any(e.get("ok") for e in entries):
+            last = entries[-1]
+            findings.append(
+                Finding(
+                    f"notify.{ch}_failing",
+                    WARN,
+                    f"{ch} pushes are failing",
+                    f"all {len(entries)} {ch} posts in the last {_DELIVERY_WINDOW_SECONDS // 3600} h failed "
+                    f"(last: {last.get('status') or ''} {last.get('error') or ''}). Alerts are reaching the "
+                    "log and any other channel only. `run.py notify-test` tries every channel.",
+                )
+            )
+    return findings
+
+
+def _disk_finding(
+    free_bytes: int, total_bytes: int, warn_gb: float, critical_gb: float, where: str
+) -> Finding:
+    """Free space on the suite's home drive (2026-10-08 audit: nothing watched it). A full disk stops
+    every ledger write, the backup and the logs at once -- and the log floor of every alert with them."""
+    free_gb = free_bytes / 1024**3
+    detail = f"{free_gb:.1f} GB free of {total_bytes / 1024**3:.0f} GB on {where}"
+    if free_gb < critical_gb:
+        return Finding("disk.free", CRITICAL, "Disk almost full", f"{detail}: ledgers and logs fail next.")
+    if free_gb < warn_gb:
+        return Finding("disk.free", WARN, "Disk space low", f"{detail} (warns under {warn_gb:g} GB).")
+    return Finding("disk.free", OK, "Disk space", detail)
+
+
+def _check_disk_space(cfg: dict[str, Any]) -> list[Finding]:
+    import shutil
+
+    ds = cfg.get("disk_space") or {}
+    where = core_home.home()
+    try:
+        usage = shutil.disk_usage(where)
+    except OSError:
+        return []
+    return [
+        _disk_finding(
+            usage.free, usage.total, float(ds.get("warn_gb", 10)), float(ds.get("critical_gb", 2)), str(where)
+        )
+    ]
+
+
+def _check_config_health() -> list[Finding]:
+    """CRITICAL while `config.json` cannot be parsed: the suite is running on the last good copy, so
+    no edit made since then is in effect -- including the one that broke it (2026-10-08 audit)."""
+    marker = util.read_json(cfgmod.broken_marker_path(), default=None)
+    if not marker:
+        return []
+    return [
+        Finding(
+            "config.unreadable",
+            CRITICAL,
+            "config.json is unreadable -- running on the last good copy",
+            f"{marker.get('path')}: {marker.get('error')} (noticed {marker.get('noticed_at')}). Every job "
+            f"is using {marker.get('running_on')}, so changes since it was saved are NOT in effect. "
+            "Fix the file (`run.py config-backup` keeps history if enabled); the warning clears on the "
+            "first good read.",
+        )
+    ]
+
+
+def _check_notify_delivery(cfg: dict[str, Any]) -> list[Finding]:
+    from cherrypick.notify import notifier as _notifier
+    from cherrypick.notify import secrets as _secrets
+
+    since = (datetime.now(timezone.utc) - timedelta(seconds=_DELIVERY_WINDOW_SECONDS)).isoformat()
+    try:
+        sent = _notifier.read_outbound(since=since)
+    except OSError:
+        sent = []
+    channels = list((cfg.get("notify") or {}).get("channels") or [])
+    return _delivery_findings(channels, sent, lambda ch: bool(_secrets.get_webhook(ch)))
+
+
 def _process_notifications(
     findings: list[Finding], notifier: Notifier, renotify_minutes: int, now: datetime | None = None
 ) -> None:
@@ -2226,18 +2662,33 @@ def _process_notifications(
                 except ValueError:
                     elapsed_ok = True
             changed = (prev is None) or (prev.get("status") != f.status)
+            told = set((prev or {}).get("members_told") or ())
+            if f.members and prev and prev.get("last_notified") and "members_told" not in prev:
+                told = set(f.members)  # state saved before members existed: already announced
+            if f.members:
+                # A list of incidents (2026-10-09): re-announced when one joins, never on the clock.
+                # After an outage the list only shrinks through the day as jobs run again, and an
+                # hourly repost of the shrinking list read as a new problem each time.
+                elapsed_ok = bool(set(f.members) - told) or not (prev and prev.get("last_notified"))
             if changed or elapsed_ok:
-                notifier.notify(f.status, f.key, f.title, f.message)
+                sent = _delivered(notifier.notify(f.status, f.key, f.title, f.message))
+                # Stamped as notified only when a push landed (2026-10-08): a failed one is tried
+                # again next tick rather than waiting out `renotify_minutes` -- or forever.
                 state[f.key] = {
                     "status": f.status,
                     "first_seen": (prev or {}).get("first_seen", now.isoformat()),
-                    "last_notified": now.isoformat(),
+                    "last_notified": now.isoformat() if sent else None,
                 }
+                if f.members:
+                    state[f.key]["members_told"] = sorted(set(f.members) if sent else told)
             else:
                 state[f.key] = {**prev, "status": f.status}
+                if f.members:  # saved even unchanged: an adopted pre-upgrade list must stick
+                    state[f.key]["members_told"] = sorted(told)
         else:  # OK
             if prev and prev.get("status") in (WARN, CRITICAL):
-                notifier.notify("INFO", f.key, f"Recovered: {f.title}", f.message)
+                if not _delivered(notifier.notify("INFO", f.key, f"Recovered: {f.title}", f.message)):
+                    continue  # keep the entry: the recovery is announced again next tick
             state.pop(f.key, None)
     _save_state(state)
 
@@ -2412,6 +2863,11 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     # Keep generic background services (e.g. the gex spot-trail recorder) alive.
     findings += _check_services(cfg)
     findings += _check_holds()
+    findings += _check_live_positions(in_session)
+    findings += _check_fixed_time_jobs(now)
+    findings += _check_notify_delivery(cfg)
+    findings += _check_config_health()
+    findings += _check_disk_space(cfg)
     try:
         findings += _check_duplicate_processes(cfg)
     except Exception as exc:

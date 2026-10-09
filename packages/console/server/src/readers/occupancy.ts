@@ -2,6 +2,7 @@ import path from "node:path";
 import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, num, str, armColumnOf } from "./db.js";
+import { NO_ATTEMPTS_SCOPE, type AttemptsScope } from "./attempts.js";
 
 /**
  * Which contracts each arm currently holds, and on which side — the data behind
@@ -89,6 +90,7 @@ export function readOccupancy(
   module: "meic" | "flies",
   mode: TradingMode,
   day: string | null,
+  scope: AttemptsScope = NO_ATTEMPTS_SCOPE,
 ): OccupancyPayload {
   const empty: OccupancyPayload = { mode, module, tradeDate: null, legs: [] };
 
@@ -102,12 +104,23 @@ export function readOccupancy(
       const tradeDate = dayRow?.d ?? null;
       if (tradeDate === null) return empty;
       const armColumn = armColumnOf(db, "ic_trades"); // `risk_profile` until meic's column moves
+      // The page's arm/symbol narrowing, so the map shows what the scoped arm actually holds.
+      const clauses = ["trade_date = ?", "status = 'open'"];
+      const params: string[] = [tradeDate];
+      if (scope.arm !== null) {
+        clauses.push(`${armColumn} = ?`);
+        params.push(scope.arm);
+      }
+      if (scope.symbol !== null) {
+        clauses.push("symbol = ?");
+        params.push(scope.symbol);
+      }
       const rows = db
-        .prepare<[string], Record<string, unknown>>(
+        .prepare<unknown[], Record<string, unknown>>(
           `SELECT ${armColumn} AS arm, put_strike, call_strike, wing_width
-             FROM ic_trades WHERE trade_date = ? AND status = 'open'`,
+             FROM ic_trades WHERE ${clauses.join(" AND ")}`,
         )
-        .all(tradeDate);
+        .all(...params);
       const legs: OccupancyLeg[] = [];
       for (const r of rows) {
         const arm = str(r["arm"]) ?? "?";
@@ -141,13 +154,23 @@ export function readOccupancy(
     // nothing leaves the book before EOD and every structure entered today still
     // constrains a new entry. Voided rows are excluded — the module has disavowed
     // those as evidence, so they constrain nothing.
+    const clauses = ["trade_date = ?", "status != 'voided'", "void_reason IS NULL"];
+    const params: string[] = [tradeDate];
+    if (scope.arm !== null) {
+      clauses.push("arm = ?");
+      params.push(scope.arm);
+    }
+    if (scope.symbol !== null) {
+      clauses.push("symbol = ?");
+      params.push(scope.symbol);
+    }
     const rows = db
-      .prepare<[string], Record<string, unknown>>(
+      .prepare<unknown[], Record<string, unknown>>(
         `SELECT arm, kind, side, center, wing_width, far_width
            FROM fly_positions
-          WHERE trade_date = ? AND status != 'voided' AND void_reason IS NULL`,
+          WHERE ${clauses.join(" AND ")}`,
       )
-      .all(tradeDate);
+      .all(...params);
     const legs: OccupancyLeg[] = [];
     for (const r of rows) {
       const center = num(r["center"]);

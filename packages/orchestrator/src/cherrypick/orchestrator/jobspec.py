@@ -103,6 +103,9 @@ CATCHUP_MINUTES = {
     # still the same edition, so the morning pair catches up to mid-morning; the retry is the
     # second chance, not a second request (a day already saved is skipped). The evening chart
     # capture keys its files by the session of the latest bar, so a late one still files right.
+    # The browser checks (2026-10-09): only useful before the run they check, so a short window.
+    "report-browser-check": 15,
+    "quikoptions-browser-check": 25,
     "report-edition": 180,
     "report-edition-retry": 180,
     "report-charts": 300,
@@ -156,6 +159,26 @@ ADVISOR_LIGHT_SLOTS = ("open", "am1", "am2", "midday", "pm1", "pm2", "close")
 
 # The browser-driven collectors: one browser session on this machine at a time.
 BROWSER_SCRIPTS = frozenset({"fetch_vendor_edition.py", "fetch_quikoptions.py"})
+
+# Fixed-time jobs that send their OWN alert when they fail (2026-10-08). The watchdog's generic
+# failed-job check skips their failures so one fault is one message; a MISSED run is still reported
+# for them, since a job that never started cannot say anything.
+NOTIFIES_OWN_FAILURE = frozenset(
+    {
+        "suite-backup",  # "Nightly backup FAILED"
+        "market-files",  # "Market files incomplete"
+        "market-files-retry",
+        "report-edition",  # the vendor collector's own warnings
+        "report-edition-retry",
+        "report-charts",
+        "quikoptions-capture",  # its own throttle / needs-a-person warnings
+        "report-browser-check",  # `smoke` warns on its own: browser would not start / signed out
+        "quikoptions-browser-check",
+        "review-provisional",  # "Suite review (...) failed"
+        "review-final",
+        "reconcile",  # its scheduled run pushes every non-FLAT verdict; the exit code is the verdict
+    }
+)
 
 # Fixed-time jobs that may run again after a failure, inside their catch-up window: fetchers that
 # are safe to repeat (each writes per-day files, or replaces the day it already wrote). The vendor
@@ -426,6 +449,13 @@ def _dolt_data_script(launcher: str) -> str:
 
 def _pmcc_earnings_script(launcher: str) -> str:
     return _suite_script(launcher, "pmcc_earnings_refresh.py")
+
+
+def _minutes_before(hhmm: str, minutes: int) -> str:
+    """ "HH:MM" `minutes` earlier, wrapping at midnight. Pure."""
+    h, m = (int(x) for x in str(hhmm).split(":"))
+    total = (h * 60 + m - minutes) % (24 * 60)
+    return f"{total // 60:02d}:{total % 60:02d}"
 
 
 def _vendor_collector_script(launcher: str) -> str:
@@ -1149,6 +1179,10 @@ def derive_jobs(
     else:
         mr_reason = "disabled in config (market_report.collector)"
     for job_id, at, sub in (
+        # A local check ~20 min before the morning fetch: the browser starts under the service and
+        # the session is still signed in -- warned in time for a person to sign in (`smoke`, never
+        # a site visit).
+        ("report-browser-check", _minutes_before(mr["edition_at"], 20), "smoke"),
         ("report-edition", mr["edition_at"], "edition"),
         ("report-edition-retry", mr["edition_retry_at"], "edition"),
         ("report-charts", mr["charts_at"], "charts"),
@@ -1169,6 +1203,60 @@ def derive_jobs(
                 enabled_reason=mr_reason,
             ),
         )
+    from . import powerwatch as _powerwatch
+
+    pw = _powerwatch.settings(cfg)
+    add(
+        "power-watch",
+        lambda: JobSpec(
+            id="power-watch",
+            # Offline and local: Windows' power status and one state file. Every minute, every day --
+            # a laptop runs down on a Saturday too -- and the script keeps the 15-minute repeat, so
+            # this interval only bounds how late the first alert can be (2026-10-08 outage).
+            argv=_run_py(pythonw, launcher, "power-watch"),
+            kind=KIND_INTERVAL,
+            interval_seconds=60,
+            enabled=bool(pw["enabled"]),
+            enabled_reason="" if pw["enabled"] else "disabled in config (power_watch.enabled)",
+        ),
+    )
+    from . import livepositions as _livepositions
+
+    lp = _livepositions.settings(cfg)
+    add(
+        "live-positions",
+        lambda: JobSpec(
+            id="live-positions",
+            # Read-only broker positions vs the live ledgers (safeguard 2(c), 2026-10-08). Asks the
+            # broker only while a live module is armed or holds a ledger leg; the watchdog reads the
+            # verdict it leaves behind.
+            argv=_run_py(pythonw, launcher, "live-positions"),
+            kind=KIND_INTERVAL,
+            interval_seconds=int(lp["interval_seconds"]),
+            window_start=lp["start"],
+            window_end=lp["end"],
+            trading_days_only=True,
+            enabled=bool(lp["enabled"]),
+            enabled_reason="" if lp["enabled"] else "disabled in config (live_positions.enabled)",
+        ),
+    )
+    los = cfg.get("live_settle_overdue") or {}
+    add(
+        "settle-overdue-live",
+        lambda: JobSpec(
+            id="settle-overdue-live",
+            # Catch-up settlement of a past live session left open (item 4, 2026-10-08): official
+            # close only. Hourly, every day -- the ledgers are read locally and the network is asked
+            # only when a session is overdue, so a quiet hour costs two SQLite queries.
+            argv=_run_py(pythonw, launcher, "settle-overdue-live"),
+            kind=KIND_INTERVAL,
+            interval_seconds=int(los.get("interval_seconds", 3600)),
+            enabled=bool(los.get("enabled", True)),
+            enabled_reason=""
+            if los.get("enabled", True)
+            else "disabled in config (live_settle_overdue.enabled)",
+        ),
+    )
     add(
         "report-session-alert",
         lambda: JobSpec(
@@ -1255,6 +1343,15 @@ def derive_jobs(
         # Scripts, not packages: the capture signs in to a third-party site (paced, one session, a
         # 24-hour cooldown after a refusal), scoring and confirming read the broker (read-only market
         # data), and the posts push a webhook. A day with no capture leaves the rest nothing to do.
+        # The same local check, half an hour before the capture (`smoke`, never a site visit).
+        (
+            "quikoptions-browser-check",
+            _minutes_before(qo["at"], 30),
+            "fetch",
+            ("smoke",),
+            qo["enabled"],
+            qo_off,
+        ),
         ("quikoptions-capture", qo["at"], "fetch", capture_argv, qo["enabled"], qo_off),
         (
             "quikoptions-score",

@@ -53,6 +53,14 @@ session), so "waiting for a credit" and "cannot read the chain" never share a si
 per position**, then the trigger disarms for good. Armed until expiry, no cutoff. After firing,
 **hold everything to expiry** on every book — early exit is reserved for a future experiment.
 
+**A missed add-on is skipped for good** (`bwb addon-missed --position-id ... --reason ... --apply`,
+dry run without `--apply`). When the loop was down while a trigger may have been met (the
+2026-10-08 power outage, 10:35-16:00 ET), the trigger is not reconstructed (rules 4 and 7): the
+position is stamped `addon_missed_at`/`addon_missed_reason`, management holds it as
+`addon_missed` and never arms or fires it, its latches keep updating, and `fire_counts` reports it
+as `missed`, outside the fire rate. A later measured fire would be a different, later trade than the
+rule would have made.
+
 **Trigger cadence**: the in-session 60s resident loop, not the entry tick. Triggers are defined on
 the 60s SAMPLED series, so the loop cadence is part of the instrument — changing it is a journaled
 measurement break (flies' 60s→15s precedent).
@@ -138,6 +146,9 @@ affecting.
 10. **Never pool across a journaled break.** `trigger_ticks_unmeasured` (2026-08-24..27, every row
     `measured = 0`) must not pool with later rows; rows before 2026-09-18 carry an overstated
     `entry_max_loss` and a doubled body settlement fee, derivable and not rewritten (history doc).
+11. **Implied variance at entry is recorded, never acted on** (2026-10-09). `entry_iv_vol` with
+    `entry_iv_complete = 0` is a lower bound (the cache's strike window cut the wings); rows before
+    2026-10-09 carry none.
 
 SPX is cash-settled and European: an expiring leg books intrinsic against the settlement print; no
 shares, no assignment, no dividend calendar. The event fee lands the next business day.
@@ -147,9 +158,11 @@ shares, no assignment, no dividend calendar. The event fee lands the next busine
 Built to test whether the paper result survives a fill without disturbing the paper books.
 
 - **Gating** (guardrail): `live.enabled`, `live.gate0_confirmed`, a per-day arm record
-  (`/live-bwb-start`, a literal YES each day), a designated account, no suite halt flag, and
-  `live.arm` naming a base book — every one re-checked on every tick and every submission, all
-  guarded from the settings surface. Never run `--install-task` outside `/live-bwb-start`.
+  (`/live-bwb-start`, a literal YES each day), a designated account, and `live.arm` naming a base
+  book — every one re-checked on every tick and every submission, all guarded from the settings
+  surface. **The suite halt flag stops new risk only** (2026-10-08): the entry is refused
+  (`halt_flag_present`) and an armed add-on deferred, while fills are confirmed, resting orders
+  managed and the ladder settled. Never run `--install-task` outside `/live-bwb-start`.
 - **The structure is the paper structure.** `engine.plan_entry` plans it; `live_orders.entry_spec`
   only collapses the body into one sell leg at double quantity with a limit (mid minus
   `entry_concession`, floored to the nickel). Live-only rules REFUSE, never reshape: the
@@ -195,6 +208,8 @@ Built to test whether the paper result survives a fill without disturbing the pa
 | `management.py` | per-book verdicts (arm/fire/hold) + advised-params choke point. Pure. |
 | `book.py` | decisions -> ledger rows; add-on legs; cash settlement. |
 | `paper_loop.py` | entry tick, 60s trigger/mark loop, expiry settle. |
+| `entry_iv.py` | the expiration's model-free implied variance (`cherrypick.core.impliedvar`), read from the cache at entry and stored on the position row (`entry_iv_*`). Recording only; a cut-off strip is `entry_iv_complete = 0`, a lower bound; a reading not taken stores its reason and no number. |
+| `iv_premium.py` | read-side: implied at entry against realised to expiry from the position's own spot marks (5-min samples, ending on the settlement print), one row per (entry session, expiration) window, arms counted once. A path that starts late, ends early or has an in-session hole over 15 min is refused, never estimated (`bwb iv-premium`). |
 | `analytics.py` | the one query layer: nets, fire counts, trigger-tick coverage. |
 | `replay.py` | read-side threshold replay over `bwb_trigger_ticks` — a stubbed fast-follow. |
 | `addon_replay.py` | the add-on scored as its own trade (`bwb addon-replay`). |
@@ -212,6 +227,7 @@ python -m cherrypick.bwb.paper_loop --interval 60 # the in-session resident loop
 python -m cherrypick.bwb.paper_loop --status      # one JSON health object (watchdog contract)
 python -m cherrypick.bwb.paper_loop --settle --date 2026-09-18 --price 6400.10  # official print
 python run.py status | worksheet | fires          # positions + expiration / worksheet / fire counts
+python run.py iv-premium [--windows]            # implied at entry vs realised to expiry, per window
 python -m pytest                                  # temp CHERRYPICK_HOME; no broker, no streamer
 ruff check . && ruff format .                     # line-length 110
 

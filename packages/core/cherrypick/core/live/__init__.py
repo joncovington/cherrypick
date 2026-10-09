@@ -10,8 +10,8 @@ Hoisted from flies' live loop on 2026-09-18 when bwb became the second module to
 Everything the record MEANS lives here so the second module cannot drift from the first: the
 filename convention (which the orchestrator's `supervisor.arm_record_path` mirrors off its own
 patchable state dir), what a record contains, the two ways a tick decides it must disarm, and the
-rule that under a live supervisor arming is a record write and nothing else. flies' legacy
-schtasks fallback stays in flies; it is a transition-window path no second module needs.
+rule that under a live supervisor arming is a record write and nothing else. Without a supervisor
+there is no arming at all (flies' Windows-only scheduled-task fallback was removed 2026-10-08).
 """
 
 from __future__ import annotations

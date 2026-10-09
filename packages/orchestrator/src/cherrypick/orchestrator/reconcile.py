@@ -274,6 +274,29 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     }
 
 
+def summary(result: dict[str, Any]) -> str:
+    """The pushed message: what is wrong, in a line or two (2026-10-09). The whole report --
+    paper context, separators, a 900-character traceback with interpreter paths -- stays in the log
+    and in `run.py reconcile`."""
+    broker = result.get("broker") or {}
+    if not broker.get("reachable"):
+        detail = str(broker.get("detail") or "unavailable")
+        if "TimeoutExpired" in detail:
+            detail = "the broker did not answer within 35 s"
+        return (
+            f"Could not check the real accounts: {detail[:200]}. "
+            "Nothing is known to be wrong; it retries tomorrow."
+        )
+    lines = []
+    for a in broker.get("accounts") or []:
+        acct = a.get("account", "****")
+        if a.get("error"):
+            lines.append(f"{acct}: could not read ({str(a['error'])[:120]})")
+        elif a.get("open_positions") and not a.get("designated"):
+            lines.append(f"{acct}: {len(a['open_positions'])} open position(s) in a paper-only account")
+    return "; ".join(lines) or "See `run.py reconcile`."
+
+
 def format_report(result: dict[str, Any]) -> tuple[str, int]:
     """Human-readable CLI report + a worst-rank (0 flat, 1 unknown, 2 drift) for the exit code."""
     verdict = result.get("verdict", UNKNOWN)

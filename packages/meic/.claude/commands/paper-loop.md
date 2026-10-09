@@ -14,17 +14,15 @@ Report the per-symbol, per-profile outcomes from the JSON it prints (fills, skip
 
 ## Unattended session
 
-For a full session that runs on its own without per-iteration invocation, use `/paper-start`, which registers a Windows scheduled task running `--once` every 2 minutes (robust, self-healing, persists across sessions, time-gated to market hours). Manage it directly with:
+A full unattended session is the orchestrator supervisor's `meic-paper` job (`--once` on the configured cadence, time-gated to market hours, on every OS); `/paper-start` checks it is being driven. Useful by hand:
 
 ```bash
-python -m cherrypick.meic.paper_loop --install-task    # register + fire the first run (recommended)
-python -m cherrypick.meic.paper_loop --status          # daemon/task status + open-position count
-python -m cherrypick.meic.paper_loop --uninstall-task  # stop the unattended session
+python -m cherrypick.meic.paper_loop --status          # daemon status + open-position count
 python -m cherrypick.review build --session <date>      # the suite review for one session (all modules)
 ```
 
 The daemon also writes that deterministic end-of-day report automatically, once, at the 16:00 settlement pass — a per-profile metrics table (trades, win rate, net P&L, expectancy, profit factor, max drawdown), an exits-by-reason breakdown, and per-symbol P&L. It's code-generated (no agent), distinct from the agent-synthesized `/paper-report`.
 
-On non-Windows hosts, run `python -m cherrypick.meic.paper_loop` in a terminal (or wire a cron job to `--once`). A long-running detached daemon (`--start`) also exists but is less robust on Windows than the scheduled task.
+Without the supervisor, run `python -m cherrypick.meic.paper_loop` in a terminal. A long-running detached daemon (`--start`) also exists but is less robust on Windows than the supervisor. The module's own Windows scheduled task (`--install-task`) was removed on 2026-10-08.
 
 Details of the metrics, gates, force-close cascade, and graduation criteria are in `docs/paper-trading.md`.

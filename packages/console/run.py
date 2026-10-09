@@ -47,6 +47,14 @@ def _child_env() -> dict[str, str]:
     # .venv/bin/python is what gives a process the venv's site-packages).
     here = str(Path(sys.executable).absolute().parent)
     env["PATH"] = here + os.pathsep + env.get("PATH", "")
+    # And name it outright, for the server's `suitePython()`: PATH alone failed where the venv holds
+    # only `python3`, or a bare `python` resolved elsewhere (2026-10-08 OS audit). pythonw (the
+    # supervisor's windowless interpreter) maps to its python.exe twin -- every bridge reads stdout.
+    if not env.get("CHERRYPICK_PYTHON"):
+        exe = Path(sys.executable).absolute()
+        if exe.stem.lower() == "pythonw" and exe.with_name("python" + exe.suffix).exists():
+            exe = exe.with_name("python" + exe.suffix)
+        env["CHERRYPICK_PYTHON"] = str(exe)
     return env
 
 

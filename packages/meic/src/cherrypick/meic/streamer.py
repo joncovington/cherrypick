@@ -852,7 +852,11 @@ def _running_pid(pid_file: Path = _PID_FILE) -> int | None:
 
         alive = psutil.pid_exists(pid)
     except ImportError:
+        # Windows asks OpenProcess; POSIX asks os.kill(pid, 0). It used to reach POSIX only through the
+        # AttributeError of a missing ctypes.windll (2026-10-08 OS audit) -- correct by accident.
         try:
+            if os.name != "nt":
+                raise OSError("not windows")
             import ctypes
 
             SYNCHRONIZE = 0x00100000

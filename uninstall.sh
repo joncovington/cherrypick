@@ -17,14 +17,20 @@ echo "==> Stopping the streamer, the console and anything else still running"
 
 # The Dolt server the earnings module kept alive, if it is on its usual port. Only a process that is
 # actually `dolt` is stopped; anything else on the port is left alone.
+# lsof when present; otherwise the suite's own probe (/proc on Linux), since a minimal server often
+# has no lsof and Dolt was left running there.
 if command -v lsof >/dev/null 2>&1; then
-    for pid in $(lsof -ti tcp:3306 -sTCP:LISTEN 2>/dev/null); do
-        if [ "$(ps -p "$pid" -o comm= 2>/dev/null | xargs basename 2>/dev/null)" = dolt ]; then
-            echo "==> Stopping the Dolt server"
-            kill "$pid"
-        fi
-    done
+    DOLT_PIDS="$(lsof -ti tcp:3306 -sTCP:LISTEN 2>/dev/null)"
+else
+    DOLT_PIDS="$(PYTHONPATH="$ROOT/packages/orchestrator/src" "$VPY" -c \
+        'from cherrypick.orchestrator.util import port_owner_pid; print(port_owner_pid(3306) or "")' 2>/dev/null)"
 fi
+for pid in $DOLT_PIDS; do
+    if [ "$(ps -p "$pid" -o comm= 2>/dev/null | xargs basename 2>/dev/null)" = dolt ]; then
+        echo "==> Stopping the Dolt server"
+        kill "$pid"
+    fi
+done
 
 echo
 echo "cherrypick is stopped and will not restart. Your data and settings are kept in ~/.cherrypick."

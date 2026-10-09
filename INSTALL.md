@@ -23,7 +23,7 @@ the suite does once it is running, see the [README](README.md) and the [User Gui
 | git | Optional | Downloading the ZIP from GitHub works just as well. |
 | [Dolt](https://github.com/dolthub/dolt) | Optional | Needed only by the **earnings** module and the **technicals** report. It serves three public DoltHub datasets: `stocks` (about 3 GB), `earnings` (about 1.35 GB) and `options` (large — the biggest of the three). Without it, those two features are switched off and hidden. |
 | [Claude Code](https://docs.claude.com/en/docs/claude-code) | Optional | Needed only by the AI advisor and the end-of-day and morning narratives, and for the repo's slash commands. Without it, those features are switched off and hidden. |
-| A machine that stays awake in market hours | **Yes** | It runs on your computer, not a cloud service. Windows is the most proven platform (see [below](#macos-and-linux)). |
+| A machine that stays awake in market hours | **Yes** | It runs on your computer, not a cloud service. Windows is the most proven platform (see [below](#macos-and-linux)); on Windows, see [Leaving a Windows PC unattended](#leaving-a-windows-pc-unattended). |
 
 The installers check Python and Node before doing anything else, and print the command to install
 whichever is missing.
@@ -48,6 +48,10 @@ whichever is missing.
    git checkout (git describe --tags --abbrev=0 origin/main)   # the latest release
    .\install.cmd
    ```
+3. **Set the PC up to run unattended:** Windows Update's restart hours, sleep, power cuts, and how
+   the suite comes back after a restart. See
+   [Leaving a Windows PC unattended](#leaving-a-windows-pc-unattended). The installer checks the
+   update hours and warns if Windows could restart during the suite's day.
 
 ## macOS and Linux
 
@@ -70,6 +74,36 @@ whichever is missing.
 On macOS and Linux the supervisor's anchor is a tagged entry in your user crontab. That backend is
 newer than the Windows Task Scheduler one and less proven on a real host — check
 `python packages/orchestrator/run.py status` after the first trading session, and report anything odd.
+
+Cron gives a job almost no environment, so **run the installer from the shell you normally use**.
+Each crontab entry the suite writes carries that shell's `PATH` (so `node`, `dolt` and `claude` are
+found), `PYTHON_KEYRING_BACKEND` if you set one, the session D-Bus on Linux, and
+`TZ=America/New_York`. That last one keeps a host on UTC or Pacific time from dating an evening
+job with the wrong session. If you later install Node, Dolt or Claude somewhere new, run
+`./install.sh` again to refresh the entries.
+
+**Where the broker login is kept:**
+
+| Host | Keyring | What to do |
+|---|---|---|
+| macOS | Keychain | Works while you are logged in. A Mac logged out or with a locked keychain refuses cron's read; stay logged in during market hours. |
+| Linux laptop or desktop | Secret Service (GNOME Keyring, KWallet) over D-Bus | Works while you are logged in to the desktop, since your login unlocks it. |
+| Headless Linux server | none | There is nothing to store the login in, and the installer's broker-login step fails with "No keyring backend available." Add a file backend and run it again: `.venv/bin/pip install keyrings.alt`, `export PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring`, then `./install.sh` from that same shell (its crontab entries keep the setting). This stores the login unencrypted under `~/.local/share/python_keyring/`, readable by your user, so keep the account to yourself. `keyrings.cryptfile` encrypts, but it asks for a password on every read and cannot run unattended. |
+
+The `desktop` notification channel uses the notification centre on macOS and `notify-send` on Linux,
+and only reaches you while you are logged in. For an alert that always arrives, set up a Discord or
+Slack webhook (`run.py connect`, or `run.py secrets-set --channel discord`).
+
+The optional browser collectors use Playwright, which no installer adds. Install it into `.venv`
+yourself (`.venv/bin/pip install playwright`), then add the browsers:
+- **QuikOptions** needs Google Chrome itself: install it the usual way on macOS, or run
+  `.venv/bin/playwright install chrome` on x86-64 Linux. There is no Chrome for Linux on ARM.
+- **The screener collector** uses Playwright's own Chromium:
+  `.venv/bin/playwright install --with-deps chromium`. On Linux this installs system libraries and
+  needs sudo.
+
+Both run headless on schedule. Signing in the first time opens a visible browser, so a headless
+server needs a display for that one step (a desktop session, VNC or `xvfb-run`).
 
 Install from a release, not from `main`: `main` is where development happens and is often ahead of
 the latest release. The git lines above check out the newest release tag, which leaves git in
@@ -198,6 +232,105 @@ running. Double-click **`console-desktop.cmd`** in the installation folder on Wi
 **`./console-desktop.sh`** there on macOS and Linux. Both run `pnpm start` in
 `packages/console/desktop`, which builds the shell first, so the first launch takes a minute. Keep the
 terminal it opens; closing the console window ends it.
+
+## Leaving a Windows PC unattended
+
+The suite runs on your computer, so the computer has to be on, awake and running it all trading
+day. On Windows that means four settings, plus a choice of how the suite comes back after a
+restart.
+
+**1. Windows Update restart hours.** Windows installs updates by itself and restarts outside its
+*active hours*. By default that is whenever it judges the PC idle, which can fall right on the
+morning data fetches or a live session. Windows Home cannot turn automatic updates off, and you
+would not want it to: security fixes matter on a machine that holds your broker login. Move the
+restarts out of the suite's day instead:
+
+- Settings → Windows Update → Advanced options → **Active hours**: set it to **Manually** and cover
+  the suite's day. Its jobs run from about **05:30 to 20:00 Eastern**. Windows allows 18 hours at
+  most, so on Mountain time 03:00–21:00 is a good choice (05:00–23:00 Eastern). Restarts then
+  happen overnight, when nothing but the backup runs, and the backup catches up.
+- In the same place, turn **Get the latest updates as soon as they're available** off. That keeps
+  the security fixes and drops the early feature updates.
+
+`run.py install` and `run.py doctor` check this for you (`windows_update`). They read the active
+hours, compare them with the suite's own schedule on this PC's clock, and warn with the exact
+hours to set when a restart could land inside the suite's day.
+
+**2. Sleep.** Settings → System → Power: set **Sleep when plugged in** to **Never**. A sleeping PC
+runs nothing. On battery the suite warns you every 15 minutes (`power-watch`).
+
+**3. Power cuts.** In the PC's BIOS/UEFI setup, set **Restore on AC Power Loss** (some boards call
+it "AC Back" or "After Power Failure") to **Power On**. The PC then boots by itself when power
+returns. Without it, a power cut leaves the machine off until someone presses the button.
+
+**4. Coming back after a restart: pick one.**
+
+- **Stay signed in (the default).** The suite's 2-minute check runs only while you are signed in,
+  so turn on Windows **auto-logon** (Sysinternals *Autologon* sets it up safely) and lock the
+  screen at every sign-in, so the signed-in desktop is not left open:
+  ```
+  schtasks /Create /TN LockOnLogon /SC ONLOGON /TR "rundll32.exe user32.dll,LockWorkStation" /RL LIMITED
+  ```
+  If your Windows account is a Microsoft account, auto-logon stops working after the password
+  changes (the login screen shows a network error at boot). Run Autologon again with the new
+  password.
+- **Run as a Windows service (nobody signed in).** The PC boots to the login screen, and the suite
+  runs anyway. See the next section.
+
+## Optional: run as a Windows service (nobody logged on)
+
+The suite's supervisor can run as a Windows service, so it starts at boot without anyone signing
+in. This is opt-in and off until you turn it on.
+
+1. Download `WinSW-x64.exe` (version 2.x) from the
+   [WinSW releases page](https://github.com/winsw/winsw/releases).
+2. In `~/.cherrypick/config.json`, set `service.enabled` to `true` and `service.winsw_exe` to the
+   downloaded file's path.
+3. Run `python packages/orchestrator/run.py service prepare`. It writes the service definition
+   (with the PATH Windows gives you at sign-in, so `node`, `dolt` and `claude` are found) and
+   prints five commands.
+4. Run them in that order, in an **administrator** PowerShell:
+   1. **Install.** It asks for your Windows account and password, which Windows stores; they
+      never go in a file. Enter the account as **`.\yourname`** (a bare name is refused). If your
+      Windows account is a Microsoft account, the password is your **Microsoft account
+      password**, not your PIN.
+   2. **Grant "Log on as a service".** The install does not always grant this right. Windows Home
+      has no Local Security Policy editor, so the suite's script
+      (`scripts\windows\grant-logon-as-service.ps1`) grants it with Windows' own `secedit`. It is
+      safe to run twice.
+   3. **Stop the running supervisor**, so the service can take over (no administrator needed).
+   4. **Start the service.**
+   5. **Let the 2-minute check run while you are signed out.** It asks for your password again.
+      The service restarts a supervisor that exits, but the check is what restarts one that hangs.
+      In Task Scheduler this shows as "Run whether user is logged on or not".
+5. Restart the PC once, leave it at the login screen for five minutes, then sign in and run
+   `run.py doctor`. The `service` line should say running, and `supervisor.log` should show the
+   supervisor starting before you signed in. Then turn auto-logon off and delete `LockOnLogon`.
+
+**If the service will not start**, Windows' System event log (Event Viewer → Windows Logs →
+System, source *Service Control Manager*) says why:
+
+- **7038, "user name or password is incorrect":** re-enter the password in the Services app
+  (`services.msc` → *cherrypick supervisor* → Properties → **Log On**). On a Microsoft account,
+  Windows must have seen that password at a sign-in on this PC: if you always use a PIN, sign out
+  and sign in once with the password first.
+- **7041, "not been granted the requested logon type":** run step 4.2 again.
+
+Until it starts, the 2-minute check gives the service 5 minutes to recover, then runs the
+supervisor the usual way and sends a CRITICAL saying so. The suite keeps running either way.
+
+**Living with it:**
+
+- **Nothing appears on screen.** Desktop notifications are skipped, so use Discord or Slack. A
+  collector whose website sign-in has expired is caught by its morning browser check, which warns
+  you; sign in from your desktop with its `login` command.
+- **After updating the code,** run `run.py supervise --restart`. The service brings the
+  supervisor back with the new code in about 30 seconds. A plain `--stop` would leave the service
+  stopped until an administrator starts it.
+- **After changing your Windows password** (for a Microsoft account, changing it online counts),
+  re-enter it in two places: the Services app's Log On tab, and Task Scheduler (*cherrypick-supervisor*
+  → Properties → OK, then the password). Until then the suite cannot start at boot.
+- To undo it all, run `run.py service uninstall` and follow what it prints.
 
 ## Stopping and uninstalling
 

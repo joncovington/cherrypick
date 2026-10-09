@@ -5,6 +5,6 @@ before any push channel is attempted, and a push-channel failure can never suppr
 This is the minimum form of the walk-away promise — "notified, or at least warned through logging."
 """
 
-from .notifier import Notifier, notify
+from .notifier import Notifier, delivered, notify
 
-__all__ = ["Notifier", "notify"]
+__all__ = ["Notifier", "delivered", "notify"]

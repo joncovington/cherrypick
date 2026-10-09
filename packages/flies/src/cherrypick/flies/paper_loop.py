@@ -16,7 +16,6 @@ import argparse
 import json
 import logging
 import os
-import subprocess
 import sys
 import time
 
@@ -54,7 +53,6 @@ RTH_CLOSE_MIN = 16 * 60
 # notice. MEIC uses this same self-trigger for its EOD report.
 DEFAULT_SETTLE_MIN = 16 * 60 + 20
 
-_TASK_NAME = "cherrypick-flies-paper-loop"
 # Cadence history — load-bearing for THIS strategy in a way it is not for MEIC: the completing
 # spread of a legged fly can cheapen transiently, so a slower poll measures a lower completion rate
 # — the module's headline number — for reasons that have nothing to do with the market. Any discrete
@@ -67,8 +65,8 @@ _TASK_NAME = "cherrypick-flies-paper-loop"
 # resident `--interval` loop at the orchestrator-configured cadence (15s) — supervised
 # (restart-on-death, restart-on-silence), which is the reliability model that going sub-minute
 # always required — while off-session ticks stay `--once` spawns so settlement, retries, and the
-# idle heartbeat keep their shape. _TASK_INTERVAL_MIN survives only for the legacy standalone
-# schtasks path (`--install-task`) and the off-session heartbeat rate-limit below.
+# idle heartbeat keep their shape. _TASK_INTERVAL_MIN survives only for the off-session heartbeat
+# rate-limit below (the module's Windows scheduled-task launcher was removed on 2026-10-08).
 _TASK_INTERVAL_MIN = 1
 _NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
@@ -860,78 +858,6 @@ def _pythonw() -> str:
     return candidate if os.path.exists(candidate) else sys.executable
 
 
-def task_installed() -> bool:
-    if os.name != "nt":
-        return False
-    r = subprocess.run(
-        ["schtasks", "/Query", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
-    )
-    return r.returncode == 0
-
-
-def install_task() -> dict:
-    """Register the recurring loop.
-
-    One task, running `--once` every couple of minutes. `--once` is internally gated — out of hours
-    it is a clean no-op, after the close it settles once — so the schedule carries no session logic
-    of its own and cannot disagree with the engine about when the day starts or ends.
-    """
-    if os.name != "nt":
-        return {
-            "ok": False,
-            "error": "scheduled-task install is Windows-only; elsewhere run "
-            "`python src/paper_loop.py --interval 120` or use cron",
-        }
-    # `-m` rather than an absolute script path: the registered task no longer bakes in this
-    # file's location. Requires cherrypick-flies installed in this interpreter (scripts/dev-install).
-    tr = f'"{_pythonw()}" -m cherrypick.flies.paper_loop --once'
-    r = subprocess.run(
-        [
-            "schtasks",
-            "/Create",
-            "/TN",
-            _TASK_NAME,
-            "/TR",
-            tr,
-            "/SC",
-            "MINUTE",
-            "/MO",
-            str(_TASK_INTERVAL_MIN),
-            "/F",
-            "/IT",
-        ],
-        capture_output=True,
-        text=True,
-        creationflags=_NO_WINDOW,
-    )
-    ok = r.returncode == 0
-    if ok:  # fire once now so the first tick isn't up to two minutes away
-        subprocess.run(
-            ["schtasks", "/Run", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
-        )
-    return {
-        "ok": ok,
-        "task": _TASK_NAME,
-        "cadence": f"every {_TASK_INTERVAL_MIN} min",
-        "detail": (r.stdout or r.stderr).strip(),
-    }
-
-
-def uninstall_task() -> dict:
-    if os.name != "nt":
-        return {"ok": False, "error": "Windows-only"}
-    subprocess.run(
-        ["schtasks", "/End", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
-    )
-    r = subprocess.run(
-        ["schtasks", "/Delete", "/TN", _TASK_NAME, "/F"],
-        capture_output=True,
-        text=True,
-        creationflags=_NO_WINDOW,
-    )
-    return {"ok": r.returncode == 0, "task": _TASK_NAME, "detail": (r.stdout or r.stderr).strip()}
-
-
 def run_status(config: dict, conn, *, cache_path: str) -> dict:
     """Health view for the orchestrator: is the upstream cache there, and what has this module done
     today? Deliberately file-only — no broker, no network — so it stays safe on a watchdog path."""
@@ -965,8 +891,6 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
         "in_session": in_session(provider.minute_of_day(when)),
         # The orchestrator's watchdog reads this to tell "the loop is registered and quiet" from
         # "nothing is scheduled at all" — which look identical in an empty paper DB.
-        "scheduled_task": task_installed(),
-        "task_name": _TASK_NAME,
         "session_settled": session_already_settled(conn, today),
         "stream_cache": cache_path,
         "stream_cache_present": os.path.exists(cache_path),
@@ -1008,24 +932,9 @@ def main(argv=None) -> int:
     ap.add_argument("--settle", action="store_true", help="cash-settle today's books")
     ap.add_argument("--price", type=float, help="explicit settlement price (see --settle)")
     ap.add_argument("--status", action="store_true")
-    ap.add_argument(
-        "--install-task",
-        action="store_true",
-        help=f"register the recurring {_TASK_NAME} task (every {_TASK_INTERVAL_MIN} min; Windows)",
-    )
-    ap.add_argument("--uninstall-task", action="store_true")
     ap.add_argument("--date", help="a session day (YYYY-MM-DD); default today")
     ap.add_argument("--force", action="store_true", help="ignore the RTH session gate")
     args = ap.parse_args(argv)
-
-    # Task registration touches no config and no database, so handle it before either is opened —
-    # `--install-task` must work on a machine that has not been configured yet.
-    if args.install_task:
-        print(json.dumps(install_task(), indent=2))
-        return 0
-    if args.uninstall_task:
-        print(json.dumps(uninstall_task(), indent=2))
-        return 0
 
     config = climod.load_config(args.config)
     cache_path = args.stream_cache or stream_cache_path(config)

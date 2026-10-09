@@ -209,6 +209,12 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
     - Their rules are `setups.STUDIED`: study-only, and kept out of `SETUPS`/`RUN`, so the chart
       and round 1 are unchanged.
     - `Readings` carries the Vortex and RSI divergence they read.
+  - **Round 4** (`round4.py`, `study round4`) scored the vendor's relative-strength breakout (price
+    and price/SPY at a 21-session high), with and without its 1.5x volume rule. It was tested only
+    on the $20M-$300M slice an exploratory look never saw. Both are worse than random entry
+    (docs/setups.md, "Round 4").
+    - Its rules read SPY as well as the name, so they live in `round4.py`, not `setups.RULES`.
+      `setups.STUDIED` holds only their records.
   - **Dolt's split table misses many splits before 2014** (KO, NKE, GILD, TJX, IBB, BEN, DUK...;
     254 suspects on in-universe days). `history.suspected_actions` flags an unexplained 40%+ jump
     whose opening gap is a clean split ratio. The study excludes positions and draws held through
@@ -259,4 +265,5 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals study run [--workers N]` | The historical study under analysis plan v2; writes `study/history-results-<stamp>.json`. |
 | `python -m cherrypick.technicals study round2 --stage A\|B [--workers N]` | Round 2's declared improvements, discovery on half A, confirmation on half B. |
 | `python -m cherrypick.technicals study round3 [--workers N]` | Round 3: Supertrend + Vortex and squeeze + RSI divergence, long and short, against the random and the matched baseline; writes `study/round3-<stamp>.json`. |
+| `python -m cherrypick.technicals study round4 [--workers N]` | Round 4: the relative-strength breakout, with and without volume, on the $20M-$300M slice; writes `study/round4-<stamp>.json`. |
 | `python -m cherrypick.technicals report [--session D]` | Write one session's report readings and per-name chart files. |

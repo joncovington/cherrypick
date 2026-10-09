@@ -569,7 +569,7 @@
     }
   },
   "notify": {
-    "_channels_note": "Push channels are OFF by default: only 'log' (always on, the floor) is listed, and the console's own on-screen toasts need no setting. Add 'desktop', 'slack', 'discord' or 'telegram' to turn one on. Push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord', 'telegram'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord); Telegram needs a bot token and chat ID (cherrypick secrets-set --channel telegram). Never in this file or env vars.",
+    "_channels_note": "Push channels are OFF by default: only 'log' (always on, the floor) is listed, and the console's own on-screen toasts need no setting. Add 'desktop' (Windows balloon, macOS notification centre, Linux notify-send), 'slack', 'discord' or 'telegram' to turn one on. push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord', 'telegram'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord); Telegram needs a bot token and chat ID (cherrypick secrets-set --channel telegram). Never in this file or env vars.",
     "channels": ["log"],
     "trade_channels": ["log"],
     "desktop_app_name": "cherrypick",
@@ -631,6 +631,35 @@
     "iv_rank_at": "18:50",
     "_comment_liquidity_at": "The nightly liquidity verdict (python -m cherrypick.technicals liquidity, local data only): a name failing the options-tradable test (weekly options, $100M a day) is held illiquid until the monthly sweep on the first trading day of the month. Broker-spending scripts skip it and listed views hide it; its bars and every count keep it. After iv_rank_at, before the 19:00 screener greeks run. Trading days, ET.",
     "liquidity_at": "18:57"
+  },
+  "live_positions": {
+    "_comment": "run.py live-positions, every interval_seconds from start to end ET on trading days: each designated live account's broker positions (read-only get_positions) against what the flies/bwb/meic live ledgers say is filled and open, on the underlyings those modules trade. Asks the broker only while a live module is armed or holds a ledger leg. A difference seen on two checks running is a CRITICAL watchdog finding (live_positions); contracts already expired are left out, since the broker lists them until its overnight processing. Safeguard 2(c), 2026-10-08.",
+    "enabled": true,
+    "interval_seconds": 300,
+    "start": "09:31",
+    "end": "16:10"
+  },
+  "live_settle_overdue": {
+    "_comment": "run.py settle-overdue-live, every interval_seconds, every day: settles any past session a flies/bwb live ledger still holds open (a machine down between the close and the disarm) at THAT session's official close (Yahoo daily bar, source yahoo_daily) -- never a provisional price. A session with a pending entry, or no official close found, stays open and the watchdog keeps alerting. Each settlement is announced on every channel. Safeguard item 4, 2026-10-08 (the owner chose official-print-only).",
+    "enabled": true,
+    "interval_seconds": 3600
+  },
+  "service": {
+    "_comment": "OPTIONAL Windows-service mode (run.py service): the supervisor as a WinSW v2 service, so the suite runs with nobody logged on. Off by default -- the default posture is auto-logon plus the logged-on anchor task. To use: download WinSW-x64.exe (v2.x, github.com/winsw/winsw/releases), set winsw_exe to its path and enabled to true, run `run.py service prepare`, then the printed commands in an administrator prompt. The service runs as you (Credential Manager stays readable); its password is asked for at install and stored by Windows, never in a file.",
+    "enabled": false,
+    "id": "cherrypick-supervisor-svc",
+    "winsw_exe": null,
+    "delayed_start": true,
+    "restart_delays_seconds": [30, 60, 120],
+    "reset_failure_hours": 1,
+    "stop_timeout_seconds": 30
+  },
+  "power_watch": {
+    "_comment": "run.py power-watch, every 60 s, every day: while this machine runs on battery, notify ALL channels (log, desktop, discord, slack -- any without a webhook is skipped) the moment it switches and every repeat_minutes, WARNING turning CRITICAL at critical_percent charge or critical_minutes of estimated time left; one message when AC returns. Reads Windows (GetSystemPowerStatus), Linux (/sys/class/power_supply; a machine with no battery entry never alerts) and macOS (pmset -g batt); a reading it cannot take stays quiet. Added after the 2026-10-08 power outage ran the laptop down mid-session.",
+    "enabled": true,
+    "repeat_minutes": 15,
+    "critical_percent": 20,
+    "critical_minutes": 30
   },
   "quikoptions": {
     "_comment": "QuikOptions' Hot Options Report (scripts/fetch_quikoptions.py; docs/quikoptions-plan.md): one paced load a day after the close in the installed Chrome, on a profile a person signs in to by hand, then the economic calendar through the menu. Kept only when the page's own sums hold, into data/quikoptions/. 'enabled' also shows the console's Options flow page. A 429, or a 403 once signed in, starts a 24-hour cooldown; an expired session notifies and stops. OFF by default: sign in first (`python scripts/fetch_quikoptions.py login`), then set enabled=true. Scheduled, trading days only: the capture at 'at' (plus 0-jitter_minutes), scoring at score_at, and the next morning the open-interest confirmation at confirm_at; each later step waits up to 45 minutes for the one before it. 'headed' runs the capture in a visible browser (off: headless, the default) -- for a session a person is watching for errors. You are responsible for complying with the site's terms. Times are ET.",

@@ -139,7 +139,7 @@ async def collect(session, wanted: dict, limit: int | None) -> dict:
         except Exception as exc:  # noqa: BLE001 -- recorded with its reason, never dropped
             if "429" in str(exc):
                 for rest in symbols[n:]:
-                    result[rest]["error"] = "not fetched: the broker answered 429"
+                    result[rest]["error"] = RATE_LIMITED
                 print(f"broker rate limit (429) at {sym}; stopping chain listings", file=sys.stderr)
                 break
             result[sym]["error"] = f"chain: {exc}"[:160]
@@ -231,6 +231,19 @@ def _f(v) -> float | None:
         return None if v is None else float(v)
     except (TypeError, ValueError):
         return None
+
+
+RATE_LIMITED = "not fetched: the broker answered 429"
+
+
+def rate_limit_problem(result: dict) -> str | None:
+    """A run the broker rate-limited is INCOMPLETE, so the retry and the next run record it again.
+    It used to be stamped complete with the unfetched symbols merely annotated, so every later run
+    read "already exists; not overwritten" and the day's file stayed partial for good (2026-10-08).
+    A per-symbol chain error (a delisted name) is not transient and does not make a run incomplete:
+    it would never complete."""
+    n = sum(1 for s in result.values() if s.get("error") == RATE_LIMITED)
+    return f"broker rate limit (429): {n} symbol(s) not fetched" if n else None
 
 
 def latest_list_day() -> str | None:
@@ -534,6 +547,7 @@ def main(argv: list[str] | None = None) -> int:
     wanted = {k: v for k, v in anchors(lists).items() if k[0].replace("/", ".") not in skip}
     started = time.monotonic()
     result, problem = asyncio.run(collect(session, wanted, args.limit))
+    problem = problem or rate_limit_problem(result)
     doc = {
         "list_date": day,
         "fetched_at": datetime.now(UTC).isoformat(),

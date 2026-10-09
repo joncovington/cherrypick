@@ -625,6 +625,31 @@ def test_heartbeat_carries_the_daemons_own_memory(spawned):
     assert isinstance(hb["rss_mb"], (int, float)) and hb["rss_mb"] > 0
 
 
+def test_a_state_file_windows_will_not_replace_is_skipped_not_fatal(spawned, monkeypatch):
+    """2026-10-09: the heartbeat's target was held open past the replace retries and the
+    PermissionError killed the daemon. A pass now skips that write, says so once, and the next pass
+    writes it."""
+    real = supervisor.atomic_write_json
+    held = {supervisor.heartbeat_path(), supervisor.jobs_path()}
+
+    def refuse(path, obj):
+        if path in held:
+            raise PermissionError(5, "Access is denied", str(path))
+        real(path, obj)
+
+    monkeypatch.setattr(supervisor, "atomic_write_json", refuse)
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=MONDAY_NOON)  # must not raise
+    sup.pass_once(now=MONDAY_NOON)
+    log = cfgmod.log_file("supervisor.log").read_text(encoding="utf-8")
+    assert log.count("write skipped this pass") == 1  # throttled: one line, not one per pass
+    assert "job registry write skipped" in log and "another process held the file" in log
+    held.clear()
+    sup._last_heartbeat = 0.0
+    sup.pass_once(now=MONDAY_NOON)
+    assert json.loads(supervisor.heartbeat_path().read_text(encoding="utf-8"))["pid"] == os.getpid()
+
+
 def test_breadcrumbs_are_not_armed_for_a_bounded_test_run(spawned, monkeypatch):
     """A bounded (test) run must never register the atexit marker: at interpreter exit it would
     write 'process exiting' into the LIVE supervisor.log — noise in exactly the diagnostic trail
@@ -885,3 +910,38 @@ def test_every_real_network_job_is_gated():
     by_id = {j.id: j for j in jobs}
     assert jobspec.needs_network(by_id["flies-fee-reconcile"])
     assert jobspec.needs_network(by_id["reconcile"])
+
+
+def test_restart_of_a_daily_job_runs_it_once_now_without_stealing_its_scheduled_run(spawned, monkeypatch):
+    # 2026-10-09: `run.py restart <daily job>` recorded the request, said "started", and ran nothing.
+    from cherrypick.orchestrator import jobspec
+
+    spec = jobspec.JobSpec(
+        id="report-browser-check",
+        argv=("py", "fetch_vendor_edition.py", "smoke"),
+        kind=jobspec.KIND_DAILY,
+        at_et="06:40",
+        catchup_minutes=15,
+    )
+    monkeypatch.setattr(jobspec, "derive_jobs", lambda cfg, **kw: ([spec], {}))
+
+    def runs():
+        return [p for p in spawned if "smoke" in p.argv]
+
+    early = MONDAY_NOON.replace(hour=5, minute=0)
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=early)  # 05:00: not due yet
+    assert runs() == []
+
+    supervisor.request_restart("report-browser-check", by="test", request_id="r1")
+    sup.pass_once(now=early)
+    st = sup._state["report-browser-check"]
+    assert len(runs()) == 1 and st["last_restart"]["result"] == "queued to run now" and "run_now" not in st
+
+    runs()[0].exit(0)
+    sup.pass_once(now=early)
+    assert len(runs()) == 1  # once, not every pass
+
+    sup._last_fixed_spawn = 0.0  # the start-spacing guard counts real seconds; these passes are an hour apart
+    sup.pass_once(now=MONDAY_NOON.replace(hour=6, minute=41))
+    assert len(runs()) == 2  # the scheduled 06:40 run still came

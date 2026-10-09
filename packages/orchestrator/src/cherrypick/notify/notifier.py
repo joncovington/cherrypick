@@ -31,6 +31,7 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -289,6 +290,46 @@ def verify_message(entry: dict[str, Any], opener=None) -> str:
         return f"unknown: {type(exc).__name__}"
 
 
+def _windows_session_id() -> int | None:
+    """This process's Windows session (0 = services, no desktop), or None off Windows / unknown."""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        sid = wintypes.DWORD()
+        k32 = ctypes.WinDLL("kernel32")
+        if k32.ProcessIdToSessionId(k32.GetCurrentProcessId(), ctypes.byref(sid)):
+            return int(sid.value)
+    except Exception:  # noqa: BLE001 -- unknown is "not session 0": try the toast as before
+        return None
+    return None
+
+
+def _applescript_str(text: str) -> str:
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def desktop_argv(platform: str, level: str, title: str, message: str, which) -> list[str] | None:
+    """The desktop-notification command off Windows, or None when this host has none (pure; `which`
+    is `shutil.which`, faked in tests). Added in the 2026-10-08 OS audit: the channel was Windows-only,
+    so on a Mac or a Linux desktop it was silently skipped.
+
+    - macOS: `osascript -e 'display notification ...'` (always present). Strings go in as AppleScript
+      literals, in an argv list, so nothing reaches a shell.
+    - Linux: `notify-send` (libnotify), with CRITICAL urgency for WARN/CRITICAL so it stays up. It
+      needs the session bus, which the cron lines carry.
+    """
+    if platform == "darwin":
+        script = f"display notification {_applescript_str(message)} with title {_applescript_str(title)}"
+        return ["osascript", "-e", script]
+    if platform.startswith("linux") and which("notify-send"):
+        urgency = "critical" if level in ("WARN", "CRITICAL") else "normal"
+        return ["notify-send", "-u", urgency, title, message]
+    return None
+
+
 class Notifier:
     def __init__(self, notify_cfg: dict[str, Any] | None = None):
         cfg = notify_cfg or {}
@@ -333,13 +374,32 @@ class Notifier:
         """Write the log floor and push nothing -- for a record worth keeping whole but not worth a
         push of its own (an earnings rejection, which is summarised instead)."""
         level = level.upper()
-        self._write_log(level, key, title, message)
-        return {"log": {"ok": True}}
+        return {"log": self._write_log_safe(level, key, title, message)}
+
+    def _write_log_safe(self, level: str, key: str, title: str, message: str) -> dict[str, Any]:
+        """The floor, best-effort. It used to raise straight through `notify()` BEFORE any push was
+        tried, so a full disk or a locked log file silenced every channel (2026-10-08 audit)."""
+        try:
+            self._write_log(level, key, title, message)
+            return {"ok": True}
+        except Exception as exc:  # noqa: BLE001 -- the floor failing must not take the pushes with it
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
     # -- push channels (best-effort) -----------------------------------------------
     def _push_desktop(self, level: str, title: str, message: str) -> dict[str, Any]:
         if os.name != "nt":
-            return {"ok": False, "skipped": "desktop notifications are Windows-only"}
+            argv = desktop_argv(sys.platform, level, f"{self.app_name}: {title}", message, shutil.which)
+            if argv is None:
+                return {"ok": False, "skipped": f"no desktop notifier on {sys.platform} (notify-send?)"}
+            try:
+                subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0)
+                return {"ok": True}
+            except Exception as exc:  # never let a push failure escape
+                return {"ok": False, "error": str(exc)}
+        if _windows_session_id() == 0:
+            # Session 0 is where services run (the optional `run.py service` mode): it has no desktop,
+            # so a balloon there reaches no one. Say so rather than report a toast nobody saw.
+            return {"ok": False, "skipped": "no desktop in session 0 (running as a Windows service)"}
         icon = "Warning" if level in ("WARN", "CRITICAL") else "Info"
         safe_title = f"{self.app_name}: {title}"
         ps = (
@@ -459,8 +519,8 @@ class Notifier:
         its source (see `send_webhook`).
         """
         level = level.upper()
-        self._write_log(level, key, title, message)  # the guarantee
-        results: dict[str, Any] = {"log": {"ok": True}}
+        title, message = _portable(title), _portable(message)
+        results: dict[str, Any] = {"log": self._write_log_safe(level, key, title, message)}
         record = {"source": key, "kind": kind, "session": session, "inputs": list(inputs)}
         for ch in self.channels:
             if ch == "log":
@@ -479,6 +539,29 @@ class Notifier:
             except Exception as exc:
                 results[ch] = {"ok": False, "error": str(exc)}
         return results
+
+
+def _portable(text: str) -> str:
+    """The user's home folder as `~` -- a pushed message never carries a username (the suite's
+    portable-paths rule; a backup failure and a reconcile timeout both printed full paths to Discord,
+    2026-10-08). Covers both slash directions and the doubled backslashes of a repr()'d path."""
+    home = os.path.expanduser("~")
+    if not text or not home or home == "~":
+        return text
+    for form in {home, home.replace("\\", "/"), home.replace("\\", "\\\\")}:
+        text = text.replace(form, "~")
+    return text
+
+
+def delivered(results: dict[str, Any]) -> bool:
+    """Did a `notify()` reach anyone? True when any push channel succeeded, or -- for a log-only
+    setup, where the floor IS the delivery -- when the floor was written. False when every push
+    channel failed or was skipped: the caller must not record the message as sent (2026-10-08 audit:
+    every caller stamped "notified" whatever happened, so a Discord outage lost alerts for good)."""
+    pushes = {ch: r for ch, r in results.items() if ch != "log"}
+    if not pushes:
+        return bool((results.get("log") or {}).get("ok"))
+    return any((r or {}).get("ok") for r in pushes.values())
 
 
 def notify(

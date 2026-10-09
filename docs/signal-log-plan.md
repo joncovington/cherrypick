@@ -677,6 +677,75 @@ draws (seeded from the entry's identity), held to the setup's own exit and score
   Both sides lose money, so neither passes.
 - The results and what they say are in `packages/technicals/docs/setups.md`, "Round 3".
 
+## Round 4: the vendor's relative-strength breakout, declared before it was run (2026-10-09)
+
+The vendor's webinars define relative strength as the stock's price divided by the S&P 500. Their
+signal is that ratio at a new high together with a price breakout. Fitting the lookback to 25 dated
+calls from their 2026 sessions gave about one month: 21 sessions reproduce 24 of the 25. The
+calls only tell us whether our list matches theirs. Round 4 asks whether the signal makes money.
+
+**What was looked at before declaring (2026-10-09, an exploratory script outside the repo).** It
+is disclosed because it shaped the declaration:
+- **Scope:** every name on days its 50-session median dollar volume was at least $300M, 2011 to
+  2026-10, with SPY as the benchmark.
+- **Signals:** price and ratio breakouts at lookbacks of 10 to 126 sessions, together and apart.
+- **Measure:** forward excess return over the same day's liquid names, at 5, 21 and 63 sessions.
+- **Result:** no lookback had an edge. The one lead was the vendor's own tie-break: breakouts on
+  volume at least 1.5x the 30-session average led the rest in both 2011–2022 and 2023–2026 at 21
+  sessions, at t near 1.
+- **So the 21-session hold below was chosen after that look.** The lookback and the volume rule
+  are the vendor's words, settled before any of this history was read.
+
+**The test uses only what that look never saw:** entries on days the name's median dollar volume
+was under $300M. The study universe still applies ($5, $20M), so this is the $20M–$300M slice.
+Baseline draws come from the same slice on the same day.
+
+**The setups, as declared** (`round4.py`, long only):
+
+| Id | Entry | Exit |
+|---|---|---|
+| `rs-break` | a close above the highest close of the prior 21 sessions, on which close ÷ SPY's close is also above its highest of the prior 21, with no such close in the prior 10 sessions | the close 21 sessions after entry; filled at the next open |
+| `rs-break-vol` | `rs-break`, and that session's volume at least 1.5x the mean of the prior 30 sessions' volume | the same |
+
+**The choices the vendor leaves open, settled before running:**
+- **The benchmark is SPY's adjusted close** (a total return), as their slide names SPY. The study
+  holds no S&P 500 index history from 2011.
+- **A session SPY did not trade** cannot fire.
+- **"Fresh" is 10 sessions,** the one value the exploratory look used. It was not tuned.
+- **A missing volume never confirms** (as `setups.volume_confirms`).
+- **Ties do not count:** "above the highest" is strictly greater, as the exploratory look used.
+
+**Three tests, Holm across the three at a family-wise α of 0.05.**
+- `rs-break:random`: the vendor's signal against random entry.
+- `rs-break-vol:random`: with the volume rule, against random entry.
+- `rs-break-vol:matched`: with the volume rule, against draws made on days the name's close and
+  its ratio were both at a 21-session high, at any volume. It asks whether the volume rule adds
+  anything over the breakout itself.
+
+Draws are 40 same-date and 40 same-name for each entry, seeded from the entry's identity, held 21
+sessions and scored like the entry. A test passes with a Holm-significant positive edge AND a
+positive net R. A setup short of 780 effective entries reads "not yet judged".
+
+**Views, never tests:**
+- the $300M slice (already seen);
+- 2011–18 and 2019–26;
+- halves A and B.
+
+**Everything else is plan v2's:**
+- the universe as of each day;
+- the corporate-action exclusions;
+- next-open fills;
+- R net of the declared costs;
+- the calendar-time one-sided test.
+
+**Outcome (run once, after this declaration; `round4-20261009-152840.json`):**
+- **Nothing passed, and the breakout is worse than random entry.**
+  - `rs-break`: +0.090 R net against a +0.138 R baseline, edge −0.085 R (t −3.4).
+  - `rs-break-vol`: +0.033 R, edge −0.127 R (t −3.8).
+  - Against the breakout at any volume: −0.039 R (t −0.9).
+- **The exploratory volume lead did not survive** on the slice it never saw.
+- The results and what they say are in `packages/technicals/docs/setups.md`, "Round 4".
+
 ## Later phases: uses the study and log are shaped for, none committed
 
 History makes most of these **runnable now, not someday**.

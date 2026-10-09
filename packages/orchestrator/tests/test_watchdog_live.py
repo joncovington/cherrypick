@@ -251,3 +251,83 @@ def test_live_settled_reports_ok(monkeypatch, tmp_path):
     out = wd._check_live("flies", _mcfg(), _AFTER_CLOSE, False)
     settle = [f for f in out if f.key == "flies.live_settle_overdue"]
     assert settle and settle[0].status == OK
+
+
+def test_a_held_submission_is_critical_and_an_empty_hold_says_nothing(monkeypatch, tmp_path):
+    """The seam's hold (a submit of unknown outcome, or an unrecorded order found at the broker)
+    refuses every live order and, since 2026-10-08, outlives the tick -- so someone must hear."""
+    held = {"unresolved": ["ext-1"], "unrecorded": {"ext-0": "99"}}
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY, "broker_held": held}, registered=False)
+    out = wd._check_live("flies", _mcfg(), _MIDDAY, True)
+    found = [f for f in out if f.key == "flies.live_held"]
+    assert found and found[0].status == CRITICAL and "ext-1" in found[0].message
+    empty = {"unresolved": [], "unrecorded": {}}
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY, "broker_held": empty}, registered=False)
+    assert not [f for f in wd._check_live("flies", _mcfg(), _MIDDAY, True) if f.key == "flies.live_held"]
+
+
+def test_a_broker_failing_while_armed_in_session_is_critical(monkeypatch, tmp_path):
+    """Item 3 of the 2026-10-08 audit: the seam swallows every broker failure and the tick exits 0,
+    so only the persisted contact record shows an outage -- and only while armed and in session."""
+    down = {"failing_since": "2026-07-30T05:00:00+00:00", "failures": 40, "last_error": "invalid_grant"}
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY, "broker_health": down}, registered=True)
+    found = [f for f in wd._check_live("flies", _mcfg(), _MIDDAY, True) if f.key == "flies.live_broker"]
+    assert found and found[0].status == CRITICAL and "invalid_grant" in found[0].message
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY, "broker_health": down}, registered=True)
+    assert not [f for f in wd._check_live("flies", _mcfg(), _MIDDAY, False) if f.key == "flies.live_broker"]
+    ok = {"failing_since": None, "last_ok_at": "2026-07-30T14:59:00+00:00"}
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY, "broker_health": ok}, registered=True)
+    assert not [f for f in wd._check_live("flies", _mcfg(), _MIDDAY, True) if f.key == "flies.live_broker"]
+
+
+def test_a_past_sessions_open_live_book_is_critical_armed_or_not(monkeypatch, tmp_path):
+    """Item 4 of the 2026-10-08 audit: settlement runs only inside an armed day's ticks, so a
+    machine down between the close and the disarm left a book open with nothing running to notice."""
+    overdue = [{"session": "2026-07-29", "positions": 2, "pending_entries": 1}]
+    _setup(
+        monkeypatch, tmp_path, status_obj={"armed_for": None, "overdue_settlement": overdue}, registered=False
+    )
+    found = [
+        f for f in wd._check_live("flies", _mcfg(), _AFTER_CLOSE, False) if f.key == "flies.live_overdue"
+    ]
+    assert found and found[0].status == CRITICAL
+    assert (
+        "2026-07-29 (2 open, 1 pending entries)" in found[0].message and "--settle --date" in found[0].message
+    )
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": None, "overdue_settlement": []}, registered=False)
+    assert not [
+        f for f in wd._check_live("flies", _mcfg(), _AFTER_CLOSE, False) if f.key == "flies.live_overdue"
+    ]
+
+
+def test_a_stale_arm_record_nothing_obeys_is_removed_not_halted(monkeypatch, tmp_path):
+    # 2026-10-08: the machine was off at 17:00, so no tick deleted the arm record; the watchdog then
+    # re-set the suite halt on every pass for a record the supervisor no longer acted on.
+    from cherrypick.orchestrator import supersnap, supervisor
+
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY}, registered=False)
+    supervisor.heartbeat_path().parent.mkdir(parents=True, exist_ok=True)
+    supervisor.heartbeat_path().write_text("{}", encoding="utf-8")  # a supervisor box
+    rec = supervisor.arm_record_path("flies")
+    rec.parent.mkdir(parents=True, exist_ok=True)
+    rec.write_text(json.dumps({"date": _TODAY}), encoding="utf-8")
+    monkeypatch.setattr(supersnap, "job_run_info", lambda job_id, snap=None: None)  # no live tick running
+    out = wd._check_live("flies", _mcfg(), _PAST_DISARM, False)
+    (f,) = [f for f in out if f.key == "flies.live_disarm"]
+    assert f.status == OK and "removed" in f.message and not rec.exists()
+    assert not (tmp_path / "halt-live.flag").exists()
+
+
+def test_a_live_tick_still_running_past_disarm_still_halts(monkeypatch, tmp_path):
+    from cherrypick.orchestrator import supersnap, supervisor
+
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY}, registered=False)
+    supervisor.heartbeat_path().parent.mkdir(parents=True, exist_ok=True)
+    supervisor.heartbeat_path().write_text("{}", encoding="utf-8")
+    rec = supervisor.arm_record_path("flies")
+    rec.parent.mkdir(parents=True, exist_ok=True)
+    rec.write_text(json.dumps({"date": _TODAY}), encoding="utf-8")
+    monkeypatch.setattr(supersnap, "job_run_info", lambda job_id, snap=None: {"still_running": True})
+    out = wd._check_live("flies", _mcfg(), _PAST_DISARM, False)
+    (f,) = [f for f in out if f.key == "flies.live_disarm"]
+    assert f.status == CRITICAL and (tmp_path / "halt-live.flag").exists() and rec.exists()
