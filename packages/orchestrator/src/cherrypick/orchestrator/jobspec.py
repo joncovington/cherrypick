@@ -1186,6 +1186,26 @@ def derive_jobs(
             enabled_reason="" if pw["enabled"] else "disabled in config (power_watch.enabled)",
         ),
     )
+    from . import livepositions as _livepositions
+
+    lp = _livepositions.settings(cfg)
+    add(
+        "live-positions",
+        lambda: JobSpec(
+            id="live-positions",
+            # Read-only broker positions vs the live ledgers (safeguard 2(c), 2026-10-08). Asks the
+            # broker only while a live module is armed or holds a ledger leg; the watchdog reads the
+            # verdict it leaves behind.
+            argv=_run_py(pythonw, launcher, "live-positions"),
+            kind=KIND_INTERVAL,
+            interval_seconds=int(lp["interval_seconds"]),
+            window_start=lp["start"],
+            window_end=lp["end"],
+            trading_days_only=True,
+            enabled=bool(lp["enabled"]),
+            enabled_reason="" if lp["enabled"] else "disabled in config (live_positions.enabled)",
+        ),
+    )
     add(
         "report-session-alert",
         lambda: JobSpec(

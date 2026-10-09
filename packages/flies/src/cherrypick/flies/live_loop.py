@@ -1899,6 +1899,45 @@ def _write_arm_stamp() -> None:
     )
 
 
+def expected_legs(config: dict, conn) -> dict:
+    """The contracts this ledger says the broker holds right now, for the orchestrator's
+    positions-vs-ledger check (`cherrypick.core.livepositions`, 2026-10-08). Files and DB only.
+
+    Counted: open rows whose entry FILL is confirmed, expanded by `fly.position_legs` (a pending
+    completion leaves `kind` a vertical, so its unfilled leg is not counted). Not counted: a pending
+    entry (nothing filled yet), cancelled and settled rows, and the paper-only hedge leg. `pending`
+    says how many orders are still working, so a reader knows the book may be mid-change."""
+    rows = [dict(r) for r in conn.execute("SELECT * FROM fly_positions WHERE status = 'open'").fetchall()]
+    legs, pending = [], 0
+    for row in rows:
+        if row.get("entry_fill_status") == "pending":
+            pending += 1
+            continue
+        if row.get("completion_fill_status") == "pending":
+            pending += 1
+        qty = int(row.get("quantity") or 1)
+        for expiry, right, strike, sign in fly.position_legs(row):
+            legs.append(
+                {
+                    "underlying": row["symbol"],
+                    "expiry": expiry,
+                    "right": right,
+                    "strike": strike,
+                    "qty": sign * qty,
+                }
+            )
+    symbol = _live_cfg(config).get("symbol")
+    underlyings = sorted({r["symbol"] for r in rows} | ({symbol} if symbol else set()))
+    return {
+        "ok": True,
+        "module": "flies",
+        "underlyings": underlyings,
+        "armed_today": arm_stamp_date() == provider.now_et().date().isoformat(),
+        "legs": legs,
+        "pending": pending,
+    }
+
+
 def arm_stamp_date() -> str | None:
     return _live.arm_record_date("flies", legacy_paths=[_legacy_arm_stamp_path()])
 
@@ -2079,6 +2118,11 @@ def main() -> int:
     )
     ap.add_argument("--watch-fills", action="store_true", help="burst fill-watcher (spawned by ticks)")
     ap.add_argument("--status", action="store_true", help="one JSON health object, files/DB only")
+    ap.add_argument(
+        "--expected-legs",
+        action="store_true",
+        help="the filled open legs the ledger holds (JSON; files/DB only)",
+    )
     ap.add_argument("--settle", action="store_true", help="settle the live book (see --price)")
     ap.add_argument("--price", type=float, help="official settlement print (marks source='official')")
     ap.add_argument("--force", action="store_true", help="allow re-settling an official settlement")
@@ -2120,6 +2164,9 @@ def main() -> int:
     try:
         if args.status:
             print(json.dumps(run_status(config, conn), indent=2, default=str))
+            return 0
+        if args.expected_legs:
+            print(json.dumps(expected_legs(config, conn), default=str))
             return 0
         if args.settle:
             when = None

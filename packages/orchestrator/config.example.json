@@ -632,6 +632,13 @@
     "_comment_liquidity_at": "The nightly liquidity verdict (python -m cherrypick.technicals liquidity, local data only): a name failing the options-tradable test (weekly options, $100M a day) is held illiquid until the monthly sweep on the first trading day of the month. Broker-spending scripts skip it and listed views hide it; its bars and every count keep it. After iv_rank_at, before the 19:00 screener greeks run. Trading days, ET.",
     "liquidity_at": "18:57"
   },
+  "live_positions": {
+    "_comment": "run.py live-positions, every interval_seconds from start to end ET on trading days: each designated live account's broker positions (read-only get_positions) against what the flies/bwb/meic live ledgers say is filled and open, on the underlyings those modules trade. Asks the broker only while a live module is armed or holds a ledger leg. A difference seen on two checks running is a CRITICAL watchdog finding (live_positions); contracts already expired are left out, since the broker lists them until its overnight processing. Safeguard 2(c), 2026-10-08.",
+    "enabled": true,
+    "interval_seconds": 300,
+    "start": "09:31",
+    "end": "16:10"
+  },
   "power_watch": {
     "_comment": "run.py power-watch, every 60 s, every day: while this machine runs on battery, notify ALL channels (log, desktop, discord, slack -- any without a webhook is skipped) the moment it switches and every repeat_minutes, WARNING turning CRITICAL at critical_percent charge or critical_minutes of estimated time left; one message when AC returns. Reads Windows (GetSystemPowerStatus), Linux (/sys/class/power_supply; a machine with no battery entry never alerts) and macOS (pmset -g batt); a reading it cannot take stays quiet. Added after the 2026-10-08 power outage ran the laptop down mid-session.",
     "enabled": true,
