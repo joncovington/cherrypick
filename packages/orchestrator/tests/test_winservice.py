@@ -59,11 +59,10 @@ def test_sc_query_reads_installed_and_state():
     assert winservice.parse_sc_query(missing) == {"installed": False, "state": None}
 
 
-def test_prepare_refuses_until_chosen_and_until_winsw_is_there(monkeypatch):
-    monkeypatch.setattr(winservice.os, "name", "nt")
-    off = winservice.prepare({}, launcher="r", workdir="w", anchor_task="a")
+def test_prepare_refuses_until_chosen_and_until_winsw_is_there():
+    off = winservice.prepare({}, launcher="r", workdir="w", anchor_task="a", platform="nt")
     assert not off["ok"] and "opt-in" in off["error"]
-    missing = winservice.prepare(ON, launcher="r", workdir="w", anchor_task="a")
+    missing = winservice.prepare(ON, launcher="r", workdir="w", anchor_task="a", platform="nt")
     assert not missing["ok"] and "WinSW" in missing["error"]
 
 
@@ -98,3 +97,48 @@ def test_in_service_mode_the_anchor_starts_the_service_never_a_rival(monkeypatch
     monkeypatch.setattr(winservice, "query", lambda sid: {"installed": False, "state": None})
     assert cli._start_supervisor(ON) and spawned == [1]  # chosen but not installed yet: the usual way
     assert cli._start_supervisor({}) and spawned == [1, 1]  # the default posture
+
+
+def test_the_service_path_is_the_logon_path_never_the_shells():
+    # 2026-10-08: prepare run from Git Bash carried Git's usr/bin ahead of System32.
+    reg = {
+        "machine": r"%SystemRoot%\system32;%SystemRoot%;C:\Program Files\nodejs"
+        + "\\"
+        + r";C:\Program Files\Dolt\bin",
+        "user": r"C:\Users\u\.local\bin;C:\WINDOWS\system32;C:\Program Files\Dolt" + "\\\\" + "bin;",
+    }
+
+    def expand(v):
+        return v.replace("%SystemRoot%", r"C:\WINDOWS")
+
+    got = winservice.logon_path(read=lambda hive, key: reg[hive], expand=expand)
+    assert got.split(";") == [
+        r"C:\WINDOWS\system32",
+        r"C:\WINDOWS",
+        r"C:\Program Files\nodejs",
+        r"C:\Program Files\Dolt\bin",
+        r"C:\Users\u\.local\bin",
+    ]
+    assert winservice.logon_path(read=lambda hive, key: "", expand=expand) is None
+
+
+def test_prepare_writes_the_definition_with_the_logon_path(monkeypatch, tmp_path):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(winservice, "logon_path", lambda: r"C:\WINDOWS\system32;C:\Program Files\nodejs")
+    monkeypatch.setenv("PATH", r"C:\Program Files\Git\usr\bin;C:\WINDOWS\system32")
+    exe = tmp_path / "WinSW-x64.exe"
+    exe.write_bytes(b"MZ")
+    cfg = {"service": {"enabled": True, "winsw_exe": str(exe)}}
+    out = winservice.prepare(
+        cfg,
+        launcher=r"C:\repo\run.py",
+        workdir=r"C:\repo",
+        anchor_task="cherrypick-supervisor",
+        platform="nt",
+    )
+    assert out["ok"], out
+    assert len(out["run_these_in_an_administrator_prompt"]) == 3
+    root = ET.parse(out["xml"]).getroot()
+    assert (
+        root.find("env").get("value") == r"C:\WINDOWS\system32;C:\Program Files\nodejs"
+    )  # never the shell's
