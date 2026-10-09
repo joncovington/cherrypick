@@ -205,7 +205,7 @@ def planned(monkeypatch):
     return state
 
 
-def _tick(config, conn, broker, cache, *, when=WHEN, live=True, armed=True):
+def _tick(config, conn, broker, cache, *, when=WHEN, live=True, armed=True, halted=False):
     if armed:
         _live.write_arm_record("bwb", date=when.date().isoformat(), at="t", armed_by="live-bwb-start")
     return live_loop.run_once(
@@ -218,6 +218,7 @@ def _tick(config, conn, broker, cache, *, when=WHEN, live=True, armed=True):
         force=True,
         log=lambda *_: None,
         clock_fn=lambda: 0.0,
+        halted=halted,
         sleep_fn=lambda s: None,
     )
 
@@ -235,11 +236,32 @@ def _decisions(conn, mode=None):
 
 # --------------------------------------------------------------------------- readiness
 def test_readiness_names_every_unmet_gate_and_passes_only_when_all_are_met(live_config):
-    unmet = live_loop.readiness({"live": {}}, halt_present=True, designated=None)
-    assert len(unmet) == 4 and any("halt flag" in g for g in unmet)  # arm defaults to control
-    assert live_loop.readiness(live_config, halt_present=False, designated="5WX1234") == []
+    unmet = live_loop.readiness({"live": {}}, designated=None)
+    # enabled, gate0, designated (arm defaults to control). The halt flag is NOT a readiness gate
+    # since 2026-10-08: it stops new risk only, and the tick still manages what is open.
+    assert len(unmet) == 3 and not any("halt" in g for g in unmet)
+    assert live_loop.readiness(live_config, designated="5WX1234") == []
     bad = {**live_config, "live": {**live_config["live"], "arm": "wall"}}
-    assert any("not a base arm" in g for g in live_loop.readiness(bad, halt_present=False, designated="x"))
+    assert any("not a base arm" in g for g in live_loop.readiness(bad, designated="x"))
+
+
+def test_a_halted_tick_refuses_the_entry_and_says_why(live_config, conn, cache, planned):
+    broker = FakeBroker()
+    out = _tick(live_config, conn, broker, cache, halted=True)
+    assert out["entry"]["reason"] == "halt_flag_present"
+    assert broker.placed == []
+    assert ("entry", "halt_flag_present", 0) in _decisions(conn, "entry")
+
+
+def test_a_halted_tick_still_confirms_a_pending_fill(live_config, conn, cache, planned):
+    """2026-10-08: the halt returned the tick before anything ran, so a halt with an order resting
+    left it unwatched. Now a halted tick still reads the broker and records the fill."""
+    broker = FakeBroker()
+    _tick(live_config, conn, broker, cache)  # places ORD1, pending
+    broker.statuses["ORD1"] = {"status": "Filled", "price": "0.90"}
+    _tick(live_config, conn, broker, cache, halted=True)
+    row = _row(conn, "SPX:control:2026-09-16:1")
+    assert row["entry_fill_status"] == "filled" and row["status"] == "open"
 
 
 # --------------------------------------------------------------------------- entry
@@ -382,6 +404,20 @@ def test_a_quarter_end_session_defers_a_live_add_on(live_config, conn):
     assert fire(conn, position, {}, {}) is False
     assert broker.placed == []
     assert ("addon", live_loop.QUARTER_END_REASON, 0) in _decisions(conn, "addon")
+
+
+def test_a_halt_defers_a_live_add_on(live_config, conn):
+    """An add-on is new risk: while the halt flag is up the fire hook places nothing and reports not
+    fired, so the trigger stays armed until the flag clears."""
+    broker = FakeBroker()
+    fire = live_loop._make_fire(
+        broker, live_config, live=True, day="2026-09-17", when=datetime(2026, 9, 17, 11, 0),
+        log=lambda *_: None, placed={}, halted=True,
+    )  # fmt: skip
+    position = {"position_id": "SPX:control:2026-09-16:1", "symbol": "SPX", "arm": "control"}
+    assert fire(conn, position, {}, {}) is False
+    assert broker.placed == []
+    assert ("addon", "halt_flag_present", 0) in _decisions(conn, "addon")
 
 
 def test_the_mark_drawdown_breaker_blocks_the_next_entry_and_touches_no_position(

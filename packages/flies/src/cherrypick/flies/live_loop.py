@@ -41,8 +41,9 @@ Order lifecycle:
     watchdog backstops this by setting the halt flag if the task somehow survives.
 
 Gates checked every live tick (`readiness()`): `live.enabled`, a non-empty `gate0_confirmed`
-attestation, one configured arm, a designated account, halt flag absent — plus the daily-loss
-breaker on the live ledger. Live concurrency (2026-09-25): no count limit by default -- the
+attestation, one configured arm and a designated account -- unmet, the tick does nothing. The halt
+flag and the daily-loss breaker are ENTRY blockers (`entry_blockers()`, 2026-10-08): they stop new
+structures only, while fills are confirmed, completions placed and cut off, and the book settled. Live concurrency (2026-09-25): no count limit by default -- the
 buying-power cap below is the sizing gate, and an uncompleted vertical or a negative-floor fly
 counts against it at its worst case. `live.max_incomplete_spreads` restores a count limit (1 was
 the pilot's rule until 2026-09-25), with `live.negative_floor_override` still naming a stuck
@@ -277,8 +278,12 @@ def _merged_live_params(config: dict, arm: str) -> dict:
 
 
 # --------------------------------------------------------------------------- gates
-def readiness(config: dict, *, halt_present: bool, designated: str | None) -> list[str]:
-    """The unmet live gates, checked every tick — empty means the loop may act. Pure."""
+def readiness(config: dict, *, designated: str | None) -> list[str]:
+    """The unmet ACCOUNT gates, checked every tick -- empty means the loop may act on the account
+    at all. Pure. The halt flag and the daily-loss breaker are not here: they stop NEW ENTRIES only
+    (`entry_blockers`), so fills are still confirmed, completions placed and cut off, and the book
+    settled while either is in force (2026-10-08 -- before that the halt returned ahead of all of it,
+    so a halt mid-session left resting orders unwatched and the day unsettled)."""
     live = _live_cfg(config)
     unmet = []
     if not live.get("enabled"):
@@ -289,11 +294,21 @@ def readiness(config: dict, *, halt_present: bool, designated: str | None) -> li
     arms = _cfg.registry(config, label="flies")
     if arm not in arms:
         unmet.append(f"live.arm {arm!r} is not a configured arm")
-    if halt_present:
-        unmet.append("halt flag present (state/halt-live.flag) — live entries halted")
     if not designated:
         unmet.append("no designated account — run `cherrypick account --module flies --set <last4>`")
     return unmet
+
+
+def entry_blockers(config: dict, conn, day: str, *, halt_present: bool) -> list[str]:
+    """Why no NEW live entry may be placed this tick; empty means entries may proceed. Everything
+    that manages what is already open -- fill confirmation, completions, cutoff cancels, settlement
+    -- runs regardless."""
+    blockers = []
+    if halt_present:
+        blockers.append("halt_flag_present")
+    if daily_loss_tripped(conn, day, _live_cfg(config).get("daily_loss_halt_dollars")):
+        blockers.append("daily_loss_breaker")
+    return blockers
 
 
 def daily_loss_tripped(conn, day: str, limit_dollars: float | None) -> bool:
@@ -750,7 +765,9 @@ def read_orphans() -> list[dict]:
         return []
 
 
-def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=print) -> dict:
+def run_once(
+    config: dict, snapshot: dict, conn, broker, *, live: bool, log=print, entry_block: list[str] | None = None
+) -> dict:
     """One live iteration for the pinned arm — the full state machine.
 
     `broker` is the injected submission seam: place(spec, live) -> {ok, order_id?, ...},
@@ -957,6 +974,12 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
         day_capped = True
         summary["skips"].append({"entry": "quarter-end session: no new live entries"})
         journal("entry", QUARTER_END_REASON, center=wanted_center)
+    # The halt flag and the daily-loss breaker (`entry_blockers`): no new entry, and nothing else
+    # held back -- every step above this one has already run.
+    if entry_block and not day_capped:
+        day_capped = True
+        summary["skips"].append({"entry": f"entries blocked: {', '.join(entry_block)}"})
+        journal("entry", "entries_blocked", center=wanted_center, detail=", ".join(entry_block))
     day_cap = live_cfg.get("max_structures_per_day")
     if live and day_cap and not day_capped:
         established = conn.execute(
@@ -2210,7 +2233,7 @@ def main() -> int:
         from cherrypick.flies import credentials as creds
 
         designated = creds.designated_account()
-        unmet = readiness(config, halt_present=os.path.exists(halt_flag_path()), designated=designated)
+        unmet = readiness(config, designated=designated)
         if live and unmet:
             _log(f"live gates unmet: {unmet}")
             print(json.dumps({"ok": False, "error": "live gates unmet", "unmet": unmet}))
@@ -2305,13 +2328,15 @@ def main() -> int:
                 print(json.dumps({"ok": False, "error": f"no snapshot: {snapshot.get('reason')}"}))
                 return 1
 
-            limit = _live_cfg(config).get("daily_loss_halt_dollars")
-            if live and daily_loss_tripped(conn, day, limit):
-                _log("daily-loss breaker tripped — no new entries")
-                print(json.dumps({"ok": False, "error": "daily-loss breaker tripped — no new entries"}))
-                return 1
+            # The halt flag and the daily-loss breaker stop NEW entries only: the tick still
+            # confirms fills, places and cuts off completions, and the book still settles.
+            blockers = entry_blockers(config, conn, day, halt_present=os.path.exists(halt_flag_path()))
+            if blockers:
+                _log(f"new entries blocked ({', '.join(blockers)}) -- managing what is open")
 
-            summary = run_once(config, snapshot, conn, BrokerAdapter(config), live=live, log=_log)
+            summary = run_once(
+                config, snapshot, conn, BrokerAdapter(config), live=live, log=_log, entry_block=blockers
+            )
             if live and (summary.get("pending_orders") or summary.get("entered")):
                 _spawn_watcher(live)
                 summary["watcher_spawned"] = True

@@ -114,22 +114,22 @@ BASE_CFG = {
 
 
 def test_readiness_passes_only_with_every_gate():
-    assert live_loop.readiness(BASE_CFG, halt_present=False, designated="5W1") == []
+    assert live_loop.readiness(BASE_CFG, designated="5W1") == []
 
 
 def test_readiness_names_each_unmet_gate():
-    unmet = live_loop.readiness({"live": {}}, halt_present=True, designated=None)
+    unmet = live_loop.readiness({"live": {}}, designated=None)
     text = " ".join(unmet)
     assert "enable_live_trading" in text
     assert "live.symbol" in text
     assert "gate0_confirmed" in text
-    assert "halt flag" in text
     assert "designated" in text
+    assert "halt" not in text  # an ENTRY blocker since 2026-10-08 (entry_blockers), never a close blocker
 
 
 def test_readiness_requires_a_pinned_symbol():
     cfg = {**BASE_CFG, "live": {**BASE_CFG["live"], "symbol": ""}}
-    assert any("live.symbol" in u for u in live_loop.readiness(cfg, halt_present=False, designated="x"))
+    assert any("live.symbol" in u for u in live_loop.readiness(cfg, designated="x"))
 
 
 # --------------------------------------------------------------------------- daily-loss breaker
@@ -141,6 +141,18 @@ def test_daily_loss_breaker(tmp_path):
     assert live_loop.daily_loss_tripped(db_path, DAY, 200.0) is True
     assert live_loop.daily_loss_tripped(db_path, DAY, 300.0) is False
     assert live_loop.daily_loss_tripped(db_path, DAY, None) is False
+
+
+def test_the_daily_loss_breaker_fails_closed_on_an_unreadable_ledger(tmp_path):
+    """It only blocks new entries now, so an unreadable ledger blocks them rather than waving them
+    through (it returned False on any sqlite error until 2026-10-08)."""
+    assert live_loop.daily_loss_tripped(str(tmp_path / "missing" / "x.db"), DAY, 200.0) is True
+
+
+def test_the_halt_and_the_breaker_are_entry_blockers(tmp_path):
+    db_path = _init_db(tmp_path)
+    assert live_loop.entry_blockers(BASE_CFG, db_path, DAY, halt_present=True) == ["halt_flag_present"]
+    assert live_loop.entry_blockers(BASE_CFG, db_path, DAY, halt_present=False) == []
 
 
 def test_live_ledger_is_a_separate_file():
@@ -355,7 +367,7 @@ def test_force_close_submits_a_real_close_order_and_records_its_id(tmp_path):
 def test_readiness_blocks_live_before_run_once_would_even_be_reached():
     # Belt-and-suspenders: main() checks this before calling run_once at all when --live is
     # passed. Exercised directly here since main() itself needs real credentials/config on disk.
-    unmet = live_loop.readiness({"live": {"symbol": "XSP"}}, halt_present=False, designated=None)
+    unmet = live_loop.readiness({"live": {"symbol": "XSP"}}, designated=None)
     assert unmet  # gate0_confirmed and designated account are both still unmet
 
 
@@ -418,6 +430,21 @@ def _stopping_snapshot():
         "LC": {"bid": 0.05, "ask": 0.08},
     }
     return snap
+
+
+def test_a_halt_blocks_new_ics_and_still_force_closes_an_open_one(tmp_path):
+    """2026-10-08: the halt flag returned the tick before any management, and gated every submit at
+    the seam, so a halt left open 0DTE ICs with no stops. Now a halted tick still sends the close."""
+    db_path = _init_db(tmp_path)
+    paper._save_trade(_open_trade_row(), db_path)
+    broker = FakeBroker()
+    snap = _entry_snapshot(symbol="QQQ", now_et="15:31", candidates=[])
+    summary = live_loop.run_once(
+        _config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None,
+        entry_block=["halt_flag_present"],
+    )  # fmt: skip
+    assert summary["closing"] == 1 and any(p["live"] is True for p in broker.placed)
+    assert summary["entry"] == {"blocked": ["halt_flag_present"]}
 
 
 def test_a_stop_is_recorded_only_when_the_broker_confirms_it_at_the_actual_price(tmp_path):
@@ -522,7 +549,12 @@ def test_the_live_seam_is_the_shared_adapter(monkeypatch):
 
     broker = live_loop.make_broker(_config(), "1234")
     assert isinstance(broker, execution.Broker)
-    # its gates are this module's readiness, re-checked per live submit
+    # Its gates are this module's ACCOUNT gates, re-checked per live submit. The halt flag is not
+    # one: a close must always get through, so the halt is enforced on entries in run_once.
     monkeypatch.setattr(live_loop.os.path, "exists", lambda p: True)  # halt flag present
-    out = broker.place({"legs": []}, live=True)
-    assert out["error"] == "live submission gated" and any("halt flag" in g for g in out["unmet_gates"])
+    assert live_loop.make_broker(_config(), "1234")._live_gates() == []
+    ungated = live_loop.make_broker({**_config(), "enable_live_trading": False}, "1234")
+    out = ungated.place({"legs": []}, live=True)
+    assert out["error"] == "live submission gated" and any(
+        "enable_live_trading" in g for g in out["unmet_gates"]
+    )

@@ -131,9 +131,12 @@ def arm_record_path() -> str:
 
 
 # --------------------------------------------------------------------------- gates
-def readiness(config: dict, *, halt_present: bool, designated: str | None) -> list[str]:
-    """The unmet live gates, checked every tick -- empty means the loop may act. Pure. bwb's own
-    list (the suite keeps these per module on purpose: the gates ARE the module's posture)."""
+def readiness(config: dict, *, designated: str | None) -> list[str]:
+    """The unmet ACCOUNT gates, checked every tick -- empty means the loop may act on the account at
+    all. Pure. bwb's own list (the suite keeps these per module on purpose: the gates ARE the
+    module's posture). The halt flag is not here (2026-10-08): it stops new risk only -- the entry
+    and the add-on -- while fills are still confirmed, resting orders managed and the ladder
+    settled (`run_once(halted=...)`)."""
     live = _live_cfg(config)
     unmet = []
     if not live.get("enabled"):
@@ -142,8 +145,6 @@ def readiness(config: dict, *, halt_present: bool, designated: str | None) -> li
         unmet.append("live.gate0_confirmed is empty -- a human must attest Gate 0 passed (who/when)")
     if _arm(config) not in engine.ARMS:
         unmet.append(f"live.arm {_arm(config)!r} is not a base arm (one of {', '.join(engine.ARMS)})")
-    if halt_present:
-        unmet.append("halt flag present (state/halt-live.flag) -- live entries halted")
     if not designated:
         unmet.append("no designated account -- run `cherrypick account --module bwb --set <last4>`")
     return unmet
@@ -636,7 +637,16 @@ def _refuse(conn, *, day: str, arm: str, symbol: str, reason: str, log, detail: 
 
 
 def _try_live_entry(
-    config: dict, conn, broker, *, cache_path: str, when: datetime, day: str, live: bool, log
+    config: dict,
+    conn,
+    broker,
+    *,
+    cache_path: str,
+    when: datetime,
+    day: str,
+    live: bool,
+    log,
+    halted: bool = False,
 ) -> dict:
     """ONE entry attempt for the live arm, gated in the order the money cares about: the day's
     budget, a working order, the breakers, the plan itself, the live floor, the margin caps -- and
@@ -655,6 +665,8 @@ def _try_live_entry(
     # Live-only: paper plans its entries in paper_loop and never reaches this function.
     if _cal.is_quarterly_expiry(when.date()):
         return refuse(QUARTER_END_REASON)
+    if halted:
+        return refuse("halt_flag_present")
     per_day = int(live_cfg.get("max_structures_per_day", 1))
     if db.established_today(conn, arm, day) >= per_day:
         return {"entry": "done", "reason": "max_structures_per_day_reached"}
@@ -829,7 +841,9 @@ def _try_live_entry(
 
 
 # --------------------------------------------------------------------------- the add-on seam
-def _make_fire(broker, config: dict, *, live: bool, day: str, when: datetime, log, placed: dict):
+def _make_fire(
+    broker, config: dict, *, live: bool, day: str, when: datetime, log, placed: dict, halted: bool = False
+):
     """The `fire` hook for `paper_loop._manage_positions`: place the add-on, stash the plan, and
     return False -- nothing is recorded fired until the broker confirms. One add-on order per
     tick across the ladder (a flip reclaim can arm several positions in the same second)."""
@@ -852,6 +866,18 @@ def _make_fire(broker, config: dict, *, live: bool, day: str, when: datetime, lo
                 symbol=symbol,
                 mode="addon",
                 reason=QUARTER_END_REASON,
+                accepted=False,
+            )
+            return False
+        # The halt flag is new risk's stop too: the add-on waits, armed, for the flag to clear.
+        if halted:
+            db.record_decision(
+                conn,
+                trade_date=day,
+                arm=position["arm"],
+                symbol=symbol,
+                mode="addon",
+                reason="halt_flag_present",
                 accepted=False,
             )
             return False
@@ -1016,6 +1042,7 @@ def run_once(
     log=_log,
     clock_fn=time.time,
     sleep_fn=time.sleep,
+    halted: bool = False,
 ) -> dict:
     """One live tick. `broker` is the injected seam (`BrokerAdapter` in production, a fake in
     tests). `live=False` is the dry-run posture: the preflight runs against the real account and
@@ -1082,7 +1109,7 @@ def run_once(
     # 5. one entry attempt inside the window
     placed: dict[str, dict] = {}
     entry = _try_live_entry(
-        config, conn, broker, cache_path=cache_path, when=when, day=day, live=live, log=log
+        config, conn, broker, cache_path=cache_path, when=when, day=day, live=live, log=log, halted=halted
     )
     summary["entry"] = entry
     if entry.get("entry") == "placed" and entry.get("order_id"):
@@ -1098,7 +1125,7 @@ def run_once(
         cache_path=cache_path,
         when=when,
         day=day,
-        fire=_make_fire(broker, config, live=live, day=day, when=when, log=log, placed=placed),
+        fire=_make_fire(broker, config, live=live, day=day, when=when, log=log, placed=placed, halted=halted),
         log=log,
     )
     summary.update(
@@ -1301,11 +1328,7 @@ def main(argv=None) -> int:
         if args.live:
             from cherrypick.bwb import credentials
 
-            unmet = readiness(
-                config,
-                halt_present=os.path.exists(halt_flag_path()),
-                designated=credentials.designated_account(),
-            )
+            unmet = readiness(config, designated=credentials.designated_account())
             if unmet:
                 return out({"ok": False, "error": "live gates unmet", "unmet_gates": unmet})
             reason = should_disarm(
@@ -1318,8 +1341,19 @@ def main(argv=None) -> int:
             return out({"ok": True, "skipped": "another live tick is running"})
         try:
             broker = BrokerAdapter(config)
+            # The halt flag stops new risk only (the entry and the add-on): the tick still
+            # confirms fills, manages resting orders and settles the ladder.
+            halted = bool(args.live) and os.path.exists(halt_flag_path())
             return out(
-                run_once(config, conn, broker, cache_path=cache_path, live=args.live, force=args.force)
+                run_once(
+                    config,
+                    conn,
+                    broker,
+                    cache_path=cache_path,
+                    live=args.live,
+                    force=args.force,
+                    halted=halted,
+                )
             )
         finally:
             looplock.release(_once_lock_path())
