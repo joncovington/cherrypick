@@ -1186,6 +1186,13 @@ def cmd_notify_desk(cfg) -> None:
     _emit(desk_notifier.run(cfg))
 
 
+def cmd_power_watch(cfg) -> None:
+    """Notify every channel while this machine is on battery (orchestrator/powerwatch.py)."""
+    from cherrypick.orchestrator import powerwatch
+
+    _emit(powerwatch.run(cfg))
+
+
 def cmd_notify_status(cfg, force: bool = False, close: bool = False) -> None:
     _emit(status_digest.run(cfg, force=force, close=close))
 
@@ -1488,6 +1495,7 @@ def build_parser() -> argparse.ArgumentParser:
             "review",
             "morning",
             "restart-console",
+            "power-watch",
             "ps",
             "restart",
             "stop",
@@ -1746,6 +1754,7 @@ def main() -> None:
         "notify-trades": lambda: cmd_notify_trades(cfg, dry_run=args.dry_run),
         "notify-desk": lambda: cmd_notify_desk(cfg),
         "notify-status": lambda: cmd_notify_status(cfg, force=args.force, close=args.close),
+        "power-watch": lambda: cmd_power_watch(cfg),
         "notify-send": lambda: cmd_notify_send(args),
         "sent": lambda: cmd_sent(args),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
