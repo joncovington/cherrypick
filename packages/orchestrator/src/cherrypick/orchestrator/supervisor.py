@@ -675,7 +675,17 @@ class Supervisor:
             self._mark_requested(
                 spec, st, 0, f"restart requested by {req.get('by') or 'unknown'} while not running"
             )
-            st["last_restart"] = {"id": req.get("id"), "at": time.time(), "result": "started"}
+            if jobspec.is_fixed_time(spec):
+                # A daily or monthly job is not running between its times, so "restart" means: run it
+                # once now (2026-10-09 -- it used to record the request, say "started", and run
+                # nothing). An EXTRA run: the day is not stamped fired, so its scheduled run still
+                # comes; the usual holds (network, one browser job, overlap) still apply.
+                st["run_now"] = req.get("id") or True
+                _log(f"{spec.id}: run-now requested by {req.get('by') or 'unknown'}")
+                result = "queued to run now"
+            else:
+                result = "started"
+            st["last_restart"] = {"id": req.get("id"), "at": time.time(), "result": result}
         if spec.kind == jobspec.KIND_INTERVAL:
             st["next_run_epoch"] = 0  # "restart" of a periodic job means: run it now
 
@@ -858,6 +868,13 @@ class Supervisor:
             if st.get("backoff_until") and time.time() < float(st["backoff_until"]):
                 continue
             fire, reason, patch = jobspec.should_start(spec, st, now, holidays)
+            run_now = bool(st.get("run_now")) and jobspec.is_fixed_time(spec)
+            if run_now and not spec.enabled:
+                _log(f"{spec.id}: run-now dropped -- the job is disabled ({spec.enabled_reason})")
+                st.pop("run_now", None)
+                run_now = False
+            if run_now and not fire:
+                fire, patch = True, {}  # out of schedule: nothing stamped, the scheduled run still comes
             if fire and jobspec.is_fixed_time(spec):
                 hold = self._fixed_start_hold(spec, browser_busy)
                 if hold is not None:
@@ -871,6 +888,7 @@ class Supervisor:
                 st["next_run"] = _epoch_iso(st.get("next_run_epoch"))
             if fire and self._spawn(spec, st):
                 started.append(spec.id)
+                st.pop("run_now", None)
                 if jobspec.is_fixed_time(spec):
                     self._last_fixed_spawn = time.time()
                     browser_busy = browser_busy or jobspec.uses_browser(spec)
@@ -1284,7 +1302,8 @@ def startup_message(info: dict[str, Any]) -> tuple[str, str, str]:
         f"; armed today: {', '.join(armed)}" if armed else "; nothing armed today"
     )
     level = "WARNING" if (not info.get("dns_ok") or info.get("halt")) else "INFO"
-    return level, title, ". ".join([", ".join(first), ", ".join(second), live]) + "."
+    sentences = [", ".join(first), ", ".join(second), live]
+    return level, title, ". ".join(t[:1].upper() + t[1:] for t in sentences) + "."
 
 
 def _announce_start(sup: Supervisor, previous: str | None) -> None:
