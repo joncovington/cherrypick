@@ -9,6 +9,7 @@ Subcommands (all read-only):
     replay      the read-side threshold replay over bwb_trigger_ticks (see replay.py)
     addon-replay  the add-on scored as its own trade, with no fly (see addon_replay.py)
     iv-premium  implied vol at entry against realised vol to expiry, per window (see iv_premium.py)
+    regime-split  each arm's closed results cut by the VIX9D/VIX gate at entry (see entry_regime.py)
 
 The paper loop's own argv (`python -m cherrypick.bwb.paper_loop --once|--interval|--settle|
 --status`) is what the orchestrator drives; this CLI is the human read side.
@@ -105,6 +106,15 @@ def cmd_addon_replay(args) -> int:
     result = addon_replay.run(conn, load_config(args.config))
     if not args.trades:
         result.pop("trades")
+    print(json.dumps({"ok": True, **result}, indent=2, default=str))
+    return 0
+
+
+def cmd_regime_split(args) -> int:
+    from cherrypick.bwb import db, entry_regime
+
+    conn = db.connect(args.db)
+    result = entry_regime.split(conn, vix9d_vix_max=args.vix9d_vix_max)
     print(json.dumps({"ok": True, **result}, indent=2, default=str))
     return 0
 
@@ -209,6 +219,11 @@ def main(argv=None) -> int:
     p_ivp.add_argument("--windows", action="store_true", help="include every window, not just the summary")
     p_ivp.add_argument("--sample-seconds", dest="sample_seconds", type=float, default=300)
     p_ivp.set_defaults(func=cmd_iv_premium)
+    p_reg = sub.add_parser(
+        "regime-split", help="each arm's closed results cut by the VIX9D/VIX gate at entry"
+    )
+    p_reg.add_argument("--vix9d-vix-max", dest="vix9d_vix_max", type=float, default=1.0)
+    p_reg.set_defaults(func=cmd_regime_split)
 
     args = ap.parse_args(argv)
     return args.func(args)

@@ -125,6 +125,8 @@
     "tick_interval_seconds": 60,
     "max_open_margin_dollars": 2000,
     "max_open_margin_per_expiration_dollars": null,
+    "_vix9d_vix_max_note": "The live term-structure entry gate (2026-10-09): enter only while VIX9D / VIX at the entry tick is below this (1.0 = VIX9D under VIX). null is off. A missing or stale VIX9D or VIX print refuses the entry (regime_unmeasured); it never lets one through. Live only -- every paper arm still enters every session and records the reading, so `bwb regime-split` measures the gate against them. Turning it on or changing it is a live measurement break: journal it.",
+    "vix9d_vix_max": null,
     "max_structures_per_day": 1,
     "min_net_credit_dollars": 15,
     "entry_concession": 0.05,

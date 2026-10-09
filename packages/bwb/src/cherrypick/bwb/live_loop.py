@@ -49,7 +49,17 @@ from cherrypick.core import settlement as _settlement
 
 from cherrypick.bwb import book as bookmod
 from cherrypick.bwb import cli as climod
-from cherrypick.bwb import clock, db, engine, entry_iv, live_orders, management, provider, stream_request
+from cherrypick.bwb import (
+    clock,
+    db,
+    engine,
+    entry_iv,
+    entry_regime,
+    live_orders,
+    management,
+    provider,
+    stream_request,
+)
 from cherrypick.bwb import paper_loop as _pl
 
 DEFAULT_ARM = "control"
@@ -169,6 +179,22 @@ def mark_drawdown_tripped(conn, limit_dollars: float | None) -> tuple[bool, floa
     if loss is None:
         return False, None
     return loss >= abs(float(limit_dollars)), loss
+
+
+def regime_gate(regime: dict, vix9d_vix_max: float | None) -> tuple[str, str] | None:
+    """The live term-structure gate (2026-10-09): `(reason, detail)` to refuse the entry, or None
+    to let it through. Off when `vix9d_vix_max` is null. A missing or stale print REFUSES
+    (`regime_unmeasured`) -- missing data can block an entry, never allow one (curve's rule 6) --
+    and a ratio at or above the bar is `regime_inverted`. Pure; the reading is `entry_regime`'s."""
+    if vix9d_vix_max is None:
+        return None
+    v9, vix = regime.get("entry_vix9d"), regime.get("entry_vix")
+    if v9 is None or vix is None or vix <= 0:
+        return "regime_unmeasured", str(regime.get("entry_regime_reason") or "no reading")
+    ratio = v9 / vix
+    if ratio >= float(vix9d_vix_max):
+        return "regime_inverted", f"VIX9D/VIX {ratio:.3f} >= {float(vix9d_vix_max):g} ({v9:g}/{vix:g})"
+    return None
 
 
 # --------------------------------------------------------------------------- the broker seam
@@ -687,7 +713,15 @@ def _try_live_entry(
     if tripped:
         return refuse("mark_drawdown_halt", f"open marked loss {marked:.2f}")
 
-    plan_dates = clock.target_expiration(when.date(), config.get("defaults") or {})
+    # The term-structure gate (2026-10-09), live only: enter only while VIX9D sits below VIX. The
+    # same reading is stored on the row, so the gate and the record can never disagree.
+    defaults = config.get("defaults") or {}
+    regime = entry_regime.measure(cache_path, max_age_seconds=defaults.get("max_quote_age_seconds", 300))
+    gate = regime_gate(regime, live_cfg.get("vix9d_vix_max"))
+    if gate is not None:
+        return refuse(*gate)
+
+    plan_dates = clock.target_expiration(when.date(), defaults)
     if plan_dates is None:
         return refuse("no_expiration_plan")
     snapshot = provider.build_entry_snapshot(
@@ -790,8 +824,8 @@ def _try_live_entry(
     if order_id is None:
         log(f"CRITICAL: live entry {pid} accepted but no order id came back -- orphan sweep will find it")
         return refuse("no_order_id", str(result))
-    # Recording only, read AFTER the order is accepted so it adds nothing to the order path.
-    defaults = config.get("defaults") or {}
+    # Recording only, read AFTER the order is accepted so it adds nothing to the order path. The
+    # term-structure reading is the one the gate decided on, taken above.
     implied = entry_iv.measure(
         cache_path,
         symbol,
@@ -808,6 +842,7 @@ def _try_live_entry(
         entry_session=day,
         advice_params=None,
         implied=implied,
+        regime=regime,
         position_id_override=pid,
         extra={
             "status": "pending",

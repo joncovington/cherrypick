@@ -5,6 +5,8 @@ bracket.
 Writes ``~/.cherrypick/state/stream_requests/bwb.json``.
 
 - ``symbols`` — SPX only.
+- ``legs`` — VIX9D, VIX and VIX3M as bare index prints (2026-10-09), for the term structure
+  `entry_regime.py` records on every position. No chains.
 - ``leg_sources`` — one SELECT over `bwb_legs` for open legs, so filled entries stay subscribed and
   closed legs age out.
 - ``expirations`` — the one computed target expiration plus every expiration still held open (a
@@ -26,7 +28,7 @@ from pathlib import Path
 
 from cherrypick.core import streamrequests as _sr
 
-from cherrypick.bwb import clock, db
+from cherrypick.bwb import clock, db, entry_regime
 
 _MODULE = "bwb"
 _MODULE_LIVE = "bwb-live"  # the live loop's own request file: its legs live in a different ledger
@@ -70,6 +72,8 @@ def write(
     return _sr.write_request(
         _MODULE_LIVE if live else _MODULE,
         [symbol],
+        # The vol term structure recorded at entry (entry_regime.py): bare index prints, no chains.
+        legs=[sym for _, sym in entry_regime.SYMBOLS],
         leg_sources=leg_sources,
         expirations=wanted_expirations(conn, symbol, today, defaults),
         window_hints={symbol: window_strikes(conn)},

@@ -253,6 +253,59 @@ def test_a_halted_tick_refuses_the_entry_and_says_why(live_config, conn, cache, 
     assert ("entry", "halt_flag_present", 0) in _decisions(conn, "entry")
 
 
+def _prints(cache, **prints):
+    """Write fresh index prints (symbol=value) into the test cache."""
+    import time
+
+    c = streamcache.connect(cache)
+    for sym, last in prints.items():
+        c.execute(
+            "INSERT OR REPLACE INTO stream_trades(symbol, last, updated_at) VALUES (?,?,?)",
+            (sym, last, time.time()),
+        )
+    c.commit()
+    c.close()
+
+
+def _gated(live_config):
+    return {**live_config, "live": {**live_config["live"], "vix9d_vix_max": 1.0}}
+
+
+def test_the_regime_gate_is_off_when_null_and_refuses_on_missing_data():
+    assert live_loop.regime_gate({}, None) is None
+    assert live_loop.regime_gate({"entry_vix9d": 14.0, "entry_vix": 16.0}, 1.0) is None
+    assert live_loop.regime_gate({"entry_vix9d": 16.0, "entry_vix": 16.0}, 1.0)[0] == "regime_inverted"
+    missing = live_loop.regime_gate(
+        {"entry_vix9d": None, "entry_vix": 16.0, "entry_regime_reason": "VIX9D:stale"}, 1.0
+    )
+    assert missing == ("regime_unmeasured", "VIX9D:stale")
+
+
+def test_an_inverted_term_structure_refuses_the_live_entry(live_config, conn, cache, planned):
+    _prints(cache, VIX9D=17.5, VIX=16.0, VIX3M=18.0)
+    broker = FakeBroker()
+    out = _tick(_gated(live_config), conn, broker, cache)
+    assert out["entry"]["reason"] == "regime_inverted"
+    assert broker.placed == []
+    assert ("entry", "regime_inverted", 0) in _decisions(conn, "entry")
+
+
+def test_no_term_structure_reading_refuses_the_live_entry_never_allows_it(live_config, conn, cache, planned):
+    broker = FakeBroker()  # the cache holds no index prints at all
+    out = _tick(_gated(live_config), conn, broker, cache)
+    assert out["entry"]["reason"] == "regime_unmeasured"
+    assert broker.placed == []
+
+
+def test_an_open_gate_enters_and_stores_the_reading_it_decided_on(live_config, conn, cache, planned):
+    _prints(cache, VIX9D=14.0, VIX=16.0, VIX3M=18.0)
+    broker = FakeBroker()
+    _tick(_gated(live_config), conn, broker, cache)
+    assert len(broker.placed) == 1
+    row = _row(conn, "SPX:control:2026-09-16:1")
+    assert (row["entry_vix9d"], row["entry_vix"], row["entry_vix3m"]) == (14.0, 16.0, 18.0)
+
+
 def test_a_halted_tick_still_confirms_a_pending_fill(live_config, conn, cache, planned):
     """2026-10-08: the halt returned the tick before anything ran, so a halt with an order resting
     left it unwatched. Now a halted tick still reads the broker and records the fill."""

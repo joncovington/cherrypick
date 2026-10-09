@@ -149,6 +149,11 @@ affecting.
 11. **Implied variance at entry is recorded, never acted on** (2026-10-09). `entry_iv_vol` with
     `entry_iv_complete = 0` is a lower bound (the cache's strike window cut the wings); rows before
     2026-10-09 carry none.
+12. **The vol term structure at entry is recorded, never acted on** (2026-10-09). VIX9D, VIX and
+    VIX3M prints with their ages; a stale or missing print is no number plus its reason. The
+    VIX9D/VIX gate (`bwb regime-split`) is a hypothesis from a modelled two-year backtest that
+    chose the best of six gates. It is measured here and not traded on. A row with no reading,
+    including every row before 2026-10-09, is `unmeasured` and is never assigned to a side.
 
 SPX is cash-settled and European: an expiring leg books intrinsic against the settlement print; no
 shares, no assignment, no dividend calendar. The event fee lands the next business day.
@@ -172,6 +177,12 @@ Built to test whether the paper result survives a fill without disturbing the pa
   per-expiration worst-case margin caps from expiry payoffs, RESERVING an unfired position's future
   add-on whenever the arm can fire; the settled-net breaker; and the mark-drawdown breaker, which
   blocks the NEXT entry only, never an exit.
+- **The term-structure gate** (`live.vix9d_vix_max`, 2026-10-09; null = off): a live entry is refused
+  `regime_inverted` when VIX9D/VIX at the entry tick is at or above the bar, and `regime_unmeasured`
+  when either print is missing or stale. Missing data blocks an entry and never allows one. The
+  reading that decided is the one stored on the row. Live only: every paper arm still enters
+  every session, so `bwb regime-split` keeps measuring the gate against them. Setting or changing
+  it is a live measurement break: journal it.
 - **No new live risk on a quarter-end session** (`core.calendar.is_quarterly_expiry`, refusal
   `core.live.QUARTER_END_REASON`): the entry refuses, and an armed add-on is deferred (not lost: it
   fires on the next session's first credit tick). Paper is untouched; arming warns. First binding
@@ -209,6 +220,7 @@ Built to test whether the paper result survives a fill without disturbing the pa
 | `book.py` | decisions -> ledger rows; add-on legs; cash settlement. |
 | `paper_loop.py` | entry tick, 60s trigger/mark loop, expiry settle. |
 | `entry_iv.py` | the expiration's model-free implied variance (`cherrypick.core.impliedvar`), read from the cache at entry and stored on the position row (`entry_iv_*`). Recording only; a cut-off strip is `entry_iv_complete = 0`, a lower bound; a reading not taken stores its reason and no number. |
+| `entry_regime.py` | VIX9D / VIX / VIX3M read from the cache (read-only) at entry and stored on the position row (`entry_vix*`, `entry_regime_reason`). Recording only; ratios are derived on read. `split` cuts each arm's closed results by the VIX9D/VIX gate (`bwb regime-split`). |
 | `iv_premium.py` | read-side: implied at entry against realised to expiry from the position's own spot marks (5-min samples, ending on the settlement print), one row per (entry session, expiration) window, arms counted once. A path that starts late, ends early or has an in-session hole over 15 min is refused, never estimated (`bwb iv-premium`). |
 | `analytics.py` | the one query layer: nets, fire counts, trigger-tick coverage. |
 | `replay.py` | read-side threshold replay over `bwb_trigger_ticks` — a stubbed fast-follow. |
