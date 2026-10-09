@@ -32,8 +32,8 @@ decisions per symbol, one shared account-wide risk budget.
 
 - **Unattended paper (automated).** `cherrypick/meic/paper_loop.py` codifies the loop's decisions. The
   orchestrator's supervisor fires `paper_loop --once` every 60 s as the `meic-paper` job
-  (`modules.meic.paper.tick_interval_seconds`; `--install-task` still registers the standalone
-  `cherrypick-meic-paper-loop` schtasks task), starts the streamer, and watchdogs both. All writes go
+  (`modules.meic.paper.tick_interval_seconds`; the module's own schtasks launcher was removed on
+  2026-10-08), starts the streamer, and watchdogs both. All writes go
   to `~/.cherrypick/data/meic/paper_trades.db`; the live account and `meic_trades.db` are never
   touched. **It is not a full re-implementation of the Loop Steps**: GEX-wall strike anchoring, the ORB
   debit-spread path and judgement-based stop tightening are agent-loop-only. The engine runs the

@@ -75,10 +75,9 @@ _ROOT = Path(__file__).resolve().parents[3]
 _PID_FILE = _paths.data_path("paper_loop.pid")
 _LOCK_FILE = _paths.data_path("paper_loop.once.lock")
 _LOG_FILE = _paths.log_path("paper_loop.log")
-_TASK_NAME = "cherrypick-meic-paper-loop"
 _PAPER_DB = str(_paths.paper_db_path())
 # `-m` rather than a path to the script: independent of this file's depth on disk and of the child's
-# working directory, which matters because the scheduled task runs from wherever schtasks starts it.
+# working directory, which matters because the supervisor runs it from its own.
 _TT = [sys.executable, "-m", "cherrypick.meic.tt"]
 _DB = [sys.executable, "-m", "cherrypick.meic.db", "--db", _PAPER_DB]
 
@@ -1096,15 +1095,6 @@ def _running_pid():
     return None
 
 
-def _task_installed():
-    if os.name != "nt":
-        return False
-    r = subprocess.run(
-        ["schtasks", "/Query", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
-    )
-    return r.returncode == 0
-
-
 def _cmd_status():
     """Daemon/task status, plus the settlement signal the orchestrator's watchdog reads.
 
@@ -1133,7 +1123,6 @@ def _cmd_status():
     info = {
         "daemon_running": pid is not None,  # a long-running --start daemon (if used)
         "pid": pid,
-        "scheduled_task": _task_installed(),  # the recommended --install-task automation
         "open_positions": len(open_today),
         "positions_today": len(open_today),
         "session_settled": not open_today,
@@ -1265,82 +1254,21 @@ def _heartbeat_lock():
 
 
 # ---------------------------------------------------------------------------
-# Scheduled-task automation (the robust unattended launcher on Windows)
+# Unattended running is the orchestrator supervisor's job: it runs `--once` on the configured
+# cadence, restarts on death, and works on every OS. The module's own Windows scheduled-task
+# launcher (`--install-task`) was removed on 2026-10-08; `--start` remains for a terminal session.
 # ---------------------------------------------------------------------------
-# A long-running detached daemon proved fragile on Windows (stray console events / abrupt
-# death of a child-spawning process). Instead the automation registers a Task Scheduler job
-# that runs `--once` every 2 minutes - each run is a short-lived process that reliably
-# completes, self-heals if one fails, no-ops outside market hours (time-gated), and persists
-# across sessions independent of any launching shell.
-
-
-def _install_task():
-    if os.name != "nt":
-        _emit(
-            {
-                "ok": False,
-                "error": "scheduled-task install is Windows-only; on "
-                "other OSes run `python src/paper_loop.py` in a terminal or via cron",
-            }
-        )
-        return
-    # pythonw.exe = no console window, so the every-2-min --once run is truly headless.
-    # `-m` rather than an absolute script path: the registered task string no longer bakes in this
-    # file's location, so moving/reinstalling the package doesn't strand the task pointing at a path
-    # that no longer exists. Requires cherrypick-meic to be installed in this interpreter, which is
-    # the documented setup (scripts/dev-install).
-    tr = f'"{_pythonw()}" -m cherrypick.meic.paper_loop --once'
-    r = subprocess.run(
-        ["schtasks", "/Create", "/TN", _TASK_NAME, "/TR", tr, "/SC", "MINUTE", "/MO", "2", "/F", "/IT"],
-        capture_output=True,
-        text=True,
-        creationflags=_NO_WINDOW,
-    )
-    ok = r.returncode == 0
-    # Fire one run immediately so positions are managed without waiting for the first tick.
-    if ok:
-        subprocess.run(
-            ["schtasks", "/Run", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
-        )
-    _emit({"ok": ok, "task": _TASK_NAME, "cadence": "every 2 min", "detail": (r.stdout or r.stderr).strip()})
-
-
-def _uninstall_task():
-    if os.name != "nt":
-        _emit({"ok": False, "error": "Windows-only"})
-        return
-    subprocess.run(
-        ["schtasks", "/End", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
-    )
-    r = subprocess.run(
-        ["schtasks", "/Delete", "/TN", _TASK_NAME, "/F"],
-        capture_output=True,
-        text=True,
-        creationflags=_NO_WINDOW,
-    )
-    _emit({"ok": r.returncode == 0, "detail": (r.stdout or r.stderr).strip()})
 
 
 def main():
     parser = argparse.ArgumentParser(description="MEICAgent paper-trading loop daemon")
     parser.add_argument(
-        "--install-task",
-        action="store_true",
-        help="Register a Windows scheduled task that runs --once every 2 min "
-        "(the recommended unattended launcher) and fire one run now",
-    )
-    parser.add_argument(
-        "--uninstall-task",
-        action="store_true",
-        help="Remove the scheduled task (stops the unattended paper session)",
-    )
-    parser.add_argument(
         "--start",
         action="store_true",
         help="Spawn a long-running detached daemon in the background (alternative "
-        "to the scheduled task; less robust on Windows)",
+        "to the supervisor; less robust on Windows)",
     )
-    parser.add_argument("--status", action="store_true", help="Print daemon/task status and exit")
+    parser.add_argument("--status", action="store_true", help="Print daemon status and exit")
     parser.add_argument("--stop", action="store_true", help="Stop a running --start daemon")
     parser.add_argument("--once", action="store_true", help="Run a single iteration and exit")
     parser.add_argument(
@@ -1355,12 +1283,6 @@ def main():
         return
     if args.stop:
         _cmd_stop()
-        return
-    if args.install_task:
-        _install_task()
-        return
-    if args.uninstall_task:
-        _uninstall_task()
         return
     if args.start:
         _spawn_detached()

@@ -106,7 +106,6 @@ from cherrypick.flies.cli import load_config  # noqa: E402
 DEFAULT_ARM = "gex"
 _TERMINAL_UNFILLED = _execution.TERMINAL_UNFILLED  # one reading of a dead order, suite-wide
 
-_TASK_NAME = "cherrypick-flies-live-loop"
 _TASK_INTERVAL_MIN = 1
 _NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
@@ -151,7 +150,7 @@ def _watch_lock_path() -> str:
 def arm_stamp_path() -> str:
     """The live ARM RECORD — 'armed for today' as a file, in the SHARED state dir so the module
     (self-disarm), the supervisor (job enablement), and the watchdog (dead-man's backstop) all read
-    the one file. Under the supervisor, this record — not a schtasks registration — IS the armed
+    the one file. Under the supervisor, this record IS the armed
     signal: present-and-dated-today enables the `flies-live` job; deleting it disarms within one
     supervisor pass. Only this module's human-confirmed arm command ever writes it. The
     convention is `cherrypick.core.live` (2026-09-18), so a second armed module cannot drift."""
@@ -1839,50 +1838,15 @@ class BrokerAdapter(_execution.Broker):
 
 
 # --------------------------------------------------------------------------- scheduled task
-def task_installed() -> bool:
-    if os.name != "nt":
-        return False
-    r = subprocess.run(
-        ["schtasks", "/Query", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
-    )
-    return r.returncode == 0
-
-
-def _allow_on_battery() -> dict:
-    """Clear Task Scheduler's default battery guards (DisallowStartIfOnBatteries /
-    StopIfGoingOnBatteries). schtasks can't set these; the orchestrator patches its own tasks
-    the same way (`tasks.allow_on_battery`), but the live task is registered HERE, module-side,
-    so it must patch itself — a laptop dropping to battery would otherwise silently stop the
-    loop with real working orders resting at the broker. Best-effort: a failure is reported
-    but never invalidates the registration (the watchdog freshness check is the backstop)."""
-    ps = (
-        "$ErrorActionPreference='Stop';"
-        f"$s=(Get-ScheduledTask -TaskName '{_TASK_NAME}').Settings;"
-        "$s.DisallowStartIfOnBatteries=$false;$s.StopIfGoingOnBatteries=$false;"
-        f"Set-ScheduledTask -TaskName '{_TASK_NAME}' -Settings $s | Out-Null"
-    )
-    try:
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            creationflags=_NO_WINDOW,
-        )
-        return {"ok": r.returncode == 0, "detail": (r.stderr.strip()[:200] or "battery guards cleared")}
-    except OSError as exc:
-        return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
-
-
 def _supervisor_heartbeat_fresh(max_age_seconds: int = 90) -> bool:
     """Is the orchestrator's supervisor daemon driving this box? (`cherrypick.core.live`.) Fresh
-    heartbeat → arming is a record write; stale/absent → the legacy schtasks path still applies."""
+    heartbeat → arming is a record write; stale/absent → arming is refused."""
     return _live.supervisor_heartbeat_fresh(max_age_seconds)
 
 
 def _spawn_first_tick() -> None:
     """Fire one detached `--once --live` immediately so arming doesn't wait up to a full interval
-    for the first tick — the same behavior `schtasks /Run` gave the legacy registration."""
+    for the first tick."""
     flags = 0
     if os.name == "nt":
         flags = 0x00000008 | 0x08000000 | 0x00000200  # DETACHED | NO_WINDOW | NEW_GROUP
@@ -1899,93 +1863,32 @@ def _spawn_first_tick() -> None:
 
 
 def install_task() -> dict:
-    """Arm the live loop FOR TODAY by writing the arm record. The record is what makes arming
-    per-day — a tick that finds a stale record disarms itself, and the watchdog's backstop keys on
-    the same file.
-
-    Driver dispatch: when the orchestrator's supervisor is running, the record alone arms (the
-    supervisor derives the `flies-live` job from it within one pass) and NO schtasks entry is
-    created. Otherwise the legacy every-minute task is registered exactly as before. Both paths
-    fire one immediate tick."""
-    armed_for = provider.now_et().date().isoformat()
-    if _supervisor_heartbeat_fresh():
-        out = _live.arm(
-            "flies",
-            date=armed_for,
-            at=clock.now_iso(),
-            armed_by="live-flies-start",
-            spawn_first_tick=_spawn_first_tick,
-            heartbeat_fresh=lambda: True,  # checked just above through this module's own seam
-        )
-        out["cadence"] = "every 60s (supervisor job flies-live)"
-        return out
-    if os.name != "nt":
-        return {"ok": False, "error": "no supervisor running, and scheduled-task install is Windows-only"}
-    tr = f'"{_pl._pythonw()}" -m cherrypick.flies.live_loop --once --live'
-    r = subprocess.run(
-        [
-            "schtasks",
-            "/Create",
-            "/TN",
-            _TASK_NAME,
-            "/TR",
-            tr,
-            "/SC",
-            "MINUTE",
-            "/MO",
-            str(_TASK_INTERVAL_MIN),
-            "/F",
-            "/IT",
-        ],
-        capture_output=True,
-        text=True,
-        creationflags=_NO_WINDOW,
+    """Arm the live loop FOR TODAY: the arm record, under a live supervisor, and nothing else
+    (`cherrypick.core.live.arm`; the supervisor derives the `flies-live` job from it within one pass
+    and one tick fires at once). No supervisor, no arming -- the Windows-only scheduled-task fallback
+    was removed on 2026-10-08, after every box had run under the supervisor for two months; it was a
+    second, less-watched way to drive a live loop."""
+    out = _live.arm(
+        "flies",
+        date=provider.now_et().date().isoformat(),
+        at=clock.now_iso(),
+        armed_by="live-flies-start",
+        spawn_first_tick=_spawn_first_tick,
+        heartbeat_fresh=_supervisor_heartbeat_fresh,
     )
-    ok = r.returncode == 0
-    battery = None
-    if ok:
-        _write_arm_stamp()
-        battery = _allow_on_battery()
-        subprocess.run(
-            ["schtasks", "/Run", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
-        )
-    out = {
-        "ok": ok,
-        "driver": "schtasks",
-        "task": _TASK_NAME,
-        "cadence": f"every {_TASK_INTERVAL_MIN} min",
-        "armed_for": armed_for,
-        "battery": battery,
-        "detail": (r.stdout or r.stderr).strip(),
-    }
-    warning = _live.quarter_end_warning(armed_for) if ok else None
-    if warning is not None:
-        out["warning"] = warning
+    if out.get("ok"):
+        out["cadence"] = "every 60s (supervisor job flies-live)"
     return out
 
 
 def uninstall_task() -> dict:
-    """Disarm: delete the arm record (which disables the supervisor's `flies-live` job within one
-    pass), and remove the legacy scheduled task if one is registered. Record deletion is the
-    authoritative act; the schtasks removal is transition-window hygiene."""
+    """Disarm: delete the arm record, which disables the supervisor's `flies-live` job within one
+    pass. A legacy scheduled task still registered on an old box is the orchestrator's to remove
+    (`run.py install` deletes every legacy task; `doctor` reports one)."""
     removed = _live.disarm("flies", legacy_paths=[_legacy_arm_stamp_path()])["arm_record_removed"]
-    task_result = None
-    if os.name == "nt" and task_installed():
-        subprocess.run(
-            ["schtasks", "/End", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
-        )
-        r = subprocess.run(
-            ["schtasks", "/Delete", "/TN", _TASK_NAME, "/F"],
-            capture_output=True,
-            text=True,
-            creationflags=_NO_WINDOW,
-        )
-        task_result = {"ok": r.returncode == 0, "detail": (r.stdout or r.stderr).strip()}
     return {
-        "ok": removed or task_result is not None,
-        "task": _TASK_NAME,
+        "ok": removed,
         "arm_record_removed": removed,
-        "legacy_task": task_result,
         "detail": "disarmed (arm record removed)" if removed else "nothing was armed",
     }
 
@@ -2091,8 +1994,6 @@ def run_status(config: dict, conn) -> dict:
         "ok": True,
         "date": today,
         "in_session": _pl.in_session(provider.minute_of_day(when)),
-        "scheduled_task": task_installed(),
-        "task_name": _TASK_NAME,
         "armed_for": arm_stamp_date(),
         "arm": arm,
         "symbol": live_cfg.get("symbol"),
@@ -2186,7 +2087,9 @@ def main() -> int:
         help="with --settle: the session to settle (YYYY-MM-DD, default today) — the next-morning "
         "official-print confirm targets YESTERDAY's book",
     )
-    ap.add_argument("--install-task", action="store_true", help=f"arm {_TASK_NAME} for TODAY (1/min)")
+    ap.add_argument(
+        "--install-task", action="store_true", help="arm the live loop for TODAY (supervisor job)"
+    )
     ap.add_argument("--uninstall-task", action="store_true", help="disarm the live loop")
     ap.add_argument(
         "--agent-mode",
