@@ -106,6 +106,13 @@ watch:
   request in `state/daemon_requests/`; each pass runs it as a `--direct` child with the supervisor's
   rights, and the child files the result the CLI waits on. Only restart/stop/start of a configured
   daemon is ever run. A restart whose stop fails now releases its hold.
+- **The Dolt sql-server is the managed daemon `dolt-server`** (`proc.DOLT_DAEMON`, `run.py
+  dolt-server-status|start|stop`), so status/stop/restart reach it like the streamer; `ensure-dolt`
+  leaves it down while held. Stop ends only the process listening on the Dolt port, and only if it
+  is dolt. **Never run a bare `dolt` command in `data/earnings` from the desktop** while the service
+  runs the server: dolt 2.4 reads `.dolt/sql-server.info`, gets Access Denied checking the PID, takes
+  the server for dead and deletes the file, then opens the clone read-only (2026-10-09: the nightly
+  pull failed). Use `run.py dolt-sql <db> --query "..."`, which connects by address.
 
 **The watchdog** (`orchestrator/watchdog.py`, a 10-minute job) checks each module's paper pipeline (job
 present, data fresh in-session, streamer alive, earnings SLA met), the supervisor/anchor, and the

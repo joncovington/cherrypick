@@ -40,14 +40,31 @@ POLL_S = 0.5
 # --------------------------------------------------------------------------- names
 
 
+# The suite's Dolt sql-server, managed like the streamer from 2026-10-09: the supervisor's `ensure-dolt`
+# job only ever started it, and under the Windows service nothing on the desktop could stop it.
+DOLT_DAEMON = "dolt-server"
+
+
 def daemons(cfg: dict[str, Any]) -> dict[str, tuple[Path, dict[str, Any], bool]]:
-    """{name: (root, spec, is_producer)} for the streamer and every enabled service."""
+    """{name: (root, spec, is_producer)} for the streamer, every enabled service, and the Dolt
+    sql-server when a module declares one (driven through `run.py dolt-server-*`)."""
     out: dict[str, tuple[Path, dict[str, Any], bool]] = {}
     spec = cfg.get("streamer") or {}
     if spec.get("enabled"):
         out["streamer"] = (cfgmod.module_root(spec, "streamer"), spec, True)
     for svc in cfgmod.enabled_services(cfg):
         out[svc["id"]] = (cfgmod.module_root(svc, svc["id"]), svc, False)
+    if any((m.get("paper") or {}).get("dolt_service") for m in cfgmod.enabled_modules(cfg).values()):
+        launcher = str(supervisor._LAUNCHER)
+        out[DOLT_DAEMON] = (
+            supervisor._LAUNCHER.parent,
+            {
+                "status_argv": [launcher, "dolt-server-status"],
+                "start_argv": [launcher, "dolt-server-start"],
+                "stop_argv": [launcher, "dolt-server-stop"],
+            },
+            False,
+        )
     return out
 
 
