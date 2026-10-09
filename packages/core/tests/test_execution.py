@@ -516,3 +516,70 @@ def test_an_unreadable_hold_file_holds(monkeypatch, tmp_path):
     _held_adapter(monkeypatch, at_broker=[], read_ok=[False])
     out = _adapter(monkeypatch, hold_path=hold).place({"legs": []}, live=True)
     assert out["ok"] is False and out.get("uncertain") is True
+
+
+# --------------------------------------------------------------------------- broker contact (2026-10-08)
+# Every failure is swallowed into data here, so a tick against a dead broker exited 0 and looked
+# healthy. The health file is the trace an outage leaves, carried across ticks.
+
+
+def test_a_failing_broker_starts_a_streak_that_the_next_tick_continues(monkeypatch, tmp_path):
+    async def down(account, session):
+        raise ConnectionError("Temporary failure in name resolution")
+
+    monkeypatch.setattr(_broker, "working_orders", down)
+    hold = tmp_path / "live_held.json"
+    first = _adapter(monkeypatch, hold_path=hold)
+    with pytest.raises(ConnectionError):
+        first.working_orders()
+    h1 = execution.read_broker_health(tmp_path / execution.HEALTH_FILENAME)
+    assert h1["failing_since"] and h1["failures"] >= 1 and "name resolution" in h1["last_error"]
+
+    second = _adapter(monkeypatch, hold_path=hold)  # the next tick: a new process, a new adapter
+    with pytest.raises(ConnectionError):
+        second.working_orders()
+    h2 = execution.read_broker_health(tmp_path / execution.HEALTH_FILENAME)
+    assert h2["failing_since"] == h1["failing_since"] and h2["failures"] > h1["failures"]
+
+
+def test_a_login_that_cannot_be_built_is_recorded(monkeypatch, tmp_path):
+    def expired():
+        raise RuntimeError("invalid_grant: refresh token expired")
+
+    adapter = execution.Broker(
+        get_session=expired, designated_account=lambda: "x", hold_path=tmp_path / "h.json"
+    )
+    with pytest.raises(RuntimeError):
+        _ = adapter.session
+    assert "invalid_grant" in execution.read_broker_health(tmp_path / execution.HEALTH_FILENAME)["last_error"]
+
+
+def test_one_success_ends_the_streak(monkeypatch, tmp_path):
+    state = {"up": False}
+
+    async def flaky(account, session):
+        if not state["up"]:
+            raise TimeoutError("read timed out")
+        return []
+
+    monkeypatch.setattr(_broker, "working_orders", flaky)
+    adapter = _adapter(monkeypatch, hold_path=tmp_path / "live_held.json")
+    with pytest.raises(TimeoutError):
+        adapter.working_orders()
+    state["up"] = True
+    assert adapter.working_orders() == []
+    h = execution.read_broker_health(tmp_path / execution.HEALTH_FILENAME)
+    assert h["failing_since"] is None and h["failures"] == 0 and h["last_ok_at"]
+
+
+def test_no_hold_path_writes_nothing_and_an_unreadable_file_reads_empty(monkeypatch, tmp_path):
+    async def down(account, session):
+        raise ConnectionError("x")
+
+    monkeypatch.setattr(_broker, "working_orders", down)
+    with pytest.raises(ConnectionError):
+        _adapter(monkeypatch).working_orders()
+    assert list(tmp_path.iterdir()) == []
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json", encoding="utf-8")
+    assert execution.read_broker_health(bad) == {}

@@ -264,3 +264,17 @@ def test_a_held_submission_is_critical_and_an_empty_hold_says_nothing(monkeypatc
     empty = {"unresolved": [], "unrecorded": {}}
     _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY, "broker_held": empty}, registered=False)
     assert not [f for f in wd._check_live("flies", _mcfg(), _MIDDAY, True) if f.key == "flies.live_held"]
+
+
+def test_a_broker_failing_while_armed_in_session_is_critical(monkeypatch, tmp_path):
+    """Item 3 of the 2026-10-08 audit: the seam swallows every broker failure and the tick exits 0,
+    so only the persisted contact record shows an outage -- and only while armed and in session."""
+    down = {"failing_since": "2026-07-30T05:00:00+00:00", "failures": 40, "last_error": "invalid_grant"}
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY, "broker_health": down}, registered=True)
+    found = [f for f in wd._check_live("flies", _mcfg(), _MIDDAY, True) if f.key == "flies.live_broker"]
+    assert found and found[0].status == CRITICAL and "invalid_grant" in found[0].message
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY, "broker_health": down}, registered=True)
+    assert not [f for f in wd._check_live("flies", _mcfg(), _MIDDAY, False) if f.key == "flies.live_broker"]
+    ok = {"failing_since": None, "last_ok_at": "2026-07-30T14:59:00+00:00"}
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY, "broker_health": ok}, registered=True)
+    assert not [f for f in wd._check_live("flies", _mcfg(), _MIDDAY, True) if f.key == "flies.live_broker"]

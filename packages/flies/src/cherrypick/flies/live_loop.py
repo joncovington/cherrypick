@@ -2046,6 +2046,10 @@ def run_status(config: dict, conn) -> dict:
         "orphaned_orders": len(read_orphans()),
         # The seam's persisted hold (a submit of unknown outcome, or an unrecorded order found).
         "broker_held": _execution.read_hold(_held_path()),
+        # Broker contact across ticks: `failing_since` set while every call fails (2026-10-08).
+        "broker_health": _execution.read_broker_health(
+            os.path.join(os.path.dirname(_held_path()), _execution.HEALTH_FILENAME)
+        ),
         "last_log_write": last_tick,
         "log_file": str(lf),
         # The order-alert daemon's own view of itself (PID probe + its heartbeat file). Only

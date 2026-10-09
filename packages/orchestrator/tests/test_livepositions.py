@@ -159,3 +159,19 @@ def test_after_the_close_todays_expired_contracts_are_left_out_of_both_sides(mon
     (acct,) = out["accounts"]
     assert acct["expired_unprocessed"] == 1
     assert [(d["expiry"], d["kind"]) for d in acct["diffs"]] == [("2026-10-09", "unrecorded")]
+
+
+# --------------------------------------------------------------------------- broker outage (item 3)
+def test_broker_failing_for_three_minutes_is_critical_and_two_is_not():
+    now = datetime(2026, 10, 8, 11, 0, tzinfo=timezone.utc)
+    health = {
+        "failing_since": (now - timedelta(minutes=4)).isoformat(),
+        "failures": 9,
+        "last_error": "ConnectError: Temporary failure in name resolution",
+    }
+    f = watchdog._broker_outage_finding("flies", "Flies", health, now, 3)
+    assert f.status == watchdog.CRITICAL and "4 min" in f.message and "name resolution" in f.message
+    young = dict(health, failing_since=(now - timedelta(minutes=2)).isoformat())
+    assert watchdog._broker_outage_finding("flies", "Flies", young, now, 3) is None
+    assert watchdog._broker_outage_finding("flies", "Flies", {"failing_since": None}, now, 3) is None
+    assert watchdog._broker_outage_finding("flies", "Flies", {}, now, 3) is None
