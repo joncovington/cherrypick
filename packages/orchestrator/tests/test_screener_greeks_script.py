@@ -190,3 +190,15 @@ def test_a_spread_passes_only_when_both_legs_do_and_no_monthly_is_none():
 def test_a_cheap_option_passes_on_the_absolute_width():
     """$0.05 wide on a $0.20 option is 25% of mid but one nickel: the OR rule lets it through."""
     assert fsg.leg_passes({"bid": 0.18, "ask": 0.23, "open_interest": 500, "volume": 50}, BARS)
+
+
+def test_a_rate_limited_run_is_incomplete_but_a_dead_symbol_is_not():
+    # 2026-10-08: a 429 stamped the day complete, so no later run ever repaired it.
+    limited = {
+        "AAPL": {"error": None},
+        "MSFT": {"error": fsg.RATE_LIMITED},
+        "NVDA": {"error": fsg.RATE_LIMITED},
+    }
+    assert fsg.rate_limit_problem(limited) == "broker rate limit (429): 2 symbol(s) not fetched"
+    delisted = {"AAPL": {"error": None}, "XYZ": {"error": "chain: no such symbol"}}
+    assert fsg.rate_limit_problem(delisted) is None
