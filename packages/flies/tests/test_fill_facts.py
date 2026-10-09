@@ -444,3 +444,17 @@ def test_shadow_completion_reads_settled_rows_per_arm(tmp_path):
     assert arm["paper"] == {"completed": 1, "completion_rate": 0.5, "net": 20.0}
     by_value = {s["value"]: s for s in arm["shadow"]}
     assert by_value[0.10]["completed"] == 1 and by_value[0.0]["completed"] == 0
+
+
+def test_a_failed_live_submit_is_not_counted_as_entered(live_conn):
+    # 2026-10-08: `entered` counted the attempt, so a failed submit spawned a fill watcher for an
+    # order that never existed. The dry run's would-be entry still counts.
+    class Refusing(FakeBroker):
+        def place(self, spec, live):
+            self.placed.append({"spec": spec, "live": live})
+            return {"ok": False, "error": "ConnectError: no route to host"}
+
+    out = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, Refusing(), live=True, log=_quiet)
+    assert out["entered"] == 0 and live_conn.execute("SELECT COUNT(*) FROM fly_positions").fetchone()[0] == 0
+    out = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, FakeBroker(), live=False, log=_quiet)
+    assert out["entered"] == 1
