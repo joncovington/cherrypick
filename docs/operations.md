@@ -125,8 +125,8 @@ Advisor page is the read surface. Since 2026-09-15 a model `kill` verdict is act
 
 **Rollback** (documented for one transition window): `git tag pre-supervisor` marks the last
 schtasks-driven commit. To roll back: `run.py uninstall` (new code), check out the tag, `run.py
-install` (old code re-registers every per-job task; the module `--install-task` helpers still exist
-there). The old and new mechanisms never coexist — each `install` deletes the other's registrations.
+install` (old code re-registers every per-job task; the module `--install-task` helpers exist
+there, though they were removed from current code on 2026-10-08). The old and new mechanisms never coexist — each `install` deletes the other's registrations.
 
 ## Inventory — daemons (not tasks)
 

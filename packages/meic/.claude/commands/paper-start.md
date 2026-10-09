@@ -37,9 +37,8 @@ to start anything here.
 
 The paper loop is NOT started here. The orchestrator's supervisor runs it as the `meic-paper` job
 whenever `modules.meic.enabled` is true in `~/.cherrypick/config.json` (one `paper_loop --once` per
-`paper.tick_interval_seconds`, time-gated to market hours). **Do not register the standalone
-`cherrypick-meic-paper-loop` task** (`--install-task`): it would run a second copy of the same loop
-beside the supervisor's.
+`paper.tick_interval_seconds`, time-gated to market hours). There is no second launcher to
+register: the module's own scheduled task (`--install-task`) was removed on 2026-10-08.
 
 Check that it is being driven, from the repo root:
 

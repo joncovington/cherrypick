@@ -75,8 +75,6 @@ from cherrypick.meic import (
 from cherrypick.meic import paths as _paths  # noqa: E402
 from cherrypick.meic import stream_request as _stream_request  # noqa: E402
 
-_TASK_NAME = "cherrypick-meic-live-loop"
-
 
 def halt_flag_path() -> str:
     """The suite-wide live kill switch; presence is the signal. Resolved through

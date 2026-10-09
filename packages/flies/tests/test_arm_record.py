@@ -75,7 +75,6 @@ def test_arming_on_a_quarter_end_session_arms_and_says_no_entries_today(
 
 def test_disarm_removes_record_and_legacy_stamp(fresh_supervisor_heartbeat, monkeypatch):
     monkeypatch.setattr(ll.subprocess, "Popen", lambda argv, **kw: None)
-    monkeypatch.setattr(ll, "task_installed", lambda: False)
     ll.install_task()
     legacy = ll._legacy_arm_stamp_path()
     os.makedirs(os.path.dirname(legacy), exist_ok=True)
@@ -89,7 +88,6 @@ def test_disarm_removes_record_and_legacy_stamp(fresh_supervisor_heartbeat, monk
 
 
 def test_disarm_with_nothing_armed_is_honest(managed_home, monkeypatch):
-    monkeypatch.setattr(ll, "task_installed", lambda: False)
     out = ll.uninstall_task()
     assert not out["arm_record_removed"] and "nothing was armed" in out["detail"]
 
@@ -113,8 +111,15 @@ def test_should_disarm_reads_the_relocated_record(fresh_supervisor_heartbeat, no
     assert "past disarm" in ll.should_disarm(config, now_min=17 * 60 + 1, today=today)
 
 
-def test_no_supervisor_and_not_windows_refuses_cleanly(managed_home, monkeypatch):
+@pytest.mark.parametrize("os_name", ["nt", "posix"])
+def test_no_supervisor_refuses_on_every_os_and_schedules_nothing(
+    managed_home, no_schtasks, monkeypatch, os_name
+):
+    # The Windows scheduled-task fallback was removed 2026-10-08: no supervisor, no arming, anywhere.
+    record = ll.arm_stamp_path()  # under managed_home; resolved before os.name is faked
+    monkeypatch.setattr(ll.subprocess, "Popen", lambda argv, **kw: None)  # never a real first tick
     monkeypatch.setattr(ll, "_supervisor_heartbeat_fresh", lambda **kw: False)
-    monkeypatch.setattr(ll.os, "name", "posix")
+    monkeypatch.setattr(ll.os, "name", os_name)
     out = ll.install_task()
     assert not out["ok"] and "no supervisor running" in out["error"]
+    assert not os.path.exists(record)

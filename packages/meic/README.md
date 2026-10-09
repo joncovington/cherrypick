@@ -117,8 +117,7 @@ cherrypick suite it plays two roles:
   `enable_live_trading`. Its one live-config action is onboarding (`cherrypick connect`), which delegates to
   this module's own credential tool.
 
-You can run the paper loop here directly too (in a terminal, or with `paper_loop --install-task` for a
-standalone Windows scheduled task on a machine without the supervisor); letting the orchestrator manage it adds the watchdog, notifications, and the cross-module read
+You can run the paper loop here directly too (in a terminal); letting the orchestrator manage it adds the watchdog, notifications, and the cross-module read
 side (`cherrypick report` / the console / `calibrate`). The shared `cherrypick.core` code (calendar, fees) lives in `packages/core`, a sibling
 in-repo package — see [Orchestrator & shared core](CLAUDE.md#orchestrator--shared-core) in `CLAUDE.md`
 for the exact couplings.

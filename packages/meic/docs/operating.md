@@ -65,7 +65,7 @@ For a multi-day, profile-by-profile performance write-up (equity curves, risk-ad
 /paper-report
 ```
 
-**Standalone (no supervisor).** Run `python -m cherrypick.meic.paper_loop` in a terminal, or wire a cron job to `--once`. On Windows, `/paper-start` checks the streamer and registers the loop's own scheduled task (`cherrypick-meic-paper-loop`, `--once` every 2 minutes; `python -m cherrypick.meic.paper_loop --uninstall-task` removes it). That task is for a machine running MEIC without the supervisor — don't run both. See [paper-trading.md](paper-trading.md) for the engine design, fee model, historical-replay accelerator, and graduation criteria.
+**Standalone (no supervisor).** Run `python -m cherrypick.meic.paper_loop` in a terminal, or wire a cron job to `--once`. The loop's own Windows scheduled task (`--install-task`) was removed on 2026-10-08; the supervisor is the unattended driver on every OS. See [paper-trading.md](paper-trading.md) for the engine design, fee model, historical-replay accelerator, and graduation criteria.
 
 ---
 

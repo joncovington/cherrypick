@@ -267,12 +267,9 @@ def test_before_the_settle_time_an_out_of_hours_run_stays_a_no_op(cache_with_cha
     assert not (home / f"paper-eod-{TRADING_DAY.date().isoformat()}.md").exists()
 
 
-def test_status_reports_whether_the_task_is_registered(cache_with_chain, conn, home):
-    """An empty paper DB looks identical whether the loop is registered and quiet or nothing is
-    scheduled at all. The watchdog needs to tell those apart."""
+def test_status_reports_an_unsettled_session(cache_with_chain, conn, home):
     status = paper_loop.run_status(config(), conn, cache_path=str(cache_with_chain))
-    assert "scheduled_task" in status and isinstance(status["scheduled_task"], bool)
-    assert status["task_name"] == paper_loop._TASK_NAME
+    assert "scheduled_task" not in status  # the module's own scheduler is gone (2026-10-08)
     assert status["session_settled"] is False
 
 

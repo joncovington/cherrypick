@@ -88,8 +88,9 @@ report files they produce.
 The module paper loops are supervisor jobs too: MEIC as a 60 s `--once` spawn
 (`modules.meic.paper.tick_interval_seconds`), flies as the one **resident** child (its own
 `--interval 15` mode in-session, supervised for death and silence) plus a 60 s off-session `--once`
-job that owns settlement. The modules' `--install-task` helpers remain only for standalone
-(orchestrator-less) use.
+job that owns settlement. The paper modules' own scheduled-task helpers were removed on
+2026-10-08; flies' and bwb's live `--install-task` only writes the day's arm record, and refuses
+without a running supervisor.
 
 ## Global flags
 
