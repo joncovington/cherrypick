@@ -1,3 +1,4 @@
+import { suitePython } from "@console/shared";
 import { spawnSync } from "node:child_process";
 
 /**
@@ -28,7 +29,7 @@ export interface SpawnedJson {
 export function spawnModuleCli(argv: string[], unavailableMessage: string): SpawnedJson {
   let out;
   try {
-    out = spawnSync("python", argv, { encoding: "utf-8", timeout: 30_000, windowsHide: true });
+    out = spawnSync(suitePython(), argv, { encoding: "utf-8", timeout: 30_000, windowsHide: true });
   } catch (err) {
     return { ok: false, json: null, error: `${unavailableMessage} (${(err as Error).message})` };
   }

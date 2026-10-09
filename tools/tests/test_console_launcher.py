@@ -83,3 +83,20 @@ def test_the_preexisting_path_is_kept_behind_the_venv(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", "/usr/local/bin:/usr/bin")
     env = launcher._child_env()
     assert env["PATH"].split(os.pathsep) == [str(venv_bin), "/usr/local/bin", "/usr/bin"]
+
+
+def test_the_interpreter_is_named_for_the_server_and_pythonw_maps_to_python(tmp_path, monkeypatch):
+    # 2026-10-08 OS audit: the server's suitePython() reads CHERRYPICK_PYTHON first.
+    launcher = _load_launcher()
+    monkeypatch.delenv("CHERRYPICK_PYTHON", raising=False)
+    venv_bin = _fake_venv(tmp_path, symlink=False)
+    monkeypatch.setattr(sys, "executable", str(venv_bin / "python"))
+    assert launcher._child_env()["CHERRYPICK_PYTHON"] == str(venv_bin / "python")
+    scripts = tmp_path / "Scripts"
+    scripts.mkdir()
+    (scripts / "pythonw.exe").write_text("")
+    (scripts / "python.exe").write_text("")
+    monkeypatch.setattr(sys, "executable", str(scripts / "pythonw.exe"))
+    assert launcher._child_env()["CHERRYPICK_PYTHON"] == str(scripts / "python.exe")
+    monkeypatch.setenv("CHERRYPICK_PYTHON", "/opt/chosen/python")
+    assert launcher._child_env()["CHERRYPICK_PYTHON"] == "/opt/chosen/python"

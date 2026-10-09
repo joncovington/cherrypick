@@ -152,10 +152,16 @@ function buildMenu(): void {
   );
 }
 
+/** A 32 px cherry, PNG. */
+const TRAY_ICON =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAyElEQVR42u2X0Q2EIAyGmeQeO4RxHZboDDcGU/B8szBFEw8TSAzRu8LZFE4fvheN/l+glmpej8loYoYVmJ/zkrkFLiUAEYz4QiCs19I9kBBYX+oiS6YQKHFcEU64jdBOyDcoPfuTADYEl2CrgD0hPGNrBaBx2T9tB9QIuBPDt4XJEgCB8AxwBFBQADkCXlDAcwSCoEDgCJCgAA0hoL4F6kWo/hmqNyL1VtzFYaR+HHcxkHQxkh0OpYyCA9GxPHU1SoiP5f/7d/wGSGA+Rqs9nZUAAAAASUVORK5CYII=";
+
 function buildTray(): void {
-  // An empty image rather than a bundled asset: packaging is deliberately deferred, and a tray with
-  // no icon file is better than a startup crash on a missing one.
-  tray = new Tray(nativeImage.createEmpty());
+  // An inline image rather than a bundled asset: packaging is deliberately deferred, and a missing
+  // icon file would crash startup. Not empty: an empty image is an invisible tray entry on GNOME
+  // (AppIndicator) and the macOS menu bar (2026-10-08 OS audit). AppIndicator also never delivers
+  // the click below, so "Open console" heads the menu.
+  tray = new Tray(nativeImage.createFromDataURL(TRAY_ICON));
   tray.setToolTip("cherrypick console");
   tray.setContextMenu(
     Menu.buildFromTemplate([

@@ -12,15 +12,28 @@
  * it for one variable.
  */
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { sandboxProblem } from "./sandbox.mjs";
 
 const require = createRequire(import.meta.url);
 // Outside a main process the electron package exports the path to its binary, which is exactly what
 // is wanted here.
 const electronBinary = require("electron");
 const appDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+const problem = sandboxProblem({
+  platform: process.platform,
+  electronBinary,
+  readFile: (p) => fs.readFileSync(p, "utf-8"),
+  stat: (p) => fs.statSync(p),
+});
+if (problem) {
+  console.error(problem);
+  process.exit(1);
+}
 
 const env = { ...process.env };
 delete env["ELECTRON_RUN_AS_NODE"];

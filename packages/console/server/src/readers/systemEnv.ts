@@ -21,6 +21,7 @@ import type {
   SystemProcessAge,
   SystemStore,
 } from "@console/shared";
+import { suitePython } from "@console/shared";
 import { REPO_ROOT, type ConsoleConfig } from "../config.js";
 import { listReaderFailures, readJson } from "./db.js";
 
@@ -289,7 +290,7 @@ async function pythonInfo(): Promise<Python> {
   if (pythonCache !== null && Date.now() - pythonCache.at < 3_600_000) return pythonCache.value;
   let value: Python;
   try {
-    const j = JSON.parse(await run("python", ["-c", PY_SCRIPT])) as { version: string; executable: string; packages: Record<string, string | null> };
+    const j = JSON.parse(await run(suitePython(), ["-c", PY_SCRIPT])) as { version: string; executable: string; packages: Record<string, string | null> };
     value = { version: j.version, executable: j.executable, packages: j.packages, error: null };
   } catch (err) {
     value = { version: null, executable: null, packages: {}, error: err instanceof Error ? err.message.split("\n")[0] ?? "failed" : "failed" };

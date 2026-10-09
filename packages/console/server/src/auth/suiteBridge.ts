@@ -1,3 +1,4 @@
+import { suitePython } from "@console/shared";
 import { spawnSync } from "node:child_process";
 
 /**
@@ -17,7 +18,7 @@ export function readSuiteOauthEntries(): { clientSecret: string; refreshToken: s
     "print(json.dumps({'cs': cs, 'rt': rt}))",
   ].join("\n");
   try {
-    const out = spawnSync("python", ["-c", script], { encoding: "utf-8", timeout: 15_000, windowsHide: true });
+    const out = spawnSync(suitePython(), ["-c", script], { encoding: "utf-8", timeout: 15_000, windowsHide: true });
     if (out.status !== 0) return null;
     const parsed = JSON.parse(out.stdout.trim()) as { cs?: string | null; rt?: string | null };
     if (typeof parsed.cs !== "string" || parsed.cs === "" || typeof parsed.rt !== "string" || parsed.rt === "") {
