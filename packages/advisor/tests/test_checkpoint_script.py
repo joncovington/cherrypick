@@ -264,6 +264,18 @@ def test_the_resolved_model_id_is_recorded_beside_the_alias(home, tmp_path):
     assert (row["model"], row["model_id"]) == ("opus", "claude-test-1")
 
 
+def test_the_model_id_is_the_answering_model_not_the_cli_housekeeping():
+    # the CLI's real shape on a short reply: Haiku's housekeeping out-produced the answer in tokens
+    out = {
+        "result": "{}",
+        "modelUsage": {
+            "claude-haiku-4-5-20251001": {"outputTokens": 11, "costUSD": 0.00058},
+            "claude-fable-5": {"outputTokens": 4, "costUSD": 0.47495},
+        },
+    }
+    assert _script_module()._parse_claude_output(json.dumps(out)) == ("{}", "claude-fable-5")
+
+
 @pytest.mark.parametrize(
     "shim,expected",
     [("silent", "returned nothing"), ("angry", "rate limited"), (None, "not on PATH")],
