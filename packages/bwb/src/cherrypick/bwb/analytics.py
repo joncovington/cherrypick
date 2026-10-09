@@ -34,14 +34,20 @@ def fire_counts(conn) -> dict:
     `delta` fires most (raw proximity); `bounce` needs the move plus a turn; `flip` needs spot to
     have entered negative-gamma territory at all. A quiet `flip` arm is the honest state."""
     out: dict[str, dict] = {}
+    # A missed add-on (`bwb addon-missed`) is neither a fire nor a "never triggered": its trigger may
+    # have been met unmeasured. It is counted apart and left out of the fire rate's denominator.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(bwb_positions)")}
+    missed_sql = "SUM(addon_missed_at IS NOT NULL)" if "addon_missed_at" in cols else "0"
     for row in conn.execute(
-        "SELECT arm, COUNT(*) AS n, SUM(addon_fired_at IS NOT NULL) AS fired "
+        f"SELECT arm, COUNT(*) AS n, SUM(addon_fired_at IS NOT NULL) AS fired, {missed_sql} AS missed "
         "FROM bwb_positions GROUP BY arm ORDER BY arm"
     ):
+        judged = row["n"] - (row["missed"] or 0)
         out[row["arm"]] = {
             "positions": row["n"],
             "fired": row["fired"] or 0,
-            "fire_rate": round((row["fired"] or 0) / row["n"], 4) if row["n"] else None,
+            "missed": row["missed"] or 0,
+            "fire_rate": round((row["fired"] or 0) / judged, 4) if judged else None,
         }
     return out
 

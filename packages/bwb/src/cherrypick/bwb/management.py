@@ -111,6 +111,12 @@ def evaluate(
     if already_fired:
         return Decision("hold", "addon_already_fired"), latches
 
+    # Skipped for good (`bwb addon-missed`): the trigger may have been met while it went unmeasured,
+    # so arming later would be a different, later trade than the rule would have made -- and the
+    # module guesses no trigger (rules 4 and 7). The latches still update, as on control.
+    if position.get("addon_missed_at"):
+        return Decision("hold", "addon_missed"), latches
+
     if not already_armed:
         if read["fired"]:
             return Decision("arm", f"{base}_trigger_met"), latches

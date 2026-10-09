@@ -53,6 +53,14 @@ session), so "waiting for a credit" and "cannot read the chain" never share a si
 per position**, then the trigger disarms for good. Armed until expiry, no cutoff. After firing,
 **hold everything to expiry** on every book — early exit is reserved for a future experiment.
 
+**A missed add-on is skipped for good** (`bwb addon-missed --position-id ... --reason ... --apply`,
+dry run without `--apply`). When the loop was down while a trigger may have been met (the
+2026-10-08 power outage, 10:35-16:00 ET), the trigger is not reconstructed (rules 4 and 7): the
+position is stamped `addon_missed_at`/`addon_missed_reason`, management holds it as
+`addon_missed` and never arms or fires it, its latches keep updating, and `fire_counts` reports it
+as `missed`, outside the fire rate. A later measured fire would be a different, later trade than the
+rule would have made.
+
 **Trigger cadence**: the in-session 60s resident loop, not the entry tick. Triggers are defined on
 the 60s SAMPLED series, so the loop cadence is part of the instrument — changing it is a journaled
 measurement break (flies' 60s→15s precedent).
