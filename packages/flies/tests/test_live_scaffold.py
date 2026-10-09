@@ -123,21 +123,19 @@ BASE_CFG = {
 
 
 def test_readiness_passes_only_with_every_gate():
-    assert live_loop.readiness(BASE_CFG, halt_present=False, designated="5W1") == []
+    assert live_loop.readiness(BASE_CFG, designated="5W1") == []
 
 
 def test_readiness_names_each_unmet_gate():
-    unmet = live_loop.readiness({"arms": {"gex": {}}, "live": {}}, halt_present=True, designated=None)
+    unmet = live_loop.readiness({"arms": {"gex": {}}, "live": {}}, designated=None)
     text = " ".join(unmet)
     assert "live.enabled" in text and "gate0_confirmed" in text
-    assert "halt flag" in text and "designated" in text
+    assert "designated" in text and "halt" not in text  # the halt stops entries only (entry_blockers)
 
 
 def test_readiness_requires_a_real_arm():
     cfg = {"arms": {"control": {}}, "live": {**BASE_CFG["live"], "arm": "bogus"}}
-    assert any(
-        "not a configured arm" in u for u in live_loop.readiness(cfg, halt_present=False, designated="x")
-    )
+    assert any("not a configured arm" in u for u in live_loop.readiness(cfg, designated="x"))
 
 
 def test_broker_cli_live_gates_are_the_same_posture():
@@ -2418,3 +2416,33 @@ def test_with_the_agent_off_nothing_is_stamped(live_conn):
     )
     assert summary["entered"] == 1 and summary["agent_mode"] == "off"
     assert live_conn.execute("SELECT agent_mode FROM fly_positions").fetchone()[0] is None
+
+
+def test_a_halt_stops_new_entries_and_nothing_else(live_conn):
+    """2026-10-08: the halt flag returned the tick before anything ran, so a halt mid-session left
+    resting orders unwatched, completions unplaced and the book unsettled. Now it blocks the ENTRY
+    step only: on a halted tick a pending entry the broker reports filled is still confirmed and its
+    completion still placed, while no new structure is entered, and the journal says why."""
+    dbmod.save_position(live_conn, _open_entry_row())
+    broker = FakeBroker(order_statuses={"ORD-E1": {"status": "Filled", "price": "1.10", "filled": True}})
+    summary = live_loop.run_once(
+        _loop_cfg(),
+        _snapshot(),
+        live_conn,
+        broker,
+        live=True,
+        log=lambda *_: None,
+        entry_block=["halt_flag_present"],
+    )
+    assert summary["entered"] == 0
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["entry_fill_status"] == "filled"  # fill confirmation ran
+    assert row["completion_order_id"]  # the completion was placed
+    assert len(broker.placed) == 1 and row["completion_order_id"] == "ORD1"  # the completion, nothing else
+    journal = live_conn.execute("SELECT reason, detail FROM fly_decisions WHERE mode = 'entry'").fetchone()
+    assert (journal["reason"], journal["detail"]) == ("entries_blocked", "halt_flag_present")
+
+
+def test_the_halt_and_the_daily_loss_breaker_are_entry_blockers(live_conn):
+    assert live_loop.entry_blockers(_loop_cfg(), live_conn, DAY, halt_present=True) == ["halt_flag_present"]
+    assert live_loop.entry_blockers(_loop_cfg(), live_conn, DAY, halt_present=False) == []

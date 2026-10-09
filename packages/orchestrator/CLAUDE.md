@@ -171,6 +171,9 @@ filename; override with `paper.sla_state_prefix`.
   mirrors it). It writes **exactly one thing: the halt flag**, via `set_halt` (create to halt, delete
   to clear), so a stop is reachable from a surface a human is looking at; the console's halt toggle
   routes through it. It never writes `enable_live_trading`, a module's config or code, or an order.
+  **The halt stops new live risk only** (2026-10-08): every live loop refuses new entries (and bwb
+  add-ons) while it is up, and still confirms fills, manages working orders, stops and closes, and
+  settles. Before that date it stopped the whole tick, so a halt left open positions unmanaged.
   The broker-touching live-ops view was deliberately never ported to the console; `reconcile` answers
   that half.
 - **Paper ↔ live isolation.** Only paper engines and paper DBs are invoked; anything advisory

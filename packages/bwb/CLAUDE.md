@@ -155,9 +155,11 @@ shares, no assignment, no dividend calendar. The event fee lands the next busine
 Built to test whether the paper result survives a fill without disturbing the paper books.
 
 - **Gating** (guardrail): `live.enabled`, `live.gate0_confirmed`, a per-day arm record
-  (`/live-bwb-start`, a literal YES each day), a designated account, no suite halt flag, and
-  `live.arm` naming a base book — every one re-checked on every tick and every submission, all
-  guarded from the settings surface. Never run `--install-task` outside `/live-bwb-start`.
+  (`/live-bwb-start`, a literal YES each day), a designated account, and `live.arm` naming a base
+  book — every one re-checked on every tick and every submission, all guarded from the settings
+  surface. **The suite halt flag stops new risk only** (2026-10-08): the entry is refused
+  (`halt_flag_present`) and an armed add-on deferred, while fills are confirmed, resting orders
+  managed and the ladder settled. Never run `--install-task` outside `/live-bwb-start`.
 - **The structure is the paper structure.** `engine.plan_entry` plans it; `live_orders.entry_spec`
   only collapses the body into one sell leg at double quantity with a limit (mid minus
   `entry_concession`, floored to the nickel). Live-only rules REFUSE, never reshape: the

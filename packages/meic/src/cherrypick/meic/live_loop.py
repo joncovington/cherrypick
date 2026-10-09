@@ -14,13 +14,14 @@ submission are new.
 It will not place a live order today, by construction:
 
   - `readiness()` must come back empty: `enable_live_trading` true, `live.symbol` set,
-    a non-empty `live.gate0_confirmed` human attestation, a designated account, and the
-    suite halt flag (`state/halt-live.flag`) absent.
+    a non-empty `live.gate0_confirmed` human attestation and a designated account.
+  - The suite halt flag (`state/halt-live.flag`) and the daily-loss breaker block NEW ICs only
+    (`entry_blockers`, 2026-10-08): fills are still confirmed and open ICs still stopped and
+    force-closed, because a close must always get through.
   - Even then, `--dry-run` (the default!) preflights every order against the real account and
     places nothing -- running the loop with `--dry-run --once` during market hours is a repeat
     of the rung-0 smoke (`live_smoke.py`) but through the actual loop code path.
-  - `--live` additionally requires every readiness gate AND is refused while the daily-loss
-    breaker (`live.daily_loss_halt_dollars`) is tripped on the live ledger.
+  - `--live` additionally requires every readiness gate.
 
 Scaffold boundaries (deliberate, rung-1 only -- see docs/live-trading-plan.md once written):
 no ORB debit spreads, no multi-symbol (one pinned `live.symbol`), no working-order repricing.
@@ -89,12 +90,17 @@ def _designated_account() -> str | None:
     return _creds.store.designated_account()
 
 
-def readiness(config: dict, *, halt_present: bool, designated: str | None) -> list[str]:
+def readiness(config: dict, *, designated: str | None) -> list[str]:
     """The unmet live gates, checked every tick -- empty means the loop may act. Pure.
 
     `enable_live_trading` is MEIC's existing single kill switch (already enforced by
     `tt.py`'s own `cmd_execute_trade`) -- there is no second `live.enabled` flag the way
-    flies has one, since flies had no other kill switch before its live scaffold existed."""
+    flies has one, since flies had no other kill switch before its live scaffold existed.
+
+    ACCOUNT gates only. The halt flag and the daily-loss breaker are entry blockers
+    (`entry_blockers`, 2026-10-08): they stop new ICs, never a stop-loss close or a force-close --
+    before that date both returned the tick ahead of `run_once`, and the halt also gated every submit
+    at the seam, so a halt left open 0DTE ICs with no stop management at all."""
     live = config.get("live") or {}
     unmet = []
     if not config.get("enable_live_trading"):
@@ -103,8 +109,6 @@ def readiness(config: dict, *, halt_present: bool, designated: str | None) -> li
         unmet.append("live.symbol is unset -- pin the one symbol this rung trades")
     if not str(live.get("gate0_confirmed") or "").strip():
         unmet.append("live.gate0_confirmed is empty -- a human must attest Gate 0 (who/when)")
-    if halt_present:
-        unmet.append("halt flag present (state/halt-live.flag) -- live entries halted")
     if not designated:
         unmet.append("no designated account -- run `cherrypick account --module meic --set <last4>`")
     return unmet
@@ -126,8 +130,21 @@ def daily_loss_tripped(db_path: str, day: str, limit_dollars: float | None) -> b
         ).fetchone()
         con.close()
     except sqlite3.Error:
-        return False
+        # Fails CLOSED: an unreadable ledger cannot show the day's loss is within the limit, and the
+        # breaker only ever blocks new entries -- closes go through regardless.
+        return True
     return float(row[0] or 0.0) <= -abs(limit_dollars)
+
+
+def entry_blockers(config: dict, db_path: str, day: str, *, halt_present: bool) -> list[str]:
+    """Why no NEW IC may be opened this tick; empty means entries may proceed. Fill confirmation and
+    the management of open ICs -- stops, force-closes -- run regardless."""
+    blockers = []
+    if halt_present:
+        blockers.append("halt_flag_present")
+    if daily_loss_tripped(db_path, day, (config.get("live") or {}).get("daily_loss_halt_dollars")):
+        blockers.append("daily_loss_breaker")
+    return blockers
 
 
 EXECUTION_MODE = "live"
@@ -520,7 +537,16 @@ def _confirm_fills(
     return counts
 
 
-def run_once(config: dict, snapshot: dict, db_path: str, broker, *, live: bool, log=print) -> dict:
+def run_once(
+    config: dict,
+    snapshot: dict,
+    db_path: str,
+    broker,
+    *,
+    live: bool,
+    log=print,
+    entry_block: list[str] | None = None,
+) -> dict:
     """One live iteration for the pinned `live.symbol`. `broker` is the injected submission
     seam -- an object with `place(spec, live) -> {ok, response?, error?}`."""
     symbol = (config.get("live") or {}).get("symbol")
@@ -528,7 +554,12 @@ def run_once(config: dict, snapshot: dict, db_path: str, broker, *, live: bool, 
     # Broker truth first: what filled, what died. Only the live ledger has orders to confirm.
     fills = _confirm_fills(symbol, snapshot, db_path, broker, log=log, params=params) if live else {}
     manage = _manage_open_trades(symbol, snapshot, params, db_path, broker, live=live, log=log)
-    entry = _manage_entry(symbol, snapshot, params, db_path, broker, live=live, log=log)
+    if entry_block:
+        # The halt flag or the daily-loss breaker: no new IC. Everything above has already run.
+        log(f"new entries blocked ({', '.join(entry_block)}) -- open ICs still managed")
+        entry = {"blocked": list(entry_block)}
+    else:
+        entry = _manage_entry(symbol, snapshot, params, db_path, broker, live=live, log=log)
     return {"symbol": symbol, "live": live, **fills, **manage, "entry": entry}
 
 
@@ -543,9 +574,9 @@ def make_broker(config: dict, designated: str | None) -> _execution.Broker:
     return _execution.Broker(
         get_session=get_session,
         designated_account=lambda: designated,
-        live_gates=lambda: readiness(
-            config, halt_present=os.path.exists(halt_flag_path()), designated=designated
-        ),
+        # Account gates only: a close must always get through (tt.py's own rule), so the halt
+        # flag is enforced on ENTRIES, in run_once, never here.
+        live_gates=lambda: readiness(config, designated=designated),
         serialize=_tt._serialize,
         deploy_limit_pct=config.get("account_deploy_limit_pct") or None,
     )
@@ -618,7 +649,7 @@ def main() -> int:
 
     cfg = paper.load_base_config()
     designated = _designated_account()
-    unmet = readiness(cfg, halt_present=os.path.exists(halt_flag_path()), designated=designated)
+    unmet = readiness(cfg, designated=designated)
     live = not args.dry_run
     if live and unmet:
         print(json.dumps({"ok": False, "error": "live gates unmet", "unmet": unmet}))
@@ -643,12 +674,9 @@ def main() -> int:
         return 1
 
     db_path = str(_paths.live_db_path())
-    limit = (cfg.get("live") or {}).get("daily_loss_halt_dollars")
-    if live and daily_loss_tripped(db_path, snapshot["date"], limit):
-        print(json.dumps({"ok": False, "error": "daily-loss breaker tripped -- no new entries"}))
-        return 1
-
-    summary = run_once(cfg, snapshot, db_path, make_broker(cfg, designated), live=live)
+    # The halt flag and the daily-loss breaker stop NEW ICs only; open ones are still managed.
+    blockers = entry_blockers(cfg, db_path, snapshot["date"], halt_present=os.path.exists(halt_flag_path()))
+    summary = run_once(cfg, snapshot, db_path, make_broker(cfg, designated), live=live, entry_block=blockers)
     print(
         json.dumps({"ok": True, "at": datetime.now().isoformat(timespec="seconds"), **summary}, default=str)
     )
