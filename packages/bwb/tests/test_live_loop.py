@@ -296,6 +296,8 @@ def test_live_entry_is_a_three_leg_limit_with_the_ledger_key_as_its_identifier(
     assert row["entry_credit"] == pytest.approx(0.9)  # the modeled credit until the broker says otherwise
     assert row["fees_source"] == "broker_estimate" and row["entry_fee_estimate"] == pytest.approx(6.89)
     assert row["entry_live_floor"] == pytest.approx(0.25)
+    # the implied-variance reading is taken at entry; an empty cache stores why, never a number
+    assert row["entry_iv_rate"] == 0.04 and row["entry_iv_vol"] is None and row["entry_iv_reason"]
     # a pending row is NOT an open position: nothing marks or manages it until it fills
     assert db.open_positions(conn) == []
     assert db.established_today(conn, "control", DAY) == 1

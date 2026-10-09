@@ -146,6 +146,9 @@ affecting.
 10. **Never pool across a journaled break.** `trigger_ticks_unmeasured` (2026-08-24..27, every row
     `measured = 0`) must not pool with later rows; rows before 2026-09-18 carry an overstated
     `entry_max_loss` and a doubled body settlement fee, derivable and not rewritten (history doc).
+11. **Implied variance at entry is recorded, never acted on** (2026-10-09). `entry_iv_vol` with
+    `entry_iv_complete = 0` is a lower bound (the cache's strike window cut the wings); rows before
+    2026-10-09 carry none.
 
 SPX is cash-settled and European: an expiring leg books intrinsic against the settlement print; no
 shares, no assignment, no dividend calendar. The event fee lands the next business day.
@@ -205,6 +208,7 @@ Built to test whether the paper result survives a fill without disturbing the pa
 | `management.py` | per-book verdicts (arm/fire/hold) + advised-params choke point. Pure. |
 | `book.py` | decisions -> ledger rows; add-on legs; cash settlement. |
 | `paper_loop.py` | entry tick, 60s trigger/mark loop, expiry settle. |
+| `entry_iv.py` | the expiration's model-free implied variance (`cherrypick.core.impliedvar`), read from the cache at entry and stored on the position row (`entry_iv_*`). Recording only; a cut-off strip is `entry_iv_complete = 0`, a lower bound; a reading not taken stores its reason and no number. |
 | `analytics.py` | the one query layer: nets, fire counts, trigger-tick coverage. |
 | `replay.py` | read-side threshold replay over `bwb_trigger_ticks` — a stubbed fast-follow. |
 | `addon_replay.py` | the add-on scored as its own trade (`bwb addon-replay`). |

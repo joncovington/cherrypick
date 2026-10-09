@@ -13,6 +13,7 @@
   "_structure_note": "near_wing_increments (default 1, $5 strikes) sits ABOVE the body toward spot; far_wing_increments (default 2, config-lint-guarded >= 2) sits BELOW the body -- narrowing it to 1 collapses the broken-wing shape into a standard fly and is refused at config-lint, not at runtime.",
   "_credit_note": "credit_floor and addon_credit_floor are DECLARED ZEROS -- a deliberate departure from the suite's min_credit_pct_of_width convention (curve/ratios carry floors; this module's floor is zero by design, per the 2026-08-22 decision). Any positive credit qualifies; a non-positive credit is a recorded refusal (no_credit / addon_not_credit), never a silent skip.",
   "_trigger_note": "delta_trigger (default 0.50) is the near wing's |delta| bar. bounce_pullback (default 0.05) is subtracted from delta_trigger to derive the bounce book's confirmation bar (0.45 at defaults) -- there is deliberately NO separate bounce_peak key, so the delta/bounce arms differ by exactly one condition by construction; bounce_pullback == 0 makes bounce degenerate to delta exactly, which is why config-lint guards it > 0. flip_buffer (default 1.001, the curve contango_max precedent) is the reclaim-above-gamma_flip multiple; a value <= 1.0 would let a knife-edge tick-through count as a reclaim and is refused at config-lint.",
+  "_implied_note": "risk_free_rate (default 0.04) is the one rate entry_iv.py uses to read the expiration's model-free implied variance at entry (Cboe's VIX arithmetic, cherrypick.core.impliedvar). RECORDING only: nothing in the entry decision reads it. The rate is second order at 1-7 DTE and is stored on every row beside the reading.",
   "defaults": {
     "dte_target": 7,
     "entry_time": "10:00",
@@ -28,7 +29,8 @@
     "settle_time": "16:20",
     "settlement_max_age_seconds": 300,
     "max_quote_age_seconds": 300,
-    "max_leg_spread_pct": 0.25
+    "max_leg_spread_pct": 0.25,
+    "risk_free_rate": 0.04
   },
   "books_header": "===== the books — one variable each =====",
   "_books_note": "All four books enter the IDENTICAL BWB from the same plan on the same tick -- four-way exact pairing on the base position. `control` never arms the add-on. `delta`/`bounce`/`flip` arm on their own trigger.py condition; once armed, every tick re-prices the add-on (a non-credit tick is a recorded refusal, addon_not_credit, and the arm stays live) until the first credit tick fires it -- ONE add-on maximum per position, armed until expiry with no cutoff. Until an arm's add-on actually fires, its positions are byte-identical to control's -- an expected find_identical_readings collision, not a defect. Each arm's effective sample is its FIRE COUNT, not its trade count; every read surface carries per-arm fire counts beside any P&L from day one.",

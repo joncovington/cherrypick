@@ -49,7 +49,7 @@ from cherrypick.core import settlement as _settlement
 
 from cherrypick.bwb import book as bookmod
 from cherrypick.bwb import cli as climod
-from cherrypick.bwb import clock, db, engine, live_orders, management, provider, stream_request
+from cherrypick.bwb import clock, db, engine, entry_iv, live_orders, management, provider, stream_request
 from cherrypick.bwb import paper_loop as _pl
 
 DEFAULT_ARM = "control"
@@ -790,6 +790,16 @@ def _try_live_entry(
     if order_id is None:
         log(f"CRITICAL: live entry {pid} accepted but no order id came back -- orphan sweep will find it")
         return refuse("no_order_id", str(result))
+    # Recording only, read AFTER the order is accepted so it adds nothing to the order path.
+    defaults = config.get("defaults") or {}
+    implied = entry_iv.measure(
+        cache_path,
+        symbol,
+        config.get("occ_root") or symbol,
+        plan["expiration"],
+        rate=float(defaults.get("risk_free_rate", entry_iv.DEFAULT_RATE)),
+        max_age_seconds=defaults.get("max_quote_age_seconds", 300),
+    )
     opened = bookmod.enter_position(
         conn,
         plan,
@@ -797,6 +807,7 @@ def _try_live_entry(
         arm,
         entry_session=day,
         advice_params=None,
+        implied=implied,
         position_id_override=pid,
         extra={
             "status": "pending",

@@ -253,6 +253,17 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     # The advisor experiment an advised row was entered under (2026-09-16), beside the params
     # it froze -- `advised:<base>` names a arm, and every experiment on that base reuses it.
     "bwb_positions": {
+        # The market's implied variance for the position's own expiration at entry (2026-10-09,
+        # `entry_iv.py`): recording only. `entry_iv_complete` 0 = a lower bound (the cache's strike
+        # window cut a wing); `entry_iv_reason` set and no number = the reading could not be taken.
+        "entry_iv_vol": "REAL",
+        "entry_iv_var": "REAL",
+        "entry_iv_complete": "INTEGER",
+        "entry_iv_quotes": "INTEGER",
+        "entry_iv_missing": "INTEGER",
+        "entry_iv_years": "REAL",
+        "entry_iv_rate": "REAL",
+        "entry_iv_reason": "TEXT",
         "experiment_id": "TEXT",  # The base arm an advised row shadows, stamped at entry from the session decision (2026-09-17): the tag no longer carries it, and after the session the decision file is gone. Management prefers this over the configured advice.base_book, so a twin of a non-default base keeps its rules.
         "advice_base": "TEXT",
         # ---- LIVE scaffold (2026-09-18). Same schema on both ledgers; paper rows leave all of
