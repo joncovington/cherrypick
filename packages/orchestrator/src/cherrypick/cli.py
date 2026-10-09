@@ -237,6 +237,18 @@ def cmd_install(cfg, force: bool = False) -> None:
     else:
         results["anchor_task"] = tasks.create_minute_task(supersnap.ANCHOR_TASK, anchor_tr, 2, run_now=False)
 
+    if os.name == "nt":
+        # An unattended Windows PC restarts itself for updates outside its active hours: say so now if
+        # that window falls on the suite's day, while the person installing is there (2026-10-09).
+        from cherrypick.orchestrator import winupdate
+
+        try:
+            results["windows_update"] = winupdate.check_config(cfg)
+        except Exception as exc:  # noqa: BLE001 -- advice only; never fails an install
+            results["windows_update"] = {"status": "unknown", "detail": f"{type(exc).__name__}: {exc}"}
+        if results["windows_update"].get("status") == "warn":
+            print(f"WARNING: {results['windows_update']['detail']}", file=sys.stderr)
+
     # Start the supervisor now rather than waiting for the anchor's first fire.
     if supersnap.supervisor_alive():
         results["supervisor"] = {"ok": True, "detail": "already running"}

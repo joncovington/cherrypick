@@ -394,6 +394,16 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
 
     from . import winservice
 
+    if os.name == "nt":
+        # Windows Update's automatic restarts against the suite's day (2026-10-09).
+        from . import winupdate
+
+        try:
+            wu = winupdate.check_config(cfg)
+        except Exception as exc:  # noqa: BLE001 -- a diagnostic must not break doctor
+            wu = {"status": "unknown", "detail": f"{type(exc).__name__}: {exc}"}
+        checks.append(Check("windows_update", {"ok": OK, "warn": WARN}.get(wu["status"], WARN), wu["detail"]))
+
     svc_settings = winservice.settings(cfg)
     svc = service_check(
         svc_settings, winservice.query(svc_settings["id"]) if os.name == "nt" else {"installed": False}
