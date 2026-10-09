@@ -354,8 +354,16 @@ class Notifier:
         """Write the log floor and push nothing -- for a record worth keeping whole but not worth a
         push of its own (an earnings rejection, which is summarised instead)."""
         level = level.upper()
-        self._write_log(level, key, title, message)
-        return {"log": {"ok": True}}
+        return {"log": self._write_log_safe(level, key, title, message)}
+
+    def _write_log_safe(self, level: str, key: str, title: str, message: str) -> dict[str, Any]:
+        """The floor, best-effort. It used to raise straight through `notify()` BEFORE any push was
+        tried, so a full disk or a locked log file silenced every channel (2026-10-08 audit)."""
+        try:
+            self._write_log(level, key, title, message)
+            return {"ok": True}
+        except Exception as exc:  # noqa: BLE001 -- the floor failing must not take the pushes with it
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
     # -- push channels (best-effort) -----------------------------------------------
     def _push_desktop(self, level: str, title: str, message: str) -> dict[str, Any]:
@@ -469,8 +477,7 @@ class Notifier:
         its source (see `send_webhook`).
         """
         level = level.upper()
-        self._write_log(level, key, title, message)  # the guarantee
-        results: dict[str, Any] = {"log": {"ok": True}}
+        results: dict[str, Any] = {"log": self._write_log_safe(level, key, title, message)}
         record = {"source": key, "kind": kind, "session": session, "inputs": list(inputs)}
         for ch in self.channels:
             if ch == "log":
@@ -487,6 +494,17 @@ class Notifier:
             except Exception as exc:
                 results[ch] = {"ok": False, "error": str(exc)}
         return results
+
+
+def delivered(results: dict[str, Any]) -> bool:
+    """Did a `notify()` reach anyone? True when any push channel succeeded, or -- for a log-only
+    setup, where the floor IS the delivery -- when the floor was written. False when every push
+    channel failed or was skipped: the caller must not record the message as sent (2026-10-08 audit:
+    every caller stamped "notified" whatever happened, so a Discord outage lost alerts for good)."""
+    pushes = {ch: r for ch, r in results.items() if ch != "log"}
+    if not pushes:
+        return bool((results.get("log") or {}).get("ok"))
+    return any((r or {}).get("ok") for r in pushes.values())
 
 
 def notify(
