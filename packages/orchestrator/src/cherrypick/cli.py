@@ -119,7 +119,7 @@ from cherrypick.orchestrator import (
     positions as positions_mod,
 )
 from cherrypick.orchestrator import proc as _proc
-from cherrypick.orchestrator.util import CREATE_NO_WINDOW, NEW_SESSION, first_json
+from cherrypick.orchestrator.util import CREATE_NO_WINDOW, NEW_SESSION, atomic_write_json, first_json
 
 # The OS scheduler invokes the in-place launcher `pythonw <repo>/run.py <cmd>`. This module is
 # <repo>/src/cherrypick/cli.py, so the repo-root launcher is two parents up. (Renamed from
@@ -891,28 +891,57 @@ def _named(cfg, name: str | None):
     return found
 
 
-def cmd_restart(cfg, name: str | None) -> None:
-    kind, name = _named(cfg, name)
-    rec = _proc.restart_job(name) if kind == "job" else _proc.restart_daemon(cfg, name, _ensure_daemon)
+def _via_supervisor(cfg) -> bool:
+    """Whether a daemon action must be handed to the supervisor (`daemonreq`): under the Windows
+    service the daemons run in session 0, where the desktop cannot stop them. Only while that
+    supervisor is alive to take the request; with none, the caller acts directly, as before."""
+    from cherrypick.orchestrator import supersnap, winservice
+
+    return bool(winservice.settings(cfg).get("enabled")) and supersnap.supervisor_alive()
+
+
+def _daemon_action(cfg, verb: str, name: str, direct: bool) -> dict:
+    if not direct and _via_supervisor(cfg):
+        from cherrypick.orchestrator import daemonreq
+
+        rec = daemonreq.await_result(daemonreq.request(verb, name))
+        return {**rec, "via": "supervisor"}
+    if verb == "restart":
+        return _proc.restart_daemon(cfg, name, _ensure_daemon)
+    if verb == "stop":
+        return _proc.stop_daemon(cfg, name)
+    return _proc.start_daemon(cfg, name, _ensure_daemon)
+
+
+def _finish(rec: dict, result: str | None) -> None:
+    """Emit, file the record where a supervisor-run child was told to (`--result`), and exit."""
+    if result:
+        atomic_write_json(result, rec)
     _emit(rec)
     sys.exit(0 if rec.get("ok") else 1)
 
 
-def cmd_stop(cfg, name: str | None, everything: bool = False) -> None:
+def cmd_restart(cfg, name: str | None, *, direct: bool = False, result: str | None = None) -> None:
+    kind, name = _named(cfg, name)
+    rec = _proc.restart_job(name) if kind == "job" else _daemon_action(cfg, "restart", name, direct)
+    _finish(rec, result)
+
+
+def cmd_stop(
+    cfg, name: str | None, everything: bool = False, *, direct: bool = False, result: str | None = None
+) -> None:
     if everything:
         rec = _proc.stop_all(cfg, anchor_registered=tasks.exists(supersnap_anchor()))
     else:
         kind, name = _named(cfg, name)
-        rec = _proc.stop_job(name) if kind == "job" else _proc.stop_daemon(cfg, name)
-    _emit(rec)
-    sys.exit(0 if rec.get("ok") else 1)
+        rec = _proc.stop_job(name) if kind == "job" else _daemon_action(cfg, "stop", name, direct)
+    _finish(rec, result)
 
 
-def cmd_start(cfg, name: str | None) -> None:
+def cmd_start(cfg, name: str | None, *, direct: bool = False, result: str | None = None) -> None:
     kind, name = _named(cfg, name)
-    rec = _proc.start_job(name) if kind == "job" else _proc.start_daemon(cfg, name, _ensure_daemon)
-    _emit(rec)
-    sys.exit(0 if rec.get("ok") else 1)
+    rec = _proc.start_job(name) if kind == "job" else _daemon_action(cfg, "start", name, direct)
+    _finish(rec, result)
 
 
 def supersnap_anchor() -> str:
@@ -1863,6 +1892,17 @@ def build_parser() -> argparse.ArgumentParser:
         "service id -- `ps` lists them. For service: prepare | status | uninstall",
     )
     parser.add_argument(
+        "--direct",
+        action="store_true",
+        help="For restart/stop/start of a daemon: act from this process even under the Windows service "
+        "(what the supervisor's own child passes; from the desktop it is refused by session 0)",
+    )
+    parser.add_argument(
+        "--result",
+        default=None,
+        help="For restart/stop/start: also write the result record to this path (the supervisor's hand-off)",
+    )
+    parser.add_argument(
         "--all",
         action="store_true",
         help="For stop: every daemon and every job still running (after `uninstall`; refused before)",
@@ -1944,9 +1984,9 @@ def main() -> None:
         "morning": lambda: _run_morning(cfg),
         "restart-console": lambda: cmd_restart_console(cfg),
         "ps": lambda: cmd_ps(cfg),
-        "restart": lambda: cmd_restart(cfg, args.name),
-        "stop": lambda: cmd_stop(cfg, args.name, everything=args.all),
-        "start": lambda: cmd_start(cfg, args.name),
+        "restart": lambda: cmd_restart(cfg, args.name, direct=args.direct, result=args.result),
+        "stop": lambda: cmd_stop(cfg, args.name, everything=args.all, direct=args.direct, result=args.result),
+        "start": lambda: cmd_start(cfg, args.name, direct=args.direct, result=args.result),
         "ensure-dolt": lambda: _ensure_dolt(cfg),
         "notify-test": lambda: cmd_notify_test(cfg),
         "secrets-set": lambda: cmd_secrets_set(args.channel, args.url),

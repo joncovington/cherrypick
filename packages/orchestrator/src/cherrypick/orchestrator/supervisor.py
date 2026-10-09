@@ -781,6 +781,41 @@ class Supervisor:
             st.pop("stderr_offset", None)
             return subprocess.DEVNULL
 
+    def _serve_daemon_requests(self, cfg: dict[str, Any]) -> None:
+        """Run each queued daemon stop/start/restart (`daemonreq`) as a `--direct` child of this
+        process, so it acts with the supervisor's rights: under the Windows service a daemon started
+        from session 0 cannot be stopped from the desktop (2026-10-09). The child files its own result;
+        this pass never waits on it. Anything but a known verb of a configured daemon is refused."""
+        from . import daemonreq, proc  # lazily: proc imports this module
+
+        try:
+            requests = daemonreq.take(set(proc.daemons(cfg)))
+        except Exception as exc:  # noqa: BLE001 -- a bad queue must not stop the pass
+            _log(f"daemon requests: could not read the queue: {type(exc).__name__}: {exc}")
+            return
+        for req in requests:
+            result = daemonreq.result_path(req["id"])
+            argv = [
+                cfgmod.pythonw_exe(),
+                str(_LAUNCHER),
+                req["verb"],
+                req["name"],
+                "--direct",
+                "--result",
+                str(result),
+            ]
+            try:
+                subprocess.Popen(
+                    argv,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=CREATE_NO_WINDOW,
+                    start_new_session=NEW_SESSION,
+                )
+                _log(f"{req['name']}: {req['verb']} requested -- running it with the supervisor's rights")
+            except OSError as exc:
+                atomic_write_json(result, {"ok": False, "error": f"spawn failed: {exc}"})
+
     def _spawn(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
         err = self._open_stderr(spec, st)
         try:
@@ -827,6 +862,7 @@ class Supervisor:
                 _log(f"{jid}: derivation failed, job disabled: {err}")
         self._errors = errors
         self._prune_retired(jobs, errors)
+        self._serve_daemon_requests(cfg)
 
         started: list[str] = []
         held = _holds.all_holds()

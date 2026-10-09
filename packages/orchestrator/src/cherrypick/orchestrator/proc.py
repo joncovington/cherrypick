@@ -122,7 +122,17 @@ def restart_daemon(cfg, name: str, ensure: Callable[..., dict[str, Any]]) -> dic
     before = daemon_status(*daemons(cfg)[name][:2]).get("pid")
     stop = stop_daemon(cfg, name, hold=True)
     if not stop["ok"]:
-        return {"ok": False, "name": name, "error": "did not stop; not restarted", "stop": stop}
+        # Still running, so the hold guards nothing -- and left in place it would stop the keep-alive
+        # from ever restarting the daemon if it later died (2026-10-09: a failed restart of the gex
+        # recorder left it held, running old code, with nothing to bring it back).
+        holds.release(name)
+        return {
+            "ok": False,
+            "name": name,
+            "error": "did not stop; not restarted",
+            "stop": stop,
+            "held": False,
+        }
     start = start_daemon(cfg, name, ensure)  # releases the hold
     return {**start, "old_pid": before, "new_pid": start.get("pid")}
 

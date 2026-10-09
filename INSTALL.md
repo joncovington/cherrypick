@@ -327,6 +327,10 @@ supervisor the usual way and sends a CRITICAL saying so. The suite keeps running
 - **After updating the code,** run `run.py supervise --restart`. The service brings the
   supervisor back with the new code in about 30 seconds. A plain `--stop` would leave the service
   stopped until an administrator starts it.
+- **The background daemons it starts (the streamer, the gex recorder) cannot be stopped from your
+  desktop.** They run in the service's own session, and Windows refuses even the same user. So
+  `run.py restart`, `stop` and `start` of a daemon hand the job to the supervisor, which does it
+  and reports back (`"via": "supervisor"`). Use them rather than Task Manager.
 - **After changing your Windows password** (for a Microsoft account, changing it online counts),
   re-enter it in two places: the Services app's Log On tab, and Task Scheduler (*cherrypick-supervisor*
   → Properties → OK, then the password). Until then the suite cannot start at boot.
