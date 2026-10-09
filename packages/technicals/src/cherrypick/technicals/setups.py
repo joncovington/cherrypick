@@ -238,6 +238,23 @@ STUDIED = (
         "rs-break, on a session whose volume is at least 1.5x the mean of the prior 30 sessions'.",
         (),
     ),
+    # round 5: the 1-10 score inside the fundamentals label; rules in round5.py
+    Setup(
+        "rs-fund",
+        "Low score, compelling fundamentals",
+        "Long on an early-leader or Bullish-trend trigger while the fundamentals are compelling and "
+        "the 1-10 score is 1-3; exit on the close 21 sessions after entry.",
+        (),
+    ),
+    Setup(
+        "rs-fund-short",
+        "High score, weak fundamentals (short)",
+        "Short on an early-laggard or Bearish-trend trigger while the fundamentals are weak and the "
+        "1-10 score is 8-10; cover on the close 21 sessions after entry.",
+        (),
+        "rs-fund",
+        "short",
+    ),
 )
 
 
