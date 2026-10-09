@@ -1319,6 +1319,8 @@ def run_status(config: dict, conn, *, cache_path: str, broker=None) -> dict:
         "orphaned_orders": read_orphans(),
         # From the seam's persisted hold file (status never talks to the broker).
         "broker_held": _execution.read_hold(os.path.join(_data_dir(), "live_held.json")),
+        # Broker contact across ticks: `failing_since` set while every call fails (2026-10-08).
+        "broker_health": _execution.read_broker_health(os.path.join(_data_dir(), _execution.HEALTH_FILENAME)),
         "last_log_write": last_log,
         "log_file": str(lf),
         "live_db": db.live_db_path(),

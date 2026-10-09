@@ -1924,6 +1924,20 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
             )
         )
 
+    # (c4) the broker unreachable while armed and in session (2026-10-08). The seam swallows every
+    # broker failure and the tick exits 0, so neither the supervisor nor the freshness check above
+    # can see an expired login, a dead network or a broker outage -- only this record can.
+    if registered and in_session:
+        outage = _broker_outage_finding(
+            name,
+            label,
+            (status or {}).get("broker_health") or {},
+            now_et,
+            int(live.get("broker_outage_minutes", 3)),
+        )
+        if outage is not None:
+            findings.append(outage)
+
     # (c) live settlement overdue: same shape as the paper check, over the live status.
     close_min = timeutil.MARKET_CLOSE.hour * 60 + timeutil.MARKET_CLOSE.minute
     settle_grace = int(live.get("settlement_grace_minutes", 30))
@@ -2100,6 +2114,35 @@ def _check_duplicate_processes(cfg: dict[str, Any]) -> list[Finding]:
             )
         )
     return findings
+
+
+def _broker_outage_finding(
+    name: str, label: str, health: dict[str, Any], now_et: datetime, minutes: int
+) -> Finding | None:
+    """CRITICAL when every broker call has failed for `minutes` or more (`failing_since` survives
+    from the first failure to the next success), else None. One failed call is not an outage: the
+    next tick's orphan sweep is another try a minute later."""
+    since = health.get("failing_since")
+    if not since:
+        return None
+    try:
+        start = datetime.fromisoformat(str(since))
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        age_min = (now_et.astimezone(timezone.utc) - start).total_seconds() / 60
+    except ValueError:
+        return None
+    if age_min < minutes:
+        return None
+    return Finding(
+        f"{name}.live_broker",
+        CRITICAL,
+        f"{label} LIVE loop cannot reach the broker",
+        f"every broker call has failed for {age_min:.0f} min ({health.get('failures')} failures; last: "
+        f"{health.get('last_error')}) while live is armed and the market is open -- fills are not "
+        "being confirmed and resting orders are unwatched. Check the login (`cherrypick.core.auth "
+        "status`), the network and the broker's status page.",
+    )
 
 
 def _tick_failed(info: dict[str, Any]) -> bool:

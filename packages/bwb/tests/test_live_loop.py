@@ -834,3 +834,14 @@ def test_expected_legs_count_a_filled_position_and_never_a_pending_or_cancelled_
     for status in ("pending", "cancelled"):
         db.save_position(conn, {"position_id": pid, "status": status})
         assert live_loop.expected_legs(live_config, conn)["legs"] == []
+
+
+def test_status_carries_the_seams_broker_contact_record(live_config, conn, cache, planned):
+    # The watchdog's only view of a broker outage (2026-10-08): the tick itself exits 0.
+    from cherrypick.core import execution as _execution
+
+    path = os.path.join(live_loop._data_dir(), _execution.HEALTH_FILENAME)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"failing_since": "2026-09-16T14:00:00+00:00", "failures": 3}, f)
+    assert live_loop.run_status(live_config, conn, cache_path=cache)["broker_health"]["failures"] == 3
