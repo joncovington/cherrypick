@@ -250,6 +250,25 @@ def record_path(session: str, store: str = "") -> Path:
     return (folder / store if store else folder) / f"{session}.jsonl"
 
 
+def answering_model(usage) -> str | None:
+    """The model that answered, from the CLI's `modelUsage`. That block also carries the CLI's own
+    housekeeping calls (Haiku), which can out-produce the answer in output tokens on a short reply,
+    so the answer is the entry that cost the most."""
+    if not isinstance(usage, dict) or not usage:
+        return None
+    return max(usage, key=lambda m: float((usage[m] or {}).get("costUSD") or 0.0))
+
+
+def model_label(recorded) -> str | None:
+    """A record's model, with the joined form written before 2026-10-09
+    (`claude-haiku-4-5-...,claude-opus-5`) read as the model that answered."""
+    if not isinstance(recorded, str) or "," not in recorded:
+        return recorded
+    parts = [p for p in recorded.split(",") if p]
+    answering = [p for p in parts if not p.startswith("claude-haiku")]
+    return (answering or parts)[0]
+
+
 def records(session: str, store: str = "") -> list[dict]:
     try:
         lines = record_path(session, store).read_text(encoding="utf-8").splitlines()
@@ -258,9 +277,12 @@ def records(session: str, store: str = "") -> list[dict]:
     out = []
     for line in lines:
         try:
-            out.append(json.loads(line))
+            rec = json.loads(line)
         except ValueError:
             continue
+        if isinstance(rec, dict) and "model" in rec:
+            rec["model"] = model_label(rec["model"])
+        out.append(rec)
     return out
 
 
