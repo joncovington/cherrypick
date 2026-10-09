@@ -832,6 +832,17 @@ market, raw closes, at least $100k a day, and names with a split inside the wind
 - R net of the declared costs (borrow on the shorts);
 - the calendar-time one-sided test.
 
+**Outcome (run once, after this declaration; `round5-20261009-202437.json`):**
+- **Nothing passed.**
+  - `bull:stage`: edge −0.055 R (t −0.4), with 633 effective entries: not yet judged.
+  - `bull:trend`: +0.222 R net against +0.569 R at the other scores, edge −0.393 R (t −3.3). A low
+    score is worse.
+  - `bear:stage`: −0.623 R net, edge +0.187 R (t 1.6).
+  - `bear:trend`: −0.890 R net, edge +0.121 R (t 1.1).
+  - Both short tests lose money at every score.
+- **The whole-universe view agrees:** on the trend trigger a low score is worse (−0.198 R, t −2.9).
+- The results and what they say are in `packages/technicals/docs/setups.md`, "Round 5".
+
 ## Later phases: uses the study and log are shaped for, none committed
 
 History makes most of these **runnable now, not someday**.

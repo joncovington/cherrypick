@@ -215,6 +215,14 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
     (docs/setups.md, "Round 4").
     - Its rules read SPY as well as the name, so they live in `round4.py`, not `setups.RULES`.
       `setups.STUDIED` holds only their records.
+  - **Round 5** (`round5.py`, `study round5`) tested the 1-10 score inside the vendor's
+    fundamentals: a low score under compelling fundamentals with a bullish trigger, and the
+    mirror for shorts. Each was compared with the same label and trigger at the other scores.
+    Nothing passed. A low score was worse on the trend trigger (docs/setups.md, "Round 5").
+    - `fundamentals.py` is the score: four measures from Dolt's weekly consensus estimates
+      (`estimates`, `quarters` in `history.db`, landed by `history fundamentals`), each a
+      percentile within the market report's sector map. That map lists only today's names.
+    - The 1-10 score on history is rebuilt as `land.land_rank_cutoffs` builds it live.
   - **Dolt's split table misses many splits before 2014** (KO, NKE, GILD, TJX, IBB, BEN, DUK...;
     254 suspects on in-universe days). `history.suspected_actions` flags an unexplained 40%+ jump
     whose opening gap is a clean split ratio. The study excludes positions and draws held through
@@ -261,9 +269,11 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank (stored whole-market cut-offs) vs the vendor's. |
 | `python -m cherrypick.technicals score-signals` | Our six scan rules vs every saved scan list. |
 | `python -m cherrypick.technicals history land` | Land Dolt's whole daily history (2011 on, every name) into `history.db`. Incremental. |
+| `python -m cherrypick.technicals history fundamentals` | Land Dolt's next-year EPS and sales estimates and quarterly income statements into `history.db` (round 5's inputs). |
 | `python -m cherrypick.technicals history check` | `history.db` against `eod.db` on the overlap, to the cent, and price jumps no split explains. |
 | `python -m cherrypick.technicals study run [--workers N]` | The historical study under analysis plan v2; writes `study/history-results-<stamp>.json`. |
 | `python -m cherrypick.technicals study round2 --stage A\|B [--workers N]` | Round 2's declared improvements, discovery on half A, confirmation on half B. |
 | `python -m cherrypick.technicals study round3 [--workers N]` | Round 3: Supertrend + Vortex and squeeze + RSI divergence, long and short, against the random and the matched baseline; writes `study/round3-<stamp>.json`. |
 | `python -m cherrypick.technicals study round4 [--workers N]` | Round 4: the relative-strength breakout, with and without volume, on the $20M-$300M slice; writes `study/round4-<stamp>.json`. |
+| `python -m cherrypick.technicals study round5 [--workers N]` | Round 5: the 1-10 score inside the fundamentals label, against the same label and trigger at the other scores; writes `study/round5-<stamp>.json`. |
 | `python -m cherrypick.technicals report [--session D]` | Write one session's report readings and per-name chart files. |
