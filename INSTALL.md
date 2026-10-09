@@ -86,8 +86,9 @@ job with the wrong session. If you later install Node, Dolt or Claude somewhere 
 | Linux laptop or desktop | Secret Service (GNOME Keyring, KWallet) over D-Bus | Works while you are logged in to the desktop, since your login unlocks it. |
 | Headless Linux server | none | There is nothing to store the login in, and the installer's broker-login step fails with "No keyring backend available." Add a file backend and run it again: `.venv/bin/pip install keyrings.alt`, `export PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring`, then `./install.sh` from that same shell (its crontab entries keep the setting). This stores the login unencrypted under `~/.local/share/python_keyring/`, readable by your user, so keep the account to yourself. `keyrings.cryptfile` encrypts, but it asks for a password on every read and cannot run unattended. |
 
-Desktop notifications are Windows-only. On macOS and Linux, set up a Discord or Slack webhook
-(`run.py connect`, or `run.py secrets-set --channel discord`) or no alert reaches you.
+The `desktop` notification channel uses the notification centre on macOS and `notify-send` on Linux,
+and only reaches you while you are logged in. For an alert that always arrives, set up a Discord or
+Slack webhook (`run.py connect`, or `run.py secrets-set --channel discord`).
 
 Install from a release, not from `main`: `main` is where development happens and is often ahead of
 the latest release. The git lines above check out the newest release tag, which leaves git in
