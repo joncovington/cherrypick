@@ -96,10 +96,9 @@ def ask_claude(model: str | None, timeout: int = 180):
             out = json.loads(proc.stdout)
         except ValueError:
             return {"reply": proc.stdout, "model": model, "cost_usd": None}
-        usage = out.get("modelUsage") or {}
         return {
             "reply": out.get("result"),
-            "model": ",".join(sorted(usage)) or model,
+            "model": intraday_advice.answering_model(out.get("modelUsage")) or model,
             "cost_usd": out.get("total_cost_usd"),
         }
 

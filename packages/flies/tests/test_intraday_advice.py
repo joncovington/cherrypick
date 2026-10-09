@@ -219,3 +219,23 @@ def test_a_close_past_the_wing_width_is_dropped_and_the_rest_of_the_decision_sta
     )
     assert v["ok"] and v["decision"]["close_stranded"] == ["near"]
     assert v["decision"]["dropped_closes"] == [{"label": "p1", "why": "past_wing_width"}]
+
+
+def test_the_answering_model_is_the_costliest_entry_not_the_cli_housekeeping():
+    # the CLI's real shape on a short reply: Haiku's housekeeping out-produced Opus in output tokens
+    usage = {
+        "claude-haiku-4-5-20251001": {"outputTokens": 11, "costUSD": 0.00058},
+        "claude-opus-5": {"outputTokens": 4, "costUSD": 0.47495},
+    }
+    assert ia.answering_model(usage) == "claude-opus-5"
+    assert ia.answering_model({"claude-haiku-4-5-20251001": {"costUSD": 0.01}}) == "claude-haiku-4-5-20251001"
+    assert ia.answering_model({}) is None and ia.answering_model(None) is None
+
+
+def test_a_record_written_with_the_joined_model_reads_as_the_answering_model(stores):  # noqa: F811
+    ia._append(SESSION, {"as_of": T, "called": True, "model": "claude-haiku-4-5-20251001,claude-opus-5"})
+    ia._append(SESSION, {"as_of": T + 60, "called": True, "model": "claude-opus-5"})
+    ia._append(SESSION, {"as_of": T + 120, "called": False})
+    assert [r.get("model") for r in ia.records(SESSION)] == ["claude-opus-5", "claude-opus-5", None]
+    assert ia.model_label("claude-haiku-4-5-20251001") == "claude-haiku-4-5-20251001"
+    assert ia.model_label("opus") == "opus" and ia.model_label(None) is None
