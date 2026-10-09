@@ -351,10 +351,20 @@ def net_walls(strikes: list[dict], key: str = "net_gex") -> tuple[float | None, 
     (max call_gex / min put_gex): those find the biggest single-side gamma pile, whereas this
     finds where NET dealer gamma is most positive / most negative. `strikes` carries `key`
     (e.g. "net_gex"). Empty input yields (None, None).
+
+    A wall needs a strike on its own side of zero: with no negative strike there is no put wall,
+    and with no positive one no call wall (None, not the least-bad strike). An expired 0DTE chain
+    after the bell is the case (2026-10-09): gamma collapses to a spike at the close, every other
+    strike reads 0, and the minimum was a 0-against-0 tie that named the chain's first row, 3000,
+    as the put wall. Never seen in the recorder's market-hours rows (0 of 3,969), so no recorded
+    wall changes.
     """
     call = max(strikes, key=lambda s: s[key], default=None)
     put = min(strikes, key=lambda s: s[key], default=None)
-    return (call["strike"] if call else None, put["strike"] if put else None)
+    return (
+        call["strike"] if call and call[key] > 0 else None,
+        put["strike"] if put and put[key] < 0 else None,
+    )
 
 
 def volume_totals(series: list[dict]) -> dict:
