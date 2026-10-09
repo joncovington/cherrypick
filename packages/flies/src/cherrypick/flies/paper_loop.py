@@ -276,6 +276,8 @@ def _note_completion_rule(conn, config: dict) -> None:
 
 
 VOL_FLOOR_ARM_FROM = "2026-10-05"
+RANGE_HIGH_ARM_FROM = "2026-10-12"
+GEX_ONE_GAMMA_FROM = "2026-10-12"
 INTRADAY_ARMS_FROM = "2026-10-06"
 INTRADAY_ARMS = ("trend-rule", "intraday-agent")
 
@@ -376,6 +378,32 @@ def _note_gex_surface_rule(conn) -> None:
         _log(f"gex-surface journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
+def _note_gex_one_gamma(conn) -> None:
+    """Journal the 2026-10-12 GEX arithmetic change (`core.gex.strike_gamma`): from that session a
+    strike's call and put carry one gamma, the out-of-the-money side's, instead of each its own feed
+    gamma. Book-wide and kind `gex_surface`, like the 10-06 input rule: every row's GEX tags change
+    meaning, and no enabled arm decides on GEX (gex, callwall are off; wall-clear starts after it).
+    Idempotent and best-effort, as the other notes."""
+    try:
+        dbmod.record_measurement_break(
+            conn,
+            break_date=GEX_ONE_GAMMA_FROM,
+            scope="*",
+            kind="gex_surface",
+            reason=(
+                f"GEX arithmetic from {GEX_ONE_GAMMA_FROM} (core.gex.strike_gamma): one gamma per strike, the "
+                "out-of-the-money side's, so net = gamma x (call OI - put OI); entry_/completion_gex_* tags "
+                "either side of it are not poolable"
+            ),
+            detail=(
+                "2026-10-09: SPX 7790 (+2.58B calls, -2.37B puts) flipped sign on 0DTE quote noise and moved the "
+                "put wall and nearest zero gamma; over 215 recorded snapshots the cumulative flip changed in 11"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"gex one-gamma journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
 def _note_vol_floor_arm(conn, config: dict) -> None:
     """Journal the `vol-floor` arm's entry to the roster (an `arm_added` break dated its first
     session), once a machine's config enables it. Idempotent; best-effort, never a reason to skip
@@ -396,6 +424,29 @@ def _note_vol_floor_arm(conn, config: dict) -> None:
         )
     except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
         _log(f"vol-floor arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
+def _note_range_high_arm(conn, config: dict) -> None:
+    """Journal the `range-high` arm's entry to the roster (an `arm_added` break dated its first
+    session), once a machine's config enables it. Idempotent; best-effort, never a reason to skip a
+    tick."""
+    try:
+        arm = (config.get("arms") or {}).get("range-high")
+        if not isinstance(arm, dict) or not arm.get("enabled", True):
+            return
+        dbmod.record_measurement_break(
+            conn,
+            break_date=RANGE_HIGH_ARM_FROM,
+            scope="range-high",
+            kind="arm_added",
+            reason=(
+                "range-high arm enters the roster: control plus no entry while spot is at or above "
+                f"range_high_pct ({arm.get('range_high_pct')}) of a session range narrower than "
+                f"range_high_max_points ({arm.get('range_high_max_points', 30.0)})"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"range-high arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
 def _note_wall_clear_arm(conn, config: dict) -> None:
@@ -964,7 +1015,9 @@ def main(argv=None) -> int:
             _note_entry_cadence_change(conn, config)
             _note_completion_rule(conn, config)
             _note_gex_surface_rule(conn)
+            _note_gex_one_gamma(conn)
             _note_vol_floor_arm(conn, config)
+            _note_range_high_arm(conn, config)
             _note_intraday_arms(conn, config)
             _note_selector_arm(conn, config)
             _note_wall_clear_arm(conn, config)
