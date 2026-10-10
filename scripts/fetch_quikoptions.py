@@ -152,6 +152,9 @@ TABLES: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
         ],
     ),
 }  # fmt: skip
+# Every Openings row had OI 0 until 2026-10-09 (TAL: 20,062 / 1 = 20,062.00). An opening may carry a
+# little open interest; past the other panel's "OI > 100" it is that panel's row, not an opening.
+OPENING_MAX_OI = 100
 CALENDAR_HEADING = "Economic"
 CALENDAR_COLUMNS = [
     ("Date", "when", TEXT), ("Impact", "impact", TEXT), ("Event", "event", TEXT),
@@ -439,10 +442,11 @@ def validate_report(doc: dict, expected: date | None = None) -> list[str]:
     """Every identity the page already satisfies (2026-10-02, checked on the live page):
     Birdseye's size buckets sum to Total and Calls + Puts = Total, to the site's own display
     rounding; Premium = price x size x 100 on sweeps and spreads (signed, on spreads); V/OI =
-    Volume / OI, and Openings rows have OI 0 and V/OI = Volume. Plus: the session the page states
-    is the one expected, every table is there with at least one row, every expiry and call/put
-    reads. A mixed spread (call and put legs, `M`) is the one row the premium identity is not
-    checked on: the site's premium for one does not satisfy it."""
+    Volume / OI, on Openings too, whose OI is at most OPENING_MAX_OI (0 until 2026-10-09; V/OI =
+    Volume at OI 0). Plus: the session the page states is the one expected, every table is there
+    with at least one row, every expiry and call/put reads. A mixed spread (call and put legs, `M`)
+    is the one row the premium identity is not checked on: the site's premium for one does not
+    satisfy it."""
     problems = list(doc.get("problems", []))
     if expected is not None and doc.get("session") != expected.isoformat():
         problems.append(f"page shows session {doc.get('session')}, expected {expected.isoformat()}")
@@ -504,15 +508,17 @@ def validate_report(doc: dict, expected: date | None = None) -> list[str]:
             r_ratio, r_vol = rounding(shown.get("v_oi", "")), rounding(shown.get("volume", ""))
             if None in (vol, oi, v_oi):
                 problems.append(f"{name} {sym}: volume, OI or V/OI did not read")
-            elif name == "openings" and (oi != 0 or abs(v_oi - vol) > r_ratio + r_vol + 1e-9):
-                problems.append(f"openings {sym}: OI {oi}, V/OI {v_oi} (an opening has OI 0, V/OI = volume)")
-            elif name == "voloi" and (
+            elif name == "openings" and not 0 <= oi <= OPENING_MAX_OI:
+                problems.append(f"openings {sym}: OI {oi} (an opening has OI {OPENING_MAX_OI} or less)")
+            elif name == "openings" and oi == 0 and abs(v_oi - vol) > r_ratio + r_vol + 1e-9:
+                problems.append(f"openings {sym}: OI 0, V/OI {v_oi} (the site's ratio is volume at OI 0)")
+            elif (name == "voloi" or oi > 0) and (
                 oi <= 0
                 # The ratio's own rounding, plus what rounding in volume and OI can move it by.
                 or abs(vol / oi - v_oi)
                 > r_ratio + r_vol / oi + vol * rounding(shown.get("oi", "")) / oi**2 + 1e-9
             ):
-                problems.append(f"voloi {sym}: {vol} / {oi} != V/OI {v_oi}")
+                problems.append(f"{name} {sym}: {vol} / {oi} != V/OI {v_oi}")
 
     for name, rows in tables.items():
         for row in rows:
