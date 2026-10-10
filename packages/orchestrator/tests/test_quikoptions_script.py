@@ -16,6 +16,7 @@ import copy
 import html
 import importlib.util
 import json
+import re
 from datetime import date
 from pathlib import Path
 
@@ -210,6 +211,49 @@ def test_a_good_report_reads_every_table_and_passes():
     spread = doc["tables"]["spreads"][0]
     assert spread["underlying"] == {"last": 11.12, "bid": 11.11, "ask": 11.12}
     assert spread["premium"] == -921_800  # the site's sign, kept
+
+
+_SIDE_TIP = re.compile(
+    r'<td><i class="bi bi-circle-fill" data-bs-title="&lt;div&gt;&lt;span class=\'fw-bold\'&gt;(.*?)'
+    r'&lt;/span&gt;&lt;br/&gt;(.*?)&lt;br/&gt;Edge: (.*?)&lt;/div&gt;"></i></td>'
+)
+
+
+def _redesigned(page: str) -> str:
+    """The same report in the markup the site drew from 2026-10-09: no `quikgrid` class, and the
+    side dot's facts in a popover's text rather than a tooltip attribute."""
+    page = page.replace(
+        'id="table-x" class="quikgrid table table-hover"',
+        'id="table-8809a398-4273-405b-9050-f6c17394b539" class="w-full border-none" data-has-header=""',
+    )
+    return _SIDE_TIP.sub(
+        lambda m: (
+            '<td class="text-center"><div class="relative w-fit m-auto">'
+            '<div class="group dropdown-menu-trigger"><svg></svg></div><div popover="manual">'
+            '<div class="text-secondary flex flex-col font-bold"><span class="mb-1 flex items-center gap-1">'
+            f'<span class="h-[5px]"><svg></svg></span><span class="h-3">{m.group(1)}</span></span>'
+            f'<span>{m.group(2)}</span><span>Edge: <span class="text-primary">{m.group(3)}</span></span>'
+            "</div></div></div></td>"
+        ),
+        page,
+    )
+
+
+def test_the_redesigned_markup_reads_the_same_as_the_old():
+    old = fq.parse_report(fq.tables_fragment(report(), fq.HEADINGS, with_date=True))
+    page = _redesigned(report())
+    assert "quikgrid" not in page and "data-bs-title" not in page
+    assert fq._report_ready(page)
+    new = fq.parse_report(fq.tables_fragment(page, fq.HEADINGS, with_date=True))
+    assert fq.validate_report(new, DAY) == []
+    assert new["tables"] == old["tables"]
+    assert new["tables"]["sweeps"][0]["side"] == {"sentiment": "Neutral", "fill": "Mid Market", "edge": -0.38}
+
+
+def test_a_table_that_is_not_a_report_grid_is_not_read():
+    page = report().replace('id="table-x" class="quikgrid table table-hover"', 'id="nav" class="w-full"')
+    assert not fq._report_ready(page)
+    assert "table missing" in _check(page)[0]
 
 
 def test_the_badge_and_row_menu_never_leak_into_a_cell():
