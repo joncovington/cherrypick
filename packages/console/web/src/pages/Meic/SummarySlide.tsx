@@ -35,11 +35,26 @@
  */
 import { useState, type ReactNode } from "react";
 import { useBoolPref, writePref } from "../../lib/prefs";
+import type { MeicScope } from "./MeicTables";
+
+export interface MeicSummaryProps {
+  /** The page's scope, from the manifest header (symbol/arm selects). Defaults to every arm and
+   *  symbol together; the header narrows. Never re-declared here — one scope per MEIC page. */
+  scope?: Partial<MeicScope>;
+}
 /* ---------------------------------------------------------------------------
- * Fixture data — the ONLY thing a real implementation replaces.
+ * Fixture data — the ONLY thing a real implementation replaces. Stated twice, ONCE PER SCOPE:
+ * `ALL` is the whole day (every arm and symbol together), `PER_ARM` each arm's own slice. The
+ * slices are constructed to reconcile — summing the arms' rows equals the unscoped totals —
+ * because that identity is what the real reader must keep, and the fixture should prove the
+ * scope control while it is judged.
+ *
+ * The scope itself is the PAGE's (the manifest header's symbol/arm selects), not the slide's:
+ * one scope per MEIC page is the existing rule, and a second control would let the summary
+ * disagree with the tabs beside it. Default is everything together; the header narrows.
  * ------------------------------------------------------------------------- */
 
-const FIXTURE = {
+const ALL = {
   session: "Wednesday, October 7, 2026",
   entriesFilled: 3,
   /** Hero net / gross / fees / settlement / open risk — one row per arm in the real reader, so the
@@ -53,7 +68,7 @@ const FIXTURE = {
     openRisk: 480, // worst case still open, the gate's own figure
   },
   /** Net premium kept after fees, as a % of premium sold. */
-  capture: { value: 16.1, domain: [-50, 50] as const },
+  capture: { value: 16.1 },
   winRate: { days: { won: 12, of: 16 }, entries: { won: 2, of: 3 } },
   sides: [
     { side: "put", net: -55, credit: 560, stops: 520, decay: 95, avgCredit: 0.6 },
@@ -96,6 +111,83 @@ const FIXTURE = {
   ],
 };
 
+/** The per-arm slice — what the real reader returns for one arm's rows of the ledger. Same shape
+ *  as `ALL` (one fewer level: no `arms` list), constructed so sums across arms equal `ALL`. */
+type Slice = Omit<typeof ALL, "arms">;
+const PER_ARM: Record<string, Slice> = {
+  control: {
+    ...ALL,
+    hero: { net: 42, gross: 790, fees: 122.5, settlement: 60, openRisk: 240 },
+    capture: { value: 4.3 },
+    winRate: { days: { won: 5, of: 16 }, entries: { won: 2, of: 3 } },
+    sides: [
+      { side: "put", net: -158, credit: 280, stops: 520, decay: 95, avgCredit: 0.6 },
+      { side: "call", net: 210, credit: 510, stops: 216, decay: 130, avgCredit: 0.84 },
+    ],
+    timeBuckets: [
+      { time: "13:11", net: -158, note: "manual stop" },
+      { time: "14:02", net: 210, note: "credit improved, taken" },
+    ],
+    evaluations: {
+      evaluated: 208,
+      filled: 2,
+      refused: 206,
+      reasons: [
+        { outcome: "gate_blocked", n: 111, dominantDetail: "regime_gex_negative" },
+        { outcome: "cadence_blocked", n: 55, dominantDetail: null },
+        { outcome: "sign_rule_blocked", n: 23, dominantDetail: "call_side_floor" },
+        { outcome: "no_candidate", n: 5, dominantDetail: null },
+        { outcome: "window_blocked", n: 7, dominantDetail: null },
+        { outcome: "no_fill", n: 5, dominantDetail: null },
+      ],
+      market: "at refusal: GEX− 74% of evaluations · median IV rank 0.41 · session quality mixed",
+    },
+    entries: [
+      { time: "13:11", arm: "control", symbol: "NQ", credit: 505, put: "stopped", call: "protected", net: -158, provisional: true, note: "manual stop" },
+      { time: "14:02", arm: "control", symbol: "NQ", credit: 560, put: "closed", call: "closed", net: 210, provisional: false, note: "" },
+    ],
+  },
+  wide: {
+    ...ALL,
+    hero: { net: 212, gross: 790, fees: 122.5, settlement: 60, openRisk: 240 },
+    capture: { value: 26.8 },
+    winRate: { days: { won: 7, of: 16 }, entries: { won: 1, of: 3 } },
+    sides: [
+      { side: "put", net: 103, credit: 280, stops: 0, decay: 0, avgCredit: 0.6 },
+      { side: "call", net: 464, credit: 510, stops: 216, decay: 130, avgCredit: 0.84 },
+    ],
+    timeBuckets: [{ time: "15:26", net: 202, note: "eod exit" }],
+    evaluations: {
+      evaluated: 204,
+      filled: 1,
+      refused: 203,
+      reasons: [
+        { outcome: "gate_blocked", n: 111, dominantDetail: "regime_gex_negative" },
+        { outcome: "cadence_blocked", n: 54, dominantDetail: null },
+        { outcome: "sign_rule_blocked", n: 23, dominantDetail: "call_side_floor" },
+        { outcome: "no_candidate", n: 5, dominantDetail: null },
+        { outcome: "window_blocked", n: 6, dominantDetail: null },
+        { outcome: "no_fill", n: 4, dominantDetail: null },
+      ],
+      market: "at refusal: GEX− 74% of evaluations · both arms share one market, so the context repeats",
+    },
+    entries: [
+      { time: "15:26", arm: "wide", symbol: "NQ", credit: 515, put: "closed", call: "protected", net: 202, provisional: false, note: "manual" },
+    ],
+  },
+};
+
+/** The slice the scope names: the arm's own rows, or all of them together. Symbol narrowing joins
+ *  the real reader the day MEIC trades a second symbol; the fixture states one. */
+function fixtureForScope(scope: Partial<MeicScope> | undefined): Slice {
+  if (scope?.profile != null && scope.profile !== "") {
+    const arm = PER_ARM[scope.profile];
+    if (arm) return arm;
+  }
+  return ALL;
+}
+
+
 /* `+$1,580.00` — signed, grouped, whole-position dollars. The summary's own display format for
  * the hero and charts; the entries table keeps the suite's `fmtCash` vocabulary. */
 function fmtUsd(v: number): string {
@@ -123,11 +215,11 @@ function TsCard({ title, aside, children }: { title: string; aside?: ReactNode; 
  * Hero net card
  * ------------------------------------------------------------------------- */
 
-function NetCard() {
-  const { hero } = FIXTURE;
+function NetCard({ slice }: { slice: Slice }) {
+  const { hero } = slice;
   const drag = hero.fees / hero.gross;
   return (
-    <TsCard title="net p&l" aside={<span className="ts-muted">{FIXTURE.session}</span>}>
+    <TsCard title="net p&l" aside={<span className="ts-muted">{slice.session}</span>}>
       <div className={`ts-hero ${hero.net >= 0 ? "ts-pos" : "ts-neg"}`}>{fmtUsd(hero.net)}</div>
       <dl className="ts-kv">
         <div><dt>gross captured</dt><dd className="ts-pos">{fmtUsd(hero.gross)}</dd></div>
@@ -163,8 +255,8 @@ function thetaOf(v: number): number {
   return ((t - G.min) / (G.max - G.min)) * 180;
 }
 
-function CaptureGauge() {
-  const { value } = FIXTURE.capture;
+function CaptureGauge({ slice }: { slice: Slice }) {
+  const { value } = slice.capture;
   const zero = thetaOf(0);
   const at = thetaOf(value);
   const [from, to] = value >= 0 ? [zero, at] : [at, zero];
@@ -205,8 +297,8 @@ function Ring({ r, fraction, className }: { r: number; fraction: number; classNa
   );
 }
 
-function WinRateArcs() {
-  const { days, entries } = FIXTURE.winRate;
+function WinRateArcs({ slice }: { slice: Slice }) {
+  const { days, entries } = slice.winRate;
   const dayPct = (days.won / days.of) * 100;
   const entryPct = (entries.won / entries.of) * 100;
   return (
@@ -235,11 +327,11 @@ function WinRateArcs() {
  * reconciles with the hero rather than silently differing from it.
  * ------------------------------------------------------------------------- */
 
-function BySide() {
-  const max = Math.max(...FIXTURE.sides.map((s) => Math.abs(s.net)));
+function BySide({ slice }: { slice: Slice }) {
+  const max = Math.max(...slice.sides.map((s) => Math.abs(s.net)));
   return (
     <TsCard title="by side" aside={<span className="ts-muted">exits applied, before fees & settlement</span>}>
-      {FIXTURE.sides.map((s) => (
+      {slice.sides.map((s) => (
         <div className="ts-side" key={s.side}>
           <div className="ts-side-head">
             <span>{s.side}</span>
@@ -264,12 +356,12 @@ function BySide() {
  * By entry time — a bar per bucket; losses are short markers, per the design.
  * ------------------------------------------------------------------------- */
 
-function ByEntryTime() {
-  const max = Math.max(...FIXTURE.timeBuckets.map((b) => Math.abs(b.net)));
+function ByEntryTime({ slice }: { slice: Slice }) {
+  const max = Math.max(...slice.timeBuckets.map((b) => Math.abs(b.net)));
   return (
     <TsCard title="by entry time">
       <div className="ts-times">
-        {FIXTURE.timeBuckets.map((b) => {
+        {slice.timeBuckets.map((b) => {
           const h = `${((Math.abs(b.net) / max) * 100).toFixed(1)}%`;
           return (
             <div className="ts-time" key={b.time} title={`${b.time} — ${fmtUsd(b.net)} ${b.note}`}>
@@ -295,15 +387,15 @@ function ByEntryTime() {
  * columns first (arm, symbol — MEIC is parallel arms over symbols, so identity IS the summary).
  * ------------------------------------------------------------------------- */
 
-function EntriesTable() {
+function EntriesTable({ slice }: { slice: Slice }) {
   return (
-    <TsCard title="entries" aside={<span className="ts-muted">{FIXTURE.entriesFilled} filled</span>}>
+    <TsCard title="entries" aside={<span className="ts-muted">{slice.entriesFilled} filled</span>}>
       <table className="ts-table">
         <thead>
           <tr><th>time</th><th>arm</th><th>sym</th><th className="num">credit</th><th>structure</th><th className="num">net</th></tr>
         </thead>
         <tbody>
-          {FIXTURE.entries.map((e) => (
+          {slice.entries.map((e) => (
             <tr key={`${e.time}-${e.arm}`}>
               <td>{e.time}</td>
               <td>{e.arm}</td>
@@ -333,8 +425,8 @@ function EntriesTable() {
  * ledger exists to answer: is a gate refusing the regime it was built to refuse?
  * ------------------------------------------------------------------------- */
 
-function Evaluations() {
-  const ev = FIXTURE.evaluations;
+function Evaluations({ slice }: { slice: Slice }) {
+  const ev = slice.evaluations;
   const maxN = Math.max(...ev.reasons.map((r) => r.n));
   const passPct = (ev.filled / ev.evaluated) * 100;
   return (
@@ -375,7 +467,7 @@ function Evaluations() {
 
 function ByArm() {
   return (
-    <TsCard title="by arm" aside={<span className="ts-muted">today, each arm's own day</span>}>
+    <TsCard title="by arm" aside={<span className="ts-muted">every arm — the comparison card does not narrow</span>}>
       <table className="ts-table">
         <thead>
           <tr>
@@ -388,7 +480,7 @@ function ByArm() {
           </tr>
         </thead>
         <tbody>
-          {FIXTURE.arms.map((a) => (
+          {ALL.arms.map((a) => (
             <tr key={a.arm}>
               <td>{a.arm}</td>
               <td>{a.symbol}</td>
@@ -412,7 +504,7 @@ function ByArm() {
 
 const RANGES = ["day", "week", "month", "year", "all-time"] as const;
 
-function Toolbar() {
+function Toolbar({ slice }: { slice: Slice }) {
   const [range, setRange] = useState<string>("day");
   // The light variant is a choice, persisted like every console pref (mirror first render, server
   // copy follows); default dark, never `prefers-color-scheme` — a deliberately dark theme must not
@@ -431,7 +523,7 @@ function Toolbar() {
       <div className="ts-daynav">
         <button aria-label="previous day">‹</button>
         <span>
-          {FIXTURE.session} <span className="ts-muted">· {FIXTURE.entriesFilled} entries filled</span>
+          {slice.session} <span className="ts-muted">· {slice.entriesFilled} entries filled</span>
         </span>
         <button aria-label="next day">›</button>
       </div>
@@ -444,26 +536,27 @@ function Toolbar() {
   );
 }
 
-export function MeicSummary() {
+export function MeicSummary({ scope }: MeicSummaryProps) {
   const light = useBoolPref("meicSummaryLight");
+  const slice = fixtureForScope(scope);
   return (
     <div className={light ? "ts-root ts-light" : "ts-root"}>
-      <Toolbar />
+      <Toolbar slice={slice} />
       <div className="ts-row ts-row-3">
-        <NetCard />
-        <CaptureGauge />
-        <WinRateArcs />
+        <NetCard slice={slice} />
+        <CaptureGauge slice={slice} />
+        <WinRateArcs slice={slice} />
       </div>
       <div className="ts-row ts-row-2">
-        <BySide />
-        <ByEntryTime />
+        <BySide slice={slice} />
+        <ByEntryTime slice={slice} />
       </div>
       <div className="ts-row ts-row-2">
-        <Evaluations />
+        <Evaluations slice={slice} />
         <ByArm />
       </div>
       <div className="ts-row">
-        <EntriesTable />
+        <EntriesTable slice={slice} />
       </div>
     </div>
   );

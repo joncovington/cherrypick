@@ -151,7 +151,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
       // Not wired to a reader yet; this slide exists to judge the shape in the real app.
       id: "summary",
       label: MEIC_LABEL.summary,
-      render: () => <MeicSummary />,
+      render: () => <MeicSummary scope={scopeArgs} />,
     },
     { id: "forest", label: MEIC_LABEL.forest, render: () => <MeicForestCard mode={mode} scope={scopeArgs} /> },
     {

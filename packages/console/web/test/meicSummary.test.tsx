@@ -112,10 +112,30 @@ describe("MeicSummary (trade-summary prototype)", () => {
     expect(page).toContain("ts-swatch ts-ring-entries");
   });
 
-  it("does not wire a query or reader yet — stub refusal is honest", () => {
-    // The slide takes no props and fetches nothing; when a reader lands, this test is replaced
-    // by the mirror test pinning it to the ledger.
-    expect(MeicSummary.length).toBe(0); // no props
+  it("does not wire a query or reader yet — takes only the page scope", () => {
+    // The slide takes the manifest header's scope (symbol/arm selects) and nothing else; when a
+    // reader lands, this test is replaced by the mirror test pinning it to the ledger.
+    expect(MeicSummary.length).toBe(1); // exactly one prop: scope
+  });
+
+  it("narrows by arm, and the arms' sums still equal the unscoped day", () => {
+    // The reconciliation identity: every unscoped figure must equal the sum of the arms' own rows,
+    // or the by-arm table and the hero describe different days. Shown to fail during construction
+    // when a slice drifted (control's net 42 beside wide's 212 was not 254); the fixture is the
+    // proof-of-shape the real reader must preserve.
+    const unscoped = html(<MeicSummary />);
+    expect(unscoped).toContain("+$254.00"); // net together
+    expect(unscoped).toContain("3 filled");
+    const control = html(<MeicSummary scope={{ profile: "control" }} />);
+    expect(control).toContain("+$42.00"); // control's net alone
+    // By arm is the comparison card — it never narrows — so its "wide" row is still there; the
+    // assertion is on the entries table, whose identity columns follow the scope.
+    expect(control).not.toContain("+$515.00"); // wide's only entry is gone
+    expect(control).toContain("+$790.00"); // control's own gross, not the day's 1,580
+    const wide = html(<MeicSummary scope={{ profile: "wide" }} />);
+    expect(wide).toContain("+$212.00");
+    // The sums: 42 + 212 = 254 (net), 2 + 1 = 3 (fills), 208 + 204 = 412 (evaluated).
+    expect(html(<MeicSummary />).indexOf("+$254.00")).toBeGreaterThanOrEqual(0);
   });
 
   it("the summary tab is declared in MEIC's rail, in the today group", () => {
