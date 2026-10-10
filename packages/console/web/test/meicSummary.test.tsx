@@ -81,8 +81,8 @@ function slice(over: Partial<MeicSummarySlice> = {}): MeicSummarySlice {
       market: { gexNegPct: 61.4, medianIvRank: 0.38, quality: "normal" },
     },
     arms: [
-      { arm: "control", symbol: "NQ", evaluated: 386, filled: 9, refused: 377, dominant: "window_blocked", net: 1231.27 },
-      { arm: "bp-1000", symbol: "NQ", evaluated: 386, filled: 1, refused: 385, dominant: "gate_blocked", net: 170.61 },
+      { arm: "control", symbol: "SPX", evaluated: 386, filled: 9, refused: 377, dominant: "window_blocked", net: 1231.27 },
+      { arm: "bp-1000", symbol: "SPX", evaluated: 386, filled: 1, refused: 385, dominant: "gate_blocked", net: 170.61 },
     ],
     delta: [
       { bucket: "0.10-0.15", trades: 4, winPct: 75, avgNet: 310.5 },
@@ -92,8 +92,8 @@ function slice(over: Partial<MeicSummarySlice> = {}): MeicSummarySlice {
     weekday: [{ bucket: "Fri", trades: 10, winPct: 80, avgNet: 140.2 }],
     entries: {
       rows: [
-        { time: "15:26", arm: "bp-1000", symbol: "NQ", credit: 515, structure: "expired OTM", net: 202, provisional: false },
-        { time: "09:46", arm: "control", symbol: "NQ", credit: 505, structure: "stopped/closed", net: -158, provisional: false },
+        { time: "15:26", arm: "bp-1000", symbol: "SPX", credit: 515, structure: "expired OTM", net: 202, provisional: false },
+        { time: "09:46", arm: "control", symbol: "SPX", credit: 505, structure: "stopped/closed", net: -158, provisional: false },
       ],
       total: 10,
     },
