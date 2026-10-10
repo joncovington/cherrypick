@@ -677,9 +677,13 @@ export function MeicSummary({ scope }: MeicSummaryProps) {
         <Evaluations slice={slice} />
         <ByArm />
       </div>
-      <div className="ts-row ts-row-3">
+      <div className="ts-row ts-row-2">
         <SignalBreakdown title="by short-call delta" rows={slice.delta} scopeNote="era, not the day" />
         <SignalBreakdown title="by wing width" rows={slice.wing} scopeNote="era, not the day" />
+      </div>
+      {/* Entries is full width UNDER the signal blocks — the real reader returns every filled entry
+          of the window, a long row of data that a third of a grid cell would cramp. */}
+      <div className="ts-row">
         <EntriesTable slice={slice} />
       </div>
     </div>
