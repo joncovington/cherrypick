@@ -65,7 +65,9 @@ pnpm dev:web      # Vite on 127.0.0.1:5173, proxies /api and /ws to 5070
 - `run.py` — the Python launcher the supervisor runs
 
 See `CLAUDE.md` for the data rules (read-only over module stores, reads the shared credential and
-never writes it, no order path) and `docs/verify-notes.md` for the M0 spike findings.
+never writes it, no order path) and `docs/verify-notes.md` for the M0 spike findings. On the
+`console/trade-summary-redesign` branch, `docs/trade-summary-branch.md` holds that branch's own
+status notes and the hourly main-sync automation.
 
 ## Desktop window
 
