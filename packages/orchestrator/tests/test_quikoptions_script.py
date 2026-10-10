@@ -250,6 +250,34 @@ def test_the_redesigned_markup_reads_the_same_as_the_old():
     assert new["tables"]["sweeps"][0]["side"] == {"sentiment": "Neutral", "fill": "Mid Market", "edge": -0.38}
 
 
+def _body(page: str, heading: str) -> re.Match:
+    at = page.index(f"<h3>{heading}</h3>")
+    return re.compile(r"<tbody>.*?</tbody>", re.S).search(page, at)
+
+
+def _voloi_drawn_as(page: str, body: str) -> str:
+    m = _body(page, "Top VolOverOI (OI &gt; 100)")
+    return page[: m.start()] + body + page[m.end() :]
+
+
+def test_an_oi_panel_drawn_as_a_copy_of_openings_is_dropped_and_named():
+    # 2026-10-09 on: the site fills the OI > 100 panel with the Openings list, OI 0 throughout.
+    page = report()
+    page = _voloi_drawn_as(page, _body(page, "Top VolOverOI (Openings)").group(0))
+    doc = fq.parse_report(fq.tables_fragment(page, fq.HEADINGS, with_date=True))
+    assert fq.validate_report(doc, DAY) == []
+    assert "voloi" not in doc["tables"] and set(doc["tables"]) == set(fq.TABLES) - {"voloi"}
+    assert doc["unavailable"] == {"voloi": "the site drew the Openings list in this panel"}
+
+
+def test_an_oi_panel_that_is_wrong_but_not_a_copy_still_rejects():
+    page = report()
+    copy_ = _body(page, "Top VolOverOI (Openings)").group(0).replace("11,105", "11,106")
+    problems = _check(_voloi_drawn_as(page, copy_))
+    assert problems and all(p.startswith("voloi AXGN") for p in problems)
+    assert fq.parse_report(fq.tables_fragment(report(), fq.HEADINGS, with_date=True))["unavailable"] == {}
+
+
 def test_a_table_that_is_not_a_report_grid_is_not_read():
     page = report().replace('id="table-x" class="quikgrid table table-hover"', 'id="nav" class="w-full"')
     assert not fq._report_ready(page)

@@ -329,6 +329,9 @@ def section_text(name: str, doc: dict, calendar: dict | None) -> str:
     if name == "Top spreads":
         return _table([_spread_cells(r) for r in (t.get("spreads") or [])[:ROWS]], {2, 4})
     if name == "Vol / OI":
+        why = (doc.get("unavailable") or {}).get("voloi")
+        if why:
+            return f"(not shown: {why})"
         return _table([_voloi_cells(r) for r in (t.get("voloi") or [])[:ROWS]], {2, 3, 4})
     if name in ("Trades", "Birdseye"):
         rows = []

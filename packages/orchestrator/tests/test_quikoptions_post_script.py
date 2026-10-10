@@ -492,3 +492,11 @@ def test_an_unverified_spread_premium_is_labelled_in_the_post():
     }
     assert qp._spread_cells({**row, "premium_unverified": True})[-1].endswith(" unverified")
     assert not qp._spread_cells(row)[-1].endswith(" unverified")
+
+
+def test_a_panel_the_site_did_not_draw_says_why_rather_than_none():
+    doc = {"tables": {}, "unavailable": {"voloi": "the site drew the Openings list in this panel"}}
+    assert (
+        qp.section_text("Vol / OI", doc, None) == "(not shown: the site drew the Openings list in this panel)"
+    )
+    assert qp.section_text("Vol / OI", {"tables": {}}, None) == "(none)"
