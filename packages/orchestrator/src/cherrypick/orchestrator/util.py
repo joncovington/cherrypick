@@ -127,6 +127,75 @@ def _replace_with_retry(src, dst, *, sleep=None) -> None:
             sleep(_REPLACE_PAUSE_S)
 
 
+def file_holders(paths) -> list[str] | None:
+    """The processes holding any of `paths` open, as "name (pid N)", from the Windows Restart
+    Manager (no admin needed). [] when it names none, which leaves a kernel-level filter (antivirus,
+    the indexer) as the holder; None when it could not be asked (not Windows, or the API failed).
+    Diagnostic only: never raises. Added 2026-10-10, when two skipped state writes could not be
+    pinned on anyone after the fact."""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _UniqueProcess(ctypes.Structure):
+            _fields_ = [("dwProcessId", wintypes.DWORD), ("ProcessStartTime", wintypes.FILETIME)]
+
+        class _ProcessInfo(ctypes.Structure):
+            _fields_ = [
+                ("Process", _UniqueProcess),
+                ("strAppName", wintypes.WCHAR * 256),
+                ("strServiceShortName", wintypes.WCHAR * 64),
+                ("ApplicationType", ctypes.c_int),
+                ("AppStatus", wintypes.ULONG),
+                ("TSSessionId", wintypes.DWORD),
+                ("bRestartable", wintypes.BOOL),
+            ]
+
+        rm = ctypes.WinDLL("rstrtmgr")
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        session = wintypes.DWORD()
+        key = ctypes.create_unicode_buffer(33)  # CCH_RM_SESSION_KEY + 1
+        if rm.RmStartSession(ctypes.byref(session), 0, key):
+            return None
+        try:
+            names = [str(p) for p in paths]
+            files = (wintypes.LPCWSTR * len(names))(*names)
+            if rm.RmRegisterResources(session, len(names), files, 0, None, 0, None):
+                return None
+            needed, count, reasons = wintypes.UINT(), wintypes.UINT(0), wintypes.DWORD()
+            infos = None
+            for _ in range(3):  # ERROR_MORE_DATA (234): the list grew between the two calls
+                infos = (_ProcessInfo * max(needed.value, 1))()
+                count.value = len(infos)
+                rc = rm.RmGetList(
+                    session, ctypes.byref(needed), ctypes.byref(count), infos, ctypes.byref(reasons)
+                )
+                if rc == 0:
+                    break
+                if rc != 234:
+                    return None
+            else:
+                return None
+            out = []
+            for info in infos[: count.value]:
+                pid = info.Process.dwProcessId
+                name = info.strAppName
+                handle = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+                if handle:
+                    buf, size = ctypes.create_unicode_buffer(1024), wintypes.DWORD(1024)
+                    if k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+                        name = os.path.basename(buf.value)
+                    k32.CloseHandle(handle)
+                out.append(f"{name or '?'} (pid {pid})")
+            return out
+        finally:
+            rm.RmEndSession(session)
+    except Exception:  # noqa: BLE001 -- a diagnostic must never be what fails
+        return None
+
+
 pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 

@@ -12,6 +12,7 @@ import json
 import os
 import time
 
+import pytest
 from cherrypick.core import looplock
 
 from cherrypick.orchestrator import util
@@ -80,3 +81,19 @@ def test_atomic_write_json_round_trip_and_replace(tmp_path):
     util.atomic_write_json(p, {"a": 2})
     assert json.loads(p.read_text(encoding="utf-8")) == {"a": 2}
     assert not p.with_name(p.name + ".tmp").exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the Windows Restart Manager")
+def test_file_holders_names_the_process_holding_a_file(tmp_path):
+    """Against the real API: a file this process holds open names this process; let go, no one."""
+    p = tmp_path / "state.json"
+    p.write_text("{}", encoding="utf-8")
+    with p.open("rb"):
+        holders = util.file_holders([p])
+    assert holders is not None and any(h.endswith(f"(pid {os.getpid()})") for h in holders)
+    assert util.file_holders([p]) == []
+
+
+def test_file_holders_cannot_ask_off_windows(monkeypatch):
+    monkeypatch.setattr(util.os, "name", "posix")
+    assert util.file_holders(["anything"]) is None
