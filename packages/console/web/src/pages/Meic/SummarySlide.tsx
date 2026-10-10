@@ -75,10 +75,29 @@ const ALL = {
   /** Net premium kept after fees, as a % of premium sold. */
   capture: { value: 16.1 },
   winRate: { days: { won: 12, of: 16 }, entries: { won: 2, of: 3 } },
+  /** Leg outcomes — the mock's "by side" rebuilt on MEIC's leg-pair truth (`ic_spread_legs`): the
+   *  credit each wing SOLD for (per-side entry credit is recorded; per-side NET is not — pnl is
+   *  the condor's), how many legs ended in each state, and the stop cost the wing charged. This is
+   *  the pair the module's margin identity reads (clean = both expired, double-stop = both
+   *  stopped), so the card states the pair counts, not a verdict on a wing. */
   sides: [
-    { side: "put", net: -55, credit: 560, stops: 520, decay: 95, avgCredit: 0.6 },
-    { side: "call", net: 674, credit: 1020, stops: 216, decay: 130, avgCredit: 0.84 },
+    {
+      side: "put",
+      credit: 560, // sum of put_credit × multiplier × qty over the window's trades
+      legs: { expired: 9, stopped: 4, settled: 1 },
+      stopCost: 520,
+    },
+    {
+      side: "call",
+      credit: 1020,
+      legs: { expired: 11, stopped: 2, settled: 1 },
+      stopCost: 216,
+    },
   ],
+  /** Leg-pair roll-up — the margin identity's own counts (analytics.py `margin_identity`):
+   *  clean = both wings expired, double-stop = both stopped, and the fee bar. Never restated
+   *  console-side in the real reader — mirrored from the module, pinned by test. */
+  pairs: { trades: 16, cleanPct: 50.0, doubleStopPct: 6.3, breakevenBarPct: 15.5 },
   /** By entry time; a negative bucket renders as a marker, per the reference design. */
   timeBuckets: [
     { time: "13:11", net: -158, note: "manual stop" },
@@ -141,8 +160,8 @@ const PER_ARM: Record<string, Slice> = {
     capture: { value: 4.3 },
     winRate: { days: { won: 5, of: 16 }, entries: { won: 2, of: 3 } },
     sides: [
-      { side: "put", net: -158, credit: 280, stops: 520, decay: 95, avgCredit: 0.6 },
-      { side: "call", net: 210, credit: 510, stops: 216, decay: 130, avgCredit: 0.84 },
+      { side: "put", credit: 280, legs: { expired: 4, stopped: 3, settled: 0 }, stopCost: 520 },
+      { side: "call", credit: 510, legs: { expired: 5, stopped: 1, settled: 1 }, stopCost: 216 },
     ],
     timeBuckets: [
       { time: "13:11", net: -158, note: "manual stop" },
@@ -184,8 +203,8 @@ const PER_ARM: Record<string, Slice> = {
     capture: { value: 26.8 },
     winRate: { days: { won: 7, of: 16 }, entries: { won: 1, of: 3 } },
     sides: [
-      { side: "put", net: 103, credit: 280, stops: 0, decay: 0, avgCredit: 0.6 },
-      { side: "call", net: 464, credit: 510, stops: 216, decay: 130, avgCredit: 0.84 },
+      { side: "put", credit: 280, legs: { expired: 5, stopped: 1, settled: 1 }, stopCost: 0 },
+      { side: "call", credit: 510, legs: { expired: 6, stopped: 1, settled: 0 }, stopCost: 216 },
     ],
     timeBuckets: [{ time: "15:26", net: 202, note: "eod exit" }],
     evaluations: {
@@ -370,26 +389,37 @@ function WinRateArcs({ slice }: { slice: Slice }) {
  * ------------------------------------------------------------------------- */
 
 function BySide({ slice }: { slice: Slice }) {
-  const max = Math.max(...slice.sides.map((s) => Math.abs(s.net)));
+  const max = Math.max(...slice.sides.map((s) => s.credit));
+  const p = slice.pairs;
   return (
-    <TsCard title="by side" aside={<span className="ts-muted">exits applied, before fees & settlement</span>}>
+    <TsCard
+      title="leg outcomes"
+      aside={
+        <span className="ts-muted">
+          {p.trades} trades · clean {p.cleanPct.toFixed(1)}% · double-stop {p.doubleStopPct.toFixed(1)}%
+        </span>
+      }
+    >
       {slice.sides.map((s) => (
         <div className="ts-side" key={s.side}>
           <div className="ts-side-head">
             <span>{s.side}</span>
-            <span className={`ts-num ${s.net >= 0 ? "ts-pos" : "ts-neg"}`}>{fmtUsd(s.net)}</span>
+            <span className="ts-num ts-pos">credit {fmtUsd(s.credit)}</span>
           </div>
           <div className="ts-hbar">
             <div
-              className={`ts-hbar-fill ${s.net >= 0 ? "ts-pos" : "ts-neg"}`}
-              style={{ width: `${((Math.abs(s.net) / max) * 100).toFixed(1)}%` }}
+              className="ts-hbar-fill ts-pos"
+              style={{ width: `${((s.credit / max) * 100).toFixed(1)}%` }}
             />
           </div>
           <div className="ts-side-sub">
-            credit {fmtUsd(s.credit)} · stops −{s.stops.toLocaleString("en-US")} · decay buybacks −{s.decay.toLocaleString("en-US")} · avg credit {s.avgCredit.toFixed(2)} cr
+            {s.legs.expired} expired · {s.legs.stopped} stopped · {s.legs.settled} settled · stop cost −{s.stopCost.toLocaleString("en-US")}
           </div>
         </div>
       ))}
+      <div className="ts-side-sub">
+        fee bar {p.breakevenBarPct.toFixed(1)}% of credit — avg fee over avg credit sold, the module's breakeven identity
+      </div>
     </TsCard>
   );
 }

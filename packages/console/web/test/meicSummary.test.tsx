@@ -21,9 +21,10 @@ const FIXTURE = {
   capture: { value: 16.1 },
   winRate: { days: { won: 12, of: 16 }, entries: { won: 2, of: 3 } },
   sides: [
-    { side: "put", net: -55, credit: 560 },
-    { side: "call", net: 674, credit: 1020 },
+    { side: "put", credit: 560 },
+    { side: "call", credit: 1020 },
   ],
+  pairs: { trades: 16, cleanPct: 50.0, doubleStopPct: 6.3, breakevenBarPct: 15.5 },
   timeBuckets: [
     { time: "13:11", net: -158 },
     { time: "14:02", net: 210 },
@@ -57,8 +58,12 @@ describe("MeicSummary (trade-summary prototype)", () => {
     expect(page).toContain("16.1%"); // capture gauge
     expect(page).toContain("75%"); // days win rate 12/16
     expect(page).toContain("put");
-    expect(page).toContain("-$55.00"); // by-side put net
-    expect(page).toContain("+$674.00"); // by-side call net
+    expect(page).toContain("credit +$560.00"); // by-side put credit sold
+    expect(page).toContain("credit +$1,020.00"); // by-side call credit sold
+    // The leg-pair roll-up rides the card's aside and fee-bar line.
+    expect(page).toContain("clean 50.0%");
+    expect(page).toContain("double-stop 6.3%");
+    expect(page).toContain("fee bar 15.5% of credit");
     for (const b of FIXTURE.timeBuckets) expect(page).toContain(b.time);
     expect(page).toContain("+$210.00"); // best bucket
     expect(page).toContain("13:11"); // entries table times
