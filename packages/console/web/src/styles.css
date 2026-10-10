@@ -3723,3 +3723,365 @@ td > .desk-refusal-reason {
   flex-wrap: wrap;
   gap: 0 0.6em;
 }
+
+/* ---------------------------------------------------------------------------
+ * Trade summary prototype (.ts-*, scoped to .ts-root) — a gauge-led day summary in a borrowed
+ * visual language: rounded cards, blue selection, mint/salmon tones. Deliberately at odds with
+ * the terminal-luxe chrome around it; every token is scoped so the rest of the console reads
+ * the :root palette unchanged. If the style is adopted, these tokens move outward and this
+ * scope is dropped. Fixture data only (SummarySlide.tsx) — no reader backs it yet.
+ * ------------------------------------------------------------------------- */
+.ts-root {
+  /* palette (reference design, dark theme) */
+  --ts-canvas: #0f1115;
+  --ts-card: #1a1d23;
+  --ts-border: #262a32;
+  --ts-accent: #3761e1;
+  --ts-pos: #3af3a0;
+  --ts-neg: #ee6760;
+  --ts-warn: #fbbf24;
+  --ts-text: #ffffff;
+  --ts-muted: #9ca3af;
+  --ts-track: #2a2e37;
+
+  background: var(--ts-canvas);
+  color: var(--ts-text);
+  border-radius: 14px;
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.ts-row {
+  display: grid;
+  gap: 14px;
+}
+.ts-row-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.ts-row-2 {
+  grid-template-columns: 3fr 2fr;
+}
+@media (max-width: 1100px) {
+  .ts-row-3,
+  .ts-row-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ts-card {
+  background: var(--ts-card);
+  border: 1px solid var(--ts-border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  min-width: 0; /* lets the grid cell, not the content, set the width (charts measure it) */
+}
+.ts-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.ts-card-head h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ts-muted);
+}
+
+.ts-pos {
+  color: var(--ts-pos);
+}
+.ts-neg {
+  color: var(--ts-neg);
+}
+.ts-muted {
+  color: var(--ts-muted);
+  font-size: 12px;
+}
+.ts-num {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+
+/* toolbar */
+.ts-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.ts-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.ts-seg {
+  display: inline-flex;
+  border: 1px solid var(--ts-border);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+.ts-seg button {
+  border: 0;
+  background: transparent;
+  color: var(--ts-muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.ts-seg button.ts-seg-on {
+  background: var(--ts-accent);
+  color: #fff;
+}
+.ts-daynav {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.ts-daynav button {
+  border: 1px solid var(--ts-border);
+  background: transparent;
+  color: var(--ts-text);
+  border-radius: 8px;
+  width: 24px;
+  height: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ts-badge {
+  display: inline-block;
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 2px 10px;
+  border: 1px solid var(--ts-border);
+  color: var(--ts-muted);
+}
+.ts-badge-warn {
+  color: var(--ts-warn);
+}
+
+/* hero */
+.ts-hero {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 42px;
+  font-weight: 700;
+  margin: 6px 0 12px;
+}
+.ts-kv {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.ts-kv div {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.ts-kv dt {
+  color: var(--ts-muted);
+}
+.ts-kv dd {
+  margin: 0;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+
+/* gauges */
+.ts-gauge {
+  width: 100%;
+  max-width: 220px;
+  display: block;
+  margin: 0 auto;
+}
+.ts-track {
+  stroke: var(--ts-track);
+}
+.ts-arc-pos {
+  stroke: var(--ts-pos);
+}
+.ts-arc-neg {
+  stroke: var(--ts-neg);
+}
+.ts-needle {
+  stroke: #fff;
+  fill: #fff;
+}
+.ts-tick {
+  fill: var(--ts-muted);
+  font-size: 9px;
+  font-family: var(--num-face);
+}
+.ts-gauge-value {
+  text-align: center;
+  font-family: var(--num-face);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+/* win-rate rings */
+.ts-rings {
+  position: relative;
+  width: 140px;
+  margin: 4px auto 8px;
+}
+.ts-rings svg {
+  display: block;
+  width: 100%;
+}
+.ts-ring-days {
+  stroke: var(--ts-pos);
+}
+.ts-ring-entries {
+  stroke: var(--ts-accent);
+}
+.ts-rings-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.ts-rings-center .ts-pos {
+  font-family: var(--num-face);
+  font-size: 22px;
+  font-weight: 700;
+}
+.ts-legend {
+  margin: 0;
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--ts-muted);
+}
+.ts-legend div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ts-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: currentColor;
+  display: inline-block;
+}
+
+/* by side */
+.ts-side {
+  margin-bottom: 12px;
+}
+.ts-side-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.ts-hbar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ts-track);
+  overflow: hidden;
+}
+.ts-hbar-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+.ts-hbar-fill.ts-pos {
+  background: var(--ts-pos);
+}
+.ts-hbar-fill.ts-neg {
+  background: var(--ts-neg);
+}
+.ts-side-sub {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ts-muted);
+}
+
+/* by entry time */
+.ts-times {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  min-height: 120px;
+}
+.ts-time {
+  flex: 1;
+  text-align: center;
+}
+.ts-time-area {
+  height: 90px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.ts-vbar {
+  width: 26px;
+  border-radius: 4px 4px 0 0;
+}
+.ts-vbar.ts-pos {
+  background: var(--ts-pos);
+}
+.ts-vbar.ts-neg {
+  background: var(--ts-neg);
+}
+/* a loss renders as a short marker, not a full-height bar, per the reference design */
+.ts-vbar.ts-marker {
+  border-radius: 2px;
+  max-height: 6px;
+}
+.ts-time-label {
+  font-family: var(--num-face);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.ts-time-sub {
+  font-size: 11px;
+  color: var(--ts-muted);
+}
+
+/* entries table */
+.ts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ts-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ts-muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--ts-border);
+}
+.ts-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--ts-border);
+}
+.ts-table tr:last-child td {
+  border-bottom: 0;
+}
+.ts-table .num {
+  text-align: right;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+.ts-table .ts-badge {
+  margin-left: 8px;
+}

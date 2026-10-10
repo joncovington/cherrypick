@@ -92,6 +92,9 @@ export type FliesSlideId = (typeof FLIES_SLIDES)[number]["id"];
  */
 export const MEIC_SLIDES = [
   { id: "session", label: "session" },
+  // Trade-summary prototype (2026-10): the gauge-led day summary, fixture data, under judgement.
+  // In the `today` group while it is judged; dropped with no alias if it never earns the rail.
+  { id: "summary", label: "summary" },
   { id: "forest", label: "forest" },
   { id: "attempts", label: "attempts" },
   { id: "exits", label: "exits" },
@@ -335,7 +338,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   meic: {
     slides: MEIC_SLIDES,
     groups: [
-      { label: "today", ids: ["session", "forest", "attempts"] },
+      { label: "today", ids: ["session", "summary", "forest", "attempts"] },
       { label: "evidence", ids: ["exits", "regime"] },
       { label: "study", ids: ["calibration", "performance", "costs", "advisor"] },
       { label: "tables", ids: ["positions", "history", "sessions"] },

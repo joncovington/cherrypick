@@ -17,6 +17,7 @@ import { OccupancyMap } from "../../components/OccupancyMap";
 import { MeicForestCard } from "../../pages/Meic/MeicForestCard";
 import { MeicPerformanceTab } from "../../pages/Meic/MeicPerformanceTab";
 import { MeicSession } from "../../pages/Meic/MeicSession";
+import { MeicSummary } from "../../pages/Meic/SummarySlide";
 import { MeicHistoryTable, MeicPositionsTable, type MeicScope } from "../../pages/Meic/MeicTables";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
@@ -145,6 +146,13 @@ export function MeicLightbox({ slide }: { slide: string }) {
 
   const slides: Array<SlideDef & { id: MeicSlideId }> = [
     { id: "session", label: MEIC_LABEL.session, render: () => <MeicSession mode={mode} scope={scopeArgs} /> },
+    {
+      // Trade-summary PROTOTYPE — every number is fixture data (see the header comment there).
+      // Not wired to a reader yet; this slide exists to judge the shape in the real app.
+      id: "summary",
+      label: MEIC_LABEL.summary,
+      render: () => <MeicSummary />,
+    },
     { id: "forest", label: MEIC_LABEL.forest, render: () => <MeicForestCard mode={mode} scope={scopeArgs} /> },
     {
       // Attempts and occupancy merged (2026-09): both are bounded snapshots regardless of session
