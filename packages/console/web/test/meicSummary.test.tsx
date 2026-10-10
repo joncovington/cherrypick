@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderToString } from "react-dom/server";
+import { MemoryRouter } from "react-router-dom";
 import { NAV_DECL } from "../src/lightbox/navGroups";
 import type { MeicSummarySlice } from "@console/shared";
 
@@ -27,8 +28,18 @@ const { MeicSummary } = await import("../src/pages/Meic/SummarySlide");
 const html = (node: React.ReactElement) =>
   renderToString(node).replace(/<!--\s*-->/g, "").replace(/&#x27;/g, "'");
 
-/** The page's TEXT as a reader sees it — tags stripped, for assertions that span inline elements. */
-const text = (node: React.ReactElement) => html(node).replace(/<[^>]+>/g, "");
+/** The page's TEXT as a reader sees it — tags stripped, for assertions that span inline elements.
+ *  Takes the RENDERED string (from html() or render()), not an element. */
+const text = (page: string) => page.replace(/<[^>]+>/g, "");
+
+/** The slide reads ?range= off the URL now — render inside a router with the URL stated. */
+function render(url: string, node: React.ReactElement): string {
+  return html(
+    <MemoryRouter initialEntries={[url]}>
+      {node}
+    </MemoryRouter>,
+  );
+}
 
 const PROPS = {
   mode: "paper" as const,
@@ -66,8 +77,8 @@ function slice(over: Partial<MeicSummarySlice> = {}): MeicSummarySlice {
     ],
     pairs: { trades: 10, clean: 9, cleanPct: 90, doubleStopPct: 0, breakevenBarPct: 26.5 },
     entryTime: [
-      { hour: "9", label: "09:00-10:00", offSession: false, net: 900, count: 6 },
-      { hour: "10", label: "10:00-11:00", offSession: false, net: 501.88, count: 4 },
+      { hour: "9", label: "09:00-10:00", offSession: false, net: 900, count: 6, avg: 150, winPct: 83.3 },
+      { hour: "10", label: "10:00-11:00", offSession: false, net: 501.88, count: 4, avg: 125.47, winPct: 50 },
     ],
     evaluations: {
       evaluated: 772,
@@ -108,7 +119,7 @@ beforeEach(() => {
 
 describe("MeicSummary (trade summary, the one-read slide)", () => {
   it("renders the payload's figures verbatim — no re-derivation", () => {
-    const page = html(<MeicSummary {...PROPS} />);
+    const page = render("/", <MeicSummary {...PROPS} />);
     expect(page).toContain("+$1,401.88"); // hero net, whole-position dollars
     expect(page).toContain("+$1,938.75"); // gross captured
     expect(page).toContain("72.3%"); // capture label: the UNclamped value
@@ -116,13 +127,16 @@ describe("MeicSummary (trade summary, the one-read slide)", () => {
     expect(page).toContain("trades 8/10"); // trades arc
     expect(page).toContain("80.0%"); // capture... no — the gauge value; and win% rows
     expect(page).toContain("credit +$1,200.00"); // put wing's credit sold
+    expect(page).toContain("avg +$150.00/trade"); // per-trade bars, not totals
+    expect(page).toContain("6"); // the evidence strip's own count, beside its bar
+    expect(page).toContain("entries: 0 → 6"); // the evidence strip's stated scale
     expect(page).toContain("clean 90.0%");
     expect(page).toContain("double-stop 0.0%");
     expect(page).toContain("fee bar 26.5% of credit");
   });
 
   it("labels the window the reader states — the day's session by name, wider ranges verbatim", () => {
-    const page = html(<MeicSummary {...PROPS} />);
+    const page = render("/", <MeicSummary {...PROPS} />);
     expect(page).toContain("Friday, October 9, 2026"); // 2026-10-09, the day window
     useMeicSummaryMock.mockReturnValue({
       data: slice({ window: { from: "2026-10-05", to: null, label: "week of 2026-10-05" } }),
@@ -130,12 +144,12 @@ describe("MeicSummary (trade summary, the one-read slide)", () => {
       isError: false,
       error: null,
     });
-    const week = html(<MeicSummary {...PROPS} />);
+    const week = render("/", <MeicSummary {...PROPS} />);
     expect(week).toContain("week of 2026-10-05");
   });
 
   it("keeps the refusal ledger honest: payload order, dominant detail, neutral bars", () => {
-    const page = text(<MeicSummary {...PROPS} />);
+    const page = text(render("/", <MeicSummary {...PROPS} />));
     expect(page).toContain("10 filled of 772 evaluated");
     expect(page).toContain("762 refused");
     expect(page).toContain("outside_entry_window"); // dominant detail carried, not re-derived
@@ -143,7 +157,7 @@ describe("MeicSummary (trade summary, the one-read slide)", () => {
   });
 
   it("by arm carries identity and the dominant refusal; net is the reader's own", () => {
-    const page = html(<MeicSummary {...PROPS} />);
+    const page = render("/", <MeicSummary {...PROPS} />);
     expect(page).toContain("+$1,231.27");
     expect(page).toContain("+$170.61");
     expect(page).toContain("window blocked");
@@ -153,7 +167,7 @@ describe("MeicSummary (trade summary, the one-read slide)", () => {
 
   it("a missing payload says so for the whole slide — never a wall of zeros", () => {
     useMeicSummaryMock.mockReturnValue({ data: null, isLoading: false, isError: false, error: null });
-    const page = html(<MeicSummary {...PROPS} />);
+    const page = render("/", <MeicSummary {...PROPS} />);
     expect(page).toContain("no rows in this window");
     expect(page).not.toContain("+$");
     expect(page).not.toContain("net p&l");
@@ -161,7 +175,7 @@ describe("MeicSummary (trade summary, the one-read slide)", () => {
 
   it("an error page reads as a failure, not as an empty window", () => {
     useMeicSummaryMock.mockReturnValue({ data: undefined, isLoading: false, isError: true, error: new Error("HTTP 503") });
-    const page = html(<MeicSummary {...PROPS} />);
+    const page = render("/", <MeicSummary {...PROPS} />);
     expect(page).toContain("the summary read failed");
     expect(page).toContain("HTTP 503");
     expect(page).not.toContain("no rows in this window");
@@ -169,7 +183,7 @@ describe("MeicSummary (trade summary, the one-read slide)", () => {
 
   it("the range selection reaches the query, and the slide keeps the day contract", () => {
     // Render once and inspect the query args the hook received.
-    html(<MeicSummary {...PROPS} />);
+    render("/", <MeicSummary {...PROPS} />);
     const arg = useMeicSummaryMock.mock.calls[0][0];
     expect(arg.range).toBe("day");
     expect(arg.mode).toBe("paper");
@@ -178,8 +192,22 @@ describe("MeicSummary (trade summary, the one-read slide)", () => {
     expect(arg.profile).toBeNull();
   });
 
+  it("the range rides the URL — ?range=week selects the week segment and reaches the query", () => {
+    const page = render("/?range=week", <MeicSummary {...PROPS} />);
+    expect(page).toContain('aria-selected="false" class="">day</button>'); // day off
+    expect(page).toContain('aria-selected="true" class="ts-seg-on">week</button>'); // week on
+    const arg = useMeicSummaryMock.mock.calls[0][0];
+    expect(arg.range).toBe("week");
+  });
+
+  it("an unrecognised range falls through to the day, like the header's day select", () => {
+    render("/?range=fortnight", <MeicSummary {...PROPS} />);
+    const arg = useMeicSummaryMock.mock.calls[0][0];
+    expect(arg.range).toBe("day");
+  });
+
   it("the prototype badge is gone — real figures must not carry it", () => {
-    const page = html(<MeicSummary {...PROPS} />);
+    const page = render("/", <MeicSummary {...PROPS} />);
     expect(page).not.toContain("fixture");
     expect(page).not.toContain("prototype");
   });

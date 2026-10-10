@@ -29,6 +29,7 @@
  * applied to pixels.
  */
 import { useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useBoolPref, writePref } from "../../lib/prefs";
 import { useMeicSummary } from "../../lib/api";
 import type { MeicSummarySlice } from "@console/shared";
@@ -261,33 +262,57 @@ function BySide({ s }: { s: MeicSummarySlice }) {
 }
 
 /* ---------------------------------------------------------------------------
- * By entry time — the day's clock: one bar per ET hour band, height by |net|, tone by sign,
- * losses as short markers. The off-session marker keeps replay/shakedown hours readable.
+ * By entry time — two stacked bar rows on one shared hour axis, because "where we trade most"
+ * and "where the trade pays" are different questions the old single bar conflated: total net
+ * scales with opportunity, so a busy-but-thin hour out-towered the hour that actually pays.
+ *
+ *   performance row — avg net per trade, tone by sign, losses as short markers;
+ *   evidence row — a slim muted bar per hour, scaled on ITS OWN scale: activity at a glance,
+ *   and thin buckets read thin twice (an average without its n is a coincidence, not a finding).
+ *
+ * Win % and the bucket's total net travel in the tooltip, verbatim — a number, never a tint:
+ * colour carries sign, never a verdict, and nobody distinguishes 83% from 87% of green.
  * ------------------------------------------------------------------------- */
 
 function ByEntryTime({ s }: { s: MeicSummarySlice }) {
   const rows = s.entryTime;
   if (rows.length === 0) return <TsEmpty what="by entry time" />;
-  const max = Math.max(...rows.map((b) => Math.abs(b.net)), 1);
+  const maxAvg = Math.max(...rows.map((b) => Math.abs(b.avg ?? 0)), 1);
+  const maxCount = Math.max(...rows.map((b) => b.count), 1);
   return (
-    <TsCard title="by entry time">
+    <TsCard title="by entry time" aside={<span className="ts-muted">per trade · entries beneath</span>}>
       <div className="ts-times">
         {rows.map((b) => {
-          const h = `${((Math.abs(b.net) / max) * 100).toFixed(1)}%`;
+          const avg = b.avg ?? 0;
+          const h = `${((Math.abs(avg) / maxAvg) * 100).toFixed(1)}%`;
+          const evidence = `${((b.count / maxCount) * 100).toFixed(1)}%`;
+          const tip = [
+            b.label + (b.offSession ? " (off-session)" : ""),
+            `avg ${fmtUsd(avg)}/trade`,
+            `${b.count} ${b.count === 1 ? "entry" : "entries"}`,
+            b.winPct === null ? "nothing settled" : `win ${b.winPct.toFixed(1)}%`,
+            `total ${fmtUsd(b.net)}`,
+          ].join(" · ");
           return (
-            <div className="ts-time" key={b.hour} title={`${b.label}${b.offSession ? " (off-session)" : ""} — ${fmtUsd(b.net)} over ${b.count} entries`}>
+            <div className="ts-time" key={b.hour} title={tip}>
               <div className="ts-time-area">
-                {b.net >= 0 ? (
+                {avg >= 0 ? (
                   <div className="ts-vbar ts-pos" style={{ height: h }} />
                 ) : (
                   <div className="ts-vbar ts-neg ts-marker" style={{ height: h }} />
                 )}
               </div>
+              <div className="ts-evidence">
+                <div className="ts-evidence-fill" style={{ width: evidence }} />
+                <span className="ts-evidence-n">{b.count}</span>
+              </div>
               <div className={`ts-time-label${b.offSession ? " ts-off" : ""}`}>{b.hour}h</div>
-              <div className="ts-time-sub">{b.count > 0 ? `${b.count} ent` : ""}</div>
             </div>
           );
         })}
+      </div>
+      <div className="ts-timescale">
+        <span className="ts-muted">entries: 0 → {maxCount} across the window's hours</span>
       </div>
     </TsCard>
   );
@@ -521,7 +546,18 @@ function Toolbar({
  */
 export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSummaryProps) {
   const light = useBoolPref("meicSummaryLight");
-  const [range, setRange] = useState<Range>("day");
+  // The range rides the URL (?range=week): a link to a page is a link to the range it names —
+  // the console's own convention for mode — and it makes the window statically verifiable.
+  // Anything unstated or unrecognised falls through to the day, like the header's day select.
+  const [params, setParams] = useSearchParams();
+  const stated = params.get("range");
+  const range: Range = (RANGES as readonly string[]).includes(stated ?? "") ? (stated as Range) : "day";
+  const setRange = (r: Range) => {
+    const next = new URLSearchParams(params);
+    if (r === "day") next.delete("range");
+    else next.set("range", r);
+    setParams(next, { replace: true });
+  };
   const q = useMeicSummary({
     mode,
     symbol: scope?.symbol ?? null,

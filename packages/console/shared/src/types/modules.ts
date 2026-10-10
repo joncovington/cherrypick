@@ -1562,8 +1562,19 @@ export interface MeicSummarySlice {
   /** The leg-pair identity the module's margin read is built on: clean = both expired, double-stop
    *  = both stopped, fee bar = avg fee over avg credit sold. Nulls when no legs are recorded. */
   pairs: { trades: number; clean: number; cleanPct: number | null; doubleStopPct: number | null; breakevenBarPct: number | null };
-  /** Entry-hour bands (ET), the deep-analytics bucket verbatim, over the window. */
-  entryTime: Array<{ hour: string; label: string; offSession: boolean; net: number; count: number }>;
+  /** Entry-hour bands (ET), the deep-analytics bucket verbatim, over the window. `net` is the
+   *  window's total over the bucket; `avg` the net per trade (the bar the card draws —
+   *  opportunity and edge are different questions); `winPct` over the bucket's SETTLED trades,
+   *  a number, never a tint — colour carries sign, never a verdict. */
+  entryTime: Array<{
+    hour: string;
+    label: string;
+    offSession: boolean;
+    net: number;
+    count: number;
+    avg: number | null;
+    winPct: number | null;
+  }>;
   /** The gate's ledger: one row per outcome, dominant block_detail beside it, and the
    *  market-at-refusal sketch aggregated from exactly the refused rows the outcomes count. */
   evaluations: {

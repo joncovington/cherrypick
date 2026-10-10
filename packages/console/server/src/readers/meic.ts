@@ -1838,7 +1838,9 @@ export function readMeicSummary(
     const hourRows = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT ${ENTRY_HOUR} AS hour, COUNT(*) AS n,
-                COALESCE(SUM(CASE WHEN pnl IS NOT NULL THEN pnl - COALESCE(fees, 0) ELSE 0 END), 0) AS net
+                COALESCE(SUM(CASE WHEN pnl IS NOT NULL THEN pnl - COALESCE(fees, 0) ELSE 0 END), 0) AS net,
+                SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END) AS wins,
+                SUM(CASE WHEN pnl IS NOT NULL THEN 1 ELSE 0 END) AS settled_n
            FROM ic_trades WHERE ${where} GROUP BY hour ORDER BY hour`,
       )
       .all(...params);
@@ -1846,12 +1848,25 @@ export function readMeicSummary(
       .filter((r) => r["hour"] !== null)
       .map((r) => {
         const h = Number(r["hour"]);
+        const count = Number(r["n"] ?? 0);
+        const net = Math.round(Number(r["net"] ?? 0) * 100) / 100;
+        const wins = Number(r["wins"] ?? 0);
+        // Avg per trade is the bar the card draws — opportunity and edge are different
+        // questions, and total net answers only the first. The average never travels without
+        // its n; the card says the count beside every bar.
+        const avg = count > 0 ? Math.round((net / count) * 100) / 100 : null;
+        // Wins are counted among settled rows (pnl NOT NULL), the module's convention; the
+        // percentage is over the bucket's SETTLED trades, so an hour with all trades still
+        // open does not read as 0%.
+        const settledN = Number(r["settled_n"] ?? 0);
         return {
           hour: String(h),
           label: `${String(h).padStart(2, "0")}:00-${String(h + 1).padStart(2, "0")}:00`,
           offSession: h < 9 || h > 15,
-          net: Math.round(Number(r["net"] ?? 0) * 100) / 100,
-          count: Number(r["n"] ?? 0),
+          net,
+          count,
+          avg,
+          winPct: settledN > 0 ? Math.round((wins / settledN) * 1000) / 10 : null,
         };
       });
 

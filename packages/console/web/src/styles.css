@@ -4172,3 +4172,28 @@ td > .desk-refusal-reason {
   color: var(--ts-muted);
   opacity: 0.75;
 }
+
+/* Trade summary — entry-time card, second row: the evidence strip (entries per hour, the
+ * activity measure on its own scale, beneath the per-trade bars). */
+.ts-root .ts-evidence {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+.ts-root .ts-evidence-fill {
+  height: 4px;
+  flex: 0 0 auto;
+  border-radius: 2px;
+  background: var(--ts-muted);
+  min-width: 2px;
+}
+.ts-root .ts-evidence-n {
+  font-size: 0.62rem;
+  color: var(--ts-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ts-root .ts-timescale {
+  margin-top: 0.4rem;
+  font-size: 0.66rem;
+}
