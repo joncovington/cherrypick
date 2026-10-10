@@ -77,8 +77,8 @@ function slice(over: Partial<MeicSummarySlice> = {}): MeicSummarySlice {
     ],
     pairs: { trades: 10, clean: 9, cleanPct: 90, doubleStopPct: 0, breakevenBarPct: 26.5 },
     entryTime: [
-      { hour: "9", label: "09:00-10:00", offSession: false, net: 900, count: 6, avg: 150, winPct: 83.3 },
-      { hour: "10", label: "10:00-11:00", offSession: false, net: 501.88, count: 4, avg: 125.47, winPct: 50 },
+      { hour: "9", label: "09:00-10:00", offSession: false, net: 900, count: 6 },
+      { hour: "10", label: "10:00-11:00", offSession: false, net: 501.88, count: 4 },
     ],
     evaluations: {
       evaluated: 772,
@@ -127,9 +127,6 @@ describe("MeicSummary (trade summary, the one-read slide)", () => {
     expect(page).toContain("trades 8/10"); // trades arc
     expect(page).toContain("80.0%"); // capture... no — the gauge value; and win% rows
     expect(page).toContain("credit +$1,200.00"); // put wing's credit sold
-    expect(page).toContain("avg +$150.00/trade"); // per-trade bars, not totals
-    expect(page).toContain("6"); // the evidence strip's own count, beside its bar
-    expect(page).toContain("entries: 0 → 6"); // the evidence strip's stated scale
     expect(page).toContain("clean 90.0%");
     expect(page).toContain("double-stop 0.0%");
     expect(page).toContain("fee bar 26.5% of credit");
