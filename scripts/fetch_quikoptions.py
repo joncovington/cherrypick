@@ -152,6 +152,9 @@ TABLES: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
         ],
     ),
 }  # fmt: skip
+# Every Openings row had OI 0 until 2026-10-09 (TAL: 20,062 / 1 = 20,062.00). An opening may carry a
+# little open interest; past the other panel's "OI > 100" it is that panel's row, not an opening.
+OPENING_MAX_OI = 100
 CALENDAR_HEADING = "Economic"
 CALENDAR_COLUMNS = [
     ("Date", "when", TEXT), ("Impact", "impact", TEXT), ("Event", "event", TEXT),
@@ -168,8 +171,18 @@ _HIDDEN_TAGS = {"svg", "script", "style"}
 _VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "wbr"}
 
 
+# A report table. The site's 2026-10-09 redesign dropped the `quikgrid` class (now `w-full
+# border-none`); the `table-<uuid>` id is what both layouts share, and stored fragments from before
+# it still carry the class.
+_GRID_ID_RE = re.compile(r"^table-[0-9a-f-]+$")
+
+
+def _is_grid(table_id: str, classes: set[str]) -> bool:
+    return "quikgrid" in classes or bool(_GRID_ID_RE.match(table_id))
+
+
 class _Grids(HTMLParser):
-    """Every `table.quikgrid` with the heading text last seen before it, and the first m/d/yyyy
+    """Every report table (`_is_grid`) with the heading text last seen before it, and the first m/d/yyyy
     text outside a table (the report's session date). A cell is its visible text plus the `title`
     and `data-bs-title` attributes inside it, which is where the site keeps the full company name,
     the call/put word, the full timestamp, the underlying's bid/ask and the side tooltip."""
@@ -197,7 +210,7 @@ class _Grids(HTMLParser):
         if hide:
             self._hidden += 1
             return
-        if tag == "table" and "quikgrid" in classes:
+        if tag == "table" and _is_grid(a.get("id", ""), classes):
             self._table = {"heading": self.heading, "columns": [], "rows": []}
             self.tables.append(self._table)
         if self._table is None:
@@ -226,6 +239,7 @@ class _Grids(HTMLParser):
         if self._table is None or self._hidden:
             return
         if tag in ("td", "th") and self._cell is not None and self._row is not None:
+            self._cell["parts"] = list(self._cell["text"])
             self._cell["text"] = " ".join(" ".join(self._cell["text"]).split())
             self._row.append(self._cell)
             self._cell = None
@@ -303,6 +317,18 @@ def parse_side(tip: str) -> dict | None:
     return side
 
 
+def parse_side_parts(parts: list[str]) -> dict | None:
+    """The same three facts since the 2026-10-09 redesign, drawn as a popover's text rather than a
+    tooltip: ["Neutral", "Mid Market", "Edge:", "0.43"]."""
+    if len(parts) < 2:
+        return None
+    side = {"sentiment": parts[0], "fill": parts[1], "edge": None}
+    m = re.search(r"Edge:\s*(-?[\d.]+)", " ".join(parts[2:]))
+    if m:
+        side["edge"] = float(m.group(1))
+    return side
+
+
 def _expiry(text: str) -> str | None:
     try:
         return datetime.strptime(text, "%d-%b-%y").date().isoformat()
@@ -328,7 +354,9 @@ def _cell_value(kind: str, cell: dict):
         # a strangle), first seen 2026-10-07: read, not missing.
         return {"C": "call", "P": "put", "M": "mixed"}.get(text)
     if kind == SIDE:
-        return parse_side(cell["tips"][0]) if cell["tips"] else None
+        if cell["tips"]:
+            return parse_side(cell["tips"][0])
+        return parse_side_parts(cell.get("parts") or [])
     if kind == TIME:
         return text or None
     if kind == TICKER:
@@ -399,17 +427,26 @@ def parse_report(page_html: str) -> dict:
             problems.append(why)
             continue
         tables[name] = read_rows(spec, table)
-    return {"session": session, "tables": tables, "problems": problems}
+    unavailable: dict[str, str] = {}
+    # Since the 2026-10-09 redesign the site draws the Openings list into the OI > 100 panel too:
+    # byte-identical, every OI 0. That panel is the site's fault, not a half-drawn page, so it is
+    # dropped and named rather than costing the five tables that read. Only an exact copy is
+    # dropped; any other wrong row still rejects the capture.
+    if tables.get("voloi") and tables.get("voloi") == tables.get("openings"):
+        del tables["voloi"]
+        unavailable["voloi"] = "the site drew the Openings list in this panel"
+    return {"session": session, "tables": tables, "unavailable": unavailable, "problems": problems}
 
 
 def validate_report(doc: dict, expected: date | None = None) -> list[str]:
     """Every identity the page already satisfies (2026-10-02, checked on the live page):
     Birdseye's size buckets sum to Total and Calls + Puts = Total, to the site's own display
     rounding; Premium = price x size x 100 on sweeps and spreads (signed, on spreads); V/OI =
-    Volume / OI, and Openings rows have OI 0 and V/OI = Volume. Plus: the session the page states
-    is the one expected, every table is there with at least one row, every expiry and call/put
-    reads. A mixed spread (call and put legs, `M`) is the one row the premium identity is not
-    checked on: the site's premium for one does not satisfy it."""
+    Volume / OI, on Openings too, whose OI is at most OPENING_MAX_OI (0 until 2026-10-09; V/OI =
+    Volume at OI 0). Plus: the session the page states is the one expected, every table is there
+    with at least one row, every expiry and call/put reads. A mixed spread (call and put legs, `M`)
+    is the one row the premium identity is not checked on: the site's premium for one does not
+    satisfy it."""
     problems = list(doc.get("problems", []))
     if expected is not None and doc.get("session") != expected.isoformat():
         problems.append(f"page shows session {doc.get('session')}, expected {expected.isoformat()}")
@@ -471,15 +508,17 @@ def validate_report(doc: dict, expected: date | None = None) -> list[str]:
             r_ratio, r_vol = rounding(shown.get("v_oi", "")), rounding(shown.get("volume", ""))
             if None in (vol, oi, v_oi):
                 problems.append(f"{name} {sym}: volume, OI or V/OI did not read")
-            elif name == "openings" and (oi != 0 or abs(v_oi - vol) > r_ratio + r_vol + 1e-9):
-                problems.append(f"openings {sym}: OI {oi}, V/OI {v_oi} (an opening has OI 0, V/OI = volume)")
-            elif name == "voloi" and (
+            elif name == "openings" and not 0 <= oi <= OPENING_MAX_OI:
+                problems.append(f"openings {sym}: OI {oi} (an opening has OI {OPENING_MAX_OI} or less)")
+            elif name == "openings" and oi == 0 and abs(v_oi - vol) > r_ratio + r_vol + 1e-9:
+                problems.append(f"openings {sym}: OI 0, V/OI {v_oi} (the site's ratio is volume at OI 0)")
+            elif (name == "voloi" or oi > 0) and (
                 oi <= 0
                 # The ratio's own rounding, plus what rounding in volume and OI can move it by.
                 or abs(vol / oi - v_oi)
                 > r_ratio + r_vol / oi + vol * rounding(shown.get("oi", "")) / oi**2 + 1e-9
             ):
-                problems.append(f"voloi {sym}: {vol} / {oi} != V/OI {v_oi}")
+                problems.append(f"{name} {sym}: {vol} / {oi} != V/OI {v_oi}")
 
     for name, rows in tables.items():
         for row in rows:
@@ -666,7 +705,9 @@ def tables_fragment(page_html: str, headings: tuple[str, ...], with_date: bool) 
         page_date, _ = grids(page_html, headings)
         if page_date:
             parts.append(f"<p>{page_date}</p>")
-    for m in re.finditer(r"<table\b[^>]*\bquikgrid\b.*?</table>", page_html, re.S):
+    for m in re.finditer(
+        r"<table\b[^>]*(?:\bquikgrid\b|\bid=\"table-[0-9a-f-]+\")[^>]*>.*?</table>", page_html, re.S
+    ):
         before = page_html[: m.start()]
         spots = {h: before.rfind(">" + htmlmod.escape(h, quote=False) + "<") for h in headings}
         heading = max(spots, key=spots.get)

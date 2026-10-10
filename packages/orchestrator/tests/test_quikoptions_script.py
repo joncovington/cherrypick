@@ -16,6 +16,7 @@ import copy
 import html
 import importlib.util
 import json
+import re
 from datetime import date
 from pathlib import Path
 
@@ -212,6 +213,77 @@ def test_a_good_report_reads_every_table_and_passes():
     assert spread["premium"] == -921_800  # the site's sign, kept
 
 
+_SIDE_TIP = re.compile(
+    r'<td><i class="bi bi-circle-fill" data-bs-title="&lt;div&gt;&lt;span class=\'fw-bold\'&gt;(.*?)'
+    r'&lt;/span&gt;&lt;br/&gt;(.*?)&lt;br/&gt;Edge: (.*?)&lt;/div&gt;"></i></td>'
+)
+
+
+def _redesigned(page: str) -> str:
+    """The same report in the markup the site drew from 2026-10-09: no `quikgrid` class, and the
+    side dot's facts in a popover's text rather than a tooltip attribute."""
+    page = page.replace(
+        'id="table-x" class="quikgrid table table-hover"',
+        'id="table-8809a398-4273-405b-9050-f6c17394b539" class="w-full border-none" data-has-header=""',
+    )
+    return _SIDE_TIP.sub(
+        lambda m: (
+            '<td class="text-center"><div class="relative w-fit m-auto">'
+            '<div class="group dropdown-menu-trigger"><svg></svg></div><div popover="manual">'
+            '<div class="text-secondary flex flex-col font-bold"><span class="mb-1 flex items-center gap-1">'
+            f'<span class="h-[5px]"><svg></svg></span><span class="h-3">{m.group(1)}</span></span>'
+            f'<span>{m.group(2)}</span><span>Edge: <span class="text-primary">{m.group(3)}</span></span>'
+            "</div></div></div></td>"
+        ),
+        page,
+    )
+
+
+def test_the_redesigned_markup_reads_the_same_as_the_old():
+    old = fq.parse_report(fq.tables_fragment(report(), fq.HEADINGS, with_date=True))
+    page = _redesigned(report())
+    assert "quikgrid" not in page and "data-bs-title" not in page
+    assert fq._report_ready(page)
+    new = fq.parse_report(fq.tables_fragment(page, fq.HEADINGS, with_date=True))
+    assert fq.validate_report(new, DAY) == []
+    assert new["tables"] == old["tables"]
+    assert new["tables"]["sweeps"][0]["side"] == {"sentiment": "Neutral", "fill": "Mid Market", "edge": -0.38}
+
+
+def _body(page: str, heading: str) -> re.Match:
+    at = page.index(f"<h3>{heading}</h3>")
+    return re.compile(r"<tbody>.*?</tbody>", re.S).search(page, at)
+
+
+def _voloi_drawn_as(page: str, body: str) -> str:
+    m = _body(page, "Top VolOverOI (OI &gt; 100)")
+    return page[: m.start()] + body + page[m.end() :]
+
+
+def test_an_oi_panel_drawn_as_a_copy_of_openings_is_dropped_and_named():
+    # 2026-10-09 on: the site fills the OI > 100 panel with the Openings list, OI 0 throughout.
+    page = report()
+    page = _voloi_drawn_as(page, _body(page, "Top VolOverOI (Openings)").group(0))
+    doc = fq.parse_report(fq.tables_fragment(page, fq.HEADINGS, with_date=True))
+    assert fq.validate_report(doc, DAY) == []
+    assert "voloi" not in doc["tables"] and set(doc["tables"]) == set(fq.TABLES) - {"voloi"}
+    assert doc["unavailable"] == {"voloi": "the site drew the Openings list in this panel"}
+
+
+def test_an_oi_panel_that_is_wrong_but_not_a_copy_still_rejects():
+    page = report()
+    copy_ = _body(page, "Top VolOverOI (Openings)").group(0).replace("11,105", "11,106")
+    problems = _check(_voloi_drawn_as(page, copy_))
+    assert problems and all(p.startswith("voloi AXGN") for p in problems)
+    assert fq.parse_report(fq.tables_fragment(report(), fq.HEADINGS, with_date=True))["unavailable"] == {}
+
+
+def test_a_table_that_is_not_a_report_grid_is_not_read():
+    page = report().replace('id="table-x" class="quikgrid table table-hover"', 'id="nav" class="w-full"')
+    assert not fq._report_ready(page)
+    assert "table missing" in _check(page)[0]
+
+
 def test_the_badge_and_row_menu_never_leak_into_a_cell():
     doc = fq.parse_report(fq.tables_fragment(report(), fq.HEADINGS, with_date=True))
     pcg = doc["tables"]["outrights"][0]
@@ -248,9 +320,19 @@ def test_vol_over_oi_that_does_not_divide_is_rejected():
     assert len(problems) == 1 and problems[0].startswith("voloi SPCX")
 
 
-def test_an_opening_with_open_interest_is_rejected():
-    problems = _check(report(openings=("11,105", "5", "2,221.00")))
+def test_an_opening_with_a_little_open_interest_passes_when_it_divides():
+    # 2026-10-09: TAL on the Openings list at OI 1, V/OI = 20,062 / 1.
+    assert _check(report(openings=("11,105", "5", "2,221.00"))) == []
+
+
+def test_an_opening_whose_ratio_does_not_divide_is_rejected():
+    problems = _check(report(openings=("11,105", "5", "11,105.00")))
     assert len(problems) == 1 and problems[0].startswith("openings AXGN")
+
+
+def test_an_opening_past_the_oi_panels_band_is_rejected():
+    problems = _check(report(openings=("11,105", "101", "109.95")))
+    assert len(problems) == 1 and problems[0].startswith("openings AXGN: OI 101")
 
 
 def test_a_missing_table_is_rejected_by_name():

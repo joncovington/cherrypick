@@ -126,7 +126,9 @@ attributes say: the full company name, the call/put badge, and the side tooltip.
   read. It never sizes, scores or ranks a derived flow, is never the largest trade, and is marked
   "unverified" in the console and the Discord post. `reparse` promotes a rejected day whose own
   HTML passes after a parser fix.
-- Vol/OI: V/OI = Volume ÷ OI (SPCX: 135,071 ÷ 119 = 1,135.05); the Openings table has OI = 0.
+- Vol/OI: V/OI = Volume ÷ OI (SPCX: 135,071 ÷ 119 = 1,135.05); the Openings table has OI = 0,
+  or since 2026-10-09 a little more (TAL: 20,062 ÷ 1), so an opening's OI is at most 100 — past
+  that it belongs to the OI > 100 panel — and its V/OI divides the same way.
 - The session date the page states is the session being saved, and every table is present and
   non-empty.
 
