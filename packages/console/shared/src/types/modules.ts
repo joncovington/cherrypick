@@ -1590,10 +1590,14 @@ export interface MeicSummarySlice {
   delta: MeicSummaryBreakdown[];
   wing: MeicSummaryBreakdown[];
   weekday: MeicSummaryBreakdown[];
-  /** The window's entries, newest first, capped at 40 — the window at a glance; the session and
-   *  history tables keep the full log. `provisional` marks an unsettled row (a mark, not a print). */
+  /** The window's entries, newest first, one settled page of 40 (`?page=` names the page;
+   *  `page` is the reader's clamp onto 1..pages). The window at a glance; the session and history
+   *  tables keep the full log. `provisional` marks an unsettled row (a mark, not a print) — none
+   *  are listed, and `total` counts the same settled rows the money figures count. */
   entries: {
     rows: Array<{ time: string | null; arm: string; symbol: string; credit: number; structure: string; net: number; provisional: boolean }>;
     total: number;
+    pages: number;
+    page: number;
   };
 }

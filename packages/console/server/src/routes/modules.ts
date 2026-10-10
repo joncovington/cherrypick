@@ -151,7 +151,10 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const q = (req.query ?? {}) as Record<string, unknown>;
     const rawDay = q["date"];
     const day = typeof rawDay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawDay) ? rawDay : null;
-    return readMeicSummary(config, parseMode(req.query), parseMeicScope(req.query), typeof q["range"] === "string" ? q["range"] : undefined, day);
+    const rawPage = q["page"];
+    // A page that is not a positive integer is the first page; the reader clamps the top.
+    const entryPage = typeof rawPage === "string" && /^[1-9][0-9]*$/.test(rawPage) ? Number(rawPage) : undefined;
+    return readMeicSummary(config, parseMode(req.query), parseMeicScope(req.query), typeof q["range"] === "string" ? q["range"] : undefined, day, entryPage);
   });
   app.get("/api/meic/scope", async (req) => readMeicScope(config, parseMode(req.query), parseMeicScope(req.query).era));
   // Scope (era x symbol x profile) reaches the forest, so the header's arm/symbol/era controls

@@ -107,6 +107,8 @@ function slice(over: Partial<MeicSummarySlice> = {}): MeicSummarySlice {
         { time: "09:46", arm: "control", symbol: "SPX", credit: 505, structure: "stopped/closed", net: -158, provisional: false },
       ],
       total: 10,
+      pages: 1,
+      page: 1,
     },
     ...over,
   };
@@ -204,6 +206,39 @@ describe("MeicSummary (trade summary, the one-read slide)", () => {
     render("/?range=fortnight", <MeicSummary {...PROPS} />);
     const arg = useMeicSummaryMock.mock.calls[0][0];
     expect(arg.range).toBe("day");
+  });
+
+  it("the entries page rides the URL — ?page=2 reaches the query and the pager renders", () => {
+    render("/?page=2", <MeicSummary {...PROPS} />);
+    const arg = useMeicSummaryMock.mock.calls[0][0];
+    expect(arg.page).toBe(2);
+    const withPages = { ...slice(), entries: { ...slice().entries, pages: 3, page: 2 } };
+    useMeicSummaryMock.mockReturnValueOnce({ data: withPages, isLoading: false, isError: false, error: null });
+    const page = render("/?page=2", <MeicSummary {...PROPS} />);
+    expect(page).toContain('page 2 of 3');
+    expect(page).toContain('aria-label="previous page"');
+    expect(page).toContain('aria-label="next page"');
+    // The clamp: ?page=9 comes back as the reader's clamped page 3 of 3, next arrow off
+    // (React omits disabled when false).
+    const clamped = { ...slice(), entries: { ...slice().entries, pages: 3, page: 3 } };
+    useMeicSummaryMock.mockReturnValueOnce({ data: clamped, isLoading: false, isError: false, error: null });
+    const last = render("/?page=9", <MeicSummary {...PROPS} />);
+    expect(last).toContain('page 3 of 3');
+    expect(last).toContain('aria-label="next page" disabled=""');
+  });
+
+  it("a page that is not a positive integer falls through to the first", () => {
+    render("/?page=0", <MeicSummary {...PROPS} />);
+    expect(useMeicSummaryMock.mock.calls[0][0].page).toBe(1);
+    render("/?page=-2", <MeicSummary {...PROPS} />);
+    expect(useMeicSummaryMock.mock.calls[1][0].page).toBe(1);
+    render("/?page=spam", <MeicSummary {...PROPS} />);
+    expect(useMeicSummaryMock.mock.calls[2][0].page).toBe(1);
+  });
+
+  it("one page means no pager at all", () => {
+    const page = render("/", <MeicSummary {...PROPS} />);
+    expect(page).not.toContain("ts-pager");
   });
 
   it("the prototype badge is gone — real figures must not carry it", () => {

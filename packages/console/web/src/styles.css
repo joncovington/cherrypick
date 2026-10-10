@@ -4256,3 +4256,25 @@ td > .desk-refusal-reason {
   font-variant-numeric: tabular-nums;
   color: var(--ts-muted);
 }
+
+/* Trade summary — the entries pager: quiet arrows in the card's aside, the page stated between. */
+.ts-root .ts-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-right: 0.75rem;
+}
+.ts-root .ts-pager button {
+  border: 1px solid var(--ts-border);
+  background: none;
+  color: var(--ts-fg, inherit);
+  font: inherit;
+  line-height: 1;
+  padding: 0.08rem 0.42rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ts-root .ts-pager button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}

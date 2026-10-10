@@ -1654,6 +1654,7 @@ export function readMeicSummary(
   scope: MeicScopeFilter,
   range: string | undefined,
   day: string | null,
+  entryPage: number | undefined,
 ): MeicSummarySlice {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
@@ -1672,7 +1673,7 @@ export function readMeicSummary(
     delta: [],
     wing: [],
     weekday: [],
-    entries: { rows: [], total: 0 },
+    entries: { rows: [], total: 0, pages: 0, page: 1 },
   };
   // No day named: resolve the latest session IN THE SCOPE'S ERA, exactly as every other MEIC card
   // does (`readMeic`'s own comment: "today" scoped to nothing answers the wrong day on a no-trade
@@ -2073,18 +2074,35 @@ export function readMeicSummary(
       };
     });
 
-    // -- Entries: the window's rows, newest first, capped. Structure text is the leg pair in the
-    //    module's vocabulary; provisional = unsettled (mark, not settlement — the honesty badge).
+    // -- Entries: the window's settled rows, newest first, ONE PAGE of 40 (the card says "page k
+    //    of n", the URL carries ?page=, and the count is the same settled rows the money figures
+    //    count — the slice's arithmetic stays closed over what it shows). Structure text is the
+    //    leg pair in the module's vocabulary; provisional = unsettled (mark, not settlement — the
+    //    honesty badge).
+    const ENTRY_PAGE_SIZE = 40;
+    const page = Math.max(1, Math.floor(entryPage ?? 1));
+    const entryTotal = Number(
+      (
+        db
+          .prepare<string[], Record<string, unknown>>(
+            `SELECT COUNT(*) AS n FROM ic_trades WHERE ${where} AND pnl IS NOT NULL`,
+          )
+          .get(...params) ?? {}
+      )["n"] ?? 0,
+    );
+    const entryPages = Math.max(1, Math.ceil(entryTotal / ENTRY_PAGE_SIZE));
+    const entryPageClamped = Math.min(page, entryPages);
     const entryRows = db
-      .prepare<string[], Record<string, unknown>>(
+      .prepare<[...string[], number, number], Record<string, unknown>>(
         `SELECT entry_time, ${armCol} AS arm, symbol, net_credit, ${mult} AS mult,
                 status, pnl, fees, ${settleCol} AS settlement,
                 ${meicCol(db, "put_settle_value")} AS put_settle_value,
                 ${meicCol(db, "call_settle_value")} AS call_settle_value,
                 exit_reason
-           FROM ic_trades WHERE ${where} ORDER BY id DESC LIMIT 40`,
+           FROM ic_trades WHERE ${where} AND pnl IS NOT NULL ORDER BY id DESC
+          LIMIT ? OFFSET ?`,
       )
-      .all(...params);
+      .all(...params, ENTRY_PAGE_SIZE, (entryPageClamped - 1) * ENTRY_PAGE_SIZE);
     const entries = {
       rows: entryRows.map((r) => {
         const credit = (toNum(r["net_credit"]) ?? 0) * (toNum(r["mult"]) ?? 10000);
@@ -2110,7 +2128,9 @@ export function readMeicSummary(
           provisional: exitKind === null,
         };
       }),
-      total: trades,
+      total: entryTotal,
+      pages: entryPages,
+      page: entryPageClamped,
     };
 
     return {

@@ -323,17 +323,39 @@ function ByEntryTime({ s }: { s: MeicSummarySlice }) {
  * rows come from the same reader the session/history tables use, so they cannot disagree.
  * ------------------------------------------------------------------------- */
 
-function EntriesTable({ s }: { s: MeicSummarySlice }) {
+function EntriesTable({ s, page, onPage }: { s: MeicSummarySlice; page: number; onPage: (p: number) => void }) {
   if (s.entries.rows.length === 0) return <TsEmpty what="entries" />;
+  const multi = s.entries.pages > 1;
+  // The pager reads the PAYLOAD's resolved page — the reader clamped the URL's ask onto
+  // 1..pages, and the card says what it shows. The URL is the request, not the display.
+  const p = s.entries.page;
   return (
-    <TsCard title="entries" aside={<span className="ts-muted">{s.entries.total} filled in window</span>}>
+    <TsCard
+      title="entries"
+      aside={
+        <span className="ts-muted">
+          {multi ? (
+            <span className="ts-pager">
+              <button aria-label="previous page" disabled={p <= 1} onClick={() => onPage(p - 1)} title="newer entries">
+                ‹
+              </button>
+              page {p} of {s.entries.pages}
+              <button aria-label="next page" disabled={p >= s.entries.pages} onClick={() => onPage(p + 1)} title="older entries">
+                ›
+              </button>
+            </span>
+          ) : null}
+          {s.entries.total} filled in window
+        </span>
+      }
+    >
       <table className="ts-table">
         <thead>
           <tr><th>time</th><th>arm</th><th>sym</th><th className="num">credit</th><th>structure</th><th className="num">net</th></tr>
         </thead>
         <tbody>
           {s.entries.rows.map((e, i) => (
-            <tr key={`${e.time ?? "?"}-${e.arm}-${i}`}>
+            <tr key={`p${s.entries.page}-${e.time ?? "?"}-${e.arm}-${i}`}>
               <td>{e.time ?? "—"}</td>
               <td>{e.arm}</td>
               <td>{e.symbol}</td>
@@ -607,6 +629,17 @@ export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSum
     const next = new URLSearchParams(params);
     if (r === "day") next.delete("range");
     else next.set("range", r);
+    // A new window restarts the entries at page 1 — page 3 of the old window means nothing there.
+    next.delete("page");
+    setParams(next, { replace: true });
+  };
+  // The page rides the URL beside the range (?page=2), unstated = first, non-numeric falls
+  // through to the first the same way an unknown range falls through to the day.
+  const page = /^[1-9][0-9]*$/.test(params.get("page") ?? "") ? Number(params.get("page")) : 1;
+  const setPage = (p: number) => {
+    const next = new URLSearchParams(params);
+    if (p <= 1) next.delete("page");
+    else next.set("page", String(p));
     setParams(next, { replace: true });
   };
   const q = useMeicSummary({
@@ -616,6 +649,7 @@ export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSum
     era: scope?.era ?? null,
     day,
     range,
+    page,
   });
   if (q.isError) {
     return (
@@ -668,7 +702,7 @@ export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSum
       {/* Entries is full width UNDER the signal blocks — the window's entries are a long row of
           data that a third of a grid cell would cramp. */}
       <div className="ts-row">
-        <EntriesTable s={s} />
+        <EntriesTable s={s} page={page} onPage={setPage} />
       </div>
       </>
       )}
