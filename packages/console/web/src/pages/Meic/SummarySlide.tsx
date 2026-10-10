@@ -148,6 +148,13 @@ const ALL = {
     { bucket: "75-wide", trades: 14, sessions: 5, winPct: 50.0, avgNet: -5.2 },
     { bucket: "100-wide", trades: 11, sessions: 4, winPct: 45.5, avgNet: -12.3 },
   ],
+  weekday: [
+    { bucket: "Mon", trades: 19, sessions: 3, winPct: 68.4, avgNet: 22.4 },
+    { bucket: "Tue", trades: 21, sessions: 3, winPct: 61.9, avgNet: 18.9 },
+    { bucket: "Wed", trades: 15, sessions: 3, winPct: 73.3, avgNet: 41.2 },
+    { bucket: "Thu", trades: 12, sessions: 3, winPct: 58.3, avgNet: 9.6 },
+    { bucket: "Fri", trades: 10, sessions: 4, winPct: 40.0, avgNet: -14.8 },
+  ],
 };
 
 /** The per-arm slice — what the real reader returns for one arm's rows of the ledger. Same shape
@@ -196,6 +203,13 @@ const PER_ARM: Record<string, Slice> = {
       { bucket: "75-wide", trades: 7, sessions: 3, winPct: 57.1, avgNet: -3.1 },
       { bucket: "100-wide", trades: 6, sessions: 2, winPct: 50.0, avgNet: -6.2 },
     ],
+    weekday: [
+      { bucket: "Mon", trades: 10, sessions: 2, winPct: 70.0, avgNet: 12.1 },
+      { bucket: "Tue", trades: 11, sessions: 2, winPct: 63.6, avgNet: 10.3 },
+      { bucket: "Wed", trades: 8, sessions: 2, winPct: 75.0, avgNet: 30.6 },
+      { bucket: "Thu", trades: 6, sessions: 2, winPct: 66.7, avgNet: 6.4 },
+      { bucket: "Fri", trades: 5, sessions: 2, winPct: 40.0, avgNet: -9.2 },
+    ],
   },
   wide: {
     ...ALL,
@@ -234,6 +248,13 @@ const PER_ARM: Record<string, Slice> = {
       { bucket: "50-wide", trades: 26, sessions: 5, winPct: 69.2, avgNet: 37.3 },
       { bucket: "75-wide", trades: 7, sessions: 2, winPct: 42.9, avgNet: -7.3 },
       { bucket: "100-wide", trades: 5, sessions: 2, winPct: 40.0, avgNet: -18.4 },
+    ],
+    weekday: [
+      { bucket: "Mon", trades: 9, sessions: 1, winPct: 66.7, avgNet: 32.7 },
+      { bucket: "Tue", trades: 10, sessions: 1, winPct: 60.0, avgNet: 27.5 },
+      { bucket: "Wed", trades: 7, sessions: 1, winPct: 71.4, avgNet: 51.8 },
+      { bucket: "Thu", trades: 6, sessions: 1, winPct: 50.0, avgNet: 12.8 },
+      { bucket: "Fri", trades: 5, sessions: 2, winPct: 40.0, avgNet: -20.4 },
     ],
   },
 };
@@ -628,6 +649,7 @@ const RANGES = ["day", "week", "month", "year", "all-time"] as const;
 
 function Toolbar({ slice }: { slice: Slice }) {
   const [range, setRange] = useState<string>("day");
+  const [dayOffset, setDayOffset] = useState(0);
   // The light variant is a choice, persisted like every console pref (mirror first render, server
   // copy follows); default dark, never `prefers-color-scheme` — a deliberately dark theme must not
   // flip because the OS said so.
@@ -637,17 +659,36 @@ function Toolbar({ slice }: { slice: Slice }) {
       <h2 className="ts-title">trade summary</h2>
       <div className="ts-seg" role="tablist" aria-label="range">
         {RANGES.map((r) => (
-          <button key={r} role="tab" aria-selected={range === r} className={range === r ? "ts-seg-on" : ""} onClick={() => setRange(r)}>
+          <button
+            key={r}
+            role="tab"
+            aria-selected={range === r}
+            className={range === r ? "ts-seg-on" : ""}
+            onClick={() => setRange(r)}
+            title={r === "day" ? undefined : "fixture limit: the prototype renders one day — the reader wires this range"}
+          >
             {r}
           </button>
         ))}
       </div>
       <div className="ts-daynav">
-        <button aria-label="previous day">‹</button>
+        <button
+          aria-label="previous day"
+          title="fixture limit: day navigation is not wired — the reader moves the window"
+          onClick={() => setDayOffset((d) => d - 1)}
+        >
+          ‹
+        </button>
         <span>
-          {slice.session} <span className="ts-muted">· {slice.entriesFilled} entries filled</span>
+          {dayOffset === 0 ? slice.session : `day −${-dayOffset} (fixture)`} <span className="ts-muted">· {slice.entriesFilled} entries filled</span>
         </span>
-        <button aria-label="next day">›</button>
+        <button
+          aria-label="next day"
+          title="fixture limit: day navigation is not wired — the reader moves the window"
+          onClick={() => setDayOffset((d) => Math.min(0, d + 1))}
+        >
+          ›
+        </button>
       </div>
       <div className="ts-seg ts-theme-seg" role="group" aria-label="theme">
         <button className={!light ? "ts-seg-on" : ""} onClick={() => writePref("meicSummaryLight", false)}>dark</button>
@@ -677,9 +718,10 @@ export function MeicSummary({ scope }: MeicSummaryProps) {
         <Evaluations slice={slice} />
         <ByArm />
       </div>
-      <div className="ts-row ts-row-2">
+      <div className="ts-row ts-row-3">
         <SignalBreakdown title="by short-call delta" rows={slice.delta} scopeNote="era, not the day" />
         <SignalBreakdown title="by wing width" rows={slice.wing} scopeNote="era, not the day" />
+        <SignalBreakdown title="by weekday" rows={slice.weekday} scopeNote="era, not the day" />
       </div>
       {/* Entries is full width UNDER the signal blocks — the real reader returns every filled entry
           of the window, a long row of data that a third of a grid cell would cramp. */}

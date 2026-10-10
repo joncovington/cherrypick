@@ -133,13 +133,23 @@ describe("MeicSummary (trade-summary prototype)", () => {
     expect(MeicSummary.length).toBe(1); // exactly one prop: scope
   });
 
+  it("states the fixture limit on the dead range and day controls, never a fake result", () => {
+    // The range segments and ‹ › arrows select nothing yet — no reader backs them — so each dead
+    // control says so on hover, not silently implying the range is served. (Their state still
+    // moves on click; without jsdom the tests can't drive events, so the pins are static.)
+    const page = html(<MeicSummary />);
+    expect(page).toContain('title="fixture limit: the prototype renders one day');
+    expect(page).toContain('title="fixture limit: day navigation is not wired');
+  });
+
   it("renders the sessions-page signal blocks, the module's buckets and measures, era-scoped", () => {
     const page = html(<MeicSummary />);
     // Titles as the sessions page names them (lowercase in the summary's card style).
     expect(page).toContain("by short-call delta");
     expect(page).toContain("by wing width");
+    expect(page).toContain("by weekday");
     // The module's bucket SQL verbatim — angle brackets render escaped, so the raw forms.
-    for (const b of ["&lt;0.10", "0.10-0.15", "0.15-0.20", "&gt;=0.20", "50-wide", "75-wide", "100-wide"]) {
+    for (const b of ["&lt;0.10", "0.10-0.15", "0.15-0.20", "&gt;=0.20", "50-wide", "75-wide", "100-wide", "Mon", "Fri"]) {
       expect(page).toContain(b);
     }
     // Era-scoped, said on the card — a day's three trades would make every band a coin toss.
@@ -155,7 +165,7 @@ describe("MeicSummary (trade-summary prototype)", () => {
     // Each bucket's title carries its avg net's sign; the bar drawn inside it must tone the same
     // way — never a hardcoded colour. Shown to fail by hardcoding the bar's class to ts-pos.
     const buckets = [...page.matchAll(/title="(\d+) trades over[^\"]*avg net per trade ([+\-−])\$[^\"]*"[\s\S]*?ts-hbar-fill ts-(pos|neg)/g)];
-    expect(buckets.length).toBeGreaterThanOrEqual(6);
+    expect(buckets.length).toBeGreaterThanOrEqual(12); // 4 delta + 3 wing + 5 weekday
     for (const [, , sign, tone] of buckets) {
       expect(tone).toBe(sign === "-" || sign === "−" ? "neg" : "pos");
     }
