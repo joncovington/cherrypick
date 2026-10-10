@@ -168,8 +168,18 @@ _HIDDEN_TAGS = {"svg", "script", "style"}
 _VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "wbr"}
 
 
+# A report table. The site's 2026-10-09 redesign dropped the `quikgrid` class (now `w-full
+# border-none`); the `table-<uuid>` id is what both layouts share, and stored fragments from before
+# it still carry the class.
+_GRID_ID_RE = re.compile(r"^table-[0-9a-f-]+$")
+
+
+def _is_grid(table_id: str, classes: set[str]) -> bool:
+    return "quikgrid" in classes or bool(_GRID_ID_RE.match(table_id))
+
+
 class _Grids(HTMLParser):
-    """Every `table.quikgrid` with the heading text last seen before it, and the first m/d/yyyy
+    """Every report table (`_is_grid`) with the heading text last seen before it, and the first m/d/yyyy
     text outside a table (the report's session date). A cell is its visible text plus the `title`
     and `data-bs-title` attributes inside it, which is where the site keeps the full company name,
     the call/put word, the full timestamp, the underlying's bid/ask and the side tooltip."""
@@ -197,7 +207,7 @@ class _Grids(HTMLParser):
         if hide:
             self._hidden += 1
             return
-        if tag == "table" and "quikgrid" in classes:
+        if tag == "table" and _is_grid(a.get("id", ""), classes):
             self._table = {"heading": self.heading, "columns": [], "rows": []}
             self.tables.append(self._table)
         if self._table is None:
@@ -226,6 +236,7 @@ class _Grids(HTMLParser):
         if self._table is None or self._hidden:
             return
         if tag in ("td", "th") and self._cell is not None and self._row is not None:
+            self._cell["parts"] = list(self._cell["text"])
             self._cell["text"] = " ".join(" ".join(self._cell["text"]).split())
             self._row.append(self._cell)
             self._cell = None
@@ -303,6 +314,18 @@ def parse_side(tip: str) -> dict | None:
     return side
 
 
+def parse_side_parts(parts: list[str]) -> dict | None:
+    """The same three facts since the 2026-10-09 redesign, drawn as a popover's text rather than a
+    tooltip: ["Neutral", "Mid Market", "Edge:", "0.43"]."""
+    if len(parts) < 2:
+        return None
+    side = {"sentiment": parts[0], "fill": parts[1], "edge": None}
+    m = re.search(r"Edge:\s*(-?[\d.]+)", " ".join(parts[2:]))
+    if m:
+        side["edge"] = float(m.group(1))
+    return side
+
+
 def _expiry(text: str) -> str | None:
     try:
         return datetime.strptime(text, "%d-%b-%y").date().isoformat()
@@ -328,7 +351,9 @@ def _cell_value(kind: str, cell: dict):
         # a strangle), first seen 2026-10-07: read, not missing.
         return {"C": "call", "P": "put", "M": "mixed"}.get(text)
     if kind == SIDE:
-        return parse_side(cell["tips"][0]) if cell["tips"] else None
+        if cell["tips"]:
+            return parse_side(cell["tips"][0])
+        return parse_side_parts(cell.get("parts") or [])
     if kind == TIME:
         return text or None
     if kind == TICKER:
@@ -666,7 +691,9 @@ def tables_fragment(page_html: str, headings: tuple[str, ...], with_date: bool) 
         page_date, _ = grids(page_html, headings)
         if page_date:
             parts.append(f"<p>{page_date}</p>")
-    for m in re.finditer(r"<table\b[^>]*\bquikgrid\b.*?</table>", page_html, re.S):
+    for m in re.finditer(
+        r"<table\b[^>]*(?:\bquikgrid\b|\bid=\"table-[0-9a-f-]+\")[^>]*>.*?</table>", page_html, re.S
+    ):
         before = page_html[: m.start()]
         spots = {h: before.rfind(">" + htmlmod.escape(h, quote=False) + "<") for h in headings}
         heading = max(spots, key=spots.get)
