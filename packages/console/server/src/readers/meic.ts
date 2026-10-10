@@ -1811,6 +1811,14 @@ export function readMeicSummary(
         stopCost: Math.round((perSideStop[side] ?? 0) * 100) / 100,
       };
     });
+    {
+      const drift = Math.round(hero.credit * 100) - Math.round(legs.reduce((s, l) => s + l.credit, 0) * 100);
+      if (drift !== 0 && legs.length > 0) {
+        const idx = legs.reduce((best, l, i) => (l.credit > legs[best]!.credit ? i : best), 0);
+        const row = legs[idx]!;
+        row.credit = Math.round((row.credit + drift / 100) * 100) / 100;
+      }
+    }
     const withLegs = legRows.filter((r) => str(r["put_status"]) !== null && str(r["call_status"]) !== null);
     const pairCount = withLegs.length;
     const clean = withLegs.filter((r) => str(r["put_status"]) === "expired" && str(r["call_status"]) === "expired").length;
@@ -1965,6 +1973,18 @@ export function readMeicSummary(
           WHERE ${attemptWhere} AND outcome != 'filled' GROUP BY ${attemptArm}, outcome`,
       )
       .all(...attemptParams);
+    // Rounding residual: each arm's net is round2 of ITS OWN exact value, so the arms' rounded
+    // sums can drift a cent from the hero's rounded total. The suite's money rule says rows add
+    // up, so the residual — display rounding, never a money error — is assigned to the
+    // largest-magnitude arm, the way a ledger foots a column.
+    const plugResidual = (rows: Array<{ net: number }>, total: number): void => {
+      const drift = Math.round(total * 100) - Math.round(rows.reduce((s, r) => s + r.net, 0) * 100);
+      if (drift !== 0 && rows.length > 0) {
+        const idx = rows.reduce((best, r, i) => (Math.abs(r.net) > Math.abs(rows[best]!.net) ? i : best), 0);
+        const row = rows[idx]!;
+        row.net = Math.round((row.net + drift / 100) * 100) / 100;
+      }
+    };
     const arms = armMoney
       .map((r) => {
         const arm = str(r["arm"]) ?? "—";
@@ -1979,8 +1999,9 @@ export function readMeicSummary(
           dominant: dom === undefined ? null : (str(dom["outcome"]) ?? null),
           net: Math.round((Number(r["gross"] ?? 0) - Number(r["fees_total"] ?? 0)) * 100) / 100,
         };
-      })
-      .sort((a, b) => b.net - a.net);
+      });
+    plugResidual(arms, hero.net);
+    arms.sort((a, b) => b.net - a.net);
 
     // -- Signal breakdowns: the module's buckets verbatim, over the window. Same denominators as
     //    the deep-analytics read: resolved, settled rows; avg net re-derived per bucket, never an

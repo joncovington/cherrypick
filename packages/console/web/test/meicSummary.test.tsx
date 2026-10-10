@@ -124,8 +124,6 @@ describe("MeicSummary (trade summary, the one-read slide)", () => {
   it("labels the window the reader states — the day's session by name, wider ranges verbatim", () => {
     const page = html(<MeicSummary {...PROPS} />);
     expect(page).toContain("Friday, October 9, 2026"); // 2026-10-09, the day window
-    const wide = useMeicSummaryMock.mockReturnValue;
-    void wide;
     useMeicSummaryMock.mockReturnValue({
       data: slice({ window: { from: "2026-10-05", to: null, label: "week of 2026-10-05" } }),
       isLoading: false,
