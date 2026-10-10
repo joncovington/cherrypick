@@ -320,9 +320,19 @@ def test_vol_over_oi_that_does_not_divide_is_rejected():
     assert len(problems) == 1 and problems[0].startswith("voloi SPCX")
 
 
-def test_an_opening_with_open_interest_is_rejected():
-    problems = _check(report(openings=("11,105", "5", "2,221.00")))
+def test_an_opening_with_a_little_open_interest_passes_when_it_divides():
+    # 2026-10-09: TAL on the Openings list at OI 1, V/OI = 20,062 / 1.
+    assert _check(report(openings=("11,105", "5", "2,221.00"))) == []
+
+
+def test_an_opening_whose_ratio_does_not_divide_is_rejected():
+    problems = _check(report(openings=("11,105", "5", "11,105.00")))
     assert len(problems) == 1 and problems[0].startswith("openings AXGN")
+
+
+def test_an_opening_past_the_oi_panels_band_is_rejected():
+    problems = _check(report(openings=("11,105", "101", "109.95")))
+    assert len(problems) == 1 and problems[0].startswith("openings AXGN: OI 101")
 
 
 def test_a_missing_table_is_rejected_by_name():
