@@ -1,30 +1,22 @@
 /**
- * Trade summary — a PROTOTYPE of the denser, gauge-led summary style (segmented range control,
- * hero net card, premium-capture gauge, win-rate arcs, by-side and by-entry-time charts).
+ * Trade summary — the denser, gauge-led summary (segmented range control, hero net card,
+ * premium-capture gauge, win-rate arcs, leg outcomes, entry-time and weekday bands, the gate's
+ * refusal ledger, by-arm rollup, entries table).
  *
- * ⚠️ EVERY NUMBER ON THIS SLIDE IS FIXTURE DATA. No reader backs it yet; the point is to judge
- * the shape in the real app before building `readers/`. Where the real data will come from,
- * per card (all of it already computed or computable server-side — this component must never
- * derive money itself, per the console's "money is derived on the server" rule):
+ * ⚠️ The PROTOTYPE phase is over: this slide now reads `useMeicSummary` — the one-read endpoint
+ * (`/api/meic/summary`, readers/meic.ts "The summary slide's one read"). Every figure arrives
+ * computed; the slide derives nothing itself beyond presentation arithmetic (a percentage of a
+ * figure the payload already carries, a bar's width from a max it already carries). The former
+ * fixture data is gone; where the payload has nothing for a card, the card says so ("no rows in
+ * this window") rather than drawing a zero.
  *
- * - hero net / gross / fees / settlement — `readers/meic.ts` `meicTradeCash` over a date range
- *   (`readers/dateRange.ts` clause), as the history table's totals chip already does.
- * - capture gauge — net over premium sold; `readers/armCosts.ts` already sums `premium` per arm.
- * - win-rate arcs — settled-entry win counts from the same rows (a win = net > 0, the ledger's
- *   own rule, not a new one).
- * - by side — per-side grouping of entry legs (put wing vs call wing) and their exits; needs a
- *   new reader + meic-mirror test, which is the real work this prototype is scoping.
- * - by entry time — ledger entry timestamps, bucketed; same new reader.
- * - entries table — the trade-table standard columns (time, credit, sides, net), which is why
- *   the columns below mirror the standard's identity: credit − exit − costs = net per row.
- * - by short-call delta / by wing width — meic/sessions' own deep-analytics buckets
- *   (`readMeicDeepAnalytics`'s `byDelta`/`byWing`, bucket SQL verbatim: delta bands on the short
- *   call's |delta| at entry, `CAST(wing_width) || '-wide'`). ERA-scoped like the sessions page
- *   defaults, not the day — the card says so — and trades/win%/avg net are the module's own
- *   three measures; the real reader re-derives avg net per slice (never an average of averages).
+ * Money columns are the suite's one layout, computed server-side: gross − fees − settlement =
+ * net, signed cash flow, whole-position dollars. Tone is sign-only, never a verdict.
  *
- * The "provisional" badge marks a net figure that is a mark, not a settlement — the same
- * mid-is-not-a-fill honesty the Live page uses, until a reader defines it for real.
+ * The scope is the PAGE's (the manifest header's symbol/arm/era selects) — one scope per MEIC
+ * page is the existing rule, and a second control would let the summary disagree with the tabs
+ * beside it. The range segments and day arrows drive the reader's window: "day" scopes to the
+ * page's resolved session, the rest widen from it, ET-anchored server-side.
  *
  * Styling is scoped to `.ts-root` (see styles.css, "Trade summary prototype"): this slide ships
  * its own palette (rounded cards, blue selection, mint/salmon tones) borrowed from a reference
@@ -32,249 +24,46 @@
  * rest of the console is untouched while the style is under judgement; if adopted, the tokens
  * move outward and the scope is dropped.
  *
- * Charts are hand-rolled SVG sized by their container via `useMeasure` — the package rule
- * (a chart in a grid cell measures itself; scaling is not reflowing). The hero figures here are
- * fixed-width enough not to need it, but the gauges and bars take the measured width where one
- * matters. Colour carries only the sign of a number (pos/neg), never a verdict — the package's
- * tone rule applied to pixels.
+ * Charts are hand-rolled FIXED-SIZE SVG (no scaling) so the useMeasure grid rule is not invoked.
+ * Colour carries only the sign of a number (pos/neg), never a verdict — the package's tone rule
+ * applied to pixels.
  */
 import { useState, type ReactNode } from "react";
 import { useBoolPref, writePref } from "../../lib/prefs";
+import { useMeicSummary } from "../../lib/api";
+import type { MeicSummarySlice } from "@console/shared";
+import type { TradingMode } from "@console/shared";
 import type { MeicScope } from "./MeicTables";
 
 export interface MeicSummaryProps {
-  /** The page's scope, from the manifest header (symbol/arm selects). Defaults to every arm and
-   *  symbol together; the header narrows. Never re-declared here — one scope per MEIC page. */
+  /** The page's mode (the PaperLiveBadge toggle) and scope, from the manifest header. Defaults
+   *  to every arm and symbol together; the header narrows. One scope per MEIC page. */
+  mode: TradingMode;
   scope?: Partial<MeicScope>;
-}
-/* ---------------------------------------------------------------------------
- * Fixture data — the ONLY thing a real implementation replaces. Stated twice, ONCE PER SCOPE:
- * `ALL` is the whole day (every arm and symbol together), `PER_ARM` each arm's own slice. The
- * slices are constructed to reconcile — summing the arms' rows equals the unscoped totals —
- * because that identity is what the real reader must keep, and the fixture should prove the
- * scope control while it is judged.
- *
- * The scope itself is the PAGE's (the manifest header's symbol/arm selects), not the slide's:
- * one scope per MEIC page is the existing rule, and a second control would let the summary
- * disagree with the tabs beside it. Default is everything together; the header narrows.
- * ------------------------------------------------------------------------- */
-
-const ALL = {
-  session: "Wednesday, October 7, 2026",
-  entriesFilled: 3,
-  /** Hero net / gross / fees / settlement / open risk — one row per arm in the real reader, so the
-   *  arms rail (the paper control's figure beside each) reconciles with the hero to the cent.
-   *  Reason taxes are exit costs charged, not a verdict on the arm. */
-  hero: {
-    net: 254, // gross − exit costs − fees − settlement, whole-position dollars
-    gross: 1580, // premium sold, entries summed
-    fees: 245,
-    settlement: 120,
-    openRisk: 480, // worst case still open, the gate's own figure
-  },
-  /** Net premium kept after fees, as a % of premium sold. */
-  capture: { value: 16.1 },
-  winRate: { days: { won: 12, of: 16 }, entries: { won: 2, of: 3 } },
-  /** Leg outcomes — the mock's "by side" rebuilt on MEIC's leg-pair truth (`ic_spread_legs`): the
-   *  credit each wing SOLD for (per-side entry credit is recorded; per-side NET is not — pnl is
-   *  the condor's), how many legs ended in each state, and the stop cost the wing charged. This is
-   *  the pair the module's margin identity reads (clean = both expired, double-stop = both
-   *  stopped), so the card states the pair counts, not a verdict on a wing. */
-  sides: [
-    {
-      side: "put",
-      credit: 560, // sum of put_credit × multiplier × qty over the window's trades
-      legs: { expired: 9, stopped: 4, settled: 1 },
-      stopCost: 520,
-    },
-    {
-      side: "call",
-      credit: 1020,
-      legs: { expired: 11, stopped: 2, settled: 1 },
-      stopCost: 216,
-    },
-  ],
-  /** Leg-pair roll-up — the margin identity's own counts (analytics.py `margin_identity`):
-   *  clean = both wings expired, double-stop = both stopped, and the fee bar. Never restated
-   *  console-side in the real reader — mirrored from the module, pinned by test. */
-  pairs: { trades: 16, cleanPct: 50.0, doubleStopPct: 6.3, breakevenBarPct: 15.5 },
-  /** By entry time; a negative bucket renders as a marker, per the reference design. */
-  timeBuckets: [
-    { time: "13:11", net: -158, note: "manual stop" },
-    { time: "14:02", net: 210, note: "credit improved, taken" },
-    { time: "15:26", net: 202, note: "eod exit" },
-  ],
-  /** Evaluations — the refusal ledger (`entry_attempts`), one row per arm-evaluation with its
-   *  `outcome`. Filled share is a proportion (a bar), not a gauge; the reason bars carry the WHY
-   *  and are sorted descending so the dominant refusal reads first. Bars stay NEUTRAL: standing
-   *  aside is a decision, not a loss, and a refusal count has no sign to tone by. */
-  evaluations: {
-    evaluated: 412,
-    filled: 3,
-    refused: 409,
-    reasons: [
-      { outcome: "gate_blocked", n: 222, dominantDetail: "regime_gex_negative" },
-      { outcome: "cadence_blocked", n: 109, dominantDetail: null },
-      { outcome: "sign_rule_blocked", n: 46, dominantDetail: "call_side_floor" },
-      { outcome: "no_candidate", n: 10, dominantDetail: null },
-      { outcome: "window_blocked", n: 13, dominantDetail: null },
-      { outcome: "no_fill", n: 9, dominantDetail: null },
-    ],
-    // The "what the market was" half — the question the ledger exists to answer: is a gate
-    // refusing the regime it was built to refuse?
-    market: "at refusal: GEX− 74% of evaluations · median IV rank 0.41 · session quality mixed",
-  },
-  arms: [
-    { arm: "control", symbol: "NQ", evaluated: 208, filled: 2, refused: 206, dominant: "gate_blocked", net: 42 },
-    { arm: "wide", symbol: "NQ", evaluated: 204, filled: 1, refused: 203, dominant: "gate_blocked", net: 212 },
-  ],
-  entries: [
-    { time: "13:11", arm: "control", symbol: "NQ", credit: 505, put: "stopped", call: "protected", net: -158, provisional: true, note: "manual stop" },
-    { time: "14:02", arm: "control", symbol: "NQ", credit: 560, put: "closed", call: "closed", net: 210, provisional: false, note: "" },
-    { time: "15:26", arm: "wide", symbol: "NQ", credit: 515, put: "closed", call: "protected", net: 202, provisional: false, note: "manual" },
-  ],
-  /** Signal breakdowns — meic/sessions' deep-analytics blocks, era-scoped like that page's
-   *  default. Trades/win%/avg net are the module's own three measures per bucket; avg net is
-   *  re-derived from every row in the bucket, never an average of averages. A real day can leave
-   *  a band empty; a bar can hold at zero. */
-  delta: [
-    { bucket: "<0.10", trades: 18, sessions: 7, winPct: 66.7, avgNet: 35.5 },
-    { bucket: "0.10-0.15", trades: 42, sessions: 9, winPct: 69.0, avgNet: 28.1 },
-    { bucket: "0.15-0.20", trades: 11, sessions: 4, winPct: 45.5, avgNet: -12.3 },
-    { bucket: ">=0.20", trades: 6, sessions: 3, winPct: 33.3, avgNet: -41.0 },
-  ],
-  wing: [
-    { bucket: "50-wide", trades: 52, sessions: 9, winPct: 71.2, avgNet: 31.0 },
-    { bucket: "75-wide", trades: 14, sessions: 5, winPct: 50.0, avgNet: -5.2 },
-    { bucket: "100-wide", trades: 11, sessions: 4, winPct: 45.5, avgNet: -12.3 },
-  ],
-  weekday: [
-    { bucket: "Mon", trades: 19, sessions: 3, winPct: 68.4, avgNet: 22.4 },
-    { bucket: "Tue", trades: 21, sessions: 3, winPct: 61.9, avgNet: 18.9 },
-    { bucket: "Wed", trades: 15, sessions: 3, winPct: 73.3, avgNet: 41.2 },
-    { bucket: "Thu", trades: 12, sessions: 3, winPct: 58.3, avgNet: 9.6 },
-    { bucket: "Fri", trades: 10, sessions: 4, winPct: 40.0, avgNet: -14.8 },
-  ],
-};
-
-/** The per-arm slice — what the real reader returns for one arm's rows of the ledger. Same shape
- *  as `ALL` (one fewer level: no `arms` list), constructed so sums across arms equal `ALL`. */
-type Slice = Omit<typeof ALL, "arms">;
-const PER_ARM: Record<string, Slice> = {
-  control: {
-    ...ALL,
-    hero: { net: 42, gross: 790, fees: 122.5, settlement: 60, openRisk: 240 },
-    capture: { value: 4.3 },
-    winRate: { days: { won: 5, of: 16 }, entries: { won: 2, of: 3 } },
-    sides: [
-      { side: "put", credit: 280, legs: { expired: 4, stopped: 3, settled: 0 }, stopCost: 520 },
-      { side: "call", credit: 510, legs: { expired: 5, stopped: 1, settled: 1 }, stopCost: 216 },
-    ],
-    timeBuckets: [
-      { time: "13:11", net: -158, note: "manual stop" },
-      { time: "14:02", net: 210, note: "credit improved, taken" },
-    ],
-    evaluations: {
-      evaluated: 208,
-      filled: 2,
-      refused: 206,
-      reasons: [
-        { outcome: "gate_blocked", n: 111, dominantDetail: "regime_gex_negative" },
-        { outcome: "cadence_blocked", n: 55, dominantDetail: null },
-        { outcome: "sign_rule_blocked", n: 23, dominantDetail: "call_side_floor" },
-        { outcome: "no_candidate", n: 5, dominantDetail: null },
-        { outcome: "window_blocked", n: 7, dominantDetail: null },
-        { outcome: "no_fill", n: 5, dominantDetail: null },
-      ],
-      market: "at refusal: GEX− 74% of evaluations · median IV rank 0.41 · session quality mixed",
-    },
-    entries: [
-      { time: "13:11", arm: "control", symbol: "NQ", credit: 505, put: "stopped", call: "protected", net: -158, provisional: true, note: "manual stop" },
-      { time: "14:02", arm: "control", symbol: "NQ", credit: 560, put: "closed", call: "closed", net: 210, provisional: false, note: "" },
-    ],
-    delta: [
-      { bucket: "<0.10", trades: 9, sessions: 5, winPct: 66.7, avgNet: 21.4 },
-      { bucket: "0.10-0.15", trades: 21, sessions: 6, winPct: 71.4, avgNet: 18.2 },
-      { bucket: "0.15-0.20", trades: 6, sessions: 2, winPct: 50.0, avgNet: -8.1 },
-      { bucket: ">=0.20", trades: 3, sessions: 2, winPct: 33.3, avgNet: -20.5 },
-    ],
-    wing: [
-      { bucket: "50-wide", trades: 26, sessions: 6, winPct: 73.1, avgNet: 24.7 },
-      { bucket: "75-wide", trades: 7, sessions: 3, winPct: 57.1, avgNet: -3.1 },
-      { bucket: "100-wide", trades: 6, sessions: 2, winPct: 50.0, avgNet: -6.2 },
-    ],
-    weekday: [
-      { bucket: "Mon", trades: 10, sessions: 2, winPct: 70.0, avgNet: 12.1 },
-      { bucket: "Tue", trades: 11, sessions: 2, winPct: 63.6, avgNet: 10.3 },
-      { bucket: "Wed", trades: 8, sessions: 2, winPct: 75.0, avgNet: 30.6 },
-      { bucket: "Thu", trades: 6, sessions: 2, winPct: 66.7, avgNet: 6.4 },
-      { bucket: "Fri", trades: 5, sessions: 2, winPct: 40.0, avgNet: -9.2 },
-    ],
-  },
-  wide: {
-    ...ALL,
-    hero: { net: 212, gross: 790, fees: 122.5, settlement: 60, openRisk: 240 },
-    capture: { value: 26.8 },
-    winRate: { days: { won: 7, of: 16 }, entries: { won: 1, of: 3 } },
-    sides: [
-      { side: "put", credit: 280, legs: { expired: 5, stopped: 1, settled: 1 }, stopCost: 0 },
-      { side: "call", credit: 510, legs: { expired: 6, stopped: 1, settled: 0 }, stopCost: 216 },
-    ],
-    timeBuckets: [{ time: "15:26", net: 202, note: "eod exit" }],
-    evaluations: {
-      evaluated: 204,
-      filled: 1,
-      refused: 203,
-      reasons: [
-        { outcome: "gate_blocked", n: 111, dominantDetail: "regime_gex_negative" },
-        { outcome: "cadence_blocked", n: 54, dominantDetail: null },
-        { outcome: "sign_rule_blocked", n: 23, dominantDetail: "call_side_floor" },
-        { outcome: "no_candidate", n: 5, dominantDetail: null },
-        { outcome: "window_blocked", n: 6, dominantDetail: null },
-        { outcome: "no_fill", n: 4, dominantDetail: null },
-      ],
-      market: "at refusal: GEX− 74% of evaluations · both arms share one market, so the context repeats",
-    },
-    entries: [
-      { time: "15:26", arm: "wide", symbol: "NQ", credit: 515, put: "closed", call: "protected", net: 202, provisional: false, note: "manual" },
-    ],
-    delta: [
-      { bucket: "<0.10", trades: 9, sessions: 4, winPct: 66.7, avgNet: 49.6 },
-      { bucket: "0.10-0.15", trades: 21, sessions: 5, winPct: 66.7, avgNet: 38.0 },
-      { bucket: "0.15-0.20", trades: 5, sessions: 2, winPct: 40.0, avgNet: -16.5 },
-      { bucket: ">=0.20", trades: 3, sessions: 1, winPct: 33.3, avgNet: -61.5 },
-    ],
-    wing: [
-      { bucket: "50-wide", trades: 26, sessions: 5, winPct: 69.2, avgNet: 37.3 },
-      { bucket: "75-wide", trades: 7, sessions: 2, winPct: 42.9, avgNet: -7.3 },
-      { bucket: "100-wide", trades: 5, sessions: 2, winPct: 40.0, avgNet: -18.4 },
-    ],
-    weekday: [
-      { bucket: "Mon", trades: 9, sessions: 1, winPct: 66.7, avgNet: 32.7 },
-      { bucket: "Tue", trades: 10, sessions: 1, winPct: 60.0, avgNet: 27.5 },
-      { bucket: "Wed", trades: 7, sessions: 1, winPct: 71.4, avgNet: 51.8 },
-      { bucket: "Thu", trades: 6, sessions: 1, winPct: 50.0, avgNet: 12.8 },
-      { bucket: "Fri", trades: 5, sessions: 2, winPct: 40.0, avgNet: -20.4 },
-    ],
-  },
-};
-
-/** The slice the scope names: the arm's own rows, or all of them together. Symbol narrowing joins
- *  the real reader the day MEIC trades a second symbol; the fixture states one. */
-function fixtureForScope(scope: Partial<MeicScope> | undefined): Slice {
-  if (scope?.profile != null && scope.profile !== "") {
-    const arm = PER_ARM[scope.profile];
-    if (arm) return arm;
-  }
-  return ALL;
+  /** The page's session (the header's day select) — "day" scopes to it. Null = latest session. */
+  day: string | null;
+  /** Step the page's session back/forward a day (the header's select follows). Null when the
+   *  manifest carries no day list, in which case the arrows sit disabled. */
+  onDayStep: (delta: -1 | 1) => void;
+  /** Whether the arrows can move at all (the manifest has a session list to step through). */
+  canStepDay: boolean;
 }
 
+const RANGES = ["day", "week", "month", "year", "all"] as const;
+type Range = (typeof RANGES)[number];
 
 /* `+$1,580.00` — signed, grouped, whole-position dollars. The summary's own display format for
  * the hero and charts; the entries table keeps the suite's `fmtCash` vocabulary. */
 function fmtUsd(v: number): string {
   const sign = v < 0 ? "-" : "+";
   return `${sign}$${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/* The window's session label, as the header's day select says it. An ISO date becomes
+ * "Wednesday, October 7, 2026"; an open window (week/month/…) shows the reader's own label. */
+function sessionLabel(iso: string): string {
+  const d = new Date(`${iso}T12:00:00Z`);
+  return d.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
 }
 
 /* ---------------------------------------------------------------------------
@@ -293,22 +82,36 @@ function TsCard({ title, aside, children }: { title: string; aside?: ReactNode; 
   );
 }
 
+/* A card whose payload has nothing for it. Says why, draws nothing — a zero would read as
+ * "traded and broke even", which is a different claim from "no rows in this window". */
+function TsEmpty({ what }: { what: string }) {
+  return (
+    <section className="ts-card">
+      <header className="ts-card-head">
+        <h3>{what}</h3>
+      </header>
+      <p className="ts-empty">no rows in this window</p>
+    </section>
+  );
+}
+
 /* ---------------------------------------------------------------------------
  * Hero net card
  * ------------------------------------------------------------------------- */
 
-function NetCard({ slice }: { slice: Slice }) {
-  const { hero } = slice;
-  const drag = hero.fees / hero.gross;
+function NetCard({ s }: { s: MeicSummarySlice }) {
+  const { hero } = s;
+  const drag = hero.gross > 0 ? hero.fees / hero.gross : null;
+  const label = s.window.label === "day" && s.window.from !== null ? sessionLabel(s.window.from) : s.window.label;
   return (
-    <TsCard title="net p&l" aside={<span className="ts-muted">{slice.session}</span>}>
+    <TsCard title="net p&l" aside={<span className="ts-muted">{label}</span>}>
       <div className={`ts-hero ${hero.net >= 0 ? "ts-pos" : "ts-neg"}`}>{fmtUsd(hero.net)}</div>
       <dl className="ts-kv">
         <div><dt>gross captured</dt><dd className="ts-pos">{fmtUsd(hero.gross)}</dd></div>
         <div><dt>fees</dt><dd className="ts-neg">−{fmtUsd(hero.fees).slice(1)}</dd></div>
         <div><dt>settlement</dt><dd className="ts-neg">−{fmtUsd(hero.settlement).slice(1)}</dd></div>
         <div><dt>open risk</dt><dd>{fmtUsd(hero.openRisk)}</dd></div>
-        <div><dt>fee drag</dt><dd>{(drag * 100).toFixed(1)}%</dd></div>
+        <div><dt>fee drag</dt><dd>{drag === null ? "n/r" : `${(drag * 100).toFixed(1)}%`}</dd></div>
       </dl>
     </TsCard>
   );
@@ -316,7 +119,9 @@ function NetCard({ slice }: { slice: Slice }) {
 
 /* ---------------------------------------------------------------------------
  * Premium-capture gauge — semicircle, needle at the value, arc filling from 0.
- * Angles run 0° (left) to 180° (right); the domain's zero sits at 90°.
+ * Angles run 0° (left) to 180° (right); the domain's zero sits at 90°. The needle clamps to the
+ * domain; the label shows the reader's UNclamped value, so a big day pins the rail but never
+ * misreports its own percentage.
  * ------------------------------------------------------------------------- */
 
 const G = { min: -50, max: 50, cx: 90, cy: 84, r: 70, stroke: 13 };
@@ -337,15 +142,19 @@ function thetaOf(v: number): number {
   return ((t - G.min) / (G.max - G.min)) * 180;
 }
 
-function CaptureGauge({ slice }: { slice: Slice }) {
-  const { value } = slice.capture;
+function CaptureGauge({ s }: { s: MeicSummarySlice }) {
+  const raw = s.captureRawPct;
+  if (raw === null) {
+    return <TsEmpty what="premium capture" />;
+  }
+  const value = s.capturePct ?? 0;
   const zero = thetaOf(0);
   const at = thetaOf(value);
   const [from, to] = value >= 0 ? [zero, at] : [at, zero];
   const [nx, ny] = gpolar(G.r - 18, at);
   return (
     <TsCard title="premium capture">
-      <svg className="ts-gauge" viewBox="0 0 180 104" role="img" aria-label={`capture ${value}%`}>
+      <svg className="ts-gauge" viewBox="0 0 180 104" role="img" aria-label={`capture ${raw.toFixed(1)}%`}>
         <path d={gaugeArc(0, 180)} className="ts-track" strokeWidth={G.stroke} fill="none" strokeLinecap="round" />
         <path d={gaugeArc(from, to)} className={value >= 0 ? "ts-arc-pos" : "ts-arc-neg"} strokeWidth={G.stroke} fill="none" strokeLinecap="round" />
         <line x1={G.cx} y1={G.cy} x2={nx} y2={ny} className="ts-needle" strokeWidth={2} />
@@ -353,14 +162,15 @@ function CaptureGauge({ slice }: { slice: Slice }) {
         <text x={8} y={100} className="ts-tick">{G.min}</text>
         <text x={168} y={100} className="ts-tick">{G.max}</text>
       </svg>
-      <div className={`ts-gauge-value ${value >= 0 ? "ts-pos" : "ts-neg"}`}>{value.toFixed(1)}%</div>
+      <div className={`ts-gauge-value ${raw >= 0 ? "ts-pos" : "ts-neg"}`}>{raw.toFixed(1)}%</div>
       <p className="ts-muted">of premium sold kept after fees</p>
     </TsCard>
   );
 }
 
 /* ---------------------------------------------------------------------------
- * Win-rate arcs — two concentric radial bars, outer = days, inner = entries.
+ * Win-rate arcs — two concentric radial bars, outer = sessions with positive net, inner = the
+ * window's settled trades. Both fractions come from the payload's own counts.
  * ------------------------------------------------------------------------- */
 
 function Ring({ r, fraction, className }: { r: number; fraction: number; className: string }) {
@@ -379,85 +189,93 @@ function Ring({ r, fraction, className }: { r: number; fraction: number; classNa
   );
 }
 
-function WinRateArcs({ slice }: { slice: Slice }) {
-  const { days, entries } = slice.winRate;
-  const dayPct = (days.won / days.of) * 100;
-  const entryPct = (entries.won / entries.of) * 100;
+function WinRateArcs({ s }: { s: MeicSummarySlice }) {
+  const { hero } = s;
+  const tradesOf = hero.trades;
+  const daysOf = hero.daysWon + hero.daysLost;
+  if (tradesOf === 0 && daysOf === 0) return <TsEmpty what="win rate" />;
+  const dayPct = daysOf > 0 ? (hero.daysWon / daysOf) * 100 : 0;
+  const tradePct = tradesOf > 0 ? (hero.wins / tradesOf) * 100 : 0;
   return (
     <TsCard title="win rate">
       <div className="ts-rings">
-        <svg viewBox="0 0 140 140" role="img" aria-label={`days ${dayPct}%, entries ${entryPct}%`}>
+        <svg viewBox="0 0 140 140" role="img" aria-label={`sessions ${dayPct.toFixed(1)}%, trades ${tradePct.toFixed(1)}%`}>
           <Ring r={54} fraction={dayPct / 100} className="ts-ring-days" />
-          <Ring r={36} fraction={entryPct / 100} className="ts-ring-entries" />
+          <Ring r={36} fraction={tradePct / 100} className="ts-ring-entries" />
         </svg>
         <div className="ts-rings-center">
-          <span className="ts-pos">{dayPct.toFixed(0)}%</span>
-          <span className="ts-muted">days</span>
+          <span className={dayPct >= 50 ? "ts-pos" : "ts-neg"}>{dayPct.toFixed(0)}%</span>
+          <span className="ts-muted">sessions</span>
         </div>
       </div>
       <dl className="ts-legend">
-        <div><span className="ts-swatch ts-ring-days" /> days {days.won}/{days.of}</div>
-        <div><span className="ts-swatch ts-ring-entries" /> entries {entries.won}/{entries.of}</div>
+        <div><span className="ts-swatch ts-ring-days" /> sessions {hero.daysWon}/{daysOf}</div>
+        <div><span className="ts-swatch ts-ring-entries" /> trades {hero.wins}/{tradesOf}</div>
       </dl>
     </TsCard>
   );
 }
 
 /* ---------------------------------------------------------------------------
- * By side — put vs call, horizontal bars on a shared scale.
- * The header states what its net covers (exits applied, fees not) so the card
- * reconciles with the hero rather than silently differing from it.
+ * Leg outcomes — `ic_spread_legs` per side: credit the wing SOLD (per-side net is not a ledger
+ * fact), the leg state counts, and the stop cost the wing charged. The header carries the
+ * leg-pair identity the module's margin read is built on; the footer line, the fee bar.
  * ------------------------------------------------------------------------- */
 
-function BySide({ slice }: { slice: Slice }) {
-  const max = Math.max(...slice.sides.map((s) => s.credit));
-  const p = slice.pairs;
+function BySide({ s }: { s: MeicSummarySlice }) {
+  const known = s.legs.filter((l) => l.credit > 0 || l.expired + l.stopped + l.settled + l.other > 0);
+  if (s.pairs.trades === 0 && known.length === 0) return <TsEmpty what="leg outcomes" />;
+  const max = Math.max(...s.legs.map((l) => l.credit), 1);
+  const p = s.pairs;
   return (
     <TsCard
       title="leg outcomes"
       aside={
         <span className="ts-muted">
-          {p.trades} trades · clean {p.cleanPct.toFixed(1)}% · double-stop {p.doubleStopPct.toFixed(1)}%
+          {p.trades} pairs · clean {p.cleanPct === null ? "n/r" : `${p.cleanPct.toFixed(1)}%`} · double-stop{" "}
+          {p.doubleStopPct === null ? "n/r" : `${p.doubleStopPct.toFixed(1)}%`}
         </span>
       }
     >
-      {slice.sides.map((s) => (
-        <div className="ts-side" key={s.side}>
+      {s.legs.map((l) => (
+        <div className="ts-side" key={l.side}>
           <div className="ts-side-head">
-            <span>{s.side}</span>
-            <span className="ts-num ts-pos">credit {fmtUsd(s.credit)}</span>
+            <span>{l.side}</span>
+            <span className="ts-num ts-pos">credit {fmtUsd(l.credit)}</span>
           </div>
           <div className="ts-hbar">
-            <div
-              className="ts-hbar-fill ts-pos"
-              style={{ width: `${((s.credit / max) * 100).toFixed(1)}%` }}
-            />
+            <div className="ts-hbar-fill ts-pos" style={{ width: `${((l.credit / max) * 100).toFixed(1)}%` }} />
           </div>
           <div className="ts-side-sub">
-            {s.legs.expired} expired · {s.legs.stopped} stopped · {s.legs.settled} settled · stop cost −{s.stopCost.toLocaleString("en-US")}
+            {l.expired} expired · {l.stopped} stopped · {l.settled} settled{l.other > 0 ? ` · ${l.other} other` : ""} · stop cost −
+            {l.stopCost.toLocaleString("en-US", { maximumFractionDigits: 2 })}
           </div>
         </div>
       ))}
       <div className="ts-side-sub">
-        fee bar {p.breakevenBarPct.toFixed(1)}% of credit — avg fee over avg credit sold, the module's breakeven identity
+        fee bar {p.breakevenBarPct === null ? "n/r" : `${p.breakevenBarPct.toFixed(1)}%`} of credit — avg fee over avg credit
+        sold, the module's breakeven identity
       </div>
     </TsCard>
   );
 }
 
 /* ---------------------------------------------------------------------------
- * By entry time — a bar per bucket; losses are short markers, per the design.
+ * By entry time — the day's clock: one bar per ET hour band, height by |net|, tone by sign,
+ * losses as short markers. The off-session marker keeps replay/shakedown hours readable.
  * ------------------------------------------------------------------------- */
 
-function ByEntryTime({ slice }: { slice: Slice }) {
-  const max = Math.max(...slice.timeBuckets.map((b) => Math.abs(b.net)));
+function ByEntryTime({ s }: { s: MeicSummarySlice }) {
+  const rows = s.entryTime;
+  if (rows.length === 0) return <TsEmpty what="by entry time" />;
+  const max = Math.max(...rows.map((b) => Math.abs(b.net)), 1);
   return (
     <TsCard title="by entry time">
       <div className="ts-times">
-        {slice.timeBuckets.map((b) => {
+        {rows.map((b) => {
           const h = `${((Math.abs(b.net) / max) * 100).toFixed(1)}%`;
           return (
-            <div className="ts-time" key={b.time} title={`${b.time} — ${fmtUsd(b.net)} ${b.note}`}>
+            <div className="ts-time" key={b.hour} title={`${b.label}${b.offSession ? " (off-session)" : ""} — ${fmtUsd(b.net)} over ${b.count} entries`}>
               <div className="ts-time-area">
                 {b.net >= 0 ? (
                   <div className="ts-vbar ts-pos" style={{ height: h }} />
@@ -465,8 +283,8 @@ function ByEntryTime({ slice }: { slice: Slice }) {
                   <div className="ts-vbar ts-neg ts-marker" style={{ height: h }} />
                 )}
               </div>
-              <div className="ts-time-label">{b.time}</div>
-              <div className="ts-time-sub">{b.net < 0 ? "manual" : b.note}</div>
+              <div className={`ts-time-label${b.offSession ? " ts-off" : ""}`}>{b.hour}h</div>
+              <div className="ts-time-sub">{b.count > 0 ? `${b.count} ent` : ""}</div>
             </div>
           );
         })}
@@ -476,25 +294,26 @@ function ByEntryTime({ slice }: { slice: Slice }) {
 }
 
 /* ---------------------------------------------------------------------------
- * Entries table — the trade-table standard's columns, cut to what a day summary shows. Identity
- * columns first (arm, symbol — MEIC is parallel arms over symbols, so identity IS the summary).
+ * Entries table — the trade-table standard's columns, cut to what a window summary shows. The
+ * rows come from the same reader the session/history tables use, so they cannot disagree.
  * ------------------------------------------------------------------------- */
 
-function EntriesTable({ slice }: { slice: Slice }) {
+function EntriesTable({ s }: { s: MeicSummarySlice }) {
+  if (s.entries.rows.length === 0) return <TsEmpty what="entries" />;
   return (
-    <TsCard title="entries" aside={<span className="ts-muted">{slice.entriesFilled} filled</span>}>
+    <TsCard title="entries" aside={<span className="ts-muted">{s.entries.total} filled in window</span>}>
       <table className="ts-table">
         <thead>
           <tr><th>time</th><th>arm</th><th>sym</th><th className="num">credit</th><th>structure</th><th className="num">net</th></tr>
         </thead>
         <tbody>
-          {slice.entries.map((e) => (
-            <tr key={`${e.time}-${e.arm}`}>
-              <td>{e.time}</td>
+          {s.entries.rows.map((e, i) => (
+            <tr key={`${e.time ?? "?"}-${e.arm}-${i}`}>
+              <td>{e.time ?? "—"}</td>
               <td>{e.arm}</td>
               <td>{e.symbol}</td>
               <td className="num ts-pos">{fmtUsd(e.credit)}</td>
-              <td className="ts-muted">put {e.put} · call {e.call}</td>
+              <td className="ts-muted">{e.structure}</td>
               <td className="num">
                 <span className={e.net >= 0 ? "ts-pos" : "ts-neg"}>{fmtUsd(e.net)}</span>
                 {e.provisional && <span className="ts-badge ts-badge-warn">provisional</span>}
@@ -509,19 +328,25 @@ function EntriesTable({ slice }: { slice: Slice }) {
 
 /* ---------------------------------------------------------------------------
  * Evaluations — the refusal ledger, told twice. A thin funnel bar for the top line (filled share
- * is a proportion of a whole: a bar, not a gauge — a gauge implies a natural scale there isn't),
- * then one horizontal bar per `entry_attempts.outcome`, sorted descending, each labelled with its
- * `block_detail` so "dominant refusal" is readable, not computed by the reader's eye. Bars are
- * NEUTRAL — no tone — because a refusal count has no sign: standing aside is a decision, not a
- * loss, and a gate count must not read as a verdict. The "what the market was" line carries the
- * ledger's other half (GEX sign at refusal, IV rank, session quality), which is the question the
- * ledger exists to answer: is a gate refusing the regime it was built to refuse?
+ * is a proportion of a whole: a bar, not a gauge), then one horizontal bar per
+ * `entry_attempts.outcome`, the payload's order (the taxonomy's own order, count-descending
+ * inside), each labelled with its dominant `block_detail`. Bars are NEUTRAL — no tone — because
+ * a refusal count has no sign: standing aside is a decision, not a loss. The market line carries
+ * the ledger's other half, aggregated server-side over exactly the refused rows the outcomes
+ * count: is a gate refusing the regime it was built to refuse?
  * ------------------------------------------------------------------------- */
 
-function Evaluations({ slice }: { slice: Slice }) {
-  const ev = slice.evaluations;
-  const maxN = Math.max(...ev.reasons.map((r) => r.n));
+function Evaluations({ s }: { s: MeicSummarySlice }) {
+  const ev = s.evaluations;
+  if (ev.evaluated === 0) return <TsEmpty what="evaluations" />;
+  const maxN = Math.max(...ev.outcomes.map((r) => r.n), 1);
   const passPct = (ev.filled / ev.evaluated) * 100;
+  const m = ev.market;
+  const marketBits = [
+    m.gexNegPct !== null ? `GEX− ${(m.gexNegPct).toFixed(0)}% of refusals` : null,
+    m.medianIvRank !== null ? `median IV rank ${m.medianIvRank.toFixed(2)}` : null,
+    m.quality !== null ? `session quality ${m.quality}` : null,
+  ].filter((x) => x !== null);
   return (
     <TsCard title="evaluations">
       <div className="ts-funnel-head">
@@ -535,7 +360,7 @@ function Evaluations({ slice }: { slice: Slice }) {
         <div className="ts-funnel-fill" style={{ width: `${passPct.toFixed(2)}%` }} />
       </div>
       <div className="ts-refusal-bars">
-        {[...ev.reasons].sort((a, b) => b.n - a.n).map((r) => (
+        {ev.outcomes.map((r) => (
           <div className="ts-refusal" key={r.outcome} title={r.dominantDetail ?? r.outcome}>
             <div className="ts-refusal-head">
               <span>{r.outcome.replace(/_/g, " ")}</span>
@@ -548,42 +373,34 @@ function Evaluations({ slice }: { slice: Slice }) {
           </div>
         ))}
       </div>
-      <p className="ts-muted ts-market">{ev.market}</p>
+      <p className="ts-muted ts-market">{marketBits.length > 0 ? `at refusal: ${marketBits.join(" · ")}` : "at refusal: no context recorded"}</p>
     </TsCard>
   );
 }
 
 /* ---------------------------------------------------------------------------
  * Signal breakdown — meic/sessions' deep-analytics block in the summary's bar style. The
- * module's own buckets (delta bands on the short call's |delta| at entry, `CAST(wing_width)
- * || '-wide'`), the module's own three measures (trades, win %, avg net) — rendered as one
- * horizontal bar per bucket, scaled by trades, with the money measure beside it. ERA-scoped
- * like the sessions page's default, so the aside says the window rather than the day; a day
- * with three trades would make every band a coin toss.
+ * module's own buckets, the module's own measures (trades, win %, avg net), rendered as one
+ * horizontal bar per bucket, scaled by trades, with the money measure beside it. Window-scoped
+ * (the toolbar's range), said on the card; a too-thin window would make every band a coin toss,
+ * which is why the range label travels with the numbers.
  * ------------------------------------------------------------------------- */
-
-interface BreakdownRow {
-  bucket: string;
-  trades: number;
-  sessions: number;
-  winPct: number | null;
-  avgNet: number | null;
-}
 
 function SignalBreakdown({
   title,
   rows,
-  scopeNote,
+  windowLabel,
 }: {
   title: string;
-  rows: BreakdownRow[];
-  scopeNote: string;
+  rows: MeicSummarySlice["delta"];
+  windowLabel: string;
 }) {
+  if (rows.length === 0) return <TsEmpty what={title} />;
   const max = Math.max(...rows.map((r) => r.trades), 1);
   return (
-    <TsCard title={title} aside={<span className="ts-muted">{scopeNote}</span>}>
+    <TsCard title={title} aside={<span className="ts-muted">{windowLabel}</span>}>
       {rows.map((r) => (
-        <div className="ts-side" key={r.bucket} title={`${r.trades} trades over ${r.sessions} sessions — avg net per trade ${r.avgNet === null ? "n/r" : fmtUsd(r.avgNet)}`}>
+        <div className="ts-side" key={r.bucket} title={`avg net per trade ${r.avgNet === null ? "n/r" : fmtUsd(r.avgNet)}`}>
           <div className="ts-side-head">
             <span className="ts-num">{r.bucket}</span>
             <span className="ts-num ts-muted">{r.trades} trades</span>
@@ -604,11 +421,13 @@ function SignalBreakdown({
 }
 
 /* ---------------------------------------------------------------------------
- * By arm — one row per arm, its own day across the slide's other cards. The hero is one row of
- * this table; the reason taxes are exit costs charged, never a verdict on the arm.
+ * By arm — one row per arm, its own window across the slide's other cards. The hero is one row
+ * of this table. The comparison card does NOT narrow when an arm is selected — comparing one arm
+ * to itself is meaningless — and says so.
  * ------------------------------------------------------------------------- */
 
-function ByArm() {
+function ByArm({ s }: { s: MeicSummarySlice }) {
+  if (s.arms.length === 0) return <TsEmpty what="by arm" />;
   return (
     <TsCard title="by arm" aside={<span className="ts-muted">every arm — the comparison card does not narrow</span>}>
       <table className="ts-table">
@@ -623,13 +442,13 @@ function ByArm() {
           </tr>
         </thead>
         <tbody>
-          {ALL.arms.map((a) => (
+          {s.arms.map((a) => (
             <tr key={a.arm}>
               <td>{a.arm}</td>
               <td>{a.symbol}</td>
               <td className="num">{a.evaluated.toLocaleString("en-US")}</td>
               <td className="num">{a.filled}</td>
-              <td className="ts-muted">{a.dominant.replace(/_/g, " ")}</td>
+              <td className="ts-muted">{a.dominant === null ? "—" : a.dominant.replace(/_/g, " ")}</td>
               <td className="num">
                 <span className={a.net >= 0 ? "ts-pos" : "ts-neg"}>{fmtUsd(a.net)}</span>
               </td>
@@ -642,14 +461,26 @@ function ByArm() {
 }
 
 /* ---------------------------------------------------------------------------
- * Toolbar — range segmented control and day navigation. Fixture-static.
+ * Toolbar — range segments and day arrows now DRIVE the read: the range picks the reader's
+ * window, the arrows step the page's session. The theme toggle is the one preference the slide
+ * owns (the dark/light choice, persisted like every console pref).
  * ------------------------------------------------------------------------- */
 
-const RANGES = ["day", "week", "month", "year", "all-time"] as const;
-
-function Toolbar({ slice }: { slice: Slice }) {
-  const [range, setRange] = useState<string>("day");
-  const [dayOffset, setDayOffset] = useState(0);
+function Toolbar({
+  range,
+  onRange,
+  label,
+  entriesFilled,
+  canStepDay,
+  onDayStep,
+}: {
+  range: Range;
+  onRange: (r: Range) => void;
+  label: string;
+  entriesFilled: number;
+  canStepDay: boolean;
+  onDayStep: (delta: -1 | 1) => void;
+}) {
   // The light variant is a choice, persisted like every console pref (mirror first render, server
   // copy follows); default dark, never `prefers-color-scheme` — a deliberately dark theme must not
   // flip because the OS said so.
@@ -659,34 +490,19 @@ function Toolbar({ slice }: { slice: Slice }) {
       <h2 className="ts-title">trade summary</h2>
       <div className="ts-seg" role="tablist" aria-label="range">
         {RANGES.map((r) => (
-          <button
-            key={r}
-            role="tab"
-            aria-selected={range === r}
-            className={range === r ? "ts-seg-on" : ""}
-            onClick={() => setRange(r)}
-            title={r === "day" ? undefined : "fixture limit: the prototype renders one day — the reader wires this range"}
-          >
+          <button key={r} role="tab" aria-selected={range === r} className={range === r ? "ts-seg-on" : ""} onClick={() => onRange(r)}>
             {r}
           </button>
         ))}
       </div>
       <div className="ts-daynav">
-        <button
-          aria-label="previous day"
-          title="fixture limit: day navigation is not wired — the reader moves the window"
-          onClick={() => setDayOffset((d) => d - 1)}
-        >
+        <button aria-label="previous day" disabled={!canStepDay} onClick={() => onDayStep(-1)}>
           ‹
         </button>
         <span>
-          {dayOffset === 0 ? slice.session : `day −${-dayOffset} (fixture)`} <span className="ts-muted">· {slice.entriesFilled} entries filled</span>
+          {label} <span className="ts-muted">· {entriesFilled} entries filled</span>
         </span>
-        <button
-          aria-label="next day"
-          title="fixture limit: day navigation is not wired — the reader moves the window"
-          onClick={() => setDayOffset((d) => Math.min(0, d + 1))}
-        >
+        <button aria-label="next day" disabled={!canStepDay || range !== "day"} onClick={() => onDayStep(1)} title={range !== "day" ? "day stepping applies to the day range" : undefined}>
           ›
         </button>
       </div>
@@ -694,43 +510,81 @@ function Toolbar({ slice }: { slice: Slice }) {
         <button className={!light ? "ts-seg-on" : ""} onClick={() => writePref("meicSummaryLight", false)}>dark</button>
         <button className={light ? "ts-seg-on" : ""} onClick={() => writePref("meicSummaryLight", true)}>light</button>
       </div>
-      <span className="ts-badge ts-badge-warn">prototype — fixture data</span>
     </div>
   );
 }
 
-export function MeicSummary({ scope }: MeicSummaryProps) {
+/**
+ * The summary slide. One fetch, one payload; loading and error are stated, never faked — an
+ * error page must not look like an empty window, and an empty window must not look like a
+ * loading page. The badge is gone: every figure on this slide is now the ledger's own.
+ */
+export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSummaryProps) {
   const light = useBoolPref("meicSummaryLight");
-  const slice = fixtureForScope(scope);
+  const [range, setRange] = useState<Range>("day");
+  const q = useMeicSummary({
+    mode,
+    symbol: scope?.symbol ?? null,
+    profile: scope?.profile ?? null,
+    era: scope?.era ?? null,
+    day,
+    range,
+  });
+  if (q.isError) {
+    return (
+      <div className={light ? "ts-root ts-light" : "ts-root"}>
+        <p className="ts-empty">the summary read failed — {q.error instanceof Error ? q.error.message : "unknown error"}</p>
+      </div>
+    );
+  }
+  const s = q.data ?? null;
+  const loading = q.isLoading;
+  const windowLabel =
+    (s?.window.label === "day" && s.window.from !== null ? sessionLabel(s.window.from) : s?.window.label) || "…";
   return (
     <div className={light ? "ts-root ts-light" : "ts-root"}>
-      <Toolbar slice={slice} />
+      <Toolbar
+        range={range}
+        onRange={setRange}
+        label={windowLabel}
+        entriesFilled={s?.hero.trades ?? 0}
+        canStepDay={canStepDay}
+        onDayStep={onDayStep}
+      />
+      {loading && <p className="ts-empty">reading the ledger…</p>}
+      {/* No payload at all (a scope with no ledger rows): one statement, not a wall of empty cards
+          or — worse — a wall of zeros. */}
+      {s === null && <p className="ts-empty">no rows in this window</p>}
+      {s !== null && (
+      <>
       {/* Rows group by the question they answer: money; the trade as built and how it ended
           (leg outcomes + the two geometry cards beside it); the gate's ledger and the arms; when
           we trade (the day's clock beside the era's week); then the ledger itself. */}
       <div className="ts-row ts-row-3">
-        <NetCard slice={slice} />
-        <CaptureGauge slice={slice} />
-        <WinRateArcs slice={slice} />
+        <NetCard s={s} />
+        <CaptureGauge s={s} />
+        <WinRateArcs s={s} />
       </div>
       <div className="ts-row ts-row-3">
-        <BySide slice={slice} />
-        <SignalBreakdown title="by wing width" rows={slice.wing} scopeNote="era, not the day" />
-        <SignalBreakdown title="by short-call delta" rows={slice.delta} scopeNote="era, not the day" />
+        <BySide s={s} />
+        <SignalBreakdown title="by wing width" rows={s.wing} windowLabel={s.window.label} />
+        <SignalBreakdown title="by short-call delta" rows={s.delta} windowLabel={s.window.label} />
       </div>
       <div className="ts-row ts-row-2">
-        <Evaluations slice={slice} />
-        <ByArm />
+        <Evaluations s={s} />
+        <ByArm s={s} />
       </div>
       <div className="ts-row ts-row-2">
-        <ByEntryTime slice={slice} />
-        <SignalBreakdown title="by weekday" rows={slice.weekday} scopeNote="era, not the day" />
+        <ByEntryTime s={s} />
+        <SignalBreakdown title="by weekday" rows={s.weekday} windowLabel={s.window.label} />
       </div>
-      {/* Entries is full width UNDER the signal blocks — the real reader returns every filled entry
-          of the window, a long row of data that a third of a grid cell would cramp. */}
+      {/* Entries is full width UNDER the signal blocks — the window's entries are a long row of
+          data that a third of a grid cell would cramp. */}
       <div className="ts-row">
-        <EntriesTable slice={slice} />
+        <EntriesTable s={s} />
       </div>
+      </>
+      )}
     </div>
   );
 }

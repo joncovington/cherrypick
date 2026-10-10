@@ -4160,3 +4160,15 @@ td > .desk-refusal-reason {
 .ts-table .ts-badge {
   margin-left: 8px;
 }
+
+/* Trade summary prototype — empty-state and off-session additions (wired read). */
+.ts-root .ts-empty {
+  margin: 0;
+  padding: 0.75rem 0 0.25rem;
+  font-size: 0.85rem;
+  color: var(--ts-muted);
+}
+.ts-root .ts-time-label.ts-off {
+  color: var(--ts-muted);
+  opacity: 0.75;
+}

@@ -147,11 +147,29 @@ export function MeicLightbox({ slide }: { slide: string }) {
   const slides: Array<SlideDef & { id: MeicSlideId }> = [
     { id: "session", label: MEIC_LABEL.session, render: () => <MeicSession mode={mode} scope={scopeArgs} /> },
     {
-      // Trade-summary PROTOTYPE — every number is fixture data (see the header comment there).
-      // Not wired to a reader yet; this slide exists to judge the shape in the real app.
+      // Trade summary — the one-read slide (readers/meic.ts, "The summary slide's one read").
+      // Scope, mode and session come from the page's own state; the day arrows step the header's
+      // session select, so every page still names one day.
       id: "summary",
       label: MEIC_LABEL.summary,
-      render: () => <MeicSummary scope={scopeArgs} />,
+      render: () => (
+        <MeicSummary
+          mode={mode}
+          scope={scopeArgs}
+          day={day}
+          canStepDay={(data?.summaries.length ?? 0) > 0}
+          onDayStep={(delta) => {
+            const days = (data?.summaries ?? []).map((sm) => sm.summaryDate).sort();
+            if (days.length === 0) return;
+            const current = day ?? data?.session ?? null;
+            if (current === null) return;
+            const i = days.indexOf(current);
+            if (i < 0) return;
+            const next = days[Math.max(0, Math.min(days.length - 1, i + delta))] ?? null;
+            if (next !== current && next !== null) setDay(next);
+          }}
+        />
+      ),
     },
     { id: "forest", label: MEIC_LABEL.forest, render: () => <MeicForestCard mode={mode} scope={scopeArgs} /> },
     {
