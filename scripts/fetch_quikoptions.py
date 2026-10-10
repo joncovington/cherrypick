@@ -424,7 +424,15 @@ def parse_report(page_html: str) -> dict:
             problems.append(why)
             continue
         tables[name] = read_rows(spec, table)
-    return {"session": session, "tables": tables, "problems": problems}
+    unavailable: dict[str, str] = {}
+    # Since the 2026-10-09 redesign the site draws the Openings list into the OI > 100 panel too:
+    # byte-identical, every OI 0. That panel is the site's fault, not a half-drawn page, so it is
+    # dropped and named rather than costing the five tables that read. Only an exact copy is
+    # dropped; any other wrong row still rejects the capture.
+    if tables.get("voloi") and tables.get("voloi") == tables.get("openings"):
+        del tables["voloi"]
+        unavailable["voloi"] = "the site drew the Openings list in this panel"
+    return {"session": session, "tables": tables, "unavailable": unavailable, "problems": problems}
 
 
 def validate_report(doc: dict, expected: date | None = None) -> list[str]:
