@@ -93,6 +93,34 @@ def test_a_failed_send_is_recorded_as_failed():
     assert rec["ok"] is False and rec["status"] == 400 and rec["message_id"] is None
 
 
+@pytest.mark.parametrize(
+    "body, expected",
+    [
+        (b'{"ok": false, "error_code": 429, "parameters": {"retry_after": 20}}', 20.0),  # Telegram
+        (b'{"retry_after": 7.5}', 7.5),  # Discord
+        (b"{}", 5.0),  # neither says: the default
+    ],
+)
+def test_a_429_waits_the_time_the_service_asked_for(monkeypatch, body, expected):
+    """Telegram puts retry_after under `parameters`; reading only Discord's top-level key waited the
+    5 s default and retried into a second 429 (verified: the old read gives 5.0 for Telegram)."""
+    slept = []
+    monkeypatch.setattr(notifier.time, "sleep", slept.append)
+    calls = []
+
+    def limited_then_ok(req, timeout):
+        calls.append(req)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(req.full_url, 429, "slow down", {}, io.BytesIO(body))
+        return _Resp(200, b"{}")
+
+    out = notifier.send_webhook(
+        "https://api.telegram.example/botX/sendMessage", {"text": "x"}, channel="telegram", source="t",
+        kind="notify", opener=limited_then_ok,
+    )  # fmt: skip
+    assert out["ok"] is True and slept == [expected]
+
+
 def test_slack_gets_no_wait_and_records_its_text():
     seen = []
     notifier.send_webhook(
@@ -193,6 +221,18 @@ def test_notify_send_reads_its_text_from_a_file_and_links_the_correction(tmp_pat
     cli.cmd_sent(_args(date="2026-10-05"))
     out = capsys.readouterr().out
     assert "followed up" in out and "follows up 111" in out
+
+
+def test_notify_send_refuses_a_channel_that_is_not_a_webhook(tmp_path, capsys):
+    """`--channel` choices are shared with secrets-set, which takes telegram; a hand post needs a URL."""
+    from cherrypick import cli
+
+    text = tmp_path / "note.md"
+    text.write_text("hello", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        cli.cmd_notify_send(_args(channel="telegram", file=str(text)))
+    assert "must be one of" in capsys.readouterr().out
+    assert _records() == []
 
 
 def test_notify_send_refuses_without_a_file(monkeypatch):

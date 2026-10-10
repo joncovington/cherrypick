@@ -71,7 +71,10 @@ def env(monkeypatch):
         },
     )
     monkeypatch.setattr(secretsops.notify_secrets, "set_webhook", webhooks.__setitem__)
-    monkeypatch.setattr(secretsops.notify_secrets, "delete_webhook", lambda ch: webhooks.pop(ch, None))
+    # The real contract: True once the secret is gone (deleted or never stored).
+    monkeypatch.setattr(
+        secretsops.notify_secrets, "delete_webhook", lambda ch: webhooks.pop(ch, None) or True
+    )
     monkeypatch.setattr(
         secretsops.accounts, "onboarding_status", lambda cfg, store_factory=None: {"ok": True, "modules": []}
     )
@@ -146,8 +149,23 @@ def test_the_settings_page_never_offers_a_telegram_url_field(env):
     out = secretsops.set_webhook("telegram", "https://example/tg")
     assert out["ok"] is False and "telegram" in out["error"]
     assert out["webhooks"]["telegram"] == "not set"
-    # And the settings page still renders a row per listed channel, including telegram's status.
-    assert set(secretsops.status(env[0])["webhooks"]) == {"slack", "discord", "telegram", "discord_reporting"}
+    # The page still renders a row per listed channel, including telegram's status...
+    status = secretsops.status(env[0])
+    assert set(status["webhooks"]) == {"slack", "discord", "telegram", "discord_reporting"}
+    # ...but offers a URL field only for the URL-shaped ones (the review found the page still
+    # rendered one for telegram, every Set of which was refused).
+    assert "telegram" not in status["url_channels"]
+    assert set(status["url_channels"]) == {"slack", "discord", "discord_reporting"}
+    from cherrypick.orchestrator import settings_serve
+
+    assert "urlChannels.has(ch)" in settings_serve._PAGE
+
+
+def test_a_delete_the_keyring_refused_is_never_reported_as_done(env, monkeypatch):
+    """A keyring error can leave a bearer token stored; 'ok' would tell the operator it was revoked."""
+    monkeypatch.setattr(secretsops.notify_secrets, "delete_webhook", lambda ch: False)
+    out = secretsops.delete_webhook("telegram")
+    assert out["ok"] is False and "could not delete telegram" in out["error"]
 
 
 def test_delete_accepts_every_channel_the_status_page_lists(env):

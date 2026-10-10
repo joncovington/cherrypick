@@ -15,9 +15,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+from cherrypick.notify.secrets import PUSH_CHANNELS
+
 from . import config as cfgmod
 
-KNOWN_CHANNELS = {"log", "desktop", "slack", "discord"}
+# The local channels plus every push channel the notifier can send to, from the one tuple that
+# names them — a hand-kept copy here missed telegram and warned on a correct config.
+KNOWN_CHANNELS = {"log", "desktop", *PUSH_CHANNELS}
 
 # Minimal-but-valid fallback when config.example.json isn't on disk (e.g. a pip-installed copy). Kept
 # intentionally small — the user fills in modules; `validate_config` guides them.

@@ -78,6 +78,8 @@ def status(cfg: dict[str, Any], store_factory=CredentialStore) -> dict[str, Any]
         "ok": True,
         "services": svc_out,
         "webhooks": notify_secrets.status(),
+        # Rows the page may offer a URL field for; any other row (telegram) is status + delete only.
+        "url_channels": list(notify_secrets.WEBHOOKS),
         "onboarding": accounts.onboarding_status(cfg, store_factory=store_factory),
     }
 
@@ -151,5 +153,12 @@ def delete_webhook(channel: str) -> dict[str, Any]:
     known = list(notify_secrets.PUSH_CHANNELS) + list(notify_secrets.DEDICATED)
     if channel not in known:
         return {"ok": False, "error": f"unknown channel: {channel!r} (known: {known})"}
-    notify_secrets.delete_webhook(channel)
+    if not notify_secrets.delete_webhook(channel):
+        # Never report a delete that did not happen: a keyring error can leave a bearer secret
+        # stored, and "done" would tell the operator it was revoked locally.
+        return {
+            "ok": False,
+            "error": f"could not delete {channel} from the keyring (is it unavailable?)",
+            "webhooks": notify_secrets.status(),
+        }
     return {"ok": True, "webhooks": notify_secrets.status()}

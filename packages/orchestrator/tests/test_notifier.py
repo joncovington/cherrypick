@@ -141,6 +141,89 @@ def test_deleting_telegram_removes_both_entries(fake_keyring):
     assert secrets_mod.is_set("telegram") is False
 
 
+def test_an_unavailable_keyring_is_not_reported_as_unset(monkeypatch):
+    def refuse(*_a):
+        raise keyring.errors.KeyringError("locked")
+
+    monkeypatch.setattr(secrets_mod.keyring, "get_password", refuse)
+    assert secrets_mod.state("telegram") == secrets_mod.UNAVAILABLE
+    assert secrets_mod.state("discord") == secrets_mod.UNAVAILABLE
+    assert secrets_mod.is_set("telegram") is False
+    assert secrets_mod.status(["telegram"]) == {"telegram": "keyring unavailable"}
+
+
+def test_delete_says_false_only_when_the_secret_may_still_be_there(fake_keyring, monkeypatch):
+    assert secrets_mod.delete_webhook("slack") is True  # nothing stored: already gone
+
+    def refuse(*_a):
+        raise keyring.errors.KeyringError("locked")
+
+    monkeypatch.setattr(secrets_mod.keyring, "delete_password", refuse)
+    assert secrets_mod.delete_webhook("slack") is False
+    assert secrets_mod.delete_webhook("telegram") is False
+
+
+def test_secrets_set_telegram_takes_both_values_from_flags(fake_keyring, monkeypatch, capsys):
+    """`--url` is the bot token and `--chat-id` the chat; the review found `--url` alone always
+    failed (the chat ID was hard-set to empty). Verified: the old code exits 2 here."""
+    from cherrypick import cli
+
+    monkeypatch.setattr(cli.getpass, "getpass", lambda prompt: pytest.fail(f"prompted: {prompt}"))
+    cli.cmd_secrets_set("telegram", "123:ABC", "456")
+    assert fake_keyring.store == {"telegram_token": "123:ABC", "telegram_chat_id": "456"}
+    assert '"ok": true' in capsys.readouterr().out
+
+
+def test_secrets_set_telegram_prompts_only_for_what_is_missing(fake_keyring, monkeypatch, capsys):
+    from cherrypick import cli
+
+    prompts = []
+    monkeypatch.setattr(cli.getpass, "getpass", lambda prompt: prompts.append(prompt) or "789")
+    cli.cmd_secrets_set("telegram", "123:ABC", None)
+    assert fake_keyring.store["telegram_chat_id"] == "789"
+    assert len(prompts) == 1 and "chat ID" in prompts[0]
+
+
+def test_the_parser_accepts_chat_id():
+    from cherrypick import cli
+
+    args = cli.build_parser().parse_args(
+        ["secrets-set", "--channel", "telegram", "--url", "t", "--chat-id", "c"]
+    )
+    assert (args.url, args.chat_id) == ("t", "c")
+
+
+@pytest.mark.parametrize("cut_at", range(3990, 4001))
+def test_a_long_telegram_message_is_cut_before_escaping_never_through_an_entity(cut_at):
+    """Slicing the ESCAPED text can split `&amp;` or the closing `</b>`, and Telegram rejects the
+    whole message. Swept across the cut so the run of entities lands on the boundary at every
+    offset; checked by round-tripping the escaped body."""
+    import html
+
+    header = "<b>[WARN] cherrypick — t</b>\n"
+    body = "x" * (cut_at - len(header)) + "&&&<<<" + "y" * 50
+    text = notifier_mod._fit_escaped(header, body, notifier_mod._TELEGRAM_TEXT_MAX)
+    assert len(text) <= notifier_mod._TELEGRAM_TEXT_MAX
+    assert text.startswith(header)
+    escaped_body = text[len(header) :]
+    # Every '&' starts a complete entity, and the body round-trips to a prefix of the original.
+    assert html.escape(html.unescape(escaped_body)) == escaped_body
+    assert body.startswith(html.unescape(escaped_body))
+
+
+def test_a_long_title_cannot_push_the_closing_tag_out(temp_floor, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(secrets_mod, "get_telegram_token", lambda: "t")
+    monkeypatch.setattr(secrets_mod, "get_telegram_chat_id", lambda: "c")
+    monkeypatch.setattr(
+        Notifier,
+        "_post_json",
+        staticmethod(lambda url, payload, **r: captured.update(payload) or {"ok": True}),
+    )
+    Notifier({"channels": ["telegram"]}).notify("WARN", "k", "&" * 5000, "body " * 2000)
+    assert "</b>" in captured["text"] and len(captured["text"]) <= notifier_mod._TELEGRAM_TEXT_MAX
+
+
 def test_a_url_is_never_stored_as_a_telegram_webhook(fake_keyring):
     with pytest.raises(ValueError):
         secrets_mod.set_webhook("telegram", "https://example/tg")

@@ -68,6 +68,25 @@ def _utcnow() -> str:
 # Discord (behind Cloudflare) rejects the default "Python-urllib" User-Agent with 403, so every send
 # carries an explicit one. Harmless for Slack.
 USER_AGENT = "cherrypick-notifier/1.0 (+https://github.com/cherrypick)"
+# Telegram's sendMessage cap is 4096 characters; the margin covers how it counts entities.
+_TELEGRAM_TEXT_MAX = 4000
+
+
+def _fit_escaped(prefix: str, body: str, limit: int) -> str:
+    """`prefix` + the HTML-escaped `body`, cut so the whole stays within `limit`. The RAW body is
+    shortened, never the escaped text, so no entity is ever split. Escaping only lengthens, so the
+    raw cut starts at the remaining budget and shrinks by the overshoot until it fits."""
+    import html
+
+    budget = max(limit - len(prefix), 0)
+    raw = body[:budget]
+    escaped = html.escape(raw)
+    while len(escaped) > budget:
+        raw = raw[: len(raw) - (len(escaped) - budget)]
+        escaped = html.escape(raw)
+    return prefix + escaped
+
+
 _REPO = Path(__file__).resolve().parents[5]  # packages/orchestrator/src/cherrypick/notify -> root
 
 
@@ -200,8 +219,11 @@ def send_webhook(
             result["status"] = exc.code
             if exc.code == 429 and attempt == 1:
                 try:
-                    wait = float(json.loads(exc.read().decode() or "{}").get("retry_after", 5))
-                except (ValueError, AttributeError):
+                    body = json.loads(exc.read().decode() or "{}") or {}
+                    # Discord puts it at the top level, Telegram under `parameters`.
+                    after = body.get("retry_after") or (body.get("parameters") or {}).get("retry_after")
+                    wait = float(after if after is not None else 5)
+                except (ValueError, AttributeError, TypeError):
                     wait = 5.0
                 time.sleep(min(max(wait, 0.5), 30.0))
                 continue
@@ -490,8 +512,10 @@ class Notifier:
 
         # Two parts, then joined: one f-string would be a line the formatter and the linter cannot
         # both accept. The [level] prefix rides the bold header; the body is escaped on its own.
-        header = f"<b>[{level}] {html.escape(self.app_name)} — {html.escape(title)}</b>"
-        text = f"{header}\n{html.escape(message)}"[:4000]
+        # Cut BEFORE escaping, never after: slicing escaped text can split an `&amp;` or the closing
+        # `</b>`, and Telegram then rejects the whole message as unparseable HTML.
+        header = f"<b>[{level}] {html.escape(self.app_name)} — {html.escape(title[:300])}</b>"
+        text = _fit_escaped(header + "\n", message, _TELEGRAM_TEXT_MAX)
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
         return self._post_json(url, payload, channel="telegram", **record)

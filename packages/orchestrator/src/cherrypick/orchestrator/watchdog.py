@@ -2545,37 +2545,57 @@ _DELIVERY_WINDOW_SECONDS = 2 * 3600
 _DELIVERY_MIN_FAILURES = 3
 
 
-def _delivery_findings(cfg_channels: list[str], sent: list[dict[str, Any]], push_secret_set) -> list[Finding]:
+# What a push channel's secret is called in a finding. Every name in PUSH_CHANNELS is checked; one
+# missing here just reads "secret". The keys stay `notify.<ch>_webhook` for the URL channels (their
+# history in watchdog state) and `notify.telegram_unconfigured` for telegram.
+_SECRET_NOUN = {"telegram": "bot token and chat ID"}
+
+
+def _delivery_findings(
+    cfg_channels: list[str], sent: list[dict[str, Any]], push_secret_state
+) -> list[Finding]:
     """Is notification delivery itself working? Pure over the outbound record and a secret probe.
     - a configured push channel with no secret stored: every push to it is skipped, and skipped
       pushes are not even recorded -- the one failure the outbound record cannot show;
+    - a keyring that could not be read is said as that, not as a missing secret (re-entering a
+      secret that is fine is the wrong fix);
     - every recorded push in the window failed (at least `_DELIVERY_MIN_FAILURES`): the webhook is
-      revoked, the bot is dead, the service is down, or the network is."""
+      revoked, the bot is dead, the service is down, or the network is.
+
+    `cfg_channels` is every channel ANY push route names (alerts, trade fills, digest, desk), and
+    `push_secret_state(ch)` answers `notify.secrets.state`: "set", "not set" or "keyring unavailable"."""
+    from cherrypick.notify.secrets import PUSH_CHANNELS, SET, UNAVAILABLE
+
     findings = []
-    for ch in ("discord", "slack", "telegram"):
-        if ch in cfg_channels and not push_secret_set(ch):
-            if ch == "telegram":
-                findings.append(
-                    Finding(
-                        "notify.telegram_unconfigured",
-                        WARN,
-                        "telegram is a notification channel but is not configured",
-                        "every telegram push is skipped. `run.py secrets-set --channel telegram` stores "
-                        "the bot token and chat ID.",
-                    )
-                )
-                continue
+    for ch in PUSH_CHANNELS:
+        if ch not in cfg_channels:
+            continue
+        st = push_secret_state(ch)
+        if st == SET:
+            continue
+        key = "notify.telegram_unconfigured" if ch == "telegram" else f"notify.{ch}_webhook"
+        noun = _SECRET_NOUN.get(ch, "webhook")
+        if st == UNAVAILABLE:
             findings.append(
                 Finding(
-                    f"notify.{ch}_webhook",
+                    key,
                     WARN,
-                    f"{ch} is a notification channel but has no webhook",
-                    f"every {ch} push is skipped. `run.py secrets-set --channel {ch}` stores one.",
+                    f"{ch} secret could not be read: the OS keyring is unavailable",
+                    f"{ch} pushes are skipped until it answers. Nothing needs re-entering.",
                 )
             )
+            continue
+        findings.append(
+            Finding(
+                key,
+                WARN,
+                f"{ch} is a notification channel but has no {noun}",
+                f"every {ch} push is skipped. `run.py secrets-set --channel {ch}` stores it.",
+            )
+        )
     by_channel: dict[str, list[dict[str, Any]]] = {}
     for e in sent:
-        if e.get("channel") in ("discord", "slack", "telegram"):
+        if e.get("channel") in PUSH_CHANNELS:
             by_channel.setdefault(e["channel"], []).append(e)
     for ch, entries in sorted(by_channel.items()):
         if len(entries) >= _DELIVERY_MIN_FAILURES and not any(e.get("ok") for e in entries):
@@ -2651,8 +2671,16 @@ def _check_notify_delivery(cfg: dict[str, Any]) -> list[Finding]:
         sent = _notifier.read_outbound(since=since)
     except OSError:
         sent = []
-    channels = list((cfg.get("notify") or {}).get("channels") or [])
-    return _delivery_findings(channels, sent, lambda ch: bool(_secrets.is_set(ch)))
+    # Every route a push can take, not just the alert list: a channel named only in trade_channels
+    # (or the digest's, or the desk's) with no secret skips every fill push without a trace.
+    notify_cfg = cfg.get("notify") or {}
+    channels = {
+        *(notify_cfg.get("channels") or []),
+        *(notify_cfg.get("trade_channels") or []),
+        *cfgmod.status_digest_settings(cfg)["channels"],
+        *cfgmod.desk_notify_settings(cfg)["channels"],
+    }
+    return _delivery_findings(sorted(channels), sent, _secrets.state)
 
 
 def _process_notifications(
