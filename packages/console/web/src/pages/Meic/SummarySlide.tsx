@@ -705,22 +705,25 @@ export function MeicSummary({ scope }: MeicSummaryProps) {
   return (
     <div className={light ? "ts-root ts-light" : "ts-root"}>
       <Toolbar slice={slice} />
+      {/* Rows group by the question they answer: money; the trade as built and how it ended
+          (leg outcomes + the two geometry cards beside it); the gate's ledger and the arms; when
+          we trade (the day's clock beside the era's week); then the ledger itself. */}
       <div className="ts-row ts-row-3">
         <NetCard slice={slice} />
         <CaptureGauge slice={slice} />
         <WinRateArcs slice={slice} />
       </div>
-      <div className="ts-row ts-row-2">
+      <div className="ts-row ts-row-3">
         <BySide slice={slice} />
-        <ByEntryTime slice={slice} />
+        <SignalBreakdown title="by wing width" rows={slice.wing} scopeNote="era, not the day" />
+        <SignalBreakdown title="by short-call delta" rows={slice.delta} scopeNote="era, not the day" />
       </div>
       <div className="ts-row ts-row-2">
         <Evaluations slice={slice} />
         <ByArm />
       </div>
-      <div className="ts-row ts-row-3">
-        <SignalBreakdown title="by short-call delta" rows={slice.delta} scopeNote="era, not the day" />
-        <SignalBreakdown title="by wing width" rows={slice.wing} scopeNote="era, not the day" />
+      <div className="ts-row ts-row-2">
+        <ByEntryTime slice={slice} />
         <SignalBreakdown title="by weekday" rows={slice.weekday} scopeNote="era, not the day" />
       </div>
       {/* Entries is full width UNDER the signal blocks — the real reader returns every filled entry
