@@ -4087,6 +4087,48 @@ td > .desk-refusal-reason {
   color: var(--ts-muted);
 }
 
+/* evaluations — the refusal ledger */
+.ts-funnel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.ts-funnel {
+  height: 8px;
+}
+.ts-funnel-fill {
+  height: 100%;
+  background: var(--ts-accent);
+  border-radius: 4px;
+}
+.ts-refusal-bars {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+.ts-refusal-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-bottom: 3px;
+}
+.ts-refusal-head .ts-num {
+  font-variant-numeric: tabular-nums;
+}
+/* Neutral tone: a refusal count has no sign, so no tone. Deliberately not pos/neg/accent —
+   standing aside is a decision, not a loss, and a gate count must not read as a verdict. */
+.ts-hbar-fill.ts-neutral {
+  background: #64748b;
+}
+.ts-root.ts-light .ts-hbar-fill.ts-neutral {
+  background: #94a3b8;
+}
+.ts-market {
+  margin: 12px 0 0;
+}
+
 /* entries table */
 .ts-table {
   width: 100%;

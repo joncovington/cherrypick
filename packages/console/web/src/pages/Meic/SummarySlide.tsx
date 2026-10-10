@@ -42,6 +42,9 @@ import { useBoolPref, writePref } from "../../lib/prefs";
 const FIXTURE = {
   session: "Wednesday, October 7, 2026",
   entriesFilled: 3,
+  /** Hero net / gross / fees / settlement / open risk — one row per arm in the real reader, so the
+   *  arms rail (the paper control's figure beside each) reconciles with the hero to the cent.
+   *  Reason taxes are exit costs charged, not a verdict on the arm. */
   hero: {
     net: 254, // gross − exit costs − fees − settlement, whole-position dollars
     gross: 1580, // premium sold, entries summed
@@ -62,10 +65,34 @@ const FIXTURE = {
     { time: "14:02", net: 210, note: "credit improved, taken" },
     { time: "15:26", net: 202, note: "eod exit" },
   ],
+  /** Evaluations — the refusal ledger (`entry_attempts`), one row per arm-evaluation with its
+   *  `outcome`. Filled share is a proportion (a bar), not a gauge; the reason bars carry the WHY
+   *  and are sorted descending so the dominant refusal reads first. Bars stay NEUTRAL: standing
+   *  aside is a decision, not a loss, and a refusal count has no sign to tone by. */
+  evaluations: {
+    evaluated: 412,
+    filled: 3,
+    refused: 409,
+    reasons: [
+      { outcome: "gate_blocked", n: 222, dominantDetail: "regime_gex_negative" },
+      { outcome: "cadence_blocked", n: 109, dominantDetail: null },
+      { outcome: "sign_rule_blocked", n: 46, dominantDetail: "call_side_floor" },
+      { outcome: "no_candidate", n: 10, dominantDetail: null },
+      { outcome: "window_blocked", n: 13, dominantDetail: null },
+      { outcome: "no_fill", n: 9, dominantDetail: null },
+    ],
+    // The "what the market was" half — the question the ledger exists to answer: is a gate
+    // refusing the regime it was built to refuse?
+    market: "at refusal: GEX− 74% of evaluations · median IV rank 0.41 · session quality mixed",
+  },
+  arms: [
+    { arm: "control", symbol: "NQ", evaluated: 208, filled: 2, refused: 206, dominant: "gate_blocked", net: 42 },
+    { arm: "wide", symbol: "NQ", evaluated: 204, filled: 1, refused: 203, dominant: "gate_blocked", net: 212 },
+  ],
   entries: [
-    { time: "13:11", credit: 505, put: "stopped", call: "protected", net: -158, provisional: true, note: "manual stop" },
-    { time: "14:02", credit: 560, put: "closed", call: "closed", net: 210, provisional: false, note: "" },
-    { time: "15:26", credit: 515, put: "closed", call: "protected", net: 202, provisional: false, note: "manual" },
+    { time: "13:11", arm: "control", symbol: "NQ", credit: 505, put: "stopped", call: "protected", net: -158, provisional: true, note: "manual stop" },
+    { time: "14:02", arm: "control", symbol: "NQ", credit: 560, put: "closed", call: "closed", net: 210, provisional: false, note: "" },
+    { time: "15:26", arm: "wide", symbol: "NQ", credit: 515, put: "closed", call: "protected", net: 202, provisional: false, note: "manual" },
   ],
 };
 
@@ -264,7 +291,8 @@ function ByEntryTime() {
 }
 
 /* ---------------------------------------------------------------------------
- * Entries table — the trade-table standard's columns, cut to what a day summary shows.
+ * Entries table — the trade-table standard's columns, cut to what a day summary shows. Identity
+ * columns first (arm, symbol — MEIC is parallel arms over symbols, so identity IS the summary).
  * ------------------------------------------------------------------------- */
 
 function EntriesTable() {
@@ -272,17 +300,103 @@ function EntriesTable() {
     <TsCard title="entries" aside={<span className="ts-muted">{FIXTURE.entriesFilled} filled</span>}>
       <table className="ts-table">
         <thead>
-          <tr><th>time</th><th className="num">credit</th><th>structure</th><th className="num">net</th></tr>
+          <tr><th>time</th><th>arm</th><th>sym</th><th className="num">credit</th><th>structure</th><th className="num">net</th></tr>
         </thead>
         <tbody>
           {FIXTURE.entries.map((e) => (
-            <tr key={e.time}>
+            <tr key={`${e.time}-${e.arm}`}>
               <td>{e.time}</td>
+              <td>{e.arm}</td>
+              <td>{e.symbol}</td>
               <td className="num ts-pos">{fmtUsd(e.credit)}</td>
               <td className="ts-muted">put {e.put} · call {e.call}</td>
               <td className="num">
                 <span className={e.net >= 0 ? "ts-pos" : "ts-neg"}>{fmtUsd(e.net)}</span>
                 {e.provisional && <span className="ts-badge ts-badge-warn">provisional</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </TsCard>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Evaluations — the refusal ledger, told twice. A thin funnel bar for the top line (filled share
+ * is a proportion of a whole: a bar, not a gauge — a gauge implies a natural scale there isn't),
+ * then one horizontal bar per `entry_attempts.outcome`, sorted descending, each labelled with its
+ * `block_detail` so "dominant refusal" is readable, not computed by the reader's eye. Bars are
+ * NEUTRAL — no tone — because a refusal count has no sign: standing aside is a decision, not a
+ * loss, and a gate count must not read as a verdict. The "what the market was" line carries the
+ * ledger's other half (GEX sign at refusal, IV rank, session quality), which is the question the
+ * ledger exists to answer: is a gate refusing the regime it was built to refuse?
+ * ------------------------------------------------------------------------- */
+
+function Evaluations() {
+  const ev = FIXTURE.evaluations;
+  const maxN = Math.max(...ev.reasons.map((r) => r.n));
+  const passPct = (ev.filled / ev.evaluated) * 100;
+  return (
+    <TsCard title="evaluations">
+      <div className="ts-funnel-head">
+        <span>
+          <strong className="ts-num">{ev.filled.toLocaleString("en-US")}</strong> filled of{" "}
+          <strong className="ts-num">{ev.evaluated.toLocaleString("en-US")}</strong> evaluated
+        </span>
+        <span className="ts-muted">{ev.refused.toLocaleString("en-US")} refused</span>
+      </div>
+      <div className="ts-hbar ts-funnel">
+        <div className="ts-funnel-fill" style={{ width: `${passPct.toFixed(2)}%` }} />
+      </div>
+      <div className="ts-refusal-bars">
+        {[...ev.reasons].sort((a, b) => b.n - a.n).map((r) => (
+          <div className="ts-refusal" key={r.outcome} title={r.dominantDetail ?? r.outcome}>
+            <div className="ts-refusal-head">
+              <span>{r.outcome.replace(/_/g, " ")}</span>
+              <span className="ts-num">{r.n.toLocaleString("en-US")}</span>
+            </div>
+            <div className="ts-hbar">
+              <div className="ts-hbar-fill ts-neutral" style={{ width: `${((r.n / maxN) * 100).toFixed(1)}%` }} />
+            </div>
+            {r.dominantDetail && <div className="ts-side-sub">{r.dominantDetail}</div>}
+          </div>
+        ))}
+      </div>
+      <p className="ts-muted ts-market">{ev.market}</p>
+    </TsCard>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * By arm — one row per arm, its own day across the slide's other cards. The hero is one row of
+ * this table; the reason taxes are exit costs charged, never a verdict on the arm.
+ * ------------------------------------------------------------------------- */
+
+function ByArm() {
+  return (
+    <TsCard title="by arm" aside={<span className="ts-muted">today, each arm's own day</span>}>
+      <table className="ts-table">
+        <thead>
+          <tr>
+            <th>arm</th>
+            <th>sym</th>
+            <th className="num">eval</th>
+            <th className="num">filled</th>
+            <th>dominant refusal</th>
+            <th className="num">net</th>
+          </tr>
+        </thead>
+        <tbody>
+          {FIXTURE.arms.map((a) => (
+            <tr key={a.arm}>
+              <td>{a.arm}</td>
+              <td>{a.symbol}</td>
+              <td className="num">{a.evaluated.toLocaleString("en-US")}</td>
+              <td className="num">{a.filled}</td>
+              <td className="ts-muted">{a.dominant.replace(/_/g, " ")}</td>
+              <td className="num">
+                <span className={a.net >= 0 ? "ts-pos" : "ts-neg"}>{fmtUsd(a.net)}</span>
               </td>
             </tr>
           ))}
@@ -343,6 +457,10 @@ export function MeicSummary() {
       <div className="ts-row ts-row-2">
         <BySide />
         <ByEntryTime />
+      </div>
+      <div className="ts-row ts-row-2">
+        <Evaluations />
+        <ByArm />
       </div>
       <div className="ts-row">
         <EntriesTable />

@@ -29,10 +29,23 @@ const FIXTURE = {
     { time: "14:02", net: 210 },
     { time: "15:26", net: 202 },
   ],
+  evaluations: {
+    evaluated: 412,
+    filled: 3,
+    refused: 409,
+    reasons: [
+      { outcome: "gate_blocked", n: 222, dominantDetail: "regime_gex_negative" },
+      { outcome: "cadence_blocked", n: 109, dominantDetail: null },
+    ],
+  },
+  arms: [
+    { arm: "control", symbol: "NQ", evaluated: 208, filled: 2, refused: 206, dominant: "gate_blocked", net: 42 },
+    { arm: "wide", symbol: "NQ", evaluated: 204, filled: 1, refused: 203, dominant: "gate_blocked", net: 212 },
+  ],
   entries: [
-    { time: "13:11", credit: 505, net: -158 },
-    { time: "14:02", credit: 560, net: 210 },
-    { time: "15:26", credit: 515, net: 202 },
+    { time: "13:11", arm: "control", symbol: "NQ", credit: 505, net: -158 },
+    { time: "14:02", arm: "control", symbol: "NQ", credit: 560, net: 210 },
+    { time: "15:26", arm: "wide", symbol: "NQ", credit: 515, net: 202 },
   ],
 };
 
@@ -49,6 +62,28 @@ describe("MeicSummary (trade-summary prototype)", () => {
     for (const b of FIXTURE.timeBuckets) expect(page).toContain(b.time);
     expect(page).toContain("+$210.00"); // best bucket
     expect(page).toContain("13:11"); // entries table times
+  });
+
+  it("renders the refusal ledger verbatim, dominant reason first, bars untoneed", () => {
+    const page = html(<MeicSummary />);
+    expect(page).toContain(" filled of ");
+    expect(page).toContain("412");
+    expect(page).toContain("409 refused");
+    // Sorted descending — the dominant refusal reads first.
+    expect(page.indexOf("gate blocked")).toBeLessThan(page.indexOf("cadence blocked"));
+    expect(page).toContain("regime_gex_negative"); // the dominant block_detail
+    expect(page).toContain("ts-hbar-fill ts-neutral"); // refusal bars carry no tone
+    expect(page).not.toMatch(/ts-refusal[^"]*ts-(pos|neg)/); // and no pos/neg anywhere near them
+  });
+
+  it("renders the by-arm card with identity and the dominant refusal", () => {
+    const page = html(<MeicSummary />);
+    expect(page).toContain("control");
+    expect(page).toContain("wide");
+    expect(page).toContain("412"); // evaluated, summed over arms
+    expect(page).toContain("+$42.00"); // control's net
+    expect(page).toContain("+$212.00"); // wide's net
+    for (const e of FIXTURE.entries) expect(page).toContain(e.arm); // identity columns in entries
   });
 
   it("defaults to the dark palette; the light variant is a deliberate choice, not a default", () => {
