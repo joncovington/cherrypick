@@ -51,6 +51,13 @@ describe("MeicSummary (trade-summary prototype)", () => {
     expect(page).toContain("13:11"); // entries table times
   });
 
+  it("defaults to the dark palette; the light variant is a deliberate choice, not a default", () => {
+    const page = html(<MeicSummary />);
+    expect(page).toContain("ts-theme-seg"); // the toggle control exists
+    expect(page).toContain(">light</button>"); // with a light choice on it
+    expect(page).not.toContain("ts-root ts-light"); // and dark renders first (no pref stored)
+  });
+
   it("renders zero-weight losses as a marker, wins as bars", () => {
     const page = html(<MeicSummary />);
     expect(page).toContain("ts-marker"); // the 13:11 loss bucket
@@ -60,6 +67,14 @@ describe("MeicSummary (trade-summary prototype)", () => {
   it("carries the prototype badge — fixture data never presents as the session", () => {
     const page = html(<MeicSummary />);
     expect(page).toContain("prototype — fixture data");
+  });
+
+  it("legend swatches state their colour rather than inheriting the text colour", () => {
+    // Shown to fail: `background: currentColor` on the swatch rendered both white. The colour
+    // classes the rings use are the ones the swatches use, so a legend cannot drift from its arc.
+    const page = html(<MeicSummary />);
+    expect(page).toContain("ts-swatch ts-ring-days");
+    expect(page).toContain("ts-swatch ts-ring-entries");
   });
 
   it("does not wire a query or reader yet — stub refusal is honest", () => {

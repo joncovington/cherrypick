@@ -34,6 +34,7 @@
  * tone rule applied to pixels.
  */
 import { useState, type ReactNode } from "react";
+import { useBoolPref, writePref } from "../../lib/prefs";
 /* ---------------------------------------------------------------------------
  * Fixture data — the ONLY thing a real implementation replaces.
  * ------------------------------------------------------------------------- */
@@ -299,6 +300,10 @@ const RANGES = ["day", "week", "month", "year", "all-time"] as const;
 
 function Toolbar() {
   const [range, setRange] = useState<string>("day");
+  // The light variant is a choice, persisted like every console pref (mirror first render, server
+  // copy follows); default dark, never `prefers-color-scheme` — a deliberately dark theme must not
+  // flip because the OS said so.
+  const light = useBoolPref("meicSummaryLight");
   return (
     <div className="ts-toolbar">
       <h2 className="ts-title">trade summary</h2>
@@ -316,14 +321,19 @@ function Toolbar() {
         </span>
         <button aria-label="next day">›</button>
       </div>
+      <div className="ts-seg ts-theme-seg" role="group" aria-label="theme">
+        <button className={!light ? "ts-seg-on" : ""} onClick={() => writePref("meicSummaryLight", false)}>dark</button>
+        <button className={light ? "ts-seg-on" : ""} onClick={() => writePref("meicSummaryLight", true)}>light</button>
+      </div>
       <span className="ts-badge ts-badge-warn">prototype — fixture data</span>
     </div>
   );
 }
 
 export function MeicSummary() {
+  const light = useBoolPref("meicSummaryLight");
   return (
-    <div className="ts-root">
+    <div className={light ? "ts-root ts-light" : "ts-root"}>
       <Toolbar />
       <div className="ts-row ts-row-3">
         <NetCard />

@@ -3732,7 +3732,7 @@ td > .desk-refusal-reason {
  * scope is dropped. Fixture data only (SummarySlide.tsx) — no reader backs it yet.
  * ------------------------------------------------------------------------- */
 .ts-root {
-  /* palette (reference design, dark theme) */
+  /* palette (reference design, dark theme — the default while judged) */
   --ts-canvas: #0f1115;
   --ts-card: #1a1d23;
   --ts-border: #262a32;
@@ -3750,6 +3750,24 @@ td > .desk-refusal-reason {
   padding: 16px;
   display: grid;
   gap: 14px;
+}
+
+/* Light variant — the reference design's light theme (canvas F6F8F9, white cards, emerald green).
+   Same components, second token set; a deliberate choice on the slide's own toggle, persisted in
+   the console's prefs mirror, never `prefers-color-scheme` (which would flip the look for a user
+   who chose dark deliberately). */
+.ts-root.ts-light {
+  --ts-canvas: #f6f8f9;
+  --ts-card: #ffffff;
+  --ts-border: #e5e7eb;
+  --ts-accent: #3761e1;
+  --ts-pos: #208a56;
+  --ts-neg: #c2372c;
+  --ts-warn: #92610a;
+  --ts-text: #111827;
+  --ts-muted: #6b7280;
+  --ts-track: #e5e7eb;
+  --ts-needle: #111827;
 }
 
 .ts-row {
@@ -3842,6 +3860,14 @@ td > .desk-refusal-reason {
   background: var(--ts-accent);
   color: #fff;
 }
+/* The theme toggle reads as a control of the console chrome around the slide, not the slide's own
+   palette — in the light variant it keeps the chrome's text colour on its unselected buttons. */
+.ts-theme-seg button {
+  color: var(--text-muted);
+}
+.ts-theme-seg button.ts-seg-on {
+  color: #fff;
+}
 .ts-daynav {
   display: inline-flex;
   align-items: center;
@@ -3914,8 +3940,8 @@ td > .desk-refusal-reason {
   stroke: var(--ts-neg);
 }
 .ts-needle {
-  stroke: #fff;
-  fill: #fff;
+  stroke: var(--ts-needle, #fff);
+  fill: var(--ts-needle, #fff);
 }
 .ts-tick {
   fill: var(--ts-muted);
@@ -3976,8 +4002,15 @@ td > .desk-refusal-reason {
   width: 10px;
   height: 10px;
   border-radius: 3px;
-  background: currentColor;
   display: inline-block;
+}
+/* A swatch states its colour — the ring class it is paired with — rather than inheriting the
+   legend text's; `background: currentColor` rendered both swatches white (shown to fail). */
+.ts-swatch.ts-ring-days {
+  background: var(--ts-pos);
+}
+.ts-swatch.ts-ring-entries {
+  background: var(--ts-accent);
 }
 
 /* by side */
