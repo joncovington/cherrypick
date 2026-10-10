@@ -51,6 +51,7 @@ from .util import (
     CREATE_NO_WINDOW,
     NEW_SESSION,
     atomic_write_json,
+    file_holders,
     pid_alive,
     port_owner_pid,
     read_json,
@@ -948,9 +949,18 @@ class Supervisor:
             last = getattr(self, "_state_write_logged", 0.0)
             if time.time() - last >= STATE_WRITE_LOG_SECONDS:
                 self._state_write_logged = time.time()
+                # Asked at once, while the holder is still likely to be there: the two skips of
+                # 2026-10-09 could not be pinned on anyone afterwards.
+                holders = file_holders([p for p in (exc.filename, exc.filename2) if p])
+                if holders:
+                    who = f"; held by {', '.join(holders)}"
+                elif holders == []:
+                    who = "; Restart Manager names no process, so a kernel filter (antivirus, indexer)"
+                else:
+                    who = ""
                 _log(
                     f"{what} write skipped this pass ({self._state_write_skips} so far): another "
-                    f"process held the file -- {exc}"
+                    f"process held the file -- {exc}{who}"
                 )
 
     def _fixed_start_hold(self, spec: jobspec.JobSpec, browser_busy: bool) -> str | None:

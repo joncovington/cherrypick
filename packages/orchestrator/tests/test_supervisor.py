@@ -638,12 +638,17 @@ def test_a_state_file_windows_will_not_replace_is_skipped_not_fatal(spawned, mon
         real(path, obj)
 
     monkeypatch.setattr(supervisor, "atomic_write_json", refuse)
+    asked = []
+    monkeypatch.setattr(
+        supervisor, "file_holders", lambda paths: asked.append(paths) or ["MsMpEng.exe (pid 4242)"]
+    )
     sup = supervisor.Supervisor(base_cfg())
     sup.pass_once(now=MONDAY_NOON)  # must not raise
     sup.pass_once(now=MONDAY_NOON)
     log = cfgmod.log_file("supervisor.log").read_text(encoding="utf-8")
     assert log.count("write skipped this pass") == 1  # throttled: one line, not one per pass
     assert "job registry write skipped" in log and "another process held the file" in log
+    assert "held by MsMpEng.exe (pid 4242)" in log and asked == [[str(supervisor.jobs_path())]]
     held.clear()
     sup._last_heartbeat = 0.0
     sup.pass_once(now=MONDAY_NOON)
