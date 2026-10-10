@@ -64,6 +64,16 @@ describe("MeicSummary (trade-summary prototype)", () => {
     expect(page).toContain("13:11"); // entries table times
   });
 
+  it("renders the fixture's era blocks, sums reconciling across arms", () => {
+    // The era blocks' trades split between arms must sum to the unscoped block — the same
+    // identity the hero carries, on the same fixture. (9+9, 21+21, 6+5, 3+3.)
+    const page = html(<MeicSummary />);
+    expect(page).toContain("18 trades");
+    expect(page).toContain("42 trades");
+    // Every era-bucket bar in the summary draws from the same rows the by-arm card sums.
+    expect(page).toContain("50-wide");
+  });
+
   it("renders the refusal ledger verbatim, dominant reason first, bars untoneed", () => {
     const page = html(<MeicSummary />);
     expect(page).toContain(" filled of ");
@@ -116,6 +126,34 @@ describe("MeicSummary (trade-summary prototype)", () => {
     // The slide takes the manifest header's scope (symbol/arm selects) and nothing else; when a
     // reader lands, this test is replaced by the mirror test pinning it to the ledger.
     expect(MeicSummary.length).toBe(1); // exactly one prop: scope
+  });
+
+  it("renders the sessions-page signal blocks, the module's buckets and measures, era-scoped", () => {
+    const page = html(<MeicSummary />);
+    // Titles as the sessions page names them (lowercase in the summary's card style).
+    expect(page).toContain("by short-call delta");
+    expect(page).toContain("by wing width");
+    // The module's bucket SQL verbatim — angle brackets render escaped, so the raw forms.
+    for (const b of ["&lt;0.10", "0.10-0.15", "0.15-0.20", "&gt;=0.20", "50-wide", "75-wide", "100-wide"]) {
+      expect(page).toContain(b);
+    }
+    // Era-scoped, said on the card — a day's three trades would make every band a coin toss.
+    expect(page).toContain("era, not the day");
+    // The module's three measures per bucket.
+    expect(page).toContain("52 trades");
+    expect(page).toContain("71.2%");
+    expect(page).toContain("$31.00");
+  });
+
+  it("tones every breakdown bar by the sign of its bucket's avg net", () => {
+    const page = html(<MeicSummary />);
+    // Each bucket's title carries its avg net's sign; the bar drawn inside it must tone the same
+    // way — never a hardcoded colour. Shown to fail by hardcoding the bar's class to ts-pos.
+    const buckets = [...page.matchAll(/title="(\d+) trades over[^\"]*avg net per trade ([+\-−])\$[^\"]*"[\s\S]*?ts-hbar-fill ts-(pos|neg)/g)];
+    expect(buckets.length).toBeGreaterThanOrEqual(6);
+    for (const [, , sign, tone] of buckets) {
+      expect(tone).toBe(sign === "-" || sign === "−" ? "neg" : "pos");
+    }
   });
 
   it("narrows by arm, and the arms' sums still equal the unscoped day", () => {

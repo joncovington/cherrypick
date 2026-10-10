@@ -17,6 +17,11 @@
  * - by entry time — ledger entry timestamps, bucketed; same new reader.
  * - entries table — the trade-table standard columns (time, credit, sides, net), which is why
  *   the columns below mirror the standard's identity: credit − exit − costs = net per row.
+ * - by short-call delta / by wing width — meic/sessions' own deep-analytics buckets
+ *   (`readMeicDeepAnalytics`'s `byDelta`/`byWing`, bucket SQL verbatim: delta bands on the short
+ *   call's |delta| at entry, `CAST(wing_width) || '-wide'`). ERA-scoped like the sessions page
+ *   defaults, not the day — the card says so — and trades/win%/avg net are the module's own
+ *   three measures; the real reader re-derives avg net per slice (never an average of averages).
  *
  * The "provisional" badge marks a net figure that is a mark, not a settlement — the same
  * mid-is-not-a-fill honesty the Live page uses, until a reader defines it for real.
@@ -109,6 +114,21 @@ const ALL = {
     { time: "14:02", arm: "control", symbol: "NQ", credit: 560, put: "closed", call: "closed", net: 210, provisional: false, note: "" },
     { time: "15:26", arm: "wide", symbol: "NQ", credit: 515, put: "closed", call: "protected", net: 202, provisional: false, note: "manual" },
   ],
+  /** Signal breakdowns — meic/sessions' deep-analytics blocks, era-scoped like that page's
+   *  default. Trades/win%/avg net are the module's own three measures per bucket; avg net is
+   *  re-derived from every row in the bucket, never an average of averages. A real day can leave
+   *  a band empty; a bar can hold at zero. */
+  delta: [
+    { bucket: "<0.10", trades: 18, sessions: 7, winPct: 66.7, avgNet: 35.5 },
+    { bucket: "0.10-0.15", trades: 42, sessions: 9, winPct: 69.0, avgNet: 28.1 },
+    { bucket: "0.15-0.20", trades: 11, sessions: 4, winPct: 45.5, avgNet: -12.3 },
+    { bucket: ">=0.20", trades: 6, sessions: 3, winPct: 33.3, avgNet: -41.0 },
+  ],
+  wing: [
+    { bucket: "50-wide", trades: 52, sessions: 9, winPct: 71.2, avgNet: 31.0 },
+    { bucket: "75-wide", trades: 14, sessions: 5, winPct: 50.0, avgNet: -5.2 },
+    { bucket: "100-wide", trades: 11, sessions: 4, winPct: 45.5, avgNet: -12.3 },
+  ],
 };
 
 /** The per-arm slice — what the real reader returns for one arm's rows of the ledger. Same shape
@@ -146,6 +166,17 @@ const PER_ARM: Record<string, Slice> = {
       { time: "13:11", arm: "control", symbol: "NQ", credit: 505, put: "stopped", call: "protected", net: -158, provisional: true, note: "manual stop" },
       { time: "14:02", arm: "control", symbol: "NQ", credit: 560, put: "closed", call: "closed", net: 210, provisional: false, note: "" },
     ],
+    delta: [
+      { bucket: "<0.10", trades: 9, sessions: 5, winPct: 66.7, avgNet: 21.4 },
+      { bucket: "0.10-0.15", trades: 21, sessions: 6, winPct: 71.4, avgNet: 18.2 },
+      { bucket: "0.15-0.20", trades: 6, sessions: 2, winPct: 50.0, avgNet: -8.1 },
+      { bucket: ">=0.20", trades: 3, sessions: 2, winPct: 33.3, avgNet: -20.5 },
+    ],
+    wing: [
+      { bucket: "50-wide", trades: 26, sessions: 6, winPct: 73.1, avgNet: 24.7 },
+      { bucket: "75-wide", trades: 7, sessions: 3, winPct: 57.1, avgNet: -3.1 },
+      { bucket: "100-wide", trades: 6, sessions: 2, winPct: 50.0, avgNet: -6.2 },
+    ],
   },
   wide: {
     ...ALL,
@@ -173,6 +204,17 @@ const PER_ARM: Record<string, Slice> = {
     },
     entries: [
       { time: "15:26", arm: "wide", symbol: "NQ", credit: 515, put: "closed", call: "protected", net: 202, provisional: false, note: "manual" },
+    ],
+    delta: [
+      { bucket: "<0.10", trades: 9, sessions: 4, winPct: 66.7, avgNet: 49.6 },
+      { bucket: "0.10-0.15", trades: 21, sessions: 5, winPct: 66.7, avgNet: 38.0 },
+      { bucket: "0.15-0.20", trades: 5, sessions: 2, winPct: 40.0, avgNet: -16.5 },
+      { bucket: ">=0.20", trades: 3, sessions: 1, winPct: 33.3, avgNet: -61.5 },
+    ],
+    wing: [
+      { bucket: "50-wide", trades: 26, sessions: 5, winPct: 69.2, avgNet: 37.3 },
+      { bucket: "75-wide", trades: 7, sessions: 2, winPct: 42.9, avgNet: -7.3 },
+      { bucket: "100-wide", trades: 5, sessions: 2, winPct: 40.0, avgNet: -18.4 },
     ],
   },
 };
@@ -461,6 +503,56 @@ function Evaluations({ slice }: { slice: Slice }) {
 }
 
 /* ---------------------------------------------------------------------------
+ * Signal breakdown — meic/sessions' deep-analytics block in the summary's bar style. The
+ * module's own buckets (delta bands on the short call's |delta| at entry, `CAST(wing_width)
+ * || '-wide'`), the module's own three measures (trades, win %, avg net) — rendered as one
+ * horizontal bar per bucket, scaled by trades, with the money measure beside it. ERA-scoped
+ * like the sessions page's default, so the aside says the window rather than the day; a day
+ * with three trades would make every band a coin toss.
+ * ------------------------------------------------------------------------- */
+
+interface BreakdownRow {
+  bucket: string;
+  trades: number;
+  sessions: number;
+  winPct: number | null;
+  avgNet: number | null;
+}
+
+function SignalBreakdown({
+  title,
+  rows,
+  scopeNote,
+}: {
+  title: string;
+  rows: BreakdownRow[];
+  scopeNote: string;
+}) {
+  const max = Math.max(...rows.map((r) => r.trades), 1);
+  return (
+    <TsCard title={title} aside={<span className="ts-muted">{scopeNote}</span>}>
+      {rows.map((r) => (
+        <div className="ts-side" key={r.bucket} title={`${r.trades} trades over ${r.sessions} sessions — avg net per trade ${r.avgNet === null ? "n/r" : fmtUsd(r.avgNet)}`}>
+          <div className="ts-side-head">
+            <span className="ts-num">{r.bucket}</span>
+            <span className="ts-num ts-muted">{r.trades} trades</span>
+          </div>
+          <div className="ts-hbar">
+            <div
+              className={`ts-hbar-fill ${r.avgNet === null ? "ts-neutral" : r.avgNet >= 0 ? "ts-pos" : "ts-neg"}`}
+              style={{ width: `${((r.trades / max) * 100).toFixed(1)}%` }}
+            />
+          </div>
+          <div className="ts-side-sub">
+            win {r.winPct === null ? "n/r" : `${r.winPct.toFixed(1)}%`} · avg net {r.avgNet === null ? "n/r" : fmtUsd(r.avgNet)}/trade
+          </div>
+        </div>
+      ))}
+    </TsCard>
+  );
+}
+
+/* ---------------------------------------------------------------------------
  * By arm — one row per arm, its own day across the slide's other cards. The hero is one row of
  * this table; the reason taxes are exit costs charged, never a verdict on the arm.
  * ------------------------------------------------------------------------- */
@@ -555,7 +647,9 @@ export function MeicSummary({ scope }: MeicSummaryProps) {
         <Evaluations slice={slice} />
         <ByArm />
       </div>
-      <div className="ts-row">
+      <div className="ts-row ts-row-3">
+        <SignalBreakdown title="by short-call delta" rows={slice.delta} scopeNote="era, not the day" />
+        <SignalBreakdown title="by wing width" rows={slice.wing} scopeNote="era, not the day" />
         <EntriesTable slice={slice} />
       </div>
     </div>
