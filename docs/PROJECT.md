@@ -107,7 +107,7 @@ any text editor — every key is documented inline in `packages/orchestrator/con
 
 **2. Your tastytrade login.** The installer stored it in your operating system's secure keyring (never
 in a file). To change it, choose which account the suite would use *if* you ever enable live trading,
-or add Discord/Slack alerts, run the wizard:
+or add Discord/Slack/Telegram alerts, run the wizard:
 
 ```bash
 python run.py connect
@@ -209,17 +209,19 @@ one the next morning, once the overnight earnings plays have settled. To turn it
 **Push notifications are off by default.** Out of the box every alert goes only to the suite's log,
 and the console shows its own on-screen trade toasts, which are always on and need no setting. To be
 told away from the console, add channels in `~/.cherrypick/config.json`: `notify.channels` (warnings)
-and `notify.trade_channels` (fills) accept **`log`** (always kept), **`desktop`**, **`discord`** and
-**`slack`**. You will then get:
+and `notify.trade_channels` (fills) accept **`log`** (always kept), **`desktop`**, **`discord`**,
+**`slack`** and **`telegram`**. You will then get:
 
 - a **notification when a new paper trade fills**, and
 - a **warning if something stalls** (the data feed going quiet mid-session, say), so a silent gap
   does not go unnoticed.
 
-Discord and Slack need a webhook, stored in the keyring rather than the config file:
+Discord and Slack need a webhook, and Telegram a bot token and a chat ID — all stored in the keyring
+rather than the config file:
 
 ```bash
 python run.py secrets-set --channel discord      # store a webhook in the keyring (paste when prompted)
+python run.py secrets-set --channel telegram     # prompts for the bot token, then the chat ID
 python run.py notify-test                        # check that alerts actually reach you
 ```
 
@@ -305,7 +307,7 @@ next.
   the engines correctly sit on their hands. Check `status` to confirm the supervisor is running.
 - **No alerts arriving?** Run `notify-test`; if desktop/Discord do not show up, re-check the `notify`
   channels in `~/.cherrypick/config.json` and (for Discord/Slack) that you stored the webhook with
-  `secrets-set`.
+  `secrets-set`, or (for Telegram) the bot token and chat ID the same command prompts for.
 - **Laptop keeps sleeping.** `packages/orchestrator/tools/setup-walkaway-durability.ps1` keeps a
   Windows machine awake and running scheduled tasks while you are away.
 

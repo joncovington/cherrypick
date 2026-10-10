@@ -78,6 +78,8 @@ def status(cfg: dict[str, Any], store_factory=CredentialStore) -> dict[str, Any]
         "ok": True,
         "services": svc_out,
         "webhooks": notify_secrets.status(),
+        # Rows the page may offer a URL field for; any other row (telegram) is status + delete only.
+        "url_channels": list(notify_secrets.WEBHOOKS),
         "onboarding": accounts.onboarding_status(cfg, store_factory=store_factory),
     }
 
@@ -125,6 +127,16 @@ def delete_secret(cfg: dict[str, Any], service: str, key: str, store_factory=Cre
 
 
 def set_webhook(channel: str, url: str) -> dict[str, Any]:
+    if channel == "telegram":
+        # The settings page renders a URL field per status() row, and telegram has one, but a
+        # Telegram bot takes a bot token and a chat ID — never a URL. Say so rather than storing
+        # a `telegram_webhook` entry nothing reads.
+        return {
+            "ok": False,
+            "error": "telegram takes a bot token and a chat ID, not a URL "
+            "(run: cherrypick secrets-set --channel telegram)",
+            "webhooks": notify_secrets.status(),
+        }
     if channel not in notify_secrets.WEBHOOKS:
         known = list(notify_secrets.WEBHOOKS)
         return {"ok": False, "error": f"unknown channel: {channel!r} (known: {known})"}
@@ -135,8 +147,18 @@ def set_webhook(channel: str, url: str) -> dict[str, Any]:
 
 
 def delete_webhook(channel: str) -> dict[str, Any]:
-    if channel not in notify_secrets.WEBHOOKS:
-        known = list(notify_secrets.WEBHOOKS)
+    # Deleting works for every push channel, telegram included (its two entries), plus the
+    # dedicated webhooks — a superset of what `set_webhook` accepts, since delete must be able to
+    # remove anything `status()` shows.
+    known = list(notify_secrets.PUSH_CHANNELS) + list(notify_secrets.DEDICATED)
+    if channel not in known:
         return {"ok": False, "error": f"unknown channel: {channel!r} (known: {known})"}
-    notify_secrets.delete_webhook(channel)
+    if not notify_secrets.delete_webhook(channel):
+        # Never report a delete that did not happen: a keyring error can leave a bearer secret
+        # stored, and "done" would tell the operator it was revoked locally.
+        return {
+            "ok": False,
+            "error": f"could not delete {channel} from the keyring (is it unavailable?)",
+            "webhooks": notify_secrets.status(),
+        }
     return {"ok": True, "webhooks": notify_secrets.status()}

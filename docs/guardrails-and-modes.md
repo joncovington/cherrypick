@@ -144,8 +144,9 @@ streamer or a dead managed service. It never places, cancels, or closes an order
 **Account numbers are masked** to the last 4 digits (`****1234`) anywhere they surface in logs or output;
 only the write to the keyring uses the full number.
 
-**Credentials in the OS keyring only** — broker OAuth tokens (in the modules) and Slack/Discord webhooks
-(in the orchestrator) live in the OS keyring, never in files, env vars, or logs.
+**Credentials in the OS keyring only** — broker OAuth tokens (in the modules) and the notification
+secrets (in the orchestrator: Slack/Discord webhook URLs, and Telegram's bot token and chat ID as two
+entries) live in the OS keyring, never in files, env vars, or logs.
 
 **The shared-credential model** (see [onboarding-redesign.md](history/onboarding-redesign.md)): the tastytrade
 login lives once in the shared `cherrypick-broker` keyring service, which every module's store reads

@@ -290,7 +290,10 @@ filename; override with `paper.sla_state_prefix`.
 
 - **Scratch work lives in a gitignored `.tmp/`** (or the job temp dir) and is deleted when finished.
   Layout: `src/`, `tests/`, `docs/`, `config/` — nothing in the repo root.
-- **Credentials in the OS keyring only** — broker tokens in the modules, Slack/Discord webhooks here;
+- **Credentials in the OS keyring only** — broker tokens in the modules, notification secrets here
+  (Slack/Discord webhook URLs; Telegram stores a bot token and a chat ID — two entries, never a
+  `telegram_webhook` URL, and `notify.secrets.PUSH_CHANNELS` is the tuple every push-channel
+  enumeration reads);
   never files, env vars or logs.
 - **Paper mode never calls `execute_trade`** (even a dry-run performs a real margin check); module
   live-order tools are gated behind `enable_live_trading: true`. Earnings is **defined-risk only**.

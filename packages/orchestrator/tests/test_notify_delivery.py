@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import pytest
 
 from cherrypick.notify import delivered, notifier
+from cherrypick.notify.secrets import NOT_SET, SET, UNAVAILABLE
 from cherrypick.orchestrator import watchdog as wd
 
 
@@ -73,9 +74,66 @@ def test_an_undelivered_recovery_is_announced_again(state):
 def test_delivery_findings_name_a_missing_webhook_and_a_channel_that_keeps_failing():
     failing = [{"channel": "discord", "ok": False, "status": 403, "error": "Forbidden"} for _ in range(3)]
     keys = {
-        f.key for f in wd._delivery_findings(["log", "discord", "slack"], failing, lambda ch: ch == "discord")
+        f.key
+        for f in wd._delivery_findings(
+            ["log", "discord", "slack"], failing, lambda ch: SET if ch == "discord" else NOT_SET
+        )
     }
     assert keys == {"notify.slack_webhook", "notify.discord_failing"}
     mixed = failing + [{"channel": "discord", "ok": True}]
-    assert wd._delivery_findings(["discord"], mixed, lambda ch: True) == []
-    assert wd._delivery_findings(["discord"], failing[:2], lambda ch: True) == []
+    assert wd._delivery_findings(["discord"], mixed, lambda ch: SET) == []
+    assert wd._delivery_findings(["discord"], failing[:2], lambda ch: SET) == []
+
+
+def test_delivery_findings_cover_telegram_too():
+    """Telegram rides the same delivery health as the webhook channels: configured-but-unset is
+    named (every push skipped), and a window of failures is named (a dead bot must not read as a
+    quiet suite)."""
+    failing = [{"channel": "telegram", "ok": False, "status": 401, "error": "Unauthorized"} for _ in range(3)]
+    keys = {f.key for f in wd._delivery_findings(["log", "telegram"], failing, lambda ch: NOT_SET)}
+    assert keys == {"notify.telegram_unconfigured", "notify.telegram_failing"}
+    # Configured: the not-configured finding drops, the failing one stays.
+    keys = {f.key for f in wd._delivery_findings(["log", "telegram"], failing, lambda ch: SET)}
+    assert keys == {"notify.telegram_failing"}
+    # One success in the window: the failing one drops too.
+    mixed = failing + [{"channel": "telegram", "ok": True}]
+    assert wd._delivery_findings(["telegram"], mixed, lambda ch: SET) == []
+
+
+def test_a_keyring_outage_is_not_reported_as_a_missing_secret():
+    """Re-entering a secret that is fine is the wrong fix for an unavailable keyring."""
+    (f,) = wd._delivery_findings(["telegram"], [], lambda ch: UNAVAILABLE)
+    assert f.key == "notify.telegram_unconfigured"
+    assert "keyring is unavailable" in f.title and "Nothing needs re-entering" in f.message
+    assert "secrets-set" not in f.message
+
+
+def test_a_channel_named_only_in_trade_channels_is_still_checked(monkeypatch):
+    """Fill pushes go to `notify.trade_channels`; a telegram there with no token skipped every fill
+    with no finding while only `notify.channels` was read (verified: reading only `channels` makes
+    this fail with no findings)."""
+    from cherrypick.notify import secrets
+
+    monkeypatch.setattr(notifier, "read_outbound", lambda since=None: [])
+    monkeypatch.setattr(secrets, "state", lambda ch: NOT_SET)
+    cfg = {"notify": {"channels": ["log"], "trade_channels": ["log", "telegram"]}}
+    assert [f.key for f in wd._check_notify_delivery(cfg)] == ["notify.telegram_unconfigured"]
+
+
+def test_init_knows_every_push_channel():
+    """A correct telegram config must not be warned about as an unknown (typo'd) channel."""
+    from cherrypick.notify.secrets import PUSH_CHANNELS
+    from cherrypick.orchestrator import init
+
+    assert set(PUSH_CHANNELS) <= init.KNOWN_CHANNELS
+    issues = init.validate_config({"notify": {"channels": ["log", "telegram"]}, "modules": {}})
+    assert not any("unknown notify channel" in msg for _lvl, msg in issues)
+
+
+def test_every_push_channel_is_checked_from_the_one_tuple(monkeypatch):
+    """The watchdog reads PUSH_CHANNELS, so a channel added there is covered with no edit here."""
+    from cherrypick.notify import secrets
+
+    monkeypatch.setattr(secrets, "PUSH_CHANNELS", secrets.PUSH_CHANNELS + ("pager",))
+    (f,) = wd._delivery_findings(["pager"], [], lambda ch: NOT_SET)
+    assert f.key == "notify.pager_webhook"

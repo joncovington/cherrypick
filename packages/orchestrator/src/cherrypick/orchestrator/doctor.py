@@ -702,11 +702,12 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     for ch in channels:
         if ch in ("log", "desktop"):
             detail_bits.append(f"{ch}=on")
-        elif ch in _secrets.SUPPORTED:
+        elif ch in _secrets.PUSH_CHANNELS:
             detail_bits.append(f"{ch}={_secrets.status([ch])[ch]}")
-    # A push channel is configured if desktop is on (Windows) or a webhook is set.
+    # A push channel is configured if desktop is on (Windows) or a channel's secret is stored
+    # (a webhook URL for slack/discord, the bot token + chat ID pair for telegram).
     has_push = ("desktop" in channels and os.name == "nt") or any(
-        ch in _secrets.SUPPORTED and _secrets.is_set(ch) for ch in channels
+        ch in _secrets.PUSH_CHANNELS and _secrets.is_set(ch) for ch in channels
     )
     checks.append(
         Check(

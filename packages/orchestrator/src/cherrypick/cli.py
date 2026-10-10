@@ -75,7 +75,8 @@ Subcommands:
   sent                 What the suite sent to webhooks: a session's (--date) or the last --days.
                        --stale names inputs changed since a post went out; --verify asks Discord
                        whether each message still exists; --kind narrows; --json for the records.
-  secrets-set          Store a webhook URL in the keyring (--channel; --url or prompt).
+  secrets-set          Store a webhook URL in the keyring (--channel; --url or prompt). Telegram:
+                       --url is the bot token, --chat-id the chat; either omitted is prompted.
   secrets-status       Show which push-channel secrets are configured (secret-free).
   secrets-delete       Remove a stored secret (--channel).
 """
@@ -1709,6 +1710,17 @@ def cmd_notify_send(args) -> None:
     if not args.channel or not args.file:
         _emit({"ok": False, "error": "notify-send needs --channel and --file"})
         sys.exit(2)
+    if args.channel not in notify_secrets.WEBHOOKS:
+        # `--channel` choices are shared with secrets-set/delete, which also take channels that are
+        # not a webhook URL (telegram: a bot token and chat ID). A hand post needs a URL to post to.
+        _emit(
+            {
+                "ok": False,
+                "error": "notify-send posts to a webhook: --channel must be one of "
+                f"{list(notify_secrets.WEBHOOKS)}",
+            }
+        )
+        sys.exit(2)
     text = Path(args.file).read_text(encoding="utf-8").strip()
     images = [Path(p) for p in (args.image or [])]
     missing = [str(p) for p in images if not p.exists()]
@@ -1763,10 +1775,26 @@ def cmd_notify_send(args) -> None:
         sys.exit(1)
 
 
-def cmd_secrets_set(channel: str | None, url: str | None) -> None:
-    if channel not in notify_secrets.WEBHOOKS:
-        _emit({"ok": False, "error": f"--channel must be one of {list(notify_secrets.WEBHOOKS)}"})
+def cmd_secrets_set(channel: str | None, url: str | None, chat_id: str | None = None) -> None:
+    secret_channels = notify_secrets.PUSH_CHANNELS + notify_secrets.DEDICATED
+    if channel not in secret_channels:
+        _emit({"ok": False, "error": f"--channel must be one of {list(secret_channels)}"})
         sys.exit(2)
+    if channel == "telegram":
+        # The bot token rides --url (the one secret-valued flag) and the chat ID --chat-id; either
+        # one left out is prompted for without echo, so a script can pass both and a person neither.
+        token = (url or "").strip() or getpass.getpass(
+            "Paste the Telegram bot token (input hidden): "
+        ).strip()
+        chat_id = (chat_id or "").strip() or getpass.getpass(
+            "Paste the Telegram chat ID (input hidden): "
+        ).strip()
+        if not token or not chat_id:
+            _emit({"ok": False, "error": "both bot token and chat ID are required"})
+            sys.exit(2)
+        notify_secrets.set_telegram(token, chat_id)
+        _emit({"ok": True, "channel": channel, "stored_in": "OS keyring", "status": notify_secrets.status()})
+        return
     if not url:
         # Read without echo / shell history. A webhook URL is a bearer secret.
         url = getpass.getpass(f"Paste the {channel} webhook URL (input hidden): ").strip()
@@ -1782,8 +1810,9 @@ def cmd_secrets_status() -> None:
 
 
 def cmd_secrets_delete(channel: str | None) -> None:
-    if channel not in notify_secrets.WEBHOOKS:
-        _emit({"ok": False, "error": f"--channel must be one of {list(notify_secrets.WEBHOOKS)}"})
+    secret_channels = notify_secrets.PUSH_CHANNELS + notify_secrets.DEDICATED
+    if channel not in secret_channels:
+        _emit({"ok": False, "error": f"--channel must be one of {list(secret_channels)}"})
         sys.exit(2)
     removed = notify_secrets.delete_webhook(channel)
     _emit({"ok": removed, "channel": channel, "status": notify_secrets.status()})
@@ -1856,12 +1885,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--channel",
-        choices=list(notify_secrets.WEBHOOKS),
-        help="Webhook for secrets-set/secrets-delete: a push channel, or a dedicated one "
+        choices=list(notify_secrets.PUSH_CHANNELS + notify_secrets.DEDICATED),
+        help="Secrets-set/secrets-delete: a push channel, or a dedicated one "
         "(discord_reporting: the reporting channel the QuikOptions series posts to, never suite alerts)",
     )
     parser.add_argument(
-        "--url", default=None, help="Webhook URL for secrets-set (omit to be prompted without echo)"
+        "--url",
+        default=None,
+        help="Webhook URL for secrets-set, or the bot token for --channel telegram "
+        "(omit to be prompted without echo)",
+    )
+    parser.add_argument(
+        "--chat-id",
+        default=None,
+        help="secrets-set --channel telegram: the chat ID to post to (omit to be prompted)",
     )
     parser.add_argument(
         "--force",
@@ -2157,7 +2194,7 @@ def main() -> None:
         "dolt-server-stop": lambda: cmd_dolt_server(cfg, "stop"),
         "dolt-sql": lambda: cmd_dolt_sql(cfg, args.name, args.query),
         "notify-test": lambda: cmd_notify_test(cfg),
-        "secrets-set": lambda: cmd_secrets_set(args.channel, args.url),
+        "secrets-set": lambda: cmd_secrets_set(args.channel, args.url, args.chat_id),
         "secrets-status": lambda: cmd_secrets_status(),
         "secrets-delete": lambda: cmd_secrets_delete(args.channel),
         "settings": lambda: cmd_settings(cfg, args),

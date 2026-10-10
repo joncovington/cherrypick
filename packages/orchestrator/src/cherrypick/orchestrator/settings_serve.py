@@ -468,11 +468,18 @@ async function renderSecrets(quiet) {
     }
   }
   h += `</div><div class="card"><h2>Notification webhooks</h2>`;
+  h += `<p class="note">Telegram takes a bot token and a chat ID, not a URL — set it with ` +
+    `\`cherrypick secrets-set --channel telegram\` in a terminal. Rows here set a URL.</p>`;
+  const urlChannels = new Set(data.url_channels || []);
   for (const [ch, st] of Object.entries(data.webhooks)) {
+    // Only a URL-shaped channel gets a URL field; telegram (bot token + chat ID) is status + delete.
+    const setter = urlChannels.has(ch)
+      ? `<input type="password" placeholder="https://…" autocomplete="off">
+      <button data-ch="${esc(ch)}" data-op="whset">Set</button>`
+      : `<span class="note" style="display:inline">set in a terminal</span>`;
     h += `<div class="row"><span class="k">${esc(ch)}
         <span class="badge ${st === "set" ? "set" : "unset"}">${esc(st)}</span></span>
-      <input type="password" placeholder="https://…" autocomplete="off">
-      <button data-ch="${esc(ch)}" data-op="whset">Set</button>
+      ${setter}
       <button data-ch="${esc(ch)}" data-op="whdel">Delete</button></div>`;
   }
   h += `<span id="msg"></span></div>`;
