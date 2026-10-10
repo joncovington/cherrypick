@@ -4197,3 +4197,62 @@ td > .desk-refusal-reason {
   margin-top: 0.4rem;
   font-size: 0.66rem;
 }
+
+/* Trade summary — weekday card: calendar-order columns on a true zero baseline (a negative day
+ * drops below it), with count and win-% pills beside the day label. */
+.ts-root .ts-week {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-end;
+}
+.ts-root .ts-wday {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.ts-root .ts-wday-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  width: 100%;
+  max-width: 44px;
+}
+.ts-root .ts-wday-axis .ts-vbar {
+  width: 100%;
+}
+.ts-root .ts-wday-label {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  margin-top: 0.35rem;
+}
+.ts-root .ts-wday-day {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.ts-root .ts-wday-pill {
+  font-size: 0.62rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--ts-border);
+  color: var(--ts-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ts-root .ts-wday-pill.ts-wday-win {
+  color: var(--ts-pos);
+  border-color: color-mix(in srgb, var(--ts-pos) 45%, transparent);
+}
+.ts-root .ts-wday-pill.ts-wday-lose {
+  color: var(--ts-neg);
+  border-color: color-mix(in srgb, var(--ts-neg) 45%, transparent);
+}
+.ts-root .ts-wday-sub {
+  margin-top: 0.15rem;
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ts-muted);
+}

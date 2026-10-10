@@ -2044,11 +2044,34 @@ export function readMeicSummary(
             ELSE '>=0.20' END`,
     );
     const wing = breakdown(`CAST(CAST(wing_width AS INTEGER) AS TEXT) || '-wide'`);
-    const weekday = breakdown(
-      `CASE CAST(strftime('%w', trade_date) AS INTEGER)
-            WHEN 0 THEN 'Sun' WHEN 1 THEN 'Mon' WHEN 2 THEN 'Tue' WHEN 3 THEN 'Wed'
-            WHEN 4 THEN 'Thu' WHEN 5 THEN 'Fri' ELSE 'Sat' END`,
-    );
+    // Weekday in CALENDAR order, Mon-Fri, every day present even at zero trades — the label's
+    // alphabetical order is not the week's order, and a day that didn't trade is part of the
+    // answer (0 trades is a fact of the week, not a missing bucket).
+    const weekdayRows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT CASE CAST(strftime('%w', trade_date) AS INTEGER)
+               WHEN 1 THEN 'Mon' WHEN 2 THEN 'Tue' WHEN 3 THEN 'Wed'
+               WHEN 4 THEN 'Thu' WHEN 5 THEN 'Fri' END AS bucket,
+               COUNT(*) AS trades, COUNT(DISTINCT trade_date) AS sessions,
+               SUM(CASE WHEN pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END) AS wins,
+               AVG(pnl - COALESCE(fees, 0)) AS avg_net
+          FROM ic_trades WHERE ${where} AND pnl IS NOT NULL
+         GROUP BY bucket`,
+      )
+      .all(...params);
+    const byDay = new Map(weekdayRows.map((r) => [String(r["bucket"] ?? "?"), r]));
+    const weekday: MeicBreakdownRow[] = ["Mon", "Tue", "Wed", "Thu", "Fri"].map((day) => {
+      const r = byDay.get(day);
+      if (!r) return { bucket: day, trades: 0, sessions: 0, winPct: null, avgNet: null };
+      const trades = Number(r["trades"]);
+      return {
+        bucket: day,
+        trades,
+        sessions: Number(r["sessions"]),
+        winPct: trades > 0 ? (Number(r["wins"]) / trades) * 100 : null,
+        avgNet: r["avg_net"] === null ? null : Number(r["avg_net"]),
+      };
+    });
 
     // -- Entries: the window's rows, newest first, capped. Structure text is the leg pair in the
     //    module's vocabulary; provisional = unsettled (mark, not settlement — the honesty badge).

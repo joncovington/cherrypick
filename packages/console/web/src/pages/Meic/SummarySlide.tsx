@@ -404,6 +404,57 @@ function Evaluations({ s }: { s: MeicSummarySlice }) {
 }
 
 /* ---------------------------------------------------------------------------
+ * By weekday — the week as a calendar, not a sorted list: Mon→Fri, every day present, a bar
+ * per day of avg net per trade. The axis is a real ZERO baseline, so a danger day DROPS
+ * beneath it (tone by sign only — red is where a number is negative, not a verdict the card
+ * invented); the trade count and the win % ride as small pills beside the day label, numbers
+ * first. Volume is deliberately NOT the bar: a 303-trade Friday would flatten Monday's −$406
+ * into invisibility, and volume has its own honest row in the entry-time card.
+ * ------------------------------------------------------------------------- */
+
+function ByWeekday({ s, windowLabel }: { s: MeicSummarySlice; windowLabel: string }) {
+  const rows = s.weekday;
+  if (rows.length === 0) return <TsEmpty what="by weekday" />;
+  const max = Math.max(...rows.map((r) => Math.abs(r.avgNet ?? 0)), 1);
+  return (
+    <TsCard title="by weekday" aside={<span className="ts-muted">{windowLabel}</span>}>
+      <div className="ts-week">
+        {rows.map((r) => {
+          const v = r.avgNet ?? 0;
+          const h = `${((Math.abs(v) / max) * 100).toFixed(1)}%`;
+          const tip = [
+            r.bucket,
+            `avg ${fmtUsd(v)}/trade`,
+            `${r.trades} ${r.trades === 1 ? "trade" : "trades"}`,
+            r.winPct === null ? "nothing settled" : `win ${r.winPct.toFixed(1)}%`,
+          ].join(" · ");
+          return (
+            <div className="ts-wday" key={r.bucket} title={tip}>
+              {/* Fixed half-height in px; the bar is a percentage of it, up or down from zero. */}
+              <div className="ts-wday-axis" style={{ height: "90px" }}>
+                {v >= 0 ? (
+                  <div className="ts-vbar ts-pos" style={{ height: h }} />
+                ) : (
+                  <div className="ts-vbar ts-neg" style={{ height: h }} />
+                )}
+              </div>
+              <div className="ts-wday-label">
+                <span className="ts-wday-day">{r.bucket}</span>
+                <span className="ts-wday-pill">{r.trades}</span>
+                <span className={`ts-wday-pill ${r.winPct === null ? "" : r.winPct >= 50 ? "ts-wday-win" : "ts-wday-lose"}`}> 
+                  {r.winPct === null ? "n/r" : `${Math.round(r.winPct)}%`}
+                </span>
+              </div>
+              <div className="ts-wday-sub">{fmtUsd(v)}</div>
+            </div>
+          );
+        })}
+      </div>
+    </TsCard>
+  );
+}
+
+/* ---------------------------------------------------------------------------
  * Signal breakdown — meic/sessions' deep-analytics block in the summary's bar style. The
  * module's own buckets, the module's own measures (trades, win %, avg net), rendered as one
  * horizontal bar per bucket, scaled by trades, with the money measure beside it. Window-scoped
@@ -612,7 +663,7 @@ export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSum
       </div>
       <div className="ts-row ts-row-2">
         <ByEntryTime s={s} />
-        <SignalBreakdown title="by weekday" rows={s.weekday} windowLabel={s.window.label} />
+        <ByWeekday s={s} windowLabel={s.window.label} />
       </div>
       {/* Entries is full width UNDER the signal blocks — the window's entries are a long row of
           data that a third of a grid cell would cramp. */}
