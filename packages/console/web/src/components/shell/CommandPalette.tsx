@@ -185,21 +185,27 @@ export function CommandPalette() {
       }}
     >
       <div className="cmdk" role="dialog" aria-modal="true" aria-label="command palette">
-        <input
-          ref={inputRef}
-          className="cmdk-input"
-          type="text"
-          placeholder="jump to a page or tab…"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setSelected(0);
-          }}
-          onKeyDown={onKeyDown}
-          aria-label="search pages"
-          autoComplete="off"
-          spellCheck={false}
-        />
+        <div className="cmdk-head">
+          <svg className="cmdk-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.5-4.5" />
+          </svg>
+          <input
+            ref={inputRef}
+            className="cmdk-input"
+            type="text"
+            placeholder="jump to a page or tab…"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setSelected(0);
+            }}
+            onKeyDown={onKeyDown}
+            aria-label="search pages"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
         <div className="cmdk-list" ref={listRef} role="listbox" aria-label="pages">
           {filtered.length === 0 && <div className="cmdk-empty">nothing matches “{query}”</div>}
           {filtered.map((it, i) => {
@@ -216,7 +222,11 @@ export function CommandPalette() {
                   data-idx={String(i)}
                   role="option"
                   aria-selected={i === selected}
-                  className={i === selected ? "cmdk-item active" : "cmdk-item"}
+                  // className as a FUNCTION: react-router's NavLink appends its own `active` to a
+                  // plain string when the row matches the current route — which would paint the
+                  // keyboard marker on every row naming today's page (three on /flies/forest).
+                  // The palette's one active row is the arrow selection, nothing else.
+                  className={() => (i === selected ? "cmdk-item active" : "cmdk-item")}
                   onMouseEnter={() => setSelected(i)}
                   // A mousedown-prevented item keeps focus in the input, so the palette never
                   // blurs mid-pick.

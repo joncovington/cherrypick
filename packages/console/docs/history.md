@@ -61,6 +61,24 @@ columns (queued for next session; did THIS session's artifact land) with the fai
   unsettled day) and band edges landed up to a grid step off. 2026-09-11 control was a "locked" book:
   two stranded verticals whose loss four adjacent 5-wide flies cancel exactly at every price.
 
+## The palette earned its polish (2026-10-12)
+
+A frontend design spec arrived for the command palette and, as with the border spec, its claims
+split under measurement: shortcut badges and a footer legend already existed, the 12px radius was
+already right, and its surface hexes were this suite's own tokens spelled in vendor grey —
+`#1A1D23`/`#14171D`/`#232730` are `--surface`/`--surface-sunken`/`--surface-hover` verbatim, and
+its `#282C34` "border" is `--border-strong`, which this suite reserves for tracks. What the probe
+confirmed as real landed, re-spelled to tokens: the rows are NavLinks and the shell's anchor rule
+underlined every one (the unstyled-link look the spec saw), the overlay had no depth blur, the
+scrollbar was the browser's, and the box was 34rem where the spec asked 640px. Alongside them the
+search head gained a magnifier and took ownership of the bottom rule, and the keyboard's row
+gained the accent marker the token ladder reserves for selection.
+
+The probe also caught a bug the facelift would have amplified: react-router's NavLink appends its
+own `active` to a plain-string className, so on `/flies/forest` three rows wore the keyboard
+marker at rest. `className` is now a function of the arrow selection, and exactly one row is
+active — verified against the served bundle in both themes.
+
 ## The shell became a grid (2026-10-12)
 
 The rail move left three seams nobody had drawn: the brand head (a row inside the nav) carried an
