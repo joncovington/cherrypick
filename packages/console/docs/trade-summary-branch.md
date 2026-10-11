@@ -45,6 +45,25 @@ restyle most of the suite at once; then the per-module hand-rolled SVGs; the `.t
 its rules land in the shared vocabulary. Every step is verified in a rebuilt browser
 (`pnpm ui-check`), not by tests alone.
 
+## 2026-10-10 — the chrome swept
+
+- The collapsed rail is the 64px icon strip (decision 3, built): one glyph per top-level link in
+  `navIcons.tsx`, hand-drawn on the 24px grid, `currentColor` only, and each glyph **is** its
+  page's link — the folded rail navigates without expanding, `aria-label` naming each glyph. The
+  strip keeps the tab order of the links; the expanded list remains the screen-reader text, and
+  `routes.test.tsx`'s collapsed-rail assertions still hold. The expanded
+  rail keeps today's structure — its restyle belongs with the card sweep, not the chrome.
+- Chips took the slide's own pill (999px) rather than a third corner language, and their tone
+  borders derive from `--pos/--neg/--warn` via `color-mix` — 28 hardcoded tone rgba literals are
+  now 7 token mixes.
+- Two rules written for the cherry accent went blue in the token hoist (the live-mode toggle, the
+  review attention card) and are restored to `--accent-live` per their own block comments. The
+  lesson is recorded for the remaining sweep: `--accent` means blue now; a rule that says cherry
+  in prose must say `--accent-live` in code.
+- The menu-selection tint and hover accents stay blue for this step; a deliberate pass over them
+  comes with the shared-component sweep, which is when the last of the legacy `--bg*`/`--ok`/
+  `--err` aliases leave.
+
 **2026-10-10** — written when the branch stood at `aaf94a90` (entries pagination) plus the merge of
 `origin/main` at `e6dc3ed6`.
 

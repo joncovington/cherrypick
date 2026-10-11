@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { NavLink, useSearchParams } from "react-router-dom";
-import { type ModuleId } from "../../lightbox/moduleOrder";
+import { type ModuleId, isExperimental } from "../../lightbox/moduleOrder";
 import { NAV_DECL, navGroups } from "../../lightbox/navGroups";
 import { CONFIG_LINK, visibleNavLinks, type NavLinkDef } from "./navLinks";
 import { useFeatures } from "../../lib/useFeatures";
@@ -8,6 +8,7 @@ import { isSlideVisible } from "../../lib/visibility";
 import { ExperimentalChip } from "../ExperimentalChip";
 import { useDirtyCount } from "../../pages/Config/stagedStore";
 import { useBoolPref, writePref } from "../../lib/prefs";
+import { NavIcon } from "./navIcons";
 
 /** The rail's open/closed state, a console preference so it follows the reader to the desktop
  *  shell. Absent means collapsed: the rail starts folded to the left edge (2026-10-01). */
@@ -53,6 +54,9 @@ export function ModuleNav({ module, slide }: { module: ModuleId; slide: string }
   const link = (l: NavLinkDef, extra?: ReactNode) => {
     extra = (
       <>
+        <span className="mf-nav-ic" aria-hidden="true">
+          <NavIcon to={l.to} />
+        </span>
         <ExperimentalChip id={l.to.slice(1)} />
         {extra}
       </>
@@ -111,8 +115,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId; slide: string }
         onClick={() => void writePref(RAIL_PREF, !expanded)}
       >
         {expanded ? "«" : "»"}
-      </button>
-      <div id="mf-nav-links" hidden={!expanded}>
+      </button>      <div id="mf-nav-links" hidden={!expanded}>
         {suite.map((l) => link(l))}
         <div className="mf-nav-section">Modules</div>
         {modules.map((l) => link(l))}
@@ -121,6 +124,25 @@ export function ModuleNav({ module, slide }: { module: ModuleId; slide: string }
           CONFIG_LINK,
           dirty > 0 && <span className="nav-dot" title={`${String(dirty)} unsaved change${dirty === 1 ? "" : "s"}`} />,
         )}
+      </div>
+      {/* The collapsed rail's icon strip: the same pages, same order, each icon a real Link to
+          the page's root (the root is what an icon names). A name per link (aria-label) because
+          the glyph carries no text; the expanded list stays as the tab order's text links. */}
+      <div className="mf-nav-icons" hidden={expanded}>
+        {[...suite, ...modules, CONFIG_LINK].map((l) => (
+          <NavLink
+            key={l.to}
+            to={l.to}
+            className="mf-nav-ic-wrap"
+            aria-label={l.label}
+            title={l.label}
+          >
+            <NavIcon to={l.to} />
+            {l.to === "/config" && dirty > 0 && <span className="nav-dot" />}
+            {isExperimental(l.to.slice(1)) && <span className="mf-nav-ic-exp" />}
+            {l.to.slice(1) === module && <span className="mf-nav-ic-on" />}
+          </NavLink>
+        ))}
       </div>
     </nav>
   );
