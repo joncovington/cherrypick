@@ -242,3 +242,21 @@ Options, in increasing exposure — all still open while the branch merges main 
    without being actionable.
 4. **Real PR** — at which point the landing note moves to the console's own docs and this file goes
    to `docs/history/` or dies with the branch name.
+
+## 2026-10-10 — three rail icons take their names' marks
+
+- **meic** trades its candlestick pair for a **soaring condor** — the bird on the name
+  (multiple-entry iron condor). Near-flat wings with forked primaries, a fan tail and a beak:
+  the three tells that read raptor at 20px. Any flatter detail became noise at rail size; any
+  more spread and it started resembling Flies' mark, which is how the wing shape was chosen.
+- **bwb** trades its payoff stair for a **butterfly at rest, side profile** — the insect on the
+  name (broken-wing butterfly). One wing sweeps tall, the far one drops short and low: the
+  asymmetry is the broken wing itself. Flies keeps the plateau payoff, so the two no longer
+  share a vocabulary at all — before, both were payoff lines.
+- **earnings** trades its candle-in-brackets for a **banknote** — the user's call: the module's
+  point is the credit, and the note reads instantly at 20px where the bracketed candle read as
+  a diff.
+- All three stay on the `Svg` family's idiom — 24px grid, stroke 1.8, round caps,
+  `currentColor`, no fill — verified against the live rail (geometry: the condor spans x 3→21
+  symmetric about 12; every glyph inside the grid with clearance) and reviewed at 96/48/20px
+  on the house card colour before landing. No tests pinned the old marks; 305/305 unchanged.

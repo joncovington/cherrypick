@@ -33,13 +33,18 @@ function Svg({ size = 20, children }: NavIconProps & { children: ReactNode }) {
   );
 }
 
-/* A candlestick pair — MEIC trades 0DTE iron condors on index options. */
+/* A soaring condor — the bird on the name (multiple-entry iron condor). Near-flat wings with
+   forked primaries, a fan tail and a beak: the three tells that read raptor at rail size and
+   keep the glyph from being mistaken for anything else on the rail. */
 function MeicIcon() {
   return (
     <Svg>
-      <path d="M7 4v3M7 17v3M17 4v2M17 15v5" />
-      <rect x="4.5" y="7" width="5" height="10" rx="1" />
-      <rect x="14.5" y="6" width="5" height="9" rx="1" />
+      <path d="M3 7.5C7 10 9.5 10.8 12 10.8" />
+      <path d="M21 7.5C17 10 14.5 10.8 12 10.8" />
+      <path d="M3 7.5L4.6 5.6M21 7.5L19.4 5.6" />
+      <path d="M10.7 8.8L12 7.4L13.3 8.8" />
+      <path d="M12 10.8V14.8" />
+      <path d="M12 14.8L9.9 19.2M12 14.8V19.8M12 14.8L14.1 19.2" />
     </Svg>
   );
 }
@@ -85,11 +90,16 @@ function ContangoIcon() {
 }
 
 /* A ladder of long puts stepped downward — the daily put broken-wing butterfly. */
+/* A butterfly at rest, side profile — the insect on the name (broken-wing butterfly). One
+   wing up, one drooped short: the asymmetry is the broken wing itself, and the pose keeps it
+   from being mistaken for Flies' plateau payoff or MEIC's soaring condor. */
 function BwbIcon() {
   return (
     <Svg>
-      <path d="M4 18h3v-4h4v-4h4V6h5" />
-      <path d="M4 18v1.5M20 6V4.5" opacity="0.5" />
+      <path d="M12 8C9 5.5 5.5 5 3.5 7C2 8.6 2.6 11.4 5 12.6C7 13.6 9.6 13.2 11 12" />
+      <path d="M12 8C14.5 6.5 17.5 7 19 9C20.5 11.2 19 13.8 16.5 14.2C14.6 14.5 12.8 13.6 12 12.2" />
+      <path d="M12 8V18.5" />
+      <path d="M12 10.5L15.5 18.5" opacity={0.45} />
     </Svg>
   );
 }
@@ -104,12 +114,13 @@ function CalendarsIcon() {
   );
 }
 
-/* An earnings candle in brackets — defined-risk structures around the print. */
+/* A banknote — the cash on the name: defined-risk structures whose point is the credit. */
 function EarningsIcon() {
   return (
     <Svg>
-      <path d="M6 3v18M18 3v18" opacity="0.5" />
-      <path d="M10 8h4v8h-4zM12 4v4M12 16v4" />
+      <rect x="3" y="7" width="18" height="10" rx="1.5" />
+      <circle cx="12" cy="12" r="2.2" />
+      <path d="M6.5 12h.01M17.5 12h.01" />
     </Svg>
   );
 }
