@@ -284,3 +284,19 @@ the day agreeing with `data/review/eod-2026-10-09.json`'s `on_max_risk` to the f
   `currentColor`, no fill — verified against the live rail (geometry: the condor spans x 3→21
   symmetric about 12; every glyph inside the grid with clearance) and reviewed at 96/48/20px
   on the house card colour before landing. No tests pinned the old marks; 305/305 unchanged.
+
+## 2026-10-11 — the suite-wide summary is withdrawn; the summary stays module-local
+
+The one-read, all-modules summary page under Reports was built and then taken back the same day:
+the modules' KPIs are not the same book — capture and capital-at-risk mean nothing for a legged
+flies book, cash deployed is contango's vocabulary alone, entry-time and weekday bands are MEIC's
+— and one comparison surface kept either flattening modules to their common denominator or
+carrying per-module exceptions until the page was a registry of special cases. The judgement:
+module-specific summaries in the MEIC pattern (each module's own slide, its own KPIs and its own
+vocabulary) beat one general page.
+
+What remains, deliberately: `core.metrics summary` (the one normalisation at arbitrary window
+widths, `--era`-aware, fully tested) — a module-agnostic core verb with no console surface, ready
+for any module summary that wants the standard hero/by-arm/daily/capture shape without mirroring
+it in TypeScript. The three console commits (page, bridge, switchboard filter) are reverted whole;
+the MEIC slide never depended on them.
