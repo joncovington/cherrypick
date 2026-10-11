@@ -1556,6 +1556,14 @@ export interface MeicSummarySlice {
    *  for the label. Null when no premium was collected. */
   capturePct: number | null;
   captureRawPct: number | null;
+  /** Return on risk — the review fact set's `on_max_risk`, mirrored: net ÷ the window's capital
+   *  at risk, capital = (wing width − credit) × multiplier × quantity summed over the same settled
+   *  rows the hero's money sums (core.ledgers._meic_closed._capital). `rorPct` clamped
+   *  −100..+100 for the gauge needle — a defined-risk trade's return lives inside those bounds
+   *  up to fee drag — `rorRawPct` unclamped for the label. Null when the window's settled rows
+   *  carry no usable capital. `coverage` says how many settled rows could support the
+   *  computation ("10/10"), so a partial denominator is never read as a whole one. */
+  returnOnRisk: { capitalAtRisk: number | null; rorPct: number | null; rorRawPct: number | null; coverage: string | null };
   /** Leg outcomes per wing: credit SOLD (per-side net is not a ledger fact), leg state counts,
    *  stop cost charged. `other` holds states a newer ledger may add, so they show as a count. */
   legs: Array<{ side: "put" | "call"; credit: number; expired: number; stopped: number; settled: number; other: number; stopCost: number }>;

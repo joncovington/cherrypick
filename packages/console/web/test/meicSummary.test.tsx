@@ -71,6 +71,7 @@ function slice(over: Partial<MeicSummarySlice> = {}): MeicSummarySlice {
     },
     capturePct: 50,
     captureRawPct: 72.3,
+    returnOnRisk: { capitalAtRisk: 7561.25, rorPct: 18.5, rorRawPct: 18.5404, coverage: "10/10" },
     legs: [
       { side: "put", credit: 1200, expired: 9, stopped: 1, settled: 0, other: 0, stopCost: 150 },
       { side: "call", credit: 738.75, expired: 10, stopped: 0, settled: 0, other: 0, stopCost: 0 },
@@ -125,6 +126,9 @@ describe("MeicSummary (trade summary, the one-read slide)", () => {
     expect(page).toContain("+$1,401.88"); // hero net, whole-position dollars
     expect(page).toContain("+$1,938.75"); // gross captured
     expect(page).toContain("72.3%"); // capture label: the UNclamped value
+    expect(page).toContain("18.5%"); // return on risk: the UNclamped figure, four decimals truncated
+    expect(page).toContain("$7,561.25 capital at risk"); // the denominator beside the ratio
+    expect(page).toContain("10/10 settled rows"); // coverage: a partial denominator is visible
     expect(page).toContain("sessions 1/1"); // days arc
     expect(page).toContain("trades 8/10"); // trades arc
     expect(page).toContain("80.0%"); // capture... no — the gauge value; and win% rows
@@ -135,6 +139,18 @@ describe("MeicSummary (trade summary, the one-read slide)", () => {
     expect(page).toContain("clean 90.0%");
     expect(page).toContain("double-stop 0.0%");
     expect(page).toContain("fee bar 26.5% of credit");
+  });
+
+  it("a window with no usable capital says so — never a zero-gauge reading as 'broke even'", () => {
+    useMeicSummaryMock.mockReturnValue({
+      data: slice({ returnOnRisk: { capitalAtRisk: null, rorPct: null, rorRawPct: null, coverage: null } }),
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+    const page = render("/", <MeicSummary {...PROPS} />);
+    expect(page).toContain("no rows in this window");
+    expect(page).toContain("return on risk");
   });
 
   it("labels the window the reader states — the day's session by name, wider ranges verbatim", () => {

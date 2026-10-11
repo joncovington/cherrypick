@@ -3877,13 +3877,24 @@ td > .desk-refusal-reason {
 .ts-row-3 {
   grid-template-columns: repeat(3, 1fr);
 }
+/* The money row grew to four cards (net / capture / return-on-risk / win-rate); the gauge cards
+   hold their width via the shared max-widths below, so no card takes a different fraction. */
+.ts-row-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
 .ts-row-2 {
   grid-template-columns: 3fr 2fr;
 }
 @media (max-width: 1100px) {
   .ts-row-3,
+  .ts-row-4,
   .ts-row-2 {
     grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 1500px) and (min-width: 1101px) {
+  .ts-row-4 {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 

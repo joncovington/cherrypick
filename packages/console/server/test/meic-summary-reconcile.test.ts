@@ -51,6 +51,33 @@ describe.skipIf(!available)("readMeicSummary reconciles", () => {
     expect(s.hero.trades).toBe(m.totals.trades);
   });
 
+  it("return on risk equals the review fact set's on_max_risk for the same session", () => {
+    // The review artifact is the validated derivation (core.ledgers._meic_closed._capital);
+    // the mirror is checked against it where their windows coincide: the "day" range resolves
+    // to the review artifact's own session whenever the review has written one for it.
+    const s = readMeicSummary(config, "paper", { symbol: null, profile: null, era: null }, "day", null);
+    if (s.window.from === null || s.window.from !== s.window.to) return; // open window — nothing to compare
+    const dir = path.join(os.homedir(), ".cherrypick", "data", "review");
+    let raw: string;
+    try {
+      raw = fs.readFileSync(path.join(dir, `eod-${s.window.from}.json`), "utf-8");
+    } catch {
+      return; // the review has not written this session — the mirror stands on the SQL identity
+    }
+    const facts = JSON.parse(raw) as Record<string, unknown>;
+    const mod = (facts["modules"] ?? {}) as Record<string, unknown>;
+    const meic = mod["meic"] as Record<string, unknown> | undefined;
+    if (meic === undefined || meic["ok"] !== true) return;
+    const ret = meic["return"] as Record<string, unknown> | undefined;
+    const onMax = ret?.["on_max_risk"];
+    if (typeof onMax !== "number") return;
+    // The comparison is in whole parts per ten-thousand: the artifact rounds to 6dp, the gauge
+    // to 0.1% — both are the same number underneath, and neither side is the other's authority.
+    expect(s.returnOnRisk.rorRawPct).toBeCloseTo(onMax * 100, 4);
+    const cap = ret?.["capital_at_risk"];
+    if (typeof cap === "number") expect(s.returnOnRisk.capitalAtRisk).toBe(cap);
+  });
+
   it("the refusal ledger's parts account for every evaluation", () => {
     const s = readMeicSummary(config, "paper", { symbol: null, profile: null, era: null }, "all", null);
     const outcomeSum = s.evaluations.outcomes.reduce((sum, o) => sum + o.n, 0);

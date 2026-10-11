@@ -169,6 +169,52 @@ function CaptureGauge({ s }: { s: MeicSummarySlice }) {
 }
 
 /* ---------------------------------------------------------------------------
+ * Return-on-risk gauge — the capture gauge's sibling, domain −100..+100: a defined-risk
+ * condor's return lives inside its own worst case, so the scale ends where the position can.
+ * Needle at the value, arc filling from the zero at centre (mint right, salmon left); the
+ * needle clamps to the domain, the label shows the reader's UNclamped figure — a big day pins
+ * the rail without misreporting itself. Beside the value, the denominator that made it: the
+ * window's capital at risk, and the settled-row coverage, so "9/10" is never read as "10/10".
+ * The figure is the review fact set's on_max_risk, mirrored server-side (readers/meic.ts) and
+ * pinned to it by test/meic-summary-reconcile.test.ts.
+ * ------------------------------------------------------------------------- */
+
+function ReturnOnRiskGauge({ s }: { s: MeicSummarySlice }) {
+  // `!r` covers a payload from an OLDER server (a field the reader had not grown yet): the card
+  // says "nothing" rather than crashing the slide while the build and the process disagree.
+  const r = s.returnOnRisk;
+  if (!r || r.rorRawPct === null) return <TsEmpty what="return on risk" />;
+  const value = r.rorPct ?? 0;
+  const zero = thetaOf(0);
+  const at = thetaOf(value);
+  const [from, to] = value >= 0 ? [zero, at] : [at, zero];
+  const [nx, ny] = gpolar(G.r - 18, at);
+  return (
+    <TsCard title="return on risk">
+      <svg className="ts-gauge" viewBox="0 0 180 104" role="img" aria-label={`return on risk ${r.rorRawPct.toFixed(1)}%`}>
+        <path d={gaugeArc(0, 180)} className="ts-track" strokeWidth={G.stroke} fill="none" strokeLinecap="round" />
+        <path
+          d={gaugeArc(from, to)}
+          className={value >= 0 ? "ts-arc-pos" : "ts-arc-neg"}
+          strokeWidth={G.stroke}
+          fill="none"
+          strokeLinecap="round"
+        />
+        <line x1={G.cx} y1={G.cy} x2={nx} y2={ny} className="ts-needle" strokeWidth={2} />
+        <circle cx={G.cx} cy={G.cy} r={3.5} className="ts-needle" />
+        <text x={8} y={100} className="ts-tick">−100</text>
+        <text x={160} y={100} className="ts-tick">+100</text>
+      </svg>
+      <div className={`ts-gauge-value ${r.rorRawPct >= 0 ? "ts-pos" : "ts-neg"}`}>{r.rorRawPct.toFixed(1)}%</div>
+      <p className="ts-muted">
+        of {r.capitalAtRisk === null ? "—" : fmtUsd(r.capitalAtRisk).replace("+$", "$")} capital at risk · {r.coverage ??
+        "n/r"} settled rows
+      </p>
+    </TsCard>
+  );
+}
+
+/* ---------------------------------------------------------------------------
  * Win-rate arcs — two concentric radial bars, outer = sessions with positive net, inner = the
  * window's settled trades. Both fractions come from the payload's own counts.
  * ------------------------------------------------------------------------- */
@@ -671,9 +717,10 @@ export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSum
       {/* Rows group by the question they answer: money; the trade as built and how it ended
           (leg outcomes + the two geometry cards beside it); the gate's ledger and the arms; when
           we trade (the day's clock beside the era's week); then the ledger itself. */}
-      <div className="ts-row ts-row-3">
+      <div className="ts-row ts-row-4">
         <NetCard s={s} />
         <CaptureGauge s={s} />
+        <ReturnOnRiskGauge s={s} />
         <WinRateArcs s={s} />
       </div>
       <div className="ts-row ts-row-3">

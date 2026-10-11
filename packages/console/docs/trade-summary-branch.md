@@ -243,6 +243,30 @@ Options, in increasing exposure — all still open while the branch merges main 
 4. **Real PR** — at which point the landing note moves to the console's own docs and this file goes
    to `docs/history/` or dies with the branch name.
 
+## 2026-10-11 — return on risk joins the money row
+
+A fourth card in the money row (the row went 3→4, `ts-row-4`, dropping to two columns under
+1500px): a return-on-risk gauge, the capture gauge's sibling — same semicircle, domain
+−100..+100 because a defined-risk condor's return lives inside its own worst case, so the scale
+ends where the position can. Needle at the value, arc filling from the zero at centre, label
+showing the UNclamped figure beside the denominator that made it (the window's capital at risk
+and the settled-row coverage, so a partial denominator reads "9/10", never "10/10").
+
+The figure is the review fact set's `on_max_risk`, mirrored — not re-derived: capital at risk is
+`core.ledgers._meic_closed._capital`'s formula per settled row, (wing width − credit) ×
+multiplier × quantity, rounded per row, summed over the same settled rows the hero's money sums;
+the ratio divides the window's UNROUNDED net sum, exactly the division the fact set makes (its
+displayed net is the rounded key; the ratio used the unrounded one — caught to the
+fourth decimal place by the reconcile test, which is the test that earns its place). Pinned to
+the artifact by `test/meic-summary-reconcile.test.ts` wherever their windows coincide; per-module
+and per-arm the review page stays the surface that already renders it.
+
+Shown to fail in both directions: the web card renders "no rows in this window" on a null and
+survives an OLDER server's payload (a restart-window field), and the server mirror disagreed
+with the review artifact by 0.00008pp until the unrounded-numerator and per-row rounding were
+both made faithful. Verified live across every range (day +18.5%, week +1.4%, all +20.4%) —
+the day agreeing with `data/review/eod-2026-10-09.json`'s `on_max_risk` to the fourth decimal.
+
 ## 2026-10-10 — three rail icons take their names' marks
 
 - **meic** trades its candlestick pair for a **soaring condor** — the bird on the name

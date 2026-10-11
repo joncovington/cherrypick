@@ -1665,6 +1665,7 @@ export function readMeicSummary(
     hero: { trades: 0, sessions: 0, gross: 0, fees: 0, settlement: 0, slippage: 0, net: 0, credit: 0, winPct: null, wins: 0, daysWon: 0, daysLost: 0, openTrades: 0, openRisk: 0 },
     capturePct: null,
     captureRawPct: null,
+    returnOnRisk: { capitalAtRisk: null, rorPct: null, rorRawPct: null, coverage: null },
     legs: [],
     pairs: { trades: 0, clean: 0, cleanPct: null, doubleStopPct: null, breakevenBarPct: null },
     entryTime: [],
@@ -1737,6 +1738,10 @@ export function readMeicSummary(
       .get(...params) ?? {};
     const gross = Math.round(Number(t["gross"] ?? 0) * 100) / 100;
     const feesTotal = Number(t["fees_total"] ?? 0);
+    // The UNrounded net sum, kept beside the hero's cent-rounded one: the return-on-risk ratio
+    // divides what the review fact set's own division divides — the unrounded sum, of which the
+    // displayed net is the rounded key. A cent in the fourth decimal place of a percentage.
+    const netRaw = Number(t["gross"] ?? 0) - feesTotal;
     const settlement = Math.round(Number(t["settlement"] ?? 0) * 100) / 100;
     const trades = Number(t["trades"] ?? 0);
     const wins = Number(t["wins"] ?? 0);
@@ -1760,6 +1765,38 @@ export function readMeicSummary(
     // -- Capture: net kept of premium sold, clamped to the gauge's domain.
     const captureRawPct = hero.credit > 0 ? (hero.net / hero.credit) * 100 : null;
     const capturePct = captureRawPct === null ? null : Math.max(-50, Math.min(50, captureRawPct));
+
+    // -- Return on risk: the review fact set's `on_max_risk`, mirrored. The denominator is
+    //    core.ledgers._meic_closed._capital's formula per settled row — (wing width − credit-or-0)
+    //    × multiplier × quantity, ROUNDED PER ROW as _capital rounds it, a missing credit reading
+    //    as zero exactly as `net_credit or 0.0` does there — summed over the same rows the hero's
+    //    money sums, so the ratio's two sides are one population. A row that cannot support the
+    //    formula drops from the DENOMINATOR, never silently from the ratio; its count rides out
+    //    as "coverage" so a partial denominator is visible ("9/10"). The numerator is the
+    //    window's UNROUNDED net — the fact set's own division divides the unrounded sum while its
+    //    displayed net is the rounded key — pinned to the artifact by
+    //    test/meic-summary-reconcile.test.ts. Clamped −100..+100 for the needle — a defined-risk
+    //    trade cannot lose more than its capital — with the unclamped value kept for the label.
+    const capRow = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT COALESCE(SUM(ROUND((wing_width - COALESCE(net_credit, 0.0)) * ${mult}, 2)), 0.0) AS cap,
+                COUNT(*) AS n,
+                SUM(CASE WHEN wing_width IS NOT NULL
+                          AND (wing_width - COALESCE(net_credit, 0.0)) * ${mult} > 0
+                    THEN 1 ELSE 0 END) AS cap_n
+           FROM ic_trades WHERE ${where} AND pnl IS NOT NULL`,
+      )
+      .get(...params) ?? {};
+    const capN = Number(capRow["cap_n"] ?? 0);
+    const capitalAtRisk = capN > 0 ? Math.round(Number(capRow["cap"] ?? 0) * 100) / 100 : null;
+    const rorRawPct =
+      capitalAtRisk !== null && capitalAtRisk > 0 ? (netRaw / capitalAtRisk) * 100 : null;
+    const returnOnRisk = {
+      capitalAtRisk,
+      rorPct: rorRawPct === null ? null : Math.max(-100, Math.min(100, rorRawPct)),
+      rorRawPct,
+      coverage: `${capN}/${trades}`,
+    };
 
     // -- Leg outcomes and the pair identity, one pass over the window's resolved ICs joined to
     //    their legs. The subquery-first shape keeps the two `status` columns unambiguous — the
@@ -2140,6 +2177,7 @@ export function readMeicSummary(
       hero,
       capturePct,
       captureRawPct,
+      returnOnRisk,
       legs,
       pairs,
       entryTime,
