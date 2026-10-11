@@ -64,6 +64,22 @@ its rules land in the shared vocabulary. Every step is verified in a rebuilt bro
   comes with the shared-component sweep, which is when the last of the legacy `--bg*`/`--ok`/
   `--err` aliases leave.
 
+## 2026-10-10 — the shared components swept, and the aliases die
+
+- The slide's own anatomy went suite-wide: cards and panels at 14px (`--surface`), tiles at 10px,
+  controls at 8px, every pill at 999px, dropdowns/toasts at 12px on `--surface-raised`. Tables
+  keep the slide's clean horizontal rules — hover carries the zebra (`--surface-raised`), not the
+  rows; `data-table` heads sit on `--surface-sunken`. Tracks and bars read `--track`, inset
+  reading panels sunken.
+- The legacy aliases left the stylesheet for good: `--bg`, `--bg-card`, `--bg-raised`,
+  `--row-line`, `--row-hover`, `--ok`, `--err`, `--cached` now have zero reads in `styles.css`
+  (they stay declared in `:root` for module CSS and the server-side style until the `.ts-*`
+  retirement removes their last readers). The tone rgba literals left with them: every
+  green/red/amber tint is a `color-mix` over `--pos/--neg/--warn`, so the light theme derives
+  rather than re-specifies.
+- Third cherry restoration: the halted lock-hero title, like its own border rules, is
+  `--accent-live`.
+
 **2026-10-10** — written when the branch stood at `aaf94a90` (entries pagination) plus the merge of
 `origin/main` at `e6dc3ed6`.
 
