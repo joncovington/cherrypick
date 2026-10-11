@@ -30,6 +30,45 @@
   --text-muted: #9ca3af;
   --text-dim: #6b7280; /* category headers; 3.5:1 on the card — headings only, never body */
   --num-face: "Cascadia Code", "Consolas", ui-monospace, monospace;
+
+  color-scheme: dark;
+}
+
+/* The light theme: the summary slide's ORIGINAL palette, come home. When the slide's language
+   was hoisted to :root (2026-10) the slide's own .ts-light set died with its scope; these are
+   those values, promoted to be the light reading of the same tokens. Every surface derives
+   from :root, so re-specifying the tokens here is the whole theme — nothing below this block
+   names a hex. The sign tones are the prototype's (#208a56/#c2372c), not the dark ones dimmed:
+   a mint tuned for a charcoal card is invisible on white. The grey ramp is derived from the
+   prototype's border (#e5e7eb) — sunken/raised/hover/grid each a step from it. Canvas charts
+   read these at construction (chart/cssvars.ts), so a switch lands on them at the next full
+   page load; everything CSS-derived flips immediately. */
+:root[data-theme="light"] {
+  --canvas: #f6f8f9;
+  --surface: #ffffff;
+  --surface-sunken: #eef1f4;
+  --surface-raised: #f3f5f7;
+  --surface-hover: #e2e6ea;
+  --border: #e5e7eb;
+  --border-strong: #d1d5db;
+  --track: #e5e7eb;
+  --chart-grid: #eceff2;
+  --chart-grid-strong: #b9c0c9;
+  --chart-grid-mid: #dde2e7;
+  --accent: #3761e1;
+  --accent-live: #d23f57;
+  --pos: #208a56;
+  --neg: #c2372c;
+  --warn: #92610a;
+  --amber-line: #b45309;
+  --chart-neutral: #94a3b8;
+  --chart-special: #7c5cd6;
+  --live: #1f8a4d;
+  --text: #111827;
+  --text-muted: #6b7280;
+  --text-dim: #9aa1ab;
+
+  color-scheme: light;
 }
 
 * {
@@ -1046,12 +1085,12 @@ select.text-input {
 
 /* Expected-move band on the strike column. */
 .chain-em-band {
-  box-shadow: inset 3px 0 0 #a0703c;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--amber-line) 65%, var(--text-muted));
 }
 
 .chip-em {
-  color: #c99a66;
-  border-color: rgba(160, 112, 60, 0.55);
+  color: color-mix(in srgb, var(--amber-line) 55%, var(--text-muted));
+  border-color: color-mix(in srgb, var(--amber-line) 45%, transparent);
 }
 
 .legs-table td {
@@ -1266,7 +1305,7 @@ select.text-input {
 /* Skeletons: cards render at final size with ghost content — no spinners, no hidden cards. */
 .skeleton {
   display: inline-block;
-  background: linear-gradient(90deg, var(--border) 25%, #343a47 50%, var(--border) 75%);
+  background: linear-gradient(90deg, var(--border) 25%, color-mix(in srgb, var(--border) 60%, var(--text-dim)) 50%, var(--border) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s infinite;
   border-radius: 4px;
@@ -2672,7 +2711,7 @@ select.text-input {
   display: block;
   height: 8px;
   border-radius: 4px;
-  background: var(--surface-2, #1d2129);
+  background: var(--surface-sunken);
   overflow: hidden;
 }
 
@@ -2682,7 +2721,7 @@ select.text-input {
   border-radius: 4px;
   /* Amber, not the brand red: red on a trading surface reads as loss, and this bar states a
      neutral position-in-range that gates nothing. Matches the curve stroke above it. */
-  background: #d9a13b;
+  background: var(--amber-line);
 }
 
 .pct-refusal {
@@ -2859,12 +2898,12 @@ td > .desk-refusal-reason {
   width: 16px;
   height: 16px;
   border-radius: 3px;
-  background: #3d4653;
+  background: var(--chart-grid-strong);
 }
-.advisor-cell-enacted { background: #43b57a; }
-.advisor-cell-carried { background: #4f8fd6; }
-.advisor-cell-not_enacted { background: #d95c4a; }
-.advisor-cell-no_artifact { background: #3d4653; }
+.advisor-cell-enacted { background: var(--pos); }
+.advisor-cell-carried { background: var(--accent); }
+.advisor-cell-not_enacted { background: var(--neg); }
+.advisor-cell-no_artifact { background: var(--chart-grid-strong); }
 /* One strip per experiment when a module runs several at once (2026-09-17). */
 .advisor-strips {
   display: flex;
@@ -2904,16 +2943,16 @@ td > .desk-refusal-reason {
 .advisor-bar {
   height: 8px;
   border-radius: 4px;
-  background: #1c222b;
+  background: var(--surface-sunken);
   overflow: hidden;
   margin: 0.3rem 0;
 }
 .advisor-bar-thin { height: 4px; }
 .advisor-bar-fill {
   height: 100%;
-  background: #43b57a;
+  background: var(--pos);
 }
-.advisor-bar-warn { background: #e3b341; }
+.advisor-bar-warn { background: var(--warn); }
 .advisor-concluded, .advisor-queue {
   padding-left: 1.2rem;
 }
@@ -3097,7 +3136,7 @@ td > .desk-refusal-reason {
 /* For a measure whose sign carries no verdict — fee drag is always positive, and tinting the
    column green would imply something nobody claimed. */
 .diverge-neutral .signed-bar-fill {
-  background: #a06bd9;
+  background: var(--chart-special);
 }
 
 /* A cross-tab is as wide as its buckets; inside a fixed-height card it scrolls rather than

@@ -28,6 +28,7 @@ vi.mock("../src/lib/prefs", () => ({
   usePrefsSync: () => undefined,
   usePrefsVersion: () => 0,
   writePref: async () => undefined,
+  getPref: () => undefined,
 }));
 vi.mock("../src/pages/Config/stagedStore", () => ({
   useDirtyCount: () => 0,

@@ -4,7 +4,8 @@ import { StatusBar } from "./StatusBar";
 import { PageErrorBoundary } from "./PageErrorBoundary";
 import { ToastStack } from "./ToastStack";
 import { isModuleId } from "../../lightbox/moduleOrder";
-import { useBoolPref, usePrefsSync } from "../../lib/prefs";
+import { useEffect } from "react";
+import { useBoolPref, usePrefsSync, usePrefsVersion, getPref } from "../../lib/prefs";
 import { useTradeNotifications } from "../../lib/useTradeNotifications";
 import { useKeyboardNav } from "../../lib/useKeyboardNav";
 
@@ -17,6 +18,25 @@ export function Shell() {
   // Pull the server's copy once, then let every reader work off the synchronous mirror.
   usePrefsSync();
   const dense = useBoolPref("denseTables");
+  // The theme rides the same mirror. The boot script in index.html set the attribute before
+  // first paint; this keeps it in step when the pref arrives from the server or changes. A flip
+  // mid-session reloads — both directions — because the canvas palette consts (chart/cssvars.ts,
+  // the candlestick pages) read :root at module import: without the reload the CSS-derived
+  // surfaces flip and the charts keep the old palette. One reload beats half-flipped charts.
+  // The version subscription is what re-renders this component when the mirror publishes; the
+  // theme itself is read off it synchronously, same as denseTables.
+  usePrefsVersion();
+  const theme = getPref("theme") === "light" ? "light" : "dark";
+  useEffect(() => {
+    const el = document.documentElement;
+    if (el.dataset.theme === theme) return;
+    if (el.dataset.theme !== undefined) {
+      el.dataset.theme = theme;
+      window.location.reload();
+      return;
+    }
+    el.dataset.theme = theme;
+  }, [theme]);
   // Mounted once here (not per-page) so trade toasts fire regardless of which page is open.
   useTradeNotifications();
   // Likewise: the shortcuts the header menu advertises work from every page.

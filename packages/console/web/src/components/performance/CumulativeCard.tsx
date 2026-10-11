@@ -12,7 +12,7 @@ import {
 } from "lightweight-charts";
 import type { ModulePerformanceGroup, MeasurementBreak } from "../../lib/api";
 import { ARM_COLORS } from "../chart/tokens";
-import { canvasPalette as _pal } from "../chart/cssvars";
+import { canvasPalette as _pal, resolveColor } from "../chart/cssvars";
 
 const PAL = _pal();
 
@@ -79,7 +79,7 @@ export function CumulativeCard({ groups, breaks }: { groups: ModulePerformanceGr
       let line = series.get(g.tag);
       if (line === undefined) {
         line = chart.addSeries(LineSeries, {
-          color: ARM_COLORS[i % ARM_COLORS.length]!,
+          color: resolveColor(ARM_COLORS[i % ARM_COLORS.length]!),
           lineWidth: 1,
           title: g.tag,
           priceLineVisible: false,

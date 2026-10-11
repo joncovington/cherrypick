@@ -123,6 +123,40 @@ its rules land in the shared vocabulary. Every step is verified in a rebuilt bro
   in the browser: card `#1a1d23` at 14px, border `#262a32`, seg-on `#3761e1`, track `#2a2e37`,
   the numeral face — every value the slide now reads straight off the shared tokens.
 
+## 2026-10-10 — the light theme: the prototype's original palette, promoted to a second reading
+
+- The theme is a string pref (`dark`/`light`) on Config's prefs slide, riding the same store
+  and mirror as the booleans. `index.html` gained a boot script that reads the mirror before
+  first paint and sets `data-theme`, so a saved light choice never flashes dark on its way in;
+  the pre-CSS inline background grew a light override to match. The Shell effect keeps the
+  attribute in step when the pref arrives from the server — and a mid-session flip reloads,
+  both directions, because the canvas palette consts (`chart/cssvars.ts`, the candlestick
+  pages) read `:root` at module import: without the reload the CSS-derived surfaces flip and
+  the charts keep the old palette. One reload beats half-flipped charts.
+- `:root[data-theme="light"]` re-specifies every token the dark block declares — the values are
+  the summary slide's original `.ts-light` set, come home: canvas `#f6f8f9`, card white, the
+  prototype's own sign tones `#208a56`/`#c2372c` (a mint tuned for charcoal is invisible on
+  white — dimming the dark values would have been the wrong move), amber deepened to `#b45309`
+  for contrast, the grey ramp derived from the prototype's `#e5e7eb` border. `color-scheme`
+  rides along. Nothing below the two blocks names a hex — the sweep's whole point.
+- The completeness the block needed was verified, not assumed: fourteen literals survived
+  below `:root` (the advisor cells and bars — the shared sweep's own declared leftovers — the
+  expected-move band and `chip-em`'s ochre family, the skeleton shimmer's lift pigment, one
+  `--surface-2` fallback that was never a token at all). All onto tokens or color-mixes; the
+  two whites that remain are ink on saturated-accent fills, theme-invariant by design.
+- `test/tokensComplete.test.ts` guards all three seams: no literal below the token blocks (bar
+  the two inks), the light block re-specifies exactly the dark set, and the canvas palette's
+  reads name tokens the stylesheet declares. Each proven to fire by breaking the thing it
+  counts before landing.
+- Caught on the way: `CumulativeCard.tsx` was feeding `ARM_COLORS` — three entries of which
+  are now `var()` strings — straight into lightweight-charts, which parses colours for canvas.
+  The sweep's resolveColor fix had covered the wrappers but missed this direct consumer; its
+  series were painting wrong. Fixed in this commit.
+- Verified live in the browser: boot dark → toggle light (attribute, inline background, card
+  white, `--pos #208a56`, reload re-derives the canvas consts) → fresh load boots light from
+  the mirror → back to dark, everything restored. 305 tests (the routes mock learned `getPref`),
+  typecheck, build green.
+
 **2026-10-10** — written when the branch stood at `aaf94a90` (entries pagination) plus the merge of
 `origin/main` at `e6dc3ed6`.
 
