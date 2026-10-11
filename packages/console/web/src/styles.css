@@ -1,21 +1,44 @@
-/* Terminal luxe: density as luxury — hairlines, mono numerals, sharp corners,
-   one cherry accent reserved for brand, live-mode, and alert moments. */
+/* The adopted house theme (2026-10): the MEIC summary slide's visual language, hoisted to the
+   root and extended across the console — see docs/trade-summary-branch.md for the decisions.
+   Density as luxury: hairlines, mono numerals, rounded cards, one cherry accent reserved for
+   brand, live-mode, and alert moments (the halt control most deliberately).
+
+   The new names are the authority; the legacy aliases below it survive until every surface is
+   swept onto the new names, then die. A surface still on --bg is not a defect, just un-swept. */
 :root {
-  --bg: #0b0c0f;
-  --bg-raised: #0e1013;
-  --bg-card: #101216;
-  --border: #23262d;
-  --row-line: #1a1d23;
-  --row-hover: #15181e;
-  --text: #eceff3;
-  --text-muted: #a6adb8;
-  --accent: #d23f57;
-  --ok: #43b57a;
-  --warn: #d9a13b;
-  --err: #d95c4a;
-  --live: #43b57a;
-  --cached: #d9a13b;
+  --canvas: #0f1115; /* deep charcoal canvas — the page behind the cards */
+  --surface: #1a1d23; /* elevated card surface */
+  --surface-sunken: #14171d; /* table header rows, the ticker, any inset strip */
+  --surface-raised: #16181e; /* zebra stripe 2, quiet fills */
+  --surface-hover: #232730; /* row hover, chart grid lines, progress tracks */
+  --border: #262a32; /* hairline card and divider border */
+  --border-strong: #282c34; /* the spec's border tone — reserved for hover/dividers that must read */
+  --track: #2a2e37; /* progress and gauge tracks */
+  --accent: #3761e1; /* interactive blue — selection, links, focus, active segments */
+  --accent-live: #d23f57; /* the cherry: brand, the LIVE badge, alert moments — never decoration */
+  --pos: #3af3a0; /* positive, by sign only */
+  --neg: #ee6760; /* negative, by sign only */
+  --warn: #fbbf24; /* amber — provisional states and warnings */
+  --amber-line: #f59e0b; /* the chart amber: price lines, payoff stranded bands, entry arrows */
+  --chart-neutral: #3f4654; /* neutral bar fill */
+  --chart-special: #a78bfa; /* the lavender special — emphasis the data stamps, never a verdict */
+  --live: #43b57a; /* liveness in the suite sense (a heartbeat up), distinct from mode */
+  --text: #ffffff;
+  --text-muted: #9ca3af;
+  --text-dim: #6b7280; /* category headers; 3.5:1 on the card — headings only, never body */
   --num-face: "Cascadia Code", "Consolas", ui-monospace, monospace;
+
+  /* legacy names (the pre-adoption palette). Aliases for the RENAMED tokens only — a name that
+     survives unchanged (e.g. --text) is declared once above, where its value changed. Aliases
+     are to be removed as surfaces are swept onto the new names. */
+  --bg: var(--canvas);
+  --bg-raised: var(--surface-sunken);
+  --bg-card: var(--surface);
+  --row-line: var(--surface-raised);
+  --row-hover: var(--surface-hover);
+  --ok: var(--pos);
+  --err: var(--neg);
+  --cached: var(--warn);
 }
 
 * {
@@ -67,7 +90,9 @@ body {
 
 .header-menu-brand {
   font-weight: 650;
-  color: var(--accent);
+  /* brand keeps the cherry (--accent-live): the adopted theme hands the interactive accent to
+     blue, but the wordmark is one of the three cherry roles (brand, LIVE, alert). */
+  color: var(--accent-live);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   font-size: 0.85rem;
@@ -124,7 +149,7 @@ body {
 .header-menu-link.active {
   color: var(--text);
   border-left-color: var(--accent);
-  background: rgba(210, 63, 87, 0.06);
+  background: rgba(55, 97, 225, 0.10);
 }
 
 .header-menu-kbd {
@@ -788,9 +813,9 @@ h2 {
 }
 
 .badge-live {
-  background: rgba(210, 63, 87, 0.14);
-  color: var(--accent);
-  border: 1px solid rgba(210, 63, 87, 0.55);
+  background: color-mix(in srgb, var(--accent-live) 14%, transparent);
+  color: var(--accent-live);
+  border: 1px solid color-mix(in srgb, var(--accent-live) 55%, transparent);
 }
 
 .badge-paper {
@@ -1358,7 +1383,7 @@ select.text-input {
 }
 
 .toast-entry {
-  border-left-color: #7aa2ff;
+  border-left-color: var(--accent);
 }
 
 .toast-exit {
@@ -1777,9 +1802,9 @@ select.text-input {
 }
 
 .lock-hero.halted {
-  border-color: rgba(210, 63, 87, 0.55);
-  border-left-color: var(--accent);
-  background: linear-gradient(to right, rgba(210, 63, 87, 0.08), var(--bg-card) 40%);
+  border-color: color-mix(in srgb, var(--accent-live) 55%, transparent);
+  border-left-color: var(--accent-live);
+  background: linear-gradient(to right, color-mix(in srgb, var(--accent-live) 8%, transparent), var(--bg-card) 40%);
 }
 
 .lock-hero-main {
@@ -1820,8 +1845,8 @@ select.text-input {
 
 /* One click, and it looks like what it does. The safe direction is never behind a dialog. */
 .lock-btn-halt {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-live);
+  border-color: var(--accent-live);
   color: #fff;
   font-weight: 650;
   letter-spacing: 0.08em;
@@ -1842,8 +1867,8 @@ select.text-input {
 .lock-confirm {
   margin-top: 0.9rem;
   padding: 0.75rem 0.9rem;
-  border: 1px solid rgba(210, 63, 87, 0.35);
-  background: rgba(210, 63, 87, 0.05);
+  border: 1px solid color-mix(in srgb, var(--accent-live) 35%, transparent);
+  background: color-mix(in srgb, var(--accent-live) 5%, transparent);
 }
 
 .lock-confirm p {
@@ -3033,7 +3058,7 @@ td > .desk-refusal-reason {
   left: 0;
   top: 3px;
   bottom: 3px;
-  background: #7aa2ff;
+  background: var(--accent);
   border-radius: 1px;
 }
 .bullet-marker {
@@ -3155,14 +3180,14 @@ td > .desk-refusal-reason {
 .mf-nav-link.active {
   color: var(--text);
   background: var(--row-hover);
-  box-shadow: inset 2px 0 0 #7aa2ff;
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 /* The current module is a heading rather than a link -- see ModuleNav. */
 .mf-nav-current {
   font-weight: 600;
   color: var(--text);
   background: var(--row-hover);
-  box-shadow: inset 2px 0 0 #7aa2ff;
+  box-shadow: inset 2px 0 0 var(--accent);
   margin-top: 0.2rem;
 }
 .mf-nav-section {
@@ -3193,7 +3218,7 @@ td > .desk-refusal-reason {
 .mf-nav-slide.active {
   color: var(--text);
   background: var(--row-hover);
-  box-shadow: inset 2px 0 0 #7aa2ff;
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .mf-layout {
@@ -3725,24 +3750,24 @@ td > .desk-refusal-reason {
 }
 
 /* ---------------------------------------------------------------------------
- * Trade summary prototype (.ts-*, scoped to .ts-root) — a gauge-led day summary in a borrowed
- * visual language: rounded cards, blue selection, mint/salmon tones. Deliberately at odds with
- * the terminal-luxe chrome around it; every token is scoped so the rest of the console reads
- * the :root palette unchanged. If the style is adopted, these tokens move outward and this
- * scope is dropped. Fixture data only (SummarySlide.tsx) — no reader backs it yet.
+ * Trade summary slide (.ts-*, scoped to .ts-root) — the first surface built in what is now the
+ * suite's adopted theme (2026-10, docs/trade-summary-branch.md): rounded cards, blue selection,
+ * mint/salmon sign tones. Its tokens below are ALIASES onto the root palette, so the slide and
+ * the chrome around it cannot drift; the scope and these aliases are removed as the sweep
+ * reaches each rule — see docs/trade-summary-branch.md.
  * ------------------------------------------------------------------------- */
 .ts-root {
-  /* palette (reference design, dark theme — the default while judged) */
-  --ts-canvas: #0f1115;
-  --ts-card: #1a1d23;
-  --ts-border: #262a32;
-  --ts-accent: #3761e1;
-  --ts-pos: #3af3a0;
-  --ts-neg: #ee6760;
-  --ts-warn: #fbbf24;
-  --ts-text: #ffffff;
-  --ts-muted: #9ca3af;
-  --ts-track: #2a2e37;
+  /* aliases onto the root palette (the adopted theme) — same values, one authority */
+  --ts-canvas: var(--canvas);
+  --ts-card: var(--surface);
+  --ts-border: var(--border);
+  --ts-accent: var(--accent);
+  --ts-pos: var(--pos);
+  --ts-neg: var(--neg);
+  --ts-warn: var(--warn);
+  --ts-text: var(--text);
+  --ts-muted: var(--text-muted);
+  --ts-track: var(--track);
 
   background: var(--ts-canvas);
   color: var(--ts-text);
@@ -3752,23 +3777,6 @@ td > .desk-refusal-reason {
   gap: 14px;
 }
 
-/* Light variant — the reference design's light theme (canvas F6F8F9, white cards, emerald green).
-   Same components, second token set; a deliberate choice on the slide's own toggle, persisted in
-   the console's prefs mirror, never `prefers-color-scheme` (which would flip the look for a user
-   who chose dark deliberately). */
-.ts-root.ts-light {
-  --ts-canvas: #f6f8f9;
-  --ts-card: #ffffff;
-  --ts-border: #e5e7eb;
-  --ts-accent: #3761e1;
-  --ts-pos: #208a56;
-  --ts-neg: #c2372c;
-  --ts-warn: #92610a;
-  --ts-text: #111827;
-  --ts-muted: #6b7280;
-  --ts-track: #e5e7eb;
-  --ts-needle: #111827;
-}
 
 .ts-row {
   display: grid;
@@ -3860,14 +3868,6 @@ td > .desk-refusal-reason {
   background: var(--ts-accent);
   color: #fff;
 }
-/* The theme toggle reads as a control of the console chrome around the slide, not the slide's own
-   palette — in the light variant it keeps the chrome's text colour on its unselected buttons. */
-.ts-theme-seg button {
-  color: var(--text-muted);
-}
-.ts-theme-seg button.ts-seg-on {
-  color: #fff;
-}
 .ts-daynav {
   display: inline-flex;
   align-items: center;
@@ -3940,8 +3940,8 @@ td > .desk-refusal-reason {
   stroke: var(--ts-neg);
 }
 .ts-needle {
-  stroke: var(--ts-needle, #fff);
-  fill: var(--ts-needle, #fff);
+  stroke: var(--needle, #fff);
+  fill: var(--needle, #fff);
 }
 .ts-tick {
   fill: var(--ts-muted);
@@ -4120,10 +4120,7 @@ td > .desk-refusal-reason {
 /* Neutral tone: a refusal count has no sign, so no tone. Deliberately not pos/neg/accent —
    standing aside is a decision, not a loss, and a gate count must not read as a verdict. */
 .ts-hbar-fill.ts-neutral {
-  background: #64748b;
-}
-.ts-root.ts-light .ts-hbar-fill.ts-neutral {
-  background: #94a3b8;
+  background: var(--neutral-bar, #64748b);
 }
 .ts-market {
   margin: 12px 0 0;

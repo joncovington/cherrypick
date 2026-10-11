@@ -30,7 +30,6 @@
  */
 import { useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useBoolPref, writePref } from "../../lib/prefs";
 import { useMeicSummary } from "../../lib/api";
 import type { MeicSummarySlice } from "@console/shared";
 import type { TradingMode } from "@console/shared";
@@ -560,8 +559,8 @@ function ByArm({ s }: { s: MeicSummarySlice }) {
 
 /* ---------------------------------------------------------------------------
  * Toolbar — range segments and day arrows now DRIVE the read: the range picks the reader's
- * window, the arrows step the page's session. The theme toggle is the one preference the slide
- * owns (the dark/light choice, persisted like every console pref).
+ * window, the arrows step the page's session. The slide owns no preferences: the theme choice
+ * moved to the console (a `theme` pref), so the toggle the prototype carried is gone.
  * ------------------------------------------------------------------------- */
 
 function Toolbar({
@@ -579,10 +578,6 @@ function Toolbar({
   canStepDay: boolean;
   onDayStep: (delta: -1 | 1) => void;
 }) {
-  // The light variant is a choice, persisted like every console pref (mirror first render, server
-  // copy follows); default dark, never `prefers-color-scheme` — a deliberately dark theme must not
-  // flip because the OS said so.
-  const light = useBoolPref("meicSummaryLight");
   return (
     <div className="ts-toolbar">
       <h2 className="ts-title">trade summary</h2>
@@ -604,10 +599,6 @@ function Toolbar({
           ›
         </button>
       </div>
-      <div className="ts-seg ts-theme-seg" role="group" aria-label="theme">
-        <button className={!light ? "ts-seg-on" : ""} onClick={() => writePref("meicSummaryLight", false)}>dark</button>
-        <button className={light ? "ts-seg-on" : ""} onClick={() => writePref("meicSummaryLight", true)}>light</button>
-      </div>
     </div>
   );
 }
@@ -618,7 +609,6 @@ function Toolbar({
  * loading page. The badge is gone: every figure on this slide is now the ledger's own.
  */
 export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSummaryProps) {
-  const light = useBoolPref("meicSummaryLight");
   // The range rides the URL (?range=week): a link to a page is a link to the range it names —
   // the console's own convention for mode — and it makes the window statically verifiable.
   // Anything unstated or unrecognised falls through to the day, like the header's day select.
@@ -653,7 +643,7 @@ export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSum
   });
   if (q.isError) {
     return (
-      <div className={light ? "ts-root ts-light" : "ts-root"}>
+      <div className="ts-root">
         <p className="ts-empty">the summary read failed — {q.error instanceof Error ? q.error.message : "unknown error"}</p>
       </div>
     );
@@ -663,7 +653,7 @@ export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSum
   const windowLabel =
     (s?.window.label === "day" && s.window.from !== null ? sessionLabel(s.window.from) : s?.window.label) || "…";
   return (
-    <div className={light ? "ts-root ts-light" : "ts-root"}>
+    <div className="ts-root">
       <Toolbar
         range={range}
         onRange={setRange}

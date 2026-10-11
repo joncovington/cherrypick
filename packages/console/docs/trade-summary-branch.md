@@ -4,6 +4,47 @@ Status notes for `console/trade-summary-redesign`, kept on the branch itself so 
 work. If this branch merges to `main`, this file either goes with it or moves to `docs/history/` —
 it should not survive on `main` as a living doc.
 
+## 2026-10-10 — the prototype is adopted, and becomes the suite's theme
+
+The MEIC summary slide's borrowed visual language is no longer a prototype under judgement: it is
+adopted, and it is being extended across the whole console (this branch never merges, so the
+adoption is recorded here and in the styles.css comments, not as a landing note). The decisions,
+made together so the rest of the work does not re-litigate them:
+
+1. **The palette is the authority.** The prototype's tokens move to `:root` under new names
+   (`--canvas/--surface/--border/--track/--accent/--pos/--neg/--warn/--text/--text-muted/--text-dim`)
+   and the old `:root` names survive as aliases onto them until each surface is swept. Two
+   disagreements between the prototype and the write-up resolved in the prototype's favour where it
+   is the thing being extended: borders read `#262a32` (the slide's drawn border, and `#282c34`
+   next to it read as drift, not intent); the grid/track tone reads `#2a2e37` for the same reason.
+   Revisit at the chrome step if the darker grid is genuinely wanted.
+2. **The cherry accent survives, as `--accent-live: #d23f57`.** The adoption hands the interactive
+   accent to blue, but the cherry is doing semantic work blue cannot: it is reserved for brand, for
+   the LIVE badge, and for the alert moments — the Config halt control most deliberately ("the one
+   control that stops live trading is the one thing that looks urgent"). Those three keep cherry;
+   focus rings, selection and link hovers go blue.
+3. **Navigation icons are for pages, not slides** (option A). The ~17 top-level links get icons —
+   which is what makes the 64px collapsed rail actually navigable (today's 26px strip holds only
+   the toggle); the ~70 slide entries stay text. Icons live in the decl data (`navLinks.ts`'s
+   `NavLinkDef`, one optional `icon` field), never a parallel hand-kept map.
+4. **The light variant is retired from the slide and becomes a global setting.** The
+   `meicSummaryLight` toggle and its `.ts-light` token set die with the slide's own scope; a
+   single `theme` console pref (mirrored like every pref, so the first render paints the chosen
+   theme) carries a light variant of the global palette once the dark sweep is done. Until that
+   exists there is no light console — that is a gap, stated here rather than hidden.
+5. **Scope controls stay per page.** The write-up's global arm/era/date bar contradicts the
+   one-scope-per-page rule and flattens per-module era semantics; deferring it to its own branch,
+   where it would be a module-frame refactor across every manifest — not part of this restyle.
+6. **Cards still link; nothing opens an overlay.** The write-up's full-screen drill-down is the
+   existing ⤢ link to a rail page carrying the query string, never a modal.
+
+Order of work: tokens and the slide's toggle removal first (one commit, the whole suite shifts to
+the new canvas/surface/border at once); then the chrome (rail, status bars, ticker); then the
+shared components (`GridCard`, `TileGrid`, `PerformanceTab`, `HistoryTable`, `TradeMoney`), which
+restyle most of the suite at once; then the per-module hand-rolled SVGs; the `.ts-*` scope dies as
+its rules land in the shared vocabulary. Every step is verified in a rebuilt browser
+(`pnpm ui-check`), not by tests alone.
+
 **2026-10-10** — written when the branch stood at `aaf94a90` (entries pagination) plus the merge of
 `origin/main` at `e6dc3ed6`.
 
