@@ -44,9 +44,9 @@ describe("Spark", () => {
 
   it("colours a cumulative series by where it ends, not by its last step", () => {
     // Steps: +10 then -30 — the last step is down and so is the total.
-    expect(renderToString(<Spark values={[10, -30]} mode="cumulative" />)).toContain("var(--err)");
+    expect(renderToString(<Spark values={[10, -30]} mode="cumulative" />)).toContain("var(--neg)");
     // Steps: -10 then +30 — the total ends up, which is what a reader takes from the line.
-    expect(renderToString(<Spark values={[-10, 30]} mode="cumulative" />)).toContain("var(--ok)");
+    expect(renderToString(<Spark values={[-10, 30]} mode="cumulative" />)).toContain("var(--pos)");
   });
 
   it("draws a dot per point only when the caller supplies the titles for them", () => {

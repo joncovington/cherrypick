@@ -41,10 +41,10 @@ const WINDOWS = ["cumulative", "rolling 4w", "rolling 1w"] as const;
 /** Sample-progress bar: n/target, colored once the significance gates are met. */
 function SampleBar({ s }: { s: StrategyDetail }) {
   const pct = Math.round(s.sampleProgress * 100);
-  const color = s.significant ? "var(--ok)" : s.directional ? "var(--warn)" : "var(--border)";
+  const color = s.significant ? "var(--pos)" : s.directional ? "var(--warn)" : "var(--border)";
   return (
     <div title={`${s.trades}/30 trades — ${s.significant ? "significant" : s.directional ? "directional only" : "too small to read"}`}>
-      <div style={{ height: 6, background: "var(--row-line)", borderRadius: 3, overflow: "hidden" }}>
+      <div style={{ height: 6, background: "var(--track)", borderRadius: 3, overflow: "hidden" }}>
         <div style={{ width: `${pct}%`, height: "100%", background: color }} />
       </div>
       <span className="muted" style={{ fontSize: 10.5 }}>

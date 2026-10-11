@@ -95,10 +95,10 @@ function SideCell({ trade }: { trade: FlowTrade }) {
 /** A magnitude bar: width in proportion to the largest value shown in the column, toned by side. */
 function Bar({ value, max, tone, width = 72 }: { value: number | null; max: number; tone?: string; width?: number }) {
   const w = value === null || max <= 0 ? 0 : Math.max(1, (Math.abs(value) / max) * width);
-  const fill = tone === "pnl-pos" ? "var(--ok)" : tone === "pnl-neg" ? "var(--err)" : "var(--text-muted)";
+  const fill = tone === "pnl-pos" ? "var(--pos)" : tone === "pnl-neg" ? "var(--neg)" : "var(--text-muted)";
   return (
     <svg width={width} height={8} role="img" aria-label="relative size" className="flow-bar">
-      <rect x={0} y={0} width={width} height={8} fill="var(--row-line)" />
+      <rect x={0} y={0} width={width} height={8} fill="var(--track)" />
       <rect x={0} y={0} width={w} height={8} fill={fill} />
     </svg>
   );
@@ -420,10 +420,10 @@ function ScoreBar({ score, width = 80 }: { score: number | null; width?: number 
   const half = width / 2;
   const w = score === null ? 0 : (Math.min(Math.abs(score), 100) / 100) * half;
   const x = score !== null && score < 0 ? half - w : half;
-  const fill = score === null ? "var(--text-muted)" : score >= 0 ? "var(--ok)" : "var(--err)";
+  const fill = score === null ? "var(--text-muted)" : score >= 0 ? "var(--pos)" : "var(--neg)";
   return (
     <svg width={width} height={8} role="img" aria-label="score" className="flow-bar">
-      <rect x={0} y={0} width={width} height={8} fill="var(--row-line)" />
+      <rect x={0} y={0} width={width} height={8} fill="var(--track)" />
       <rect x={half - 0.5} y={0} width={1} height={8} fill="var(--text-muted)" />
       <rect x={x} y={0} width={w} height={8} fill={fill} />
     </svg>
@@ -713,7 +713,7 @@ function NamesCard({ day }: { day: OptionsFlowDay }) {
                 <td>
                   <svg width={6 * 9} height={8} role="img" aria-label={`${String(n.tables.length)} of 6 tables`}>
                     {Object.keys(TABLE_LABEL).map((t, i) => (
-                      <rect key={t} x={i * 9} y={0} width={7} height={8} fill={n.tables.includes(t) ? "var(--accent)" : "var(--row-line)"} />
+                      <rect key={t} x={i * 9} y={0} width={7} height={8} fill={n.tables.includes(t) ? "var(--accent)" : "var(--track)"} />
                     ))}
                   </svg>
                 </td>

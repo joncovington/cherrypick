@@ -53,8 +53,8 @@ function useOccupancy(
   });
 }
 
-const LONG = "var(--ok)";
-const SHORT = "var(--err)";
+const LONG = "var(--pos)";
+const SHORT = "var(--neg)";
 
 export function OccupancyMap({
   module,

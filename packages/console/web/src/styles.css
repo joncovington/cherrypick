@@ -14,6 +14,9 @@
   --border: #262a32; /* hairline card and divider border */
   --border-strong: #282c34; /* the spec's border tone — reserved for hover/dividers that must read */
   --track: #2a2e37; /* progress and gauge tracks */
+  --chart-grid: #15181e; /* chart gridlines — fainter than the border, a texture not a rule */
+  --chart-grid-strong: #3d4653; /* the zero line and hover crosshairs — a gridline that must read */
+  --chart-grid-mid: #23262d; /* between the two: occasional marks, pane separators */
   --accent: #3761e1; /* interactive blue — selection, links, focus, active segments */
   --accent-live: #d23f57; /* the cherry: brand, the LIVE badge, alert moments — never decoration */
   --pos: #3af3a0; /* positive, by sign only */

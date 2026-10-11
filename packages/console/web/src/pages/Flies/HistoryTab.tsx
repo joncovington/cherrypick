@@ -138,7 +138,7 @@ export function FliesCalendar({
           {[0, 1, 2, 3, 4].map((wd) => {
             const cell = cells.find((c) => c.weekday === wd);
             if (cell === undefined)
-              return <div key={wd} style={{ width: 18, height: 18, background: "var(--row-line)", borderRadius: 3 }} />;
+              return <div key={wd} style={{ width: 18, height: 18, background: "var(--track)", borderRadius: 3 }} />;
             const alpha = 0.2 + 0.8 * (Math.abs(cell.netPnl) / maxAbs);
             const color = cell.netPnl >= 0 ? `rgba(67, 181, 122, ${alpha})` : `rgba(217, 92, 74, ${alpha})`;
             return (

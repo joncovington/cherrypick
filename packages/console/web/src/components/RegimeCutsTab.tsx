@@ -169,8 +169,8 @@ export function CrossTabGrid({ tab, thinBelowSessions }: { tab: RegimeCrossTab; 
                       // misread the writer's flag exists to prevent, so it never gets a colour.
                       const colour =
                         c.thin || rate === null
-                          ? "var(--row-line)"
-                          : `rgba(67, 181, 122, ${(0.15 + 0.85 * rate).toFixed(3)})`;
+                          ? "var(--track)"
+                          : `color-mix(in srgb, var(--pos) ${Math.round((0.15 + 0.85 * rate) * 100)}%, transparent)`;
                       return (
                         <div
                           className={`regime-grid-cell${c.thin || rate === null ? " muted" : ""}`}
