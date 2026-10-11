@@ -37,10 +37,7 @@ export function spawnModuleCli(argv: string[], unavailableMessage: string): Spaw
     return { ok: false, json: null, error: `${unavailableMessage} (${out.error.message})` };
   }
   if (out.status !== 0) {
-    const lines = (out.stderr ?? "").trim().split(/\r?\n/).filter(Boolean);
-    // An empty stderr is its own fact ("exit 1" beats a dangling dash): the CLI's failures print
-    // JSON to stdout, so a silent stderr must never render as "unavailable — ".
-    const detail = lines.pop() ?? `exit ${String(out.status)}`;
+    const detail = (out.stderr ?? "").trim().split(/\r?\n/).pop() ?? `exit ${String(out.status)}`;
     return { ok: false, json: null, error: `${unavailableMessage} — ${detail}` };
   }
   try {

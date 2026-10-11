@@ -3943,14 +3943,6 @@ td > .desk-refusal-reason {
   gap: 14px;
   flex-wrap: wrap;
 }
-/* The scope row under the toolbar: mode toggle, symbol and arm selects, and the unreadable-
-   modules count. Own row because the toolbar's segments are already wide on their own. */
-.ts-scope {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
 .ts-title {
   margin: 0;
   font-size: 13px;

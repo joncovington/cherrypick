@@ -13,13 +13,11 @@ Commands:
 
     summary --db PATH --schema {meic_ic|earnings|fly_book|dc_week|pmcc|curve_vx|bwb_132}
             [--session YYYY-MM-DD] [--symbol SYMBOL] [--arm TAG]
-            [--width {day|week|month|year|all}] [--era ERA] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+            [--width {day|week|month|year|all}]
 
 `--era` keeps only records stamped with that era (a schema in `ledgers.ERA_SCHEMAS`; any other
 schema is refused rather than silently unfiltered). An unstamped row never matches. `ALL`, or no
-flag, applies no era filter. Applied to the WHOLE read -- facets included -- so the page's
-selects name the era's own values, and rides out as "era" in the output so a slice says which
-scope it answered for.
+flag, applies no era filter.
 
 `read` output: {"ok": true, "schema": ..., "n_records": N,
                 "groups": {tag: {"reading": <calibration_reading>,
@@ -153,10 +151,6 @@ def cmd_summary(args) -> dict:
     reader = ledgers.READERS.get(ledgers.canonical_schema(args.schema))
     if reader is None:
         return {"ok": False, "error": f"unknown schema {args.schema!r}"}
-    era = getattr(args, "era", None)
-    if era and era != "ALL":
-        if ledgers.canonical_schema(args.schema) not in ledgers.ERA_SCHEMAS:
-            return {"ok": False, "error": f"schema {args.schema!r} records carry no era; --era cannot scope it"}
     try:
         conn = ledgers.connect_ro(args.db)
         try:
@@ -165,8 +159,6 @@ def cmd_summary(args) -> dict:
             conn.close()
     except sqlite3.OperationalError as exc:
         return {"ok": False, "error": f"cannot read {args.db!r}: {exc}"}
-    if era and era != "ALL":
-        records = [r for r in records if r.get("era") == era]
 
     sessions = sorted({r["session"] for r in records if r.get("session")})
     symbols = sorted({r["symbol"] for r in records if r.get("symbol")})
@@ -175,7 +167,6 @@ def cmd_summary(args) -> dict:
         return {
             "ok": True,
             "schema": args.schema,
-            "era": era,
             "window": {"from": None, "to": None},
             "hero": _hero([]),
             "return": {"value": None, "coverage": "0/0"},
@@ -269,7 +260,6 @@ def cmd_summary(args) -> dict:
     return {
         "ok": True,
         "schema": args.schema,
-        "era": era,
         "window": {
             # The resolved window's own bounds -- the sessions in it, not calendar guesses, so a
             # page states the window with the reader's own voice. "day" is [anchor, anchor];
@@ -312,9 +302,6 @@ def main(argv: list[str] | None = None) -> int:
         choices=[*WINDOW_DAYS, "all"],
         help="how far back from the anchor session the window reaches",
     )
-    sm.add_argument("--era", default=None, help="one stamped era (ERA_SCHEMAS only), or ALL")
-    sm.add_argument("--start", default=None)
-    sm.add_argument("--end", default=None)
     args = ap.parse_args(argv)
     fn = {"read": cmd_read, "summary": cmd_summary}[args.cmd]
     result = fn(args)

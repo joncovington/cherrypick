@@ -7,8 +7,19 @@ import { readEntryAttempts } from "../readers/attempts.js";
 import { readDecisions } from "../readers/decisions.js";
 import { readFliesArmGuide, readMeicProfileGuide } from "../readers/experimentGuide.js";
 import { readOccupancy } from "../readers/occupancy.js";
-import { readMeic, readMeicCosts, readMeicAnalytics, readMeicDivergence, readMeicDeepAnalytics, readMeicSummary, readMeicPerformance, readMeicScope, readMeicLoopStatus, type MeicScopeFilter, type MeicTradeQuery } from "../readers/meic.js";
-import { parseSummaryFilter, readTradeSummary } from "../readers/summary.js";
+import {
+  readMeic,
+  readMeicCosts,
+  readMeicAnalytics,
+  readMeicDivergence,
+  readMeicDeepAnalytics,
+  readMeicSummary,
+  readMeicPerformance,
+  readMeicScope,
+  readMeicLoopStatus,
+  type MeicScopeFilter,
+  type MeicTradeQuery,
+} from "../readers/meic.js";
 import { parsePage } from "../readers/paging.js";
 import {
   readFlies,
@@ -117,12 +128,6 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     return readScreenMetrics(parseMode(req.query) === "live" ? "live" : "paper", since);
   });
 
-  // The Reports summary's one read (readers/summary.ts, "The Reports summary's one read"): every
-  // module's slice arrives computed by `core.metrics summary` through the bridge; the page derives
-  // nothing beyond presentation arithmetic. module=null renders every module's comparison card.
-  app.get("/api/reports/summary", async (req) =>
-    readTradeSummary(config, parseSummaryFilter((req.query ?? {}) as Record<string, unknown>)),
-  );
   app.get("/api/meic", async (req) => readMeic(config, parseMode(req.query), parseMeicTradeQuery(req.query)));
   app.get("/api/meic/analytics", async (req) =>
     readMeicAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),

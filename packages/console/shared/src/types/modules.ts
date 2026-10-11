@@ -1658,18 +1658,11 @@ export interface TradeSummarySlice {
     winPct: number | null;
   };
   return: TradeSummaryReturn;
-  /** What the denominator IS, per module — the reader's vocabulary, not the page's derivation
-   *  ("capital at risk" for a defined-risk structure, "cash deployed" for a shares book). The
-   *  figure is already in `return`; this only says its name. */
-  returnLabel: { capital: string; note: string };
   byArm: Array<{ arm: string; trades: number; sessions: number; net: number; gross: number; fees: number; wins: number; winPct: number | null; capitalCoverage: string; return: number | null }>;
   /** [session, net, trades, wins], in session order — the window's path. */
   daily: Array<{ session: string; net: number; trades: number; wins: number }>;
   capture: { value: number | null; n: number } | null;
   facets: { sessions: string[]; symbols: string[]; arms: string[] };
-  /** The module's refusal, when its slice could not be read for this filter (no live ledger,
-   *  an absent store, a spawn failure). Present means the card head names it — never silent. */
-  error?: string;
 }
 
 /** The one-read payload: the module requested PLUS one slice per schema, so switching modules
@@ -1688,12 +1681,4 @@ export interface TradeSummaryPayload {
   slices: TradeSummarySlice[];
   modulesRead: string[];
   moduleErrors: Record<string, string>;
-  /** Modules the orchestrator's switchboard turned off (`modules.<m>.enabled`), held OUT of the
-   *  comparison — an off module is not part of the suite's day. Reachable only by a direct
-   *  `?module=` ask, whose slice then states the refusal. Empty when the config names no
-   *  modules block (the switchboard says nothing; hide nothing). */
-  modulesHidden: string[];
-  /** The label for the ROR denominator per module id — the reader's registry, one hop off the
-   *  payload so the page never keeps a module table of its own. */
-  returnLabels: Record<string, { capital: string; note: string }>;
 }
