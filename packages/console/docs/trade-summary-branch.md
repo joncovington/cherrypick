@@ -80,6 +80,32 @@ its rules land in the shared vocabulary. Every step is verified in a rebuilt bro
 - Third cherry restoration: the halted lock-hero title, like its own border rules, is
   `--accent-live`.
 
+## 2026-10-10 — the chart kit reads the tokens; the hand-SVG greys become a grid
+
+- Three new tokens: `--chart-grid` (the faint line texture, `#15181e`), `--chart-grid-strong`
+  (the zero line and hover crosshairs, `#3d4653`), `--chart-grid-mid` (pane separators,
+  `#23262d`). Every hand-SVG gridline in the suite now reads one of the three; the six or so
+  greys each file guessed for itself collapse onto them.
+- The shared palettes went var-first: `ARM_COLORS` leads with `--accent/--pos/--amber-line/
+  --chart-special` (the categorical tail stays literal — it is a *set*), `SPOT_COLOR` is
+  `--amber-line`, the outcome vocabulary reads the tokens where the theme names one, and
+  `AXIS_MUTED_HEX` (its name kept — a dozen call sites) now carries `var(--text-muted)`. SVG
+  inherits no custom property, but the *attribute* is read back in the DOM: the var() is
+  resolved against the stylesheet, which is exactly what we want for the theme step.
+- Canvas knows nothing of custom properties, so the lightweight-charts surfaces (the
+  performance cards, ChartPage, IntradayPage) go through one runtime reader,
+  `chart/cssvars.ts`: `getHex`/`hexOf` read `:root` once at construction (module-level consts
+  use the lenient read — SSR-safe), `resolveColor` turns a caller's `var(--pos)` into the hex
+  the canvas needs, and a missing token throws rather than painting a wrong colour. The
+  wrappers resolve on the callers' behalf, so a series colour written as a token works the
+  same as one written as a hex.
+- The inline alias readers (Spark, OccupancyMap, the bar tracks, Earnings bars, Flow) moved to
+  canonical names; RegimeCutsTab's rate-tinted cell now derives its tint with `color-mix`
+  instead of its own rgba literal. Zero `--ok/--err/--row-line` reads remain in TSX.
+- The remaining literals are the resolution seam itself: `hexOf` fallbacks (the value the
+  canvas would read before hydration, kept in sync with `:root`) and one luminance threshold
+  for chip ink, which is arithmetic, not palette.
+
 **2026-10-10** — written when the branch stood at `aaf94a90` (entries pagination) plus the merge of
 `origin/main` at `e6dc3ed6`.
 

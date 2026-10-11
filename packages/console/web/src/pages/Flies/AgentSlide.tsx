@@ -12,6 +12,7 @@ import type {
 import { Card, DataCard, PnlCell } from "../../components/DataTable";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { ARM_COLORS, AXIS_FONT_FAMILY, AXIS_MUTED_HEX, SPOT_COLOR } from "../../components/chart/tokens";
+import { CHART_GRID } from "../../components/Charts";
 import { niceTicks } from "../../components/chart/scales";
 import { hhmm, minuteOf } from "../../components/chart/time";
 import { fmtCash, fmtPct, fmtPrice } from "../../lib/format";
@@ -28,9 +29,9 @@ import { useTimeline } from "./TimelineCard";
  * priced at natural when tagged and left to settle, so "net if closed" is a valuation, never a fill.
  */
 
-const GATE_ON = "#d9a13b";
-const GATE_OFF = "#7aa2ff";
-const GATE_BAD = "#82878f";
+const GATE_ON = "var(--amber-line)";
+const GATE_OFF = "var(--accent)";
+const GATE_BAD = "var(--text-dim)";
 
 function useAgent(session: string | null) {
   return useQuery<FliesAgentPayload>({
@@ -112,7 +113,7 @@ function DecisionChart({ data }: { data: FliesAgentPayload }) {
     <svg viewBox={`0 0 ${String(width)} ${String(height)}`} width="100%" role="img" aria-label="spot path with the agent's decisions">
       {niceTicks(yMin, yMax, 4).map((v) => (
         <g key={v}>
-          <line x1={pad.l} y1={Y(v)} x2={width - pad.r} y2={Y(v)} stroke="#15181e" />
+          <line x1={pad.l} y1={Y(v)} x2={width - pad.r} y2={Y(v)} stroke={CHART_GRID} />
           <text x={4} y={Y(v) + 3} fontSize={9} fill={AXIS_MUTED_HEX} fontFamily={AXIS_FONT_FAMILY}>{v.toFixed(0)}</text>
         </g>
       ))}

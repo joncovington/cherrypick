@@ -42,7 +42,7 @@ const BAND_LABEL: Record<string, string> = { "1": "1 lot", "2-10": "2–10", "11
 // 2026-10-02) and a fourth shade of red vanished beside the third. Every band that has trades also
 // gets MIN_BAND pixels, so the block trades are always visible.
 const BAND_FILL: Record<string, string> = {
-  "1": "#5b616b",
+  "1": "var(--text-dim)",
   "2-10": "rgba(210, 63, 87, 0.5)",
   "11-99": "var(--accent)",
   "100+": "var(--warn)",

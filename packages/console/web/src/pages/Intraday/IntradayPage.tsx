@@ -13,6 +13,9 @@ import { CANDLE_PERIODS, type CandleBar, type CandlePeriod, type FuturesTickerEn
 import { useFuturesTicker } from "../../lib/api";
 import { useWsState } from "../../lib/useQuote";
 import { wsClient } from "../../lib/wsClient";
+import { canvasPalette as _pal, hexOf } from "../../components/chart/cssvars";
+
+const PAL = _pal();
 
 /**
  * A live intraday futures chart: 1-, 5- or 15-minute candles over the console's own DXLink session,
@@ -23,8 +26,8 @@ import { wsClient } from "../../lib/wsClient";
  * bar in progress, or a new one. The chart draws what the feed sent and computes nothing.
  */
 
-const UP = "#43b57a";
-const DOWN = "#d95c4a";
+const UP = hexOf("--pos", "#3af3a0");
+const DOWN = hexOf("--neg", "#ee6760");
 const UP_VOL = "rgba(67, 181, 122, 0.35)";
 const DOWN_VOL = "rgba(217, 92, 74, 0.35)";
 /** Bars in view when the history lands; the rest is a scroll away. */
@@ -98,11 +101,11 @@ function LiveCandles({ entry, period }: { entry: FuturesTickerEntry & { streamer
     const precision = PRECISION[entry.product] ?? 2;
     const chart = createChart(el, {
       autoSize: true,
-      layout: { background: { color: "transparent" }, textColor: "#a6adb8" },
-      grid: { vertLines: { color: "#1a1d23" }, horzLines: { color: "#1a1d23" } },
-      rightPriceScale: { borderColor: "#23262d" },
+      layout: { background: { color: "transparent" }, textColor: PAL.textMuted },
+      grid: { vertLines: { color: PAL.grid }, horzLines: { color: PAL.grid } },
+      rightPriceScale: { borderColor: PAL.gridMid },
       timeScale: {
-        borderColor: "#23262d",
+        borderColor: PAL.gridMid,
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 5,

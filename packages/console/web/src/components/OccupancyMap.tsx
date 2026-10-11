@@ -141,13 +141,13 @@ export function OccupancyMap({
                                 minWidth: 16,
                                 borderRadius: 3,
                                 background: cell.sign > 0 ? LONG : SHORT,
-                                color: "#0d1014",
+                                color: "var(--canvas)",
                                 fontWeight: 600,
                                 // A strike that has actually refused something is
                                 // ringed rather than recoloured: it is still an
                                 // ordinary long or short, and the sign is the
                                 // thing that must stay readable.
-                                outline: refusals > 0 ? "2px solid #d9a13b" : undefined,
+                                outline: refusals > 0 ? "2px solid var(--amber-line)" : undefined,
                               }}
                             >
                               {cell.sign > 0 ? "+" : "−"}

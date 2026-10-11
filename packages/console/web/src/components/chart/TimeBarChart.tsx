@@ -8,6 +8,9 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { fmtMoney } from "../DataTable";
+import { canvasPalette as _pal } from "./cssvars";
+
+const PAL = _pal();
 
 /**
  * Signed bar chart over a real date x-axis, green/red by sign, with an optional line overlay --
@@ -37,16 +40,16 @@ export function TimeBarChart({
     if (el === null) return;
     const chart = createChart(el, {
       autoSize: true,
-      layout: { background: { color: "transparent" }, textColor: "#a6adb8" },
-      grid: { vertLines: { color: "#1a1d23" }, horzLines: { color: "#1a1d23" } },
-      rightPriceScale: { borderColor: "#23262d" },
-      timeScale: { borderColor: "#23262d" },
+      layout: { background: { color: "transparent" }, textColor: PAL.textMuted },
+      grid: { vertLines: { color: PAL.grid }, horzLines: { color: PAL.grid } },
+      rightPriceScale: { borderColor: PAL.gridMid },
+      timeScale: { borderColor: PAL.gridMid },
       localization: { priceFormatter: yFormat },
     });
     chartRef.current = chart;
     barsRef.current = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false });
     overlayRef.current = chart.addSeries(LineSeries, {
-      color: "#7aa2ff",
+      color: PAL.accent,
       lineWidth: 2,
       title: "cumulative",
       priceLineVisible: false,
@@ -68,7 +71,7 @@ export function TimeBarChart({
     const t = (x: string) => (Date.parse(x) / 1000) as UTCTimestamp;
     const hadNoData = barSeries.data().length === 0;
 
-    barSeries.setData(bars.map((b) => ({ time: t(b.x), value: b.y, color: b.y >= 0 ? "#43b57a" : "#d95c4a" })));
+    barSeries.setData(bars.map((b) => ({ time: t(b.x), value: b.y, color: b.y >= 0 ? PAL.pos : PAL.neg })));
     overlaySeries.setData((overlay ?? []).map((o) => ({ time: t(o.x), value: o.y })));
 
     if (hadNoData) chart.timeScale().fitContent();

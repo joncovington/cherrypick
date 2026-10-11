@@ -242,7 +242,7 @@ export function ArmRail({
               <div
                 key={a.arm}
                 style={{
-                  border: "1px solid var(--border, #2a2f38)",
+                  border: "1px solid var(--border)",
                   borderRadius: 6,
                   padding: "0.55rem 0.65rem",
                 }}
@@ -344,7 +344,7 @@ export function ArmRail({
                           title={`${LABEL_OF[outcome] ?? outcome}: ${n}`}
                           style={{
                             width: `${(n / (a.attempts - a.fills || 1)) * 100}%`,
-                            background: COLOR_OF[outcome] ?? "#6c7480",
+                            background: COLOR_OF[outcome] ?? "var(--text-dim)",
                           }}
                         />
                       ))}
@@ -441,7 +441,7 @@ export function AttemptTimeline({
           >
             {hourTicks.map((m) => (
               <g key={m}>
-                <line x1={X(m)} x2={X(m)} y1={pad.t - 4} y2={height - pad.b} stroke="#2a2f38" strokeWidth={1} />
+                <line x1={X(m)} x2={X(m)} y1={pad.t - 4} y2={height - pad.b} stroke="var(--chart-grid)" strokeWidth={1} />
                 <text x={X(m)} y={height - pad.b + 14} fontSize={10} fill={AXIS_MUTED} textAnchor="middle">
                   {`${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`}
                 </text>
@@ -459,7 +459,7 @@ export function AttemptTimeline({
                     x2={width - pad.r}
                     y1={y + LANE_H / 2}
                     y2={y + LANE_H / 2}
-                    stroke="#1e232b"
+                    stroke="var(--chart-grid)"
                     strokeWidth={1}
                   />
                   {rows
@@ -481,7 +481,7 @@ export function AttemptTimeline({
                           y={y + (filled ? 3 : 7)}
                           width={filled ? 4 : 2}
                           height={filled ? LANE_H - 6 : LANE_H - 14}
-                          fill={COLOR_OF[r.outcome] ?? "#6c7480"}
+                          fill={COLOR_OF[r.outcome] ?? "var(--text-dim)"}
                           opacity={filled ? 1 : 0.75}
                           onMouseEnter={() => setHover(r)}
                         />

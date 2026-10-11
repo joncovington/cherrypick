@@ -81,12 +81,12 @@ export function SpotPathCard({
       <svg viewBox={`0 0 ${String(width)} ${String(height)}`} width="100%" role="img" aria-label="spot path with entries and completions">
         {niceTicks(yMin, yMax, 4).map((v) => (
           <g key={v}>
-            <line x1={pad.l} y1={Y(v)} x2={width - pad.r} y2={Y(v)} stroke="#15181e" />
-            <text x={4} y={Y(v) + 3} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">{v.toFixed(0)}</text>
+            <line x1={pad.l} y1={Y(v)} x2={width - pad.r} y2={Y(v)} stroke="var(--chart-grid)" />
+            <text x={4} y={Y(v) + 3} fontSize={9} fill="var(--text-muted)" fontFamily="Consolas, monospace">{v.toFixed(0)}</text>
           </g>
         ))}
         {hours.map((m) => (
-          <text key={m} x={X(m)} y={height - 6} fontSize={9} fill="#82878f" textAnchor="middle" fontFamily="Consolas, monospace">
+          <text key={m} x={X(m)} y={height - 6} fontSize={9} fill="var(--text-muted)" textAnchor="middle" fontFamily="Consolas, monospace">
             {hhmm(m)}
           </text>
         ))}

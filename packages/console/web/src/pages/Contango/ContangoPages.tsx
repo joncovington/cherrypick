@@ -60,12 +60,12 @@ function navLines(metrics: ContangoMetrics | undefined, withExpected: boolean): 
     const base = m.startingCapital ?? 10_000;
     lines.push({ label: arm, color: SERIES_COLORS[i % SERIES_COLORS.length], points: rebase(m.series, base) });
     if (withExpected && m.expected.length > 1) {
-      lines.push({ label: `${arm}: its rule at 2 bps`, color: "#5b6270", points: rebase(m.expected, base) });
+      lines.push({ label: `${arm}: its rule at 2 bps`, color: "var(--text-dim)", points: rebase(m.expected, base) });
     }
   });
   const firstCapital = Object.values(metrics.arms)[0]?.startingCapital ?? 10_000;
   for (const [symbol, b] of Object.entries(metrics.benchmarks)) {
-    lines.push({ label: `buy-and-hold ${symbol}`, color: "#d9a13b", points: rebase(b.series, firstCapital) });
+    lines.push({ label: `buy-and-hold ${symbol}`, color: "var(--amber-line)", points: rebase(b.series, firstCapital) });
   }
   return lines.filter((l) => l.points.length > 0);
 }
@@ -278,7 +278,7 @@ export function ContangoPerformance({ data, metrics }: { data: ContangoPayload |
   const arms = Object.entries(metrics?.arms ?? {});
   const named: NamedSeries[] = [
     ...arms.map(([arm, m], i) => ({ label: arm, data: m.series, color: SERIES_COLORS[i % SERIES_COLORS.length] })),
-    ...Object.entries(metrics?.benchmarks ?? {}).map(([sym, b]) => ({ label: `buy-and-hold ${sym}`, data: b.series as DatedValue[], color: "#d9a13b" })),
+    ...Object.entries(metrics?.benchmarks ?? {}).map(([sym, b]) => ({ label: `buy-and-hold ${sym}`, data: b.series as DatedValue[], color: "var(--amber-line)" })),
   ];
   const windows = [...FIXED_STRESS_WINDOWS, ...inversionWindows(data?.regimeSeries ?? [])];
   return (

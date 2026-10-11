@@ -8,6 +8,7 @@ import { niceTicks } from "../../components/chart/scales";
 import { SpotMarker } from "../../components/chart/Tooltip";
 import { useHoverX } from "../../components/chart/useHoverX";
 import type { MeicScope } from "./MeicTables";
+import { CHART_GRID, CHART_GRID_STRONG } from "../../components/Charts";
 
 /**
  * MEIC's profit forest: expiry payoff for each arm's open book.
@@ -159,18 +160,18 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
               x2={width - pad.r}
               y1={Y(realisedNet)}
               y2={Y(realisedNet)}
-              stroke="var(--ok, #43b57a)"
+              stroke="var(--pos)"
               strokeWidth={1.5}
               strokeDasharray="6 4"
             />
-            <text x={width - pad.r} y={Y(realisedNet) - 5} fontSize={10} fill="var(--ok, #43b57a)" textAnchor="end">
+            <text x={width - pad.r} y={Y(realisedNet) - 5} fontSize={10} fill="var(--pos)" textAnchor="end">
               actually realised {fmtMoney(realisedNet)}
             </text>
           </g>
         )}
         {niceTicks(yMin, yMax, 5).map((v) => (
           <g key={`y${v}`}>
-            <line x1={pad.l} x2={width - pad.r} y1={Y(v)} y2={Y(v)} stroke={v === 0 ? "#3a424e" : "#1e232b"} />
+            <line x1={pad.l} x2={width - pad.r} y1={Y(v)} y2={Y(v)} stroke={v === 0 ? CHART_GRID_STRONG : CHART_GRID} />
             <text x={pad.l - 6} y={Y(v) + 3} fontSize={10} fill={AXIS_MUTED} textAnchor="end">
               {fmtMoney(v)}
             </text>
@@ -233,7 +234,7 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
         )}
 
         {hoverIdx !== null && hoverPrice !== null && (
-          <line x1={X(hoverPrice)} x2={X(hoverPrice)} y1={pad.t} y2={height - pad.b} stroke="#3a424e" strokeDasharray="3 3" />
+          <line x1={X(hoverPrice)} x2={X(hoverPrice)} y1={pad.t} y2={height - pad.b} stroke={CHART_GRID_STRONG} strokeDasharray="3 3" />
         )}
       </svg>
     );

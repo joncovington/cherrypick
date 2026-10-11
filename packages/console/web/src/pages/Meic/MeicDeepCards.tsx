@@ -54,7 +54,7 @@ function NlvChart({ points }: { points: Array<{ date: string; nlv: number }> }) 
       <polyline
         points={points.map((p, i) => `${sx(i).toFixed(1)},${sy(p.nlv).toFixed(1)}`).join(" ")}
         fill="none"
-        stroke={rising ? "#43b57a" : "#d95c4a"}
+        stroke={rising ? "var(--pos)" : "var(--neg)"}
         strokeWidth={1.6}
       />
     </svg>

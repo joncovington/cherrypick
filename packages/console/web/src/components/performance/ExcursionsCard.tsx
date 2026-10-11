@@ -5,6 +5,7 @@ import { Tile } from "./Tile";
 import { ARM_COLORS } from "../chart/tokens";
 import { niceTicks } from "../chart/scales";
 import { AXIS_MUTED } from "../Charts";
+import { CHART_GRID, CHART_GRID_STRONG } from "../Charts";
 
 /**
  * MAE/MFE (docs/metrics-plan.md Phase 2) -- the deepest a position went against its entry and the
@@ -48,7 +49,7 @@ export function ExcursionsCard({ excursions }: { excursions: ExcursionsResult })
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="MAE vs MFE scatter" style={{ width: "100%", height: "auto", display: "block" }}>
         {niceTicks(yMin, yMax, 5).map((v) => (
           <g key={`y${v}`}>
-            <line x1={pad.l} y1={Y(v)} x2={width - pad.r} y2={Y(v)} stroke={Math.abs(v) < 1e-9 ? "#3d4653" : "#15181e"} />
+            <line x1={pad.l} y1={Y(v)} x2={width - pad.r} y2={Y(v)} stroke={Math.abs(v) < 1e-9 ? CHART_GRID_STRONG : CHART_GRID} />
             <text x={4} y={Y(v) + 3} fontSize={9} fill={AXIS_MUTED} fontFamily="Consolas, monospace">
               {fmtMoney(v)}
             </text>
@@ -56,7 +57,7 @@ export function ExcursionsCard({ excursions }: { excursions: ExcursionsResult })
         ))}
         {niceTicks(xMin, xMax, 6).map((v) => (
           <g key={`x${v}`}>
-            <line x1={X(v)} y1={pad.t} x2={X(v)} y2={height - pad.b} stroke={Math.abs(v) < 1e-9 ? "#3d4653" : "#15181e"} />
+            <line x1={X(v)} y1={pad.t} x2={X(v)} y2={height - pad.b} stroke={Math.abs(v) < 1e-9 ? CHART_GRID_STRONG : CHART_GRID} />
             <text x={X(v)} y={height - 8} fontSize={9} fill={AXIS_MUTED} textAnchor="middle" fontFamily="Consolas, monospace">
               {v.toFixed(0)}
             </text>

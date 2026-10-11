@@ -233,7 +233,7 @@ export function RegimeRatioChart({
     { label: "VIX/VIX3M", points: pts.map((r) => ({ x: r.tradeDate, y: r.ratio })) },
     ...thresholds.map((t) => ({
       label: t.label,
-      color: "#8a8f98",
+      color: "var(--text-dim)",
       points: [
         { x: pts[0]!.tradeDate, y: t.value },
         { x: pts[pts.length - 1]!.tradeDate, y: t.value },

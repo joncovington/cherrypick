@@ -12,6 +12,9 @@ import {
 } from "lightweight-charts";
 import type { ModulePerformanceGroup, MeasurementBreak } from "../../lib/api";
 import { ARM_COLORS } from "../chart/tokens";
+import { canvasPalette as _pal } from "../chart/cssvars";
+
+const PAL = _pal();
 
 /**
  * Cumulative net P&L per profile, one line per tag -- the mount/teardown-once, update-via-setData
@@ -36,12 +39,12 @@ export function CumulativeCard({ groups, breaks }: { groups: ModulePerformanceGr
     if (el === null) return;
     const chart = createChart(el, {
       autoSize: true,
-      layout: { background: { color: "transparent" }, textColor: "#a6adb8" },
-      grid: { vertLines: { color: "#1a1d23" }, horzLines: { color: "#1a1d23" } },
+      layout: { background: { color: "transparent" }, textColor: PAL.textMuted },
+      grid: { vertLines: { color: PAL.grid }, horzLines: { color: PAL.grid } },
       // Extra top margin: break markers render `aboveBar`, and with no headroom a marker aligned
       // near a line's local peak collides with the card's own header.
-      rightPriceScale: { borderColor: "#23262d", scaleMargins: { top: 0.15, bottom: 0.05 } },
-      timeScale: { borderColor: "#23262d" },
+      rightPriceScale: { borderColor: PAL.gridMid, scaleMargins: { top: 0.15, bottom: 0.05 } },
+      timeScale: { borderColor: PAL.gridMid },
     });
     chartRef.current = chart;
     return () => {
@@ -90,7 +93,7 @@ export function CumulativeCard({ groups, breaks }: { groups: ModulePerformanceGr
         const markers: SeriesMarker<Time>[] = breaks.map((b) => ({
           time: t(b.date),
           position: "aboveBar",
-          color: "#d9a13b",
+          color: PAL.amber,
           shape: "circle",
           text: b.key,
         }));
