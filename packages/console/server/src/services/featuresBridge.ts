@@ -1,5 +1,5 @@
 import type { SuiteFeatures, SuiteFeaturesOk, SuiteModuleFeature } from "@console/shared";
-import { callConfigCli, type BridgeResult } from "./configBridge.js";
+import { callConfigCli, type BridgeRequest, type BridgeResult } from "./configBridge.js";
 
 /**
  * What the suite has turned on, asked of the orchestrator (`configcli` op `features`) rather than
@@ -58,9 +58,16 @@ export function parseFeatures(raw: BridgeResult): SuiteFeatures {
   return ok;
 }
 
+let caller: (req: BridgeRequest) => BridgeResult = callConfigCli;
+
+/** Swap the config bridge out in tests. Pass nothing to restore the real one. */
+export function setFeaturesCaller(fn?: (req: BridgeRequest) => BridgeResult): void {
+  caller = fn ?? callConfigCli;
+}
+
 export function getFeatures(now: number = Date.now()): SuiteFeatures {
   if (memo !== null && now - memo.at < TTL_MS) return memo.value;
-  const value = parseFeatures(callConfigCli({ op: "features" }));
+  const value = parseFeatures(caller({ op: "features" }));
   memo = { at: now, value };
   return value;
 }
