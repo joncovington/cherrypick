@@ -204,16 +204,18 @@ alone):
 
 ## Pages
 
-**Shell.** A top bar (brand, the futures ticker, session chip, clock, the palette trigger) and a
-bottom status bar (health chips, watchdog/session/morning phase, logs) are on every page; only the
-content between them scrolls. **The left rail is the one nav** (mounted in the shell since
-2026-10-11, Overview included; collapsed to a 64px icon strip by default, its own toggle only —
-the top bar holds no menu and never opens one). The brand block is a static link home, not a
-dropdown; the command palette (`Ctrl/Cmd+K`, or `?` outside a text field; `CommandPalette` over
-`paletteStore`'s open flag) is the searchable shortcut legend — every page, the current module's
-tabs, and the `g`/digit hints, built from `navLinks.ts`/`navGroups.ts` so it cannot name a page
-the rail lacks. The palette closes on any navigation, Escape (restoring focus), a pick, or
-Ctrl+K again.
+**Shell.** A grid, not a stack (2026-10-12): the brand head and the top bar are row 1's two
+halves (ticker, session chip, clock, the palette trigger), the rail and the content pane are row
+2's, the status bar (health chips, watchdog/session/morning phase, logs) is row 3. The brand
+head's underline is the same grid track as the top bar's — one rule across the window in both
+rail widths — and the rail's vertical is the brand head's right border continued by the nav's,
+unbroken from the top of the window to the status bar. **The rail is the one nav** (mounted in
+the shell since 2026-10-11, Overview included; collapsed to a 64px icon strip by default, its own
+toggle at its foot — the top bar holds no menu and never opens one). The command palette
+(`Ctrl/Cmd+K`, or `?` outside a text field; `CommandPalette` over `paletteStore`'s open flag) is
+the searchable shortcut legend — every page, the current module's tabs, and the `g`/digit hints,
+built from `navLinks.ts`/`navGroups.ts` so it cannot name a page the rail lacks. The palette
+closes on any navigation, Escape (restoring focus), a pick, or Ctrl+K again.
 
 **System page** (`/system`): the suite's own health, read-only, from the files the suite writes
 (supervisor registry and heartbeat, watchdog and its renotify memory, holds, pid files, stamps).

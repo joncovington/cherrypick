@@ -47,27 +47,28 @@ export function Shell() {
   // Likewise: the chords (`g o`, `1`–`9`, `j`/`k`) and the palette chord work from every page.
   useKeyboardNav();
   return (
-    <div className={dense ? "shell dense" : "shell"}>
+    <div className={dense ? (railExpanded ? "shell dense" : "shell dense shell-rail-collapsed") : railExpanded ? "shell" : "shell shell-rail-collapsed"}>
+      {/* The grid's first column is the rail, spanning the header and content rows: its right
+          border is one unbroken vertical from the top of the window to the status bar, and the
+          brand block lives in the rail's head, inside that line. The top bar sits beside it in
+          column 2 and cannot leave a notch where they meet. Collapsed (the default since
+          2026-10-01) the first column folds to 64px and the wordmark to the cherry alone. The
+          toggle lives at the rail's foot; nothing else opens or closes it. */}
+      <ModuleNav module={module} slide={location.pathname.split("/")[2] ?? ""} />
       <StatusHeader />
-      {/* The middle row is a grid whose first column is the rail — collapsed to its 64px icon
-          strip by default, expanded to its column when the pref says so. The toggle lives in the
-          rail itself; nothing else opens or closes it (the top bar carries no menu). */}
-      <div className={railExpanded ? "shell-main" : "shell-main shell-rail-collapsed"}>
-        <ModuleNav module={module} slide={location.pathname.split("/")[2] ?? ""} />
-        <main className={module !== null ? "shell-content shell-content-flush" : "shell-content"}>
-          {/* Keyed by the MODULE, not the full pathname. The key exists to remount on navigation so
-              the CSS fade retriggers, but a module's slide lives in the path too (`/flies/forest`),
-              so keying on the whole thing remounted the module -- and refetched everything it had --
-              on every tab click. That is the defect the old lightbox's own body fixed in 2026-09 by
-              staying mounted and handing off, and keying here undid it one level up. A tab change
-              now reconciles; a module change still remounts and fades. */}
-          <div key={seg} className={module !== null ? "view-fade view-fill" : "view-fade"}>
-            <PageErrorBoundary resetKey={location.pathname}>
-              <Outlet />
-            </PageErrorBoundary>
-          </div>
-        </main>
-      </div>
+      <main className={module !== null ? "shell-content shell-content-flush" : "shell-content"}>
+        {/* Keyed by the MODULE, not the full pathname. The key exists to remount on navigation so
+            the CSS fade retriggers, but a module's slide lives in the path too (`/flies/forest`),
+            so keying on the whole thing remounted the module -- and refetched everything it had --
+            on every tab click. That is the defect the old lightbox's own body fixed in 2026-09 by
+            staying mounted and handing off, and keying here undid it one level up. A tab change
+            now reconciles; a module change still remounts and fades. */}
+        <div key={seg} className={module !== null ? "view-fade view-fill" : "view-fade"}>
+          <PageErrorBoundary resetKey={location.pathname}>
+            <Outlet />
+          </PageErrorBoundary>
+        </div>
+      </main>
       <StatusBar />
       <ToastStack />
       {/* The palette mounts once, at the shell's end, so it overlays everything on every page. */}

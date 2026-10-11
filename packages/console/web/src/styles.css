@@ -88,11 +88,31 @@ body {
    so while the WINDOW was the thing that scrolled, a sticky page header had a scrollport that never
    moved and could never stick. Bounding the shell to the viewport puts the scrolling where the
    sticky elements already expect it, and keeps the nav and status header in view as a bonus. */
+/* The shell's grid (2026-10-12): the rail is the FIRST column and spans the header and content
+   rows, so its right border is one unbroken vertical from the top of the window to the status
+   bar; the top bar lives in the second column and cannot leave a notch where it meets the rail.
+   Before this the shell was a flex column with the rail below the header, and every junction
+   needed its own alignment to stay flush. */
 .shell {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 222px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100vh;
   overflow: hidden;
+}
+.shell.shell-rail-collapsed {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+/* Explicit placements — the rail and its brand head own column 1 of the first two rows; the
+   top bar and the content own column 2. Auto-placement stays correct for the status bar
+   (row 3, both columns) but is written out anyway, as a guard against reordering the children. */
+.brand-block {
+  grid-column: 1;
+  grid-row: 1;
+}
+.status-header {
+  grid-column: 2;
+  grid-row: 1;
 }
 
 /* The command palette (2026-10-11): the keyboard-driven jump-to-anything dialog, opened with
@@ -193,22 +213,42 @@ body {
   padding: 0 4px;
 }
 
-/* The brand block — a static link home with a subtle indicator. It is NOT a menu: the rail is
-   the one nav, and the shortcut legend lives in the command palette. The cherry (the wordmark's
-   colour) is one of the three cherry roles: brand, LIVE, alert. */
+/* The brand head — the rail's HALF of the shell's header row (2026-10-12): its own grid item in
+   row 1, column 1, NOT a row inside the nav, so its bottom border sits on the same track as the
+   top bar's and the two read as one continuous rule across the window, in both widths. It is
+   NOT a menu: the rail is the one nav, and the shortcut legend lives in the command palette.
+   The cherry (two berries, one knot, a leaf) is one of the three cherry roles: brand, LIVE,
+   alert. */
 .brand-block {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  /* The rail's vertical, top segment: the brand head is the rail's row-1 half, so IT carries
+     the right border here — the nav's own border continues it from row 2 down. Without this
+     the vertical started at the header rule and left the brand head floating against the
+     header's line. */
+  border-right: 1px solid var(--border);
+  background: var(--surface-sunken);
   text-decoration: none;
-  flex-shrink: 0;
+  overflow: hidden;
 }
 .brand-mark {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent-live);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--accent-live) 55%, transparent);
+  flex-shrink: 0;
+}
+/* Collapsed: the wordmark folds away and the cherry grows to fill the 64px strip. */
+.shell-rail-collapsed .brand-block {
+  justify-content: center;
+  padding: 0.55rem 0;
+}
+.shell-rail-collapsed .brand-name {
+  display: none;
+}
+.shell-rail-collapsed .brand-mark {
+  width: 26px;
+  height: 26px;
 }
 .brand-name {
   font-weight: 650;
@@ -247,6 +287,8 @@ body {
   border-bottom: 1px solid var(--border);
   min-height: 2.6rem;
   flex-shrink: 0;
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .status-right {
@@ -318,23 +360,12 @@ a.chip:hover {
   border-color: color-mix(in srgb, var(--neg) 40%, transparent);
 }
 
-/* The shell's middle row: rail column + content column, one grid, every page. Collapsed (the
-   default since 2026-10-01) the rail is a 64px icon strip; expanded it takes its 222px column.
-   The toggle lives in the rail; nothing else opens or closes it. */
-.shell-main {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 222px minmax(0, 1fr);
-}
-.shell-main.shell-rail-collapsed {
-  grid-template-columns: 64px minmax(0, 1fr);
-}
 .shell-content {
   padding: 1.25rem;
   overflow: auto;
-  flex: 1;
   min-height: 0;
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .page-title-row {
@@ -2913,6 +2944,10 @@ td > .desk-refusal-reason {
    second row only takes its height from the content area above, which scrolls. A clipped health
    chip was the worse failure: a stale producer's warning scrolled out of sight. */
 .statusbar-wrap {
+  /* The shell grid's LAST row, both columns: auto-placement would otherwise drop this into the
+     row-3 slot under the rail (column 1) and leave the content column's foot empty. */
+  grid-column: 1 / -1;
+  grid-row: 3;
   flex-shrink: 0;
 }
 
@@ -3247,6 +3282,11 @@ td > .desk-refusal-reason {
   line-height: 1;
   text-align: right;
   cursor: pointer;
+  /* The rail's LAST row, below the scrollable link list (2026-10-12): the head-row slot it
+     used to hold was an empty line before the brand, and a margin-top:auto middle slot gapped
+     the whole menu away from the brand head. At the foot it costs no row the links could use
+     and stays reachable without scrolling. */
+  flex-shrink: 0;
 }
 .mf-nav-collapsed .mf-nav-toggle {
   padding: 0.4rem 0;
@@ -3258,9 +3298,24 @@ td > .desk-refusal-reason {
 .mf-nav {
   border-right: 1px solid var(--border);
   background: var(--surface-sunken);
-  padding: 0.5rem 0;
-  overflow-y: auto;
   min-height: 0;
+  /* Column 1, row 2: beneath the brand head (its own grid row, sharing row 1 with the top
+     bar). Three rows inside the nav: the scrollable link list (flex 1), the toggle (pinned
+     foot). The scroll lives on the middle region, not here — an auto margin above the toggle
+     would otherwise gap the menu away from the brand head (2026-10-12, and fixed the same day). */
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+}
+.mf-nav-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* The link list owns its vertical padding (the brand head and the toggle carry their own). */
+#mf-nav-links {
+  padding: 0.4rem 0 0.75rem;
 }
 .mf-nav-link {
   display: flex;
@@ -3464,14 +3519,7 @@ td > .desk-refusal-reason {
 }
 
 /* Below this the rail costs more than it gives; the header menu still reaches every page. */
-@media (max-width: 1000px) {
-  .mf {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .mf-nav {
-    display: none;
-  }
-}
+
 
 /* History-table controls (2026-09-25): a date range kept in the URL, and a columns panel that drops
    from its button rather than opening a dialog -- the table stays visible and updates behind it. */

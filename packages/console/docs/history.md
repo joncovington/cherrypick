@@ -61,6 +61,21 @@ columns (queued for next session; did THIS session's artifact land) with the fai
   unsettled day) and band edges landed up to a grid step off. 2026-09-11 control was a "locked" book:
   two stranded verticals whose loss four adjacent 5-wide flies cancel exactly at every price.
 
+## The shell became a grid (2026-10-12)
+
+The rail move left three seams nobody had drawn: the brand head (a row inside the nav) carried an
+underline that met the top bar's rule at slightly different heights and read as a step; the rail's
+vertical began at the header rule, leaving the brand head floating; and the toggle, parked in the
+head row, sat in empty space above the menu. The fix was one decision — the shell's flex column
+became a grid with the brand head and the top bar as row 1's two halves, rail and content as row
+2's, status bar as row 3 — after which the lines are shared tracks by construction: the header
+rule is continuous across the window (pixel-verified, zero breaks in both rail widths), and the
+vertical is the brand head's right border continued by the nav's. The toggle moved to the rail's
+foot (a `margin-top: auto` middle slot had gapped the whole menu away from the brand head), the
+scroll to a middle region under the pinned head, and the collapsed cherry grew from 18px to 26px.
+A `margin-top: auto` above a footer inside a scrolling rail is how the empty space got there; the
+lesson is that alignment seams are grid tracks, not margins to keep in step.
+
 ## The one nav (2026-10-11)
 
 The header's hamburger menu and the module frame's left rail were the same list in two places, and

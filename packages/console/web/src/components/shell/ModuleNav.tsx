@@ -113,17 +113,31 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
   };
 
   return (
-    <nav className={expanded ? "mf-nav" : "mf-nav mf-nav-collapsed"} aria-label="modules">
-      <button
-        type="button"
-        className="mf-nav-toggle"
-        aria-expanded={expanded}
-        aria-controls="mf-nav-links"
-        title={expanded ? "collapse the navigation" : "expand the navigation"}
-        onClick={() => void writePref(RAIL_PREF, !expanded)}
-      >
-        {expanded ? "«" : "»"}
-      </button>      <div id="mf-nav-links" hidden={!expanded}>
+    <>
+      {/* The brand head: the cherry and the wordmark, a link home. It is the rail's HALF of the
+          header row — its own grid item in row 1, not a row inside the rail — so its underline
+          lands on the same track as the top bar's, one continuous rule across the window, and
+          the two can never drift apart. Collapsed, the wordmark folds away and the cherry grows
+          to fill the strip (see `.shell-rail-collapsed` in styles.css). */}
+      <a className="brand-block" href="/" aria-label="cherrypick — home">
+        {/* Two berries touching at the centre, stems rising from each and joining at one knot,
+            a single leaf off it. Stems in the dim text colour — green strokes were what made the
+            old mark read as "a green thing", not a cherry. */}
+        <svg className="brand-mark" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="8.2" cy="15.5" r="4.6" fill="var(--accent-live)" />
+          <circle cx="15.8" cy="15.5" r="4.6" fill="var(--accent-live)" opacity="0.88" />
+          <path d="M8.2 15.2C7.6 10.4 8.4 6.4 12.1 4.2" stroke="var(--text-dim)" strokeWidth="1.4" strokeLinecap="round" />
+          <path d="M15.8 15.2C16.4 10.4 15.6 6.4 12.1 4.2" stroke="var(--text-dim)" strokeWidth="1.4" strokeLinecap="round" />
+          <path d="M12.1 4.2c2.2-.3 4.2-1.2 5.2-2.9-2.4-.2-4.4.6-5.6 2.2Z" fill="var(--pos)" />
+        </svg>
+        <span className="brand-name">cherrypick</span>
+      </a>
+      <nav className={expanded ? "mf-nav" : "mf-nav mf-nav-collapsed"} aria-label="modules">
+      {/* The scrollable middle: the links (or the collapsed icon strip) scroll here. The brand
+          head is the grid's own row above; the toggle below is the rail's last row, so
+          collapsing never asks you to scroll a long module's tab list to reach the control. */}
+      <div className="mf-nav-scroll">
+      <div id="mf-nav-links" hidden={!expanded}>
         {suite.map((l) => link(l))}
         <div className="mf-nav-section">Modules</div>
         {modules.map((l) => link(l))}
@@ -152,6 +166,18 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
           </NavLink>
         ))}
       </div>
+      </div>
+      <button
+        type="button"
+        className="mf-nav-toggle"
+        aria-expanded={expanded}
+        aria-controls="mf-nav-links"
+        title={expanded ? "collapse the navigation" : "expand the navigation"}
+        onClick={() => void writePref(RAIL_PREF, !expanded)}
+      >
+        {expanded ? "«" : "»"}
+      </button>
     </nav>
+    </>
   );
 }

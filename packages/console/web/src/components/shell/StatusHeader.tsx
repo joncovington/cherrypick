@@ -3,27 +3,21 @@ import { FuturesTicker } from "./FuturesTicker";
 import { togglePalette } from "./paletteStore";
 
 /**
- * The top bar, on every page: the brand block, the futures ticker beside it, and the session chip
- * with the clock (the session is the watchdog's own verdict, read off the overview payload). The
- * health chips that used to sit here (DXLink, credential scope, producer liveness) moved to the
- * bottom `StatusBar` on 2026-10-01, so this bar carries the market and that one carries the suite.
+ * The top bar, on every page: the futures ticker and the session chip with the clock (the session
+ * is the watchdog's own verdict, read off the overview payload). The health chips that used to sit
+ * here (DXLink, credential scope, producer liveness) moved to the bottom `StatusBar` on
+ * 2026-10-01, so this bar carries the market and that one carries the suite.
  *
- * Since 2026-10-11 it carries NO menu: the left rail is the one nav on every page (it renders in
- * the shell, Overview included), and the brand block is a static link home, not a dropdown
- * trigger. The shortcut legend the menu used to print moved to the command palette (the ⌘K
- * button beside the clock opens it, as does the chord itself).
+ * Since 2026-10-12 it carries NO brand: the brand block moved into the rail's head — the rail
+ * spans the full window height, so its right border passes the wordmark without a notch, which a
+ * brand cell here could never promise (it would have had to track the rail's two column widths).
+ * This bar is context for the CONTENT: ticker, session, clock, and the command-palette trigger.
  */
 export function StatusHeader() {
   const { data } = useStatus();
   const wd = useOverview().data?.watchdog;
   return (
     <header className="status-header">
-      {/* Static brand — a link home with a subtle indicator, never a menu trigger. The cherry
-          stays on the wordmark: it is one of the three cherry roles (brand, LIVE, alert). */}
-      <a className="brand-block" href="/" aria-label="cherrypick — home">
-        <span className="brand-mark" aria-hidden="true" />
-        <span className="brand-name">cherrypick</span>
-      </a>
       <FuturesTicker />
       <div className="status-right">
         {/* No pill until the watchdog has reported once: an absent state file reads as "not a

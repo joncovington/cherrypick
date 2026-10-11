@@ -121,11 +121,31 @@ describe("the module frame", () => {
   it("the rail is on the shell: the Overview has it too, and the top bar has no menu", () => {
     const html = render("/");
     expect(html).toContain('aria-label="modules"');
-    // The hamburger menu is gone — the brand block is a static link, not a dropdown trigger.
+    // The hamburger menu is gone — the brand lives in the RAIL's head now (its right border
+    // passes it without a notch, which a top-bar cell could never promise). Not a dropdown.
     expect(html).not.toContain("header-menu");
     expect(html).toContain('class="brand-block"');
     // The command palette is mounted and reachable from the top bar.
     expect(html).toContain("cmdk-trigger");
+  });
+
+  it("the brand head is the rail's row-1 twin, and the toggle is the nav's last child", () => {
+    const html = render("/flies/forest");
+    // The brand block is the rail's own grid item in row 1 (a sibling BEFORE the nav element),
+    // so its underline sits on the same track as the top bar's — one rule across the window.
+    const iBrand = html.indexOf("brand-block");
+    const iNav = html.indexOf("<nav");
+    expect(iBrand).toBeGreaterThanOrEqual(0);
+    expect(iBrand).toBeLessThan(iNav);
+    // Within the nav: the link list first, then the foot toggle last — the head-row slot the
+    // toggle used to hold was an empty line before the brand.
+    const nav = html.slice(iNav, html.indexOf("</nav>"));
+    const iLinks = nav.indexOf('id="mf-nav-links"');
+    const iToggleLast = nav.lastIndexOf("mf-nav-toggle");
+    expect(iLinks).toBeGreaterThanOrEqual(0);
+    expect(iLinks).toBeLessThan(iToggleLast);
+    // Exactly one toggle: the foot row, not a head copy and not the old head-row slot.
+    expect(nav.split("mf-nav-toggle").length - 1).toBe(1);
   });
 
   it("the bare module route opens on the first tab", () => {
