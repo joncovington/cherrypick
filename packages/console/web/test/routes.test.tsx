@@ -110,9 +110,22 @@ describe("the module frame", () => {
 
   it("the rail starts collapsed: a toggle, with its links hidden rather than gone", () => {
     const html = render("/flies/forest");
-    expect(html).toContain("mf-rail-collapsed");
+    // The rail's column is the shell's grid; collapsed is the 64px icon strip, the toggle in the
+    // rail itself — the top bar holds no menu and no second trigger.
+    expect(html).toContain("shell-rail-collapsed");
+    expect(html).toContain("mf-nav-collapsed");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toMatch(/<div id="mf-nav-links" hidden="">/);
+  });
+
+  it("the rail is on the shell: the Overview has it too, and the top bar has no menu", () => {
+    const html = render("/");
+    expect(html).toContain('aria-label="modules"');
+    // The hamburger menu is gone — the brand block is a static link, not a dropdown trigger.
+    expect(html).not.toContain("header-menu");
+    expect(html).toContain('class="brand-block"');
+    // The command palette is mounted and reachable from the top bar.
+    expect(html).toContain("cmdk-trigger");
   });
 
   it("the bare module route opens on the first tab", () => {

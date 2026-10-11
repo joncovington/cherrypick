@@ -17,6 +17,10 @@ export const RAIL_PREF = "navExpanded";
 /**
  * The left rail: every page in the suite, with the current module opened out into its tabs.
  *
+ * Mounted ONCE, in the shell (2026-10-11) — every page has it, Overview included — replacing the
+ * per-frame copy and the header's hamburger menu, which had become the second and third listing of
+ * the same pages. One nav, one source of truth (`navLinks.ts`).
+ *
  * Only the open page expands. A tree with all eight open would be sixty-odd links, and the
  * rail's job is to make the current module's tabs one click away while keeping the rest one click
  * away too — not to show the whole suite at once.
@@ -30,11 +34,15 @@ export const RAIL_PREF = "navExpanded";
  * and a tab change that silently dropped the reader's scope would be the same class of lie as a
  * stale date in a breadcrumb.
  *
- * Collapsed by default to a thin strip holding only its toggle, which gives the page the width. The
- * links stay in the document under `hidden` rather than unmounting, so they are out of sight and
- * out of the tab order but the rail's structure is the same either way.
+ * Collapsed by default to a 64px icon strip, which gives the page the width. The links stay in
+ * the document under `hidden` rather than unmounting, so they are out of sight and out of the
+ * tab order but the rail's structure is the same either way. Collapsing is ONLY the rail's own
+ * toggle: the top bar holds no menu and no second trigger.
+ *
+ * `module` is the current page's segment or null (the Overview): null opens no tabs out, and the
+ * rail is a flat list — which is exactly the Overview's old relationship to it.
  */
-export function ModuleNav({ module, slide }: { module: ModuleId; slide: string }) {
+export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: string }) {
   const expanded = useBoolPref(RAIL_PREF);
   const [params] = useSearchParams();
   const qs = params.toString();
@@ -45,8 +53,8 @@ export function ModuleNav({ module, slide }: { module: ModuleId; slide: string }
   const features = useFeatures();
   const { suite, modules } = visibleNavLinks(features);
   const grouping = navGroups(
-    module,
-    NAV_DECL[module].slides.filter((s) => isSlideVisible(module, s.id, features)),
+    module ?? ("meic" as ModuleId), // never read when module is null — grouping is built only for the open module
+    module === null ? [] : NAV_DECL[module].slides.filter((s) => isSlideVisible(module, s.id, features)),
   );
 
   // Any page opens out in place, wherever its link sits: a suite surface (Reports, Live, Config)
@@ -61,7 +69,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId; slide: string }
         {extra}
       </>
     );
-    if (l.to.slice(1) !== module) {
+    if (module === null || l.to.slice(1) !== module) {
       return (
         <NavLink
           key={l.to}
@@ -90,7 +98,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId; slide: string }
                 {g.slides.map((sl) => (
                   <NavLink
                     key={sl.id}
-                    to={withQs(`/${module}/${sl.id}`)}
+                    to={withQs(`/${String(module)}/${sl.id}`)}
                     className={sl.id === slide ? "mf-nav-slide active" : "mf-nav-slide"}
                     aria-current={sl.id === slide ? "page" : undefined}
                   >

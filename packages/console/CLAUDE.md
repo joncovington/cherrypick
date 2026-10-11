@@ -204,8 +204,16 @@ alone):
 
 ## Pages
 
-**Shell.** A top bar (menu, the futures ticker, the clock) and a bottom status bar (health chips,
-watchdog/session/morning phase, logs) are on every page; only the content between them scrolls.
+**Shell.** A top bar (brand, the futures ticker, session chip, clock, the palette trigger) and a
+bottom status bar (health chips, watchdog/session/morning phase, logs) are on every page; only the
+content between them scrolls. **The left rail is the one nav** (mounted in the shell since
+2026-10-11, Overview included; collapsed to a 64px icon strip by default, its own toggle only —
+the top bar holds no menu and never opens one). The brand block is a static link home, not a
+dropdown; the command palette (`Ctrl/Cmd+K`, or `?` outside a text field; `CommandPalette` over
+`paletteStore`'s open flag) is the searchable shortcut legend — every page, the current module's
+tabs, and the `g`/digit hints, built from `navLinks.ts`/`navGroups.ts` so it cannot name a page
+the rail lacks. The palette closes on any navigation, Escape (restoring focus), a pick, or
+Ctrl+K again.
 
 **System page** (`/system`): the suite's own health, read-only, from the files the suite writes
 (supervisor registry and heartbeat, watchdog and its renotify memory, holds, pid files, stamps).

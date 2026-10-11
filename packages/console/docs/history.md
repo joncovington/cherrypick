@@ -61,6 +61,21 @@ columns (queued for next session; did THIS session's artifact land) with the fai
   unsettled day) and band edges landed up to a grid step off. 2026-09-11 control was a "locked" book:
   two stranded verticals whose loss four adjacent 5-wide flies cancel exactly at every price.
 
+## The one nav (2026-10-11)
+
+The header's hamburger menu and the module frame's left rail were the same list in two places, and
+had been since 2026-10-01, when the menu replaced an earlier side nav and the rail replaced the
+menu's width cost one page at a time. The two had already disagreed once by construction — the menu
+renumbered the digit shortcuts over what was visible, the rail did not — and a third copy was being
+asked for. The menu went, the rail moved into the shell (one mount, every page, Overview included;
+`ModuleRoute` renders the content pane only), and the brand block became a static link home with no
+dropdown. The menu's printed shortcut legend — `g o`, `g r`, `1`–`8`, which `lib/keyboardNav.ts` has
+implemented since the menu was written — became the command palette (`Ctrl/Cmd+K`, or `?` outside a
+text field): searchable, built from `navLinks.ts`/`navGroups.ts` so it cannot name a page the rail
+lacks, closing on any navigation like the menu did. The rail's collapsed posture moved from the old
+frame grid to the shell's own `.shell-main` grid, so the collapse is one class on one element, not
+per page.
+
 ## Module frame migration (2026-09-22 → 2026-09-25)
 
 Pages moved one at a time — flies first, the seven trading modules, then the suite surfaces (GEX,

@@ -3,7 +3,9 @@ import { StatusHeader } from "./StatusHeader";
 import { StatusBar } from "./StatusBar";
 import { PageErrorBoundary } from "./PageErrorBoundary";
 import { ToastStack } from "./ToastStack";
-import { isModuleId } from "../../lightbox/moduleOrder";
+import { CommandPalette } from "./CommandPalette";
+import { ModuleNav, RAIL_PREF } from "./ModuleNav";
+import { isModuleId, type ModuleId } from "../../lightbox/moduleOrder";
 import { useEffect } from "react";
 import { useBoolPref, usePrefsSync, usePrefsVersion, getPref } from "../../lib/prefs";
 import { useTradeNotifications } from "../../lib/useTradeNotifications";
@@ -11,10 +13,13 @@ import { useKeyboardNav } from "../../lib/useKeyboardNav";
 
 export function Shell() {
   const location = useLocation();
-  // A page on the frame owns the full content area: the rail sits against the header with no
-  // gutter, and its own body scrolls rather than the shell's. Every page but the Overview.
+  // Every page is framed now (2026-10-11): the rail is the ONE nav and renders HERE, on the shell,
+  // for every route — Overview included — instead of each frame page mounting its own copy beside
+  // the content (the duplication the hamburger menu used to be). The current module's segment
+  // decides whether the rail opens out that module's tabs.
   const seg = location.pathname.split("/")[1] ?? "";
-  const framed = isModuleId(seg);
+  const module: ModuleId | null = isModuleId(seg) ? (seg as ModuleId) : null;
+  const railExpanded = useBoolPref(RAIL_PREF);
   // Pull the server's copy once, then let every reader work off the synchronous mirror.
   usePrefsSync();
   const dense = useBoolPref("denseTables");
@@ -39,26 +44,34 @@ export function Shell() {
   }, [theme]);
   // Mounted once here (not per-page) so trade toasts fire regardless of which page is open.
   useTradeNotifications();
-  // Likewise: the shortcuts the header menu advertises work from every page.
+  // Likewise: the chords (`g o`, `1`–`9`, `j`/`k`) and the palette chord work from every page.
   useKeyboardNav();
   return (
     <div className={dense ? "shell dense" : "shell"}>
       <StatusHeader />
-      <main className={framed ? "shell-content shell-content-flush" : "shell-content"}>
-        {/* Keyed by the MODULE, not the full pathname. The key exists to remount on navigation so
-            the CSS fade retriggers, but a module's slide lives in the path too (`/flies/forest`),
-            so keying on the whole thing remounted the module -- and refetched everything it had --
-            on every tab click. That is the defect the old lightbox's own body fixed in 2026-09 by
-            staying mounted and handing off, and keying here undid it one level up. A tab change
-            now reconciles; a module change still remounts and fades. */}
-        <div key={seg} className={framed ? "view-fade view-fill" : "view-fade"}>
-          <PageErrorBoundary resetKey={location.pathname}>
-            <Outlet />
-          </PageErrorBoundary>
-        </div>
-      </main>
+      {/* The middle row is a grid whose first column is the rail — collapsed to its 64px icon
+          strip by default, expanded to its column when the pref says so. The toggle lives in the
+          rail itself; nothing else opens or closes it (the top bar carries no menu). */}
+      <div className={railExpanded ? "shell-main" : "shell-main shell-rail-collapsed"}>
+        <ModuleNav module={module} slide={location.pathname.split("/")[2] ?? ""} />
+        <main className={module !== null ? "shell-content shell-content-flush" : "shell-content"}>
+          {/* Keyed by the MODULE, not the full pathname. The key exists to remount on navigation so
+              the CSS fade retriggers, but a module's slide lives in the path too (`/flies/forest`),
+              so keying on the whole thing remounted the module -- and refetched everything it had --
+              on every tab click. That is the defect the old lightbox's own body fixed in 2026-09 by
+              staying mounted and handing off, and keying here undid it one level up. A tab change
+              now reconciles; a module change still remounts and fades. */}
+          <div key={seg} className={module !== null ? "view-fade view-fill" : "view-fade"}>
+            <PageErrorBoundary resetKey={location.pathname}>
+              <Outlet />
+            </PageErrorBoundary>
+          </div>
+        </main>
+      </div>
       <StatusBar />
       <ToastStack />
+      {/* The palette mounts once, at the shell's end, so it overlays everything on every page. */}
+      <CommandPalette />
     </div>
   );
 }

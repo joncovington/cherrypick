@@ -3,9 +3,10 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { isModuleId } from "../lightbox/moduleOrder";
 import { navSlideIds, resolveSlide } from "../lightbox/navGroups";
 import { NAV_DECL } from "../lightbox/navGroups";
-import { reduceKey, type KeyState } from "./keyboardNav";
+import { reduceKey, paletteKeyFor, type KeyState } from "./keyboardNav";
 import { useFeatures } from "./useFeatures";
 import { isSlideVisible } from "./visibility";
+import { setPaletteOpen } from "../components/shell/paletteStore";
 
 function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -19,10 +20,15 @@ function isEditable(target: EventTarget | null): boolean {
 }
 
 /**
- * Mounted once, in the Shell. Listens, asks `reduceKey` what the key means, and navigates.
+ * Mounted once, in the Shell. Listens, asks `reduceKey` what the key means, and navigates — or
+ * opens the command palette (`Ctrl/Cmd+K`, or a bare `?` outside a text field; the decision lives
+ * in `paletteKeyFor`, not here).
  *
- * Escape is deliberately not handled here: the detail sheet and the header menu own their own,
- * and a second listener racing them is how a single Escape closes two things.
+ * The palette OPEN action closes over `setPaletteOpen`, a store rather than state, because the
+ * hook mounts once and the palette renders wherever the shell puts it.
+ *
+ * Escape is deliberately not handled here: the detail sheet and the palette own their own, and a
+ * second listener racing them is how a single Escape closes two things.
  */
 export function useKeyboardNav() {
   const navigate = useNavigate();
@@ -50,11 +56,16 @@ export function useKeyboardNav() {
         slides,
         slide,
         features,
+        paletteKey: paletteKeyFor(e),
       });
       stateRef.current = state;
       if (action === null) return;
 
       e.preventDefault();
+      if (action.kind === "palette") {
+        setPaletteOpen(true);
+        return;
+      }
       const qs = params.toString();
       const withQs = (p: string) => (qs ? `${p}?${qs}` : p);
       if (action.kind === "navigate") navigate(action.to);
