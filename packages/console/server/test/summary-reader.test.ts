@@ -11,7 +11,6 @@ import {
   ROR_LABEL,
 } from "../src/readers/summary.js";
 import { setSummaryCaller } from "../src/services/summaryBridge.js";
-import { setFeaturesCaller, invalidateFeatures } from "../src/services/featuresBridge.js";
 import type { ConsoleConfig } from "../src/config.js";
 import type { SummarySlice } from "../src/services/summaryBridge.js";
 
@@ -124,11 +123,6 @@ describe("readTradeSummary over the REAL core caller (skips without cherrypick.c
 
   afterEach(() => {
     resetSummaryReads();
-    // The features bridge memoises 15s and its test caller persists: restore the real one and
-    // drop the memo, or one test's switchboard answer leaks into the next (the on-by-default
-    // fixture switchboard below, so a test that does not drive it sees every module on).
-    setFeaturesCaller(() => ({ ok: true, capabilities: {}, modules: {}, services: {}, features: {} }));
-    invalidateFeatures();
   });
 
   it("composes one payload whose slices are one population, money rows adding up", (ctx) => {
@@ -247,56 +241,41 @@ describe("readTradeSummary over the REAL core caller (skips without cherrypick.c
   it("the switchboard decides the comparison: off modules hold no card, a direct ask states the refusal", (ctx) => {
     if (!pythonAvailable()) return ctx.skip();
     home = fs.mkdtempSync(path.join(os.tmpdir(), "console-summary-test-"));
-    config = fakeConfig(home);
+    config = fakeConfig(home, {
+      meic: { enabled: true },
+      flies: { enabled: true },
+      calendars: { enabled: false },
+      pmcc: {}, // declared, no enabled key: the orchestrator's opt-in convention says OFF
+    });
     makeMeicLedger(config.paths.meicDir);
-    // The switchboard is asked of the ORCHESTRATOR through the shared features bridge — the
-    // console's documented rule ("what is off comes only from configcli op features") — driven
-    // here through its test caller, the same handle the features-bridge test pins.
-    setFeaturesCaller(() => ({
-      ok: true,
-      capabilities: {},
-      modules: {
-        meic: { configured: true, enabled: true, missing: [] },
-        flies: { configured: true, enabled: true, missing: [] },
-        earnings: { configured: true, enabled: true, missing: [] },
-        calendars: { configured: true, enabled: false, missing: [] },
-        pmcc: { configured: true, enabled: false, missing: [] },
-        curve: { configured: true, enabled: false, missing: [] },
-        bwb: { configured: true, enabled: true, missing: [] },
-      },
-      services: {},
-      features: {},
-    }));
+    // The comparison: calendars and pmcc hold no card at all (pmcc was never enabled; contango
+    // and curve are not even declared, so off with them), and the payload says it hid them.
     const cmp = readTradeSummary(config, parseSummaryFilter({ range: "all", mode: "paper" }));
-    // The comparison: the off modules hold no card at all, and the payload says it hid them
-    // (in module order: meic flies earnings calendars pmcc curve contango bwb — contango is not
-    // named by the bridge and "unknown is visible", so it stays).
     expect(cmp.slices.find((s) => s.module === "calendars")).toBeUndefined();
     expect(cmp.slices.find((s) => s.module === "pmcc")).toBeUndefined();
-    expect(cmp.slices.find((s) => s.module === "curve")).toBeUndefined();
     // Only meic's ledger exists in this fixture; the rest of the comparison read their
     // "no store" refusals and so do not count as read.
     expect(cmp.modulesRead).toEqual(["meic"]);
-    expect(cmp.modulesHidden).toEqual(["calendars", "pmcc", "curve"]);
+    // The hidden list rides the module order (meic flies earnings calendars pmcc curve contango bwb).
+    expect(cmp.modulesHidden).toEqual(["earnings", "calendars", "pmcc", "curve", "contango", "bwb"]);
     // A DIRECT ask is honoured — the reader wants that module — and the slice states the
     // refusal naming the switch, never numbers that look like a silent empty book.
     const direct = readTradeSummary(config, parseSummaryFilter({ module: "calendars", range: "all", mode: "paper" }));
-    expect(direct.modulesHidden).toEqual(["calendars", "pmcc", "curve"]);
-    expect(direct.moduleErrors["calendars"]).toMatch(/switched off in the suite config/);
+    expect(direct.modulesHidden).toEqual(["earnings", "calendars", "pmcc", "curve", "contango", "bwb"]);
+    expect(direct.moduleErrors["calendars"]).toMatch(/switched off in the orchestrator config/);
     expect(direct.slices[0].error).toMatch(/switched off/);
     expect(direct.slices[0].hero.trades).toBe(0);
     // An enabled module with a real ledger still reads as before.
     const meic = readTradeSummary(config, parseSummaryFilter({ module: "meic", range: "all", mode: "paper" }));
-    expect(meic.modulesHidden).toEqual(["calendars", "pmcc", "curve"]);
+    expect(meic.modulesHidden).toEqual(["earnings", "calendars", "pmcc", "curve", "contango", "bwb"]);
     expect(meic.slices[0].hero.trades).toBe(3);
   });
 
-  it("an unknown switchboard answer hides nothing — a broken bridge costs a chip, not data", (ctx) => {
+  it("a config file with no modules block hides nothing; a broken one cannot hide data either", (ctx) => {
     if (!pythonAvailable()) return ctx.skip();
     home = fs.mkdtempSync(path.join(os.tmpdir(), "console-summary-test-"));
-    config = fakeConfig(home);
+    config = fakeConfig(home); // no modules block at all
     makeMeicLedger(config.paths.meicDir);
-    setFeaturesCaller(() => ({ ok: false, error: "configcli failed" }));
     const out = readTradeSummary(config, parseSummaryFilter({ range: "all", mode: "paper" }));
     expect(out.modulesHidden).toEqual([]);
     expect(out.slices.find((s) => s.module === "calendars")).toBeDefined();

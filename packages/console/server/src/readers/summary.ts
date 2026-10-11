@@ -6,9 +6,8 @@ import {
   type TradingMode,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { suiteEra } from "./db.js";
+import { readJson, suiteEra } from "./db.js";
 import { MODULE_DIR_KEY } from "./performance.js";
-import { getFeatures, moduleOn } from "../services/featuresBridge.js";
 import { CURRENT_ERA as PMCC_CURRENT_ERA } from "./pmcc.js";
 import { readModuleSummary, resetSummaryCache, type SummarySlice } from "../services/summaryBridge.js";
 
@@ -197,29 +196,37 @@ export function parseSummaryFilter(q: Record<string, unknown>): SummaryFilter {
   };
 }
 
-/** The switchboard's verdict per module — asked of the ORCHESTRATOR (`configcli` op `features`,
- *  through the shared `getFeatures` bridge), never read off the config file here: "is earnings
- *  off?" folds the user's switch together with the machine's capabilities, that rule lives in
- *  Python, and a TypeScript copy reading the file directly would be a second answer free to drift
- *  from the one the scheduler acts on (the console's own documented rule). "Unknown is visible":
- *  a failed bridge leaves every module in the comparison — a broken bridge costs a chip, not
- *  data. The features bridge is memoised 15s and dropped on every config save, so a module
- *  switched off in the browser leaves this page on the next read. */
-function hiddenModules(): SummaryModuleId[] {
-  const features = getFeatures();
-  return SUMMARY_MODULES.filter((m) => !moduleOn(features, m));
+/** The switchboard's verdict per module: `modules.<m>.enabled` in the orchestrator config — the
+ *  same file `system.ts`'s module table reads. Handles both declared shapes (an object keyed by
+ *  id, a list of objects carrying id/name); a module DECLARED but with no `enabled` key counts
+ *  as OFF (the orchestrator's own convention: enabled is opt-in, `enabled === true`), and a
+ *  module never declared is off with it (contango ships unconfigured; the module list declares
+ *  what runs). Absent config file = every module on, so a broken read can never hide data. */
+function enabledModules(config: ConsoleConfig): Set<string> | null {
+  const cfg = readJson(config.paths.orchestratorConfig);
+  if (cfg === null) return null;
+  const raw = (cfg as Record<string, unknown>).modules;
+  const on = new Set<string>();
+  const push = (id: string, m: Record<string, unknown>) => {
+    if (m["enabled"] === true) on.add(id);
+  };
+  if (Array.isArray(raw)) for (const m of raw as Array<Record<string, unknown>>) push(String(m["id"] ?? m["name"] ?? ""), m);
+  else if (raw && typeof raw === "object") for (const [k, v] of Object.entries(raw)) push(k, (v ?? {}) as Record<string, unknown>);
+  else return null; // no modules block at all — the switchboard says nothing; hide nothing
+  return on;
 }
 
 export function readTradeSummary(config: ConsoleConfig, f: SummaryFilter): TradeSummaryPayload {
   const suite = suiteEra(config.paths.orchestratorConfig);
   const requested = f.module;
-  // The switchboard decides what the comparison shows: a module the suite turned off is not part
-  // of the suite's day, so it holds no comparison card. It stays reachable by a DIRECT ask
-  // (?module=pmcc) — a reader naming a module wants THAT module — but the slice then states the
-  // refusal instead of numbers, so an off module can never quietly masquerade as a silent empty
-  // book.
-  const hidden = hiddenModules();
-  const comparison = [...SUMMARY_MODULES].filter((m) => !hidden.includes(m));
+  // The switchboard decides what the comparison shows: a module the operator turned off (or one
+  // never declared) is not part of the suite's day, so it holds no comparison card. It stays
+  // reachable by a DIRECT ask (?module=pmcc) — a reader naming a module wants THAT module — but
+  // the slice then states the refusal instead of numbers, so an off module can never quietly
+  // masquerade as a silent empty book.
+  const enabled = enabledModules(config);
+  const comparison = [...SUMMARY_MODULES].filter((m) => enabled === null || enabled.has(m));
+  const hidden = [...SUMMARY_MODULES].filter((m) => enabled !== null && !enabled.has(m));
   const modules: SummaryModuleId[] = requested && (SUMMARY_MODULES as string[]).includes(requested)
     ? [requested as SummaryModuleId]
     : comparison;
@@ -233,7 +240,7 @@ export function readTradeSummary(config: ConsoleConfig, f: SummaryFilter): Trade
     // store probe, so "no store" can never mask "the operator switched this off". The
     // question "why is this module not trading" is answered by the config, not the ledger.
     if (hidden.includes(m)) {
-      moduleErrors[m] = `${m} is switched off in the suite config (modules.${m}.enabled) — no ledger has been kept`;
+      moduleErrors[m] = `${m} is switched off in the orchestrator config (modules.${m}.enabled) — no ledger has been kept`;
       slices.push(absentSlice(m, f.mode, schema, moduleErrors[m]));
       continue;
     }
