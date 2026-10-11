@@ -48,7 +48,7 @@ export const MODULE_SCHEMA = PERFORMANCE_MODULE_SCHEMA;
 
 export type { PerformanceModuleId };
 
-const MODULE_DIR_KEY = {
+export const MODULE_DIR_KEY = {
   meic: "meicDir",
   flies: "fliesDir",
   earnings: "earningsDir",

@@ -263,6 +263,7 @@ export const LIVE_SLIDES = [{ id: "today", label: "today" }] as const satisfies 
 export const REPORTS_SLIDES = [
   { id: "morning", label: "morning" },
   { id: "eod", label: "eod" },
+  { id: "summary", label: "summary" },
 ] as const satisfies readonly NavSlide[];
 
 /**

@@ -10,6 +10,7 @@ import type {
   StatusPayload,
   MeicPayload,
   MeicSummarySlice,
+  TradeSummaryPayload,
   FliesPayload,
   EarningsPayload,
   GexPayload,
@@ -337,6 +338,34 @@ export function useMeicSummary(q: MeicSummaryQuery) {
     refetchInterval: 30_000,
     // Same rule as the trade log above: a window that briefly empties mid-refetch must not read
     // as "no trades in this range".
+    placeholderData: (prev) => prev,
+  });
+}
+
+export interface TradeSummaryQuery {
+  mode: "paper" | "live";
+  /** The module filter ("meic"), null = all modules (a comparison, never a pool). */
+  module: string | null;
+  /** The toolbar's range — the server anchors each window the same way the MEIC read does. */
+  range: "day" | "week" | "month" | "year" | "all";
+  /** The stated session (?date=), null = each module's own latest. */
+  session: string | null;
+  symbol: string | null;
+  arm: string | null;
+}
+
+/** The Reports summary's one read — every module's slice arrives computed by
+ * `core.metrics summary`; the page derives nothing beyond presentation arithmetic. */
+export function useTradeSummary(q: TradeSummaryQuery) {
+  const params = new URLSearchParams({ mode: q.mode, range: q.range });
+  if (q.module !== null) params.set("module", q.module);
+  if (q.session !== null) params.set("date", q.session);
+  if (q.symbol !== null) params.set("symbol", q.symbol);
+  if (q.arm !== null) params.set("arm", q.arm);
+  return useQuery<TradeSummaryPayload>({
+    queryKey: ["trade-summary", q.mode, q.module, q.range, q.session, q.symbol, q.arm],
+    queryFn: () => getJson<TradeSummaryPayload>(`/api/reports/summary?${params.toString()}`),
+    refetchInterval: 30_000,
     placeholderData: (prev) => prev,
   });
 }
