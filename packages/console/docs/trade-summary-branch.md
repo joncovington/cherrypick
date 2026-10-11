@@ -106,6 +106,23 @@ its rules land in the shared vocabulary. Every step is verified in a rebuilt bro
   canvas would read before hydration, kept in sync with `:root`) and one luminance threshold
   for chip ink, which is arithmetic, not palette.
 
+## 2026-10-10 — the scope dies: the slide reads the shared palette directly
+
+- The legacy aliases left `:root` for good: `--bg`, `--bg-raised`, `--bg-card`, `--row-line`,
+  `--row-hover`, `--ok`, `--err`, `--cached` are no longer declared anywhere. Their last
+  readers were the desktop splash (which lifted its palette from an older `styles.css`) —
+  ported to the current names and values — and one fallback-comma read (`--row-hover`) the
+  exact-paren grep of the shared sweep had missed; both canonical.
+- The slide's private namespace went with them: the ten `--ts-*` aliases, the `.ts-root`
+  scoping on every descendant rule, and the three undefined-var fallbacks (`--needle`,
+  `--neutral-bar`, `--ts-fg`) that only ever resolved to white/inherit because nothing set
+  them. `.ts-needle` is `--text`, `.ts-hbar-fill.ts-neutral` is `--chart-neutral` (which is
+  what its `#64748b` was reaching for), the pager inherits.
+- The `.ts-` class names stay — they are wired in `SummarySlide.tsx` and pinned by its tests;
+  what died is the second palette they used to resolve through. Verified computed-identical
+  in the browser: card `#1a1d23` at 14px, border `#262a32`, seg-on `#3761e1`, track `#2a2e37`,
+  the numeral face — every value the slide now reads straight off the shared tokens.
+
 **2026-10-10** — written when the branch stood at `aaf94a90` (entries pagination) plus the merge of
 `origin/main` at `e6dc3ed6`.
 

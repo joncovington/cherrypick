@@ -3,8 +3,8 @@
    Density as luxury: hairlines, mono numerals, rounded cards, one cherry accent reserved for
    brand, live-mode, and alert moments (the halt control most deliberately).
 
-   The new names are the authority; the legacy aliases below it survive until every surface is
-   swept onto the new names, then die. A surface still on --bg is not a defect, just un-swept. */
+   The names below are the only palette — no aliases remain; a surface reading a retired name
+   is a defect, not an un-swept surface. */
 :root {
   --canvas: #0f1115; /* deep charcoal canvas — the page behind the cards */
   --surface: #1a1d23; /* elevated card surface */
@@ -30,18 +30,6 @@
   --text-muted: #9ca3af;
   --text-dim: #6b7280; /* category headers; 3.5:1 on the card — headings only, never body */
   --num-face: "Cascadia Code", "Consolas", ui-monospace, monospace;
-
-  /* legacy names (the pre-adoption palette). Aliases for the RENAMED tokens only — a name that
-     survives unchanged (e.g. --text) is declared once above, where its value changed. Aliases
-     are to be removed as surfaces are swept onto the new names. */
-  --bg: var(--canvas);
-  --bg-raised: var(--surface-sunken);
-  --bg-card: var(--surface);
-  --row-line: var(--surface-raised);
-  --row-hover: var(--surface-hover);
-  --ok: var(--pos);
-  --err: var(--neg);
-  --cached: var(--warn);
 }
 
 * {
@@ -2542,7 +2530,7 @@ select.text-input {
 }
 
 .cal-row-click:hover {
-  background: var(--row-hover, rgba(255, 255, 255, 0.03));
+  background: var(--surface-hover);
 }
 
 /* The expanded week. `.data-table td` is nowrap by house rule; this one holds prose and legs
@@ -3827,27 +3815,15 @@ td > .desk-refusal-reason {
 }
 
 /* ---------------------------------------------------------------------------
- * Trade summary slide (.ts-*, scoped to .ts-root) — the first surface built in what is now the
- * suite's adopted theme (2026-10, docs/trade-summary-branch.md): rounded cards, blue selection,
- * mint/salmon sign tones. Its tokens below are ALIASES onto the root palette, so the slide and
- * the chrome around it cannot drift; the scope and these aliases are removed as the sweep
- * reaches each rule — see docs/trade-summary-branch.md.
+ * The MEIC summary slide — the surface that seeded the adopted theme (2026-10,
+ * docs/trade-summary-branch.md): rounded cards, blue selection, mint/salmon sign tones. Its
+ * private scope and token aliases are gone; these rules read the shared vocabulary directly,
+ * exactly as every other card in the suite does. The .ts- class names stay — they are wired in
+ * SummarySlide.tsx and pinned by its tests.
  * ------------------------------------------------------------------------- */
 .ts-root {
-  /* aliases onto the root palette (the adopted theme) — same values, one authority */
-  --ts-canvas: var(--canvas);
-  --ts-card: var(--surface);
-  --ts-border: var(--border);
-  --ts-accent: var(--accent);
-  --ts-pos: var(--pos);
-  --ts-neg: var(--neg);
-  --ts-warn: var(--warn);
-  --ts-text: var(--text);
-  --ts-muted: var(--text-muted);
-  --ts-track: var(--track);
-
-  background: var(--ts-canvas);
-  color: var(--ts-text);
+  background: var(--canvas);
+  color: var(--text);
   border-radius: 14px;
   padding: 16px;
   display: grid;
@@ -3873,8 +3849,8 @@ td > .desk-refusal-reason {
 }
 
 .ts-card {
-  background: var(--ts-card);
-  border: 1px solid var(--ts-border);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 14px;
   padding: 14px 16px;
   min-width: 0; /* lets the grid cell, not the content, set the width (charts measure it) */
@@ -3892,17 +3868,17 @@ td > .desk-refusal-reason {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--ts-muted);
+  color: var(--text-muted);
 }
 
 .ts-pos {
-  color: var(--ts-pos);
+  color: var(--pos);
 }
 .ts-neg {
-  color: var(--ts-neg);
+  color: var(--neg);
 }
 .ts-muted {
-  color: var(--ts-muted);
+  color: var(--text-muted);
   font-size: 12px;
 }
 .ts-num {
@@ -3926,7 +3902,7 @@ td > .desk-refusal-reason {
 }
 .ts-seg {
   display: inline-flex;
-  border: 1px solid var(--ts-border);
+  border: 1px solid var(--border);
   border-radius: 999px;
   padding: 3px;
   gap: 2px;
@@ -3934,7 +3910,7 @@ td > .desk-refusal-reason {
 .ts-seg button {
   border: 0;
   background: transparent;
-  color: var(--ts-muted);
+  color: var(--text-muted);
   font: inherit;
   font-size: 12px;
   padding: 4px 12px;
@@ -3942,7 +3918,7 @@ td > .desk-refusal-reason {
   cursor: pointer;
 }
 .ts-seg button.ts-seg-on {
-  background: var(--ts-accent);
+  background: var(--accent);
   color: #fff;
 }
 .ts-daynav {
@@ -3952,9 +3928,9 @@ td > .desk-refusal-reason {
   font-size: 13px;
 }
 .ts-daynav button {
-  border: 1px solid var(--ts-border);
+  border: 1px solid var(--border);
   background: transparent;
-  color: var(--ts-text);
+  color: var(--text);
   border-radius: 8px;
   width: 24px;
   height: 24px;
@@ -3966,11 +3942,11 @@ td > .desk-refusal-reason {
   font-size: 11px;
   border-radius: 999px;
   padding: 2px 10px;
-  border: 1px solid var(--ts-border);
-  color: var(--ts-muted);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
 }
 .ts-badge-warn {
-  color: var(--ts-warn);
+  color: var(--warn);
 }
 
 /* hero */
@@ -3992,7 +3968,7 @@ td > .desk-refusal-reason {
   font-size: 13px;
 }
 .ts-kv dt {
-  color: var(--ts-muted);
+  color: var(--text-muted);
 }
 .ts-kv dd {
   margin: 0;
@@ -4008,20 +3984,20 @@ td > .desk-refusal-reason {
   margin: 0 auto;
 }
 .ts-track {
-  stroke: var(--ts-track);
+  stroke: var(--track);
 }
 .ts-arc-pos {
-  stroke: var(--ts-pos);
+  stroke: var(--pos);
 }
 .ts-arc-neg {
-  stroke: var(--ts-neg);
+  stroke: var(--neg);
 }
 .ts-needle {
-  stroke: var(--needle, #fff);
-  fill: var(--needle, #fff);
+  stroke: var(--text);
+  fill: var(--text);
 }
 .ts-tick {
-  fill: var(--ts-muted);
+  fill: var(--text-muted);
   font-size: 9px;
   font-family: var(--num-face);
 }
@@ -4043,10 +4019,10 @@ td > .desk-refusal-reason {
   width: 100%;
 }
 .ts-ring-days {
-  stroke: var(--ts-pos);
+  stroke: var(--pos);
 }
 .ts-ring-entries {
-  stroke: var(--ts-accent);
+  stroke: var(--accent);
 }
 .ts-rings-center {
   position: absolute;
@@ -4068,7 +4044,7 @@ td > .desk-refusal-reason {
   gap: 16px;
   justify-content: center;
   font-size: 12px;
-  color: var(--ts-muted);
+  color: var(--text-muted);
 }
 .ts-legend div {
   display: flex;
@@ -4084,10 +4060,10 @@ td > .desk-refusal-reason {
 /* A swatch states its colour — the ring class it is paired with — rather than inheriting the
    legend text's; `background: currentColor` rendered both swatches white (shown to fail). */
 .ts-swatch.ts-ring-days {
-  background: var(--ts-pos);
+  background: var(--pos);
 }
 .ts-swatch.ts-ring-entries {
-  background: var(--ts-accent);
+  background: var(--accent);
 }
 
 /* by side */
@@ -4103,7 +4079,7 @@ td > .desk-refusal-reason {
 .ts-hbar {
   height: 6px;
   border-radius: 3px;
-  background: var(--ts-track);
+  background: var(--track);
   overflow: hidden;
 }
 .ts-hbar-fill {
@@ -4111,15 +4087,15 @@ td > .desk-refusal-reason {
   border-radius: 3px;
 }
 .ts-hbar-fill.ts-pos {
-  background: var(--ts-pos);
+  background: var(--pos);
 }
 .ts-hbar-fill.ts-neg {
-  background: var(--ts-neg);
+  background: var(--neg);
 }
 .ts-side-sub {
   margin-top: 4px;
   font-size: 11px;
-  color: var(--ts-muted);
+  color: var(--text-muted);
 }
 
 /* by entry time */
@@ -4144,10 +4120,10 @@ td > .desk-refusal-reason {
   border-radius: 4px 4px 0 0;
 }
 .ts-vbar.ts-pos {
-  background: var(--ts-pos);
+  background: var(--pos);
 }
 .ts-vbar.ts-neg {
-  background: var(--ts-neg);
+  background: var(--neg);
 }
 /* a loss renders as a short marker, not a full-height bar, per the reference design */
 .ts-vbar.ts-marker {
@@ -4161,7 +4137,7 @@ td > .desk-refusal-reason {
 }
 .ts-time-sub {
   font-size: 11px;
-  color: var(--ts-muted);
+  color: var(--text-muted);
 }
 
 /* evaluations — the refusal ledger */
@@ -4177,7 +4153,7 @@ td > .desk-refusal-reason {
 }
 .ts-funnel-fill {
   height: 100%;
-  background: var(--ts-accent);
+  background: var(--accent);
   border-radius: 4px;
 }
 .ts-refusal-bars {
@@ -4197,7 +4173,7 @@ td > .desk-refusal-reason {
 /* Neutral tone: a refusal count has no sign, so no tone. Deliberately not pos/neg/accent —
    standing aside is a decision, not a loss, and a gate count must not read as a verdict. */
 .ts-hbar-fill.ts-neutral {
-  background: var(--neutral-bar, #64748b);
+  background: var(--chart-neutral);
 }
 .ts-market {
   margin: 12px 0 0;
@@ -4215,13 +4191,13 @@ td > .desk-refusal-reason {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--ts-muted);
+  color: var(--text-muted);
   padding: 6px 8px;
-  border-bottom: 1px solid var(--ts-border);
+  border-bottom: 1px solid var(--border);
 }
 .ts-table td {
   padding: 8px;
-  border-bottom: 1px solid var(--ts-border);
+  border-bottom: 1px solid var(--border);
 }
 .ts-table tr:last-child td {
   border-bottom: 0;
@@ -4236,57 +4212,57 @@ td > .desk-refusal-reason {
 }
 
 /* Trade summary prototype — empty-state and off-session additions (wired read). */
-.ts-root .ts-empty {
+.ts-empty {
   margin: 0;
   padding: 0.75rem 0 0.25rem;
   font-size: 0.85rem;
-  color: var(--ts-muted);
+  color: var(--text-muted);
 }
-.ts-root .ts-time-label.ts-off {
-  color: var(--ts-muted);
+.ts-time-label.ts-off {
+  color: var(--text-muted);
   opacity: 0.75;
 }
 
 /* Trade summary — entry-time card, second row: the evidence strip (entries per hour, the
  * activity measure on its own scale, beneath the per-trade bars). */
-.ts-root .ts-evidence {
+.ts-evidence {
   display: flex;
   align-items: center;
   gap: 0.3rem;
   margin-top: 0.2rem;
 }
-.ts-root .ts-evidence-fill {
+.ts-evidence-fill {
   height: 4px;
   flex: 0 0 auto;
   border-radius: 2px;
-  background: var(--ts-muted);
+  background: var(--text-muted);
   min-width: 2px;
 }
-.ts-root .ts-evidence-n {
+.ts-evidence-n {
   font-size: 0.62rem;
-  color: var(--ts-muted);
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
-.ts-root .ts-timescale {
+.ts-timescale {
   margin-top: 0.4rem;
   font-size: 0.66rem;
 }
 
 /* Trade summary — weekday card: calendar-order columns on a true zero baseline (a negative day
  * drops below it), with count and win-% pills beside the day label. */
-.ts-root .ts-week {
+.ts-week {
   display: flex;
   gap: 0.9rem;
   align-items: flex-end;
 }
-.ts-root .ts-wday {
+.ts-wday {
   display: flex;
   flex-direction: column;
   align-items: center;
   flex: 1 1 0;
   min-width: 0;
 }
-.ts-root .ts-wday-axis {
+.ts-wday-axis {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -4294,61 +4270,61 @@ td > .desk-refusal-reason {
   width: 100%;
   max-width: 44px;
 }
-.ts-root .ts-wday-axis .ts-vbar {
+.ts-wday-axis .ts-vbar {
   width: 100%;
 }
-.ts-root .ts-wday-label {
+.ts-wday-label {
   display: flex;
   align-items: center;
   gap: 0.28rem;
   margin-top: 0.35rem;
 }
-.ts-root .ts-wday-day {
+.ts-wday-day {
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.04em;
 }
-.ts-root .ts-wday-pill {
+.ts-wday-pill {
   font-size: 0.62rem;
   padding: 0.05rem 0.3rem;
   border-radius: 999px;
-  border: 1px solid var(--ts-border);
-  color: var(--ts-muted);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
-.ts-root .ts-wday-pill.ts-wday-win {
-  color: var(--ts-pos);
-  border-color: color-mix(in srgb, var(--ts-pos) 45%, transparent);
+.ts-wday-pill.ts-wday-win {
+  color: var(--pos);
+  border-color: color-mix(in srgb, var(--pos) 45%, transparent);
 }
-.ts-root .ts-wday-pill.ts-wday-lose {
-  color: var(--ts-neg);
-  border-color: color-mix(in srgb, var(--ts-neg) 45%, transparent);
+.ts-wday-pill.ts-wday-lose {
+  color: var(--neg);
+  border-color: color-mix(in srgb, var(--neg) 45%, transparent);
 }
-.ts-root .ts-wday-sub {
+.ts-wday-sub {
   margin-top: 0.15rem;
   font-size: 0.66rem;
   font-variant-numeric: tabular-nums;
-  color: var(--ts-muted);
+  color: var(--text-muted);
 }
 
 /* Trade summary — the entries pager: quiet arrows in the card's aside, the page stated between. */
-.ts-root .ts-pager {
+.ts-pager {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
   margin-right: 0.75rem;
 }
-.ts-root .ts-pager button {
-  border: 1px solid var(--ts-border);
+.ts-pager button {
+  border: 1px solid var(--border);
   background: none;
-  color: var(--ts-fg, inherit);
+  color: inherit;
   font: inherit;
   line-height: 1;
   padding: 0.08rem 0.42rem;
   border-radius: 6px;
   cursor: pointer;
 }
-.ts-root .ts-pager button:disabled {
+.ts-pager button:disabled {
   opacity: 0.35;
   cursor: default;
 }
