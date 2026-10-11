@@ -1910,7 +1910,7 @@ export function readMeicSummary(
 
     // -- The gate's ledger. `entry_attempts` carries arm/symbol/trade_date in its own columns, so
     //    the scope rebuilds here — but the ARM column name still comes from the shared detector,
-    //    since older ledgers spell it risk_profile. The era column is newer still: an untagged
+    //    since older ledgers spell it `risk_profile`. The era column is newer still: an untagged
     //    ledger stays unbounded rather than matching nothing.
     const attemptArm = findArmColumn(db, "entry_attempts") ?? "arm";
     const attemptHasEra = hasColumn(db, "entry_attempts", "era");
