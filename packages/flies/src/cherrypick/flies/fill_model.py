@@ -218,6 +218,37 @@ def net_fill_price(fills: list[dict] | None, quantity: int = 1) -> float | None:
     return round(total / quantity, 4)
 
 
+def broker_price(fills: list[dict] | None, quantity: int, leg: str) -> float | None:
+    """The broker's fill price for one order in the order's own direction, positive: the credit an
+    entry took, the debit a completion paid. None without parseable leg fills."""
+    net = net_fill_price(fills, quantity)
+    if net is None:
+        return None
+    return net if leg == COMPLETION else -net
+
+
+def booked_price(fills: list[dict] | None, quantity: int, leg: str, limit: float | None) -> tuple:
+    """The price a live position books for a filled order, and where it came from: ``(price,
+    "broker")`` from the broker's own leg fills, else ``(limit, "limit")``.
+
+    The order status's `price` is the LIMIT, so booking it hid every price improvement (2026-10-12:
+    23 of 163 live fills, each checked against the broker's transactions, all to the cent). A limit
+    order never fills worse than its limit, so a leg sum that says it did is a status read that
+    does not add up (a partial leg list, a parse miss), and the limit is kept rather than a wrong
+    number. So is a non-positive price. Pure."""
+    return choose_booked(broker_price(fills, quantity, leg), leg, limit)
+
+
+def choose_booked(price: float | None, leg: str, limit: float | None) -> tuple:
+    """`booked_price`'s rule on a broker price already read: keep it unless it is missing,
+    non-positive, or worse than the limit. Pure."""
+    if price is None or price <= 0:
+        return limit, "limit"
+    if limit is not None and (price < limit - 1e-9 if leg == ENTRY else price > limit + 1e-9):
+        return limit, "limit"
+    return round(price, 4), "broker"
+
+
 def latest_fill_time(fills: list[dict] | None) -> str | None:
     """The broker's own fill time for an order: the LAST leg fill's `filled_at` (an order is filled
     when its final leg is). None when no fill carries one."""

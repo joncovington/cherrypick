@@ -161,9 +161,9 @@ def test_a_completion_fill_records_the_broker_time_price_and_all_three_distances
     assert order["fill_dist_widths"] == pytest.approx(1.6)
     assert order["fill_mid_gap"] == pytest.approx(0.10)
     assert order["fill_natural_gap"] == pytest.approx(0.30)
-    # The position itself is unchanged by any of this: still the broker's price field.
+    # The position books the broker's price, not the status's limit (2026-10-12).
     pos = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert pos["kind"] == "fly" and pos["debit"] == pytest.approx(1.10)
+    assert pos["kind"] == "fly" and pos["debit"] == pytest.approx(1.05)
 
 
 def test_without_broker_fills_the_row_says_it_used_the_time_we_noticed(live_conn):
