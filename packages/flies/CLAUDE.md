@@ -113,8 +113,11 @@ assumed:
   (`fly_order_path`, each tick and watcher cycle). At each fill it keeps all three distances (spot
   past the centre, spot past the completing long strike, the mid/natural gap to the limit), signed
   as `fill_model.py` defines them, plus the broker's own fill time and leg-fill price. **The
-  ledger's live `debit`/`credit` are the order's LIMIT** (the status `price` field), so price
-  improvement only shows in `broker_fill_price`. A row says `fill_time_source = 'noticed'` when
+  ledger's live `debit`/`credit` are the broker's fill price** (`fill_model.booked_price`, from
+  2026-10-12), and the order's limit stays on `fly_live_orders.limit_price`. Before that they were
+  the limit (the status `price` field), which hid 23 of 163 fills' price improvement; `fill_facts
+  book-prices` rewrote those, each checked against the broker's transactions. With no leg fills,
+  or a leg sum worse than the limit, the limit is still booked. A row says `fill_time_source = 'noticed'` when
   the broker's time is unknown. Every write goes through `live_loop._telemetry`: a failure is
   logged, never raised into a fill confirmation or a placement.
 - **Paper** stamps each legged entry with the limit a live completion would rest at

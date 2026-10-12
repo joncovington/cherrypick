@@ -61,11 +61,15 @@ completion shadow:
 
 ## Two caveats the data already carries
 
-- **The ledger's live `debit` and `credit` are limits, not fills.** They come from the order
-  status's `price` field, which is the order's own limit. Any price improvement was invisible
-  until the broker's leg fills were recorded. The backfill found almost none (no fill more than
-  0.05 better than its limit), so the limit has been a fair stand-in; `broker_fill_price` is now
-  the record of it.
+- **The ledger's live `debit` and `credit` were limits, not fills, until 2026-10-12.** They came
+  from the order status's `price` field, which is the order's own limit. A check against the
+  broker's transactions that day found 23 of 163 filled orders better than their limit, by up to
+  0.10 (three of them), and `broker_fill_price` matched the transactions on all 163. Since then a
+  position books `broker_fill_price` (`fill_model.booked_price`), and `python -m
+  cherrypick.flies.fill_facts book-prices` (dry run unless `--write`; it backs up the ledger and
+  refuses any change the transactions do not confirm) rewrote the earlier rows. On rows fee
+  reconciliation had confirmed, `net` and `pnl` were already the broker's cash, so only
+  `credit`/`debit` and `slippage_dollars` moved.
 - **Before the order status carried leg fills, the only fill time known was when the loop noticed.**
   Such rows say `fill_time_source = 'noticed'`, and their measures describe that moment.
 

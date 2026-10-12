@@ -1,10 +1,10 @@
 """Reconcile the flies LIVE ledger against actual broker cash flow.
 
 Two of `fly_positions`' canonical columns are modeled, not real, on a live row: `net`/`credit`/
-`debit` are corrected in real time from `order_status`'s `price` field (the order's own working/
-limit price — "the closest a `PlacedOrder` gets to a real fill price without a separate
-transactions-API call", per that function's own docstring, not a true realized amount), and
-`fees` folds in a flat modeled assignment-fee constant (`fly.expire_fee`) rather than what the
+`debit` were corrected in real time from `order_status`'s `price` field (the order's own working/
+limit price, not a true realized amount) -- since 2026-10-12 from the broker's leg fills on that
+same status (`fill_model.booked_price`), which matched the transactions on every order checked,
+with the limit still the fallback -- and `fees` folds in a flat modeled assignment-fee constant (`fly.expire_fee`) rather than what the
 broker actually charged overnight. A 2026-07-30 XSP session showed this drifting the reported
 `pnl` by $12.02 against real broker cash flow.
 
