@@ -1,7 +1,7 @@
 """Read the flies `restack` arm against control: what a second contract on a completed centre earned.
 
     python scripts/flies_restack_read.py                   # restack vs control, from the arm's first session
-    python scripts/flies_restack_read.py --since 2026-10-19 --until 2026-11-06
+    python scripts/flies_restack_read.py --since 2026-10-12 --until 2026-10-30
 
 Read-only; runnable from anywhere; the ledger resolves off `$CHERRYPICK_HOME` (default `~/.cherrypick`).
 
@@ -30,7 +30,7 @@ from pathlib import Path
 from cherrypick.core.metrics import MIN_EFFECTIVE_N
 from cherrypick.core.regimecuts import sign_test_p
 
-ARM_FROM = "2026-10-19"
+ARM_FROM = "2026-10-12"
 
 
 def _ledger() -> Path:

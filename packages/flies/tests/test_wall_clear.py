@@ -121,7 +121,7 @@ def test_the_arm_is_journaled_once_when_enabled(tmp_path):
     paper_loop._note_wall_clear_arm(conn, cfg)
     paper_loop._note_wall_clear_arm(conn, cfg)
     rows = [r for r in dbmod.measurement_breaks(conn) if r["scope"] == "wall-clear"]
-    assert len(rows) == 1 and rows[0]["kind"] == "arm_added" and rows[0]["break_date"] == "2026-10-19"
+    assert len(rows) == 1 and rows[0]["kind"] == "arm_added" and rows[0]["break_date"] == "2026-10-12"
     staged = dbmod.connect(str(tmp_path / "staged.db"))
     paper_loop._note_wall_clear_arm(staged, {"arms": {"wall-clear": {"enabled": False, **ON}}})
     assert not [r for r in dbmod.measurement_breaks(staged) if r["scope"] == "wall-clear"]

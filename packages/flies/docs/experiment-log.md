@@ -1113,3 +1113,17 @@ for `control` since 08-21, ahead of window (15,391) and cadence (5,416).
   only if restacks beat control's per-entry net, since on live a restack spends the same cap as any
   other entry.
 - **Paper only.** No live path reads `restack_completed`, and `live.arm` stays `control`.
+
+## 2026-10-12 — `wall-clear` and `restack` start today, not 10-19
+
+Both arms were staged off for the 10-19 boundary. On the morning of 10-12, before the open, they
+were enabled instead and their `arm_added` breaks dated 2026-10-12, so they join today's boundary
+(the GEX one-gamma change and `range-high`) rather than the selector's.
+- **Why:** the user's call, to start both forward tests a week sooner.
+- **Nothing else moved.** Each arm's definition, thresholds and judging rule are as declared
+  (2026-10-05 and 2026-10-11); only the first session changed. The `selector` stays at 10-19.
+- **Read from 10-12.** `wall-clear` lands on the same day as the GEX one-gamma change, which moves
+  the recorder's walls too (on 10-09 it moved the put wall from 7730 to 7790). Its whole forward
+  sample is on the new arithmetic, but its 10 / 5 point thresholds were read off walls computed the
+  old way. The forward read is still the arm as declared; if it fails, re-derive the thresholds on
+  the new walls before calling the idea dead.

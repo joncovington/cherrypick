@@ -324,8 +324,8 @@ def tick_config(config: dict, arm: str, day: str, now: float) -> tuple[dict, dic
 
 
 SELECTOR_ARM_FROM = "2026-10-19"
-WALL_CLEAR_ARM_FROM = "2026-10-19"
-RESTACK_ARM_FROM = "2026-10-19"
+WALL_CLEAR_ARM_FROM = "2026-10-12"
+RESTACK_ARM_FROM = "2026-10-12"
 
 
 def _note_selector_arm(conn, config: dict) -> None:
@@ -452,7 +452,7 @@ def _note_range_high_arm(conn, config: dict) -> None:
 
 def _note_wall_clear_arm(conn, config: dict) -> None:
     """Journal the `wall-clear` arm's entry to the roster (an `arm_added` break dated its declared
-    first session, 2026-10-19), once a machine's config enables it. Idempotent and best-effort, as
+    first session, 2026-10-12, moved from 10-19), once a machine's config enables it. Idempotent and best-effort, as
     the vol-floor note; a future-dated break binds nothing until it passes."""
     try:
         arm = (config.get("arms") or {}).get("wall-clear")
@@ -476,7 +476,7 @@ def _note_wall_clear_arm(conn, config: dict) -> None:
 
 def _note_restack_arm(conn, config: dict) -> None:
     """Journal the `restack` arm's entry to the roster (an `arm_added` break dated its declared first
-    session, 2026-10-19), once a machine's config enables it. Idempotent and best-effort, as the
+    session, 2026-10-12, moved from 10-19), once a machine's config enables it. Idempotent and best-effort, as the
     wall-clear note."""
     try:
         arm = (config.get("arms") or {}).get("restack")
