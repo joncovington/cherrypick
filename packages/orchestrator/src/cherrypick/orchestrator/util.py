@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from typing import Any
 
 from cherrypick.core import looplock
@@ -82,12 +83,26 @@ def rotate_if_large(path, max_bytes: int = 5_000_000, keep: int = 3) -> bool:
 def read_json(path, default=None) -> Any:
     """Best-effort JSON file read: the parsed value, or `default` ({} if omitted) on any
     miss/parse failure. The one implementation of the pattern watchdog, dashboard, and
-    trade_notifier each hand-rolled."""
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
-    except Exception:
-        return {} if default is None else default
+    trade_notifier each hand-rolled.
+
+    A PermissionError is retried first: on Windows, opening a file in the instant `atomic_write_json`
+    replaces it fails that way. Read as a miss, the supervisor's registry came back {} and the
+    watchdog raised "Contango paper job missing" (2026-10-12) for a job that never left it; a
+    reader racing a writer that replaces continuously hit it on about 1 read in 800."""
+    for attempt in range(_READ_TRIES):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return json.load(fh)
+        except PermissionError:
+            if attempt < _READ_TRIES - 1:
+                time.sleep(_READ_PAUSE_S)
+        except Exception:
+            break
+    return {} if default is None else default
+
+
+_READ_TRIES = 10
+_READ_PAUSE_S = 0.05
 
 
 def atomic_write_json(path, obj: Any) -> None:

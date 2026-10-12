@@ -83,6 +83,49 @@ def test_atomic_write_json_round_trip_and_replace(tmp_path):
     assert not p.with_name(p.name + ".tmp").exists()
 
 
+def _refusing_open(times: int):
+    """`open` that raises PermissionError `times` times, as Windows does mid-replace, then opens."""
+    calls = {"n": 0}
+    real = open
+
+    def fake(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] <= times:
+            raise PermissionError(13, "Permission denied")
+        return real(*args, **kwargs)
+
+    return fake, calls
+
+
+def test_read_json_retries_a_file_caught_mid_replace(tmp_path, monkeypatch):
+    """2026-10-12: one refused open read the supervisor's registry as {} and the watchdog called a
+    present job missing."""
+    p = tmp_path / "reg.json"
+    p.write_text('{"jobs": {"contango-paper": {}}}', encoding="utf-8")
+    fake, calls = _refusing_open(2)
+    monkeypatch.setattr(util, "open", fake, raising=False)
+    monkeypatch.setattr(util.time, "sleep", lambda s: None)
+    assert util.read_json(p) == {"jobs": {"contango-paper": {}}}
+    assert calls["n"] == 3
+
+
+def test_read_json_gives_up_on_a_file_that_stays_refused(tmp_path, monkeypatch):
+    p = tmp_path / "reg.json"
+    p.write_text("{}", encoding="utf-8")
+    fake, calls = _refusing_open(10_000)
+    monkeypatch.setattr(util, "open", fake, raising=False)
+    monkeypatch.setattr(util.time, "sleep", lambda s: None)
+    assert util.read_json(p, default={"x": 1}) == {"x": 1}
+    assert calls["n"] == util._READ_TRIES
+
+
+def test_read_json_does_not_retry_a_missing_file(tmp_path, monkeypatch):
+    fake, calls = _refusing_open(0)
+    monkeypatch.setattr(util, "open", fake, raising=False)
+    assert util.read_json(tmp_path / "absent.json") == {}
+    assert calls["n"] == 1
+
+
 @pytest.mark.skipif(os.name != "nt", reason="the Windows Restart Manager")
 def test_file_holders_names_the_process_holding_a_file(tmp_path):
     """Against the real API: a file this process holds open names this process; let go, no one."""
