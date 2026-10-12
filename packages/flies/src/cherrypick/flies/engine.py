@@ -116,13 +116,13 @@ ARMS = (
     # or above `range_high_pct` of a session range narrower than `range_high_max_points`
     # (`range_high_refusal`). One variable vs control; in-sample, found by search, hence an arm.
     "range-high",
-    # control plus a wall-clearance gate (declared for 2026-10-19): no legged entry while the GEX
+    # control plus a wall-clearance gate (from 2026-10-12, moved from 10-19): no legged entry while the GEX
     # wall on the completing side -- the call wall for a put spread, which needs a rally, the put
     # wall for a call spread -- sits under `wall_clear_ahead_points` ahead of spot or has been
     # crossed by less than `wall_clear_past_points` (`wall_clearance_refusal`). One variable vs
     # control. In-sample over 43 sessions the band lost; the thresholds were chosen on those rows.
     "wall-clear",
-    # control plus one relaxed rule (declared 2026-10-11, for 2026-10-19): the duplicate rule stops
+    # control plus one relaxed rule (declared 2026-10-11, from 2026-10-12): the duplicate rule stops
     # counting a structure once it is completed risk-free (`restack_completed`, `completed_risk_free`),
     # so spot returning to a completed fly's centre may sell that vertical again. Spot came back to
     # 127 of control's 196 completed flies (08-21..10-09); what a second contract earns was never
