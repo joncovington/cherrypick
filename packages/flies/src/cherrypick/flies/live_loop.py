@@ -449,7 +449,11 @@ def _confirm_entry_fill(conn, pos: dict, broker, log) -> dict:
     status = broker.status(pos["entry_order_id"])
     state, price = _execution.fill_state(status, fallback_price=pos["net"])
     if state == "filled":
-        actual_credit = price  # the model only when the broker reported a fill without a parseable price
+        # `price` is the order's LIMIT (the model only when the broker reported a fill without a
+        # parseable price); the broker's own leg fills say what it actually paid.
+        actual_credit, source = fill_model.booked_price(
+            (status or {}).get("fills"), pos.get("quantity", 1), fill_model.ENTRY, price
+        )
         slippage = measured_entry_slippage(
             pos.get("entry_mid_at_submit"), actual_credit, pos.get("quantity", 1)
         )
@@ -471,7 +475,7 @@ def _confirm_entry_fill(conn, pos: dict, broker, log) -> dict:
         )
         log(
             f"entry FILLED {pos['position_id']}: modeled {pos['net']:.2f} credit -> "
-            f"actual {actual_credit:.2f}"
+            f"actual {actual_credit:.2f} ({source})"
         )
         return {
             **pos,
@@ -512,7 +516,10 @@ def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = 
     status = broker.status(pos["completion_order_id"])
     state, price = _execution.fill_state(status, fallback_price=pos.get("debit") or 0.0)
     if state == "filled":
-        actual_debit = price
+        # As the entry: `price` is the LIMIT; book what the broker's leg fills say it paid.
+        actual_debit, source = fill_model.booked_price(
+            (status or {}).get("fills"), pos.get("quantity", 1), fill_model.COMPLETION, price
+        )
         completion_fee = fly.vertical_open_fee(pos["symbol"], pos.get("quantity", 1))
         new_net = pos["net"] - actual_debit
         new_fees = (pos.get("fees") or 0.0) + completion_fee
@@ -529,8 +536,8 @@ def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = 
         )
         conn.commit()
         log(
-            f"completion FILLED {pos['position_id']}: floor ${floor:.2f} after fees "
-            f"({'risk-free' if risk_free else 'NOT risk-free'})"
+            f"completion FILLED {pos['position_id']}: debit {actual_debit:.2f} ({source}), floor "
+            f"${floor:.2f} after fees ({'risk-free' if risk_free else 'NOT risk-free'})"
         )
         # "The moment worth waking up for" (trade_notifier.py's own words for this event) — journaled
         # here, once, rather than at each of this function's two callers (run_once's own fill-
@@ -557,7 +564,7 @@ def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = 
             leg=fill_model.COMPLETION,
             order_id=pos["completion_order_id"],
             status=status,
-            limit_price=actual_debit,
+            limit_price=price,
         )
         return {
             **updated,

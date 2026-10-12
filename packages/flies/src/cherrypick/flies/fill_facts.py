@@ -30,7 +30,7 @@ import json
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from cherrypick.flies import clock, engine, fill_model, live_orders
+from cherrypick.flies import clock, engine, fill_model, fly, live_orders
 from cherrypick.flies import db as dbmod
 
 ET = ZoneInfo("America/New_York")
@@ -139,8 +139,7 @@ def filled(conn, pos: dict, *, leg: str, order_id, status: dict | None, limit_pr
     status carries them, then every at-fill measure. Returns the measures written."""
     fills = (status or {}).get("fills")
     broker_time = fill_model.latest_fill_time(fills)
-    net = fill_model.net_fill_price(fills, pos.get("quantity") or 1)
-    price = None if net is None else (net if leg == fill_model.COMPLETION else -net)
+    price = fill_model.broker_price(fills, pos.get("quantity") or 1, leg)
     _ensure(conn, pos, leg=leg, order_id=order_id, limit_price=limit_price)
     dbmod.save_live_order(
         conn,
@@ -389,6 +388,130 @@ def write_backfill(conn, plan: dict) -> dict:
     return {"orders": len(plan["orders"]), "path_rows": sum(len(v) for v in plan["paths"].values())}
 
 
+# --------------------------------------------------------------------------- booked prices
+def book_prices_plan(conn, *, fills: dict[str, dict] | None) -> dict:
+    """Which live positions booked an order's LIMIT where the broker filled better, and what each
+    would book instead (2026-10-12). Pure over the ledger and `fills` (`transaction_fills`).
+
+    The price booked is `broker_fill_price`, chosen as the live path chooses it
+    (`fill_model.booked_price`). With `fills`, an order whose transactions disagree with it, or have
+    none, is refused rather than changed; `fills=None` skips that check.
+
+    What changes per position: `credit`/`debit`, and `slippage_dollars` against the recorded mid. A
+    row fee reconciliation has confirmed already carries the broker's cash in `net`/`pnl`, so only
+    those columns move, and `net` is checked to agree with them. An unconfirmed row's `net` follows
+    (credit less debit), and with it the completed floor and, once settled, `gross_pnl`/`pnl`."""
+    from cherrypick.flies import live_loop
+
+    orders = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM fly_live_orders WHERE outcome = 'filled' AND broker_fill_price IS NOT NULL"
+        )
+    ]
+    by_position: dict[str, dict] = {}
+    refused = []
+    for o in orders:
+        pos = _position_row(conn, o["position_id"])
+        if pos is None or pos.get("void_reason"):
+            continue
+        column = "credit" if o["leg"] == fill_model.ENTRY else "debit"
+        qty = pos.get("quantity") or 1
+        price, source = fill_model.choose_booked(o["broker_fill_price"], o["leg"], o["limit_price"])
+        if source != "broker" or pos.get(column) is None or abs(price - pos[column]) < 1e-9:
+            continue
+        if fills is not None:
+            f = fills.get(str(o["order_id"]))
+            txn = None if f is None else round(f["cash"] / (100 * qty), 4)
+            txn = None if txn is None else (txn if o["leg"] == fill_model.ENTRY else -txn)
+            if txn is None or abs(txn - price) > 1e-6:
+                refused.append(
+                    {
+                        "order_id": o["order_id"],
+                        "position_id": o["position_id"],
+                        "booked": price,
+                        "transactions": txn,
+                    }
+                )
+                continue
+        plan = by_position.setdefault(o["position_id"], {"position": pos, "set": {}})
+        plan["set"][column] = price
+
+    changes = []
+    for pid, plan in by_position.items():
+        pos, new = plan["position"], dict(plan["set"])
+        credit = new.get("credit", pos["credit"])
+        debit = new.get("debit", pos.get("debit"))
+        if "credit" in new and pos.get("entry_mid_at_submit") is not None:
+            new["slippage_dollars"] = live_loop.measured_entry_slippage(
+                pos["entry_mid_at_submit"], credit, pos.get("quantity", 1)
+            )
+        net = credit - (debit or 0.0) if pos["kind"] == "fly" else credit
+        if pos.get("broker_reconciliation_status") == "reconciled":
+            agrees = abs((pos.get("net") or 0.0) - net) < 1e-6
+        else:
+            agrees = None
+            new["net"] = round(net, 4)
+            if pos["kind"] == "fly" and pos.get("floor_dollars") is not None:
+                # Shifted, not recomputed: the floor is linear in `net`, and on a settled row `fees`
+                # already holds the settlement charge `position_floor` would reserve a second time.
+                shift = (net - (pos.get("net") or 0.0)) * fly.CONTRACT_MULTIPLIER * (pos.get("quantity") or 1)
+                new["floor_dollars"] = round(pos["floor_dollars"] + shift, 2)
+                new["risk_free"] = int(new["floor_dollars"] >= 0)
+            if pos.get("status") == "settled" and pos.get("expiry_payoff") is not None:
+                gross = round(
+                    (net + pos["expiry_payoff"]) * fly.CONTRACT_MULTIPLIER * (pos.get("quantity") or 1), 2
+                )
+                new["gross_pnl"] = gross
+                new["pnl"] = round(gross - (pos.get("fees") or 0.0), 2)
+        changes.append(
+            {
+                "position_id": pid,
+                "book_id": pos["book_id"],
+                "trade_date": pos["trade_date"],
+                "reconciled": pos.get("broker_reconciliation_status") == "reconciled",
+                "net_agrees_with_broker_cash": agrees,
+                "before": {k: pos.get(k) for k in new},
+                "after": new,
+            }
+        )
+    changes.sort(key=lambda c: (c["trade_date"], c["position_id"]))
+    return {"changes": changes, "refused": refused}
+
+
+def write_book_prices(conn, plan: dict, config: dict) -> dict:
+    """Write what `book_prices_plan` planned, then re-roll each settled book whose positions' `net`
+    moved, through `book._save_book` exactly as settlement does. A book fee reconciliation has
+    confirmed is left alone: its figures come from the broker's cash, which this does not move."""
+    from cherrypick.flies import book as bookmod
+
+    rerolled = set()
+    for c in plan["changes"]:
+        dbmod.save_position(conn, {"position_id": c["position_id"], **c["after"]})
+        if "net" in c["after"]:
+            rerolled.add(c["book_id"])
+    for book_id in sorted(rerolled):
+        book = conn.execute("SELECT * FROM fly_books WHERE book_id = ?", (book_id,)).fetchone()
+        if book is None or book["broker_reconciliation_status"] or book["status"] != "settled":
+            continue
+        final = [bookmod._to_position(r) for r in fly.held(dbmod.book_positions(conn, book_id))]
+        for p in final:
+            p["status"] = "settled"
+        params = engine.merged_params(config, book["arm"])
+        bookmod._save_book(
+            conn,
+            book_id,
+            book["trade_date"],
+            book["arm"],
+            book["symbol"],
+            final,
+            params,
+            book["settlement_price"],
+        )
+    conn.commit()
+    return {"positions": len(plan["changes"]), "books_rerolled": sorted(rerolled)}
+
+
 # --------------------------------------------------------------------------- the spot trail
 def trail_reader(spot_conn, symbol: str):
     """`trail_path(start_iso, end_iso) -> [(iso_et, spot)]` over the gex recorder's spot trail
@@ -469,10 +592,57 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--write", action="store_true", help="write the rows (default: dry run)")
     r = sub.add_parser("rebuild", help="re-derive at-fill measures for filled orders from stored data")
     r.add_argument("--date", help="one trade_date (default: every filled order)")
-    for p in (b, r):
+    k = sub.add_parser(
+        "book-prices", help="book the broker's fill price where a position booked the order's limit"
+    )
+    k.add_argument(
+        "--no-broker", action="store_true", help="skip checking each change against the transactions"
+    )
+    k.add_argument("--write", action="store_true", help="back up the ledger, then write (default: dry run)")
+    for p in (b, r, k):
         p.add_argument("--db", help="ledger path (default: the LIVE ledger)")
         p.add_argument("--gex", help="gex history db (default: the recorder's)")
     return ap
+
+
+def _backup(conn, db_path: str, tag: str) -> str:
+    """Copy the ledger through SQLite's backup API to `<ledger>.bak-<tag>-<stamp>` before a write."""
+    import sqlite3
+
+    dest = f"{db_path}.bak-{tag}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    with sqlite3.connect(dest) as out:
+        conn.backup(out)
+    return dest
+
+
+def _book_prices_main(conn, args) -> int:
+    from cherrypick.flies.cli import load_config
+
+    fills = None
+    if not args.no_broker:
+        rows = conn.execute(
+            "SELECT DISTINCT p.symbol, o.trade_date FROM fly_live_orders o "
+            "JOIN fly_positions p ON p.position_id = o.position_id WHERE o.outcome = 'filled'"
+        ).fetchall()
+        symbols = sorted({r[0] for r in rows})
+        txns = asyncio.run(_fetch_transactions(symbols, [r[1] for r in rows]))
+        fills = transaction_fills(txns)
+    plan = book_prices_plan(conn, fills=fills)
+    summary = {
+        "ok": not plan["refused"],
+        "write": args.write,
+        "checked_against_transactions": fills is not None,
+        "changes": plan["changes"],
+        "refused": plan["refused"],
+        "net_disagrees": [
+            c["position_id"] for c in plan["changes"] if c["net_agrees_with_broker_cash"] is False
+        ],
+    }
+    if args.write and plan["changes"]:
+        summary["backup"] = _backup(conn, args.db or str(dbmod.live_db_path()), "pre-book-prices")
+        summary["written"] = write_book_prices(conn, plan, load_config())
+    print(json.dumps(summary, indent=2, default=str))
+    return 0 if summary["ok"] else 1
 
 
 def _open_trail(path: str | None):
@@ -488,6 +658,8 @@ def _open_trail(path: str | None):
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     conn = dbmod.connect(args.db or dbmod.live_db_path())
+    if args.command == "book-prices":
+        return _book_prices_main(conn, args)
     spot_conn = _open_trail(args.gex)
     if args.command == "rebuild":
         clause, params = ("AND trade_date = ?", [args.date]) if args.date else ("", [])
