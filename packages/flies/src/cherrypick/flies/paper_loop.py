@@ -324,7 +324,8 @@ def tick_config(config: dict, arm: str, day: str, now: float) -> tuple[dict, dic
 
 
 SELECTOR_ARM_FROM = "2026-10-19"
-WALL_CLEAR_ARM_FROM = "2026-10-19"
+WALL_CLEAR_ARM_FROM = "2026-10-12"
+RESTACK_ARM_FROM = "2026-10-12"
 
 
 def _note_selector_arm(conn, config: dict) -> None:
@@ -451,7 +452,7 @@ def _note_range_high_arm(conn, config: dict) -> None:
 
 def _note_wall_clear_arm(conn, config: dict) -> None:
     """Journal the `wall-clear` arm's entry to the roster (an `arm_added` break dated its declared
-    first session, 2026-10-19), once a machine's config enables it. Idempotent and best-effort, as
+    first session, 2026-10-12, moved from 10-19), once a machine's config enables it. Idempotent and best-effort, as
     the vol-floor note; a future-dated break binds nothing until it passes."""
     try:
         arm = (config.get("arms") or {}).get("wall-clear")
@@ -471,6 +472,29 @@ def _note_wall_clear_arm(conn, config: dict) -> None:
         )
     except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
         _log(f"wall-clear arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
+def _note_restack_arm(conn, config: dict) -> None:
+    """Journal the `restack` arm's entry to the roster (an `arm_added` break dated its declared first
+    session, 2026-10-12, moved from 10-19), once a machine's config enables it. Idempotent and best-effort, as the
+    wall-clear note."""
+    try:
+        arm = (config.get("arms") or {}).get("restack")
+        if not isinstance(arm, dict) or not arm.get("enabled", True):
+            return
+        dbmod.record_measurement_break(
+            conn,
+            break_date=RESTACK_ARM_FROM,
+            scope="restack",
+            kind="arm_added",
+            reason=(
+                "restack arm enters the roster: control plus the duplicate rule ignoring a structure "
+                "once it is completed risk-free (restack_completed), so a completed fly's centre may "
+                "be entered again"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"restack arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
 def _entry_cadence_state_path() -> str:
@@ -1021,6 +1045,7 @@ def main(argv=None) -> int:
             _note_intraday_arms(conn, config)
             _note_selector_arm(conn, config)
             _note_wall_clear_arm(conn, config)
+            _note_restack_arm(conn, config)
             # Stale-checkout guard (2026-08-05). The loop imports from the working tree, so a session
             # run from an older branch writes NULL to any regime column that branch predates --
             # silently, all day, with no backfill path afterwards. Logged rather than enforced: a

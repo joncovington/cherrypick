@@ -116,12 +116,18 @@ ARMS = (
     # or above `range_high_pct` of a session range narrower than `range_high_max_points`
     # (`range_high_refusal`). One variable vs control; in-sample, found by search, hence an arm.
     "range-high",
-    # control plus a wall-clearance gate (declared for 2026-10-19): no legged entry while the GEX
+    # control plus a wall-clearance gate (from 2026-10-12, moved from 10-19): no legged entry while the GEX
     # wall on the completing side -- the call wall for a put spread, which needs a rally, the put
     # wall for a call spread -- sits under `wall_clear_ahead_points` ahead of spot or has been
     # crossed by less than `wall_clear_past_points` (`wall_clearance_refusal`). One variable vs
     # control. In-sample over 43 sessions the band lost; the thresholds were chosen on those rows.
     "wall-clear",
+    # control plus one relaxed rule (declared 2026-10-11, from 2026-10-12): the duplicate rule stops
+    # counting a structure once it is completed risk-free (`restack_completed`, `completed_risk_free`),
+    # so spot returning to a completed fly's centre may sell that vertical again. Spot came back to
+    # 127 of control's 196 completed flies (08-21..10-09); what a second contract earns was never
+    # priced, because the rule refuses before pricing. One variable vs control.
+    "restack",
     # The selector (2026-10-04, selector.py): one portfolio that, on each tick, asks its declared
     # source arms what they would do against ITS book and books the proposal the session's frozen
     # model scores best -- or control's, which is what it books with no model at all. Not a variant
@@ -1141,6 +1147,26 @@ def structure_key(position: dict) -> tuple:
     )
 
 
+def completed_risk_free(position: dict) -> bool:
+    """Is this a completed structure whose worst case going forward is no loss? The `restack` arm's
+    test for whether a held structure may be entered again (`restack_completed`, declared 2026-10-11).
+
+    Completed means the kind a completion writes (`fly`, `iron_fly`); a short vertical, a debit
+    vertical or an unrolled bwb is not. Risk-free is `fly.is_risk_free` (floor >= 0 after fees), the
+    number the book roll-up and the live cap read, so a completion that locked in a loss still blocks: stacking
+    a second contract on a structure that can still lose is adding to a loser, which is not the
+    question the arm asks. A row whose floor cannot be read is treated as not risk-free, so the
+    duplicate rule fails CLOSED here -- the opposite of the sign rule's permissive skip, because
+    this path admits an entry and that one refuses.
+    """
+    if position.get("kind") not in ("fly", "iron_fly"):
+        return False
+    try:
+        return fly.is_risk_free(position)
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def cadence_state(params: dict, day_positions: list, now_min: int | None) -> tuple[bool, float | None]:
     """Has this arm's entry cadence elapsed? Returns ``(allowed, seconds_remaining)``.
 
@@ -1189,8 +1215,10 @@ def portfolio_gates(
         return "entry_cadence_wait", {"seconds_until_cadence_clear": remaining}
 
     if structure is not None:
-        existing = {structure_key(p) for p in day_positions if p.get("center") is not None}
-        if structure in existing:
+        held = [p for p in day_positions if p.get("center") is not None]
+        if params.get("restack_completed"):
+            held = [p for p in held if not completed_risk_free(p)]
+        if structure in {structure_key(p) for p in held}:
             return "duplicate_structure", {}
 
     if proposed_legs:

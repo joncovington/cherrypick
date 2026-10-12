@@ -29,7 +29,7 @@ the sessions holding both kinds in which the refused rows averaged worse.
 - **Not the arm's book.** A refused tick is dropped here; the arm enters at a later tick instead,
   at a price no ledger recorded. That is why `wall-clear` is an arm and not a replayed verdict.
 - **Not out of sample** on its own era: the declared thresholds (10 ahead, 5 past) were read off
-  these rows. Only sessions from the arm's start (2026-10-19) judge it.
+  these rows. Only sessions from the arm's start (2026-10-12, moved from 10-19) judge it.
 - **Not the snapshot's own GEX walls**, which are gross call/put peaks; the recorder's are net-GEX
   walls, a different definition (provider.py beside `RECORDED_GEX_MAX_AGE_SECONDS`).
 - **Pools nothing across 2026-10-05**, when paper completions began paying the live limit; the
