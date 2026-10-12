@@ -1054,3 +1054,62 @@ gex spot trail at the entry instant: (spot - low) / (high - low), the range so f
   gain came from few sessions, a forward result carried by one or two sessions does not count.
 - **Its book starts at its own `arm_added` break.** It lands with the 10-12 GEX arithmetic change
   (`gex_surface`, non-bounding: no enabled arm decides on GEX).
+
+## 2026-10-11 — live sizing re-read: the one-incomplete rule and the buying-power cap; nothing changed
+
+The question was whether to go back to one open spread at a time on live. Read with
+`scripts/flies_live_start_replay.py`'s cap model (start 00:00, so every recorded entry is eligible) over
+live `control` 09-25..10-09 (11 sessions, 64 entries) and paper `control` 08-21..10-09 (33 sessions).
+At $1,000 the replay admits all 64 live entries, which is the check on the model.
+
+| Live, cap | Entries | Net | Worst day | Max drawdown |
+|---|---|---|---|---|
+| $500 (= one incomplete) | 25 | −$1,897 | −$286 | −$1,897 |
+| $750 | 51 | −$905 | −$496 | −$1,213 |
+| **$1,000** (deployed) | 64 | −$666 | −$779 | −$1,391 |
+
+- **A $500 cap and the one-incomplete rule are the same rule on live.** One open 5-wide vertical
+  commits ~$255–300, so two never fit.
+- **The entries the rule blocks are the good ones.** 39 blocked, 33 completed, +$1,231. Under the rule,
+  a stranded first spread holds the slot all day (09-29, 09-30 and 10-09 each became one ~−$275 trade).
+- **It does cap the bad day** (10-02 and 10-07 from about −$770 to −$230), but costs more on the rest:
+  worse on 8 of 11 days.
+- **More buying power stops paying at about $1,000.** Paper control: $1,000 +$4,771, $1,250 +$4,659,
+  $1,500 +$3,655, uncapped +$4,342, while the worst day grows to −$1,388 at $1,500. Net per entry falls
+  from +$40 at $500 to about +$18 uncapped. The curve is not monotone: a different cap admits different
+  entries and the day's path changes after them.
+- **Caveat:** blocked entries are dropped, not refilled later, which flatters $1,000 a little.
+
+The cap stays at $1,000 and `max_incomplete_spreads` stays null. A bad-day limit would read intraday
+marks, not settled net or a count; not replayed yet.
+
+## 2026-10-11 — returns to a completed fly's centre; the `restack` arm declared, from 2026-10-19
+
+The question was whether a completed fly should take another contract when spot comes back to its
+centre. Control's duplicate rule (`engine.portfolio_gates`, `structure_key`) never enters a structure it
+already holds that day, and it is the most frequent refusal in the paper ledger: 26,753 refused ticks
+for `control` since 08-21, ahead of window (15,391) and cadence (5,416).
+
+- **Spot came back to 127 of control's 196 completed flies** (paper, 08-21..10-09), on 33 of 34
+  sessions, typically 2–4 a day and up to 10.
+- **96 of those 127 settled with no payoff.** Their money was the locked-in credit less the
+  completing debit, not a pin.
+- **What a second contract earns was never recorded.** The rule refuses before pricing, so
+  `would_be_credit` is null on every `duplicate_blocked` row. A restack is a fresh legged entry that
+  needs its own completion, and the first contract's completion says nothing about it.
+- **The rule's own reason holds against it:** two flies on one centre double the pin bet without adding
+  a profit zone (`test_entry_will_not_stack_two_structures_on_one_center`). The arm measures whether
+  the re-entries pay anyway, because a return to the centre is the chop that completes legged flies.
+
+**Declared: the `restack` arm, from 2026-10-19** (the `selector`/`wall-clear` boundary).
+- **The arm:** `control` plus `restack_completed`: the duplicate rule ignores a structure once it is
+  completed risk-free (`engine.completed_risk_free`: kind `fly`/`iron_fly` and `fly.is_risk_free`). An
+  open vertical, a completion with a negative floor, or an unreadable row still blocks (fails closed).
+  Cadence, windows and every other gate are control's.
+- **How it will be read:** `scripts/flies_restack_read.py`, after at least 14 sessions
+  (`MIN_EFFECTIVE_N`). Restacks on their own (completion rate, net per entry) against the arm's first
+  entries and control's entries; the book against control per session (sign test); deepest stack per
+  session, because every contract on a centre settles to the same payoff. It earns a live question
+  only if restacks beat control's per-entry net, since on live a restack spends the same cap as any
+  other entry.
+- **Paper only.** No live path reads `restack_completed`, and `live.arm` stays `control`.
