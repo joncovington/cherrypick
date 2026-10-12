@@ -368,6 +368,15 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
     inputs. Fails open when unmeasured.
   - **The one variable is pinned** by `tests/test_wall_clear.py`; the judging rule is in the
     experiment log (2026-10-05).
+- `restack` — `control` plus one relaxed rule, **declared for 2026-10-19** and staged off until then:
+  the duplicate rule ignores a structure once it is completed risk-free (`restack_completed`,
+  `engine.completed_risk_free`), so spot returning to a completed fly's centre may sell that vertical
+  again. An open vertical or a negative-floor completion still blocks.
+  - **Why:** spot came back to 127 of control's 196 completed flies (08-21..10-09), and the rule
+    refuses before pricing, so what a second contract earns was never recorded.
+  - **The cost is concentration:** every contract on a centre settles to the same payoff.
+  - **The one variable is pinned** by `tests/test_restack.py`; the read is
+    `scripts/flies_restack_read.py`, and the judging rule is in the experiment log (2026-10-11).
 
 ### Regime tagging
 
