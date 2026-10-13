@@ -40,6 +40,15 @@ experiment's own `base_profile` from the advisor's store (earnings appends the s
 `<prefix>:<arm>` arm it is `<prefix>:control` when one exists. Earnings' `strat_test:<strategy>`
 books are each a strategy's own baseline and have no control.
 
+**Size-normalised figures.** A paired difference in dollars a session compares books of whatever
+size they are: MEIC's capped arms read -$22k to -$31k a session behind a control that takes ~270
+entries a day against their ~6, which is mostly size, not the parameter. So every arm also carries
+`net_per_entry` and `net_per_100_risk` (net per $100 of the capital `core.ledgers` records per trade:
+max loss, or buying power, as each module's ledger states it; only trades with a known capital
+count, and how many is said), and every pair carries the same paired comparison on the per-session
+normalised figures (`per_entry`, `per_100_risk`), keyed and windowed exactly as the dollar pair. A
+module whose ledger records no capital (flies) has no risk-normalised figure, never a zero.
+
 Read-only, deterministic (seeded bootstraps), no network. Nothing here labels an arm better or
 worse: the interval, the sign test and the projection are numbers, and the thresholds belong to
 whoever reads them.
@@ -224,11 +233,49 @@ def _r(x: float | None, nd: int = 2) -> float | None:
     return None if x is None else round(x, nd)
 
 
+def _capital(record: dict) -> float | None:
+    """The trade's recorded capital at risk, or None when the ledger did not record one (or
+    recorded a non-positive one, which cannot be divided by)."""
+    cap = record.get("capital")
+    try:
+        cap = float(cap) if cap is not None else None
+    except (TypeError, ValueError):
+        return None
+    return cap if cap is not None and cap > 0 else None
+
+
+def normalised_session_values(
+    records: list[dict], per: str, *, session_key: str = "session"
+) -> dict[str, float]:
+    """`{session: normalised net}` for one arm, in session order. `per="entry"`: the session's net
+    over its entries. `per="risk"`: 100 x the session's net over its recorded capital, from the trades
+    whose capital is known; a session with none is dropped, never read as zero."""
+    nets: dict[str, float] = {}
+    denom: dict[str, float] = {}
+    for r in records:
+        s = r.get(session_key)
+        if not s:
+            continue
+        if per == "entry":
+            weight = 1.0
+        elif per == "risk":
+            weight = _capital(r)
+            if weight is None:
+                continue
+        else:
+            raise ValueError(f"normalised_session_values: per must be 'entry' or 'risk', not {per!r}")
+        nets[str(s)] = nets.get(str(s), 0.0) + float(r["net_pnl"])
+        denom[str(s)] = denom.get(str(s), 0.0) + weight
+    scale = 100.0 if per == "risk" else 1.0
+    return {s: scale * nets[s] / denom[s] for s in sorted(nets) if denom[s]}
+
+
 def arm_reading(
     records: list[dict], *, level: float = LEVEL, resamples: int = RESAMPLES, seed: int = SEED
 ) -> dict:
     """One arm's own numbers over its in-scope closed rows. Money in whole-position dollars, net
-    after every cost; `max_drawdown` is the peak-to-trough fall of the per-SESSION equity path."""
+    after every cost; `max_drawdown` is the peak-to-trough fall of the per-SESSION equity path.
+    `net_per_entry` and `net_per_100_risk` are the size-normalised figures (module docstring)."""
     ordered = sorted(records, key=lambda r: r.get("session") or "")
     nets = [float(r["net_pnl"]) for r in ordered]
     sv = _stats.session_values(ordered)
@@ -237,6 +284,8 @@ def arm_reading(
     ci = _stats.bootstrap_ci(svals, level=level, resamples=resamples, seed=seed) if len(svals) >= 2 else None
     excludes = (ci[0] > 0 or ci[1] < 0) if ci else None
     n = len(nets)
+    known = [(float(r["net_pnl"]), cap) for r in ordered if (cap := _capital(r)) is not None]
+    risk = sum(cap for _, cap in known)
     return {
         "trades": n,
         "sessions": len(sv),
@@ -254,9 +303,67 @@ def arm_reading(
         "sessions_to_exclude_zero": 0
         if excludes
         else _stats.sessions_to_exclude_zero(mean, sd, len(svals), level=level),
+        "entries_per_session": _r(n / len(sv)) if sv else None,
+        "net_per_entry": _r(sum(nets) / n) if n else None,
+        "capital": _r(risk) if known else None,
+        "capital_known_trades": len(known),
+        "net_per_100_risk": _r(100.0 * sum(v for v, _ in known) / risk) if risk else None,
         "trade_nets": [_r(v) for v in nets],
         "session_nets": [[s, _r(v)] for s, v in sv.items()],
     }
+
+
+def pair_with_control(
+    arm_records: list[dict],
+    control_records: list[dict],
+    *,
+    schema: str,
+    level: float = LEVEL,
+    resamples: int = RESAMPLES,
+    seed: int = SEED,
+) -> dict | None:
+    """An arm's closed records against its control's, by this module's pairing rule (see the
+    module docstring): keyed on the day for a same-day schema and on `entry_session` otherwise,
+    common sessions inside the overlap of the two windows, one-side-only sessions counted. The
+    advisor's verdicts call this too, so a verdict and the compare page cannot pair differently.
+    None when either side has no dated rows."""
+    pair_on = "session" if schema in SAME_DAY_SCHEMAS else "entry_session"
+
+    def rekeyed(records: list[dict]) -> list[dict]:
+        return [
+            {"pair": r.get(pair_on) or r.get("session"), "net_pnl": r["net_pnl"], "capital": r.get("capital")}
+            for r in records
+        ]
+
+    arm_rows, control_rows = rekeyed(arm_records), rekeyed(control_records)
+    mine = _stats.session_values(arm_rows, session_key="pair")
+    theirs = _stats.session_values(control_rows, session_key="pair")
+    if not mine or not theirs:
+        return None
+    lo = max(next(iter(mine)), next(iter(theirs)))
+    hi = min(next(reversed(mine)), next(reversed(theirs)))
+    window = [s for s in sorted(set(mine) | set(theirs)) if lo <= s <= hi]
+    vs = _stats.paired_comparison(
+        mine, theirs, fill=None, sessions=window, level=level, resamples=resamples, seed=seed
+    )
+    vs["paired_on"] = pair_on
+    vs["arm_only_sessions"] = sum(1 for s in window if s in mine and s not in theirs)
+    vs["control_only_sessions"] = sum(1 for s in window if s in theirs and s not in mine)
+
+    # The same pair on size-normalised session figures: same key, same window, same rule. A side
+    # with no recorded capital on any shared session has no risk-normalised pair (None, not zero).
+    for name, per in (("per_entry", "entry"), ("per_100_risk", "risk")):
+        a = normalised_session_values(arm_rows, per, session_key="pair")
+        c = normalised_session_values(control_rows, per, session_key="pair")
+        shared = [s for s in window if s in a and s in c]
+        vs[name] = (
+            _stats.paired_comparison(
+                a, c, fill=None, sessions=window, level=level, resamples=resamples, seed=seed
+            )
+            if shared
+            else None
+        )
+    return vs
 
 
 def module_comparison(
@@ -312,14 +419,6 @@ def module_comparison(
     experiments = experiments if experiments is not None else {}
     names = sorted(by_arm, key=_arm_order)
     readings = {a: arm_reading(by_arm[a], level=level, resamples=resamples, seed=seed) for a in names}
-    pair_on = "session" if schema in SAME_DAY_SCHEMAS else "entry_session"
-    pair_values = {
-        a: _stats.session_values(
-            [{"pair": r.get(pair_on) or r["session"], "net_pnl": r["net_pnl"]} for r in by_arm[a]],
-            session_key="pair",
-        )
-        for a in names
-    }
     arms = []
     for a in names:
         reading = readings[a]
@@ -345,17 +444,9 @@ def module_comparison(
             "vs_control": None,
         }
         if ctl is not None:
-            mine, theirs = pair_values[a], pair_values[ctl]
-            lo = max(next(iter(mine)), next(iter(theirs)))
-            hi = min(next(reversed(mine)), next(reversed(theirs)))
-            window = [s for s in sorted(set(mine) | set(theirs)) if lo <= s <= hi]
-            vs = _stats.paired_comparison(
-                mine, theirs, fill=None, sessions=window, level=level, resamples=resamples, seed=seed
+            entry["vs_control"] = pair_with_control(
+                by_arm[a], by_arm[ctl], schema=schema, level=level, resamples=resamples, seed=seed
             )
-            vs["paired_on"] = pair_on
-            vs["arm_only_sessions"] = sum(1 for s in window if s in mine and s not in theirs)
-            vs["control_only_sessions"] = sum(1 for s in window if s in theirs and s not in mine)
-            entry["vs_control"] = vs
         arms.append(entry)
     out["arms"] = arms
     return out
@@ -408,5 +499,7 @@ __all__ = [
     "era_window",
     "experiments_index",
     "module_comparison",
+    "normalised_session_values",
+    "pair_with_control",
     "read_breaks",
 ]
