@@ -147,6 +147,54 @@ def test_dry_run_then_apply_then_nothing_to_do(tmp_path, monkeypatch, capsys):
     assert len(_breaks(home, "meic")) == 4
 
 
+HAND_BWB_ADVICE = (
+    '{\r\n  "defaults": {\r\n    "delta_trigger": 0.5,\r\n    "flip_buffer": 1.001\r\n  },\r\n'
+    '  "books": {\r\n    "control": { "enabled": true },\r\n    "delta": { "enabled": false }\r\n  },\r\n'
+    '  "advice": {\r\n    "base_book": "control",\r\n    "bounds": {\r\n'
+    '      "quantity": { "min": 1, "max": 5 },\r\n'
+    '      "delta_trigger": {\r\n        "min": 0.05,\r\n        "max": 0.95\r\n      },\r\n'
+    '      "flip_buffer": { "min": 1.0001, "max": 1.05 }\r\n    }\r\n  }\r\n}\r\n'
+)
+
+
+def test_bwb_bounds_gain_the_examples_arms_in_the_files_own_format(tmp_path, monkeypatch):
+    """The advisor refuses a trigger param on a base that never arms only once the deployed bounds
+    say so. The step copies the example's `arms` (bwb's own test derives them), patches a
+    hand-formatted file in place, writes no ledger break (no book changed), and is idempotent."""
+    (tmp_path / "config").mkdir()
+    path = tmp_path / "config" / "bwb.json"
+    path.write_bytes(HAND_BWB_ADVICE.encode())
+    mod = _load()
+    declared = {"delta_trigger": ["delta", "bounce"], "flip_buffer": ["flip"], "bounce_pullback": ["bounce"]}
+    monkeypatch.setattr(mod, "_bwb_declared_arms", lambda: declared)
+
+    plan = mod.Plan()
+    mod.step_bwb(plan, tmp_path)
+    old, new = plan.files[path]
+    doc = json.loads(new)
+    assert doc["advice"]["bounds"]["delta_trigger"]["arms"] == ["delta", "bounce"]
+    assert doc["advice"]["bounds"]["flip_buffer"]["arms"] == ["flip"]
+    assert "arms" not in doc["advice"]["bounds"]["quantity"]
+    assert doc["defaults"] == {"delta_trigger": 0.5, "flip_buffer": 1.001}
+    assert '"control": { "enabled": true }' in new and new.count("\n") == new.count("\r\n")
+    assert plan.breaks == [], "an advice-bound declaration is not a bwb ledger break"
+
+    path.write_bytes(new.encode())
+    again = mod.Plan()
+    mod.step_bwb(again, tmp_path)
+    assert again.files == {}
+
+
+def test_bwb_bounds_are_left_alone_before_the_arms_declaration_exists(tmp_path, monkeypatch):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "bwb.json").write_bytes(HAND_BWB_ADVICE.encode())
+    mod = _load()
+    monkeypatch.setattr(mod, "_bwb_declared_arms", lambda: {})
+    plan = mod.Plan()
+    mod.step_bwb(plan, tmp_path)
+    assert plan.files == {} and any("PR #224" in n for n in plan.notes)
+
+
 def test_mid_first_only_with_its_own_flag_and_with_a_live_break(tmp_path, monkeypatch):
     pytest.importorskip("cherrypick.earnings")
     from cherrypick.flies import live_orders

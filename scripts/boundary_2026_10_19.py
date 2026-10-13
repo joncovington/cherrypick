@@ -25,6 +25,8 @@ What this script does (each step idempotent; a step already applied reports "not
      this boundary 2026-10-04; --skip-selector leaves it); removes miss_stop_minutes from the advice
      bounds. With --enable-flies-mid-first only: live.entry_pricing "mid_first" and a LIVE ledger break.
   3. bwb.json: retires the delta and wall books (enabled false). Their open rows run off by expiry.
+     Copies the add-on bounds' `arms` from packages/bwb/config.example.json (PR #224), so the
+     advisor refuses a trigger param on a base that never arms; skipped with a note before #224.
   4. curve.json: retires the hook book.
   5. calendars.json: removes time_exit from the advice bounds.
   6. meic.risk.json: adds the four live-minus-one-gate arms.
@@ -153,6 +155,35 @@ def _disable_block(text: str, block: str, note: str) -> str:
     return new
 
 
+def _add_arms(text: str, param: str, arms: list) -> str:
+    """`"<param>": { ... }` (an advice bound, the only place the param's value is an object) gains
+    `"arms": [...]` before its closing brace, on its own last line's indent if it spans lines."""
+    pattern = re.compile(r'("' + re.escape(param) + r'"\s*:\s*\{)([^{}]*?)(\s*\})')
+    match = pattern.search(text)
+    if match is None:
+        raise RuntimeError(f"could not find the {param!r} bound")
+    if '"arms"' in match.group(2):
+        raise RuntimeError(f"the {param!r} bound already names other arms; edit it by hand")
+    body = match.group(2).rstrip()
+    addition = ', "arms": ' + json.dumps(arms)
+    return text[: match.start(2)] + body + addition + match.group(3) + text[match.end(3) :]
+
+
+def _bwb_declared_arms() -> dict[str, list]:
+    """`{param: arms}` from this checkout's bwb config example -- the declaration bwb's own
+    `tests/test_advice_arms.py` derives from management.evaluate. Empty before PR #224."""
+    example = Path(__file__).resolve().parents[1] / "packages" / "bwb" / "config.example.json"
+    try:
+        bounds = json.loads(_read(example)).get("advice", {}).get("bounds", {})
+    except (OSError, ValueError):
+        return {}
+    return {
+        p: list(r["arms"])
+        for p, r in bounds.items()
+        if isinstance(r, dict) and isinstance(r.get("arms"), list)
+    }
+
+
 # --------------------------------------------------------------------------- the steps
 def step_advisor(plan: Plan, h: Path) -> None:
     db = h / "data" / "advisor" / "advisor.db"
@@ -245,16 +276,37 @@ def step_bwb(plan: Plan, h: Path) -> None:
         "Open rows run off",
     }
 
+    declared = _bwb_declared_arms()
+    if not declared:
+        plan.notes.append(
+            "bwb: this checkout's config.example declares no advice-bound `arms` (PR #224 not merged); "
+            "advice bounds left as they are"
+        )
+
+    def _arms_to_add(doc) -> dict[str, list]:
+        bounds = (doc.get("advice") or {}).get("bounds") or {}
+        return {
+            param: arms
+            for param, arms in declared.items()
+            if isinstance(bounds.get(param), dict) and bounds[param].get("arms") != arms
+        }
+
     def mutate(doc):
         for book, why in notes.items():
             blk = (doc.get("books") or {}).get(book)
             if isinstance(blk, dict) and blk.get("enabled", True):
                 blk["enabled"] = False
                 blk["_retired"] = f"Retired {BOUNDARY} ({JOURNAL}): {why}."
+        for param, arms in _arms_to_add(doc).items():
+            doc["advice"]["bounds"][param]["arms"] = list(arms)
 
     def patch(text):
         for book, why in notes.items():
-            text = _disable_block(text, book, f"Retired {BOUNDARY} ({JOURNAL}): {why}.")
+            blk = (json.loads(text).get("books") or {}).get(book)
+            if isinstance(blk, dict) and blk.get("enabled", True):
+                text = _disable_block(text, book, f"Retired {BOUNDARY} ({JOURNAL}): {why}.")
+        for param, arms in _arms_to_add(json.loads(text)).items():
+            text = _add_arms(text, param, arms)
         return text
 
     doc = json.loads(_read(path))
@@ -263,15 +315,18 @@ def step_bwb(plan: Plan, h: Path) -> None:
     if change:
         plan.files[path] = change
         after = _roster(json.loads(change[1]).get("books") or {}, ("control", "delta", "bounce", "flip"))
-        plan.breaks.append(
-            _key_break(
-                h / "data" / "bwb" / "paper_trades.db",
-                "arms",
-                before,
-                after,
-                "delta and wall retired; their open rows are managed and settled to expiry. " + JOURNAL,
+        # An `arms` declaration on the advice bounds changes no book: it is the advisor's input
+        # (its 2026-10-19 break, in packages/advisor/CLAUDE.md), never a bwb ledger break.
+        if before != after:
+            plan.breaks.append(
+                _key_break(
+                    h / "data" / "bwb" / "paper_trades.db",
+                    "arms",
+                    before,
+                    after,
+                    "delta and wall retired; their open rows are managed and settled to expiry. " + JOURNAL,
+                )
             )
-        )
 
 
 def step_curve(plan: Plan, h: Path) -> None:
