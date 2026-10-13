@@ -36,12 +36,6 @@ def render_path(session: str) -> Path:
     return data_dir() / f"morning-{session}.md"
 
 
-def note_path(session: str) -> Path:
-    """Where the narrative lands -- beside the facts, never inside them, so a missing or failed
-    note can never damage the record it describes."""
-    return data_dir() / f"morning-{session}.note.md"
-
-
 def stream_cache_db() -> Path:
     """The shared stream cache -- read-only here; the streamer is its single producer."""
     return _home.data_dir("marketdata") / "stream_cache.db"

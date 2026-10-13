@@ -14,7 +14,7 @@ import statistics
 
 from cherrypick.core.metrics import excursions as _mae_mfe
 
-from cherrypick.calendars import db, exit_policies
+from cherrypick.calendars import db
 
 
 def headline(conn) -> dict:
@@ -48,12 +48,6 @@ def week_detail(conn, week_of: str) -> dict:
         ]
         positions.append(p)
     return {"week_of": week_of, "positions": positions}
-
-
-def exit_policy_table(conn, config: dict) -> dict:
-    """The exit study's answer, with its own validation attached — one call so no surface can show
-    the ranking without the reason to believe it."""
-    return exit_policies.comparison_table(conn, config)
 
 
 def em_vs_realized(conn) -> list[dict]:
