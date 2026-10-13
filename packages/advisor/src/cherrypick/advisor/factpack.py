@@ -36,6 +36,7 @@ from cherrypick.core import config as _cfg
 from cherrypick.core import db as _db
 from cherrypick.core import home as _home
 from cherrypick.core import regime as _regime
+from cherrypick.core import streamcache as _streamcache
 
 from cherrypick.advisor import bounds as _bounds
 from cherrypick.advisor import clock as _clock
@@ -133,7 +134,7 @@ def _live_db(module: str) -> Path:
 
 
 def _stream_cache() -> Path:
-    return _paths.module_data_dir("marketdata") / "stream_cache.db"
+    return _streamcache.cache_path()
 
 
 def _gex_history() -> Path:

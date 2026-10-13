@@ -477,3 +477,13 @@ def test_greeks_for_feeds_compute_gex_end_to_end(tmp_path):
     result = _gex.compute_gex(chain, greeks, oi, 100.0)
     assert result["ok"] is True, result.get("error")
     assert result["strikes_with_data"] == 3
+
+
+def test_cache_path_prefers_config_and_expands_else_the_canonical_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    assert streamcache.cache_path() == tmp_path / "data" / "marketdata" / "stream_cache.db"
+    assert streamcache.cache_path({"source": {}}) == streamcache.cache_path(None)
+    monkeypatch.setenv("CP_TEST_DIR", str(tmp_path / "elsewhere"))
+    got = streamcache.cache_path({"source": {"stream_cache_db": "$CP_TEST_DIR/c.db"}})
+    assert got == tmp_path / "elsewhere" / "c.db"
+    assert "~" not in str(streamcache.cache_path({"source": {"stream_cache_db": "~/c.db"}}))

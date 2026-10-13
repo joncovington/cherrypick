@@ -32,6 +32,7 @@ from cherrypick.core import config as _cfg
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
+from cherrypick.core import streamcache as _streamcache
 
 from cherrypick.curve import book as bookmod
 from cherrypick.curve import cli as climod
@@ -45,11 +46,7 @@ _logger = logging.getLogger("curve_paper_loop")
 
 
 def stream_cache_path(config: dict) -> str:
-    configured = (config.get("source") or {}).get("stream_cache_db")
-    if configured:
-        return os.path.expanduser(os.path.expandvars(configured))
-    home = str(_home.home())
-    return os.path.join(home, "data", "marketdata", "stream_cache.db")
+    return str(_streamcache.cache_path(config))
 
 
 def log_file():
@@ -747,12 +744,7 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
 
 
 def _beat() -> None:
-    try:
-        path = _home.heartbeat_path("curve")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(datetime.now().astimezone().isoformat(), encoding="utf-8")
-    except OSError:
-        pass
+    _home.beat("curve")
 
 
 def main(argv=None) -> int:

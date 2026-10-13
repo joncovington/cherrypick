@@ -30,6 +30,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import jsonio as _jsonio
+
 from . import paths, symbols, tradable
 
 ILLIQUID = "illiquid"
@@ -201,11 +203,7 @@ def build(dolt_cfg: dict | None = None, today: date | None = None) -> dict[str, 
     previous = load()
     verdicts = update(previous, fresh, today.isoformat(), sweep)
     doc = {"updated_on": today.isoformat(), "sweep": sweep, "label_day": label_day, "names": verdicts}
-    path = verdicts_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(doc, indent=1), encoding="utf-8")
-    tmp.replace(path)
+    path = _jsonio.write_json_atomic(verdicts_path(), doc, indent=1, default=None)
     held = illiquid(verdicts)
     return {
         "ok": True,

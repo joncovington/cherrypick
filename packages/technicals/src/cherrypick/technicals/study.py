@@ -27,7 +27,6 @@ renamed) closes an open position at its last close, flagged: its delisting retur
 
 from __future__ import annotations
 
-import json
 import math
 import random
 import time
@@ -36,6 +35,8 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from statistics import mean, median, pstdev
+
+from cherrypick.core import jsonio as _jsonio
 
 from . import history, paths, setups, store, tradable, tuning_names, universe
 
@@ -523,8 +524,4 @@ def write(result: dict, rows: list[dict] | None = None) -> str:
     out = paths.study_dir()
     out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    target = out / f"history-results-{stamp}.json"
-    tmp = target.with_name(target.name + ".tmp")
-    tmp.write_text(json.dumps(result, indent=1, default=str), encoding="utf-8")
-    tmp.replace(target)
-    return str(target)
+    return str(_jsonio.write_json_atomic(out / f"history-results-{stamp}.json", result, indent=1))

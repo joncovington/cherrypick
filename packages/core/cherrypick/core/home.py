@@ -35,6 +35,7 @@ the reliability path). Call :func:`ensure` at the point you actually write.
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import os
 from pathlib import Path
@@ -104,6 +105,21 @@ def heartbeat_path(package: str) -> Path:
     and the orchestrator (watching it) have to agree, and they cannot import each other.
     """
     return state_dir() / f"{package}.heartbeat"
+
+
+def beat(package: str) -> None:
+    """Touch ``heartbeat_path(package)`` -- call it at the top of every tick, before any branch.
+
+    Every reader (the supervisor's silence check, the watchdog's freshness check, the console) reads
+    the file's MTIME only; the body is the local time with its offset, for a person reading the file.
+    Best-effort: an OSError is swallowed, because a heartbeat that costs a tick would be worse than
+    the problem it solves, and a missing file degrades to not-silence-supervised, never to a kill."""
+    try:
+        path = heartbeat_path(package)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_dt.datetime.now().astimezone().isoformat(), encoding="utf-8")
+    except OSError:
+        pass
 
 
 HALT_FLAG_NAME = "halt-live.flag"

@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 from cherrypick.core import home as _home
+from cherrypick.core import streamcache as _streamcache
 from cherrypick.core.db import connect_ro as _connect_ro
 from cherrypick.core.streamcache import usable_quote as _usable_quote
 
@@ -26,10 +27,7 @@ DEFAULT_MAX_QUOTE_AGE_SECONDS = 120
 
 
 def stream_cache_path(config: dict) -> str:
-    configured = (config.get("source") or {}).get("stream_cache_db")
-    if configured:
-        return os.path.expanduser(os.path.expandvars(configured))
-    return os.path.join(str(_home.home()), "data", "marketdata", "stream_cache.db")
+    return str(_streamcache.cache_path(config))
 
 
 def technicals_db_path(config: dict) -> str:

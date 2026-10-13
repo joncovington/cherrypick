@@ -870,12 +870,7 @@ def _beat() -> None:
 
     Best-effort: a beat that cannot be written degrades to not-silence-supervised, never to a
     failed tick."""
-    try:
-        path = _core_home.heartbeat_path("meic")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(str(time.time()), encoding="utf-8")
-    except OSError:
-        pass
+    _core_home.beat("meic")
 
 
 def run_iteration(cfg, force=False):
