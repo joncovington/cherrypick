@@ -25,9 +25,12 @@ import { peakRiskSessions } from "./fliesPeakRisk.js";
  *
  * Flies has no `era` column, so an era here is a (symbol, start-date) pair rather than a tag. The
  * XSP books (2026-07-29..07-31) are a different trade, not an earlier version of this one: 1-wide
- * structures on a $750 index, where the median completed fly collected $12.00 against $4.97 of fees
- * — 41.4% drag against the SPX book's 10.9%. Credits, widths and per-contract risk all differ by
- * roughly 5x, so pooling them silently distorts every per-arm breakdown.
+ * structures on a $750 index, where trading fees (settlement excluded) were 6.9% of the premium
+ * collected against 3.7% for the SPX book before them -- 32.3% against 10.6% on the median
+ * completed fly (settled, non-void rows, recomputed from the ledger 2026-10-12; the 41% / 11% once
+ * quoted here was written before settlement was recorded apart from fees). Credits, widths and
+ * per-contract risk all differ by roughly 5x, so pooling them silently distorts every per-arm
+ * breakdown.
  *
  * Mirrors MEIC's `CURRENT_ERA`: narrow by default, widen only as a stated choice. Deliberately a
  * FILTER and never a deletion — the XSP books are the record of a documented fee finding, and the
@@ -819,6 +822,16 @@ export function readFliesJournal(config: ConsoleConfig, mode: TradingMode, day: 
 const SETTLED = "status = 'settled' AND void_reason IS NULL";
 
 /**
+ * Not struck from the record. A voided row keeps `status = 'settled'` and its pnl -- the module
+ * marks it with `void_reason` alone -- so `pnl IS NOT NULL` or `status = 'settled'` lets it into a
+ * money total. Every aggregate that sums money over positions says this as well. A ledger from
+ * before the column has nothing voided ("1=1"), and must not throw into an empty payload.
+ */
+function notVoid(db: DatabaseHandle): string {
+  return hasColumn(db, "fly_positions", "void_reason") ? "void_reason IS NULL" : "1=1";
+}
+
+/**
  * A cancelled entry's order was pulled before it filled, so it never was a position: nothing was
  * bought or sold and its credit was never collected. The ledger keeps the row as a record of the
  * attempt, and every query here that counts, values or replays POSITIONS has to drop it -- or the
@@ -967,78 +980,6 @@ function groupSummaries<T extends string>(rows: Array<Record<string, unknown>>, 
   return [...grouped.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([k, rs]) => ({ [label]: k, ...summarize(rs) }) as Record<T, string> & FliesSummary);
-}
-
-export interface ArmDivergence {
-  date: string | null;
-  iterations: number;
-  allAgreeRatePct: number | null;
-  pairs: Array<{ arms: string; iterations: number; agreementRatePct: number | null }>;
-}
-
-/**
- * Port of analytics.arm_divergence: how often the arms actually picked
- * DIFFERENT centres. The experiment can only separate two arms to the extent
- * they disagree — a high agreement rate means the comparison cannot answer
- * the question as framed, and that is far better learned in week one.
- */
-export function readArmDivergence(config: ConsoleConfig, mode: TradingMode, day: string | null): ArmDivergence {
-  const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
-  const dbPath = path.join(config.paths.fliesDir, file);
-  const empty: ArmDivergence = { date: null, iterations: 0, allAgreeRatePct: null, pairs: [] };
-  return withReadOnlyDb<ArmDivergence>(dbPath, empty, (db) => {
-    const date =
-      day ?? latestTradeDateIn(db);
-    if (date === null) return empty;
-    const rows = db
-      .prepare<[string], Record<string, unknown>>(
-        "SELECT iteration_ts, symbol, arm, center FROM fly_iterations WHERE trade_date = ? ORDER BY iteration_ts",
-      )
-      .all(date);
-    const iterations = new Map<string, Record<string, number>>();
-    for (const r of rows) {
-      if (typeof r["center"] !== "number") continue;
-      const key = `${String(r["iteration_ts"])}|${String(r["symbol"])}`;
-      let bucket = iterations.get(key);
-      if (bucket === undefined) {
-        bucket = {};
-        iterations.set(key, bucket);
-      }
-      bucket[String(r["arm"])] = r["center"];
-    }
-    const pairs = new Map<string, boolean[]>();
-    let allAgree = 0;
-    let considered = 0;
-    for (const centers of iterations.values()) {
-      const arms = Object.keys(centers).sort();
-      if (arms.length < 2) continue;
-      considered += 1;
-      if (new Set(Object.values(centers)).size === 1) allAgree += 1;
-      for (let i = 0; i < arms.length; i++) {
-        for (let j = i + 1; j < arms.length; j++) {
-          const key = `${arms[i]} vs ${arms[j]}`;
-          let list = pairs.get(key);
-          if (list === undefined) {
-            list = [];
-            pairs.set(key, list);
-          }
-          list.push(centers[arms[i]!] === centers[arms[j]!]);
-        }
-      }
-    }
-    return {
-      date,
-      iterations: considered,
-      allAgreeRatePct: considered > 0 ? (allAgree / considered) * 100 : null,
-      pairs: [...pairs.entries()]
-        .map(([arms, matches]) => ({
-          arms,
-          iterations: matches.length,
-          agreementRatePct: matches.length > 0 ? (matches.filter(Boolean).length / matches.length) * 100 : null,
-        }))
-        .sort((a, b) => (b.agreementRatePct ?? 0) - (a.agreementRatePct ?? 0)),
-    };
-  });
 }
 
 export interface FliesHistory {
@@ -1758,7 +1699,7 @@ export function readFliesPerformance(
     const leftOnTableRows = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT credit, debit, quantity, completion_gex_bucket, post_best_completing_debit, post_best_completing_credit
-           FROM fly_positions WHERE entry_mode = 'debit_first' AND kind = 'fly'${sc.and}`,
+           FROM fly_positions WHERE entry_mode = 'debit_first' AND kind = 'fly' AND ${notVoid(db)}${sc.and}`,
       )
       .all(...sc.params);
     let leftOnTableUntracked = 0;
@@ -2042,7 +1983,7 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
                   SUM(CASE WHEN risk_free = 1 THEN 1 ELSE 0 END) AS risk_free,
                   SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed,
                   COALESCE(SUM(fees), 0) AS fees
-             FROM fly_positions WHERE trade_date = ? AND ${NOT_CANCELLED}${armClause}`,
+             FROM fly_positions WHERE trade_date = ? AND ${NOT_CANCELLED} AND ${notVoid(db)}${armClause}`,
         )
         .get(tradeDate, ...armParams) ?? {};
       const positions = Number(t["positions"] ?? 0);
@@ -2101,7 +2042,7 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
                 SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) AS losses,
                 COALESCE(SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END), 0) AS won,
                 COALESCE(SUM(CASE WHEN pnl < 0 THEN -pnl ELSE 0 END), 0) AS lost
-           FROM fly_positions WHERE pnl IS NOT NULL${dateClause}${armClause} GROUP BY arm ORDER BY net DESC`,
+           FROM fly_positions WHERE pnl IS NOT NULL AND ${notVoid(db)}${dateClause}${armClause} GROUP BY arm ORDER BY net DESC`,
       )
       .all(...dateParams, ...armParams);
     const byArm = armRows.map((r) => {
@@ -2123,7 +2064,7 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
       .prepare<string[], Record<string, unknown>>(
         `SELECT arm, COALESCE(SUM(gross_pnl), 0) AS gross, COALESCE(SUM(fees), 0) AS fees,
                 COALESCE(SUM(pnl), 0) AS net
-           FROM fly_positions WHERE pnl IS NOT NULL${dateClause}${armClause} GROUP BY arm ORDER BY arm`,
+           FROM fly_positions WHERE pnl IS NOT NULL AND ${notVoid(db)}${dateClause}${armClause} GROUP BY arm ORDER BY arm`,
       )
       .all(...dateParams, ...armParams)
       .map((r) => {
@@ -2267,7 +2208,7 @@ export function readFliesCosts(config: ConsoleConfig, mode: TradingMode, era: st
                 ${costColumn(db, "settlement_fees")} AS settlement_fees,
                 ${costColumn(db, "slippage_dollars")} AS slippage_dollars,
                 MAX(net, 0) * 100 * COALESCE(quantity, 1) AS premium, trade_date
-           FROM fly_positions WHERE status = 'settled'${ec.sql === null ? "" : ` AND ${ec.sql}`}`,
+           FROM fly_positions WHERE status = 'settled' AND ${notVoid(db)}${ec.sql === null ? "" : ` AND ${ec.sql}`}`,
       )
       .all(...ec.params);
     const since = era === "ALL" ? null : (ERAS.find((e) => e.key === (era ?? DEFAULT_ERA))?.from ?? null);

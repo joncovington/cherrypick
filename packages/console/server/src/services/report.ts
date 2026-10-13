@@ -3,7 +3,8 @@
  * per-schema net rules are the load-bearing part and copied exactly:
  *   meic ic_trades:   net = pnl − fees (resolved trades)
  *   earnings trades:  net = pnl − entry_cost − exit_cost (closed)
- *   flies fly_books:  net = pnl (book P&L is already net of fees when settled)
+ *   flies fly_books:  net = pnl (book P&L is already net of fees when settled),
+ *                     books holding a voided position left out
  * Sessions keyed by trade date; suite stats = net, trades, wins/losses on the
  * per-trade net, win rate, average.
  */
@@ -11,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
-import { suiteEra, withReadOnlyDb } from "../readers/db.js";
+import { hasColumn, suiteEra, withReadOnlyDb } from "../readers/db.js";
 import { listSessions } from "../readers/review.js";
 import { MODULE_SCHEMA, performanceDbPath } from "../readers/performance.js";
 import { readMeasurementBreaks } from "../readers/integrity.js";
@@ -71,12 +72,21 @@ function earningsNets(config: ConsoleConfig): TradeNet[] {
   );
 }
 
+/**
+ * A book's stored pnl still counts its voided positions, so a book holding any is left out -- every
+ * one struck so far (bwb 2026-08-04..06, the 2026-10-08 outage) was voided whole.
+ */
 function fliesNets(config: ConsoleConfig): TradeNet[] {
   const dbPath = path.join(config.paths.fliesDir, "paper_trades.db");
   return withReadOnlyDb<TradeNet[]>(dbPath, [], (db) =>
     db
       .prepare<[], Record<string, unknown>>(
-        `SELECT trade_date, pnl FROM fly_books WHERE pnl IS NOT NULL AND status = 'settled'`,
+        `SELECT trade_date, pnl FROM fly_books WHERE pnl IS NOT NULL AND status = 'settled'${
+          hasColumn(db, "fly_positions", "void_reason")
+            ? ` AND NOT EXISTS (SELECT 1 FROM fly_positions p
+                                 WHERE p.book_id = fly_books.book_id AND p.void_reason IS NOT NULL)`
+            : ""
+        }`,
       )
       .all()
       .map((r) => ({ session: String(r["trade_date"]), net: Number(r["pnl"]) })),

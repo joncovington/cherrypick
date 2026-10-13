@@ -332,7 +332,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
             currentEra={meta.data?.currentEra}
             onChange={setEra}
             pooledLabel="all eras — pooled"
-            title="The XSP books (2026-07-29..07-31) are a different trade — 1-wide structures at 41% fee drag against the SPX book's 11%. Pooling them distorts every per-arm breakdown."
+            title="The XSP books (2026-07-29..07-31) are a different trade — 1-wide structures whose trading fees were 6.9% of premium collected against the SPX book's 3.7% (32% against 11% on the median completed fly). Pooling them distorts every per-arm breakdown."
           />
           <select className="text-input" value={date ?? ""} onChange={(e) => setDate(e.target.value === "" ? null : e.target.value)} aria-label="date filter">
             <option value="">latest day</option>
