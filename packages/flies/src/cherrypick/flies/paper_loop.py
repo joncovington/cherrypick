@@ -497,6 +497,35 @@ def _note_restack_arm(conn, config: dict) -> None:
         _log(f"restack arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
+LIVE_SHADOW_ARM_FROM = "2026-10-19"
+
+
+def _note_live_shadow_arm(conn, config: dict) -> None:
+    """Journal the `live-shadow` arm's entry to the roster (an `arm_added` break dated its declared
+    first session, 2026-10-19), once a machine's config enables it with `mirror_live`. Idempotent
+    and best-effort, as the other notes; a future-dated break binds nothing until it passes."""
+    try:
+        arm = (config.get("arms") or {}).get("live-shadow")
+        if not isinstance(arm, dict) or not arm.get("enabled", True) or not arm.get("mirror_live"):
+            return
+        live = config.get("live") or {}
+        dbmod.record_measurement_break(
+            conn,
+            break_date=LIVE_SHADOW_ARM_FROM,
+            scope="live-shadow",
+            kind="arm_added",
+            reason=(
+                f"live-shadow arm enters the roster: the live configuration in paper (live.arm "
+                f"{live.get('arm', 'control')!r}, start {live.get('no_entry_before')}, completion cutoff "
+                f"{live.get('completion_cutoff') or engine.LIVE_DEFAULT_COMPLETION_CUTOFF}, buying-power cap "
+                f"${live.get('max_open_margin_dollars')}); read against the live ledger, not control"
+            ),
+            detail="docs/experiment-log.md 2026-10-12; tests/test_live_shadow.py lists what paper cannot express",
+        )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"live-shadow arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
 def _entry_cadence_state_path() -> str:
     return os.path.join(_paper_data_dir(), "entry_cadence.json")
 
@@ -1046,6 +1075,7 @@ def main(argv=None) -> int:
             _note_selector_arm(conn, config)
             _note_wall_clear_arm(conn, config)
             _note_restack_arm(conn, config)
+            _note_live_shadow_arm(conn, config)
             # Stale-checkout guard (2026-08-05). The loop imports from the working tree, so a session
             # run from an older branch writes NULL to any regime column that branch predates --
             # silently, all day, with no backfill path afterwards. Logged rather than enforced: a

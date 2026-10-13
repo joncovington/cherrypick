@@ -297,6 +297,21 @@ def _entry_context(criteria: dict, composite_score) -> dict:
 
 
 # --- Per-symbol entry review (the data reviewed for a symbol + the chosen/rejected decision) ---------
+# Strategies retired from strat_test, each with the first session it opens nothing (2026-10-12,
+# docs/operating-history.md). Dated in code because the registry has no per-strategy switch and a
+# deleted `strategies.<name>` block would raise rather than disable; dated so it can merge before the
+# boundary and bind on it. The 20-session review in the config's own note set the rule: fewer than 5
+# entries, or losing, retires the calendars. Through 10-12 atm_calendar ran 56 trades at 21% won for
+# -$6,349, double_calendar 35 at 14% for -$3,660.
+STRAT_TEST_RETIRED = {"atm_calendar": "2026-10-19", "double_calendar": "2026-10-19"}
+
+
+def strategy_retired(strategy_name: str, session: str) -> bool:
+    """Is this strategy retired from the harness as of `session` (an ISO date)?"""
+    since = STRAT_TEST_RETIRED.get(strategy_name)
+    return since is not None and str(session) >= since
+
+
 def _book_tag(config: dict, strategy_name: str) -> str:
     """The paper-book (profile) tag a strat_test trade is written under. In
     "per_strategy" mode (the default) each strategy gets its own book,
@@ -780,6 +795,13 @@ def cmd_run_entries(args) -> dict:
             # execution-stage drop, so "the window closed" never reads as "nothing qualified".
             if _past_entry_window(config):
                 drop("entry_window_closed")
+                continue
+
+            # A strategy retired from the harness opens nothing from its retirement session on; its
+            # screen row above is still written, and its open positions run off under the ordinary
+            # close path (cmd_run_closes reads the ledger, not this table).
+            if strategy_retired(strategy_name, scan_date):
+                drop("strategy_retired")
                 continue
 
             try:

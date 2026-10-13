@@ -1167,3 +1167,92 @@ own book, and only at a declared boundary.
 **The read is unchanged:** after 10 departing sessions, per-session net against `control`, sign test.
 Expect it to stay `control`'s twin for weeks: with about nine sessions of history on 10-19, few
 cells will be clear.
+
+## 2026-10-12 — the 2026-10-19 boundary: seven arms retired, `live-shadow` declared, `miss_stop_minutes` out of the bounds
+
+The roster changes declared for the selector's boundary (2026-10-04: "any other roster change
+planned for the fortnight lands at this same break"), from a ledger review on 10-12. Nothing
+changes before 10-19. The config side is applied on the weekend of 10-17 by
+`scripts/boundary_2026_10_19.py` (dry run by default; it backs up, shows a diff, and with `--apply`
+writes), because flies has no dated activation: an arm is on or off in config.
+
+**Retired from 2026-10-19** (`enabled` false with a dated note; kept in `ARMS` and in config so
+their books stay readable). Window 09-21..10-12, 15 sessions, settled, unvoided, against `control`'s
++$1,017.94 on 123 entries:
+
+| Arm | Entries | Net | Against control | Why |
+|---|---|---|---|---|
+| `debit-first-up` | 71 | −$136.96 | −$1,155 | the 15–20 session read is reached; the family loses to fees |
+| `debit-first-down` | 83 | −$2,788.00 | −$3,806 | as above |
+| `bwb-atm` | 85 | −$3,146.80 | −$4,165 | as traded the roll cost $756 against never rolling (below) |
+| `bwb-up` | 4 | +$86.82 | | 4 fills in 16 sessions |
+| `bwb-down` | 2 | +$38.10 | | 2 fills |
+| `bwb-up-w2`, `bwb-down-w2` | 0 | | | the 1.50 floor sits above every credit measured |
+
+The debit-first family as a whole (10-04, `debit-first-offsets`): gross −$34.77 against $1,979.25 of
+fees over 200 entries. The ledger review's own figures (−$1,262, −$3,920, −$3,978) used a slightly
+different window; the sign and size agree.
+
+**The bwb floor replay before retiring** (`scripts/flies_bwb_floor_replay.py --since 2026-09-30`,
+read-only, 9 sessions 09-30..10-12; the 10-08 outage session is included as recorded). Validation
+PASS for `bwb-up`, `bwb-down` and `bwb-atm` (credits re-priced to 0.0001, real fills reproduced
+before each first roll, `bwb-atm`'s 8 unrolled fills settled to the cent); the w2 pair has no real
+fill, so its tables are UNVALIDATED. Unrolled, held to the print:
+
+| Arm | Floor 0 (modelled) | Deployed floor (modelled) | Best credit offered, last five sessions (modelled) |
+|---|---|---|---|
+| `bwb-up` (0.75) | 17 entries, +$366.93, 2 tail hits | 1, +$109.36 | 0.42, 0.48, 0.68, 0.28, 0.56, 0.07 |
+| `bwb-down` (0.75) | 27, −$112.55, 2 tail hits | 2, +$150.60 | 0.78, 0.43, 0.45, 0.34, 0.28, 0.23 |
+| `bwb-up-w2` (1.50) | 4, +$862.46 | 0 | −0.27, 0.07, −0.16, −0.31, −0.52, −0.67 |
+| `bwb-down-w2` (1.50) | 12, −$973.76, 2 tail hits | 0 | 0.15, 0.10, 0.23, 0.08, 0.07, −0.16 |
+| `bwb-atm` (0.75) | 43, −$355.49, 17 tail hits | 43, −$335.49 | 1.79–1.95 |
+
+- **No floor rescues the delta pairs.** Up makes money at most floors and down loses at most, which
+  is the tape (the 09-30 fall), the same split the 10-03 entry found. The best `bwb-up` cell
+  (floor 0.05 of tail, +$1,066 over 14 entries) is one cell of fourteen on nine sessions.
+- **The w2 credits went negative** for `bwb-up-w2` from 10-05 on; the arm cannot trade at any floor.
+- **`bwb-atm`'s roll is where it lost:** its 42 real fills (34 rolled) made −$544.21 as traded and
+  would have made +$211.39 never rolled. That is a finding about the roll rule, banked here; the
+  arm is still behind `control` unrolled.
+
+**`debit-first-atm` stays; it slips to the next boundary.** Its shadow ladder's first read is
+declared at 10 sessions from 10-05 (2026-10-04 entry). The 10-08 outage voided that session's
+anchors (`partial_session` break; its 24 rungs settled against voided fills), so clean ladder
+sessions are 10-05, 06, 07, 09, 12 and, by 10-16, 13–16: nine. The tenth is 10-19 itself, so the
+read cannot be complete before the boundary. It runs on unchanged.
+
+**`miss_stop_minutes` leaves the advice bounds.** Asked for repeatedly; the 10-03 replay on live was
+negative at every setting; `advised:miss-stop-90` ran about −$94 a session behind `control`. The
+gate (`engine.miss_stop_refusal`) stays for an arm to set and the regime cuts' `gate_replay` still
+sweeps it. **The running experiments are concluded, never dropped:** a bound removed under a
+running experiment rejects its next artifact (one out-of-bounds value rejects that experiment's
+overlay), which reads as `not_enacted` sessions until the calendar exit -- the experiment vanishing
+without a verdict. So the boundary script runs `python -m cherrypick.advisor kill` for
+`miss-stop-30` (started 10-12; 4 sessions by 10-16) and for `miss-stop-90` if it is still active
+(it reaches 15 sessions about 10-15 and should conclude on its own) BEFORE it edits the bounds; the
+kill computes and stores each verdict and re-issues Monday's artifact without them. Flies is flat
+overnight, so no advised position outlives Friday's settlement.
+
+**Declared: the `live-shadow` arm, from 2026-10-19.**
+- **The arm:** the live configuration in paper. An arm declaring `mirror_live` takes its params from
+  the live block (`engine.live_mirror_params`): `live.arm`'s params, the later of live's and the
+  arm's `no_entry_before` (10:15), live's `completion_cutoff` (15:30; no paper completion from it,
+  `book.py` step 1), live's `max_open_margin_dollars` ($1,000, checked after the engine accepts,
+  as live does, by `engine.margin_cap_exceeded`, pinned to `live_loop.margin_cap_exceeded`), and the
+  entry credit floored to the tick as a live order asks. Any other key on the arm is ignored, so it
+  cannot be tuned away from live, and it follows any later change to the live block by construction.
+- **What paper cannot express**, listed key by key in `tests/test_live_shadow.py`: a resting entry
+  that may not fill; the completion resting at the broker and filling on a touch (paper completes on
+  its modelled debit and pays the limit); the fresh REST re-quote and its tolerance; mid-first
+  pricing; the one-minute live tick against paper's 15 s; the quarter-end entry block; the halt,
+  orphan and held-submit blocks; and the broker's fill price on the row.
+- **How it will be read:** against the LIVE ledger over the same sessions, never against `control`.
+  Per session: entries, completions, completion rate and net, live minus shadow. A persistent gap is
+  the fill model's error measured on live's own configuration; the selector, `vol-floor` and the
+  other arms are still read against `control`. It earns nothing and loses nothing: it is a ruler.
+- **Its book starts at its own `arm_added` break** (`paper_loop._note_live_shadow_arm`, dated
+  2026-10-19).
+
+**Also at this boundary:** the `selector` is enabled by the same script, as declared (2026-10-04,
+amended 2026-10-12; `--skip-selector` leaves it off). The live entry-pricing option (its own
+entry, built off) is offered by the script behind its own flag and is not part of the batch.

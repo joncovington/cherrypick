@@ -53,3 +53,16 @@ never reached the loop.
 
 `/calendars` landed 2026-08-17; it reads the ledger directly for state and calls `cli.py` for
 policies and the week plan (see CLAUDE.md for why).
+
+## `time_exit` out of the advice bounds at the 2026-10-19 boundary (declared 2026-10-12)
+
+The read side already replays every time exit over every week's real marks, Friday noon included
+(`exit_policies.py` `time-fri-noon`, validated against the real books to the cent each run), so a
+forward advised book on it buys nothing the replay does not. `time_exit` leaves `advice.bounds`; the
+parameter itself stays for a book to set. The running experiment on it,
+`advised:fri-noon-cycle-extension` (6 of 15 sessions), is concluded with a verdict by `advisor kill`
+before the bound goes -- a bound removed under a running experiment rejects its next artifact instead
+of concluding it -- and its open rows keep their frozen params to the end of their week. `advice_bounds`
+break 2026-10-19. Both done by `scripts/boundary_2026_10_19.py` on the weekend of 10-17.
+
+The replay covers `path` only, not `friday:path`; the Friday regime's exit grid is still a gap.

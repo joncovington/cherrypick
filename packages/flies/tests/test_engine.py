@@ -2081,7 +2081,12 @@ def test_the_delta_debit_arms_are_a_mirrored_pair_and_reach_the_roster():
     up, down = arms["debit-first-up"], arms["debit-first-down"]
     for arm, expected_direction in (("debit-first-up", "up"), ("debit-first-down", "down")):
         assert arm in engine.ARMS
-        assert arm in cli.enabled_arms(example), f"{arm} is registered but not on the roster"
+        # Retired arms (the pair from 2026-10-19) keep their definitions with enabled false; only a
+        # live one must reach the roster.
+        if arms[arm].get("enabled", True):
+            assert arm in cli.enabled_arms(example), f"{arm} is registered but not on the roster"
+        else:
+            assert arm not in cli.enabled_arms(example)
         p = engine.merged_params(example, arm)
         assert p["center_rule"] == "delta"
         assert p["entry_modes"] == ["debit_first"]

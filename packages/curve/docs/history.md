@@ -55,3 +55,11 @@ percentage-of-width floor scores a wider spread as worse even when it keeps more
 had entered twice where control could not (killed at the boundary, base redefined). Capacity stays
 the limit on size: about ten contracts bid at the short strikes.
 
+
+## `hook` retired at the 2026-10-19 boundary (declared 2026-10-12)
+
+`hook` never traded: 0 hook signals in 33 sessions (32 `no_hook_signal` refusals 08-27..10-12), so
+it has no position and no reading. `books.hook.enabled` false, never a deleted block (an absent
+built-in book runs by default); `arms` break 2026-10-19 (`control, noflip, near`). The daily regime
+and the hook flag are still written every session, traded or not, so the signal's own history keeps
+accruing if the idea comes back. Written by `scripts/boundary_2026_10_19.py` on the weekend of 10-17.

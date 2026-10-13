@@ -259,7 +259,10 @@ era (`ic_trades.era`, from `analytics.CURRENT_ERA` via `cmd_save_trade`), journa
   `test_risk_profiles.py` pins it override-free and equal to the live merge. Live's top level differs
   from control on sixteen settings, so control's result describes a configuration live does not run.
   Live stays disabled; enabling it, and what it trades, is a decision this arm's rows inform. (A
-  `live.profile` seam like flies' `live.arm` was considered and deferred until then.)
+  `live.profile` seam like flies' `live.arm` was considered and deferred until then.) **Verdict at 10
+  sessions: live as configured almost never trades** (1 fill session of 10). From 2026-10-19 four
+  `live-minus-*` arms each relax ONE of the gates that refused, to name the one keeping it dark
+  (docs/history.md, 2026-10-12).
 - **`bp-5k` / `bp-10k` / `bp-25k`** — control's gates and hold-to-expiry exits under live-account limits:
   `max_open_bp_dollars` (open ICs' (width − credit) × 100 plus the candidate's must fit, checked per
   candidate so a too-wide candidate falls to a narrower one — `paper.ic_buying_power`),
