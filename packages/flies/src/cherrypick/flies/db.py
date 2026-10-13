@@ -233,6 +233,11 @@ CREATE TABLE IF NOT EXISTS fly_entry_attempts (
 );
 CREATE INDEX IF NOT EXISTS idx_fly_attempts_date ON fly_entry_attempts(trade_date, arm);
 CREATE INDEX IF NOT EXISTS idx_fly_attempts_outcome ON fly_entry_attempts(trade_date, outcome);
+-- Covering for the per-arm reads (2026-10-12): the console's attempts rail counts each arm's
+-- sessions seen and filled over the whole table, which scanned all ~508k rows on every page load
+-- (0.9 s, 1.4 s scoped to one arm; 0.16 s and 0.02 s with this). Built once, on the first open
+-- after it lands (~1.5 s on the paper ledger at that size).
+CREATE INDEX IF NOT EXISTS idx_fly_attempts_arm_date_outcome ON fly_entry_attempts(arm, trade_date, outcome);
 
 -- One row per symbol: the current auto-escalated streamer ATM-window width this loop is requesting,
 -- separate from the engine's own configured default. Written/read by stream_window.py, which widens
