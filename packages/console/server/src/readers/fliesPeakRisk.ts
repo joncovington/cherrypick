@@ -29,6 +29,8 @@ function hasTable(db: Database.Database, name: string): boolean {
 export function peakRiskSessions(db: Database.Database, scope: PeakScope): LiveRiskSession[] {
   if (!hasTable(db, "fly_positions")) return [];
   const where: string[] = ["COALESCE(status, '') NOT IN ('cancelled', 'voided')"];
+  // A voided row keeps `status = 'settled'`; only `void_reason` says it was struck.
+  if (hasColumn(db, "fly_positions", "void_reason")) where.push("void_reason IS NULL");
   const params: string[] = [];
   if (scope.arm !== null) {
     where.push("arm = ?");

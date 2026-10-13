@@ -29,7 +29,7 @@ import type {
   LiveRiskSession,
 } from "@console/shared";
 import { PERFORMANCE_MODULE_SCHEMA } from "@console/shared";
-import { readOnlyDb, withReadOnlyDb, num, str, readJson, suiteEra } from "./db.js";
+import { hasColumn, readOnlyDb, withReadOnlyDb, num, str, readJson, suiteEra } from "./db.js";
 import { readModuleMetrics } from "../services/metricsBridge.js";
 import { onPeakRiskOver, peakRiskSessions } from "./fliesPeakRisk.js";
 import { readFliesAnalytics, readFliesJournal, readFliesLoopStatus, readFliesPerformance } from "./flies.js";
@@ -66,9 +66,11 @@ export function periodBounds(session: string): Record<"today" | "week" | "month"
 // --------------------------------------------------------------------------- settled net
 /** core.ledgers `_flies_closed`: closed = `status = 'settled'`, net = `(gross_pnl or 0) - (fees or 0)`,
  *  session = `trade_date`. Mirrored here rather than bridged because it is a query, not a
- *  derivation; `server/test/flies-live-reader.test.ts` pins it against fixture rows. */
+ *  derivation; `server/test/flies-live-reader.test.ts` pins it against fixture rows. One step
+ *  past it: a voided row (still `settled`, marked only by `void_reason`) is left out, as on every
+ *  other console total -- the paper control figure beside each tile once carried 2026-10-08's. */
 function settledNet(db: Database.Database, bounds: [string, string], arm: string | null): Omit<LivePeriod, "paperNet" | "onRisk"> {
-  const armClause = arm !== null ? " AND arm = ?" : "";
+  const armClause = (hasColumn(db, "fly_positions", "void_reason") ? " AND void_reason IS NULL" : "") + (arm !== null ? " AND arm = ?" : "");
   const params: Array<string> = [bounds[0], bounds[1], ...(arm !== null ? [arm] : [])];
   const row = db
     .prepare<string[], Record<string, unknown>>(

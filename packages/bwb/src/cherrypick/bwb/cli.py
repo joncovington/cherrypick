@@ -10,6 +10,8 @@ Subcommands (all read-only):
     addon-replay  the add-on scored as its own trade, with no fly (see addon_replay.py)
     iv-premium  implied vol at entry against realised vol to expiry, per window (see iv_premium.py)
     regime-split  each arm's closed results cut by the VIX9D/VIX gate at entry (see entry_regime.py)
+    live-gap    the live arm against paper's same arm per session; live refusals named by gate
+    entry-context  every position's entry vol term structure and implied vol, as recorded
 
 The paper loop's own argv (`python -m cherrypick.bwb.paper_loop --once|--interval|--settle|
 --status`) is what the orchestrator drives; this CLI is the human read side.
@@ -110,23 +112,72 @@ def cmd_addon_replay(args) -> int:
     return 0
 
 
-def cmd_regime_split(args) -> int:
-    from cherrypick.bwb import db, entry_regime
+def _open_ro(path: str | None):
+    """A read-only handle on a ledger, or None when the file is absent. The read verbs below are
+    what the console bridges, so a poll must never create or migrate a store (`db.connect` does
+    both)."""
+    import os
 
-    conn = db.connect(args.db)
+    from cherrypick.core import db as _core_db
+
+    from cherrypick.bwb import db
+
+    path = path or os.environ.get("BWB_DB_PATH") or db.default_db_path()
+    return _core_db.connect_ro(path) if pathlib.Path(path).exists() else None
+
+
+def _absent(**extra) -> int:
+    print(json.dumps({"ok": True, "ledger": "absent", **extra}))
+    return 0
+
+
+def cmd_regime_split(args) -> int:
+    from cherrypick.bwb import entry_regime
+
+    conn = _open_ro(args.db)
+    if conn is None:
+        return _absent(arms={})
     result = entry_regime.split(conn, vix9d_vix_max=args.vix9d_vix_max)
-    print(json.dumps({"ok": True, **result}, indent=2, default=str))
+    print(json.dumps({"ok": True, "ledger": "ok", **result}, indent=2, default=str))
     return 0
 
 
 def cmd_iv_premium(args) -> int:
-    from cherrypick.bwb import db, iv_premium
+    from cherrypick.bwb import iv_premium
 
-    conn = db.connect(args.db)
+    conn = _open_ro(args.db)
+    if conn is None:
+        return _absent()
     result = iv_premium.run(conn, sample_seconds=args.sample_seconds)
     if not args.windows:
         result.pop("windows")
-    print(json.dumps({"ok": True, **result}, indent=2, default=str))
+    print(json.dumps({"ok": True, "ledger": "ok", **result}, indent=2, default=str))
+    return 0
+
+
+def cmd_live_gap(args) -> int:
+    """The live arm's sessions against paper's same arm: entry credit, add-on fire match, fee
+    reconciliation, net; and the live refusals, each named with its gate (read-only)."""
+    from cherrypick.bwb import analytics, db
+
+    arm = args.arm or str((load_config(args.config).get("live") or {}).get("arm") or "") or None
+    live = _open_ro(args.live_db or db.live_db_path())
+    if live is None or arm is None:
+        return _absent(arm=arm, sessions=[], refusals={})
+    result = analytics.live_gap(live, _open_ro(args.db), arm)
+    print(json.dumps({"ok": True, "ledger": "ok", **result}, indent=2, default=str))
+    return 0
+
+
+def cmd_entry_context(args) -> int:
+    """Every position's entry vol term structure and implied variance, as recorded (read-only)."""
+    from cherrypick.bwb import analytics
+
+    conn = _open_ro(args.db)
+    if conn is None:
+        return _absent(positions=[])
+    rows = analytics.entry_context(conn, arm=args.arm)
+    print(json.dumps({"ok": True, "ledger": "ok", "positions": rows}, indent=2, default=str))
     return 0
 
 
@@ -224,6 +275,15 @@ def main(argv=None) -> int:
     )
     p_reg.add_argument("--vix9d-vix-max", dest="vix9d_vix_max", type=float, default=1.0)
     p_reg.set_defaults(func=cmd_regime_split)
+    p_lg = sub.add_parser(
+        "live-gap", help="the live arm's sessions against paper's same arm: credit, add-on, fees, net"
+    )
+    p_lg.add_argument("--arm", help="the arm (default: the config's live.arm)")
+    p_lg.add_argument("--live-db", dest="live_db", help="an explicit live ledger path")
+    p_lg.set_defaults(func=cmd_live_gap)
+    p_ec = sub.add_parser("entry-context", help="every position's entry vol term structure and implied vol")
+    p_ec.add_argument("--arm")
+    p_ec.set_defaults(func=cmd_entry_context)
 
     args = ap.parse_args(argv)
     return args.func(args)

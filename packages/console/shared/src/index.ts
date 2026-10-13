@@ -26,4 +26,6 @@ export * from "./types/futures.js";
 export * from "./types/system.js";
 export * from "./types/features.js";
 export * from "./types/optionsFlow.js";
+export * from "./types/bwbEvidence.js";
+export * from "./types/dataEvidence.js";
 export * from "./types/compare.js";
