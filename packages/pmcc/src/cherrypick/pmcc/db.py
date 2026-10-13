@@ -159,6 +159,9 @@ CREATE TABLE IF NOT EXISTS pmcc_marks (
     refusal            TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_pmcc_marks_position ON pmcc_marks(position_id, marked_at);
+-- The latest mark of each LEG of a position (the console's open-position P&L) is a seek here, not
+-- a walk over every tick of the position. Idempotent, so an existing ledger gains it on connect.
+CREATE INDEX IF NOT EXISTS idx_pmcc_marks_position_leg ON pmcc_marks(position_id, leg_role, marked_at);
 CREATE INDEX IF NOT EXISTS idx_pmcc_marks_session ON pmcc_marks(session_date);
 
 -- Shares delivered by a PHYSICALLY-settled leg that finished ITM, and their disposal. `basis` is
