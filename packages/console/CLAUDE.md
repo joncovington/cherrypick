@@ -158,6 +158,9 @@ alone):
     forest sentence says what the floor knows and no more ("from 7659 upward", "at or below 7645",
     "locked").
   - Mirror tests skip cleanly and **visibly** when the ledger or Python is unavailable.
+  - **bwb evidence is bridged** (`services/bwbEvidenceBridge.ts`): `live-gap` (the live arm against
+    paper's same arm, refusals named with their gate, e.g. `live.vix9d_vix_max`), `entry-context`,
+    `regime-split` and `iv-premium` (the `vol` tab). Each verb opens the ledger read-only.
   - **Bridged, not mirrored:** calendars' exit-policy table and week anchors go through
     `services/calendarsBridge.ts` (memoised 5–10 min) — the policy replay is validated to the cent
     against the real books, and a TypeScript copy would be validating the wrong derivation; the
@@ -213,6 +216,11 @@ A tile's level is the suite's verdict (a watchdog finding, or the supervisor's o
 never a second opinion. Two reads go beyond a file, both cached and read-only: `git` (what the
 checkout holds; which processes predate their package's newest commit) and one `python -c`
 (interpreter and package versions). No control path: restarts and holds stay with `run.py`.
+The data tab also asks `cherrypick.core` two things (`services/dataEvidenceBridge.ts`): quote-history
+coverage (`python -m cherrypick.core.quotehistory coverage`, which reads only through
+`core.quotehistory.session()`, so this package holds no SQL against `gex_quote_history`) and
+`core.impliedvar check` for VIX9D and VIX, whose refusal (`not_bracketed`) is a reading, not a
+failure (`spawnModuleCli`'s `okStatuses`).
 
 **What is off is not shown.** Whether a module, GEX (the `gex-recorder` service), the advisor, the
 technicals cards or a narrative is on comes **only** from the orchestrator's `configcli` op

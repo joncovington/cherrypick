@@ -25,8 +25,10 @@ export interface SpawnedJson {
 
 /** Spawn `python <argv>`, parse stdout as JSON. `unavailableMessage` names the package this argv
  * needs installed, and prefixes every failure branch -- a spawn failure, a nonzero exit (its
- * detail is the last stderr line), or a response that didn't parse as JSON. */
-export function spawnModuleCli(argv: string[], unavailableMessage: string): SpawnedJson {
+ * detail is the last stderr line), or a response that didn't parse as JSON. `okStatuses` names the
+ * exit codes that still carry an answer on stdout (`core.impliedvar check` exits 1 for a check that
+ * did not agree, with the reading printed); every other nonzero exit is a failure. */
+export function spawnModuleCli(argv: string[], unavailableMessage: string, okStatuses: readonly number[] = [0]): SpawnedJson {
   let out;
   try {
     out = spawnSync(suitePython(), argv, { encoding: "utf-8", timeout: 30_000, windowsHide: true });
@@ -36,7 +38,7 @@ export function spawnModuleCli(argv: string[], unavailableMessage: string): Spaw
   if (out.error !== undefined) {
     return { ok: false, json: null, error: `${unavailableMessage} (${out.error.message})` };
   }
-  if (out.status !== 0) {
+  if (out.status === null || !okStatuses.includes(out.status)) {
     const detail = (out.stderr ?? "").trim().split(/\r?\n/).pop() ?? `exit ${String(out.status)}`;
     return { ok: false, json: null, error: `${unavailableMessage} — ${detail}` };
   }

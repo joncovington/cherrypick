@@ -113,11 +113,17 @@ export type MeicSlideId = (typeof MEIC_SLIDES)[number]["id"];
  * into the rail); its dense cards became pages: `positions` (open trades, marked), `arms` (net by
  * arm beside the fire counts, with the module's honesty caveats) and `decisions`. `history` is the
  * completed positions in the suite's standard trade layout.
+ *
+ * 2026-10-12: `vol` (the entry term structure and implied variance, `regime-split`, `iv-premium`)
+ * and `livegap` (the live arm against paper's same arm, with its refusals named by gate) joined
+ * the evidence group. Both are the module's own reads, bridged.
  */
 export const BWB_SLIDES = [
   { id: "session", label: "session" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
+  { id: "vol", label: "entry vol" },
+  { id: "livegap", label: "live vs paper" },
   { id: "performance", label: "performance" },
   { id: "advisor", label: "advisor" },
   { id: "positions", label: "positions" },
@@ -347,7 +353,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     slides: BWB_SLIDES,
     groups: [
       { label: "today", ids: ["session"] },
-      { label: "evidence", ids: ["decisions", "arms"] },
+      { label: "evidence", ids: ["decisions", "arms", "vol", "livegap"] },
       { label: "study", ids: ["performance", "advisor"] },
       { label: "tables", ids: ["positions", "history"] },
       { label: "help", ids: ["guide"] },

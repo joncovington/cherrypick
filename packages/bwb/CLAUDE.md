@@ -240,6 +240,7 @@ python -m cherrypick.bwb.paper_loop --status      # one JSON health object (watc
 python -m cherrypick.bwb.paper_loop --settle --date 2026-09-18 --price 6400.10  # official print
 python run.py status | worksheet | fires          # positions + expiration / worksheet / fire counts
 python run.py iv-premium [--windows]            # implied at entry vs realised to expiry, per window
+python run.py live-gap | entry-context           # live arm vs paper per session; entry vol per position (read-only)
 python -m pytest                                  # temp CHERRYPICK_HOME; no broker, no streamer
 ruff check . && ruff format .                     # line-length 110
 
