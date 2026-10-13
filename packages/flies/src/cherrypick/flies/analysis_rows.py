@@ -200,3 +200,84 @@ def completion_fees(row: dict) -> float:
     """Fees the completing trade paid; 0.0 on a row that never completed (or a bwb's roll: see
     `fee_split`'s `roll`)."""
     return fee_split(row)["completion"]
+
+
+# --------------------------------------------------------------------------- replaying a legged row
+def open_cash(row: dict) -> float:
+    """Per-contract cash a legged row held as a spread: its opening credit. A row that completed
+    carries net = credit - debit, so the debit is put back."""
+    return row["net"] + ((row.get("debit") or 0.0) if completed(row) else 0.0)
+
+
+def completed_pnl(row: dict, debit: float) -> float:
+    """Settled P&L of a legged row completed into a fly for `debit` points, at its own print.
+
+    Built from what the row really paid: its entry fee, its own completion fee where it completed
+    (else the module's), and the print's charge it really paid plus only the settlement events the
+    completing strike adds (the module's table: the fly's ITM strikes less the row's own). So a
+    row that did complete, replayed at its own debit, gives back its recorded `pnl` -- the broker's
+    settlement charge is not the module's table, and charging the module's for the whole fly
+    misses a live row by $2.50 to $5.00 (`ledger_mismatches`)."""
+    qty, sp = _qty(row), row["settlement_price"]
+    split = fee_split(row)
+    completion_fee = split["completion"] if completed(row) else fly.vertical_open_fee(_symbol(row), qty)
+    fly_row = {
+        "kind": "fly",
+        "side": row["side"],
+        "center": row["center"],
+        "wing_width": row["wing_width"],
+        "quantity": qty,
+        "net": open_cash(row) - debit,
+        "status": "settled",
+        "settlement_price": sp,
+    }
+    # The recorded charge is for the row's own shape at the print: a completed row's already is the fly's.
+    added = fly.assignment_fee(fly_row, sp) - fly.assignment_fee(row, sp)
+    fly_row["fees"] = split["entry"] + completion_fee + split["settlement"] + added
+    return fly.position_pnl(fly_row, sp)
+
+
+def held_pnl(row: dict) -> float:
+    """Settled P&L of an uncompleted legged row held as its spread to the print, from the same parts
+    `completed_pnl` builds from -- so its recorded `pnl` checks them."""
+    if completed(row):
+        raise ValueError(f"{row.get('position_id')}: completed; its print was the fly's, not the spread's")
+    split = fee_split(row)
+    spread = {
+        "kind": "short_vertical",
+        "side": row["side"],
+        "center": row["center"],
+        "wing_width": row["wing_width"],
+        "quantity": _qty(row),
+        "net": open_cash(row),
+        "fees": split["entry"] + split["settlement"],
+        "status": "settled",
+        "settlement_price": row["settlement_price"],
+    }
+    return fly.position_pnl(spread, row["settlement_price"])
+
+
+def ledger_mismatches(rows: list[dict], value, *, tolerance: float = 0.01) -> list[dict]:
+    """Every settled row whose replayed value (`value(row)`, the replay's OWN pricing of the row as
+    it really went) is not its recorded `pnl` to `tolerance` dollars. A replay whose baseline does
+    not reproduce the ledger is comparing its policies against something that never happened, so
+    a non-empty answer is a reason to refuse, never a footnote. Rows without a `pnl` or a print are
+    skipped (nothing to reproduce)."""
+    out = []
+    for r in rows:
+        if r.get("pnl") is None or r.get("settlement_price") is None:
+            continue
+        got = value(r)
+        # To the cent: the ledger rounds `fees` and `pnl` to cents, so a cent either way is rounding.
+        if abs(round(got - r["pnl"], 2)) > tolerance:
+            out.append(
+                {
+                    "position_id": r.get("position_id"),
+                    "trade_date": r.get("trade_date"),
+                    "kind": r["kind"],
+                    "recorded": r["pnl"],
+                    "replayed": round(got, 2),
+                    "problem": f"replayed {got:+.2f}, ledger {r['pnl']:+.2f} ({got - r['pnl']:+.2f})",
+                }
+            )
+    return out

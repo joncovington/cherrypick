@@ -26,6 +26,12 @@ is the record of how, so the answer can be re-run on later sessions rather than 
                replayed by dropping the refused rows (the `replay_gates.py` pattern, so a freed
                cadence slot is not modelled).
 
+**The salvage's pricing must reproduce the ledger before the grid is printed** (as
+`flies_completion_replay.py`): every completed legged row, completed by the rescue's own pricing at
+its own debit, must come back to its recorded `pnl` within a cent. A miss means a rescue is
+mispriced the same way, so the script lists the rows and exits 2; `--no-salvage` prints the
+recorded-only sections without the check.
+
 `miss_stop_minutes` and the hedge overlay are not re-implemented here -- `python run.py
 replay-gates` and `python run.py hedge-overlay` already replay them.
 
@@ -38,6 +44,7 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import statistics as st
+import sys
 from collections import Counter, defaultdict
 from datetime import datetime
 
@@ -166,9 +173,35 @@ def timing(rows: list[dict]) -> None:
         )
 
 
+def _rescued_pnl(r: dict, debit: float) -> float:
+    """A spread completed for `debit`, settled at its print: the entry fee it really paid plus the
+    module's completion fee, and the settlement fee its print would charge the fly
+    (`fly.position_pnl` on an open position)."""
+    qty = r["quantity"] or 1
+    pos = dict(
+        kind="fly",
+        side=r["side"],
+        center=r["center"],
+        wing_width=r["wing_width"],
+        quantity=qty,
+        net=r["credit"] - debit,
+        fees=analysis_rows.entry_fees(r) + fly.vertical_open_fee(r["symbol"], qty),
+        status="open",
+    )
+    return fly.position_pnl(pos, r["settlement_price"])
+
+
+def baseline_mismatches(rows: list[dict]) -> list[dict]:
+    """The salvage's pricing checked against the ledger: every completed legged row, completed by
+    `_rescued_pnl` at its own debit, must come back to its recorded `pnl`. A rescue is priced by the
+    same function, so a row it misses is a rescue it misprices; the grid is refused then."""
+    done = [
+        r for r in rows if r.get("entry_mode") == "legged" and r["kind"] == "fly" and r["credit"] is not None
+    ]
+    return analysis_rows.ledger_mismatches(done, lambda r: _rescued_pnl(r, r["debit"]))
+
+
 def _salvage(rows: list[dict], t: float, x: float) -> tuple:
-    """A rescued spread pays the entry fee it really paid plus the module's completion fee, and the
-    settlement fee its print would charge the fly (`fly.position_pnl` on an open position)."""
     per, rescued, charged = defaultdict(float), 0, 0
     for r in rows:
         p = r["pnl"]
@@ -180,18 +213,7 @@ def _salvage(rows: list[dict], t: float, x: float) -> tuple:
         elif r["kind"] == "short_vertical":
             b, at = r["best_completing_debit"], r["best_debit_at"]
             if b is not None and at and b <= r["credit"] + x and _mins(r["entry_time"], at) >= t:
-                qty = r["quantity"] or 1
-                pos = dict(
-                    kind="fly",
-                    side=r["side"],
-                    center=r["center"],
-                    wing_width=r["wing_width"],
-                    quantity=qty,
-                    net=-x,
-                    fees=analysis_rows.entry_fees(r) + fly.vertical_open_fee(r["symbol"], qty),
-                    status="open",
-                )
-                p = fly.position_pnl(pos, r["settlement_price"])
+                p = _rescued_pnl(r, r["credit"] + x)
                 rescued += 1
         per[r["trade_date"]] += p
     return (*_session_stats(per), rescued, charged)
@@ -236,7 +258,7 @@ def sameside(rows: list[dict]) -> None:
     )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--ledger", choices=("paper", "live"), default="paper")
     ap.add_argument("--arm", action="append", help="repeatable; default control")
@@ -246,7 +268,7 @@ def main() -> None:
     ap.add_argument("--until")
     ap.add_argument("--min-sessions", type=int, default=3)
     ap.add_argument("--no-salvage", action="store_true", help="skip the 24-row salvage grid")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     conn = analysis_rows.open_ledger(a.ledger)
     paper = analysis_rows.open_ledger("paper")  # spot paths: the paper loop records every tick
@@ -261,8 +283,18 @@ def main() -> None:
                 (a.symbol, a.since, a.min_sessions),
             )
         ]
-    for arm in arms:
-        rows = load(conn, arm, a.symbol, a.since, a.until)
+    loaded = {arm: load(conn, arm, a.symbol, a.since, a.until) for arm in arms}
+    if not a.no_salvage:
+        missed = [(arm, m) for arm, rows in loaded.items() for m in baseline_mismatches(rows)]
+        if missed:
+            print(
+                f"REFUSED: the salvage's completion pricing does not reproduce the {a.ledger} ledger's "
+                "completed rows, so no rescue is valued with it (--no-salvage reports the rest)"
+            )
+            for arm, m in missed:
+                print(f"  {arm} {m['position_id']} ({m['trade_date']}): {m['problem']}")
+            return 2
+    for arm, rows in loaded.items():
         if not rows:
             continue
         print(f"\n== {a.ledger} {arm}  {rows[0]['trade_date']}..{rows[-1]['trade_date']}")
@@ -274,7 +306,8 @@ def main() -> None:
         sameside(rows)
         if not a.no_salvage:
             salvage(rows)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
