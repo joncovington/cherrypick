@@ -43,6 +43,18 @@ side closed normally at 0.222. The position missed its exit, its front expired, 
 Monday under `long_disposition`, and the result differed from the replay by $1.30. Journaled as
 `exit_gate_absolute_spread_floor`.
 
+## The replay's validation tightened to a cent (2026-10-12)
+
+`validate_against_control` defaulted to a $0.50 tolerance while every description of it said "to
+the cent". Read against the paper ledger, `control` matched within a cent on every graded week but
+`path` came out $0.44–0.49 rich on all six: the recorder marks open legs only, so the Monday
+disposal tick is the last one written and lands before the disposition minute, the derivation falls
+back to the recorded close price, and the fallback dropped the disposal's fee and slippage. The
+fallback now carries the recorded disposal cost (the row's exit charges net of its settlement
+charges) and the default is $0.01. All twelve graded week-arms now agree within a cent (path to
+$0.00, control to −$0.01 from rounding), and `expiry-longs-mon` in the policy table is $0.44–0.49 a
+week lower than before. A correction of a wrong number, not a measurement change.
+
 ## Advice ordering (2026-09-15)
 
 Since this date the session's advice decision is derived and recorded BEFORE the ex-dividend gate,
