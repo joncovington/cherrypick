@@ -14,6 +14,10 @@ Every closed reader yields the same record shape, keyed by `paper.trade_schema`:
     {arm, symbol, strategy, gross_pnl, cost, net_pnl, slippage, capital, max_profit, session,
      experiment_id}
 
+plus, for the multi-day schemas (earnings, dc_week, pmcc, curve_vx, bwb_132, contango_etf),
+`entry_session` -- the session the position was entered, where `session` is the one it closed
+(added 2026-10-12 for `core.compare`, which pairs those arms on the entry they share).
+
 `arm` is the suite's word for one configured variant run as its own portfolio (root `CLAUDE.md`).
 This module is where the four source spellings become one: `risk_profile` (meic), `arm` (flies),
 `book` (calendars/pmcc/curve/bwb) and `profile` (earnings) all land here as `arm`. The columns
@@ -117,6 +121,15 @@ def _experiment_select(conn, table: str) -> tuple[str, bool]:
     return (", experiment_id" if present else ""), present
 
 
+def _entry_select(conn, table: str, column: str = "entry_session") -> tuple[str, bool]:
+    """(", <column>" or "", present) for the session a multi-day position was ENTERED. Closed
+    records carry it as `entry_session` (added 2026-10-12) beside `session`, the close: arms of one
+    module enter together and exit by different rules, so a paired comparison of a multi-day
+    structure keys on the entry (`core.compare`). None where the ledger predates the column."""
+    present = column in _table_cols(conn, table)
+    return (f", {column}" if present else ""), present
+
+
 def _session_where(column_expr: str, start: str | None, end: str | None) -> tuple[str, list]:
     """SQL fragment + params bounding a session-date expression to [start, end] (inclusive,
     either side optional). Pushed into the readers so an all-time table scan isn't the only
@@ -202,10 +215,11 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
     # so a SQL bound would shift evening closes across the session boundary. The table is
     # small (one row per position); run() applies the tz-correct Python filter.
     exp_col, has_exp = _experiment_select(conn, "trades")
+    open_col, has_open = _entry_select(conn, "trades", "opened_at")
     arm = core_db.arm_column(conn, "trades")  # `profile` until earnings' column moves
     rows = conn.execute(
         f"SELECT symbol, {arm} AS arm, strategy, pnl, entry_cost, exit_cost, closed_at"
-        f"{slip_cols}{cap_col}{exp_col} FROM trades WHERE closed_at IS NOT NULL"
+        f"{slip_cols}{cap_col}{exp_col}{open_col} FROM trades WHERE closed_at IS NOT NULL"
     ).fetchall()
 
     def _slip(r):
@@ -231,6 +245,7 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
             # than guessed. Deferred, not abandoned: see docs/metrics-plan.md phase 2 (excursions).
             "max_profit": None,
             "session": session_from_epoch(r["closed_at"]),
+            "entry_session": (session_from_epoch(r["opened_at"]) or None) if has_open else None,
         }
         for r in rows
     ]
@@ -297,9 +312,11 @@ def _calendars_closed(conn, start: str | None = None, end: str | None = None) ->
     different trade from a dc_4_7 and pooling them would blend structures."""
     where, params = _session_where("closed_session", start, end)
     exp_col, has_exp = _experiment_select(conn, "dc_positions")
+    ent_col, has_ent = _entry_select(conn, "dc_positions")
     rows = conn.execute(
         f"SELECT symbol, arm, structure, gross_pnl, fees, entry_slippage, exit_slippage, "
-        f"entry_debit, quantity, closed_session{exp_col} FROM dc_positions WHERE status = 'closed'{where}",
+        f"entry_debit, quantity, closed_session{exp_col}{ent_col} FROM dc_positions "
+        f"WHERE status = 'closed'{where}",
         params,
     ).fetchall()
 
@@ -333,6 +350,7 @@ def _calendars_closed(conn, start: str | None = None, end: str | None = None) ->
             # number to put here without re-deriving the payoff curve.
             "max_profit": None,
             "session": r["closed_session"] or "",
+            "entry_session": r["entry_session"] if has_ent else None,
         }
         for r in rows
     ]
@@ -356,9 +374,10 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
     # stamped era, which is the module's own rule (`analytics.headline`). See ERA_SCHEMAS.
     has_era = "era" in _table_cols(conn, "pmcc_positions")
     era_col = ", era" if has_era else ""
+    ent_col, has_ent = _entry_select(conn, "pmcc_positions")
     rows = conn.execute(
         f"SELECT symbol, arm, gross_pnl, fees, entry_slippage, exit_slippage, "
-        f"net_debit, quantity, closed_session{exp_col}{era_col} "
+        f"net_debit, quantity, closed_session{exp_col}{era_col}{ent_col} "
         f"FROM pmcc_positions WHERE status = 'closed'{where}",
         params,
     ).fetchall()
@@ -390,6 +409,7 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
             # at entry.
             "max_profit": None,
             "session": r["closed_session"] or "",
+            "entry_session": r["entry_session"] if has_ent else None,
             "era": r["era"] if has_era else None,
         }
         for r in rows
@@ -409,9 +429,10 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
     over a weekend is the one exposure not bounded by it, same caveat as pmcc's delivered shares."""
     where, params = _session_where("closed_session", start, end)
     exp_col, has_exp = _experiment_select(conn, "curve_positions")
+    ent_col, has_ent = _entry_select(conn, "curve_positions")
     rows = conn.execute(
         f"SELECT symbol, arm, gross_pnl, fees, entry_slippage, exit_slippage, "
-        f"entry_max_loss, entry_credit, quantity, closed_session{exp_col} FROM curve_positions "
+        f"entry_max_loss, entry_credit, quantity, closed_session{exp_col}{ent_col} FROM curve_positions "
         f"WHERE status = 'closed'{where}",
         params,
     ).fetchall()
@@ -450,6 +471,7 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
             "capital": _capital(r),
             "max_profit": _max_profit(r),
             "session": r["closed_session"] or "",
+            "entry_session": r["entry_session"] if has_ent else None,
         }
         for r in rows
     ]
@@ -485,8 +507,9 @@ def _contango_closed(conn, start: str | None = None, end: str | None = None) -> 
     (entry + exit + distributions = gross; gross - fees - slippage = net), so this reads it rather
     than re-deriving it. `max_profit` is None: a fund holding has no ceiling."""
     where, params = _session_where("exit_session", start, end)
+    ent_col, has_ent = _entry_select(conn, "contango_positions")
     rows = conn.execute(
-        "SELECT arm, symbol, shares, entry_mid, gross_pnl, fees, slippage, net_pnl, exit_session "
+        f"SELECT arm, symbol, shares, entry_mid, gross_pnl, fees, slippage, net_pnl, exit_session{ent_col} "
         f"FROM contango_positions WHERE status = 'closed'{where}",
         params,
     ).fetchall()
@@ -503,6 +526,7 @@ def _contango_closed(conn, start: str | None = None, end: str | None = None) -> 
             "capital": round(r["shares"] * r["entry_mid"], 2) if r["entry_mid"] is not None else None,
             "max_profit": None,
             "session": r["exit_session"] or "",
+            "entry_session": r["entry_session"] if has_ent else None,
         }
         for r in rows
     ]
@@ -538,8 +562,9 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
     larger of the up/down loss) x100xqty."""
     where, params = _session_where("closed_session", start, end)
     exp_col, has_exp = _experiment_select(conn, "bwb_positions")
+    ent_col, has_ent = _entry_select(conn, "bwb_positions")
     rows = conn.execute(
-        f"SELECT symbol, arm, gross_pnl, fees, entry_max_loss, quantity, closed_session{exp_col} "
+        f"SELECT symbol, arm, gross_pnl, fees, entry_max_loss, quantity, closed_session{exp_col}{ent_col} "
         f"FROM bwb_positions WHERE status = 'closed'{where}",
         params,
     ).fetchall()
@@ -569,6 +594,7 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
             # rather than guessed; revisit alongside the module's own strike-level records.
             "max_profit": None,
             "session": r["closed_session"] or "",
+            "entry_session": r["entry_session"] if has_ent else None,
         }
         for r in rows
     ]
