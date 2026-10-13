@@ -24,7 +24,7 @@ LINE = re.compile(r"^(?P<ts>\S+) (?P<level>[A-Z]+) (?P<msg>.*)$")
 def logger(tmp_path, request):
     """A logger unique to the test, so handlers from one case never leak into another."""
     path = tmp_path / "module.log"
-    lg = logs.get_logger(f"probe.{request.node.name}", path, console=False)
+    lg = logs.configure(logging.getLogger(f"probe.{request.node.name}"), path, console=False)
     yield lg, path
     for h in list(lg.handlers):
         lg.removeHandler(h)

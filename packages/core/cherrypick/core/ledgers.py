@@ -831,19 +831,3 @@ def concentration(
         "sign_flips_without_largest": flips,
         "contributors": len(rows),
     }
-
-
-def tail_to_credit(worst: float | None, credit: float | None) -> float | None:
-    """How many times the collected credit the modelled worst case is.
-
-    A book's floor and the band it holds over already travel together by the flies module's own
-    rule; this is the same argument for the other tail. The session that prompted it collected
-    7,852.50 against a modelled worst of -27,171.58 — a ratio of 3.46 — and nothing in the output
-    said so, while the book's positive settlement was being read as a result.
-
-    ``None`` when there is no credit to compare against, rather than a large number or a zero: an
-    undefined ratio and a small one are different facts.
-    """
-    if not credit or credit <= 0 or worst is None:
-        return None
-    return round(abs(min(worst, 0.0)) / credit, 2)

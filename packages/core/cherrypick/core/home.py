@@ -10,7 +10,6 @@ Layout under the home::
 
     ~/.cherrypick/
       config.json          suite config (orchestrator)
-      dashboard.html       generated status page
       state/               orchestrator runtime state
       modules/             installed module checkouts
       data/<pkg>/          per-package runtime data (trade DBs, stream caches, ...)
@@ -140,11 +139,6 @@ def config_path(package: str | None = None) -> Path:
     if package is None:
         return home() / "config.json"
     return config_dir() / f"{package}.json"
-
-
-def dashboard_path() -> Path:
-    """The generated status page (``home()/dashboard.html``)."""
-    return home() / "dashboard.html"
 
 
 def ensure(path: Path) -> Path:
