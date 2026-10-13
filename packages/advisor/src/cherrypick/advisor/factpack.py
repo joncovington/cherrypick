@@ -1004,13 +1004,14 @@ _MODULE_SECTIONS = {
 
 
 def _live(session: str) -> dict[str, Any]:
-    """Live posture and a live-vs-paper shape, for context only.
+    """Live posture and today's flies live and paper counts, for context only.
 
-    Deliberately duplicated rather than imported: this package depends on `cherrypick.core` alone
-    and spawns no subprocess, so `cherrypick.flies.analytics`' live-vs-paper summary cannot be
-    called from here. The duplication is labeled with the shape tag it matches so a future divergence
-    is visible, and it is facts-for-context — never a report surface. See
-    packages/flies/src/cherrypick/flies/analytics.py's cross-reference.
+    This package depends on `cherrypick.core` alone and spawns no subprocess, so
+    `cherrypick.flies.analytics.live_vs_paper` cannot be called from here, and nothing here copies
+    it: the block is today's status counts and settled P&L on each side, with no completion rate,
+    gap or abort rule to round or compare. Its shape tag names it as the advisor's own
+    (`advisor.flies_live_today/v1`); until the 2026-10-19 boundary it carried flies' tag, which
+    claimed a parity it never had. Facts-for-context, never a report surface.
     """
     state = _paths.state_dir()
     posture: dict[str, Any] = {}
@@ -1080,7 +1081,10 @@ def _live(session: str) -> dict[str, Any]:
         return rows[0] if rows else None
 
     live_vs_paper = {
-        "shape": "flies.analytics.live_vs_paper/v1",
+        # Not flies' live_vs_paper shape, and never was: this is today's counts on each side, with
+        # no completion rate, gap or abort rule. The tag claimed that shape until the 2026-10-19
+        # boundary; `test_factpack` now fails if it claims a shape whose keys it does not carry.
+        "shape": "advisor.flies_live_today/v1",
         "live": _read(_live_db("flies"), live_flies),
         "paper": _read(_paper_db("flies"), paper_flies),
         "_note": "computed here with the advisor's own read-only SQL; see the docstring on why",

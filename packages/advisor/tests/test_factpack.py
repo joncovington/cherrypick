@@ -148,9 +148,27 @@ def test_live_facts_are_present_and_labeled(seeded):
     pack = factpack.build(SESSION, "open")
     live = pack["live"]
     assert "enactment is paper-only" in live["_note"]
-    assert live["flies_live"]["shape"] == "flies.analytics.live_vs_paper/v1"
+    assert live["flies_live"]["shape"] == "advisor.flies_live_today/v1"
     assert live["flies_live"]["live"]["settled_today"]["n"] == 1
     assert live["posture"]["flies"]["arm_record"]["armed_today"] is False
+
+
+def test_the_flies_live_block_claims_flies_shape_only_with_its_keys(seeded):
+    """The pack's `flies_live` block was tagged `flies.analytics.live_vs_paper/v1` while carrying
+    none of that shape: no completion rate, no gap, no abort rule (found 2026-10-12, beside the
+    console's rounding fix in PR #179 -- there was no rounding here to fix, because there was no
+    rate). A tag naming flies' function must carry that function's keys, checked against flies'
+    own output on an empty pair of ledgers; skipped where flies is not installed."""
+    flies_analytics = pytest.importorskip("cherrypick.flies.analytics")
+    from cherrypick.flies import db as flies_db
+
+    block = factpack.build(SESSION, "open")["live"]["flies_live"]
+    if not str(block.get("shape", "")).startswith("flies.analytics.live_vs_paper/"):
+        return
+    live, paper = flies_db.connect(":memory:"), flies_db.connect(":memory:")
+    reference = flies_analytics.live_vs_paper(live, paper)
+    missing = sorted(set(reference) - set(block))
+    assert missing == [], f"tagged as flies' shape but lacks {missing}"
 
 
 def test_the_halt_flag_shows_up(seeded, tmp_home):
