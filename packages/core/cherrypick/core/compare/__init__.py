@@ -259,6 +259,41 @@ def arm_reading(
     }
 
 
+def pair_with_control(
+    arm_records: list[dict],
+    control_records: list[dict],
+    *,
+    schema: str,
+    level: float = LEVEL,
+    resamples: int = RESAMPLES,
+    seed: int = SEED,
+) -> dict | None:
+    """An arm's closed records against its control's, by this module's pairing rule (see the
+    module docstring): keyed on the day for a same-day schema and on `entry_session` otherwise,
+    common sessions inside the overlap of the two windows, one-side-only sessions counted. The
+    advisor's verdicts call this too, so a verdict and the compare page cannot pair differently.
+    None when either side has no dated rows."""
+    pair_on = "session" if schema in SAME_DAY_SCHEMAS else "entry_session"
+
+    def keyed(records: list[dict]) -> dict[str, float]:
+        rows = [{"pair": r.get(pair_on) or r.get("session"), "net_pnl": r["net_pnl"]} for r in records]
+        return _stats.session_values(rows, session_key="pair")
+
+    mine, theirs = keyed(arm_records), keyed(control_records)
+    if not mine or not theirs:
+        return None
+    lo = max(next(iter(mine)), next(iter(theirs)))
+    hi = min(next(reversed(mine)), next(reversed(theirs)))
+    window = [s for s in sorted(set(mine) | set(theirs)) if lo <= s <= hi]
+    vs = _stats.paired_comparison(
+        mine, theirs, fill=None, sessions=window, level=level, resamples=resamples, seed=seed
+    )
+    vs["paired_on"] = pair_on
+    vs["arm_only_sessions"] = sum(1 for s in window if s in mine and s not in theirs)
+    vs["control_only_sessions"] = sum(1 for s in window if s in theirs and s not in mine)
+    return vs
+
+
 def module_comparison(
     module: str,
     *,
@@ -312,14 +347,6 @@ def module_comparison(
     experiments = experiments if experiments is not None else {}
     names = sorted(by_arm, key=_arm_order)
     readings = {a: arm_reading(by_arm[a], level=level, resamples=resamples, seed=seed) for a in names}
-    pair_on = "session" if schema in SAME_DAY_SCHEMAS else "entry_session"
-    pair_values = {
-        a: _stats.session_values(
-            [{"pair": r.get(pair_on) or r["session"], "net_pnl": r["net_pnl"]} for r in by_arm[a]],
-            session_key="pair",
-        )
-        for a in names
-    }
     arms = []
     for a in names:
         reading = readings[a]
@@ -345,17 +372,9 @@ def module_comparison(
             "vs_control": None,
         }
         if ctl is not None:
-            mine, theirs = pair_values[a], pair_values[ctl]
-            lo = max(next(iter(mine)), next(iter(theirs)))
-            hi = min(next(reversed(mine)), next(reversed(theirs)))
-            window = [s for s in sorted(set(mine) | set(theirs)) if lo <= s <= hi]
-            vs = _stats.paired_comparison(
-                mine, theirs, fill=None, sessions=window, level=level, resamples=resamples, seed=seed
+            entry["vs_control"] = pair_with_control(
+                by_arm[a], by_arm[ctl], schema=schema, level=level, resamples=resamples, seed=seed
             )
-            vs["paired_on"] = pair_on
-            vs["arm_only_sessions"] = sum(1 for s in window if s in mine and s not in theirs)
-            vs["control_only_sessions"] = sum(1 for s in window if s in theirs and s not in mine)
-            entry["vs_control"] = vs
         arms.append(entry)
     out["arms"] = arms
     return out
@@ -408,5 +427,6 @@ __all__ = [
     "era_window",
     "experiments_index",
     "module_comparison",
+    "pair_with_control",
     "read_breaks",
 ]
