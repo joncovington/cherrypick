@@ -243,37 +243,21 @@ def _fee_estimate(result: dict) -> float | None:
 
 # --------------------------------------------------------------------------- orphans
 def _sweep_orphans(conn, broker, log, symbol: str) -> int | None:
-    """Broker truth against ledger belief, first thing every tick: a working order this ledger
-    never recorded is the one crash window nothing else covers (a tick dying between a placement
-    and its row). Persisted for `--status` and the arm command's stop rule; detection only --
-    cancelling an order this process cannot account for is a human's call."""
-    try:
-        orphans = _execution.orphans(broker, db.known_order_ids(conn))
-    except Exception as exc:  # noqa: BLE001 -- a failed sweep must not break the tick
-        log(f"orphan sweep failed ({type(exc).__name__}: {exc}) -- will retry next tick")
-        return None  # unknown -- and unknown blocks the entry
-    orphans = [o for o in orphans if o.get("underlying_symbol") in (None, symbol)]
-    try:
-        os.makedirs(_data_dir(), exist_ok=True)
-        with open(_orphans_path(), "w", encoding="utf-8") as f:
-            json.dump({"at": clock.now_iso(), "orphans": orphans}, f)
-    except OSError:
-        pass
-    if orphans:
-        log(
-            f"ORPHANED ORDERS at the broker, unknown to the ledger: {[o.get('order_id') for o in orphans]} "
-            "-- a placement was recorded nowhere (or another system is trading this account). "
-            "Review in the broker UI before any further arming."
-        )
-    return len(orphans)
+    """Broker truth against ledger belief, first thing every tick (`core.execution.sweep_orphans`):
+    a working order this ledger never recorded is the one crash window nothing else covers.
+    Persisted for `--status` and the arm command's stop rule; None (unknown) blocks the entry."""
+    return _execution.sweep_orphans(
+        broker,
+        db.known_order_ids(conn),
+        symbol=symbol,
+        path=_orphans_path(),
+        now_iso=clock.now_iso(),
+        log=log,
+    )
 
 
 def read_orphans() -> list[dict]:
-    try:
-        with open(_orphans_path(), encoding="utf-8") as f:
-            return json.load(f).get("orphans", [])
-    except (OSError, ValueError):
-        return []
+    return _execution.read_orphans(_orphans_path())
 
 
 # --------------------------------------------------------------------------- fill confirmation
