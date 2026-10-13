@@ -55,6 +55,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import sqlite3
 from datetime import date, datetime
 from pathlib import Path
 
@@ -292,6 +294,63 @@ def union_symbols(seed_symbols=None) -> list[str]:
     for data in read_all():
         symbols.update(clean_symbols(data.get("symbols")))
     return sorted(symbols)
+
+
+# A leg-source query gets a short read-only window; a locked/slow trades DB must not stall the poll.
+LEG_QUERY_TIMEOUT_S = 2.0
+
+
+def union_legs() -> list[str]:
+    """Extra streamer-symbols to keep subscribed: explicit ``legs`` plus everything the declared
+    ``leg_sources`` queries currently return, unioned across all modules.
+
+    Here rather than in the streamer (2026-10-12) because a second reader needs the same answer:
+    gex's quote recorder keeps the quotes of every declared leg on its chain, and "which legs do the
+    modules hold" must not be answered two ways."""
+    legs: set[str] = set()
+    for data in read_all():
+        legs.update(v.strip() for v in data.get("legs") or [] if isinstance(v, str) and v.strip())
+        for src in data.get("leg_sources") or []:
+            legs.update(legs_from_source(src))
+    return sorted(legs)
+
+
+def is_single_select(query: str) -> bool:
+    q = query.strip().rstrip(";").strip()
+    if not q or ";" in q:  # one statement only
+        return False
+    return q[:6].lower() == "select"
+
+
+def legs_from_source(src) -> list[str]:
+    """Open a module-declared DB read-only and collect streamer-symbols from the ``SELECT`` it provides.
+
+    Every non-null string cell in the result set is treated as a streamer-symbol. Never fatal — a missing
+    DB, a non-SELECT query, a bad/locked DB just contributes nothing this poll (the reader keeps running
+    on whatever the other sources return).
+    """
+    if not isinstance(src, dict):
+        return []
+    db, query = src.get("db"), src.get("query")
+    if not isinstance(db, str) or not isinstance(query, str) or not is_single_select(query):
+        return []
+    path = os.path.expanduser(os.path.expandvars(db))
+    if not os.path.exists(path):
+        return []
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=LEG_QUERY_TIMEOUT_S)
+        try:
+            rows = conn.execute(query).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return []
+    out: list[str] = []
+    for row in rows:
+        for cell in row:
+            if isinstance(cell, str) and cell.strip():
+                out.append(cell.strip())
+    return out
 
 
 def union_window_hints() -> dict[str, tuple[int, int]]:
