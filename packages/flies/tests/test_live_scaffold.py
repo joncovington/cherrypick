@@ -2316,7 +2316,11 @@ def test_should_disarm(tmp_path, monkeypatch):
     today = providermod.now_et().date().isoformat()
     # No stamp at all -> disarm (arming didn't go through the command path).
     assert live_loop.should_disarm(cfg, 10 * 60, today) is not None
-    live_loop._write_arm_stamp()
+    from cherrypick.core import live as core_live
+
+    from cherrypick.flies import clock
+
+    core_live.write_arm_record("flies", date=today, at=clock.now_iso(), armed_by="live-flies-start")
     # Fresh stamp, mid-session -> keep running.
     assert live_loop.should_disarm(cfg, 10 * 60, today) is None
     # Fresh stamp but past disarm time -> disarm.
