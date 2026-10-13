@@ -47,7 +47,9 @@ did. Each row carries:
 **`fly_order_path`** (live ledger) records, for each working order, the four leg quotes and spot
 every time the loop looked: each main tick, and each burst-watcher cycle (about every 10 seconds).
 The stream cache keeps no quote history, so this is the only record of what an order saw before it
-filled.
+filled, and it stays the finest one (about every 10 s, and tied to the order). From 2026-10-13 the
+gex recorder also keeps the chain's quotes every ~15 s for 20 strikes each side of spot
+(`core.quotehistory`), which covers every strike, traded or not.
 
 **`shadow_completion_limit` / `shadow_touches`** (paper ledger, `fly_positions`) are the live-like
 completion shadow:

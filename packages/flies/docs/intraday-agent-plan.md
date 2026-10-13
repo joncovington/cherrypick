@@ -276,6 +276,11 @@ before any live session is spent on it.
 - **Not the closes.** The plan assumed recorded marks to price a close at natural. Paper never
   recorded intraday quotes (marks are live-only), so a past close cannot be priced honestly. The
   model's close decisions are kept with their packs, and closes are valued by the forward arms only.
+  **From 2026-10-13 that changes for sessions recorded from then on:** the gex recorder keeps the
+  chain's quotes every ~15 s (`core.quotehistory`), so a close can be priced at natural at the
+  tag and at any later time. Using it waits for the replay to validate
+  ([quote-history-replay-plan.md](../../../docs/quote-history-replay-plan.md)); nothing before
+  10-13 can be recovered.
 - The packs show `control`'s positions, the arm being scored. The agent arm's own book did not exist.
 - Replayed sessions count toward the gate criteria in the qualification, marked `replay`, and never
   replace a forward session (mutant `flies-replay-keeps-forward`).
