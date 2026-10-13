@@ -48,6 +48,16 @@ def test_every_reviewed_module_has_its_health_and_expected_readers(module):
     assert module in facts.EXPECTED_READERS, f"{module} has no expected-vs-observed reader"
 
 
+@pytest.mark.parametrize("module", sorted(facts.MODULES))
+def test_every_reviewed_module_has_an_independent_reconcile_route(module):
+    """reconcile indexed `_INDEPENDENT[module]` for every module in a fact set; bwb, curve and
+    contango were reviewed but had no route, so `review reconcile` raised KeyError on the first
+    session carrying one and checked nothing at all (found 2026-10-13)."""
+    from cherrypick.review import reconcile
+
+    assert module in reconcile._INDEPENDENT, f"{module} is reviewed but never reconciled"
+
+
 def test_the_registries_do_not_carry_modules_the_review_does_not_know():
     """A reader for a module that was removed from MODULES is dead code that reads like coverage."""
     extra_health = sorted(set(facts.HEALTH_READERS) - set(facts.MODULES))
