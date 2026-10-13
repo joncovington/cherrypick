@@ -46,6 +46,7 @@ from typing import Any
 from cherrypick.core import broker as _broker
 from cherrypick.core import dxfeed as _dx
 from cherrypick.core import execution as _execution
+from cherrypick.core.redact import mask_account
 
 from cherrypick.earnings import credentials as _creds
 from cherrypick.earnings import paths as _paths
@@ -95,6 +96,37 @@ async def _get_account(account_number: str | None = None):
         account_number,
         default_number=_creds.get_secret(_creds.ACCOUNT_NUMBER),
     )
+
+
+def _designated_account() -> str | None:
+    """This module's designated live account (`cherrypick account --module earnings --set <last4>`),
+    or None when it is unset or the keyring cannot be read. A seam, so tests never read a real
+    keyring."""
+    return _creds.store.designated_account()
+
+
+async def _trading_account(account_number: str | None = None):
+    """The account `execute_trade` acts on: the DESIGNATED one, or a refusal (2026-10-12).
+
+    `_get_account` resolves through `core.broker.resolve_account`, whose last resort is the first
+    account on the login -- right for a read, wrong for an order: with the designation unset or the
+    keyring unreadable, an order would have gone to whichever account the broker listed first. It now
+    refuses, as `core.execution.Broker` does (`AccountNotDesignated`). An explicit `--account_number`
+    must BE the designated one, or typing a number would walk around the refusal. The dry run refuses
+    too: a preflight against an account that is not the one the order would trade in validates
+    nothing (paper never calls this command). Read-only commands keep the fallback."""
+    designated = _designated_account()
+    if not designated:
+        raise _execution.AccountNotDesignated(
+            "no designated account (unset or unreadable) -- run `cherrypick account --module earnings "
+            "--set <last4>`; refusing rather than default to the login's first account"
+        )
+    if account_number and account_number.strip() != designated:
+        raise _execution.AccountNotDesignated(
+            f"--account_number {mask_account(account_number)} is not the designated account "
+            f"{mask_account(designated)}"
+        )
+    return await _get_account(designated)
 
 
 # Thin re-exports of the shared option-chain helpers now implemented in cherrypick.core.broker.
@@ -441,7 +473,7 @@ async def cmd_execute_trade(args) -> dict:
     spec["external_identifier"] = ext
     account = None
     try:
-        account = await _get_account(getattr(args, "account_number", None))
+        account = await _trading_account(getattr(args, "account_number", None))
         order = _build_order(spec)
         # cherrypick.core.broker owns the preflight-then-optionally-live submission core; it
         # places a live order only when live=True, the dry-run preflight had no errors, and (when

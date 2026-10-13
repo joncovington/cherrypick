@@ -162,6 +162,10 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
   `readiness` on every submit and applies the deploy governor. `adjust_order` goes through
   `cherrypick.core.broker.replace_order` (same preflight and governor as `execute_trade`); a core test
   scans every package for a `dry_run=False` outside the seam.
+- **`tt`'s order commands act on the designated account or refuse.** `execute_trade` (dry run
+  included), `adjust_order` and `close_position` resolve through `_trading_account`: no designation
+  (unset or unreadable) is `AccountNotDesignated`, never the login's first account, and an explicit
+  `--account_number` must be the designated one. Read-only commands keep `resolve_account`'s fallback.
 - **The live loop records fills only on broker confirmation.** An entry is saved `status='pending'`;
   `_confirm_fills` at the top of each tick flips it to `open` at the ACTUAL net credit
   (`fill_confirmed_at`), or to `cancelled` with zero P&L if it dies unfilled (freeing its slot). A
