@@ -303,6 +303,67 @@ class LedgerStore:
             "refusals": refusals,
         }
 
+    def closed_results(
+        self,
+        conn,
+        *,
+        group: str = "symbol",
+        where: str | None = None,
+        params: tuple | list = (),
+        lead: tuple[tuple[str, str], ...] = (),
+        trail: tuple[tuple[str, str], ...] = (),
+    ) -> dict[str, dict]:
+        """`{arm: {<group value>: results}}` over CLOSED positions -- the `headline` table bwb,
+        calendars, curve and pmcc each wrote as the same SQL with a different group key or extras.
+
+        Net is `gross_pnl - fees`, the same subtraction the suite's ledger reader performs; a win is
+        a position whose net is positive. `where` narrows further (pmcc's era scope) with `params`.
+        `lead`/`trail` are `(key, SQL aggregate)` pairs placed after `positions` / at the end of
+        each result, raw, so each module's extra columns keep their place in the document."""
+        extras = [*lead, *trail]
+        extra_sql = "".join(f", {sql} AS extra_{i}" for i, (_, sql) in enumerate(extras))
+        clause = "status = 'closed'" + (f" AND {where}" if where else "")
+        arms: dict[str, dict] = {}
+        for row in conn.execute(
+            f"SELECT arm, {group} AS grp, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees, "
+            f"SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins{extra_sql} "
+            f"FROM {self.table('positions')} WHERE {clause} GROUP BY arm, {group} ORDER BY arm, {group}",
+            list(params),
+        ):
+            result: dict = {"positions": row["n"]}
+            for i, (key, _) in enumerate(lead):
+                result[key] = row[f"extra_{i}"]
+            result["gross_pnl"] = round(row["gross"], 2) if row["gross"] is not None else None
+            result["fees"] = round(row["fees"], 2) if row["fees"] is not None else None
+            result["net_pnl"] = round(row["net"], 2) if row["net"] is not None else None
+            result["win_rate"] = round(row["wins"] / row["n"], 4) if row["n"] else None
+            for j, (key, _) in enumerate(trail):
+                result[key] = row[f"extra_{len(lead) + j}"]
+            arms.setdefault(row["arm"], {})[row["grp"]] = result
+        return arms
+
+    def assignment_exposure(self, conn) -> dict:
+        """The early-assignment-exposure telemetry, aggregated: per position, how many usable
+        short-leg marks sat under the exposure threshold, and their share. Was an identical
+        `analytics.exposure` in curve and pmcc."""
+        positions = []
+        for row in conn.execute(
+            "SELECT position_id, "
+            "SUM(CASE WHEN assignment_exposed = 1 THEN 1 ELSE 0 END) AS exposed, "
+            f"COUNT(*) AS marked FROM {self.table('marks')} WHERE short_tv IS NOT NULL AND usable = 1 "
+            "GROUP BY position_id ORDER BY position_id"
+        ):
+            positions.append(
+                {
+                    "position_id": row["position_id"],
+                    "exposed_ticks": row["exposed"],
+                    "marked_ticks": row["marked"],
+                    "exposed_share": round(row["exposed"] / row["marked"], 4) if row["marked"] else None,
+                }
+            )
+        exposed_positions = sum(1 for p in positions if (p["exposed_ticks"] or 0) > 0)
+        return {"positions": positions, "positions_with_exposure": exposed_positions}
+
     def open_assignment_count(self, conn, position_id: str) -> int:
         return int(
             conn.execute(

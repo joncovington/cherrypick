@@ -18,6 +18,8 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
+from cherrypick.core import streamrequests as _streamrequests
+
 from cherrypick.pmcc import clock, db, management, provider
 
 DEFAULT_BASE_WIDTH = 60
@@ -106,27 +108,7 @@ def recent_miss_occurrences(conn, trade_date: str, symbol: str) -> int:
     """The largest `pmcc_decisions.occurrences` for a window-miss refusal on `symbol` today, across
     arms and reasons. MAX rather than SUM: a shared window gap surfaces in multiple arms at once,
     and summing would inflate urgency for what is really one physical cause."""
-    placeholders = ", ".join("?" * len(_MISS_REASONS))
-    row = conn.execute(
-        f"SELECT MAX(occurrences) AS n FROM pmcc_decisions "
-        f"WHERE trade_date = ? AND symbol = ? AND reason IN ({placeholders})",
-        (trade_date, symbol, *_MISS_REASONS),
-    ).fetchone()
-    return int(row["n"]) if row and row["n"] is not None else 0
-
-
-def _state(conn, symbol: str) -> dict:
-    row = conn.execute("SELECT * FROM pmcc_stream_window WHERE symbol = ?", (symbol,)).fetchone()
-    if row:
-        return dict(row)
-    return {
-        "symbol": symbol,
-        "width": None,
-        "last_escalated_occurrences": 0,
-        "last_checked_occurrences": 0,
-        "last_escalated_at": None,
-        "last_miss_at": None,
-    }
+    return _streamrequests.window_miss_occurrences(conn, "pmcc_decisions", _MISS_REASONS, trade_date, symbol)
 
 
 def evaluate(
@@ -144,50 +126,18 @@ def evaluate(
     """The escalation half (flies' shape verbatim): widen by `increment` once `miss_threshold` NEW
     miss occurrences accumulate since the last escalation; decay one `increment` per
     `decay_after_minutes` of quiet, never below `base_width`. Persists to `pmcc_stream_window`."""
-    now = now or clock.now_iso()
-    state = _state(conn, symbol)
-    width = max(state["width"] or base_width, base_width)
-
-    occurrences = recent_miss_occurrences(conn, trade_date, symbol)
-    last_checked = state["last_checked_occurrences"] or 0
-    last_escalated = state["last_escalated_occurrences"] or 0
-    last_miss_at = state["last_miss_at"]
-    last_escalated_at = state["last_escalated_at"]
-
-    if occurrences > last_checked:
-        last_miss_at = now
-
-    delta = occurrences - last_escalated
-    if delta >= miss_threshold:
-        steps = delta // miss_threshold
-        width = min(width + steps * increment, max_width)
-        last_escalated = last_escalated + steps * miss_threshold
-        last_escalated_at = now
-
-    if width > base_width and last_miss_at:
-        try:
-            quiet_minutes = (
-                datetime.fromisoformat(now) - datetime.fromisoformat(last_miss_at)
-            ).total_seconds() / 60
-        except ValueError:
-            quiet_minutes = 0.0
-        if quiet_minutes >= decay_after_minutes:
-            width = max(base_width, width - increment)
-            last_miss_at = now  # reset the clock so decay steps down gradually, not all at once
-
-    conn.execute(
-        "INSERT INTO pmcc_stream_window "
-        "(symbol, width, last_escalated_occurrences, last_checked_occurrences, "
-        "last_escalated_at, last_miss_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(symbol) DO UPDATE SET "
-        "width=excluded.width, last_escalated_occurrences=excluded.last_escalated_occurrences, "
-        "last_checked_occurrences=excluded.last_checked_occurrences, "
-        "last_escalated_at=excluded.last_escalated_at, last_miss_at=excluded.last_miss_at, "
-        "updated_at=excluded.updated_at",
-        (symbol, width, last_escalated, occurrences, last_escalated_at, last_miss_at, now),
+    return _streamrequests.escalate_window(
+        conn,
+        symbol,
+        state_table="pmcc_stream_window",
+        occurrences=recent_miss_occurrences(conn, trade_date, symbol),
+        base_width=base_width,
+        increment=increment,
+        max_width=max_width,
+        miss_threshold=miss_threshold,
+        decay_after_minutes=decay_after_minutes,
+        now=now or clock.now_iso(),
     )
-    conn.commit()
-    return width
 
 
 def entry_possible(conn, symbol: str, arms: list[str], max_positions: int) -> bool:
