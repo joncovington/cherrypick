@@ -21,21 +21,7 @@ def headline(conn) -> dict:
     """Per-arm, per-structure results over CLOSED positions, plus what is still open. Net is
     `gross_pnl - fees`, the same subtraction the suite's ledger reader performs — one convention,
     stated once."""
-    arms: dict[str, dict] = {}
-    for row in conn.execute(
-        "SELECT arm, structure, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees, "
-        "SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins, "
-        "COUNT(DISTINCT week_of) AS weeks FROM dc_positions WHERE status = 'closed' "
-        "GROUP BY arm, structure ORDER BY arm, structure"
-    ):
-        arms.setdefault(row["arm"], {})[row["structure"]] = {
-            "positions": row["n"],
-            "weeks": row["weeks"],
-            "gross_pnl": round(row["gross"], 2) if row["gross"] is not None else None,
-            "fees": round(row["fees"], 2) if row["fees"] is not None else None,
-            "net_pnl": round(row["net"], 2) if row["net"] is not None else None,
-            "win_rate": round(row["wins"] / row["n"], 4) if row["n"] else None,
-        }
+    arms = db._store.closed_results(conn, group="structure", lead=(("weeks", "COUNT(DISTINCT week_of)"),))
     open_rows = conn.execute(
         "SELECT COUNT(*) AS n, COUNT(DISTINCT week_of) AS weeks FROM dc_positions WHERE status != 'closed'"
     ).fetchone()
