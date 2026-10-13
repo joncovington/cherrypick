@@ -1,5 +1,5 @@
 import type { ArmMoneyRow, EntryOutcomes } from "@console/shared";
-import { hasTable, num, str, type DatabaseHandle } from "./db.js";
+import { hasTable, memoOnStore, num, str, type DatabaseHandle } from "./db.js";
 import { positionCash, tradeTotals } from "./positionCash.js";
 
 /**
@@ -47,25 +47,56 @@ export function armMoney(rows: Array<Record<string, unknown>>): ArmMoneyRow[] {
   });
 }
 
+interface AttemptSession {
+  arm: string;
+  tradeDate: string;
+  /** The outcome of the session's last attempt (highest id). */
+  outcome: string;
+  fills: number;
+}
+
+/**
+ * One row per (arm, session): the last attempt's outcome and the session's fill count. Grouped in
+ * SQL, not by walking every attempt in id order: flies' table is ~508k rows (a row per tick per
+ * arm), and the walk ran twice per request (era and all). `outcome` is a bare column beside
+ * `MAX(id)`, which SQLite documents as taken from the row holding the max -- the last attempt.
+ * The (arm, trade_date, outcome) index flies adds serves this as a covering scan in group order.
+ * Memoised on the store's stamp, so the era and all-time reads share one pass.
+ */
+function attemptSessions(db: DatabaseHandle, table: string): AttemptSession[] {
+  // An in-memory handle has no file stamp to key on (every one is named ":memory:").
+  if (db.memory) return groupAttempts(db, table);
+  return memoOnStore(db.name, `entryOutcomes:${db.name}:${table}`, () => groupAttempts(db, table));
+}
+
+function groupAttempts(db: DatabaseHandle, table: string): AttemptSession[] {
+  return db
+      .prepare<[], Record<string, unknown>>(
+        `SELECT arm, trade_date, outcome, MAX(id) AS last_id, SUM(outcome = 'filled') AS fills
+           FROM ${table} WHERE trade_date IS NOT NULL GROUP BY arm, trade_date`,
+      )
+      .all()
+      .map((r) => ({
+        arm: str(r["arm"]) ?? "",
+        tradeDate: str(r["trade_date"]) ?? "",
+        outcome: str(r["outcome"]) ?? "unknown",
+        fills: Number(r["fills"] ?? 0),
+      }));
+}
+
 /** Entry outcomes per arm per session from `table` (an `*_entry_attempts` ledger table), from
  *  `since` (inclusive) when given. */
 export function entryOutcomes(db: DatabaseHandle, table: string, since: string | null): EntryOutcomes[] {
   if (!hasTable(db, table)) return [];
-  const rows = db
-    .prepare<[string], Record<string, unknown>>(`SELECT arm, trade_date, outcome FROM ${table} WHERE trade_date >= ? ORDER BY id`)
-    .all(since ?? "");
-  const last = new Map<string, { arm: string; filled: boolean; outcome: string }>();
+  const last: Array<{ arm: string; filled: boolean; outcome: string }> = [];
   const fills = new Map<string, number>();
-  for (const r of rows) {
-    if (str(r["outcome"]) === "filled") fills.set(str(r["arm"]) ?? "", (fills.get(str(r["arm"]) ?? "") ?? 0) + 1);
-    const arm = str(r["arm"]) ?? "";
-    const key = `${arm}|${str(r["trade_date"]) ?? ""}`;
-    const outcome = str(r["outcome"]) ?? "unknown";
-    const prev = last.get(key);
-    last.set(key, { arm, filled: (prev?.filled ?? false) || outcome === "filled", outcome });
+  for (const s of attemptSessions(db, table)) {
+    if (s.tradeDate < (since ?? "")) continue;
+    fills.set(s.arm, (fills.get(s.arm) ?? 0) + s.fills);
+    last.push({ arm: s.arm, filled: s.fills > 0, outcome: s.outcome });
   }
   const out = new Map<string, EntryOutcomes>();
-  for (const s of last.values()) {
+  for (const s of last) {
     const o = out.get(s.arm) ?? { arm: s.arm, sessions: 0, entered: 0, refusals: {}, fills: 0 };
     o.sessions += 1;
     if (s.filled) o.entered += 1;
