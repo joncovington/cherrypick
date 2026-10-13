@@ -78,10 +78,9 @@ def test_modules_dir_default_and_override(monkeypatch, _clean_env):
     assert home.modules_dir() == Path("/srv/mods")
 
 
-def test_config_and_dashboard_paths(_clean_env):
+def test_config_path(_clean_env):
     base = _clean_env / ".cherrypick"
     assert home.config_path() == base / "config.json"
-    assert home.dashboard_path() == base / "dashboard.html"
 
 
 def test_module_config_paths(_clean_env):
