@@ -206,7 +206,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     return readEntryAttempts(config, "curve", "paper", f.date ?? resolveCurveSession(config));
   });
   app.get("/api/pmcc/decisions", async () => readDecisions(config, "pmcc", null));
-  app.get("/api/bwb/decisions", async () => readDecisions(config, "bwb", null));
+  app.get("/api/bwb/decisions", async (req) => readDecisions(config, "bwb", null, parseMode(req.query)));
   app.get("/api/meic/loop", async (req) =>
     readMeicLoopStatus(config, parseMode(req.query), parseMeicScope(req.query)),
   );
@@ -430,10 +430,10 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     );
   });
 
-  // bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment). No `mode`
-  // here either -- paper-only, no live loop.
-  app.get("/api/bwb", async () => readBwb(config));
-  app.get("/api/bwb/meta", async () => readBwbMeta(config));
+  // bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment). Paper by
+  // default; `?mode=live` reads the narrow live pilot's own ledger (`live_trades.db`), never a merge.
+  app.get("/api/bwb", async (req) => readBwb(config, parseMode(req.query)));
+  app.get("/api/bwb/meta", async (req) => readBwbMeta(config, parseMode(req.query)));
   app.get("/api/bwb/history", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const pick = (k: string, max: number): string | null => {
@@ -444,6 +444,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       config,
       { arm: pick("arm", 40) ?? pick("book", 40), symbol: pick("symbol", 12), range: parseDateRange(q) },
       parsePage(req.query),
+      parseMode(q),
     );
   });
 
