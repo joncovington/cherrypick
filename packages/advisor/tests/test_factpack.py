@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import sqlite3
 
 import fakes
 import pytest
@@ -151,6 +152,46 @@ def test_live_facts_are_present_and_labeled(seeded):
     assert live["flies_live"]["shape"] == "advisor.flies_live_today/v1"
     assert live["flies_live"]["live"]["settled_today"]["n"] == 1
     assert live["posture"]["flies"]["arm_record"]["armed_today"] is False
+
+
+def test_the_flies_live_block_leaves_voided_rows_out(seeded):
+    """flies voids a row by setting `void_reason`; its status stays `settled` with its pnl (the
+    10-08 outage left 22 such paper rows). Counted, they inflate both sides' settled count and net.
+    The seeded fake ledgers have no such column, which the block must still read (the test above)."""
+    data = seeded / "data" / "flies"
+    for name, pid in (("live_trades.db", "lv"), ("paper_trades.db", "pv")):
+        db = data / name
+        conn = sqlite3.connect(str(db))
+        conn.execute("ALTER TABLE fly_positions ADD COLUMN void_reason TEXT")
+        conn.commit()
+        conn.close()
+        fakes.insert(
+            db,
+            "fly_positions",
+            [
+                {
+                    "position_id": pid,
+                    "trade_date": SESSION,
+                    "arm": "control",
+                    "symbol": "SPX",
+                    "kind": "fly",
+                    "net": -500.0,
+                    "fees": 9.0,
+                    "pnl": -509.0,
+                    "status": "settled",
+                    "entry_fill_status": "filled",
+                    "completion_latency_min": 90.0,
+                    "void_reason": "outage",
+                }
+            ],
+        )
+
+    block = factpack.build(SESSION, "open")["live"]["flies_live"]
+    assert block["live"]["settled_today"] == {"n": 1, "pnl": 37.0}
+    assert block["live"]["by_status"] == [{"status": "settled", "n": 1, "net": 40.0, "fees": 3.0}]
+    assert block["live"]["entry_fills"] == {"filled": 1}
+    assert block["paper"]["n"] == 1 and block["paper"]["pnl"] == 142.0
+    assert block["paper"]["latency"] == 12.0
 
 
 def test_the_flies_live_block_claims_flies_shape_only_with_its_keys(seeded):

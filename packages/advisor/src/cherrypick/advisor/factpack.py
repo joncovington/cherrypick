@@ -1047,22 +1047,30 @@ def _live(session: str) -> dict[str, Any]:
         if module == "bwb":
             posture[module]["arm"] = live_cfg.get("arm")
 
+    def not_void(conn) -> str:
+        # flies voids a row by setting `void_reason` and leaves it `settled` with its pnl, so a
+        # count without this filter carries it. A ledger from before the column has none to drop.
+        cols = {c[1] for c in conn.execute("PRAGMA table_info(fly_positions)")}
+        return " AND void_reason IS NULL" if "void_reason" in cols else ""
+
     def live_flies(conn):
+        nv = not_void(conn)
         today = _store.rows(
             conn,
             "SELECT status, COUNT(*) n, SUM(net) net, SUM(fees) fees FROM fly_positions"
-            " WHERE trade_date = ? GROUP BY status",
+            f" WHERE trade_date = ?{nv} GROUP BY status",
             (session,),
         )
         fills = _store.rows(
             conn,
-            "SELECT entry_fill_status, COUNT(*) n FROM fly_positions WHERE trade_date = ?"
+            f"SELECT entry_fill_status, COUNT(*) n FROM fly_positions WHERE trade_date = ?{nv}"
             " GROUP BY entry_fill_status",
             (session,),
         )
         settled = _store.rows(
             conn,
-            "SELECT COUNT(*) n, SUM(pnl) pnl FROM fly_positions WHERE trade_date = ? AND status = 'settled'",
+            "SELECT COUNT(*) n, SUM(pnl) pnl FROM fly_positions WHERE trade_date = ? AND status = 'settled'"
+            + nv,
             (session,),
         )
         return {
@@ -1075,7 +1083,7 @@ def _live(session: str) -> dict[str, Any]:
         rows = _store.rows(
             conn,
             "SELECT COUNT(*) n, SUM(pnl) pnl, AVG(completion_latency_min) latency FROM fly_positions"
-            " WHERE trade_date = ? AND status = 'settled'",
+            " WHERE trade_date = ? AND status = 'settled'" + not_void(conn),
             (session,),
         )
         return rows[0] if rows else None
