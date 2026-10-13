@@ -262,6 +262,30 @@ def test_status_names_a_base_window_whose_chain_is_dated_before_the_session(home
     assert st["symbol_health"]["SPX"]["chain_expiration"] == "2026-09-09"
 
 
+def test_status_ignores_a_stale_chain_for_a_symbol_the_union_no_longer_serves(home, monkeypatch):
+    """2026-10-13: pmcc stopped requesting TQQQ, so nothing reloaded its chain and its health row
+    kept the 10-12 expiration it last loaded. The 09:00 ET pass read that orphan as a base window
+    serving yesterday's chain and restarted a healthy streamer. A symbol outside the union is not
+    being served, so its old row can't be a stall; one still in the union with an old chain is."""
+    from cherrypick.core import streamcache
+
+    cache = _config.cache_path({})
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    conn = streamcache.connect(cache)
+    streamcache.upsert_symbol_health(
+        conn, "TQQQ", chain_loaded_at="x", chain_fetch_error=None, chain_expiration="2026-10-12"
+    )
+    streamcache.upsert_symbol_health(
+        conn, "SPX", chain_loaded_at="x", chain_fetch_error=None, chain_expiration="2026-10-12"
+    )
+    conn.close()
+
+    monkeypatch.setattr(_daemon, "_session_date", lambda: "2026-10-13")
+    st = _daemon.status({"symbols": ["SPX"]})
+    assert st["stale_chains"] == {"SPX": "2026-10-12"}
+    assert st["symbol_health"]["TQQQ"]["chain_expiration"] == "2026-10-12"
+
+
 def test_status_reads_a_cache_the_producer_has_not_migrated_yet(home):
     """status() opens the cache read-only and must not depend on the producer's additive migration
     having run: the watchdog reads status BEFORE it auto-starts the streamer at 09:00 ET, so a
