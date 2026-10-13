@@ -366,6 +366,11 @@ export function readDesk(config: ConsoleConfig, features?: SuiteFeatures): DeskP
     const closed = lastSessionFacts?.[mod]?.closed ?? null;
     return { module: mod, net, closed, netPerTrade: closed !== null && closed > 0 ? net / closed : null };
   });
+  // A module whose fact set carries no net is not in the suite's sums; list it with no net rather
+  // than drop it, so the row reads unrecorded instead of absent.
+  for (const [mod, fact] of Object.entries(lastSessionFacts ?? {})) {
+    if (fact.net === null) eodRows.push({ module: mod, net: null, closed: fact.closed, netPerTrade: null });
+  }
 
   const keep = <T,>(rows: T[], idOf: (r: T) => string): T[] => onlyEnabled(rows, idOf, features);
   return {

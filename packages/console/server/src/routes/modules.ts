@@ -67,10 +67,9 @@ import { readEarningsLive } from "../readers/earningsLive.js";
 import { readScreenMetrics } from "../services/screenBridge.js";
 import { readGex } from "../readers/gex.js";
 import { buildGexProfile, gexSymbols } from "../services/gexProfile.js";
-import { buildSuiteReport } from "../services/report.js";
 import { readLogTail } from "../readers/logs.js";
 import { getFeatures } from "../services/featuresBridge.js";
-import { readSystemPanel, readEod, renderReport } from "../services/suite.js";
+import { readSystemPanel } from "../services/suite.js";
 import { suiteEra } from "../readers/db.js";
 
 function parseMode(q: unknown): TradingMode {
@@ -488,9 +487,8 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/gex/profile/:symbol", async (req, reply) => {
     const { symbol } = req.params as { symbol: string };
     const wanted = symbol.toUpperCase();
-    // Only symbols the recorder is still writing -- the same allow-list shape /api/eod/report uses
-    // below, and for a sharper reason. `buildGexProfile` deliberately falls back to the most recent
-    // PAST expiration so a weekend still shows Friday's profile; for a symbol the suite retired
+    // Only symbols the recorder is still writing. `buildGexProfile` deliberately falls back to the
+    // most recent PAST expiration so a weekend still shows Friday's profile; for a symbol the suite retired
     // weeks ago that fallback computes a gamma profile off a dead chain and returns it as a claim
     // about now. The shared stream cache still holds 34 such underlyings from other modules.
     if (!gexSymbols(config).includes(wanted)) {
@@ -498,20 +496,9 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     }
     return buildGexProfile(config, wanted);
   });
-  app.get("/api/report", async () => buildSuiteReport(config));
   app.get<{ Querystring: { source?: string; limit?: string } }>("/api/logs", async (req) => {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit ?? "", 10) || 50, 1), 1000);
     return { lines: readLogTail(config, limit, req.query.source || undefined, getFeatures()) };
   });
   app.get("/api/system", async () => readSystemPanel(config));
-  app.get("/api/eod", async () => readEod(config));
-  app.get("/api/eod/report", async (req, reply) => {
-    // Only files the EOD card itself listed can be rendered — no arbitrary reads.
-    const { file } = req.query as { file?: string };
-    const allowed = new Set(readEod(config).reports.filter((r) => r.exists).map((r) => r.file));
-    if (file === undefined || !allowed.has(file)) return reply.code(404).send({ error: "unknown report" });
-    const html = renderReport(file);
-    if (html === null) return reply.code(404).send({ error: "unreadable" });
-    return { html };
-  });
 }
