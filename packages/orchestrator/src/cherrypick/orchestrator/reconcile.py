@@ -19,7 +19,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
-from cherrypick.core import db as _db
+from cherrypick.core import ledgers as _ledgers
 
 from . import config as cfgmod
 from . import doctor, report, schemas
@@ -33,66 +33,11 @@ _VERDICT_RANK = {FLAT: 0, UNKNOWN: 1, DRIFT: 2}
 
 
 # --------------------------------------------------------------------------- paper-DB open positions
-def _meic_open(conn) -> list[dict]:
-    arm = _db.arm_column(conn, "ic_trades")  # `risk_profile` until meic's column moves
-    # A cancelled entry was never a position: it has no exit time because it never had an entry
-    # fill, or because a session was struck whole (the 2026-10-08 outage cancelled 184 unmanaged
-    # entries), and counting it would report paper positions the module does not hold.
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(ic_trades)")}
-    held = " AND COALESCE(status, '') != 'cancelled'" if "status" in cols else ""
-    rows = conn.execute(
-        f"SELECT symbol, {arm} AS arm FROM ic_trades WHERE exit_time IS NULL{held}"
-    ).fetchall()
-    return [{"symbol": r["symbol"], "arm": r["arm"]} for r in rows]
-
-
-def _earnings_open(conn) -> list[dict]:
-    arm = _db.arm_column(conn, "trades")  # `profile` until earnings' column moves
-    rows = conn.execute(f"SELECT symbol, {arm} AS arm FROM trades WHERE closed_at IS NULL").fetchall()
-    return [{"symbol": r["symbol"], "arm": r["arm"]} for r in rows]
-
-
-def _flies_open(conn) -> list[dict]:
-    rows = conn.execute("SELECT symbol, arm FROM fly_positions WHERE status = 'open'").fetchall()
-    return [{"symbol": r["symbol"], "arm": r["arm"]} for r in rows]
-
-
-def _calendars_open(conn) -> list[dict]:
-    rows = conn.execute("SELECT symbol, arm FROM dc_positions WHERE status != 'closed'").fetchall()
-    return [{"symbol": r["symbol"], "arm": r["arm"]} for r in rows]
-
-
-def _pmcc_open(conn) -> list[dict]:
-    rows = conn.execute("SELECT symbol, arm FROM pmcc_positions WHERE status != 'closed'").fetchall()
-    return [{"symbol": r["symbol"], "arm": r["arm"]} for r in rows]
-
-
-def _curve_open(conn) -> list[dict]:
-    rows = conn.execute("SELECT symbol, arm FROM curve_positions WHERE status != 'closed'").fetchall()
-    return [{"symbol": r["symbol"], "arm": r["arm"]} for r in rows]
-
-
-def _bwb_open(conn) -> list[dict]:
-    rows = conn.execute("SELECT symbol, arm FROM bwb_positions WHERE status != 'closed'").fetchall()
-    return [{"symbol": r["symbol"], "arm": r["arm"]} for r in rows]
-
-
-def _contango_open(conn) -> list[dict]:
-    rows = conn.execute("SELECT symbol, arm FROM contango_positions WHERE status = 'open'").fetchall()
-    return [{"symbol": r["symbol"], "arm": r["arm"]} for r in rows]
-
-
-# Same registry shape as report._READERS, but for OPEN (not-yet-closed) rows, keyed by paper.trade_schema.
-_OPEN_READERS = {
-    "meic_ic": _meic_open,
-    "earnings": _earnings_open,
-    "fly_book": _flies_open,
-    "dc_week": _calendars_open,
-    "pmcc": _pmcc_open,
-    "curve_vx": _curve_open,
-    "bwb_132": _bwb_open,
-    "contango_etf": _contango_open,
-}
+# What each paper ledger holds right now, keyed by paper.trade_schema: `core.ledgers.HELD_READERS`,
+# the overnight open readers with the two 0DTE schemas answered intraday. This file kept eight
+# readers of its own until 2026-10-12; they had drifted from core's on what "open" excludes (a
+# cancelled bwb entry counted here as a held position).
+_OPEN_READERS = _ledgers.HELD_READERS
 
 
 def _paper_open_positions(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:

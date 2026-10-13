@@ -136,7 +136,6 @@ def test_the_earnings_scan_finds_the_readers_it_is_meant_to_cover():
     found = {p.relative_to(REPO).as_posix() for p in _earnings_readers()}
     for must in (
         "packages/core/cherrypick/core/ledgers.py",
-        "packages/orchestrator/src/cherrypick/orchestrator/reconcile.py",
         "packages/orchestrator/src/cherrypick/orchestrator/trade_notifier.py",
         "packages/advisor/src/cherrypick/advisor/factpack.py",
         "packages/console/server/src/readers/earnings.ts",
