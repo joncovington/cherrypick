@@ -1,14 +1,14 @@
 import type { AlertDaemonHealth } from "@console/shared";
 import { useMorningReport, useOverview } from "../../lib/api";
-import { LiveFliesPanel } from "./LiveFliesPanel";
+import { LivePanel } from "./LivePanel";
 import { useBookRotation } from "../../lib/useBookRotation";
 import { useSystem } from "./SuiteCards";
 import { ExposureCard, EntriesCard } from "./DeskCards";
 
 /**
  * The suite's morning-to-close picture, redesigned (2026-09) to fit 1440×900 with no page
- * scroll: the suite matrix (exposure + entries) on the left, and on the right the flies live
- * pilot's latest session (`LiveFliesPanel`), which replaced the suite equity curve, the session
+ * scroll: the suite matrix (exposure + entries) on the left, and on the right every live book with
+ * activity (`LivePanel`; the flies pilot alone until 2026-10-12), which replaced the suite equity curve, the session
  * heatmap and the end-of-day table on 2026-10-01. Logs, watchdog, morning phase and the per-producer liveness strip are
  * in the shell's status bar (`components/shell/StatusBar`), on every page since 2026-10-01, when
  * the evidence-clock chip row also went. See `docs/history/` for what the taller card-stack
@@ -108,7 +108,7 @@ export function OverviewPage() {
           <EntriesCard rotation={rotation} />
         </div>
         <div className="overview-right">
-          <LiveFliesPanel />
+          <LivePanel />
         </div>
       </div>
 

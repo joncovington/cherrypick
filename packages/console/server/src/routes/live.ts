@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ConsoleConfig } from "../config.js";
 import { readFliesLive } from "../readers/fliesLive.js";
+import { readLiveBooks } from "../readers/liveBooks.js";
 
 /**
  * The Live page's one endpoint (2026-09-17). Read-only: the flies live pilot's day, composed in
@@ -16,4 +17,6 @@ export function registerLiveRoutes(app: FastifyInstance, config: ConsoleConfig):
     }
     return readFliesLive(config, session ?? null);
   });
+  // Every module with a live book and whether it has live activity: the Overview's live panel.
+  app.get("/api/live/books", async () => readLiveBooks(config));
 }

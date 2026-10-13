@@ -27,12 +27,12 @@ have refused; the forward arm is the one that sees its own book.
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 
 from cherrypick.flies import engine, intraday_advice, intraday_pack
 
@@ -249,9 +249,5 @@ def score(ledger_conn, cfg: dict, *, now: datetime | None = None, write: bool = 
         "sessions": out,
     }
     if write:
-        path = result_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(result, indent=2), encoding="utf-8")
-        tmp.replace(path)
+        _jsonio.write_json_atomic(result_path(), result, indent=2, default=None)
     return result

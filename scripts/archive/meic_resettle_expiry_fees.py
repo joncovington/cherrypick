@@ -1,7 +1,7 @@
 """Charge MEIC's past ITM cash settlements the $5-per-strike fee they never paid (2026-09-24).
 
-    python scripts/meic_resettle_expiry_fees.py            # dry run -- prints, changes nothing
-    python scripts/meic_resettle_expiry_fees.py --apply    # backs up the ledger, then corrects it
+    python scripts/archive/meic_resettle_expiry_fees.py            # dry run -- prints, changes nothing
+    python scripts/archive/meic_resettle_expiry_fees.py --apply    # backs up the ledger, then corrects it
 
 Runnable from anywhere; the ledger resolves off `$CHERRYPICK_HOME` (default `~/.cherrypick`).
 

@@ -162,6 +162,10 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
   `readiness` on every submit and applies the deploy governor. `adjust_order` goes through
   `cherrypick.core.broker.replace_order` (same preflight and governor as `execute_trade`); a core test
   scans every package for a `dry_run=False` outside the seam.
+- **`tt`'s order commands act on the designated account or refuse.** `execute_trade` (dry run
+  included), `adjust_order` and `close_position` resolve through `_trading_account`: no designation
+  (unset or unreadable) is `AccountNotDesignated`, never the login's first account, and an explicit
+  `--account_number` must be the designated one. Read-only commands keep `resolve_account`'s fallback.
 - **The live loop records fills only on broker confirmation.** An entry is saved `status='pending'`;
   `_confirm_fills` at the top of each tick flips it to `open` at the ACTUAL net credit
   (`fill_confirmed_at`), or to `cancelled` with zero P&L if it dies unfilled (freeing its slot).
@@ -309,8 +313,8 @@ fired, `*_settle_value` what the side was worth unstopped — **recorded for sto
   cache keeps no quote history; a `0.0` would be misleadingly precise. It needs write-path
   instrumentation, not a read-side fix. **That instrumentation exists from 2026-10-13:** the gex
   recorder keeps SPX's chain quotes every ~15 s (`core.quotehistory`), covering every leg MEIC has
-  traded since 09-01. A MEIC replay on it (an uncensored stop curve, gap-through fills, MFE and
-  profit-side exits) is Phase 2 of [quote-history-replay-plan.md](../../docs/quote-history-replay-plan.md).
+  traded since 09-01. A MEIC replay on it (gap-through stop fills, MFE and profit-side exits; the
+  stop curve itself is already uncensored, `control` running no per-side stop) is Phase 2 of [quote-history-replay-plan.md](../../docs/quote-history-replay-plan.md).
   Nothing before 10-13 is recoverable.
 
 **A width (or any arm) comparison must be bucketed on whether the reference arm fired that session**

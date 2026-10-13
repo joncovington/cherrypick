@@ -18,8 +18,8 @@ interface BreakdownRow {
 }
 
 interface Performance {
-  profiles: Array<{
-    profile: string;
+  arms: Array<{
+    arm: string;
     trades: number;
     sessions: number;
     grossPnl: number;
@@ -94,24 +94,24 @@ export function MeicPerformanceTab({
         <DailyRiskTiles risk={risk} maxDrawdown={equity.length > 0 ? Math.max(...equity.map((e) => e.drawdown), 0) : null} />
       </Card>
 
-      <Card title="Profile comparison (every profile, ranked by net — the variance-test payoff)" updatedAt={dataUpdatedAt}>
+      <Card title="Arm comparison (every arm, ranked by net — the variance-test payoff)" updatedAt={dataUpdatedAt}>
         <div className="table-scroll">
           <table className="data-table num-from-1">
             <thead>
               <tr>
-                <th>profile</th><th>trades</th><th>sessions</th><th>gross</th><th>fees</th><th>net</th>
+                <th>arm</th><th>trades</th><th>sessions</th><th>gross</th><th>fees</th><th>net</th>
                 <th>win %</th><th>expectancy</th><th>PF</th><th>max DD</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr><td colSpan={10}><span className="skeleton skeleton-text" style={{ width: "60%" }} /></td></tr>
-              ) : data?.profiles.length === 0 ? (
+              ) : data?.arms.length === 0 ? (
                 <tr><td colSpan={10} className="muted">no arm-tagged trades (this ledger has no arm column)</td></tr>
               ) : (
-                data?.profiles.map((p) => (
-                  <tr key={p.profile}>
-                    <td>{p.profile}</td>
+                data?.arms.map((p) => (
+                  <tr key={p.arm}>
+                    <td>{p.arm}</td>
                     <td>{p.trades}</td>
                     <td className="muted">{p.sessions}</td>
                     <td>{fmtMoney(p.grossPnl)}</td>
@@ -207,11 +207,11 @@ export function MeicPerformanceTab({
         )}
       </Card>
 
-      <Card title="Study arms — cumulative net per profile (ignores the symbol and profile scope, not the era)" updatedAt={dataUpdatedAt}>
+      <Card title="Study arms — cumulative net per arm (ignores the symbol and arm scope, not the era)" updatedAt={dataUpdatedAt}>
         {isLoading ? (
           <span className="skeleton skeleton-text" style={{ width: "40%" }} />
         ) : (data?.studyArms.length ?? 0) === 0 ? (
-          <p className="muted">no profile-tagged history</p>
+          <p className="muted">no arm-tagged history</p>
         ) : (
           <>
             <TimeLineChart

@@ -62,7 +62,8 @@ def cmd_read(args) -> dict:
         return {
             "reading": calibration_reading(group),
             "session_nets": [list(pair) for pair in session_nets_dated(group)],
-            "trade_nets": [round(r["net_pnl"], 2) for r in group],
+            # An unrecorded net (n/r) is no trade's result; the reading's `unscored` counts it.
+            "trade_nets": [round(r["net_pnl"], 2) for r in group if r.get("net_pnl") is not None],
         }
 
     # One group per EXPERIMENT for stamped advised rows (2026-09-16): the `advised:<base>` tag

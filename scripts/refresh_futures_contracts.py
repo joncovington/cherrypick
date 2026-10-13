@@ -30,6 +30,7 @@ from pathlib import Path
 
 from cherrypick.core import home as _home
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
+from cherrypick.core.jsonio import write_json_atomic
 
 # Product codes to resolve, and how many contracts of each the map should carry.
 #
@@ -110,11 +111,7 @@ def main(argv=None) -> int:
         print(json.dumps(payload, indent=2))
         return 0
 
-    path = _out_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    tmp.replace(path)  # write-then-rename: a reader never sees a partial map
+    path = write_json_atomic(_out_path(), payload, indent=2, default=None)
     print(json.dumps({"ok": True, "path": str(path), "contracts": contracts}, indent=2))
     return 0
 

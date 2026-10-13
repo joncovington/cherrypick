@@ -59,7 +59,13 @@ def cmd_init_db(args) -> dict[str, Any]:
 def cmd_factpack(args) -> dict[str, Any]:
     session = _session(args)
     modules = [m.strip() for m in args.modules.split(",")] if args.modules else None
-    path = _factpack.write(session, args.slot, modules)
+    warnings: list[str] = []
+
+    def _warn(message: str) -> None:
+        warnings.append(message)
+        _factpack._warn_stderr(message)
+
+    path = _factpack.write(session, args.slot, modules, warn=_warn)
     size = path.stat().st_size
     # The budget travels with the pack rather than living only in a test. The test measures a seeded
     # fixture, which is how the real deep pack grew from 250KB to 731KB across nine sessions with
@@ -75,6 +81,7 @@ def cmd_factpack(args) -> dict[str, Any]:
             "ceiling": ceiling,
             "over_budget": size > ceiling,
             "ratio": round(size / ceiling, 2),
+            "warning": warnings[0] if warnings else None,
         },
     }
 

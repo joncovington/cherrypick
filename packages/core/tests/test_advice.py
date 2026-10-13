@@ -493,3 +493,46 @@ def test_advised_tag_is_one_rule_and_slug_safe():
     )
     assert advice.slug("  a:b  ") == "a-b"
     assert advice.is_advised("advised:x") and not advice.is_advised("control") and not advice.is_advised(None)
+
+
+def test_base_for_reads_the_admitted_entry_then_the_tail_then_the_configured_base():
+    decision = {
+        "experiments": [
+            {"tag": "advised:wide", "base": "delta", "params": {"x": 1}},
+            {"tag": "advised:refused", "base": "delta", "params": None},  # rejected: opens no book
+        ]
+    }
+    assert advice.base_for("control", decision=decision) == "control"
+    assert advice.base_for("advised:wide", decision=decision) == "delta"
+    assert advice.base_for("advised:wide:iron_fly", decision=decision) == "delta"
+    # A rejected entry is not an advised book, so it never names the base here.
+    assert advice.base_for("advised:refused", decision=decision) == "control"
+    assert advice.base_for("advised:delta", is_base_arm=lambda t: t == "delta") == "delta"
+    assert advice.base_for("advised:x", advice_config={"base_book": "hook"}) == "hook"
+
+
+def test_base_for_asks_the_registry_only_for_an_unmatched_advised_arm():
+    asked = []
+    advice.base_for("control", is_base_arm=lambda t: asked.append(t) or False)
+    assert asked == []
+
+
+def test_effective_params_prefers_the_row_stamp_and_overlays_only_an_advised_row():
+    params = advice.effective_params(
+        {"arm": "advised:wide", "advice_base": "delta", "advice_params": '{"width": 3}'},
+        base_book=lambda arm: "control",
+        base_params=lambda base: {"width": 2, "base_seen": base},
+    )
+    assert params == {"width": 3, "base_seen": "delta", "arm": "advised:wide", "base_book": "delta"}
+    plain = advice.effective_params(
+        {"arm": "control", "advice_params": '{"width": 3}'},
+        base_book=lambda arm: arm,
+        base_params=lambda base: {"width": 2},
+    )
+    assert plain["width"] == 2 and plain["base_book"] == "control"
+    torn = advice.effective_params(
+        {"arm": "advised:wide", "advice_params": "{not json"},
+        base_book=lambda arm: "control",
+        base_params=lambda base: {"width": 2},
+    )
+    assert torn["width"] == 2

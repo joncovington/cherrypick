@@ -396,7 +396,7 @@ _ADDED_TRADE_COLUMNS = {
     # can show trading fees and settlement as separate columns. `fees` stays the TOTAL, so every
     # reader already summing it is unchanged. 0 on a row that closed without settling; NULL where it
     # is not known (a settlement with no recorded price, and rows from before it was written that
-    # `scripts/meic_backfill_settlement_fees.py` could not recover).
+    # `scripts/archive/meic_backfill_settlement_fees.py` could not recover).
     "settlement_fees": "REAL",
     # Regime tags (regime.classify_regime, 'entry' phase — MEIC's ic_trades has no legging step,
     # so there is no separate 'completion' snapshot the way flies' fly_positions has one). Bucket

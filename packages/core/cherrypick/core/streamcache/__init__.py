@@ -17,13 +17,31 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
 import re
 import sqlite3
 import time
 from pathlib import Path
 
 from cherrypick.core import calendar as _cal
+from cherrypick.core import home as _home
 from cherrypick.core.db import connect_ro
+
+CACHE_FILE = "stream_cache.db"
+
+
+def cache_path(config: dict | None = None) -> Path:
+    """Where a consumer reads the shared stream cache: the module config's `source.stream_cache_db`
+    when set (`$VAR` then `~` expanded -- portable paths only), else the canonical
+    `<home>/data/marketdata/stream_cache.db`. Never creates anything.
+
+    The one copy of a rule eleven readers carried. The producer (`packages/streamer`) and gex
+    resolve their own: they expand `~` before `$VAR`, and a writer's override is its own business."""
+    configured = ((config or {}).get("source") or {}).get("stream_cache_db")
+    if configured:
+        return Path(os.path.expanduser(os.path.expandvars(configured)))
+    return _home.data_dir("marketdata") / CACHE_FILE
+
 
 # The schema every consumer shares. orb_ranges/stream_rest_cache are used only by MEIC's daemon today
 # but are kept here so MEIC can adopt this DDL verbatim when it migrates onto the core engine.
@@ -1073,6 +1091,107 @@ def usable_quote(row, now_ts: float, max_age: float) -> dict | None:
         "mid": float(mid) if mid is not None else (bid + ask) / 2.0,
         "age_seconds": round(now_ts - float(updated), 1),
     }
+
+
+QUOTE_CHUNK = 900  # under SQLite's old 999 bound-parameter limit
+
+
+def usable_quotes(
+    conn: sqlite3.Connection, streamer_syms, now_ts: float, max_age: float
+) -> tuple[dict[str, dict], int]:
+    """`({symbol: quote}, rejected)` for `streamer_syms`, each row judged by `usable_quote`.
+
+    `rejected` counts rows the cache HOLDS that `usable_quote` refused (stale, crossed, no ask) --
+    a symbol with no row at all is simply absent from the map and not counted, which is how a
+    caller tells a thin session from a broken feed. Queried in chunks of `QUOTE_CHUNK`; rows are
+    read through a `sqlite3.Row` cursor whatever the connection's own row factory. The map keeps
+    the cache's row order, chunk by chunk. The one copy of a loop five providers carried."""
+    syms = list(streamer_syms)
+    quotes: dict[str, dict] = {}
+    rejected = 0
+    for i in range(0, len(syms), QUOTE_CHUNK):
+        chunk = syms[i : i + QUOTE_CHUNK]
+        placeholders = ", ".join("?" * len(chunk))
+        cur = conn.cursor()
+        cur.row_factory = sqlite3.Row
+        cur.execute(
+            f"SELECT symbol, bid, ask, mid, updated_at FROM stream_quotes WHERE symbol IN ({placeholders})",
+            chunk,
+        )
+        for row in cur:
+            quote = usable_quote(row, now_ts, max_age)
+            if quote is None:
+                rejected += 1
+                continue
+            quotes[row["symbol"]] = quote
+    return quotes, rejected
+
+
+def mark_snapshot(
+    db_path, legs: list[dict], *, max_quote_age_seconds: float, default_symbol: str = ""
+) -> dict:
+    """Per-leg quotes + greeks + spot for a position's open legs -- the marking substrate calendars
+    and pmcc share (their copies differed only in the spot symbol a leg without one falls back to,
+    now `default_symbol`).
+
+    Always returns per-leg detail (None for an unusable leg) so a partial mark is still recorded
+    as refusal rows; `ok` is position-level and means EVERY leg is priceable, which is the bar for
+    acting (a close priced off one good leg and one guess is not a measurement). Greeks are read
+    at six times the quote age bound."""
+    db_path = Path(db_path)
+    out: dict = {
+        "ok": False,
+        "spot": None,
+        "quotes": {},
+        "greeks": {},
+        "fresh": 0,
+        "stale": 0,
+        "max_spread_pct": None,
+        "leg_spreads": [],
+    }
+    if not legs:
+        return {**out, "reason": "no_legs"}
+    if not db_path.exists():
+        return {**out, "reason": "stream_cache_missing"}
+
+    conn = connect_ro(db_path)
+    try:
+        symbol = (legs[0].get("position_symbol") or legs[0].get("symbol") or default_symbol).strip().upper()
+        tr = conn.execute("SELECT last FROM stream_trades WHERE symbol = ?", (symbol,)).fetchone()
+        out["spot"] = float(tr["last"]) if tr and tr["last"] is not None else None
+
+        now_ts = time.time()
+        streamer_syms = [leg["streamer_symbol"] for leg in legs]
+        usable, _ = usable_quotes(conn, streamer_syms, now_ts, max_quote_age_seconds)
+        widest = None
+        for sym in streamer_syms:
+            quote = usable.get(sym)
+            out["quotes"][sym] = quote
+            if quote is None:
+                out["stale"] += 1
+                continue
+            out["fresh"] += 1
+            if quote["mid"] > 0:
+                spread_pct = (quote["ask"] - quote["bid"]) / quote["mid"]
+                widest = spread_pct if widest is None else max(widest, spread_pct)
+                # Both readings of the same width, PER LEG: a percentage alone cannot tell a
+                # genuinely illiquid leg from a nearly-worthless one (0.00/0.01 is a 200% ratio and
+                # a one-cent width), and the two maxima can sit on different legs.
+                out["leg_spreads"].append(
+                    {"symbol": sym, "pct": round(spread_pct, 4), "abs": round(quote["ask"] - quote["bid"], 4)}
+                )
+        out["max_spread_pct"] = round(widest, 4) if widest is not None else None
+        out["greeks"] = greeks_for(
+            conn, streamer_syms, now_ts=now_ts, max_age_seconds=max_quote_age_seconds * 6
+        )
+
+        if out["spot"] is None:
+            return {**out, "reason": "no_spot_price"}
+        if out["stale"]:
+            return {**out, "reason": "missing_leg_quotes"}
+        return {**out, "ok": True}
+    finally:
+        conn.close()
 
 
 def read_spot(db_path, symbol: str, *, max_age_seconds: float | None = None) -> float | None:

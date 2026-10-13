@@ -20,12 +20,12 @@ from.
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
 from pathlib import Path
 
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 
 from cherrypick.flies import engine, intraday_pack
 
@@ -216,12 +216,7 @@ def decision_path(target: str) -> Path:
 
 
 def write_decision(target: str, record: dict) -> Path:
-    path = decision_path(target)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(record, indent=1), encoding="utf-8")
-    os.replace(tmp, path)
-    return path
+    return _jsonio.write_json_atomic(decision_path(target), record, indent=1, default=None)
 
 
 def read_decision(target: str, *, session: str, now: float) -> dict | None:
