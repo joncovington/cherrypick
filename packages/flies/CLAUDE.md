@@ -620,6 +620,12 @@ talkative as a human reader needs.
     moved against us beyond `live.fresh_quote_tolerance_dollars`. Whether/what to enter stays 100%
     cache-driven. (Origin: the broker's execution-quality check rejected a cached price its own
     preflight passed.)
+  - **`live.entry_pricing`** (2026-10-12, default `concession`, off in the example): `mid_first`
+    asks the fresh mid (floored to the tick, never past it) on a structure's first order of the day
+    and concedes to the concession price on the next tick through `_manage_pending_entry`'s
+    cancel/replace; the ledger's unfilled rows, not process state, remember the first try. Every
+    gate and the fresh-quote check apply to both orders. The completion limit follows the credit
+    filled, so it rises with a mid fill. Switching it is a **live measurement break**.
   - **The order-alert stream** — `live.use_order_alert_stream` (per-burst websocket) or
     `live.use_order_alert_daemon` (supersedes it when both are on: `alert_daemon.py` holds one
     connection for the day and appends to `data/flies/live_alerts.db`). Both off by default, both only
