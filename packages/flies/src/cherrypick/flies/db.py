@@ -817,8 +817,9 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
 
 def _now() -> str:
     """ET, with offset — see clock.py. Every timestamp this module persists is ET; it was naive
-    machine-local until 2026-07-27."""
-    return clock.now_iso()
+    machine-local until 2026-07-27. The tick's own instant while a replay pins one
+    (`clock.pinned`), so a replayed row's created_at/updated_at agree with its entry_time."""
+    return clock.stamp_iso()
 
 
 def _upsert(conn, table: str, key: str, row: dict) -> None:
