@@ -217,3 +217,49 @@ def test_ledgers_resolve_off_the_cherrypick_home(managed_home):
     assert ar.ledger_path("paper") == managed_home / "data" / "flies" / "paper_trades.db"
     with pytest.raises(ValueError):
         ar.ledger_path("shadow")
+
+
+# --------------------------------------------------------------------------- replaying a legged row
+# Live 2026-09-28: a 7700/7695/7690 put fly, every strike ITM at 7683.69, the broker charging $12.50
+# at the print where the module's table says $15.00.
+BROKER_FLY = row(
+    kind="fly",
+    center=7695.0,
+    net=0.25,
+    credit=2.2,
+    debit=1.95,
+    fees=19.38,
+    settlement_fees=12.5,
+    settlement_price=7683.69,
+    pnl=5.62,
+)
+
+
+def test_a_completed_row_replayed_at_its_own_debit_gives_back_its_pnl():
+    assert round(ar.completed_pnl(BROKER_FLY, BROKER_FLY["debit"]), 2) == BROKER_FLY["pnl"]
+    assert ar.open_cash(BROKER_FLY) == pytest.approx(2.2)
+    # A worse debit costs exactly its difference.
+    assert ar.completed_pnl(BROKER_FLY, 2.45) == pytest.approx(BROKER_FLY["pnl"] - 50.0, abs=0.01)
+
+
+def test_a_stranded_row_completed_pays_the_modules_completion_and_only_the_strikes_it_adds():
+    # 7685/7680 put spread through both strikes at 7670.84 (really paid 7.50 there); as a fly the
+    # third strike adds one $5.00 event.
+    spread = row(net=2.35, credit=2.35, fees=10.94, settlement_fees=7.5, pnl=-275.94)
+    assert ar.held_pnl(spread) == pytest.approx(-275.94)
+    expected = (2.35 - 4.8) * 100 - (3.44 + VERTICAL + 7.5 + 5.0)
+    assert ar.completed_pnl(spread, 4.8) == pytest.approx(expected)
+
+
+def test_holding_a_completed_row_as_a_spread_is_refused():
+    with pytest.raises(ValueError, match="completed"):
+        ar.held_pnl(BROKER_FLY)
+
+
+def test_ledger_mismatches_flags_a_miss_and_forgives_a_cent_of_rounding():
+    spread = row(position_id="s", net=2.35, credit=2.35, fees=10.94, settlement_fees=7.5, pnl=-275.94)
+    unsettled = row(position_id="u", status="open", settlement_price=None, fees=3.44, pnl=None)
+    assert ar.ledger_mismatches([spread, unsettled], ar.held_pnl) == []
+    assert ar.ledger_mismatches([spread], lambda r: ar.held_pnl(r) + 0.01) == []
+    (miss,) = ar.ledger_mismatches([spread], lambda r: ar.held_pnl(r) - 2.5)
+    assert miss["position_id"] == "s" and miss["replayed"] == -278.44 and "-2.50" in miss["problem"]
