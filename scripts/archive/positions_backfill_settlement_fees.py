@@ -1,7 +1,7 @@
 """Backfill `settlement_fees` for calendars, pmcc and curve positions (2026-09-25).
 
-    python scripts/positions_backfill_settlement_fees.py            # dry run -- prints, changes nothing
-    python scripts/positions_backfill_settlement_fees.py --apply    # adds the column, writes
+    python scripts/archive/positions_backfill_settlement_fees.py       # dry run -- prints, changes nothing
+    python scripts/archive/positions_backfill_settlement_fees.py --apply  # adds the column, writes
 
 The three modules keep one accounting: `fees` is the total of every cost a position has incurred,
 and `exit_cost` accumulates each traded exit's fee, the cash-settlement charge and the assignment
@@ -29,7 +29,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-_REPO = Path(__file__).resolve().parents[1]
+_REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "packages" / "core"))
 MODULES = {"calendars": "dc_", "pmcc": "pmcc_", "curve": "curve_"}
 for _m in MODULES:

@@ -1,7 +1,7 @@
 """Backfill bwb's `settlement_fees` column on positions closed before it was recorded (2026-09-25).
 
-    python scripts/bwb_backfill_settlement_fees.py            # dry run -- prints, changes nothing
-    python scripts/bwb_backfill_settlement_fees.py --apply    # writes
+    python scripts/archive/bwb_backfill_settlement_fees.py            # dry run -- prints, changes nothing
+    python scripts/archive/bwb_backfill_settlement_fees.py --apply    # writes
 
 `settlement_fees` is the part of a position's `fees` that is the cash-settlement charge, $5 per
 distinct ITM symbol (`engine.settlement_fee`). bwb has always charged it and always counted the ITM
@@ -28,7 +28,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-_REPO = Path(__file__).resolve().parents[1]
+_REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "packages" / "core"))
 sys.path.insert(0, str(_REPO / "packages" / "bwb" / "src"))
 
