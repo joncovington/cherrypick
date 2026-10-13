@@ -1523,14 +1523,15 @@ export interface BwbMeta {
   sessions: string[];
 }
 
-/** How often MEIC's profiles reached the SAME entry decision on the same tick. */
+/** How often MEIC's arms reached the SAME entry decision on the same tick. */
 export interface MeicDivergence {
   date: string | null;
-  /** Ticks where at least two profiles both evaluated, so agreement is defined. */
+  /** Ticks where at least two arms both evaluated, so agreement is defined. */
   ticks: number;
-  /** Share of those ticks where every evaluating profile reached the same outcome. */
+  /** Share of those ticks where every evaluating arm reached the same outcome. */
   allAgreeRatePct: number | null;
-  pairs: Array<{ profiles: string; ticks: number; agreementRatePct: number | null }>;
-  /** The outcomes seen, most common first — what the profiles were agreeing or disagreeing ABOUT. */
+  /** One row per arm pair, `arms` reading "a vs b". */
+  pairs: Array<{ arms: string; ticks: number; agreementRatePct: number | null }>;
+  /** The outcomes seen, most common first — what the arms were agreeing or disagreeing ABOUT. */
   outcomes: Array<{ outcome: string; count: number }>;
 }

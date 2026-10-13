@@ -34,7 +34,7 @@ interface MeicAnalytics {
 
 interface MeicScopeData {
   symbols: string[];
-  profiles: string[];
+  arms: string[];
   eras: Array<{ era: string; trades: number }>;
   currentEra: string;
 }
@@ -94,7 +94,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
     const data = scope.data;
     if (data === undefined) return;
     if (symbol !== null && !data.symbols.includes(symbol)) setSymbol(null);
-    if (profile !== null && !data.profiles.includes(profile)) setProfile(null);
+    if (profile !== null && !data.arms.includes(profile)) setProfile(null);
   }, [scope.data, symbol, profile]);
 
   const loop = useQuery<LoopStatus>({
@@ -318,7 +318,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
             </select>
           )}
           <ScopeSelect label="symbol" value={symbol} options={scope.data?.symbols} onChange={setSymbol} allLabel="all symbols" />
-          <ScopeSelect label="arm" value={profile} options={scope.data?.profiles} onChange={setProfile} allLabel="all arms" />
+          <ScopeSelect label="arm" value={profile} options={scope.data?.arms} onChange={setProfile} allLabel="all arms" />
           <EraSelect value={era} eras={scope.data?.eras} currentEra={scope.data?.currentEra} onChange={setEra} />
           {l?.ivRank != null && <span className="chip">IV rank {fmtIvr(l.ivRank)}</span>}
           {l?.underlyingPrice != null && <span className="chip">{l.underlyingPrice.toFixed(2)}</span>}

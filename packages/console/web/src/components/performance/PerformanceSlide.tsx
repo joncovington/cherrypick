@@ -8,7 +8,7 @@ import { CumulativeCard } from "./CumulativeCard";
 import { PairedABCard } from "./PairedABCard";
 
 /**
- * The suite-wide performance slide: one calibration reading per profile, via
+ * The suite-wide performance slide: one calibration reading per arm, via
  * `GET /api/performance/:module` (`server/src/readers/performance.ts`). Generic over every module
  * this reads (curve/pmcc/calendars/bwb/meic/flies/earnings all share ONE schema registry and ONE
  * metric vocabulary -- `core.metrics.calibration_reading`), so this component is not written per
