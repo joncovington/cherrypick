@@ -217,12 +217,27 @@ function ConfigIcon() {
   );
 }
 
+/* The Compare page's own histogram, stood upright: a zero line with a bar rising on one side
+   and falling on the other, the pair straddling it — every arm beside its control, and the
+   only tone a number's sign. The falling bar carries the sibling-element opacity the rail's
+   paired glyphs use (the calendars' second window, contango's second arrow). */
+function CompareIcon() {
+  return (
+    <Svg>
+      <path d="M4 12h16" />
+      <path d="M9 12V6.5" />
+      <path d="M15 17.5V12" opacity="0.55" />
+    </Svg>
+  );
+}
+
 /** By route, not by label — the label is prose and can change; the route is the identity. */
 const ICONS: Record<string, (p: NavIconProps) => ReactNode> = {
   "/": OverviewIcon,
   "/charts": ChartsIcon,
   "/flow": FlowIcon,
   "/reports": ReportsIcon,
+  "/compare": CompareIcon,
   "/advisor": AdvisorIcon,
   "/live": LiveIcon,
   "/system": SystemIcon,
