@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
+from cherrypick.core import live as _core_live
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from cherrypick.flies import db as dbmod
@@ -138,10 +141,90 @@ def test_readiness_requires_a_real_arm():
     assert any("not a configured arm" in u for u in live_loop.readiness(cfg, designated="x"))
 
 
+_ET = ZoneInfo("America/New_York")
+_GATE_DAY = "2026-10-13"
+_GATE_WHEN = datetime(2026, 10, 13, 11, 0, tzinfo=_ET)
+
+
+def _arm_for(day: str) -> None:
+    _core_live.write_arm_record("flies", date=day, armed_by="test", at=f"{day}T09:00:00")
+
+
 def test_broker_cli_live_gates_are_the_same_posture():
     assert live_gates({}) == ["live.enabled is false (docs/live-trading-plan.md, Gate 0 first)"]
-    assert live_gates({"live": {"enabled": True}})  # no attestation -> still gated
-    assert live_gates({"live": {"enabled": True, "gate0_confirmed": "jon"}}) == []
+    assert live_gates({"live": {"enabled": True}}, designated="5W1", when=_GATE_WHEN)  # no attestation
+    _arm_for(_GATE_DAY)
+    assert live_gates(BASE_CFG, designated="5W1", when=_GATE_WHEN) == []
+
+
+def test_live_gates_are_readiness_plus_the_day_arm_record():
+    """The submission gate is the tick's gate: every readiness refusal is a live_gates refusal.
+    Before 2026-10-12 a bad `live.arm` and a missing designated account both passed live_gates."""
+    _arm_for(_GATE_DAY)
+    bogus = {"arms": {"control": {}}, "live": {**BASE_CFG["live"], "arm": "bogus"}}
+    assert any("not a configured arm" in u for u in live_gates(bogus, designated="5W1", when=_GATE_WHEN))
+    assert any("designated" in u for u in live_gates(BASE_CFG, designated=None, when=_GATE_WHEN))
+    for cfg, designated in (
+        (BASE_CFG, "5W1"),
+        (bogus, None),
+        ({"arms": {}, "live": {"enabled": True}}, None),
+    ):
+        assert set(live_loop.readiness(cfg, designated=designated)) <= set(
+            live_gates(cfg, designated=designated, when=_GATE_WHEN)
+        )
+
+
+def test_an_unarmed_day_refuses_a_live_submission():
+    """No arm record, yesterday's record, and today's record past disarm time all refuse -- the
+    tick's dead-man's switch, applied to the submission."""
+    unarmed = live_gates(BASE_CFG, designated="5W1", when=_GATE_WHEN)
+    assert len(unarmed) == 1 and "not armed" in unarmed[0]
+    _arm_for("2026-10-12")
+    assert any("not armed" in u for u in live_gates(BASE_CFG, designated="5W1", when=_GATE_WHEN))
+    _arm_for(_GATE_DAY)
+    assert live_gates(BASE_CFG, designated="5W1", when=_GATE_WHEN) == []
+    late = datetime(2026, 10, 13, 17, 5, tzinfo=_ET)
+    assert any("disarm time" in u for u in live_gates(BASE_CFG, designated="5W1", when=late))
+
+
+@pytest.fixture
+def by_hand(monkeypatch):
+    """`execute_trade --live` with the broker faked out: what reached `place_order`, if anything."""
+    from cherrypick.flies import broker_cli
+
+    placed = []
+    monkeypatch.setattr(broker_cli, "load_config", lambda *a, **k: BASE_CFG)
+    monkeypatch.setattr(broker_cli.creds, "designated_account", lambda: "5WX11234")
+    monkeypatch.setattr(broker_cli.provider, "now_et", lambda: _GATE_WHEN)
+    monkeypatch.setattr(broker_cli.creds, "get_session", lambda: object())
+
+    async def account(_session):
+        return "acct"
+
+    async def place_order(account, session, order, *, live, deploy_limit_pct):
+        placed.append(live)
+        return {"ok": True, "live": live}
+
+    monkeypatch.setattr(broker_cli, "_account", account)
+    monkeypatch.setattr(broker_cli._broker, "build_order", lambda spec: spec)
+    monkeypatch.setattr(broker_cli._broker, "place_order", place_order)
+    args = type("Args", (), {"live": True, "order": "{}"})()
+    return lambda: asyncio.run(broker_cli.cmd_execute_trade(args)), placed
+
+
+def test_execute_trade_live_refuses_on_an_unarmed_day(by_hand):
+    run, placed = by_hand
+    out = run()
+    assert out["ok"] is False and out["error"] == "live submission gated"
+    assert any("not armed" in u for u in out["unmet_gates"])
+    assert placed == []
+
+
+def test_execute_trade_live_passes_the_gate_on_an_armed_day(by_hand):
+    run, placed = by_hand
+    _arm_for(_GATE_DAY)
+    assert run() == {"ok": True, "live": True}
+    assert placed == [True]
 
 
 def test_broker_adapter_place_extracts_order_id_from_serialized_response(monkeypatch):
@@ -170,7 +253,13 @@ def test_broker_adapter_place_extracts_order_id_from_serialized_response(monkeyp
     monkeypatch.setattr(core_broker, "place_order", fake_place_order)
     monkeypatch.setattr(core_broker, "build_order", lambda spec: object())
 
-    adapter = live_loop.BrokerAdapter(BASE_CFG)  # live.enabled + gate0_confirmed, so the gate passes
+    # Every live gate met (since 2026-10-12 that includes today's arm record and a designated account).
+    from cherrypick.flies import broker_cli
+
+    monkeypatch.setattr(broker_cli.creds, "designated_account", lambda: "5WX11234")
+    monkeypatch.setattr(broker_cli.provider, "now_et", lambda: _GATE_WHEN)
+    _arm_for(_GATE_DAY)
+    adapter = live_loop.BrokerAdapter(BASE_CFG)
     monkeypatch.setattr(adapter, "_ensure", lambda: None)
     adapter._session, adapter._account = object(), object()
 
