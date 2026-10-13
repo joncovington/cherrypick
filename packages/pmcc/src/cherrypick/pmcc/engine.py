@@ -159,28 +159,15 @@ def ex_date_in_span(config: dict, symbol: str, start_day: str, end_day: str) -> 
 
 
 def base_book(arm: str, *, config: dict | None = None, decision: dict | None = None) -> str:
-    """The arm whose rules an advised twin runs under. A base arm is its own base.
-
-    **An advised tag no longer carries its base (2026-09-17).** Each advisor experiment gets its
-    own arm, `advised:<experiment name>`, and the base it shadows is named by the session
-    decision's experiment entry rather than by the tag. Resolution, in order: the decision's entry
-    for this tag when one is given; the tag's last segment when it names a base arm -- the legacy
-    `advised:control` every row before this date carries (and the retired `advised:keltner` /
-    `advised:roll` history, through the config's `arms` keys); else the configured
-    `advice.base_book` (default `control`)."""
-    if not _core_advice.is_advised(arm):
-        return arm
-    for entry in _core_advice.advised_books(decision):
-        tag = entry.get("tag")
-        if tag and (arm == tag or arm.startswith(tag + ":")) and entry.get("base"):
-            return str(entry["base"])
-    tail = arm.split(":", 1)[1]
-    if tail in ARMS or tail in _cfg.registry(config, label="pmcc"):
-        return tail
-    # Any accepted spelling: an operator who renames this key must not silently get
-    # "control" as the base, which is a wrong A/B that still reads as a valid one.
-    advice_cfg = (config or {}).get("advice") or {}
-    return str(_cfg.first_present(advice_cfg, *_cfg.BASE_ARM_KEYS) or "control")
+    """The arm whose rules an advised twin runs under (`core.advice.base_for`): the decision's
+    admitted entry for this tag, else the tag's tail when it is a base arm (`engine.ARMS` or a declared arm), else the
+    configured `advice.base_book` under any accepted spelling (default `control`)."""
+    return _core_advice.base_for(
+        arm,
+        decision=decision,
+        is_base_arm=lambda tail: tail in ARMS or tail in _cfg.registry(config, label="pmcc"),
+        advice_config=(config or {}).get("advice") or {},
+    )
 
 
 def merged_params(config: dict, arm: str) -> dict:
