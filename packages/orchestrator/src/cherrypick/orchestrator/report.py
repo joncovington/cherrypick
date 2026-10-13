@@ -81,10 +81,15 @@ def _summarize(records: list[dict]) -> dict:
     """P&L stats over normalized closed-trade records. net_pnl is cost-adjusted; gross_pnl is
     before costs and cost is the total modeled cost (MEIC fees; earnings commission+slippage).
     win_rate is on net P&L; gross_win_rate is on gross -- the gap shows how many trades have edge
-    before costs but not after (the signal at 1-contract sizing, where cost dominates)."""
+    before costs but not after (the signal at 1-contract sizing, where cost dominates).
+
+    A record whose net the ledger never recorded (`net_pnl: None`, n/r) is no trade's result: it
+    joins no figure here and is counted in `unscored`, so `trades` and the sums describe one set."""
+    unscored = sum(1 for r in records if r.get("net_pnl") is None)
+    records = [r for r in records if r.get("net_pnl") is not None]
     net = [r["net_pnl"] for r in records]
-    gross = [r.get("gross_pnl", r["net_pnl"]) for r in records]
-    cost = [r.get("cost", 0.0) for r in records]
+    gross = [r["net_pnl"] if r.get("gross_pnl") is None else r["gross_pnl"] for r in records]
+    cost = [r.get("cost") or 0.0 for r in records]
     n = len(net)
     wins = [p for p in net if p > 0]
     gross_wins = [p for p in gross if p > 0]
@@ -96,6 +101,7 @@ def _summarize(records: list[dict]) -> dict:
     known_slips = [s for s in slips if s is not None]
     return {
         "trades": n,
+        "unscored": unscored,
         "gross_pnl": round(sum(gross), 2),
         "cost": round(sum(cost), 2),
         "net_pnl": round(sum(net), 2),
@@ -179,6 +185,8 @@ def run(
 
         if session_range is not None:
             for r in records:
+                if r.get("net_pnl") is None:
+                    continue  # n/r: counted in the module's `unscored`, never as a flat trade
                 day = daily.setdefault(r.get("session") or "", {"net_pnl": 0.0, "trades": 0, "by_module": {}})
                 day["net_pnl"] += r["net_pnl"]
                 day["trades"] += 1
