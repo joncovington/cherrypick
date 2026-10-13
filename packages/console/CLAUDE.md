@@ -444,7 +444,10 @@ net — each money header's `title` stating its definition.
 - A recently added cost column is read as optional (`NULL` on an older ledger), so a missing column
   reads "not recorded" rather than `withReadOnlyDb` turning it into an empty table.
 - A totals chip carries gross, fees, settlement and net over every matching row, and says how many
-  rows a partially recorded measure (slippage) covers.
+  rows a partially recorded measure (slippage) covers. A settlement total over any row that never
+  recorded it is n/r, never a partial sum.
+- Fee drag is one helper, `@console/shared`'s `feeDragPct` (trading fees, settlement out, ÷ premium
+  collected; null when nothing was collected), on every surface that shows it.
 - Each module on the standard has its own trade-standard test against its own fixture, shown to fail
   (the flies one by removing the subtraction and the filter):
 
