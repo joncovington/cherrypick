@@ -731,12 +731,12 @@ def broker_greeks(occs: list[str], wait_s: float = GREEKS_WAIT_S) -> dict[str, f
     day's contracts to arrive. Whatever has not arrived is simply absent: the model's delta stands."""
     import time
 
-    from cherrypick.core import home, streamcache
+    from cherrypick.core import streamcache
 
     request_legs(occs)
     wanted = {streamcache.occ_to_streamer_symbol(o): o for o in occs}
     wanted.pop("", None)
-    cache = home.data_dir("marketdata") / "stream_cache.db"
+    cache = streamcache.cache_path()
     deadline = time.monotonic() + wait_s
     got: dict[str, float] = {}
     while True:

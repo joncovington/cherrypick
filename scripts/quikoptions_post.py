@@ -68,6 +68,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as _home
+from cherrypick.core.jsonio import write_json_atomic
 
 REPO = Path(__file__).resolve().parents[1]
 UI_CHECK = REPO / "packages" / "console" / "tools" / "ui-check.mjs"
@@ -672,11 +673,7 @@ def mark_sent(session: str, index: int, how: dict, fresh: bool = False) -> None:
         entry["sent"] = sorted([*entry["sent"], index])
     entry["at"] = _now_et().isoformat(timespec="seconds")
     kept = dict(sorted(all_.items())[-MARKER_KEEP:])
-    path = _marker_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(kept, indent=1), encoding="utf-8")
-    os.replace(tmp, path)
+    write_json_atomic(_marker_path(), kept, indent=1, default=None)
 
 
 # ------------------------------------------------------------------------------------------------
