@@ -55,6 +55,30 @@ def test_connection_status_masks_the_account_and_never_opens_a_session_without_c
         cli.connection_status(_creds(session=RuntimeError("401")), live_trading_enabled=True, hint="x")
     )
     assert failed["ok"] is False and failed["error"] == "RuntimeError: 401"
+    assert failed["connected"] is False
+
+
+def test_connection_status_is_not_ok_without_credentials():
+    """`doctor` and `connect` read `ok` as connected. With nothing stored this said `ok: True` (bwb,
+    and flies once folded), while tt.py's `connection_check` said `ok: False` -- one probe, two
+    meanings. The broker_cli shape now agrees with the tt.py one on every orchestrator-read key."""
+    out = asyncio.run(cli.connection_status(_creds(present=False), live_trading_enabled=False, hint="h"))
+    assert out["ok"] is False and out["connected"] is False and out["hint"] == "h"
+    check = asyncio.run(
+        cli.connection_check(lambda: None, credentials_present=False, live_trading_enabled=False, hint="h")
+    )
+    for key in ("ok", "credentials_present", "hint"):
+        assert out[key] == check[key], key
+
+
+def test_connection_status_is_ok_and_connected_with_a_working_session(monkeypatch):
+    async def count(_session):
+        return 2
+
+    monkeypatch.setattr(cli._broker, "account_count", count)
+    out = asyncio.run(cli.connection_status(_creds(session=object()), live_trading_enabled=False, hint="h"))
+    assert out["ok"] is True and out["connected"] is True and out["account_count"] == 2
+    assert "hint" not in out
 
 
 def test_connection_check_is_not_ok_without_credentials():

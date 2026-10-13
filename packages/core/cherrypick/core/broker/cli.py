@@ -95,8 +95,11 @@ async def designated_account(creds: Any, session: Any) -> Any:
 
 
 async def connection_status(creds: Any, *, live_trading_enabled: bool, hint: str) -> dict:
-    """Keyring + session probe, the designated account masked. Without credentials it returns the
-    hint and does not try a session."""
+    """Keyring + session probe, the designated account masked. Without credentials it is NOT ok: it
+    returns the hint and does not try a session -- `connection_check`'s answer, so every module's
+    probe means the same thing. Until 2026-10-12 this said `ok: True` with nothing stored (bwb's
+    behaviour, carried into the fold), and `doctor` and `connect`, which read `ok` as connected,
+    reported a module with no secrets as connected."""
     secrets = creds.store.secrets_status()
     status: dict = {
         "ok": True,
@@ -108,13 +111,17 @@ async def connection_status(creds: Any, *, live_trading_enabled: bool, hint: str
     designated = creds.designated_account()
     status["designated"] = "****" + designated[-4:] if designated else None
     if not status["credentials_present"]:
+        status["ok"] = False
+        status["connected"] = False
         status["hint"] = hint
         return status
     try:
         session = creds.get_session()
         status["account_count"] = await _broker.account_count(session)
+        status["connected"] = True
     except Exception as exc:  # noqa: BLE001
         status["ok"] = False
+        status["connected"] = False
         status["error"] = f"{type(exc).__name__}: {exc}"
     return status
 
