@@ -104,27 +104,21 @@ def settlement_style(config: dict, symbol: str) -> str | None:
 
 
 def ex_dividend_dates(config: dict, symbol: str) -> list[str]:
-    """The declared ex-dates for `symbol`, else empty."""
-    block = (config.get("dividends") or {}).get(symbol.upper()) or {}
-    return [str(d) for d in (block.get("ex_dates") or [])]
+    """The declared ex-dates for `symbol`, else empty (`core.settlement`)."""
+    return _settlement.ex_dividend_dates(config, symbol=symbol)
 
 
 def dividend_coverage_ok(config: dict, symbol: str, through_day: str) -> bool:
-    """Whether the declared calendar can answer questions up to `through_day` (ISO date). No block,
-    or a horizon short of the day, is not-covered — never "probably no dividend"."""
-    block = (config.get("dividends") or {}).get(symbol.upper()) or {}
-    declared_through = block.get("declared_through")
-    return isinstance(declared_through, str) and str(through_day) <= declared_through
+    """Whether the declared calendar covers `through_day` -- never "probably no dividend"
+    (`core.settlement`)."""
+    return _settlement.dividend_coverage_ok(config, symbol=symbol, through_day=through_day)
 
 
 def ex_date_in_span(config: dict, symbol: str, start_day: str, end_day: str) -> str | None:
-    """The first declared ex-date inside the CLOSED span [start_day, end_day], or None. The span is
-    the whole week — entry through the back expiration — because shares delivered at a Friday
-    expiry ride the weekend, so a Monday ex-date is crossed too."""
-    for d in sorted(ex_dividend_dates(config, symbol)):
-        if str(start_day) <= d <= str(end_day):
-            return d
-    return None
+    """The first declared ex-date inside the CLOSED span [start_day, end_day], or None
+    (`core.settlement`). The span is the whole week -- entry through the back expiration -- because shares
+    delivered at a Friday expiry ride the weekend, so a Monday ex-date is crossed too."""
+    return _settlement.ex_date_in_span(config, symbol=symbol, start_day=start_day, end_day=end_day)
 
 
 def merged_params(config: dict, arm: str) -> dict:
@@ -303,16 +297,8 @@ def combo_value(leg_marks: dict) -> float | None:
 
 
 def settle_intrinsic(strike: float, option_type: str, spot: float) -> float:
-    """Intrinsic value of one leg at the settlement print.
-
-    Under CASH settlement this is the whole story. Under PHYSICAL settlement it is still the option's
-    own value at expiry — what changes is that the leg also delivers stock, which `assignment_from`
-    arms separately. Keeping intrinsic as the option half of both models is what lets one settlement
-    path, one derivation, and one validation serve both styles.
-    """
-    if option_type == "put":
-        return round(max(0.0, strike - spot), 4)
-    return round(max(0.0, spot - strike), 4)
+    """Intrinsic value of one leg at the settlement print (`core.settlement.settle_intrinsic`)."""
+    return _settlement.settle_intrinsic(strike=strike, option_type=option_type, spot=spot)
 
 
 # --------------------------------------------------------------------------- physical settlement
@@ -340,24 +326,8 @@ def settle_intrinsic(strike: float, option_type: str, spot: float) -> float:
 
 
 def assignment_from(leg: dict, spot: float, quantity: int) -> dict | None:
-    """The share position one ITM leg delivers at expiry, or None if it expires worthless.
-
-    `basis` is the settlement spot, per the decomposition above. `strike` rides along unused by the
-    arithmetic because an assignment that cannot be tied back to the contract it came from is not
-    auditable.
-    """
-    option_type = leg["option_type"]
-    if settle_intrinsic(leg["strike"], option_type, spot) <= 0:
-        return None
-    sold = leg.get("action") == "Sell to Open"
-    long_shares = (sold and option_type == "put") or (not sold and option_type == "call")
-    return {
-        "direction": "long" if long_shares else "short",
-        "shares": 100 * int(quantity or 1),
-        "basis": round(float(spot), 4),
-        "strike": leg["strike"],
-        "option_type": option_type,
-    }
+    """The share position one ITM leg delivers at expiry, or None (`core.settlement`)."""
+    return _settlement.assignment_from(leg, spot=spot, quantity=quantity)
 
 
 # Delivered-share P&L lives in core: calendars and pmcc both model physical settlement and must

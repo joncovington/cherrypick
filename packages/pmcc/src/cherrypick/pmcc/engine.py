@@ -98,17 +98,14 @@ def settlement_style(config: dict, symbol: str) -> str | None:
 
 
 def ex_dividend_dates(config: dict, symbol: str) -> list[str]:
-    """The declared ex-dates for `symbol`, else empty."""
-    block = (config.get("dividends") or {}).get(symbol.upper()) or {}
-    return [str(d) for d in (block.get("ex_dates") or [])]
+    """The declared ex-dates for `symbol`, else empty (`core.settlement`)."""
+    return _settlement.ex_dividend_dates(config, symbol=symbol)
 
 
 def dividend_coverage_ok(config: dict, symbol: str, through_day: str) -> bool:
-    """Whether the declared calendar can answer questions up to `through_day` (ISO date). No block,
-    or a horizon short of the day, is not-covered — never "probably no dividend"."""
-    block = (config.get("dividends") or {}).get(symbol.upper()) or {}
-    declared_through = block.get("declared_through")
-    return isinstance(declared_through, str) and str(through_day) <= declared_through
+    """Whether the declared calendar covers `through_day` -- never "probably no dividend"
+    (`core.settlement`)."""
+    return _settlement.dividend_coverage_ok(config, symbol=symbol, through_day=through_day)
 
 
 # --------------------------------------------------------------------------- the earnings calendar
@@ -149,13 +146,9 @@ def earnings_in_span(config: dict, symbol: str, start_day: str, end_day: str) ->
 
 
 def ex_date_in_span(config: dict, symbol: str, start_day: str, end_day: str) -> str | None:
-    """The first declared ex-date inside the CLOSED span [start_day, end_day], or None. The span is
-    the short leg's whole life — entry through its expiration — because that is the window in which
-    the short can be standing ITM across an ex-date."""
-    for d in sorted(ex_dividend_dates(config, symbol)):
-        if str(start_day) <= d <= str(end_day):
-            return d
-    return None
+    """The first declared ex-date inside the CLOSED span [start_day, end_day], or None
+    (`core.settlement`)."""
+    return _settlement.ex_date_in_span(config, symbol=symbol, start_day=start_day, end_day=end_day)
 
 
 def base_book(arm: str, *, config: dict | None = None, decision: dict | None = None) -> str:
@@ -640,12 +633,8 @@ def short_time_value(short_mid: float, spot: float, short_strike: float) -> floa
 
 
 def settle_intrinsic(strike: float, option_type: str, spot: float) -> float:
-    """Intrinsic value of one leg at the settlement print. Under PHYSICAL settlement it is still the
-    option's own value at expiry — what changes is that the leg also delivers stock, which
-    `assignment_from` arms separately (the calendars decomposition, adopted whole)."""
-    if option_type == "put":
-        return round(max(0.0, strike - spot), 4)
-    return round(max(0.0, spot - strike), 4)
+    """Intrinsic value of one leg at the settlement print (`core.settlement.settle_intrinsic`)."""
+    return _settlement.settle_intrinsic(strike=strike, option_type=option_type, spot=spot)
 
 
 # --------------------------------------------------------------------------- physical settlement
@@ -665,27 +654,8 @@ def settle_intrinsic(strike: float, option_type: str, spot: float) -> float:
 
 
 def assignment_from(leg: dict, spot: float, quantity: int) -> dict | None:
-    """The share position one ITM leg delivers at expiry, or None if it expires worthless. `basis`
-    is the settlement spot, per the decomposition above. You end up SHORT shares when a short call
-    is assigned, LONG shares when a long call is exercised at its own expiry.
-
-    This function has NO settlement-style opinion of its own — it does not look at the symbol at
-    all, only at the leg's own strike/type/action. That is deliberate: a cash-settled leg (XSP)
-    never delivers shares, and the guard against that lives at the ONE call site
-    (`book.settle_expiring_legs`, gated `if physical:`) rather than duplicated here. Do not call
-    this for a cash-settled leg — nothing downstream would catch a phantom share assignment."""
-    option_type = leg["option_type"]
-    if settle_intrinsic(leg["strike"], option_type, spot) <= 0:
-        return None
-    sold = leg.get("action") == "Sell to Open"
-    long_shares = (sold and option_type == "put") or (not sold and option_type == "call")
-    return {
-        "direction": "long" if long_shares else "short",
-        "shares": 100 * int(quantity or 1),
-        "basis": round(float(spot), 4),
-        "strike": leg["strike"],
-        "option_type": option_type,
-    }
+    """The share position one ITM leg delivers at expiry, or None (`core.settlement`)."""
+    return _settlement.assignment_from(leg, spot=spot, quantity=quantity)
 
 
 # Delivered-share P&L lives in core: calendars and pmcc both model physical settlement and must
