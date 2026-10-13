@@ -451,22 +451,29 @@ def test_expected_readers_filter_on_arm_the_column_the_ledgers_actually_have():
     """All four filtered on `book` for eleven days after the 2026-09-23 rename to `arm`. The
     ledgers have no `book` column, `_rows` swallowed the error as "no such table", and every
     session's expectation for these modules read as "nothing closed"."""
+    # Ledger-shaped since 2026-10-12, when these readers moved onto core.ledgers' records.
     pmcc = _ledger(
-        "CREATE TABLE pmcc_positions (arm TEXT, status TEXT, closed_session TEXT, entry_session TEXT,"
-        " entry_weekly_yield_pct REAL, gross_pnl REAL, fees REAL, net_debit REAL, quantity INTEGER)",
-        "INSERT INTO pmcc_positions VALUES (?,?,?,?,?,?,?,?,?)",
-        ("control", "closed", "2026-10-02", "2026-09-25", 0.02, 120.0, 20.0, 10.0, 1),
+        "CREATE TABLE pmcc_positions (symbol TEXT, arm TEXT, status TEXT, closed_session TEXT,"
+        " entry_session TEXT, entry_weekly_yield_pct REAL, gross_pnl REAL, fees REAL, net_debit REAL,"
+        " quantity INTEGER, entry_slippage REAL, exit_slippage REAL)",
+        "INSERT INTO pmcc_positions VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("QQQ", "control", "closed", "2026-10-02", "2026-09-25", 0.02, 120.0, 20.0, 10.0, 1, None, None),
     )
-    assert facts._pmcc_expected(pmcc, "2026-10-02")["positions_closed"] == 1
+    got = facts._pmcc_expected(pmcc, "2026-10-02")
+    assert got["positions_closed"] == 1
+    assert got["observed"] == pytest.approx((100.0 / 1000.0) * (7.0 / 7))
 
     for table, reader in (("bwb_positions", facts._bwb_expected), ("curve_positions", facts._curve_expected)):
         conn = _ledger(
-            f"CREATE TABLE {table} (arm TEXT, status TEXT, closed_session TEXT, entry_credit REAL,"
-            " quantity INTEGER, gross_pnl REAL, fees REAL)",
-            f"INSERT INTO {table} VALUES (?,?,?,?,?,?,?)",
-            ("control", "closed", "2026-10-02", 1.10, 1, 90.0, 5.0),
+            f"CREATE TABLE {table} (symbol TEXT, arm TEXT, status TEXT, closed_session TEXT,"
+            " entry_credit REAL, quantity INTEGER, gross_pnl REAL, fees REAL, entry_max_loss REAL,"
+            " entry_slippage REAL, exit_slippage REAL)",
+            f"INSERT INTO {table} VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            ("SPX", "control", "closed", "2026-10-02", 1.10, 1, 90.0, 5.0, 2.0, None, None),
         )
-        assert reader(conn, "2026-10-02")["positions_closed"] == 1, table
+        got = reader(conn, "2026-10-02")
+        assert got["positions_closed"] == 1, table
+        assert got["expected"] == pytest.approx(110.0) and got["observed"] == pytest.approx(85.0), table
 
     cal = _ledger(
         "CREATE TABLE dc_positions (arm TEXT, front_expiration TEXT, settlement_spot REAL, side TEXT,"

@@ -91,8 +91,18 @@ Things about this data that will mislead you if you do not know them:
   raw sample suggests. A module-level total averages them and hides the finding. Sets written
   before `fact_version` 8 spell this key `by_profile` and mean exactly the same thing; likewise
   `concentration.largest` names the arm under `arm` from v8 and `profile` below it.
-- `expected_vs_observed` is each module's OWN model. The three modules' bases are not comparable
-  with each other.
+- `expected_vs_observed` is each module's OWN model, and its `basis` says what it measures. There
+  are eight trading modules (meic, flies, earnings, calendars, pmcc, bwb, curve, contango) and
+  their bases are not comparable with each other.
+- "P&L" and `net` are always net of costs. From `fact_version` 10 the costs in `results` (and each
+  `by_arm` row) are separate: `fees` (trading fees), `settlement` (exercise / assignment /
+  delivery; null with `settlement_unrecorded` counting the rows when it was not recorded, in which
+  case the charge sits inside `fees`), and `slippage`. `cost` is their total. Slippage does not
+  mean the same thing in every module: `slippage_basis` `in_gross` (meic, flies) means the modelled
+  fill already conceded it, so it is a measure and is NOT subtracted again; `cost` (the others)
+  means fills were at mid and slippage was charged, so gross - fees - settlement - slippage = net.
+  Never add or compare slippage across the two bases as if it were one number. A set before v10
+  has only `cost`.
 - `status: provisional` means the overnight module has not settled.
 
 Write, in this order and in plain prose, no more than roughly 500 words:
