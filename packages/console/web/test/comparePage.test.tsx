@@ -107,7 +107,7 @@ describe("the arm table", () => {
     const html = render("/compare");
     // control's own row: every vs-control cell is null.
     const control = rowCells(html, "flies", "control");
-    const vsCells = control.slice(-6);
+    const vsCells = control.slice(-8);
     for (const c of vsCells) expect(c).toContain("—");
     expect(control.join("")).not.toContain("$0.00");
     // range-high: one paired session, so no interval, no t bound, no projection.
@@ -145,10 +145,49 @@ describe("no verdicts", () => {
     // exactly the row a significance colour would paint. Its t bound, sign test, projection and
     // unpaired cells must carry no tone; its mean diff is toned by its sign, its interval is not.
     const cells = rowCells(html, "flies", "advised:miss-stop-90");
-    const vs = cells.slice(-6);
-    for (const c of [vs[2], vs[3], vs[4], vs[5]]) expect(c).not.toMatch(/pnl-(pos|neg)/);
+    const vs = cells.slice(-8);
+    for (const c of [vs[4], vs[5], vs[6], vs[7]]) expect(c).not.toMatch(/pnl-(pos|neg)/);
     expect(vs[1]).toMatch(/^<span class="pnl-neg">-\$81\.53<\/span>/);
     expect(vs[1]).toContain('<div class="muted cmp-sub">[-$159.33, -$12.40]</div>');
+  });
+});
+
+describe("size-normalised figures", () => {
+  it("shows net per entry with entries per session, and a dash where no capital is recorded", () => {
+    const cells = rowCells(render("/compare"), "flies", "advised:miss-stop-90").join("");
+    expect(cells).toContain('<span class="pnl-neg">-$23.05</span>');
+    expect(cells).toContain('<div class="muted cmp-sub">4.7 / session</div>');
+    // flies records no capital per trade: its risk-normalised cells are dashes, never $0.00.
+    const vs = rowCells(render("/compare"), "flies", "advised:miss-stop-90").slice(-8);
+    expect(vs[3]).toMatch(/^<span class="muted">—<\/span>/);
+    expect(vs[3]).not.toContain("$0.00");
+  });
+
+  it("pairs per entry beside the dollar pair, toned by sign, its interval untoned", () => {
+    const vs = rowCells(render("/compare"), "flies", "advised:miss-stop-90").slice(-8);
+    expect(vs[2]).toMatch(/^<span class="pnl-neg">-\$19\.75<\/span>/);
+    expect(vs[2]).toContain('<div class="muted cmp-sub">[-$37.37, -$3.43]</div>');
+  });
+
+  it("renders a per-$100-risk pair when the ledger records capital", () => {
+    const doc = structuredClone(DOC) as unknown as CompareDoc;
+    const arm = doc.modules[0]!.arms.find((a) => a.arm === "debit-first-up")!;
+    arm.net_per_100_risk = 1.5;
+    arm.capital_known_trades = arm.trades - 1;
+    arm.vs_control = { ...arm.vs_control!, per_100_risk: { ...arm.vs_control!.per_entry!, mean_diff: 0.42, ci: [-0.1, 0.9] } };
+    const saved = payload;
+    payload = { ok: true, scope: "era", data: doc, error: null };
+    try {
+      const cells = rowCells(render("/compare"), "flies", "debit-first-up");
+      const joined = cells.join("");
+      expect(joined).toContain('<span class="pnl-pos">+$1.50</span>');
+      expect(joined).toContain(`${String(arm.trades - 1)} of ${String(arm.trades)} trades`);
+      const vs = cells.slice(-8);
+      expect(vs[3]).toMatch(/^<span class="pnl-pos">\+\$0\.42<\/span>/);
+      expect(vs[3]).toContain('<div class="muted cmp-sub">[-$0.10, +$0.90]</div>');
+    } finally {
+      payload = saved;
+    }
   });
 });
 

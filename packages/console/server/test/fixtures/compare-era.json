@@ -123,7 +123,12 @@
       ]
      ],
      "control": null,
-     "vs_control": null
+     "vs_control": null,
+     "entries_per_session": 5.83,
+     "net_per_entry": -4.46,
+     "capital": null,
+     "capital_known_trades": 0,
+     "net_per_100_risk": null
     },
     {
      "arm": "debit-first-down",
@@ -217,8 +222,40 @@
       "mde": 427.81,
       "paired_on": "session",
       "arm_only_sessions": 0,
-      "control_only_sessions": 0
-     }
+      "control_only_sessions": 0,
+      "per_entry": {
+       "sessions": 6,
+       "first": "2026-10-05",
+       "last": "2026-10-12",
+       "pairing": "intersection",
+       "mean_diff": -26.86,
+       "sd_diff": 74.86,
+       "total_diff": -161.16,
+       "ci": [
+        -81.84,
+        30.76
+       ],
+       "ci_level": 0.95,
+       "ci_excludes_zero": false,
+       "t_lower": -88.44,
+       "alpha": 0.05,
+       "arm_better": 2,
+       "control_better": 4,
+       "ties": 0,
+       "sign_test_p": 0.6875,
+       "sessions_to_exclude_zero": 24,
+       "edge": null,
+       "power": 0.8,
+       "sessions_needed": null,
+       "mde": 75.99
+      },
+      "per_100_risk": null
+     },
+     "entries_per_session": 4.83,
+     "net_per_entry": -48.73,
+     "capital": null,
+     "capital_known_trades": 0,
+     "net_per_100_risk": null
     },
     {
      "arm": "debit-first-up",
@@ -312,8 +349,40 @@
       "mde": 403.29,
       "paired_on": "session",
       "arm_only_sessions": 0,
-      "control_only_sessions": 0
-     }
+      "control_only_sessions": 0,
+      "per_entry": {
+       "sessions": 6,
+       "first": "2026-10-05",
+       "last": "2026-10-12",
+       "pairing": "intersection",
+       "mean_diff": 26.37,
+       "sd_diff": 105.74,
+       "total_diff": 158.19,
+       "ci": [
+        -44.17,
+        102.41
+       ],
+       "ci_level": 0.95,
+       "ci_excludes_zero": false,
+       "t_lower": -60.62,
+       "alpha": 0.05,
+       "arm_better": 3,
+       "control_better": 3,
+       "ties": 0,
+       "sign_test_p": 1.0,
+       "sessions_to_exclude_zero": 56,
+       "edge": null,
+       "power": 0.8,
+       "sessions_needed": null,
+       "mde": 107.34
+      },
+      "per_100_risk": null
+     },
+     "entries_per_session": 3.17,
+     "net_per_entry": 23.84,
+     "capital": null,
+     "capital_known_trades": 0,
+     "net_per_100_risk": null
     },
     {
      "arm": "range-high",
@@ -373,8 +442,37 @@
       "mde": null,
       "paired_on": "session",
       "arm_only_sessions": 0,
-      "control_only_sessions": 0
-     }
+      "control_only_sessions": 0,
+      "per_entry": {
+       "sessions": 1,
+       "first": "2026-10-12",
+       "last": "2026-10-12",
+       "pairing": "intersection",
+       "mean_diff": 0.0,
+       "sd_diff": null,
+       "total_diff": 0.0,
+       "ci": null,
+       "ci_level": 0.95,
+       "ci_excludes_zero": null,
+       "t_lower": null,
+       "alpha": 0.05,
+       "arm_better": 0,
+       "control_better": 0,
+       "ties": 1,
+       "sign_test_p": null,
+       "sessions_to_exclude_zero": null,
+       "edge": null,
+       "power": 0.8,
+       "sessions_needed": null,
+       "mde": null
+      },
+      "per_100_risk": null
+     },
+     "entries_per_session": 4.0,
+     "net_per_entry": -4.23,
+     "capital": null,
+     "capital_known_trades": 0,
+     "net_per_100_risk": null
     },
     {
      "arm": "advised:miss-stop-90",
@@ -468,8 +566,40 @@
       "mde": 104.53,
       "paired_on": "session",
       "arm_only_sessions": 0,
-      "control_only_sessions": 0
-     }
+      "control_only_sessions": 0,
+      "per_entry": {
+       "sessions": 6,
+       "first": "2026-10-05",
+       "last": "2026-10-12",
+       "pairing": "intersection",
+       "mean_diff": -19.75,
+       "sd_diff": 24.11,
+       "total_diff": -118.5,
+       "ci": [
+        -37.37,
+        -3.43
+       ],
+       "ci_level": 0.95,
+       "ci_excludes_zero": true,
+       "t_lower": -39.58,
+       "alpha": 0.05,
+       "arm_better": 0,
+       "control_better": 3,
+       "ties": 3,
+       "sign_test_p": 0.25,
+       "sessions_to_exclude_zero": 0,
+       "edge": null,
+       "power": 0.8,
+       "sessions_needed": null,
+       "mde": 24.48
+      },
+      "per_100_risk": null
+     },
+     "entries_per_session": 4.67,
+     "net_per_entry": -23.05,
+     "capital": null,
+     "capital_known_trades": 0,
+     "net_per_100_risk": null
     }
    ]
   },
@@ -534,7 +664,12 @@
       ]
      ],
      "control": null,
-     "vs_control": null
+     "vs_control": null,
+     "entries_per_session": 1.0,
+     "net_per_entry": 10.77,
+     "capital": 159.0,
+     "capital_known_trades": 1,
+     "net_per_100_risk": 6.77
     }
    ]
   },

@@ -38,13 +38,13 @@ export interface CompareEra {
   era_stamp: string | null;
 }
 
-export interface CompareVsControl {
+/** `core.stats.paired_comparison` on one per-session series: the block every pair carries. */
+export interface ComparePairedBlock {
   /** Sessions both arm and control closed, inside the overlap of their windows. */
   sessions: number;
   first: string | null;
   last: string | null;
   pairing: string;
-  paired_on: "session" | "entry_session";
   mean_diff: number | null;
   sd_diff: number | null;
   total_diff: number | null;
@@ -64,8 +64,22 @@ export interface CompareVsControl {
   power: number;
   sessions_needed: number | null;
   mde: number | null;
+}
+
+/** The dollar pair (net per session), plus how it was keyed and what it left out. */
+export interface CompareVsControl extends ComparePairedBlock {
+  paired_on: "session" | "entry_session";
   arm_only_sessions: number;
   control_only_sessions: number;
+  /**
+   * The same pair on each session's net per entry, keyed and windowed as the dollar pair, so a
+   * capped arm beside a much larger control is not read as a size difference. Optional: absent on
+   * a document written before the bridge carried it.
+   */
+  per_entry?: ComparePairedBlock | null;
+  /** The same pair on each session's net per $100 of recorded capital; null when either side's
+   *  ledger records none on the shared sessions (never a zero). */
+  per_100_risk?: ComparePairedBlock | null;
 }
 
 export interface CompareArm {
@@ -92,6 +106,15 @@ export interface CompareArm {
   session_net_ci: [number, number] | null;
   session_net_ci_excludes_zero: boolean | null;
   sessions_to_exclude_zero: number | null;
+  /** Size-normalised (optional: absent on a document written before the bridge carried them). */
+  entries_per_session?: number | null;
+  net_per_entry?: number | null;
+  /** Summed capital at risk (max loss / buying power as the module's ledger records it), over the
+   *  trades that record one; null when none does. */
+  capital?: number | null;
+  capital_known_trades?: number;
+  /** Net per $100 of that capital, over the same trades; null when none records one. */
+  net_per_100_risk?: number | null;
   trade_nets: number[];
   session_nets: Array<[string, number]>;
   control: string | null;

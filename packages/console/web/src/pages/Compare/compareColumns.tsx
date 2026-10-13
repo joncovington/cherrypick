@@ -96,6 +96,37 @@ export function compareColumns(costsNote: string, levelPct: string): CompareColu
       num: true,
     },
     {
+      id: "per_entry",
+      header: "net / entry",
+      title: "net ÷ closed trades: what one entry made, so arms of different size read on one footing; beneath, entries per session",
+      sort: (a) => a.net_per_entry ?? null,
+      render: (a) => (
+        <>
+          <SignedCash v={a.net_per_entry} />
+          <div className="muted cmp-sub">{dash(a.entries_per_session, (v) => `${v.toFixed(1)} / session`)}</div>
+        </>
+      ),
+      num: true,
+    },
+    {
+      id: "per_risk",
+      header: "net / $100 risk",
+      title:
+        "net per $100 of capital at risk (max loss or buying power, as the module's ledger records it per trade), over the trades that record one; — where the ledger records none, never zero. Beneath, how many trades record it when not all do",
+      sort: (a) => a.net_per_100_risk ?? null,
+      render: (a) => (
+        <>
+          <SignedCash v={a.net_per_100_risk} />
+          {a.capital_known_trades !== undefined && a.capital_known_trades > 0 && a.capital_known_trades < a.trades && (
+            <div className="muted cmp-sub">
+              {fmtCount(a.capital_known_trades)} of {fmtCount(a.trades)} trades
+            </div>
+          )}
+        </>
+      ),
+      num: true,
+    },
+    {
       id: "more",
       header: "sessions until",
       title: "further sessions until the arm's own interval would exclude zero, IF the observed mean and spread held — a projection, not a forecast; 0 when it already does",
@@ -121,6 +152,34 @@ export function compareColumns(costsNote: string, levelPct: string): CompareColu
         <>
           <SignedCash v={a.vs_control?.mean_diff} />
           <div className="muted cmp-sub">{fmtInterval(a.vs_control?.ci)}</div>
+        </>
+      ),
+      num: true,
+      group: "vs",
+    },
+    {
+      id: "vs_per_entry",
+      header: "diff / entry",
+      title: `mean of (arm − control) net PER ENTRY per paired session, dollars, with its ${levelPct} session-bootstrap interval beneath: the dollar difference with the books' size taken out (a capped arm beside a 270-entry control reads as size in dollars)`,
+      sort: (a) => a.vs_control?.per_entry?.mean_diff ?? null,
+      render: (a) => (
+        <>
+          <SignedCash v={a.vs_control?.per_entry?.mean_diff} />
+          <div className="muted cmp-sub">{fmtInterval(a.vs_control?.per_entry?.ci)}</div>
+        </>
+      ),
+      num: true,
+      group: "vs",
+    },
+    {
+      id: "vs_per_risk",
+      header: "diff / $100 risk",
+      title: `mean of (arm − control) net per $100 of recorded capital at risk per paired session, with its ${levelPct} session-bootstrap interval beneath; — where either ledger records no capital`,
+      sort: (a) => a.vs_control?.per_100_risk?.mean_diff ?? null,
+      render: (a) => (
+        <>
+          <SignedCash v={a.vs_control?.per_100_risk?.mean_diff} />
+          <div className="muted cmp-sub">{fmtInterval(a.vs_control?.per_100_risk?.ci)}</div>
         </>
       ),
       num: true,
