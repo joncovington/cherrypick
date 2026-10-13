@@ -40,8 +40,10 @@ function stdoutError(stdout: string | null | undefined): string | null {
 /** Spawn `python <argv>`, parse stdout as JSON. `unavailableMessage` names the package this argv
  * needs installed, and prefixes every failure branch -- a spawn failure, a nonzero exit (its
  * detail is the CLI's own `{"ok": false, "error"}` from stdout where it wrote one, else the last
- * stderr line), or a response that didn't parse as JSON. */
-export function spawnModuleCli(argv: string[], unavailableMessage: string): SpawnedJson {
+ * stderr line), or a response that didn't parse as JSON. `okStatuses` names the exit codes that
+ * still carry an answer on stdout (`core.impliedvar check` exits 1 for a check that did not agree,
+ * with the reading printed); every other nonzero exit is a failure. */
+export function spawnModuleCli(argv: string[], unavailableMessage: string, okStatuses: readonly number[] = [0]): SpawnedJson {
   let out;
   try {
     out = spawnSync(suitePython(), argv, { encoding: "utf-8", timeout: 30_000, windowsHide: true });
@@ -51,7 +53,7 @@ export function spawnModuleCli(argv: string[], unavailableMessage: string): Spaw
   if (out.error !== undefined) {
     return { ok: false, json: null, error: `${unavailableMessage} (${out.error.message})` };
   }
-  if (out.status !== 0) {
+  if (out.status === null || !okStatuses.includes(out.status)) {
     // A CLI that reports its own failure as `{"ok": false, "error": ...}` on stdout and exits 1
     // (core.compare does) leaves stderr empty, so its reason is only in stdout; without this the
     // page would say "exit 1" where the module had said what broke.

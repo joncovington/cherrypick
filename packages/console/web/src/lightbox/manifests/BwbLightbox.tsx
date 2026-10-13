@@ -9,6 +9,8 @@ import { BwbSession } from "../../pages/Bwb/BwbSession";
 import { DecisionsCard } from "../../components/DecisionsCard";
 import { HistoryTab } from "../../pages/Bwb/HistoryTab";
 import { HelpTab } from "../../pages/Bwb/HelpTab";
+import { BwbLiveGapSlide } from "../../pages/Bwb/LiveGapSlide";
+import { BwbVolSlide } from "../../pages/Bwb/VolSlide";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { ModuleFrame } from "../ModuleFrame";
@@ -57,6 +59,8 @@ export function BwbLightbox({ slide }: { slide: string }) {
         </div>
       ),
     },
+    { id: "vol", label: BWB_LABEL.vol, render: () => <BwbVolSlide /> },
+    { id: "livegap", label: BWB_LABEL.livegap, render: () => <BwbLiveGapSlide /> },
     { id: "performance", label: BWB_LABEL.performance, render: () => <PerformanceSlide module="bwb" mode={mode} /> },
     { id: "advisor", label: BWB_LABEL.advisor, render: () => <AdvisorSlide module="bwb" /> },
     {
