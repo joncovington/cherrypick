@@ -135,6 +135,9 @@ CREATE TABLE IF NOT EXISTS dc_marks (
     refusal      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_dc_marks_position ON dc_marks(position_id, marked_at);
+-- The latest mark of each LEG of a position (the console's open-position P&L) is a seek here, not
+-- a walk over every tick of the position. Idempotent, so an existing ledger gains it on connect.
+CREATE INDEX IF NOT EXISTS idx_dc_marks_position_leg ON dc_marks(position_id, leg_role, marked_at);
 CREATE INDEX IF NOT EXISTS idx_dc_marks_session ON dc_marks(session_date);
 
 -- Shares delivered by a PHYSICALLY-settled leg that finished ITM, and their disposal. Empty for a
