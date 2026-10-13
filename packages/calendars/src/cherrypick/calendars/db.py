@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import sys
 
 from cherrypick.core import db as _core_db
 from cherrypick.core import home as _home
@@ -474,8 +475,10 @@ def record_paired_debit(conn, **row) -> None:
             values,
         )
         conn.commit()
-    except sqlite3.Error:
-        pass
+    except sqlite3.Error as exc:
+        # Still never the tick's problem, but no longer silent: a measurement that fails to land
+        # has to say so somewhere a person reads.
+        print(f"calendars: paired-debit row not recorded ({type(exc).__name__}: {exc})", file=sys.stderr)
 
 
 def paired_debits(conn, week_of: str | None = None) -> list[dict]:
