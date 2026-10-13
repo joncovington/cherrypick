@@ -97,6 +97,8 @@ what that layer returns — MEIC grew three call sites that disagree about what 
 - **The post-completion counterfactual** (`post_best_completing_debit`/`_credit`) — for completions,
   how much better the price got AFTER the first qualifying tick was taken. The stream cache keeps no
   quote history, so it is recorded live (`book.py` step 1d, pure telemetry, no gate reads it) or lost.
+  (From 2026-10-13 the gex recorder keeps the chain's quotes every ~15 s, `core.quotehistory`, so a
+  replay can re-derive it for sessions from then on.)
   `analytics.left_on_table` splits it by `completion_gex_bucket`. The decision record and the bar a
   wait-for-better rule must clear: [docs/completion-timing.md](docs/completion-timing.md).
 - **Arm divergence** — how often arms picked different centres. **Only meaningful against an arm
