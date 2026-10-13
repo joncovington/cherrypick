@@ -130,6 +130,35 @@ def session_from_epoch(closed_at) -> str:
         return ""
 
 
+def _net(gross, *costs) -> float | None:
+    """gross less every cost given; None when the gross itself was never recorded. A missing cost
+    column subtracts nothing (the closed readers' long-standing convention)."""
+    if gross is None:
+        return None
+    return gross - sum((c or 0.0) for c in costs)
+
+
+#: The net rule per schema, over one raw ledger row (anything indexable by column name). The
+#: closed readers below compute `net_pnl` with the same `_net` over the same columns, and a surface
+#: that shows a single row's P&L -- the trade notifier's exit cards -- calls these rather than
+#: re-deriving: MEIC's `pnl` and
+#: earnings' `pnl` are GROSS, and printing either under "P&L" overstated every exit by its fees.
+#: None means the row has no gross yet (or, for contango, no stored net): render it as unrecorded.
+#: MEIC and earnings follow their closed readers' stricter rule (2026-10-12): a missing cost
+#: column there is n/r too, never a costless trade.
+ROW_NET = {
+    "meic_ic": lambda r: _less(r["pnl"], r["fees"]),
+    "earnings": lambda r: _less(r["pnl"], _plus(r["entry_cost"], r["exit_cost"])),
+    "fly_book": lambda r: _net(r["gross_pnl"], r["fees"]),
+    "dc_week": lambda r: _net(r["gross_pnl"], r["fees"]),
+    "pmcc": lambda r: _net(r["gross_pnl"], r["fees"]),
+    "curve_vx": lambda r: _net(r["gross_pnl"], r["fees"]),
+    "bwb_132": lambda r: _net(r["gross_pnl"], r["fees"]),
+    # contango stores the whole layout on the row (gross - fees - slippage = net); read, not derived.
+    "contango_etf": lambda r: r["net_pnl"],
+}
+
+
 def _table_cols(conn, table: str) -> set:
     try:
         return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
@@ -310,7 +339,7 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
             "center_reason": (r["center_reason"] if has_reason else None),
             "gross_pnl": (r["gross_pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
-            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "net_pnl": _net(r["gross_pnl"] or 0.0, r["fees"]),
             # Slippage capture deferred for flies: its decisive metrics are floor/completion
             # based, and its fills already price the haircut into gross_pnl. Unknown != zero,
             # and likewise capital: a legged book's risk depends on completion state.
@@ -363,7 +392,7 @@ def _calendars_closed(conn, start: str | None = None, end: str | None = None) ->
             # `fees` is that module's TOTAL modeled cost (entry+exit+settlement, slippage included),
             # so net is one subtraction and slippage is NOT additionally deducted here.
             "cost": (r["fees"] or 0.0),
-            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "net_pnl": _net(r["gross_pnl"] or 0.0, r["fees"]),
             "slippage": _slip(r),
             "capital": _capital(r),
             # A long calendar is a DEBIT structure: its max profit depends on where the underlying
@@ -420,7 +449,7 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
             "strategy": "pmcc",
             "gross_pnl": (r["gross_pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
-            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "net_pnl": _net(r["gross_pnl"] or 0.0, r["fees"]),
             "slippage": _slip(r),
             "capital": _capital(r),
             # PMCC is a debit structure (deep-ITM long call as a stock substitute + a short call):
@@ -484,7 +513,7 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
             "strategy": "curve_vx",
             "gross_pnl": (r["gross_pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
-            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "net_pnl": _net(r["gross_pnl"] or 0.0, r["fees"]),
             "slippage": _slip(r),
             "capital": _capital(r),
             "max_profit": _max_profit(r),
@@ -618,7 +647,7 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
             "strategy": "bwb_132",
             "gross_pnl": (r["gross_pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
-            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "net_pnl": _net(r["gross_pnl"] or 0.0, r["fees"]),
             "slippage": _slip(r),
             "capital": _capital(r),
             # A broken-wing fly's max profit depends on the strike geometry (which wing is

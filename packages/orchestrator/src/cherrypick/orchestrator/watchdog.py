@@ -1445,9 +1445,10 @@ def _decision_window_open(mcfg: dict[str, Any], now_et: datetime) -> bool:
         return True
 
 
-# The trade-notify job runs every 30s and the watchdog tick runs it again, and every pass that gets
-# the lock saves its state whether or not anything was sent. A state file this old means passes are
-# failing before the save, not that the market was quiet.
+# The trade-notify job runs every 30s in session (less often off it) and the watchdog tick runs it
+# again, and every pass that gets the lock either writes its state or, when nothing changed, touches
+# the file's mtime (2026-10-12: it no longer rewrites an unchanged file). A state file this old means
+# passes are failing before the save, not that the market was quiet.
 _TRADE_NOTIFY_STALE_MIN = 30
 
 

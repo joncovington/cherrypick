@@ -80,14 +80,31 @@ def _release_lock() -> None:
         pass
 
 
-def _save_state(state: dict) -> None:
+def _content(state: dict) -> str:
+    """What decides whether the state changed: everything but the time it was written."""
+    return json.dumps({k: v for k, v in state.items() if k != "updated_at"}, sort_keys=True)
+
+
+def _save_state(state: dict, *, previous: dict | None = None) -> bool:
+    """Write the state (atomically) only when its content changed; returns whether it wrote.
+
+    Every pass used to rewrite it with a fresh `updated_at`, so the file changed every run of a job
+    that, on almost every run, had nothing to do. `updated_at` now says when something last did."""
+    if previous is not None and _content(state) == _content(previous):
+        return False
     cfgmod.ensure_dirs()
     tmp = _STATE.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    tmp.write_text(json.dumps({**state, "updated_at": _now_iso()}, indent=2), encoding="utf-8")
     os.replace(tmp, _STATE)
+    return True
 
 
-def _cap(ids: list[str]) -> list[str]:
+def _cap(ids: list[str], journal_ids: set[str] | None = None) -> list[str]:
+    """A remembered-id list, bounded. With the journal's ids it is pruned to them rather than cut:
+    a cut list forgets ids the journal still holds, and a forgotten id is announced again -- the
+    501st desk order would have re-carded the first one on every pass."""
+    if journal_ids is not None:
+        return [i for i in dict.fromkeys(ids) if i in journal_ids]
     return ids[-_ID_CAP:]
 
 
@@ -269,7 +286,7 @@ def run(cfg: dict[str, Any] | None = None, *, status_fn=None) -> dict[str, Any]:
                     seed_watch[oid] = entry
             _save_state(
                 {
-                    "announced": _cap(announced),
+                    "announced": _cap(announced, {str(e["order_id"]) for e in entries}),
                     "settled": [],
                     "watching": seed_watch,
                     "seeded_at": _now_iso(),
@@ -318,14 +335,17 @@ def run(cfg: dict[str, Any] | None = None, *, status_fn=None) -> dict[str, Any]:
             watching.pop(oid, None)
             pushed += 1
 
-        _save_state(
-            {
-                "announced": _cap(announced),
-                "settled": _cap(settled),
-                "watching": watching,
-                "updated_at": _now_iso(),
-            }
-        )
-        return {"ok": True, "pushed": pushed, "watching": len(watching)}
+        # An empty read (a journal briefly unreadable) must not prune: the next pass would card the
+        # whole journal again.
+        journal_ids = {str(e["order_id"]) for e in entries} or None
+        new_state = {
+            "announced": _cap(announced, journal_ids),
+            "settled": _cap(settled, journal_ids),
+            "watching": watching,
+        }
+        if "seeded_at" in state:
+            new_state["seeded_at"] = state["seeded_at"]
+        written = _save_state(new_state, previous=state)
+        return {"ok": True, "pushed": pushed, "watching": len(watching), "written": written}
     finally:
         _release_lock()
