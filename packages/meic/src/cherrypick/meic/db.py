@@ -356,6 +356,12 @@ _ADDED_TRADE_COLUMNS = {
     # `net_credit` took the fill, so a live stop or expiry was charged against credits nobody
     # received. NULL on paper rows (modelled by definition) and on live rows from before.
     "side_credit_source": "TEXT",
+    # Where a LIVE side's close price came from once its close filled (2026-10-12,
+    # `live_loop.exit_fill_price`): 'broker_legs' -- the side's two leg fills as the broker reported
+    # them; 'booked' -- the order's price as the status carried it (the limit asked). Before this
+    # every live close was booked at its limit. NULL on paper rows and on sides never closed live.
+    "put_exit_fill_source": "TEXT",
+    "call_exit_fill_source": "TEXT",
     "dollar_multiplier": "REAL DEFAULT 100",
     # `risk_profile` until 2026-09-24. Only ever ADDED to a ledger that has neither name -- one that
     # still says `risk_profile` is refused by `_refuse_pre_rename` before this list is read.
@@ -1053,6 +1059,8 @@ _UPDATABLE_TRADE_FIELDS = (
     "call_credit",
     "put_credit_fraction",
     "side_credit_source",
+    "put_exit_fill_source",
+    "call_exit_fill_source",
     "put_stop_fill_status",
     "call_stop_fill_status",
     "pending_exit_json",

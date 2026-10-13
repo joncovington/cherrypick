@@ -948,6 +948,29 @@ def occ_to_streamer_symbol(occ: str) -> str:
     return out
 
 
+_STREAMER_OPTION_RE = re.compile(r"\.(.{1,6}?)(\d{6})([CP])(\d{1,5})(?:\.(\d{1,3}))?")
+
+
+def streamer_to_occ_symbol(streamer: str) -> str:
+    """The OCC 2010 symbol for a DXLink option streamer symbol -- the inverse of
+    `occ_to_streamer_symbol`, for a module that keeps only the streamer symbol and must name the leg
+    to the broker, whose orders take OCC (`.XSP261012P580` -> `XSP   261012P00580000`).
+
+    Returns "" for anything that is not an option streamer symbol or has no OCC form (a root longer
+    than six characters, a strike over five digits or finer than a thousandth). **The answer is
+    checked by converting it back**: a result `occ_to_streamer_symbol` does not map onto the input is
+    refused, so the pair can never disagree. Not the SDK's `streamer_symbol_to_occ`, which matches
+    roots on `[A-Z]+` only (an adjusted root such as `TNA1`, or `BRK/B`, comes back "") and scales the
+    fraction by 100 (52.25 -> a four-digit `2500` field, a malformed symbol)."""
+    match = _STREAMER_OPTION_RE.fullmatch(streamer or "")
+    if match is None:
+        return ""
+    root, exp, right, dollars, frac = match.groups()
+    thousandths = int((frac or "").ljust(3, "0"))
+    occ = f"{root.ljust(6)}{exp}{right}{int(dollars):05d}{thousandths:03d}"
+    return occ if occ_to_streamer_symbol(occ) == streamer else ""
+
+
 # --------------------------------------------------------------- cash-leg event entitlements
 #
 # What a NON-option symbol can actually publish, so the producer stops paying for events that can

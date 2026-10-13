@@ -384,7 +384,7 @@ def _manage_entry(
     if not entered:
         return {"entry": "skipped", "reason": reason}
 
-    quantity = params.get("quantity", 1)
+    quantity = int(params.get("quantity", 1))
     try:
         spec = live_orders.entry_spec(chosen, quantity)
     except ValueError as exc:
@@ -401,7 +401,10 @@ def _manage_entry(
         return {"entry": "dry_run", "net_credit": spec["price"]}
 
     order_id = _extract_order_id(result)
-    row = paper.synthetic_entry_fill(snapshot, EXECUTION_MODE, chosen, params, EXECUTION_MODE)
+    # The row holds what the ORDER holds (2026-10-12): it was always written at quantity 1.
+    row = paper.synthetic_entry_fill(
+        snapshot, EXECUTION_MODE, chosen, params, EXECUTION_MODE, quantity=quantity
+    )
     if order_id is None:
         log(f"WARNING: live placement had no extractable order id for {symbol}; keeping synthetic id")
     else:
@@ -412,7 +415,7 @@ def _manage_entry(
     # The mid the limit was asked against: the modeled credit is mid minus the haircut, and the
     # row carries the haircut in dollars, so the mid is recoverable here and nowhere later.
     row["entry_mid_at_submit"] = round(
-        float(chosen["net_credit"]) + float(row["slippage_dollars"]) / 100.0, 4
+        float(chosen["net_credit"]) + float(row["slippage_dollars"]) / (100.0 * quantity), 4
     )
     row["status"] = "pending"
     row["fill_confirmed_at"] = None
@@ -513,6 +516,35 @@ def entry_fill_credits(trade: dict, status: dict | None, booked: float | None) -
     }
 
 
+def exit_fill_price(
+    trade: dict, side: str, status: dict | None, booked: float | None, limit: float | None
+) -> tuple[float | None, str]:
+    """The per-share debit one side's confirmed close books, and where it came from. Pure
+    (2026-10-12) -- `entry_fill_credits`' rule, applied to the close.
+
+    Until this a close was booked at `status["price"]`, which is the order's LIMIT (the
+    cushioned crossing price, `stop_limit_ratio` over it), so every live stop was recorded at
+    least as bad as asked even when the broker filled it better.
+
+    **Broker legs first** (`'broker_legs'`): the short leg's average purchase less the long leg's
+    average sale, from `status["fills"]`. Used only when both legs have a parseable fill on the
+    expected action (buy the short back, sell the long) and the debit is not above `limit`: a
+    debit limit never fills worse than itself, so a sum that says it did is an incomplete read and
+    the booked price is kept. **Otherwise `'booked'`**: `booked` as `fill_state` read it."""
+    short_key, long_key = (
+        ("put_symbol", "long_put_symbol") if side == "put" else ("call_symbol", "long_call_symbol")
+    )
+    fills = list((status or {}).get("fills") or [])
+    if fills:
+        bought = _leg_average(fills, trade.get(short_key), "buy")
+        sold = _leg_average(fills, trade.get(long_key), "sell")
+        if bought is not None and sold is not None:
+            debit = round(bought - sold, 4)
+            if debit >= 0 and (limit is None or debit <= float(limit) + _EPS):
+                return debit, "broker_legs"
+    return booked, "booked"
+
+
 def _confirm_fills(
     symbol: str, snapshot: dict, db_path: str, broker, *, log, params: dict | None = None
 ) -> dict:
@@ -596,12 +628,20 @@ def _confirm_fills(
             except ValueError:
                 stashed = {}
             modeled = (stashed.get("decision") or {}).get(f"{side}_exit_price")
-            state, price = _execution.fill_state(broker.status(oid), fallback_price=modeled)
+            status = broker.status(oid)
+            state, price = _execution.fill_state(status, fallback_price=modeled)
             if state == "filled":
+                # The broker's own leg fills where they are complete, else the booked price
+                # (2026-10-12). `modeled` is the limit asked for this side: the stash carries it.
+                price, source = exit_fill_price(trade, side, status, price, modeled)
                 fresh = _trade_row(ic_order_id, db_path) or trade
                 paper._apply_exit_decision(fresh, _exit_for_side(stashed, side, price), symbol, db_path)
-                paper._update_trade(ic_order_id, {f"{side}_stop_fill_status": "filled"}, db_path)
-                log(f"{side} close FILLED {ic_order_id} at {price} (modeled {modeled})")
+                paper._update_trade(
+                    ic_order_id,
+                    {f"{side}_stop_fill_status": "filled", f"{side}_exit_fill_source": source},
+                    db_path,
+                )
+                log(f"{side} close FILLED {ic_order_id} at {price} ({source}; limit {modeled})")
                 counts["closes_filled"] += 1
             elif state != "working":
                 # Never recorded closed, so nothing to reopen: clear the marker and let the next
