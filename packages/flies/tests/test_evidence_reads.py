@@ -161,6 +161,26 @@ def test_gate_sessions_use_each_arms_own_window(tmp_path):
     assert day["restacks"] == 1 and day["acted"] and day["diff"] == 40.0
 
 
+def test_gate_sessions_leave_voided_rows_out(tmp_path):
+    """A voided row stays `settled` (`void_reason` alone marks it). Counted, a session whose only
+    arm row is void would be listed, and a void row's close tag would read as the gate acting."""
+    conn = _ledger(tmp_path / "paper.db")
+    _pos(conn, "C-08", "2026-10-08", "control", center=7700, pnl=10.0)
+    _pos(conn, "C-09", "2026-10-09", "control", center=7700, pnl=10.0)
+    _pos(conn, "T-08", "2026-10-08", "trend-rule", center=7700, pnl=-200.0)
+    _pos(conn, "T-09", "2026-10-09", "trend-rule", center=7700, pnl=10.0)
+    _pos(conn, "TV-09", "2026-10-09", "trend-rule", center=7710, pnl=-50.0, minute="11:00")
+    conn.execute("UPDATE fly_positions SET close_tag_at = '2026-10-09T11:30:00' WHERE position_id = 'TV-09'")
+    conn.execute("UPDATE fly_positions SET void_reason = 'outage' WHERE position_id IN ('T-08', 'TV-09')")
+    conn.commit()
+
+    arms = {a["arm"]: a for a in analytics.gate_sessions(conn, session="2026-10-09")["arms"]}
+    (day,) = arms["trend-rule"]["sessions"]
+    assert day["session"] == "2026-10-09"
+    assert day["close_tags"] == 0 and not day["acted"]
+    assert day["arm_entries"] == 1 and day["diff"] == 0.0
+
+
 # --------------------------------------------------------------------------- selector
 def _choice(conn, day, chosen, reason):
     dbmod.record_selector_choice(

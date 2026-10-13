@@ -3295,7 +3295,7 @@ def gate_sessions(conn, session: str | None = None) -> dict:
             r[0]
             for r in conn.execute(
                 "SELECT DISTINCT trade_date FROM fly_positions WHERE arm = ? AND trade_date >= ? "
-                "AND trade_date <= ? ORDER BY trade_date",
+                "AND trade_date <= ? AND void_reason IS NULL ORDER BY trade_date",
                 (arm, start or "", session),
             )
         ]
@@ -3324,7 +3324,8 @@ def gate_sessions(conn, session: str | None = None) -> dict:
                     refusals[r["block_detail"]] = r["n"]
             tags = (
                 conn.execute(
-                    "SELECT COUNT(*) FROM fly_positions WHERE arm = ? AND trade_date = ? AND close_tag_at IS NOT NULL",
+                    "SELECT COUNT(*) FROM fly_positions WHERE arm = ? AND trade_date = ? AND close_tag_at IS NOT NULL "
+                    "AND void_reason IS NULL",
                     (arm, day),
                 ).fetchone()[0]
                 if spec.get("close_tags")
