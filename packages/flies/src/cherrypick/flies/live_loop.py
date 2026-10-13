@@ -260,7 +260,10 @@ def _merged_live_params(config: dict, arm: str) -> dict:
     2026-09-25; under the margin cap that replaced it, the weak 10:00-10:14 slot still crowds the
     good ones -- it just does so through the cap. `scripts/flies_live_start_replay.py` over the
     same 25 era sessions: 10:15 +$4,758 against 10:30's +$2,735 (19 of 21 differing days better,
-    sign p 0.0002) and 10:00's +$3,614. Journaled as a live `entry_rules` break. The engine's
+    sign p 0.0002) and 10:00's +$3,614. Journaled as a live `entry_rules` break. That replay
+    dropped paper's rows and drifted from live's admission; rebuilt 2026-10-12 on live's own gates
+    over paper's ticks, 10:15 is still ahead of 10:00 and 10:30 but no longer significantly
+    (experiment log, 2026-10-12). The engine's
     `before_open_gate` reads this key,
     so the override is refused ahead of the arm's own windows like any other blackout floor; it
     can only ever move the start LATER than the arm's (the later of the two wins).
