@@ -97,6 +97,8 @@ what that layer returns — MEIC grew three call sites that disagree about what 
 - **The post-completion counterfactual** (`post_best_completing_debit`/`_credit`) — for completions,
   how much better the price got AFTER the first qualifying tick was taken. The stream cache keeps no
   quote history, so it is recorded live (`book.py` step 1d, pure telemetry, no gate reads it) or lost.
+  (From 2026-10-13 the gex recorder keeps the chain's quotes every ~15 s, `core.quotehistory`, so a
+  replay can re-derive it for sessions from then on.)
   `analytics.left_on_table` splits it by `completion_gex_bucket`. The decision record and the bar a
   wait-for-better rule must clear: [docs/completion-timing.md](docs/completion-timing.md).
 - **Arm divergence** — how often arms picked different centres. **Only meaningful against an arm
@@ -333,7 +335,12 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   that through settlement. Its positions complete under the proposing source's params
   (`selected_from`). Every tick writes `fly_selector_choices`. **Declared for 2026-10-19**; the
   first read is at 10 departing sessions, on per-session net against control (experiment log,
-  2026-10-04). Not live-eligible while debit-first has no live order path.
+  2026-10-04, amended 2026-10-12).
+  - **Procedure v2** (2026-10-12, before it traded): it skips or departs only on a cell whose
+    session interval (`core.regimecuts.robustness`) is wholly clear of zero, and never on a
+    source's all-regime average. Version 1 would have skipped half the book on a −$8.51 cell.
+  - **Sources `control` and `vol-floor`.** `debit-first-atm` was dropped; more sources only once
+    the quote-history replay can score them.
 - `vol-floor` — `control` plus one variable (from 2026-10-05): no entry while the ATM straddle is
   under `min_entry_straddle_pct` (0.0022) of spot (`engine.low_vol_refusal`, refusal
   `straddle_below_floor`).

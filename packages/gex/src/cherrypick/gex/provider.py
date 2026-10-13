@@ -27,6 +27,7 @@ from cherrypick.core import clock as _clock
 from cherrypick.core import gex as _core_gex
 from cherrypick.core.db import connect_ro as _connect_ro
 from cherrypick.core.streamcache import read_spot as _core_read_spot
+from cherrypick.core.streamcache import usable_quote as _usable_quote
 
 
 @dataclass
@@ -69,6 +70,60 @@ LEFTOVER_ROW_SECONDS = _core_gex.LEFTOVER_ROW_SECONDS  # 600; shared with flies'
 
 # SQLite's default host-parameter limit is 999; stay under it with room to spare.
 _SPOT_CHUNK = 900
+
+
+def nearest_strikes(strikes, spot: float, each_side: int) -> list[float]:
+    """The `each_side` strikes below spot and the `each_side` at or above it."""
+    distinct = sorted({float(k) for k in strikes if k is not None})
+    below = [k for k in distinct if k < spot][-each_side:] if each_side else []
+    return below + [k for k in distinct if k >= spot][:each_side]
+
+
+def chain_quotes(
+    db_path: Path | str, snap: GexSnapshot, *, each_side: int, max_age_seconds: float
+) -> list[dict]:
+    """The usable quotes (`core.streamcache.usable_quote`, the suite's one definition) and fresh
+    deltas for the strikes nearest spot on `snap`'s chain, read-only. One row per (side, strike);
+    a strike with no usable quote is absent, never a zero."""
+    if not snap.chain_entries or snap.spot is None:
+        return []
+    keep = set(nearest_strikes((e["strike_price"] for e in snap.chain_entries), snap.spot, each_side))
+    legs = {
+        e["streamer_symbol"]: (
+            "call" if "C" in str(e["option_type"]).upper() else "put",
+            float(e["strike_price"]),
+        )
+        for e in snap.chain_entries
+        if e["strike_price"] is not None and float(e["strike_price"]) in keep
+    }
+    if not legs:
+        return []
+    conn = _connect_ro(db_path)
+    try:
+        now_ts = time.time()
+        ph = ", ".join("?" * len(legs))
+        deltas = {}
+        for r in conn.execute(
+            f"SELECT symbol, delta, updated_at FROM stream_greeks WHERE symbol IN ({ph})", list(legs)
+        ):
+            if (
+                r["delta"] is not None
+                and r["updated_at"] is not None
+                and now_ts - float(r["updated_at"]) <= max_age_seconds
+            ):
+                deltas[r["symbol"]] = float(r["delta"])
+        out = []
+        for r in conn.execute(
+            f"SELECT symbol, bid, ask, mid, updated_at FROM stream_quotes WHERE symbol IN ({ph})", list(legs)
+        ):
+            q = _usable_quote(r, now_ts, max_age_seconds)
+            if q is None:
+                continue
+            side, strike = legs[r["symbol"]]
+            out.append({"side": side, "strike": strike, **q, "delta": deltas.get(r["symbol"])})
+        return sorted(out, key=lambda x: (x["side"], x["strike"]))
+    finally:
+        conn.close()
 
 
 def _normalise_iv(raw_iv: float) -> float:

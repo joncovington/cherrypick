@@ -1127,3 +1127,43 @@ were enabled instead and their `arm_added` breaks dated 2026-10-12, so they join
   sample is on the new arithmetic, but its 10 / 5 point thresholds were read off walls computed the
   old way. The forward read is still the arm as declared; if it fails, re-derive the thresholds on
   the new walls before calling the idea dead.
+
+## 2026-10-12 — the `selector` declaration amended before it trades: procedure v2, two sources
+
+A review of the 10-04 declaration against the models the nightly job has written since 10-05.
+Nothing has traded, so this is a version bump and an amended declaration, not a measurement break.
+The start stays **2026-10-19**.
+
+**What the review found:**
+- **Version 1 skipped on noise.** It skipped whenever the default's cell mean was negative. The 10-13
+  model, fitted on the new era (from the 10-05 completion-rule break), had one qualifying cell,
+  normal-vol × flat: five sessions, −$8.51 an entry, session interval [−$1,916, +$1,353]. Version 1
+  would have skipped every entry in it, half the book.
+- **Its evidence is from the old era.** The 10-04 walk-forward (+$1,540 over control) ran on
+  08-21..10-02. Walked forward through the new era, version 1 is `thin_default` on every session to
+  10-12: its first real decision would have been the skip above.
+- **An all-regime average could displace a regime's evidence.** A `shrunk` candidate, scored on its
+  source's overall net, could beat control's cell. Latent, since every source's overall net is
+  negative this era.
+- **`debit-first-atm` adds nothing.** −$16.72 an entry this era; the debit-first family loses to
+  fees.
+
+**Procedure v2** ([selector.md](selector.md)):
+- **Skip** only on a default cell whose session interval (`core.regimecuts.robustness`, 90%,
+  seeded bootstrap) is wholly below zero; a negative but unclear cell keeps the default
+  (`default_negative_unclear`).
+- **Depart** only for a candidate whose own cell interval is wholly above zero and beats the
+  default's net per entry by `margin`. A source's all-regime average is never evidence.
+- **Checked both ways:** on the 10-13 data v2 keeps control in normal-vol × flat; over 08-21..10-02 it
+  still skips the up-from-open cell from 09-03 (32 entries, +$5,734.52 against control's
+  +$4,436.50; v1: 35, +$5,976.74).
+
+**Sources: `control` and `vol-floor`.** `debit-first-atm` is dropped. The arms added since
+(`trend-rule`, `range-high`, `wall-clear`) filter control's own entries, which is what the skip
+learns per cell; `restack` is a different book shape. More sources once the quote-history replay
+(`core.quotehistory`, recorded from 2026-10-13) can price every source's candidate on the selector's
+own book, and only at a declared boundary.
+
+**The read is unchanged:** after 10 departing sessions, per-session net against `control`, sign test.
+Expect it to stay `control`'s twin for weeks: with about nine sessions of history on 10-19, few
+cells will be clear.

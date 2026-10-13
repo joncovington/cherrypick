@@ -22,9 +22,16 @@ candidate carrying both labels, scored on the strictest proposer's evidence firs
 vol-floor's trades are a subset of control's tape, so pooling them counts one trade twice.
 
 The procedure is declared and versioned (`PROCEDURE_VERSION`). Refitting it nightly moves its
-parameters, not its meaning; changing it is a measurement break. Version 1 reads two features, the
+parameters, not its meaning; changing it is a measurement break. It reads two features, the
 volatility and trend-from-open buckets, because the regime cuts so far show one paired contrast in
 46 under p 0.10 against about 4.6 by chance -- more features would be fitting noise.
+
+**Version 2 (2026-10-12, before the arm ever traded) acts only on a clear cell.** Version 1 skipped
+whenever the default's cell mean was negative and could depart on a source's ALL-regime average:
+the 10-13 model would have skipped every normal-vol, flat entry, half the book, on -$8.51 an entry
+over five sessions. Now a skip needs the default's cell interval (`core.regimecuts.robustness`,
+seeded bootstrap, 90%) wholly below zero, and a departure needs the other candidate's own CELL
+interval wholly above zero. Anything less stays the default's twin.
 """
 
 from __future__ import annotations
@@ -33,7 +40,7 @@ from cherrypick.core import regimecuts as _rc
 
 from cherrypick.flies import engine
 
-PROCEDURE_VERSION = 1
+PROCEDURE_VERSION = 2
 FEATURES = ("vol_bucket", "trend_bucket")
 DEFAULT_SOURCE = "control"
 DEFAULT_MIN_SESSIONS = 5
@@ -135,52 +142,63 @@ def cell_key(regime: dict) -> str:
 
 
 def score(candidate: dict, regime: dict, model: dict | None) -> dict:
-    """The candidate's evidence in this regime. Proposers are tried strictest first: the first with
-    a cell of at least `min_sessions` sessions scores it; failing that, the first with that many
-    sessions overall scores it, flagged `shrunk`; failing both it is ineligible, and an ineligible
-    candidate is never preferred over the default."""
+    """The candidate's evidence in this regime: the first proposer, strictest first, whose cell holds
+    at least `min_sessions` sessions. None qualifying leaves it ineligible. A source's all-regime
+    average is never evidence here (version 2): it would let an arm that is good on average displace
+    the default in a regime nothing is known about, which is not a regime choice."""
     out = {"label": label(candidate), "cell": cell_key(regime), "eligible": False}
     if not model:
         return out
     min_sessions = model.get("min_sessions", DEFAULT_MIN_SESSIONS)
-    strictest_first = list(reversed(candidate["sources"]))
-    for source in strictest_first:
+    for source in reversed(candidate["sources"]):
         stats = (model.get("cells", {}).get(out["cell"]) or {}).get(source)
         if stats and stats["sessions"] >= min_sessions:
-            return {**out, **stats, "evidence": source, "eligible": True, "shrunk": False}
-    for source in strictest_first:
-        stats = model.get("overall", {}).get(source)
-        if stats and stats["sessions"] >= min_sessions:
-            return {**out, **stats, "evidence": source, "eligible": True, "shrunk": True}
+            return {**out, **stats, "evidence": source, "eligible": True}
     return out
+
+
+def _clear(stats: dict, positive: bool) -> bool:
+    """Does the cell's session-level interval sit wholly on one side of zero? No interval (too few
+    sessions to bootstrap) is never clear."""
+    interval = stats.get("interval")
+    if not interval:
+        return False
+    return interval[0] > 0 if positive else interval[1] < 0
 
 
 def choose(scored: list, model: dict | None, default: str = DEFAULT_SOURCE) -> tuple:
     """Pick one candidate or none. `scored` is [(candidate, score), ...]. Returns
     (candidate | None, reason).
 
-    The default source's candidate is taken unless the model has a reason to depart from it: a
-    different candidate with positive evidence that beats the default's by `margin`, or the
-    default's own cell (not shrunk) saying negative, which skips. No model means no departure."""
+    The default source's candidate is taken unless the model has a CLEAR reason to depart from it:
+    another candidate whose own cell interval is wholly above zero and whose net per entry beats the
+    default's by `margin`, or the default's own cell interval wholly below zero, which skips. A
+    negative but unclear cell keeps the default and says so. No model means no departure."""
     ctrl = next(((c, s) for c, s in scored if default in c["sources"]), None)
     if not model:
         return (ctrl[0], "no_model_default") if ctrl else (None, "default_not_offered")
 
     margin = model.get("margin", DEFAULT_MARGIN)
-    eligible = [(c, s) for c, s in scored if s["eligible"]]
-    best = max(eligible, key=lambda cs: cs[1]["net_per_entry"], default=None)
     ctrl_net = ctrl[1]["net_per_entry"] if ctrl and ctrl[1]["eligible"] else 0.0
-
-    if best is not None and (ctrl is None or best[0] is not ctrl[0]):
-        if best[1]["net_per_entry"] > 0 and best[1]["net_per_entry"] >= ctrl_net + margin:
-            return best[0], "model_preferred"
+    better = [
+        (c, s)
+        for c, s in scored
+        if s["eligible"]
+        and (ctrl is None or c is not ctrl[0])
+        and _clear(s, positive=True)
+        and s["net_per_entry"] >= ctrl_net + margin
+    ]
+    if better:
+        return max(better, key=lambda cs: cs[1]["net_per_entry"])[0], "model_preferred"
     if ctrl is None:
         return None, "default_not_offered"
     s = ctrl[1]
-    if s["eligible"] and not s["shrunk"] and s["net_per_entry"] < 0:
-        return None, "default_cell_negative"
     if not s["eligible"]:
         return ctrl[0], "thin_default"
+    if _clear(s, positive=False):
+        return None, "default_cell_negative"
+    if s["net_per_entry"] < 0:
+        return ctrl[0], "default_negative_unclear"
     return ctrl[0], "default"
 
 
@@ -190,12 +208,16 @@ def _stats(rows: list) -> dict:
     for r in rows:
         by_session[r["trade_date"]] = by_session.get(r["trade_date"], 0.0) + (r["pnl"] or 0.0)
     net = sum(by_session.values())
+    # The cell's session-level 90% interval on its total net (seeded bootstrap, the regime cuts' own
+    # stamp), what `choose` asks to be clear of zero. None below the cuts' thin bar.
+    rob = _rc.robustness({d: [1, v] for d, v in by_session.items()})
     return {
         "sessions": len(by_session),
         "entries": len(rows),
         "net_per_entry": round(net / len(rows), 2),
         "completion_rate": round(sum(1 for r in rows if r["kind"] in ("fly", "iron_fly")) / len(rows), 4),
         "worst_session": round(min(by_session.values()), 2),
+        "interval": rob["net_interval"] if rob else None,
     }
 
 

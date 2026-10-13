@@ -294,7 +294,11 @@ fired, `*_settle_value` what the side was worth unstopped — **recorded for sto
   reproduce its recorded P&L to the cent. The advisor era has no stopping arm, so use `era="ALL"`.
 - **Max favourable excursion reads `None`, deliberately** — only the adverse maximum is stored and the
   cache keeps no quote history; a `0.0` would be misleadingly precise. It needs write-path
-  instrumentation, not a read-side fix.
+  instrumentation, not a read-side fix. **That instrumentation exists from 2026-10-13:** the gex
+  recorder keeps SPX's chain quotes every ~15 s (`core.quotehistory`), covering every leg MEIC has
+  traded since 09-01. A MEIC replay on it (an uncensored stop curve, gap-through fills, MFE and
+  profit-side exits) is Phase 2 of [quote-history-replay-plan.md](../../docs/quote-history-replay-plan.md).
+  Nothing before 10-13 is recoverable.
 
 **A width (or any arm) comparison must be bucketed on whether the reference arm fired that session**
 (`analytics.control_fired`). A stricter-gated arm can go dark on a session its looser siblings trade,

@@ -8,5 +8,12 @@
   "_serve_note": "This module no longer serves anything -- the console (packages/console) is the suite's read surface. The key keeps its name because refresh_seconds outlived the server it was named for: it is the spot-trail recorder's sample interval (`run.py record`), and renaming it would break every existing config.json.",
   "serve": {
     "refresh_seconds": 15
+  },
+  "_quote_history_note": "The chain's quotes, kept by the recorder (2026-10-12): every tick (~15 s) in RTH, the strikes_each_side strikes each side of spot on both rights, bid/ask/mid/age/delta, into gex_history.db's gex_quote_history. The suite's only quote history -- what a replay of a rule a module never ran (flies' credit floor, a restack, a live start time) prices against; read through cherrypick.core.quotehistory. OFF by default: ~10 MB a session PER SYMBOL, and nothing replays XSP or QQQ yet. symbols null = this file's symbols; set it to the chains you will replay (SPX for flies). interval_seconds stays under serve.refresh_seconds so every tick records. A change takes a recorder restart (the orchestrator recycles it on a config change).",
+  "quote_history": {
+    "enabled": false,
+    "symbols": ["SPX"],
+    "strikes_each_side": 20,
+    "interval_seconds": 10
   }
 }
