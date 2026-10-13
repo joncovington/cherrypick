@@ -6,10 +6,12 @@ the broker-side operations the live plan needs: connection check, account listin
 preflight/placement through `core.broker.place_order` (real dry-run preflight + the deploy
 governor). It is deliberately tiny — everything reusable already lives in core.
 
-**Live submission is double-gated and OFF.** `--live` requires BOTH `live.enabled: true` in
-this module's config AND a non-empty `live.gate0_confirmed` attestation (who/when Gate 0 of
-docs/live-trading-plan.md was judged passed). Until then every submission is a dry run —
-the real preflight against the real designated account, placing nothing.
+**Live submission is gated and OFF.** `--live` requires `live.enabled: true` in this module's
+config, a non-empty `live.gate0_confirmed` attestation (who/when Gate 0 of
+docs/live-trading-plan.md was judged passed), `live.arm` naming a configured arm, a designated
+account, and today's arm record from `/live-flies-start` -- every gate the live tick checks
+(`live_gates`). Without them every submission is a dry run -- the real preflight against the
+real designated account, placing nothing.
 
 Usage:
     python src/broker_cli.py get_connection_status
@@ -30,6 +32,7 @@ from cherrypick.core import settlement as _settlement  # noqa: E402
 from cherrypick.core.broker import cli as _broker_cli
 
 from cherrypick.flies import credentials as creds  # noqa: E402
+from cherrypick.flies import provider  # noqa: E402
 from cherrypick.flies.cli import load_config  # noqa: E402
 
 
@@ -77,14 +80,37 @@ async def fresh_option_quotes(session, symbols: list[str]) -> dict[str, dict]:
 official_settlement_price = _settlement.official_index_close
 
 
-def live_gates(config: dict) -> list[str]:
-    """The unmet gates for a LIVE submission — empty means live is allowed. Pure."""
+_READ = object()  # "read it yourself": the keyring for the account, the ET clock for the day
+
+
+def live_gates(config: dict, *, designated=_READ, when=None) -> list[str]:
+    """The unmet gates for a LIVE submission -- empty means live is allowed. Re-checked by the
+    execution adapter on every live submit and by `execute_trade --live` before it builds anything.
+
+    One source, two additions (2026-10-12). The account gates are `live_loop.readiness` itself, so
+    the tick and the submission cannot drift: `live.enabled`, the Gate 0 attestation, `live.arm`
+    naming a configured arm, and a designated account. Before this the by-hand path and the
+    per-submit re-check skipped the last two -- and with no designated account
+    `core.broker.resolve_account` falls back to the FIRST account on the login, so a by-hand
+    `--live` could have traded an account nobody designated. Then the day's arm record, read
+    exactly as the tick's dead-man's switch reads it (`live_loop.should_disarm`): a day nobody
+    armed with `/live-flies-start`, or one past `live.disarm_time`, refuses every live submission,
+    not only the scheduled tick. Disabled short-circuits before any keyring or file read.
+
+    `designated` and `when` exist for tests and for the adapter, which has its own account read;
+    left out, they are read here."""
+    from cherrypick.flies import live_loop  # lazy: live_loop reaches this module lazily too
+
     live = config.get("live") or {}
-    unmet = []
     if not live.get("enabled"):
         return ["live.enabled is false (docs/live-trading-plan.md, Gate 0 first)"]
-    if not str(live.get("gate0_confirmed") or "").strip():
-        unmet.append("live.gate0_confirmed is empty — a human must attest Gate 0 passed (who/when)")
+    if designated is _READ:
+        designated = creds.designated_account()
+    unmet = live_loop.readiness(config, designated=designated)
+    when = when or provider.now_et()
+    reason = live_loop.should_disarm(config, provider.minute_of_day(when), when.date().isoformat())
+    if reason:
+        unmet.append(f"not armed for this session: {reason} (arm with /live-flies-start)")
     return unmet
 
 
