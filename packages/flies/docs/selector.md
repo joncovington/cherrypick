@@ -46,21 +46,33 @@ Each rule below is stated so another module can keep it without borrowing flies'
    that proposed it (`selected_from`), never the selector's own. A test gives the source a different
    fee buffer and requires the selector's position to behave like the source's.
 
-## The decision rule (procedure version 1)
+## The decision rule (procedure version 2, from 2026-10-12)
 
 **Features:** `vol_bucket` × `trend_bucket` only. The regime cuts showed one paired contrast in 46
 under p 0.10, against about 4.6 by chance, so more features would fit noise.
 
 **Scoring.** A candidate's evidence is the first proposer, strictest first, with a cell of at least
-`min_sessions` (5) sessions. Failing that, it is the first with that many sessions overall, flagged
-`shrunk`. Failing both, the candidate is ineligible, and an ineligible candidate never displaces the
-default.
+`min_sessions` (5) sessions. None qualifying leaves it ineligible. A source's all-regime average is
+never evidence: it would let an arm that is good on average displace the default in a regime
+nothing is known about.
+
+**Each cell carries its session-level interval:** the 90% seeded-bootstrap interval on its total
+net (`core.regimecuts.robustness`, the regime cuts' own stamp), None below three sessions.
 
 **The choice:**
-- **Depart from the default** only for a candidate with positive net per entry that beats the
-  default's by `margin`.
-- **Skip** only when the default's own unshrunk cell is negative.
-- **Otherwise take the default.** The reason is `thin_default` when its evidence is thin.
+- **Depart from the default** only for a candidate whose own cell interval is wholly above zero and
+  whose net per entry beats the default's by `margin` (`model_preferred`).
+- **Skip** only when the default's own cell interval is wholly below zero (`default_cell_negative`).
+- **Otherwise take the default.** The reason is `thin_default` when it has no cell,
+  `default_negative_unclear` when its cell is negative but not clear of zero, `default` otherwise.
+
+**Why version 1 was replaced before it traded.** Version 1 skipped on any negative cell mean and
+could depart on a source's overall average (`shrunk`). The 2026-10-13 model, fitted on the new era
+(from 10-05), had one qualifying cell, normal-vol × flat: five sessions, −$8.51 an entry, interval
+[−$1,916, +$1,353]. Version 1 would have skipped every entry in it, half the book. Version 2 keeps
+control there. Over the original window (08-21..10-02) version 2 still skips the up-from-open cell
+from 09-03: 32 entries dropped, +$5,734.52 against control's +$4,436.50 (version 1: 35, +$5,976.74).
+It keeps the signal and drops the noise.
 
 Every tick writes a `fly_selector_choices` row: each source's refusal or scored plan, the choice,
 and the reason (with the model's absence reason appended when there was none).
