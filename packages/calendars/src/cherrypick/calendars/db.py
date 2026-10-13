@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import sys
 
 from cherrypick.core import db as _core_db
 from cherrypick.core import home as _home
@@ -134,6 +135,9 @@ CREATE TABLE IF NOT EXISTS dc_marks (
     refusal      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_dc_marks_position ON dc_marks(position_id, marked_at);
+-- The latest mark of each LEG of a position (the console's open-position P&L) is a seek here, not
+-- a walk over every tick of the position. Idempotent, so an existing ledger gains it on connect.
+CREATE INDEX IF NOT EXISTS idx_dc_marks_position_leg ON dc_marks(position_id, leg_role, marked_at);
 CREATE INDEX IF NOT EXISTS idx_dc_marks_session ON dc_marks(session_date);
 
 -- Shares delivered by a PHYSICALLY-settled leg that finished ITM, and their disposal. Empty for a
@@ -474,8 +478,10 @@ def record_paired_debit(conn, **row) -> None:
             values,
         )
         conn.commit()
-    except sqlite3.Error:
-        pass
+    except sqlite3.Error as exc:
+        # Still never the tick's problem, but no longer silent: a measurement that fails to land
+        # has to say so somewhere a person reads.
+        print(f"calendars: paired-debit row not recorded ({type(exc).__name__}: {exc})", file=sys.stderr)
 
 
 def paired_debits(conn, week_of: str | None = None) -> list[dict]:

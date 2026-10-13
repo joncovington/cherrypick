@@ -254,7 +254,7 @@ def normalised_session_values(
     denom: dict[str, float] = {}
     for r in records:
         s = r.get(session_key)
-        if not s:
+        if not s or r.get("net_pnl") is None:  # undated, or n/r (unscored)
             continue
         if per == "entry":
             weight = 1.0
@@ -275,8 +275,12 @@ def arm_reading(
 ) -> dict:
     """One arm's own numbers over its in-scope closed rows. Money in whole-position dollars, net
     after every cost; `max_drawdown` is the peak-to-trough fall of the per-SESSION equity path.
-    `net_per_entry` and `net_per_100_risk` are the size-normalised figures (module docstring)."""
-    ordered = sorted(records, key=lambda r: r.get("session") or "")
+    `net_per_entry` and `net_per_100_risk` are the size-normalised figures (module docstring).
+    A closed row the ledger left without its money (`net_pnl` None, n/r -- `core.ledgers`) is no
+    trade's result: it joins no figure here and is counted as `unscored`, as `core.metrics` does."""
+    scored = [r for r in records if r.get("net_pnl") is not None]
+    unscored = len(records) - len(scored)
+    ordered = sorted(scored, key=lambda r: r.get("session") or "")
     nets = [float(r["net_pnl"]) for r in ordered]
     sv = _stats.session_values(ordered)
     svals = list(sv.values())
@@ -288,11 +292,12 @@ def arm_reading(
     risk = sum(cap for _, cap in known)
     return {
         "trades": n,
+        "unscored": unscored,
         "sessions": len(sv),
         "first": next(iter(sv), None),
         "last": next(reversed(sv), None) if sv else None,
-        "gross": _r(sum(float(r["gross_pnl"]) for r in ordered)),
-        "costs": _r(sum(float(r["cost"]) for r in ordered)),
+        "gross": _r(sum(float(r["gross_pnl"] or 0.0) for r in ordered)),
+        "costs": _r(sum(float(r["cost"] or 0.0) for r in ordered)),
         "net": _r(sum(nets)),
         "win_rate": _r(sum(1 for v in nets if v > 0) / n, 4) if n else None,
         "max_drawdown": _metrics.max_drawdown(svals),
@@ -333,6 +338,7 @@ def pair_with_control(
         return [
             {"pair": r.get(pair_on) or r.get("session"), "net_pnl": r["net_pnl"], "capital": r.get("capital")}
             for r in records
+            if r.get("net_pnl") is not None  # n/r rows are unscored, never a flat trade
         ]
 
     arm_rows, control_rows = rekeyed(arm_records), rekeyed(control_records)

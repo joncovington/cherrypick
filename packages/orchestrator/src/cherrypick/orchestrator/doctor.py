@@ -9,7 +9,6 @@ Read-only: it never installs, restarts, or trades.
 from __future__ import annotations
 
 import importlib.util
-import json
 import os
 import subprocess
 import sys
@@ -77,6 +76,30 @@ def _run(module_root: Path, argv: list[str], timeout: int = 30) -> subprocess.Co
         timeout=timeout,
         creationflags=CREATE_NO_WINDOW,
     )
+
+
+def connection_verdict(stdout: str | None) -> tuple[bool, str]:
+    """Read a module's `get_connection_status` output: (connected, one-line detail). Pure.
+
+    Both CLI shapes answer `ok: False` with a `hint` when no credentials are stored (tt.py always
+    did; the broker_cli shape since 2026-10-12), and exit non-zero, so the JSON is read whatever the
+    exit code. `credentials_present: false` is never connected, whatever `ok` says -- a module built
+    before that fix still said `ok: True` there. The detail carries the hint or the error rather than
+    the raw output, which the secrets block pushed past any useful truncation."""
+    out = first_json(stdout)
+    connected = bool(out.get("ok") or out.get("connected") or out.get("authenticated"))
+    if out.get("credentials_present") is False:
+        connected = False
+    if connected:
+        count = out.get("account_count")
+        return True, "connected" + (f" ({count} account(s))" if count is not None else "")
+    if out.get("credentials_present") is False:
+        why = "no credentials stored"
+        return False, f"{why} -- {out['hint']}" if out.get("hint") else why
+    why = out.get("error") or out.get("hint")
+    if why:
+        return False, f"not connected: {why}"
+    return False, f"get_connection_status not ok: {(stdout or '').strip()[:160] or 'no output'}"
 
 
 def _dolt_databases(host: str, port: int, user: str = "root") -> set[str] | None:
@@ -598,17 +621,8 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         if not broker_checked and not fast:
             try:
                 r = _run(root, [*cfgmod.broker_tool(mcfg, name), "get_connection_status"], timeout=35)
-                out = json.loads(r.stdout or "{}") if r.returncode == 0 else {}
-                ok = bool(out.get("ok") or out.get("connected") or out.get("authenticated"))
-                checks.append(
-                    Check(
-                        "broker/keyring",
-                        OK if ok else FAIL,
-                        "connected"
-                        if ok
-                        else f"get_connection_status not ok: {(r.stdout or r.stderr)[:160]}",
-                    )
-                )
+                ok, detail = connection_verdict(r.stdout or r.stderr)
+                checks.append(Check("broker/keyring", OK if ok else FAIL, detail))
                 broker_checked = True
             except Exception as exc:
                 checks.append(Check("broker/keyring", FAIL, f"connection check error: {exc}"))

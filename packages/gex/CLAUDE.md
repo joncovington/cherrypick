@@ -49,7 +49,7 @@ spot against the open and predicted nothing after it.
   `(symbol, ts)`. About 100 strikes × 78 readings a session. It is what lets a past session's walls,
   flip or flow be recomputed under any definition; nothing before 2026-10-05 exists to rebuild.
 
-**The chain's quotes are kept too** (from 2026-10-13, `gex_quote_history`, `service.record_quotes`):
+**The chain's quotes are kept too** (from 2026-10-13, `gex_quote_samples` + `gex_quotes`, `service.record_quotes`):
 every recorder tick (~15 s, the cadence flies' paper loop prices at, so a brief completion touch is not missed) per symbol in RTH, the 20 strikes each side of spot (~100 SPX points, so a trend day's stranded vertical stays priceable) on both rights of the same chain
 the profile reads, with bid, ask, mid, quote age and a fresh delta. Only quotes
 `core.streamcache.usable_quote` accepts at 120 s (the age flies prices with), so a missing row means
@@ -57,7 +57,18 @@ no usable quote that minute. It is the suite's only quote history, kept here so 
 recorder rather than one per module; a replay of a rule a module never ran prices against it.
 - **Spot is not stored with it.** `gex_spot_history` has it every tick; `core.quotehistory.session`
   joins it at-or-before, within 60 s, and hands each minute back in a flies snapshot's shape.
-- **About 80 rows a tick, ~125k a session (~10 MB, ~2.5 GB a year) per symbol.** Nothing prunes it.
+- **Normalised: a sample row per (symbol, tick), the quotes keyed by it** (`WITHOUT ROWID`, side as
+  `QUOTE_SIDES`' integer). The first layout repeated the sample's columns on every quote: 15.3 MB for
+  a synthetic session, 7.9 MB in this one. Changed before any session was recorded; an empty
+  `gex_quote_history` is dropped, one with rows never. Readers go through `core.quotehistory`.
+- **About 80 quotes a tick, ~125k a session (~8 MB, ~2 GB a year) per symbol.** Nothing prunes it.
+- **Held strikes too** (`quote_history.held_strikes`, on unless `false`): every strike of the
+  recorded chain that a module declares it holds (`core.streamrequests.union_legs`, the open legs the
+  streamer keeps subscribed), on both rights, so a stranded vertical past the 20 is still recorded.
+  Content, not measurement: nothing reads it yet.
+- **The history DB is WAL** (`historydb`, asked for once per process), so the recorder's ~15 s
+  writes never block flies' `gex_at` or the console. A tick opens it once and commits once; each
+  series writes in its own savepoint, so one that raises loses only its own rows.
 - **Off unless a machine's config turns it on** (`quote_history.enabled`; `service.quote_history_settings`
   reads the block over its defaults). Its own `symbols` (SPX for flies), so the example's XSP and QQQ
   are not recorded by accident; `strikes_each_side` and `interval_seconds` default to 20 and 10. A

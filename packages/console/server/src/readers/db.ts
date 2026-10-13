@@ -304,22 +304,17 @@ const derivedCache = new Map<string, { stamp: string; value: unknown }>();
  * iterates in insertion order, and a re-cached entry is re-inserted below), which is LRU enough for
  * a handful of entries and costs nothing to reason about.
  */
-const DERIVED_CACHE_MAX = 16;
+const DERIVED_CACHE_MAX = 32;
 
-/**
- * `dbPath` may name several stores, for a read derived from more than one (the compare bridge reads
- * every module's ledger and the advisor's store): the stamp is each store's stamp in order, so a
- * write to ANY of them is a miss. A missing file stamps as absent, and its appearance is a miss too.
- */
-export function memoOnStore<T>(dbPath: string | readonly string[], key: string, build: () => T): T {
-  const stamp = typeof dbPath === "string" ? fileStamp(dbPath) : dbPath.map(fileStamp).join("|");
+function cachedOnStamp<T>(key: string, stamp: string): { value: T } | undefined {
   const hit = derivedCache.get(key);
-  if (hit !== undefined && hit.stamp === stamp) {
-    derivedCache.delete(key); // re-insert so the freshly used entry is evicted last
-    derivedCache.set(key, hit);
-    return hit.value as T;
-  }
-  const value = build();
+  if (hit === undefined || hit.stamp !== stamp) return undefined;
+  derivedCache.delete(key); // re-insert so the freshly used entry is evicted last
+  derivedCache.set(key, hit);
+  return { value: hit.value as T };
+}
+
+function rememberOnStamp(key: string, stamp: string, value: unknown): void {
   derivedCache.delete(key);
   derivedCache.set(key, { stamp, value });
   while (derivedCache.size > DERIVED_CACHE_MAX) {
@@ -327,6 +322,39 @@ export function memoOnStore<T>(dbPath: string | readonly string[], key: string, 
     if (oldest.done === true) break;
     derivedCache.delete(oldest.value);
   }
+}
+
+/**
+ * `dbPath` may name several stores, for a read derived from more than one (the compare bridge reads
+ * every module's ledger and the advisor's store): the stamp is each store's stamp in order, so a
+ * write to ANY of them is a miss. A missing file stamps as absent, and its appearance is a miss too.
+ */
+export function memoOnStore<T>(dbPath: string | readonly string[], key: string, build: () => T): T {
+  // Stamped BEFORE the build: a write landing mid-build leaves an older stamp, so the next call
+  // rebuilds rather than serving a value that may predate the write.
+  const stamp = typeof dbPath === "string" ? fileStamp(dbPath) : dbPath.map(fileStamp).join("|");
+  const hit = cachedOnStamp<T>(key, stamp);
+  if (hit !== undefined) return hit.value;
+  const value = build();
+  rememberOnStamp(key, stamp, value);
+  return value;
+}
+
+/**
+ * `withReadOnlyDb`, memoised on the store's stamp like `memoOnStore` -- except that a read which
+ * THREW is not remembered. Caching the fallback would pin an empty answer (and a single recorded
+ * failure) until the module next writes, which outside a session is the next morning; a failed
+ * read is retried, and recorded, on every request instead. An absent store is remembered: its
+ * stamp moves when the file appears.
+ */
+export function memoReadOnlyDb<T>(dbPath: string, key: string, fallback: T, fn: (db: Database.Database) => T): T {
+  const stamp = fileStamp(dbPath);
+  const hit = cachedOnStamp<T>(key, stamp);
+  if (hit !== undefined) return hit.value;
+  const outcome = readOnlyDb(dbPath, fn);
+  if (outcome.status === "failed") return fallback;
+  const value = outcome.status === "ok" ? outcome.value : fallback;
+  rememberOnStamp(key, stamp, value);
   return value;
 }
 

@@ -301,6 +301,20 @@ def test_normalised_values_drop_a_session_with_no_known_capital():
     assert compare.normalised_session_values(rows, "entry") == {"a": 7.5, "b": 7.0}
 
 
+def test_a_row_without_its_money_is_unscored_never_a_flat_trade():
+    # `core.ledgers` reads a closed MEIC/earnings/contango row with no recorded money as net None.
+    rows = [
+        {"session": "a", "net_pnl": 10.0, "gross_pnl": 12.0, "cost": 2.0, "capital": 100.0},
+        {"session": "b", "net_pnl": None, "gross_pnl": None, "cost": None, "capital": 100.0},
+    ]
+    reading = compare.arm_reading(rows)
+    assert reading["trades"] == 1 and reading["unscored"] == 1 and reading["net"] == 10.0
+    assert reading["sessions"] == 1 and reading["win_rate"] == 1.0
+    assert compare.normalised_session_values(rows, "entry") == {"a": 10.0}
+    paired = compare.pair_with_control(rows, rows[:1], schema="meic_ic")
+    assert paired is not None
+
+
 # --------------------------------------------------------------------------- the bridge
 def test_absent_ledger_is_reported_not_raised(tmp_path):
     m = compare.module_comparison("curve", db_path=tmp_path / "nope.db", session="2026-10-12")

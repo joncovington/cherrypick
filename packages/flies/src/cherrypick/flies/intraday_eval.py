@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 from cherrypick.core import stats as _stats
 
 from cherrypick.flies import analytics, engine, intraday_advice, intraday_pack
@@ -487,9 +488,5 @@ def run(conn, cfg: dict, *, write: bool = False, now: datetime | None = None) ->
     band = engine.merged_params(cfg, agent_arm).get("regime_trend_points", intraday_pack.TREND_BAND_POINTS)
     result["trend_band_points"] = float(band)
     if write:
-        path = qualification_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(result, indent=2), encoding="utf-8")
-        tmp.replace(path)
+        _jsonio.write_json_atomic(qualification_path(), result, indent=2, default=None)
     return result

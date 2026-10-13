@@ -11,14 +11,26 @@ left once those are parameterized is I/O plumbing — the ledger query, the writ
 would need roughly as many injection hooks as the twenty lines of logic it wrapped. An adapter
 bigger than the duplication it removes is not a dedup. The spot reads inside those loops already
 share one implementation via `cherrypick.core.streamcache`, and the fee stack already shares one via
-`cherrypick.core.fees`, so what remained genuinely common is the function below.
+`cherrypick.core.fees`, so what remained genuinely common is the arithmetic below: `share_pnl`,
+and (2026-10-12) the leg intrinsic, the assignment a leg delivers and the declared-dividend reads,
+which calendars and pmcc carried byte for byte. They are keyword-only so a positional call written
+for bwb's or curve's differently-ordered `settle_intrinsic` cannot land here silently.
 """
 
 from __future__ import annotations
 
 import asyncio
 
-__all__ = ["OFFICIAL_SOURCES", "official_index_close", "share_pnl"]
+__all__ = [
+    "OFFICIAL_SOURCES",
+    "assignment_from",
+    "dividend_coverage_ok",
+    "ex_date_in_span",
+    "ex_dividend_dates",
+    "official_index_close",
+    "settle_intrinsic",
+    "share_pnl",
+]
 
 # Which `official_index_close` sources count as a POSTED close a cash-settled ledger may settle on.
 # Anything else -- an intraday last/mark tick tagged provisional, or nothing at all -- means the
@@ -41,6 +53,61 @@ def share_pnl(direction: str, shares: int, basis: float, price: float) -> float:
     """
     move = price - basis if direction == "long" else basis - price
     return round(move * shares, 2)
+
+
+def settle_intrinsic(*, strike: float, option_type: str, spot: float) -> float:
+    """Intrinsic value of one leg at the settlement print.
+
+    Under CASH settlement this is the whole story. Under PHYSICAL settlement it is still the option's
+    own value at expiry -- what changes is that the leg also delivers stock, which `assignment_from`
+    arms separately. Keeping intrinsic as the option half of both models is what lets one settlement
+    path, one derivation, and one validation serve both styles. Keyword-only: bwb's engine has a
+    `settle_intrinsic` with a different argument order, and curve's is calls-only."""
+    if option_type == "put":
+        return round(max(0.0, strike - spot), 4)
+    return round(max(0.0, spot - strike), 4)
+
+
+def assignment_from(leg: dict, *, spot: float, quantity: int) -> dict | None:
+    """The share position one ITM leg delivers at expiry, or None if it expires worthless.
+
+    `basis` is the settlement spot. `strike` rides along unused by the arithmetic because an
+    assignment that cannot be tied back to the contract it came from is not auditable."""
+    option_type = leg["option_type"]
+    if settle_intrinsic(strike=leg["strike"], option_type=option_type, spot=spot) <= 0:
+        return None
+    sold = leg.get("action") == "Sell to Open"
+    long_shares = (sold and option_type == "put") or (not sold and option_type == "call")
+    return {
+        "direction": "long" if long_shares else "short",
+        "shares": 100 * int(quantity or 1),
+        "basis": round(float(spot), 4),
+        "strike": leg["strike"],
+        "option_type": option_type,
+    }
+
+
+def ex_dividend_dates(config: dict, *, symbol: str) -> list[str]:
+    """The declared ex-dates for `symbol` (the module config's `dividends.<SYMBOL>.ex_dates`), else
+    empty."""
+    block = (config.get("dividends") or {}).get(symbol.upper()) or {}
+    return [str(d) for d in (block.get("ex_dates") or [])]
+
+
+def dividend_coverage_ok(config: dict, *, symbol: str, through_day: str) -> bool:
+    """Whether the declared calendar can answer questions up to `through_day` (ISO date). No block,
+    or a horizon short of the day, is not-covered -- never "probably no dividend"."""
+    block = (config.get("dividends") or {}).get(symbol.upper()) or {}
+    declared_through = block.get("declared_through")
+    return isinstance(declared_through, str) and str(through_day) <= declared_through
+
+
+def ex_date_in_span(config: dict, *, symbol: str, start_day: str, end_day: str) -> str | None:
+    """The first declared ex-date inside the CLOSED span [start_day, end_day], or None."""
+    for d in sorted(ex_dividend_dates(config, symbol=symbol)):
+        if str(start_day) <= d <= str(end_day):
+            return d
+    return None
 
 
 def leg_pnl(leg: dict) -> float | None:

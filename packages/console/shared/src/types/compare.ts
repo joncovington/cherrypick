@@ -90,6 +90,9 @@ export interface CompareArm {
   start: string | null;
   start_reason: "era" | "arm_added" | "era_stamp" | "first_row";
   trades: number;
+  /** Closed rows the ledger left without their money (net n/r): in no figure here, only counted.
+   *  Optional: absent on a document written before the bridge carried it. */
+  unscored?: number;
   sessions: number;
   first: string | null;
   last: string | null;

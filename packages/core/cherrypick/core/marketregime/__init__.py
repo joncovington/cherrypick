@@ -272,7 +272,7 @@ def write(doc: dict) -> dict:
 
 
 def _cache_path() -> Path:
-    return _home.data_dir("marketdata") / "stream_cache.db"
+    return _sc.cache_path()
 
 
 def main(argv: list[str] | None = None) -> int:

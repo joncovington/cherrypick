@@ -24,6 +24,7 @@ import os
 from pathlib import Path
 
 from cherrypick.core import home as _home
+from cherrypick.core import streamcache as _streamcache
 
 
 def data_dir() -> Path:
@@ -55,7 +56,9 @@ def stream_cache_path() -> Path:
     and flies/gex read the same file. It follows ``CHERRYPICK_HOME`` (the whole-home relocation) but,
     unlike MEIC's data DBs, **not** ``MEIC_DATA_DIR`` — the cache is not a MEIC-scoped artifact. See
     ``docs/streamer-package-plan.md``."""
-    return _home.ensure(_home.data_dir("marketdata")) / "stream_cache.db"
+    path = _streamcache.cache_path()
+    _home.ensure(path.parent)
+    return path
 
 
 def config_path() -> Path:

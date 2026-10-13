@@ -37,7 +37,7 @@ interface ForestPosition {
 }
 
 interface ForestArm {
-  profile: string;
+  arm: string;
   positions: ForestPosition[];
   prices: number[];
   pnl: number[];
@@ -53,7 +53,7 @@ interface MeicForest {
   openPositions: number;
   asEntered: ForestArm[];
   arms: ForestArm[];
-  releasedStrikes: Array<{ profile: string; strike: number; right: "P" | "C"; at: string | null }>;
+  releasedStrikes: Array<{ arm: string; strike: number; right: "P" | "C"; at: string | null }>;
   lastSpot: number | null;
 }
 
@@ -130,8 +130,8 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
 
     const X = (v: number) => pad.l + ((v - xMin) / (xMax - xMin || 1)) * (width - pad.l - pad.r);
     const Y = (v: number) => height - pad.b - ((v - yMin) / (yMax - yMin || 1)) * (height - pad.t - pad.b);
-    const colorOf = (profile: string) =>
-      ARM_COLORS[arms.findIndex((a) => a.profile === profile) % ARM_COLORS.length]!;
+    const colorOf = (arm: string) =>
+      ARM_COLORS[arms.findIndex((a) => a.arm === arm) % ARM_COLORS.length]!;
 
     const thisHoverPrice = hoverX !== null ? xMin + ((hoverX - pad.l) / (width - pad.l - pad.r)) * (xMax - xMin) : null;
     hoverPrice = thisHoverPrice;
@@ -187,10 +187,10 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
           shown.flatMap((a) =>
             a.perPosition.map((p) => (
               <path
-                key={`${a.profile}-${p.icOrderId}`}
+                key={`${a.arm}-${p.icOrderId}`}
                 d={path(a.prices, p.pnl, X, Y)}
                 fill="none"
-                stroke={colorOf(a.profile)}
+                stroke={colorOf(a.arm)}
                 strokeWidth={1}
                 opacity={0.28}
               />
@@ -198,7 +198,7 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
           )}
 
         {shown.map((a) => (
-          <path key={a.profile} d={path(a.prices, a.pnl, X, Y)} fill="none" stroke={colorOf(a.profile)} strokeWidth={2} />
+          <path key={a.arm} d={path(a.prices, a.pnl, X, Y)} fill="none" stroke={colorOf(a.arm)} strokeWidth={2} />
         ))}
 
         {/* Strikes a stop has released: they no longer constrain a new entry, and
@@ -268,17 +268,17 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
           {body}
           <div className="legend-row" style={{ marginTop: "0.4rem" }}>
             {shown.map((a, i) => (
-              <span key={a.profile} className="muted" style={{ fontSize: 11, marginRight: "0.9rem" }}>
+              <span key={a.arm} className="muted" style={{ fontSize: 11, marginRight: "0.9rem" }}>
                 <i
                   style={{
-                    background: ARM_COLORS[(data?.arms ?? []).findIndex((x) => x.profile === a.profile) % ARM_COLORS.length],
+                    background: ARM_COLORS[(data?.arms ?? []).findIndex((x) => x.arm === a.arm) % ARM_COLORS.length],
                     display: "inline-block",
                     width: 8,
                     height: 8,
                     marginRight: 4,
                   }}
                 />
-                {a.profile} — {a.positions.length} {a.positions.length === 1 ? "condor" : "condors"}
+                {a.arm} — {a.positions.length} {a.positions.length === 1 ? "condor" : "condors"}
                 {!live && a.outcome !== undefined && (
                   <span className={a.outcome.realisedNet >= 0 ? "pnl-pos" : "pnl-neg"}>
                     {" "}· made {fmtMoney(a.outcome.realisedNet)}
@@ -311,8 +311,8 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
                     {stopped} were <strong>stopped</strong> and never reached it,{" "}
                   </>
                 )}
-                {expired} expired. For a profile that stops, the wings below are the loss its stops existed to prevent
-                rather than one it ran; for a profile that holds to expiry they are real. Which is which is in the
+                {expired} expired. For an arm that stops, the wings below are the loss its stops existed to prevent
+                rather than one it ran; for an arm that holds to expiry they are real. Which is which is in the
                 legend — each arm's realised figure sits beside it, and the dashed line is the total
                 {realisedNet !== null && <> at {fmtMoney(realisedNet)}</>}.
               </>

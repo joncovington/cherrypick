@@ -1,7 +1,7 @@
 """Backfill earnings' `settlement_fees` on paper trades closed before it was recorded (2026-09-25).
 
-    python scripts/earnings_backfill_settlement_fees.py            # dry run -- prints, changes nothing
-    python scripts/earnings_backfill_settlement_fees.py --apply    # adds the column, writes
+    python scripts/archive/earnings_backfill_settlement_fees.py       # dry run -- prints, changes nothing
+    python scripts/archive/earnings_backfill_settlement_fees.py --apply  # adds the column, writes
 
 `settlement_fees` is the part of a trade's `exit_cost` that is the exercise/assignment charge on
 legs that settled rather than traded out ($5 per ITM strike, `settlement.settlement_fee`). What a
@@ -9,7 +9,7 @@ row gets depends on what its `exit_cost` actually contains:
 
   - closed by a trade             0 -- every leg was bought or sold back, so no part of exit_cost
                                   is settlement.
-  - closed by settlement          left to `scripts/earnings_resettle_expiry_fees.py`, which computes
+  - closed by settlement          left to `scripts/archive/earnings_resettle_expiry_fees.py`, which computes
     (`expired`, `front_expiry`)   the fee at each expiration's own settlement close and, on the run
                                   that re-costs exit_cost, records it here in the same transaction.
                                   Without that run the exit_cost still holds the old closing stack,
@@ -29,7 +29,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-_REPO = Path(__file__).resolve().parents[1]
+_REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "packages" / "core"))
 sys.path.insert(0, str(_REPO / "packages" / "earnings" / "src"))
 

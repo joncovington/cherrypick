@@ -39,6 +39,12 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
+# scripts/_common.py, beside this file (a test loading this script by path has no scripts/ on sys.path).
+_HERE = str(Path(__file__).resolve().parent)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+import _common  # noqa: E402
+
 # Scheduled runs happen under pythonw — no console. A CONSOLE child (claude, gh) spawned from a
 # windowless parent gets a brand-new console window, which flashes over whatever the user is doing;
 # on 2026-08-21 that was three windows popping over a live trading platform mid-session. Same
@@ -85,8 +91,18 @@ Things about this data that will mislead you if you do not know them:
   raw sample suggests. A module-level total averages them and hides the finding. Sets written
   before `fact_version` 8 spell this key `by_profile` and mean exactly the same thing; likewise
   `concentration.largest` names the arm under `arm` from v8 and `profile` below it.
-- `expected_vs_observed` is each module's OWN model. The three modules' bases are not comparable
-  with each other.
+- `expected_vs_observed` is each module's OWN model, and its `basis` says what it measures. There
+  are eight trading modules (meic, flies, earnings, calendars, pmcc, bwb, curve, contango) and
+  their bases are not comparable with each other.
+- "P&L" and `net` are always net of costs. From `fact_version` 10 the costs in `results` (and each
+  `by_arm` row) are separate: `fees` (trading fees), `settlement` (exercise / assignment /
+  delivery; null with `settlement_unrecorded` counting the rows when it was not recorded, in which
+  case the charge sits inside `fees`), and `slippage`. `cost` is their total. Slippage does not
+  mean the same thing in every module: `slippage_basis` `in_gross` (meic, flies) means the modelled
+  fill already conceded it, so it is a measure and is NOT subtracted again; `cost` (the others)
+  means fills were at mid and slippage was charged, so gross - fees - settlement - slippage = net.
+  Never add or compare slippage across the two bases as if it were one number. A set before v10
+  has only `cost`.
 - `status: provisional` means the overnight module has not settled.
 
 Write, in this order and in plain prose, no more than roughly 500 words:
@@ -129,31 +145,7 @@ def _trend_context(session: str, count: int = TREND_SESSIONS) -> list[dict]:
 
 
 def _run_claude(payload: str) -> tuple[str | None, str | None]:
-    exe = shutil.which("claude")
-    if not exe:
-        return None, "claude not on PATH"
-    try:
-        proc = subprocess.run(
-            [exe, "-p", PROMPT, "--disallowed-tools", *DISALLOWED],
-            input=payload,
-            capture_output=True,
-            text=True,
-            # UTF-8 explicitly. `text=True` alone decodes with the LOCALE encoding, which is cp1252
-            # on Windows -- so every em dash the model emits came back as mojibake and was then
-            # written out faithfully as UTF-8, baking the corruption into the note.
-            encoding="utf-8",
-            errors="replace",
-            timeout=TIMEOUT_SECONDS,
-            creationflags=CREATE_NO_WINDOW,
-        )
-    except subprocess.TimeoutExpired:
-        return None, f"claude timed out after {TIMEOUT_SECONDS}s"
-    except Exception as exc:  # noqa: BLE001 -- a note is never worth raising over
-        return None, f"{type(exc).__name__}: {exc}"
-    if proc.returncode != 0:
-        return None, (proc.stderr or "")[:500] or f"claude exited {proc.returncode}"
-    text = (proc.stdout or "").strip()
-    return (text, None) if text else (None, "claude returned nothing")
+    return _common.run_claude(payload, prompt=PROMPT, disallowed=DISALLOWED, timeout=TIMEOUT_SECONDS)
 
 
 def _recommendations(note: str) -> list[str]:

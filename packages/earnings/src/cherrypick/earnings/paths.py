@@ -48,13 +48,6 @@ def paper_db_path() -> Path:
     return data_path("paper_trades.db")
 
 
-def reports_dir() -> Path:
-    """Generated strategy-dashboard HTML lives under the module data home
-    (``~/.cherrypick/data/earnings/reports``), so it never lands in the checkout. A pure path — the
-    caller creates it when it writes (``strategy_dashboard.py`` mkdirs before rendering)."""
-    return _home.data_dir("earnings", env="EARNINGS_DATA_DIR") / "reports"
-
-
 def config_path() -> Path:
     """Earnings' config file. The home config (``~/.cherrypick/config/earnings.json``) once it exists,
     else the legacy in-repo ``config/config.json`` until migrated, else the shipped

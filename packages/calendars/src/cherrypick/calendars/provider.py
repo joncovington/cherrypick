@@ -33,6 +33,7 @@ from cherrypick.core.db import connect_ro as _connect_ro
 # occ_root is re-exported: the modules' own code calls provider.occ_root.
 from cherrypick.core.streamcache import chain_for_expiration as _chain_for_expiration
 from cherrypick.core.streamcache import greeks_for as _greeks
+from cherrypick.core.streamcache import mark_snapshot as _mark_snapshot
 
 # Shared with every other provider — see cherrypick.core.streamcache.
 # read_spot is re-exported deliberately: the loops call provider.read_spot and their tests
@@ -41,7 +42,7 @@ from cherrypick.core.streamcache import (
     occ_root,  # noqa: F401
     read_spot,  # noqa: F401
 )
-from cherrypick.core.streamcache import usable_quote as _usable_quote
+from cherrypick.core.streamcache import usable_quotes as _usable_quotes
 
 from cherrypick.calendars.clock import now_et  # noqa: F401  (re-exported for the loop's convenience)
 
@@ -112,22 +113,8 @@ def build_entry_snapshot(
         if not near:
             return _fail(symbol, "no_strikes_near_spot")
         now_ts = time.time()
-        quotes: dict[str, dict] = {}
-        stale = 0
         by_symbol = {e["streamer_symbol"]: e for e in near}
-        for i in range(0, len(by_symbol), 900):
-            chunk = list(by_symbol)[i : i + 900]
-            placeholders = ", ".join("?" * len(chunk))
-            for row in conn.execute(
-                f"SELECT symbol, bid, ask, mid, updated_at FROM stream_quotes "
-                f"WHERE symbol IN ({placeholders})",
-                chunk,
-            ):
-                quote = _usable_quote(row, now_ts, max_quote_age_seconds)
-                if quote is None:
-                    stale += 1
-                    continue
-                quotes[row["symbol"]] = quote
+        quotes, stale = _usable_quotes(conn, list(by_symbol), now_ts, max_quote_age_seconds)
         if not quotes:
             return _fail(symbol, "no_fresh_quotes", rejected=stale)
 
@@ -157,77 +144,7 @@ def build_mark_snapshot(
     when: datetime | None = None,
     max_quote_age_seconds: float = DEFAULT_MAX_QUOTE_AGE_SECONDS,
 ) -> dict:
-    """Per-leg quotes + greeks + spot for a position's open legs — the marking substrate.
-
-    Always returns per-leg detail (None for an unusable leg) so a partial mark is still recorded
-    as refusal rows; `ok` is position-level and means EVERY leg is priceable, which is the bar for
-    acting (a side close priced off one good leg and one guess is not a measurement).
-    """
-    when = when or now_et()
-    db_path = Path(db_path)
-    out: dict = {
-        "ok": False,
-        "spot": None,
-        "quotes": {},
-        "greeks": {},
-        "fresh": 0,
-        "stale": 0,
-        "max_spread_pct": None,
-        "leg_spreads": [],
-    }
-    if not legs:
-        return {**out, "reason": "no_legs"}
-    if not db_path.exists():
-        return {**out, "reason": "stream_cache_missing"}
-
-    conn = _connect_ro(db_path)
-    try:
-        symbol = (legs[0].get("position_symbol") or legs[0].get("symbol") or "SPX").strip().upper()
-        tr = conn.execute("SELECT last FROM stream_trades WHERE symbol = ?", (symbol,)).fetchone()
-        out["spot"] = float(tr["last"]) if tr and tr["last"] is not None else None
-
-        now_ts = time.time()
-        streamer_syms = [leg["streamer_symbol"] for leg in legs]
-        placeholders = ", ".join("?" * len(streamer_syms))
-        rows = {
-            r["symbol"]: r
-            for r in conn.execute(
-                f"SELECT symbol, bid, ask, mid, updated_at FROM stream_quotes "
-                f"WHERE symbol IN ({placeholders})",
-                streamer_syms,
-            )
-        }
-        widest = None
-        for sym in streamer_syms:
-            row = rows.get(sym)
-            quote = _usable_quote(row, now_ts, max_quote_age_seconds) if row is not None else None
-            out["quotes"][sym] = quote
-            if quote is None:
-                out["stale"] += 1
-                continue
-            out["fresh"] += 1
-            if quote["mid"] > 0:
-                spread_pct = (quote["ask"] - quote["bid"]) / quote["mid"]
-                widest = spread_pct if widest is None else max(widest, spread_pct)
-                # Both readings of the same width, per leg. A percentage alone cannot tell a
-                # genuinely illiquid leg from a nearly-worthless one: a 0.00/0.01 quote is a 200%
-                # spread and a one-cent cost. The gate needs both to tell those apart, and it needs
-                # them PER LEG -- the widest-by-percent and the widest-by-money can be different
-                # legs, so two separate maxima would refuse a structure neither leg justifies.
-                out["leg_spreads"].append(
-                    {
-                        "symbol": sym,
-                        "pct": round(spread_pct, 4),
-                        "abs": round(quote["ask"] - quote["bid"], 4),
-                    }
-                )
-        out["max_spread_pct"] = round(widest, 4) if widest is not None else None
-        out["greeks"] = _greeks(conn, streamer_syms, now_ts=now_ts, max_age_seconds=max_quote_age_seconds * 6)
-
-        if out["spot"] is None:
-            return {**out, "reason": "no_spot_price"}
-        if out["stale"]:
-            return {**out, "reason": "missing_leg_quotes"}
-        return {**out, "ok": True}
-    finally:
-        conn.close()
+    """Per-leg quotes + greeks + spot for a position's open legs: `core.streamcache.mark_snapshot`,
+    with a leg that names no symbol read against SPX (the module's original underlying). `when` is
+    accepted for the callers' signature and unused, as it always was."""
+    return _mark_snapshot(db_path, legs, max_quote_age_seconds=max_quote_age_seconds, default_symbol="SPX")

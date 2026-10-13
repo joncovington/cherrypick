@@ -233,6 +233,11 @@ CREATE TABLE IF NOT EXISTS fly_entry_attempts (
 );
 CREATE INDEX IF NOT EXISTS idx_fly_attempts_date ON fly_entry_attempts(trade_date, arm);
 CREATE INDEX IF NOT EXISTS idx_fly_attempts_outcome ON fly_entry_attempts(trade_date, outcome);
+-- Covering for the per-arm reads (2026-10-12): the console's attempts rail counts each arm's
+-- sessions seen and filled over the whole table, which scanned all ~508k rows on every page load
+-- (0.9 s, 1.4 s scoped to one arm; 0.16 s and 0.02 s with this). Built once, on the first open
+-- after it lands (~1.5 s on the paper ledger at that size).
+CREATE INDEX IF NOT EXISTS idx_fly_attempts_arm_date_outcome ON fly_entry_attempts(arm, trade_date, outcome);
 
 -- One row per symbol: the current auto-escalated streamer ATM-window width this loop is requesting,
 -- separate from the engine's own configured default. Written/read by stream_window.py, which widens
@@ -317,6 +322,7 @@ CREATE TABLE IF NOT EXISTS fly_live_orders (
     fill_dist_widths   REAL,
     fill_dist_moves    REAL,
     fill_obs_at        TEXT,              -- the path observation the price measures came from
+    fill_obs_age_s     REAL,              -- seconds from that observation to the fill moment
     fill_mid           REAL,
     fill_natural       REAL,
     fill_mid_gap       REAL,
@@ -733,6 +739,11 @@ _ADDED_STREAM_WINDOW_COLUMNS = {
     "last_checked_occurrences": "INTEGER NOT NULL DEFAULT 0",
 }
 
+# How old the quotes behind an at-fill price gap were (2026-10-12, fill_facts.MAX_QUOTE_AGE_SECONDS).
+_ADDED_LIVE_ORDER_COLUMNS = {
+    "fill_obs_age_s": "REAL",
+}
+
 
 def _migrate(conn: sqlite3.Connection) -> list[str]:
     """Add any columns missing from an older paper DB. Returns what it added (for tests and logs)."""
@@ -741,6 +752,7 @@ def _migrate(conn: sqlite3.Connection) -> list[str]:
         ("fly_positions", _ADDED_POSITION_COLUMNS),
         ("fly_books", _ADDED_BOOK_COLUMNS),
         ("fly_stream_window", _ADDED_STREAM_WINDOW_COLUMNS),
+        ("fly_live_orders", _ADDED_LIVE_ORDER_COLUMNS),
     ):
         existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         for column, sql_type in columns.items():
@@ -817,8 +829,9 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
 
 def _now() -> str:
     """ET, with offset — see clock.py. Every timestamp this module persists is ET; it was naive
-    machine-local until 2026-07-27."""
-    return clock.now_iso()
+    machine-local until 2026-07-27. The tick's own instant while a replay pins one
+    (`clock.pinned`), so a replayed row's created_at/updated_at agree with its entry_time."""
+    return clock.stamp_iso()
 
 
 def _upsert(conn, table: str, key: str, row: dict) -> None:
@@ -960,53 +973,6 @@ def record_entry_attempt(
         ),
     )
     conn.commit()
-
-
-def last_entry_fill_ts(conn, *, trade_date: str, arm: str, symbol: str) -> str | None:
-    """When this arm last FILLED an entry on this symbol today, or None.
-
-    The cadence clock's input. Read from the position ledger rather than from the attempts table:
-    the ledger is what actually holds a position, and a fill that was written there but whose
-    attempt row failed to write must still consume the arm's slot. Telemetry may be lossy; the
-    clock may not.
-
-    Live rows carry `entry_fill_status` -- a *placed* order is 'pending' until confirmed, and it is
-    counted here, because the slot is spent the moment an order is working. Paper rows leave the
-    column NULL and are counted unconditionally. Rejected and cancelled entries are excluded: those
-    never became a position, so they never used the slot.
-    """
-    row = conn.execute(
-        "SELECT MAX(entry_time) AS t FROM fly_positions WHERE trade_date = ? AND arm = ? "
-        "AND symbol = ? AND status != 'voided' AND void_reason IS NULL "
-        "AND (entry_fill_status IS NULL OR entry_fill_status IN ('filled', 'pending'))",
-        (trade_date, arm, symbol.upper()),
-    ).fetchone()
-    return row["t"] if row and row["t"] else None
-
-
-def day_structure_keys(conn, *, trade_date: str, arm: str, symbol: str) -> set:
-    """Every structure this arm has already established today, as (kind, side, center, wing, far).
-
-    The duplicate rule's input. Deliberately spans the WHOLE day regardless of status: flies are
-    completed, not closed, so a structure never leaves the book before EOD and re-entering it later
-    in the session is the same trade twice. Voided rows are excluded -- those are rows the module
-    has disavowed as evidence, so they constrain nothing.
-    """
-    rows = conn.execute(
-        "SELECT kind, side, center, wing_width, far_width FROM fly_positions "
-        "WHERE trade_date = ? AND arm = ? AND symbol = ? AND status != 'voided' AND void_reason IS NULL",
-        (trade_date, arm, symbol.upper()),
-    ).fetchall()
-    return {
-        (
-            str(r["kind"] or ""),
-            str(r["side"] or ""),
-            None if r["center"] is None else float(r["center"]),
-            None if r["wing_width"] is None else float(r["wing_width"]),
-            None if r["far_width"] is None else float(r["far_width"]),
-        )
-        for r in rows
-    }
 
 
 def record_iteration(
