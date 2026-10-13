@@ -181,7 +181,9 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
   gap is the measurement.
 - **Order legs are OCC; ledger legs are streamer symbols.** `live_orders.order_symbol` converts at the
   order boundary (`core.streamcache.streamer_to_occ_symbol`) and refuses a symbol with no OCC form;
-  the test `FakeBroker` rejects any non-OCC leg. A live row records the quantity its order carried
+  the test `FakeBroker` rejects any non-OCC leg. The agent path's `tt execute_trade` and
+  `adjust_order` run every leg through the same function before anything reaches the broker
+  (`reason: leg_symbol_not_orderable` on a refusal). A live row records the quantity its order carried
   (`synthetic_entry_fill(quantity=)`), and the exit accounting scales P&L, close fees and slippage
   by the row's quantity -- a no-op on paper, where every row is quantity 1.
 - **Each loop declares its own open legs to the streamer.** `stream_request.py` writes `meic.json` from
