@@ -276,18 +276,30 @@ def derive(week: dict, policy_name: str, config: dict) -> dict:
             if tick is not None:
                 exit_costs += _close_roles(week, tick, long_roles, config, exits)["total"]
             else:
-                # Never disposed — fall back to what the real arm recorded (its own expiry
-                # settlement); a derivation inventing a Monday price the record does not hold
-                # would be a guess.
+                # No mark at the disposition minute — fall back to what the real arm recorded; a
+                # derivation inventing a Monday price the record does not hold would be a guess.
+                # This is the USUAL case, not the rare one: the recorder marks open legs only, so
+                # the tick the arm disposed on is the last one it writes, and it lands before the
+                # minute is reached.
+                itm_cash_longs = 0
                 for role in long_roles:
                     leg = week["legs"][role]
                     if leg["close_value"] is None:
                         return _not_derivable(week, policy_name, "no_mark_mon_open")
-                    exits[role] = {
-                        "value": leg["close_value"],
-                        "kind": leg["close_kind"] or "cash_settled",
-                        "session": leg["expiration"],
-                    }
+                    kind = leg["close_kind"] or "cash_settled"
+                    exits[role] = {"value": leg["close_value"], "kind": kind, "session": leg["expiration"]}
+                    if kind == "cash_settled" and leg["close_value"] > 0:
+                        itm_cash_longs += 1
+                # The recorded price comes with the recorded cost of getting it. Every exit charge
+                # on the row that is not a settlement charge is the disposal's fee and slippage
+                # (the shorts' settlement is re-derived above, and an ITM long that cash-settled
+                # pays its own settlement fee). Leaving this out made every path week $0.44-0.49
+                # rich, inside the old $0.50 tolerance and so never reported.
+                for p in week["positions"].values():
+                    exit_costs += (
+                        (p["exit_cost"] or 0) + (p["exit_slippage"] or 0) - (p["settlement_fees"] or 0)
+                    )
+                exit_costs += engine.settlement_fee(itm_cash_longs)
         trigger = {"reason": f"expiry_longs_{spec['longs']}", "session": day}
 
     # Anything not exited by its trigger falls through to the control terminal.
@@ -395,11 +407,16 @@ def _break_date(conn, key: str) -> str | None:
     return None if row is None else str(row[0])
 
 
-def validate_against_control(conn, config: dict, tolerance: float = 0.50) -> dict:
+def validate_against_control(conn, config: dict, tolerance: float = 0.01) -> dict:
     """The derivation reproduced against reality: derived `control` vs the control arm's real
     recorded net (from the control arm's OWN marks), and derived `expiry-longs-mon` vs the path
     arm's real net. A mismatch past `tolerance` dollars means the replay and the arms disagree
-    about the same trade, and the policy table should not be trusted until it is explained."""
+    about the same trade, and the policy table should not be trusted until it is explained.
+
+    The default is one cent, which is what "to the cent" means: the derived net and the recorded
+    net round their components separately, so a one-cent difference is rounding and anything more
+    is a disagreement. It was $0.50 until 2026-10-12, wide enough to hide a $0.49 bias on every
+    path week (the long disposal's cost, missing from the derivation)."""
     checks = []
     for arm, policy_name in (("control", "control"), ("path", "expiry-longs-mon")):
         for week_of in _completed_weeks(conn, arm):
@@ -420,7 +437,7 @@ def validate_against_control(conn, config: dict, tolerance: float = 0.50) -> dic
                     "derived_net": derived["net_pnl"],
                     "real_net": round(real_gross - real_fees, 2),
                     "diff": diff,
-                    "ok": abs(diff) <= tolerance,
+                    "ok": abs(diff) <= tolerance + 1e-9,
                 }
             )
 

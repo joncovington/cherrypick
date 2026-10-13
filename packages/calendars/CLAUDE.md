@@ -38,6 +38,8 @@ tick at recorded prices through the live cost stack.
 **Validated against reality every run.** `validate_against_control` re-derives `control` from its
 own marks and must match its real recorded net **to the cent**; `expiry-longs-mon` likewise against
 `path`. A derivation that cannot reproduce the books beside it has no business ranking policies.
+The default tolerance is $0.01 (rounding); it was $0.50 until 2026-10-12, which hid a $0.49 bias on
+every `path` week (the long disposal's cost was missing from the recorded-close fallback).
 
 **A Friday-entry regime is designed, not built** — [docs/friday-entry-arm.md](docs/friday-entry-arm.md)
 (`dc_7_10` vs this `dc_4_7`). It is NOT a fourth book: it prices its own snapshot and strikes, so it
