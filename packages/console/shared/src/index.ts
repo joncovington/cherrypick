@@ -16,6 +16,7 @@ export * from "./types/morning.js";
 export * from "./types/technicals.js";
 export * from "./types/performance.js";
 export * from "./types/live.js";
+export * from "./types/liveBooks.js";
 export * from "./types/regimeCuts.js";
 export * from "./types/fliesAgent.js";
 export * from "./types/openingRange.js";

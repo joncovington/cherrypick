@@ -6,6 +6,7 @@ import { MetricTiles } from "./MetricTiles";
 import { ExcursionsCard } from "./ExcursionsCard";
 import { CumulativeCard } from "./CumulativeCard";
 import { PairedABCard } from "./PairedABCard";
+import { TradeNetHistogram } from "./TradeNetHistogram";
 
 /**
  * The suite-wide performance slide: one calibration reading per arm, via
@@ -90,6 +91,7 @@ export function PerformanceSlide({ module, mode = "paper" }: { module: Performan
               updatedAt={dataUpdatedAt}
             >
               <MetricTiles reading={g.reading} peakRisk={g.peakRisk} />
+              <TradeNetHistogram nets={g.tradeNets} />
               {underpoweredByBase.get(g.tag) === true && (
                 <p className="muted" style={{ fontSize: 11, marginTop: "0.4rem" }}>
                   <span className="chip chip-warn">underpowered</span> every experiment paired against this
