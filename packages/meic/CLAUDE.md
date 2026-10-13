@@ -171,12 +171,19 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
   expiry P&L are charged per side, so before this a live row's sides did not add to its net. A
   pending row holds its slot but is not managed for exits. A close stashes its decision on the row
   (`pending_exit_json`, `{side}_stop_fill_status='pending'`), and the shared exit accounting
-  (`paper._apply_exit_decision`) runs only on confirmation, at the actual price. A close still working
+  (`paper._apply_exit_decision`) runs only on confirmation, at the actual price: the side's two leg
+  fills when both are reported on the expected action and the debit is within the limit, else the
+  booked price (`exit_fill_price`; `{side}_exit_fill_source` says which). A close still working
   next tick is cancelled and re-priced under the same stop rule off fresh quotes; one that dies clears
   its marker and the side is re-evaluated (nothing is reopened). An unfilled end-of-day close on a
   cash-settled side is cancelled at settlement and falls through to expiry. Resubmit-not-escalate,
   re-price-every-tick and settle-not-chase keep live's rule byte-identical to paper's, so the paper↔live
   gap is the measurement.
+- **Order legs are OCC; ledger legs are streamer symbols.** `live_orders.order_symbol` converts at the
+  order boundary (`core.streamcache.streamer_to_occ_symbol`) and refuses a symbol with no OCC form;
+  the test `FakeBroker` rejects any non-OCC leg. A live row records the quantity its order carried
+  (`synthetic_entry_fill(quantity=)`), and the exit accounting scales P&L, close fees and slippage
+  by the row's quantity -- a no-op on paper, where every row is quantity 1.
 - **Each loop declares its own open legs to the streamer.** `stream_request.py` writes `meic.json` from
   the paper loop and `meic-live.json` from the live loop's preamble (`register_live`, best-effort,
   dry-run included), each with the open-IC leg query against that loop's OWN ledger. Leg columns hold

@@ -61,7 +61,7 @@ index that tells you which one to open.
 | `entry` | Entry-permission rules MEIC and flies must apply identically: cadence and the leg-sign rule. |
 | `structures` | Pure option-structure formulas earnings and calendars must agree on (the straddle-based expected move), and the nickel tick rounding every live order builder uses (`tick_floor`/`tick_ceil`). |
 | `streamer` | The generic persistent DXLink streaming engine; `packages/streamer` is the daemon around it. |
-| `streamcache` | The shared stream-cache schema and its SQLite helpers — the producer/reader contract. |
+| `streamcache` | The shared stream-cache schema and its SQLite helpers — the producer/reader contract. Also the one OCC ↔ streamer symbol pair (`occ_to_streamer_symbol`, pinned to the SDK; `streamer_to_occ_symbol`, its round-trip-checked inverse — not the SDK's, which mangles digit roots and two-decimal strikes). |
 | `streamrequests` | The subscription registry: how a module declares its symbols, plus the union read the streamer subscribes from and the orchestrator checks staleness against. |
 | `dxfeed` | On-demand DXLink event collectors, for a snapshot rather than a stream. |
 | `gex` | The GEX engine: a pure function over an option-chain snapshot. Copying it once let the math drift ~75×. One gamma per strike, the OTM side's (`strike_gamma`, from 2026-10-12). |

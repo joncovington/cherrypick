@@ -32,6 +32,49 @@ def test_occ_conversion_matches_the_sdk_exactly():
         assert streamcache.occ_to_streamer_symbol(occ) == Option.occ_to_streamer_symbol(occ), occ
 
 
+# (streamer, OCC) pairs exactly as the streamer recorded them in `stream_chain` (the SDK's
+# `streamer_symbol` and `symbol` on one chain row), read from the live cache on 2026-10-12.
+CACHE_PAIRS = [
+    (".XSP261009P460", "XSP   261009P00460000"),
+    (".XSP261009C460", "XSP   261009C00460000"),
+    (".SPXW261009P3000", "SPXW  261009P03000000"),
+    (".SPX261016C200", "SPX   261016C00200000"),
+    (".SPY261009P500", "SPY   261009P00500000"),
+    (".TQQQ261009C40", "TQQQ  261009C00040000"),
+    (".VXX261016P5", "VXX   261016P00005000"),
+    (".SLV261009C15", "SLV   261009C00015000"),
+]
+
+
+def test_streamer_to_occ_matches_the_pairs_the_streamer_recorded():
+    for streamer, occ in CACHE_PAIRS:
+        assert streamcache.streamer_to_occ_symbol(streamer) == occ, streamer
+        assert streamcache.occ_to_streamer_symbol(occ) == streamer, occ
+
+
+def test_streamer_to_occ_inverts_the_forward_converter_on_every_case():
+    """Fractional strikes (52.5, 52.25), padded and non-alphanumeric roots, and an adjusted root
+    with a digit -- the cases the SDK's own `streamer_symbol_to_occ` gets wrong."""
+    for occ in [*OCC_CASES, "KR    260918P00052250", "TNA1  261016C00050000", "XSP   261012P00580000"]:
+        assert streamcache.streamer_to_occ_symbol(streamcache.occ_to_streamer_symbol(occ)) == occ, occ
+
+
+def test_streamer_to_occ_refuses_what_has_no_occ_form():
+    for sym in (
+        "",
+        "XSP",
+        ".XSP",
+        "XSP   261012P00580000",
+        ".TOOLONGR261012P5",
+        ".XSP261012P123456",
+        ".XSP261012P5.1234",
+        ".XSP261012P52.50",
+        ".XSP261012X5",
+        ".XSP26101P5",
+    ):
+        assert streamcache.streamer_to_occ_symbol(sym) == "", sym
+
+
 def test_non_option_symbols_convert_to_empty_string():
     """An equity holding has no OCC form. "" lets a caller iterating a mixed position list say "this one
     is already its own streamer symbol" instead of having to pre-classify."""
