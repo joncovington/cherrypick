@@ -70,6 +70,27 @@ export interface LiveVsPaperSide {
 }
 
 /**
+ * The flies pilot's live completion against contemporaneous paper on the same arm and sessions,
+ * and the abort rule over the gap (cherrypick.flies.analytics.live_vs_paper, mirrored and pinned
+ * by test/flies-live-vs-paper-mirror.test.ts).
+ *
+ * `paper` is null when the paper ledger could not be read -- absent, or the read threw -- and
+ * `degraded` says which. (An absent paper store is degraded here although it is not elsewhere:
+ * this block exists only once a live ledger has pilot entries, and a pilot with nothing to compare
+ * against has lost its abort rule, not legitimately got nothing to show.) The gap and the verdict are then UNAVAILABLE: `completionGapPct` is null
+ * and `abort.triggered` is false only because nothing was evaluated, so a consumer must show the
+ * rule as unavailable rather than as passing.
+ */
+export interface LiveVsPaper {
+  arm: string;
+  live: LiveVsPaperSide;
+  paper: LiveVsPaperSide | null;
+  completionGapPct: number | null;
+  abort: { minLiveEntries: number; gapLimitPct: number; armed: boolean; triggered: boolean };
+  degraded?: { reason: string };
+}
+
+/**
  * The flies Performance tab's figures for the live pilot's arm, every session through the one
  * shown -- `readFliesPerformance` in live mode, carried rather than recomputed, so the two pages
  * cannot disagree -- plus the per-session return on session peak risk, which that tab does not have.
@@ -98,13 +119,7 @@ export interface LivePerformance {
   equity: Array<{ date: string; netPnl: number; equity: number; drawdown: number }>;
   completion: LiveCompletion;
   completionTrend: Array<{ day: string; legged: number; completed: number; ratePct: number | null }>;
-  liveVsPaper: {
-    arm: string;
-    live: LiveVsPaperSide;
-    paper: LiveVsPaperSide;
-    completionGapPct: number | null;
-    abort: { minLiveEntries: number; gapLimitPct: number; armed: boolean; triggered: boolean };
-  } | null;
+  liveVsPaper: LiveVsPaper | null;
   onRisk: LiveOnRisk;
   /** Newest first. */
   sessions: LiveRiskSession[];

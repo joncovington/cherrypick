@@ -1,5 +1,13 @@
-import type { ContangoMetrics, ContangoPayload, ContangoSessionRow, DatedValue } from "@console/shared";
+import { useState } from "react";
+import type { ContangoHistoryRow, ContangoMetrics, ContangoPayload, ContangoSessionRow, DatedValue } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtNum } from "../../components/DataTable";
+import { ScopeSelect } from "../../components/ScopeBar";
+import { TradeTotalsChip, tradeMoneyColumns } from "../../components/TradeMoney";
+import { HistoryTable } from "../../components/table/HistoryTable";
+import { useUrlDateRange } from "../../components/table/DateRange";
+import type { ColumnDef } from "../../components/table/columns";
+import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
+import { useContangoHistory } from "../../lib/api";
 import { GridCard, StatTile } from "../../components/grid/GridCard";
 import { TimeLineChart, type TimeLineSeries } from "../../components/chart/TimeLineChart";
 import { SERIES_COLORS } from "../../components/Charts";
@@ -272,6 +280,7 @@ export function ContangoPerformance({ data, metrics }: { data: ContangoPayload |
         <Card title="performance" isError>
           <p className="integrity-warn">{metrics.error}</p>
         </Card>
+        <PerformanceSlide module="contango" />
       </div>
     );
   }
@@ -312,6 +321,7 @@ export function ContangoPerformance({ data, metrics }: { data: ContangoPayload |
           stretch its own regime read sat at or above 1.0.
         </p>
       </Card>
+      <PerformanceSlide module="contango" />
     </div>
   );
 }
@@ -320,13 +330,19 @@ export function ContangoCosts({ data }: { data: ContangoPayload | undefined }) {
   const fills = data?.fills ?? [];
   const floor = data?.params.slippageFloorBps ?? 2;
   const withBps = fills.filter((f) => f.slippageBps !== null);
+  const withFees = fills.filter((f) => f.fees !== null);
   const avgBps = withBps.length === 0 ? null : withBps.reduce((t, f) => t + (f.slippageBps ?? 0), 0) / withBps.length;
   const missed = (data?.sessions ?? []).filter((s) => s.action === "missed");
   return (
     <div className="cards cards-wide">
       <div className="grid-12">
         <StatTile label="slippage per fill" value={avgBps === null ? null : `${avgBps.toFixed(2)} bps`} tone="dim" foot={`against the replay's ${String(floor)} bps a side · ${String(withBps.length)} fills`} />
-        <StatTile label="fees" value={fmtMoney(fills.reduce((t, f) => t + f.fees, 0))} tone="dim" foot="SEC and TAF on sells; buys are free" />
+        <StatTile
+          label="fees"
+          value={withFees.length === 0 ? null : fmtMoney(withFees.reduce((t, f) => t + (f.fees ?? 0), 0))}
+          tone="dim"
+          foot={`SEC and TAF on sells; buys are free${withFees.length < fills.length ? ` · ${String(withFees.length)} of ${String(fills.length)} fills recorded` : ""}`}
+        />
         <StatTile label="missed windows" value={String(missed.length)} tone="dim" foot="an arm that could not act holds what it held" />
         <StatTile label="distributions" value={fmtMoney((data?.distributions ?? []).reduce((t, d) => t + d.amount, 0))} tone="dim" foot="the cash fund's dividends, credited from the technicals store" />
       </div>
@@ -345,12 +361,12 @@ export function ContangoCosts({ data }: { data: ContangoPayload | undefined }) {
             <td>{f.side}</td>
             <td>{f.symbol}</td>
             <td>{f.shares}</td>
-            <td>{fmtCash(f.side === "buy" ? -f.value : f.value)}</td>
-            <td>{fmtMoney(-f.slippage)}</td>
+            <td>{fmtCash(f.value)}</td>
+            <td>{f.slippage === null ? "n/r" : fmtMoney(-f.slippage)}</td>
             <td className={f.slippageBps !== null && f.slippageBps > floor + 0.01 ? "pnl-neg" : undefined}>
               {f.slippageBps === null ? "—" : f.slippageBps.toFixed(2)}
             </td>
-            <td>{fmtMoney(-f.fees)}</td>
+            <td>{f.fees === null ? "n/r" : fmtMoney(-f.fees)}</td>
           </tr>
         ))}
       </DataCard>
@@ -426,43 +442,84 @@ export function ContangoPositions({ data }: { data: ContangoPayload | undefined 
   );
 }
 
+const MONEY = tradeMoneyColumns<ContangoHistoryRow>("the entry mid per share: a purchase, so a debit");
+
+/** The standard's columns, with the fund's distributions as a third cash flow between exit and
+ *  gross: entry + exit + distributions = gross. */
+const HISTORY_COLUMNS: ColumnDef<ContangoHistoryRow>[] = [
+  {
+    id: "dates",
+    header: "held",
+    kind: "describe",
+    render: (r) => (
+      <>
+        {r.entrySession}
+        <span className="muted"> → {r.exitSession ?? "—"}</span>
+      </>
+    ),
+  },
+  { id: "arm", header: "arm", kind: "describe", render: (r) => r.arm },
+  { id: "symbol", header: "symbol", kind: "describe", render: (r) => r.symbol },
+  ...MONEY.describe,
+  { id: "reason", header: "why it ended", kind: "describe", className: "muted", render: (r) => r.exitReason ?? "—" },
+  ...MONEY.money.flatMap((c): ColumnDef<ContangoHistoryRow>[] => {
+    if (c.id === "gross") return [{ ...c, title: "entry + exit + distributions, before any cost" }];
+    if (c.id === "settle") return [{ ...c, title: "a share trade records no settlement charge" }];
+    if (c.id !== "exit") return [c];
+    return [
+      { ...c, title: "the sale, whole position" },
+      {
+        id: "distrib",
+        header: "distrib.",
+        title: "the fund's distributions credited while it was held",
+        kind: "money",
+        render: (r) => fmtCash(r.distributions),
+      },
+    ];
+  }),
+];
+
+function ContangoStintHistory({ data }: { data: ContangoPayload | undefined }) {
+  const [arm, setArm] = useState<string | null>(null);
+  const { from, to } = useUrlDateRange();
+  const history = useContangoHistory({ arm, from, to });
+  return (
+    <HistoryTable
+      table="contango-history"
+      title="closed holding stints"
+      className="view-fade"
+      defs={HISTORY_COLUMNS}
+      rows={history.data?.rows ?? []}
+      rowKey={(r) => r.positionId}
+      loading={history.isLoading}
+      isError={history.isError}
+      busy={history.isPlaceholderData}
+      empty={
+        from !== null || to !== null
+          ? "no stint closed in this date range"
+          : "no stint has closed yet -- one closes on each switch"
+      }
+      updatedAt={history.data === undefined ? undefined : history.dataUpdatedAt}
+      dateBasis="closed"
+      filters={
+        <ScopeSelect
+          label="arm filter"
+          value={arm}
+          options={data?.params.arms.map((a) => a.arm)}
+          onChange={setArm}
+          allLabel="all arms"
+        />
+      }
+      footer={history.data !== undefined && <TradeTotalsChip totals={history.data.totals} noun="stints" settlementRecorded={false} />}
+    />
+  );
+}
+
 export function ContangoHistory({ data }: { data: ContangoPayload | undefined }) {
-  const closed = (data?.stints ?? []).filter((s) => s.status === "closed");
   const sessions = data?.sessions ?? [];
   return (
     <div className="cards cards-wide">
-      <DataCard
-        title="closed holding stints"
-        headers={["held", "arm", "symbol", "shares", "entry", "exit", "distrib.", "gross", "fees", "slip", "net", "why it ended"]}
-        loading={data === undefined}
-        rowCount={closed.length}
-        numFrom={3}
-        empty="no stint has closed yet -- one closes on each switch"
-      >
-        {closed.map((s) => (
-          <tr key={s.positionId}>
-            <td>
-              {s.entrySession}
-              <span className="muted"> → {s.exitSession ?? "—"}</span>
-            </td>
-            <td>{s.arm}</td>
-            <td>{s.symbol}</td>
-            <td>{s.shares}</td>
-            <td>{fmtCash(s.entryValue)}</td>
-            <td>{fmtCash(s.exitValue)}</td>
-            <td>{fmtCash(s.distributions)}</td>
-            <td>
-              <PnlCell v={s.grossPnl} />
-            </td>
-            <td>{fmtMoney(s.fees === null ? null : -s.fees)}</td>
-            <td>{fmtMoney(s.slippage === null ? null : -s.slippage)}</td>
-            <td>
-              <PnlCell v={s.netPnl} />
-            </td>
-            <td className="muted">{s.exitReason ?? "—"}</td>
-          </tr>
-        ))}
-      </DataCard>
+      <ContangoStintHistory data={data} />
       <DataCard
         title="daily NAV log"
         headers={["date", "arm", "ratio", "before → after", "action", "holding", "cash", "NAV"]}

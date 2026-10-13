@@ -172,6 +172,33 @@ def test_validation_is_clean_to_the_cent(week_conn):
     assert validation["ok"], validation["mismatches"]
 
 
+def _drop_post_disposition_marks(conn):
+    """The live recorder's shape: it marks open legs only, so nothing is recorded at or after the
+    tick the arm disposed on, and the derivation has to fall back to the recorded close."""
+    conn.execute("DELETE FROM dc_marks WHERE session_date = '2026-08-24'")
+    conn.commit()
+
+
+def test_validation_is_clean_to_the_cent_without_a_monday_mark(week_conn):
+    """The fallback path must carry the disposal's recorded costs with its recorded price. Without
+    them every live path week came out $0.44-0.49 rich, inside the old $0.50 tolerance."""
+    _drop_post_disposition_marks(week_conn)
+    validation = exit_policies.validate_against_control(week_conn, {})
+    assert validation["compared"] == 2
+    assert validation["ok"], validation["mismatches"]
+    derived = _derive(week_conn, "expiry-longs-mon")
+    assert derived["exits"]["back_put"]["kind"] == "traded"
+
+
+def test_one_cent_is_the_default_tolerance(week_conn):
+    """A disagreement of a few cents must be reported, not absorbed."""
+    week_conn.execute("UPDATE dc_positions SET fees = fees + 0.05 WHERE position_id LIKE '%:control:put'")
+    week_conn.commit()
+    validation = exit_policies.validate_against_control(week_conn, {})
+    assert not validation["ok"]
+    assert [m["arm"] for m in validation["mismatches"]] == ["control"]
+
+
 def test_profit_targets_trigger_on_successive_days(week_conn):
     assert _derive(week_conn, "pt-10")["trigger"]["session"] == "2026-08-18"
     assert _derive(week_conn, "pt-20")["trigger"]["session"] == "2026-08-19"
@@ -332,6 +359,15 @@ def test_expiry_derivation_carries_the_delivered_shares(spy_week_conn):
 def test_the_derivation_still_reproduces_the_books_it_sits_beside(spy_week_conn):
     """The module's one guarantee, under the new settlement style: a derivation that cannot
     reproduce the real arms has no business ranking the policies between them."""
+    validation = exit_policies.validate_against_control(spy_week_conn, SPY_CONFIG)
+    assert validation["compared"] == 2
+    assert validation["ok"], validation["mismatches"]
+
+
+def test_physical_week_is_clean_to_the_cent_without_a_monday_mark(spy_week_conn):
+    """Delivered shares put an assignment charge in `settlement_fees`; the fallback must take the
+    disposal's costs net of it, or the assignment fee is charged twice."""
+    _drop_post_disposition_marks(spy_week_conn)
     validation = exit_policies.validate_against_control(spy_week_conn, SPY_CONFIG)
     assert validation["compared"] == 2
     assert validation["ok"], validation["mismatches"]

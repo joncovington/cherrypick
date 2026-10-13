@@ -15,7 +15,51 @@ unambiguous across a March/November boundary and `datetime.fromisoformat` round-
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from datetime import datetime
+
 # ET and the "what does now mean" primitives live in cherrypick.core.clock: four modules had written
 # the same functions and ~10 more sites re-derived the zone inline, which is how two of them come to
 # disagree about what date a session belongs to. The arithmetic BELOW is this module's own.
 from cherrypick.core.clock import ET, hhmm_to_min, minute_of_day, now_et, now_iso, today_iso  # noqa: F401
+
+# The instant a replayed tick stands for, while one is being processed. Unset (the live and paper
+# loops) means the wall clock, exactly as before. The engine already decides on the snapshot's own
+# `now_min`; without this the book STAMPED the wall clock beside that decision, so a replayed entry
+# carried today's entry_time, every latency measured the replay's runtime, and the cadence clock
+# (keyed on `entry_time_min`) paced a historical session against the hour the replay ran.
+_PINNED: ContextVar[datetime | None] = ContextVar("flies_stamp_clock", default=None)
+
+
+@contextmanager
+def pinned(when: datetime | None) -> Iterator[None]:
+    """Stamp every persisted timestamp as `when` for the duration of the block.
+
+    `None` pins nothing, so a caller can pass through whatever it was given. A naive `when` is
+    refused rather than read as ET: a stored instant that needs outside context to interpret is the
+    bug this module's clock exists to prevent.
+    """
+    if when is None:
+        yield
+        return
+    if when.tzinfo is None or when.utcoffset() is None:
+        raise ValueError(f"pinned clock needs an aware datetime, got {when!r}")
+    token = _PINNED.set(when.astimezone(ET))
+    try:
+        yield
+    finally:
+        _PINNED.reset(token)
+
+
+def stamp_et() -> datetime:
+    """The instant a ledger write records: the pinned tick when one is set, else now."""
+    when = _PINNED.get()
+    return when if when is not None else now_et()
+
+
+def stamp_iso() -> str:
+    """`stamp_et` for persistence, in `now_iso`'s exact format (seconds, offset kept)."""
+    when = _PINNED.get()
+    return when.isoformat(timespec="seconds") if when is not None else now_iso()

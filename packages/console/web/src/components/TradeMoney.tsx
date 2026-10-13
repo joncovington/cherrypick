@@ -81,7 +81,16 @@ export function tradeMoneyColumns<R extends TradeMoney>(priceTitle: string): {
   };
 }
 
-export function TradeTotalsChip({ totals, noun = "positions" }: { totals: TradeTotals | undefined; noun?: string }) {
+export function TradeTotalsChip({
+  totals,
+  noun = "positions",
+  settlementRecorded = true,
+}: {
+  totals: TradeTotals | undefined;
+  noun?: string;
+  /** False for a module whose ledger never records settlement (contango's share trades): `n/r`, never $0. */
+  settlementRecorded?: boolean;
+}) {
   if (totals === undefined || totals.positions === 0) return null;
   return (
     <span
@@ -89,7 +98,7 @@ export function TradeTotalsChip({ totals, noun = "positions" }: { totals: TradeT
       title={`Over every ${noun.replace(/s$/, "")} matching these filters — not just this page. Gross − fees − settlement − slippage = net: this module charges slippage as a cost.`}
     >
       net <PnlCell v={totals.net} /> · {totals.positions.toLocaleString()} {noun} · gross {fmtMoney(totals.gross)} · fees{" "}
-      {fmtMoney(totals.fees)} · settlement {fmtMoney(totals.settlementFees)} · slippage {fmtMoney(totals.slippage)}
+      {fmtMoney(totals.fees)} · settlement {settlementRecorded ? fmtMoney(totals.settlementFees) : "n/r"} · slippage {fmtMoney(totals.slippage)}
     </span>
   );
 }

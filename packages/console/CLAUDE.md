@@ -465,6 +465,7 @@ net — each money header's `title` stating its definition.
 | bwb | `readers/bwb.ts` `bwbTradeCash` | `bwb-trade-standard` | slippage charged inside `fees`; each part subtracted once; a broker-reconciled row takes none out |
 | earnings | `readers/earnings.ts` `earningsTradeCash` | `earnings-trade-standard` | `entry_cost`/`exit_cost` carry slippage and (exit) settlement fee; history is closed trades across both books |
 | calendars, pmcc, curve | `readers/positionCash.ts`, `components/TradeMoney.tsx` | `position-trade-standard` (via curve), `pmcc-`/`calendars-trade-standard` on fixtures from each module's `db.connect` | exit kinds add `assigned`; calendars' history is per week and arm, net null until every position (shares included) has closed, totals over finished weeks only |
+| contango | `readers/contango.ts` `contangoTradeCash` | `contango-trade-standard`, on a fixture from its `db.connect` | a stint is a fund bought and sold: entry (the purchase) + exit (the sale) + distributions = gross; slippage charged as a cost; settlement never recorded, so `n/r` |
 
 ## History-table controls
 
@@ -481,7 +482,7 @@ definition tooltip, cell, kind); the controls come from that list.
   picker (Monday-first, nothing after today); `?from=&to=` written with `replace`; presets end today in
   New York time. **The server applies it** (`readers/dateRange.ts`: one parser, one clause builder), so
   counts and totals describe the range. Each module bounds the date its history is ABOUT, and the bar
-  names it: trade date for flies and meic, close date for bwb/pmcc/curve/earnings (an open position is
+  names it: trade date for flies and meic, close date for bwb/pmcc/curve/earnings/contango (an open position is
   outside any range), week for calendars.
 - **`HistoryTable`** (`components/table/HistoryTable.tsx`) is the card for every module but flies.
   Money and `numeric` columns right-align per column (`td.num`), since a reorderable table cannot align

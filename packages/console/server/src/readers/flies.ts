@@ -2,7 +2,7 @@ import { NO_RANGE, rangeClauses, type DateRange } from "./dateRange.js";
 import { concededArmMoney, entryOutcomes } from "./armCosts.js";
 import type { ArmCostsPayload } from "@console/shared";
 import path from "node:path";
-import type { FliesPayload, FliesBookRow, FliesPositionRow, Paged, TradingMode } from "@console/shared";
+import type { FliesPayload, FliesBookRow, FliesPositionRow, LiveVsPaper, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { hasColumn, memoOnStore, readJson, readOnlyDb, withReadOnlyDb, num, str, type DatabaseHandle } from "./db.js";
 import {
@@ -1548,18 +1548,42 @@ export interface FliesPerformance {
   };
   completionTrend: Array<{ day: string; legged: number; completed: number; ratePct: number | null }>;
   rollTrend: Array<{ day: string; legged: number; completed: number; ratePct: number | null }>;
-  liveVsPaper: {
-    arm: string;
-    live: { sessions: number; entries: number; completed: number; completionRatePct: number | null; medianLatencyMin: number | null; avgCredit: number | null };
-    paper: { sessions: number; entries: number; completed: number; completionRatePct: number | null; medianLatencyMin: number | null; avgCredit: number | null };
-    completionGapPct: number | null;
-    abort: { minLiveEntries: number; gapLimitPct: number; armed: boolean; triggered: boolean };
-  } | null;
+  liveVsPaper: LiveVsPaper | null;
 }
 
+/**
+ * The flies pilot's abort rule, mirrored from cherrypick.flies.analytics (ABORT_MIN_LIVE_ENTRIES,
+ * ABORT_COMPLETION_GAP, live_vs_paper). Pinned constant-for-constant and verdict-for-verdict by
+ * test/flies-live-vs-paper-mirror.test.ts, which asks the Python itself.
+ */
+export const ABORT_MIN_LIVE_ENTRIES = 30;
+export const ABORT_COMPLETION_GAP = 0.15;
 
-const ABORT_MIN_LIVE_ENTRIES = 30;
-const ABORT_COMPLETION_GAP = 0.15;
+/** Python's `round(x, 4)` for the rates and the gap: the rule compares the ROUNDED gap, so a
+ *  0.65 - 0.50 that floats to 0.15000000000000002 is not over the limit there and must not be here. */
+function round4(v: number): number {
+  return Math.round(v * 1e4) / 1e4;
+}
+
+/** `_rate(completed, entries)`: a 0..1 completion rate to four places, null with no entries. */
+export function completionRate(completed: number, entries: number): number | null {
+  return entries > 0 ? round4(completed / entries) : null;
+}
+
+/**
+ * The abort verdict over the two sides' counts, as `live_vs_paper` computes it. `paper` null
+ * means the paper side was not read: no gap, and `triggered` false because nothing was evaluated.
+ */
+export function abortVerdict(
+  live: { entries: number; completed: number },
+  paper: { entries: number; completed: number } | null,
+): { completionGap: number | null; armed: boolean; triggered: boolean } {
+  const liveRate = completionRate(live.completed, live.entries);
+  const paperRate = paper !== null ? completionRate(paper.completed, paper.entries) : null;
+  const gap = liveRate !== null && paperRate !== null ? round4(paperRate - liveRate) : null;
+  const armed = live.entries >= ABORT_MIN_LIVE_ENTRIES;
+  return { completionGap: gap, armed, triggered: armed && gap !== null && gap > ABORT_COMPLETION_GAP };
+}
 
 export function readFliesPerformance(
   config: ConsoleConfig,
@@ -1809,7 +1833,7 @@ export function readFliesPerformance(
   // moved to control on 2026-09-18 the panel and its abort rule measured only the July sessions.
   const liveCfg = ((readJson(config.paths.fliesConfig) ?? {})["live"] ?? {}) as Record<string, unknown>;
   const pilotArm = str(liveCfg["arm"]) ?? "gex";
-  result.liveVsPaper = withReadOnlyDb(path.join(config.paths.fliesDir, "live_trades.db"), null, (liveDb) => {
+  result.liveVsPaper = withReadOnlyDb<LiveVsPaper | null>(path.join(config.paths.fliesDir, "live_trades.db"), null, (liveDb) => {
     const days = liveDb
       .prepare<[string], { d: string }>(
         "SELECT DISTINCT trade_date AS d FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' AND status != 'cancelled' ORDER BY trade_date",
@@ -1828,33 +1852,39 @@ export function readFliesPerformance(
       const done = rows.filter((r) => r["kind"] === "fly");
       const lat = done.map((r) => num(r["completion_latency_min"])).filter((v): v is number => v !== null && v !== 0);
       const credits = rows.map((r) => num(r["credit"])).filter((v): v is number => v !== null);
+      const rate = completionRate(done.length, rows.length);
       return {
         sessions: days.length,
         entries: rows.length,
         completed: done.length,
-        completionRatePct: rows.length > 0 ? (done.length / rows.length) * 100 : null,
+        completionRatePct: rate !== null ? rate * 100 : null,
         medianLatencyMin: median(lat),
         avgCredit: credits.length > 0 ? credits.reduce((s, v) => s + v, 0) / credits.length : null,
       };
     };
     const live = side(liveDb);
-    const paper = withReadOnlyDb(path.join(config.paths.fliesDir, "paper_trades.db"), side(liveDb), side);
-    const gap =
-      live.completionRatePct !== null && paper.completionRatePct !== null
-        ? (paper.completionRatePct - live.completionRatePct) / 100
-        : null;
-    const armed = live.entries >= ABORT_MIN_LIVE_ENTRIES;
+    // The paper side has NO fallback figures. Until 2026-10-12 a failed paper read fell back to
+    // side(liveDb) -- the live figures standing in for paper -- so the gap read 0 and the abort
+    // rule could never fire on exactly the read that should have been loudest.
+    const paperRead = readOnlyDb(path.join(config.paths.fliesDir, "paper_trades.db"), side);
+    const paper = paperRead.status === "ok" ? paperRead.value : null;
+    const verdict = abortVerdict(live, paper);
     return {
       arm: pilotArm,
       live,
       paper,
-      completionGapPct: gap !== null ? gap * 100 : null,
+      completionGapPct: verdict.completionGap !== null ? verdict.completionGap * 100 : null,
       abort: {
         minLiveEntries: ABORT_MIN_LIVE_ENTRIES,
         gapLimitPct: ABORT_COMPLETION_GAP * 100,
-        armed,
-        triggered: armed && gap !== null && gap > ABORT_COMPLETION_GAP,
+        armed: verdict.armed,
+        triggered: verdict.triggered,
       },
+      ...(paperRead.status === "failed"
+        ? { degraded: { reason: `paper ledger read failed: ${paperRead.error}` } }
+        : paperRead.status === "absent"
+          ? { degraded: { reason: "paper ledger absent" } }
+          : {}),
     };
   });
 

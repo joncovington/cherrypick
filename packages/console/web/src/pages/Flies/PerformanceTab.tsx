@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { TradingMode } from "@console/shared";
+import type { LiveVsPaper, TradingMode } from "@console/shared";
 import { fliesQuery, type FliesFilter } from "../../lib/api";
 import { fmtMoney } from "../../components/DataTable";
 import { EquityUnderwater } from "../../components/EquityUnderwater";
@@ -55,13 +55,7 @@ interface Performance {
     medianSpotMove: number | null;
   };
   completionTrend: Array<{ day: string; legged: number; completed: number; ratePct: number | null }>;
-  liveVsPaper: {
-    arm: string;
-    live: { sessions: number; entries: number; completed: number; completionRatePct: number | null; medianLatencyMin: number | null; avgCredit: number | null };
-    paper: { sessions: number; entries: number; completed: number; completionRatePct: number | null; medianLatencyMin: number | null; avgCredit: number | null };
-    completionGapPct: number | null;
-    abort: { minLiveEntries: number; gapLimitPct: number; armed: boolean; triggered: boolean };
-  } | null;
+  liveVsPaper: LiveVsPaper | null;
   leftOnTable: {
     entryMode: "debit_first";
     untracked: number;
@@ -249,11 +243,17 @@ export function CompletionCard({ c }: { c: Performance["completion"] | undefined
 }
 
 export function LiveVsPaperCard({ lvp }: { lvp: NonNullable<Performance["liveVsPaper"]> }) {
+  // No paper side means no gap and no verdict: the rule is unavailable, never "not triggered".
+  const paper = lvp.paper;
+  const pct = (v: number | null | undefined) => (v !== null && v !== undefined ? `${v.toFixed(0)}%` : "—");
+  const mins = (v: number | null | undefined) => (v !== null && v !== undefined ? `${v.toFixed(0)}m` : "—");
   return (
     <section className="card">
       <h2>
         Live vs paper — {lvp.arm} arm (contemporaneous){" "}
-        {lvp.abort.triggered ? (
+        {paper === null ? (
+          <span className="chain-badge">abort rule unavailable</span>
+        ) : lvp.abort.triggered ? (
           <span className="chain-badge chain-badge-short">ABORT RULE TRIGGERED</span>
         ) : lvp.abort.armed ? (
           <span className="chain-badge">abort rule armed</span>
@@ -266,31 +266,37 @@ export function LiveVsPaperCard({ lvp }: { lvp: NonNullable<Performance["liveVsP
           <tr><th></th><th>live</th><th>paper (same sessions)</th></tr>
         </thead>
         <tbody>
-          <tr><td className="muted">entries</td><td>{lvp.live.entries}</td><td>{lvp.paper.entries}</td></tr>
-          <tr><td className="muted">completed</td><td>{lvp.live.completed}</td><td>{lvp.paper.completed}</td></tr>
+          <tr><td className="muted">entries</td><td>{lvp.live.entries}</td><td>{paper?.entries ?? "—"}</td></tr>
+          <tr><td className="muted">completed</td><td>{lvp.live.completed}</td><td>{paper?.completed ?? "—"}</td></tr>
           <tr>
             <td className="muted">completion rate</td>
-            <td>{lvp.live.completionRatePct !== null ? `${lvp.live.completionRatePct.toFixed(0)}%` : "—"}</td>
-            <td>{lvp.paper.completionRatePct !== null ? `${lvp.paper.completionRatePct.toFixed(0)}%` : "—"}</td>
+            <td>{pct(lvp.live.completionRatePct)}</td>
+            <td>{pct(paper?.completionRatePct)}</td>
           </tr>
           <tr>
             <td className="muted">median latency</td>
-            <td>{lvp.live.medianLatencyMin !== null ? `${lvp.live.medianLatencyMin.toFixed(0)}m` : "—"}</td>
-            <td>{lvp.paper.medianLatencyMin !== null ? `${lvp.paper.medianLatencyMin.toFixed(0)}m` : "—"}</td>
+            <td>{mins(lvp.live.medianLatencyMin)}</td>
+            <td>{mins(paper?.medianLatencyMin)}</td>
           </tr>
           <tr>
             <td className="muted">avg credit</td>
             <td>{lvp.live.avgCredit !== null ? lvp.live.avgCredit.toFixed(2) : "—"}</td>
-            <td>{lvp.paper.avgCredit !== null ? lvp.paper.avgCredit.toFixed(2) : "—"}</td>
+            <td>{paper !== null && paper.avgCredit !== null ? paper.avgCredit.toFixed(2) : "—"}</td>
           </tr>
           <tr>
             <td className="muted">completion gap</td>
             <td colSpan={2} className={lvp.completionGapPct !== null && lvp.completionGapPct > lvp.abort.gapLimitPct ? "pnl-neg" : ""}>
-              {lvp.completionGapPct !== null ? `${lvp.completionGapPct.toFixed(1)}pp` : "—"}
+              {lvp.completionGapPct !== null ? `${lvp.completionGapPct.toFixed(1)}pp` : paper === null ? "unavailable" : "—"}
             </td>
           </tr>
         </tbody>
       </table>
+      {paper === null && (
+        <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
+          No paper figures to compare against ({lvp.degraded?.reason ?? "paper ledger unreadable"}), so the gap and the
+          abort verdict cannot be evaluated.
+        </p>
+      )}
       {/* The rule is prose and `.data-table td` is nowrap by house rule: inside the cell it pushed
           the table past the card's right edge. */}
       <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
