@@ -44,6 +44,19 @@ _INDEPENDENT = {
         "SELECT COUNT(*) n, COALESCE(SUM(gross_pnl), 0) gross, COALESCE(SUM(fees), 0) cost "
         "FROM pmcc_positions WHERE status = 'closed' AND closed_session = ?"
     ),
+    "bwb": (
+        "SELECT COUNT(*) n, COALESCE(SUM(gross_pnl), 0) gross, COALESCE(SUM(fees), 0) cost "
+        "FROM bwb_positions WHERE status = 'closed' AND closed_session = ?"
+    ),
+    "curve": (
+        "SELECT COUNT(*) n, COALESCE(SUM(gross_pnl), 0) gross, COALESCE(SUM(fees), 0) cost "
+        "FROM curve_positions WHERE status = 'closed' AND closed_session = ?"
+    ),
+    "contango": (
+        "SELECT COUNT(*) n, COALESCE(SUM(gross_pnl), 0) gross, "
+        "COALESCE(SUM(COALESCE(fees, 0) + COALESCE(slippage, 0)), 0) cost "
+        "FROM contango_positions WHERE status = 'closed' AND exit_session = ?"
+    ),
 }
 
 # Rows a module has voided: still `settled` with their P&L, but not evidence, so the fact set leaves
@@ -57,6 +70,10 @@ TOLERANCE = 0.01
 
 
 def _independent_totals(module: str, session: str) -> dict | None:
+    if module not in _INDEPENDENT:
+        # A module the fact set covers but this check has no independent route for yet: unchecked,
+        # never a crash that hides every other module's reconciliation.
+        return None
     db_path = _paths.module_db(module)
     if not db_path.exists():
         return None
