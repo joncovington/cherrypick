@@ -152,7 +152,9 @@ affecting.
 12. **The vol term structure at entry is recorded, never acted on** (2026-10-09). VIX9D, VIX and
     VIX3M prints with their ages; a stale or missing print is no number plus its reason. The
     VIX9D/VIX gate (`bwb regime-split`) is a hypothesis from a modelled two-year backtest that
-    chose the best of six gates. It is measured here and not traded on. A row with no reading,
+    chose the best of six gates. It is measured here and not traded on. The modelled out-of-sample
+    test (2011-2024, `scripts/bwb_regime_gate_history.py`, root `docs/history-studies-2026-10.md`)
+    found that skipped entries lose about twice as much per trade, and that kept entries still lose. A row with no reading,
     including every row before 2026-10-09, is `unmeasured` and is never assigned to a side.
 
 SPX is cash-settled and European: an expiring leg books intrinsic against the settlement print; no
