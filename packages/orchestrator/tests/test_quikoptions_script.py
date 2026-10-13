@@ -409,6 +409,41 @@ def test_the_calendar_reads_dates_times_and_country():
     assert (umich["date"], umich["time_et"]) == ("2026-10-09", "10:00")
 
 
+def _redesigned_calendar(headers: list[str] | None = None) -> str:
+    """The 2026-10-09 layout: no Currency / Change / Change%, a Consensus column."""
+    headers = headers or ["Date", "Impact", "Event", "Country", "Previous", "Consensus", "Estimate", "Actual"]
+    body = [
+        _td("Tue 10/13 6:00 AM") + '<td><div class="custom-icon econ-low" title="Normal Impact">L</div></td>'
+        + _td("NFIB Business Optimism Index")
+        + '<td><span title="United States - United States" class="world-flag"></span></td>'
+        + _td("98.7") + _td("98") + _td("96") + _td("")
+    ]  # fmt: skip
+    return "<html><body><a>Economic</a><a>IPO</a>" + _table("Upcoming", headers, body) + "</body></html>"
+
+
+def test_the_redesigned_calendar_reads_with_its_consensus():
+    doc = fq.parse_calendar(fq.tables_fragment(_redesigned_calendar(), (fq.CALENDAR_HEADING,), False), DAY)
+    assert fq.validate_calendar(doc) == []
+    (nfib,) = doc["events"]
+    assert (nfib["date"], nfib["time_et"], nfib["impact"]) == ("2026-10-13", "06:00", "L")
+    assert (nfib["previous"], nfib["consensus"], nfib["estimate"], nfib["actual"]) == (
+        "98.7",
+        "98",
+        "96",
+        None,
+    )
+    assert nfib["country"] == "United States - United States" and "currency" not in nfib
+
+
+def test_a_calendar_in_neither_layout_is_rejected_against_the_newest():
+    headers = ["Date", "Impact", "Event", "Country", "Previous", "Estimate", "Actual", "Surprise"]
+    doc = fq.parse_calendar(
+        fq.tables_fragment(_redesigned_calendar(headers), (fq.CALENDAR_HEADING,), False), DAY
+    )
+    assert doc["events"] == [] and doc["problems"][0].startswith("calendar: columns changed")
+    assert "'Consensus'" in doc["problems"][0]
+
+
 def test_a_weekday_that_disagrees_with_the_date_is_rejected():
     doc = fq.parse_calendar(
         fq.tables_fragment(calendar([("Thu 10/2 8:30 AM", "H", "NFP")]), (fq.CALENDAR_HEADING,), False), DAY

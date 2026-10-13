@@ -162,6 +162,14 @@ CALENDAR_COLUMNS = [
     ("Estimate", "estimate", TEXT), ("Actual", "actual", TEXT), ("Change", "change", TEXT),
     ("Change%", "change_pct", TEXT),
 ]  # fmt: skip
+# Since the 2026-10-09 redesign: Currency, Change and Change% gone, Consensus added. Pages saved
+# before it still read with the layout above; the first layout whose headers match is the one used.
+CALENDAR_COLUMNS_2026_10 = [
+    ("Date", "when", TEXT), ("Impact", "impact", TEXT), ("Event", "event", TEXT),
+    ("Country", "country", TEXT), ("Previous", "previous", TEXT), ("Consensus", "consensus", TEXT),
+    ("Estimate", "estimate", TEXT), ("Actual", "actual", TEXT),
+]  # fmt: skip
+CALENDAR_LAYOUTS = (CALENDAR_COLUMNS_2026_10, CALENDAR_COLUMNS)
 HEADINGS = tuple(heading for heading, _ in TABLES.values())
 PAGE_DATE_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
 
@@ -659,18 +667,19 @@ def parse_calendar(page_html: str, captured: date) -> dict:
     table = next((t for t in found if t["heading"] == CALENDAR_HEADING), None)
     if table is None:
         return {"captured": captured.isoformat(), "events": [], "problems": ["calendar: table missing"]}
-    why = columns_problem("calendar", CALENDAR_COLUMNS, table["columns"])
-    if why:
+    spec = next((s for s in CALENDAR_LAYOUTS if not columns_problem("calendar", s, table["columns"])), None)
+    if spec is None:
+        why = columns_problem("calendar", CALENDAR_LAYOUTS[0], table["columns"])
         return {"captured": captured.isoformat(), "events": [], "problems": [why]}
     events = []
     for cells in table["rows"]:
-        if len(cells) < len(CALENDAR_COLUMNS):
+        if len(cells) < len(spec):
             # A one-cell separator ("no events") is a row of the view, not an event; anything else
             # short is the table changing shape.
             if len(cells) > 1:
                 problems.append(f"calendar: a row of {len(cells)} cells: {[c['text'] for c in cells]}")
             continue
-        row = {key: cell["text"] or None for (_, key, _), cell in zip(CALENDAR_COLUMNS, cells, strict=False)}
+        row = {key: cell["text"] or None for (_, key, _), cell in zip(spec, cells, strict=False)}
         row["date"], row["time_et"] = _calendar_when(cells[0]["text"], captured)
         if row["date"] is None:
             problems.append(f"calendar: date did not read: {cells[0]['text']!r}")
@@ -910,10 +919,14 @@ def _slow_scroll(page, to_bottom: bool = True) -> None:
             return
 
 
-def _click_text(page, text: str, *, exact: bool = True) -> bool:
+def _click_text(page, text: str, *, exact: bool = True, wait_s: float = 0) -> bool:
     """Click the first VISIBLE element with this text. The site renders a hidden copy of its menu
-    (the 2026-10-02 probe timed out on one), so the first match in the DOM is not the one to use."""
+    (the 2026-10-02 probe timed out on one), so the first match in the DOM is not the one to use.
+    `wait_s` gives an element still being drawn that long to appear."""
     target = page.get_by_text(text, exact=exact).filter(visible=True).first
+    deadline = time.monotonic() + wait_s
+    while not target.count() and time.monotonic() < deadline:
+        page.wait_for_timeout(1000)  # not time.sleep: the page only draws inside Playwright calls
     if not target.count():
         _log(f"no visible '{text}' on the page")
         return False
@@ -1013,7 +1026,9 @@ def capture_calendar(page, hits: list[str]) -> str:
     if not _click_text(page, "RESOURCES"):
         raise NeedsPerson("the Resources menu was not found")
     time.sleep(random.uniform(1.0, 2.5))
-    if not _click_text(page, "Calendars", exact=False):
+    # Since the 2026-10-09 redesign RESOURCES opens a page, not a menu, and Calendars is a tab on
+    # it drawn after the page loads; on 2026-10-12 one look 1-2.5 s after the click missed it.
+    if not _click_text(page, "Calendars", exact=False, wait_s=30):
         raise NeedsPerson("the Calendars link was not found")
     _wait_for_tables(page, _calendar_ready, hits)
     time.sleep(random.uniform(8, 15))
