@@ -1005,13 +1005,14 @@ _MODULE_SECTIONS = {
 
 
 def _live(session: str) -> dict[str, Any]:
-    """Live posture and a live-vs-paper shape, for context only.
+    """Live posture and today's flies live and paper counts, for context only.
 
-    Deliberately duplicated rather than imported: this package depends on `cherrypick.core` alone
-    and spawns no subprocess, so `cherrypick.flies.analytics`' live-vs-paper summary cannot be
-    called from here. The duplication is labeled with the shape tag it matches so a future divergence
-    is visible, and it is facts-for-context — never a report surface. See
-    packages/flies/src/cherrypick/flies/analytics.py's cross-reference.
+    This package depends on `cherrypick.core` alone and spawns no subprocess, so
+    `cherrypick.flies.analytics.live_vs_paper` cannot be called from here, and nothing here copies
+    it: the block is today's status counts and settled P&L on each side, with no completion rate,
+    gap or abort rule to round or compare. Its shape tag names it as the advisor's own
+    (`advisor.flies_live_today/v1`); until the 2026-10-19 boundary it carried flies' tag, which
+    claimed a parity it never had. Facts-for-context, never a report surface.
     """
     state = _paths.state_dir()
     posture: dict[str, Any] = {}
@@ -1047,22 +1048,30 @@ def _live(session: str) -> dict[str, Any]:
         if module == "bwb":
             posture[module]["arm"] = live_cfg.get("arm")
 
+    def not_void(conn) -> str:
+        # flies voids a row by setting `void_reason` and leaves it `settled` with its pnl, so a
+        # count without this filter carries it. A ledger from before the column has none to drop.
+        cols = {c[1] for c in conn.execute("PRAGMA table_info(fly_positions)")}
+        return " AND void_reason IS NULL" if "void_reason" in cols else ""
+
     def live_flies(conn):
+        nv = not_void(conn)
         today = _store.rows(
             conn,
             "SELECT status, COUNT(*) n, SUM(net) net, SUM(fees) fees FROM fly_positions"
-            " WHERE trade_date = ? GROUP BY status",
+            f" WHERE trade_date = ?{nv} GROUP BY status",
             (session,),
         )
         fills = _store.rows(
             conn,
-            "SELECT entry_fill_status, COUNT(*) n FROM fly_positions WHERE trade_date = ?"
+            f"SELECT entry_fill_status, COUNT(*) n FROM fly_positions WHERE trade_date = ?{nv}"
             " GROUP BY entry_fill_status",
             (session,),
         )
         settled = _store.rows(
             conn,
-            "SELECT COUNT(*) n, SUM(pnl) pnl FROM fly_positions WHERE trade_date = ? AND status = 'settled'",
+            "SELECT COUNT(*) n, SUM(pnl) pnl FROM fly_positions WHERE trade_date = ? AND status = 'settled'"
+            + nv,
             (session,),
         )
         return {
@@ -1075,13 +1084,16 @@ def _live(session: str) -> dict[str, Any]:
         rows = _store.rows(
             conn,
             "SELECT COUNT(*) n, SUM(pnl) pnl, AVG(completion_latency_min) latency FROM fly_positions"
-            " WHERE trade_date = ? AND status = 'settled'",
+            " WHERE trade_date = ? AND status = 'settled'" + not_void(conn),
             (session,),
         )
         return rows[0] if rows else None
 
     live_vs_paper = {
-        "shape": "flies.analytics.live_vs_paper/v1",
+        # Not flies' live_vs_paper shape, and never was: this is today's counts on each side, with
+        # no completion rate, gap or abort rule. The tag claimed that shape until the 2026-10-19
+        # boundary; `test_factpack` now fails if it claims a shape whose keys it does not carry.
+        "shape": "advisor.flies_live_today/v1",
         "live": _read(_live_db("flies"), live_flies),
         "paper": _read(_paper_db("flies"), paper_flies),
         "_note": "computed here with the advisor's own read-only SQL; see the docstring on why",
@@ -1116,24 +1128,28 @@ def _experiments_running(conn) -> list[dict[str, Any]]:
         # The module's own rule, the same gate arm_readings, kill and expiry use. Bare
         # `for_experiment` applied the library default here -- the 2026-08-14 two-gate
         # disagreement, back in a section added after it was fixed elsewhere (2026-09-12).
-        pairs = _verdicts.for_experiment(exp, rule=_settings.calibration_rule(exp["module"]) or None)["pairs"]
-        out.append(
-            {
-                "id": exp["id"],
-                "module": exp["module"],
-                "base_profile": exp["base_profile"],
-                "name": exp["name"],
-                "tag": exp.get("tag"),
-                "hypothesis": exp["hypothesis"],
-                "params": params,
-                "sessions_run": exp["sessions_run"],
-                "expires_after_sessions": exp["expires_after_sessions"],
-                "reading": [
-                    {"advised_tag": p["advised_tag"], "delta": p["delta"], "underpowered": p["underpowered"]}
-                    for p in pairs
-                ],
-            }
-        )
+        body = _verdicts.for_experiment(exp, rule=_settings.calibration_rule(exp["module"]) or None)
+        pairs = body["pairs"]
+        entry = {
+            "id": exp["id"],
+            "module": exp["module"],
+            "base_profile": exp["base_profile"],
+            "name": exp["name"],
+            "tag": exp.get("tag"),
+            "hypothesis": exp["hypothesis"],
+            "params": params,
+            "sessions_run": exp["sessions_run"],
+            "expires_after_sessions": exp["expires_after_sessions"],
+            "reading": [
+                {"advised_tag": p["advised_tag"], "delta": p["delta"], "underpowered": p["underpowered"]}
+                for p in pairs
+            ],
+        }
+        # From the 2026-10-19 boundary: an advised book that never traded differently from its
+        # base says so here, beside the delta it would otherwise be read from. Absent when false.
+        if body.get("no_exposure"):
+            entry["no_exposure"] = body["no_exposure"]
+        out.append(entry)
     return out
 
 
@@ -1153,6 +1169,9 @@ _VERDICT_KEEP = (
     "stalled",
     "killed_reason",
     "error",
+    # 2026-10-19 boundary: the verdict's own "measured nothing" conclusion, ahead of pass/fail.
+    "no_exposure",
+    "conclusion",
 )
 
 
@@ -1529,9 +1548,10 @@ _REGIME_CUTS_NOTE = (
     "pooled table but not the paired one is a kind of day, not a kind of entry. `sign_changed` "
     "lists cells whose net changed sign over the prior nightly snapshots. `multiplicity` says how "
     "many intervals and paired tests the whole artifact carries and how many would clear the bar "
-    "by chance: compare against it before citing one. flies also carries `gate_replay`: every "
-    "replayable gate bound (miss_stop_minutes, refuse_trend_bucket, entry_windows) replayed over "
-    "the base arm's era rows by dropping the entries the rule would have refused -- exact, because "
+    "by chance: compare against it before citing one. flies also carries `gate_replay`: each "
+    "replayable gate bound (refuse_trend_bucket, entry_windows; miss_stop is evidence only, no "
+    "longer a bound) replayed over the base arm's era rows by dropping the entries the rule would "
+    "have refused -- exact, because "
     "paper structures are independent. One line per rule, with its net change against the base. "
     "It is in-sample by construction: a rule that wins it is a hypothesis for the forward twin, and "
     "a rule that loses it needs a reason the replay cannot see before it is proposed."

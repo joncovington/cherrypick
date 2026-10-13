@@ -295,6 +295,11 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   - **Safety and credit trade directly**: pushing the tail away from spot shrinks the credit, so
     `min_bwb_credit_pct_of_tail` (0.15), not the price gate, is what binds. The roll trap it tests is
     in [docs/faq.md](docs/faq.md).
+- **Retired at the 2026-10-19 boundary** (experiment log, 2026-10-12): `debit-first-up`,
+  `debit-first-down`, `bwb-up`, `bwb-down`, `bwb-up-w2`, `bwb-down-w2` and `bwb-atm`. Their entries
+  below are kept as the record. `debit-first-atm` stays: its shadow ladder's 10-session read cannot
+  be complete by 10-19 (the 10-08 outage voided that session's anchors), so it slips to the next
+  boundary.
 - `bwb-atm`, `debit-first-atm` — ATM twins of the two GEX-centred construction arms, restoring the
   one-variable rule: **X-atm vs `control`** isolates construction, **X-atm vs X** isolates centring. ATM
   means the structure straddles spot, deliberately. **No `spot + N strikes` arm**: `center_offset` is
@@ -381,6 +386,13 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
     inputs. Fails open when unmeasured.
   - **The one variable is pinned** by `tests/test_wall_clear.py`; the judging rule is in the
     experiment log (2026-10-05).
+- `live-shadow` — **the live configuration in paper, from 2026-10-19**. Not a variant of `control`:
+  an arm declaring `mirror_live` takes its params from the live block (`engine.live_mirror_params`:
+  `live.arm`'s params, live's start, completion cutoff and buying-power cap, the entry credit floored
+  to the tick), and ignores any key of its own. Read against the **live ledger** over the same
+  sessions, never against `control`. `tests/test_live_shadow.py` pins it to `live_loop`'s params and
+  lists, key by key, what paper cannot express (resting fills, fresh REST quotes, mid-first pricing,
+  the one-minute tick, the quarter-end block).
 - `restack` — `control` plus one relaxed rule, **from 2026-10-12** (moved from 10-19, as
   `wall-clear`): the duplicate rule ignores a structure once it is completed risk-free (`restack_completed`,
   `engine.completed_risk_free`), so spot returning to a completed fly's centre may sell that vertical
@@ -462,7 +474,9 @@ changing one. The narrative behind every dimension:
 every entry while the session's trend-from-open bucket is the named one — the day, not the leg.
 `engine.miss_stop_refusal` (`miss_stop_minutes`) stops an arm entering for the day once any of its
 spreads has sat uncompleted that long (losing sessions were RUNS of misses into one tape). Both are
-off unless an arm or advice sets them; both are declared in `advice.bounds`; both sit ahead of strike
+off unless an arm or advice sets them; `refuse_trend_bucket` is declared in `advice.bounds`, and
+`miss_stop_minutes` was taken out of them at the 2026-10-19 boundary (negative on live, re-proposed
+repeatedly; experiment log 2026-10-12) -- an arm may still set it; both sit ahead of strike
 selection so a refusal is attributed to the session; legged only. Because each reads only facts every
 row carries, `replay_gates.py` (`replay-gates`) re-runs recorded sessions under either rule exactly —
 the cheap first answer before the advised twin's forward A/B. The live tick stamps `entry_time_min`

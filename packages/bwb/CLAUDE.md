@@ -35,7 +35,7 @@ doubly so here because a zero credit floor cannot screen out an illusory opening
 | book | add-on trigger |
 |---|---|
 | `control` | never — the BWB rides alone to expiry |
-| `delta` | the near wing's \|delta\| reaches `delta_trigger` (50Δ) — raw proximity |
+| `delta` | the near wing's \|delta\| reaches `delta_trigger` (50Δ) — raw proximity. **Retired from 2026-10-19** (docs/history.md) |
 | `bounce` | peak \|delta\| since entry >= `delta_trigger` AND current <= `delta_trigger - bounce_pullback` (45Δ). No `bounce_peak` key: delta and bounce differ by exactly one condition |
 | `flip` | spot traded below `gamma_flip` since entry AND reclaimed to >= `flip * flip_buffer` (1.001) |
 
@@ -78,7 +78,10 @@ basis, NOT the GEX recorder's ~5-min history, so a stalled recorder cannot freez
 basis is stamped on every trigger row. A chain with no OI cached yet refuses `insufficient_gex_data`,
 so `flip` cannot arm until OI accumulates.
 
-### The `wall` book (opt-in, 2026-08-31) — outside the paired design
+### The `wall` book (opt-in, 2026-08-31; retired from 2026-10-19) — outside the paired design
+
+Retired because a $300-a-week edge would take ~126 weeks to read at its $1,353 weekly sd
+(docs/history.md). Kept below as the record.
 
 `books.wall` trades a CALL-side BWB with the body at the GEX call wall (read off the same
 `gamma_flip_reading` as the flip trigger): +1 near (one increment below) / −2 body / +1 far (two

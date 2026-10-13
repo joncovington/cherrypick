@@ -221,7 +221,11 @@ real section beside it.
 evidence, and are not pooled): **2026-08-26** (journal/flag taper and deep-only schedule, batched as
 one), **2026-09-14** (compacted `experiments_full`), **2026-09-22** (first deep pack reading
 `regime_cuts`), **2026-09-28** (robustness stamps and `gate_replay`, at the first deep checkpoint
-reading them). Plus the 2026-09-16 counter break for earnings above.
+reading them), **2026-10-19** (`miss_stop_minutes` leaves flies' bounds and the `gate_replay` note
+stops calling it one; the `flies_live` block is tagged as the advisor's own,
+`advisor.flies_live_today/v1`; verdicts carry `no_exposure`/`conclusion` into the pack;
+that block stops counting flies' voided rows, `void_reason` set, on either side). Plus the
+2026-09-16 counter break for earnings above.
 
 ## The module list is derived, not restated
 

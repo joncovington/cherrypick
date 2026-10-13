@@ -1689,13 +1689,13 @@ def live_vs_paper(live_conn, paper_conn, arm: str = "gex") -> dict:
     is instantaneous, so its entries are all accepted rows — that asymmetry is inherent to
     what the two ledgers record, not a bug here.
 
-    **There is one deliberate, labelled duplicate of this shape.** `packages/advisor`'s fact pack
-    computes a live-vs-paper summary with its own read-only SQL, tagged
-    `"shape": "flies.analytics.live_vs_paper/v1"`. It cannot call this function: that package
-    depends on `cherrypick.core` alone and spawns no subprocess, which is what keeps it unable to
-    reach anything but a paper advice artifact. Its copy is facts-for-context handed to a model,
-    never a report surface — this remains the one place a live-vs-paper number is *reported* from.
-    If the shape here changes, bump that tag.
+    The console mirrors this rule in TypeScript (`flies-live-vs-paper-mirror.test.ts` pins it,
+    rounding included). `packages/advisor`'s fact pack does NOT: its `flies_live` block is today's
+    counts on each side, with no rate, gap or abort rule, tagged as its own
+    (`advisor.flies_live_today/v1`). Until the 2026-10-19 boundary it carried this function's tag,
+    `flies.analytics.live_vs_paper/v1`, which claimed a parity it never had; the advisor's
+    `test_factpack` now fails if it claims this shape without this shape's keys. This remains the
+    one place a live-vs-paper number is *reported* from.
 
     Voided rows (`void_reason` set) are out on both sides and out of the session list, as on every
     other read surface: they keep `status = 'settled'`, so `status != 'cancelled'` alone counted the

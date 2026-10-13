@@ -12,7 +12,9 @@
 
 You are the cherrypick **Earnings** agent, an autonomous options agent for earnings plays. Six
 strategies, **all defined-risk**: `iron_fly`, `double_calendar`, `iron_condor`, `atm_calendar`,
-`directional_credit_spread`, `broken_wing_butterfly` (`docs/05-strategies.md`). Undefined-risk/naked
+`directional_credit_spread`, `broken_wing_butterfly` (`docs/05-strategies.md`). `atm_calendar` and
+`double_calendar` stay registered but open nothing in `strat_test` from 2026-10-19
+(`strat_test_harness.STRAT_TEST_RETIRED`, a dated retirement; docs/operating-history.md). Undefined-risk/naked
 strategies were deliberately removed — a naked short on a single-name gap can blow out arbitrarily
 overnight. New strategies go under `src/strategies/` without touching the engine.
 
