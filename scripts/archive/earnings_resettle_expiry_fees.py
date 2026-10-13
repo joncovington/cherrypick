@@ -1,7 +1,7 @@
 """Re-cost earnings' past settlements under the per-strike expiry fee (2026-09-24).
 
-    python scripts/earnings_resettle_expiry_fees.py            # dry run -- prints, changes nothing
-    python scripts/earnings_resettle_expiry_fees.py --apply    # backs up the ledger, then corrects it
+    python scripts/archive/earnings_resettle_expiry_fees.py            # dry run -- prints, changes nothing
+    python scripts/archive/earnings_resettle_expiry_fees.py --apply    # backs up the ledger, then corrects it
 
 Runnable from anywhere; the ledger resolves off `$CHERRYPICK_HOME` (default `~/.cherrypick`). Needs
 the same settlement closes the loop used (`settlement.settlement_close`, the Dolt price history).

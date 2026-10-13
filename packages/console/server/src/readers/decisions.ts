@@ -21,11 +21,11 @@ import { resolveContangoSession } from "./contango.js";
  * could show for it without a change to the module's own engine first.
  */
 
-import type { DecisionsModule } from "@console/shared";
+import type { DecisionsModule, TradingMode } from "@console/shared";
 export type { DecisionsModule };
 
 export interface DecisionRow {
-  book: string;
+  arm: string;
   symbol: string;
   reason: string;
   accepted: boolean;
@@ -35,6 +35,8 @@ export interface DecisionRow {
 
 export interface DecisionsPayload {
   module: DecisionsModule;
+  /** The book the rows came from; a live read of a module with no live book is empty, never paper. */
+  mode: TradingMode;
   tradeDate: string | null;
   rows: DecisionRow[];
 }
@@ -42,13 +44,20 @@ export interface DecisionsPayload {
 interface Spec {
   dir: (config: ConsoleConfig) => string;
   table: string;
-  resolveSession: (config: ConsoleConfig) => string | null;
+  resolveSession: (config: ConsoleConfig, mode: TradingMode) => string | null;
+  /** The live ledger's file name, for a module with a live book (bwb's pilot); absent otherwise. */
+  liveFile?: string;
 }
 
 const SPECS: Record<DecisionsModule, Spec> = {
   curve: { dir: (c) => c.paths.curveDir, table: "curve_decisions", resolveSession: resolveCurveSession },
   pmcc: { dir: (c) => c.paths.pmccDir, table: "pmcc_decisions", resolveSession: resolvePmccSession },
-  bwb: { dir: (c) => c.paths.bwbDir, table: "bwb_decisions", resolveSession: resolveBwbSession },
+  bwb: {
+    dir: (c) => c.paths.bwbDir,
+    table: "bwb_decisions",
+    resolveSession: resolveBwbSession,
+    liveFile: "live_trades.db",
+  },
   contango: {
     dir: (c) => c.paths.contangoDir,
     table: "contango_decisions",
@@ -61,11 +70,18 @@ const SPECS: Record<DecisionsModule, Spec> = {
  * table's own last row) -- the same rule `resolvePmccSession` exists to enforce, so this reader
  * cannot reintroduce the "two cards, two dates" incident for a fourth table.
  */
-export function readDecisions(config: ConsoleConfig, module: DecisionsModule, date: string | null): DecisionsPayload {
+export function readDecisions(
+  config: ConsoleConfig,
+  module: DecisionsModule,
+  date: string | null,
+  mode: TradingMode = "paper",
+): DecisionsPayload {
   const spec = SPECS[module];
-  const dbPath = path.join(spec.dir(config), "paper_trades.db");
-  const empty: DecisionsPayload = { module, tradeDate: null, rows: [] };
-  const tradeDate = date ?? spec.resolveSession(config);
+  const empty: DecisionsPayload = { module, mode, tradeDate: null, rows: [] };
+  const file = mode === "live" ? spec.liveFile : "paper_trades.db";
+  if (file === undefined) return empty;
+  const dbPath = path.join(spec.dir(config), file);
+  const tradeDate = date ?? spec.resolveSession(config, mode);
   if (tradeDate === null) return empty;
 
   return withReadOnlyDb<DecisionsPayload>(dbPath, empty, (db) => {
@@ -76,7 +92,7 @@ export function readDecisions(config: ConsoleConfig, module: DecisionsModule, da
       .prepare<[string], Record<string, unknown>>(`SELECT * FROM ${spec.table} WHERE trade_date = ?`)
       .all(tradeDate)
       .map((r) => ({
-        book: str(r["arm"] ?? r["book"]) ?? "",
+        arm: str(r["arm"] ?? r["book"]) ?? "",
         symbol: str(r["symbol"]) ?? "",
         reason: str(r["reason"]) ?? "",
         accepted: Number(r["accepted"] ?? 0) === 1,
@@ -87,8 +103,8 @@ export function readDecisions(config: ConsoleConfig, module: DecisionsModule, da
         (a, b) =>
           Number(a.accepted) - Number(b.accepted) ||
           b.occurrences - a.occurrences ||
-          (a.book < b.book ? -1 : a.book > b.book ? 1 : 0),
+          (a.arm < b.arm ? -1 : a.arm > b.arm ? 1 : 0),
       );
-    return { module, tradeDate, rows };
+    return { module, mode, tradeDate, rows };
   });
 }

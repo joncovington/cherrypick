@@ -168,7 +168,8 @@ Built to test whether the paper result survives a fill without disturbing the pa
 - **Gating** (guardrail): `live.enabled`, `live.gate0_confirmed`, a per-day arm record
   (`/live-bwb-start`, a literal YES each day), a designated account, and `live.arm` naming a base
   book — every one re-checked on every tick and every submission, all guarded from the settings
-  surface. **The suite halt flag stops new risk only** (2026-10-08): the entry is refused
+  surface. One list: `broker_cli.live_gates` is `live_loop.readiness` plus the arm record read as
+  the dead-man's switch reads it (2026-10-12; a missing `live.arm` refuses in both). **The suite halt flag stops new risk only** (2026-10-08): the entry is refused
   (`halt_flag_present`) and an armed add-on deferred, while fills are confirmed, resting orders
   managed and the ladder settled. Never run `--install-task` outside `/live-bwb-start`.
 - **The structure is the paper structure.** `engine.plan_entry` plans it; `live_orders.entry_spec`

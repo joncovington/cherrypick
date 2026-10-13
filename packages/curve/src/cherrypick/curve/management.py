@@ -22,10 +22,10 @@ flagged, never treated as a flip.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from cherrypick.core import advice as _core_advice
 from cherrypick.core import spreadbook as _spreadbook
 
 PARAM_DEFAULTS = {
@@ -57,29 +57,15 @@ class Decision:
 
 def effective_params(position: dict, config: dict) -> dict:
     """The params governing this position: the base arm's merged config, with the row's frozen
-    `advice_params` overlaid for an advised arm. An unreadable stamp is the base's config, never a
-    guess."""
+    `advice_params` overlaid for an advised arm (`core.advice.effective_params`: the row's
+    `advice_base` stamp first, else `engine.base_book`)."""
     from cherrypick.curve import engine
 
-    arm = position.get("arm") or "control"
-    # A legacy `advised:<base>` row names its base in the tag; a 2026-09-17 `advised:<experiment>`
-    # row shadows the configured `advice.base_book`. One rule, in `engine.base_book`; the answer
-    # rides on the params as `base_book` so the flip-exit check never re-derives it from the tag.
-    # The row's own stamp first (2026-09-17): an advised twin of a non-default base is managed under
-    # THAT base after the session's decision file is gone, not under the configured default.
-    stamped = position.get("advice_base")
-    base = str(stamped) if stamped else engine.base_book(arm, config=config)
-    params = {**PARAM_DEFAULTS, **engine.merged_params(config, base)}
-    params["arm"] = arm
-    params["base_book"] = base
-    raw = position.get("advice_params")
-    if arm.startswith("advised:") and raw:
-        try:
-            overlay = json.loads(raw) if isinstance(raw, str) else dict(raw)
-        except (TypeError, ValueError):
-            overlay = {}
-        params.update(overlay)
-    return params
+    return _core_advice.effective_params(
+        position,
+        base_book=lambda arm: engine.base_book(arm, config=config),
+        base_params=lambda base: {**PARAM_DEFAULTS, **engine.merged_params(config, base)},
+    )
 
 
 def _base_book(params: dict) -> str:

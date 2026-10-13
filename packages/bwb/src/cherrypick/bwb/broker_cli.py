@@ -27,63 +27,59 @@ import json
 import sys
 
 from cherrypick.core import broker as _broker
+from cherrypick.core.broker import cli as _broker_cli
 
+from cherrypick.bwb import clock
 from cherrypick.bwb import credentials as creds
-from cherrypick.bwb import engine
 from cherrypick.bwb.cli import load_config
 
+_READ = object()  # "read it yourself": the keyring for the account, the ET clock for the day
 
-def live_gates(config: dict) -> list[str]:
-    """The unmet gates for a LIVE submission -- empty means live is allowed. Pure, and re-checked
-    by the execution adapter on every live submit (not only at loop start).
 
-    `live.arm` must name one of the four base arms: the wall arm and every advised twin are
-    paper experiments whose structures are not the pilot's, and a typo here must refuse rather
-    than trade something else."""
+def live_gates(config: dict, *, designated=_READ, when=None) -> list[str]:
+    """The unmet gates for a LIVE submission -- empty means live is allowed. Re-checked by the
+    execution adapter on every live submit (not only at loop start) and by `execute_trade --live`.
+
+    One source (2026-10-12): the account gates ARE `live_loop.readiness` -- `live.enabled`, the
+    Gate 0 attestation, `live.arm` naming a base arm, and a designated account -- so the tick and the
+    submission cannot drift. Before, this was a hand copy that had already drifted on a missing
+    `live.arm`, and it had no designated-account gate: with none set `core.broker.resolve_account`
+    falls back to the FIRST account on the login. Then the day's arm record, read exactly as the
+    tick's dead-man's switch reads it (`live_loop.should_disarm`): a session nobody armed with
+    `/live-bwb-start`, or one past `live.disarm_time`, refuses every live submission. Disabled
+    short-circuits before any keyring or file read. `designated`/`when` are for tests; left out,
+    they are read here."""
+    from cherrypick.bwb import live_loop  # lazy: live_loop reaches this module lazily too
+
     live = config.get("live") or {}
     if not live.get("enabled"):
         return ["live.enabled is false"]
-    unmet = []
-    if not str(live.get("gate0_confirmed") or "").strip():
-        unmet.append("live.gate0_confirmed is empty -- a human must attest Gate 0 passed (who/when)")
-    arm = str(live.get("arm") or "").strip()
-    if arm not in engine.ARMS:
-        unmet.append(f"live.arm {arm!r} is not a base arm (one of {', '.join(engine.ARMS)})")
+    if designated is _READ:
+        designated = creds.designated_account()
+    unmet = live_loop.readiness(config, designated=designated)
+    when = when or clock.now_et()
+    reason = live_loop.should_disarm(config, clock.minute_of_day(when), when.date().isoformat())
+    if reason:
+        unmet.append(f"not armed for this session: {reason} (arm with /live-bwb-start)")
     return unmet
 
 
 async def _account(session):
-    return await _broker.resolve_account(session, creds.designated_account())
+    return await _broker_cli.designated_account(creds, session)
 
 
 async def cmd_get_connection_status(_args) -> dict:
-    secrets = creds.store.secrets_status()
-    status: dict = {
-        "ok": True,
-        "service": creds.SERVICE_NAME,
-        "credentials_present": creds.store.secrets_present(),
-        "secrets": secrets,
-        "live_trading_enabled": bool((load_config().get("live") or {}).get("enabled")),
-    }
-    designated = creds.designated_account()
-    status["designated"] = ("****" + designated[-4:]) if designated else None
-    if not status["credentials_present"]:
-        status["hint"] = "run `cherrypick connect --module bwb` to store the OAuth secrets"
-        return status
-    try:
-        session = creds.get_session()
-        status["account_count"] = await _broker.account_count(session)
-    except Exception as exc:  # noqa: BLE001 -- a probe reports, it never raises
-        status["ok"] = False
-        status["error"] = f"{type(exc).__name__}: {exc}"
-    return status
+    """Keyring + session probe, designated account masked (`core.broker.cli`)."""
+    return await _broker_cli.connection_status(
+        creds,
+        live_trading_enabled=bool((load_config().get("live") or {}).get("enabled")),
+        hint="run `cherrypick connect --module bwb` to store the OAuth secrets",
+    )
 
 
 async def cmd_list_accounts(_args) -> dict:
-    # Machine shape, matching MEIC's tt.py: FULL account numbers, because the orchestrator's
-    # account-designation flow needs them to write the keyring value (it masks for display).
-    session = creds.get_session()
-    return {"ok": True, "accounts": await _broker.list_accounts(session)}
+    # FULL account numbers, the tt.py machine shape the designation flow reads.
+    return await _broker_cli.list_accounts(creds)
 
 
 async def cmd_execute_trade(args) -> dict:
@@ -102,33 +98,21 @@ async def cmd_execute_trade(args) -> dict:
 
 async def cmd_order_status(args) -> dict:
     """Read-only -- checking a working order's status places nothing."""
-    session = creds.get_session()
-    account = await _account(session)
-    return await _broker.order_status(account, session, args.order_id)
+    return await _broker_cli.order_status(creds, args.order_id)
 
 
 async def cmd_cancel_order(args) -> dict:
-    """Cancelling is not a new live submission (no --live gate): the working order it targets could
-    only exist because a prior submission passed the gate, and refusing to pull it is less safe."""
-    session = creds.get_session()
-    account = await _account(session)
-    return await _broker.cancel_order(account, session, args.order_id)
+    """Pulling a working order is not a new live submission, so no live gate (`core.broker.cli`)."""
+    return await _broker_cli.cancel_order(creds, args.order_id)
 
 
 def cmd_secrets_set(args) -> dict:
-    """Hidden-input secrets flow, argv-compatible with tt.py's so the orchestrator's `connect`
-    drives every module identically. Blank input keeps a stored value."""
-    import getpass
-
-    for key in args.keys:
-        value = getpass.getpass(f"{key} (input hidden, blank to keep current): ").strip()
-        if value:
-            creds.store.set_secret(key, value)
-    return {"ok": True, "service": creds.SERVICE_NAME, "secrets": creds.store.secrets_status()}
+    """Hidden-input secrets flow, argv-compatible with tt.py's. Blank input keeps a stored value."""
+    return _broker_cli.secrets_set(creds, args.keys)
 
 
 def cmd_secrets_status(_args) -> dict:
-    return {"ok": True, "service": creds.SERVICE_NAME, "secrets": creds.store.secrets_status()}
+    return _broker_cli.secrets_status(creds)
 
 
 def main() -> None:

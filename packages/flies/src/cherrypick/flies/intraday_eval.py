@@ -19,11 +19,12 @@ bound uses Student's t, rounded toward caution past 30 degrees of freedom.
 from __future__ import annotations
 
 import json
-import math
 from datetime import UTC, datetime
 from pathlib import Path
 
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
+from cherrypick.core import stats as _stats
 
 from cherrypick.flies import analytics, engine, intraday_advice, intraday_pack
 
@@ -301,21 +302,22 @@ def _shadow_inputs(live_db: Path, live_arm: str) -> tuple[list, dict]:
 
 
 # --------------------------------------------------------------------------- the evaluation
-def paired_stats(diffs: list[float]) -> dict:
+def paired_stats(diffs: list[float], *, edge: float = TARGET_EDGE) -> dict:
     """Mean, spread and one-sided 95% lower bound of a paired difference, and the sessions the
-    observed spread needs to detect TARGET_EDGE at 80% power."""
+    observed spread needs to detect `edge` at 80% power (`cherrypick.core.stats`). The bound keeps
+    this module's own `t95` table, rounded toward caution past 30 df, because the `beats_rule` gate
+    reads it."""
     n = len(diffs)
     out = {"n": n, "mean": None, "sd": None, "lower_95": None, "sessions_needed": None}
     if n == 0:
         return out
-    mean = sum(diffs) / n
+    mean, sd = _stats.mean_sd(diffs)
     out["mean"] = round(mean, 2)
     if n < 2:
         return out
-    sd = math.sqrt(sum((d - mean) ** 2 for d in diffs) / (n - 1))
     out["sd"] = round(sd, 2)
-    out["lower_95"] = round(mean - t95(n - 1) * sd / math.sqrt(n), 2)
-    out["sessions_needed"] = math.ceil(((1.645 + 0.842) * sd / TARGET_EDGE) ** 2) if sd > 0 else None
+    out["lower_95"] = round(_stats.t_lower_bound(diffs, critical=t95(n - 1)), 2)
+    out["sessions_needed"] = _stats.sessions_needed(sd, edge, alpha=0.05, power=0.80)
     return out
 
 
@@ -332,15 +334,17 @@ def evaluate(
     generated_at: str,
     arms: dict,
     shadow: dict | None = None,
+    target_edge: float = TARGET_EDGE,
 ) -> dict:
     """Pure: the qualification from per-session arm values, the record summary, and the scored live
-    shadow (`shadow_scoring`; None scores nothing)."""
+    shadow (`shadow_scoring`; None scores nothing). `target_edge` is the per-session edge
+    `sessions_needed` is sized for; it moves no criterion."""
     decided = set(summary["paper_sessions"])
     paired = sorted(set(rule) & set(agent) & decided)
     gate_diffs = [agent[s]["settled_net"] - rule[s]["settled_net"] for s in paired]
     close_diffs = [agent[s]["net_closes_2x"] - rule[s]["net_closes_2x"] for s in paired]
-    gates = paired_stats(gate_diffs)
-    closes = paired_stats(close_diffs)
+    gates = paired_stats(gate_diffs, edge=target_edge)
+    closes = paired_stats(close_diffs, edge=target_edge)
 
     def rate(values, key):
         entries = sum(values[s]["entries"] for s in paired)
@@ -427,7 +431,7 @@ def evaluate(
         "arms": arms,
         "live_mode_max": live_mode_max,
         "sessions": {"decided": len(decided), "paired": paired, "shadow": summary["shadow_sessions"]},
-        "gates": {**gates, "target_edge": TARGET_EDGE},
+        "gates": {**gates, "target_edge": target_edge},
         "closes": {**closes, "episodes": summary["episodes"], "saved_2x": saved_2x},
         "strand_rate": {"rule": strand_rule, "agent": strand_agent},
         "shadow": shadow,
@@ -484,9 +488,5 @@ def run(conn, cfg: dict, *, write: bool = False, now: datetime | None = None) ->
     band = engine.merged_params(cfg, agent_arm).get("regime_trend_points", intraday_pack.TREND_BAND_POINTS)
     result["trend_band_points"] = float(band)
     if write:
-        path = qualification_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(result, indent=2), encoding="utf-8")
-        tmp.replace(path)
+        _jsonio.write_json_atomic(qualification_path(), result, indent=2, default=None)
     return result

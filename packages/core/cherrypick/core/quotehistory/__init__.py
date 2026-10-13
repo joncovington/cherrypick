@@ -1,4 +1,8 @@
-"""The read side of the chain's recorded quotes (`gex_quote_history`, gex's history DB, from 2026-10-13).
+"""The read side of the chain's recorded quotes (gex's history DB, from 2026-10-13).
+
+Stored as `gex_quote_samples` (one row per symbol and tick: date, time, expiration) and `gex_quotes`
+(one per side and strike of a sample, the side 0 for a put and 1 for a call); the layout is the
+recorder's (`service._ensure_history_table`), and this module hides it.
 
 The gex recorder keeps, every tick (~15 s) in RTH, the usable quotes of the strikes nearest spot on its
 chain -- the only quote history in the suite (the stream cache keeps the latest quote per leg and
@@ -28,6 +32,10 @@ from cherrypick.core import home as _home
 
 DEFAULT_MAX_SPOT_STALENESS_SECONDS = 60.0
 
+# `gex_quotes.side`: the recorder's `service.QUOTE_SIDES` (put 0, call 1). Kept as a literal, since
+# core imports nothing from gex; change both or neither.
+PUT, CALL = 0, 1
+
 
 def default_history_db() -> Path:
     return _home.data_dir("gex") / "gex_history.db"
@@ -48,12 +56,13 @@ def session(
     conn = _db.connect_ro(path)
     try:
         have = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        if "gex_quote_history" not in have:
+        if not {"gex_quote_samples", "gex_quotes"} <= have:
             return []
         minutes: dict[float, dict] = {}
         for r in conn.execute(
-            "SELECT ts, expiration, side, strike, bid, ask, mid, age_s, delta FROM gex_quote_history "
-            "WHERE symbol = ? AND trade_date = ? ORDER BY ts",
+            "SELECT s.ts, s.expiration, q.side, q.strike, q.bid, q.ask, q.mid, q.age_s, q.delta "
+            "FROM gex_quote_samples s JOIN gex_quotes q ON q.sample_id = s.id "
+            "WHERE s.symbol = ? AND s.trade_date = ? ORDER BY s.ts, q.side, q.strike",
             (symbol, trade_date),
         ):
             snap = minutes.get(r["ts"])
@@ -79,7 +88,7 @@ def session(
             q = {"bid": r["bid"], "ask": r["ask"], "mid": r["mid"], "age_seconds": r["age_s"]}
             if r["delta"] is not None:
                 q["delta"] = r["delta"]
-            snap["puts" if r["side"] == "put" else "calls"][r["strike"]] = q
+            snap["puts" if r["side"] == PUT else "calls"][r["strike"]] = q
         if not minutes:
             return []
         spots = (

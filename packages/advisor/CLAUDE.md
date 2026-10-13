@@ -131,6 +131,13 @@ The model only *recommends*; its recommendation is stored beside the numbers, ne
 A verdict below the qualification thresholds is labelled `underpowered` — never silently passed or
 failed. Stored verdicts are **recomputed every time a recommendation is attached**.
 
+Each pair also carries **`paired`** (2026-10-12): the advised book against its base session by
+session through `core.compare.pair_with_control` — the console compare page's rule — with the
+seeded 95% interval on the mean difference, the exact sign test and `sessions_to_decision`. It sits
+beside `qualification` and moves no threshold. It is **kept out of `delta` and out of the fact
+pack** (`test_verdict_paired.py` pins both, shown to fail with it moved into `delta`): adding it to
+the model's input is a measurement break for the advisor, to be declared and batched like the others.
+
 **A book that never diverged measured nothing.** Every pair carries `exposure` (does each closed
 advised row have an identical twin in the base on its session, to the cent?), and the verdict carries
 `no_exposure` and `conclusion` (`no_exposure` / `underpowered` / `measured`), ahead of any pass or

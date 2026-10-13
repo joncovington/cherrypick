@@ -46,7 +46,8 @@ Config: copy `config.example.json` → `config.json` (git-ignored, machine-local
   static list. The coupling surface is data plus the module's own SQL, never code, so no package
   imports another. The symbol/window-hint union is delegated to `cherrypick.core.streamrequests` —
   the orchestrator unions the same files to decide whether a running producer has gone stale, and two
-  implementations would recycle this daemon over a difference it never sees. `union_legs` stays local.
+  implementations would recycle this daemon over a difference it never sees. `union_legs` joined them
+  on 2026-10-12, when gex's quote recorder became its second reader (it records held strikes).
   - **A `window_hint` is a `(below, above)` span, not a width.** A plain count is symmetric;
     `{"down": N, "up": M}` is directional. Both normalise through `streamcache.window_span`, the union
     takes the max **per side**, and `window_strike_count` floors both sides, so a directional hint can

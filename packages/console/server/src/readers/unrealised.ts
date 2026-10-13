@@ -75,15 +75,23 @@ export function unrealisedByPosition(
   const openIds = `SELECT position_id FROM ${opts.positionsTable} WHERE status != 'closed'`;
 
   // The latest USABLE mark per (position, leg). A refused mark is a recorded row, not a price.
+  //
+  // One probe per open leg, newest first, stopping at the first usable row -- the shape SQLite can
+  // answer from an index: a seek on the modules' `(position_id, leg_role, marked_at)` index, or a
+  // short backwards walk on the older `(position_id, marked_at)` one. The MAX-per-group join this
+  // replaced read every tick of every open position to find one row per leg (~50 ms on pmcc and
+  // the same again with the per-leg index, which a GROUP BY cannot seek). Only OPEN legs are
+  // priced from a mark, so only they are probed; ties on `marked_at` go to the later row.
   const marks = new Map<string, number>();
   for (const r of db
     .prepare<[], Record<string, unknown>>(
-      `SELECT m.position_id, m.leg_role, m.mid FROM ${opts.marksTable} m
-       JOIN (SELECT position_id, leg_role, MAX(marked_at) AS t FROM ${opts.marksTable}
-             WHERE usable = 1 AND mid IS NOT NULL AND position_id IN (${openIds})
-             GROUP BY position_id, leg_role) x
-         ON x.position_id = m.position_id AND x.leg_role = m.leg_role AND x.t = m.marked_at
-       WHERE m.position_id IN (${openIds})`,
+      `SELECT k.position_id, k.leg_role,
+              (SELECT m.mid FROM ${opts.marksTable} m
+                WHERE m.position_id = k.position_id AND m.leg_role = k.leg_role
+                  AND m.usable = 1 AND m.mid IS NOT NULL
+                ORDER BY m.marked_at DESC, m.rowid DESC LIMIT 1) AS mid
+         FROM (SELECT DISTINCT position_id, leg_role FROM ${opts.legsTable}
+                WHERE status = 'open' AND position_id IN (${openIds})) k`,
     )
     .all()) {
     const mid = num(r["mid"]);
@@ -123,11 +131,12 @@ export function unrealisedByPosition(
     const spots = new Map<string, number>();
     const spotRows = hasColumn(db as never, opts.marksTable, "spot") ? db
       .prepare<[], Record<string, unknown>>(
-        `SELECT m.position_id, m.spot FROM ${opts.marksTable} m
-         JOIN (SELECT position_id, MAX(marked_at) AS t FROM ${opts.marksTable}
-               WHERE spot IS NOT NULL AND position_id IN (${openIds}) GROUP BY position_id) x
-           ON x.position_id = m.position_id AND x.t = m.marked_at
-         WHERE m.spot IS NOT NULL AND m.position_id IN (${openIds})`,
+        // One newest-first probe per open position, as for the leg marks above.
+        `SELECT p.position_id,
+                (SELECT m.spot FROM ${opts.marksTable} m
+                  WHERE m.position_id = p.position_id AND m.spot IS NOT NULL
+                  ORDER BY m.marked_at DESC, m.rowid DESC LIMIT 1) AS spot
+           FROM ${opts.positionsTable} p WHERE p.status != 'closed'`,
       )
       .all() : [];
     for (const r of spotRows) {

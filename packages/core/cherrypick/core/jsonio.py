@@ -11,9 +11,33 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+# On Windows a replace onto a file another process holds open (a reader without delete-sharing,
+# antivirus scanning it) fails with PermissionError for a moment. Unretried, that one moment killed
+# the supervisor: seven "FATAL: unhandled PermissionError" exits in supervisor.log, 2026-09-21 to
+# 2026-10-08, every one in this replace. Moved here from the orchestrator's copy so every writer
+# gets it; a file held for good still raises after the last try.
+_REPLACE_TRIES = 20
+_REPLACE_PAUSE_S = 0.1
+
+
+def replace_with_retry(
+    src: Path | str, dst: Path | str, *, sleep: Callable[[float], Any] | None = None
+) -> None:
+    """`os.replace(src, dst)`, retried on PermissionError up to `_REPLACE_TRIES` times."""
+    sleep = sleep or time.sleep
+    for attempt in range(_REPLACE_TRIES):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == _REPLACE_TRIES - 1:
+                raise
+            sleep(_REPLACE_PAUSE_S)
 
 
 def write_json_atomic(
@@ -30,15 +54,16 @@ def write_json_atomic(
     `TypeError` instead of being written as its `str()` -- for artifacts whose schema is validated
     on read, where a silently stringified value would be a worse failure than a refused write.
     The text is encoded in full before the tmp file is opened, so a refused payload leaves nothing
-    behind. Text mode, UTF-8, `ensure_ascii` left on: the bytes match every copy this replaced."""
+    behind. Text mode, UTF-8, `ensure_ascii` left on: the bytes match every copy this replaced.
+    The replace is retried on a Windows PermissionError (`replace_with_retry`)."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(payload, indent=indent, default=default)
     tmp = target.with_name(target.name + ".tmp")
     with open(tmp, "w", encoding="utf-8") as handle:
         handle.write(text)
-    os.replace(tmp, target)
+    replace_with_retry(tmp, target)
     return target
 
 
-__all__ = ["write_json_atomic"]
+__all__ = ["replace_with_retry", "write_json_atomic"]

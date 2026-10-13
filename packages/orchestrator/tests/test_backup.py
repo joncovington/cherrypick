@@ -143,3 +143,82 @@ def test_a_file_that_vanishes_mid_run_is_recorded_not_a_failed_night(home, monke
     with zipfile.ZipFile(backup.latest_path(CFG)) as zf:
         manifest = json.loads(zf.read(backup.MANIFEST))
     assert manifest["vanished"] == ["state/transient.json"]
+
+
+# --------------------------------------------------------------------------- carrying files over
+# 2026-10-12: the 3.1 GB technicals history, unchanged since 10-09, was snapshotted, quick_checked
+# and recompressed every night -- most of a 7.5-minute run.
+
+
+def _members(path: Path) -> dict[str, bytes]:
+    with zipfile.ZipFile(path) as zf:
+        return {n: zf.read(n) for n in zf.namelist() if n != backup.MANIFEST}
+
+
+def test_an_unchanged_night_carries_every_file_over_and_still_verifies(home):
+    first = backup.run(CFG)
+    assert first["ok"] and first["reused"] == 0
+    before = _members(backup.latest_path(CFG))
+    second = backup.run(CFG)
+    assert second["ok"] and second["reused"] == second["files"] == first["files"]
+    assert _members(backup.latest_path(CFG)) == before
+    assert backup.verify(CFG)["ok"]
+    with zipfile.ZipFile(backup.latest_path(CFG)) as zf:
+        manifest = json.loads(zf.read(backup.MANIFEST))
+    assert {e.get("reused_from") for e in manifest["files"]} == {first["night"]}
+
+
+def test_a_changed_file_is_rebuilt_and_the_rest_carried_over(home):
+    backup.run(CFG)
+    cfg_file = home / "config" / "meic.json"
+    cfg_file.write_text('{"x": 22}', encoding="utf-8")
+    res = backup.run(CFG)
+    assert res["ok"] and res["reused"] == res["files"] - 1
+    assert _members(backup.latest_path(CFG))["config/meic.json"] == b'{"x": 22}'
+
+
+def test_a_write_still_in_the_wal_is_never_carried_over_stale(home):
+    # A committed write that is still in the WAL leaves the main file's size and mtime untouched;
+    # carrying the old copy over would lose it.
+    backup.run(CFG)
+    con = sqlite3.connect(home / "data" / "earnings" / "paper_trades.db")
+    con.execute("PRAGMA wal_autocheckpoint=0")
+    con.execute("INSERT INTO t VALUES (99)")
+    con.commit()
+    try:
+        res = backup.run(CFG)
+    finally:
+        con.close()
+    assert res["ok"] and res["reused"] == res["files"] - 1
+    p = home.parent / "copy.db"
+    p.write_bytes(_members(backup.latest_path(CFG))["data/earnings/paper_trades.db"])
+    assert sqlite3.connect(p).execute("SELECT COUNT(*) FROM t").fetchone()[0] == 4
+
+
+def test_a_backup_from_before_the_source_record_is_never_carried_over(home):
+    backup.run(CFG)
+    latest = backup.latest_path(CFG)
+    with zipfile.ZipFile(latest) as zf:
+        members = {n: zf.read(n) for n in zf.namelist()}
+    manifest = json.loads(members[backup.MANIFEST])
+    for e in manifest["files"]:
+        for key in ("src_size", "src_mtime_ns", "src_sha256"):
+            e.pop(key)
+    members[backup.MANIFEST] = json.dumps(manifest).encode()
+    with zipfile.ZipFile(latest, "w") as zf:
+        for n, data in members.items():
+            zf.writestr(n, data)
+    assert backup.run(CFG)["reused"] == 0
+
+
+def test_carrying_over_a_zip64_member_keeps_the_archive_readable(home, monkeypatch):
+    # The history store is over the 2 GiB line, so its member needs zip64 headers; lower the line
+    # so a small file exercises the same path.
+    monkeypatch.setattr(zipfile, "ZIP64_LIMIT", 64)
+    (home / "data" / "technicals").mkdir(parents=True)
+    (home / "data" / "technicals" / "big.json").write_text("x" * 5000, encoding="utf-8")
+    backup.run(CFG)
+    res = backup.run(CFG)
+    assert res["ok"] and res["reused"] == res["files"]
+    assert backup.verify(CFG)["ok"]
+    assert _members(backup.latest_path(CFG))["data/technicals/big.json"] == b"x" * 5000

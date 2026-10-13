@@ -91,10 +91,6 @@ _EXPERIMENT_IN_ADVISOR = re.compile(r"\(([a-z0-9-]+)\)\s*$")
 _PACK_SLOTS = ("deep", "close", "pm2", "pm1", "midday", "am2", "am1", "open", "am")
 
 
-def _artifact_params(artifact: dict[str, Any]) -> dict[str, Any]:
-    return _advice.params_map(artifact.get("proposals"))
-
-
 def experiment_of(artifact: dict[str, Any] | None) -> str | None:
     """The FIRST experiment an artifact was issued for: the explicit field, else the stamp `enact`
     wrote. Every artifact written before 2026-09-17 carried exactly one; see `experiments_of`."""

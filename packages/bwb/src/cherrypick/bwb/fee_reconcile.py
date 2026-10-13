@@ -26,17 +26,14 @@ import argparse
 import json
 from datetime import date, timedelta
 
+from cherrypick.core import fees as _fees
+
 from cherrypick.bwb import clock, db, engine
 
-# A position's fee is the sum of these fields' magnitudes across every matched transaction --
-# tastytrade reports each as a signed (negative) charge or, on some rows, absent entirely.
-_FEE_FIELDS = ("commission", "clearing_fees", "regulatory_fees", "proprietary_index_option_fees")
+# A position's fee: the shared reading of a broker transaction row (`cherrypick.core.fees`).
+_fee_total = _fees.broker_fee_total
 _SETTLEMENT_TRANSACTION_TYPE = "Receive Deliver"
 _TRADE_TRANSACTION_TYPE = "Trade"
-
-
-def _fee_total(txn: dict) -> float:
-    return sum(abs(float(txn[field])) for field in _FEE_FIELDS if txn.get(field) not in (None, ""))
 
 
 def pending_reconciliation(conn, symbol: str, lookback_days: int = 7, today: str | None = None) -> list[str]:
