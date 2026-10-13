@@ -454,6 +454,15 @@ side, own status/exit/P&L), `daily_summary` (key `summary_date`), `loop_log` (ap
   `positions_today` and `data_reason`, `settlement_check` is enabled for meic in the orchestrator, and
   `tests/test_paper_loop_status.py` pins those field names — a check that cannot fire is worse than
   none.
+- **A session left open past the close is settled at the official close, and only that.**
+  `paper_loop.settle_overdue` runs from the tick's outside-window branch (and `--settle-overdue` by
+  hand): each cash-settled (session, symbol) still open — a past day at once, today's from 20 minutes
+  after settlement — settles through `paper.process_symbol` at one print from
+  `core.settlement.OFFICIAL_SOURCES` (a past day by date, today's via `tt.py get_official_close`),
+  clock pinned to the settlement instant, no entries evaluated, then the daily_summary roll-up.
+  No official print, a physically settled symbol, an event force-close day, or a session already
+  partly settled at another print: left open and logged, never a guess (2026-10-13: an outage across
+  the close left 656 positions open).
 - **`analytics.settlement_audit` (`run.py settlement-audit`) is re-runnable** and reproduces each
   resolved fill from the written convention with its own `_side_settle_value`, **deliberately
   duplicated, not imported** — an audit that imports what it audits only confirms the function equals
