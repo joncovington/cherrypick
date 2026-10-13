@@ -233,6 +233,74 @@ def test_a_multi_day_structure_pairs_on_the_entry_it_shares(tmp_path):
     assert delta["first"] == "2026-09-04"  # its own reading stays on the close
 
 
+# --------------------------------------------------------------------------- size normalisation
+def _sized_bwb_db(path):
+    """A control taking ten entries a session beside an arm taking one, every entry netting the
+    same: the dollar pair is all size, the normalised pairs are zero."""
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE bwb_positions (symbol TEXT, arm TEXT, gross_pnl REAL, fees REAL, entry_max_loss REAL, "
+        "quantity INTEGER, closed_session TEXT, entry_session TEXT, status TEXT)"
+    )
+    rows = []
+    for i, day in enumerate(["2026-09-01", "2026-09-02", "2026-09-03"]):
+        gross = 10.0 + i
+        rows += [("control", gross, 1.0, 5.0, day, day)] * 10
+        rows.append(("capped", gross, 1.0, 5.0, day, day))
+        # A third arm: the same count as the capped one, half the risk per entry.
+        rows.append(("narrow", gross, 1.0, 2.5, day, day))
+    conn.executemany(
+        "INSERT INTO bwb_positions VALUES ('SPX', ?, ?, ?, ?, 1, ?, ?, 'closed')",
+        rows,
+    )
+    conn.commit()
+    conn.close()
+    return path
+
+
+def _bwb_arm(db, arm):
+    arms = compare.module_comparison("bwb", db_path=db, session="2026-10-12")["arms"]
+    return next(a for a in arms if a["arm"] == arm)
+
+
+def test_a_capped_arm_is_compared_per_entry_and_per_dollar_of_risk(tmp_path):
+    db = _sized_bwb_db(tmp_path / "bwb.db")
+    capped, control = _bwb_arm(db, "capped"), _bwb_arm(db, "control")
+    assert control["entries_per_session"] == 10.0 and capped["entries_per_session"] == 1.0
+    assert capped["net_per_entry"] == control["net_per_entry"] == 10.0
+    assert capped["capital"] == 1500.0 and capped["capital_known_trades"] == 3
+    assert capped["net_per_100_risk"] == control["net_per_100_risk"] == 2.0  # $10 on $500 of max loss
+
+    vs = capped["vs_control"]
+    assert vs["mean_diff"] == -90.0, "in dollars a session, the cap reads as a loss of nine entries"
+    assert vs["per_entry"]["mean_diff"] == 0.0 and vs["per_entry"]["sessions"] == 3
+    assert vs["per_100_risk"]["mean_diff"] == 0.0 and vs["per_100_risk"]["ties"] == 3
+
+
+def test_per_dollar_of_risk_separates_what_per_entry_cannot(tmp_path):
+    narrow = _bwb_arm(_sized_bwb_db(tmp_path / "bwb.db"), "narrow")
+    assert narrow["net_per_entry"] == 10.0 and narrow["net_per_100_risk"] == 4.0
+    assert narrow["vs_control"]["per_entry"]["mean_diff"] == 0.0
+    assert narrow["vs_control"]["per_100_risk"]["mean_diff"] == 2.0
+
+
+def test_no_recorded_capital_is_no_risk_figure_never_zero(flies_db, advisor_db):
+    gate = _arm(_doc(flies_db, advisor_db), "flies", "gate")
+    assert gate["capital"] is None and gate["capital_known_trades"] == 0 and gate["net_per_100_risk"] is None
+    assert gate["vs_control"]["per_100_risk"] is None
+    assert gate["vs_control"]["per_entry"]["sessions"] == gate["vs_control"]["sessions"]
+
+
+def test_normalised_values_drop_a_session_with_no_known_capital():
+    rows = [
+        {"session": "a", "net_pnl": 10.0, "capital": 100.0},
+        {"session": "a", "net_pnl": 5.0, "capital": None},
+        {"session": "b", "net_pnl": 7.0, "capital": None},
+    ]
+    assert compare.normalised_session_values(rows, "risk") == {"a": 10.0}
+    assert compare.normalised_session_values(rows, "entry") == {"a": 7.5, "b": 7.0}
+
+
 # --------------------------------------------------------------------------- the bridge
 def test_absent_ledger_is_reported_not_raised(tmp_path):
     m = compare.module_comparison("curve", db_path=tmp_path / "nope.db", session="2026-10-12")

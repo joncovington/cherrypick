@@ -41,8 +41,14 @@ def _table(doc: dict) -> str:
                     f" [{_money(ci[0])}, {_money(ci[1])}] sign p {vs['sign_test_p']}"
                     f" more {vs['sessions_to_exclude_zero']}"
                 )
+                for key, label in (("per_entry", "/entry"), ("per_100_risk", "/$100 risk")):
+                    block = vs.get(key)
+                    if block and block["sessions"]:
+                        nci = block["ci"] or [None, None]
+                        pair += f"  {label} {_money(block['mean_diff'])} [{_money(nci[0])}, {_money(nci[1])}]"
             lines.append(
                 f"  {a['arm']:<42} {a['trades']:>5} tr {a['sessions']:>3} s  net {_money(a['net']):>13}"
+                f"  /entry {_money(a['net_per_entry']):>9}  /$100 risk {_money(a['net_per_100_risk']):>7}"
                 f"  dd {a['max_drawdown']:>10,.2f}{pair}"
             )
     return "\n".join(lines)
