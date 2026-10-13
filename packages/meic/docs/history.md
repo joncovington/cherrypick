@@ -118,6 +118,41 @@ gross by hand came out $55k off before it was noticed — hence the net-of-fees 
   bound. The same replay scored every stop rule on the same entries: holding to expiry won on total at
   every size, stops only shrank the worst day; unspaced, a cap fills in the first minutes on one market
   and loses ~100% of itself on the worst day. `arm_added` break 2026-09-29.
+- **2026-10-12 — `live-shadow`'s verdict: live as configured almost never trades.** Over its first 10
+  sessions (09-29..10-12, 3,586 attempts) it filled on one, 10-02 (two 10-wide ICs at 12:04/12:05,
+  +$428.74), against `control` filling on 9. Refusals: IV floor 1,461 (whole window dark on 5
+  sessions), negative-GEX block 907 (4 sessions), call OTM floor 422, entry window 416, late-entry
+  bias 357, overlap 17, put OTM floor 4. The VIX, VIX1D-ratio, ATR, daily-target and concurrency gates
+  never refused. Gates are checked in order (`paper.evaluate_entry`), so the IV floor masks the GEX
+  block, and only 09-30, 10-02 and 10-05 cleared IV, GEX and the bias -- where the 0.0035 call floor
+  then refused nearly every tick (71% of control's candidates fail it alone). Enabling MEIC live as
+  configured would buy a book that trades about one day in ten.
+- **2026-10-12 — live minus one gate, from 2026-10-19.** Four arms, each `live-shadow` with ONE gate
+  set back to `control`'s value: `live-minus-ivrank` (`min_iv_rank` 0), `live-minus-gexblock`
+  (`regime_gex_block_negative` false), `live-minus-otmfloor` (both OTM floors 0.0001; one rule, two
+  sides) and `live-minus-latebias` (`late_entry_bias_enabled` false). Live adds about a dozen gates
+  over control; these are the four that refused, picked by the counts above, and the rest are left
+  out on purpose. Read each against `live-shadow` on the same sessions: the arm that trades where
+  the shadow is dark names the gate that keeps live dark. Expect masking -- IV and GEX each darkened
+  whole sessions on their own, so removing either may leave the other holding the day; a pair is the
+  next question only if no single arm opens up. Added to the machine registry by
+  `scripts/boundary_2026_10_19.py` on the weekend of 10-17, with an `arm_added` break each dated
+  2026-10-19; `tests/test_risk_profiles.py` pins each to one gate at control's value.
+- **2026-10-12 — `advised:live-stop-vs-hold` wound down at the boundary.** The replay had already
+  found holding beats every stop at every cap, and forward it won 26% of entries over 9 sessions. It
+  is concluded with a verdict by `advisor kill` on the weekend of 10-17 (the boundary script), not
+  left to run its 20.
+- **2026-10-12 — three live-ledger rows corrected** (`scripts/meic_live_ledger_correct.py`, dry run
+  by default; a recording correction). The agent-era loop stored the entry's limit as `net_credit`.
+  id 7 (06-30): filled at 0.43, not 0.32, so the stop at 0.39 was the +$4.00 gross the row already
+  says (net −$0.96, which matches the account's move that day). id 6 (06-29): filled at 0.38, exit
+  0.40, so pnl −$2.00 gross and fees $4.96 (net −$6.96, again matching the account) where both were
+  NULL. id 1 (06-25) is a paper trade (`PAPER-` id, live trading off that day) that every reader
+  counts as live, with a net figure in the gross column; the script exports and removes it on
+  request. Broker transactions for orders 479518187/479536927 and 479793516/479805454 would make
+  id 6's fee split exact. Separately, `live_loop.py` updates only `net_credit` on a fill, while stop
+  and expiry P&L read the per-side `put_credit`/`call_credit` modelled at quote time, so live P&L
+  leaves out any fill improvement. No live row exists since 06-30; fix before MEIC goes live.
 
 ## The gex regime tag
 

@@ -32,6 +32,7 @@ from typing import Any
 from cherrypick.core import calendar as _calendar
 from cherrypick.core import clock as _clock
 from cherrypick.core import db as _db
+from cherrypick.core import jsonio as _jsonio
 
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET
@@ -876,12 +877,7 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
 
 def write(facts: dict) -> str:
     """Atomic tmp-then-replace, same as every artifact writer in the suite."""
-    path = _paths.facts_path(facts["session"])
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(facts, indent=2, default=str), encoding="utf-8")
-    tmp.replace(path)
-    return str(path)
+    return str(_jsonio.write_json_atomic(_paths.facts_path(facts["session"]), facts))
 
 
 def read(session: str) -> dict | None:

@@ -207,13 +207,6 @@ def ic_expire_fee(itm_legs: int = 0) -> float:
     return round(itm_legs * ASSIGNMENT_FEE_PER_SETTLEMENT, 2)
 
 
-def ic_open_fee_table(symbols=("SPX", "XSP", "NDX", "RUT")) -> dict:
-    """{symbol: ic_open_fee(symbol)} plus a DEFAULT (equity/ETF, no index exchange fee)."""
-    table = {s: ic_open_fee(s) for s in symbols}
-    table["DEFAULT"] = ic_open_fee("__default__")  # unknown symbol -> 0.0 exchange fee
-    return table
-
-
 # --------------------------------------------------------------------------- 3. the SHARE side
 # What a cash-settled symbol never reaches: an American-style option that finishes ITM delivers
 # STOCK, and the stock then has to be disposed of. Two pass-throughs land on the disposal, both on
@@ -312,3 +305,15 @@ def assignment_fee(assignment: dict, dispose_price: float) -> float:
     return assignment_round_trip_fee(
         assignment["shares"], assignment["basis"], dispose_price, direction=assignment["direction"]
     )
+
+
+# --------------------------------------------------------------------------- 4. broker-reported fees
+# What a live fee reconciliation reads off a tastytrade transaction row. A position's real fee is the
+# sum of these fields' magnitudes across every matched transaction: tastytrade reports each as a signed
+# (negative) charge or, on some rows, leaves it out. bwb and flies reconcile against the same fields.
+BROKER_FEE_FIELDS = ("commission", "clearing_fees", "regulatory_fees", "proprietary_index_option_fees")
+
+
+def broker_fee_total(txn: dict) -> float:
+    """The fees one broker transaction row charged, as a positive figure (absent or blank fields are 0)."""
+    return sum(abs(float(txn[field])) for field in BROKER_FEE_FIELDS if txn.get(field) not in (None, ""))

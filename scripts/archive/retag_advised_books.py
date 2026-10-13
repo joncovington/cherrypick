@@ -18,8 +18,8 @@ its experiment's tag is not touched), dry-run by default, `--apply` backs each l
 (`<db>.bak-pre-retag-<stamp>`) before the first write to it. Run it with the paper loops idle --
 outside RTH -- so no writer holds the ledger while a tag is rewritten.
 
-    python scripts/retag_advised_books.py            # report only
-    python scripts/retag_advised_books.py --apply    # rewrite, with backups
+    python scripts/archive/retag_advised_books.py            # report only
+    python scripts/archive/retag_advised_books.py --apply    # rewrite, with backups
 """
 
 from __future__ import annotations

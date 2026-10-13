@@ -35,14 +35,17 @@ doubly so here because a zero credit floor cannot screen out an illusory opening
 | book | add-on trigger |
 |---|---|
 | `control` | never — the BWB rides alone to expiry |
-| `delta` | the near wing's \|delta\| reaches `delta_trigger` (50Δ) — raw proximity |
+| `delta` | the near wing's \|delta\| reaches `delta_trigger` (50Δ) — raw proximity. **Retired from 2026-10-19** (docs/history.md) |
 | `bounce` | peak \|delta\| since entry >= `delta_trigger` AND current <= `delta_trigger - bounce_pullback` (45Δ). No `bounce_peak` key: delta and bounce differ by exactly one condition |
 | `flip` | spot traded below `gamma_flip` since entry AND reclaimed to >= `flip * flip_buffer` (1.001) |
 
 Advised twins follow `packages/core/CLAUDE.md`. bwb specifics: **deliberately UNBOUNDED** (no
 `advice.bounds` at all); the pre-2026-09-17 tags `advised:control` / `advised:delta` still resolve
 by name in `engine.base_book` and `management.effective_params`; the `wall` book is never an advised
-base.
+base. The add-on params (`delta_trigger`, `bounce_pullback`, `flip_buffer`, `addon_credit_floor`)
+declare `arms` in their bounds — none acts on `control`, which never arms — and
+`tests/test_advice_arms.py` derives each list from `management.evaluate`, so a drifted list fails.
+The deployed config needs the same `arms` keys before the refusal applies there.
 
 **The add-on** (identical for all three arms): a put credit spread bracketing the far wing — SELL
 one increment above, BUY one below — which must itself price as a credit (`addon_credit_floor`, a
@@ -75,7 +78,10 @@ basis, NOT the GEX recorder's ~5-min history, so a stalled recorder cannot freez
 basis is stamped on every trigger row. A chain with no OI cached yet refuses `insufficient_gex_data`,
 so `flip` cannot arm until OI accumulates.
 
-### The `wall` book (opt-in, 2026-08-31) — outside the paired design
+### The `wall` book (opt-in, 2026-08-31; retired from 2026-10-19) — outside the paired design
+
+Retired because a $300-a-week edge would take ~126 weeks to read at its $1,353 weekly sd
+(docs/history.md). Kept below as the record.
 
 `books.wall` trades a CALL-side BWB with the body at the GEX call wall (read off the same
 `gamma_flip_reading` as the flip trigger): +1 near (one increment below) / −2 body / +1 far (two
@@ -152,7 +158,9 @@ affecting.
 12. **The vol term structure at entry is recorded, never acted on** (2026-10-09). VIX9D, VIX and
     VIX3M prints with their ages; a stale or missing print is no number plus its reason. The
     VIX9D/VIX gate (`bwb regime-split`) is a hypothesis from a modelled two-year backtest that
-    chose the best of six gates. It is measured here and not traded on. A row with no reading,
+    chose the best of six gates. It is measured here and not traded on. The modelled out-of-sample
+    test (2011-2024, `scripts/bwb_regime_gate_history.py`, root `docs/history-studies-2026-10.md`)
+    found that skipped entries lose about twice as much per trade, and that kept entries still lose. A row with no reading,
     including every row before 2026-10-09, is `unmeasured` and is never assigned to a side.
 
 SPX is cash-settled and European: an expiring leg books intrinsic against the settlement print; no
@@ -165,7 +173,8 @@ Built to test whether the paper result survives a fill without disturbing the pa
 - **Gating** (guardrail): `live.enabled`, `live.gate0_confirmed`, a per-day arm record
   (`/live-bwb-start`, a literal YES each day), a designated account, and `live.arm` naming a base
   book — every one re-checked on every tick and every submission, all guarded from the settings
-  surface. **The suite halt flag stops new risk only** (2026-10-08): the entry is refused
+  surface. One list: `broker_cli.live_gates` is `live_loop.readiness` plus the arm record read as
+  the dead-man's switch reads it (2026-10-12; a missing `live.arm` refuses in both). **The suite halt flag stops new risk only** (2026-10-08): the entry is refused
   (`halt_flag_present`) and an armed add-on deferred, while fills are confirmed, resting orders
   managed and the ladder settled. Never run `--install-task` outside `/live-bwb-start`.
 - **The structure is the paper structure.** `engine.plan_entry` plans it; `live_orders.entry_spec`
@@ -240,6 +249,7 @@ python -m cherrypick.bwb.paper_loop --status      # one JSON health object (watc
 python -m cherrypick.bwb.paper_loop --settle --date 2026-09-18 --price 6400.10  # official print
 python run.py status | worksheet | fires          # positions + expiration / worksheet / fire counts
 python run.py iv-premium [--windows]            # implied at entry vs realised to expiry, per window
+python run.py live-gap | entry-context           # live arm vs paper per session; entry vol per position (read-only)
 python -m pytest                                  # temp CHERRYPICK_HOME; no broker, no streamer
 ruff check . && ruff format .                     # line-length 110
 

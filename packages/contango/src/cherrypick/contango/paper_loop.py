@@ -66,12 +66,7 @@ def _release_loop_lock() -> None:
 
 
 def _beat() -> None:
-    try:
-        path = _home.heartbeat_path("contango")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(datetime.now().astimezone().isoformat(), encoding="utf-8")
-    except OSError:
-        pass
+    _home.beat("contango")
 
 
 # --------------------------------------------------------------------------- arms

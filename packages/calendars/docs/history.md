@@ -84,3 +84,16 @@ silently, and `run.py record-break` opens the ledger for writing (the 09-24 swit
 to read-only caught it, and it raised on every call since). Still open: `friday_week_skipped` can
 never be journaled (it waits for `now_min > 16:00`, and the loop stops at 16:00), and the read-side
 exit grid covers `path` but not `friday:path`.
+
+## `time_exit` out of the advice bounds at the 2026-10-19 boundary (declared 2026-10-12)
+
+The read side already replays every time exit over every week's real marks, Friday noon included
+(`exit_policies.py` `time-fri-noon`, validated against the real books to the cent each run), so a
+forward advised book on it buys nothing the replay does not. `time_exit` leaves `advice.bounds`; the
+parameter itself stays for a book to set. The running experiment on it,
+`advised:fri-noon-cycle-extension` (6 of 15 sessions), is concluded with a verdict by `advisor kill`
+before the bound goes -- a bound removed under a running experiment rejects its next artifact instead
+of concluding it -- and its open rows keep their frozen params to the end of their week. `advice_bounds`
+break 2026-10-19. Both done by `scripts/boundary_2026_10_19.py` on the weekend of 10-17.
+
+The replay covers `path` only, not `friday:path`; the Friday regime's exit grid is still a gap.

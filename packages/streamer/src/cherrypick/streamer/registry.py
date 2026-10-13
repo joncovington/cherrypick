@@ -31,10 +31,10 @@ See ``docs/streamer-package-plan.md``.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 from cherrypick.core import streamrequests as _streamrequests
 
 requests_dir = _streamrequests.requests_dir
@@ -85,10 +85,7 @@ def write_request(
         "expirations": _streamrequests.clean_expirations(expirations),
         "history_days": _streamrequests.clean_history_days(history_days),
     }
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(payload), encoding="utf-8")
-    tmp.replace(path)  # atomic on the same filesystem (Windows + POSIX)
-    return path
+    return _jsonio.write_json_atomic(path, payload, indent=None, default=None)
 
 
 _read_all = _streamrequests.read_all

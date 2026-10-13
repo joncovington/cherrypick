@@ -30,12 +30,12 @@ import { fmtIvr } from "../../lib/format";
 interface MeicAnalytics {
   periods: Array<{ label: string; net: number; trades: number; wins: number; losses: number }>;
   exitReasons: Array<{ reason: string; count: number }>;
-  feeDrag: { grossCredit: number; fees: number; netPnl: number; dragPct: number | null };
+  feeDrag: { credit: number; fees: number; settlementFees: number | null; netPnl: number; dragPct: number | null };
 }
 
 interface MeicScopeData {
   symbols: string[];
-  profiles: string[];
+  arms: string[];
   eras: Array<{ era: string; trades: number }>;
   currentEra: string;
 }
@@ -95,7 +95,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
     const data = scope.data;
     if (data === undefined) return;
     if (symbol !== null && !data.symbols.includes(symbol)) setSymbol(null);
-    if (profile !== null && !data.profiles.includes(profile)) setProfile(null);
+    if (profile !== null && !data.arms.includes(profile)) setProfile(null);
   }, [scope.data, symbol, profile]);
 
   const loop = useQuery<LoopStatus>({
@@ -213,19 +213,24 @@ export function MeicLightbox({ slide }: { slide: string }) {
             <div className="stats-grid">
               <div className="stat-tile">
                 <span className="stat-label">premium collected</span>
-                <span className="stat-value">{a !== undefined ? fmtMoney(a.feeDrag.grossCredit) : "—"}</span>
+                <span className="stat-value">{a !== undefined ? fmtMoney(a.feeDrag.credit) : "—"}</span>
               </div>
-              <div className="stat-tile">
-                <span className="stat-label">fees and settlement</span>
+              <div className="stat-tile" title="commissions and exchange fees; settlement is its own figure and outside fee drag">
+                <span className="stat-label">trading fees</span>
                 <span className="stat-value pnl-neg">{a !== undefined ? fmtMoney(a.feeDrag.fees) : "—"}</span>
               </div>
-              <div className="stat-tile">
-                <span className="stat-label">net P&L</span>
-                <span className={`stat-value ${(a?.feeDrag.netPnl ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}`}>
-                  {a !== undefined ? fmtMoney(a.feeDrag.netPnl) : "—"}
-                </span>
+              <div
+                className="stat-tile"
+                title={
+                  a?.feeDrag.settlementFees === null
+                    ? "not recorded on every trade in this era; the unrecorded trades' settlement is inside trading fees"
+                    : "exercise / assignment fees at settlement"
+                }
+              >
+                <span className="stat-label">settlement</span>
+                <span className="stat-value">{a === undefined ? "—" : a.feeDrag.settlementFees === null ? "n/r" : fmtMoney(a.feeDrag.settlementFees)}</span>
               </div>
-              <div className="stat-tile">
+              <div className="stat-tile" title="trading fees ÷ premium collected, settled trades">
                 <span className="stat-label">fee drag</span>
                 <span className="stat-value">{fmtPct(a?.feeDrag.dragPct ?? null, 1)}</span>
               </div>
@@ -339,7 +344,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
             </select>
           )}
           <ScopeSelect label="symbol" value={symbol} options={scope.data?.symbols} onChange={setSymbol} allLabel="all symbols" />
-          <ScopeSelect label="arm" value={profile} options={scope.data?.profiles} onChange={setProfile} allLabel="all arms" />
+          <ScopeSelect label="arm" value={profile} options={scope.data?.arms} onChange={setProfile} allLabel="all arms" />
           <EraSelect value={era} eras={scope.data?.eras} currentEra={scope.data?.currentEra} onChange={setEra} />
           {l?.ivRank != null && <span className="chip">IV rank {fmtIvr(l.ivRank)}</span>}
           {l?.underlyingPrice != null && <span className="chip">{l.underlyingPrice.toFixed(2)}</span>}

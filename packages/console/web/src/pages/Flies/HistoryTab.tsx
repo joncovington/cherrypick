@@ -14,7 +14,11 @@ interface Summary {
   trades: number;
   sessions: number;
   grossPnl: number;
+  /** Trading fees; settlement is its own figure. */
   fees: number;
+  /** Null (n/r) when any trade behind it never recorded settlement. */
+  settlementFees: number | null;
+  premium: number;
   netPnl: number;
   wins: number;
   losses: number;
@@ -346,12 +350,21 @@ export function HistoryTab({
         <DataCard title="By entry hour (deliberately unranked)" headers={headers} loading={isLoading} rowCount={data?.byEntryHour.length ?? 0}>
           <SummaryRows rows={data?.byEntryHour} label="hour" thinBelow={data?.thinBelowSessions ?? null} />
         </DataCard>
-        <DataCard title="Fee drag by arm" headers={["arm", "gross", "fees", "net", "drag %"]} loading={isLoading} rowCount={data?.feeDrag.length ?? 0}>
+        <DataCard
+          title="Fee drag by arm"
+          headers={["arm", "premium", "gross", "fees", "settle", "net", "fee drag"]}
+          loading={isLoading}
+          rowCount={data?.feeDrag.length ?? 0}
+        >
           {data?.feeDrag.map((r) => (
             <tr key={r.arm}>
               <td>{r.arm}</td>
+              <td title="premium collected: each credit fly's entry credit, whole position">{fmtMoney(r.premium)}</td>
               <td>{fmtMoney(r.grossPnl)}</td>
-              <td className="pnl-neg">{fmtMoney(r.fees)}</td>
+              <td className="pnl-neg" title={r.settlementFees === null ? "trading fees, with settlement left in on the trades that never recorded the split" : "trading fees: commissions and exchange fees"}>
+                {fmtMoney(r.fees)}
+              </td>
+              <td className="muted">{r.settlementFees === null ? "n/r" : fmtMoney(r.settlementFees)}</td>
               <td><PnlCell v={r.netPnl} /></td>
               <td className="muted">
                 {r.feeDragPct !== null ? `${r.feeDragPct.toFixed(1)}%` : "—"}

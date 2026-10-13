@@ -1,4 +1,6 @@
 import { useBwb } from "../../lib/api";
+import { useMode } from "../../lib/useMode";
+import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { LoopPill } from "../../components/ScopeBar";
 import { IntegrityStrip } from "../../pages/Bwb/IntegrityStrip";
@@ -7,6 +9,8 @@ import { BwbSession } from "../../pages/Bwb/BwbSession";
 import { DecisionsCard } from "../../components/DecisionsCard";
 import { HistoryTab } from "../../pages/Bwb/HistoryTab";
 import { HelpTab } from "../../pages/Bwb/HelpTab";
+import { BwbLiveGapSlide } from "../../pages/Bwb/LiveGapSlide";
+import { BwbVolSlide } from "../../pages/Bwb/VolSlide";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { ModuleFrame } from "../ModuleFrame";
@@ -18,20 +22,24 @@ const BWB_LABEL = Object.fromEntries(BWB_SLIDES.map((s) => [s.id, s.label])) as 
 /**
  * bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment), on the
  * module frame since 2026-09-25: a left rail of pages, and nothing on the surface opens an overlay.
+ *
+ * Paper by default, with the live pilot's book behind the page's paper/live toggle: every slide
+ * that reads a ledger follows it. The advisor slide stays paper -- advised books exist only there.
  */
 export function BwbLightbox({ slide }: { slide: string }) {
-  const { data, isLoading, dataUpdatedAt } = useBwb();
+  const [mode, setMode] = useMode();
+  const { data, isLoading, dataUpdatedAt } = useBwb(mode);
   const loopState =
     data?.today.lastIteration == null ? "no-data" : data.today.lastIteration.ageSeconds < 900 ? "live" : "idle";
 
   const slides: Array<SlideDef & { id: BwbSlideId }> = [
-    { id: "session", label: BWB_LABEL.session, render: () => <BwbSession data={data} loading={isLoading} /> },
+    { id: "session", label: BWB_LABEL.session, render: () => <BwbSession data={data} loading={isLoading} mode={mode} /> },
     {
       id: "decisions",
       label: BWB_LABEL.decisions,
       render: () => (
         <div className="cards cards-wide">
-          <DecisionsCard module="bwb" />
+          <DecisionsCard module="bwb" mode={mode} />
         </div>
       ),
     },
@@ -51,7 +59,9 @@ export function BwbLightbox({ slide }: { slide: string }) {
         </div>
       ),
     },
-    { id: "performance", label: BWB_LABEL.performance, render: () => <PerformanceSlide module="bwb" /> },
+    { id: "vol", label: BWB_LABEL.vol, render: () => <BwbVolSlide /> },
+    { id: "livegap", label: BWB_LABEL.livegap, render: () => <BwbLiveGapSlide /> },
+    { id: "performance", label: BWB_LABEL.performance, render: () => <PerformanceSlide module="bwb" mode={mode} /> },
     { id: "advisor", label: BWB_LABEL.advisor, render: () => <AdvisorSlide module="bwb" /> },
     {
       id: "positions",
@@ -60,7 +70,7 @@ export function BwbLightbox({ slide }: { slide: string }) {
         <div className="cards cards-wide">{isLoading ? null : <OpenTradesCard data={data} updatedAt={dataUpdatedAt} />}</div>
       ),
     },
-    { id: "history", label: BWB_LABEL.history, render: () => <HistoryTab /> },
+    { id: "history", label: BWB_LABEL.history, render: () => <HistoryTab mode={mode} /> },
     { id: "guide", label: BWB_LABEL.guide, render: () => <HelpTab data={data} /> },
   ];
 
@@ -69,7 +79,8 @@ export function BwbLightbox({ slide }: { slide: string }) {
       module="bwb"
       slide={slide}
       slides={slides}
-      badge={<PaperLiveBadge mode="paper" />}
+      badge={<PaperLiveBadge mode={mode} />}
+      headerControls={<ModeToggle mode={mode} onChange={setMode} />}
       loopPill={
         <LoopPill
           state={data === undefined ? undefined : loopState}

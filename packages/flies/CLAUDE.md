@@ -52,14 +52,15 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `cherrypick/flies/book.py` | wires engine decisions to the paper DB; one book per (date, arm, symbol). A replay hands `process_snapshot`/`settle_book` the tick's `now` (or `paper_loop.run_once` its `when`) and every stamp — entry_time, completed_at, latencies, the cadence clock, the journals — is that instant (`clock.pinned`); the loops pass none and stamp the wall clock. |
 | `cherrypick/flies/db.py` | `fly_positions` (ledger) and `fly_books` (roll-up with the floor's price band). |
 | `cherrypick/flies/analytics.py` | the one query layer every read surface goes through. Read-only. |
+| `cherrypick/flies/analysis_rows.py` | The `scripts/flies_*` replays' settled-row loader and the ONE split of a row's `fees` into entry / completion / roll / settlement (`fees` is the total; the print's part is `settlement_fees`, else derived from a reconciled total, else the module's own fee at the print; the trades share the rest by shape). A replay never takes the entry's fee another way. |
 | `cherrypick/flies/eod.py` | Report builders, retired 2026-08-13 (`packages/review` reports the session now). `logs_dir()` is still the loops' path helper. |
-| `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `regime` / `bands` / `replay-gates` / `hedge-overlay` (`--run-k`) / `reversal-book` / `fill-model` / `regime-cuts` / `debit-first-offsets` / `debit-ladder` / `selector-fit` / `selector-replay` / `close-or-hold`. |
+| `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `regime` / `bands` / `replay-gates` / `hedge-overlay` (`--run-k`) / `reversal-book` / `fill-model` / `regime-cuts` / `debit-first-offsets` / `debit-ladder` / `selector-fit` / `selector-replay` / `close-or-hold`; the console bridges three read-only evidence verbs, `live-gap` (live vs paper paired per session), `gate-sessions` (gate arms vs control over each arm's own window) and `selector-sessions`. |
 | `cherrypick/flies/close_or_hold.py` | `run.py close-or-hold` (live ledger; `--paper`, `--at HH:MM`): each of today's open positions closed now at natural (long legs at the bid, shorts at the ask, less `ic_close_fee`) beside its expected expiry P&L under the empirical move from this clock time (±5 min) to the close, from the gex recorder's `gex_spot_history` and `daily_closes`, settled through `fly.position_pnl` with its settlement fee. Any unusable leg quote means no close number, never a guess. **Unscaled** (a quiet day and a fast one weigh the same), ~50-80 sessions, no estimate under 20; values the structure as it stands, not a completion still resting. A read, not advice: nothing consults it and rule 5 stands. Pure functions plus a read-only reader. |
 | `cherrypick/flies/selector.py` | The selector arm, pure: candidates against its own book, the merge, scoring, the choice, `fit`, model validation. [docs/selector.md](docs/selector.md). |
 | `cherrypick/flies/selector_replay.py` | The selector walked forward over recorded sessions, out of sample, beside every benchmark it must beat. Read-only. |
 | `cherrypick/flies/ladder.py` | The debit-first shadow ladder, pure: rung geometry, the entry price, the per-tick fold through the arm's own completion function, settlement. |
 | `cherrypick/flies/live_loop.py` | The LIVE loop: a 1-min `--once --live` tick fired by the supervisor while the arm record (`state/flies-live-arm.json`, written per day via `/live-flies-start`) is valid; self-disarms at `live.disarm_time` by deleting the record. The arm record, both disarm reasons, the supervisor-heartbeat read and the record-only arming rule are `cherrypick.core.live` (thin wrappers here; the pre-cutover record location stays flies-only, and arming without a supervisor is refused -- the schtasks fallback was removed 2026-10-08); fill confirmation reads `cherrypick.core.execution.fill_state`. `--once` (dry-run default) is the rung-0 smoke; `--status`; `--settle --price` for the official print; burst fill-watchers `--watch-fills`. Every live tick marks each open position at mid into `fly_live_marks` — pure telemetry after every decision; an unquoted leg gets no row, never a zero. A mid is not a fill. Live only: paper's result is settled payoff by design. |
-| `cherrypick/flies/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor); `--live` double-gated. The loop's adapter is `cherrypick.core.execution.Broker` with this module's session, account, `live_gates`, serializer and deploy cap injected; only the REST re-quote remains here. `official_settlement_price` is `cherrypick.core.settlement`'s, kept as a module attribute so the adapter and tests patch one seam. |
+| `cherrypick/flies/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor). `live_gates` is `live_loop.readiness` plus today's arm record (read as the tick's dead-man's switch reads it), so `execute_trade --live` and every adapter submit refuse an unarmed day, a bad `live.arm` or a missing designated account exactly as the tick does. The loop's adapter is `cherrypick.core.execution.Broker` with this module's session, account, `live_gates`, serializer and deploy cap injected; only the REST re-quote remains here. `official_settlement_price` is `cherrypick.core.settlement`'s, kept as a module attribute so the adapter and tests patch one seam. |
 | `cherrypick/flies/live_orders.py` | Pure engine-decision → order-spec builders (OCC symbols from the provider). Tick rounding is `cherrypick.core.structures`. |
 | `cherrypick/flies/alert_daemon.py` | Optional order-alert daemon: one account-alert websocket for the trading day, started on arm / stopped on disarm. Decides nothing — appends to the inbox below so fills are *noticed* sooner. |
 | `cherrypick/flies/alerts_db.py` | The WAL-mode alert inbox (`live_alerts.db`), separate from the ledger on purpose — 1 writer (daemon), N readers (tick, watcher). |
@@ -294,6 +295,11 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   - **Safety and credit trade directly**: pushing the tail away from spot shrinks the credit, so
     `min_bwb_credit_pct_of_tail` (0.15), not the price gate, is what binds. The roll trap it tests is
     in [docs/faq.md](docs/faq.md).
+- **Retired at the 2026-10-19 boundary** (experiment log, 2026-10-12): `debit-first-up`,
+  `debit-first-down`, `bwb-up`, `bwb-down`, `bwb-up-w2`, `bwb-down-w2` and `bwb-atm`. Their entries
+  below are kept as the record. `debit-first-atm` stays: its shadow ladder's 10-session read cannot
+  be complete by 10-19 (the 10-08 outage voided that session's anchors), so it slips to the next
+  boundary.
 - `bwb-atm`, `debit-first-atm` — ATM twins of the two GEX-centred construction arms, restoring the
   one-variable rule: **X-atm vs `control`** isolates construction, **X-atm vs X** isolates centring. ATM
   means the structure straddles spot, deliberately. **No `spot + N strikes` arm**: `center_offset` is
@@ -380,6 +386,13 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
     inputs. Fails open when unmeasured.
   - **The one variable is pinned** by `tests/test_wall_clear.py`; the judging rule is in the
     experiment log (2026-10-05).
+- `live-shadow` — **the live configuration in paper, from 2026-10-19**. Not a variant of `control`:
+  an arm declaring `mirror_live` takes its params from the live block (`engine.live_mirror_params`:
+  `live.arm`'s params, live's start, completion cutoff and buying-power cap, the entry credit floored
+  to the tick), and ignores any key of its own. Read against the **live ledger** over the same
+  sessions, never against `control`. `tests/test_live_shadow.py` pins it to `live_loop`'s params and
+  lists, key by key, what paper cannot express (resting fills, fresh REST quotes, mid-first pricing,
+  the one-minute tick, the quarter-end block).
 - `restack` — `control` plus one relaxed rule, **from 2026-10-12** (moved from 10-19, as
   `wall-clear`): the duplicate rule ignores a structure once it is completed risk-free (`restack_completed`,
   `engine.completed_risk_free`), so spot returning to a completed fly's centre may sell that vertical
@@ -461,7 +474,9 @@ changing one. The narrative behind every dimension:
 every entry while the session's trend-from-open bucket is the named one — the day, not the leg.
 `engine.miss_stop_refusal` (`miss_stop_minutes`) stops an arm entering for the day once any of its
 spreads has sat uncompleted that long (losing sessions were RUNS of misses into one tape). Both are
-off unless an arm or advice sets them; both are declared in `advice.bounds`; both sit ahead of strike
+off unless an arm or advice sets them; `refuse_trend_bucket` is declared in `advice.bounds`, and
+`miss_stop_minutes` was taken out of them at the 2026-10-19 boundary (negative on live, re-proposed
+repeatedly; experiment log 2026-10-12) -- an arm may still set it; both sit ahead of strike
 selection so a refusal is attributed to the session; legged only. Because each reads only facts every
 row carries, `replay_gates.py` (`replay-gates`) re-runs recorded sessions under either rule exactly —
 the cheap first answer before the advised twin's forward A/B. The live tick stamps `entry_time_min`
@@ -622,6 +637,12 @@ talkative as a human reader needs.
     moved against us beyond `live.fresh_quote_tolerance_dollars`. Whether/what to enter stays 100%
     cache-driven. (Origin: the broker's execution-quality check rejected a cached price its own
     preflight passed.)
+  - **`live.entry_pricing`** (2026-10-12, default `concession`, off in the example): `mid_first`
+    asks the fresh mid (floored to the tick, never past it) on a structure's first order of the day
+    and concedes to the concession price on the next tick through `_manage_pending_entry`'s
+    cancel/replace; the ledger's unfilled rows, not process state, remember the first try. Every
+    gate and the fresh-quote check apply to both orders. The completion limit follows the credit
+    filled, so it rises with a mid fill. Switching it is a **live measurement break**.
   - **The order-alert stream** — `live.use_order_alert_stream` (per-burst websocket) or
     `live.use_order_alert_daemon` (supersedes it when both are on: `alert_daemon.py` holds one
     connection for the day and appends to `data/flies/live_alerts.db`). Both off by default, both only

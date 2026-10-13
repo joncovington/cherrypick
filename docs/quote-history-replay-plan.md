@@ -139,7 +139,31 @@ of the rules. Fields beyond quotes are enriched from what is already recorded:
 - the live start time and the cap size;
 - which sources could join the selector;
 - the intraday agent's tagged closes, re-priced at other times;
+- the live tick cadence (declared below);
 - any paper arm judged over sessions recorded since it was declared.
+
+**Declared question: the live tick cadence (declared 2026-10-13, before any recorded session was
+read).** The live loop ticks every 60 s; paper ticks every 15 s, and `live-shadow` lists the
+1-minute tick as a difference paper cannot express. The tick decides when a new entry is evaluated
+and when a resting entry is cancelled and replaced. It does not decide completions (the completing
+order rests at the broker from the entry fill) or fill confirmation (the burst watcher polls on its
+own clock), and the replay must hold both identical across cells. The start-time replay (#227) found
+net swinging by up to ~$5k with the second-offset a 60 s tick lands on, more than any gap between
+start times, so cadence plausibly matters, in an unknown direction.
+- *Grid, fixed now:* 60 s at four phases (offsets 0/15/30/45 s), 30 s at two phases (0/15 s), and
+  15 s. 15 s is the recording's own resolution and the finest cell; nothing finer is replayable.
+  The baseline is 60 s as deployed, read as the mean of its four phases; the family is the two
+  alternatives (30 s, 15 s), Holm-corrected.
+- *Measures, per session, paired against the baseline:* structures admitted, strands, completion
+  rate, net, and broker load (entry orders placed, cancel/replaces and fresh-quote calls). The spread
+  across 60 s phases is reported beside every comparison, because it is the noise a cadence change
+  has to clear.
+- *Decision rule:* a faster cadence is adopted only if its paired per-session net difference has a
+  one-sided 95% lower bound above zero after correction, over at least 20 sessions recorded and
+  replayed out of sample, and its added broker load fits the broker's rate limits with room left.
+  Short of that the tick stays at 60 s, and the read says "not shown", not "60 s is better".
+- *Landing:* if adopted, the change lands at a declared boundary with a live-ledger break
+  (`tick_cadence`), and `live-shadow`'s list of what paper cannot express drops the 1-minute tick.
 
 ## Phase 2 — the MEIC replay
 
@@ -210,3 +234,4 @@ disagree, the shared code moves to `cherrypick.core`, following core's own bar.
 | ~10-26 (10 sessions) | Phase 1 validation, live-rules and paper side by side (gap 5) |
 | after Phase 1 validates | Phase 2 (MEIC) |
 | ~14 sessions out of sample | First tuning reads (credit floor, restack, start time), against their declared grids; an effect of ~$100 a session needs ~42 (gap 3) |
+| ≥20 sessions out of sample | Live tick cadence read (60 s vs 30 s vs 15 s), against its declared grid and decision rule |

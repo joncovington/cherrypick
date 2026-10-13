@@ -158,10 +158,19 @@ alone):
     forest sentence says what the floor knows and no more ("from 7659 upward", "at or below 7645",
     "locked").
   - Mirror tests skip cleanly and **visibly** when the ledger or Python is unavailable.
+  - **bwb evidence is bridged** (`services/bwbEvidenceBridge.ts`): `live-gap` (the live arm against
+    paper's same arm, refusals named with their gate, e.g. `live.vix9d_vix_max`), `entry-context`,
+    `regime-split` and `iv-premium` (the `vol` tab). Each verb opens the ledger read-only.
   - **Bridged, not mirrored:** calendars' exit-policy table and week anchors go through
     `services/calendarsBridge.ts` (memoised 5–10 min) — the policy replay is validated to the cent
     against the real books, and a TypeScript copy would be validating the wrong derivation; the
     anchors are NYSE holiday arithmetic whose structure tag keys every result.
+  - **Flies evidence** (`services/fliesEvidenceBridge.ts`, memoised 2 min): `run.py live-gap`
+    (live vs paper paired per session, split at the `completion_rule` break), `gate-sessions`
+    (each gate arm against control over its own window from the ledger's breaks, not `ERAS`) and
+    `selector-sessions` (departures and the model's procedure-v2 intervals). The module's JSON is
+    passed through in its own snake_case inside a `BridgedResult`; a failed read is an error, never
+    an empty table. The verbs open ledgers read-only.
 - **Console preferences are read synchronously, from a local mirror.** The server store
   (`/api/config/prefs`) is the source of truth (it follows you to the desktop shell), but a preference
   fetched late cannot decide the first render — the paper/live default would paint paper and flip to
@@ -223,6 +232,11 @@ A tile's level is the suite's verdict (a watchdog finding, or the supervisor's o
 never a second opinion. Two reads go beyond a file, both cached and read-only: `git` (what the
 checkout holds; which processes predate their package's newest commit) and one `python -c`
 (interpreter and package versions). No control path: restarts and holds stay with `run.py`.
+The data tab also asks `cherrypick.core` two things (`services/dataEvidenceBridge.ts`): quote-history
+coverage (`python -m cherrypick.core.quotehistory coverage`, which reads only through
+`core.quotehistory.session()`, so this package holds no SQL against `gex_quote_history`) and
+`core.impliedvar check` for VIX9D and VIX, whose refusal (`not_bracketed`) is a reading, not a
+failure (`spawnModuleCli`'s `okStatuses`).
 
 **What is off is not shown.** Whether a module, GEX (the `gex-recorder` service), the advisor, the
 technicals cards or a narrative is on comes **only** from the orchestrator's `configcli` op
@@ -324,6 +338,28 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   (`names=all` is the way out). With no label it cuts nothing, because an unknown flag would empty
   it.
 
+**Compare** (`/compare`, `lightbox/manifests/CompareLightbox.tsx`, `pages/Compare/`) — every arm of
+every module beside its control, over `GET /api/compare?scope=era|all` (`routes/compare.ts` →
+`services/compareBridge.ts` → `python -m cherrypick.core.compare --json`). A bridge, not a mirror:
+the intervals, paired differences, t bounds, sign tests and projections are `core.stats`'
+(`server/test/compare-bridge.test.ts`, `web/test/comparePage.test.tsx`).
+
+- Field names stay the bridge's snake_case, verbatim (`shared/types/compare.ts`). A schema other than
+  1 is refused, never half-rendered; every failure is `{ok: false, error}`, never an empty table.
+- Memoised on every module's paper ledger, the advisor's store and the New York session (a break
+  dated ahead binds from its own date). A bad `scope` is a 400 and never runs the bridge.
+- **No verdicts.** Tone comes only from a number's sign; interval ends, the t bound, the sign-test p
+  and the projections are never toned, and a test fails on any verdict-like class. A null is an em
+  dash, never `$0.00`.
+- **Size-normalised beside the dollars.** In dollars a session, a capped arm beside a large control
+  reads as size: MEIC's capped books sit $22k–$31k behind a control taking ~270 entries a day against
+  their ~6. So each arm also shows `net / entry` (entries per session beneath) and `net / $100 risk`
+  (on the capital `core.ledgers` records per trade: max loss or buying power, as the module's ledger
+  states it), and each pair shows `diff / entry` and `diff / $100 risk`. These are the bridge's
+  `per_entry` / `per_100_risk` paired blocks, keyed and windowed as the dollar pair. A ledger with no
+  recorded capital (flies) shows a dash there, never zero, and a partial record says how many trades
+  carry one.
+
 **Module advisor slides.** `readers/advisor.ts`'s `readAdvisorModule` serves
 `/api/advisor/module/:module`: active experiments with progress against length and stall budget, the
 session strip from the advisor's `enactment` table (read, never re-derived), the paired comparison as
@@ -376,6 +412,12 @@ net per period, the intraday series and the broker account. Rules, stated on the
   `PerformanceTab.tsx`'s own exported cards) and the **performance** slide's calibration reading
   (`core.metrics` over `live_trades.db`, rendered by `MetricTiles`). Their two max drawdowns differ on
   purpose — daily against per trade — and the page labels which is which.
+
+**The Overview's live panel** (`pages/Overview/LivePanel.tsx`, 2026-10-12) lists every module with a
+live book (`readers/liveBooks.ts`, `GET /api/live/books`: flies and bwb, each module's own
+settled-net rule mirrored) and draws only those with live activity — flies through its own
+`LiveFliesPanel`, bwb as three tiles linking to its live-vs-paper tab. The quiet ones are named in one
+line; an absent ledger and a failed read say which they are.
 
 **Flies intraday agent tab** (`/flies/agent`, `pages/Flies/AgentSlide.tsx` over
 `GET /api/flies/agent[?session=]` → `readers/fliesAgent.ts`). It has no live view: a live read is
@@ -454,7 +496,10 @@ net — each money header's `title` stating its definition.
 - A recently added cost column is read as optional (`NULL` on an older ledger), so a missing column
   reads "not recorded" rather than `withReadOnlyDb` turning it into an empty table.
 - A totals chip carries gross, fees, settlement and net over every matching row, and says how many
-  rows a partially recorded measure (slippage) covers.
+  rows a partially recorded measure (slippage) covers. A settlement total over any row that never
+  recorded it is n/r, never a partial sum.
+- Fee drag is one helper, `@console/shared`'s `feeDragPct` (trading fees, settlement out, ÷ premium
+  collected; null when nothing was collected), on every surface that shows it.
 - Each module on the standard has its own trade-standard test against its own fixture, shown to fail
   (the flies one by removing the subtraction and the filter):
 

@@ -80,6 +80,12 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+# scripts/_common.py, beside this file (a test loading this script by path has no scripts/ on sys.path).
+_HERE = str(Path(__file__).resolve().parent)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+import _common  # noqa: E402
+
 ET = ZoneInfo("America/New_York")
 
 # The rule. "Very liquid, tight bid/ask" (the strict bar, chosen 2026-09-27), decided by what is
@@ -670,10 +676,9 @@ def store_dir() -> Path:
 
 
 def _write_json(path: Path, body) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(body, indent=1, default=str), encoding="utf-8")
-    tmp.replace(path)  # write-then-rename: a reader never sees half a file
+    from cherrypick.core.jsonio import write_json_atomic
+
+    write_json_atomic(path, body, indent=1)  # write-then-rename: a reader never sees half a file
 
 
 def _read_json(path: Path, default):
@@ -684,16 +689,7 @@ def _read_json(path: Path, default):
 
 
 def _warn(title: str, message: str) -> None:
-    print(f"WARNING: {title}\n{message}", file=sys.stderr)
-    try:
-        from cherrypick.notify.notifier import Notifier
-        from cherrypick.orchestrator import config as cfgmod
-
-        Notifier(cfgmod.load_config().get("notify")).notify(
-            "WARNING", "market_report.universe", title, message
-        )
-    except Exception:  # noqa: BLE001
-        pass
+    _common.warn("market_report.universe", title, message)
 
 
 # ------------------------------------------------------------------------------------------------

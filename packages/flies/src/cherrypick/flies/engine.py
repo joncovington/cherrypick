@@ -30,6 +30,7 @@ from __future__ import annotations
 from cherrypick.core import calendar as _cal
 from cherrypick.core import config as _cfg
 from cherrypick.core import entry as _entry
+from cherrypick.core.structures import tick_floor
 
 from cherrypick.flies import fly
 
@@ -139,7 +140,17 @@ ARMS = (
     # follows the agent's fresh decision (paper_loop.tick_config) and falls back to the rule.
     "trend-rule",
     "intraday-agent",
+    # The live configuration, in paper (declared 2026-10-12, from 2026-10-19). Not a variant of
+    # control: an arm declaring `mirror_live` takes ITS params from the live block itself
+    # (`live_mirror_params`) -- the live arm's params with live's start, completion cutoff and
+    # buying-power cap on top -- so it cannot drift from what live trades. Read against the LIVE
+    # ledger over the same sessions, never against control. `tests/test_live_shadow.py` pins it and
+    # lists what paper cannot express.
+    "live-shadow",
 )
+
+# The live loop's completion cutoff when its block names none (`live_loop.DEFAULT_CUTOFF`).
+LIVE_DEFAULT_COMPLETION_CUTOFF = "15:30"
 
 
 # --------------------------------------------------------------------------- config
@@ -151,10 +162,40 @@ def merged_params(config: dict, arm: str) -> dict:
     wing_width_strikes` -- the width-N arms are defined in STRIKES so the sweep means the same thing
     on any symbol's chain regardless of that symbol's own strike spacing, rather than naming a point
     value fit against one symbol (see the `width-N` note above ARMS)."""
+    arm_def = _cfg.registry(config, label="flies").get(arm) or {}
+    if arm_def.get("mirror_live"):
+        return live_mirror_params(config, arm)
     params = dict(config.get("defaults", {}))
-    params.update(_cfg.registry(config, label="flies").get(arm) or {})
+    params.update(arm_def)
     if "wing_width_strikes" in params:
         params["wing_width"] = params["strike_increment"] * params["wing_width_strikes"]
+    params["arm"] = arm
+    return params
+
+
+def live_mirror_params(config: dict, arm: str) -> dict:
+    """The params of an arm declaring `mirror_live` (the `live-shadow` arm, from 2026-10-19): what
+    the live loop trades, run in paper. The live arm's own params (`live.arm`), with the three live
+    overrides paper can express on top, each read exactly as `live_loop` reads it:
+      - `no_entry_before`: the later of live's and the arm's (`live_loop._merged_live_params`);
+      - `completion_cutoff`: live's, else the live loop's 15:30 default -- no completion after it;
+      - `max_open_margin_dollars`: live's buying-power cap, checked after the engine accepts.
+    Every other key on the mirroring arm's own entry is ignored, so the arm cannot be tuned away
+    from live in config. Refuses to mirror itself (a live arm that is a mirror has nothing to copy).
+    """
+    live = config.get("live") or {}
+    source = live.get("arm") or "control"
+    if (_cfg.registry(config, label="flies").get(source) or {}).get("mirror_live"):
+        raise ValueError(f"live.arm {source!r} is itself a mirror_live arm; nothing to mirror")
+    params = merged_params(config, source)
+    params["completion_cutoff"] = live.get("completion_cutoff") or LIVE_DEFAULT_COMPLETION_CUTOFF
+    start = live.get("no_entry_before")
+    if start:
+        arm_start = params.get("no_entry_before")
+        params["no_entry_before"] = max(str(start), str(arm_start)) if arm_start else str(start)
+    params["max_open_margin_dollars"] = live.get("max_open_margin_dollars")
+    params["mirror_live"] = True
+    params["mirrors_arm"] = source
     params["arm"] = arm
     return params
 
@@ -1281,6 +1322,32 @@ def containment_refusal(snapshot: dict, params: dict, gate_detail: dict | None =
 
 
 # --------------------------------------------------------------------------- legged entry (step 1)
+def margin_cap_exceeded(
+    cap: float | None, open_positions: list, wing_width: float, credit: float, quantity: int = 1
+) -> tuple[bool, float]:
+    """Would a new short vertical push the book's open worst-case exposure past `cap`? The paper
+    copy of `live_loop.margin_cap_exceeded` for the `live-shadow` arm: each open position counts
+    `max(0, -position_floor)`, the proposal (width - credit) x 100 x qty. `tests/test_live_shadow.py`
+    pins the two to the same answer. Returns (exceeded, would_be_total); off when cap is falsy."""
+    if not cap:
+        return False, 0.0
+    held = sum(max(0.0, -fly.position_floor(p)) for p in open_positions if p.get("status", "open") == "open")
+    proposed = max(0.0, (wing_width - credit) * fly.CONTRACT_MULTIPLIER * quantity)
+    total = float(held + proposed)
+    return total > float(cap), total
+
+
+def completion_cutoff_reached(params: dict, now_min: int | None) -> bool:
+    """Has the `live-shadow` arm (mirror_live) reached live's completion cutoff? Live cancels its
+    resting completion there and places none after; the shadow stops completing at the same minute.
+    Keyed on `mirror_live`, not on the key alone: a `completion_cutoff` left in `defaults` must never
+    quietly stop every paper arm completing (every other arm completes until the close)."""
+    cutoff = params.get("completion_cutoff")
+    if not params.get("mirror_live") or not cutoff or now_min is None:
+        return False
+    return now_min >= time_to_minutes(cutoff)
+
+
 def evaluate_credit_spread_entry(
     snapshot: dict,
     params: dict,
@@ -1473,6 +1540,20 @@ def evaluate_credit_spread_entry(
     round_trip_fees = fly.vertical_open_fee(symbol, qty) * 2
     if credit * fly.CONTRACT_MULTIPLIER * qty <= round_trip_fees:
         return False, "credit_cannot_clear_fees", None
+
+    # Live's buying-power cap, in paper (the `live-shadow` arm; off unless an arm's params carry
+    # it). After the engine has accepted and on the plan's unfloored credit, as `live_loop.run_once`
+    # checks it, because the margin is only known from the plan.
+    cap = params.get("max_open_margin_dollars")
+    if cap and margin_cap_exceeded(cap, open_positions, width, credit, qty)[0]:
+        return False, "max_open_margin_reached", None
+
+    # The `live-shadow` arm (mirror_live) books what a live order asks: the credit floored to the
+    # tick, the difference counted as concession like the model's own. Off for every other arm.
+    if params.get("mirror_live"):
+        floored = tick_floor(credit)
+        conceded_pts = round(conceded_pts + (credit - floored), 4)
+        credit = floored
 
     completing_strike = center + width if side == PUT else center - width
     return (

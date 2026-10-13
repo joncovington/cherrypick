@@ -24,20 +24,6 @@ def test_load_profiles_external_file(tmp_path):
     assert profiles.load_profiles(external_path=f) == {"a": {"x": 1}}
 
 
-# --------------------------------------------------------------------------- select_profile
-def test_select_profile_returns_copy():
-    profs = {"a": {"x": 1}}
-    got = profiles.select_profile(profs, "a")
-    assert got == {"x": 1}
-    got["x"] = 99
-    assert profs["a"]["x"] == 1  # returned a copy, source unmutated
-
-
-def test_select_profile_unknown_raises():
-    with pytest.raises(ValueError, match="unknown profile 'z'"):
-        profiles.select_profile({"a": {}}, "z")
-
-
 # --------------------------------------------------------------------------- attribution_tag
 def test_attribution_tag_returns_name_when_set():
     assert profiles.attribution_tag("aggressive") == "aggressive"

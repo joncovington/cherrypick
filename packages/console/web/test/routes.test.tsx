@@ -161,7 +161,8 @@ describe("the module frame", () => {
   it("a renamed tab's old id reaches its replacement, not the first tab", () => {
     // The dangerous failure is the quiet one: `/flies/exits` falling through to `session` would
     // look like a working link while showing the wrong page. A 404 would at least be visible.
-    expect(text(render("/flies/exits"))).toContain("Flies / divergence");
+    expect(text(render("/flies/exits"))).toContain("Flies / gates vs control");
+    expect(text(render("/flies/divergence"))).toContain("Flies / gates vs control");
     expect(text(render("/flies/calibration"))).toContain("Flies / completion");
     expect(text(render("/flies/journal"))).toContain("Flies / decisions");
     expect(text(render("/flies/openrange"))).toContain("Flies / opening range");
@@ -223,6 +224,8 @@ describe("the suite surfaces are on the frame", () => {
     ["/live", "Live / today"],
     ["/reports/eod", "Reports / eod"],
     ["/reports", "Reports / morning"],
+    ["/compare", "Compare / arms"],
+    ["/compare/arms?scope=all", "Compare / arms"],
     ["/advisor", "Advisor / advisor"],
     ["/system", "System / health"],
     ["/system/supervisor", "System / supervisor"],

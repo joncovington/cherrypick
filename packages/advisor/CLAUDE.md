@@ -131,6 +131,23 @@ The model only *recommends*; its recommendation is stored beside the numbers, ne
 A verdict below the qualification thresholds is labelled `underpowered` — never silently passed or
 failed. Stored verdicts are **recomputed every time a recommendation is attached**.
 
+Each pair also carries **`paired`** (2026-10-12): the advised book against its base session by
+session through `core.compare.pair_with_control` — the console compare page's rule — with the
+seeded 95% interval on the mean difference, the exact sign test and `sessions_to_decision`. It sits
+beside `qualification` and moves no threshold. It is **kept out of `delta` and out of the fact
+pack** (`test_verdict_paired.py` pins both, shown to fail with it moved into `delta`): adding it to
+the model's input is a measurement break for the advisor, to be declared and batched like the others.
+
+**A book that never diverged measured nothing.** Every pair carries `exposure` (does each closed
+advised row have an identical twin in the base on its session, to the cent?), and the verdict carries
+`no_exposure` and `conclusion` (`no_exposure` / `underpowered` / `measured`), ahead of any pass or
+fail: `declared` when every param is one the module's bounds say cannot act on the base (a rule's
+`arms`), `never_diverged` when the rows show it. No closed advised rows is no evidence either way.
+Admission, `tune` and `enact` refuse the declared case outright through `core.advice` (2026-10-12:
+bwb's `delta-trigger-early` and both earlier `flip_buffer` experiments sat on `control`, which never
+arms, and matched it row for row). The pack does not carry these fields until the 2026-10-19
+boundary.
+
 **A `kill` recommendation is actioned; `keep` and `promote` are recorded** (`advisor.kill_on_verdict`,
 on by default; off restores record-only). Admitting a kill takes the same path as a human `kill`:
 status `killed`, verdict stored with the model's block, the queue moves up, and the next session's
@@ -204,7 +221,11 @@ real section beside it.
 evidence, and are not pooled): **2026-08-26** (journal/flag taper and deep-only schedule, batched as
 one), **2026-09-14** (compacted `experiments_full`), **2026-09-22** (first deep pack reading
 `regime_cuts`), **2026-09-28** (robustness stamps and `gate_replay`, at the first deep checkpoint
-reading them). Plus the 2026-09-16 counter break for earnings above.
+reading them), **2026-10-19** (`miss_stop_minutes` leaves flies' bounds and the `gate_replay` note
+stops calling it one; the `flies_live` block is tagged as the advisor's own,
+`advisor.flies_live_today/v1`; verdicts carry `no_exposure`/`conclusion` into the pack;
+that block stops counting flies' voided rows, `void_reason` set, on either side). Plus the
+2026-09-16 counter break for earnings above.
 
 ## The module list is derived, not restated
 

@@ -30,6 +30,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 # sign rule, 10:00-14:30 and cap-scaled spacing -- a live-sizable book at three sizes.
 BP_ARMS = {"bp-5k": 5000, "bp-10k": 10000, "bp-25k": 25000}
 ACTIVE_STREAMS = {"control", "live-shadow", *BP_ARMS}
+# live minus one gate (declared 2026-10-12, from 2026-10-19): live-shadow (the live top level) with
+# ONE gate set back to control's value, to learn which gate keeps live dark (live-shadow filled 1 of
+# 10 sessions). Four of the gates live adds over control, picked by live-shadow's refusal counts
+# 09-29..10-12; the rest never refused. Added to a machine's registry by
+# scripts/boundary_2026_10_19.py on the weekend before, so a registry holds all four or none.
+LIVE_MINUS_ARMS = {
+    "live-minus-ivrank": {"min_iv_rank": 0.0},
+    "live-minus-gexblock": {"regime_gex_block_negative": False},
+    "live-minus-otmfloor": {"min_call_otm_pct": 0.0001, "min_put_otm_pct": 0.0001},
+    "live-minus-latebias": {"late_entry_bias_enabled": False},
+}
 LADDER = {"conservative", "moderate", "aggressive", "very-aggressive"}
 RETIRED_STUDY_ARMS = {
     "gex-open",
@@ -136,21 +147,24 @@ def test_config_risk_json_has_the_expected_profiles(sample_risk_profiles):
     kept for the record. Any name outside that set must be a recognized experiment prefix."""
     names = set(sample_risk_profiles["profiles"].keys())
     assert ACTIVE_STREAMS <= names
-    for extra in names - ACTIVE_STREAMS - LADDER - RETIRED_STUDY_ARMS:
+    for extra in names - ACTIVE_STREAMS - LADDER - RETIRED_STUDY_ARMS - set(LIVE_MINUS_ARMS):
         assert extra.split("-")[0] in EXPERIMENT_PREFIXES, f"unexpected profile {extra!r}"
 
 
 def test_registry_is_the_active_streams_plus_the_historical_record(sample_risk_profiles):
     """What the registry holds, pinned exactly: the active streams and the retired record. Adding or removing a profile should be a
     deliberate edit here, not a silent one."""
-    assert set(sample_risk_profiles["profiles"]) == ACTIVE_STREAMS | LADDER | RETIRED_STUDY_ARMS
+    names = set(sample_risk_profiles["profiles"])
+    minus = names & set(LIVE_MINUS_ARMS)
+    assert minus in (set(), set(LIVE_MINUS_ARMS)), "the live-minus arms land together or not at all"
+    assert names - minus == ACTIVE_STREAMS | LADDER | RETIRED_STUDY_ARMS
 
 
 def test_only_the_active_streams_are_enabled(sample_risk_profiles):
     """Every ladder tier and every retired study arm must be `enabled: false` — kept for history,
     not competing with the active streams for the same ticks."""
     profiles = sample_risk_profiles["profiles"]
-    for name in ACTIVE_STREAMS:
+    for name in ACTIVE_STREAMS | (set(profiles) & set(LIVE_MINUS_ARMS)):
         assert profiles[name].get("enabled", True) is True, f"{name} must be enabled"
     for name in LADDER | RETIRED_STUDY_ARMS:
         assert profiles[name].get("enabled") is False, f"{name} must be disabled"
@@ -171,6 +185,56 @@ def test_live_shadow_resolves_to_exactly_the_params_live_trades(sample_risk_prof
     shadow = paper._merged_params(sample_config, sample_risk_profiles["profiles"]["live-shadow"])
     live = paper._merged_params(sample_config, {})
     assert {k for k in set(shadow) | set(live) if shadow.get(k) != live.get(k)} <= {"enabled"}
+
+
+def _check_live_minus(profiles: dict, live_top: dict) -> None:
+    """Each live-minus arm is live-shadow (no overrides) plus exactly its declared keys, each at
+    control's value, and each key must actually differ between live and control -- an override
+    equal to live's own value would be a copy of live-shadow under another name."""
+    control = _gates(profiles["control"])
+    for name, keys in LIVE_MINUS_ARMS.items():
+        assert _gates(profiles[name]) == keys, name
+        for key, value in keys.items():
+            assert control.get(key) == value, f"{name}.{key} is not control's value"
+            assert live_top.get(key, _CODE_DEFAULTS.get(key)) != value, (
+                f"{name}.{key} does not differ from live"
+            )
+
+
+# Live's value where meic.json leaves a key to the code's default (paper.py reads it with a default).
+_CODE_DEFAULTS = {"regime_gex_block_negative": True}
+
+
+def test_the_live_minus_arms_are_live_shadow_with_one_gate_relaxed(sample_risk_profiles):
+    profiles = sample_risk_profiles["profiles"]
+    if not set(LIVE_MINUS_ARMS) <= set(profiles):
+        pytest.skip("live-minus arms not yet added to this machine's registry (from 2026-10-19)")
+    live_top = json.loads((Path.home() / ".cherrypick" / "config" / "meic.json").read_text(encoding="utf-8"))
+    _check_live_minus(profiles, live_top)
+
+
+def test_the_live_minus_check_fails_on_a_second_relaxed_gate():
+    """The guard, shown to fire: an arm relaxing two gates is not live minus one."""
+    profiles = {
+        "control": {
+            "min_iv_rank": 0.0,
+            "regime_gex_block_negative": False,
+            "min_call_otm_pct": 0.0001,
+            "min_put_otm_pct": 0.0001,
+            "late_entry_bias_enabled": False,
+        },
+        **{name: {"enabled": True, **keys} for name, keys in LIVE_MINUS_ARMS.items()},
+    }
+    live_top = {
+        "min_iv_rank": 0.3,
+        "min_call_otm_pct": 0.0035,
+        "min_put_otm_pct": 0.003,
+        "late_entry_bias_enabled": True,
+    }
+    _check_live_minus(profiles, live_top)
+    profiles["live-minus-ivrank"]["late_entry_bias_enabled"] = False
+    with pytest.raises(AssertionError):
+        _check_live_minus(profiles, live_top)
 
 
 _BP_KEYS = {

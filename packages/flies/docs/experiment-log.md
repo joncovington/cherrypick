@@ -1167,3 +1167,185 @@ own book, and only at a declared boundary.
 **The read is unchanged:** after 10 departing sessions, per-session net against `control`, sign test.
 Expect it to stay `control`'s twin for weeks: with about nine sessions of history on 10-19, few
 cells will be clear.
+
+## 2026-10-12 — the live start replay's admission model rebuilt; the 10:15 case re-read, nothing changed
+
+The ten-session check declared on 09-28. `scripts/flies_live_start_replay.py --validate` showed live
+admitting 59 structures from 09-29 against the replay's 41, and netting −$195.91 against +$74.16.
+
+**Why it drifted.** The replay took paper control's settled rows and dropped the ones the start or the
+cap refused. 36 of live's 59 entries were structures (centre and side) that no paper arm held that day,
+and dropping rows cannot produce them. Paper's 10:00–10:14 entries and its uncapped book hold centres
+(the duplicate rule), run the six-minute cadence clock and hold legs (the sign rule). So paper's later
+ticks were refused for reasons live's smaller book never had, and live entered elsewhere. The cap
+arithmetic was not the cause.
+
+**The replay now** puts paper control's recorded ticks (`fly_entry_attempts`: wanted centre and spot,
+every ~15 s) through live's own gates against the replay's own book: start, quarter-end,
+`engine.portfolio_gates` and the margin cap. It takes one tick a minute and averages four tick phases.
+Most of what it admits paper never held, so it prices from two models:
+- **Credit:** that day's nearby paper credits. Median error 0.24.
+- **Completion:** spot moving 6 points through the centre toward the completing side, before 15:30.
+  It gets 79 of 84 live rows right (completed or stranded), median timing error 0.6 min, and 241 of
+  251 paper rows.
+
+**Validation, 09-29..10-12** (10-08 not replayable: paper's loop stopped at 10:41):
+- Live: 57 structures, 16 stranded. Replay: 59.5, 17.5 stranded.
+- Every session's mean is within ±2 of live, and the total within 10%. That is the declared tolerance.
+- At ±1, 09-29 and 10-02 fall outside. On both, the day forks at the first tick's side choice and at
+  one completion time.
+- The money is not reproduced: live −$222, replay −$320, with the four phases running −$1,596 to +$600.
+- 09-25 is not comparable, because the one-incomplete rule still ran that session. On 09-28, at
+  10:30, the replay admits 8.5 to live's 6: live's unfilled and re-placed entries and its fresh-quote
+  skips are not modelled.
+
+**The start, 34 sessions 08-21..10-12, $1,000 cap:**
+
+| Start | Structures | Net (mean of 4 phases) | Phases | Worst day |
+|---|---|---|---|---|
+| 10:00 | 217 | −$609 | +381 / +994 / +151 / −3,962 | −$820 |
+| **10:15** | 206 | **+$1,113** | +413 / +2,713 / +2,208 / −882 | −$845 |
+| 10:30 | 206 | −$1,116 | −2,463 / +211 / −940 / −1,271 | −$852 |
+
+- **10:15 is ahead in every phase**: of 10:30 (+$2,229, 19–13 days, p 0.38) and of 10:00 (+$1,722,
+  17–15 days, p 0.86).
+- **No day-level difference is significant.** The first model's "19 of 21 days, p 0.0002" is
+  withdrawn.
+- **The phase spread (up to $5k) is wider than any gap between starts.**
+- `--donors` prices a structure paper held from its own row. That row is reproduced within a cent on
+  242 of 243. The model prices $15 a structure below the rows, and an earlier start has more donor
+  rows, so donors are off by default. With them: 10:00 +$1,482, 10:15 +$2,048, 10:30 −$669. 10:15 is
+  still ahead, and still not significant (p 0.11 against 10:30).
+
+Live stays at 10:15. Nothing here argues for a move, and nothing proves 10:15 either. A proof needs
+the quote-history replay (chain quotes from 10-13), which can price the structures paper never held.
+The 10-11 sizing read fed live's own rows through the old cap model; the rebuilt script does not do
+that.
+
+## 2026-10-12 — live entry pricing: a mid-first option, built off (a live break if switched on)
+
+The question was whether the live entry gives away more than it needs to. Every live entry limit is
+the fresh credit floored to the tick: mid less `slippage_frac` (0.125) of the two legs' spreads,
+about mid − 0.05 on 5-wide SPX (`fly.vertical_credit`, `live_orders.entry_fresh_reprice`). The
+ledger review of 10-12 found every live entry of the control era filling at once (median latency
+0 s, 69 entries) and 16 of them with price improvement; across the whole live ledger, 93 entries
+filled and 21 filled better than their limit. An order that always fills at once is priced past
+where it needs to be, but only the market can say by how much.
+
+**Built: `live.entry_pricing`** (`live_orders.entry_pricing_mode`, `live_loop._manage_pending_entry`).
+- **`concession`** (the default, and what an absent key or any other value means) is the pilot's rule,
+  unchanged. A test pins the placed orders, the ledger rows and the decision detail as identical to
+  the code before the option.
+- **`mid_first`** asks the vertical's fresh mid, floored to the tick, on a structure's first order of
+  the day. If that order is still resting on the next tick (about a minute), the existing
+  cancel/replace cancels it and this tick's entry stage re-evaluates and re-places at the
+  concession price. A structure that has already ended unfilled today, for any reason, is priced at
+  the concession; the ledger remembers that, not the process.
+- **Every gate still applies:** the fresh-quote check, the buying-power cap, the quarter-end and
+  halt blocks, the engine's own gates. Only the limit moves, and only after all of them passed.
+- **Never past mid:** `tick_floor` rounds to the cent before flooring, so a 1.249 mid came back
+  1.25; the mid-first limit steps down a tick when that happens. The test that found it is kept.
+- **The completion limit moves with it.** The resting completion is priced from the credit
+  actually filled (credit − 0.25 on 5-wide SPX: two $3.44 fee stacks, the $15 worst-case settlement
+  reserve and the $1 floor, rounded down to the nickel), so a mid fill raises the completion limit
+  by the same 0.05. That is intended: the completion bar is set by what the entry took in.
+
+**Off everywhere.** The example ships `concession`. Switching it on changes what a live entry costs
+and how often it fills, so it is a **live measurement break**: journal it on the live ledger at a
+declared boundary. The 2026-10-19 apply script (`scripts/boundary_2026_10_19.py`) offers it, and
+switching it on is the user's call, not the batch's.
+
+**How it would be read:** the live ledger's own fills, `fly_live_orders` (`limit_price`,
+`broker_fill_price`, outcome `replaced` for a concession), per entry against the concession price
+it would otherwise have paid: dollars saved on mid fills against entries lost or delayed by the
+one-tick wait. The paper `live-shadow` arm cannot express the wait (paper fills at once), so it
+does not read this.
+
+## 2026-10-12 — the 2026-10-19 boundary: seven arms retired, `live-shadow` declared, `miss_stop_minutes` out of the bounds
+
+The roster changes declared for the selector's boundary (2026-10-04: "any other roster change
+planned for the fortnight lands at this same break"), from a ledger review on 10-12. Nothing
+changes before 10-19. The config side is applied on the weekend of 10-17 by
+`scripts/boundary_2026_10_19.py` (dry run by default; it backs up, shows a diff, and with `--apply`
+writes), because flies has no dated activation: an arm is on or off in config.
+
+**Retired from 2026-10-19** (`enabled` false with a dated note; kept in `ARMS` and in config so
+their books stay readable). Window 09-21..10-12, 15 sessions, settled, unvoided, against `control`'s
++$1,017.94 on 123 entries:
+
+| Arm | Entries | Net | Against control | Why |
+|---|---|---|---|---|
+| `debit-first-up` | 71 | −$136.96 | −$1,155 | the 15–20 session read is reached; the family loses to fees |
+| `debit-first-down` | 83 | −$2,788.00 | −$3,806 | as above |
+| `bwb-atm` | 85 | −$3,146.80 | −$4,165 | as traded the roll cost $756 against never rolling (below) |
+| `bwb-up` | 4 | +$86.82 | | 4 fills in 16 sessions |
+| `bwb-down` | 2 | +$38.10 | | 2 fills |
+| `bwb-up-w2`, `bwb-down-w2` | 0 | | | the 1.50 floor sits above every credit measured |
+
+The debit-first family as a whole (10-04, `debit-first-offsets`): gross −$34.77 against $1,979.25 of
+fees over 200 entries. The ledger review's own figures (−$1,262, −$3,920, −$3,978) used a slightly
+different window; the sign and size agree.
+
+**The bwb floor replay before retiring** (`scripts/flies_bwb_floor_replay.py --since 2026-09-30`,
+read-only, 9 sessions 09-30..10-12; the 10-08 outage session is included as recorded). Validation
+PASS for `bwb-up`, `bwb-down` and `bwb-atm` (credits re-priced to 0.0001, real fills reproduced
+before each first roll, `bwb-atm`'s 8 unrolled fills settled to the cent); the w2 pair has no real
+fill, so its tables are UNVALIDATED. Unrolled, held to the print:
+
+| Arm | Floor 0 (modelled) | Deployed floor (modelled) | Best credit offered, last five sessions (modelled) |
+|---|---|---|---|
+| `bwb-up` (0.75) | 17 entries, +$366.93, 2 tail hits | 1, +$109.36 | 0.42, 0.48, 0.68, 0.28, 0.56, 0.07 |
+| `bwb-down` (0.75) | 27, −$112.55, 2 tail hits | 2, +$150.60 | 0.78, 0.43, 0.45, 0.34, 0.28, 0.23 |
+| `bwb-up-w2` (1.50) | 4, +$862.46 | 0 | −0.27, 0.07, −0.16, −0.31, −0.52, −0.67 |
+| `bwb-down-w2` (1.50) | 12, −$973.76, 2 tail hits | 0 | 0.15, 0.10, 0.23, 0.08, 0.07, −0.16 |
+| `bwb-atm` (0.75) | 43, −$355.49, 17 tail hits | 43, −$335.49 | 1.79–1.95 |
+
+- **No floor rescues the delta pairs.** Up makes money at most floors and down loses at most, which
+  is the tape (the 09-30 fall), the same split the 10-03 entry found. The best `bwb-up` cell
+  (floor 0.05 of tail, +$1,066 over 14 entries) is one cell of fourteen on nine sessions.
+- **The w2 credits went negative** for `bwb-up-w2` from 10-05 on; the arm cannot trade at any floor.
+- **`bwb-atm`'s roll is where it lost:** its 42 real fills (34 rolled) made −$544.21 as traded and
+  would have made +$211.39 never rolled. That is a finding about the roll rule, banked here; the
+  arm is still behind `control` unrolled.
+
+**`debit-first-atm` stays; it slips to the next boundary.** Its shadow ladder's first read is
+declared at 10 sessions from 10-05 (2026-10-04 entry). The 10-08 outage voided that session's
+anchors (`partial_session` break; its 24 rungs settled against voided fills), so clean ladder
+sessions are 10-05, 06, 07, 09, 12 and, by 10-16, 13–16: nine. The tenth is 10-19 itself, so the
+read cannot be complete before the boundary. It runs on unchanged.
+
+**`miss_stop_minutes` leaves the advice bounds.** Asked for repeatedly; the 10-03 replay on live was
+negative at every setting; `advised:miss-stop-90` ran about −$94 a session behind `control`. The
+gate (`engine.miss_stop_refusal`) stays for an arm to set and the regime cuts' `gate_replay` still
+sweeps it. **The running experiments are concluded, never dropped:** a bound removed under a
+running experiment rejects its next artifact (one out-of-bounds value rejects that experiment's
+overlay), which reads as `not_enacted` sessions until the calendar exit -- the experiment vanishing
+without a verdict. So the boundary script runs `python -m cherrypick.advisor kill` for
+`miss-stop-30` (started 10-12; 4 sessions by 10-16) and for `miss-stop-90` if it is still active
+(it reaches 15 sessions about 10-15 and should conclude on its own) BEFORE it edits the bounds; the
+kill computes and stores each verdict and re-issues Monday's artifact without them. Flies is flat
+overnight, so no advised position outlives Friday's settlement.
+
+**Declared: the `live-shadow` arm, from 2026-10-19.**
+- **The arm:** the live configuration in paper. An arm declaring `mirror_live` takes its params from
+  the live block (`engine.live_mirror_params`): `live.arm`'s params, the later of live's and the
+  arm's `no_entry_before` (10:15), live's `completion_cutoff` (15:30; no paper completion from it,
+  `book.py` step 1), live's `max_open_margin_dollars` ($1,000, checked after the engine accepts,
+  as live does, by `engine.margin_cap_exceeded`, pinned to `live_loop.margin_cap_exceeded`), and the
+  entry credit floored to the tick as a live order asks. Any other key on the arm is ignored, so it
+  cannot be tuned away from live, and it follows any later change to the live block by construction.
+- **What paper cannot express**, listed key by key in `tests/test_live_shadow.py`: a resting entry
+  that may not fill; the completion resting at the broker and filling on a touch (paper completes on
+  its modelled debit and pays the limit); the fresh REST re-quote and its tolerance; mid-first
+  pricing; the one-minute live tick against paper's 15 s; the quarter-end entry block; the halt,
+  orphan and held-submit blocks; and the broker's fill price on the row.
+- **How it will be read:** against the LIVE ledger over the same sessions, never against `control`.
+  Per session: entries, completions, completion rate and net, live minus shadow. A persistent gap is
+  the fill model's error measured on live's own configuration; the selector, `vol-floor` and the
+  other arms are still read against `control`. It earns nothing and loses nothing: it is a ruler.
+- **Its book starts at its own `arm_added` break** (`paper_loop._note_live_shadow_arm`, dated
+  2026-10-19).
+
+**Also at this boundary:** the `selector` is enabled by the same script, as declared (2026-10-04,
+amended 2026-10-12; `--skip-selector` leaves it off). The live entry-pricing option (its own
+entry, built off) is offered by the script behind its own flag and is not part of the batch.

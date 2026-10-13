@@ -291,19 +291,29 @@ function toPosition(
   };
 }
 
-function readPositions(db: DatabaseHandle, where: string, params: string[]): CalendarsPosition[] {
+function unrealised(db: DatabaseHandle): Map<string, Unrealised> {
+  return unrealisedByPosition(db, {
+    positionsTable: "dc_positions",
+    legsTable: "dc_legs",
+    marksTable: "dc_marks",
+    assignmentsTable: "dc_assignments",
+  });
+}
+
+/** `pnl`: every open position's mark, when the caller already read it -- it is the same map for
+ *  any `where`, and the marks reads are most of this page's cost. */
+function readPositions(
+  db: DatabaseHandle,
+  where: string,
+  params: string[],
+  pnl: Map<string, Unrealised> = unrealised(db),
+): CalendarsPosition[] {
   const rows = db
     .prepare<string[], Record<string, unknown>>(
       `SELECT * FROM dc_positions WHERE ${where} ORDER BY week_of DESC, arm, side`,
     )
     .all(...params);
   const legs = legsFor(db, rows.map((r) => str(r["position_id"]) ?? ""));
-  const pnl = unrealisedByPosition(db, {
-    positionsTable: "dc_positions",
-    legsTable: "dc_legs",
-    marksTable: "dc_marks",
-    assignmentsTable: "dc_assignments",
-  });
   return rows.map((r) => toPosition(r, legs.get(str(r["position_id"]) ?? "") ?? [], pnl));
 }
 
@@ -596,9 +606,14 @@ export function readCalendars(config: ConsoleConfig): CalendarsPayload {
 
     const weekOf = plan?.weekOf ?? db.prepare<[], { w: string | null }>("SELECT MAX(week_of) AS w FROM dc_positions").get()?.w ?? null;
 
+    // The latest tick, found inside the latest session so the (session_date, ran_at) index serves
+    // it: a session is the date of its own ticks, so the latest tick is in the latest session. A
+    // bare `ORDER BY ran_at` scanned all ~30k iterations on every poll.
     const iteration = db
       .prepare<[], Record<string, unknown>>(
-        "SELECT ran_at, phase, status FROM dc_loop_iterations ORDER BY ran_at DESC LIMIT 1",
+        `SELECT ran_at, phase, status FROM dc_loop_iterations
+          WHERE session_date = (SELECT MAX(session_date) FROM dc_loop_iterations)
+          ORDER BY ran_at DESC LIMIT 1`,
       )
       .get();
     const ranAt = iteration === undefined ? null : num(iteration["ran_at"]);
@@ -634,16 +649,18 @@ export function readCalendars(config: ConsoleConfig): CalendarsPayload {
       .all()
       .map((r) => ({ date: str(r["break_date"]) ?? "", key: str(r["key"]) ?? "", note: str(r["note"]) }));
 
+    // Read once for both tables below: it was read per table, twice the page's dominant cost.
+    const pnl = unrealised(db);
     return {
       ...empty,
       session,
       dbPresent: true,
       currentWeek: {
         weekOf,
-        positions: weekOf === null ? [] : readPositions(db, "week_of = ?", [weekOf]),
+        positions: weekOf === null ? [] : readPositions(db, "week_of = ?", [weekOf], pnl),
       },
       entryWindow: readEntryWindow(db, params, entrySession),
-      openPositions: readPositions(db, "status != 'closed'", []),
+      openPositions: readPositions(db, "status != 'closed'", [], pnl),
       arms: readBooks(db),
       emVsRealized: readEmVsRealized(db),
       integrity: {

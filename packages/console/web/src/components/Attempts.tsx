@@ -26,14 +26,13 @@ import { OUTCOMES } from "./chart/tokens";
  * them to one row shape, so the pages do not have to know the difference.
  */
 
+/** One timeline mark: what the chart and its hover line read. The day is the payload's tradeDate. */
 export interface AttemptRow {
   ts: string | null;
-  tradeDate: string | null;
   arm: string;
   symbol: string | null;
   outcome: string;
   blockDetail: string | null;
-  center: number | null;
   blockingStrike: number | null;
   secondsUntilCadenceClear: number | null;
   spot: number | null;

@@ -6,11 +6,15 @@ rule): a green check that cannot fire reads as coverage.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sqlite3
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 from cherrypick.core import home as _home
+from cherrypick.core import live as _core_live
 
 from cherrypick.bwb import book as bookmod
 from cherrypick.bwb import broker_cli, db, engine
@@ -92,16 +96,96 @@ def test_live_columns_migrate_additively_onto_a_pre_live_ledger(managed_home):
 # --------------------------------------------------------------------------- gates
 
 
+_ET = ZoneInfo("America/New_York")
+_GATE_DAY = "2026-10-13"
+_GATE_WHEN = datetime(2026, 10, 13, 10, 30, tzinfo=_ET)
+
+
+def _arm_for(day: str) -> None:
+    _core_live.write_arm_record("bwb", date=day, armed_by="test", at=f"{day}T09:00:00")
+
+
+def _gates(cfg, designated="5WX11234", when=_GATE_WHEN):
+    return broker_cli.live_gates(cfg, designated=designated, when=when)
+
+
 def test_live_gates_fail_closed_and_require_a_base_book_arm():
+    _arm_for(_GATE_DAY)
     assert broker_cli.live_gates({}) == ["live.enabled is false"]
-    assert broker_cli.live_gates({"live": {"enabled": False, "gate0_confirmed": "jon", "arm": "control"}})
-    unmet = broker_cli.live_gates({"live": {"enabled": True}})
+    assert _gates({"live": {"enabled": False, "gate0_confirmed": "jon", "arm": "control"}})
+    unmet = _gates({"live": {"enabled": True}})
     assert any("gate0_confirmed" in g for g in unmet) and any("live.arm" in g for g in unmet)
     for bad in ("wall", "advised:control", "", "Control"):
-        unmet = broker_cli.live_gates({"live": {"enabled": True, "gate0_confirmed": "jon", "arm": bad}})
+        unmet = _gates({"live": {"enabled": True, "gate0_confirmed": "jon", "arm": bad}})
         assert unmet and "not a base arm" in unmet[0], bad
     for arm in engine.ARMS:
-        assert broker_cli.live_gates({"live": {"enabled": True, "gate0_confirmed": "jon", "arm": arm}}) == []
+        assert _gates({"live": {"enabled": True, "gate0_confirmed": "jon", "arm": arm}}) == []
+
+
+_LIVE = {"live": {"enabled": True, "gate0_confirmed": "jon", "arm": "control"}}
+
+
+def test_live_gates_are_readiness_plus_the_day_arm_record():
+    """One source: every readiness refusal is a live_gates refusal, with the same words. The copy
+    this replaced had no designated-account gate, and disagreed with readiness on a missing arm."""
+    from cherrypick.bwb import live_loop
+
+    _arm_for(_GATE_DAY)
+    for cfg, designated in (
+        (_LIVE, "5WX11234"),
+        (_LIVE, None),
+        ({"live": {"enabled": True}}, None),
+        ({"live": {"enabled": True, "gate0_confirmed": "jon"}}, "5WX11234"),
+    ):
+        assert _gates(cfg, designated) == live_loop.readiness(cfg, designated=designated), cfg
+    assert any("designated" in g for g in _gates(_LIVE, None))
+
+
+def test_an_unarmed_session_refuses_a_live_submission():
+    unarmed = _gates(_LIVE)
+    assert len(unarmed) == 1 and "not armed" in unarmed[0]
+    _arm_for("2026-10-12")
+    assert any("not armed" in g for g in _gates(_LIVE))
+    _arm_for(_GATE_DAY)
+    assert _gates(_LIVE) == []
+    assert any("disarm time" in g for g in _gates(_LIVE, when=datetime(2026, 10, 13, 17, 5, tzinfo=_ET)))
+
+
+@pytest.fixture
+def by_hand(monkeypatch):
+    """`execute_trade --live` with the broker faked out: what reached `place_order`, if anything."""
+    placed = []
+    monkeypatch.setattr(broker_cli, "load_config", lambda *a, **k: _LIVE)
+    monkeypatch.setattr(broker_cli.creds, "designated_account", lambda: "5WX11234")
+    monkeypatch.setattr(broker_cli.clock, "now_et", lambda: _GATE_WHEN)
+    monkeypatch.setattr(broker_cli.creds, "get_session", lambda: object())
+
+    async def account(_session):
+        return "acct"
+
+    async def place_order(account, session, order, *, live, deploy_limit_pct):
+        placed.append(live)
+        return {"ok": True, "live": live}
+
+    monkeypatch.setattr(broker_cli, "_account", account)
+    monkeypatch.setattr(broker_cli._broker, "build_order", lambda spec: spec)
+    monkeypatch.setattr(broker_cli._broker, "place_order", place_order)
+    args = type("Args", (), {"live": True, "order": "{}"})()
+    return lambda: asyncio.run(broker_cli.cmd_execute_trade(args)), placed
+
+
+def test_execute_trade_live_refuses_on_an_unarmed_session(by_hand):
+    run, placed = by_hand
+    out = run()
+    assert out["ok"] is False and any("not armed" in g for g in out["unmet_gates"])
+    assert placed == []
+
+
+def test_execute_trade_live_passes_the_gate_on_an_armed_session(by_hand):
+    run, placed = by_hand
+    _arm_for(_GATE_DAY)
+    assert run() == {"ok": True, "live": True}
+    assert placed == [True]
 
 
 # --------------------------------------------------------------------------- readers

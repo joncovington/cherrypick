@@ -53,6 +53,33 @@ export interface AdvisorPair {
   /** `{tag: {qualified, checks}}` from qualify_readings — the promotion gate, unmodified. */
   qualification: Record<string, unknown>;
   underpowered: boolean;
+  /**
+   * The advised book against its base session by session (`verdicts._paired`, through
+   * `core.compare.pair_with_control`), verbatim. Absent on a verdict stored before 2026-10-12 and
+   * null when either book had no rows; never part of the qualification.
+   */
+  paired?: AdvisorPaired | null;
+}
+
+/** Field names are the verdict's own (snake_case), passed through unmapped like `delta`. */
+export interface AdvisorPaired {
+  sessions: number;
+  /** `session` for a same-day module; `entry_session` for a multi-day structure. */
+  paired_on: string;
+  mean_diff: number | null;
+  total_diff: number | null;
+  ci: [number | null, number | null] | null;
+  ci_level: number;
+  ci_excludes_zero: boolean | null;
+  t_lower: number | null;
+  advised_better: number;
+  base_better: number;
+  ties: number;
+  sign_test_p: number | null;
+  /** More sessions until the interval would exclude zero at the observed mean and spread. */
+  sessions_to_decision: number | null;
+  advised_only_sessions: number;
+  base_only_sessions: number;
 }
 
 export interface AdvisorVerdict {
@@ -66,6 +93,14 @@ export interface AdvisorVerdict {
    * recording decisions. `sessionsRun` is how many sessions it actually got.
    */
   stalled: { sessionsRun: number; calendarSessions: number } | null;
+  /**
+   * Set when the advised book never traded differently from its base (2026-10-12): every param
+   * declared unable to act on the base (`declared`), or every closed advised row identical to a
+   * base row on its session (`never_diverged`). Such a verdict measured nothing, and says so ahead
+   * of underpowered or any pass/fail. Null on a verdict that may have measured something, and on
+   * every verdict written before the field existed.
+   */
+  noExposure: { reason: string; detail: string } | null;
 }
 
 export interface AdvisorEvent {

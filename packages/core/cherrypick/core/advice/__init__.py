@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -76,7 +77,26 @@ def advice_path(state_dir: Path | str, module: str, session: str) -> Path:
     return Path(state_dir) / ADVICE_DIR / f"{module}-{session}.json"
 
 
-def _check_proposal(p: Any, bounds: dict[str, Any]) -> str | None:
+def param_acts_on(rule: Any, base: str | None) -> bool:
+    """Can a param bounded by `rule` change anything on an advised twin of `base`?
+
+    A bounds rule may carry `arms`, the base arms whose rules read the param at all (bwb's trigger
+    thresholds act on the arm whose trigger they tune, and `control` has none). Absent means every
+    base, which is every rule written before 2026-10-12. An unknown base (`None`, a legacy entry)
+    is not refused: the declaration names arms, and nothing here guesses one.
+
+    This is the module's own declaration, read from its config like the ranges beside it, so a
+    proposal that cannot move its book from the base is refused by the same function both sides
+    call -- before it spends an experiment's sessions measuring nothing."""
+    if not isinstance(rule, dict) or base is None:
+        return True
+    arms = rule.get("arms")
+    if not isinstance(arms, list):
+        return True
+    return str(base) in {str(a) for a in arms}
+
+
+def _check_proposal(p: Any, bounds: dict[str, Any], base: str | None = None) -> str | None:
     """None if admissible, else the rejection reason."""
     if not isinstance(p, dict):
         return "proposal is not an object"
@@ -91,6 +111,13 @@ def _check_proposal(p: Any, bounds: dict[str, Any]) -> str | None:
         # not raise out of the validator and, on the producer side, abort every other module's
         # issuance for the night (2026-09-12).
         return f"{param!r} bounds rule is malformed (expected {{min, max}} or {{choices}})"
+    if "arms" in rule and not isinstance(rule["arms"], list):
+        return f"{param!r} bounds rule is malformed (arms must be a list of base arm names)"
+    if not param_acts_on(rule, base):
+        return (
+            f"{param!r} cannot act on base arm {base!r} "
+            f"(declared for: {', '.join(str(a) for a in rule['arms']) or 'no arm'})"
+        )
     value = p.get("value")
     if "choices" in rule:
         if value not in rule["choices"]:
@@ -113,7 +140,7 @@ def params_map(proposals: Any) -> dict[str, Any]:
     return {p["param"]: p["value"] for p in proposals or [] if isinstance(p, dict) and "param" in p}
 
 
-def validate_proposals(proposals: Any, bounds: dict[str, Any]) -> dict[str, Any]:
+def validate_proposals(proposals: Any, bounds: dict[str, Any], base: str | None = None) -> dict[str, Any]:
     """Admission check for ONE overlay -- one experiment's proposals list -- against the bounds.
     Returns {"ok", "reason", "proposals", "rejected"}; ok False always means empty proposals
     (reject-all, per overlay)."""
@@ -128,7 +155,7 @@ def validate_proposals(proposals: Any, bounds: dict[str, Any]) -> dict[str, Any]
     rejected: list[dict[str, Any]] = []
     admitted: list[dict[str, Any]] = []
     for p in proposals:
-        reason = _check_proposal(p, bounds)
+        reason = _check_proposal(p, bounds, base)
         if reason is None and isinstance(p, dict):
             if p.get("param") in seen:
                 reason = f"duplicate param {p.get('param')!r}"
@@ -164,7 +191,7 @@ def _experiment_entries(artifact: dict[str, Any]) -> list[dict[str, Any]]:
             "experiment_id": artifact_experiment_id(artifact),
             "name": None,
             "tag": None,
-            "base": None,
+            "base": artifact.get("base"),
             "proposals": artifact.get("proposals"),
             "rejected": artifact.get("rejected") or [],
         }
@@ -200,7 +227,7 @@ def validate(
 
     experiments: list[dict[str, Any]] = []
     for entry in _experiment_entries(artifact):
-        checked = validate_proposals(entry.get("proposals"), bounds)
+        checked = validate_proposals(entry.get("proposals"), bounds, entry.get("base"))
         experiments.append(
             {
                 "experiment_id": entry.get("experiment_id"),
@@ -321,6 +348,69 @@ def experiment_for(decision: dict[str, Any] | None, book: str | None) -> str | N
         if tag and (book == tag or str(book).startswith(tag + ":")):
             return entry.get("experiment_id")
     return None
+
+
+def base_for(
+    arm: str,
+    *,
+    decision: dict[str, Any] | None = None,
+    is_base_arm: Callable[[str], bool] = lambda tail: False,
+    advice_config: dict[str, Any] | None = None,
+) -> str:
+    """The arm whose rules an advised twin runs under. A base arm is its own base.
+
+    **An advised tag no longer carries its base (2026-09-17).** Each advisor experiment gets its own
+    arm, `advised:<experiment name>`, and the base it shadows is named by the session decision's
+    ADMITTED experiment entry rather than by the tag. Resolution, in order: that entry when one
+    matches; the tag's last segment when `is_base_arm` says it names one (the legacy
+    `advised:control` every row before that date carries); else the configured base under any
+    accepted spelling (`advice_config`, default `control`) -- an operator who renames the key must
+    not silently get "control", a wrong A/B that still reads as a valid one.
+
+    `is_base_arm` is called only for an advised arm with no matching entry, so a module's registry
+    read (which may warn) happens exactly when it used to. bwb, curve and pmcc resolve through this;
+    calendars keeps its own (the `friday:path` rule), and flies/meic resolve tags from an EARLIER
+    decision today, where a rejected entry still names the base, so they scan every entry."""
+    if not is_advised(arm):
+        return arm
+    for entry in advised_books(decision):
+        tag = entry.get("tag")
+        if tag and (arm == tag or arm.startswith(tag + ":")) and entry.get("base"):
+            return str(entry["base"])
+    tail = arm.split(":", 1)[1]
+    if is_base_arm(tail):
+        return tail
+    return str(_cfg.first_present(advice_config or {}, *_cfg.BASE_ARM_KEYS) or "control")
+
+
+def effective_params(
+    position: dict[str, Any],
+    *,
+    base_book: Callable[[str], str],
+    base_params: Callable[[str], dict[str, Any]],
+) -> dict[str, Any]:
+    """The params governing one position: its base arm's params, with the row's frozen
+    `advice_params` overlaid for an advised arm. An unreadable stamp is the base's params, never a
+    guess.
+
+    The base is the row's own `advice_base` stamp first (2026-09-17: an advised twin of a
+    non-default base is managed under THAT base after the session's decision file is gone), else
+    `base_book(arm)`. The answer rides on the params as `base_book` so a verdict never re-derives
+    it from the tag. `base_params(base)` is the module's defaults merged with that arm's config."""
+    arm = position.get("arm") or "control"
+    stamped = position.get("advice_base")
+    base = str(stamped) if stamped else base_book(arm)
+    params = dict(base_params(base))
+    params["arm"] = arm
+    params["base_book"] = base
+    raw = position.get("advice_params")
+    if arm.startswith(ADVISED_PREFIX) and raw:
+        try:
+            overlay = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except (TypeError, ValueError):
+            overlay = {}
+        params.update(overlay)
+    return params
 
 
 def stamp_for(book: str | None, experiment: Any) -> str | None:

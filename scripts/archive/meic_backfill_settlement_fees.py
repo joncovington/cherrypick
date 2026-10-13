@@ -1,7 +1,7 @@
 """Backfill MEIC's `settlement_fees` column on rows closed before it was recorded (2026-09-25).
 
-    python scripts/meic_backfill_settlement_fees.py            # dry run -- prints, changes nothing
-    python scripts/meic_backfill_settlement_fees.py --apply    # writes
+    python scripts/archive/meic_backfill_settlement_fees.py            # dry run -- prints, changes nothing
+    python scripts/archive/meic_backfill_settlement_fees.py --apply    # writes
 
 `settlement_fees` is the part of a trade's `fees` that is the cash-settlement charge, $5 per ITM
 strike (`paper.expire_fees`). The write path records it from 2026-09-25; this recovers it for the
@@ -14,7 +14,7 @@ What a row gets depends on what its `fees` total actually CONTAINS, not on what 
                                   settle, so no part of the total is settlement.
   - settled at expiry, paper      `paper.expire_fees(n)`, n = `paper.settlement_itm_strikes` over the
                                   sides still held at the recorded `settle_underlying` -- the count
-                                  and fee `scripts/meic_resettle_expiry_fees.py` added to this row's
+                                  and fee `scripts/archive/meic_resettle_expiry_fees.py` added to this row's
                                   total. Only on a ledger that run was applied to (its marker file
                                   sits beside the ledger): before it, settlement was never charged,
                                   and a computed fee would not be a part of the total.
@@ -37,7 +37,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-_REPO = Path(__file__).resolve().parents[1]
+_REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "packages" / "core"))
 sys.path.insert(0, str(_REPO / "packages" / "meic" / "src"))
 

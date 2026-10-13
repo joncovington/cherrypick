@@ -68,6 +68,25 @@ the 2026-09-04 settlement was the proof), and settlement had charged the $5 even
 ROW, so the doubled body paid twice. Rows before 2026-09-18 carry the old values; both are
 derivable and neither is rewritten.
 
+## `delta` and `wall` retired at the 2026-10-19 boundary (declared 2026-10-12)
+
+- **`delta`:** the two-year modelled backtest (2024-10..2026-10) put it at −$9,983 against
+  `control`'s −$9,128, with a $24.9k drawdown. Its paper lead is the regime it has run in, not the
+  trigger.
+- **`wall`:** the weekly difference against `control` has an sd of $1,353, so reading a $300-a-week
+  edge would take about 126 weeks.
+- **How:** `books.<name>.enabled` false, never a deleted block (an absent built-in book runs by
+  default). The roster only matters at entry: the two `delta` and one `wall` rows open on 10-12
+  expire 10-16 and are managed and settled from the ledger as before. `arms` break 2026-10-19 in
+  the paper ledger. Both written by `scripts/boundary_2026_10_19.py` on the weekend of 10-17; the
+  code keeps both books, so their rows stay readable.
+- **Found on the way:** the advisor's `advised:delta-trigger-early` (base `control`,
+  `delta_trigger` 0.30) can never arm: `triggers.py` gives `control` no trigger, so a twin of
+  `control` ignores `delta_trigger` whatever its value (13 twin positions, 0 armed). Its success
+  metric also reads the `delta` book as the reference. It reaches its 15 sessions about 10-14 and
+  concludes on its own; its verdict measures nothing, and a re-proposal needs a base that has a
+  trigger.
+
 ## Milestones
 
 Built 2026-08-23; paper since 2026-08-24. Runs as the supervisor's `bwb-paper` job on a 60s

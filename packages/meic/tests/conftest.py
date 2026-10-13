@@ -76,3 +76,17 @@ def _today_is_not_a_quarter_end(monkeypatch):
     from cherrypick.meic import tt
 
     monkeypatch.setattr(tt, "_quarter_end_today", lambda: False)
+
+
+#: The designated account every test sees unless it says otherwise -- a fake, never a real number.
+TEST_DESIGNATED_ACCOUNT = "TEST0001"
+
+
+@pytest.fixture(autouse=True)
+def _a_designated_account(monkeypatch):
+    """`tt`'s order commands refuse without a designated account (2026-10-12), and the real lookup
+    reads the machine's keyring. Pinned to a fake here so no test reads a keyring; the refusal's own
+    tests pin it to None."""
+    from cherrypick.meic import tt
+
+    monkeypatch.setattr(tt, "_designated_account", lambda: TEST_DESIGNATED_ACCOUNT)

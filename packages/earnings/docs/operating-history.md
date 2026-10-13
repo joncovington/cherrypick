@@ -52,3 +52,22 @@ on and as a constraint. It is a constraint.
 An earlier note claimed a 2,349-vs-64 acceptance gap; that was a miscount — 2,238 of those are
 legacy capital-R `Reject` rows, i.e. rejections. Real acceptances reconcile with trades opened, so
 the execution stage records a gap that is currently small, not a hole.
+
+## The two calendars retired from `strat_test` from 2026-10-19 (declared 2026-10-12)
+
+The config's own 20-session review said to retire `atm_calendar` and `double_calendar` from the
+harness if they were losing. Through 10-12 `atm_calendar` ran 56 trades at 21% won for −$6,349 and
+`double_calendar` 35 at 14% for −$3,660.
+
+- **How:** the registry has no per-strategy switch, and a deleted `strategies.<name>` block would
+  raise rather than disable, so the retirement is dated in code: `strat_test_harness.STRAT_TEST_RETIRED`
+  maps each to 2026-10-19. From that session the harness still writes the screen row and refuses the
+  opening as an execution-stage `strategy_retired` drop, so "retired" never reads as "nothing
+  qualified". It merges ahead of the boundary and binds on it, with no config change.
+- **Open rows run off.** Six `atm_calendar` rows and one `double_calendar` row opened 10-12 (front
+  expiry 10-16) close under the ordinary close path, which reads the ledger, not the registry.
+- **The advised twin.** `advised:dc-stop-at-75pct-debit` (1 of 15 sessions) opens only beside a
+  `strat_test` double calendar, so it would starve rather than conclude. It is concluded with a
+  verdict by `advisor kill` on the weekend of 10-17 (`scripts/boundary_2026_10_19.py`); its open UNH
+  twin keeps its frozen params to the close.
+- `strat_test_strategies` break 2026-10-19 in the paper ledger, written by the same script.

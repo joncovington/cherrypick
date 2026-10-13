@@ -20,6 +20,8 @@ alone, and nothing tracked the gate after that.
   paying. Every threshold from 15 to 90 minutes nets below no gate (−$368 → −$570 to −$979), and
   paper on the same dates agrees. Entries made while a spread that went on to strand was still open
   completed 91% (20 of 22) and made +$1,127. Re-run at 15 sessions (about 10-15).
+- **2026-10-12:** taken out of the advisor's bounds at the 10-19 boundary (experiment log). The live
+  re-run at 15 sessions is still the reopen condition for live; the advisor no longer proposes it.
 
 ## Variants of the delta-placed debit-first pair, by config only
 

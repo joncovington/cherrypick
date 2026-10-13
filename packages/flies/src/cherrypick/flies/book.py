@@ -585,6 +585,23 @@ def _process_snapshot(
     # code stays because it is correct and tested, but note the floor tiebreak below is NOT valid
     # across kinds and must be fixed before anything re-enables this.
     for pos in [p for p in positions if p["kind"] == "short_vertical" and p["status"] == "open"]:
+        # Only an arm that declares `completion_cutoff` stops here (`live-shadow`, mirroring live's
+        # cancel of its resting completion); every other arm completes until the close.
+        if engine.completion_cutoff_reached(pos_params(pos), snapshot.get("now_min")):
+            journal(
+                "completion",
+                "completion_cutoff_reached",
+                center=pos["center"],
+                position_id=pos["position_id"],
+            )
+            actions.append(
+                {
+                    "action": "completion_skipped",
+                    "position_id": pos["position_id"],
+                    "reason": "completion_cutoff_reached",
+                }
+            )
+            continue
         debit_done, debit_reason, debit_plan = engine.evaluate_completion(snapshot, pos, pos_params(pos))
         if debit_plan is not None:
             # The MARKET's modelled debit, never the price a completion would pay: from 2026-10-05

@@ -338,12 +338,23 @@ def status(cfg: dict) -> dict:
     # reconnect at 23:58 ET reloaded the 9th's chain and the process survived the night, so the
     # base SPX window served an expired chain all session while every aggregate stayed fresh). The
     # SYMBOL@date extra windows are dated by construction and excluded; a NULL expiration (a row
-    # from an older producer) is unknown, not stale.
+    # from an older producer) is unknown, not stale. Only symbols the registry union still serves
+    # count: a symbol that left the union keeps its last health row forever (nothing reloads its
+    # chain), so on 2026-10-13 TQQQ's row -- dropped by pmcc, last loaded 10-11 -- read as a chain
+    # dated before the session and the 09:00 ET pass restarted a healthy streamer for it. If the
+    # union can't be read, every row counts, as before.
     session_date = _session_date()
+    try:
+        served = set(_registry.union_symbols(seed_symbols=_config.symbols(cfg)))
+    except Exception:
+        served = None
     info["stale_chains"] = {
         s: h["chain_expiration"]
         for s, h in symbol_health.items()
-        if "@" not in s and h.get("chain_expiration") and h["chain_expiration"] < session_date
+        if "@" not in s
+        and (served is None or s in served)
+        and h.get("chain_expiration")
+        and h["chain_expiration"] < session_date
     }
     # What the registry union currently asks beyond each symbol's nearest expiration. The per-date
     # serving state is the `SYMBOL@date` rows already present in symbol_health above.

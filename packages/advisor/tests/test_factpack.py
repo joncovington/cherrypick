@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import sqlite3
 
 import fakes
 import pytest
@@ -148,9 +149,67 @@ def test_live_facts_are_present_and_labeled(seeded):
     pack = factpack.build(SESSION, "open")
     live = pack["live"]
     assert "enactment is paper-only" in live["_note"]
-    assert live["flies_live"]["shape"] == "flies.analytics.live_vs_paper/v1"
+    assert live["flies_live"]["shape"] == "advisor.flies_live_today/v1"
     assert live["flies_live"]["live"]["settled_today"]["n"] == 1
     assert live["posture"]["flies"]["arm_record"]["armed_today"] is False
+
+
+def test_the_flies_live_block_leaves_voided_rows_out(seeded):
+    """flies voids a row by setting `void_reason`; its status stays `settled` with its pnl (the
+    10-08 outage left 22 such paper rows). Counted, they inflate both sides' settled count and net.
+    The seeded fake ledgers have no such column, which the block must still read (the test above)."""
+    data = seeded / "data" / "flies"
+    for name, pid in (("live_trades.db", "lv"), ("paper_trades.db", "pv")):
+        db = data / name
+        conn = sqlite3.connect(str(db))
+        conn.execute("ALTER TABLE fly_positions ADD COLUMN void_reason TEXT")
+        conn.commit()
+        conn.close()
+        fakes.insert(
+            db,
+            "fly_positions",
+            [
+                {
+                    "position_id": pid,
+                    "trade_date": SESSION,
+                    "arm": "control",
+                    "symbol": "SPX",
+                    "kind": "fly",
+                    "net": -500.0,
+                    "fees": 9.0,
+                    "pnl": -509.0,
+                    "status": "settled",
+                    "entry_fill_status": "filled",
+                    "completion_latency_min": 90.0,
+                    "void_reason": "outage",
+                }
+            ],
+        )
+
+    block = factpack.build(SESSION, "open")["live"]["flies_live"]
+    assert block["live"]["settled_today"] == {"n": 1, "pnl": 37.0}
+    assert block["live"]["by_status"] == [{"status": "settled", "n": 1, "net": 40.0, "fees": 3.0}]
+    assert block["live"]["entry_fills"] == {"filled": 1}
+    assert block["paper"]["n"] == 1 and block["paper"]["pnl"] == 142.0
+    assert block["paper"]["latency"] == 12.0
+
+
+def test_the_flies_live_block_claims_flies_shape_only_with_its_keys(seeded):
+    """The pack's `flies_live` block was tagged `flies.analytics.live_vs_paper/v1` while carrying
+    none of that shape: no completion rate, no gap, no abort rule (found 2026-10-12, beside the
+    console's rounding fix in PR #179 -- there was no rounding here to fix, because there was no
+    rate). A tag naming flies' function must carry that function's keys, checked against flies'
+    own output on an empty pair of ledgers; skipped where flies is not installed."""
+    flies_analytics = pytest.importorskip("cherrypick.flies.analytics")
+    from cherrypick.flies import db as flies_db
+
+    block = factpack.build(SESSION, "open")["live"]["flies_live"]
+    if not str(block.get("shape", "")).startswith("flies.analytics.live_vs_paper/"):
+        return
+    live, paper = flies_db.connect(":memory:"), flies_db.connect(":memory:")
+    reference = flies_analytics.live_vs_paper(live, paper)
+    missing = sorted(set(reference) - set(block))
+    assert missing == [], f"tagged as flies' shape but lacks {missing}"
 
 
 def test_the_halt_flag_shows_up(seeded, tmp_home):
@@ -880,6 +939,34 @@ def test_experiments_full_carries_one_fresh_verdict_per_experiment_not_raw_rows(
     assert brief["params"] == {"stop_trigger_ratio": 0.9}
 
 
+def test_a_no_exposure_conclusion_reaches_the_pack(seeded, monkeypatch):
+    """From the 2026-10-19 boundary: a verdict whose advised book never traded differently from its
+    base carries `no_exposure`/`conclusion`, and the pack keeps both -- in the compacted verdict
+    and beside the running delta -- so the model reads "measured nothing" before the delta."""
+    from cherrypick.advisor import experiments, store, verdicts
+
+    fakes.write_config(seeded, "meic", fakes.advice_block({"stop_trigger_ratio": {"min": 0.85, "max": 0.95}}))
+    fakes.write_suite_config(seeded, {"enabled": True, "modules": {"meic": {"enabled": True}}})
+    conn = store.connect()
+    admitted = experiments.admit_spec(
+        conn, session=fakes.anchor_session(), module="meic", params={"stop_trigger_ratio": 0.9}
+    )
+    conn.close()
+    real = verdicts.for_experiment
+    inert = {"reason": "never_diverged", "detail": "all 11 advised row(s) identical", "params": ["x"]}
+
+    def stamped(*args, **kwargs):
+        return {**real(*args, **kwargs), "no_exposure": inert, "conclusion": "no_exposure"}
+
+    monkeypatch.setattr(verdicts, "for_experiment", stamped)
+    pack = factpack.build(SESSION, "deep")
+    brief = pack["experiments_full"]["active"][0]
+    assert brief["id"] == admitted["experiment_id"]
+    assert brief["verdict"]["no_exposure"] == inert and brief["verdict"]["conclusion"] == "no_exposure"
+    assert pack["experiments"][0]["no_exposure"] == inert
+    assert factpack._compact_verdict({"pairs": []}).get("no_exposure") is None
+
+
 # --------------------------------------------------------------------------- regime cuts (2026-09-19)
 def _regime_doc(module="flies", session=SESSION, **overrides):
     doc = {
@@ -1183,6 +1270,21 @@ def test_regime_cuts_carries_the_flies_gate_replay_one_line_per_rule(tmp_home):
     assert out["rules"]["base"].startswith("kept=184/184") and "(" not in out["rules"]["base"]
     assert set(out["rules"]) == {"base", "miss_stop:90", "trend_bucket:up_from_open"}
     assert "gate_replay" in factpack._REGIME_CUTS_NOTE
+
+
+def test_the_gate_replay_note_calls_a_param_a_bound_only_while_flies_declares_one():
+    """The note tells the model which replayed gates it may propose. miss_stop_minutes left flies'
+    advice bounds at the 2026-10-19 boundary while its replay line stays (evidence, not a lever);
+    a note still listing it as a bound invites a proposal the validator will refuse. Driven off
+    flies' own example config, so the next bound that leaves fails here too."""
+    import re
+
+    example = pathlib.Path(__file__).resolve().parents[2] / "flies" / "config.example.json"
+    bounds = json.loads(example.read_text(encoding="utf-8"))["advice"]["bounds"]
+    listed = re.search(r"replayable gate bound \(([^;)]*)", factpack._REGIME_CUTS_NOTE)
+    assert listed, "the note names the replayable bounds"
+    names = [n.strip() for n in listed.group(1).split(",")]
+    assert names and all(n in bounds for n in names), f"{names} vs flies bounds {sorted(bounds)}"
 
 
 def test_regime_cuts_underpowered_is_emitted_only_when_true(tmp_home):

@@ -43,10 +43,17 @@ an arm joins only by being named there). A derivation that cannot reproduce the 
 The default tolerance is $0.01 (rounding); it was $0.50 until 2026-10-12, which hid a $0.49 bias on
 every `path` week (the long disposal's cost was missing from the recorded-close fallback).
 
-**A Friday-entry regime is designed, not built** — [docs/friday-entry-arm.md](docs/friday-entry-arm.md)
-(`dc_7_10` vs this `dc_4_7`). It is NOT a fourth book: it prices its own snapshot and strikes, so it
-is a parallel regime with its own books and population, and an ordering problem on a Friday that
-already carries the exit, settlement and share delivery.
+**A Friday-entry regime is built and trading** (enabled 2026-08-24, first entry 2026-09-04) —
+[docs/friday-entry-arm.md](docs/friday-entry-arm.md) (`dc_7_10` vs this `dc_4_7`). It is NOT a fourth
+book: it prices its own snapshot and strikes at 15:50-16:00 on the Friday before (`friday_entry`
+block, `clock.friday_entry_plan`), books `friday:control` and `friday:path` (`engine.FRIDAY_PREFIX`;
+`base_book` reads the last segment, so they manage, settle and dispose as their bases), and is
+skipped while the week's Monday-regime exits are still pending. Through 10-12 it entered 4 weeks
+(16 rows); 08-28, 09-11 and 09-18 were skipped. Not yet true, and say so before reading it:
+- **`dc_paired_debits` was empty until the 2026-10-12 fix** — the Monday-moment price of the Friday
+  strikes, the low-variance Friday-vs-Monday read. The past weeks cannot be backfilled.
+- **The read-side grid does not cover it.** `exit_policies` derives `path` only, never `friday:path`.
+- **Its arrival was never journaled as a break**, though friday-entry-arm.md says it should be.
 
 ## Two settlement styles, one set of numbers
 

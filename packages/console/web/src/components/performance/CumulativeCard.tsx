@@ -17,7 +17,7 @@ import { canvasPalette as _pal, resolveColor } from "../chart/cssvars";
 const PAL = _pal();
 
 /**
- * Cumulative net P&L per profile, one line per tag -- the mount/teardown-once, update-via-setData
+ * Cumulative net P&L per arm, one line per tag -- the mount/teardown-once, update-via-setData
  * pattern the Overview's suite equity card established (removed 2026-10-01; this is now its
  * reference), so a 60s refetch updates the existing lines in place rather than discarding whatever
  * pan/zoom the viewer set. `fitContent()` only fires the first time data arrives, same reason.

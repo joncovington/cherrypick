@@ -240,8 +240,12 @@ def _issue(conn, *, module: str, session: str, target: str) -> dict[str, Any]:
     entries: list[dict[str, Any]] = []
     for experiment in active:
         params = json.loads(experiment["params_json"] or "{}")
+        base = experiment.get("base_profile") or posture["base_profile"]
+        # The base rides on the artifact so the validator can refuse, tonight, a param the module
+        # now declares cannot act on it (a bounds rule's `arms`) -- the same re-validation against
+        # current bounds a tightened range gets.
         artifact = _experiments.artifact_for(
-            module, target, params, rationale=f"advisor experiment {experiment['id']}"
+            module, target, params, rationale=f"advisor experiment {experiment['id']}", base=base
         )
         checked = _advice.validate(artifact, posture["bounds"], target)
         entries.append(
@@ -249,7 +253,7 @@ def _issue(conn, *, module: str, session: str, target: str) -> dict[str, Any]:
                 "experiment_id": experiment["id"],
                 "name": experiment.get("name"),
                 "tag": _bounds.experiment_tag(experiment),
-                "base": experiment.get("base_profile") or posture["base_profile"],
+                "base": base,
                 "proposals": checked["proposals"],
                 "rejected": checked["rejected"],
                 "reason": checked["reason"],
