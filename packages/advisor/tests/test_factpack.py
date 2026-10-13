@@ -1152,6 +1152,21 @@ def test_regime_cuts_carries_the_flies_gate_replay_one_line_per_rule(tmp_home):
     assert "gate_replay" in factpack._REGIME_CUTS_NOTE
 
 
+def test_the_gate_replay_note_calls_a_param_a_bound_only_while_flies_declares_one():
+    """The note tells the model which replayed gates it may propose. miss_stop_minutes left flies'
+    advice bounds at the 2026-10-19 boundary while its replay line stays (evidence, not a lever);
+    a note still listing it as a bound invites a proposal the validator will refuse. Driven off
+    flies' own example config, so the next bound that leaves fails here too."""
+    import re
+
+    example = pathlib.Path(__file__).resolve().parents[2] / "flies" / "config.example.json"
+    bounds = json.loads(example.read_text(encoding="utf-8"))["advice"]["bounds"]
+    listed = re.search(r"replayable gate bound \(([^;)]*)", factpack._REGIME_CUTS_NOTE)
+    assert listed, "the note names the replayable bounds"
+    names = [n.strip() for n in listed.group(1).split(",")]
+    assert names and all(n in bounds for n in names), f"{names} vs flies bounds {sorted(bounds)}"
+
+
 def test_regime_cuts_underpowered_is_emitted_only_when_true(tmp_home):
     doc = _regime_doc()
     doc["arms"][0]["dimensions"]["gex"]["underpowered"] = True
