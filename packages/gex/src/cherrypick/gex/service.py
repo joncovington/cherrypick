@@ -85,7 +85,7 @@ PROFILE_COLUMNS = (
 # The chain's QUOTES over time (2026-10-12), which nothing else keeps: the stream cache holds only the
 # latest quote per leg, the profile above has no bid/ask, and a module's own marks cover only legs it
 # holds. Without them a rule a module never ran (flies' credit floor, a restack, an earlier start)
-# cannot be priced after the fact. Once a minute per symbol in RTH, the strikes nearest spot on each
+# cannot be priced after the fact. Every recorder tick (~15 s) per symbol in RTH, the strikes nearest spot on each
 # side, both rights, on the same chain the profile reads; only quotes `usable_quote` accepts at the
 # age flies prices with (120 s), so a missing row means no usable quote. Spot is NOT stored again:
 # `gex_spot_history` already has it every tick, and `core.quotehistory` joins it on read.
@@ -93,7 +93,12 @@ PROFILE_COLUMNS = (
 # is about -- sits a trend day's distance from spot, and a narrower window would lose exactly those.
 QUOTE_STRIKES_EACH_SIDE = 20
 QUOTE_MAX_AGE_SECONDS = 120.0
-QUOTE_INTERVAL_SECONDS = 60
+# Every tick, not every minute (2026-10-12): flies' paper loop prices every 15 s, and a completion is
+# often a touch of a few seconds that a minute sample misses, so a replay of a paper arm at a minute
+# would understate completion -- the number the strategy turns on. ~10 MB a session. The throttle
+# sits under the 15 s tick so it only stops a double write; at 15 s, a tick landing a hair early
+# would be skipped and the cadence would halve.
+QUOTE_INTERVAL_SECONDS = 10
 
 
 def _ensure_history_table(conn: sqlite3.Connection, db_path: Path | str | None = None) -> None:
@@ -429,7 +434,7 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
             try:
                 n = record_spots(cfg)
                 record_regimes(cfg)  # internally throttled to ~5-minute rows
-                record_quotes(cfg)  # internally throttled to ~1-minute samples, RTH-gated
+                record_quotes(cfg)  # every tick (~15 s), RTH-gated
                 _regime.sample(cfg)  # internally throttled to ~1-minute rows, RTH-gated
                 ticks += 1
                 if ticks % heartbeat_every == 0:
