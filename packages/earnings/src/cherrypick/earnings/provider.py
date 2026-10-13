@@ -29,7 +29,7 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
-from cherrypick.core import home as _home
+from cherrypick.core import streamcache as _streamcache
 
 # Read-only opens go through cherrypick.core.db.connect_ro: it percent-escapes the path, so a
 # directory containing '?', '#' or '%' cannot silently change the URI's meaning. The local
@@ -53,7 +53,7 @@ DEFAULT_MAX_SPOT_AGE_SECONDS = 600
 
 def cache_path() -> Path:
     """The suite's canonical shared cache. One producer writes it; every module reads it."""
-    return _home.data_dir() / "marketdata" / "stream_cache.db"
+    return _streamcache.cache_path()
 
 
 def _fail(reason: str, **extra) -> dict:

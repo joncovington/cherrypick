@@ -17,13 +17,31 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
 import re
 import sqlite3
 import time
 from pathlib import Path
 
 from cherrypick.core import calendar as _cal
+from cherrypick.core import home as _home
 from cherrypick.core.db import connect_ro
+
+CACHE_FILE = "stream_cache.db"
+
+
+def cache_path(config: dict | None = None) -> Path:
+    """Where a consumer reads the shared stream cache: the module config's `source.stream_cache_db`
+    when set (`$VAR` then `~` expanded -- portable paths only), else the canonical
+    `<home>/data/marketdata/stream_cache.db`. Never creates anything.
+
+    The one copy of a rule eleven readers carried. The producer (`packages/streamer`) and gex
+    resolve their own: they expand `~` before `$VAR`, and a writer's override is its own business."""
+    configured = ((config or {}).get("source") or {}).get("stream_cache_db")
+    if configured:
+        return Path(os.path.expanduser(os.path.expandvars(configured)))
+    return _home.data_dir("marketdata") / CACHE_FILE
+
 
 # The schema every consumer shares. orb_ranges/stream_rest_cache are used only by MEIC's daemon today
 # but are kept here so MEIC can adopt this DDL verbatim when it migrates onto the core engine.

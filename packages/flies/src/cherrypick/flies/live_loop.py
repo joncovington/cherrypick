@@ -73,12 +73,12 @@ import sys
 import time
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
 from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import config as _cfg  # noqa: E402
 from cherrypick.core import execution as _execution
 from cherrypick.core import home as _home  # noqa: E402
+from cherrypick.core import jsonio as _jsonio  # noqa: E402
 from cherrypick.core import live as _live  # noqa: E402
 from cherrypick.core import redact as _redact  # noqa: E402
 from cherrypick.core import settlement as _settlement  # noqa: E402
@@ -1951,10 +1951,7 @@ def set_agent_mode(config: dict, mode: str, *, today: str | None = None) -> dict
         return {"ok": False, "error": f"{mode!r} is not offered today", "offered": offered}
     acfg = intraday_advice.agent_config(config)
     record["intraday_agent"] = {"mode": mode, "model": acfg["model"], "confirmed_at": clock.now_iso()}
-    path = Path(arm_stamp_path())
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(record), encoding="utf-8")
-    os.replace(tmp, path)
+    _jsonio.write_json_atomic(arm_stamp_path(), record, indent=None, default=None)
     return {"ok": True, "date": today, "intraday_agent": record["intraday_agent"], "offered": offered}
 
 

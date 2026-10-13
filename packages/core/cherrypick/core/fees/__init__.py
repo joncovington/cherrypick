@@ -305,3 +305,15 @@ def assignment_fee(assignment: dict, dispose_price: float) -> float:
     return assignment_round_trip_fee(
         assignment["shares"], assignment["basis"], dispose_price, direction=assignment["direction"]
     )
+
+
+# --------------------------------------------------------------------------- 4. broker-reported fees
+# What a live fee reconciliation reads off a tastytrade transaction row. A position's real fee is the
+# sum of these fields' magnitudes across every matched transaction: tastytrade reports each as a signed
+# (negative) charge or, on some rows, leaves it out. bwb and flies reconcile against the same fields.
+BROKER_FEE_FIELDS = ("commission", "clearing_fees", "regulatory_fees", "proprietary_index_option_fees")
+
+
+def broker_fee_total(txn: dict) -> float:
+    """The fees one broker transaction row charged, as a positive figure (absent or blank fields are 0)."""
+    return sum(abs(float(txn[field])) for field in BROKER_FEE_FIELDS if txn.get(field) not in (None, ""))

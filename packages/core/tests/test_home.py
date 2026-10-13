@@ -188,3 +188,14 @@ def test_no_package_reads_cherrypick_home_raw():
         if raw.search(line)
     ]
     assert hits == []
+
+
+def test_beat_touches_the_heartbeat_and_never_raises(monkeypatch, tmp_path):
+    """Readers take the mtime only; a write that fails must cost the beat, never the tick."""
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    home.beat("calendars")
+    beat = tmp_path / "state" / "calendars.heartbeat"
+    assert beat.exists() and beat.read_text(encoding="utf-8")
+    monkeypatch.setattr(home, "heartbeat_path", lambda package: tmp_path / "state" / "x" / "y.heartbeat")
+    (tmp_path / "state" / "x").write_text("a file where the directory should be", encoding="utf-8")
+    home.beat("calendars")  # OSError swallowed

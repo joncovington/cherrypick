@@ -1420,12 +1420,7 @@ def run_status(config: dict, conn, *, cache_path: str, broker=None) -> dict:
 
 
 def _beat() -> None:
-    try:
-        path = _home.heartbeat_path("bwb-live")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(datetime.now().astimezone().isoformat(), encoding="utf-8")
-    except OSError:
-        pass
+    _home.beat("bwb-live")
 
 
 # --------------------------------------------------------------------------- main

@@ -36,7 +36,6 @@ from typing import Any
 
 from cherrypick.core import streamcache
 from cherrypick.core.db import connect_ro
-from cherrypick.core.home import data_dir
 
 from . import config as cfgmod
 from . import reconcile
@@ -62,7 +61,7 @@ WIDE_SPREAD_MIN_DOLLARS = 0.10
 
 def _cache_db_path():
     """The shared stream cache. Same default every consumer uses; this reader never creates it."""
-    return data_dir("marketdata") / "stream_cache.db"
+    return streamcache.cache_path()
 
 
 # --------------------------------------------------------------------------- marks

@@ -36,6 +36,7 @@ from cherrypick.core import config as _cfg
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
+from cherrypick.core import streamcache as _streamcache
 
 from cherrypick.calendars import book as bookmod
 from cherrypick.calendars import cli as climod
@@ -51,11 +52,7 @@ _logger = logging.getLogger("calendars_paper_loop")
 def stream_cache_path(config: dict) -> str:
     """The suite's canonical shared stream cache, read-only here. Config first, then the managed
     home — portable paths only."""
-    configured = (config.get("source") or {}).get("stream_cache_db")
-    if configured:
-        return os.path.expanduser(os.path.expandvars(configured))
-    home = str(_home.home())
-    return os.path.join(home, "data", "marketdata", "stream_cache.db")
+    return str(_streamcache.cache_path(config))
 
 
 def log_file():
@@ -89,12 +86,7 @@ def _beat() -> None:
     that costs a tick would be worse than the problem it solves — and a missing file is not judged
     silent by the supervisor, so the degrade is safe in both directions.
     """
-    try:
-        path = heartbeat_file()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(clock.now_iso(), encoding="utf-8")
-    except OSError:
-        pass
+    _home.beat("calendars")
 
 
 def in_session(now_min: int) -> bool:
