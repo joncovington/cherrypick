@@ -70,7 +70,8 @@ def test_a_cancelled_meic_entry_is_not_an_open_position(tmp_path):
     )
     conn.commit()
     conn.row_factory = sqlite3.Row
-    assert reconcile._meic_open(conn) == [{"symbol": "SPX", "arm": "control"}]
+    held = reconcile._OPEN_READERS["meic_ic"](conn)
+    assert [(r["symbol"], r["arm"]) for r in held] == [("SPX", "control")]
 
 
 def _flat_acct(account, designated=False):

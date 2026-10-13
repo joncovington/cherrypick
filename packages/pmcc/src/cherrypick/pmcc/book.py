@@ -38,7 +38,6 @@ def enter_position(
     *,
     entry_session: str,
     advice_params: dict | None,
-    keltner_measures: dict | None = None,
     experiment_id: str | dict | None = None,
 ) -> dict | None:
     """Open one arm's position from a plan. Idempotent per position_id: a arm that already holds
@@ -54,7 +53,6 @@ def enter_position(
     leg_quotes = [{"bid": leg["bid"], "ask": leg["ask"]} for leg in plan["legs"]]
     cost = engine.entry_cost(plan["symbol"], leg_quotes, quantity, config)
     now = clock.now_iso()
-    measures = keltner_measures or {}
     long_leg = next(leg for leg in plan["legs"] if leg["leg_role"] == "long_call")
     short_leg = next(leg for leg in plan["legs"] if leg["leg_role"] != "long_call")
     db.save_position(
@@ -93,12 +91,12 @@ def enter_position(
             "entry_long_iv": long_leg.get("iv"),
             "entry_short_iv": short_leg.get("iv"),
             "long_selected_by": plan["long_selected_by"],
-            "keltner_mid": measures.get("keltner_mid"),
-            "keltner_atr": measures.get("keltner_atr"),
-            "keltner_days": measures.get("keltner_days"),
-            "keltner_distance_atr": measures.get("keltner_distance_atr"),
-            "keltner_bounce_atr": measures.get("keltner_bounce_atr"),
-            "keltner_prev_close_gap": measures.get("keltner_prev_close_gap"),
+            "keltner_mid": None,
+            "keltner_atr": None,
+            "keltner_days": None,
+            "keltner_distance_atr": None,
+            "keltner_bounce_atr": None,
+            "keltner_prev_close_gap": None,
             "advice_params": (
                 json.dumps(advice_params) if (advice_params and arm.startswith("advised:")) else None
             ),

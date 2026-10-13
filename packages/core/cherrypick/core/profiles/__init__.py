@@ -65,13 +65,6 @@ def load_profiles(
     return _cfg.registry(config, label=label or "inline config", log=log)
 
 
-def select_profile(profiles: Mapping, name: str) -> dict:
-    """Return the named profile's override dict, or raise ValueError listing the known names."""
-    if name not in profiles:
-        raise ValueError(f"unknown profile '{name}' -- known profiles: {sorted(profiles)}")
-    return dict(profiles[name])
-
-
 def attribution_tag(value: Any, *, untagged: str = UNTAGGED) -> str:
     """Normalize a stored profile tag into a stable attribution group key.
 

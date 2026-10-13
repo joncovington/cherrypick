@@ -15,7 +15,6 @@ from datetime import datetime
 from pathlib import Path
 
 from cherrypick.core import db as _db
-from cherrypick.core import home as _home
 from cherrypick.core import rangefeatures as _rf
 from cherrypick.core import streamcache as _sc
 from cherrypick.core.clock import ET as _ET
@@ -29,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--bars-through", default=_rf.EVALUATION_THROUGH)
     args = parser.parse_args(argv)
 
-    cache = Path(args.cache) if args.cache else _home.data_dir("marketdata") / "stream_cache.db"
+    cache = Path(args.cache) if args.cache else _sc.cache_path()
     try:
         conn = _db.connect_ro(cache)
     except Exception as exc:  # noqa: BLE001 -- an unreadable store is a reported state

@@ -18,8 +18,11 @@ export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
             turning the fly into a 1-3-2.
           </p>
           <p className="muted">
-            Paper only: there is no live loop and no order-placement code anywhere in the module. Built
-            2026-08-23.
+            Paper by default, built 2026-08-23. Since 2026-09-18 a narrow live path also exists: one arm,
+            armed per day with <span className="mono">/live-bwb-start</span>, under a worst-case margin cap and a
+            cost-derived credit floor, with every fill the broker's word. Its book is its own ledger
+            (<span className="mono">live_trades.db</span>), shown under the page's live toggle and never mixed
+            with the paper arms.
           </p>
         </div>
       </Card>

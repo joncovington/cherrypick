@@ -310,6 +310,35 @@ def test_reconcile_passes_when_the_ledger_agrees(store, monkeypatch):
     assert reconcile.check_session("2026-08-12")["ok"] is True
 
 
+@pytest.mark.parametrize("with_column", [True, False])
+def test_a_voided_flies_row_is_out_of_the_fact_set_and_the_reconcile_alike(
+    store, tmp_path, monkeypatch, with_column
+):
+    """flies voids a row by stamping `void_reason` and leaving it settled with its P&L (the 10-08
+    outage: 22 paper rows). The fact set leaves it out, so the independent count must too, or every
+    voided session reconciles as a mismatch; a ledger older than the column reads whole."""
+    db = tmp_path / "flies.db"
+    conn = sqlite3.connect(db)
+    void = ", void_reason TEXT" if with_column else ""
+    conn.execute(
+        "CREATE TABLE fly_positions (symbol TEXT, arm TEXT, entry_mode TEXT, kind TEXT, gross_pnl REAL, "
+        f"fees REAL, trade_date TEXT, status TEXT{void})"
+    )
+    rows = [("SPX", "control", "legged", "fly", 50.0, 5.0, "2026-10-08", "settled")]
+    if with_column:
+        rows = [r + (None,) for r in rows] + [
+            ("SPX", "control", "legged", "fly", -80.0, 7.0, "2026-10-08", "settled", "outage")
+        ]
+    conn.executemany(f"INSERT INTO fly_positions VALUES ({', '.join('?' * len(rows[0]))})", rows)
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(facts._paths, "module_db", lambda module, filename="paper_trades.db": db)
+
+    facts.write(facts.build("2026-10-08", modules=["flies"]))
+    assert facts.read("2026-10-08")["modules"]["flies"]["results"]["closed"] == 1
+    assert reconcile.check_session("2026-10-08") == {"session": "2026-10-08", "ok": True, "mismatches": []}
+
+
 def test_reconcile_says_so_when_there_is_no_fact_set(store):
     assert reconcile.check_session("1999-01-01")["ok"] is False
 
@@ -422,22 +451,29 @@ def test_expected_readers_filter_on_arm_the_column_the_ledgers_actually_have():
     """All four filtered on `book` for eleven days after the 2026-09-23 rename to `arm`. The
     ledgers have no `book` column, `_rows` swallowed the error as "no such table", and every
     session's expectation for these modules read as "nothing closed"."""
+    # Ledger-shaped since 2026-10-12, when these readers moved onto core.ledgers' records.
     pmcc = _ledger(
-        "CREATE TABLE pmcc_positions (arm TEXT, status TEXT, closed_session TEXT, entry_session TEXT,"
-        " entry_weekly_yield_pct REAL, gross_pnl REAL, fees REAL, net_debit REAL, quantity INTEGER)",
-        "INSERT INTO pmcc_positions VALUES (?,?,?,?,?,?,?,?,?)",
-        ("control", "closed", "2026-10-02", "2026-09-25", 0.02, 120.0, 20.0, 10.0, 1),
+        "CREATE TABLE pmcc_positions (symbol TEXT, arm TEXT, status TEXT, closed_session TEXT,"
+        " entry_session TEXT, entry_weekly_yield_pct REAL, gross_pnl REAL, fees REAL, net_debit REAL,"
+        " quantity INTEGER, entry_slippage REAL, exit_slippage REAL)",
+        "INSERT INTO pmcc_positions VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("QQQ", "control", "closed", "2026-10-02", "2026-09-25", 0.02, 120.0, 20.0, 10.0, 1, None, None),
     )
-    assert facts._pmcc_expected(pmcc, "2026-10-02")["positions_closed"] == 1
+    got = facts._pmcc_expected(pmcc, "2026-10-02")
+    assert got["positions_closed"] == 1
+    assert got["observed"] == pytest.approx((100.0 / 1000.0) * (7.0 / 7))
 
     for table, reader in (("bwb_positions", facts._bwb_expected), ("curve_positions", facts._curve_expected)):
         conn = _ledger(
-            f"CREATE TABLE {table} (arm TEXT, status TEXT, closed_session TEXT, entry_credit REAL,"
-            " quantity INTEGER, gross_pnl REAL, fees REAL)",
-            f"INSERT INTO {table} VALUES (?,?,?,?,?,?,?)",
-            ("control", "closed", "2026-10-02", 1.10, 1, 90.0, 5.0),
+            f"CREATE TABLE {table} (symbol TEXT, arm TEXT, status TEXT, closed_session TEXT,"
+            " entry_credit REAL, quantity INTEGER, gross_pnl REAL, fees REAL, entry_max_loss REAL,"
+            " entry_slippage REAL, exit_slippage REAL)",
+            f"INSERT INTO {table} VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            ("SPX", "control", "closed", "2026-10-02", 1.10, 1, 90.0, 5.0, 2.0, None, None),
         )
-        assert reader(conn, "2026-10-02")["positions_closed"] == 1, table
+        got = reader(conn, "2026-10-02")
+        assert got["positions_closed"] == 1, table
+        assert got["expected"] == pytest.approx(110.0) and got["observed"] == pytest.approx(85.0), table
 
     cal = _ledger(
         "CREATE TABLE dc_positions (arm TEXT, front_expiration TEXT, settlement_spot REAL, side TEXT,"

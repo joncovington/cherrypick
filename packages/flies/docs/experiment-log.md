@@ -1168,6 +1168,60 @@ own book, and only at a declared boundary.
 Expect it to stay `control`'s twin for weeks: with about nine sessions of history on 10-19, few
 cells will be clear.
 
+## 2026-10-12 — the live start replay's admission model rebuilt; the 10:15 case re-read, nothing changed
+
+The ten-session check declared on 09-28. `scripts/flies_live_start_replay.py --validate` showed live
+admitting 59 structures from 09-29 against the replay's 41, and netting −$195.91 against +$74.16.
+
+**Why it drifted.** The replay took paper control's settled rows and dropped the ones the start or the
+cap refused. 36 of live's 59 entries were structures (centre and side) that no paper arm held that day,
+and dropping rows cannot produce them. Paper's 10:00–10:14 entries and its uncapped book hold centres
+(the duplicate rule), run the six-minute cadence clock and hold legs (the sign rule). So paper's later
+ticks were refused for reasons live's smaller book never had, and live entered elsewhere. The cap
+arithmetic was not the cause.
+
+**The replay now** puts paper control's recorded ticks (`fly_entry_attempts`: wanted centre and spot,
+every ~15 s) through live's own gates against the replay's own book: start, quarter-end,
+`engine.portfolio_gates` and the margin cap. It takes one tick a minute and averages four tick phases.
+Most of what it admits paper never held, so it prices from two models:
+- **Credit:** that day's nearby paper credits. Median error 0.24.
+- **Completion:** spot moving 6 points through the centre toward the completing side, before 15:30.
+  It gets 79 of 84 live rows right (completed or stranded), median timing error 0.6 min, and 241 of
+  251 paper rows.
+
+**Validation, 09-29..10-12** (10-08 not replayable: paper's loop stopped at 10:41):
+- Live: 57 structures, 16 stranded. Replay: 59.5, 17.5 stranded.
+- Every session's mean is within ±2 of live, and the total within 10%. That is the declared tolerance.
+- At ±1, 09-29 and 10-02 fall outside. On both, the day forks at the first tick's side choice and at
+  one completion time.
+- The money is not reproduced: live −$222, replay −$320, with the four phases running −$1,596 to +$600.
+- 09-25 is not comparable, because the one-incomplete rule still ran that session. On 09-28, at
+  10:30, the replay admits 8.5 to live's 6: live's unfilled and re-placed entries and its fresh-quote
+  skips are not modelled.
+
+**The start, 34 sessions 08-21..10-12, $1,000 cap:**
+
+| Start | Structures | Net (mean of 4 phases) | Phases | Worst day |
+|---|---|---|---|---|
+| 10:00 | 217 | −$609 | +381 / +994 / +151 / −3,962 | −$820 |
+| **10:15** | 206 | **+$1,113** | +413 / +2,713 / +2,208 / −882 | −$845 |
+| 10:30 | 206 | −$1,116 | −2,463 / +211 / −940 / −1,271 | −$852 |
+
+- **10:15 is ahead in every phase**: of 10:30 (+$2,229, 19–13 days, p 0.38) and of 10:00 (+$1,722,
+  17–15 days, p 0.86).
+- **No day-level difference is significant.** The first model's "19 of 21 days, p 0.0002" is
+  withdrawn.
+- **The phase spread (up to $5k) is wider than any gap between starts.**
+- `--donors` prices a structure paper held from its own row. That row is reproduced within a cent on
+  242 of 243. The model prices $15 a structure below the rows, and an earlier start has more donor
+  rows, so donors are off by default. With them: 10:00 +$1,482, 10:15 +$2,048, 10:30 −$669. 10:15 is
+  still ahead, and still not significant (p 0.11 against 10:30).
+
+Live stays at 10:15. Nothing here argues for a move, and nothing proves 10:15 either. A proof needs
+the quote-history replay (chain quotes from 10-13), which can price the structures paper never held.
+The 10-11 sizing read fed live's own rows through the old cap model; the rebuilt script does not do
+that.
+
 ## 2026-10-12 — live entry pricing: a mid-first option, built off (a live break if switched on)
 
 The question was whether the live entry gives away more than it needs to. Every live entry limit is

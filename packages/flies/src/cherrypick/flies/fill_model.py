@@ -421,14 +421,6 @@ def score_rule(orders: list[dict], basis: str, value: float) -> dict:
     }
 
 
-def score_grid(orders: list[dict]) -> list[dict]:
-    """`score_rule` over every grid value of every basis."""
-    out = []
-    for basis, grid in (("mid", GAP_GRID), ("natural", GAP_GRID), ("dist", WIDTH_GRID)):
-        out.extend(score_rule(orders, basis, v) for v in grid)
-    return out
-
-
 # --------------------------------------------------------------------------- the paper shadow
 def shadow_outcome(row: dict, basis: str, value: float, *, cutoff: str | None) -> dict | None:
     """One settled paper legged row replayed under a live-like completion: a resting limit at

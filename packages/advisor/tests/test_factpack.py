@@ -537,6 +537,39 @@ def test_pack_size_reports_over_budget_without_raising(seeded):
     assert lines == ([] if not out["over_budget"] else lines)
 
 
+def test_writing_a_pack_runs_the_size_check_and_never_changes_the_pack(seeded, monkeypatch):
+    """`pack_size` was called nowhere until 2026-10-12, so its warning could not fire. `write` runs
+    it on the pack it wrote; the bytes on disk are the same whether or not it warns."""
+    monkeypatch.setattr(factpack._store, "now_iso", lambda: "2026-10-12T21:00:00+00:00")
+    plain = factpack.write(SESSION, "deep").read_bytes()
+
+    monkeypatch.setattr(factpack, "DEEP_MAX_BYTES", 10)
+    lines: list[str] = []
+    path = factpack.write(SESSION, "deep", warn=lines.append)
+    assert len(lines) == 1 and "deep slot" in lines[0]
+    assert path.read_bytes() == plain
+
+
+def test_a_warn_that_raises_does_not_cost_the_pack(seeded, monkeypatch):
+    monkeypatch.setattr(factpack, "LIGHT_MAX_BYTES", 10)
+
+    def boom(_message):
+        raise RuntimeError("notifier down")
+
+    assert factpack.write(SESSION, "open", warn=boom).exists()
+
+
+def test_the_factpack_verb_reports_the_warning_beside_the_budget(seeded, monkeypatch, capsys):
+    from cherrypick.advisor import __main__ as cli
+
+    monkeypatch.setattr(factpack, "LIGHT_MAX_BYTES", 10)
+    out = cli.cmd_factpack(
+        cli.build_parser().parse_args(["factpack", "--slot", "open", "--session", SESSION])
+    )
+    assert out["budget"]["warning"] and "open slot" in out["budget"]["warning"]
+    assert "WARNING: fact pack over its ATTENTION budget" in capsys.readouterr().err
+
+
 def test_pack_size_warns_with_the_slot_and_the_ratio():
     lines = []
     huge = {"filler": "x" * (factpack.DEEP_MAX_BYTES + 10)}

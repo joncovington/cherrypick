@@ -28,7 +28,7 @@ _INDEPENDENT = {
     ),
     "flies": (
         "SELECT COUNT(*) n, COALESCE(SUM(gross_pnl), 0) gross, COALESCE(SUM(fees), 0) cost "
-        "FROM fly_positions WHERE status = 'settled' AND trade_date = ?"
+        "FROM fly_positions WHERE status = 'settled' AND trade_date = ?{void}"
     ),
     "earnings": (
         "SELECT COUNT(*) n, COALESCE(SUM(pnl), 0) gross, "
@@ -46,6 +46,12 @@ _INDEPENDENT = {
     ),
 }
 
+# Rows a module has voided: still `settled` with their P&L, but not evidence, so the fact set leaves
+# them out (flies stamps `void_reason`). Applied only where the ledger has the column -- an older
+# ledger has nothing voided -- and phrased here rather than borrowed from the reader, so it stays an
+# independent route to the same scope.
+_VOID = {"flies": ("fly_positions", "void_reason", " AND void_reason IS NULL")}
+
 # Money is compared to the cent. Anything looser hides exactly the rounding drift worth catching.
 TOLERANCE = 0.01
 
@@ -56,7 +62,12 @@ def _independent_totals(module: str, session: str) -> dict | None:
         return None
     conn = _ledgers.connect_ro(db_path)
     try:
-        row = conn.execute(_INDEPENDENT[module], (session,)).fetchone()
+        void = ""
+        if module in _VOID:
+            table, column, clause = _VOID[module]
+            if column in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
+                void = clause
+        row = conn.execute(_INDEPENDENT[module].replace("{void}", void), (session,)).fetchone()
     except sqlite3.Error:
         return None
     finally:

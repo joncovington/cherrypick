@@ -63,8 +63,9 @@ def _pick_legs() -> tuple[dict, dict, float, float]:
     """Two adjacent cached SPXW puts, the deepest pair at most MAX_WIDTH apart and at least OTM_FLOOR
     below spot, on the furthest cached expiration at least MIN_DTE days out. Returns (short, long,
     spot, width)."""
-    path = os.path.expanduser("~/.cherrypick/data/marketdata/stream_cache.db")
-    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    # Through the home resolver, so CHERRYPICK_HOME moves it with the rest of the suite.
+    path = _home.data_dir("marketdata") / "stream_cache.db"
+    con = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
     spot_row = con.execute("SELECT last FROM stream_trades WHERE symbol='SPX'").fetchone()
     spot = float(spot_row[0]) if spot_row else 0.0
     if spot <= 0:

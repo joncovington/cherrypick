@@ -142,11 +142,9 @@ def main(argv=None) -> int:
     kept = select(items, now, args.hours)
     day = now.astimezone().date().isoformat()
     doc = {"generated_at": now.isoformat(), "window_hours": args.hours, "feeds": feeds, "items": kept}
-    path = out_path(day)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(doc, indent=1), encoding="utf-8")
-    tmp.replace(path)
+    from cherrypick.core.jsonio import write_json_atomic
+
+    path = write_json_atomic(out_path(day), doc, indent=1, default=None)
     print(
         json.dumps(
             {

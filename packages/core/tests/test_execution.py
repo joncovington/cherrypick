@@ -168,6 +168,83 @@ def test_replace_goes_through_the_same_gated_path(monkeypatch):
     assert calls == [("OID", False)]
 
 
+# ------------------------------------------------------- no designated account refuses (2026-10-12)
+def _undesignated(monkeypatch, designated):
+    """An adapter whose designation is `designated()`, over a broker that records every account
+    lookup and every submit -- and whose resolve_account, like the real one, falls back to the
+    login's FIRST account when handed None."""
+    seen = {"resolved": [], "placed": [], "read": 0}
+
+    async def resolve(session, number):
+        seen["resolved"].append(number)
+        return f"acct:{number or 'FIRST-ON-LOGIN'}"
+
+    async def place(account, session, order, *, live, serialize, deploy_limit_pct, get_balances=None):
+        seen["placed"].append(account)
+        return {"ok": True, "dry_run": not live, "response": {"order": {"id": 1}}}
+
+    async def today(account, session):
+        seen["read"] += 1
+        return []
+
+    monkeypatch.setattr(_broker, "resolve_account", resolve)
+    monkeypatch.setattr(_broker, "place_order", place)
+    monkeypatch.setattr(_broker, "orders_today", today)
+    monkeypatch.setattr(_broker, "build_order", lambda spec: spec)
+    adapter = execution.Broker(get_session=lambda: object(), designated_account=designated)
+    return adapter, seen
+
+
+@pytest.mark.parametrize("designation", [None, ""])
+def test_no_designated_account_refuses_instead_of_trading_the_first_one(monkeypatch, designation):
+    """Shown to fail: before, `_ensure` passed None to resolve_account and the order went to
+    `acct:FIRST-ON-LOGIN`."""
+    adapter, seen = _undesignated(monkeypatch, lambda: designation)
+    for live in (True, False):
+        out = adapter.place({"legs": []}, live=live)
+        assert out["ok"] is False and "no designated account" in out["error"]
+    out = adapter.replace("OID", {}, live=True)
+    assert out["ok"] is False and out["order_id"] == "OID"
+    assert adapter.status("OID")["status"] is None
+    with pytest.raises(execution.AccountNotDesignated):
+        adapter.working_orders()
+    with pytest.raises(execution.AccountNotDesignated):
+        _ = adapter.account
+    assert seen == {"resolved": [], "placed": [], "read": 0}
+    # a refusal is not a failed submit: nothing is held
+    assert adapter.held == {"unresolved": [], "unrecorded": {}}
+
+
+def test_an_unreadable_designation_refuses(monkeypatch):
+    def unreadable():
+        raise OSError("keyring locked")
+
+    adapter, seen = _undesignated(monkeypatch, unreadable)
+    out = adapter.place({"legs": []}, live=True)
+    assert out["ok"] is False and "unreadable" in out["error"]
+    with pytest.raises(execution.AccountNotDesignated):
+        adapter.orders_today()
+    assert seen["placed"] == [] and seen["resolved"] == []
+
+
+def test_a_designation_cleared_or_changed_mid_session_is_read_on_the_next_call(monkeypatch):
+    current = ["11111111"]
+    adapter, seen = _undesignated(monkeypatch, lambda: current[0])
+    assert adapter.place({"legs": []}, live=True)["ok"] is True
+    assert seen["placed"] == ["acct:11111111"]
+
+    current[0] = "22222222"  # re-designated: rebuilt against the new account, never the cached one
+    assert adapter.place({"legs": []}, live=True)["ok"] is True
+    assert seen["placed"][-1] == "acct:22222222"
+
+    current[0] = None  # cleared: the cached session and account are dropped, nothing is sent
+    assert adapter.place({"legs": []}, live=True)["ok"] is False
+    with pytest.raises(execution.AccountNotDesignated):
+        _ = adapter.account
+    assert adapter._account is None
+    assert seen["placed"] == ["acct:11111111", "acct:22222222"]
+
+
 # --------------------------------------------------------------------------- sweeps and watches
 class _FakeBroker:
     def __init__(self, working=(), statuses=None):
@@ -583,3 +660,50 @@ def test_no_hold_path_writes_nothing_and_an_unreadable_file_reads_empty(monkeypa
     bad = tmp_path / "bad.json"
     bad.write_text("{not json", encoding="utf-8")
     assert execution.read_broker_health(bad) == {}
+
+
+def test_the_sweep_scopes_to_the_symbol_but_keeps_an_order_of_unknown_underlying(tmp_path):
+    """Another underlying is somebody else's order; an unnamed one could be ours, and counting it
+    blocks this loop's entries until a person looks -- the safe direction for a live gate."""
+    b = _FakeBroker(
+        working=[
+            {"order_id": "known", "underlying_symbol": "SPX"},
+            {"order_id": "ghost", "underlying_symbol": "SPX"},
+            {"order_id": "manual", "underlying_symbol": "AAPL"},
+            {"order_id": "unnamed", "underlying_symbol": None},
+        ]
+    )
+    logs: list[str] = []
+    path = tmp_path / "data" / "live_orphans.json"
+    n = execution.sweep_orphans(b, ["known"], symbol="SPX", path=path, now_iso="t", log=logs.append)
+    assert n == 2
+    assert [o["order_id"] for o in execution.read_orphans(path)] == ["ghost", "unnamed"]
+    assert any("ORPHANED" in m for m in logs)
+
+
+def test_a_sweep_that_cannot_look_is_unknown_and_keeps_the_last_record(tmp_path):
+    path = tmp_path / "live_orphans.json"
+    execution.sweep_orphans(
+        _FakeBroker(working=[{"order_id": "ghost", "underlying_symbol": "SPX"}]),
+        [],
+        symbol="SPX",
+        path=path,
+        now_iso="t",
+        log=lambda m: None,
+    )
+
+    class Loud(_FakeBroker):
+        def working_orders(self):
+            raise RuntimeError("broker unreachable")
+
+    class Blind:  # no working_orders at all: it cannot say nothing is orphaned either
+        pass
+
+    logs: list[str] = []
+    for broker in (Loud(), Blind()):
+        assert (
+            execution.sweep_orphans(broker, [], symbol="SPX", path=path, now_iso="t", log=logs.append) is None
+        )
+    assert sum("orphan sweep failed" in m for m in logs) == 2
+    assert [o["order_id"] for o in execution.read_orphans(path)] == ["ghost"]
+    assert execution.read_orphans(tmp_path / "absent.json") == []
