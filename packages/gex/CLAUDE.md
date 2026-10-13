@@ -57,7 +57,11 @@ no usable quote that minute. It is the suite's only quote history, kept here so 
 recorder rather than one per module; a replay of a rule a module never ran prices against it.
 - **Spot is not stored with it.** `gex_spot_history` has it every tick; `core.quotehistory.session`
   joins it at-or-before, within 60 s, and hands each minute back in a flies snapshot's shape.
-- **About 80 rows a tick, ~125k a session (~10 MB, ~2.5 GB a year).** Nothing prunes it.
+- **About 80 rows a tick, ~125k a session (~10 MB, ~2.5 GB a year) per symbol.** Nothing prunes it.
+- **Off unless a machine's config turns it on** (`quote_history.enabled`; `service.quote_history_settings`
+  reads the block over its defaults). Its own `symbols` (SPX for flies), so the example's XSP and QQQ
+  are not recorded by accident; `strikes_each_side` and `interval_seconds` default to 20 and 10. A
+  malformed value keeps its default, never fails the recorder. A change takes a recorder restart.
 
 **The recorder publishes its liveness.** The daemon touches `data/gex/recorder.heartbeat` at the top of
 every tick, and `record --status` reports `stalled: true` past `RECORDER_STALL_SECONDS` — the signal

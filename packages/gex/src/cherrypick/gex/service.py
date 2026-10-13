@@ -100,6 +100,36 @@ QUOTE_MAX_AGE_SECONDS = 120.0
 # would be skipped and the cadence would halve.
 QUOTE_INTERVAL_SECONDS = 10
 
+# The config block (`quote_history`). OFF unless a machine's config turns it on: it is ~10 MB a
+# session per symbol, and a checkout set up from the example (SPX, XSP, QQQ) should not start
+# recording three chains nothing replays. `symbols` null means the recorder's own `symbols`.
+QUOTE_HISTORY_DEFAULTS = {
+    "enabled": False,
+    "symbols": None,
+    "strikes_each_side": QUOTE_STRIKES_EACH_SIDE,
+    "interval_seconds": QUOTE_INTERVAL_SECONDS,
+}
+
+
+def quote_history_settings(cfg: dict) -> dict:
+    """The `quote_history` block over its defaults. A malformed value falls back to its default
+    rather than failing the recorder: this is telemetry, and the recorder's other series must run."""
+    raw = cfg.get("quote_history") or {}
+    out = dict(QUOTE_HISTORY_DEFAULTS)
+    if not isinstance(raw, dict):
+        return out
+    out["enabled"] = raw.get("enabled") is True
+    syms = raw.get("symbols")
+    if isinstance(syms, list) and syms:
+        out["symbols"] = [str(s).strip().upper() for s in syms]
+    for key in ("strikes_each_side", "interval_seconds"):
+        value = raw.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            out[key] = value
+    if out["symbols"] is None:
+        out["symbols"] = [str(s).strip().upper() for s in (cfg.get("symbols") or [])]
+    return out
+
 
 def _ensure_history_table(conn: sqlite3.Connection, db_path: Path | str | None = None) -> None:
     """Create the history tables if absent. Idempotent, and skipped once a given file has been
@@ -554,18 +584,22 @@ def record_regimes(
 def record_quotes(
     cfg: dict,
     symbols: list[str] | None = None,
-    min_interval_s: int = QUOTE_INTERVAL_SECONDS,
+    min_interval_s: int | None = None,
     *,
     now_et: datetime | None = None,
 ) -> int:
-    """Persist the near-spot quotes of each symbol's chain into `gex_quote_history` (see
-    `QUOTE_STRIKES_EACH_SIDE`). RTH only, for `record_regimes`' reason; throttled to one sample per
-    symbol per `min_interval_s`, so the recorder calls it every tick. Best-effort per symbol.
-    Returns quote rows written."""
+    """Persist the near-spot quotes of each symbol's chain into `gex_quote_history`, as the config's
+    `quote_history` block says (`quote_history_settings`; off unless enabled). RTH only, for
+    `record_regimes`' reason; throttled to one sample per symbol per interval, so the recorder calls
+    it every tick. Best-effort per symbol. Returns quote rows written."""
+    settings = quote_history_settings(cfg)
+    if not settings["enabled"]:
+        return 0
     when = now_et or datetime.now(_ET)
     if not _regime.in_rth(when):
         return 0
-    syms = [str(s).strip().upper() for s in (symbols if symbols is not None else cfg.get("symbols") or [])]
+    interval = settings["interval_seconds"] if min_interval_s is None else min_interval_s
+    syms = [str(s).strip().upper() for s in symbols] if symbols is not None else settings["symbols"]
     if not syms:
         return 0
     db_path = Path(cfg["history_db_path"])
@@ -580,7 +614,7 @@ def record_quotes(
             row = conn.execute(
                 "SELECT MAX(ts) FROM gex_quote_history WHERE symbol = ? AND trade_date = ?", (sym, today)
             ).fetchone()
-            if row and row[0] is not None and (now - row[0]) < min_interval_s:
+            if row and row[0] is not None and (now - row[0]) < interval:
                 continue
             try:
                 snap = _provider.snapshot_from_stream_cache(cfg["stream_cache_db"], sym)
@@ -589,7 +623,7 @@ def record_quotes(
                 quotes = _provider.chain_quotes(
                     cfg["stream_cache_db"],
                     snap,
-                    each_side=QUOTE_STRIKES_EACH_SIDE,
+                    each_side=settings["strikes_each_side"],
                     max_age_seconds=QUOTE_MAX_AGE_SECONDS,
                 )
                 conn.executemany(

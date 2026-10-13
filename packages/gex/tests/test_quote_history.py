@@ -58,7 +58,12 @@ def _seed(path, *, stale=(), crossed=()):
 def _cfg(tmp_path, **seed):
     db = tmp_path / "stream_cache.db"
     _seed(db, **seed)
-    return {"stream_cache_db": db, "history_db_path": tmp_path / "gex_history.db", "symbols": ["SPX"]}
+    return {
+        "stream_cache_db": db,
+        "history_db_path": tmp_path / "gex_history.db",
+        "symbols": ["SPX"],
+        "quote_history": {"enabled": True},
+    }
 
 
 def _rows(cfg):
@@ -130,3 +135,47 @@ def test_the_recorder_loop_calls_it(tmp_path, monkeypatch):
     monkeypatch.setattr(service._regime, "sample", lambda cfg: {"status": "ok", "usable": 0, "written": 0})
     service.run_recorder({**_cfg(tmp_path), "serve": {"refresh_seconds": 15}}, once=True)
     assert seen == [1]
+
+
+# --------------------------------------------------------------------------- the config switch
+def test_it_is_off_unless_a_config_turns_it_on(tmp_path):
+    """Shown to fail with the default on: no block, or enabled false, records nothing and creates no
+    history file."""
+    cfg = _cfg(tmp_path)
+    for block in (None, {}, {"enabled": False}, {"enabled": "yes"}):
+        off = {k: v for k, v in cfg.items() if k != "quote_history"}
+        if block is not None:
+            off["quote_history"] = block
+        assert service.record_quotes(off, now_et=IN_SESSION) == 0, block
+    assert not cfg["history_db_path"].exists()
+    assert service.record_quotes(cfg, now_et=IN_SESSION) == 80
+
+
+def test_its_own_symbols_override_the_recorders(tmp_path):
+    cfg = {**_cfg(tmp_path), "symbols": ["SPX", "XSP", "QQQ"]}
+    assert service.quote_history_settings({**cfg, "quote_history": {"enabled": True}})["symbols"] == [
+        "SPX",
+        "XSP",
+        "QQQ",
+    ]
+    only = {**cfg, "quote_history": {"enabled": True, "symbols": ["spx"]}}
+    assert service.quote_history_settings(only)["symbols"] == ["SPX"]
+    assert service.record_quotes(only, now_et=IN_SESSION) == 80
+
+
+def test_its_settings_are_read_and_a_bad_value_keeps_the_default(tmp_path):
+    cfg = _cfg(tmp_path)
+    narrow = {**cfg, "quote_history": {"enabled": True, "strikes_each_side": 5, "interval_seconds": 60}}
+    assert service.record_quotes(narrow, now_et=IN_SESSION) == 20
+    assert service.record_quotes(narrow, now_et=IN_SESSION + timedelta(seconds=30)) == 0
+    bad = service.quote_history_settings(
+        {
+            "quote_history": {
+                "enabled": True,
+                "strikes_each_side": "20",
+                "interval_seconds": -1,
+                "symbols": "SPX",
+            }
+        }
+    )
+    assert bad["strikes_each_side"] == 20 and bad["interval_seconds"] == 10 and bad["symbols"] == []
