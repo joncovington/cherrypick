@@ -865,6 +865,34 @@ def test_experiments_full_carries_one_fresh_verdict_per_experiment_not_raw_rows(
     assert brief["params"] == {"stop_trigger_ratio": 0.9}
 
 
+def test_a_no_exposure_conclusion_reaches_the_pack(seeded, monkeypatch):
+    """From the 2026-10-19 boundary: a verdict whose advised book never traded differently from its
+    base carries `no_exposure`/`conclusion`, and the pack keeps both -- in the compacted verdict
+    and beside the running delta -- so the model reads "measured nothing" before the delta."""
+    from cherrypick.advisor import experiments, store, verdicts
+
+    fakes.write_config(seeded, "meic", fakes.advice_block({"stop_trigger_ratio": {"min": 0.85, "max": 0.95}}))
+    fakes.write_suite_config(seeded, {"enabled": True, "modules": {"meic": {"enabled": True}}})
+    conn = store.connect()
+    admitted = experiments.admit_spec(
+        conn, session=fakes.anchor_session(), module="meic", params={"stop_trigger_ratio": 0.9}
+    )
+    conn.close()
+    real = verdicts.for_experiment
+    inert = {"reason": "never_diverged", "detail": "all 11 advised row(s) identical", "params": ["x"]}
+
+    def stamped(*args, **kwargs):
+        return {**real(*args, **kwargs), "no_exposure": inert, "conclusion": "no_exposure"}
+
+    monkeypatch.setattr(verdicts, "for_experiment", stamped)
+    pack = factpack.build(SESSION, "deep")
+    brief = pack["experiments_full"]["active"][0]
+    assert brief["id"] == admitted["experiment_id"]
+    assert brief["verdict"]["no_exposure"] == inert and brief["verdict"]["conclusion"] == "no_exposure"
+    assert pack["experiments"][0]["no_exposure"] == inert
+    assert factpack._compact_verdict({"pairs": []}).get("no_exposure") is None
+
+
 # --------------------------------------------------------------------------- regime cuts (2026-09-19)
 def _regime_doc(module="flies", session=SESSION, **overrides):
     doc = {

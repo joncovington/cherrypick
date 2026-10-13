@@ -1119,24 +1119,28 @@ def _experiments_running(conn) -> list[dict[str, Any]]:
         # The module's own rule, the same gate arm_readings, kill and expiry use. Bare
         # `for_experiment` applied the library default here -- the 2026-08-14 two-gate
         # disagreement, back in a section added after it was fixed elsewhere (2026-09-12).
-        pairs = _verdicts.for_experiment(exp, rule=_settings.calibration_rule(exp["module"]) or None)["pairs"]
-        out.append(
-            {
-                "id": exp["id"],
-                "module": exp["module"],
-                "base_profile": exp["base_profile"],
-                "name": exp["name"],
-                "tag": exp.get("tag"),
-                "hypothesis": exp["hypothesis"],
-                "params": params,
-                "sessions_run": exp["sessions_run"],
-                "expires_after_sessions": exp["expires_after_sessions"],
-                "reading": [
-                    {"advised_tag": p["advised_tag"], "delta": p["delta"], "underpowered": p["underpowered"]}
-                    for p in pairs
-                ],
-            }
-        )
+        body = _verdicts.for_experiment(exp, rule=_settings.calibration_rule(exp["module"]) or None)
+        pairs = body["pairs"]
+        entry = {
+            "id": exp["id"],
+            "module": exp["module"],
+            "base_profile": exp["base_profile"],
+            "name": exp["name"],
+            "tag": exp.get("tag"),
+            "hypothesis": exp["hypothesis"],
+            "params": params,
+            "sessions_run": exp["sessions_run"],
+            "expires_after_sessions": exp["expires_after_sessions"],
+            "reading": [
+                {"advised_tag": p["advised_tag"], "delta": p["delta"], "underpowered": p["underpowered"]}
+                for p in pairs
+            ],
+        }
+        # From the 2026-10-19 boundary: an advised book that never traded differently from its
+        # base says so here, beside the delta it would otherwise be read from. Absent when false.
+        if body.get("no_exposure"):
+            entry["no_exposure"] = body["no_exposure"]
+        out.append(entry)
     return out
 
 
@@ -1156,6 +1160,9 @@ _VERDICT_KEEP = (
     "stalled",
     "killed_reason",
     "error",
+    # 2026-10-19 boundary: the verdict's own "measured nothing" conclusion, ahead of pass/fail.
+    "no_exposure",
+    "conclusion",
 )
 
 
