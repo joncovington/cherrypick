@@ -677,6 +677,13 @@ an autouse fixture in `tests/conftest.py`, not one each test opts into, for the 
 systematically from the official print; a position centred within a point of spot can settle on the
 wrong side. Pass `--price` with the official print for any book whose result matters.
 
+**A live book never settles on an unasked fill status** (2026-10-13). Every settle path (the tick's,
+`--settle`, `--settle-overdue`) first confirms each open position's pending entry or completion with
+the broker; any answer still unknown refuses the whole book (`pending_fill_unconfirmed`) and the next
+call retries. A completion that filled during an outage had been settled as a bare vertical: +$225
+booked against +$480. A confirmed completion's `completed_at` and latency are the broker's fill
+time, the moment it was noticed only when the broker gives none.
+
 ## The live pilot
 
 Live trading is running, not hypothetical. The two questions moving to live raised, and how the pilot

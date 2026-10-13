@@ -62,10 +62,16 @@ def test_no_official_close_leaves_it_open_and_never_guesses(live_conn, monkeypat
     assert live_conn.execute("SELECT status FROM fly_positions").fetchone()["status"] == "open"
 
 
-def test_a_session_with_a_pending_entry_is_left_for_a_person(live_conn):
+def test_a_session_with_a_pending_entry_and_no_broker_to_ask_is_left(live_conn):
+    """Whether that order filled is the broker's word: with no broker to ask, the session stays
+    open (2026-10-13; `test_settle_pending_fills.py` has the broker-confirmed paths)."""
     _past_fly(live_conn)
     _past_fly(live_conn, pid="E2", entry="pending")
     out = live_loop.settle_overdue(
         _settle_cfg(), live_conn, cache_path="unused", today=TODAY, close_fn=lambda s, d: 7494.0
     )
-    assert out["settled"] == [] and out["left"] == [{"session": PAST, "reason": "pending_entries"}]
+    assert out["settled"] == []
+    assert [(x["session"], x["reason"], x["positions"]) for x in out["left"]] == [
+        (PAST, "pending_fill_unconfirmed", ["E2"])
+    ]
+    assert {r["status"] for r in live_conn.execute("SELECT status FROM fly_positions")} == {"open"}
