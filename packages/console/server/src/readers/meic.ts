@@ -456,7 +456,8 @@ const RESOLVED = "status NOT IN ('cancelled','pending','partial_entry')";
 
 export interface MeicScope {
   symbols: string[];
-  profiles: string[];
+  /** The arm tags present in the scope's era (stored as `arm`, or `risk_profile` on an older ledger). */
+  arms: string[];
   /** Every era present, with its row count, so the page can say what a filter costs. */
   eras: Array<{ era: string; trades: number }>;
   currentEra: string;
@@ -465,9 +466,9 @@ export interface MeicScope {
 /**
  * The page-wide scope selects' own options.
  *
- * `symbols` and `profiles` are narrowed to the SAME era the data is, because a select that offers
+ * `symbols` and `arms` are narrowed to the SAME era the data is, because a select that offers
  * more than the scope can return is lying about what is reachable. Measured on the paper ledger:
- * the unfiltered profile list carries 14 names while the current era holds 3 -- the retired ladder
+ * the unfiltered arm list carries 14 names while the current era holds 3 -- the retired ladder
  * tiers, the GEX study pair, and the pre-2026-07-18 symbol/wing cells are all still in the table by
  * design, since this module retires an arm by writing a verdict rather than deleting its rows. Eleven
  * of those fourteen options selected nothing, and an option that yields no rows reads as "this arm
@@ -484,7 +485,7 @@ export function readMeicScope(
 ): MeicScope {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
-  const empty: MeicScope = { symbols: [], profiles: [], eras: [], currentEra: CURRENT_ERA };
+  const empty: MeicScope = { symbols: [], arms: [], eras: [], currentEra: CURRENT_ERA };
   return withReadOnlyDb<MeicScope>(dbPath, empty, (db) => {
     const scoped = era !== "ALL" && hasColumn(db, "ic_trades", "era");
     const and = scoped ? " AND era = ?" : "";
@@ -505,7 +506,7 @@ export function readMeicScope(
         )
         .all(...params)
         .map((r) => r.s),
-      profiles: db
+      arms: db
         .prepare<string[], { p: string }>(
           `SELECT DISTINCT ${armColumnOf(db, "ic_trades")} AS p FROM ic_trades
             WHERE ${armColumnOf(db, "ic_trades")} IS NOT NULL${and} ORDER BY p`,
@@ -593,9 +594,9 @@ export function readMeicOpenExposure(config: ConsoleConfig, mode: TradingMode): 
 
 export interface MeicPerformance {
   mode: TradingMode;
-  /** Every profile side by side — the variance-test payoff; symbol-scoped, profile-unscoped. */
-  profiles: Array<{
-    profile: string;
+  /** Every arm side by side — the variance-test payoff; symbol-scoped, arm-unscoped. */
+  arms: Array<{
+    arm: string;
     trades: number;
     sessions: number;
     grossPnl: number;
@@ -659,7 +660,7 @@ export function readMeicPerformance(
   const dbPath = path.join(config.paths.meicDir, file);
   const empty: MeicPerformance = {
     mode,
-    profiles: [],
+    arms: [],
     equity: [],
     risk: { sharpe: null, sortino: null, calmar: null, recoveryFactor: null, sampleSize: 0, undersampledFlag: false, sharpeOverfitFlag: false },
     periods: [],
@@ -719,7 +720,7 @@ export function readMeicPerformance(
       profileClauses.push("symbol = ?");
       profileParams.push(symbol);
     }
-    const profiles = hasProfile
+    const arms = hasProfile
       ? (() => {
           const rows = db
             .prepare<string[], Record<string, unknown>>(
@@ -756,7 +757,7 @@ export function readMeicPerformance(
                 maxdd = Math.max(maxdd, peak - running);
               }
               return {
-                profile: prof,
+                arm: prof,
                 trades: rs.length,
                 sessions: new Set(rs.map((r) => String(r["trade_date"]))).size,
                 grossPnl: gross,
@@ -829,7 +830,7 @@ export function readMeicPerformance(
         };
       });
 
-    // --- study arms: one cumulative line per profile (ignores the page filters, but not the era) ---
+    // --- study arms: one cumulative line per arm (ignores the page filters, but not the era) ---
     const studyArms = hasProfile
       ? (() => {
           const rows = db
@@ -909,7 +910,7 @@ export function readMeicPerformance(
 
     return {
       mode,
-      profiles,
+      arms,
       equity,
       risk,
       periods,
@@ -1052,14 +1053,14 @@ export interface MeicAnalytics {
   /** TODAY / WEEK / MONTH / YEAR / ALL. Net is after fees, as everywhere else in the suite. */
   periods: Array<{ label: string; net: number; trades: number; wins: number; losses: number }>;
   /**
-   * Today's result per profile — which arm actually made the money, the question the page could
-   * not answer. The Performance tab's per-profile table is cumulative and states that it ignores
+   * Today's result per arm — which arm actually made the money, the question the page could
+   * not answer. The Performance tab's per-arm table is cumulative and states that it ignores
    * the page's scope, so it never covered this.
    */
-  byProfile: Array<{ profile: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
-  /** Today's fee drag per profile, same grouping as byProfile: `credit` is premium collected,
+  byArm: Array<{ arm: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
+  /** Today's fee drag per arm, same grouping as byArm: `credit` is premium collected,
    *  `fees` trading fees (settlement out where recorded), `dragPct` = fees ÷ credit (`feeDragPct`). */
-  profileFeeDrag: Array<{ profile: string; credit: number; fees: number; settlementFees: number | null; net: number; dragPct: number | null }>;
+  armFeeDrag: Array<{ arm: string; credit: number; fees: number; settlementFees: number | null; net: number; dragPct: number | null }>;
   exitReasons: Array<{ reason: string; count: number }>;
   /** The scope's fee drag over settled rows: premium collected, trading fees, settlement (null =
    *  n/r on any row) and net, so credit is never called gross and fees never carry settlement. */
@@ -1076,8 +1077,8 @@ export function readMeicAnalytics(
   const empty: MeicAnalytics = {
     mode,
     periods: [],
-    byProfile: [],
-    profileFeeDrag: [],
+    byArm: [],
+    armFeeDrag: [],
     exitReasons: [],
     feeDrag: { credit: 0, fees: 0, settlementFees: 0, netPnl: 0, dragPct: null },
   };
@@ -1133,7 +1134,7 @@ export function readMeicAnalytics(
     // TODAY, per profile. Scoped to the same session the tiles above it report, so the page does
     // not put "this year" and "today" beside each other under one heading — the mistake the flies
     // reader already carries a note about.
-    const profileRows = db
+    const armRows = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT ${armColumnOf(db, "ic_trades")} AS profile, ${SETTLED} AS trades,
                 ${NET} AS net, ${WINS} AS wins, ${LOSSES} AS losses,
@@ -1143,14 +1144,14 @@ export function readMeicAnalytics(
           GROUP BY profile HAVING trades > 0 ORDER BY net DESC`,
       )
       .all(today, ...sc.params);
-    const byProfile = profileRows.map((r) => {
+    const byArm = armRows.map((r) => {
       const trades = Number(r["trades"]);
       const wins = Number(r["wins"]);
       const losses = Number(r["losses"]);
       const lost = Number(r["lost"]);
       const net = Number(r["net"]);
       return {
-        profile: String(r["profile"] ?? "?"),
+        arm: String(r["profile"] ?? "?"),
         trades,
         net,
         winPct: wins + losses > 0 ? (wins / (wins + losses)) * 100 : null,
@@ -1180,14 +1181,14 @@ export function readMeicAnalytics(
         dragPct: feeDragPct(fees, credit),
       };
     };
-    const profileFeeDrag = db
+    const armFeeDrag = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT ${armColumnOf(db, "ic_trades")} AS profile, ${DRAG_SUMS}
            FROM ic_trades WHERE ${RESOLVED} AND pnl IS NOT NULL AND trade_date = ?${sc.and}
           GROUP BY profile ORDER BY profile`,
       )
       .all(today, ...sc.params)
-      .map((r) => ({ profile: String(r["profile"] ?? "?"), ...dragOf(r) }));
+      .map((r) => ({ arm: String(r["profile"] ?? "?"), ...dragOf(r) }));
 
     // Grouped on the LEG PAIR, not on ic_trades.exit_reason.
     //
@@ -1235,8 +1236,8 @@ export function readMeicAnalytics(
     return {
       mode,
       periods,
-      byProfile,
-      profileFeeDrag,
+      byArm,
+      armFeeDrag,
       exitReasons,
       feeDrag: { credit: fd.credit, fees: fd.fees, settlementFees: fd.settlementFees, netPnl: fd.net, dragPct: fd.dragPct },
     };
@@ -1246,7 +1247,7 @@ export function readMeicAnalytics(
 // ── The MEIC profit forest ──────────────────────────────────────────────────
 
 export interface MeicForestArm {
-  profile: string;
+  arm: string;
   /** One entry per open IC, so a nested condor reads as nested rather than as one lumpy line. */
   positions: Array<{ icOrderId: string; putStrike: number; callStrike: number; wingWidth: number; netCredit: number; quantity: number }>;
   /** The arm's aggregate curve: P&L at expiry across the price grid. */
@@ -1281,7 +1282,7 @@ export interface MeicForest {
   arms: MeicForestArm[];
   /** Strikes released by a stop today: drawn as vacated so the forest and the
    *  occupancy map can never disagree about what the book still holds. */
-  releasedStrikes: Array<{ profile: string; strike: number; right: "P" | "C"; at: string | null }>;
+  releasedStrikes: Array<{ arm: string; strike: number; right: "P" | "C"; at: string | null }>;
   lastSpot: number | null;
 }
 
@@ -1322,7 +1323,7 @@ function forestGrid(strikes: number[]): number[] {
 }
 
 /**
- * Per-profile expiry-payoff curves for the open book on one day — MEIC's
+ * Per-arm expiry-payoff curves for the open book on one day — MEIC's
  * equivalent of the flies profit forest.
  *
  * Two things this needs that the flies forest does not. **Nesting is the
@@ -1375,12 +1376,12 @@ export function readMeicForest(
     // would clip the as-entered view to whatever happened to still be open.
     const buildArms = (source: Array<Record<string, unknown>>): MeicForestArm[] => {
       if (source.length === 0) return [];
-      const byProfile = new Map<string, Array<Record<string, unknown>>>();
+      const byArm = new Map<string, Array<Record<string, unknown>>>();
       for (const r of source) {
-        const profile = str(r["arm"]) ?? "?";
-        const list = byProfile.get(profile) ?? [];
+        const arm = str(r["arm"]) ?? "?";
+        const list = byArm.get(arm) ?? [];
         list.push(r);
-        byProfile.set(profile, list);
+        byArm.set(arm, list);
       }
       const prices = forestGrid(
         source.flatMap((r) => {
@@ -1390,9 +1391,9 @@ export function readMeicForest(
           return [p - w, p, c, c + w];
         }),
       );
-      return [...byProfile.entries()]
+      return [...byArm.entries()]
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([profile, list]) => {
+        .map(([arm, list]) => {
           const positions = list.map((r) => ({
             icOrderId: str(r["ic_order_id"]) ?? "",
             putStrike: num(r["put_strike"]) ?? 0,
@@ -1419,7 +1420,7 @@ export function readMeicForest(
               0,
             ),
           };
-          return { profile, positions, prices, pnl, perPosition, outcome };
+          return { arm, positions, prices, pnl, perPosition, outcome };
         });
     };
 
@@ -1434,26 +1435,26 @@ export function readMeicForest(
     // handed back, per arm and side, not one entry per trade that touched them.
     const releasedKeys = new Set<string>();
     const released: MeicForest["releasedStrikes"] = [];
-    const pushReleased = (profile: string, strike: number, right: "P" | "C") => {
-      const key = `${profile}|${right}|${strike}`;
+    const pushReleased = (arm: string, strike: number, right: "P" | "C") => {
+      const key = `${arm}|${right}|${strike}`;
       if (releasedKeys.has(key)) return;
       releasedKeys.add(key);
-      released.push({ profile, strike, right, at: null });
+      released.push({ arm, strike, right, at: null });
     };
     for (const r of rows) {
       const status = str(r["status"]);
       if (status === "open") continue;
-      const profile = str(r["arm"]) ?? "?";
+      const arm = str(r["arm"]) ?? "?";
       const w = num(r["wing_width"]) ?? 0;
       const p = num(r["put_strike"]);
       const c = num(r["call_strike"]);
       if (p !== null) {
-        pushReleased(profile, p, "P");
-        if (w) pushReleased(profile, p - w, "P");
+        pushReleased(arm, p, "P");
+        if (w) pushReleased(arm, p - w, "P");
       }
       if (c !== null) {
-        pushReleased(profile, c, "C");
-        if (w) pushReleased(profile, c + w, "C");
+        pushReleased(arm, c, "C");
+        if (w) pushReleased(arm, c + w, "C");
       }
     }
 
@@ -1552,8 +1553,8 @@ export function readMeicDivergence(
       ticks: considered,
       allAgreeRatePct: considered > 0 ? (allAgree / considered) * 100 : null,
       pairs: [...pairs.entries()]
-        .map(([profiles, matches]) => ({
-          profiles,
+        .map(([arms, matches]) => ({
+          arms,
           ticks: matches.length,
           agreementRatePct: matches.length > 0 ? (matches.filter(Boolean).length / matches.length) * 100 : null,
         }))

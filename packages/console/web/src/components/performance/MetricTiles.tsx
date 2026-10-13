@@ -7,7 +7,7 @@ import { TileGrid } from "./TileGrid";
  * The core calibration-reading tile row -- one `reading` object (a group's `calibration_reading`
  * dict, snake_case field names verbatim per `lib/api.ts::ModulePerformanceResult`'s own
  * convention). This is the suite-wide half every module's performance slide shares; a module's
- * own bespoke extras (MEIC's profile table, flies' completion/roll cards, ...) stay in that
+ * own bespoke extras (MEIC's per-arm table, flies' completion/roll cards, ...) stay in that
  * module's own tab and are not reproduced here.
  *
  * Every accessor tolerates a missing/mistyped key rather than throwing -- an older reading (from a
