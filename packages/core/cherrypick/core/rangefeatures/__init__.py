@@ -43,6 +43,7 @@ from collections.abc import Sequence
 
 from cherrypick.core import marketregime as _mr
 from cherrypick.core import metrics as _metrics
+from cherrypick.core import stats as _stats
 
 DECLARATION = "docs/range-features.md"
 DECLARED = "2026-10-03"
@@ -249,16 +250,9 @@ def difference(values: Sequence[float], groups: Sequence[int | None]) -> float |
     return s1 / n1 - s0 / n0
 
 
-def stationary_indices(n: int, mean_block: float, rng: random.Random) -> list[int]:
-    """One stationary-bootstrap resample (Politis & Romano 1994): blocks of geometric length with the
-    given mean, wrapping circularly, so the resample keeps the series' short-range dependence."""
-    p = 1.0 / mean_block
-    out = []
-    j = rng.randrange(n)
-    for _ in range(n):
-        out.append(j)
-        j = rng.randrange(n) if rng.random() < p else (j + 1) % n
-    return out
+# One stationary-bootstrap resample (Politis & Romano 1994); `core.stats` owns it now, and this name
+# stays importable for the record of what the study declared.
+stationary_indices = _stats.stationary_indices
 
 
 def bootstrap(values: Sequence[float], groups: Sequence[int | None], h: int) -> dict:

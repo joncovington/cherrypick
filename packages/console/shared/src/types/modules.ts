@@ -49,14 +49,35 @@ export interface MeicTradeTotals {
   trades: number;
   sessions: number;
   gross: number;
+  /** Trading fees: the fee total less the settlement that was recorded. A row that never recorded
+   *  its split keeps its settlement in here (the standard's rule). */
   fees: number;
-  settlementFees: number;
+  /** Settlement over every row, or null (n/r) when any row never recorded it -- never a partial sum
+   *  shown as the total. */
+  settlementFees: number | null;
+  /** Settlement summed over the rows that did record it, so gross − fees − this = net always holds. */
+  settlementRecorded: number;
+  /** Rows that recorded settlement, of `trades`. */
+  settlementTrades: number;
+  /** Conceded inside the modelled fill, so inside gross; a measure, never subtracted. */
   slippage: number;
+  /** Rows that recorded slippage, of `trades` -- `slippage` covers only these. */
+  slippageTrades: number;
   net: number;
   /** Premium collected — the sum of entry cash over these rows, the denominator of fee drag. */
   credit: number;
   /** The same totals, one row per arm, net descending. */
-  byArm: Array<{ arm: string; trades: number; gross: number; fees: number; settlementFees: number; net: number; credit: number }>;
+  byArm: Array<{
+    arm: string;
+    trades: number;
+    gross: number;
+    fees: number;
+    settlementFees: number | null;
+    settlementRecorded: number;
+    settlementTrades: number;
+    net: number;
+    credit: number;
+  }>;
 }
 
 export interface MeicSummaryRow {
@@ -1395,6 +1416,8 @@ export interface BwbManagementEvent {
 }
 
 export interface BwbPayload {
+  /** Which book this came from: `paper_trades.db` or the live pilot's `live_trades.db`. */
+  mode: TradingMode;
   /** The resolved session every card on the page names. Null when the module has never run. */
   session: string | null;
   /** False when the store is absent -- "has not run here", which is not an error. */
@@ -1494,22 +1517,25 @@ export interface BwbHistoryTotals {
   net: number;
 }
 
-export type BwbHistory = Paged<BwbCycleRow> & { totals: BwbHistoryTotals };
+/** `totals` is null when no completed position matched -- an empty book has no net, not a zero one. */
+export type BwbHistory = Paged<BwbCycleRow> & { mode: TradingMode; totals: BwbHistoryTotals | null };
 
 export interface BwbMeta {
+  mode: TradingMode;
   arms: string[];
   symbols: string[];
   sessions: string[];
 }
 
-/** How often MEIC's profiles reached the SAME entry decision on the same tick. */
+/** How often MEIC's arms reached the SAME entry decision on the same tick. */
 export interface MeicDivergence {
   date: string | null;
-  /** Ticks where at least two profiles both evaluated, so agreement is defined. */
+  /** Ticks where at least two arms both evaluated, so agreement is defined. */
   ticks: number;
-  /** Share of those ticks where every evaluating profile reached the same outcome. */
+  /** Share of those ticks where every evaluating arm reached the same outcome. */
   allAgreeRatePct: number | null;
-  pairs: Array<{ profiles: string; ticks: number; agreementRatePct: number | null }>;
-  /** The outcomes seen, most common first — what the profiles were agreeing or disagreeing ABOUT. */
+  /** One row per arm pair, `arms` reading "a vs b". */
+  pairs: Array<{ arms: string; ticks: number; agreementRatePct: number | null }>;
+  /** The outcomes seen, most common first — what the arms were agreeing or disagreeing ABOUT. */
   outcomes: Array<{ outcome: string; count: number }>;
 }

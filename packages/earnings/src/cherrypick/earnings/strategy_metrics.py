@@ -120,40 +120,6 @@ def load_closed_trades(
     return trades
 
 
-def load_open_trades(profile: str | None = None, strategy: str | None = None) -> list[dict]:
-    """Still-open positions (closed_at IS NULL), dicts with entry_context parsed, ordered by
-    opened_at. The mirror of load_closed_trades for the entry side: closed trades carry realized
-    P&L, open trades carry overnight risk that has not resolved yet. Same read-only direct-SQLite
-    access, same optional profile/strategy filters. No `since` — an open position has no close
-    date to bound on, and 'opened after X' is the caller's job (see _open_session)."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        query = "SELECT * FROM trades WHERE closed_at IS NULL"
-        params: list = []
-        if profile:
-            frag, fparams = book_family_filter(profile)  # see load_closed_trades
-            query += f" AND {frag}"
-            params.extend(fparams)
-        if strategy:
-            query += " AND strategy = ?"
-            params.append(strategy)
-        rows = conn.execute(query + " ORDER BY opened_at", params).fetchall()
-    finally:
-        conn.close()
-
-    trades = []
-    for row in rows:
-        t = dict(row)
-        if t.get("entry_context"):
-            try:
-                t["entry_context"] = json.loads(t["entry_context"])
-            except (TypeError, ValueError):
-                t["entry_context"] = None
-        trades.append(t)
-    return trades
-
-
 def net_pnl(trade: dict) -> float:
     gross = trade.get("pnl") or 0.0
     return gross - (trade.get("entry_cost") or 0.0) - (trade.get("exit_cost") or 0.0)
@@ -243,21 +209,6 @@ def equity_curve(trades: list[dict]) -> list[tuple[float, float]]:
         running += net_pnl(t)
         curve.append((t.get("closed_at") or 0.0, running))
     return curve
-
-
-def daily_equity_series(trades: list[dict]) -> tuple[list[str], list[float]]:
-    """equity_curve() on a date axis: (ISO close-date labels, end-of-day cumulative net P&L),
-    one point per session that closed a trade, for the suite's viz timeseries cards. A day with
-    no closes simply isn't a point — no interpolation across quiet sessions."""
-    from datetime import datetime
-
-    by_day: dict[str, float] = {}
-    running = 0.0
-    for t in sorted(trades, key=lambda x: x.get("closed_at") or 0):
-        running += net_pnl(t)
-        by_day[datetime.fromtimestamp(t.get("closed_at") or 0).date().isoformat()] = running
-    labels = list(by_day)
-    return labels, [by_day[d] for d in labels]
 
 
 def max_drawdown(trades: list[dict], capital_basis: float | None = None) -> dict:

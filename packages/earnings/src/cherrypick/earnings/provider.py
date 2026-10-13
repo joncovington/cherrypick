@@ -29,7 +29,7 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
-from cherrypick.core import home as _home
+from cherrypick.core import streamcache as _streamcache
 
 # Read-only opens go through cherrypick.core.db.connect_ro: it percent-escapes the path, so a
 # directory containing '?', '#' or '%' cannot silently change the URI's meaning. The local
@@ -39,7 +39,7 @@ from cherrypick.core.clock import ET
 from cherrypick.core.db import connect_ro as _connect_ro
 
 # Shared with every other provider — see cherrypick.core.streamcache.
-from cherrypick.core.streamcache import usable_quote as _usable_quote
+from cherrypick.core.streamcache import usable_quotes as _usable_quotes
 
 # A minute-cadence loop reading a continuously-streamed cache: anything older than this is a feed
 # that stopped, not a market that went quiet. Deliberately longer than flies' 120s — an earnings
@@ -53,7 +53,7 @@ DEFAULT_MAX_SPOT_AGE_SECONDS = 600
 
 def cache_path() -> Path:
     """The suite's canonical shared cache. One producer writes it; every module reads it."""
-    return _home.data_dir() / "marketdata" / "stream_cache.db"
+    return _streamcache.cache_path()
 
 
 def _fail(reason: str, **extra) -> dict:
@@ -81,17 +81,11 @@ def leg_quotes(conn, streamer_symbols, *, now_ts: float, max_age: float) -> tupl
     wanted = [s for s in streamer_symbols if s]
     if not wanted:
         return {}, [], []
-    placeholders = ",".join("?" for _ in wanted)
-    rows = conn.execute(
-        f"SELECT symbol, bid, ask, mid, updated_at FROM stream_quotes WHERE symbol IN ({placeholders})",
-        wanted,
-    ).fetchall()
-    found = {r["symbol"]: r for r in rows}
+    usable, _ = _usable_quotes(conn, wanted, now_ts, max_age)
 
     quotes, fresh, rejected = {}, [], []
     for symbol in wanted:
-        row = found.get(symbol)
-        quote = _usable_quote(row, now_ts, max_age) if row is not None else None
+        quote = usable.get(symbol)
         if quote is None:
             rejected.append(symbol)
         else:

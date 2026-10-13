@@ -46,6 +46,7 @@ from typing import Any
 from cherrypick.core import broker as _broker
 from cherrypick.core import dxfeed as _dx
 from cherrypick.core import execution as _execution
+from cherrypick.core.broker import cli as _broker_cli
 from cherrypick.core.redact import mask_account
 
 from cherrypick.earnings import credentials as _creds
@@ -73,13 +74,7 @@ def _out(data: Any) -> None:
     print(json.dumps(data, default=str))
 
 
-def _error(exc: Exception) -> dict:
-    msg = f"{type(exc).__name__}: {exc}"
-    retryable = any(f" {c} " in str(exc) or str(exc).endswith(str(c)) for c in (500, 502, 503, 504))
-    result: dict = {"ok": False, "error": msg}
-    if retryable:
-        result["retryable"] = True
-    return result
+_error = _broker_cli.error_result
 
 
 _serialize = _broker.serialize  # the suite's one SDK-object flattener (core.broker default)
@@ -169,46 +164,22 @@ async def _collect_option_volume(symbols: list[str], timeout: float) -> dict:
 
 
 async def cmd_get_connection_status(_args) -> dict:
-    status: dict = {
-        "ok": True,
-        "live_trading_enabled": _live_trading_enabled(),
-        "credentials_present": _creds.secrets_present(),
-    }
-    if not status["credentials_present"]:
-        status["ok"] = False
-        status["hint"] = "Run `python src/tt.py secrets_set` to store credentials."
-        return status
-    try:
-        session = get_session()
-        status["account_count"] = await _broker.account_count(session)
-        status["connected"] = True
-    except Exception as exc:
-        status["ok"] = False
-        status["connected"] = False
-        status.update(_error(exc))
-    return status
+    return await _broker_cli.connection_check(
+        lambda: get_session(),
+        credentials_present=_creds.secrets_present(),
+        live_trading_enabled=_live_trading_enabled(),
+        hint="Run `python src/tt.py secrets_set` to store credentials.",
+    )
 
 
 async def cmd_list_accounts(_args) -> dict:
-    try:
-        return {"ok": True, "accounts": await _broker.list_accounts(get_session())}
-    except Exception as exc:
-        return _error(exc)
+    return await _broker_cli.account_list(lambda: get_session())
 
 
 async def cmd_get_account_info(args) -> dict:
-    try:
-        account = await _get_account(getattr(args, "account_number", None))
-        session = get_session()
-        balances = await account.get_balances(session)
-        return {
-            "ok": True,
-            "account_number": account.account_number,
-            "nickname": getattr(account, "nickname", None),
-            "balances": _serialize(balances),
-        }
-    except Exception as exc:
-        return _error(exc)
+    return await _broker_cli.account_info(
+        lambda n: _get_account(n), lambda: get_session(), getattr(args, "account_number", None), _serialize
+    )
 
 
 async def cmd_get_quote(args) -> dict:

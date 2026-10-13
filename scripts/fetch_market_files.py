@@ -43,6 +43,12 @@ from pathlib import Path
 
 from cherrypick.overview import files, occ
 
+# scripts/_common.py, beside this file (a test loading this script by path has no scripts/ on sys.path).
+_HERE = str(Path(__file__).resolve().parent)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+import _common  # noqa: E402
+
 UA = "cherrypick-marketfiles/1.0"
 PAUSE_RANGE_S = (2.0, 5.0)
 # OCC is asked more slowly: a backfill is two dozen ~4 MB files from one host.
@@ -402,14 +408,7 @@ def fetch_listings(report: dict, get=None) -> None:
 
 
 def _warn(title: str, message: str) -> None:
-    print(f"WARNING: {title}\n{message}", file=sys.stderr)
-    try:
-        from cherrypick.notify.notifier import Notifier
-        from cherrypick.orchestrator import config as cfgmod
-
-        Notifier(cfgmod.load_config().get("notify")).notify("WARNING", "market_files", title, message)
-    except Exception:  # noqa: BLE001
-        pass
+    _common.warn("market_files", title, message)
 
 
 def cmd_fetch(_args) -> int:

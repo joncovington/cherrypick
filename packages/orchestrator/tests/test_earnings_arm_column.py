@@ -59,7 +59,7 @@ def _ledger(tmp_path: Path, spelling: str) -> sqlite3.Connection:
 READERS = {
     "ledgers.earnings_closed": lambda c: ledgers.READERS["earnings"](c),
     "ledgers.earnings_open": lambda c: ledgers.OPEN_READERS["earnings"](c),
-    "reconcile.earnings_open": lambda c: reconcile._earnings_open(c),
+    "reconcile.earnings_open": lambda c: reconcile._OPEN_READERS["earnings"](c),
     "notifier.entries": lambda c: (
         [tn._fmt_earnings_entry(r) for r in tn._earnings_new_entries(c, set())]
         + [tn._embed_earnings_entry(r) for r in tn._earnings_new_entries(c, set())]

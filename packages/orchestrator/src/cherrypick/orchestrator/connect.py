@@ -36,14 +36,10 @@ def _set_credentials(root, tool: list[str]) -> bool:
 
 def _verify_connection(root, tool: list[str]) -> dict[str, Any]:
     print("\n[2/3] Verifying broker connection…")
-    status = first_json(doctor._run(root, [*tool, "get_connection_status"], timeout=35).stdout)
-    connected = bool(status.get("ok") or status.get("connected") or status.get("authenticated"))
-    count = status.get("account_count")
-    detail = "connected" if connected else "NOT connected"
-    if count is not None:
-        detail += f" ({count} account(s))"
-    print(f"      {detail}")
-    return {"connected": connected, "account_count": count}
+    stdout = doctor._run(root, [*tool, "get_connection_status"], timeout=35).stdout
+    connected, detail = doctor.connection_verdict(stdout)
+    print(f"      {detail if connected else 'NOT connected -- ' + detail}")
+    return {"connected": connected, "account_count": first_json(stdout).get("account_count")}
 
 
 def _select_account(cfg: dict[str, Any], module: str, prompt_fn=input) -> dict[str, Any]:

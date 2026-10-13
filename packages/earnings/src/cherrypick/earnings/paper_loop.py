@@ -41,6 +41,7 @@ from pathlib import Path
 
 from cherrypick.core import calendar as _calendar
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 from cherrypick.core import looplock as _looplock
 
 from cherrypick.earnings import (
@@ -206,10 +207,7 @@ def write_heartbeat(phase: str, record: dict) -> None:
     """
     name = "earnings_entry.last.json" if phase == "entry" else "earnings_exit.last.json"
     try:
-        path = state_file(name)
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
-        tmp.replace(path)
+        _jsonio.write_json_atomic(state_file(name), record)
     except OSError:
         pass
 

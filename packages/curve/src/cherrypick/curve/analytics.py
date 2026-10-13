@@ -16,19 +16,7 @@ from cherrypick.curve import db
 
 def headline(conn) -> dict:
     """Per-arm, per-symbol results over CLOSED positions, plus what is still open."""
-    arms: dict[str, dict] = {}
-    for row in conn.execute(
-        "SELECT arm, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees, "
-        "SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins "
-        "FROM curve_positions WHERE status = 'closed' GROUP BY arm, symbol ORDER BY arm, symbol"
-    ):
-        arms.setdefault(row["arm"], {})[row["symbol"]] = {
-            "positions": row["n"],
-            "gross_pnl": round(row["gross"], 2) if row["gross"] is not None else None,
-            "fees": round(row["fees"], 2) if row["fees"] is not None else None,
-            "net_pnl": round(row["net"], 2) if row["net"] is not None else None,
-            "win_rate": round(row["wins"] / row["n"], 4) if row["n"] else None,
-        }
+    arms = db._store.closed_results(conn)
     open_rows = conn.execute("SELECT COUNT(*) AS n FROM curve_positions WHERE status != 'closed'").fetchone()
     return {"arms": arms, "open_positions": open_rows["n"], "flip_divergence": flip_divergence(conn)}
 
@@ -99,24 +87,10 @@ def worksheet(conn) -> list[dict]:
 
 
 def exposure(conn) -> dict:
-    """The early-assignment-exposure telemetry, aggregated per position."""
-    positions = []
-    for row in conn.execute(
-        "SELECT position_id, "
-        "SUM(CASE WHEN assignment_exposed = 1 THEN 1 ELSE 0 END) AS exposed, "
-        "COUNT(*) AS marked FROM curve_marks WHERE short_tv IS NOT NULL AND usable = 1 "
-        "GROUP BY position_id ORDER BY position_id"
-    ):
-        positions.append(
-            {
-                "position_id": row["position_id"],
-                "exposed_ticks": row["exposed"],
-                "marked_ticks": row["marked"],
-                "exposed_share": round(row["exposed"] / row["marked"], 4) if row["marked"] else None,
-            }
-        )
-    exposed_positions = sum(1 for p in positions if (p["exposed_ticks"] or 0) > 0)
-    return {"positions": positions, "positions_with_exposure": exposed_positions}
+    """The early-assignment-exposure telemetry, aggregated per position.
+
+    `LedgerStore.assignment_exposure`, shared with pmcc."""
+    return db._store.assignment_exposure(conn)
 
 
 def regime_series(conn, *, limit: int = 60) -> list[dict]:

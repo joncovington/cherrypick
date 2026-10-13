@@ -113,8 +113,3 @@ def configure(
             sh.setFormatter(IsoOffsetFormatter(LINE_FORMAT))
             logger.addHandler(sh)
     return logger
-
-
-def get_logger(name: str, path: Path | str, **kwargs) -> logging.Logger:
-    """`configure` against the named logger — the usual entry point."""
-    return configure(logging.getLogger(name), path, **kwargs)

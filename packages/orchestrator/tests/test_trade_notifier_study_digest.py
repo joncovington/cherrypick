@@ -89,7 +89,7 @@ def test_study_entry_lands_in_digest_not_per_trade():
 
     assert counts["entries_notified"] == 1
     assert n.sent == [], "a study entry must never fire a per-trade push"
-    assert state["pending_summary"]["XSP"]["entries"] == ["gex-open"]
+    assert state["pending_summary"]["XSP"]["entries"] == {"gex-open": 1}
     assert state["last_entry_id"] == 1, "the watermark must advance even though it's digest-routed"
 
 
@@ -119,7 +119,7 @@ def test_no_flush_before_interval_elapses():
         conn, state, n2, "meic", summary_prefixes=_PREFIXES, summary_interval_minutes=15, now=1000.0 + 10 * 60
     )
     assert n2.sent == []
-    assert state["pending_summary"]["XSP"]["entries"] == ["gex-open"]
+    assert state["pending_summary"]["XSP"]["entries"] == {"gex-open": 1}
 
 
 def test_flush_after_interval_emits_one_digest_and_clears_bucket():
@@ -221,7 +221,7 @@ def test_summary_mode_routes_every_profile_to_digest():
 
     assert counts["entries_notified"] == 1
     assert n.sent == []
-    assert state["pending_summary"]["XSP"]["entries"] == ["conservative"]
+    assert state["pending_summary"]["XSP"]["entries"] == {"conservative": 1}
 
 
 def test_watermark_advances_once_per_row_across_both_paths():
@@ -281,7 +281,7 @@ def test_digest_holds_outside_the_intraday_window():
 
     assert n.sent == []
     assert counts["summary_pushed"] is False
-    assert state["pending_summary"]["XSP"]["entries"] == ["gex-open"], "held, not dropped"
+    assert state["pending_summary"]["XSP"]["entries"] == {"gex-open": 1}, "held, not dropped"
 
 
 def test_digest_holds_on_a_non_trading_day():
@@ -303,7 +303,7 @@ def test_digest_holds_on_a_non_trading_day():
             now=start + 15 * 60,
         )
         assert n.sent == [], label
-        assert state["pending_summary"]["XSP"]["entries"] == ["gex-open"], label
+        assert state["pending_summary"]["XSP"]["entries"] == {"gex-open": 1}, label
 
 
 def test_held_digest_goes_out_on_the_next_in_window_tick():

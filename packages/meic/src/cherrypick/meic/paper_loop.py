@@ -552,88 +552,6 @@ def _money(x):
     return _viz.fmt_money(x, none="-")
 
 
-def _entry_attempts_section(conn, day) -> list:
-    """The refusal ledger: every evaluated entry opportunity, by arm and outcome.
-
-    Added 2026-08-11, when each profile became an independent portfolio with unbounded capital.
-    Every arm now sees the same market with the same money, so the ONLY thing that differentiates
-    them is which entries the rules let through -- which makes the refusals the primary measurement
-    rather than a diagnostic. This is the section that carries them into the deterministic record,
-    and therefore into the EOD insight layer, which reads these files and nothing else.
-
-    Distinct from the Gate ledger above, which counts `gate_block` rows per stream. This is per
-    ATTEMPT: it can say how many opportunities an arm evaluated, how many it took, and how long it
-    spent waiting on its own cadence -- none of which a block count can express.
-
-    Also prints the LOW-SAMPLE line, and that is deliberate rather than decorative: a debrief read
-    a two-position arm as a validated thesis and wrote a tuning recommendation from it. An arm's
-    entry count is the fact that would have stopped it, so it goes in the record where the narrative
-    layer will see it.
-    """
-    L = ["## Entry attempts (the refusal ledger)"]
-    try:
-        rows = conn.execute(
-            "SELECT arm, outcome, block_detail, COUNT(*) n, "
-            "       AVG(seconds_until_cadence_clear) avg_wait "
-            "  FROM entry_attempts WHERE trade_date=? GROUP BY 1, 2, 3",
-            (day,),
-        ).fetchall()
-    except sqlite3.Error:
-        L.append("_No `entry_attempts` table (a ledger written before 2026-08-11)._")
-        L.append("")
-        return L
-    if not rows:
-        L.append("_No entry attempts recorded today -- the loop did not reach its entry window._")
-        L.append("")
-        return L
-
-    by_arm = {}
-    for r in rows:
-        d = dict(r)
-        arm = by_arm.setdefault(d["arm"], {"fills": 0, "refused": 0, "reasons": {}, "wait": []})
-        if d["outcome"] == "filled":
-            arm["fills"] += d["n"]
-        else:
-            arm["refused"] += d["n"]
-            key = d["block_detail"] or d["outcome"]
-            arm["reasons"][key] = arm["reasons"].get(key, 0) + d["n"]
-        if d["avg_wait"] is not None:
-            arm["wait"].append((d["avg_wait"], d["n"]))
-
-    L.append("| Arm | Evaluated | Filled | Refused | Dominant refusal | Cadence wait |")
-    L.append("|---|---|---|---|---|---|")
-    for name in sorted(by_arm):
-        a = by_arm[name]
-        total = a["fills"] + a["refused"]
-        top = max(a["reasons"].items(), key=lambda kv: kv[1]) if a["reasons"] else None
-        dominant = f"{top[0]} x{top[1]}" if top else "-"
-        if a["wait"]:
-            secs = sum(w * n for w, n in a["wait"]) / sum(n for _, n in a["wait"])
-            wait = f"~{secs:.0f}s avg"
-        else:
-            wait = "-"
-        L.append(f"| {name} | {total} | {a['fills']} | {a['refused']} | {dominant} | {wait} |")
-    L.append("")
-
-    thin = sorted(n for n, a in by_arm.items() if 0 < a["fills"] < 5)
-    flat = sorted(n for n, a in by_arm.items() if a["fills"] == 0)
-    if thin:
-        L.append(
-            f"**Too few entries to read: {', '.join(thin)}.** Under 5 fills is not a sample. Report "
-            "what these arms did; do not rank them, call them validated, or write a recommendation "
-            "from them."
-        )
-    if flat:
-        L.append(
-            f"**Took no entries: {', '.join(flat)}.** A gate held them out all session -- see the "
-            "dominant refusal above. Standing aside is a decision, not a gap, and an arm at zero "
-            "contributes no evidence about anything except the gate that refused it."
-        )
-    if thin or flat:
-        L.append("")
-    return L
-
-
 # ---------------------------------------------------------------------------
 # EOD supplement -- arm scorecard (breakeven identity), gate ledger, stop-policy
 # table, regime coverage, iteration duration/peak positions. Isolated in its own
@@ -647,96 +565,9 @@ def _entry_attempts_section(conn, day) -> list:
 # ---------------------------------------------------------------------------
 
 
-def _analysis_path(day):
-    return _LOG_FILE.parent / f"eod-analysis-{day}.md"
-
-
-def _read_market_context(day):
-    """Return (today_row, prior_row) dicts from the paper DB's market_context table, or (None, None).
-    prior_row is the most recent earlier day, used only for the VIX/underlying deltas."""
-    try:
-        con = sqlite3.connect(_PAPER_DB)
-        con.row_factory = sqlite3.Row
-        today = con.execute("SELECT * FROM market_context WHERE context_date=?", (day,)).fetchone()
-        prior = con.execute(
-            "SELECT * FROM market_context WHERE context_date < ? ORDER BY context_date DESC LIMIT 1", (day,)
-        ).fetchone()
-        con.close()
-    except sqlite3.Error:
-        return None, None
-    return (dict(today) if today else None, dict(prior) if prior else None)
-
-
-def _signed(x):
-    return f"+{x:.2f}" if x is not None and x >= 0 else (f"{x:.2f}" if x is not None else "?")
-
-
-def _loop_gate_tail(day):
-    """(iteration_count, per-symbol gate line) from the day's loop log — what the entry gates decided
-    per symbol, at the last iteration. This is the 'why entries did/didn't fire' the trade tables can't
-    show (e.g. `SPX(ivr 0.43): all regime_gex_negative`), so a flat/gated day is explainable rather than
-    a blank. Best-effort; (0, None) if the log is unavailable."""
-    try:
-        con = sqlite3.connect(_PAPER_DB)
-        con.row_factory = sqlite3.Row
-        n = con.execute(
-            "SELECT COUNT(*) FROM loop_log WHERE loop_date=? AND action='paper_iteration'", (day,)
-        ).fetchone()[0]
-        r = con.execute(
-            "SELECT reasoning FROM loop_log WHERE loop_date=? AND action='paper_iteration' "
-            "ORDER BY loop_time DESC LIMIT 1",
-            (day,),
-        ).fetchone()
-        con.close()
-    except sqlite3.Error:
-        return 0, None
-    if not r or not r["reasoning"]:
-        return n, None
-    # Strip the leading "[HH:MM ET] VIX .. 1D-ratio .. delta .." prefix; keep the per-symbol gate part.
-    import re
-
-    m = re.search(r"[A-Z]{2,5}\(ivr", r["reasoning"])
-    tail = r["reasoning"][m.start() :].strip() if m else r["reasoning"].strip()
-    return n, tail
-
-
-def _intraday_path(active: list) -> str | None:
-    """One sentence describing the day by its PATH, not its endpoints.
-
-    Added 2026-08-11 after a debrief opened with "SPX barely moved (-0.32%)", called the tape
-    dead-calm, and built its whole thesis on a market that supposedly cooperated -- on a day the
-    index slid 44.95 points (0.58% of spot) from 7763 to 7718 and that drift stopped 384 put sides.
-    Close-to-close hid the move that actually decided the session, which is the same failure shape
-    as reading an exit query that matches nothing: the number was available and nobody printed it.
-
-    Measured across the underlying prices recorded at THIS session's own entries, so it describes
-    the window the book was actually exposed to rather than the whole cash session. That also means
-    it is only as wide as the entry window -- stated here rather than left to be inferred.
-
-    Note 0.5% is the threshold `quarterly_expiry_max_intraday_range_pct` already treats as a blown-out
-    range, so a day past it should never be narrated as calm.
-    """
-    prices = [r.get("underlying_price_entry") for r in active if r.get("underlying_price_entry")]
-    if len(prices) < 2:
-        return None
-    lo, hi = min(prices), max(prices)
-    span = hi - lo
-    pct = span / hi * 100 if hi else 0.0
-    first, last = prices[0], prices[-1]
-    drift = last - first
-    direction = "drifted up" if drift > 0 else ("drifted down" if drift < 0 else "round-tripped")
-    calm = "calm" if pct < 0.30 else ("ordinary" if pct < 0.50 else "NOT calm - a wide-range day")
-    return (
-        f"Across the entry window the underlying ranged **{lo:.2f}-{hi:.2f}** "
-        f"({span:.2f} pts, **{pct:.2f}%** of spot) and {direction} {abs(drift):.2f} pts from first "
-        f"entry to last. Judge the session by this path, not by the close-to-close change: {calm}."
-    )
-
-
 def _open_advised_tags():
     """DISTINCT advised:* profile tags with open/partial rows -- positions that must keep being
     managed (exits, force-close, settlement) even when today's advice is absent or disabled."""
-    import sqlite3
 
     try:
         conn = sqlite3.connect(_PAPER_DB)
@@ -870,12 +701,7 @@ def _beat() -> None:
 
     Best-effort: a beat that cannot be written degrades to not-silence-supervised, never to a
     failed tick."""
-    try:
-        path = _core_home.heartbeat_path("meic")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(str(time.time()), encoding="utf-8")
-    except OSError:
-        pass
+    _core_home.beat("meic")
 
 
 def run_iteration(cfg, force=False):

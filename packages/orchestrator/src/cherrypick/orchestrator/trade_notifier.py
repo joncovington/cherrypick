@@ -5,11 +5,15 @@ closed since the last check, and pushes one concise line per event through the n
 the watchdog's health
 alerts: each trade is a one-shot event tracked by an id watermark (not deduped or re-notified). On first
 activation the watermark is seeded to the current DB state, so pre-existing paper trades aren't
-backfilled as a burst.
+backfilled as a burst -- and so is a module switched back on, or one left unprocessed past
+`_STALE_DAYS`, whose history is not news.
 
-Called both by the dedicated fast trade-notify task (low latency, ~2 min) and as a fallback on each
-watchdog tick; the per-schema id watermark keeps either path from re-sending the same event, and the
-state file is written atomically so overlapping runs can't corrupt it.
+Called both by the dedicated fast trade-notify task and as a fallback on each watchdog tick; the
+per-schema id watermark keeps either path from re-sending the same event, and the state file is
+written atomically so overlapping runs can't corrupt it. The state is kept small and quiet: compact
+JSON, written only when it changed, holding only modules still notified; integer ids remembered as
+a capped list plus a floor (`_trim_ids`), text ids pruned to the ledger (`_run_stages`), and the
+MEIC digest bucket as per-arm counts. Every exit card's "P&L" is net, by `core.ledgers.ROW_NET`.
 
 Three paper-DB schemas are wired, dispatched by `paper.trade_schema`:
   - "meic_ic"  : MEICAgent's `ic_trades` table (integer id; entry, per-wing stop, and exit watermarks).
@@ -42,7 +46,7 @@ from . import config as cfgmod
 from . import schemas, timeutil, util
 
 _STATE = cfgmod.STATE_DIR / "trade_notify.json"
-_ID_CAP = 4000  # bound the remembered-id lists (per schema, per direction)
+_ID_CAP = 4000  # bound an integer remembered-id list; ids below the cut ride the floor (_trim_ids)
 
 # The 2-minute trade-notify task and the 10-minute watchdog tick both call run(). The atomic
 # _save_state protects against a CORRUPT file, but not against the read-modify-write race: an
@@ -78,32 +82,89 @@ def _release_lock() -> None:
         pass
 
 
+#: A module's state not processed for longer than this is re-seeded from its ledger rather than
+#: caught up: whatever happened in between is history, not news, and catching up is a flood. MEIC's
+#: state sat from 2026-08-19 with its notify switched off while the ledger went from id 6,495 to
+#: 23,426; switching it back on would have pushed ~17,000 old exits.
+_STALE_DAYS = 3
+
+
 def _load_state() -> dict:
     return util.read_json(_STATE)
 
 
-def _save_state(state: dict) -> None:
+def _stale(st: dict, today) -> bool:
+    """Has this module's state gone unprocessed for longer than `_STALE_DAYS`? State written before
+    the stamp existed has none and is taken as current: it was processed on the previous pass."""
+    stamp = st.get("processed_on")
+    if not stamp:
+        return False
+    try:
+        last = datetime.strptime(str(stamp), "%Y-%m-%d").date()
+    except ValueError:
+        return True
+    return (today - last).days > _STALE_DAYS
+
+
+def _dumps(state: dict) -> str:
+    """The state's one serialization: compact and key-sorted, so an unchanged state is the same
+    text pass after pass and the comparison in `_save_state` means something."""
+    return json.dumps(state, separators=(",", ":"), sort_keys=True)
+
+
+def _save_state(state: dict, *, unchanged_from: str | None = None) -> bool:
+    """Write the state if it changed; returns whether bytes were written.
+
+    Until 2026-10-12 every pass rewrote the whole file, indented, changed or not: 7.3 MB every 30
+    seconds around the clock. An unchanged pass now only touches the file's mtime, which is what
+    `watchdog._check_trade_notify` reads as "passes are completing"."""
     # Atomic replace: the trade-notify task and the watchdog tick can both call run() at once, so a
     # plain truncate-then-write could leave a half-written state file if they overlap.
     cfgmod.ensure_dirs()
+    text = _dumps(state)
+    if unchanged_from is not None and text == unchanged_from and _STATE.exists():
+        try:
+            os.utime(_STATE, None)
+            return False
+        except OSError:
+            pass  # fall through to a full write rather than let the watchdog read a dead notifier
     tmp = _STATE.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, _STATE)
+    return True
+
+
+def _trim_ids(ids, floor: int, id_of=int) -> tuple[list, int]:
+    """(kept, floor) for an integer-keyed remembered-id list: sorted, capped at `_ID_CAP` by
+    dropping the OLDEST ids and raising `floor` past them, so everything at or below the floor
+    counts as already notified.
+
+    A plain cap is not enough. The id lists used to be cut to the newest 4,000 and the rest
+    forgotten, while the query still returned every row ever closed -- so from the 4,001st exit on,
+    the oldest ones looked new again on every pass. MEIC's digest bucket held 271,000 replayed
+    exits when it was last flushed."""
+    kept = sorted({i for i in ids if id_of(i) > floor}, key=lambda i: (id_of(i), str(i)))
+    if len(kept) > _ID_CAP:
+        floor = max(floor, id_of(kept[-_ID_CAP - 1]))
+        kept = kept[-_ID_CAP:]
+    return kept, floor
 
 
 from cherrypick.core import db as _db  # noqa: E402
+from cherrypick.core import ledgers as _ledgers  # noqa: E402 — the one per-schema net rule
 from cherrypick.core.db import connect_ro as _connect_ro  # noqa: E402 — shared read-only opener
 
 
 # --------------------------------------------------------------------------- MEIC ic_trades schema
-def _meic_stopped_wing_keys(conn) -> list:
-    """ "{id}:put"/"{id}:call" for every wing that already has a stop cost recorded — the per-wing
-    watermark. A wing is stopped exactly when its put/call_stop_cost is non-null (MEIC writes the
-    stop's exit price there)."""
+def _meic_stopped_wing_keys(conn, floor: int = 0) -> list:
+    """ "{id}:put"/"{id}:call" for every wing above `floor` that already has a stop cost recorded —
+    the per-wing watermark. A wing is stopped exactly when its put/call_stop_cost is non-null (MEIC
+    writes the stop's exit price there)."""
     keys = []
     for r in conn.execute(
         "SELECT id, put_stop_cost, call_stop_cost FROM ic_trades "
-        "WHERE put_stop_cost IS NOT NULL OR call_stop_cost IS NOT NULL"
+        "WHERE (put_stop_cost IS NOT NULL OR call_stop_cost IS NOT NULL) AND id > ?",
+        (floor,),
     ):
         if r["put_stop_cost"] is not None:
             keys.append(f"{r['id']}:put")
@@ -112,14 +173,44 @@ def _meic_stopped_wing_keys(conn) -> list:
     return keys
 
 
+def _stop_key_id(key: str) -> int:
+    return int(str(key).split(":", 1)[0])
+
+
+def _meic_open_floor(conn) -> int:
+    """The highest id at or below which no IC can still produce an event: one below the oldest IC
+    still open, or the newest id when none is. A cancelled row never exits, so it does not hold
+    the floor down."""
+    lo = conn.execute(
+        "SELECT MIN(id) FROM ic_trades WHERE exit_time IS NULL AND status != 'cancelled'"
+    ).fetchone()[0]
+    if lo is not None:
+        return int(lo) - 1
+    return int(conn.execute("SELECT COALESCE(MAX(id), 0) FROM ic_trades").fetchone()[0])
+
+
 def _meic_seed(conn) -> dict:
     max_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM ic_trades").fetchone()[0]
-    exited = [r[0] for r in conn.execute("SELECT id FROM ic_trades WHERE exit_time IS NOT NULL")]
+    floor = _meic_open_floor(conn)
+    exited = [
+        r[0]
+        for r in conn.execute("SELECT id FROM ic_trades WHERE exit_time IS NOT NULL AND id > ?", (floor,))
+    ]
     return {
         "last_entry_id": max_id,
-        "notified_exit_ids": exited,
-        "notified_stop_keys": _meic_stopped_wing_keys(conn),
+        "exit_floor_id": floor,
+        "notified_exit_ids": sorted(exited),
+        "stop_floor_id": floor,
+        "notified_stop_keys": sorted(
+            _meic_stopped_wing_keys(conn, floor), key=lambda k: (_stop_key_id(k), k)
+        ),
     }
+
+
+def _legacy_floor(ids: list) -> int:
+    """The floor implied by a remembered-id list from before floors existed: it was the newest ids
+    kept in order, so everything below its oldest member had already been notified."""
+    return min(ids) - 1 if ids else 0
 
 
 def _meic_new_entries(conn, last_entry_id: int) -> list:
@@ -132,21 +223,36 @@ def _meic_new_entries(conn, last_entry_id: int) -> list:
     ).fetchall()
 
 
-def _meic_new_exits(conn, notified_ids: set) -> list:
+def _meic_new_exits(conn, notified_ids: set, floor: int = 0) -> list:
     arm = _db.arm_column(conn, "ic_trades")
     rows = conn.execute(
         f"SELECT id, symbol, {arm} AS arm, exit_reason, pnl, fees, entry_time, exit_time FROM ic_trades "
-        "WHERE exit_time IS NOT NULL"
+        "WHERE exit_time IS NOT NULL AND id > ? ORDER BY id",
+        (floor,),
     ).fetchall()
     return [r for r in rows if r["id"] not in notified_ids]
 
 
-def _meic_new_stops(conn) -> list:
+def _meic_new_stops(conn, floor: int = 0) -> list:
     arm = _db.arm_column(conn, "ic_trades")
     return conn.execute(
         f"SELECT id, symbol, {arm} AS arm, put_strike, call_strike, put_stop_cost, call_stop_cost "
-        "FROM ic_trades WHERE put_stop_cost IS NOT NULL OR call_stop_cost IS NOT NULL ORDER BY id"
+        "FROM ic_trades WHERE (put_stop_cost IS NOT NULL OR call_stop_cost IS NOT NULL) AND id > ? "
+        "ORDER BY id",
+        (floor,),
     ).fetchall()
+
+
+def _signed(x) -> str:
+    """A signed dollar figure, or "n/r" (not recorded) -- never a zero standing in for a gap."""
+    return f"${x:+.2f}" if x is not None else "n/r"
+
+
+def _net(schema: str, r) -> float | None:
+    """An exit row's net P&L by `core.ledgers`' rule for its schema. "P&L" on every card is this
+    figure: MEIC's and earnings' `pnl` columns are GROSS, and until 2026-10-12 their cards printed
+    them under "P&L", overstating every exit by its costs."""
+    return _ledgers.ROW_NET[schema](r)
 
 
 # --------------------------------------------------------------------------- Discord embed cards
@@ -236,9 +342,10 @@ def _embed_meic_entry(r) -> dict:
 
 
 def _embed_meic_exit(r) -> dict:
-    pnl = r["pnl"]
-    pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
-    details = f"{r['exit_reason'] or 'closed'} · P&L {pnl_str}"
+    details = (
+        f"{r['exit_reason'] or 'closed'} · P&L {_signed(_net('meic_ic', r))} "
+        f"(gross {_signed(r['pnl'])}, fees ${r['fees'] or 0:.2f})"
+    )
     entered, exited = _hhmm_et(r["entry_time"]), _hhmm_et(r["exit_time"])
     if entered or exited:
         details += f" · {entered or '?'} → {exited or '?'}"
@@ -283,11 +390,9 @@ def _fmt_meic_entry(r) -> str:
 
 
 def _fmt_meic_exit(r) -> str:
-    pnl = r["pnl"]
-    pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
     return (
         f"\U0001f534 MEIC paper EXIT — {r['symbol']} [{_arm(r)}] "
-        f"{r['exit_reason'] or 'closed'}, P&L {pnl_str}"
+        f"{r['exit_reason'] or 'closed'}, P&L {_signed(_net('meic_ic', r))} (gross {_signed(r['pnl'])})"
     )
 
 
@@ -316,7 +421,7 @@ def _meic_day_totals(conn, symbol: str, day: str, prefixes: tuple[str, ...]) -> 
     where = " OR ".join([f"{arm} LIKE ?"] * len(prefixes))
     params = [symbol, day] + [f"{p}%" for p in prefixes]
     row = conn.execute(
-        f"SELECT COUNT(*), COALESCE(SUM(pnl - fees), 0) FROM ic_trades "
+        f"SELECT COUNT(*), COALESCE(SUM(pnl - COALESCE(fees, 0)), 0) FROM ic_trades "
         f"WHERE symbol = ? AND exit_time IS NOT NULL AND substr(exit_time, 1, 10) = ? "
         f"AND ({where})",
         params,
@@ -324,21 +429,42 @@ def _meic_day_totals(conn, symbol: str, day: str, prefixes: tuple[str, ...]) -> 
     return int(row[0] or 0), float(row[1] or 0.0)
 
 
+def _pending_bucket(bucket: dict | None) -> dict:
+    """One symbol's pending digest figures as {"entries": {arm: count}, "exits": count, "net": sum}.
+
+    Aggregated rather than listed so the bucket is bounded by the number of arms, not trades: the
+    list form ({"entries": [arm, ...], "exits": [net, ...]}, read here for state written before
+    2026-10-12) held one element per event and reached 271,000 exits in one bucket."""
+    bucket = bucket or {}
+    entries = bucket.get("entries") or {}
+    if isinstance(entries, list):
+        counted: dict[str, int] = {}
+        for arm in entries:
+            counted[arm] = counted.get(arm, 0) + 1
+        entries = counted
+    exits = bucket.get("exits") or 0
+    net = bucket.get("net") or 0.0
+    if isinstance(exits, list):
+        exits, net = len(exits), net + sum(exits)
+    return {"entries": dict(entries), "exits": int(exits), "net": round(float(net), 2)}
+
+
 def _meic_symbol_segment(conn, symbol: str, bucket: dict, day: str, prefixes: tuple[str, ...]) -> list[str]:
     """One symbol's digest figures as three parts (entries / exits / day total), shared by the plain
     line and the embed card so the two can never drift. Arms are counted, not listed — a 30-entry
     window would otherwise repeat the same three labels ten times each."""
-    entries = bucket.get("entries", [])
-    exits = bucket.get("exits", [])
-    entry_part = f"{len(entries)} {'entry' if len(entries) == 1 else 'entries'}"
+    bucket = _pending_bucket(bucket)
+    n_entries = sum(bucket["entries"].values())
+    entry_part = f"{n_entries} {'entry' if n_entries == 1 else 'entries'}"
     counts: dict[str, int] = {}
-    for e in entries:
-        label = _short_arm_label(e)
-        counts[label] = counts.get(label, 0) + 1
+    for arm, n in bucket["entries"].items():
+        label = _short_arm_label(arm)
+        counts[label] = counts.get(label, 0) + n
     labels = " ".join(f"{arm}×{n}" if n > 1 else arm for arm, n in sorted(counts.items()))
     if labels:
         entry_part += f" ({labels})"
-    exit_part = f"{len(exits)} {'exit' if len(exits) == 1 else 'exits'} net {_money(sum(exits))}"
+    n_exits = bucket["exits"]
+    exit_part = f"{n_exits} {'exit' if n_exits == 1 else 'exits'} net {_money(bucket['net'])}"
     day_count, day_net = _meic_day_totals(conn, symbol, day, prefixes)
     return [entry_part, exit_part, f"day {day_count} trades net {_money(day_net)}"]
 
@@ -380,12 +506,21 @@ def _meic_process(
     now: float | None = None,
 ) -> dict:
     now = time.time() if now is None else now
-    pending = st.setdefault("pending_summary", {})  # symbol -> {"entries": [arm,...], "exits": [net,...]}
+    # symbol -> {"entries": {arm: n}, "exits": n, "net": x}; see _pending_bucket for the old shape.
+    pending = {sym: _pending_bucket(b) for sym, b in (st.get("pending_summary") or {}).items()}
+    st["pending_summary"] = pending
+
+    # Legacy state (before floors) kept the newest ids in order, so its oldest member marks the floor.
+    if "exit_floor_id" not in st:
+        st["exit_floor_id"] = _legacy_floor(st.get("notified_exit_ids") or [])
+    if "stop_floor_id" not in st:
+        st["stop_floor_id"] = st["exit_floor_id"]
 
     entries = _meic_new_entries(conn, st["last_entry_id"])
     for r in entries:
         if _is_summary_profile(_arm(r), summary_prefixes):
-            pending.setdefault(r["symbol"], {"entries": [], "exits": []})["entries"].append(_arm(r))
+            bucket = pending.setdefault(r["symbol"], _pending_bucket(None))
+            bucket["entries"][_arm(r)] = bucket["entries"].get(_arm(r), 0) + 1
         else:
             notifier.notify(
                 "INFO",
@@ -404,10 +539,12 @@ def _meic_process(
     # carries the trade's final P&L) rather than getting their own mid-trade notify.
     stops_notified = 0
     if "notified_stop_keys" not in st:
-        st["notified_stop_keys"] = _meic_stopped_wing_keys(conn)
+        st["notified_stop_keys"], st["stop_floor_id"] = _trim_ids(
+            _meic_stopped_wing_keys(conn, st["stop_floor_id"]), st["stop_floor_id"], _stop_key_id
+        )
     else:
         stopped = set(st["notified_stop_keys"])
-        for r in _meic_new_stops(conn):
+        for r in _meic_new_stops(conn, st["stop_floor_id"]):
             for wing, cost in (("put", r["put_stop_cost"]), ("call", r["call_stop_cost"])):
                 if cost is None:
                     continue
@@ -424,14 +561,15 @@ def _meic_process(
                     )
                 stopped.add(key)
                 stops_notified += 1
-        st["notified_stop_keys"] = list(stopped)[-_ID_CAP:]
+        st["notified_stop_keys"], st["stop_floor_id"] = _trim_ids(stopped, st["stop_floor_id"], _stop_key_id)
 
     notified = set(st.get("notified_exit_ids", []))
-    exits = _meic_new_exits(conn, notified)
+    exits = _meic_new_exits(conn, notified, st["exit_floor_id"])
     for r in exits:
         if _is_summary_profile(_arm(r), summary_prefixes):
-            net = (r["pnl"] or 0.0) - (r["fees"] or 0.0)
-            pending.setdefault(r["symbol"], {"entries": [], "exits": []})["exits"].append(net)
+            bucket = pending.setdefault(r["symbol"], _pending_bucket(None))
+            bucket["exits"] += 1
+            bucket["net"] = round(bucket["net"] + (_net("meic_ic", r) or 0.0), 2)
         else:
             notifier.notify(
                 "INFO",
@@ -441,7 +579,7 @@ def _meic_process(
                 embed=_embed_meic_exit(r),
             )
         notified.add(r["id"])
-    st["notified_exit_ids"] = sorted(notified)[-_ID_CAP:]
+    st["notified_exit_ids"], st["exit_floor_id"] = _trim_ids(notified, st["exit_floor_id"])
 
     summary_pushed = False
     last_flush = st.get("last_summary_flush")
@@ -483,11 +621,30 @@ def _all_review_ids(conn) -> list:
 
 def _earnings_seed(conn) -> dict:
     rows = conn.execute("SELECT order_id, closed_at FROM trades").fetchall()
+    reviews = _all_review_ids(conn)
     return {
-        "notified_entry_ids": [r["order_id"] for r in rows],
-        "notified_exit_ids": [r["order_id"] for r in rows if r["closed_at"] is not None],
-        "notified_review_ids": _all_review_ids(conn),
+        "notified_entry_ids": sorted(r["order_id"] for r in rows),
+        "notified_exit_ids": sorted(r["order_id"] for r in rows if r["closed_at"] is not None),
+        # Reviews are one-shot rows with a rising integer id: the newest one is the whole watermark.
+        "review_floor_id": max(reviews, default=0),
+        "notified_review_ids": [],
     }
+
+
+def _earnings_present(conn) -> tuple[set, set] | None:
+    """(every order_id, every closed order_id): what a remembered-id list is pruned to, so it is
+    bounded by the ledger and never cut short of it (a cut list replays what it forgot). None when
+    the table cannot be read, in which case the lists are kept as they are."""
+    try:
+        rows = conn.execute("SELECT order_id, closed_at FROM trades").fetchall()
+    except sqlite3.Error:
+        return None
+    return {r["order_id"] for r in rows}, {r["order_id"] for r in rows if r["closed_at"] is not None}
+
+
+def _pruned(ids: set, present: set | None) -> list:
+    """A text-keyed remembered-id list, sorted and pruned to the ids the ledger still holds."""
+    return sorted(ids if present is None else ids & present)
 
 
 def _earnings_new_entries(conn, notified_ids: set) -> list:
@@ -502,7 +659,8 @@ def _earnings_new_entries(conn, notified_ids: set) -> list:
 def _earnings_new_exits(conn, notified_ids: set) -> list:
     arm = _db.arm_column(conn, "trades")
     rows = conn.execute(
-        f"SELECT order_id, strategy, symbol, pnl, {arm} AS arm, opened_at, closed_at FROM trades "
+        f"SELECT order_id, strategy, symbol, pnl, entry_cost, exit_cost, {arm} AS arm, opened_at, closed_at "
+        "FROM trades "
         "WHERE closed_at IS NOT NULL ORDER BY closed_at"
     ).fetchall()
     return [r for r in rows if r["order_id"] not in notified_ids]
@@ -531,11 +689,16 @@ def _fmt_earnings_entry(r) -> str:
     )
 
 
+def _earnings_costs(r) -> float:
+    return (r["entry_cost"] or 0.0) + (r["exit_cost"] or 0.0)
+
+
 def _fmt_earnings_exit(r) -> str:
-    pnl = r["pnl"]
-    pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
     strat = (r["strategy"] or "spread").replace("_", " ")
-    return f"\U0001f534 Earnings paper EXIT — {r['symbol']} {strat} [{_arm(r)}], P&L {pnl_str}"
+    return (
+        f"\U0001f534 Earnings paper EXIT — {r['symbol']} {strat} [{_arm(r)}], "
+        f"P&L {_signed(_net('earnings', r))} (gross {_signed(r['pnl'])})"
+    )
 
 
 def _embed_earnings_entry(r) -> dict:
@@ -552,24 +715,26 @@ def _embed_earnings_entry(r) -> dict:
 
 
 def _embed_earnings_exit(r) -> dict:
-    pnl = r["pnl"]
-    pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
     strat = (r["strategy"] or "spread").replace("_", " ")
-    details = f"P&L {pnl_str}"
+    # Earnings' entry/exit costs are commission + pass-through + slippage: one cost figure here.
+    details = (
+        f"P&L {_signed(_net('earnings', r))} (gross {_signed(r['pnl'])}, costs ${_earnings_costs(r):.2f})"
+    )
     entered, exited = _hhmm_epoch(r["opened_at"]), _hhmm_epoch(r["closed_at"])
     if entered or exited:
         details += f" · {entered or '?'} → {exited or '?'}"
     return _embed(COLOR_EXIT, f"CLOSE · {r['symbol']} {strat}", details, footer=_arm(r))
 
 
-def _earnings_new_reviews(conn, notified_ids: set) -> list:
+def _earnings_new_reviews(conn, notified_ids: set, floor: int = 0) -> list:
     """New per-symbol entry reviews (id watermark). Guarded — the table is absent on older DBs."""
     try:
         arm = _db.arm_column(conn, "entry_reviews")
         rows = conn.execute(
             "SELECT id, scan_date, symbol, timing, price, volume, winrate, winrate_sample, "
             "iv_rv_ratio, term_structure, market_cap, expected_move, best_tier, selected, reason, "
-            f"{arm} AS arm FROM entry_reviews ORDER BY id"
+            f"{arm} AS arm FROM entry_reviews WHERE id > ? ORDER BY id",
+            (floor,),
         ).fetchall()
     except sqlite3.Error:
         return []
@@ -735,7 +900,8 @@ def _earnings_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
             embed=_embed_earnings_entry(r),
         )
         entered.add(r["order_id"])
-    st["notified_entry_ids"] = list(entered)[-_ID_CAP:]
+    present = _earnings_present(conn)
+    st["notified_entry_ids"] = _pruned(entered, present and present[0])
 
     notified = set(st.get("notified_exit_ids", []))
     exits = _earnings_new_exits(conn, notified)
@@ -748,7 +914,7 @@ def _earnings_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
             embed=_embed_earnings_exit(r),
         )
         notified.add(r["order_id"])
-    st["notified_exit_ids"] = list(notified)[-_ID_CAP:]
+    st["notified_exit_ids"] = _pruned(notified, present and present[1])
 
     # Per-symbol entry reviews: the data reviewed for each symbol during the entry scan + the
     # chosen/rejected decision, id-watermarked like entries/exits. A CHOSEN review is pushed on its
@@ -756,7 +922,10 @@ def _earnings_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     # Until 2026-09-27 every rejection was its own push: 1,054 of 1,103 review notices in two months
     # (up to 87 a day), burying the 49 that opened trades.
     reviewed = set(st.get("notified_review_ids", []))
-    reviews = _earnings_new_reviews(conn, reviewed)
+    if "review_floor_id" not in st:
+        # Before floors the list was cut in no particular order, so only an uncut one is complete.
+        st["review_floor_id"] = 0 if len(reviewed) < _ID_CAP else max(reviewed)
+    reviews = _earnings_new_reviews(conn, reviewed, st["review_floor_id"])
     rejected = []
     for r in reviews:
         key = f"trade.{name}.review.{r['id']}"
@@ -768,7 +937,7 @@ def _earnings_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
             notifier.record("INFO", key, "Earnings review", _fmt_earnings_review(r))
             rejected.append(r)
         reviewed.add(r["id"])
-    st["notified_review_ids"] = list(reviewed)[-_ID_CAP:]
+    st["notified_review_ids"], st["review_floor_id"] = _trim_ids(reviewed, st["review_floor_id"])
     summaries = review_summaries(reviews)
     for scan_date, text in summaries.items():
         notifier.notify("INFO", f"trade.{name}.review_summary.{scan_date}", "Earnings scan", text)
@@ -780,6 +949,35 @@ def _earnings_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
         "reviews_recorded": len(rejected),
         "review_summaries": len(summaries),
     }
+
+
+# --------------------------------------------------------------------------- staged text-keyed schemas
+def _position_id(r) -> str:
+    return r["position_id"]
+
+
+def _run_stages(conn, st: dict, notifier: Notifier, name: str, stages: list, rows_fn=None) -> dict:
+    """One pass over a text-keyed schema's notifiable stages. Each stage is (state key, event,
+    title, formatter, embed builder, query[, id function]); a row whose id is not yet remembered
+    under the key is pushed once and remembered.
+
+    The remembered ids are pruned to the ids the stage's own query still returns, never cut to a
+    count: a count cap forgets ids the query keeps returning, and a forgotten id is pushed again
+    (see `_trim_ids`). The list is therefore bounded by the ledger itself."""
+    counts = {}
+    for stage in stages:
+        key, event, title, fmt, embed_fn, query = stage[:6]
+        id_of = stage[6] if len(stage) > 6 else _position_id
+        all_rows = rows_fn(conn, query) if rows_fn else conn.execute(query).fetchall()
+        present = {id_of(r) for r in all_rows}
+        notified = set(st.get(key, []))
+        rows = [r for r in all_rows if id_of(r) not in notified]
+        for r in rows:
+            notifier.notify("INFO", f"trade.{name}.{event}.{id_of(r)}", title, fmt(r), embed=embed_fn(r))
+            notified.add(id_of(r))
+        st[key] = sorted(notified & present)
+        counts[f"{event}s_notified"] = len(rows)
+    return counts
 
 
 # --------------------------------------------------------------------------- flies fly_positions schema
@@ -952,7 +1150,6 @@ def _embed_flies_exit(r) -> dict:
 
 
 def _flies_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
-    counts = {}
     stages = [
         (
             "notified_entry_ids",
@@ -979,17 +1176,7 @@ def _flies_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
             "SELECT * FROM fly_positions WHERE status = 'settled'",
         ),
     ]
-    for key, event, title, fmt, embed_fn, query in stages:
-        notified = set(st.get(key, []))
-        rows = [r for r in conn.execute(query).fetchall() if r["position_id"] not in notified]
-        for r in rows:
-            notifier.notify(
-                "INFO", f"trade.{name}.{event}.{r['position_id']}", title, fmt(r), embed=embed_fn(r)
-            )
-            notified.add(r["position_id"])
-        st[key] = sorted(notified)[-_ID_CAP:]
-        counts[f"{event}s_notified"] = len(rows)
-    return counts
+    return _run_stages(conn, st, notifier, name, stages)
 
 
 # cherrypick-calendars keys on a text `position_id` and lives across a week, so a position has
@@ -1040,17 +1227,17 @@ def _embed_calendars_settlement(r) -> dict:
 
 
 def _fmt_calendars_exit(r) -> str:
-    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    net = _net("dc_week", r)
     return (
         f"\U0001f3c1 Calendars paper CLOSED — {r['symbol']} {r['structure']} {r['side']} "
-        f"{r['strike']:.0f} net ${net:+.2f} ({r['exit_reason']}) [{_arm(r)}]"
+        f"{r['strike']:.0f} net {_signed(net)} ({r['exit_reason']}) [{_arm(r)}]"
     )
 
 
 def _embed_calendars_exit(r) -> dict:
-    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    net = _net("dc_week", r)
     details = (
-        f"net ${net:+.2f} (gross ${r['gross_pnl'] or 0:+.2f}, fees ${r['fees'] or 0:.2f}) · "
+        f"net {_signed(net)} (gross {_signed(r['gross_pnl'])}, fees ${r['fees'] or 0:.2f}) · "
         f"{r['exit_reason']} · week {r['week_of']}"
     )
     title = f"CLOSED · {r['symbol']} {r['structure']} {r['side']} {r['strike']:.0f}"[:256]
@@ -1058,7 +1245,6 @@ def _embed_calendars_exit(r) -> dict:
 
 
 def _calendars_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
-    counts = {}
     stages = [
         (
             "notified_entry_ids",
@@ -1085,17 +1271,7 @@ def _calendars_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
             "SELECT * FROM dc_positions WHERE status = 'closed'",
         ),
     ]
-    for key, event, title, fmt, embed_fn, query in stages:
-        notified = set(st.get(key, []))
-        rows = [r for r in conn.execute(query).fetchall() if r["position_id"] not in notified]
-        for r in rows:
-            notifier.notify(
-                "INFO", f"trade.{name}.{event}.{r['position_id']}", title, fmt(r), embed=embed_fn(r)
-            )
-            notified.add(r["position_id"])
-        st[key] = sorted(notified)[-_ID_CAP:]
-        counts[f"{event}s_notified"] = len(rows)
-    return counts
+    return _run_stages(conn, st, notifier, name, stages)
 
 
 # cherrypick-pmcc keys on a text `position_id`. A weekly (control) position lives ~1-2 weeks; a
@@ -1234,18 +1410,18 @@ def _embed_pmcc_settlement(r) -> dict:
 
 
 def _fmt_pmcc_exit(r) -> str:
-    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    net = _net("pmcc", r)
     return (
         f"\U0001f3c1 PMCC paper CLOSED — {r['symbol']} "
-        f"{r['long_strike']:.0f}/{r['short_strike']:.0f} net ${net:+.2f} "
+        f"{r['long_strike']:.0f}/{r['short_strike']:.0f} net {_signed(net)} "
         f"({r['exit_reason']}) [{_arm(r)}]"
     )
 
 
 def _embed_pmcc_exit(r) -> dict:
-    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    net = _net("pmcc", r)
     details = (
-        f"net ${net:+.2f} (gross ${r['gross_pnl'] or 0:+.2f}, fees ${r['fees'] or 0:.2f}) · "
+        f"net {_signed(net)} (gross {_signed(r['gross_pnl'])}, fees ${r['fees'] or 0:.2f}) · "
         f"{r['exit_reason']} · entered {r['entry_session']}"
     )
     title = f"CLOSED · {r['symbol']} PMCC {r['long_strike']:.0f}/{r['short_strike']:.0f}"[:256]
@@ -1253,7 +1429,6 @@ def _embed_pmcc_exit(r) -> dict:
 
 
 def _pmcc_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
-    counts = {}
     # Keys introduced after a module's state was first seeded start from the ledger as it stands.
     for key, ids in _pmcc_new_keys(conn).items():
         st.setdefault(key, ids)
@@ -1295,15 +1470,7 @@ def _pmcc_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
             lambda r: r["position_id"],
         ),
     ]
-    for key, event, title, fmt, embed_fn, query, notif_id in stages:
-        notified = set(st.get(key, []))
-        rows = [r for r in _pmcc_rows(conn, query) if notif_id(r) not in notified]
-        for r in rows:
-            notifier.notify("INFO", f"trade.{name}.{event}.{notif_id(r)}", title, fmt(r), embed=embed_fn(r))
-            notified.add(notif_id(r))
-        st[key] = sorted(notified)[-_ID_CAP:]
-        counts[f"{event}s_notified"] = len(rows)
-    return counts
+    return _run_stages(conn, st, notifier, name, stages, rows_fn=_pmcc_rows)
 
 
 # cherrypick-curve keys on a text `position_id` and holds ~30-45 DTE with three notifiable
@@ -1350,18 +1517,18 @@ def _embed_curve_settlement(r) -> dict:
 
 
 def _fmt_curve_exit(r) -> str:
-    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    net = _net("curve_vx", r)
     return (
         f"\U0001f3c1 Curve paper CLOSED — {r['symbol']} "
-        f"{r['short_strike']:.0f}/{r['long_strike']:.0f} net ${net:+.2f} "
+        f"{r['short_strike']:.0f}/{r['long_strike']:.0f} net {_signed(net)} "
         f"({r['exit_reason']}) [{_arm(r)}]"
     )
 
 
 def _embed_curve_exit(r) -> dict:
-    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    net = _net("curve_vx", r)
     details = (
-        f"net ${net:+.2f} (gross ${r['gross_pnl'] or 0:+.2f}, fees ${r['fees'] or 0:.2f}) · "
+        f"net {_signed(net)} (gross {_signed(r['gross_pnl'])}, fees ${r['fees'] or 0:.2f}) · "
         f"{r['exit_reason']} · entered {r['entry_session']}"
     )
     title = f"CLOSED · {r['symbol']} curve {r['short_strike']:.0f}/{r['long_strike']:.0f}"[:256]
@@ -1369,7 +1536,6 @@ def _embed_curve_exit(r) -> dict:
 
 
 def _curve_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
-    counts = {}
     stages = [
         (
             "notified_entry_ids",
@@ -1396,17 +1562,7 @@ def _curve_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
             "SELECT * FROM curve_positions WHERE status = 'closed'",
         ),
     ]
-    for key, event, title, fmt, embed_fn, query in stages:
-        notified = set(st.get(key, []))
-        rows = [r for r in conn.execute(query).fetchall() if r["position_id"] not in notified]
-        for r in rows:
-            notifier.notify(
-                "INFO", f"trade.{name}.{event}.{r['position_id']}", title, fmt(r), embed=embed_fn(r)
-            )
-            notified.add(r["position_id"])
-        st[key] = sorted(notified)[-_ID_CAP:]
-        counts[f"{event}s_notified"] = len(rows)
-    return counts
+    return _run_stages(conn, st, notifier, name, stages)
 
 
 # cherrypick-contango keys on a text `position_id`, one per holding stint, with two notifiable
@@ -1437,20 +1593,19 @@ def _embed_contango_entry(r) -> dict:
 def _fmt_contango_exit(r) -> str:
     return (
         f"🏁 Contango paper SWITCH OUT — sold {r['shares']} {r['symbol']} @ {r['exit_mid']:.2f}, "
-        f"net ${r['net_pnl'] or 0:+.2f} ({r['exit_reason']}) [{_arm(r)}]"
+        f"net {_signed(_net('contango_etf', r))} ({r['exit_reason']}) [{_arm(r)}]"
     )
 
 
 def _embed_contango_exit(r) -> dict:
     details = (
-        f"net ${r['net_pnl'] or 0:+.2f} (gross ${r['gross_pnl'] or 0:+.2f}, fees ${r['fees'] or 0:.2f}, "
-        f"slippage ${r['slippage'] or 0:.2f}) · held since {r['entry_session']}"
+        f"net {_signed(_net('contango_etf', r))} (gross {_signed(r['gross_pnl'])}, "
+        f"fees ${r['fees'] or 0:.2f}, slippage ${r['slippage'] or 0:.2f}) · held since {r['entry_session']}"
     )
     return _embed(COLOR_EXIT, f"SWITCH OUT · {r['symbol']} contango"[:256], details, footer=_arm(r))
 
 
 def _contango_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
-    counts = {}
     stages = [
         (
             "notified_exit_ids",
@@ -1469,17 +1624,7 @@ def _contango_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
             "SELECT * FROM contango_positions",
         ),
     ]
-    for key, event, title, fmt, embed_fn, query in stages:
-        notified = set(st.get(key, []))
-        rows = [r for r in conn.execute(query).fetchall() if r["position_id"] not in notified]
-        for r in rows:
-            notifier.notify(
-                "INFO", f"trade.{name}.{event}.{r['position_id']}", title, fmt(r), embed=embed_fn(r)
-            )
-            notified.add(r["position_id"])
-        st[key] = sorted(notified)[-_ID_CAP:]
-        counts[f"{event}s_notified"] = len(rows)
-    return counts
+    return _run_stages(conn, st, notifier, name, stages)
 
 
 # cherrypick-bwb keys on a text `position_id` and ladders daily like pmcc, with four notifiable
@@ -1546,17 +1691,17 @@ def _embed_bwb_settlement(r) -> dict:
 
 
 def _fmt_bwb_exit(r) -> str:
-    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    net = _net("bwb_132", r)
     return (
         f"\U0001f3c1 BWB paper CLOSED — {r['symbol']} body {r['body_strike']:.0f} "
-        f"net ${net:+.2f} ({r['exit_reason']}) [{_arm(r)}]"
+        f"net {_signed(net)} ({r['exit_reason']}) [{_arm(r)}]"
     )
 
 
 def _embed_bwb_exit(r) -> dict:
-    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    net = _net("bwb_132", r)
     details = (
-        f"net ${net:+.2f} (gross ${r['gross_pnl'] or 0:+.2f}, fees ${r['fees'] or 0:.2f}) · "
+        f"net {_signed(net)} (gross {_signed(r['gross_pnl'])}, fees ${r['fees'] or 0:.2f}) · "
         f"{r['exit_reason']} · entered {r['entry_session']}"
     )
     title = f"CLOSED · {r['symbol']} BWB {r['body_strike']:.0f}"[:256]
@@ -1564,7 +1709,6 @@ def _embed_bwb_exit(r) -> dict:
 
 
 def _bwb_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
-    counts = {}
     stages = [
         (
             "notified_entry_ids",
@@ -1599,17 +1743,7 @@ def _bwb_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
             "SELECT * FROM bwb_positions WHERE status = 'closed'",
         ),
     ]
-    for key, event, title, fmt, embed_fn, query in stages:
-        notified = set(st.get(key, []))
-        rows = [r for r in conn.execute(query).fetchall() if r["position_id"] not in notified]
-        for r in rows:
-            notifier.notify(
-                "INFO", f"trade.{name}.{event}.{r['position_id']}", title, fmt(r), embed=embed_fn(r)
-            )
-            notified.add(r["position_id"])
-        st[key] = sorted(notified)[-_ID_CAP:]
-        counts[f"{event}s_notified"] = len(rows)
-    return counts
+    return _run_stages(conn, st, notifier, name, stages)
 
 
 # Registry: paper.trade_schema -> (seed_fn, process_fn). Schemas not listed here skip cleanly.
@@ -1710,28 +1844,33 @@ def run(cfg: dict | None = None, *, dry_run: bool = False) -> dict:
         summary_interval_minutes = summary_cfg.get("interval_minutes", 15)
 
         state = json.loads(json.dumps(_load_state())) if dry_run else _load_state()
+        loaded = _dumps(state)
         summary: dict[str, Any] = {}
+        today = timeutil.et_from_epoch(time.time()).date()
+        wanted: set[str] = set()  # state keys a module is still configured to notify under
 
         for name, mcfg in cfgmod.enabled_modules(cfg).items():
             paper = mcfg.get("paper", {})
             if not paper.get("notify_trades"):
                 continue
-            db_path = cfgmod.paper_db_path(mcfg, name)
-            if not db_path.exists():
-                continue
             schema = schemas.canonical(paper.get("trade_schema", "meic_ic"))
             adapter = _SCHEMAS.get(schema)
             if adapter is None:  # unknown schema — skip cleanly
+                continue
+            wanted.add(name)
+            db_path = cfgmod.paper_db_path(mcfg, name)
+            if not db_path.exists():
                 continue
             seed_fn, process_fn = adapter
 
             conn = _connect_ro(db_path)
             try:
                 st = state.get(name)
-                if st is None:  # first activation — seed, don't backfill
-                    state[name] = seed_fn(conn)
-                    summary[name] = {"seeded": True}
+                if st is None or _stale(st, today):  # first or renewed activation — seed, don't backfill
+                    summary[name] = {"seeded": True, **({"reseeded": "stale"} if st is not None else {})}
+                    state[name] = {**seed_fn(conn), "processed_on": today.isoformat()}
                     continue
+                st["processed_on"] = today.isoformat()
                 if schema == "meic_ic":
                     kwargs = {
                         "summary_prefixes": summary_prefixes,
@@ -1751,26 +1890,28 @@ def run(cfg: dict | None = None, *, dry_run: bool = False) -> dict:
             live = mcfg.get("live") or {}
             if not live.get("notify_trades"):
                 continue
-            db_path = cfgmod.live_db_path(mcfg, name)
-            if db_path is None or not db_path.exists():
-                continue
             schema = schemas.canonical(mcfg.get("paper", {}).get("trade_schema", "meic_ic"))
             adapter = _SCHEMAS.get(schema)
             if adapter is None:
+                continue
+            key = f"{name}:live"
+            wanted.add(key)
+            db_path = cfgmod.live_db_path(mcfg, name)
+            if db_path is None or not db_path.exists():
                 continue
             seed_fn, process_fn = adapter
             live_channels = sorted(set(channels) | {"desktop"})
             live_notifier = _LiveNotifier(
                 recorder if recorder is not None else Notifier({**notify_cfg, "channels": live_channels})
             )
-            key = f"{name}:live"
             conn = _connect_ro(db_path)
             try:
                 st = state.get(key)
-                if st is None:  # first activation — seed, don't backfill
-                    state[key] = seed_fn(conn)
-                    summary[key] = {"seeded": True}
+                if st is None or _stale(st, today):  # first or renewed activation — seed, don't backfill
+                    summary[key] = {"seeded": True, **({"reseeded": "stale"} if st is not None else {})}
+                    state[key] = {**seed_fn(conn), "processed_on": today.isoformat()}
                     continue
+                st["processed_on"] = today.isoformat()
                 if schema == "meic_ic":
                     kwargs = {"summary_prefixes": (), "summary_interval_minutes": summary_interval_minutes}
                 else:
@@ -1781,7 +1922,15 @@ def run(cfg: dict | None = None, *, dry_run: bool = False) -> dict:
 
         if recorder is not None:
             return {"ok": True, "dry_run": True, "modules": summary, "would_send": recorder.sent}
-        _save_state(state)
-        return {"ok": True, "modules": summary}
+        # A module no longer notified keeps no state: it was dead weight rewritten every pass (MEIC's
+        # was 3.9 MB of a 7.3 MB file), and switching the module back on seeds it afresh.
+        pruned = sorted(k for k in state if k not in wanted)
+        for k in pruned:
+            del state[k]
+        written = _save_state(state, unchanged_from=loaded)
+        out: dict[str, Any] = {"ok": True, "modules": summary, "written": written}
+        if pruned:
+            out["pruned"] = pruned
+        return out
     finally:
         _release_lock()

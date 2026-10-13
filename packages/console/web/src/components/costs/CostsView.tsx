@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ArmMoneyRow, EntryOutcomes } from "@console/shared";
+import { feeDragPct, type ArmMoneyRow, type EntryOutcomes } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtPct } from "../DataTable";
 import { StatTile } from "../grid/GridCard";
 import { fmtMoney } from "../../lib/format";
@@ -75,7 +75,7 @@ export function CostsView({
   return (
     <>
       <div className="grid-12">
-        <StatTile label="fee drag" value={cycles === 0 ? null : fmtPct(share(fees, premium), 1)} tone="dim" foot="trading fees ÷ premium collected, closed positions" />
+        <StatTile label="fee drag" value={cycles === 0 ? null : fmtPct(feeDragPct(fees, premium), 1)} tone="dim" foot="trading fees ÷ premium collected, closed positions" />
         {slippageInGross ? (
           <StatTile
             label="slippage ÷ premium"
@@ -117,7 +117,7 @@ export function CostsView({
             <td>
               <PnlCell v={a.netPnl} />
             </td>
-            <td>{fmtPct(share(a.fees, a.premium), 1)}</td>
+            <td>{fmtPct(feeDragPct(a.fees, a.premium), 1)}</td>
             {slippageInGross ? (
               <>
                 <td className="muted">{fmtMoney(a.slippage)}</td>

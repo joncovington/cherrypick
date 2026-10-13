@@ -1,3 +1,4 @@
+import type { TradingMode } from "@console/shared";
 import { DataCard } from "./DataTable";
 import { useDecisions, type DecisionsModule } from "../lib/api";
 
@@ -10,8 +11,8 @@ import { useDecisions, type DecisionsModule } from "../lib/api";
  * rows (accepted) surface as a plain chip; every refusal keeps its own reason text so "why didn't
  * this arm trade today" never comes down to a generic "no".
  */
-export function DecisionsCard({ module }: { module: DecisionsModule }) {
-  const { data, isLoading, isError, dataUpdatedAt } = useDecisions(module);
+export function DecisionsCard({ module, mode = "paper" }: { module: DecisionsModule; mode?: TradingMode }) {
+  const { data, isLoading, isError, dataUpdatedAt } = useDecisions(module, mode);
   return (
     <DataCard
       title={`Entry decisions${data?.tradeDate !== null && data?.tradeDate !== undefined ? ` (${data.tradeDate})` : ""}`}
@@ -20,7 +21,7 @@ export function DecisionsCard({ module }: { module: DecisionsModule }) {
       loading={isLoading}
       isError={isError}
       rowCount={data?.rows.length ?? 0}
-      empty="no decisions recorded this session"
+      empty={data?.mode === "live" ? "no live decisions recorded yet" : "no decisions recorded this session"}
       updatedAt={dataUpdatedAt}
     >
       {data?.rows.map((r, i) => (

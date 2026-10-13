@@ -36,7 +36,7 @@ around it:
 
 from __future__ import annotations
 
-from datetime import datetime
+from cherrypick.core import streamrequests as _streamrequests
 
 from cherrypick.flies import clock
 
@@ -53,27 +53,7 @@ def recent_miss_occurrences(conn, trade_date: str, symbol: str) -> int:
     `symbol` today, across every arm/mode. MAX rather than SUM: a shared window gap surfaces in
     multiple arms/modes at once, and summing would inflate urgency for what is really one physical
     cause."""
-    marks = ",".join("?" for _ in MISS_REASONS)
-    row = conn.execute(
-        "SELECT MAX(occurrences) AS n FROM fly_decisions "
-        f"WHERE trade_date = ? AND symbol = ? AND reason IN ({marks})",
-        (trade_date, symbol, *MISS_REASONS),
-    ).fetchone()
-    return int(row["n"]) if row and row["n"] is not None else 0
-
-
-def _state(conn, symbol: str) -> dict:
-    row = conn.execute("SELECT * FROM fly_stream_window WHERE symbol = ?", (symbol,)).fetchone()
-    if row:
-        return dict(row)
-    return {
-        "symbol": symbol,
-        "width": None,
-        "last_escalated_occurrences": 0,
-        "last_checked_occurrences": 0,
-        "last_escalated_at": None,
-        "last_miss_at": None,
-    }
+    return _streamrequests.window_miss_occurrences(conn, "fly_decisions", MISS_REASONS, trade_date, symbol)
 
 
 def hints_for_symbols(
@@ -111,52 +91,15 @@ def evaluate(
     `base_width`) once `decay_after_minutes` have passed with no NEW miss. Persists state to
     `fly_stream_window` and returns the width to request.
     """
-    now = now or clock.now_iso()
-    state = _state(conn, symbol)
-    width = max(state["width"] or base_width, base_width)  # a raised config default still floors it
-
-    occurrences = recent_miss_occurrences(conn, trade_date, symbol)
-    last_checked = state["last_checked_occurrences"] or 0
-    last_escalated = state["last_escalated_occurrences"] or 0
-    last_miss_at = state["last_miss_at"]
-    last_escalated_at = state["last_escalated_at"]
-
-    is_new_miss = occurrences > last_checked
-    if is_new_miss:
-        last_miss_at = now
-
-    delta = occurrences - last_escalated
-    if delta >= miss_threshold:
-        # Multi-step in one call for a burst that crosses several threshold multiples at once (e.g.
-        # a quiet symbol suddenly missing dozens of times before the next tick), not just one
-        # increment regardless of how far past the threshold -- leftover occurrences short of the
-        # next full threshold multiple stay un-escalated for a future tick.
-        steps = delta // miss_threshold
-        width = min(width + steps * increment, max_width)
-        last_escalated = last_escalated + steps * miss_threshold
-        last_escalated_at = now
-
-    if width > base_width and last_miss_at:
-        try:
-            quiet_minutes = (
-                datetime.fromisoformat(now) - datetime.fromisoformat(last_miss_at)
-            ).total_seconds() / 60
-        except ValueError:
-            quiet_minutes = 0.0
-        if quiet_minutes >= decay_after_minutes:
-            width = max(base_width, width - increment)
-            last_miss_at = now  # reset the clock so decay steps down gradually, not all at once
-
-    conn.execute(
-        "INSERT INTO fly_stream_window "
-        "(symbol, width, last_escalated_occurrences, last_checked_occurrences, "
-        "last_escalated_at, last_miss_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(symbol) DO UPDATE SET "
-        "width=excluded.width, last_escalated_occurrences=excluded.last_escalated_occurrences, "
-        "last_checked_occurrences=excluded.last_checked_occurrences, "
-        "last_escalated_at=excluded.last_escalated_at, last_miss_at=excluded.last_miss_at, "
-        "updated_at=excluded.updated_at",
-        (symbol, width, last_escalated, occurrences, last_escalated_at, last_miss_at, now),
+    return _streamrequests.escalate_window(
+        conn,
+        symbol,
+        state_table="fly_stream_window",
+        occurrences=recent_miss_occurrences(conn, trade_date, symbol),
+        base_width=base_width,
+        increment=increment,
+        max_width=max_width,
+        miss_threshold=miss_threshold,
+        decay_after_minutes=decay_after_minutes,
+        now=now or clock.now_iso(),
     )
-    conn.commit()
-    return width

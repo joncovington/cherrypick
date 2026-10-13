@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -321,6 +322,69 @@ def experiment_for(decision: dict[str, Any] | None, book: str | None) -> str | N
         if tag and (book == tag or str(book).startswith(tag + ":")):
             return entry.get("experiment_id")
     return None
+
+
+def base_for(
+    arm: str,
+    *,
+    decision: dict[str, Any] | None = None,
+    is_base_arm: Callable[[str], bool] = lambda tail: False,
+    advice_config: dict[str, Any] | None = None,
+) -> str:
+    """The arm whose rules an advised twin runs under. A base arm is its own base.
+
+    **An advised tag no longer carries its base (2026-09-17).** Each advisor experiment gets its own
+    arm, `advised:<experiment name>`, and the base it shadows is named by the session decision's
+    ADMITTED experiment entry rather than by the tag. Resolution, in order: that entry when one
+    matches; the tag's last segment when `is_base_arm` says it names one (the legacy
+    `advised:control` every row before that date carries); else the configured base under any
+    accepted spelling (`advice_config`, default `control`) -- an operator who renames the key must
+    not silently get "control", a wrong A/B that still reads as a valid one.
+
+    `is_base_arm` is called only for an advised arm with no matching entry, so a module's registry
+    read (which may warn) happens exactly when it used to. bwb, curve and pmcc resolve through this;
+    calendars keeps its own (the `friday:path` rule), and flies/meic resolve tags from an EARLIER
+    decision today, where a rejected entry still names the base, so they scan every entry."""
+    if not is_advised(arm):
+        return arm
+    for entry in advised_books(decision):
+        tag = entry.get("tag")
+        if tag and (arm == tag or arm.startswith(tag + ":")) and entry.get("base"):
+            return str(entry["base"])
+    tail = arm.split(":", 1)[1]
+    if is_base_arm(tail):
+        return tail
+    return str(_cfg.first_present(advice_config or {}, *_cfg.BASE_ARM_KEYS) or "control")
+
+
+def effective_params(
+    position: dict[str, Any],
+    *,
+    base_book: Callable[[str], str],
+    base_params: Callable[[str], dict[str, Any]],
+) -> dict[str, Any]:
+    """The params governing one position: its base arm's params, with the row's frozen
+    `advice_params` overlaid for an advised arm. An unreadable stamp is the base's params, never a
+    guess.
+
+    The base is the row's own `advice_base` stamp first (2026-09-17: an advised twin of a
+    non-default base is managed under THAT base after the session's decision file is gone), else
+    `base_book(arm)`. The answer rides on the params as `base_book` so a verdict never re-derives
+    it from the tag. `base_params(base)` is the module's defaults merged with that arm's config."""
+    arm = position.get("arm") or "control"
+    stamped = position.get("advice_base")
+    base = str(stamped) if stamped else base_book(arm)
+    params = dict(base_params(base))
+    params["arm"] = arm
+    params["base_book"] = base
+    raw = position.get("advice_params")
+    if arm.startswith(ADVISED_PREFIX) and raw:
+        try:
+            overlay = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except (TypeError, ValueError):
+            overlay = {}
+        params.update(overlay)
+    return params
 
 
 def stamp_for(book: str | None, experiment: Any) -> str | None:
