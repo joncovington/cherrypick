@@ -43,6 +43,7 @@ function fakeConfig(dataEpochDate: string | null): ConsoleConfig {
       pmccDir: path.join(data, "pmcc"),
       curveDir: path.join(data, "curve"),
       bwbDir: path.join(data, "bwb"),
+      contangoDir: path.join(data, "contango"),
       gexDir: "",
       reviewDir: "",
       overviewDir: "",
@@ -97,6 +98,7 @@ describe("performance db path resolution", () => {
     expect(MODULE_SCHEMA.pmcc).toBe("pmcc");
     expect(MODULE_SCHEMA.curve).toBe("curve_vx");
     expect(MODULE_SCHEMA.bwb).toBe("bwb_132");
+    expect(MODULE_SCHEMA.contango).toBe("contango_etf");
   });
 });
 

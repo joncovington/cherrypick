@@ -54,7 +54,7 @@ import {
 } from "../services/pmccTrackerBridge.js";
 import { readCurve, readCurveHistory, readCurveMeta, resolveCurveSession } from "../readers/curve.js";
 import { readContangoMetrics, readCurveEquity, readPmccEquity } from "../services/navBridge.js";
-import { readContango } from "../readers/contango.js";
+import { readContango, readContangoHistory } from "../readers/contango.js";
 import path from "node:path";
 import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
 import { readCalendars, readCalendarsWeek, readCalendarsWeeks } from "../readers/calendars.js";
@@ -408,6 +408,11 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/curve/equity", async () => readCurveEquity(path.join(config.paths.curveDir, "paper_trades.db")));
   // contango (the VIX/VIX3M switch held in shares). Paper-only, no `mode`.
   app.get("/api/contango", async () => readContango(config));
+  app.get("/api/contango/history", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const arm = typeof q["arm"] === "string" && q["arm"] !== "" && q["arm"].length <= 40 ? q["arm"] : null;
+    return readContangoHistory(config, { arm, range: parseDateRange(q) });
+  });
   app.get("/api/contango/decisions", async () => readDecisions(config, "contango", null));
   // contango's arms, buy-and-hold and expected path (`contango metrics`, core.metrics.nav).
   app.get("/api/contango/metrics", async () =>

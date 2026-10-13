@@ -15,6 +15,7 @@ export const PERFORMANCE_MODULE_SCHEMA = {
   pmcc: "pmcc",
   curve: "curve_vx",
   bwb: "bwb_132",
+  contango: "contango_etf",
 } as const;
 
 export type PerformanceModuleId = keyof typeof PERFORMANCE_MODULE_SCHEMA;

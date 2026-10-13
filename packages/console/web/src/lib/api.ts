@@ -4,6 +4,7 @@ import type {
   ArmCostsPayload,
   EquityPayload,
   ContangoMetrics,
+  ContangoHistory,
   ContangoPayload,
   CurveEquity,
   OverviewPayload,
@@ -943,6 +944,19 @@ export function useContango() {
     queryKey: ["contango"],
     queryFn: () => getJson<ContangoPayload>("/api/contango"),
     refetchInterval: 30_000,
+  });
+}
+
+/** contango's closed stints over the date range (by exit session), with totals over all of them. */
+export function useContangoHistory(filter: { arm: string | null; from: string | null; to: string | null }) {
+  const params = new URLSearchParams();
+  if (filter.arm !== null) params.set("arm", filter.arm);
+  rangeParams(params, filter);
+  return useQuery<ContangoHistory>({
+    queryKey: ["contango-history", filter],
+    queryFn: () => getJson<ContangoHistory>(`/api/contango/history?${params.toString()}`),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
   });
 }
 
