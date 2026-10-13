@@ -42,6 +42,7 @@ lines at the top saying what has shipped; once a plan has fully landed it moves 
 | [metrics-plan.md](metrics-plan.md) | Expanding the calibration metrics (expectancy, profit factor, Sortino, per-session Sharpe, the Probabilistic Sharpe Ratio, excursions) — what is computed today and what is still a gap. |
 | [vxm-plan.md](vxm-plan.md) | The contango switch in Mini VIX futures: the replay (1× notional is not survivable, ½× earns less than SVXY), a design as a second contango arm, the prerequisites to measure first, and the decisions it waits on. Not built. |
 | [regime-recorder-plan.md](regime-recorder-plan.md) | The market-regime recorder in the gex package: which readings are recorded each minute, the entitlement probe that froze the list, and what is still open. |
+| [quote-history-replay-plan.md](quote-history-replay-plan.md) | Replaying rules a module never ran against the gex recorder's chain quotes (recorded every ~15 s from 2026-10-13): the flies replay and its validation against paper and live, then MEIC's (an uncensored stop curve, gap-through stop fills, profit-side exits, untried entry variants). Recording built; replays not yet. |
 | [streamer-subscription-budget.md](streamer-subscription-budget.md) | The 2026-08-24 subscription-rate incident in the streamer, and the fixes, each marked built or open. |
 
 ## Module docs (kept inside each module — the source of truth for that engine)
