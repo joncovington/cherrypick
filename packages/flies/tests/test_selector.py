@@ -35,13 +35,19 @@ def conn(tmp_path):
     return dbmod.connect(str(tmp_path / "paper_trades.db"))
 
 
-def stats(sessions=10, net=10.0, worst=-50.0):
+def stats(sessions=10, net=10.0, worst=-50.0, interval="clear"):
+    """A cell's stats. `interval` "clear" puts the session-level interval wholly on the side of its
+    net (what a v2 skip or departure needs); pass a pair to make it straddle zero."""
+    if interval == "clear":
+        total = net * sessions * 3
+        interval = sorted([total * 0.5, total * 1.5])
     return {
         "sessions": sessions,
         "entries": sessions * 3,
         "net_per_entry": net,
         "completion_rate": 0.8,
         "worst_session": worst,
+        "interval": interval,
     }
 
 
@@ -143,10 +149,9 @@ def test_a_merged_candidate_is_scored_strictest_first():
         overall={"vol-floor": stats(net=9.0)},
     )
     s = selector.score(merged, regime, thin)
-    assert (s["evidence"], s["shrunk"], s["net_per_entry"]) == ("control", False, -5.0)
-    # Nobody has a cell: the overall figure, flagged shrunk.
-    s = selector.score(merged, regime, model(overall={"vol-floor": stats(net=9.0)}))
-    assert (s["evidence"], s["shrunk"]) == ("vol-floor", True)
+    assert (s["evidence"], s["net_per_entry"]) == ("control", -5.0)
+    # Nobody has a cell: ineligible. An all-regime average is never evidence (v2).
+    assert not selector.score(merged, regime, model(overall={"vol-floor": stats(net=9.0)}))["eligible"]
     assert not selector.score(merged, regime, model())["eligible"]
 
 
@@ -171,13 +176,35 @@ def test_choose_departs_from_control_only_on_evidence():
     assert (selector.label(choice), why) == ("control+vol-floor", "thin_default")
 
 
-def test_choose_skips_only_on_the_defaults_own_negative_cell():
+def test_a_departure_needs_a_clear_cell_not_a_good_mean_or_a_good_average():
+    """Shown to fail under v1: a positive mean whose interval straddles zero departed, and so did a
+    source with no cell at all on its all-regime average."""
+    unclear = model(
+        cells={
+            CELL: {"vol-floor": stats(net=1.0), "debit-first-atm": stats(net=12.0, interval=[-200.0, 900.0])}
+        }
+    )
+    choice, why = selector.choose(_scored(unclear), unclear)
+    assert (selector.label(choice), why) == ("control+vol-floor", "default")
+    average_only = model(
+        cells={CELL: {"vol-floor": stats(net=1.0)}}, overall={"debit-first-atm": stats(net=50.0)}
+    )
+    choice, why = selector.choose(_scored(average_only), average_only)
+    assert (selector.label(choice), why) == ("control+vol-floor", "default")
+
+
+def test_choose_skips_only_on_the_defaults_own_clearly_negative_cell():
     m = model(cells={CELL: {"vol-floor": stats(net=-3.0)}})
     assert selector.choose(_scored(m), m) == (None, "default_cell_negative")
-    # A negative OVERALL figure (shrunk) is not enough to skip.
+    # Negative but not clear -- the 10-13 model's normal|flat, -$8.51 an entry over five sessions --
+    # keeps the default and says so. Shown to fail under v1, which skipped it.
+    m = model(cells={CELL: {"vol-floor": stats(sessions=5, net=-8.51, interval=[-420.0, 260.0])}})
+    choice, why = selector.choose(_scored(m), m)
+    assert (selector.label(choice), why) == ("control+vol-floor", "default_negative_unclear")
+    # A negative all-regime average is not a cell, so nothing is known here: the default, thin.
     m = model(overall={"vol-floor": stats(net=-3.0)})
     choice, why = selector.choose(_scored(m), m)
-    assert (selector.label(choice), why) == ("control+vol-floor", "default")
+    assert (selector.label(choice), why) == ("control+vol-floor", "thin_default")
 
 
 # --------------------------------------------------------------------------- completion follows the position
@@ -197,7 +224,7 @@ def test_a_selector_debit_first_position_completes_as_debit_first_atm_would(conn
         bookmod.settle_book(conn, "2026-07-20", arm, "SPX", 6002.0, cfg)
     sel = dbmod.book_positions(conn, bookmod.book_id_for("2026-07-20", "selector", "SPX"))
     assert [r["selected_from"] for r in sel] == ["debit-first-atm"]
-    assert sel[0]["selector_model_id"] == "selector-2026-07-20-v1"
+    assert sel[0]["selector_model_id"] == f"selector-2026-07-20-v{selector.PROCEDURE_VERSION}"
     assert _book(conn, "selector") == _book(conn, "debit-first-atm")
 
 
@@ -230,6 +257,30 @@ def test_fit_is_truncation_invariant():
     assert base["overall"]["control"]["sessions"] == 2
     assert base["overall"]["control"]["net_per_entry"] == -75.0
     assert base["cells"][CELL]["control"]["worst_session"] == -200.0
+
+
+def _cell_rows(nets):
+    return [{**ROWS[0], "trade_date": f"2026-09-{i + 1:02d}", "pnl": p} for i, p in enumerate(nets)]
+
+
+def test_fit_stamps_each_cell_with_its_session_interval():
+    """What v2's skip and departure ask of a cell: a mixed cell straddles zero, a cell that lost
+    every session sits below it, and the fit is reproducible (a seeded bootstrap)."""
+    mixed = selector.fit(
+        _cell_rows([120.0, -300.0, 90.0, -150.0, 95.0]), through="2026-10-01", sources=SOURCES
+    )
+    lo, hi = mixed["cells"][CELL]["control"]["interval"]
+    assert lo < 0 < hi
+    losing = selector.fit(
+        _cell_rows([-60.0, -80.0, -40.0, -90.0, -70.0]), through="2026-10-01", sources=SOURCES
+    )
+    assert losing["cells"][CELL]["control"]["interval"][1] < 0
+    again = selector.fit(
+        _cell_rows([120.0, -300.0, 90.0, -150.0, 95.0]), through="2026-10-01", sources=SOURCES
+    )
+    assert again == mixed
+    two = selector.fit(_cell_rows([-60.0, -80.0]), through="2026-10-01", sources=SOURCES)
+    assert two["cells"][CELL]["control"]["interval"] is None
 
 
 def test_fit_never_pools_across_an_arms_era_start():
@@ -308,7 +359,7 @@ def test_a_declared_but_disabled_selector_is_still_fitted(tmp_path, monkeypatch,
         "selector": {"enabled": False, "entry_modes": [], "selector": {"sources": ["control"]}},
     }
     rc, out = _run_fit(tmp_path, monkeypatch, capsys, arms, "--write", "--session", "2026-10-19")
-    assert rc == 0 and out["model_id"] == "selector-2026-10-19-v1"
+    assert rc == 0 and out["model_id"] == f"selector-2026-10-19-v{selector.PROCEDURE_VERSION}"
     assert (tmp_path / "selector_model-2026-10-19.json").exists()
 
 
