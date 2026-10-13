@@ -164,7 +164,11 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
   scans every package for a `dry_run=False` outside the seam.
 - **The live loop records fills only on broker confirmation.** An entry is saved `status='pending'`;
   `_confirm_fills` at the top of each tick flips it to `open` at the ACTUAL net credit
-  (`fill_confirmed_at`), or to `cancelled` with zero P&L if it dies unfilled (freeing its slot). A
+  (`fill_confirmed_at`), or to `cancelled` with zero P&L if it dies unfilled (freeing its slot).
+  `put_credit`/`call_credit` follow the fill (`entry_fill_credits`, 2026-10-12): each side from the
+  broker's per-leg fills when all four legs are reported and sum to no less than the limit, else the
+  booked fill split in the quote-time modelled ratio; `side_credit_source` says which. Stop and
+  expiry P&L are charged per side, so before this a live row's sides did not add to its net. A
   pending row holds its slot but is not managed for exits. A close stashes its decision on the row
   (`pending_exit_json`, `{side}_stop_fill_status='pending'`), and the shared exit accounting
   (`paper._apply_exit_decision`) runs only on confirmation, at the actual price. A close still working

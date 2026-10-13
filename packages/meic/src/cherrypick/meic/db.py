@@ -349,6 +349,13 @@ _ADDED_TRADE_COLUMNS = {
     # actual fill), so the column means the same thing on a live row as on a paper row: dollars
     # conceded to the spread on entry. Paper rows leave it NULL.
     "entry_mid_at_submit": "REAL",
+    # Where a LIVE row's `put_credit`/`call_credit` came from once the entry filled (2026-10-12):
+    # 'broker_legs' -- each side's own leg fills, as the broker reported them; 'proportional' -- the
+    # whole-IC fill split in the ratio of the credits modelled at quote time (the fill carried no
+    # usable per-leg prices). Before this the sides stayed at the quote-time model while
+    # `net_credit` took the fill, so a live stop or expiry was charged against credits nobody
+    # received. NULL on paper rows (modelled by definition) and on live rows from before.
+    "side_credit_source": "TEXT",
     "dollar_multiplier": "REAL DEFAULT 100",
     # `risk_profile` until 2026-09-24. Only ever ADDED to a ledger that has neither name -- one that
     # still says `risk_profile` is refused by `_refuse_pre_rename` before this list is read.
@@ -1040,6 +1047,12 @@ _UPDATABLE_TRADE_FIELDS = (
     # Live fill confirmation (2026-09-17): the ACTUAL net credit once the broker confirms the
     # entry, and the per-side stop-order fill status.
     "net_credit",
+    # ...and the per-side credits that fill splits into, with where the split came from
+    # (2026-10-12, `live_loop.entry_fill_credits`).
+    "put_credit",
+    "call_credit",
+    "put_credit_fraction",
+    "side_credit_source",
     "put_stop_fill_status",
     "call_stop_fill_status",
     "pending_exit_json",
