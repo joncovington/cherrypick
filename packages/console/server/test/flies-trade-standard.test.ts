@@ -211,3 +211,28 @@ describe("flies' History summaries follow the date range", () => {
     expect(outside.byArm).toEqual([]);
   });
 });
+
+describe("flies' fee drag", () => {
+  // Held positions: p1 credit 240, fees 40 of which 10 settlement; p2 a debit (no premium), fees 5,
+  // settlement 0; p3 credit 100, fees 5, settlement never recorded (so the 5 stays in fees).
+  // Trading fees 30 + 5 + 5 = 40 over premium 340. The old figure was the fee total over gross P&L,
+  // 50 / 160 = 31.25%.
+  const history = () => readFliesHistory(config, "paper", { arm: null, date: null, symbol: null, era: "ALL" });
+
+  it("is trading fees, settlement excluded, over the premium collected", () => {
+    const [arm] = history().feeDrag;
+    expect(arm?.premium).toBe(340);
+    expect(arm?.fees).toBe(40);
+    expect(arm?.feeDragPct).toBeCloseTo((40 / 340) * 100, 6);
+  });
+
+  it("reads settlement n/r when any trade behind it never recorded the split", () => {
+    expect(history().feeDrag[0]?.settlementFees).toBeNull();
+  });
+
+  it("is the same summary the performance and live tiles read, so every arm row carries it", () => {
+    // `summarize` serves the History tables, the performance tile and the live page's tile alike.
+    for (const r of history().byArm) expect(r.feeDragPct).toBeCloseTo((r.fees / r.premium) * 100, 6);
+  });
+});
+

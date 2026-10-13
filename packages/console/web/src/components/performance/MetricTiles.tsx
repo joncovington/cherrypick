@@ -78,13 +78,15 @@ export function MetricTiles({ reading, peakRisk }: { reading: Record<string, unk
 
   // Twelve tiles, so TileGrid's 2/3/4/6 columns always come out even. The first six are edge, the
   // second six shape and risk; the per-session pair sits beside the per-trade Sharpe it corrects.
+  // Win rate and profit factor carry no tone: green above 50% or above 1.0 would be a verdict
+  // threshold chosen here (a 40% win rate can be the design), and a tone comes only from a sign.
   return (
     <TileGrid count={12}>
       <Tile label="sample" value={sample === null ? "—" : String(sample)} tone="dim" />
       <Tile label="net P&L" value={fmtMoney(netPnl)} tone={tone(netPnl)} afterFees n={sample} />
-      <Tile label="win rate" value={fmtPct(pctFraction(winRate), 1)} tone={tone(winRate === null ? null : winRate - 0.5)} n={sample} />
+      <Tile label="win rate" value={fmtPct(pctFraction(winRate), 1)} n={sample} />
       <Tile label="expectancy" value={fmtMoney(expectancy)} tone={tone(expectancy)} afterFees n={sample} />
-      <Tile label="profit factor" value={fmtNum(profitFactor)} tone={tone(profitFactor === null ? null : profitFactor - 1)} n={sample} />
+      <Tile label="profit factor" value={fmtNum(profitFactor)} n={sample} />
       {peakRisk !== undefined ? (
         <Tile
           label="return on peak risk"

@@ -82,6 +82,7 @@ export interface LivePerformance {
     netPnl: number;
     winRatePct: number | null;
     profitFactor: number | null;
+    /** Trading fees ÷ premium collected (`feeDragPct`); null when nothing was collected. */
     feeDragPct: number | null;
     completionRatePct: number | null;
   };

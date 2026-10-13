@@ -49,14 +49,35 @@ export interface MeicTradeTotals {
   trades: number;
   sessions: number;
   gross: number;
+  /** Trading fees: the fee total less the settlement that was recorded. A row that never recorded
+   *  its split keeps its settlement in here (the standard's rule). */
   fees: number;
-  settlementFees: number;
+  /** Settlement over every row, or null (n/r) when any row never recorded it -- never a partial sum
+   *  shown as the total. */
+  settlementFees: number | null;
+  /** Settlement summed over the rows that did record it, so gross − fees − this = net always holds. */
+  settlementRecorded: number;
+  /** Rows that recorded settlement, of `trades`. */
+  settlementTrades: number;
+  /** Conceded inside the modelled fill, so inside gross; a measure, never subtracted. */
   slippage: number;
+  /** Rows that recorded slippage, of `trades` -- `slippage` covers only these. */
+  slippageTrades: number;
   net: number;
   /** Premium collected — the sum of entry cash over these rows, the denominator of fee drag. */
   credit: number;
   /** The same totals, one row per arm, net descending. */
-  byArm: Array<{ arm: string; trades: number; gross: number; fees: number; settlementFees: number; net: number; credit: number }>;
+  byArm: Array<{
+    arm: string;
+    trades: number;
+    gross: number;
+    fees: number;
+    settlementFees: number | null;
+    settlementRecorded: number;
+    settlementTrades: number;
+    net: number;
+    credit: number;
+  }>;
 }
 
 export interface MeicSummaryRow {

@@ -29,7 +29,7 @@ import { fmtIvr } from "../../lib/format";
 interface MeicAnalytics {
   periods: Array<{ label: string; net: number; trades: number; wins: number; losses: number }>;
   exitReasons: Array<{ reason: string; count: number }>;
-  feeDrag: { grossCredit: number; fees: number; netPnl: number; dragPct: number | null };
+  feeDrag: { credit: number; fees: number; settlementFees: number | null; netPnl: number; dragPct: number | null };
 }
 
 interface MeicScopeData {
@@ -187,19 +187,24 @@ export function MeicLightbox({ slide }: { slide: string }) {
             <div className="stats-grid">
               <div className="stat-tile">
                 <span className="stat-label">premium collected</span>
-                <span className="stat-value">{a !== undefined ? fmtMoney(a.feeDrag.grossCredit) : "—"}</span>
+                <span className="stat-value">{a !== undefined ? fmtMoney(a.feeDrag.credit) : "—"}</span>
               </div>
-              <div className="stat-tile">
-                <span className="stat-label">fees and settlement</span>
+              <div className="stat-tile" title="commissions and exchange fees; settlement is its own figure and outside fee drag">
+                <span className="stat-label">trading fees</span>
                 <span className="stat-value pnl-neg">{a !== undefined ? fmtMoney(a.feeDrag.fees) : "—"}</span>
               </div>
-              <div className="stat-tile">
-                <span className="stat-label">net P&L</span>
-                <span className={`stat-value ${(a?.feeDrag.netPnl ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}`}>
-                  {a !== undefined ? fmtMoney(a.feeDrag.netPnl) : "—"}
-                </span>
+              <div
+                className="stat-tile"
+                title={
+                  a?.feeDrag.settlementFees === null
+                    ? "not recorded on every trade in this era; the unrecorded trades' settlement is inside trading fees"
+                    : "exercise / assignment fees at settlement"
+                }
+              >
+                <span className="stat-label">settlement</span>
+                <span className="stat-value">{a === undefined ? "—" : a.feeDrag.settlementFees === null ? "n/r" : fmtMoney(a.feeDrag.settlementFees)}</span>
               </div>
-              <div className="stat-tile">
+              <div className="stat-tile" title="trading fees ÷ premium collected, settled trades">
                 <span className="stat-label">fee drag</span>
                 <span className="stat-value">{fmtPct(a?.feeDrag.dragPct ?? null, 1)}</span>
               </div>

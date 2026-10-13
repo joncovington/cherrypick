@@ -1,6 +1,6 @@
 import { hasRange, rangeClauses } from "./dateRange.js";
 import { concededArmMoney, entryOutcomes } from "./armCosts.js";
-import type { ArmCostsPayload } from "@console/shared";
+import { feeDragPct, sumIfAllRecorded, type ArmCostsPayload } from "@console/shared";
 import path from "node:path";
 import type { MeicDivergence, MeicPayload, MeicTradeRow, MeicTradeTotals, MeicSummaryRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
@@ -241,7 +241,10 @@ const EMPTY_MEIC_TOTALS: MeicTradeTotals = {
   gross: 0,
   fees: 0,
   settlementFees: 0,
+  settlementRecorded: 0,
+  settlementTrades: 0,
   slippage: 0,
+  slippageTrades: 0,
   net: 0,
   credit: 0,
   byArm: [],
@@ -349,20 +352,30 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
   const totals = withReadOnlyDb<MeicTradeTotals>(dbPath, EMPTY_MEIC_TOTALS, (db) => {
     const f = tradeFilterSql(db, query);
     const mult = `COALESCE(${meicCol(db, "dollar_multiplier")}, 100) * COALESCE(quantity, 1)`;
+    // Settlement is summed over the rows that recorded it, and COUNTed, so a scope holding any row
+    // that never recorded it reads n/r rather than a partial sum dressed as the total (101 paper
+    // rows, mostly the `book` era, predate the column). The fee total keeps the unrecorded rows'
+    // settlement inside `fees`, the standard's rule for a split never recorded.
     const sums = `COUNT(*) AS trades, COUNT(DISTINCT trade_date) AS sessions,
                   COALESCE(SUM(pnl), 0) AS gross, COALESCE(SUM(fees), 0) AS fees,
                   COALESCE(SUM(${meicCol(db, "settlement_fees")}), 0) AS settlement,
+                  COUNT(${meicCol(db, "settlement_fees")}) AS settlement_trades,
                   COALESCE(SUM(${meicCol(db, "slippage_dollars")}), 0) AS slippage,
+                  COUNT(${meicCol(db, "slippage_dollars")}) AS slippage_trades,
                   COALESCE(SUM(net_credit * ${mult}), 0) AS credit`;
     const shape = (r: Record<string, unknown>) => {
+      const trades = Number(r["trades"] ?? 0);
       const gross = Number(r["gross"] ?? 0);
       const fees = Number(r["fees"] ?? 0);
-      const settlementFees = Number(r["settlement"] ?? 0);
+      const recorded = round2(Number(r["settlement"] ?? 0));
+      const settlementTrades = Number(r["settlement_trades"] ?? 0);
       return {
-        trades: Number(r["trades"] ?? 0),
+        trades,
         gross: round2(gross),
-        fees: round2(fees - settlementFees),
-        settlementFees: round2(settlementFees),
+        fees: round2(fees - recorded),
+        settlementFees: sumIfAllRecorded(recorded, settlementTrades, trades),
+        settlementRecorded: recorded,
+        settlementTrades,
         net: round2(gross - fees),
         credit: round2(Number(r["credit"] ?? 0)),
       };
@@ -383,6 +396,7 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
       ...shape(all),
       sessions: Number(all["sessions"] ?? 0),
       slippage: round2(Number(all["slippage"] ?? 0)),
+      slippageTrades: Number(all["slippage_trades"] ?? 0),
       byArm,
     };
   });
@@ -1043,14 +1057,13 @@ export interface MeicAnalytics {
    * the page's scope, so it never covered this.
    */
   byProfile: Array<{ profile: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
-  /** Today's fee drag per profile, same grouping as byProfile.
-   *
-   * `gross` here is premium COLLECTED, not gross P&L -- it does not reconcile with `net` the way
-   * flies' identically-named field does. Renaming the field would ripple through the page; the
-   * column it renders is labelled "credit" instead. */
-  profileFeeDrag: Array<{ profile: string; gross: number; fees: number; net: number; dragPct: number | null }>;
+  /** Today's fee drag per profile, same grouping as byProfile: `credit` is premium collected,
+   *  `fees` trading fees (settlement out where recorded), `dragPct` = fees ÷ credit (`feeDragPct`). */
+  profileFeeDrag: Array<{ profile: string; credit: number; fees: number; settlementFees: number | null; net: number; dragPct: number | null }>;
   exitReasons: Array<{ reason: string; count: number }>;
-  feeDrag: { grossCredit: number; fees: number; netPnl: number; dragPct: number | null };
+  /** The scope's fee drag over settled rows: premium collected, trading fees, settlement (null =
+   *  n/r on any row) and net, so credit is never called gross and fees never carry settlement. */
+  feeDrag: { credit: number; fees: number; settlementFees: number | null; netPnl: number; dragPct: number | null };
 }
 
 export function readMeicAnalytics(
@@ -1066,7 +1079,7 @@ export function readMeicAnalytics(
     byProfile: [],
     profileFeeDrag: [],
     exitReasons: [],
-    feeDrag: { grossCredit: 0, fees: 0, netPnl: 0, dragPct: null },
+    feeDrag: { credit: 0, fees: 0, settlementFees: 0, netPnl: 0, dragPct: null },
   };
   return withReadOnlyDb<MeicAnalytics>(dbPath, empty, (db) => {
     const sc = scopeSql(db, scope);
@@ -1146,28 +1159,35 @@ export function readMeicAnalytics(
       };
     });
 
+    // Fee drag is trading fees ÷ premium collected (`feeDragPct`, the costs page's definition).
+    // `fees` folds settlement in on this ledger, so the recorded settlement comes out; the credit is
+    // the entry credit, whole position, with the trade totals' multiplier. Restricted to settled rows
+    // so credit, fees and net all describe the same trades -- a drag percentage mixing an unsettled
+    // row's fees into a settled row's credit means nothing.
+    const settleCol = meicCol(db, "settlement_fees");
+    const DRAG_SUMS = `COALESCE(SUM(net_credit * COALESCE(${meicCol(db, "dollar_multiplier")}, 100) * COALESCE(quantity, 1)), 0) AS credit,
+                COALESCE(SUM(fees), 0) AS fees_total, COALESCE(SUM(${settleCol}), 0) AS settlement,
+                COUNT(${settleCol}) AS settlement_rows, COUNT(*) AS rows_n, ${NET} AS net`;
+    const dragOf = (r: Record<string, unknown>) => {
+      const credit = round2(Number(r["credit"] ?? 0));
+      const recorded = round2(Number(r["settlement"] ?? 0));
+      const fees = round2(Number(r["fees_total"] ?? 0) - recorded);
+      return {
+        credit,
+        fees,
+        settlementFees: sumIfAllRecorded(recorded, Number(r["settlement_rows"] ?? 0), Number(r["rows_n"] ?? 0)),
+        net: Number(r["net"] ?? 0),
+        dragPct: feeDragPct(fees, credit),
+      };
+    };
     const profileFeeDrag = db
       .prepare<string[], Record<string, unknown>>(
-        // Restricted to settled rows so gross, fees and net all describe the same trades — a drag
-        // percentage mixing an unsettled row's fees into a settled row's credit means nothing.
-        `SELECT ${armColumnOf(db, "ic_trades")} AS profile,
-                COALESCE(SUM(net_credit * COALESCE(quantity, 1) * 100), 0) AS gross,
-                COALESCE(SUM(fees), 0) AS fees, ${NET} AS net
+        `SELECT ${armColumnOf(db, "ic_trades")} AS profile, ${DRAG_SUMS}
            FROM ic_trades WHERE ${RESOLVED} AND pnl IS NOT NULL AND trade_date = ?${sc.and}
           GROUP BY profile ORDER BY profile`,
       )
       .all(today, ...sc.params)
-      .map((r) => {
-        const gross = Number(r["gross"]);
-        const fees = Number(r["fees"]);
-        return {
-          profile: String(r["profile"] ?? "?"),
-          gross,
-          fees,
-          net: Number(r["net"]),
-          dragPct: Math.abs(gross) > 0 ? (fees / Math.abs(gross)) * 100 : null,
-        };
-      });
+      .map((r) => ({ profile: String(r["profile"] ?? "?"), ...dragOf(r) }));
 
     // Grouped on the LEG PAIR, not on ic_trades.exit_reason.
     //
@@ -1204,27 +1224,21 @@ export function readMeicAnalytics(
       .all(...sc.params)
       .map((r) => ({ reason: String(r["reason"]), count: Number(r["count"]) }));
 
-    const fd = db
-      .prepare<string[], Record<string, unknown>>(
-        `SELECT COALESCE(SUM(net_credit * COALESCE(quantity, 1) * 100), 0) AS gross,
-                COALESCE(SUM(fees), 0) AS fees, ${NET} AS net
-           FROM ic_trades WHERE ${RESOLVED}${sc.and}`,
-      )
-      .get(...sc.params) ?? {};
-    const gross = Number(fd["gross"] ?? 0);
-    const fees = Number(fd["fees"] ?? 0);
+    // Settled rows only, as above: an open row's fees against no result yet was the same mix.
+    const fd = dragOf(
+      db
+        .prepare<string[], Record<string, unknown>>(
+          `SELECT ${DRAG_SUMS} FROM ic_trades WHERE ${RESOLVED} AND pnl IS NOT NULL${sc.and}`,
+        )
+        .get(...sc.params) ?? {},
+    );
     return {
       mode,
       periods,
       byProfile,
       profileFeeDrag,
       exitReasons,
-      feeDrag: {
-        grossCredit: gross,
-        fees,
-        netPnl: Number(fd["net"] ?? 0),
-        dragPct: gross > 0 ? (fees / gross) * 100 : null,
-      },
+      feeDrag: { credit: fd.credit, fees: fd.fees, settlementFees: fd.settlementFees, netPnl: fd.net, dragPct: fd.dragPct },
     };
   });
 }
