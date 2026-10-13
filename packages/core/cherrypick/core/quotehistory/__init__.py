@@ -1,8 +1,8 @@
 """The read side of the chain's recorded quotes (`gex_quote_history`, gex's history DB, from 2026-10-13).
 
-The gex recorder keeps, once a minute in RTH, the usable quotes of the strikes nearest spot on its
+The gex recorder keeps, every tick (~15 s) in RTH, the usable quotes of the strikes nearest spot on its
 chain -- the only quote history in the suite (the stream cache keeps the latest quote per leg and
-nothing else). This module hands a session back minute by minute in the shape a module's snapshot
+nothing else). This module hands a session back sample by sample in the shape a module's snapshot
 already has (`underlying_price`, `now_min`, `puts`/`calls` as {strike: {bid, ask, mid, age_seconds,
 delta}}), so a replay of a rule a module never ran prices against the market as it was through the
 module's own pricing functions.
@@ -40,7 +40,7 @@ def session(
     history_db: Path | str | None = None,
     max_spot_staleness_seconds: float = DEFAULT_MAX_SPOT_STALENESS_SECONDS,
 ) -> list[dict]:
-    """Every recorded minute of `symbol` on `trade_date`, oldest first. Empty when nothing was kept."""
+    """Every recorded sample of `symbol` on `trade_date`, oldest first. Empty when nothing was kept."""
     path = Path(history_db) if history_db is not None else default_history_db()
     if not path.exists():
         return []

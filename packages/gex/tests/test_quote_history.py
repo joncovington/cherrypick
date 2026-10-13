@@ -1,4 +1,4 @@
-"""The recorder's minute-by-minute chain quotes (`gex_quote_history`, 2026-10-12)."""
+"""The recorder's chain quotes, every tick (`gex_quote_history`, 2026-10-12)."""
 
 import json
 import sqlite3
@@ -88,11 +88,11 @@ def test_a_stale_or_crossed_quote_is_absent_never_a_zero(tmp_path):
     assert ("call", 6000.0) in kept and ("put", 6005.0) in kept
 
 
-def test_one_sample_a_minute_and_nothing_outside_rth(tmp_path):
+def test_one_sample_a_tick_and_nothing_outside_rth(tmp_path):
     cfg = _cfg(tmp_path)
     assert service.record_quotes(cfg, now_et=IN_SESSION) == 80
-    assert service.record_quotes(cfg, now_et=IN_SESSION + timedelta(seconds=30)) == 0
-    assert service.record_quotes(cfg, now_et=IN_SESSION + timedelta(seconds=61)) == 80
+    assert service.record_quotes(cfg, now_et=IN_SESSION + timedelta(seconds=5)) == 0  # a double write
+    assert service.record_quotes(cfg, now_et=IN_SESSION + timedelta(seconds=15)) == 80  # the next tick
     (tmp_path / "off").mkdir()
     other = _cfg(tmp_path / "off")
     for when in (datetime(2026, 9, 30, 9, 0, tzinfo=ET), datetime(2026, 9, 26, 11, 0, tzinfo=ET)):
