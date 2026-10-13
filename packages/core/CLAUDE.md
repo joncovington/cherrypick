@@ -92,7 +92,9 @@ the live path. Both the orchestrator and the module loop validate through this s
 - **Off by default, twice over.** The suite must schedule the advisor (`scripts/advisor_checkpoint.py`)
   and the module must declare `advice.enabled` plus its own `advice.bounds` — closed ranges the
   proposal is validated against. A bound over a parameter the module doesn't read, or a range that
-  can't move the book from control, is a spent experiment slot, not a safe default.
+  can't move the book from control, is a spent experiment slot, not a safe default. A rule may name
+  `arms`, the base arms the param acts on at all; the validator refuses it on any other base (both
+  sides, from the artifact entry's `base`). Absent means every base.
 - **Every module's `advice` block is its own**, never inherited from another module's bounds.
 - **One book per experiment.** The artifact and decision carry an `experiments` list; each validated
   entry opens its own slug-safe `advised:<experiment name>` book (`advised_tag`, `slug`). An artifact

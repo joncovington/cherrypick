@@ -89,6 +89,66 @@ def _delta(advised: dict | None, base: dict | None) -> dict[str, Any]:
     return out
 
 
+# What makes two closed rows the same trade for the exposure check: every money field the ledger
+# reader normalises, to the cent, plus what was traded. An advised twin that never diverged from its
+# base writes rows identical on all of these, session by session.
+_TWIN_FIELDS = ("symbol", "strategy", "gross_pnl", "cost", "net_pnl", "capital")
+
+
+def _twin_key(record: dict) -> tuple:
+    return tuple(round(v, 2) if isinstance(v, float) else v for v in (record.get(f) for f in _TWIN_FIELDS))
+
+
+def exposure(records: list[dict], tag_advised: str, tag_base: str) -> dict[str, Any]:
+    """Did the advised book ever trade differently from its base?
+
+    An advised twin is planned from its base's own entry, so until the treated parameter acts the
+    two books write the same rows. `diverged` is False when the advised book has closed rows and
+    every one of them has an identical twin (`_TWIN_FIELDS`, to the cent) in the base book on the
+    same session; True as soon as one does not; None when the advised book has nothing closed, which
+    is no evidence either way. A verdict built on a book that never diverged has measured nothing:
+    its effective sample is zero whatever its trade count says (2026-10-12: bwb's
+    `delta-trigger-early` put a trigger param on `control`, which has no trigger, and its eleven
+    rows matched control's exactly).
+
+    Matching is per session and one-to-one, and the base may hold extra rows (positions it entered
+    before the experiment started that close inside the window), so the advised side must be a
+    subset of the base side, not equal to it.
+    """
+    from collections import Counter
+
+    advised: dict[str, Counter] = {}
+    base: dict[str, Counter] = {}
+    for r in records:
+        side = advised if r.get("arm") == tag_advised else base if r.get("arm") == tag_base else None
+        if side is not None:
+            side.setdefault(str(r.get("session") or ""), Counter())[_twin_key(r)] += 1
+    rows = sum(sum(c.values()) for c in advised.values())
+    unmatched = 0
+    diverged_sessions = []
+    for session, counts in sorted(advised.items()):
+        missing = counts - base.get(session, Counter())
+        if missing:
+            unmatched += sum(missing.values())
+            diverged_sessions.append(session)
+    return {
+        "diverged": None if rows == 0 else unmatched > 0,
+        "advised_rows": rows,
+        "unmatched_rows": unmatched,
+        "sessions": len(advised),
+        "diverged_sessions": diverged_sessions,
+    }
+
+
+def inert_params(module: str, params: dict[str, Any], base_profile: str) -> list[str]:
+    """The params the module declares cannot act on `base_profile` (a bounds rule's `arms`, read
+    through `core.advice.param_acts_on`). Earnings' dotted names are checked whole -- its base is a
+    prefix, and no earnings rule declares `arms`."""
+    posture = _bounds.resolve(module)
+    rules = posture.get("bounds") or {}
+    return [p for p in params if not _advice.param_acts_on(rules.get(p), base_profile)]
+
+
 def reading_pair(
     module: str,
     base_profile: str,
@@ -151,6 +211,7 @@ def reading_pair(
         "qualification": qualified,
         "rule": thresholds,
         "underpowered": _underpowered(advised, thresholds),
+        "exposure": exposure(records, tag_advised, tag_base),
     }
 
 
@@ -229,6 +290,8 @@ def for_experiment(experiment: dict[str, Any], *, rule: dict | None = None) -> d
         for s in strategies
     ]
 
+    underpowered = all(p["underpowered"] for p in pairs)
+    no_exposure = _no_exposure(module, params, base, pairs)
     return {
         "experiment_id": experiment["id"],
         "module": module,
@@ -236,6 +299,35 @@ def for_experiment(experiment: dict[str, Any], *, rule: dict | None = None) -> d
         "sessions_run": experiment.get("sessions_run"),
         "pairs": pairs,
         # An experiment is underpowered unless at least one of its pairs was actually measured.
-        "underpowered": all(p["underpowered"] for p in pairs),
+        "underpowered": underpowered,
+        # Ahead of pass/fail: an advised book that never traded differently from its base has
+        # measured nothing, and no qualification read over it means anything.
+        "no_exposure": no_exposure,
+        "conclusion": ("no_exposure" if no_exposure else "underpowered" if underpowered else "measured"),
         "computed_by": "cherrypick.advisor.verdicts",
     }
+
+
+def _no_exposure(module: str, params: dict[str, Any], base: str, pairs: list[dict]) -> dict | None:
+    """Why this experiment measured nothing, or None when it may have measured something.
+
+    Two routes. `declared`: every treated param is one the module declares cannot act on the base
+    (bounds `arms`) -- known without a single row. `never_diverged`: every pair's advised book has
+    closed rows and each one is identical to a base row on its session. A pair with no closed rows
+    is not evidence of no exposure; it leaves the verdict to `underpowered`."""
+    inert = inert_params(module, params, base) if params else []
+    if params and len(inert) == len(params):
+        return {
+            "reason": "declared",
+            "detail": f"{', '.join(sorted(inert))} cannot act on base arm {base!r} (advice.bounds arms)",
+            "params": sorted(inert),
+        }
+    exposures = [p.get("exposure") or {} for p in pairs]
+    if exposures and all(e.get("diverged") is False for e in exposures):
+        rows = sum(e.get("advised_rows") or 0 for e in exposures)
+        return {
+            "reason": "never_diverged",
+            "detail": f"all {rows} advised row(s) identical to {base!r} on their sessions",
+            "params": sorted(params),
+        }
+    return None

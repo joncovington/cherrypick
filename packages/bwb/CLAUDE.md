@@ -42,7 +42,10 @@ doubly so here because a zero credit floor cannot screen out an illusory opening
 Advised twins follow `packages/core/CLAUDE.md`. bwb specifics: **deliberately UNBOUNDED** (no
 `advice.bounds` at all); the pre-2026-09-17 tags `advised:control` / `advised:delta` still resolve
 by name in `engine.base_book` and `management.effective_params`; the `wall` book is never an advised
-base.
+base. The add-on params (`delta_trigger`, `bounce_pullback`, `flip_buffer`, `addon_credit_floor`)
+declare `arms` in their bounds — none acts on `control`, which never arms — and
+`tests/test_advice_arms.py` derives each list from `management.evaluate`, so a drifted list fails.
+The deployed config needs the same `arms` keys before the refusal applies there.
 
 **The add-on** (identical for all three arms): a put credit spread bracketing the far wing — SELL
 one increment above, BUY one below — which must itself price as a credit (`addon_credit_floor`, a

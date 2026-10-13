@@ -44,19 +44,30 @@ STATUS_KILLED = "killed"
 
 
 def check_params(
-    module: str, params: dict[str, Any], target_session: str, *, rationales: dict | None = None
+    module: str,
+    params: dict[str, Any],
+    target_session: str,
+    *,
+    rationales: dict | None = None,
+    base: str | None = None,
 ) -> dict[str, Any]:
     """Would these params be admitted for `target_session`? The dry run of what `enact` will write.
 
     Runs the real artifact through the real validator, so an admission here and the artifact written
     tonight cannot disagree about what is legal. Returns core.advice's own verdict shape plus the
     module's posture.
+
+    `base` is the arm the twin would shadow (an existing experiment's own, for `tune`); without it,
+    the module's configured base. A param the module declares cannot act on that base (a bounds
+    rule's `arms`) is refused here, before it spends sessions measuring nothing (2026-10-12).
     """
     posture = _bounds.resolve(module)
     if not posture["enabled"]:
         return {"ok": False, "reason": posture["reason"], "proposals": [], "rejected": [], "posture": posture}
 
-    artifact = artifact_for(module, target_session, params, rationales=rationales)
+    artifact = artifact_for(
+        module, target_session, params, rationales=rationales, base=base or posture["base_profile"]
+    )
     result = _advice.validate(artifact, posture["bounds"], target_session)
     return {**result, "posture": posture}
 
@@ -68,13 +79,16 @@ def artifact_for(
     *,
     rationales: dict | None = None,
     rationale: str | None = None,
+    base: str | None = None,
 ) -> dict[str, Any]:
     """The artifact body for an overlay, built ONE way. `check_params` is "the dry run of what
-    `enact` will write", and that claim rested on two literals staying identical (2026-09-12)."""
+    `enact` will write", and that claim rested on two literals staying identical (2026-09-12).
+    `base` rides along so the validator can refuse a param that cannot act on it."""
     return {
         "module": module,
         "session": target_session,
         "expires_at": _clock.end_of_session_iso(target_session),
+        "base": base,
         "proposals": [
             {
                 "param": p,
@@ -227,7 +241,13 @@ def tune(
 
     module = experiment["module"]
     merged = {**json.loads(experiment["params_json"] or "{}"), **params}
-    checked = check_params(module, merged, _clock.next_session(session), rationales=rationales)
+    checked = check_params(
+        module,
+        merged,
+        _clock.next_session(session),
+        rationales=rationales,
+        base=experiment.get("base_profile"),
+    )
     if not checked["ok"]:
         return {"ok": False, "reason": checked["reason"], "rejected": checked["rejected"]}
 

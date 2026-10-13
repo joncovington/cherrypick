@@ -66,6 +66,14 @@ export interface AdvisorVerdict {
    * recording decisions. `sessionsRun` is how many sessions it actually got.
    */
   stalled: { sessionsRun: number; calendarSessions: number } | null;
+  /**
+   * Set when the advised book never traded differently from its base (2026-10-12): every param
+   * declared unable to act on the base (`declared`), or every closed advised row identical to a
+   * base row on its session (`never_diverged`). Such a verdict measured nothing, and says so ahead
+   * of underpowered or any pass/fail. Null on a verdict that may have measured something, and on
+   * every verdict written before the field existed.
+   */
+  noExposure: { reason: string; detail: string } | null;
 }
 
 export interface AdvisorEvent {

@@ -493,3 +493,52 @@ def test_advised_tag_is_one_rule_and_slug_safe():
     )
     assert advice.slug("  a:b  ") == "a-b"
     assert advice.is_advised("advised:x") and not advice.is_advised("control") and not advice.is_advised(None)
+
+
+# --------------------------------------------------------------------------- arms (2026-10-12)
+
+ARM_BOUNDS = {
+    "stop_trigger_ratio": {"min": 0.85, "max": 0.95},
+    "delta_trigger": {"min": 0.05, "max": 0.95, "arms": ["delta", "bounce"]},
+}
+
+
+def _entry_artifact(base, proposals):
+    art = _artifact([])
+    art["experiments"] = [
+        {"experiment_id": "exp-1", "name": "x", "tag": "advised:x", "base": base, "proposals": proposals}
+    ]
+    return art
+
+
+def test_a_param_declared_for_other_arms_is_refused_on_this_base():
+    """A bounds rule's `arms` is the module saying where the param acts. A twin of any other base
+    would write its base's rows under the experiment's name: refused, reject-all, on both sides."""
+    v = advice.validate(
+        _entry_artifact("control", [{"param": "delta_trigger", "value": 0.3}]), ARM_BOUNDS, SESSION, now=NOW
+    )
+    entry = v["experiments"][0]
+    assert entry["ok"] is False and entry["proposals"] == []
+    assert (
+        entry["rejected"][0]["reason"]
+        == "'delta_trigger' cannot act on base arm 'control' (declared for: delta, bounce)"
+    )
+    ok = advice.validate(
+        _entry_artifact("bounce", [{"param": "delta_trigger", "value": 0.3}]), ARM_BOUNDS, SESSION, now=NOW
+    )
+    assert ok["experiments"][0]["ok"] is True
+
+
+def test_no_arms_means_every_base_and_no_base_is_never_guessed():
+    assert advice.param_acts_on({"min": 0, "max": 1}, "control") is True
+    assert advice.param_acts_on(ARM_BOUNDS["delta_trigger"], None) is True
+    legacy = _artifact([{"param": "delta_trigger", "value": 0.3}])
+    assert advice.validate(legacy, ARM_BOUNDS, SESSION, now=NOW)["ok"] is True
+    legacy["base"] = "control"
+    assert advice.validate(legacy, ARM_BOUNDS, SESSION, now=NOW)["ok"] is False
+
+
+def test_a_malformed_arms_list_is_a_reason_not_a_raise():
+    bounds = {"delta_trigger": {"min": 0.05, "max": 0.95, "arms": "delta"}}
+    v = advice.validate_proposals([{"param": "delta_trigger", "value": 0.3}], bounds, "delta")
+    assert v["ok"] is False and "arms must be a list" in v["rejected"][0]["reason"]
