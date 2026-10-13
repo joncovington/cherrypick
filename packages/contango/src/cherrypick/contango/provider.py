@@ -20,7 +20,7 @@ from pathlib import Path
 
 from cherrypick.core import home as _home
 from cherrypick.core.db import connect_ro as _connect_ro
-from cherrypick.core.streamcache import usable_quote as _usable_quote
+from cherrypick.core.streamcache import usable_quotes as _usable_quotes
 
 DEFAULT_MAX_QUOTE_AGE_SECONDS = 120
 
@@ -49,11 +49,8 @@ def read_quotes(db_path, symbols: list[str], *, max_quote_age_seconds: float) ->
     conn = _connect_ro(db_path)
     try:
         now_ts = time.time()
-        marks = ", ".join("?" * len(symbols))
-        for row in conn.execute(
-            f"SELECT symbol, bid, ask, mid, updated_at FROM stream_quotes WHERE symbol IN ({marks})", symbols
-        ):
-            out[row["symbol"]] = _usable_quote(row, now_ts, max_quote_age_seconds)
+        usable, _ = _usable_quotes(conn, symbols, now_ts, max_quote_age_seconds)
+        out.update({s: usable.get(s) for s in out})
         return out
     finally:
         conn.close()

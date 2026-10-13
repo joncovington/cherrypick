@@ -477,3 +477,57 @@ def test_greeks_for_feeds_compute_gex_end_to_end(tmp_path):
     result = _gex.compute_gex(chain, greeks, oi, 100.0)
     assert result["ok"] is True, result.get("error")
     assert result["strikes_with_data"] == 3
+
+
+# --------------------------------------------------------------------------- usable_quotes / mark_snapshot
+def _quote_cache(path, now):
+    conn = streamcache.connect(path)
+    rows = [
+        (".A", 1.0, 1.2, 1.1, now - 5),  # good
+        (".B", 1.0, 1.2, 1.1, now - 9999),  # stale
+        (".C", 1.3, 1.2, 1.25, now - 5),  # crossed
+    ]
+    conn.executemany(
+        "INSERT INTO stream_quotes (symbol, bid, ask, mid, updated_at) VALUES (?, ?, ?, ?, ?)", rows
+    )
+    conn.execute(
+        "INSERT INTO stream_trades (symbol, last, updated_at) VALUES (?, ?, ?)",
+        ("SPY", 500.0, now),
+    )
+    conn.commit()
+    return conn
+
+
+def test_usable_quotes_counts_refused_rows_but_not_absent_symbols(tmp_path):
+    now = time.time()
+    conn = _quote_cache(tmp_path / "sc.db", now)
+    quotes, rejected = streamcache.usable_quotes(conn, [".A", ".B", ".C", ".MISSING"], now, 120)
+    assert list(quotes) == [".A"] and rejected == 2
+
+
+def test_usable_quotes_chunks_and_reads_rows_by_name_on_a_plain_connection(tmp_path, monkeypatch):
+    now = time.time()
+    _quote_cache(tmp_path / "sc.db", now).close()
+    plain = sqlite3.connect(tmp_path / "sc.db")  # no row factory: the helper must not depend on one
+    monkeypatch.setattr(streamcache, "QUOTE_CHUNK", 1)
+    quotes, rejected = streamcache.usable_quotes(plain, [".A", ".B", ".C"], now, 120)
+    assert list(quotes) == [".A"] and rejected == 2
+
+
+def test_mark_snapshot_is_ok_only_when_every_leg_prices(tmp_path):
+    now = time.time()
+    _quote_cache(tmp_path / "sc.db", now).close()
+    legs = [{"streamer_symbol": ".A", "symbol": "SPY"}, {"streamer_symbol": ".B", "symbol": "SPY"}]
+    snap = streamcache.mark_snapshot(tmp_path / "sc.db", legs, max_quote_age_seconds=120)
+    assert snap["spot"] == 500.0 and snap["fresh"] == 1 and snap["stale"] == 1
+    assert snap["quotes"][".B"] is None and snap["reason"] == "missing_leg_quotes"
+    ok = streamcache.mark_snapshot(tmp_path / "sc.db", legs[:1], max_quote_age_seconds=120)
+    assert ok["ok"] is True and ok["leg_spreads"][0]["symbol"] == ".A"
+    # A leg naming no symbol falls back to `default_symbol` for spot.
+    bare = streamcache.mark_snapshot(
+        tmp_path / "sc.db", [{"streamer_symbol": ".A"}], max_quote_age_seconds=120, default_symbol="SPY"
+    )
+    assert bare["spot"] == 500.0
+    assert streamcache.mark_snapshot(tmp_path / "x.db", legs, max_quote_age_seconds=120)["reason"] == (
+        "stream_cache_missing"
+    )
