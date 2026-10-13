@@ -56,16 +56,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import sqlite3
 from collections import defaultdict
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import fees as core_fees
 from cherrypick.core.regimecuts import robustness
-from cherrypick.flies import fly
+from cherrypick.flies import analysis_rows, fly
 
 ET = ZoneInfo("America/New_York")
 CAP_REASON = "max_open_margin%"
@@ -81,18 +78,6 @@ CAVEAT = (
     "natural needs order-path quotes, which the backfilled history does not have; c1_bound is an "
     "upper bound on C1, not a measurement."
 )
-
-
-def _ledger(name: str) -> Path:
-    home = os.environ.get("CHERRYPICK_HOME")
-    root = (Path(home) if home else Path.home() / ".cherrypick") / "data" / "flies"
-    return root / f"{name}_trades.db"
-
-
-def _open(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def ts(value) -> datetime | None:
@@ -186,30 +171,16 @@ def open_cash(p: dict) -> float:
     return p["net"] + ((p["debit"] or 0.0) if p["kind"] == "fly" else 0.0)
 
 
-def settlement_fees(p: dict) -> float:
-    """What the row paid at the print: the broker's figure where it was split out, else the module's
-    own assignment fee for this row's shape at its settlement price."""
-    if p.get("settlement_fees") is not None:
-        return p["settlement_fees"]
-    return fly.assignment_fee(p, p["settlement_price"])
-
-
-def entry_fees(p: dict) -> float:
-    """Fees the spread had paid by t: the row's total less its settlement fees and, on a row that
-    completed later, the completion's own two-leg fee."""
-    paid = (p["fees"] or 0.0) - settlement_fees(p)
-    if p["kind"] == "fly":
-        paid -= fly.vertical_open_fee(p["symbol"] or "SPX", _qty(p))
-    return paid
-
-
 def force_completed_net(p: dict, debit: float) -> float:
     """Settled net of the spread completed at t for `debit` points, at its own settlement print.
 
     The print's fee starts from what the row really paid there and adds only the settlement events
     the completing leg brings (the module's table: the fly's ITM strikes less the row's own), so a
-    row that did complete, completed here at its own debit, gives back its recorded `pnl`."""
+    row that did complete, completed here at its own debit, gives back its recorded `pnl`. The
+    completion's fee is the one the row paid where it completed, else the module's."""
     sym, qty = p["symbol"] or "SPX", _qty(p)
+    split = analysis_rows.fee_split(p)
+    completion_fee = split["completion"] if analysis_rows.completed(p) else fly.vertical_open_fee(sym, qty)
     completed = {
         "kind": "fly",
         "side": p["side"],
@@ -222,7 +193,7 @@ def force_completed_net(p: dict, debit: float) -> float:
     }
     sp = p["settlement_price"]
     added = fly.assignment_fee(completed, sp) - fly.assignment_fee(p, sp)
-    completed["fees"] = entry_fees(p) + fly.vertical_open_fee(sym, qty) + settlement_fees(p) + added
+    completed["fees"] = split["entry"] + completion_fee + split["settlement"] + added
     return fly.position_pnl(completed, p["settlement_price"])
 
 
@@ -232,7 +203,7 @@ def aborted_net(p: dict, structure_mid: float) -> float:
     sym, qty = p["symbol"] or "SPX", _qty(p)
     close_fee = core_fees.ic_close_fee(sym, qty, legs=2, sell_legs=1, ndigits=4)
     gross = (open_cash(p) + structure_mid) * fly.CONTRACT_MULTIPLIER * qty
-    return gross - entry_fees(p) - close_fee - (p["slippage_dollars"] or 0.0)
+    return gross - analysis_rows.entry_fees(p) - close_fee - (p["slippage_dollars"] or 0.0)
 
 
 # --------------------------------------------------------------------------- the replay
@@ -380,7 +351,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--detail", action="store_true", help="include every refusal run")
     a = ap.parse_args(argv)
     since, until = (a.session, a.session) if a.session else (a.since, a.until)
-    out = replay(_open(_ledger("live")), _open(_ledger("paper")), a.arm, since, until)
+    out = replay(analysis_rows.open_ledger("live"), analysis_rows.open_ledger("paper"), a.arm, since, until)
     if not a.detail:
         out.pop("runs")
     print(json.dumps(out, indent=2))

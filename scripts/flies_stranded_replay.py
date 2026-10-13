@@ -36,23 +36,15 @@ an unrolled tail) and `depth` reports theirs by kind without the salvage/stop ma
 from __future__ import annotations
 
 import argparse
-import os
 import sqlite3
 import statistics as st
 from collections import Counter, defaultdict
 from datetime import datetime
-from pathlib import Path
 
-from cherrypick.flies import fly
+from cherrypick.flies import analysis_rows, fly
 
 SALVAGE_X = (0.0, 0.1, 0.25, 0.5)
 SALVAGE_T = (5, 15, 30, 45, 60, 90)
-
-
-def _ledger(name: str) -> Path:
-    home = os.environ.get("CHERRYPICK_HOME")
-    root = (Path(home) if home else Path.home() / ".cherrypick") / "data" / "flies"
-    return root / f"{name}_trades.db"
 
 
 def _mins(a: str, b: str) -> float:
@@ -60,10 +52,7 @@ def _mins(a: str, b: str) -> float:
 
 
 def load(conn: sqlite3.Connection, arm: str, symbol: str, since: str, until: str | None) -> list[dict]:
-    q = """select * from fly_positions where arm=? and symbol=? and status='settled' and trade_date>=?
-           and (? is null or trade_date<=?) and void_reason is null and coalesce(closed_before_expiry,0)=0
-           order by entry_time"""
-    return [dict(r) for r in conn.execute(q, (arm, symbol, since, until, until))]
+    return analysis_rows.settled_positions(conn, arm=arm, symbol=symbol, since=since, until=until)
 
 
 def _session_stats(per_day: dict[str, float]) -> tuple[float, float, float, int]:
@@ -178,7 +167,8 @@ def timing(rows: list[dict]) -> None:
 
 
 def _salvage(rows: list[dict], t: float, x: float) -> tuple:
-    vfee = None
+    """A rescued spread pays the entry fee it really paid plus the module's completion fee, and the
+    settlement fee its print would charge the fly (`fly.position_pnl` on an open position)."""
     per, rescued, charged = defaultdict(float), 0, 0
     for r in rows:
         p = r["pnl"]
@@ -190,15 +180,15 @@ def _salvage(rows: list[dict], t: float, x: float) -> tuple:
         elif r["kind"] == "short_vertical":
             b, at = r["best_completing_debit"], r["best_debit_at"]
             if b is not None and at and b <= r["credit"] + x and _mins(r["entry_time"], at) >= t:
-                vfee = vfee if vfee is not None else fly.vertical_open_fee(r["symbol"])
+                qty = r["quantity"] or 1
                 pos = dict(
                     kind="fly",
                     side=r["side"],
                     center=r["center"],
                     wing_width=r["wing_width"],
-                    quantity=r["quantity"] or 1,
+                    quantity=qty,
                     net=-x,
-                    fees=2 * vfee * (r["quantity"] or 1),
+                    fees=analysis_rows.entry_fees(r) + fly.vertical_open_fee(r["symbol"], qty),
                     status="open",
                 )
                 p = fly.position_pnl(pos, r["settlement_price"])
@@ -258,9 +248,8 @@ def main() -> None:
     ap.add_argument("--no-salvage", action="store_true", help="skip the 24-row salvage grid")
     a = ap.parse_args()
 
-    conn = sqlite3.connect(_ledger(a.ledger))
-    conn.row_factory = sqlite3.Row
-    paper = sqlite3.connect(_ledger("paper"))  # spot paths: the paper loop records every tick
+    conn = analysis_rows.open_ledger(a.ledger)
+    paper = analysis_rows.open_ledger("paper")  # spot paths: the paper loop records every tick
     arms = a.arm or ["control"]
     if a.all:
         arms = [
