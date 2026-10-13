@@ -19,8 +19,9 @@ the cap just does the crowding now. Live moved to 10:15 for 2026-09-29, journale
 **The model** -- live_loop's own arithmetic, applied to paper control's recorded entries in time
 order. An entry is admitted only while the open worst-case exposure plus its own (width - credit)
 x100 fits under the cap (`margin_cap_exceeded`). An admitted position counts until settlement:
-before its completion as a short vertical at its entry credit (entry fees taken as half the row's
-total), after it at its completed floor, which is 0 once risk-free (`open_margin_dollars`). No
+before its completion as a short vertical at its entry credit and entry fees, after it at its
+completed floor, which is 0 once risk-free (`open_margin_dollars`); both carry only the fees paid by
+then (`analysis_rows`), never the print's, which the floor reserves for itself. No
 count limit. Dropping rows is the `replay_gates` pattern: a freed slot is not re-filled by an entry
 paper never recorded, and paper's modelled fills stand in for live's -- which is why this compares
 starts with one another and does not forecast live P&L. Checked on 09-25..09-28: the replay admitted
@@ -31,41 +32,34 @@ replay's +$768 -- the admission rule is approximated, the fills are not modelled
 from __future__ import annotations
 
 import argparse
-import os
-import sqlite3
 import statistics as st
 from collections import defaultdict
 from datetime import datetime
-from pathlib import Path
 
 from cherrypick.core.regimecuts import sign_test_p
-from cherrypick.flies import fly
+from cherrypick.flies import analysis_rows, fly
 
 DEFAULT_STARTS = ("10:00", "10:15", "10:30")
 
 
-def _ledger(name: str) -> Path:
-    home = os.environ.get("CHERRYPICK_HOME")
-    root = (Path(home) if home else Path.home() / ".cherrypick") / "data" / "flies"
-    return root / f"{name}_trades.db"
-
-
 def load(name: str, arm: str, since: str, until: str | None) -> list[dict]:
-    conn = sqlite3.connect(f"file:{_ledger(name)}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    q = """select trade_date, entry_time, completed_at, kind, wing_width, quantity, net, credit, fees, pnl
-           from fly_positions where arm=? and symbol='SPX' and status='settled' and void_reason is null
-           and entry_mode='legged' and trade_date>=? and (? is null or trade_date<=?) order by entry_time"""
-    return [dict(r) for r in conn.execute(q, (arm, since, until, until))]
+    conn = analysis_rows.open_ledger(name)
+    return analysis_rows.settled_positions(
+        conn, arm=arm, symbol="SPX", since=since, until=until, entry_mode="legged"
+    )
 
 
 def exposure_at(p: dict, t: datetime) -> float:
-    """Worst-case dollars one admitted position commits at time t."""
+    """Worst-case dollars one admitted position commits at time t: the fees it had paid by then,
+    never its settlement charge (the floor reserves the worst case of that itself)."""
     if p["kind"] == "fly" and p["completed_at"] and datetime.fromisoformat(p["completed_at"]) <= t:
-        return max(0.0, -fly.position_floor(p))
-    entry_fees = (p["fees"] or 0.0) / (2 if p["kind"] == "fly" else 1)
+        paid = p["fees"] - analysis_rows.settlement_fees(p)
+        return max(0.0, -fly.position_floor({**p, "fees": paid}))
     return max(
-        0.0, -fly.position_floor({**p, "kind": "short_vertical", "net": p["credit"], "fees": entry_fees})
+        0.0,
+        -fly.position_floor(
+            {**p, "kind": "short_vertical", "net": p["credit"], "fees": analysis_rows.entry_fees(p)}
+        ),
     )
 
 
