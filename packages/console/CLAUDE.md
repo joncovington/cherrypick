@@ -314,6 +314,28 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   (`names=all` is the way out). With no label it cuts nothing, because an unknown flag would empty
   it.
 
+**Compare** (`/compare`, `lightbox/manifests/CompareLightbox.tsx`, `pages/Compare/`) — every arm of
+every module beside its control, over `GET /api/compare?scope=era|all` (`routes/compare.ts` →
+`services/compareBridge.ts` → `python -m cherrypick.core.compare --json`). A bridge, not a mirror:
+the intervals, paired differences, t bounds, sign tests and projections are `core.stats`'
+(`server/test/compare-bridge.test.ts`, `web/test/comparePage.test.tsx`).
+
+- Field names stay the bridge's snake_case, verbatim (`shared/types/compare.ts`). A schema other than
+  1 is refused, never half-rendered; every failure is `{ok: false, error}`, never an empty table.
+- Memoised on every module's paper ledger, the advisor's store and the New York session (a break
+  dated ahead binds from its own date). A bad `scope` is a 400 and never runs the bridge.
+- **No verdicts.** Tone comes only from a number's sign; interval ends, the t bound, the sign-test p
+  and the projections are never toned, and a test fails on any verdict-like class. A null is an em
+  dash, never `$0.00`.
+- **Size-normalised beside the dollars.** In dollars a session, a capped arm beside a large control
+  reads as size: MEIC's capped books sit $22k–$31k behind a control taking ~270 entries a day against
+  their ~6. So each arm also shows `net / entry` (entries per session beneath) and `net / $100 risk`
+  (on the capital `core.ledgers` records per trade: max loss or buying power, as the module's ledger
+  states it), and each pair shows `diff / entry` and `diff / $100 risk`. These are the bridge's
+  `per_entry` / `per_100_risk` paired blocks, keyed and windowed as the dollar pair. A ledger with no
+  recorded capital (flies) shows a dash there, never zero, and a partial record says how many trades
+  carry one.
+
 **Module advisor slides.** `readers/advisor.ts`'s `readAdvisorModule` serves
 `/api/advisor/module/:module`: active experiments with progress against length and stall budget, the
 session strip from the advisor's `enactment` table (read, never re-derived), the paired comparison as

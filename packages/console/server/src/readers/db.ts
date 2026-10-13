@@ -324,10 +324,15 @@ function rememberOnStamp(key: string, stamp: string, value: unknown): void {
   }
 }
 
-export function memoOnStore<T>(dbPath: string, key: string, build: () => T): T {
+/**
+ * `dbPath` may name several stores, for a read derived from more than one (the compare bridge reads
+ * every module's ledger and the advisor's store): the stamp is each store's stamp in order, so a
+ * write to ANY of them is a miss. A missing file stamps as absent, and its appearance is a miss too.
+ */
+export function memoOnStore<T>(dbPath: string | readonly string[], key: string, build: () => T): T {
   // Stamped BEFORE the build: a write landing mid-build leaves an older stamp, so the next call
   // rebuilds rather than serving a value that may predate the write.
-  const stamp = fileStamp(dbPath);
+  const stamp = typeof dbPath === "string" ? fileStamp(dbPath) : dbPath.map(fileStamp).join("|");
   const hit = cachedOnStamp<T>(key, stamp);
   if (hit !== undefined) return hit.value;
   const value = build();

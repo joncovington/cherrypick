@@ -3684,3 +3684,87 @@ td > .desk-refusal-reason {
   flex-wrap: wrap;
   gap: 0 0.6em;
 }
+/* Compare (pages/Compare/): every arm beside its control. No verdict colours: the only tone is a
+   number's sign (pnl-pos/pnl-neg) and a histogram bin's side of zero. */
+.cmp-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.cmp-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+.cmp-method p {
+  margin: 0.2rem 0;
+  font-size: 13px;
+}
+.cmp-era p {
+  margin: 0.2rem 0 0.4rem;
+  font-size: 13px;
+}
+.cmp-break-kind {
+  font-family: var(--num-face);
+}
+.cmp-caveats {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+.cmp-caveats ul {
+  margin: 0.3rem 0 0 1.1rem;
+  padding: 0;
+}
+.cmp-table th.cmp-group {
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+.cmp-sub {
+  font-size: 11px;
+}
+.cmp-arm {
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.cmp-row-open td {
+  background: var(--row-line);
+}
+.cmp-hist-head {
+  font-size: 12px;
+  margin-bottom: 0.3rem;
+  white-space: normal;
+}
+.cmp-hist svg {
+  display: block;
+  max-width: 100%;
+}
+.cmp-hist-axis,
+.cmp-hist-zero {
+  stroke: var(--border);
+}
+.cmp-hist-zero {
+  stroke-dasharray: 3 3;
+}
+.cmp-hist-label {
+  fill: var(--text-muted);
+  font-size: 10px;
+  font-family: var(--num-face);
+}
+.cmp-hist-loss {
+  fill: var(--err);
+  opacity: 0.75;
+}
+.cmp-hist-gain {
+  fill: var(--ok);
+  opacity: 0.75;
+}
+.cmp-error,
+.cmp-status {
+  font-size: 13px;
+  white-space: pre-wrap;
+}
