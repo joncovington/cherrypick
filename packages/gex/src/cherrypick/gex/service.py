@@ -82,6 +82,19 @@ PROFILE_COLUMNS = (
     "put_iv",
 )
 
+# The chain's QUOTES over time (2026-10-12), which nothing else keeps: the stream cache holds only the
+# latest quote per leg, the profile above has no bid/ask, and a module's own marks cover only legs it
+# holds. Without them a rule a module never ran (flies' credit floor, a restack, an earlier start)
+# cannot be priced after the fact. Once a minute per symbol in RTH, the strikes nearest spot on each
+# side, both rights, on the same chain the profile reads; only quotes `usable_quote` accepts at the
+# age flies prices with (120 s), so a missing row means no usable quote. Spot is NOT stored again:
+# `gex_spot_history` already has it every tick, and `core.quotehistory` joins it on read.
+# Twenty strikes each side (~100 SPX points), not ten: a stranded vertical -- what a close decision
+# is about -- sits a trend day's distance from spot, and a narrower window would lose exactly those.
+QUOTE_STRIKES_EACH_SIDE = 20
+QUOTE_MAX_AGE_SECONDS = 120.0
+QUOTE_INTERVAL_SECONDS = 60
+
 
 def _ensure_history_table(conn: sqlite3.Connection, db_path: Path | str | None = None) -> None:
     """Create the history tables if absent. Idempotent, and skipped once a given file has been
@@ -114,6 +127,13 @@ def _ensure_history_table(conn: sqlite3.Connection, db_path: Path | str | None =
         + ")"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_gph_sym_ts ON gex_profile_history(symbol, ts)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS gex_quote_history ("
+        "symbol TEXT NOT NULL, trade_date TEXT NOT NULL, ts REAL NOT NULL, expiration TEXT NOT NULL, "
+        "side TEXT NOT NULL, strike REAL NOT NULL, bid REAL NOT NULL, ask REAL NOT NULL, mid REAL NOT NULL, "
+        "age_s REAL, delta REAL)"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gqh_sym_date ON gex_quote_history(symbol, trade_date, ts)")
     have = {r[1] for r in conn.execute("PRAGMA table_info(gex_regime_history)")}
     for column in FLOW_COLUMNS:
         if column not in have:
@@ -346,9 +366,10 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
     if once:
         n = record_spots(cfg)
         r = record_regimes(cfg)
+        qn = record_quotes(cfg)
         m = _regime.sample(cfg)
         print(
-            f"recorded spot for {n}/{len(syms)} symbols, {r} gex regime row(s), "
+            f"recorded spot for {n}/{len(syms)} symbols, {r} gex regime row(s), {qn} quote row(s), "
             f"market regime: {m['status']} ({m['usable']}/{m['written']} usable)"
         )
         return 0
@@ -408,6 +429,7 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
             try:
                 n = record_spots(cfg)
                 record_regimes(cfg)  # internally throttled to ~5-minute rows
+                record_quotes(cfg)  # internally throttled to ~1-minute samples, RTH-gated
                 _regime.sample(cfg)  # internally throttled to ~1-minute rows, RTH-gated
                 ticks += 1
                 if ticks % heartbeat_every == 0:
@@ -516,6 +538,76 @@ def record_regimes(
                     ],
                 )
                 written += 1
+            except Exception:
+                continue  # one symbol's hiccup must not lose the others
+        conn.commit()
+        return written
+    finally:
+        conn.close()
+
+
+def record_quotes(
+    cfg: dict,
+    symbols: list[str] | None = None,
+    min_interval_s: int = QUOTE_INTERVAL_SECONDS,
+    *,
+    now_et: datetime | None = None,
+) -> int:
+    """Persist the near-spot quotes of each symbol's chain into `gex_quote_history` (see
+    `QUOTE_STRIKES_EACH_SIDE`). RTH only, for `record_regimes`' reason; throttled to one sample per
+    symbol per `min_interval_s`, so the recorder calls it every tick. Best-effort per symbol.
+    Returns quote rows written."""
+    when = now_et or datetime.now(_ET)
+    if not _regime.in_rth(when):
+        return 0
+    syms = [str(s).strip().upper() for s in (symbols if symbols is not None else cfg.get("symbols") or [])]
+    if not syms:
+        return 0
+    db_path = Path(cfg["history_db_path"])
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    try:
+        _ensure_history_table(conn)
+        today = when.astimezone(_ET).date().isoformat()
+        now = when.timestamp()
+        written = 0
+        for sym in syms:
+            row = conn.execute(
+                "SELECT MAX(ts) FROM gex_quote_history WHERE symbol = ? AND trade_date = ?", (sym, today)
+            ).fetchone()
+            if row and row[0] is not None and (now - row[0]) < min_interval_s:
+                continue
+            try:
+                snap = _provider.snapshot_from_stream_cache(cfg["stream_cache_db"], sym)
+                if snap.source == "missing" or snap.expiration is None:
+                    continue
+                quotes = _provider.chain_quotes(
+                    cfg["stream_cache_db"],
+                    snap,
+                    each_side=QUOTE_STRIKES_EACH_SIDE,
+                    max_age_seconds=QUOTE_MAX_AGE_SECONDS,
+                )
+                conn.executemany(
+                    "INSERT INTO gex_quote_history (symbol, trade_date, ts, expiration, side, strike, bid, ask, "
+                    "mid, age_s, delta) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    [
+                        (
+                            sym,
+                            today,
+                            now,
+                            str(snap.expiration),
+                            q["side"],
+                            q["strike"],
+                            q["bid"],
+                            q["ask"],
+                            q["mid"],
+                            q["age_seconds"],
+                            q["delta"],
+                        )
+                        for q in quotes
+                    ],
+                )
+                written += len(quotes)
             except Exception:
                 continue  # one symbol's hiccup must not lose the others
         conn.commit()
