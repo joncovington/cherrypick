@@ -1,8 +1,49 @@
 # /VXM plan: the contango switch in Mini VIX futures
 
-**Status: plan, not built (2026-10-05).** It follows `packages/contango`, which runs the same switch
-in SVXY. Nothing here changes code. Each open decision is marked **Decide** and needs your answer
-before anything is built.
+**Status: answered from settlement history, not built (2026-10-12).** The plan below deferred the
+½× second-month arm until SVXY had a quarter of paper data. `scripts/contango_vx_replay.py` answers
+it from CFE's settlement files instead, and the answer is no: see
+[the 2026-10-12 replay](#the-2026-10-12-replay-the-arm-does-not-earn-its-place). The rest of this file
+is kept as the design, should something change the answer.
+
+## The 2026-10-12 replay: the arm does not earn its place
+
+`scripts/contango_vx_replay.py DATA_DIR [--fetch]` runs the module's own rule
+(`regime.target_state`, each arm's thresholds from the contango config) on a short second-month VX
+position, beside `scripts/contango_replay.py`'s SVXY arms on the same sessions. Declared: whole
+contracts sized `floor(½ × NAV ÷ (multiplier × settle))` on entry and each roll (re-sized between
+only on 25% drift), rolled five sessions before the front month settles, filled at the settle, $2.00
+a VXM side ($3.50 VX) plus half a 0.05 tick, both legs of a roll costed. Cash earns SHV's total
+return less the initial margin posted (45% of notional, an assumption). VXM is priced off VX settles,
+which agree with VXM's own on all 8,785 contract-sessions where both exist.
+
+| 2018-03-01 → 2026-10-02 | CAGR | max drawdown | worst day | trades (rolls) |
+|---|---|---|---|---|
+| SVXY `control` | 7.4% | −39.8% | −17.0% | 165 switches |
+| /VXM ½×, `control`, $100k | 0.9% | −48.2% | −13.9% | 258 (83) |
+| /VXM ½×, `control`, $10k (2–3 contracts) | 2.3% | −38.3% | −10.3% | 332 (83) |
+| SVXY `flipexit` | 9.8% | −41.6% | −17.0% | 81 switches |
+| /VXM ½×, `flipexit`, $100k | 3.7% | −44.6% | −13.7% | 182 (88) |
+| /VXM 1×, `flipexit`, $100k | −1.8% | −76.3% | −26.4% | 201 (88) |
+
+From 2013-05-20 (CFE's first settle), with SVXY rebuilt from the settles as the stand-in because the
+real fund was −1× before 2018-02-27: `control` 7.7% against /VXM ½× 2.7%, `flipexit` 11.5% against
+5.9%, every drawdown between −42% and −49%. The rebuilt SVXY runs about one to two points a year
+ahead of the real one (14.1% against 12.3% ungated, daily correlation 0.981), so discount it by that.
+
+- **It earns 4–6 points a year less than SVXY for the same drawdown.** Only the worst day is
+  better (about −14% against −17%), because the second month moves less on a spike day.
+- **A quarter to two-fifths of the gap is the contract, the rest the costs.** With no costs at all it
+  makes 5.8% (`control`) and 7.2% (`flipexit`), still under SVXY: the second month carries less
+  roll-down than the 30-day blend SVXY holds. Rolling every month at about 25 bps a VXM side then
+  costs about 3.5% of NAV a year. A calendar-spread roll would save some of that, not all.
+- **Margin is not the constraint.** Peak initial margin was about a third of NAV at ½×, with no
+  session over 100%; it would stay under even if the broker doubled the rate in a spike. At $10,000
+  it is two or three contracts.
+- **1× is still not survivable** (−76% to −80% drawdown, −27% worst day), as in 2026-10-05.
+
+So the second contango arm is not built. Capacity, Section 1256 treatment and issuer risk don't
+matter at a size this suite runs, and they would be bought with about five points a year.
 
 ## The short answer
 

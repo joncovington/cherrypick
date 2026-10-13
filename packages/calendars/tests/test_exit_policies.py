@@ -107,57 +107,83 @@ def _snapshot_from(marks, spot):
     return {"ok": True, "spot": spot, "quotes": quotes, "greeks": {}, "max_spread_pct": 0.02}
 
 
+def _live_the_week(conn, control_arms=("control",), path_arms=("path",)):
+    """Mark the week, close the control arms at Friday's bell, settle the shorts and dispose the
+    path arms' longs on Monday — the loop's own sequence, over every arm given."""
+    arms = (*control_arms, *path_arms)
+    # The week's path. Combined debit is 10.0; combined value = 2 x (back - front).
+    _tick(conn, "2026-08-17", "10:05", 6500.0, {"front": 20.0, "back": 25.0}, arms)  # entry tick: +0%
+    _tick(conn, "2026-08-18", "11:00", 6480.0, {"front": 19.0, "back": 24.6}, arms)  # +12% -> pt-10
+    _tick(conn, "2026-08-19", "11:00", 6470.0, {"front": 17.5, "back": 23.6}, arms)  # +22% -> pt-20
+    _tick(conn, "2026-08-20", "11:00", 6460.0, {"front": 16.0, "back": 23.2}, arms)  # +44%; put touched
+    _tick(conn, "2026-08-20", "15:50", 6462.0, {"front": 16.2, "back": 23.4}, arms)  # thu_close tick
+    _tick(conn, "2026-08-21", "12:05", 6450.0, {"front": 10.0, "back": 21.0}, arms)  # fri_noon tick
+    fri_close_marks = {"front": 5.0, "back": 20.0}
+    _tick(conn, "2026-08-21", "15:50", 6445.0, fri_close_marks, arms)  # the bell tick
+
+    # Control closes for real at the bell tick's own quotes.
+    for arm in control_arms:
+        for side in ("put", "call"):
+            position = dict(
+                conn.execute(
+                    "SELECT * FROM dc_positions WHERE position_id = ?", (f"2026-08-17:{arm}:{side}",)
+                ).fetchone()
+            )
+            assert book.close_open_legs(
+                conn,
+                position,
+                _snapshot_from(fri_close_marks, 6445.0),
+                {},
+                reason="scheduled_exit",
+                session_date="2026-08-21",
+            )["ok"]
+
+    # Path: shorts settle Friday, longs marked and disposed Monday.
+    book.settle_expiring_legs(conn, "2026-08-21", SETTLE_SPOT, {}, symbol="SPX")
+    mon_marks = {"back": 26.0}
+    _tick(conn, "2026-08-24", "09:50", 6470.0, mon_marks, arms=path_arms)
+    for arm in path_arms:
+        for side in ("put", "call"):
+            position = dict(
+                conn.execute(
+                    "SELECT * FROM dc_positions WHERE position_id = ?", (f"2026-08-17:{arm}:{side}",)
+                ).fetchone()
+            )
+            assert book.close_open_legs(
+                conn,
+                position,
+                _snapshot_from(mon_marks, 6470.0),
+                {},
+                reason="long_disposition",
+                session_date="2026-08-24",
+            )["ok"]
+
+
 @pytest.fixture()
 def week_conn(tmp_path):
     """One fully-lived week: entered Monday, marked all week, control closed Friday, path settled
     Friday and disposed Monday."""
     conn = db.connect(str(tmp_path / "paper.db"))
     book.enter_week(conn, _plan(), {}, ["control", "path"], week=WEEK, advice_params=None)
+    _live_the_week(conn)
+    return conn
 
-    # The week's path. Combined debit is 10.0; combined value = 2 x (back - front).
-    _tick(conn, "2026-08-17", "10:05", 6500.0, {"front": 20.0, "back": 25.0})  # entry tick: +0%
-    _tick(conn, "2026-08-18", "11:00", 6480.0, {"front": 19.0, "back": 24.6})  # +12% -> pt-10
-    _tick(conn, "2026-08-19", "11:00", 6470.0, {"front": 17.5, "back": 23.6})  # +22% -> pt-20
-    _tick(conn, "2026-08-20", "11:00", 6460.0, {"front": 16.0, "back": 23.2})  # +44% -> pt-30; put touched
-    _tick(conn, "2026-08-20", "15:50", 6462.0, {"front": 16.2, "back": 23.4})  # thu_close tick
-    _tick(conn, "2026-08-21", "12:05", 6450.0, {"front": 10.0, "back": 21.0})  # fri_noon tick
-    fri_close_marks = {"front": 5.0, "back": 20.0}
-    _tick(conn, "2026-08-21", "15:50", 6445.0, fri_close_marks)  # the bell tick
 
-    # Control closes for real at the bell tick's own quotes.
-    for side in ("put", "call"):
-        position = dict(
-            conn.execute(
-                "SELECT * FROM dc_positions WHERE position_id = ?", (f"2026-08-17:control:{side}",)
-            ).fetchone()
-        )
-        assert book.close_open_legs(
-            conn,
-            position,
-            _snapshot_from(fri_close_marks, 6445.0),
-            {},
-            reason="scheduled_exit",
-            session_date="2026-08-21",
-        )["ok"]
+# The Friday regime's week: the same contracts entered the session before, tagged apart.
+FRIDAY_WEEK = {**WEEK, "entry_session": "2026-08-14", "structure": "dc_7_10"}
 
-    # Path: shorts settle Friday, longs marked and disposed Monday.
-    book.settle_expiring_legs(conn, "2026-08-21", SETTLE_SPOT, {}, symbol="SPX")
-    mon_marks = {"back": 26.0}
-    _tick(conn, "2026-08-24", "09:50", 6470.0, mon_marks, arms=("path",))
-    for side in ("put", "call"):
-        position = dict(
-            conn.execute(
-                "SELECT * FROM dc_positions WHERE position_id = ?", (f"2026-08-17:path:{side}",)
-            ).fetchone()
-        )
-        assert book.close_open_legs(
-            conn,
-            position,
-            _snapshot_from(mon_marks, 6470.0),
-            {},
-            reason="long_disposition",
-            session_date="2026-08-24",
-        )["ok"]
+
+@pytest.fixture()
+def two_regime_conn(tmp_path):
+    """The same lived week held by BOTH entry regimes, as the real ledger has it since 2026-09-04:
+    `control`/`path` entered Monday and `friday:control`/`friday:path` entered the Friday before,
+    sharing `week_of` and distinct only by arm name and structure tag."""
+    conn = db.connect(str(tmp_path / "paper.db"))
+    book.enter_week(conn, _plan(), {}, ["control", "path"], week=WEEK, advice_params=None)
+    book.enter_week(
+        conn, _plan(), {}, ["friday:control", "friday:path"], week=FRIDAY_WEEK, advice_params=None
+    )
+    _live_the_week(conn, ("control", "friday:control"), ("path", "friday:path"))
     return conn
 
 
@@ -170,6 +196,86 @@ def test_validation_is_clean_to_the_cent(week_conn):
     validation = exit_policies.validate_against_control(week_conn, {})
     assert validation["compared"] == 2
     assert validation["ok"], validation["mismatches"]
+
+
+def _drop_post_disposition_marks(conn):
+    """The live recorder's shape: it marks open legs only, so nothing is recorded at or after the
+    tick the arm disposed on, and the derivation has to fall back to the recorded close."""
+    conn.execute("DELETE FROM dc_marks WHERE session_date = '2026-08-24'")
+    conn.commit()
+
+
+def test_validation_is_clean_to_the_cent_without_a_monday_mark(week_conn):
+    """The fallback path must carry the disposal's recorded costs with its recorded price. Without
+    them every live path week came out $0.44-0.49 rich, inside the old $0.50 tolerance."""
+    _drop_post_disposition_marks(week_conn)
+    validation = exit_policies.validate_against_control(week_conn, {})
+    assert validation["compared"] == 2
+    assert validation["ok"], validation["mismatches"]
+    derived = _derive(week_conn, "expiry-longs-mon")
+    assert derived["exits"]["back_put"]["kind"] == "traded"
+
+
+def test_one_cent_is_the_default_tolerance(week_conn):
+    """A disagreement of a few cents must be reported, not absorbed."""
+    week_conn.execute("UPDATE dc_positions SET fees = fees + 0.05 WHERE position_id LIKE '%:control:put'")
+    week_conn.commit()
+    validation = exit_policies.validate_against_control(week_conn, {})
+    assert not validation["ok"]
+    assert [m["arm"] for m in validation["mismatches"]] == ["control"]
+
+
+def test_the_friday_regime_is_validated_beside_the_monday_one(two_regime_conn):
+    """`friday:path` is the Friday regime's substrate exactly as `path` is Monday's, so its
+    replay has to reproduce its own recorded net to the cent too — and `friday:control` likewise.
+    Until 2026-10-12 the validation named `control` and `path` only, so the Friday regime's weeks
+    were never checked at all."""
+    validation = exit_policies.validate_against_control(two_regime_conn, {})
+    assert validation["compared"] == 4
+    assert validation["ok"], validation["mismatches"]
+
+
+@pytest.mark.parametrize("arm", ["friday:path", "friday:control"])
+def test_a_friday_disagreement_is_reported_against_its_own_arm(two_regime_conn, arm):
+    """The guard has to be able to fail: a few cents of drift on one Friday arm alone must show up
+    as that arm's mismatch, not be absorbed or blamed on the Monday arm beside it."""
+    two_regime_conn.execute(
+        "UPDATE dc_positions SET fees = fees + 0.05 WHERE position_id = ?", (f"2026-08-17:{arm}:put",)
+    )
+    two_regime_conn.commit()
+    validation = exit_policies.validate_against_control(two_regime_conn, {})
+    assert not validation["ok"]
+    assert [m["arm"] for m in validation["mismatches"]] == [arm]
+
+
+def test_the_policy_table_replays_friday_path_under_its_own_tag(two_regime_conn):
+    """Both path arms feed the grid, and the tag keeps them apart (honesty rule 4): the Monday
+    `dc_4_7` bucket is exactly what it is without the Friday regime beside it."""
+    table = exit_policies.comparison_table(two_regime_conn, {})
+    assert table["weeks_considered"] == 2
+    assert table["validation"]["ok"]
+    for policy, by_structure in table["policies"].items():
+        assert set(by_structure) == {"dc_4_7", "dc_7_10"}, policy
+        assert by_structure["dc_4_7"]["weeks"] == 1
+        assert by_structure["dc_7_10"]["weeks"] == 1
+    friday_week = exit_policies.week_data(two_regime_conn, WEEK["week_of"], "friday:path")
+    assert (
+        table["policies"]["expiry-longs-mon"]["dc_7_10"]["total_net"]
+        == exit_policies.derive(friday_week, "expiry-longs-mon", {})["net_pnl"]
+    )
+
+
+def test_the_monday_grid_is_unchanged_by_the_friday_regime(week_conn, tmp_path):
+    alone = exit_policies.comparison_table(week_conn, {})["policies"]
+    conn = db.connect(str(tmp_path / "both.db"))
+    book.enter_week(conn, _plan(), {}, ["control", "path"], week=WEEK, advice_params=None)
+    book.enter_week(
+        conn, _plan(), {}, ["friday:control", "friday:path"], week=FRIDAY_WEEK, advice_params=None
+    )
+    _live_the_week(conn, ("control", "friday:control"), ("path", "friday:path"))
+    both = exit_policies.comparison_table(conn, {})["policies"]
+    for policy in alone:
+        assert both[policy]["dc_4_7"] == alone[policy]["dc_4_7"], policy
 
 
 def test_profit_targets_trigger_on_successive_days(week_conn):
@@ -332,6 +438,15 @@ def test_expiry_derivation_carries_the_delivered_shares(spy_week_conn):
 def test_the_derivation_still_reproduces_the_books_it_sits_beside(spy_week_conn):
     """The module's one guarantee, under the new settlement style: a derivation that cannot
     reproduce the real arms has no business ranking the policies between them."""
+    validation = exit_policies.validate_against_control(spy_week_conn, SPY_CONFIG)
+    assert validation["compared"] == 2
+    assert validation["ok"], validation["mismatches"]
+
+
+def test_physical_week_is_clean_to_the_cent_without_a_monday_mark(spy_week_conn):
+    """Delivered shares put an assignment charge in `settlement_fees`; the fallback must take the
+    disposal's costs net of it, or the assignment fee is charged twice."""
+    _drop_post_disposition_marks(spy_week_conn)
     validation = exit_policies.validate_against_control(spy_week_conn, SPY_CONFIG)
     assert validation["compared"] == 2
     assert validation["ok"], validation["mismatches"]

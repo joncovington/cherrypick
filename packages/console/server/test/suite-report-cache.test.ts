@@ -108,6 +108,46 @@ describe("the suite report's cache", () => {
   });
 });
 
+describe("a fact set with no net", () => {
+  it("reads null, stays out of the suite's sums, and is listed on the desk without a net", async () => {
+    const { readFactSet } = await import("../src/services/report.js");
+    const { readDesk } = await import("../src/readers/desk.js");
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-report-nonet-"));
+    const base = configFor(tmp);
+    const config = {
+      ...base,
+      paths: {
+        ...base.paths,
+        calendarsDir: path.join(tmp, "calendars"),
+        pmccDir: path.join(tmp, "pmcc"),
+        curveDir: path.join(tmp, "curve"),
+        bwbDir: path.join(tmp, "bwb"),
+        pmccConfigCandidates: [],
+        calendarsConfigCandidates: [],
+        curveConfigCandidates: [],
+      },
+    } as ConsoleConfig;
+    fs.mkdirSync(config.paths.reviewDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(config.paths.reviewDir, "eod-2026-08-19.json"),
+      JSON.stringify({
+        modules: {
+          meic: { ok: true, results: { net: 100, closed: 2, wins: 1, losses: 1 } },
+          flies: { ok: true, results: { closed: 3, wins: 2, losses: 1 } },
+        },
+      }),
+    );
+
+    expect(readFactSet(config, "2026-08-19")?.["flies"]?.net).toBeNull();
+    const report = buildSuiteReport(config);
+    expect(report.suite.net).toBe(100);
+    expect(report.suite.trades).toBe(2);
+    expect(report.daily[0]?.byModule).toEqual({ meic: 100 });
+    const flies = readDesk(config, ALL_ENABLED).eod.rows.find((r) => r.module === "flies");
+    expect(flies).toEqual({ module: "flies", net: null, closed: 3, netPerTrade: null });
+  });
+});
+
 describe("the suite report's measurement breaks", () => {
   it("carries each drawn module's breaks inside the curve's range, read past the cache", async () => {
     const Database = (await import("better-sqlite3")).default;

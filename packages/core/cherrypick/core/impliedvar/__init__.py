@@ -267,23 +267,11 @@ def strip_from_cache(
     """
     chain = streamcache.chain_for_expiration(conn, symbol, expiration, root)
     by_sym = {e["streamer_symbol"]: e for e in chain}
-    quotes = []
-    syms = list(by_sym)
-    for i in range(0, len(syms), 900):
-        chunk = syms[i : i + 900]
-        placeholders = ", ".join("?" * len(chunk))
-        cur = conn.cursor()
-        cur.row_factory = sqlite3.Row
-        cur.execute(
-            f"SELECT symbol, bid, ask, mid, updated_at FROM stream_quotes WHERE symbol IN ({placeholders})",
-            chunk,
-        )
-        for row in cur:
-            q = streamcache.usable_quote(row, now_ts, max_age_seconds)
-            if q is None:
-                continue
-            e = by_sym[row["symbol"]]
-            quotes.append({"strike": e["strike_price"], "option_type": e["option_type"], **q})
+    usable, _ = streamcache.usable_quotes(conn, list(by_sym), now_ts, max_age_seconds)
+    quotes = [
+        {"strike": by_sym[sym]["strike_price"], "option_type": by_sym[sym]["option_type"], **q}
+        for sym, q in usable.items()
+    ]
     return {
         "quotes": quotes,
         "listed": len(chain),

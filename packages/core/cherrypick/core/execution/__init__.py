@@ -48,6 +48,12 @@ from typing import Any
 
 from cherrypick.core import broker as _broker
 
+
+class AccountNotDesignated(RuntimeError):
+    """The adapter has no designated account to trade (unset, empty or unreadable). Raised
+    rather than resolved: `core.broker.resolve_account`'s fallback is the login's first account."""
+
+
 #: Status strings (lower-cased) after which a working order will never fill.
 TERMINAL_UNFILLED = frozenset({"cancelled", "rejected", "expired"})
 
@@ -134,6 +140,7 @@ class Broker:
         self._deploy_limit_pct = deploy_limit_pct
         self._session = None
         self._account = None
+        self._resolved_for: str | None = None  # the designation `_account` was resolved for
         # Identities whose outcome is unknown (the submit raised AND the read-back failed), and
         # identities the read-back later FOUND at the broker that no caller recorded. Either one
         # refuses every further live submission from this adapter -- see `place`.
@@ -210,8 +217,25 @@ class Broker:
         every later `place()` handed `None` to `core.broker.place_order`, which surfaced as
         `AttributeError: 'NoneType' object has no attribute 'place_order'` rather than as the
         broker error it really was. Locals first, `self` only once both succeed, and the guard
-        checks BOTH fields so a half-built adapter repairs itself on the next call."""
-        if self._session is not None and self._account is not None:
+        checks BOTH fields so a half-built adapter repairs itself on the next call.
+
+        **No designated account refuses (2026-10-12).** The docstring always said so, but this
+        handed the None straight to `core.broker.resolve_account`, whose last resort is the FIRST
+        account on the login -- so a module whose designation was unset, or whose keyring could
+        not be read, would have traded whichever account the broker listed first. The designation
+        is read on every call, not only on the first: one cleared mid-session refuses the next
+        call, and one changed mid-session rebuilds against the new account."""
+        try:
+            designated = self._designated_account()
+        except Exception as exc:  # noqa: BLE001 -- unreadable is unset: refuse, never guess
+            self._reset()
+            raise AccountNotDesignated(
+                f"designated account unreadable ({type(exc).__name__}: {exc})"
+            ) from exc
+        if not designated:
+            self._reset()
+            raise AccountNotDesignated("no designated account -- refusing rather than default to the first")
+        if self._session is not None and self._account is not None and self._resolved_for == designated:
             return
         try:
             session = self._get_session()
@@ -222,17 +246,31 @@ class Broker:
         try:
             # Its failure is recorded; its success is not proof of health -- an account lookup that
             # works while every orders call fails would otherwise clear the streak each tick.
-            account = self.run(
-                _broker.resolve_account(session, self._designated_account()), _counts_as_contact=False
-            )
+            account = self.run(_broker.resolve_account(session, designated), _counts_as_contact=False)
         except Exception:
             self._reset()
             raise
-        self._session, self._account = session, account
+        self._session, self._account, self._resolved_for = session, account, designated
 
     def _reset(self):
         self._session = None
         self._account = None
+        self._resolved_for = None
+
+    def _designation_refusal(self) -> dict | None:
+        """The refusal `place`/`replace` return for an undesignated adapter, checked BEFORE the
+        submit path: raised inside it, the refusal would read as a failed submit and start the
+        uncertain-outcome hold over an order that was never sent."""
+        try:
+            designated = self._designated_account()
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"designated account unreadable ({type(exc).__name__}: {exc})"}
+        if not designated:
+            return {
+                "ok": False,
+                "error": "no designated account -- refusing rather than default to the first",
+            }
+        return None
 
     def _load_hold(self) -> None:
         if self._hold_path is None or not self._hold_path.exists():
@@ -298,6 +336,9 @@ class Broker:
         order this process cannot account for is a human's call, and a loop that kept placing
         beside it would be the duplicate the protocol exists to prevent. Dry runs are never
         held; they place nothing."""
+        refused = self._designation_refusal()
+        if refused is not None:
+            return refused
         if live:
             unmet = self._live_gates()
             if unmet:
@@ -435,6 +476,9 @@ class Broker:
 
     def replace(self, order_id: str, spec: dict, live: bool) -> dict:
         """Replace a working order with `spec`, on the same gated, governed path as `place`."""
+        refused = self._designation_refusal()
+        if refused is not None:
+            return {**refused, "order_id": order_id}
         if live:
             unmet = self._live_gates()
             if unmet:
@@ -566,6 +610,64 @@ def orphans(broker: Any, known_order_ids: Iterable[Any]) -> list[dict]:
     `working_orders` raises: a sweep that cannot run must not report 'no orphans'."""
     known = {str(k) for k in known_order_ids if k is not None}
     return [o for o in broker.working_orders() if str(o.get("order_id")) not in known]
+
+
+def sweep_orphans(
+    broker: Any,
+    known_order_ids: Iterable[Any],
+    *,
+    symbol: str,
+    path: str | Path,
+    now_iso: str,
+    log: Callable[[str], None],
+) -> int | None:
+    """The live tick's orphan sweep, first thing every tick: broker truth against ledger belief.
+
+    The one crash window nothing else covers is a tick dying between a successful place and the DB
+    write, which leaves a real order resting at the broker with no ledger row. Any working order the
+    ledger has never heard of is persisted to `path` (which `--status` reports and the watchdog
+    raises on) and logged loudly. Detection only: cancelling an order this process cannot account
+    for is a human's call, made with the broker UI open.
+
+    Returns the orphan count, or **None when the sweep could not look** (the broker read raised, or
+    the broker offers no `working_orders` at all). Unknown is not zero, and the callers block new
+    entries on it.
+
+    Scoped to `symbol`, because the account is not exclusively the loop's: a resting order in
+    another underlying (manual trading, another module) is real and none of this sweep's business.
+    An order whose underlying is **unknown** (`None`) is kept. It could be ours, and counting it
+    blocks this loop's entries until a person looks, which is the safe direction for a live gate.
+    Dropping it would let the tick place a second order beside one nothing recorded. bwb always
+    kept it; flies dropped it until this fold (2026-10-12)."""
+    try:
+        found = orphans(broker, known_order_ids)
+    except Exception as exc:  # noqa: BLE001 -- a failed sweep must not break the tick
+        log(f"orphan sweep failed ({type(exc).__name__}: {exc}) -- will retry next tick")
+        return None  # unknown -- and unknown blocks the entry
+    found = [o for o in found if o.get("underlying_symbol") in (None, symbol)]
+    try:
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as f:
+            json.dump({"at": now_iso, "orphans": found}, f)
+    except OSError:
+        pass
+    if found:
+        log(
+            f"ORPHANED ORDERS at the broker, unknown to the ledger: {[o.get('order_id') for o in found]} "
+            "-- a placement was recorded nowhere (or another system is trading this account). "
+            "Review in the broker UI before any further arming."
+        )
+    return len(found)
+
+
+def read_orphans(path: str | Path) -> list[dict]:
+    """The last sweep's orphans, as persisted by `sweep_orphans`; [] when there is no readable file."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f).get("orphans", [])
+    except (OSError, ValueError):
+        return []
 
 
 def watch(

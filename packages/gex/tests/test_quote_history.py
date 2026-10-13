@@ -67,12 +67,22 @@ def _cfg(tmp_path, **seed):
 
 
 def _rows(cfg):
+    """Every recorded quote, in the first layout's row shape (side by name), oldest sample first."""
     conn = sqlite3.connect(cfg["history_db_path"])
     conn.row_factory = sqlite3.Row
     try:
-        return [dict(r) for r in conn.execute("SELECT * FROM gex_quote_history ORDER BY side, strike")]
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT s.symbol, s.trade_date, s.ts, s.expiration, q.side, q.strike, q.bid, q.ask, q.mid, "
+                "q.age_s, q.delta FROM gex_quote_samples s JOIN gex_quotes q ON q.sample_id = s.id "
+                "ORDER BY s.ts, q.side DESC, q.strike"
+            )
+        ]
     finally:
         conn.close()
+    names = {v: k for k, v in service.QUOTE_SIDES.items()}
+    return [{**r, "side": names[r["side"]]} for r in rows]
 
 
 def test_a_sample_keeps_the_nearest_twenty_strikes_each_side_on_both_rights(tmp_path):
@@ -132,7 +142,9 @@ def test_the_recorder_loop_calls_it(tmp_path, monkeypatch):
     monkeypatch.setattr(service, "record_quotes", lambda cfg, **k: seen.append(1) or 0)
     monkeypatch.setattr(service, "record_spots", lambda cfg, **k: 0)
     monkeypatch.setattr(service, "record_regimes", lambda cfg, **k: 0)
-    monkeypatch.setattr(service._regime, "sample", lambda cfg: {"status": "ok", "usable": 0, "written": 0})
+    monkeypatch.setattr(
+        service._regime, "sample", lambda cfg, **k: {"status": "ok", "usable": 0, "written": 0}
+    )
     service.run_recorder({**_cfg(tmp_path), "serve": {"refresh_seconds": 15}}, once=True)
     assert seen == [1]
 
@@ -179,3 +191,199 @@ def test_its_settings_are_read_and_a_bad_value_keeps_the_default(tmp_path):
         }
     )
     assert bad["strikes_each_side"] == 20 and bad["interval_seconds"] == 10 and bad["symbols"] == []
+
+
+# --------------------------------------------------------------------------- the storage layout
+def test_a_session_round_trips_exactly_what_the_recorder_saw(tmp_path, monkeypatch):
+    """Every quote `chain_quotes` handed the recorder comes back from `core.quotehistory` unchanged,
+    sample by sample, with the sample's expiration and time. Shown to fail by swapping the side codes
+    in the reader (puts read back as calls)."""
+    cfg = _cfg(tmp_path, crossed={".SPX_c6005"})
+    seen = []
+    real = service._provider.chain_quotes
+
+    def spy(*a, **k):
+        seen.append(real(*a, **k))
+        return seen[-1]
+
+    monkeypatch.setattr(service._provider, "chain_quotes", spy)
+    ticks = [IN_SESSION + timedelta(seconds=15 * i) for i in range(3)]
+    for when in ticks:
+        assert service.record_quotes(cfg, now_et=when) == 79
+    got = quotehistory.session("SPX", IN_SESSION.date().isoformat(), history_db=cfg["history_db_path"])
+    assert [s["ts"] for s in got] == [t.timestamp() for t in ticks]
+    for sample, quotes in zip(got, seen, strict=True):
+        assert sample["expiration"] == EXPIRY and sample["symbol"] == "SPX"
+        back = {
+            ("put" if book == "puts" else "call", strike): q
+            for book in ("puts", "calls")
+            for strike, q in sample[book].items()
+        }
+        want = {
+            (q["side"], q["strike"]): {
+                "bid": q["bid"],
+                "ask": q["ask"],
+                "mid": q["mid"],
+                "age_seconds": q["age_seconds"],
+                "delta": q["delta"],
+            }
+            for q in quotes
+        }
+        assert back == want
+
+
+def test_the_compact_layout_is_well_under_the_first(tmp_path):
+    """Bytes for the same rows in both layouts: the reason for the change, kept as a check."""
+    cfg = _cfg(tmp_path)
+    for i in range(60):
+        service.record_quotes(cfg, now_et=IN_SESSION + timedelta(seconds=15 * i))
+    rows = _rows(cfg)
+    assert len(rows) == 60 * 80
+    first = sqlite3.connect(tmp_path / "first.db")
+    first.execute(
+        "CREATE TABLE gex_quote_history (symbol TEXT NOT NULL, trade_date TEXT NOT NULL, ts REAL NOT NULL, "
+        "expiration TEXT NOT NULL, side TEXT NOT NULL, strike REAL NOT NULL, bid REAL NOT NULL, "
+        "ask REAL NOT NULL, mid REAL NOT NULL, age_s REAL, delta REAL)"
+    )
+    first.execute("CREATE INDEX idx_gqh_sym_date ON gex_quote_history(symbol, trade_date, ts)")
+    first.executemany(
+        "INSERT INTO gex_quote_history VALUES (:symbol,:trade_date,:ts,:expiration,:side,:strike,:bid,:ask,"
+        ":mid,:age_s,:delta)",
+        rows,
+    )
+    first.commit()
+    first.close()
+    compact = tmp_path / "compact.db"
+    src = sqlite3.connect(cfg["history_db_path"])
+    src.execute("VACUUM INTO ?", (str(compact),))
+    src.close()
+    drop = sqlite3.connect(compact)  # the quotes alone: the recorder's file has its other tables too
+    for table in ("gex_spot_history", "gex_regime_history", "gex_profile_history"):
+        drop.execute(f"DROP TABLE {table}")
+    drop.commit()
+    drop.execute("VACUUM")
+    drop.close()
+    assert compact.stat().st_size < 0.6 * (tmp_path / "first.db").stat().st_size
+
+
+def test_an_empty_first_layout_table_is_dropped_and_one_with_rows_is_kept(tmp_path):
+    for keep in (False, True):
+        where = tmp_path / str(keep)
+        where.mkdir()
+        cfg = _cfg(where)
+        conn = sqlite3.connect(cfg["history_db_path"])
+        conn.execute("CREATE TABLE gex_quote_history (symbol TEXT, ts REAL)")
+        if keep:
+            conn.execute("INSERT INTO gex_quote_history VALUES ('SPX', 1.0)")
+        conn.commit()
+        conn.close()
+        service.record_quotes(cfg, now_et=IN_SESSION)
+        conn = sqlite3.connect(cfg["history_db_path"])
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        conn.close()
+        assert ("gex_quote_history" in tables) is keep
+        assert {"gex_quote_samples", "gex_quotes"} <= tables
+
+
+# --------------------------------------------------------------------------- the light chain read
+def test_the_light_read_picks_the_chain_the_full_snapshot_does(tmp_path):
+    cfg = _cfg(tmp_path)
+    full = service._provider.snapshot_from_stream_cache(cfg["stream_cache_db"], "SPX")
+    light = service._provider.chain_from_stream_cache(cfg["stream_cache_db"], "SPX")
+    assert (light.spot, light.expiration, light.chain_entries) == (
+        full.spot,
+        full.expiration,
+        full.chain_entries,
+    )
+    assert full.greeks and not light.greeks and not light.oi and not light.volume
+    kw = {"each_side": 20, "max_age_seconds": 120.0}
+    a = service._provider.chain_quotes(cfg["stream_cache_db"], full, **kw)
+    b = service._provider.chain_quotes(cfg["stream_cache_db"], light, **kw)
+    assert [(q["side"], q["strike"], q["bid"], q["ask"], q["mid"], q["delta"]) for q in a] == [
+        (q["side"], q["strike"], q["bid"], q["ask"], q["mid"], q["delta"]) for q in b
+    ]
+
+
+# --------------------------------------------------------------------------- held strikes
+def test_a_declared_held_leg_outside_the_window_is_recorded(tmp_path):
+    """Shown to fail without `held_symbols`: 5850 is 30 strikes below spot, outside the 20."""
+    from cherrypick.core import streamrequests
+
+    cfg = _cfg(tmp_path)
+    trades = tmp_path / "trades.db"
+    conn = sqlite3.connect(trades)
+    conn.execute("CREATE TABLE fly_positions (wing_leg_symbol TEXT, status TEXT)")
+    conn.executemany(
+        "INSERT INTO fly_positions VALUES (?, ?)", [(".SPX_p5850", "open"), (".SPX_p5800", "closed")]
+    )
+    conn.commit()
+    conn.close()
+    query = "SELECT wing_leg_symbol FROM fly_positions WHERE status = 'open'"
+    streamrequests.write_request("flies", ["SPX"], leg_sources=[streamrequests.leg_source(trades, query)])
+    assert service.record_quotes(cfg, now_et=IN_SESSION) == 82
+    kept = {(r["side"], r["strike"]) for r in _rows(cfg)}
+    assert ("put", 5850.0) in kept and ("call", 5850.0) in kept and ("put", 5800.0) not in kept
+    off = {**cfg, "quote_history": {"enabled": True, "held_strikes": False}}
+    assert service.record_quotes(off, now_et=IN_SESSION + timedelta(seconds=15)) == 80
+
+
+# --------------------------------------------------------------------------- the history file
+def test_the_history_db_is_wal_and_a_read_only_reader_opens_it(tmp_path):
+    from cherrypick.core import db as core_db
+
+    cfg = _cfg(tmp_path)
+    service.record_quotes(cfg, now_et=IN_SESSION)
+    conn = sqlite3.connect(cfg["history_db_path"])
+    assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    conn.close()
+    # Every writer is closed, so no -shm is left; a mode=ro reader (flies, overview) still reads it.
+    ro = core_db.connect_ro(cfg["history_db_path"])
+    try:
+        assert ro.execute("SELECT COUNT(*) FROM gex_quotes").fetchone()[0] == 80
+    finally:
+        ro.close()
+
+
+def test_a_failing_series_loses_only_its_own_rows_in_a_shared_tick(tmp_path, monkeypatch):
+    """Shown to fail without the savepoint in `historydb.step`: the spots written before the failing
+    series are committed with the tick, and nothing the failing series wrote is."""
+    from cherrypick.gex import historydb
+
+    cfg = _cfg(tmp_path)
+    monkeypatch.setattr(service._provider, "read_spots", lambda *a, **k: {"SPX": SPOT})
+    try:
+        with historydb.tick(cfg["history_db_path"]) as conn:
+            assert service.record_spots(cfg, conn=conn) == 1
+            with historydb.step(cfg["history_db_path"], conn) as c:
+                c.execute(
+                    "INSERT INTO gex_quote_samples (symbol, trade_date, ts, expiration) VALUES ('X','d',1,'e')"
+                )
+                raise RuntimeError("boom")
+    except RuntimeError:
+        pass
+    db = sqlite3.connect(cfg["history_db_path"])
+    try:
+        assert db.execute("SELECT COUNT(*) FROM gex_spot_history").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM gex_quote_samples").fetchone()[0] == 0
+    finally:
+        db.close()
+
+
+def test_flies_wall_read_uses_the_symbol_ts_index(tmp_path):
+    """`core.regime.gex_at`'s query, planned against the recorder's schema. Shown to fail with the
+    index removed (the plan falls back to the (symbol, trade_date) index and a sort)."""
+    cfg = _cfg(tmp_path)
+    service.record_quotes(cfg, now_et=IN_SESSION)
+    conn = sqlite3.connect(cfg["history_db_path"])
+    try:
+        plan = " ".join(
+            str(r[-1])
+            for r in conn.execute(
+                "EXPLAIN QUERY PLAN SELECT ts FROM gex_regime_history WHERE symbol = ? AND ts <= ? "
+                "AND (expiration IS NULL OR expiration >= trade_date) ORDER BY ts DESC",
+                ("SPX", 1.0),
+            )
+        )
+    finally:
+        conn.close()
+    assert "idx_grh_sym_ts" in plan and "TEMP B-TREE" not in plan, plan

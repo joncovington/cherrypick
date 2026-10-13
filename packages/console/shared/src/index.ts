@@ -1,4 +1,5 @@
 export * from "./paths.js";
+export * from "./feeDrag.js";
 export * from "./types/overview.js";
 export * from "./types/status.js";
 export * from "./types/modules.js";
@@ -15,6 +16,7 @@ export * from "./types/morning.js";
 export * from "./types/technicals.js";
 export * from "./types/performance.js";
 export * from "./types/live.js";
+export * from "./types/liveBooks.js";
 export * from "./types/regimeCuts.js";
 export * from "./types/fliesAgent.js";
 export * from "./types/openingRange.js";
@@ -22,3 +24,4 @@ export * from "./types/futures.js";
 export * from "./types/system.js";
 export * from "./types/features.js";
 export * from "./types/optionsFlow.js";
+export * from "./types/compare.js";

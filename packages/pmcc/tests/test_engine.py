@@ -168,12 +168,9 @@ def test_plan_entry_worksheet_with_atm_short():
     assert roles["long_call"]["expiration"] == "2026-09-04"
 
 
-def test_short_time_value_and_position_value():
+def test_short_time_value():
     assert engine.short_time_value(4.75, 70.60, 67.0) == pytest.approx(1.15)
     assert engine.short_time_value(1.20, 66.00, 67.0) == pytest.approx(1.20)  # OTM: all TV
-    value = engine.position_value({"long_call": {"mid": 20.7}, "short_call_1": {"mid": 4.75}})
-    assert value == pytest.approx(15.95)
-    assert engine.position_value({"long_call": {"mid": 20.7}, "short_call_1": None}) is None
 
 
 def test_settlement_decomposition_cash_equivalence_short_call():

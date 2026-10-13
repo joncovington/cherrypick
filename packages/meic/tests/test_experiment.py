@@ -135,6 +135,34 @@ def test_bootstrap_resamples_sessions_and_returns_an_interval_once_there_are_eno
     assert out["excludes_zero"] is True
 
 
+def test_bootstrap_pairs_sessions_instead_of_pooling_trade_means():
+    """A takes ten entries a day at +$5 each; the gated B takes one at +$6. Same days, same tape.
+
+    Pooled trade means (the pre-2026-10-12 estimator) compared A's average ENTRY with B's and said
+    B was ahead by $1 -- an interval wholly below zero, the wrong sign for the account. Paired per
+    session it is A's +$50 against B's +$6 on every day: A ahead by $44 a session. (The real ledger
+    showed the same shape: bp-5k's per-trade read was -$6 and spanned zero; per session it was
+    -$31.5k with every day on one side.)"""
+    days = [f"2026-08-{d:02d}" for d in range(3, 3 + experiment.MIN_SESSIONS_FOR_INTERVAL)]
+    a = [rec(d, 5.0) for d in days for _ in range(10)]
+    b = [rec(d, 6.0) for d in days]
+    out = experiment.bootstrap_difference(a, b, iterations=500, seed=3)
+    assert out["ok"] is True and out["sessions"] == len(days)
+    assert out["point_estimate"] == pytest.approx(44.0)
+    assert out["excludes_zero"] is True and out["ci95"][0] > 0
+    assert out["unit"] == "per-session net, paired"
+
+
+def test_bootstrap_reads_a_session_one_arm_sat_out_as_zero():
+    """A gate that blocks a whole day is the gate's effect, not a missing observation."""
+    days = [f"2026-08-{d:02d}" for d in range(3, 3 + experiment.MIN_SESSIONS_FOR_INTERVAL)]
+    a = [rec(d, -10.0) for d in days]
+    b = [rec(d, 0.0) for d in days[::2]]  # B traded (flat) every other day, sat out the rest
+    out = experiment.bootstrap_difference(a, b, iterations=200, seed=4)
+    assert out["sessions"] == len(days)
+    assert out["point_estimate"] == pytest.approx(-10.0)
+
+
 def test_bootstrap_interval_spans_zero_when_the_arms_are_indistinguishable():
     """The expected answer for a long while, and it must be reported as such rather than as a
     small-but-real effect."""

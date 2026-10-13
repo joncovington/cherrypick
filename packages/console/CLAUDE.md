@@ -314,6 +314,28 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   (`names=all` is the way out). With no label it cuts nothing, because an unknown flag would empty
   it.
 
+**Compare** (`/compare`, `lightbox/manifests/CompareLightbox.tsx`, `pages/Compare/`) — every arm of
+every module beside its control, over `GET /api/compare?scope=era|all` (`routes/compare.ts` →
+`services/compareBridge.ts` → `python -m cherrypick.core.compare --json`). A bridge, not a mirror:
+the intervals, paired differences, t bounds, sign tests and projections are `core.stats`'
+(`server/test/compare-bridge.test.ts`, `web/test/comparePage.test.tsx`).
+
+- Field names stay the bridge's snake_case, verbatim (`shared/types/compare.ts`). A schema other than
+  1 is refused, never half-rendered; every failure is `{ok: false, error}`, never an empty table.
+- Memoised on every module's paper ledger, the advisor's store and the New York session (a break
+  dated ahead binds from its own date). A bad `scope` is a 400 and never runs the bridge.
+- **No verdicts.** Tone comes only from a number's sign; interval ends, the t bound, the sign-test p
+  and the projections are never toned, and a test fails on any verdict-like class. A null is an em
+  dash, never `$0.00`.
+- **Size-normalised beside the dollars.** In dollars a session, a capped arm beside a large control
+  reads as size: MEIC's capped books sit $22k–$31k behind a control taking ~270 entries a day against
+  their ~6. So each arm also shows `net / entry` (entries per session beneath) and `net / $100 risk`
+  (on the capital `core.ledgers` records per trade: max loss or buying power, as the module's ledger
+  states it), and each pair shows `diff / entry` and `diff / $100 risk`. These are the bridge's
+  `per_entry` / `per_100_risk` paired blocks, keyed and windowed as the dollar pair. A ledger with no
+  recorded capital (flies) shows a dash there, never zero, and a partial record says how many trades
+  carry one.
+
 **Module advisor slides.** `readers/advisor.ts`'s `readAdvisorModule` serves
 `/api/advisor/module/:module`: active experiments with progress against length and stall budget, the
 session strip from the advisor's `enactment` table (read, never re-derived), the paired comparison as
@@ -366,6 +388,12 @@ net per period, the intraday series and the broker account. Rules, stated on the
   `PerformanceTab.tsx`'s own exported cards) and the **performance** slide's calibration reading
   (`core.metrics` over `live_trades.db`, rendered by `MetricTiles`). Their two max drawdowns differ on
   purpose — daily against per trade — and the page labels which is which.
+
+**The Overview's live panel** (`pages/Overview/LivePanel.tsx`, 2026-10-12) lists every module with a
+live book (`readers/liveBooks.ts`, `GET /api/live/books`: flies and bwb, each module's own
+settled-net rule mirrored) and draws only those with live activity — flies through its own
+`LiveFliesPanel`, bwb as three tiles linking to its live-vs-paper tab. The quiet ones are named in one
+line; an absent ledger and a failed read say which they are.
 
 **Flies intraday agent tab** (`/flies/agent`, `pages/Flies/AgentSlide.tsx` over
 `GET /api/flies/agent[?session=]` → `readers/fliesAgent.ts`). It has no live view: a live read is
@@ -444,7 +472,10 @@ net — each money header's `title` stating its definition.
 - A recently added cost column is read as optional (`NULL` on an older ledger), so a missing column
   reads "not recorded" rather than `withReadOnlyDb` turning it into an empty table.
 - A totals chip carries gross, fees, settlement and net over every matching row, and says how many
-  rows a partially recorded measure (slippage) covers.
+  rows a partially recorded measure (slippage) covers. A settlement total over any row that never
+  recorded it is n/r, never a partial sum.
+- Fee drag is one helper, `@console/shared`'s `feeDragPct` (trading fees, settlement out, ÷ premium
+  collected; null when nothing was collected), on every surface that shows it.
 - Each module on the standard has its own trade-standard test against its own fixture, shown to fail
   (the flies one by removing the subtraction and the filter):
 
@@ -455,6 +486,7 @@ net — each money header's `title` stating its definition.
 | bwb | `readers/bwb.ts` `bwbTradeCash` | `bwb-trade-standard` | slippage charged inside `fees`; each part subtracted once; a broker-reconciled row takes none out |
 | earnings | `readers/earnings.ts` `earningsTradeCash` | `earnings-trade-standard` | `entry_cost`/`exit_cost` carry slippage and (exit) settlement fee; history is closed trades across both books |
 | calendars, pmcc, curve | `readers/positionCash.ts`, `components/TradeMoney.tsx` | `position-trade-standard` (via curve), `pmcc-`/`calendars-trade-standard` on fixtures from each module's `db.connect` | exit kinds add `assigned`; calendars' history is per week and arm, net null until every position (shares included) has closed, totals over finished weeks only |
+| contango | `readers/contango.ts` `contangoTradeCash` | `contango-trade-standard`, on a fixture from its `db.connect` | a stint is a fund bought and sold: entry (the purchase) + exit (the sale) + distributions = gross; slippage charged as a cost; settlement never recorded, so `n/r` |
 
 ## History-table controls
 
@@ -471,7 +503,7 @@ definition tooltip, cell, kind); the controls come from that list.
   picker (Monday-first, nothing after today); `?from=&to=` written with `replace`; presets end today in
   New York time. **The server applies it** (`readers/dateRange.ts`: one parser, one clause builder), so
   counts and totals describe the range. Each module bounds the date its history is ABOUT, and the bar
-  names it: trade date for flies and meic, close date for bwb/pmcc/curve/earnings (an open position is
+  names it: trade date for flies and meic, close date for bwb/pmcc/curve/earnings/contango (an open position is
   outside any range), week for calendars.
 - **`HistoryTable`** (`components/table/HistoryTable.tsx`) is the card for every module but flies.
   Money and `numeric` columns right-align per column (`td.num`), since a reorderable table cannot align

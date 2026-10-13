@@ -29,6 +29,8 @@
     "account_deploy_limit_pct": 50,
     "max_open_margin_dollars": 1000,
     "fresh_quote_tolerance_dollars": 0.05,
+    "_entry_pricing": "How the opening credit spread is priced (2026-10-12, docs/experiment-log.md). \"concession\" (the default, and what any other value means) is the pilot's rule since it began: the fresh credit, mid less slippage_frac (0.125) of the two legs' spreads, floored to the tick -- about mid - 0.05 on 5-wide SPX. \"mid_first\" asks the vertical's mid (floored to the tick, never past it) on a structure's FIRST order of the day; if that order is still resting on the next tick, the ordinary cancel/replace concedes to the concession price, and every later order for that structure that day is priced there. The fresh-quote check, the buying-power cap and every other gate apply to both orders unchanged. The resting completion is priced from the credit actually filled (credit - 0.25 on 5-wide SPX), so a fill at mid raises the completion limit by the same amount; that is intended. Switching it on changes what a live entry costs and how often it fills, so it is a LIVE measurement break: turn it on only at a declared boundary and journal it on the live ledger.",
+    "entry_pricing": "concession",
     "negative_floor_override": "",
     "max_incomplete_spreads": null,
     "completion_cutoff": "15:30",

@@ -18,13 +18,33 @@ has no profit-target close" and the live-loop plan's rung-1 scope: no ORB, no mu
   force_close_spec  Same crossing-price pricing as stop_close_spec, over whichever side(s) of
                     the IC are still open (one or both) — the 2-leg and 4-leg force-close cases
                     are the same code path with a different leg set.
+
+**Every leg symbol is OCC (2026-10-12).** The candidate and the ledger row carry only the DXLink
+streamer symbol (`.XSP261012P580`) -- the stream cache's key. tastytrade orders take the OCC symbol
+(`XSP   261012P00580000`), which is what `live_smoke` already sent. Until this date all three
+builders sent the streamer symbol, so no live meic order could have been accepted. `_order_symbol`
+converts at this boundary, through `cherrypick.core.streamcache.streamer_to_occ_symbol` (the
+checked inverse of the cache's own converter), and refuses a symbol with no OCC form.
 """
 
 from __future__ import annotations
 
+from cherrypick.core.streamcache import occ_to_streamer_symbol, streamer_to_occ_symbol
 from cherrypick.core.structures import TICK, tick_ceil, tick_floor  # one rounding rule, suite-wide
 
-__all__ = ["TICK", "tick_ceil", "tick_floor"]
+__all__ = ["TICK", "order_symbol", "tick_ceil", "tick_floor"]
+
+
+def order_symbol(symbol: str | None) -> str:
+    """The OCC symbol a broker order names this leg by. A streamer symbol is converted; an OCC
+    symbol passes through unchanged (only when it converts back to itself); anything else is a
+    ValueError -- a leg the broker cannot identify is never sent."""
+    occ = streamer_to_occ_symbol(symbol or "")
+    if occ:
+        return occ
+    if symbol and streamer_to_occ_symbol(occ_to_streamer_symbol(symbol)) == symbol:
+        return symbol
+    raise ValueError(f"leg symbol {symbol!r} has no OCC form -- not an order symbol")
 
 
 def _leg(rec: dict, action: str, quantity: int) -> dict:
@@ -33,10 +53,28 @@ def _leg(rec: dict, action: str, quantity: int) -> dict:
         raise ValueError(f"leg at strike {rec.get('strike')!r} carries no streamer_symbol")
     return {
         "instrument_type": rec.get("instrument_type") or "Equity Option",
-        "symbol": symbol,
+        "symbol": order_symbol(symbol),
         "action": action,
         "quantity": quantity,
     }
+
+
+def _close_legs(short_sym: str, long_sym: str, quantity) -> list[dict]:
+    """BTC the short, STC the long -- one side of an open IC, named by OCC symbol."""
+    return [
+        {
+            "instrument_type": "Equity Option",
+            "symbol": order_symbol(short_sym),
+            "action": "buy to close",
+            "quantity": quantity,
+        },
+        {
+            "instrument_type": "Equity Option",
+            "symbol": order_symbol(long_sym),
+            "action": "sell to close",
+            "quantity": quantity,
+        },
+    ]
 
 
 def entry_spec(chosen: dict, quantity: int = 1) -> dict:
@@ -79,26 +117,12 @@ def stop_close_spec(trade: dict, side: str, leg_quotes: dict, stop_limit_ratio: 
     price = tick_ceil((sq["ask"] - lq["bid"]) * stop_limit_ratio)
     if price <= 0:
         raise ValueError(f"{side} close price {price!r} is not a submittable debit")
-    qty = trade.get("quantity", 1)
     return {
         "time_in_force": "Day",
         "order_type": "Limit",
         "price": price,
         "price_effect": "debit",
-        "legs": [
-            {
-                "instrument_type": "Equity Option",
-                "symbol": short_sym,
-                "action": "buy to close",
-                "quantity": qty,
-            },
-            {
-                "instrument_type": "Equity Option",
-                "symbol": long_sym,
-                "action": "sell to close",
-                "quantity": qty,
-            },
-        ],
+        "legs": _close_legs(short_sym, long_sym, trade.get("quantity", 1)),
     }
 
 
@@ -121,22 +145,7 @@ def force_close_spec(
             continue
         short_sym, long_sym, sq, lq = _side_legs(trade, leg_quotes, side)
         raw_debit += sq["ask"] - lq["bid"]
-        legs.append(
-            {
-                "instrument_type": "Equity Option",
-                "symbol": short_sym,
-                "action": "buy to close",
-                "quantity": qty,
-            }
-        )
-        legs.append(
-            {
-                "instrument_type": "Equity Option",
-                "symbol": long_sym,
-                "action": "sell to close",
-                "quantity": qty,
-            }
-        )
+        legs.extend(_close_legs(short_sym, long_sym, qty))
     price = tick_ceil(raw_debit * stop_limit_ratio)
     if price <= 0:
         raise ValueError(f"force-close price {price!r} is not a submittable debit")

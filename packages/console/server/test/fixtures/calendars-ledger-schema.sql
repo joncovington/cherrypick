@@ -207,6 +207,7 @@ CREATE INDEX idx_dc_events_session ON dc_management_events(session_date);
 CREATE INDEX idx_dc_iterations_session ON dc_loop_iterations(session_date, ran_at);
 CREATE INDEX idx_dc_legs_status ON dc_legs(status, expiration);
 CREATE INDEX idx_dc_marks_position ON dc_marks(position_id, marked_at);
+CREATE INDEX idx_dc_marks_position_leg ON dc_marks(position_id, leg_role, marked_at);
 CREATE INDEX idx_dc_marks_session ON dc_marks(session_date);
 CREATE INDEX idx_dc_positions_status ON dc_positions(status);
 CREATE INDEX idx_dc_positions_week ON dc_positions(week_of, arm);

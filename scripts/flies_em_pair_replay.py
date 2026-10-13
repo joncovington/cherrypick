@@ -16,8 +16,8 @@ on each side is the pair, and it is scored two ways:
 - `held`   -- the same debit spread held to settlement and never completed, repriced at the real
               print through `fly.position_pnl` (`long_vertical`, the settlement fee that print
               triggers). An uncompleted row IS the held case and keeps its recorded P&L; a completed
-              row is charged its opening fee only, estimated as the median `fees - settlement_fees`
-              over the window's uncompleted rows. A counterfactual, not a fill.
+              row is charged its own entry's share of its fees only (`analysis_rows.entry_fees`).
+              A counterfactual, not a fill.
 
 The two diverge exactly where the proposal needs them to agree: completion caps the spread at a
 fly's payoff, so on the day spot runs through it the hedge is gone (2026-09-21: the call spread
@@ -29,25 +29,9 @@ does not -- and it needs several losing days before it says anything.
 from __future__ import annotations
 
 import argparse
-import os
-import sqlite3
 import statistics as st
-from pathlib import Path
 
-from cherrypick.flies import fly
-
-
-def _ledger(name: str) -> Path:
-    home = os.environ.get("CHERRYPICK_HOME")
-    root = (Path(home) if home else Path.home() / ".cherrypick") / "data" / "flies"
-    return root / f"{name}_trades.db"
-
-
-def load(conn: sqlite3.Connection, arm: str, symbol: str, since: str, until: str | None) -> list[dict]:
-    q = """select * from fly_positions where arm=? and symbol=? and status='settled' and trade_date>=?
-           and (? is null or trade_date<=?) and void_reason is null and coalesce(closed_before_expiry,0)=0
-           order by entry_time"""
-    return [dict(r) for r in conn.execute(q, (arm, symbol, since, until, until))]
+from cherrypick.flies import analysis_rows, fly
 
 
 def _session_stats(per_day: dict[str, float]) -> tuple[float, float, float, int]:
@@ -60,7 +44,9 @@ def _session_stats(per_day: dict[str, float]) -> tuple[float, float, float, int]
     return sum(vals), (min(vals) if vals else 0.0), dd, sum(v < 0 for v in vals)
 
 
-def held_pnl(row: dict, open_fee: float) -> float:
+def held_pnl(row: dict) -> float:
+    """The row held as its opening debit spread to the print: its recorded P&L if it was never
+    completed, else repriced with only its entry's share of the fees (`analysis_rows`)."""
     if row["kind"] == "long_vertical":
         return row["pnl"]
     spread = {
@@ -70,7 +56,7 @@ def held_pnl(row: dict, open_fee: float) -> float:
         "wing_width": row["wing_width"],
         "net": -row["debit"],
         "quantity": row["quantity"],
-        "fees": open_fee,
+        "fees": analysis_rows.entry_fees(row),
     }
     return fly.position_pnl(spread, row["settlement_price"])
 
@@ -86,14 +72,14 @@ def main() -> None:
     ap.add_argument("--until")
     a = ap.parse_args()
 
-    conn = sqlite3.connect(_ledger(a.ledger))
-    conn.row_factory = sqlite3.Row
-    base, up, dn = (load(conn, arm, a.symbol, a.since, a.until) for arm in (a.base, a.up, a.down))
-    unfilled = [r["fees"] - (r["settlement_fees"] or 0.0) for r in up + dn if r["kind"] == "long_vertical"]
-    if not base or not unfilled:
-        print("nothing to pair: no base rows, or no uncompleted pair rows to price the opening fee from")
+    conn = analysis_rows.open_ledger(a.ledger)
+    base, up, dn = (
+        analysis_rows.settled_positions(conn, arm=arm, symbol=a.symbol, since=a.since, until=a.until)
+        for arm in (a.base, a.up, a.down)
+    )
+    if not base:
+        print("nothing to pair: no base rows")
         return
-    open_fee = st.median(unfilled)
 
     base_day: dict[str, float] = {}
     for r in base:
@@ -109,7 +95,7 @@ def main() -> None:
 
     print(
         f"== {a.ledger} {a.base} + first {a.up}/{a.down}  {days[0]}..{days[-1]}  "
-        f"({len(days)} sessions; opening fee {open_fee:.2f})"
+        f"({len(days)} sessions; a completed row held is charged its own entry fee)"
     )
     print(
         f"  {'session':10} {'base':>9} {'traded':>8} {'held':>8}   "
@@ -120,7 +106,7 @@ def main() -> None:
     for d in days:
         u, w = first[("up", d)], first[("dn", d)]
         traded[d] = u["pnl"] + w["pnl"]
-        held[d] = held_pnl(u, open_fee) + held_pnl(w, open_fee)
+        held[d] = held_pnl(u) + held_pnl(w)
         legs = " / ".join(
             f"{s} {r['entry_time'][11:16]} K{r['center']:.0f} "
             f"{'fly' if r['kind'] == 'fly' else 'open'} {r['pnl']:+.0f}"

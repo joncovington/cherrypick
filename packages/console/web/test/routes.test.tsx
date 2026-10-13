@@ -189,6 +189,8 @@ describe("the suite surfaces are on the frame", () => {
     ["/live", "Live / today"],
     ["/reports/eod", "Reports / eod"],
     ["/reports", "Reports / morning"],
+    ["/compare", "Compare / arms"],
+    ["/compare/arms?scope=all", "Compare / arms"],
     ["/advisor", "Advisor / advisor"],
     ["/system", "System / health"],
     ["/system/supervisor", "System / supervisor"],

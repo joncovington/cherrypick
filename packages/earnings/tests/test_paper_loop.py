@@ -61,8 +61,6 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(db_paper, "DB_PATH", book)
     monkeypatch.setattr(metrics, "DB_PATH", book)
     monkeypatch.setattr(metrics, "PAPER_DB_PATH", book)
-    monkeypatch.setattr(harness, "_eod_report_path", lambda day: tmp_path / f"paper-eod-{day}.md")
-    monkeypatch.setattr(harness, "_analysis_path", lambda day: tmp_path / f"eod-analysis-{day}.md")
     db_paper.cmd_init_db(argparse.Namespace())
     monkeypatch.setattr(paper_loop, "state_file", lambda name: tmp_path / name)
     monkeypatch.setattr(paper_loop, "lock_path", lambda: tmp_path / "loop.lock")

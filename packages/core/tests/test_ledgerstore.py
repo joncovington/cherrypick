@@ -145,3 +145,31 @@ def test_open_positions_filters_by_status(store, conn):
     store.save_position(conn, {"position_id": "p2", "status": "closed"})
     ids = [r["position_id"] for r in store.open_positions(conn, ("open",))]
     assert ids == ["p1"]
+
+
+def test_closed_results_nets_fees_and_keeps_each_modules_extra_columns_in_place():
+    c = sqlite3.connect(":memory:")
+    c.row_factory = sqlite3.Row
+    c.execute(
+        "CREATE TABLE x_positions (arm TEXT, symbol TEXT, structure TEXT, status TEXT, gross_pnl REAL, "
+        "fees REAL, week_of TEXT, era TEXT)"
+    )
+    c.executemany(
+        "INSERT INTO x_positions VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            ("control", "SPY", "dc", "closed", 100.0, 10.0, "w1", "a"),
+            ("control", "SPY", "dc", "closed", -50.0, 10.0, "w2", "b"),
+            ("control", "SPY", "dc", "open", None, None, "w3", "b"),
+        ],
+    )
+    store = ledgerstore.LedgerStore("x_", "", {})
+    got = store.closed_results(c)
+    assert got == {
+        "control": {
+            "SPY": {"positions": 2, "gross_pnl": 50.0, "fees": 20.0, "net_pnl": 30.0, "win_rate": 0.5}
+        }
+    }
+    weeks = store.closed_results(c, group="structure", lead=(("weeks", "COUNT(DISTINCT week_of)"),))
+    assert list(weeks["control"]["dc"]) == ["positions", "weeks", "gross_pnl", "fees", "net_pnl", "win_rate"]
+    scoped = store.closed_results(c, where="era = ?", params=("a",), trail=(("n2", "COUNT(*)"),))
+    assert scoped["control"]["SPY"]["net_pnl"] == 90.0 and list(scoped["control"]["SPY"])[-1] == "n2"

@@ -117,11 +117,11 @@ def test_a_completion_fill_records_the_broker_time_price_and_all_three_distances
     )
     now = clock.now_et()
     filled_at = now - timedelta(seconds=20)
-    # One look 30s before the broker filled: spot 7503 (8 points past the 7495 centre, put side),
+    # One look 10s before the broker filled: spot 7503 (8 points past the 7495 centre, put side),
     # completing spread at mid 1.20 / natural 1.40 against the 1.10 limit.
     dbmod.record_order_path(
         live_conn,
-        observed_at=_iso(filled_at - timedelta(seconds=30)),
+        observed_at=_iso(filled_at - timedelta(seconds=10)),
         trade_date=DAY,
         position_id="E1",
         order_id="ORD-C1",
@@ -161,9 +161,80 @@ def test_a_completion_fill_records_the_broker_time_price_and_all_three_distances
     assert order["fill_dist_widths"] == pytest.approx(1.6)
     assert order["fill_mid_gap"] == pytest.approx(0.10)
     assert order["fill_natural_gap"] == pytest.approx(0.30)
+    assert order["fill_obs_age_s"] == pytest.approx(10.0)
     # The position books the broker's price, not the status's limit (2026-10-12).
     pos = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
     assert pos["kind"] == "fly" and pos["debit"] == pytest.approx(1.05)
+
+
+def _path_look(observed_at: str, *, buy, sell, spot: float) -> dict:
+    return {
+        "observed_at": observed_at,
+        "source": "tick",
+        "limit_price": 1.90,
+        "buy_bid": buy[0],
+        "buy_ask": buy[1],
+        "sell_bid": sell[0],
+        "sell_ask": sell[1],
+        "spot": spot,
+    }
+
+
+def _filled_completion(broker_filled_at: str) -> dict:
+    return {
+        "order_id": "512454758",
+        "leg": fm.COMPLETION,
+        "side": "put",
+        "center": 7770.0,
+        "wing_width": 5.0,
+        "limit_price": 1.90,
+        "broker_filled_at": broker_filled_at,
+        "resolved_at": "2026-10-07T11:13:57-04:00",
+    }
+
+
+def test_a_price_gap_is_never_taken_from_a_look_long_before_the_fill():
+    """Shown to fail on the old bound (the price gap shared spot's 60s): order 512454758 on
+    2026-10-07 filled at 1.90 at 11:13:49 ET, in one of the burst watcher's minute-long holes in
+    the path. The last look before it was the 11:12:56 tick, 53s earlier, with the spread at mid
+    2.45 -- recorded as the market sitting 0.55 above the limit it filled at. Spot moved 6.5 points
+    in that minute; the first look after the fill had the mid at 2.00. A look that old says nothing
+    about the price at the fill, so the gap is NULL; spot, which has the trail behind it, keeps its
+    own minute."""
+    order = _filled_completion("2026-10-07T15:13:49.356000+00:00")
+    path = [_path_look("2026-10-07T11:12:56-04:00", buy=(11.5, 11.6), sell=(9.0, 9.2), spot=7772.83)]
+    out = fill_facts.measures(order, None, path)
+    assert out["fill_mid_gap"] is None and out["fill_natural_gap"] is None
+    assert out["fill_mid"] is None and out["fill_obs_at"] is None and out["fill_obs_age_s"] is None
+    assert out["fill_spot"] == pytest.approx(7772.83) and out["fill_spot_source"] == "path"
+
+
+def test_a_fresh_look_gives_the_gap_and_says_how_old_it_was():
+    order = _filled_completion("2026-10-07T15:13:49.356000+00:00")
+    path = [
+        _path_look("2026-10-07T11:12:56-04:00", buy=(11.5, 11.6), sell=(9.0, 9.2), spot=7772.83),
+        _path_look("2026-10-07T11:13:41-04:00", buy=(8.6, 8.7), sell=(6.6, 6.7), spot=7778.9),
+    ]
+    out = fill_facts.measures(order, None, path)
+    assert out["fill_obs_at"] == "2026-10-07T11:13:41-04:00"
+    assert out["fill_obs_age_s"] == pytest.approx(8.4)
+    assert out["fill_mid"] == pytest.approx(2.0) and out["fill_mid_gap"] == pytest.approx(0.10)
+
+
+def test_a_ledger_from_before_fill_obs_age_is_migrated_on_connect(tmp_path):
+    """The deployed ledgers' `fly_live_orders` predates the age column; `CREATE TABLE IF NOT
+    EXISTS` never adds it, so without the migration every at-fill write would fail (inside
+    `_telemetry`, silently)."""
+    import sqlite3
+
+    path = str(tmp_path / "old.db")
+    raw = sqlite3.connect(path)
+    raw.execute("CREATE TABLE fly_live_orders (order_id TEXT PRIMARY KEY, trade_date TEXT, fill_obs_at TEXT)")
+    raw.commit()
+    raw.close()
+    conn = dbmod.connect(path)
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(fly_live_orders)")}
+    assert "fill_obs_age_s" in cols
 
 
 def test_without_broker_fills_the_row_says_it_used_the_time_we_noticed(live_conn):

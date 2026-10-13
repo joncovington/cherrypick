@@ -6,10 +6,12 @@ the broker-side operations the live plan needs: connection check, account listin
 preflight/placement through `core.broker.place_order` (real dry-run preflight + the deploy
 governor). It is deliberately tiny — everything reusable already lives in core.
 
-**Live submission is double-gated and OFF.** `--live` requires BOTH `live.enabled: true` in
-this module's config AND a non-empty `live.gate0_confirmed` attestation (who/when Gate 0 of
-docs/live-trading-plan.md was judged passed). Until then every submission is a dry run —
-the real preflight against the real designated account, placing nothing.
+**Live submission is gated and OFF.** `--live` requires `live.enabled: true` in this module's
+config, a non-empty `live.gate0_confirmed` attestation (who/when Gate 0 of
+docs/live-trading-plan.md was judged passed), `live.arm` naming a configured arm, a designated
+account, and today's arm record from `/live-flies-start` -- every gate the live tick checks
+(`live_gates`). Without them every submission is a dry run -- the real preflight against the
+real designated account, placing nothing.
 
 Usage:
     python src/broker_cli.py get_connection_status
@@ -27,8 +29,10 @@ import sys
 
 from cherrypick.core import broker as _broker  # noqa: E402
 from cherrypick.core import settlement as _settlement  # noqa: E402
+from cherrypick.core.broker import cli as _broker_cli
 
 from cherrypick.flies import credentials as creds  # noqa: E402
+from cherrypick.flies import provider  # noqa: E402
 from cherrypick.flies.cli import load_config  # noqa: E402
 
 
@@ -76,36 +80,56 @@ async def fresh_option_quotes(session, symbols: list[str]) -> dict[str, dict]:
 official_settlement_price = _settlement.official_index_close
 
 
-def live_gates(config: dict) -> list[str]:
-    """The unmet gates for a LIVE submission — empty means live is allowed. Pure."""
+_READ = object()  # "read it yourself": the keyring for the account, the ET clock for the day
+
+
+def live_gates(config: dict, *, designated=_READ, when=None) -> list[str]:
+    """The unmet gates for a LIVE submission -- empty means live is allowed. Re-checked by the
+    execution adapter on every live submit and by `execute_trade --live` before it builds anything.
+
+    One source, two additions (2026-10-12). The account gates are `live_loop.readiness` itself, so
+    the tick and the submission cannot drift: `live.enabled`, the Gate 0 attestation, `live.arm`
+    naming a configured arm, and a designated account. Before this the by-hand path and the
+    per-submit re-check skipped the last two -- and with no designated account
+    `core.broker.resolve_account` falls back to the FIRST account on the login, so a by-hand
+    `--live` could have traded an account nobody designated. Then the day's arm record, read
+    exactly as the tick's dead-man's switch reads it (`live_loop.should_disarm`): a day nobody
+    armed with `/live-flies-start`, or one past `live.disarm_time`, refuses every live submission,
+    not only the scheduled tick. Disabled short-circuits before any keyring or file read.
+
+    `designated` and `when` exist for tests and for the adapter, which has its own account read;
+    left out, they are read here."""
+    from cherrypick.flies import live_loop  # lazy: live_loop reaches this module lazily too
+
     live = config.get("live") or {}
-    unmet = []
     if not live.get("enabled"):
         return ["live.enabled is false (docs/live-trading-plan.md, Gate 0 first)"]
-    if not str(live.get("gate0_confirmed") or "").strip():
-        unmet.append("live.gate0_confirmed is empty — a human must attest Gate 0 passed (who/when)")
+    if designated is _READ:
+        designated = creds.designated_account()
+    unmet = live_loop.readiness(config, designated=designated)
+    when = when or provider.now_et()
+    reason = live_loop.should_disarm(config, provider.minute_of_day(when), when.date().isoformat())
+    if reason:
+        unmet.append(f"not armed for this session: {reason} (arm with /live-flies-start)")
     return unmet
 
 
 async def _account(session):
-    return await _broker.resolve_account(session, creds.designated_account())
+    return await _broker_cli.designated_account(creds, session)
 
 
 async def cmd_connection_status(_args) -> dict:
-    session = creds.get_session()
-    n = await _broker.account_count(session)
-    return {
-        "ok": True,
-        "accounts": n,
-        "designated": ("****" + d[-4:]) if (d := creds.designated_account()) else None,
-    }
+    """Keyring + session probe, designated account masked (`core.broker.cli`)."""
+    return await _broker_cli.connection_status(
+        creds,
+        live_trading_enabled=bool((load_config().get("live") or {}).get("enabled")),
+        hint="run `cherrypick connect --module flies` to store the OAuth secrets",
+    )
 
 
 async def cmd_list_accounts(_args) -> dict:
-    # Machine shape, matching MEIC's tt.py: FULL account numbers, because the orchestrator's
-    # account-designation flow needs them to write the keyring value (it masks for display).
-    session = creds.get_session()
-    return {"ok": True, "accounts": await _broker.list_accounts(session)}
+    # FULL account numbers, the tt.py machine shape the designation flow reads.
+    return await _broker_cli.list_accounts(creds)
 
 
 async def cmd_execute_trade(args) -> dict:
@@ -123,35 +147,22 @@ async def cmd_execute_trade(args) -> dict:
 
 
 async def cmd_order_status(args) -> dict:
-    """Read-only — no live gating needed, checking a working order's status places nothing."""
-    session = creds.get_session()
-    account = await _account(session)
-    return await _broker.order_status(account, session, args.order_id)
+    """Read-only -- checking a working order's status places nothing."""
+    return await _broker_cli.order_status(creds, args.order_id)
 
 
 async def cmd_cancel_order(args) -> dict:
-    """Cancelling a live order is not itself a new live submission (no --live gate here) —
-    the working order it targets could only exist because a prior live submission already
-    passed the gate; refusing to let it be pulled would be strictly less safe."""
-    session = creds.get_session()
-    account = await _account(session)
-    return await _broker.cancel_order(account, session, args.order_id)
+    """Pulling a working order is not a new live submission, so no live gate (`core.broker.cli`)."""
+    return await _broker_cli.cancel_order(creds, args.order_id)
 
 
 def cmd_secrets_set(args) -> dict:
-    """Hidden-input secrets flow, argv-compatible with tt.py's so the orchestrator's `connect`
-    drives both modules identically. Blank input keeps a stored value."""
-    import getpass
-
-    for key in args.keys:
-        value = getpass.getpass(f"{key} (input hidden, blank to keep current): ").strip()
-        if value:
-            creds.store.set_secret(key, value)
-    return {"ok": True, "service": creds.SERVICE_NAME, "secrets": creds.store.secrets_status()}
+    """Hidden-input secrets flow, argv-compatible with tt.py's. Blank input keeps a stored value."""
+    return _broker_cli.secrets_set(creds, args.keys)
 
 
 def cmd_secrets_status(_args) -> dict:
-    return {"ok": True, "service": creds.SERVICE_NAME, "secrets": creds.store.secrets_status()}
+    return _broker_cli.secrets_status(creds)
 
 
 def main() -> None:
