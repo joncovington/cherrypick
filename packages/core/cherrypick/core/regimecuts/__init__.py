@@ -40,14 +40,13 @@ the stamps exactly.
 from __future__ import annotations
 
 import json
-import math
 import os
-import random
 import re
 import statistics
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import stats as _stats
 from cherrypick.core.jsonio import write_json_atomic
 
 CUT_VERSION = 2
@@ -181,13 +180,11 @@ def _sign(x: float) -> int:
 
 def _bootstrap_interval(nets: list[float]) -> tuple[float, float]:
     """Percentile interval of the cell's TOTAL net, resampling sessions (never trades: same-day
-    entries share a market). Seeded, so the same sessions always give the same interval."""
-    rng = random.Random(BOOTSTRAP_SEED)
-    k = len(nets)
-    totals = sorted(sum(rng.choices(nets, k=k)) for _ in range(BOOTSTRAP_RESAMPLES))
-    tail = (1 - INTERVAL_LEVEL) / 2
-    lo = totals[int(tail * BOOTSTRAP_RESAMPLES)]
-    hi = totals[math.ceil((1 - tail) * BOOTSTRAP_RESAMPLES) - 1]
+    entries share a market). Seeded, so the same sessions always give the same interval. The
+    estimator is `core.stats.bootstrap_ci`, which kept this function's draw and index rule."""
+    lo, hi = _stats.bootstrap_ci(
+        nets, statistic="sum", level=INTERVAL_LEVEL, resamples=BOOTSTRAP_RESAMPLES, seed=BOOTSTRAP_SEED
+    )
     return round(lo, 2), round(hi, 2)
 
 
@@ -221,12 +218,10 @@ def _is_fragile(rob: dict | None) -> bool | None:
 
 
 def sign_test_p(wins: int, losses: int) -> float | None:
-    """Two-sided exact sign test; ties are dropped before the call. None with nothing to test."""
-    n = wins + losses
-    if n == 0:
-        return None
-    tail = sum(math.comb(n, i) for i in range(min(wins, losses) + 1)) / 2**n
-    return round(min(1.0, 2 * tail), 4)
+    """Two-sided exact sign test (`core.stats.sign_test_p`), rounded to four places as the artifact
+    has always carried it; ties are dropped before the call. None with nothing to test."""
+    p = _stats.sign_test_p(wins, losses)
+    return None if p is None else round(p, 4)
 
 
 def paired_contrasts(buckets: list[dict]) -> list[dict]:
@@ -240,11 +235,11 @@ def paired_contrasts(buckets: list[dict]) -> list[dict]:
     out = []
     for i, a in enumerate(read):
         for b in read[i + 1 :]:
-            sa, sb = a["session_nets"], b["session_nets"]
-            shared = sorted(set(sa) & set(sb))
+            per_a = {d: v[1] / v[0] for d, v in a["session_nets"].items()}
+            per_b = {d: v[1] / v[0] for d, v in b["session_nets"].items()}
+            shared, diffs = _stats.paired_diffs(per_a, per_b)
             if len(shared) < THIN_BELOW_SESSIONS:
                 continue
-            diffs = [sa[d][1] / sa[d][0] - sb[d][1] / sb[d][0] for d in shared]
             a_better = sum(1 for x in diffs if x > 0)
             b_better = sum(1 for x in diffs if x < 0)
             out.append(

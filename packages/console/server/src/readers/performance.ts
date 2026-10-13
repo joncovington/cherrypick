@@ -71,6 +71,9 @@ export const LIVE_LEDGER = {
   meic: "meic_trades.db",
   flies: "live_trades.db",
   earnings: "earnings_trades.db",
+  // The narrow live pilot (2026-09-18): the same `bwb_positions` schema in its own file, which
+  // `core.metrics read --schema bwb_132` reads as it reads paper.
+  bwb: "live_trades.db",
 } as const satisfies Partial<Record<PerformanceModuleId, string>>;
 
 function hasLiveLedger(module: PerformanceModuleId): module is keyof typeof LIVE_LEDGER {

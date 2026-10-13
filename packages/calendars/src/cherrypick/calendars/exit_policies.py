@@ -16,7 +16,8 @@ Two honesty rails, both load-bearing:
 - **The derivation is validated against reality every time it runs.** `validate_against_control`
   re-derives the `control` policy from the control arm's OWN marks and compares it to that arm's
   real recorded net (they should agree to the cent — same ticks, same mids, same cost model), and
-  the `expiry-longs-mon` policy against the path arm's real net. A derivation that cannot
+  the `expiry-longs-mon` policy against the path arm's real net — and the Friday regime's
+  `friday:control` and `friday:path` likewise, each against its own. A derivation that cannot
   reproduce the arms it is derived beside has no business ranking the policies between them.
 
 Granularity caveat, stated rather than hidden: a trigger is evaluated at the recorded tick cadence,
@@ -53,6 +54,19 @@ POLICIES = {
 }
 
 _ROLES = ("front_put", "back_put", "front_call", "back_call")
+
+# Each entry regime's path arm is the substrate for its own weeks, and each real arm is validated
+# against the policy that IS its rule. The Friday regime (docs/friday-entry-arm.md) is listed beside
+# the Monday one rather than derived by prefix-stripping, so an arm only joins the grid or the
+# validation by being named here. Its weeks carry their own structure tag (`dc_7_10` against
+# `dc_4_7`), so they land in their own buckets and never pool.
+PATH_ARMS = ("path", f"{engine.FRIDAY_PREFIX}path")
+VALIDATED_ARMS = (
+    ("control", "control"),
+    ("path", "expiry-longs-mon"),
+    (f"{engine.FRIDAY_PREFIX}control", "control"),
+    (f"{engine.FRIDAY_PREFIX}path", "expiry-longs-mon"),
+)
 
 
 # --------------------------------------------------------------------------- path assembly
@@ -358,10 +372,15 @@ def _completed_weeks(conn, arm: str) -> list[str]:
 
 
 def comparison_table(conn, config: dict) -> dict:
-    """Every policy over every completed path-arm week, grouped by structure tag (distinct tags
-    are distinct trades and never pool). This table is the module's answer to "which exit
-    parameters work" — read beside `validation`, which says whether to believe it."""
-    weeks = [w for w in (week_data(conn, week_of, "path") for week_of in _completed_weeks(conn, "path")) if w]
+    """Every policy over every completed path-arm week — both entry regimes' — grouped by structure
+    tag (distinct tags are distinct trades and never pool). This table is the module's answer to
+    "which exit parameters work" — read beside `validation`, which says whether to believe it."""
+    weeks = [
+        w
+        for arm in PATH_ARMS
+        for w in (week_data(conn, week_of, arm) for week_of in _completed_weeks(conn, arm))
+        if w
+    ]
     breaks = [dict(r) for r in conn.execute("SELECT * FROM measurement_breaks ORDER BY break_date")]
     table: dict[str, dict] = {}
     for policy_name in POLICIES:
@@ -416,9 +435,13 @@ def validate_against_control(conn, config: dict, tolerance: float = 0.01) -> dic
     The default is one cent, which is what "to the cent" means: the derived net and the recorded
     net round their components separately, so a one-cent difference is rounding and anything more
     is a disagreement. It was $0.50 until 2026-10-12, wide enough to hide a $0.49 bias on every
-    path week (the long disposal's cost, missing from the derivation)."""
+    path week (the long disposal's cost, missing from the derivation).
+
+    The Friday regime's arms are checked the same way, each against its own recorded net. Until
+    2026-10-12 only `control` and `path` were named here, so `friday:control` and `friday:path`
+    weeks were never validated at all."""
     checks = []
-    for arm, policy_name in (("control", "control"), ("path", "expiry-longs-mon")):
+    for arm, policy_name in VALIDATED_ARMS:
         for week_of in _completed_weeks(conn, arm):
             week = week_data(conn, week_of, arm)
             if week is None:

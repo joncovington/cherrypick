@@ -226,6 +226,75 @@ def cmd_close_tag_tracker(args) -> int:
     return 0
 
 
+def _open_ro(path: str):
+    """A read-only handle, or None when the file is absent. Never `dbmod.connect`: that migrates,
+    and the evidence verbs below are read surfaces (the console bridges them)."""
+    from cherrypick.core import db as _core_db
+
+    return _core_db.connect_ro(path) if pathlib.Path(path).exists() else None
+
+
+def cmd_live_gap(args) -> int:
+    """The live arm's sessions paired with paper's same arm: net, fill, fee and completion gaps
+    (read-only)."""
+    from cherrypick.flies import analytics
+
+    live = _open_ro(args.live_db or dbmod.live_db_path())
+    paper = _open_ro(args.db or dbmod.default_db_path())
+    arm = args.arm or (load_config(args.config).get("live") or {}).get("arm") or "control"
+    if live is None:
+        print(json.dumps({"ok": True, "arm": arm, "ledger": "absent", "sessions": [], "eras": {}}))
+        return 0
+    out = analytics.live_paper_gap(live, paper, arm=arm, start=args.start, end=args.end)
+    if not args.detail:
+        for s in out["sessions"]:
+            s.pop("pairs", None)
+    print(json.dumps({"ok": True, "ledger": "ok", **out}, indent=2, default=str))
+    return 0
+
+
+def cmd_gate_sessions(args) -> int:
+    """Each gate arm per session over its own window: did the gate act, arm net vs control
+    (read-only)."""
+    from cherrypick.flies import analytics
+
+    conn = _open_ro(args.db or dbmod.default_db_path())
+    if conn is None:
+        print(json.dumps({"ok": True, "ledger": "absent", "arms": []}))
+        return 0
+    out = analytics.gate_sessions(conn, session=args.session)
+    print(json.dumps({"ok": True, "ledger": "ok", **out}, indent=2, default=str))
+    return 0
+
+
+def cmd_selector_sessions(args) -> int:
+    """The selector arm per session: choices, departures from control, nets, and each session's
+    frozen model read under procedure v2 (read-only)."""
+    from cherrypick.flies import analytics, paper_loop
+
+    conn = _open_ro(args.db or dbmod.default_db_path())
+    if conn is None:
+        print(json.dumps({"ok": True, "ledger": "absent", "sessions": []}))
+        return 0
+
+    def loader(session: str):
+        path = pathlib.Path(paper_loop.selector_model_path(session))
+        if not path.exists():
+            return None
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {"malformed": True}  # validate_model names it model_malformed
+
+    # The newest model on disk: `selector-fit` names each by the session it is for.
+    folder = pathlib.Path(paper_loop.selector_model_path("x")).parent
+    fitted = sorted(folder.glob("selector_model-*.json")) if folder.exists() else []
+    latest = loader(fitted[-1].stem.removeprefix("selector_model-")) if fitted else None
+    out = analytics.selector_sessions(conn, model_loader=loader, latest_model=latest)
+    print(json.dumps({"ok": True, "ledger": "ok", **out}, indent=2, default=str))
+    return 0
+
+
 def cmd_debit_first_offsets(args) -> int:
     """Settled debit-first rows cut by how far out of the money the centre sat, in strikes and in
     delta, side by side (read-only)."""
@@ -582,6 +651,26 @@ def main(argv=None) -> int:
     p_ctt.add_argument("--symbol")
     p_ctt.add_argument("--detail", action="store_true", help="list every tag")
     p_ctt.set_defaults(func=cmd_close_tag_tracker)
+    p_lg = sub.add_parser(
+        "live-gap",
+        help="the live arm's sessions paired with paper's same arm: net, fill, fee and completion gaps",
+    )
+    p_lg.add_argument("--arm", help="the arm (default: the config's live.arm)")
+    p_lg.add_argument("--live-db", dest="live_db", help="an explicit live ledger path")
+    p_lg.add_argument("--start")
+    p_lg.add_argument("--end")
+    p_lg.add_argument("--detail", action="store_true", help="every matched pair")
+    p_lg.set_defaults(func=cmd_live_gap)
+    p_gs = sub.add_parser(
+        "gate-sessions", help="each gate arm per session over its own window: acted?, arm net vs control"
+    )
+    p_gs.add_argument("--session", help="read the windows as of this session (default: the latest)")
+    p_gs.set_defaults(func=cmd_gate_sessions)
+    p_ss = sub.add_parser(
+        "selector-sessions",
+        help="the selector per session: choices, departures from control, nets, the model's intervals",
+    )
+    p_ss.set_defaults(func=cmd_selector_sessions)
     p_coh = sub.add_parser(
         "close-or-hold",
         help="each open position: close now at natural, or hold to expiry on the empirical move to the close",

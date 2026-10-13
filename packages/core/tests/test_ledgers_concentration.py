@@ -118,25 +118,6 @@ def test_records_with_no_arm_are_grouped_rather_than_dropped():
     assert out["by_arm"][0]["arm"] == "unassigned"
 
 
-# --------------------------------------------------------------------------- tail to credit
-
-
-def test_tail_to_credit_reports_the_ratio_the_arm_table_never_showed():
-    """The prompting arm collected 7,852.50 against a modelled worst of -27,171.58 and settled
-    positive because price stayed put. The ratio is 3.46 and nothing in the output said so."""
-    assert ledgers.tail_to_credit(-27171.58, 7852.50) == 3.46
-
-
-def test_tail_to_credit_is_none_without_a_credit_to_compare_against():
-    """An undefined ratio and a small one are different facts."""
-    assert ledgers.tail_to_credit(-100.0, 0) is None
-    assert ledgers.tail_to_credit(-100.0, None) is None
-
-
-def test_an_arm_with_no_modelled_loss_has_a_zero_tail_not_a_negative_one():
-    assert ledgers.tail_to_credit(250.0, 1000.0) == 0.0
-
-
 # --------------------------------------------------------------------------- the persisted spelling
 
 

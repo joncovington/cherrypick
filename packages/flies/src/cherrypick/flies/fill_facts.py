@@ -38,6 +38,14 @@ COMPLETION_CUTOFF = "15:30"  # the live block's `completion_cutoff` throughout t
 # How far a spot reading may sit from the moment it describes. The trail records every ~15s and the
 # watcher looks every ~10s, so a minute is several missed reads; past that, NULL beats a stale spot.
 MAX_SPOT_AGE_SECONDS = 60.0
+# How far the QUOTES behind a price gap may sit before the fill. Much tighter than spot, because
+# spot has the trail to fall back on and a price gap has nothing: an SPX vertical moves ~0.4 of a
+# point per SPX point, so a minute-old quote on a fast tape is a different market. Until 2026-10-12
+# the price gap used the spot bound, and the burst watcher's every-other-minute holes in the path
+# let a look up to 53s old stand in for the fill -- five completions recorded the market 0.20-0.55
+# ABOVE the limit they filled at, where the first look after each fill sat -0.10..+0.10 from it.
+# The watcher looks every ~10s; 15s is one look plus slack. Past that the gap is NULL, never stale.
+MAX_QUOTE_AGE_SECONDS = 15.0
 _TRADE = "Trade"
 
 
@@ -164,10 +172,11 @@ def _position_row(conn, position_id: str) -> dict | None:
 def measures(order: dict, position: dict | None, path: list[dict], trail=None) -> dict:
     """Every at-fill measure for one FILLED order, from its stored path and, where the path has no
     spot near the fill, the spot trail (`trail(when_iso) -> spot | None`). Pure given its inputs.
-    The fill moment is the broker's when known, else when we noticed."""
+    The fill moment is the broker's when known, else when we noticed. `fill_obs_age_s` is how long
+    before that moment the quotes behind the price gaps were seen."""
     when = order.get("broker_filled_at") or order.get("resolved_at")
     quoted = [r for r in path if r.get("buy_bid") is not None]
-    observation = fill_model.observation_at(quoted, when, max_age_seconds=MAX_SPOT_AGE_SECONDS)
+    observation = fill_model.observation_at(quoted, when, max_age_seconds=MAX_QUOTE_AGE_SECONDS)
     spot_obs = fill_model.observation_at(
         [r for r in path if r.get("spot") is not None], when, max_age_seconds=MAX_SPOT_AGE_SECONDS
     )
@@ -184,7 +193,7 @@ def measures(order: dict, position: dict | None, path: list[dict], trail=None) -
         straddle = fill_model.straddle_points(
             position.get("entry_vol_value"), position.get("underlying_at_entry")
         )
-    return fill_model.fill_measures(
+    out = fill_model.fill_measures(
         order,
         side=order["side"],
         center=order["center"],
@@ -194,6 +203,12 @@ def measures(order: dict, position: dict | None, path: list[dict], trail=None) -
         spot_source=spot_source,
         straddle=straddle,
     )
+    out["fill_obs_age_s"] = (
+        round((fill_model.parse_ts(when) - fill_model.parse_ts(out["fill_obs_at"])).total_seconds(), 1)
+        if out.get("fill_obs_at") and when
+        else None
+    )
+    return out
 
 
 def rebuild(conn, order_id, *, trail=None) -> dict:

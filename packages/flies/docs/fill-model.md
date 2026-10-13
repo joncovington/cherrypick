@@ -37,7 +37,13 @@ did. Each row carries:
   - `fill_dist_center`: spot against the centre, the short strike the open spread was sold at.
   - `fill_dist_long`: spot against the completing long strike.
   - `fill_mid_gap` / `fill_natural_gap`: the order's spread at mid and at the natural, against the
-    limit.
+    limit. They come from the last path look at or before the fill, and only from one no more than
+    15 s before it (`fill_facts.MAX_QUOTE_AGE_SECONDS`); `fill_obs_at` is that look and
+    `fill_obs_age_s` how long before the fill it was. Past 15 s both gaps are NULL. Until
+    2026-10-12 they took a look up to 60 s old, and the burst watcher's minute-long holes in the
+    path meant seven completions on 2026-10-05..07 measured a market that had since moved: five
+    recorded it 0.20-0.55 above a limit it filled at, from looks 34-53 s old. A `rebuild` re-derives
+    those rows under the new bound.
 
   Both spot distances are signed so `+` is the completing direction. Both price gaps are signed so
   `+` means the market had not reached the limit at that price. `fill_dist_widths` and

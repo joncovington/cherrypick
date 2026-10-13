@@ -1,6 +1,6 @@
 import { NO_RANGE, rangeClauses, type DateRange } from "./dateRange.js";
 import { concededArmMoney, entryOutcomes } from "./armCosts.js";
-import type { ArmCostsPayload } from "@console/shared";
+import { feeDragPct, sumIfAllRecorded, tradingFees, type ArmCostsPayload } from "@console/shared";
 import path from "node:path";
 import type { FliesPayload, FliesBookRow, FliesPositionRow, LiveVsPaper, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
@@ -849,19 +849,29 @@ export interface FliesSummary {
   /** Distinct settled sessions behind `trades` — the unit of independence. */
   sessions: number;
   grossPnl: number;
+  /** Trading fees only -- the ledger's fee total less settlement, with the total kept here on a row
+   *  whose settlement split was never recorded (the standard's rule, `tradingFees`). */
   fees: number;
+  /** Settlement over these trades; null (n/r) when any of them never recorded it. */
+  settlementFees: number | null;
+  /** Premium collected: each credit fly's entry credit, whole position. A debit fly adds none. */
+  premium: number;
   netPnl: number;
   wins: number;
   losses: number;
   winRatePct: number | null;
   avgPnl: number | null;
+  /** Trading fees ÷ premium collected (`feeDragPct`), null when nothing was collected. */
   feeDragPct: number | null;
   profitFactor: number | null;
 }
 
 interface PnlRow {
   gross: number;
+  /** Trading fees (settlement excluded where recorded). */
   fees: number;
+  settlement: number | null;
+  premium: number;
   pnl: number;
   /** Carried so every summary can report SESSIONS beside trades. Same-day trades share a regime, so
    *  they are not independent observations — this module's own experiment docs put the effective N
@@ -881,6 +891,13 @@ function summarize(rows: PnlRow[]): FliesSummary {
   const sessions = new Set(rows.map((r) => r.day).filter((d) => d !== "")).size;
   const gross = rows.reduce((s, r) => s + r.gross, 0);
   const fees = rows.reduce((s, r) => s + r.fees, 0);
+  const premium = rows.reduce((s, r) => s + r.premium, 0);
+  const settled = rows.filter((r) => r.settlement !== null);
+  const settlementFees = sumIfAllRecorded(
+    settled.reduce((s, r) => s + (r.settlement ?? 0), 0),
+    settled.length,
+    rows.length,
+  );
   const nets = rows.map((r) => r.pnl);
   const wins = nets.filter((n) => n > 0);
   const losses = nets.filter((n) => n < 0);
@@ -891,23 +908,28 @@ function summarize(rows: PnlRow[]): FliesSummary {
     trades: rows.length,
     sessions,
     grossPnl: gross,
-    fees,
+    fees: round2(fees),
+    settlementFees: settlementFees === null ? null : round2(settlementFees),
+    premium: round2(premium),
     netPnl: net,
     wins: wins.length,
     losses: losses.length,
     winRatePct: wins.length + losses.length > 0 ? (wins.length / (wins.length + losses.length)) * 100 : null,
     avgPnl: nets.length > 0 ? net / nets.length : null,
-    feeDragPct: gross > 0 ? (fees / gross) * 100 : null,
+    feeDragPct: feeDragPct(fees, premium),
     profitFactor: totalLoss > 0 ? totalWin / totalLoss : null,
   };
 }
 
-function pnlRows(db: import("better-sqlite3").Database, where: string, params: string[]): Array<Record<string, unknown>> {
+function pnlRows(db: DatabaseHandle, where: string, params: string[]): Array<Record<string, unknown>> {
+  // Premium is the credit-fly rule the costs page uses (`readFliesCosts`): the entry credit, whole
+  // position; a debit fly collects nothing and adds nothing.
   return db
     .prepare<string[], Record<string, unknown>>(
       `SELECT trade_date, arm, entry_mode, entry_window, entry_time, completed_at,
               completion_latency_min, pinned, COALESCE(gross_pnl, 0) AS gross,
-              COALESCE(fees, 0) AS fees, COALESCE(pnl, 0) AS pnl
+              COALESCE(fees, 0) AS fees, ${costColumn(db, "settlement_fees")} AS settlement_fees,
+              MAX(COALESCE(net, 0), 0) * 100 * COALESCE(quantity, 1) AS premium, COALESCE(pnl, 0) AS pnl
          FROM fly_positions WHERE ${where}`,
     )
     .all(...params);
@@ -915,7 +937,9 @@ function pnlRows(db: import("better-sqlite3").Database, where: string, params: s
 
 const toPnl = (r: Record<string, unknown>): PnlRow => ({
   gross: Number(r["gross"]),
-  fees: Number(r["fees"]),
+  fees: tradingFees(Number(r["fees"]), num(r["settlement_fees"])) ?? 0,
+  settlement: num(r["settlement_fees"]),
+  premium: Number(r["premium"] ?? 0),
   pnl: Number(r["pnl"]),
   day: String(r["trade_date"] ?? ""),
 });
@@ -1774,10 +1798,13 @@ export function readFliesPerformance(
   // moved to control on 2026-09-18 the panel and its abort rule measured only the July sessions.
   const liveCfg = ((readJson(config.paths.fliesConfig) ?? {})["live"] ?? {}) as Record<string, unknown>;
   const pilotArm = str(liveCfg["arm"]) ?? "gex";
+  // Voided rows (`void_reason` set, still `settled`) are out on both sides and out of the session
+  // list, as in live_vs_paper; a ledger older than the column has nothing voided.
+  const notVoidLvp = (db: DatabaseHandle) => (hasColumn(db, "fly_positions", "void_reason") ? " AND void_reason IS NULL" : "");
   result.liveVsPaper = withReadOnlyDb<LiveVsPaper | null>(path.join(config.paths.fliesDir, "live_trades.db"), null, (liveDb) => {
     const days = liveDb
       .prepare<[string], { d: string }>(
-        "SELECT DISTINCT trade_date AS d FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' AND status != 'cancelled' ORDER BY trade_date",
+        `SELECT DISTINCT trade_date AS d FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' AND status != 'cancelled'${notVoidLvp(liveDb)} ORDER BY trade_date`,
       )
       .all(pilotArm)
       .map((r) => r.d);
@@ -1787,7 +1814,7 @@ export function readFliesPerformance(
       const rows = db
         .prepare<string[], Record<string, unknown>>(
           `SELECT kind, credit, completion_latency_min FROM fly_positions
-            WHERE arm = ? AND entry_mode = 'legged' AND status != 'cancelled' AND trade_date IN (${marks})`,
+            WHERE arm = ? AND entry_mode = 'legged' AND status != 'cancelled'${notVoidLvp(db)} AND trade_date IN (${marks})`,
         )
         .all(pilotArm, ...days);
       const done = rows.filter((r) => r["kind"] === "fly");
@@ -1869,7 +1896,9 @@ export interface FliesAnalytics {
     medianCompletionMin: number | null;
   };
   byArm: Array<{ arm: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
-  feeDrag: Array<{ arm: string; gross: number; fees: number; net: number; dragPct: number | null }>;
+  /** Per arm: premium collected, gross, trading fees (settlement out where recorded), settlement
+   *  (null = n/r on any row) and net; `dragPct` is trading fees ÷ premium (`feeDragPct`). */
+  feeDrag: Array<{ arm: string; premium: number; gross: number; fees: number; settlementFees: number | null; net: number; dragPct: number | null }>;
 }
 
 /**
@@ -2060,22 +2089,31 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
       };
     });
 
+    // Fee drag is trading fees ÷ premium collected (`feeDragPct`), the costs page's definition: the
+    // ledger's `fees` folds settlement in, so it comes out where recorded; premium is each credit
+    // fly's entry credit.
+    const settle = costColumn(db, "settlement_fees");
     const feeDrag = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT arm, COALESCE(SUM(gross_pnl), 0) AS gross, COALESCE(SUM(fees), 0) AS fees,
+        `SELECT arm, COALESCE(SUM(gross_pnl), 0) AS gross, COALESCE(SUM(fees), 0) AS fees_total,
+                COALESCE(SUM(${settle}), 0) AS settlement, COUNT(${settle}) AS settlement_rows, COUNT(*) AS rows_n,
+                COALESCE(SUM(MAX(COALESCE(net, 0), 0) * 100 * COALESCE(quantity, 1)), 0) AS premium,
                 COALESCE(SUM(pnl), 0) AS net
            FROM fly_positions WHERE pnl IS NOT NULL AND ${notVoid(db)}${dateClause}${armClause} GROUP BY arm ORDER BY arm`,
       )
       .all(...dateParams, ...armParams)
       .map((r) => {
-        const gross = Number(r["gross"]);
-        const fees = Number(r["fees"]);
+        const recorded = Number(r["settlement"]);
+        const fees = round2(Number(r["fees_total"]) - recorded);
+        const premium = round2(Number(r["premium"]));
         return {
           arm: String(r["arm"] ?? "?"),
-          gross,
+          premium,
+          gross: Number(r["gross"]),
           fees,
+          settlementFees: sumIfAllRecorded(round2(recorded), Number(r["settlement_rows"]), Number(r["rows_n"])),
           net: Number(r["net"]),
-          dragPct: Math.abs(gross) > 0 ? (fees / Math.abs(gross)) * 100 : null,
+          dragPct: feeDragPct(fees, premium),
         };
       });
 

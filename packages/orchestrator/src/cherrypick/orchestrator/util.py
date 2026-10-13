@@ -8,6 +8,7 @@ import sys
 import time
 from typing import Any
 
+from cherrypick.core import jsonio as _jsonio
 from cherrypick.core import looplock
 from cherrypick.core.redact import (
     mask_account,  # noqa: F401 -- re-exported: accounts/liveops/reconcile import it here
@@ -109,37 +110,10 @@ def atomic_write_json(path, obj: Any) -> None:
     """Write JSON via a sibling temp file + `os.replace`, so a reader never sees a half-written
     file. The supervisor rewrites its heartbeat and job registry every few seconds while watchdog
     ticks read them concurrently; a plain `open(..., 'w')` leaves a window where the file is
-    truncated-but-unwritten and `read_json` returns {} — indistinguishable from a dead supervisor."""
-    from pathlib import Path as _Path
-
-    path = _Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    with tmp.open("w", encoding="utf-8") as fh:
-        json.dump(obj, fh, indent=2, default=str)
-    _replace_with_retry(tmp, path)
-
-
-# On Windows a replace onto a file another process holds open (a reader without delete-sharing,
-# antivirus scanning it) fails with PermissionError for a moment. Unretried, that one moment killed
-# the supervisor: seven "FATAL: unhandled PermissionError" exits in supervisor.log, 2026-09-21 to
-# 2026-10-08, every one in this replace.
-_REPLACE_TRIES = 20
-_REPLACE_PAUSE_S = 0.1
-
-
-def _replace_with_retry(src, dst, *, sleep=None) -> None:
-    import time as _time
-
-    sleep = sleep or _time.sleep
-    for attempt in range(_REPLACE_TRIES):
-        try:
-            os.replace(src, dst)
-            return
-        except PermissionError:
-            if attempt == _REPLACE_TRIES - 1:
-                raise
-            sleep(_REPLACE_PAUSE_S)
+    truncated-but-unwritten and `read_json` returns {} — indistinguishable from a dead supervisor.
+    This is the suite's one writer, `cherrypick.core.jsonio`, which also retries a Windows
+    PermissionError on the replace (seven supervisor deaths, 2026-09-21 to 10-08, before it did)."""
+    _jsonio.write_json_atomic(path, obj, indent=2, default=str)
 
 
 def file_holders(paths) -> list[str] | None:

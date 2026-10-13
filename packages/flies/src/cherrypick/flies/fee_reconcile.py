@@ -43,6 +43,7 @@ import asyncio
 import json
 from datetime import date, timedelta
 
+from cherrypick.core import fees as _fees  # noqa: E402
 from cherrypick.core import streamcache  # noqa: E402
 
 from cherrypick.flies import (
@@ -51,9 +52,8 @@ from cherrypick.flies import (
 )
 from cherrypick.flies import db as dbmod  # noqa: E402
 
-# A position's fee is the sum of these fields' magnitudes across every matched transaction —
-# tastytrade reports each as a signed (negative) charge or, on some rows, absent entirely.
-_FEE_FIELDS = ("commission", "clearing_fees", "regulatory_fees", "proprietary_index_option_fees")
+# A position's fee: the shared reading of a broker transaction row (`cherrypick.core.fees`).
+_fee_total = _fees.broker_fee_total
 
 # Live v1 is legged-only (see live_orders.entry_spec's own guard) — a settled live position's
 # `kind` is always one of these two shapes. bwb/iron/debit_first are paper-only research arms.
@@ -104,10 +104,6 @@ def _position_leg_symbols(position: dict, *, root: str | None = None) -> list[st
         streamcache.occ_to_streamer_symbol(_occ_symbol(occ_root, expiration, side, strike))
         for strike in strikes
     ]
-
-
-def _fee_total(txn: dict) -> float:
-    return sum(abs(float(txn[field])) for field in _FEE_FIELDS if txn.get(field) not in (None, ""))
 
 
 # Signed contracts per unit of structure, keyed by the column that records each leg's symbol.

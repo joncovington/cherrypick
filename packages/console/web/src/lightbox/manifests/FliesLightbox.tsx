@@ -17,7 +17,9 @@ import { TimelineCard } from "../../pages/Flies/TimelineCard";
 import { HistoryTab } from "../../pages/Flies/HistoryTab";
 import { JournalCard } from "../../pages/Flies/JournalCard";
 import { OpeningRangeCard } from "../../pages/Flies/OpeningRangeCard";
-import { DivergenceCard } from "../../pages/Flies/DivergenceCard";
+import { GatesSlide } from "../../pages/Flies/GatesSlide";
+import { LiveGapSlide } from "../../pages/Flies/LiveGapSlide";
+import { SelectorSlide } from "../../pages/Flies/SelectorSlide";
 import { PerformanceTab } from "../../pages/Flies/PerformanceTab";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
@@ -67,7 +69,7 @@ interface FliesAnalytics {
     medianCompletionMin?: number | null;
   };
   byArm: Array<{ arm: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
-  feeDrag: Array<{ arm: string; gross: number; fees: number; net: number; dragPct: number | null }>;
+  feeDrag: Array<{ arm: string; premium: number; gross: number; fees: number; settlementFees: number | null; net: number; dragPct: number | null }>;
 }
 
 function useFliesAnalytics(mode: TradingMode, filter: FliesFilter) {
@@ -165,7 +167,9 @@ export function FliesLightbox({ slide }: { slide: string }) {
     { id: "timeline", label: FLIES_LABEL.timeline, render: () => <TimelineCard mode={mode} filter={filter} arm={arm} /> },
     { id: "openingrange", label: FLIES_LABEL.openingrange, render: () => <OpeningRangeCard filter={filter} /> },
     { id: "decisions", label: FLIES_LABEL.decisions, render: () => <JournalCard mode={mode} filter={filter} /> },
-    { id: "divergence", label: FLIES_LABEL.divergence, render: () => <DivergenceCard mode={mode} filter={filter} /> },
+    { id: "gates", label: FLIES_LABEL.gates, render: () => <GatesSlide /> },
+    { id: "livegap", label: FLIES_LABEL.livegap, render: () => <LiveGapSlide /> },
+    { id: "selector", label: FLIES_LABEL.selector, render: () => <SelectorSlide /> },
     { id: "completion", label: FLIES_LABEL.completion, render: () => <PerformanceTab mode={mode} filter={multiDayFilter} /> },
     { id: "advisor", label: FLIES_LABEL.advisor, render: () => <AdvisorSlide module="flies" /> },
     { id: "performance", label: FLIES_LABEL.performance, render: () => <PerformanceSlide module="flies" mode={mode} /> },
