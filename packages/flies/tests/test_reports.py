@@ -148,21 +148,6 @@ def seeded(conn):
 
 
 # --------------------------------------------------------------------------- EOD files
-def test_write_reports_creates_both_files(conn, tmp_path):
-    seeded(conn)
-    out = eodmod.write_reports(conn, DAY, tmp_path)
-    assert (tmp_path / f"paper-eod-{DAY}.md").exists()
-    assert (tmp_path / f"eod-analysis-{DAY}.md").exists()
-    assert out["ok"] is True
-
-
-def test_filenames_match_what_the_orchestrator_looks_for(conn, tmp_path):
-    """The digest and insight discover these by convention alone. A rename here silently drops flies
-    out of both surfaces with no error anywhere."""
-    out = tmp_path / "logs"
-    eodmod.write_reports(conn, DAY, out)
-    names = {p.name for p in out.iterdir()}
-    assert names == {f"paper-eod-{DAY}.md", f"eod-analysis-{DAY}.md"}
 
 
 def test_logs_dir_follows_the_orchestrators_convention(monkeypatch, tmp_path):

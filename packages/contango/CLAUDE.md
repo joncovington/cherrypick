@@ -38,6 +38,12 @@ whether real switching costs match the 2 bps. At 10 bps a side, control falls to
 flipexit to 8.2%, which is why `flipexit` exists. The 2018-03 start is deliberate: SVXY was −1×
 until 2018-02-27, a different fund.
 
+`contango_replay.py --validate` checks the replay against the ledger session by session (read-only):
+the rule on the ledger's own ratio, the replay's decision on the Cboe close, and each fund's
+decision-tick mid against the store's close. The /VXM arm in `docs/vxm-plan.md` was answered from
+CFE settlements by `scripts/contango_vx_replay.py` (2026-10-12) and is not built: ½× second month
+earned 4–6 points a year less than SVXY for the same drawdown.
+
 ## Honesty rules
 
 1. **One decision per arm per session, in the window or not at all.** The window opens
