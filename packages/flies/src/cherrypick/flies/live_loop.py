@@ -673,18 +673,60 @@ def place_resting_completion(conn, pos: dict, snapshot: dict, params: dict, brok
 
 
 # --------------------------------------------------------------------------- entry management
-def _manage_pending_entry(conn, pos: dict, snapshot: dict, params: dict, others: list, broker, log) -> dict:
+def _structure_tried_today(
+    conn, day: str, arm: str, side: str, center: float, width: float, exclude_id=None
+) -> bool:
+    """Has an entry order for this exact structure already ended unfilled today (cancelled, replaced,
+    rejected, expired)? `live.entry_pricing: mid_first` asks the mid only on a structure's FIRST order
+    of the day; every later order for it is priced at the concession. Read from the ledger, so the
+    rule holds across ticks and processes with no state of its own."""
+    terminal = tuple(_TERMINAL_UNFILLED)
+    marks = ", ".join("?" for _ in terminal)
+    row = conn.execute(
+        "SELECT 1 FROM fly_positions WHERE trade_date = ? AND arm = ? AND side = ? AND center = ? "
+        f"AND wing_width = ? AND entry_fill_status IN ({marks}) AND id IS NOT ? LIMIT 1",
+        (day, arm, side, center, width, *terminal, exclude_id),
+    ).fetchone()
+    return row is not None
+
+
+def _manage_pending_entry(
+    conn, pos: dict, snapshot: dict, params: dict, others: list, broker, log, *, pricing: str = "concession"
+) -> dict:
     """Streamer-first management of a resting, unconfirmed entry order.
 
     Re-runs the entry evaluation against cached quotes (free). Unchanged center + credit
     within one tick -> leave the resting order alone, zero broker calls. Moved, or refused
     outright -> cancel; a fresh placement happens in this tick's entry stage. A failed cancel
-    re-polls status — "already filled" is the expected race and gets recorded."""
+    re-polls status — "already filled" is the expected race and gets recorded.
+
+    Under `live.entry_pricing: mid_first` one more case cancels: a structure's first order of the
+    day (priced at mid) still resting a tick later above today's concession price on the same
+    centre. That is the concession, done through the same cancel/replace: this tick's entry stage
+    re-evaluates, re-runs the fresh-quote check and every gate, and -- the structure having now
+    ended unfilled once today -- prices the replacement at the concession."""
     enter, reason, plan = engine.evaluate_credit_spread_entry(snapshot, params, others)
-    if enter and plan["center"] == pos["center"] and abs(plan["credit"] - pos["net"]) < live_orders.TICK:
+    concede = (
+        pricing == live_orders.ENTRY_PRICING_MID_FIRST
+        and enter
+        and plan["center"] == pos["center"]
+        and pos["net"] > live_orders.tick_floor(plan["credit"]) + 1e-9
+        and not _structure_tried_today(
+            conn, pos["trade_date"], pos["arm"], pos["side"], pos["center"], pos["wing_width"], pos.get("id")
+        )
+    )
+    if (
+        not concede
+        and enter
+        and plan["center"] == pos["center"]
+        and abs(plan["credit"] - pos["net"]) < live_orders.TICK
+    ):
         return pos  # evaluation unchanged — the resting order stands, no broker call
 
-    why = f"center {plan['center']}" if enter else f"refused ({reason})"
+    if concede:
+        why = f"the concession price {live_orders.tick_floor(plan['credit']):.2f} (mid-first order unfilled after a tick)"
+    else:
+        why = f"center {plan['center']}" if enter else f"refused ({reason})"
     res = broker.cancel(pos["entry_order_id"])
     if res.get("ok"):
         conn.execute(
@@ -770,6 +812,7 @@ def run_once(
     live_cfg = _live_cfg(config)
     arm = live_cfg.get("arm", DEFAULT_ARM)
     params = _merged_live_params(config, arm)
+    entry_pricing = live_orders.entry_pricing_mode(live_cfg)
     day = snapshot["date"]
     symbol = snapshot["symbol"]
     # The intraday agent, in the mode today's arm record names (docs/intraday-agent-plan.md): off,
@@ -876,7 +919,9 @@ def run_once(
         for pos in positions:
             if pos.get("kind") == "short_vertical" and pos.get("entry_fill_status") == "pending":
                 others = [p for p in positions if p is not pos]
-                pos = _manage_pending_entry(conn, pos, snapshot, params, others, broker, log)
+                pos = _manage_pending_entry(
+                    conn, pos, snapshot, params, others, broker, log, pricing=entry_pricing
+                )
             if pos.get("status") == "open":
                 managed.append(pos)
         positions = managed
@@ -1119,6 +1164,27 @@ def run_once(
                     spec["price"] = new_price
                     entry_price = new_price
                     entry_mid = info.get("fresh_mid", entry_mid)
+            # Mid-first pricing (live.entry_pricing, off by default): only after every check above
+            # passed, so the fresh-quote check and every gate apply exactly as they do today; only
+            # the limit changes, and only on the structure's first order of the day. The next tick
+            # concedes to the concession price if it is still resting (`_manage_pending_entry`).
+            # The completion limit is relative to the credit actually taken (credit - 0.25 on 5-wide
+            # SPX), so a fill at mid raises it by the same amount -- left that way on purpose.
+            entry_pricing_used = None
+            if (
+                spec is not None
+                and entry_pricing == live_orders.ENTRY_PRICING_MID_FIRST
+                and not _structure_tried_today(
+                    conn, day, arm, plan["side"], plan["center"], plan["wing_width"]
+                )
+            ):
+                mid_price = live_orders.entry_mid_price(entry_mid, spec["price"])
+                if mid_price > spec["price"]:
+                    spec["price"] = mid_price
+                    entry_price = mid_price
+                    entry_pricing_used = live_orders.ENTRY_PRICING_MID_FIRST
+            elif spec is not None and entry_pricing == live_orders.ENTRY_PRICING_MID_FIRST:
+                entry_pricing_used = "conceded"
             if spec is not None:
                 # Per-attempt unique (paper's book.py convention: microsecond timestamp), not
                 # day+arm+center alone — a retry at the SAME centre after an earlier rejection
@@ -1226,7 +1292,8 @@ def run_once(
                         accepted=True,
                         center=plan["center"],
                         position_id=pid,
-                        detail=f"credit {entry_price:.2f}, order {res['order_id']}",
+                        detail=f"credit {entry_price:.2f}, order {res['order_id']}"
+                        + (f", pricing {entry_pricing_used}" if entry_pricing_used else ""),
                     )
                 else:
                     if not live:

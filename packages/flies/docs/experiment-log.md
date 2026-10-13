@@ -1221,3 +1221,42 @@ Live stays at 10:15. Nothing here argues for a move, and nothing proves 10:15 ei
 the quote-history replay (chain quotes from 10-13), which can price the structures paper never held.
 The 10-11 sizing read fed live's own rows through the old cap model; the rebuilt script does not do
 that.
+
+## 2026-10-12 — live entry pricing: a mid-first option, built off (a live break if switched on)
+
+The question was whether the live entry gives away more than it needs to. Every live entry limit is
+the fresh credit floored to the tick: mid less `slippage_frac` (0.125) of the two legs' spreads,
+about mid − 0.05 on 5-wide SPX (`fly.vertical_credit`, `live_orders.entry_fresh_reprice`). The
+ledger review of 10-12 found every live entry of the control era filling at once (median latency
+0 s, 69 entries) and 16 of them with price improvement; across the whole live ledger, 93 entries
+filled and 21 filled better than their limit. An order that always fills at once is priced past
+where it needs to be, but only the market can say by how much.
+
+**Built: `live.entry_pricing`** (`live_orders.entry_pricing_mode`, `live_loop._manage_pending_entry`).
+- **`concession`** (the default, and what an absent key or any other value means) is the pilot's rule,
+  unchanged. A test pins the placed orders, the ledger rows and the decision detail as identical to
+  the code before the option.
+- **`mid_first`** asks the vertical's fresh mid, floored to the tick, on a structure's first order of
+  the day. If that order is still resting on the next tick (about a minute), the existing
+  cancel/replace cancels it and this tick's entry stage re-evaluates and re-places at the
+  concession price. A structure that has already ended unfilled today, for any reason, is priced at
+  the concession; the ledger remembers that, not the process.
+- **Every gate still applies:** the fresh-quote check, the buying-power cap, the quarter-end and
+  halt blocks, the engine's own gates. Only the limit moves, and only after all of them passed.
+- **Never past mid:** `tick_floor` rounds to the cent before flooring, so a 1.249 mid came back
+  1.25; the mid-first limit steps down a tick when that happens. The test that found it is kept.
+- **The completion limit moves with it.** The resting completion is priced from the credit
+  actually filled (credit − 0.25 on 5-wide SPX: two $3.44 fee stacks, the $15 worst-case settlement
+  reserve and the $1 floor, rounded down to the nickel), so a mid fill raises the completion limit
+  by the same 0.05. That is intended: the completion bar is set by what the entry took in.
+
+**Off everywhere.** The example ships `concession`. Switching it on changes what a live entry costs
+and how often it fills, so it is a **live measurement break**: journal it on the live ledger at a
+declared boundary. The 2026-10-19 apply script (`scripts/boundary_2026_10_19.py`) offers it, and
+switching it on is the user's call, not the batch's.
+
+**How it would be read:** the live ledger's own fills, `fly_live_orders` (`limit_price`,
+`broker_fill_price`, outcome `replaced` for a concession), per entry against the concession price
+it would otherwise have paid: dollars saved on mid fills against entries lost or delayed by the
+one-tick wait. The paper `live-shadow` arm cannot express the wait (paper fills at once), so it
+does not read this.

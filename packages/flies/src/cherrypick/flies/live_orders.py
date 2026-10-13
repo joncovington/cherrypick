@@ -111,6 +111,36 @@ def entry_fresh_reprice(
     }
 
 
+# How the opening credit is priced (`live.entry_pricing`, 2026-10-12). "concession" is the pilot's
+# rule since it began and the default: the fresh credit, mid less `slippage_frac` of the two legs'
+# spreads, floored to the tick. "mid_first" asks the mid (floored to the tick, so never past it) on a
+# structure's first order of the day and concedes to the concession price on the next tick if that
+# order is still unfilled (`live_loop._manage_pending_entry`). Any other value is the default.
+ENTRY_PRICING_CONCESSION = "concession"
+ENTRY_PRICING_MID_FIRST = "mid_first"
+
+
+def entry_pricing_mode(live_cfg: dict) -> str:
+    """The configured entry pricing, defaulting to today's concession price for anything that is not
+    exactly "mid_first" -- a typo prices the way the pilot always has, never somewhere new."""
+    if (live_cfg or {}).get("entry_pricing") == ENTRY_PRICING_MID_FIRST:
+        return ENTRY_PRICING_MID_FIRST
+    return ENTRY_PRICING_CONCESSION
+
+
+def entry_mid_price(mid: float, concession_price: float) -> float:
+    """The mid-first limit: the vertical's mid floored to the tick. Flooring a credit asks for less,
+    so the order is never priced beyond mid, and it is never below the concession price (a mid that
+    floors under it means the concession already is the mid).
+
+    `tick_floor` rounds to the cent before flooring, so a 1.249 mid would come back 1.25 -- past
+    mid by a tenth of a cent. A mid-first limit steps down a tick when that happens."""
+    price = tick_floor(mid)
+    if price > mid + 1e-9:
+        price = round(price - TICK, 2)
+    return max(price, concession_price)
+
+
 def completion_spec(snapshot: dict, position: dict, plan: dict) -> dict:
     """Step 2: the completing vertical from an admitted `evaluate_completion` plan. Buy to
     open the far strike, sell to open the centre again (the fly's -2). Day limit at the
