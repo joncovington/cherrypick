@@ -722,62 +722,40 @@ def _held_path() -> str:
     return os.path.join(_data_dir(), "live_held.json")
 
 
-def _sweep_orphans(conn, broker, log, symbol: str) -> int | None:
-    """Diff the broker's working orders (truth) against the ledger's order ids (belief),
-    scoped to `symbol` — the one this arm actually trades.
-
-    The one crash window nothing else covers: a tick dying between a successful place and the
-    DB write leaves a real order resting at the broker with no ledger row — invisible to fill
-    polling, entry management, and the cutoff cancel alike. Any working order the ledger has
-    never heard of is persisted to live_orphans.json (which `--status` reports and the
-    watchdog raises CRITICAL on) and logged loudly. Detection only — cancelling an order this
-    process can't account for is a human's call, made with the broker UI open.
-
-    Scoped to `symbol` because this account is not exclusively this loop's: a still-resting
-    order this process didn't place but that shares the account (manual trading in another
-    symbol, another module) is real and none of this process's business — the sweep exists to
-    catch OUR crashed placements, not to audit the whole account. `working_orders()` already
-    drops filled/cancelled/rejected orders (see cherrypick.core.broker.working_orders); the
-    symbol filter is the second, independent reason a non-flies order shouldn't page anyone."""
-    if not hasattr(broker, "working_orders"):
-        return 0
-    try:
-        working = broker.working_orders()
-    except Exception as exc:  # noqa: BLE001 — a failed sweep must not break the tick
-        log(f"orphan sweep failed ({type(exc).__name__}: {exc}) — will retry next tick")
-        return None  # unknown -- and unknown blocks new entries (run_once step 4)
-    working = [o for o in working if o.get("underlying_symbol") == symbol]
-    known = {
+def _known_order_ids(conn) -> list[str]:
+    """Every broker order id this ledger has recorded: entry, completion and close."""
+    return [
         str(r[0])
         for r in conn.execute(
             "SELECT entry_order_id FROM fly_positions WHERE entry_order_id IS NOT NULL "
             "UNION SELECT completion_order_id FROM fly_positions WHERE completion_order_id IS NOT NULL "
             "UNION SELECT close_order_id FROM fly_positions WHERE close_order_id IS NOT NULL"
         ).fetchall()
-    }
-    orphans = [o for o in working if str(o.get("order_id")) not in known]
-    try:
-        os.makedirs(_data_dir(), exist_ok=True)
-        with open(_orphans_path(), "w", encoding="utf-8") as f:
-            json.dump({"at": clock.now_iso(), "orphans": orphans}, f)
-    except OSError:
-        pass
-    if orphans:
-        log(
-            f"ORPHANED ORDERS at the broker, unknown to the ledger: "
-            f"{[o.get('order_id') for o in orphans]} — a placement was recorded nowhere "
-            "(or another system is trading this account). Review in the broker UI before "
-            "any further arming."
-        )
-    return len(orphans)
+    ]
+
+
+def _sweep_orphans(conn, broker, log, symbol: str) -> int | None:
+    """Diff the broker's working orders (truth) against the ledger's order ids (belief), scoped to
+    `symbol` -- `core.execution.sweep_orphans`, shared with bwb. Persisted to live_orphans.json
+    (which `--status` reports and the watchdog raises CRITICAL on). Detection only. None means the
+    sweep could not look, and unknown blocks new entries (run_once step 4).
+
+    Scoped to `symbol` because this account is not exclusively this loop's: manual trading in
+    another symbol is real and none of this process's business (confirmed 2026-07-30, when a
+    shared account's manual trading fired the CRITICAL alert every tick). An order whose
+    underlying the broker did not name is kept: it could be ours."""
+    return _execution.sweep_orphans(
+        broker,
+        _known_order_ids(conn),
+        symbol=symbol,
+        path=_orphans_path(),
+        now_iso=clock.now_iso(),
+        log=log,
+    )
 
 
 def read_orphans() -> list[dict]:
-    try:
-        with open(_orphans_path(), encoding="utf-8") as f:
-            return json.load(f).get("orphans", [])
-    except (OSError, ValueError):
-        return []
+    return _execution.read_orphans(_orphans_path())
 
 
 def run_once(

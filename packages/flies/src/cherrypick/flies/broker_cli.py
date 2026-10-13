@@ -27,6 +27,7 @@ import sys
 
 from cherrypick.core import broker as _broker  # noqa: E402
 from cherrypick.core import settlement as _settlement  # noqa: E402
+from cherrypick.core.broker import cli as _broker_cli
 
 from cherrypick.flies import credentials as creds  # noqa: E402
 from cherrypick.flies.cli import load_config  # noqa: E402
@@ -88,24 +89,21 @@ def live_gates(config: dict) -> list[str]:
 
 
 async def _account(session):
-    return await _broker.resolve_account(session, creds.designated_account())
+    return await _broker_cli.designated_account(creds, session)
 
 
 async def cmd_connection_status(_args) -> dict:
-    session = creds.get_session()
-    n = await _broker.account_count(session)
-    return {
-        "ok": True,
-        "accounts": n,
-        "designated": ("****" + d[-4:]) if (d := creds.designated_account()) else None,
-    }
+    """Keyring + session probe, designated account masked (`core.broker.cli`)."""
+    return await _broker_cli.connection_status(
+        creds,
+        live_trading_enabled=bool((load_config().get("live") or {}).get("enabled")),
+        hint="run `cherrypick connect --module flies` to store the OAuth secrets",
+    )
 
 
 async def cmd_list_accounts(_args) -> dict:
-    # Machine shape, matching MEIC's tt.py: FULL account numbers, because the orchestrator's
-    # account-designation flow needs them to write the keyring value (it masks for display).
-    session = creds.get_session()
-    return {"ok": True, "accounts": await _broker.list_accounts(session)}
+    # FULL account numbers, the tt.py machine shape the designation flow reads.
+    return await _broker_cli.list_accounts(creds)
 
 
 async def cmd_execute_trade(args) -> dict:
@@ -123,35 +121,22 @@ async def cmd_execute_trade(args) -> dict:
 
 
 async def cmd_order_status(args) -> dict:
-    """Read-only — no live gating needed, checking a working order's status places nothing."""
-    session = creds.get_session()
-    account = await _account(session)
-    return await _broker.order_status(account, session, args.order_id)
+    """Read-only -- checking a working order's status places nothing."""
+    return await _broker_cli.order_status(creds, args.order_id)
 
 
 async def cmd_cancel_order(args) -> dict:
-    """Cancelling a live order is not itself a new live submission (no --live gate here) —
-    the working order it targets could only exist because a prior live submission already
-    passed the gate; refusing to let it be pulled would be strictly less safe."""
-    session = creds.get_session()
-    account = await _account(session)
-    return await _broker.cancel_order(account, session, args.order_id)
+    """Pulling a working order is not a new live submission, so no live gate (`core.broker.cli`)."""
+    return await _broker_cli.cancel_order(creds, args.order_id)
 
 
 def cmd_secrets_set(args) -> dict:
-    """Hidden-input secrets flow, argv-compatible with tt.py's so the orchestrator's `connect`
-    drives both modules identically. Blank input keeps a stored value."""
-    import getpass
-
-    for key in args.keys:
-        value = getpass.getpass(f"{key} (input hidden, blank to keep current): ").strip()
-        if value:
-            creds.store.set_secret(key, value)
-    return {"ok": True, "service": creds.SERVICE_NAME, "secrets": creds.store.secrets_status()}
+    """Hidden-input secrets flow, argv-compatible with tt.py's. Blank input keeps a stored value."""
+    return _broker_cli.secrets_set(creds, args.keys)
 
 
 def cmd_secrets_status(_args) -> dict:
-    return {"ok": True, "service": creds.SERVICE_NAME, "secrets": creds.store.secrets_status()}
+    return _broker_cli.secrets_status(creds)
 
 
 def main() -> None:
