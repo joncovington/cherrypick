@@ -169,6 +169,9 @@ def test_broker_adapter_place_extracts_order_id_from_serialized_response(monkeyp
 
     monkeypatch.setattr(core_broker, "place_order", fake_place_order)
     monkeypatch.setattr(core_broker, "build_order", lambda spec: object())
+    # The adapter refuses without a designated account (core.execution, 2026-10-12), and CI has
+    # no keyring to read one from: stub the designation, never the refusal.
+    monkeypatch.setattr(live_loop, "_designated_account", lambda: "5WX11234")
 
     adapter = live_loop.BrokerAdapter(BASE_CFG)  # live.enabled + gate0_confirmed, so the gate passes
     monkeypatch.setattr(adapter, "_ensure", lambda: None)
@@ -252,6 +255,7 @@ def test_broker_adapter_fresh_quotes_delegates_and_fails_closed(monkeypatch):
 def test_the_adapter_is_the_shared_one_with_flies_gates(monkeypatch):
     from cherrypick.core import execution
 
+    monkeypatch.setattr(live_loop, "_designated_account", lambda: "5WX11234")  # no keyring in CI
     adapter = live_loop.BrokerAdapter(BASE_CFG)
     assert isinstance(adapter, execution.Broker)
     cfg = {**BASE_CFG, "live": {**BASE_CFG["live"], "enabled": False}}
