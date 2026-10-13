@@ -48,6 +48,7 @@ from cherrypick.core.dxfeed import num as _dxfeed_num
 from cherrypick.meic import credentials as _creds
 from cherrypick.meic import gex_math
 from cherrypick.meic import paths as _paths
+from cherrypick.meic.live_orders import order_symbol as _order_symbol
 from cherrypick.meic.session import get_session
 
 # ---------------------------------------------------------------------------
@@ -1023,6 +1024,22 @@ def _opens_position(spec: dict) -> bool:
     return any("to open" in str(leg.get("action", "")).lower() for leg in spec.get("legs") or [])
 
 
+def _occ_legs(spec: dict) -> dict:
+    """`spec` with every leg named by its OCC symbol (2026-10-12) -- the agent path's half of #231.
+
+    The agent builds this order from `get_strategies` legs or a ledger row, and the stream cache keys
+    options by DXLink streamer symbol (`.XSP261012P580`); tastytrade orders take OCC
+    (`XSP   261012P00580000`). This command passed whatever it was handed. A streamer symbol is
+    converted, an OCC symbol passes through, and a leg with no OCC form raises ValueError -- the same
+    `live_orders.order_symbol` the live loop's builders use, so the two doors cannot disagree."""
+    legs = [{**leg, "symbol": _order_symbol(leg.get("symbol"))} for leg in spec.get("legs") or []]
+    return {**spec, "legs": legs} if "legs" in spec else spec
+
+
+def _leg_refusal(exc: ValueError) -> dict:
+    return {"ok": False, "reason": "leg_symbol_not_orderable", "error": f"{exc}; nothing was sent"}
+
+
 async def cmd_execute_trade(args) -> dict:
     if not _live_trading_enabled() and not getattr(args, "dry_run", True):
         return {
@@ -1030,6 +1047,10 @@ async def cmd_execute_trade(args) -> dict:
             "error": "Live trading is disabled. Set enable_live_trading=true in config.json.",
         }
     spec = json.loads(args.order)
+    try:
+        spec = _occ_legs(spec)
+    except ValueError as exc:
+        return _leg_refusal(exc)
     # The submission's own identity (2026-09-17): tastytrade does not deduplicate retries, and a
     # human re-runs this command on an error. Sent as the order's external identifier and reported
     # back; a timeout after the broker accepted is recovered below by reading today's orders for
@@ -1093,6 +1114,10 @@ async def cmd_adjust_order(args) -> dict:
         }
     try:
         spec = json.loads(args.order)
+        try:
+            spec = _occ_legs(spec)  # a replacement names its legs to the broker too
+        except ValueError as exc:
+            return _leg_refusal(exc)
         account = await _get_account(getattr(args, "account_number", None))
         session = get_session()
         order = _build_order(spec)
