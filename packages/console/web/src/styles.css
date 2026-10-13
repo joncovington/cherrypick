@@ -825,7 +825,7 @@ h2 {
 }
 
 .pager-btn:hover:not(:disabled) {
-  color: var(--fg);
+  color: var(--text);
   border-color: var(--accent);
 }
 
@@ -861,7 +861,7 @@ h2 {
 }
 
 .link-button:hover {
-  color: var(--fg);
+  color: var(--text);
 }
 
 /* A scope select holding something other than its default, so a narrowed or
