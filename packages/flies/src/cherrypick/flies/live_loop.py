@@ -1903,12 +1903,6 @@ def uninstall_task() -> dict:
     }
 
 
-def _write_arm_stamp() -> None:
-    _live.write_arm_record(
-        "flies", date=provider.now_et().date().isoformat(), at=clock.now_iso(), armed_by="live-flies-start"
-    )
-
-
 def expected_legs(config: dict, conn) -> dict:
     """The contracts this ledger says the broker holds right now, for the orchestrator's
     positions-vs-ledger check (`cherrypick.core.livepositions`, 2026-10-08). Files and DB only.

@@ -975,53 +975,6 @@ def record_entry_attempt(
     conn.commit()
 
 
-def last_entry_fill_ts(conn, *, trade_date: str, arm: str, symbol: str) -> str | None:
-    """When this arm last FILLED an entry on this symbol today, or None.
-
-    The cadence clock's input. Read from the position ledger rather than from the attempts table:
-    the ledger is what actually holds a position, and a fill that was written there but whose
-    attempt row failed to write must still consume the arm's slot. Telemetry may be lossy; the
-    clock may not.
-
-    Live rows carry `entry_fill_status` -- a *placed* order is 'pending' until confirmed, and it is
-    counted here, because the slot is spent the moment an order is working. Paper rows leave the
-    column NULL and are counted unconditionally. Rejected and cancelled entries are excluded: those
-    never became a position, so they never used the slot.
-    """
-    row = conn.execute(
-        "SELECT MAX(entry_time) AS t FROM fly_positions WHERE trade_date = ? AND arm = ? "
-        "AND symbol = ? AND status != 'voided' AND void_reason IS NULL "
-        "AND (entry_fill_status IS NULL OR entry_fill_status IN ('filled', 'pending'))",
-        (trade_date, arm, symbol.upper()),
-    ).fetchone()
-    return row["t"] if row and row["t"] else None
-
-
-def day_structure_keys(conn, *, trade_date: str, arm: str, symbol: str) -> set:
-    """Every structure this arm has already established today, as (kind, side, center, wing, far).
-
-    The duplicate rule's input. Deliberately spans the WHOLE day regardless of status: flies are
-    completed, not closed, so a structure never leaves the book before EOD and re-entering it later
-    in the session is the same trade twice. Voided rows are excluded -- those are rows the module
-    has disavowed as evidence, so they constrain nothing.
-    """
-    rows = conn.execute(
-        "SELECT kind, side, center, wing_width, far_width FROM fly_positions "
-        "WHERE trade_date = ? AND arm = ? AND symbol = ? AND status != 'voided' AND void_reason IS NULL",
-        (trade_date, arm, symbol.upper()),
-    ).fetchall()
-    return {
-        (
-            str(r["kind"] or ""),
-            str(r["side"] or ""),
-            None if r["center"] is None else float(r["center"]),
-            None if r["wing_width"] is None else float(r["wing_width"]),
-            None if r["far_width"] is None else float(r["far_width"]),
-        )
-        for r in rows
-    }
-
-
 def record_iteration(
     conn,
     *,
