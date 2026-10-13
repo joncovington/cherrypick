@@ -334,6 +334,39 @@ describe("live vs paper", () => {
     expect(lvp.arm).toBe("control");
     expect(lvp.live).toMatchObject({ sessions: 1, entries: 2, completed: 1, completionRatePct: 50 });
     expect(lvp.paper).toMatchObject({ sessions: 1, entries: 1, completed: 1, completionRatePct: 100 });
+    expect(lvp.degraded).toBeUndefined();
+  });
+
+  it("serves no paper figures, and says why, when the paper read fails -- never the live ones", () => {
+    const live = new Database(path.join(tmp, "flies", "live_trades.db"));
+    live.exec(DDL);
+    live.exec("ALTER TABLE fly_positions ADD COLUMN completion_latency_min REAL");
+    // 30 live entries, none completed: armed, and with any real paper side the gap would be huge.
+    for (let i = 0; i < 30; i += 1) pos(live, `L${i}`, "2026-09-17", { kind: "short_vertical", credit: 2.2 });
+    live.close();
+    // A paper store whose read throws (no fly_positions table).
+    const paper = new Database(path.join(tmp, "flies", "paper_trades.db"));
+    paper.exec("CREATE TABLE unrelated (x INTEGER)");
+    paper.close();
+
+    // Shown to fail before 2026-10-12: paper fell back to side(liveDb), so it read 0/30 and the gap 0.
+    const lvp = readFliesLive(config, "2026-09-17").performance.liveVsPaper!;
+    expect(lvp.live).toMatchObject({ entries: 30, completed: 0 });
+    expect(lvp.paper).toBeNull();
+    expect(lvp.completionGapPct).toBeNull();
+    expect(lvp.abort).toMatchObject({ armed: true, triggered: false });
+    expect(lvp.degraded?.reason).toMatch(/^paper ledger read failed: /);
+  });
+
+  it("calls an absent paper ledger degraded too: the abort rule has nothing to compare", () => {
+    const live = new Database(path.join(tmp, "flies", "live_trades.db"));
+    live.exec(DDL);
+    live.exec("ALTER TABLE fly_positions ADD COLUMN completion_latency_min REAL");
+    pos(live, "C1", "2026-09-17", { credit: 2.4, completion_latency_min: 30 });
+    live.close();
+    const lvp = readFliesLive(config, "2026-09-17").performance.liveVsPaper!;
+    expect(lvp.paper).toBeNull();
+    expect(lvp.degraded).toEqual({ reason: "paper ledger absent" });
   });
 });
 
