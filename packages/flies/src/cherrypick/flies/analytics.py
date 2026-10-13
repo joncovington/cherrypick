@@ -1695,12 +1695,16 @@ def live_vs_paper(live_conn, paper_conn, arm: str = "gex") -> dict:
     depends on `cherrypick.core` alone and spawns no subprocess, which is what keeps it unable to
     reach anything but a paper advice artifact. Its copy is facts-for-context handed to a model,
     never a report surface — this remains the one place a live-vs-paper number is *reported* from.
-    If the shape here changes, bump that tag."""
+    If the shape here changes, bump that tag.
+
+    Voided rows (`void_reason` set) are out on both sides and out of the session list, as on every
+    other read surface: they keep `status = 'settled'`, so `status != 'cancelled'` alone counted the
+    22 paper rows of the 2026-10-08 outage against live's two entries that day."""
     days = [
         r[0]
         for r in live_conn.execute(
             "SELECT DISTINCT trade_date FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' "
-            "AND status != 'cancelled' ORDER BY trade_date",
+            "AND status != 'cancelled' AND void_reason IS NULL ORDER BY trade_date",
             (arm,),
         )
     ]
@@ -1722,7 +1726,7 @@ def live_vs_paper(live_conn, paper_conn, arm: str = "gex") -> dict:
             dict(r)
             for r in conn.execute(
                 f"SELECT * FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' "
-                f"AND status != 'cancelled' AND trade_date IN ({marks})",
+                f"AND status != 'cancelled' AND void_reason IS NULL AND trade_date IN ({marks})",
                 (arm, *days),
             )
         ]

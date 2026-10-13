@@ -1857,10 +1857,13 @@ export function readFliesPerformance(
   // moved to control on 2026-09-18 the panel and its abort rule measured only the July sessions.
   const liveCfg = ((readJson(config.paths.fliesConfig) ?? {})["live"] ?? {}) as Record<string, unknown>;
   const pilotArm = str(liveCfg["arm"]) ?? "gex";
+  // Voided rows (`void_reason` set, still `settled`) are out on both sides and out of the session
+  // list, as in live_vs_paper; a ledger older than the column has nothing voided.
+  const notVoidLvp = (db: DatabaseHandle) => (hasColumn(db, "fly_positions", "void_reason") ? " AND void_reason IS NULL" : "");
   result.liveVsPaper = withReadOnlyDb<LiveVsPaper | null>(path.join(config.paths.fliesDir, "live_trades.db"), null, (liveDb) => {
     const days = liveDb
       .prepare<[string], { d: string }>(
-        "SELECT DISTINCT trade_date AS d FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' AND status != 'cancelled' ORDER BY trade_date",
+        `SELECT DISTINCT trade_date AS d FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' AND status != 'cancelled'${notVoidLvp(liveDb)} ORDER BY trade_date`,
       )
       .all(pilotArm)
       .map((r) => r.d);
@@ -1870,7 +1873,7 @@ export function readFliesPerformance(
       const rows = db
         .prepare<string[], Record<string, unknown>>(
           `SELECT kind, credit, completion_latency_min FROM fly_positions
-            WHERE arm = ? AND entry_mode = 'legged' AND status != 'cancelled' AND trade_date IN (${marks})`,
+            WHERE arm = ? AND entry_mode = 'legged' AND status != 'cancelled'${notVoidLvp(db)} AND trade_date IN (${marks})`,
         )
         .all(pilotArm, ...days);
       const done = rows.filter((r) => r["kind"] === "fly");

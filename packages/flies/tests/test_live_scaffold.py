@@ -2207,6 +2207,35 @@ def test_a_cancelled_live_entry_is_not_counted_against_completion(live_conn):
     paper.close()
 
 
+def test_a_voided_row_is_out_of_live_vs_paper_on_both_sides(live_conn):
+    """A voided row keeps `status = 'settled'` and its P&L (`void_reason` alone marks it), so
+    `status != 'cancelled'` let the 22 voided paper rows of the 2026-10-08 outage into paper's side
+    of the gap. Out on both sides, and a session whose only live rows are void is no live session."""
+    from cherrypick.flies import analytics
+
+    paper = _paper_conn()
+    _legged_row(live_conn, "L1", kind="fly", latency=8.0, debit=0.5)
+    _legged_row(live_conn, "L2", kind="short_vertical")
+    _legged_row(live_conn, "LV", kind="short_vertical", day="2020-01-02")
+    _legged_row(paper, "P1", kind="fly", latency=4.0, debit=0.4)
+    _legged_row(paper, "PV1", kind="short_vertical")
+    _legged_row(paper, "PV2", kind="short_vertical")
+    _legged_row(paper, "PV3", kind="fly", day="2020-01-02")
+    for conn, ids in ((live_conn, ("LV",)), (paper, ("PV1", "PV2", "PV3"))):
+        conn.executemany(
+            "UPDATE fly_positions SET void_reason = 'outage' WHERE position_id = ?", [(i,) for i in ids]
+        )
+        conn.commit()
+
+    out = analytics.live_vs_paper(live_conn, paper, "gex")
+
+    assert out["sessions"] == [DAY], "a voided-only live session was counted"
+    assert out["live"]["entries"] == 2
+    assert out["paper"]["entries"] == 1 and out["paper"]["completion_rate"] == pytest.approx(1.0)
+    assert out["completion_gap"] == pytest.approx(0.5)
+    paper.close()
+
+
 def test_abort_rule_arms_and_triggers(live_conn):
     from cherrypick.flies import analytics
 
