@@ -36,7 +36,6 @@ from typing import Any
 
 from cherrypick.core import streamcache
 from cherrypick.core.db import connect_ro
-from cherrypick.core.home import data_dir
 
 from . import config as cfgmod
 from . import reconcile
@@ -62,18 +61,7 @@ WIDE_SPREAD_MIN_DOLLARS = 0.10
 
 def _cache_db_path():
     """The shared stream cache. Same default every consumer uses; this reader never creates it."""
-    return data_dir("marketdata") / "stream_cache.db"
-
-
-def _num(value: Any) -> float | None:
-    """Broker payloads quote every number as a string. None for anything unparseable."""
-    if value is None:
-        return None
-    try:
-        out = float(value)
-        return None if out != out else out
-    except (TypeError, ValueError):
-        return None
+    return streamcache.cache_path()
 
 
 # --------------------------------------------------------------------------- marks
@@ -109,9 +97,9 @@ def _live_marks(root, symbols: list[str], tool: list[str] | None) -> dict[str, d
         if quote.get("mid") is None:
             continue
         out[sym] = {
-            "bid": _num(quote.get("bid")),
-            "ask": _num(quote.get("ask")),
-            "mid": _num(quote.get("mid")),
+            "bid": streamcache.to_float(quote.get("bid")),
+            "ask": streamcache.to_float(quote.get("ask")),
+            "mid": streamcache.to_float(quote.get("mid")),
             "age_seconds": 0.0,
             "source": "feed",
         }
@@ -131,10 +119,10 @@ def _price_leg(position: dict, mark: dict | None) -> dict:
     is_option = str(position.get("instrument_type") or "") == "Equity Option"
     direction = str(position.get("quantity_direction") or "")
     sign = -1 if direction == "Short" else 1
-    quantity = _num(position.get("quantity")) or 0.0
-    multiplier = (_num(position.get("multiplier")) or 1.0) if is_option else 1.0
-    open_price = _num(position.get("average_open_price"))
-    prev_close = _num(position.get("close_price"))
+    quantity = streamcache.to_float(position.get("quantity")) or 0.0
+    multiplier = (streamcache.to_float(position.get("multiplier")) or 1.0) if is_option else 1.0
+    open_price = streamcache.to_float(position.get("average_open_price"))
+    prev_close = streamcache.to_float(position.get("close_price"))
     contracts = sign * quantity
 
     leg: dict[str, Any] = {
@@ -149,7 +137,7 @@ def _price_leg(position: dict, mark: dict | None) -> dict:
     }
     if is_option and len(occ) >= 19:
         leg["right"] = occ[12]
-        strike = _num(occ[13:])
+        strike = streamcache.to_float(occ[13:])
         leg["strike"] = strike / 1000.0 if strike is not None else None
 
     if mark is None or mark.get("mid") is None:
@@ -346,7 +334,7 @@ def format_report(result: dict[str, Any], *, detail: bool = False) -> str:
         balances = acct.get("balances") or {}
         netliq = next((v for k, v in balances.items() if "net-liquidating-value" in str(k).lower()), None)
         if netliq is not None:
-            lines.append(f"  net liq {_money(_num(netliq))}")
+            lines.append(f"  net liq {_money(streamcache.to_float(netliq))}")
         lines.append(
             f"  {acct['leg_count']} leg(s)   mark value {_money(acct['value'])}"
             f"   open P/L {_money(acct['open_pl'], signed=True)}"

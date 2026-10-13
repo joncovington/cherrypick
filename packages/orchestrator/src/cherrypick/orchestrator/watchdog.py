@@ -1395,14 +1395,6 @@ def _save_state(state: dict[str, Any]) -> None:
     _STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
-def _parse_hhmm(value: str, default: time) -> time:
-    try:
-        h, m = (int(x) for x in str(value).split(":", 1))
-        return time(h, m)
-    except (ValueError, TypeError):
-        return default
-
-
 def _check_eval_activity(
     name: str, mcfg: dict[str, Any], now_et: datetime, in_session: bool, settings: dict[str, Any]
 ) -> list[Finding]:
@@ -2760,8 +2752,8 @@ def run_streamer_health(cfg: dict[str, Any] | None = None, *, require_enabled: b
     tz = cfg.get("timezone", "America/New_York")
     now = timeutil.now_et(tz)
     if not timeutil.is_trading_day(now, timeutil.load_holidays()):
-        # The task has no day-of-week filter (see tasks.create_windowed_minute_task), so weekends
-        # and holidays reach here and stop here.
+        # Run by hand, or by a scheduler without a day-of-week filter, weekends and holidays
+        # reach here and stop here.
         return {"ok": True, "skipped": "not a trading day"}
 
     findings: list[Finding] = []

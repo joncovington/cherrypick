@@ -22,29 +22,21 @@ cost of the arm is concentration: every contract on a centre settles to the same
 from __future__ import annotations
 
 import argparse
-import os
-import sqlite3
 from collections import defaultdict
 from pathlib import Path
 
 from cherrypick.core.metrics import MIN_EFFECTIVE_N
 from cherrypick.core.regimecuts import sign_test_p
+from cherrypick.flies import analysis_rows
 
 ARM_FROM = "2026-10-12"
 
 
-def _ledger() -> Path:
-    home = os.environ.get("CHERRYPICK_HOME")
-    return (Path(home) if home else Path.home() / ".cherrypick") / "data" / "flies" / "paper_trades.db"
-
-
 def load(path: Path, arm: str, since: str, until: str | None) -> list[dict]:
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    q = """select trade_date, entry_time, center, wing_width, far_width, completed_at, pnl
-           from fly_positions where arm=? and symbol='SPX' and status='settled' and void_reason is null
-           and entry_mode='legged' and trade_date>=? and (? is null or trade_date<=?) order by entry_time"""
-    return [dict(r) for r in conn.execute(q, (arm, since, until, until))]
+    conn = analysis_rows.open_ledger(path)
+    return analysis_rows.settled_positions(
+        conn, arm=arm, symbol="SPX", since=since, until=until, entry_mode="legged"
+    )
 
 
 def classify(rows: list[dict]) -> list[dict]:
@@ -112,7 +104,7 @@ def main() -> None:
     ap.add_argument("--until")
     ap.add_argument("--db", type=Path, default=None, help="default: the paper ledger")
     a = ap.parse_args()
-    path = a.db or _ledger()
+    path = a.db or analysis_rows.ledger_path("paper")
     out = read(load(path, a.arm, a.since, a.until), load(path, a.control, a.since, a.until))
     if not out["sessions"]:
         print(f"no settled {a.arm} or {a.control} entries since {a.since}")

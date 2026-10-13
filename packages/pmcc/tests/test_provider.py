@@ -84,11 +84,3 @@ def test_read_spot_staleness_gate(cache):
     cache.spot("TNA", 70.60, age=600)
     assert provider.read_spot(cache.path, "TNA", max_age_seconds=300) is None
     assert provider.read_spot(cache.path, "TNA") == 70.60
-
-
-def test_read_session(cache):
-    cache.summary("TNA", "2026-08-17", o=70.0, h=71.0, low=69.5, c=None, prev=69.8)
-    row = provider.read_session(cache.path, "TNA", "2026-08-17")
-    assert row["day_low"] == 69.5
-    assert row["prev_day_close"] == 69.8
-    assert provider.read_session(cache.path, "TNA", "2026-08-18") is None

@@ -367,6 +367,12 @@ net per period, the intraday series and the broker account. Rules, stated on the
   (`core.metrics` over `live_trades.db`, rendered by `MetricTiles`). Their two max drawdowns differ on
   purpose — daily against per trade — and the page labels which is which.
 
+**The Overview's live panel** (`pages/Overview/LivePanel.tsx`, 2026-10-12) lists every module with a
+live book (`readers/liveBooks.ts`, `GET /api/live/books`: flies and bwb, each module's own
+settled-net rule mirrored) and draws only those with live activity — flies through its own
+`LiveFliesPanel`, bwb as three tiles linking to its live-vs-paper tab. The quiet ones are named in one
+line; an absent ledger and a failed read say which they are.
+
 **Flies intraday agent tab** (`/flies/agent`, `pages/Flies/AgentSlide.tsx` over
 `GET /api/flies/agent[?session=]` → `readers/fliesAgent.ts`). It has no live view: a live read is
 refused on the page (`web/test/fliesAgentSlide.test.tsx`), and the live shadow, scored by the
@@ -444,7 +450,10 @@ net — each money header's `title` stating its definition.
 - A recently added cost column is read as optional (`NULL` on an older ledger), so a missing column
   reads "not recorded" rather than `withReadOnlyDb` turning it into an empty table.
 - A totals chip carries gross, fees, settlement and net over every matching row, and says how many
-  rows a partially recorded measure (slippage) covers.
+  rows a partially recorded measure (slippage) covers. A settlement total over any row that never
+  recorded it is n/r, never a partial sum.
+- Fee drag is one helper, `@console/shared`'s `feeDragPct` (trading fees, settlement out, ÷ premium
+  collected; null when nothing was collected), on every surface that shows it.
 - Each module on the standard has its own trade-standard test against its own fixture, shown to fail
   (the flies one by removing the subtraction and the filter):
 
@@ -455,6 +464,7 @@ net — each money header's `title` stating its definition.
 | bwb | `readers/bwb.ts` `bwbTradeCash` | `bwb-trade-standard` | slippage charged inside `fees`; each part subtracted once; a broker-reconciled row takes none out |
 | earnings | `readers/earnings.ts` `earningsTradeCash` | `earnings-trade-standard` | `entry_cost`/`exit_cost` carry slippage and (exit) settlement fee; history is closed trades across both books |
 | calendars, pmcc, curve | `readers/positionCash.ts`, `components/TradeMoney.tsx` | `position-trade-standard` (via curve), `pmcc-`/`calendars-trade-standard` on fixtures from each module's `db.connect` | exit kinds add `assigned`; calendars' history is per week and arm, net null until every position (shares included) has closed, totals over finished weeks only |
+| contango | `readers/contango.ts` `contangoTradeCash` | `contango-trade-standard`, on a fixture from its `db.connect` | a stint is a fund bought and sold: entry (the purchase) + exit (the sale) + distributions = gross; slippage charged as a cost; settlement never recorded, so `n/r` |
 
 ## History-table controls
 
@@ -471,7 +481,7 @@ definition tooltip, cell, kind); the controls come from that list.
   picker (Monday-first, nothing after today); `?from=&to=` written with `replace`; presets end today in
   New York time. **The server applies it** (`readers/dateRange.ts`: one parser, one clause builder), so
   counts and totals describe the range. Each module bounds the date its history is ABOUT, and the bar
-  names it: trade date for flies and meic, close date for bwb/pmcc/curve/earnings (an open position is
+  names it: trade date for flies and meic, close date for bwb/pmcc/curve/earnings/contango (an open position is
   outside any range), week for calendars.
 - **`HistoryTable`** (`components/table/HistoryTable.tsx`) is the card for every module but flies.
   Money and `numeric` columns right-align per column (`td.num`), since a reorderable table cannot align

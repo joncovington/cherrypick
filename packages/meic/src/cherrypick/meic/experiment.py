@@ -24,7 +24,6 @@ than individual trades. Below ~30 clusters even cluster-robust intervals run opt
 from __future__ import annotations
 
 import os
-import random
 import sqlite3
 import sys
 from pathlib import Path
@@ -33,6 +32,7 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
+from cherrypick.core import stats as _stats  # noqa: E402
 from cherrypick.core.metrics import MIN_EFFECTIVE_N, calibration_reading  # noqa: E402
 
 from cherrypick.meic import paths as _paths  # noqa: E402
@@ -168,48 +168,44 @@ def compare_arms(conn, start: str | None = None) -> dict:
 
 
 def bootstrap_difference(group_a: list[dict], group_b: list[dict], iterations=2000, seed=0) -> dict | None:
-    """Percentile interval for (mean net P&L of A) − (mean of B), resampling whole SESSIONS.
+    """Percentile interval for the PAIRED per-session difference in net P&L, A − B, resampling
+    whole SESSIONS (`cherrypick.core.stats`).
 
     Sessions are the resampling unit because same-day trades share a regime and are not independent;
     treating each trade as its own observation is what makes a 6-session result look like a
-    120-observation one. Returns None below `MIN_SESSIONS_FOR_INTERVAL` rather than quoting an
+    120-observation one. Refuses below `MIN_SESSIONS_FOR_INTERVAL` rather than quoting an
     interval nothing supports -- and even at 14 sessions, cluster counts under ~30 are known to give
     optimistic coverage, so read the result as directional.
+
+    Paired since 2026-10-12. The earlier version resampled sessions but then pooled every resampled
+    TRADE of A and of B and differenced the two trade means, so a session that one arm traded ten
+    times and the other twice weighed five times as much on one side -- the pairing the two arms
+    share (same days, same tape) was thrown away, and a gate that blocks entries changed the
+    denominator it was judged by. Now each session's net for A is differenced with B's on that same
+    day; both arms run every session of the A/B, so a session one arm sat out entirely reads as 0
+    for it (blocking a whole day is the gate's effect, not missing data). `point_estimate` is the
+    observed mean of those differences, no longer the mean of the bootstrap draws.
     """
-    by_session: dict[str, dict[str, list]] = {}
-    for tag, group in (("a", group_a), ("b", group_b)):
-        for r in group:
-            by_session.setdefault(r["session"], {"a": [], "b": []})[tag].append(r["net_pnl"])
-    sessions = [s for s in by_session if s]
+    a = _stats.session_values(group_a)
+    b = _stats.session_values(group_b)
+    sessions, diffs = _stats.paired_diffs(a, b, fill=0.0)
     if len(sessions) < MIN_SESSIONS_FOR_INTERVAL:
         return {
             "ok": False,
             "reason": f"{len(sessions)} sessions < {MIN_SESSIONS_FOR_INTERVAL} required",
             "sessions": len(sessions),
         }
-
-    rng = random.Random(seed)
-    diffs = []
-    for _ in range(iterations):
-        picked = [by_session[rng.choice(sessions)] for _ in sessions]
-        a_vals = [v for p in picked for v in p["a"]]
-        b_vals = [v for p in picked for v in p["b"]]
-        if not a_vals or not b_vals:
-            continue
-        diffs.append(sum(a_vals) / len(a_vals) - sum(b_vals) / len(b_vals))
-    if not diffs:
-        return {"ok": False, "reason": "no resample produced both groups", "sessions": len(sessions)}
-    diffs.sort()
-    lo = diffs[int(0.025 * len(diffs))]
-    hi = diffs[min(int(0.975 * len(diffs)), len(diffs) - 1)]
+    lo, hi = _stats.bootstrap_ci(diffs, level=0.95, resamples=iterations, seed=seed)
     return {
         "ok": True,
         "sessions": len(sessions),
+        "unit": "per-session net, paired",
         "point_estimate": round(sum(diffs) / len(diffs), 2),
         "ci95": [round(lo, 2), round(hi, 2)],
         # An interval spanning zero means the data does not distinguish the two, which at these
         # sample sizes is the expected answer for a long while.
         "excludes_zero": (lo > 0) or (hi < 0),
+        "sign_test_p": _stats.sign_test_p(sum(1 for d in diffs if d > 0), sum(1 for d in diffs if d < 0)),
     }
 
 

@@ -39,6 +39,7 @@ from cherrypick.core import config as _cfg
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
+from cherrypick.core import streamcache as _streamcache
 
 from cherrypick.pmcc import analytics, clock, db, engine, management, provider, skew, stream_request
 from cherrypick.pmcc import book as bookmod
@@ -54,11 +55,7 @@ _logger = logging.getLogger("pmcc_paper_loop")
 def stream_cache_path(config: dict) -> str:
     """The suite's canonical shared stream cache, read-only here. Config first, then the managed
     home — portable paths only."""
-    configured = (config.get("source") or {}).get("stream_cache_db")
-    if configured:
-        return os.path.expanduser(os.path.expandvars(configured))
-    home = str(_home.home())
-    return os.path.join(home, "data", "marketdata", "stream_cache.db")
+    return str(_streamcache.cache_path(config))
 
 
 def log_file():
@@ -1183,12 +1180,7 @@ def _beat() -> None:
     the watchdog's freshness check WARNed mid-session over a 17-minute gap between mark writes.
     Touched at the TOP of the tick, before any branch; failure is swallowed (a heartbeat that
     costs a tick would be worse than the problem it solves)."""
-    try:
-        path = _home.heartbeat_path("pmcc")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(datetime.now().astimezone().isoformat(), encoding="utf-8")
-    except OSError:
-        pass
+    _home.beat("pmcc")
 
 
 def main(argv=None) -> int:

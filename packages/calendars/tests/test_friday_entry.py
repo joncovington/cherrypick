@@ -414,3 +414,77 @@ def test_friday_skip_is_silent_before_the_window_closes(conn, tmp_path):
         conn.execute("SELECT COUNT(*) FROM dc_decisions WHERE reason = 'friday_week_skipped'").fetchone()[0]
         == 0
     )
+
+
+# --- ...and it is journaled from a tick the loop actually runs ----------------------------------
+
+
+def _skips(conn):
+    return [
+        dict(r)
+        for r in conn.execute(
+            "SELECT trade_date, detail FROM dc_decisions WHERE reason = 'friday_week_skipped'"
+        )
+    ]
+
+
+def _ex_div_attempts(conn):
+    for _ in range(2):
+        db.record_entry_attempt(
+            conn, trade_date="2026-08-28", week_of="2026-08-31", symbol="SPY", outcome="ex_dividend_week"
+        )
+
+
+def test_friday_skip_is_journaled_by_the_off_session_tick(conn, tmp_path):
+    """The window closes at 16:00, which is also when the resident loop stops: `in_session` ends at
+    the bell, and every later tick is the off-session `--once` job, which returned at the RTH gate
+    before reaching the Friday phase. So the journal was unreachable, and 2026-09-11 and 09-18 (both
+    refused `ex_dividend_week`) left no `friday_week_skipped` row. The off-session tick is the first
+    one after the window that actually runs, so it is the one that journals."""
+    _ex_div_attempts(conn)
+    result = paper_loop.run_once(
+        _friday_cfg(),
+        conn,
+        cache_path=str(tmp_path / "none.db"),
+        when=datetime(2026, 8, 28, 16, 1, tzinfo=ET),
+    )
+    assert result["skipped"] == "outside_rth"  # still an off-session tick: nothing else changed
+    assert _skips(conn) == [{"trade_date": "2026-08-28", "detail": "ex_dividend_week"}]
+
+
+def test_friday_skip_is_journaled_on_the_settlement_tick_too(conn, tmp_path, monkeypatch):
+    """A Friday carries expiring shorts, so the first off-session tick past 16:20 may be the settle
+    pass, which returns before the RTH gate. The journal comes first and the settlement still runs."""
+    _ex_div_attempts(conn)
+    settled = []
+    monkeypatch.setattr(paper_loop, "_unsettled_today", lambda conn, day: True)
+    monkeypatch.setattr(paper_loop, "run_settle", lambda *a, **k: settled.append(k["when"]) or {"ok": True})
+    result = paper_loop.run_once(
+        _friday_cfg(),
+        conn,
+        cache_path=str(tmp_path / "none.db"),
+        when=datetime(2026, 8, 28, 16, 25, tzinfo=ET),
+    )
+    assert result["settled_session"] and len(settled) == 1
+    assert _skips(conn) == [{"trade_date": "2026-08-28", "detail": "ex_dividend_week"}]
+
+
+def test_off_session_journal_respects_the_regime_and_the_week(conn, tmp_path):
+    """Nothing when the regime is off, nothing on a session that is not the Friday entry, and
+    nothing when the Friday regime did enter."""
+    _ex_div_attempts(conn)
+    cache = str(tmp_path / "none.db")
+    paper_loop.run_once(
+        _friday_cfg(friday_entry={"enabled": False}),
+        conn,
+        cache_path=cache,
+        when=datetime(2026, 8, 28, 16, 1, tzinfo=ET),
+    )
+    paper_loop.run_once(_friday_cfg(), conn, cache_path=cache, when=datetime(2026, 8, 27, 16, 1, tzinfo=ET))
+    assert _skips(conn) == []
+
+    _pos(conn, "2026-08-31:friday:control:put", "friday:control", "2026-09-04")
+    conn.execute("UPDATE dc_positions SET week_of = '2026-08-31'")
+    conn.commit()
+    paper_loop.run_once(_friday_cfg(), conn, cache_path=cache, when=datetime(2026, 8, 28, 16, 1, tzinfo=ET))
+    assert _skips(conn) == []

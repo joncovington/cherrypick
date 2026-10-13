@@ -1,5 +1,5 @@
 // ------------------------------------------------------------------- module performance (shared)
-// The suite-wide performance read every module shares: one calibration reading per profile tag,
+// The suite-wide performance read every module shares: one calibration reading per arm tag,
 // via `server/src/readers/performance.ts::readModulePerformance` / `GET /api/performance/:module`.
 // Field names inside `reading` stay snake_case, matching `core.metrics`' own `calibration_reading`
 // JSON verbatim, rather than a ~20-key hand mapping to camelCase.
@@ -15,6 +15,7 @@ export const PERFORMANCE_MODULE_SCHEMA = {
   pmcc: "pmcc",
   curve: "curve_vx",
   bwb: "bwb_132",
+  contango: "contango_etf",
 } as const;
 
 export type PerformanceModuleId = keyof typeof PERFORMANCE_MODULE_SCHEMA;

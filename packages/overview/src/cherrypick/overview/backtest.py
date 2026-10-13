@@ -26,9 +26,10 @@ implementation of the blend would be a second opinion free to drift from the one
 
 from __future__ import annotations
 
-import json
 from statistics import fmean, median
 from typing import Any
+
+from cherrypick.core import jsonio as _jsonio
 
 from . import paths as _paths
 from . import score as _score
@@ -181,12 +182,7 @@ def write(result: dict[str, Any]) -> str:
     One file, overwritten: this is a recomputation over stored history, not a per-session record,
     so a dated series of them would be a series of near-identical files.
     """
-    path = _paths.data_dir() / "score-history.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
-    tmp.replace(path)
-    return str(path)
+    return str(_jsonio.write_json_atomic(_paths.data_dir() / "score-history.json", result))
 
 
 def build(session: str | None = None) -> dict[str, Any]:

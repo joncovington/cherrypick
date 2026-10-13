@@ -31,11 +31,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
-import subprocess
 import sys
 from datetime import date, timedelta
 from pathlib import Path
+
+# scripts/_common.py, beside this file (a test loading this script by path has no scripts/ on sys.path).
+_HERE = str(Path(__file__).resolve().parent)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+import _common  # noqa: E402
 
 # Scheduled runs happen under pythonw — no console. A CONSOLE child (claude, gh) spawned from a
 # windowless parent gets a brand-new console window, which flashes over whatever the user is doing;
@@ -193,30 +197,7 @@ def _headlines(session: str) -> dict | None:
 
 
 def _run_claude(payload: str) -> tuple[str | None, str | None]:
-    exe = shutil.which("claude")
-    if not exe:
-        return None, "claude not on PATH"
-    try:
-        proc = subprocess.run(
-            [exe, "-p", PROMPT, "--disallowed-tools", *DISALLOWED],
-            input=payload,
-            capture_output=True,
-            text=True,
-            # UTF-8 explicitly: text=True alone decodes with the locale encoding (cp1252 on
-            # Windows), which bakes mojibake into the note. Same lesson as eod_narrative.py.
-            encoding="utf-8",
-            errors="replace",
-            timeout=TIMEOUT_SECONDS,
-            creationflags=CREATE_NO_WINDOW,
-        )
-    except subprocess.TimeoutExpired:
-        return None, f"claude timed out after {TIMEOUT_SECONDS}s"
-    except Exception as exc:  # noqa: BLE001 -- a note is never worth raising over
-        return None, f"{type(exc).__name__}: {exc}"
-    if proc.returncode != 0:
-        return None, (proc.stderr or "")[:500] or f"claude exited {proc.returncode}"
-    text = (proc.stdout or "").strip()
-    return (text, None) if text else (None, "claude returned nothing")
+    return _common.run_claude(payload, prompt=PROMPT, disallowed=DISALLOWED, timeout=TIMEOUT_SECONDS)
 
 
 def main() -> int:

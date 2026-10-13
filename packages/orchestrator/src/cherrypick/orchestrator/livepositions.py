@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 from cherrypick.core import livepositions as _lp
 
 from . import config as cfgmod
@@ -177,11 +178,7 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     accounts_of = {m: _designated(cfg, m) for m in expected}
     result = evaluate(expected, accounts_of, lambda n: _broker_positions(cfg, n), recent_state())
     result["generated_at"] = datetime.now(timezone.utc).isoformat()
-    path = state_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
-    tmp.replace(path)
+    _jsonio.write_json_atomic(state_path(), result)
     return result
 
 

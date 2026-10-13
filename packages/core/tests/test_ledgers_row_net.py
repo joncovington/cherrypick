@@ -40,6 +40,12 @@ def test_the_meic_reader_agrees_with_the_row_rule():
         "fees REAL, exit_time TEXT)"
     )
     conn.execute("INSERT INTO ic_trades VALUES (1, 'SPX', 'control', 100.0, 7.5, '2026-10-09 16:00:00')")
-    (rec,) = ledgers.READERS["meic_ic"](conn)
-    row = conn.execute("SELECT * FROM ic_trades").fetchone()
-    assert rec["net_pnl"] == ledgers.ROW_NET["meic_ic"](row)
+    # A closed row with no fees recorded: n/r in the reader, so n/r on the card too.
+    conn.execute("INSERT INTO ic_trades VALUES (2, 'SPX', 'control', 100.0, NULL, '2026-10-09 16:00:00')")
+    recs = ledgers.READERS["meic_ic"](conn)
+    rows = conn.execute("SELECT * FROM ic_trades ORDER BY id").fetchall()
+    assert len(recs) == 2
+    assert sorted((r["net_pnl"] is None, r["net_pnl"]) for r in recs) == sorted(
+        (ledgers.ROW_NET["meic_ic"](r) is None, ledgers.ROW_NET["meic_ic"](r)) for r in rows
+    )
+    assert ledgers.ROW_NET["meic_ic"](rows[1]) is None

@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb, num, str, hasColumn, armColumnOf } from "./db.js";
+import { memoOnStore, memoReadOnlyDb, num, str, hasColumn, armColumnOf, type DatabaseHandle } from "./db.js";
 import { isVoidedSession } from "./voidedSession.js";
 
 /**
@@ -35,14 +35,15 @@ export type AttemptOutcome =
   | "no_candidate"
   | "no_fill";
 
+/** One timeline mark. Carries only what the timeline chart and its hover line read: the row's day
+ *  is the payload's `tradeDate`, and the strike a module stands in for a centre was never drawn,
+ *  so neither is sent (they were ~16% of a 1.6 MB flies payload polled every 20s). */
 export interface AttemptRow {
   ts: string | null;
-  tradeDate: string | null;
   arm: string;
   symbol: string | null;
   outcome: string;
   blockDetail: string | null;
-  center: number | null;
   blockingStrike: number | null;
   secondsUntilCadenceClear: number | null;
   spot: number | null;
@@ -173,7 +174,6 @@ interface TableSpec {
   file: (mode: TradingMode) => string;
   dir: (config: ConsoleConfig) => string;
   table: string;
-  centerColumn: string;
   spotColumn: string;
   /** Columns only some ledgers keep. Absent ones read as null rather than failing the query. */
   blockingStrikeColumn?: string;
@@ -194,10 +194,6 @@ const SPECS: Record<AttemptsModule, TableSpec> = {
     file: (mode) => (mode === "live" ? "meic_trades.db" : "paper_trades.db"),
     dir: (config) => config.paths.meicDir,
     table: "entry_attempts",
-    // MEIC has no single "centre" — the profit zone is the short PAIR — so the
-    // put short stands in for one on the timeline, and the pair is available in
-    // the row itself for anything that needs both.
-    centerColumn: "put_strike",
     spotColumn: "underlying_price",
     blockingStrikeColumn: "blocking_strike",
     cadenceColumn: "seconds_until_cadence_clear",
@@ -206,7 +202,6 @@ const SPECS: Record<AttemptsModule, TableSpec> = {
     file: (mode) => (mode === "live" ? "live_trades.db" : "paper_trades.db"),
     dir: (config) => config.paths.fliesDir,
     table: "fly_entry_attempts",
-    centerColumn: "center",
     spotColumn: "spot",
     blockingStrikeColumn: "blocking_strike",
     cadenceColumn: "seconds_until_cadence_clear",
@@ -216,9 +211,6 @@ const SPECS: Record<AttemptsModule, TableSpec> = {
     file: () => "paper_trades.db",
     dir: (config) => config.paths.pmccDir,
     table: "pmcc_entry_attempts",
-    // The SHORT strike is what this structure re-decides each week — the long is a stock
-    // substitute held across cycles — so it is the strike worth putting on a timeline.
-    centerColumn: "short_strike",
     spotColumn: "spot",
     // pmcc keeps neither: it has no same-strike blocking rule and no entry cadence gate.
   },
@@ -227,7 +219,6 @@ const SPECS: Record<AttemptsModule, TableSpec> = {
     file: () => "paper_trades.db",
     dir: (config) => config.paths.curveDir,
     table: "curve_entry_attempts",
-    centerColumn: "short_strike",
     spotColumn: "spot",
     // curve keeps neither: no same-strike blocking rule, no entry cadence gate.
   },
@@ -260,7 +251,12 @@ export function readEntryAttempts(
     blockedByStrike: {},
   };
 
-  return withReadOnlyDb<AttemptsPayload>(dbPath, empty, (db) => {
+  // Memoised on the ledger's stamp. The flies ledger holds ~500k attempt rows and ~26k of them a
+  // day, the page polls every 20s and the Overview every 15s, and better-sqlite3 is synchronous, so
+  // every rebuild holds the event loop; between the module's writes (and all evening) the answer
+  // cannot have moved. A read that threw is not remembered (memoReadOnlyDb).
+  const key = `attempts:${dbPath}:${day ?? "latest"}:${scope.arm ?? "*"}:${scope.symbol ?? "*"}`;
+  return memoReadOnlyDb<AttemptsPayload>(dbPath, key, empty, (db) => {
     if (!hasColumn(db, spec.table, "outcome")) return empty;
     // Resolved per FILE, not per module: meic's ledger says `risk_profile` until its own window,
     // and a live ledger can be on the other side of that window from its paper twin.
@@ -281,9 +277,6 @@ export function readEntryAttempts(
       scopeParams.push(scope.symbol);
     }
     const scopeAnd = scopeClauses.length > 0 ? ` AND ${scopeClauses.join(" AND ")}` : "";
-    // When symbol is scoped, the rail's lifetime counts ("days seen / days filled") describe days
-    // that produced attempts for that symbol (consistent with the page scope), not all symbols.
-    const scopeWhere = scopeClauses.length > 0 ? ` WHERE ${scopeClauses.join(" AND ")}` : "";
 
     const dayRow = day
       ? { d: day }
@@ -297,7 +290,6 @@ export function readEntryAttempts(
     const rows = db
       .prepare<unknown[], Record<string, unknown>>(
         `SELECT ts, trade_date, ${armColumn} AS arm, symbol, outcome, block_detail,
-                ${spec.centerColumn} AS center,
                 ${spec.blockingStrikeColumn ?? "NULL"} AS blocking_strike,
                 ${spec.cadenceColumn ?? "NULL"} AS seconds_until_cadence_clear,
                 ${spec.spotColumn} AS spot
@@ -309,12 +301,10 @@ export function readEntryAttempts(
 
     const timeline: AttemptRow[] = rows.map((r) => ({
       ts: normalizeTs(str(r["ts"]), str(r["trade_date"])),
-      tradeDate: str(r["trade_date"]),
       arm: str(r["arm"]) ?? "?",
       symbol: str(r["symbol"]),
       outcome: str(r["outcome"]) ?? "gate_blocked",
       blockDetail: str(r["block_detail"]),
-      center: num(r["center"]),
       blockingStrike: num(r["blocking_strike"]),
       secondsUntilCadenceClear: num(r["seconds_until_cadence_clear"]),
       spot: num(r["spot"]),
@@ -385,18 +375,10 @@ export function readEntryAttempts(
       breaks = [];
     }
 
-    // Lifetime session counts per arm, joined onto today's rail. Cheap (one grouped scan of a
-    // small table) and it is the only way the rail can distinguish "quiet this morning" from "has
-    // not traded since it was added".
+    // Lifetime session counts per arm, joined onto today's rail -- the only way the rail can
+    // distinguish "quiet this morning" from "has not traded since it was added".
     try {
-      const lifetime = db
-        .prepare<unknown[], { arm: string; seen: number; filled: number }>(
-          `SELECT ${armColumn} AS arm,
-                  COUNT(DISTINCT trade_date) AS seen,
-                  COUNT(DISTINCT CASE WHEN outcome = 'filled' THEN trade_date END) AS filled
-             FROM ${spec.table}${scopeWhere} GROUP BY 1`,
-        )
-        .all(...scopeParams);
+      const lifetime = readLifetimeSessions(db, spec.table, armColumn, scope);
       for (const row of lifetime) {
         const entry = byArm.get(row.arm);
         if (entry !== undefined) {
@@ -464,4 +446,132 @@ export function readEntryAttempts(
       blockedByStrike,
     };
   });
+}
+
+/**
+ * Sessions each arm has evaluated in, and filled in, across the whole ledger (within the page's
+ * arm/symbol scope -- a scoped symbol counts the days that produced attempts for that symbol).
+ *
+ * Shaped for the indexes rather than as one grouped scan: the distinct (day, arm) pairs come off
+ * the `(trade_date, arm)` index alone, and "did this arm fill that day" is a seek per pair on an
+ * index leading with `trade_date` and `outcome` -- or, where a ledger has one, `(arm, trade_date,
+ * outcome)`, which answers it without touching the table. The single `COUNT(DISTINCT ...)` scan
+ * this replaced read every row of a ~500k-row flies ledger (~480ms against ~65ms). Memoised on the
+ * store's stamp, and keyed apart from the day, so browsing sessions does not recount it.
+ */
+function readLifetimeSessions(
+  db: DatabaseHandle,
+  table: string,
+  armColumn: string,
+  scope: AttemptsScope,
+): Array<{ arm: string; seen: number; filled: number }> {
+  const key = `attempts-lifetime:${db.name}:${table}:${armColumn}:${scope.arm ?? "*"}:${scope.symbol ?? "*"}`;
+  return memoOnStore(db.name, key, () => {
+    const pairClauses = ["trade_date IS NOT NULL"];
+    const pairParams: string[] = [];
+    if (scope.arm !== null) {
+      pairClauses.push(`${armColumn} = ?`);
+      pairParams.push(scope.arm);
+    }
+    if (scope.symbol !== null) {
+      pairClauses.push("symbol = ?");
+      pairParams.push(scope.symbol);
+    }
+    const fillSymbol = scope.symbol !== null ? " AND f.symbol = ?" : "";
+    const fillParams = scope.symbol !== null ? [scope.symbol] : [];
+    return db
+      .prepare<unknown[], { arm: string; seen: number; filled: number }>(
+        `SELECT arm, COUNT(*) AS seen, SUM(filled) AS filled
+           FROM (SELECT d.arm AS arm,
+                        EXISTS (SELECT 1 FROM ${table} f
+                                 WHERE f.trade_date = d.trade_date AND f.outcome = 'filled'
+                                   AND f.${armColumn} = d.arm${fillSymbol}) AS filled
+                   FROM (SELECT DISTINCT trade_date, ${armColumn} AS arm FROM ${table}
+                          WHERE ${pairClauses.join(" AND ")}) d)
+          GROUP BY arm`,
+      )
+      .all(...fillParams, ...pairParams);
+  });
+}
+
+/** One module's entry outcomes for a session, counted exactly. */
+export interface AttemptCounts {
+  tradeDate: string | null;
+  filled: number;
+  /** Every refusal: anything neither filled nor `no_fill`. */
+  refused: number;
+  noFill: number;
+  /** The most frequent refusal reason (`block_detail`, else the outcome) with its count. */
+  topRefusal: string | null;
+}
+
+const NO_COUNTS: AttemptCounts = { tradeDate: null, filled: 0, refused: 0, noFill: 0, topRefusal: null };
+
+/**
+ * The Overview's entries row for one module: filled / refused / no-fill for a session, from one
+ * grouped query over that day's rows.
+ *
+ * The Overview used to count `readEntryAttempts(...).timeline`, which is THINNED for the chart (one
+ * mark per arm, outcome and minute) -- so an arm refused on every 15s tick counted once a minute,
+ * and "refused" read a fraction of the truth. It also built the whole page payload (every row of
+ * the day, the arm rail, lifetime counts) to read four numbers from it.
+ *
+ * Same session rules as `readEntryAttempts`: `day` null means the table's latest day, and a voided
+ * session counts nothing. Same refusal key as before (`block_detail`, else the outcome), with ties
+ * broken by which reason appeared first.
+ */
+export function readAttemptCounts(
+  config: ConsoleConfig,
+  module: AttemptsModule,
+  mode: TradingMode,
+  day: string | null,
+): AttemptCounts {
+  const spec = SPECS[module];
+  const dbPath = path.join(spec.dir(config), spec.file(mode));
+  return memoReadOnlyDb<AttemptCounts>(dbPath, `attempt-counts:${dbPath}:${day ?? "latest"}`, NO_COUNTS, (db) => {
+    if (!hasColumn(db, spec.table, "outcome")) return NO_COUNTS;
+    const tradeDate =
+      day ?? db.prepare<[], { d: string | null }>(`SELECT MAX(trade_date) AS d FROM ${spec.table}`).get()?.d ?? null;
+    if (tradeDate === null) return NO_COUNTS;
+    if (isVoidedSession(db, module, tradeDate)) return { ...NO_COUNTS, tradeDate };
+    const groups = db
+      .prepare<[string], { outcome: unknown; block_detail: unknown; n: number; first: number }>(
+        `SELECT outcome, block_detail, COUNT(*) AS n, MIN(id) AS first
+           FROM ${spec.table} WHERE trade_date = ? GROUP BY outcome, block_detail`,
+      )
+      .all(tradeDate);
+    return countGroups(tradeDate, groups);
+  });
+}
+
+/** Fold `(outcome, block_detail, n)` groups into the entries row. Exported for the test. */
+export function countGroups(
+  tradeDate: string | null,
+  groups: ReadonlyArray<{ outcome: unknown; block_detail: unknown; n: number; first?: number }>,
+): AttemptCounts {
+  let filled = 0;
+  let noFill = 0;
+  const refusals = new Map<string, { n: number; first: number }>();
+  for (const g of groups) {
+    // The timeline's own reading of a row: a missing outcome is a gate refusal.
+    const outcome = str(g.outcome) ?? "gate_blocked";
+    if (outcome === "filled") filled += g.n;
+    else if (outcome === "no_fill") noFill += g.n;
+    else {
+      const key = str(g.block_detail) ?? outcome;
+      const prior = refusals.get(key);
+      const first = g.first ?? Number.POSITIVE_INFINITY;
+      refusals.set(key, { n: (prior?.n ?? 0) + g.n, first: Math.min(prior?.first ?? first, first) });
+    }
+  }
+  const ranked = [...refusals.entries()].sort((a, b) => b[1].n - a[1].n || a[1].first - b[1].first);
+  const refused = ranked.reduce((s, [, r]) => s + r.n, 0);
+  const top = ranked[0];
+  return {
+    tradeDate,
+    filled,
+    refused,
+    noFill,
+    topRefusal: top !== undefined ? `${top[0]} ×${String(top[1].n)}` : null,
+  };
 }

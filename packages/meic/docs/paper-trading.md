@@ -61,7 +61,7 @@ Paper P&L is net of the **exact tastytrade fee schedule** (`paper.open_fees`,
   contract (the broker settles each option symbol as one event); an OTM leg costs nothing.
   Charged nothing at all until 2026-09-24 ("expiration is not a transaction"), which was right
   for an OTM leg and wrong for an ITM one -- 2,379 ITM settlements went uncharged, $11,895.
-  History was re-settled the same day (`scripts/meic_resettle_expiry_fees.py`: fees only, `pnl`
+  History was re-settled the same day (`scripts/archive/meic_resettle_expiry_fees.py`: fees only, `pnl`
   untouched, `daily_summary` rebuilt, 99 rows with no recorded settlement price left as they
   were), so rows on both sides of the fix mean the same thing and no measurement break was
   journaled.

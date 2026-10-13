@@ -111,7 +111,8 @@ def test_open_positions_reader_tags_by_arm(tmp_path):
     )
     conn = sqlite3.connect(db)
     conn.row_factory = sqlite3.Row
-    assert reconcile._flies_open(conn) == [{"symbol": "SPX", "arm": "gex"}]
+    held = reconcile._OPEN_READERS["fly_book"](conn)
+    assert [(r["symbol"], r["arm"]) for r in held] == [("SPX", "gex")]
 
 
 def test_schema_is_registered_in_every_registry():

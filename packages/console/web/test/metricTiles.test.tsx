@@ -64,6 +64,17 @@ describe("MetricTiles", () => {
     expect(html).toContain("20 sessions");
   });
 
+  it("tones win rate and profit factor by nothing: a 50% or 1.0 threshold is a verdict, not a sign", () => {
+    for (const reading of [READING, { ...READING, win_rate: 0.3, profit_factor: 0.6 }]) {
+      const html = text(<MetricTiles reading={reading} />);
+      for (const label of ["win rate", "profit factor"]) {
+        const tile = new RegExp(`stat-label">${label}</span>.*?<span class="stat-value([^"]*)"`).exec(html);
+        expect(tile, label).not.toBeNull();
+        expect(tile?.[1], label).not.toMatch(/pnl-(pos|neg)/);
+      }
+    }
+  });
+
   it("reads a refused per-session sharpe (too few sessions) as an em-dash, not a zero", () => {
     const html = text(<MetricTiles reading={{ ...READING, sessions: 3, session_sharpe: null, psr: null }} />);
     expect(html).not.toContain("0.0%");
