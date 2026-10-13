@@ -48,7 +48,7 @@ import sys
 from collections import Counter, defaultdict
 from datetime import datetime
 
-from cherrypick.flies import analysis_rows, fly
+from cherrypick.flies import analysis_rows
 
 SALVAGE_X = (0.0, 0.1, 0.25, 0.5)
 SALVAGE_T = (5, 15, 30, 45, 60, 90)
@@ -174,21 +174,12 @@ def timing(rows: list[dict]) -> None:
 
 
 def _rescued_pnl(r: dict, debit: float) -> float:
-    """A spread completed for `debit`, settled at its print: the entry fee it really paid plus the
-    module's completion fee, and the settlement fee its print would charge the fly
-    (`fly.position_pnl` on an open position)."""
-    qty = r["quantity"] or 1
-    pos = dict(
-        kind="fly",
-        side=r["side"],
-        center=r["center"],
-        wing_width=r["wing_width"],
-        quantity=qty,
-        net=r["credit"] - debit,
-        fees=analysis_rows.entry_fees(r) + fly.vertical_open_fee(r["symbol"], qty),
-        status="open",
-    )
-    return fly.position_pnl(pos, r["settlement_price"])
+    """A spread completed for `debit`, settled at its print (`analysis_rows.completed_pnl`): the
+    entry fee it really paid, the module's completion fee, and the settlement charge it really paid
+    at the print plus only the events the completing strike adds. Charging the module's table for
+    the whole fly instead missed 20 live control flies by $2.50-$5.00 (2026-10-12): the broker
+    charged less at the print than the table says."""
+    return analysis_rows.completed_pnl(r, debit)
 
 
 def baseline_mismatches(rows: list[dict]) -> list[dict]:

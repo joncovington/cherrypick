@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from cherrypick.flies import analysis_rows, fly
 from cherrypick.flies import db as dbmod
 
 SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "flies_stranded_replay.py"
@@ -120,13 +121,52 @@ def test_a_completed_row_the_pricing_misses_refuses_the_grid(script, ledger, cap
     assert _main(script, "--no-salvage") == 0
 
 
-def test_a_rescue_priced_off_the_modules_settlement_table_misses_a_broker_settled_row(script, ledger, capsys):
+def _table_priced(r, debit):
+    """The rescue as it was priced before 2026-10-12: the module's settlement table for the whole fly."""
+    qty = r["quantity"] or 1
+    pos = {
+        "kind": "fly",
+        "side": r["side"],
+        "center": r["center"],
+        "wing_width": r["wing_width"],
+        "quantity": qty,
+        "net": r["credit"] - debit,
+        "fees": analysis_rows.entry_fees(r) + fly.vertical_open_fee(r["symbol"], qty),
+        "status": "open",
+    }
+    return fly.position_pnl(pos, r["settlement_price"])
+
+
+def test_a_broker_settled_row_is_reproduced_and_the_table_priced_rescue_it_replaced_is_not(
+    script, ledger, monkeypatch
+):
     """The live ledger's finding on 2026-10-12: the broker charged $12.50 at the print where the
-    module's table says $15.00, so a completion priced from the table misses that row by $2.50."""
+    module's table says $15.00, so a rescue priced from the table missed that row by $2.50 (and 19
+    other live control flies like it). Priced from what the row really paid, it reproduces."""
     _position(ledger, **BROKER_SETTLED)
     _position(ledger, **STRANDED)
-    missed = script.baseline_mismatches(script.load(ledger, "control", "SPX", DAY, None))
+    rows = script.load(ledger, "control", "SPX", DAY, None)
+    assert script.baseline_mismatches(rows) == []
+    assert _main(script) == 0
+
+    monkeypatch.setattr(script, "_rescued_pnl", _table_priced)
+    missed = script.baseline_mismatches(rows)
     assert [(m["position_id"], round(m["replayed"] - m["recorded"], 2)) for m in missed] == [
         ("live-control-7695-broker", -2.5)
     ]
     assert _main(script) == 2
+
+
+def test_a_rescued_spread_pays_what_it_really_paid_plus_the_completion_and_the_added_strike(script):
+    # 7675/7670 put spread, worthless at 7683.69 -- as was every strike of the fly it would become.
+    spread = {
+        **STRANDED,
+        "entry_mode": "legged",
+        "status": "settled",
+        "side": "put",
+        "wing_width": 5.0,
+        "quantity": 1,
+        "symbol": "SPX",
+    }
+    rescued = script._rescued_pnl(spread, 2.45 + 0.25)
+    assert rescued == pytest.approx(-0.25 * 100 - 3.44 - fly.vertical_open_fee("SPX"))
