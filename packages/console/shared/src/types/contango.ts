@@ -4,6 +4,8 @@
  * Python field names are re-spelled once, in `readers/contango.ts`.
  */
 
+import type { TradeMoney, TradeTotals } from "./modules.js";
+
 export interface ContangoArmParams {
   arm: string;
   enabled: boolean;
@@ -76,17 +78,44 @@ export interface ContangoStint {
   unrealisedNet: number | null;
 }
 
-/** One fill (a stint's entry or exit), for the costs page: slippage against the replay's 2 bps. */
+/** One fill (a stint's entry or exit), for the costs page: slippage against the replay's 2 bps.
+ *  `value` is signed cash flow (a purchase −, a sale +); an unrecorded value, fee or slippage is
+ *  null, never a zero. */
 export interface ContangoFill {
   session: string;
   arm: string;
   symbol: string;
   side: "buy" | "sell";
   shares: number;
-  value: number;
-  slippage: number;
+  value: number | null;
+  slippage: number | null;
   slippageBps: number | null;
-  fees: number;
+  fees: number | null;
+}
+
+/**
+ * A closed stint in the trade table standard. A stint is a purchase and a sale of one fund, so
+ * entry is the purchase (−), exit the sale (+) and the fund's distributions a third cash flow:
+ * entry + exit + distributions = gross; gross − fees − slippage = net, the module's own `net_pnl`.
+ * Fills are at mid and slippage is charged as a cost. Settlement is never recorded for a share
+ * trade, so it reads `n/r`.
+ */
+export interface ContangoHistoryRow extends TradeMoney {
+  positionId: string;
+  arm: string;
+  symbol: string;
+  role: string;
+  entrySession: string;
+  exitSession: string | null;
+  exitMid: number | null;
+  exitReason: string | null;
+  distributions: number | null;
+}
+
+/** Closed stints over the date range (bounded by the exit session), with totals over all of them. */
+export interface ContangoHistory {
+  rows: ContangoHistoryRow[];
+  totals: TradeTotals;
 }
 
 export interface ContangoDistribution {
