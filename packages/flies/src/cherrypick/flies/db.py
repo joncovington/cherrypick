@@ -317,6 +317,7 @@ CREATE TABLE IF NOT EXISTS fly_live_orders (
     fill_dist_widths   REAL,
     fill_dist_moves    REAL,
     fill_obs_at        TEXT,              -- the path observation the price measures came from
+    fill_obs_age_s     REAL,              -- seconds from that observation to the fill moment
     fill_mid           REAL,
     fill_natural       REAL,
     fill_mid_gap       REAL,
@@ -733,6 +734,11 @@ _ADDED_STREAM_WINDOW_COLUMNS = {
     "last_checked_occurrences": "INTEGER NOT NULL DEFAULT 0",
 }
 
+# How old the quotes behind an at-fill price gap were (2026-10-12, fill_facts.MAX_QUOTE_AGE_SECONDS).
+_ADDED_LIVE_ORDER_COLUMNS = {
+    "fill_obs_age_s": "REAL",
+}
+
 
 def _migrate(conn: sqlite3.Connection) -> list[str]:
     """Add any columns missing from an older paper DB. Returns what it added (for tests and logs)."""
@@ -741,6 +747,7 @@ def _migrate(conn: sqlite3.Connection) -> list[str]:
         ("fly_positions", _ADDED_POSITION_COLUMNS),
         ("fly_books", _ADDED_BOOK_COLUMNS),
         ("fly_stream_window", _ADDED_STREAM_WINDOW_COLUMNS),
+        ("fly_live_orders", _ADDED_LIVE_ORDER_COLUMNS),
     ):
         existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         for column, sql_type in columns.items():

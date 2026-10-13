@@ -114,7 +114,9 @@ assumed:
 - **Live** records every order (`fly_live_orders`, filled or not) and what it saw while it worked
   (`fly_order_path`, each tick and watcher cycle). At each fill it keeps all three distances (spot
   past the centre, spot past the completing long strike, the mid/natural gap to the limit), signed
-  as `fill_model.py` defines them, plus the broker's own fill time and leg-fill price. **The
+  as `fill_model.py` defines them, plus the broker's own fill time and leg-fill price. The price
+  gaps come only from a look at most 15 s before the fill (its age is `fill_obs_age_s`), else
+  NULL: a minute-old look on a fast tape once read 0.55 above the limit that filled. **The
   ledger's live `debit`/`credit` are the broker's fill price** (`fill_model.booked_price`, from
   2026-10-12), and the order's limit stays on `fly_live_orders.limit_price`. Before that they were
   the limit (the status `price` field), which hid 23 of 163 fills' price improvement; `fill_facts
