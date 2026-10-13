@@ -13,13 +13,13 @@ The scored day and the day whose forward move it is credited with are never the 
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from statistics import fmean, median
 from typing import Any
 
 from cherrypick.core import db as _core_db
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 
 from cherrypick.curve import regime as _regime
 
@@ -159,12 +159,7 @@ def _data_dir():
 
 
 def write(result: dict[str, Any]) -> str:
-    path = _data_dir() / "regime-history.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
-    tmp.replace(path)
-    return str(path)
+    return str(_jsonio.write_json_atomic(_data_dir() / "regime-history.json", result))
 
 
 def build(config: dict) -> dict[str, Any]:

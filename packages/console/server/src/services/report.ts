@@ -1,11 +1,8 @@
 /**
- * Port of the orchestrator report's cross-module paper P&L rollup — the
- * per-schema net rules are the load-bearing part and copied exactly:
- *   meic ic_trades:   net = pnl − fees (resolved trades)
- *   earnings trades:  net = pnl − entry_cost − exit_cost (closed)
- *   flies fly_books:  net = pnl (book P&L is already net of fees when settled)
- * Sessions keyed by trade date; suite stats = net, trades, wins/losses on the
- * per-trade net, win rate, average.
+ * The suite's cross-module paper P&L rollup, summed from the review's per-session fact sets
+ * (`packages/review`, which applies `cherrypick.core.ledgers`' per-schema net rules once). No net
+ * rule lives here. Sessions keyed by trade date; suite stats = net, trades, wins/losses, win rate,
+ * average. Read by the Overview desk (`readers/desk.ts`).
  */
 
 import fs from "node:fs";
@@ -16,24 +13,6 @@ import { listSessions } from "../readers/review.js";
 import { MODULE_SCHEMA, performanceDbPath } from "../readers/performance.js";
 import { readMeasurementBreaks } from "../readers/integrity.js";
 import type { MeasurementBreak, PerformanceModuleId } from "@console/shared";
-
-interface TradeNet {
-  session: string;
-  net: number;
-}
-
-function meicNets(config: ConsoleConfig): TradeNet[] {
-  const dbPath = path.join(config.paths.meicDir, "paper_trades.db");
-  return withReadOnlyDb<TradeNet[]>(dbPath, [], (db) =>
-    db
-      .prepare<[], Record<string, unknown>>(
-        `SELECT trade_date, pnl, fees FROM ic_trades
-          WHERE pnl IS NOT NULL AND status NOT IN ('cancelled','pending','partial_entry')`,
-      )
-      .all()
-      .map((r) => ({ session: String(r["trade_date"]), net: Number(r["pnl"]) - Number(r["fees"] ?? 0) })),
-  );
-}
 
 /**
  * Earnings timestamps are stored as epoch-seconds floats in some columns and
@@ -55,43 +34,16 @@ export function sessionDate(closedAt: unknown): string | null {
   return isoStamp(closedAt)?.slice(0, 10) ?? null;
 }
 
-function earningsNets(config: ConsoleConfig): TradeNet[] {
-  const dbPath = path.join(config.paths.earningsDir, "paper_trades.db");
-  return withReadOnlyDb<TradeNet[]>(dbPath, [], (db) =>
-    db
-      .prepare<[], Record<string, unknown>>(
-        `SELECT closed_at, pnl, entry_cost, exit_cost FROM trades WHERE closed_at IS NOT NULL AND pnl IS NOT NULL`,
-      )
-      .all()
-      .flatMap((r) => {
-        const session = sessionDate(r["closed_at"]);
-        if (session === null) return [];
-        return [{ session, net: Number(r["pnl"]) - Number(r["entry_cost"] ?? 0) - Number(r["exit_cost"] ?? 0) }];
-      }),
-  );
-}
-
-function fliesNets(config: ConsoleConfig): TradeNet[] {
-  const dbPath = path.join(config.paths.fliesDir, "paper_trades.db");
-  return withReadOnlyDb<TradeNet[]>(dbPath, [], (db) =>
-    db
-      .prepare<[], Record<string, unknown>>(
-        `SELECT trade_date, pnl FROM fly_books WHERE pnl IS NOT NULL AND status = 'settled'`,
-      )
-      .all()
-      .map((r) => ({ session: String(r["trade_date"]), net: Number(r["pnl"]) })),
-  );
-}
-
-
 export interface FactModule {
-  net: number;
+  /** Null when the module's results carry no net: unrecorded, never a $0 session. */
+  net: number | null;
   closed: number;
   wins: number;
   losses: number;
 }
 
-/** One session's per-module results, or null if the artifact is missing or unreadable. */
+/** One session's per-module results, or null if the artifact is missing or unreadable. A module
+ *  whose results carry no readable net keeps a null net rather than reading as a flat day. */
 export function readFactSet(config: ConsoleConfig, session: string): Record<string, FactModule> | null {
   let parsed: Record<string, unknown>;
   try {
@@ -108,8 +60,9 @@ export function readFactSet(config: ConsoleConfig, session: string): Record<stri
     const m = (raw ?? {}) as Record<string, unknown>;
     if (m["ok"] !== true) continue;
     const r = (m["results"] ?? {}) as Record<string, unknown>;
-    const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
-    out[name] = { net: n(r["net"]), closed: n(r["closed"]), wins: n(r["wins"]), losses: n(r["losses"]) };
+    const finite = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+    const n = (v: unknown) => finite(v) ?? 0;
+    out[name] = { net: finite(r["net"]), closed: n(r["closed"]), wins: n(r["wins"]), losses: n(r["losses"]) };
   }
   return out;
 }
@@ -189,7 +142,11 @@ export function buildSuiteReportUncached(config: ConsoleConfig): SuiteReport {
     if (era.from !== null && session < era.from) continue;
     const facts = readFactSet(config, session);
     if (facts === null) continue;
-    for (const [mod, raw] of Object.entries(facts)) {
+    for (const [mod, fact] of Object.entries(facts)) {
+      // A module with no readable net is left out of the session whole, counts included, as an
+      // unreadable module is: summing it as zero would draw a flat day it never recorded.
+      if (fact.net === null) continue;
+      const raw = { ...fact, net: fact.net };
       const m = (modules[mod] ??= { net: 0, trades: 0, wins: 0, losses: 0 });
       m.net += raw.net;
       m.trades += raw.closed;

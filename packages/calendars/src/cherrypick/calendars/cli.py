@@ -102,7 +102,9 @@ def cmd_record_break(args) -> int:
 
     from cherrypick.calendars import db
 
-    conn = db.connect_ro(args.db)
+    # The one writing verb: the 2026-09-24 switch of every verb to `connect_ro` caught this one too,
+    # and from then on it raised "attempt to write a readonly database" (no test covered it).
+    conn = db.connect(args.db)
     conn.execute(
         "INSERT OR REPLACE INTO measurement_breaks (break_date, key, old_value, new_value, note, recorded_at)"
         " VALUES (?, ?, ?, ?, ?, ?)",

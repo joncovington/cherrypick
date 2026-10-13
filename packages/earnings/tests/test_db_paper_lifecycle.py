@@ -406,15 +406,6 @@ def test_a_new_trade_in_a_migrated_database_still_gets_a_status(tmp_path, monkey
 
 
 # --------------------------------------------------------------------------- the EOD lifecycle sections
-def _eod(tmp_path, monkeypatch, day):
-    from cherrypick.earnings import strat_test_harness as harness
-    from cherrypick.earnings import strategy_metrics as metrics
-
-    monkeypatch.setattr(metrics, "DB_PATH", db_paper.DB_PATH)
-    monkeypatch.setattr(harness, "_eod_report_path", lambda d: tmp_path / f"paper-eod-{d}.md")
-    return harness._write_eod_report(day).read_text(encoding="utf-8")
-
-
 def test_a_management_event_carries_the_profile_it_judged(tmp_path):
     """The advisor's earnings_comparison_integrity spec (2026-09-01): an advised twin runs
     different exit params than its control, and without a profile stamp "did the advised target

@@ -49,6 +49,12 @@ from html.parser import HTMLParser
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+# scripts/_common.py, beside this file (a test loading this script by path has no scripts/ on sys.path).
+_HERE = str(Path(__file__).resolve().parent)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+import _common  # noqa: E402
+
 SITE = "https://app.quikoptions.com"
 REPORT_URL = f"{SITE}/Market/Options/THOR/Stock"
 REPORT_MARKER = "Hot Options Report"
@@ -761,32 +767,17 @@ def _state_path() -> Path:
 
 
 def cooldown_until() -> datetime | None:
-    try:
-        raw = json.loads(_state_path().read_text(encoding="utf-8")).get("cooldown_until")
-        return datetime.fromisoformat(raw) if raw else None
-    except (OSError, ValueError):
-        return None
+    return _common.cooldown_until(_state_path())
 
 
 def start_cooldown(reason: str) -> None:
-    until = datetime.now(UTC) + COOLDOWN
-    _state_path().parent.mkdir(parents=True, exist_ok=True)
-    _state_path().write_text(
-        json.dumps({"cooldown_until": until.isoformat(), "reason": reason}, indent=2), encoding="utf-8"
-    )
+    _common.start_cooldown(_state_path(), reason, COOLDOWN)
 
 
 def _warn(title: str, message: str) -> None:
     """Best-effort WARNING through the orchestrator's notifier, to the suite's own channels — never
     the hot-options Discord channel."""
-    print(f"WARNING: {title}\n{message}", file=sys.stderr)
-    try:
-        from cherrypick.notify.notifier import Notifier
-        from cherrypick.orchestrator import config as cfgmod
-
-        Notifier(cfgmod.load_config().get("notify")).notify("WARNING", "quikoptions", title, message)
-    except Exception:  # noqa: BLE001
-        pass
+    _common.warn("quikoptions", title, message)
 
 
 def _log(line: str) -> None:

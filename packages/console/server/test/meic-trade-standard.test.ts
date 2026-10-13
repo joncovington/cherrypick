@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../src/config.js";
-import { readMeic, NO_TRADE_QUERY, meicExitKind } from "../src/readers/meic.js";
+import { readMeic, readMeicAnalytics, NO_SCOPE, NO_TRADE_QUERY, meicExitKind } from "../src/readers/meic.js";
 
 /**
  * The trade table standard (root CLAUDE.md) on MEIC's positions and history.
@@ -87,12 +87,45 @@ describe("MEIC's history rows", () => {
     const t = read("history").totals;
     expect(t.trades).toBe(3);
     expect(t.gross).toBe(-375);
-    expect(t.settlementFees).toBe(10);
     expect(t.fees).toBe(33.28);
     expect(t.net).toBe(-418.28);
     expect(t.slippage).toBe(9);
+    expect(t.slippageTrades).toBe(3);
     expect(t.byArm.map((a) => a.arm).sort()).toEqual(["a", "b"]);
     expect(t.byArm.reduce((n, a) => n + a.net, 0)).toBeCloseTo(t.net, 2);
+  });
+
+  it("read settlement n/r when any trade behind the total never recorded it, never a partial $0-ish sum", () => {
+    const t = read("history").totals;
+    // ic-stop never recorded its split, so the total cannot say what settlement cost.
+    expect(t.settlementFees).toBeNull();
+    expect(t.settlementTrades).toBe(2);
+    // What WAS recorded still reconciles: gross - fees - recorded settlement = net.
+    expect(t.settlementRecorded).toBe(10);
+    expect(t.gross - t.fees - t.settlementRecorded).toBeCloseTo(t.net, 2);
+    // Arm a recorded every split; arm b's only closed trade did not.
+    const a = t.byArm.find((r) => r.arm === "a");
+    const b = t.byArm.find((r) => r.arm === "b");
+    expect(a?.settlementFees).toBe(10);
+    expect(b?.settlementFees).toBeNull();
+  });
+});
+
+describe("MEIC's fee drag", () => {
+  // Settled rows only: credit 120 + 50 + 55 = 225; trading fees 16.89 + 6.89 + 9.5 = 33.28 (the
+  // stop's 9.5 keeps its unrecorded settlement, the standard's rule). The open row's 3.44 fees and
+  // 70 credit stay out. The old figure was the fee total, settlement in, over every resolved row's
+  // credit: 46.72 / 295.
+  const fd = () => readMeicAnalytics(config, "paper", { ...NO_SCOPE, era: "ALL" }).feeDrag;
+
+  it("is trading fees over the premium collected, settled trades only", () => {
+    expect(fd().credit).toBe(225);
+    expect(fd().fees).toBe(33.28);
+    expect(fd().dragPct).toBeCloseTo((33.28 / 225) * 100, 6);
+  });
+
+  it("reads settlement n/r when a trade never recorded it", () => {
+    expect(fd().settlementFees).toBeNull();
   });
 });
 

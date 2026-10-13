@@ -237,9 +237,11 @@ def _decisions(conn, mode=None):
 # --------------------------------------------------------------------------- readiness
 def test_readiness_names_every_unmet_gate_and_passes_only_when_all_are_met(live_config):
     unmet = live_loop.readiness({"live": {}}, designated=None)
-    # enabled, gate0, designated (arm defaults to control). The halt flag is NOT a readiness gate
-    # since 2026-10-08: it stops new risk only, and the tick still manages what is open.
-    assert len(unmet) == 3 and not any("halt" in g for g in unmet)
+    # enabled, gate0, arm, designated. A missing `live.arm` refuses since 2026-10-12 (it read as
+    # control here while broker_cli.live_gates refused it; one list now, the stricter reading).
+    # The halt flag is NOT a readiness gate since 2026-10-08: it stops new risk only.
+    assert len(unmet) == 4 and not any("halt" in g for g in unmet)
+    assert any("live.arm ''" in g for g in unmet)
     assert live_loop.readiness(live_config, designated="5WX1234") == []
     bad = {**live_config, "live": {**live_config["live"], "arm": "wall"}}
     assert any("not a base arm" in g for g in live_loop.readiness(bad, designated="x"))

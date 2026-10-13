@@ -22,23 +22,6 @@ def tick(session, delta, quotes=(1.1, 1.3, 0.8, 0.95), at=0.0):
 
 
 # --------------------------------------------------------------------------- the pure layer
-def test_the_addon_arms_on_the_delta_touch_and_fires_on_the_first_credit_tick_after():
-    """The loop's latch: once armed it stays armed, and fires on the first tick that prices as a
-    credit -- even after delta has fallen back below the bar."""
-    ticks = [
-        tick("2026-09-08", 0.40, at=1),
-        tick("2026-09-08", 0.55, quotes=(0.5, 0.6, 0.6, 0.7), at=2),  # armed, but a debit
-        tick("2026-09-08", 0.45, quotes=(None, None, None, None), at=3),  # unpriceable: skipped
-        tick("2026-09-08", 0.45, at=4),  # fires here, delta already back under 0.50
-    ]
-    fire = addon_replay.addon_only_fire(ticks, PARAMS)
-    assert fire["ticked_at"] == 4 and fire["credit"] == pytest.approx(0.325)
-
-
-def test_no_touch_no_trade():
-    assert addon_replay.addon_only_fire([tick("2026-09-08", 0.49)], PARAMS) is None
-
-
 def test_the_daily_comparator_sells_on_the_entry_session_only():
     ticks = [tick("2026-09-07", 0.2, at=1), tick("2026-09-08", 0.2, quotes=(2.0, 2.2, 1.0, 1.2), at=2)]
     sale = addon_replay.daily_sale(ticks, "2026-09-08", PARAMS)

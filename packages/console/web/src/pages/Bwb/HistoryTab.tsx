@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { BwbCycleRow } from "@console/shared";
+import type { BwbCycleRow, TradingMode } from "@console/shared";
 import { useBwbHistory, useBwbMeta } from "../../lib/api";
 import { PnlCell, fmtMoney } from "../../components/DataTable";
 import { Pager, ScopeSelect, usePage } from "../../components/ScopeBar";
@@ -132,14 +132,15 @@ const COLUMNS: ColumnDef<BwbCycleRow>[] = [
   { id: "net", header: "net", title: "gross − fees − settlement − slippage", kind: "money", pinned: true, render: (r) => <PnlCell v={r.netPnl} /> },
 ];
 
-export function HistoryTab() {
+export function HistoryTab({ mode = "paper" }: { mode?: TradingMode }) {
   const [arm, setBook] = useState<string | null>(null);
   const [symbol, setSymbol] = useState<string | null>(null);
   const { from, to } = useUrlDateRange();
-  const meta = useBwbMeta();
-  const { page, setOffset, setLimit } = usePage([arm, symbol, from, to]);
-  const { data, isLoading, isError, isPlaceholderData } = useBwbHistory({ arm, symbol, from, to }, page);
-  const t = data?.totals;
+  const meta = useBwbMeta(mode);
+  const { page, setOffset, setLimit } = usePage([arm, symbol, from, to, mode]);
+  const { data, isLoading, isError, isPlaceholderData } = useBwbHistory({ arm, symbol, from, to }, page, mode);
+  // Null when nothing matched: an empty book has no totals, so no chip rather than a row of zeros.
+  const t = data?.totals ?? null;
 
   return (
     <div className="cards cards-wide">
@@ -156,7 +157,9 @@ export function HistoryTab() {
         empty={
           from !== null || to !== null
             ? "no position closed in this date range"
-            : "no completed positions yet -- results fill in as the daily ladder settles at expiry"
+            : data?.mode === "live"
+              ? "no live trades yet -- the live pilot has not completed a position"
+              : "no completed positions yet -- results fill in as the daily ladder settles at expiry"
         }
         updatedAt={data === undefined ? undefined : Date.now()}
         dateBasis="closed"
@@ -175,7 +178,7 @@ export function HistoryTab() {
         footer={
           data !== undefined && (
             <>
-              {t !== undefined && t.positions > 0 && (
+              {t !== null && (
                 <span
                   className="chip"
                   title="Over every completed position matching these filters — not just this page. Gross − fees − settlement − slippage = net: bwb charges slippage as a cost."

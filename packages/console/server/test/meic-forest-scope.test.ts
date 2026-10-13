@@ -76,24 +76,24 @@ afterAll(async () => {
 });
 
 const get = (url: string) => app.inject({ method: "GET", url, headers: { host: "127.0.0.1:5070" } });
-const profiles = (f: MeicForest) => f.asEntered.map((a) => a.profile);
+const armsOf = (f: MeicForest) => f.asEntered.map((a) => a.arm);
 
 describe("the forest honours the page scope", () => {
   it("defaults to the current era's latest session", () => {
     const f = readMeicForest(config, "paper", null);
     expect(f.tradeDate).toBe("2026-09-25");
-    expect(profiles(f)).toEqual(["armA", "armB"]);
+    expect(armsOf(f)).toEqual(["armA", "armB"]);
   });
 
   it("narrows to the selected arm", () => {
     const f = readMeicForest(config, "paper", null, { ...NO_SCOPE, profile: "armA" });
-    expect(profiles(f)).toEqual(["armA"]);
+    expect(armsOf(f)).toEqual(["armA"]);
     expect(f.tradesToday).toBe(2);
   });
 
   it("narrows to the selected symbol", () => {
     const f = readMeicForest(config, "paper", null, { ...NO_SCOPE, symbol: "NDX" });
-    expect(profiles(f)).toEqual(["armA"]);
+    expect(armsOf(f)).toEqual(["armA"]);
     expect(f.tradesToday).toBe(1);
   });
 
@@ -102,7 +102,7 @@ describe("the forest honours the page scope", () => {
     // no sample rows, and drew an empty forest.
     const f = readMeicForest(config, "paper", null, { ...NO_SCOPE, era: "sample" });
     expect(f.tradeDate).toBe("2026-08-13");
-    expect(profiles(f)).toEqual(["armA"]);
+    expect(armsOf(f)).toEqual(["armA"]);
     expect(f.tradesToday).toBe(1);
   });
 
@@ -120,7 +120,7 @@ describe("the forest route carries the scope to the reader", () => {
     const res = await get("/api/meic/forest?mode=paper&profile=armA&symbol=NDX&era=advisor");
     expect(res.statusCode).toBe(200);
     const body = res.json() as MeicForest;
-    expect(profiles(body)).toEqual(["armA"]);
+    expect(armsOf(body)).toEqual(["armA"]);
     expect(body.tradesToday).toBe(1);
   });
 

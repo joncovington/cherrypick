@@ -112,16 +112,6 @@ def test_ic_open_fee_matches_meic_constants(symbol, expected):
     assert fees.ic_open_fee(symbol) == expected
 
 
-def test_ic_open_fee_table_matches_meic_fallback_dict():
-    assert fees.ic_open_fee_table() == {
-        "SPX": 6.89,
-        "XSP": 4.49,
-        "NDX": 5.49,
-        "RUT": 5.21,
-        "DEFAULT": 4.49,
-    }
-
-
 def test_ic_open_fee_scales_with_quantity():
     # Quantity 2 SPX IC: 4 legs * 2 * 1.72 + 2 sells * 2 * 0.00329 = 13.76 + 0.01316 -> 13.77.
     assert fees.ic_open_fee("SPX", quantity=2) == 13.77

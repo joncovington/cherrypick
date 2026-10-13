@@ -170,9 +170,6 @@ def _close_sweep_env(tmp_path, monkeypatch, quotes_by_symbol, config=None):
         "_leg_quotes_for_symbols",
         lambda underlying, leg_symbols, price: {s: quotes_by_symbol[s] for s in leg_symbols},
     )
-    report = tmp_path / "eod.md"
-    report.write_text("stub", encoding="utf-8")
-    monkeypatch.setattr(runner, "_eod_report_path", lambda day: report)
     return db_paper
 
 
@@ -343,10 +340,6 @@ def test_run_closes_records_attempts_and_reports_stranded(tmp_path, monkeypatch)
     monkeypatch.setattr(runner, "_capture_market_context", lambda day: None)
     monkeypatch.setattr(runner.scanner, "fetch_quote_and_expirations", lambda symbol: {"ok": False})
     monkeypatch.setattr(runner, "_leg_quotes_for_symbols", lambda *a, **k: None)
-    # Pretend today's EOD report already exists so the sweep skips report generation.
-    report = tmp_path / "eod.md"
-    report.write_text("stub", encoding="utf-8")
-    monkeypatch.setattr(runner, "_eod_report_path", lambda day: report)
 
     first = runner.cmd_run_closes(argparse.Namespace())
     assert first["ok"] is True

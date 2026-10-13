@@ -16,6 +16,8 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from cherrypick.core import jsonio as _jsonio
+
 from . import levels, liquidity, paths, rotation, signals, stage, store, symbols, trend
 
 REPORT_VERSION = 2  # 2: `movers`
@@ -176,8 +178,4 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
 
 def write(doc: dict) -> str:
     path = paths.data_dir() / f"report-{doc['session']}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(doc, indent=1), encoding="utf-8")
-    tmp.replace(path)  # write-then-rename: a reader never sees half a report
-    return str(path)
+    return str(_jsonio.write_json_atomic(path, doc, indent=1, default=None))

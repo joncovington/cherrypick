@@ -393,6 +393,113 @@ def test_a_confirmed_entry_opens_at_the_actual_credit(tmp_path):
     # slippage_dollars is MEASURED on a live row (2026-09-18): mid at submission minus the fill.
     assert row["entry_mid_at_submit"] is not None
     assert row["slippage_dollars"] == pytest.approx((row["entry_mid_at_submit"] - 1.37) * 100.0)
+    # No per-leg fills on this status: the sides split the fill in the modelled ratio and add up.
+    assert row["side_credit_source"] == "proportional"
+    assert row["put_credit"] + row["call_credit"] == pytest.approx(1.37)
+
+
+# --------------------------------------------------------------------------- per-side credits (2026-10-12)
+def _fills(sp=0.62, lp=0.18, sc=0.55, lc=0.15, syms=("SP", "LP", "SC", "LC")):
+    out = []
+    for sym, action, price in zip(
+        syms, ("Sell to Open", "Buy to Open", "Sell to Open", "Buy to Open"), (sp, lp, sc, lc), strict=True
+    ):
+        if price is not None:
+            out.append({"symbol": sym, "action": action, "quantity": "1", "fill_price": str(price)})
+    return out
+
+
+_PENDING = {
+    "put_symbol": "SP",
+    "long_put_symbol": "LP",
+    "call_symbol": "SC",
+    "long_call_symbol": "LC",
+    "put_credit": 0.45,  # modelled at quote time
+    "call_credit": 0.35,
+    "net_credit": 0.75,  # the limit asked
+}
+
+
+def test_entry_fill_credits_take_each_side_from_its_own_leg_fills():
+    out = live_loop.entry_fill_credits(_PENDING, {"price": "0.75", "fills": _fills()}, 0.75)
+    assert out == {
+        "net_credit": 0.84,  # 0.44 + 0.40: what was received, not the 0.75 limit
+        "put_credit": 0.44,
+        "call_credit": 0.40,
+        "side_credit_source": "broker_legs",
+    }
+
+
+def test_entry_fill_credits_match_the_brokers_occ_symbols_to_the_rows_streamer_symbols():
+    trade = {
+        **_PENDING,
+        "put_symbol": ".XSP260708P583",
+        "long_put_symbol": ".XSP260708P578",
+        "call_symbol": ".XSP260708C598",
+        "long_call_symbol": ".XSP260708C603",
+    }
+    occ = ("XSP   260708P00583000", "XSP   260708P00578000", "XSP   260708C00598000", "XSP   260708C00603000")
+    out = live_loop.entry_fill_credits(trade, {"fills": _fills(syms=occ)}, 0.75)
+    assert out["side_credit_source"] == "broker_legs" and out["put_credit"] == 0.44
+
+
+def test_entry_fill_credits_fall_back_to_the_modelled_ratio_and_still_add_up():
+    """No fills, a missing leg, a leg on the wrong action, or a leg sum below the limit (a credit
+    limit cannot fill worse than itself): the booked fill is split 0.45 : 0.35, never re-derived."""
+    cases = (
+        {"price": "0.80"},
+        {"fills": _fills(lc=None)},
+        {"fills": [{**f, "action": "Buy to Open"} if f["symbol"] == "SP" else f for f in _fills()]},
+        {"fills": _fills(sp=0.50)},  # 0.32 + 0.40 = 0.72 < the 0.75 limit
+    )
+    for status in cases:
+        out = live_loop.entry_fill_credits(_PENDING, status, 0.80)
+        assert out["side_credit_source"] == "proportional", status
+        assert out["net_credit"] == 0.80
+        assert out["put_credit"] == pytest.approx(0.80 * 0.45 / 0.80)
+        assert out["put_credit"] + out["call_credit"] == pytest.approx(0.80)
+    lopsided = {**_PENDING, "call_credit": -0.02}
+    assert live_loop.entry_fill_credits(lopsided, {}, 0.80)["put_credit"] == 0.40  # halves, never > net
+
+
+def _place_and_fill(tmp_path, fills):
+    db_path, broker = _place_one(tmp_path)
+    broker._statuses = {"ORD1": {"status": "Filled", "price": "-0.75", "filled": True, "fills": fills}}
+    live_loop.run_once(_config(), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None)
+    return db_path, broker, live_loop._trade_row("LIVE-XSP-ORD1", db_path)
+
+
+def test_a_confirmed_entry_books_the_sides_the_broker_filled(tmp_path):
+    """Shown to fail on the pre-change loop, which left both sides at the quote-time model."""
+    db_path, _broker, row = _place_and_fill(tmp_path, _fills())
+    assert row["status"] == "open" and row["side_credit_source"] == "broker_legs"
+    assert (row["put_credit"], row["call_credit"], row["net_credit"]) == (0.44, 0.40, 0.84)
+    assert row["put_credit_fraction"] == pytest.approx(0.44 / 0.84, abs=1e-4)
+    assert row["slippage_dollars"] == pytest.approx((row["entry_mid_at_submit"] - 0.84) * 100.0)
+
+
+def test_live_stop_and_expiry_pnl_are_charged_against_the_filled_side_credits(tmp_path):
+    """The point of the split: a stop and an expiry on a live row add up to the net received."""
+    db_path, _broker, row = _place_and_fill(tmp_path, _fills())
+    paper._apply_exit_decision(
+        row, {"action": "stop_put", "put_exit_price": 1.10, "put_exit_slippage": 0}, "XSP", db_path
+    )
+    row = live_loop._trade_row("LIVE-XSP-ORD1", db_path)
+    assert row["pnl"] == pytest.approx((0.44 - 1.10) * 100)
+    paper._apply_exit_decision(
+        row,
+        {
+            "action": "expire",
+            "put_open": False,
+            "call_open": True,
+            "call_exit_price": 0.0,
+            "settle_underlying": 590.0,
+        },
+        "XSP",
+        db_path,
+    )
+    row = live_loop._trade_row("LIVE-XSP-ORD1", db_path)
+    assert row["pnl"] == pytest.approx((0.84 - 1.10 - 0.0) * 100)
 
 
 def test_a_rejected_entry_is_cancelled_and_frees_its_slot(tmp_path):

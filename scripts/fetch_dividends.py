@@ -26,6 +26,7 @@ import time
 from datetime import UTC, datetime, timedelta
 
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
+from cherrypick.core.jsonio import write_json_atomic
 from cherrypick.technicals import paths, symbols
 
 PAUSE_S = 1.0
@@ -40,11 +41,7 @@ def load() -> dict:
 
 
 def save(doc: dict) -> None:
-    path = paths.tastytrade_dividends()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(doc), encoding="utf-8")
-    tmp.replace(path)  # write-then-rename: a reader never sees half a file
+    write_json_atomic(paths.tastytrade_dividends(), doc, indent=None, default=None)
 
 
 def due(doc: dict, wanted: list[str], now: datetime, force: bool) -> list[str]:

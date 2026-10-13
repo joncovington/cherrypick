@@ -56,27 +56,13 @@ def headline(conn, era: str | None = CURRENT_ERA) -> dict:
     `era=CURRENT_ERA` (the default) scopes to the module's current evidence window; `era="ALL"`
     disables the filter for an explicit cross-era read; any other value scopes to that era alone.
     """
-    where = "status = 'closed'"
-    params: list[str] = []
-    if era and era != "ALL":
-        where += " AND era = ?"
-        params.append(era)
-    arms: dict[str, dict] = {}
-    for row in conn.execute(
-        "SELECT arm, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees, "
-        "SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins, "
-        f"SUM(roll_count) AS rolls FROM pmcc_positions WHERE {where} "
-        "GROUP BY arm, symbol ORDER BY arm, symbol",
-        params,
-    ):
-        arms.setdefault(row["arm"], {})[row["symbol"]] = {
-            "positions": row["n"],
-            "gross_pnl": round(row["gross"], 2) if row["gross"] is not None else None,
-            "fees": round(row["fees"], 2) if row["fees"] is not None else None,
-            "net_pnl": round(row["net"], 2) if row["net"] is not None else None,
-            "win_rate": round(row["wins"] / row["n"], 4) if row["n"] else None,
-            "rolls": row["rolls"],
-        }
+    scoped = bool(era and era != "ALL")
+    arms = db._store.closed_results(
+        conn,
+        where="era = ?" if scoped else None,
+        params=(era,) if scoped else (),
+        trail=(("rolls", "SUM(roll_count)"),),
+    )
     open_rows = conn.execute("SELECT COUNT(*) AS n FROM pmcc_positions WHERE status != 'closed'").fetchone()
     # Open positions marked to market (`tracker.value_at(now)`), beside the closed results rather
     # than in them: a held-long position closes ~10 months after it opens, and until then this is
@@ -127,24 +113,10 @@ def worksheet(conn) -> list[dict]:
 def exposure(conn) -> dict:
     """The early-assignment-exposure telemetry, aggregated: per position, how many marked ticks the
     short's extrinsic sat under the exposure threshold, and its share of usable short-leg marks.
-    This is the module's honest bound on what unmodelled early assignment could have touched."""
-    positions = []
-    for row in conn.execute(
-        "SELECT position_id, "
-        "SUM(CASE WHEN assignment_exposed = 1 THEN 1 ELSE 0 END) AS exposed, "
-        "COUNT(*) AS marked FROM pmcc_marks WHERE short_tv IS NOT NULL AND usable = 1 "
-        "GROUP BY position_id ORDER BY position_id"
-    ):
-        positions.append(
-            {
-                "position_id": row["position_id"],
-                "exposed_ticks": row["exposed"],
-                "marked_ticks": row["marked"],
-                "exposed_share": round(row["exposed"] / row["marked"], 4) if row["marked"] else None,
-            }
-        )
-    exposed_positions = sum(1 for p in positions if (p["exposed_ticks"] or 0) > 0)
-    return {"positions": positions, "positions_with_exposure": exposed_positions}
+    This is the module's honest bound on what unmodelled early assignment could have touched.
+
+        `LedgerStore.assignment_exposure`, shared with curve."""
+    return db._store.assignment_exposure(conn)
 
 
 def excursions(conn, era: str | None = CURRENT_ERA) -> dict:
