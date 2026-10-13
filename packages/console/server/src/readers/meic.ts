@@ -160,11 +160,25 @@ function latestMeicSessionIn(db: DatabaseHandle, era: string | null = null): str
     parts.push(`SELECT MAX(${c}) AS d FROM ${t}${e.sql !== null ? ` WHERE ${e.sql}` : ""}`);
     params.push(...e.params);
   }
-  return (
+  const latest =
     db
       .prepare<string[], { d: string | null }>(`SELECT MAX(d) AS d FROM (${parts.join(" UNION ALL ")})`)
-      .get(...params)?.d ?? null
-  );
+      .get(...params)?.d ?? null;
+  // A CLOSED era ends at its own last stamped trade. Its date span runs to the next era's start, so
+  // the journals alone named a no-trade tail day: the book era's span ends 2026-08-06, its last
+  // trade is 2026-08-04, and the loop ran 08-05 and 08-06 with every arm blocked -- so era=book with
+  // no day showed 0 trades (with a range, 290), on a day no card has anything to say about (the
+  // attempts table did not exist yet). The open era keeps the journals' answer: today may have no
+  // trades yet, and a refused session is still a session (the 2026-09-30 rule above).
+  const key = era ?? CURRENT_ERA;
+  if (hasEras && key !== "ALL" && ERA_DATES[key]?.to != null) {
+    const last =
+      db
+        .prepare<[string], { d: string | null }>("SELECT MAX(trade_date) AS d FROM ic_trades WHERE era = ?")
+        .get(key)?.d ?? null;
+    if (last !== null && (latest === null || last < latest)) return last;
+  }
+  return latest;
 }
 
 function meicDbPath(config: ConsoleConfig, mode: TradingMode): string {
