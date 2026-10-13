@@ -1395,6 +1395,8 @@ export interface BwbManagementEvent {
 }
 
 export interface BwbPayload {
+  /** Which book this came from: `paper_trades.db` or the live pilot's `live_trades.db`. */
+  mode: TradingMode;
   /** The resolved session every card on the page names. Null when the module has never run. */
   session: string | null;
   /** False when the store is absent -- "has not run here", which is not an error. */
@@ -1494,9 +1496,11 @@ export interface BwbHistoryTotals {
   net: number;
 }
 
-export type BwbHistory = Paged<BwbCycleRow> & { totals: BwbHistoryTotals };
+/** `totals` is null when no completed position matched -- an empty book has no net, not a zero one. */
+export type BwbHistory = Paged<BwbCycleRow> & { mode: TradingMode; totals: BwbHistoryTotals | null };
 
 export interface BwbMeta {
+  mode: TradingMode;
   arms: string[];
   symbols: string[];
   sessions: string[];
