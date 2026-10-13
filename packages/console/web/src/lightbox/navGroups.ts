@@ -54,6 +54,12 @@ export interface ModuleNavDecl {
  * rail's `tables` group, and those cards link to them -- nothing on the surface opens an overlay,
  * so every place a reader can go can be reloaded, shared and reached from the rail. The old
  * `trades` id (the tab before the sheets) reaches `positions`.
+ *
+ * 2026-10-12: `divergence` → `gates`. The arm-divergence card answered GEX-centre agreement, a
+ * question retired with the `gex` arm on 2026-08-21; the tab is now the gate arms against control
+ * over each arm's own window. `divergence` and `exits` both reach it. `livegap` (live vs paper,
+ * paired per session) and `selector` joined the evidence group, and `openingrange` moved there:
+ * it is a study of past sessions, not today's book.
  */
 export const FLIES_SLIDES = [
   { id: "session", label: "session" },
@@ -62,7 +68,9 @@ export const FLIES_SLIDES = [
   { id: "openingrange", label: "opening range" },
   { id: "attempts", label: "attempts" },
   { id: "decisions", label: "decisions" },
-  { id: "divergence", label: "divergence" },
+  { id: "gates", label: "gates vs control" },
+  { id: "livegap", label: "live vs paper" },
+  { id: "selector", label: "selector" },
   { id: "regime", label: "regime cuts" },
   { id: "agent", label: "intraday agent" },
   { id: "completion", label: "completion" },
@@ -323,15 +331,19 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   flies: {
     slides: FLIES_SLIDES,
     groups: [
-      { label: "today", ids: ["session", "forest", "timeline", "openingrange"] },
-      { label: "evidence", ids: ["attempts", "decisions", "divergence", "regime", "agent"] },
+      { label: "today", ids: ["session", "forest", "timeline"] },
+      {
+        label: "evidence",
+        ids: ["attempts", "decisions", "gates", "livegap", "selector", "openingrange", "regime", "agent"],
+      },
       { label: "study", ids: ["completion", "performance", "costs", "advisor"] },
       { label: "tables", ids: ["books", "positions", "history"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: {
       now: "session",
-      exits: "divergence",
+      exits: "gates",
+      divergence: "gates",
       calibration: "completion",
       journal: "decisions",
       openrange: "openingrange",

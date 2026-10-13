@@ -1,4 +1,5 @@
 export * from "./paths.js";
+export * from "./types/bridged.js";
 export * from "./feeDrag.js";
 export * from "./types/overview.js";
 export * from "./types/status.js";
@@ -19,6 +20,7 @@ export * from "./types/live.js";
 export * from "./types/liveBooks.js";
 export * from "./types/regimeCuts.js";
 export * from "./types/fliesAgent.js";
+export * from "./types/fliesEvidence.js";
 export * from "./types/openingRange.js";
 export * from "./types/futures.js";
 export * from "./types/system.js";

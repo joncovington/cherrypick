@@ -162,6 +162,12 @@ alone):
     `services/calendarsBridge.ts` (memoised 5–10 min) — the policy replay is validated to the cent
     against the real books, and a TypeScript copy would be validating the wrong derivation; the
     anchors are NYSE holiday arithmetic whose structure tag keys every result.
+  - **Flies evidence** (`services/fliesEvidenceBridge.ts`, memoised 2 min): `run.py live-gap`
+    (live vs paper paired per session, split at the `completion_rule` break), `gate-sessions`
+    (each gate arm against control over its own window from the ledger's breaks, not `ERAS`) and
+    `selector-sessions` (departures and the model's procedure-v2 intervals). The module's JSON is
+    passed through in its own snake_case inside a `BridgedResult`; a failed read is an error, never
+    an empty table. The verbs open ledgers read-only.
 - **Console preferences are read synchronously, from a local mirror.** The server store
   (`/api/config/prefs`) is the source of truth (it follows you to the desktop shell), but a preference
   fetched late cannot decide the first render — the paper/live default would paint paper and flip to

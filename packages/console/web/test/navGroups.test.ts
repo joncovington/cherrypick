@@ -57,7 +57,8 @@ describe("resolveSlide", () => {
   });
 
   it("sends a renamed tab's old id to its replacement", () => {
-    expect(resolveSlide("flies", "exits", slides)).toBe("divergence");
+    expect(resolveSlide("flies", "exits", slides)).toBe("gates");
+    expect(resolveSlide("flies", "divergence", slides)).toBe("gates");
     expect(resolveSlide("flies", "now", slides)).toBe("session");
   });
 
