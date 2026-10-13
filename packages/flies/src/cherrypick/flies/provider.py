@@ -32,6 +32,9 @@ from cherrypick.core import regime as _regime
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET
 
+# The loops call provider.minute_of_day; it is the suite's one copy, re-exported here.
+from cherrypick.core.clock import minute_of_day
+
 # Read-only opens go through cherrypick.core.db.connect_ro: it percent-escapes the path, so a
 # directory containing '?', '#' or '%' cannot silently change the URI's meaning. The local
 # copies interpolated the path raw, where a '#' truncated the URI and opened a DIFFERENT,
@@ -83,10 +86,6 @@ RECORDED_GEX_MAX_AGE_SECONDS = 600
 
 def now_et() -> datetime:
     return datetime.now(_ET)
-
-
-def minute_of_day(when: datetime) -> int:
-    return when.hour * 60 + when.minute
 
 
 def _fail(symbol: str, reason: str, **extra) -> dict:

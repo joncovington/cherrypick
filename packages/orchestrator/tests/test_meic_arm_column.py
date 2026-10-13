@@ -62,7 +62,7 @@ def _ledger(tmp_path: Path, spelling: str) -> sqlite3.Connection:
 
 READERS = {
     "ledgers.meic_closed": lambda c: ledgers.READERS["meic_ic"](c),
-    "reconcile.meic_open": lambda c: reconcile._meic_open(c),
+    "reconcile.meic_open": lambda c: reconcile._OPEN_READERS["meic_ic"](c),
     "notifier.entries": lambda c: (
         [tn._fmt_meic_entry(r) for r in tn._meic_new_entries(c, 0)]
         + [tn._embed_meic_entry(r) for r in tn._meic_new_entries(c, 0)]

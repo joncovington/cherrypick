@@ -29,7 +29,6 @@ import {
   readFliesHistory,
   readFliesPerformance,
   readFliesJournal,
-  readArmDivergence,
   readVoidedRows,
   readFliesTradeLog,
   readFliesCosts,
@@ -67,10 +66,9 @@ import { readEarningsLive } from "../readers/earningsLive.js";
 import { readScreenMetrics } from "../services/screenBridge.js";
 import { readGex } from "../readers/gex.js";
 import { buildGexProfile, gexSymbols } from "../services/gexProfile.js";
-import { buildSuiteReport } from "../services/report.js";
 import { readLogTail } from "../readers/logs.js";
 import { getFeatures } from "../services/featuresBridge.js";
-import { readSystemPanel, readEod, renderReport } from "../services/suite.js";
+import { readSystemPanel } from "../services/suite.js";
 import { suiteEra } from "../readers/db.js";
 
 function parseMode(q: unknown): TradingMode {
@@ -207,7 +205,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     return readEntryAttempts(config, "curve", "paper", f.date ?? resolveCurveSession(config));
   });
   app.get("/api/pmcc/decisions", async () => readDecisions(config, "pmcc", null));
-  app.get("/api/bwb/decisions", async () => readDecisions(config, "bwb", null));
+  app.get("/api/bwb/decisions", async (req) => readDecisions(config, "bwb", null, parseMode(req.query)));
   app.get("/api/meic/loop", async (req) =>
     readMeicLoopStatus(config, parseMode(req.query), parseMeicScope(req.query)),
   );
@@ -294,9 +292,6 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   );
   app.get("/api/flies/voided", async (req) =>
     readVoidedRows(config, parseMode(req.query), parseFliesFilter(req.query)),
-  );
-  app.get("/api/flies/divergence", async (req) =>
-    readArmDivergence(config, parseMode(req.query), parseFliesFilter(req.query).date),
   );
   app.get("/api/flies/journal", async (req) => {
     const f = parseFliesFilter(req.query);
@@ -431,10 +426,10 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     );
   });
 
-  // bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment). No `mode`
-  // here either -- paper-only, no live loop.
-  app.get("/api/bwb", async () => readBwb(config));
-  app.get("/api/bwb/meta", async () => readBwbMeta(config));
+  // bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment). Paper by
+  // default; `?mode=live` reads the narrow live pilot's own ledger (`live_trades.db`), never a merge.
+  app.get("/api/bwb", async (req) => readBwb(config, parseMode(req.query)));
+  app.get("/api/bwb/meta", async (req) => readBwbMeta(config, parseMode(req.query)));
   app.get("/api/bwb/history", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const pick = (k: string, max: number): string | null => {
@@ -445,6 +440,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       config,
       { arm: pick("arm", 40) ?? pick("book", 40), symbol: pick("symbol", 12), range: parseDateRange(q) },
       parsePage(req.query),
+      parseMode(q),
     );
   });
 
@@ -488,9 +484,8 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/gex/profile/:symbol", async (req, reply) => {
     const { symbol } = req.params as { symbol: string };
     const wanted = symbol.toUpperCase();
-    // Only symbols the recorder is still writing -- the same allow-list shape /api/eod/report uses
-    // below, and for a sharper reason. `buildGexProfile` deliberately falls back to the most recent
-    // PAST expiration so a weekend still shows Friday's profile; for a symbol the suite retired
+    // Only symbols the recorder is still writing. `buildGexProfile` deliberately falls back to the
+    // most recent PAST expiration so a weekend still shows Friday's profile; for a symbol the suite retired
     // weeks ago that fallback computes a gamma profile off a dead chain and returns it as a claim
     // about now. The shared stream cache still holds 34 such underlyings from other modules.
     if (!gexSymbols(config).includes(wanted)) {
@@ -498,20 +493,9 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     }
     return buildGexProfile(config, wanted);
   });
-  app.get("/api/report", async () => buildSuiteReport(config));
   app.get<{ Querystring: { source?: string; limit?: string } }>("/api/logs", async (req) => {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit ?? "", 10) || 50, 1), 1000);
     return { lines: readLogTail(config, limit, req.query.source || undefined, getFeatures()) };
   });
   app.get("/api/system", async () => readSystemPanel(config));
-  app.get("/api/eod", async () => readEod(config));
-  app.get("/api/eod/report", async (req, reply) => {
-    // Only files the EOD card itself listed can be rendered — no arbitrary reads.
-    const { file } = req.query as { file?: string };
-    const allowed = new Set(readEod(config).reports.filter((r) => r.exists).map((r) => r.file));
-    if (file === undefined || !allowed.has(file)) return reply.code(404).send({ error: "unknown report" });
-    const html = renderReport(file);
-    if (html === null) return reply.code(404).send({ error: "unreadable" });
-    return { html };
-  });
 }

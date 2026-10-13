@@ -16,6 +16,7 @@ import { otherFields, paramRows, scalar } from "./proposalPayload";
 import { TabStrip } from "../../components/ScopeBar";
 import { pushToast } from "../../lib/toast";
 import { gateDistance, lastCounted, readingSessions } from "../../components/advisor/experimentStats";
+import { PairedRead } from "../../components/advisor/PairedRead";
 
 /**
  * The AI advisor. Renders what it observed, proposed and ran — and judges none of it here.
@@ -577,6 +578,12 @@ export function PairTable({ pairs }: { pairs: AdvisorPair[] }) {
           )}
         </tbody>
       </table>
+      {pairs.map((pair) => (
+        <div key={`paired-${pair.advisedTag}`}>
+          {pairs.length > 1 && <span className="muted">{pair.advisedTag}: </span>}
+          <PairedRead paired={pair.paired} />
+        </div>
+      ))}
     </div>
   );
 }

@@ -245,7 +245,10 @@ pattern).
 ## Open questions
 
 - **CVaR quantile and minimum sessions** — proposed worst-10% over ≥20 sessions; settle at
-  implementation and stamp it in the function's contract.
+  implementation and stamp it in the function's contract. **Calibrated 2026-10-12 on 823 modelled
+  weekly bwb sessions** ([history-studies-2026-10.md](history-studies-2026-10.md), section c): 20
+  stays. 94–96% of 20-session windows read within ±50% of the long-run tail, because bwb's loss is
+  capped. That does not calibrate the daily modules with path-dependent tails (meic, flies).
 - **Do tail metrics enter promotion GATES or stay report-only?** — **Decided 2026-08-23:
   report-only at first.** Gating on CVaR changes what promotion means — measurement-adjacent even
   if not measurement-affecting — so the gate question is deliberately DEFERRED, not dismissed:

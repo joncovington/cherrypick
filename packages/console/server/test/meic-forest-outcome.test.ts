@@ -69,7 +69,7 @@ beforeAll(() => {
 });
 
 const asEntered = (profile: string) =>
-  readMeicForest(config, "paper", null).asEntered.find((a) => a.profile === profile)!;
+  readMeicForest(config, "paper", null).asEntered.find((a) => a.arm === profile)!;
 
 describe("what the as-entered curve is standing next to", () => {
   it("counts how each trade actually ended", () => {

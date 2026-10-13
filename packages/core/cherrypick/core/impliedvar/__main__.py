@@ -42,8 +42,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 from cherrypick.core import db as _db
-from cherrypick.core import home as _home
 from cherrypick.core import impliedvar as _iv
+from cherrypick.core import streamcache as _streamcache
 from cherrypick.core import streamrequests as _requests
 from cherrypick.core.clock import ET as _ET
 
@@ -174,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--clear", action="store_true")
     args = parser.parse_args(argv)
 
-    path = Path(args.db) if args.db else _home.data_dir("marketdata") / "stream_cache.db"
+    path = Path(args.db) if args.db else _streamcache.cache_path()
     if args.cmd == "declare":
         out, code = cmd_declare(args, path)
         print(json.dumps(out, indent=2))

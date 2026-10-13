@@ -927,9 +927,23 @@ def evaluate_entry(
 
 
 def synthetic_entry_fill(
-    snapshot: dict, profile_name: str, chosen: dict, params: dict, execution_mode: str
+    snapshot: dict,
+    profile_name: str,
+    chosen: dict,
+    params: dict,
+    execution_mode: str,
+    *,
+    quantity: int = 1,
 ) -> dict:
-    """Build the ic_trades row for a synthetic fill priced at mid minus the slippage haircut."""
+    """Build the ic_trades row for a synthetic fill priced at mid minus the slippage haircut.
+
+    `quantity` is the contracts the row holds -- 1 for every paper arm; the live loop passes the
+    quantity its order carried (2026-10-12: it always wrote 1, so a live order at `quantity: 2`
+    would have recorded half its position, fees and slippage). Open fees and the modelled
+    slippage dollars follow it; prices stay per share."""
+    quantity = int(quantity)
+    if quantity < 1:
+        raise ValueError(f"quantity must be at least 1, got {quantity!r}")
     now = str(_now_et())
     today = snapshot["date"]
     sp, lp, sc, lc = chosen["short_put"], chosen["long_put"], chosen["short_call"], chosen["long_call"]
@@ -955,10 +969,11 @@ def synthetic_entry_fill(
         "slippage_dollars": round(
             params.get("slippage_frac_of_spread", DEFAULT_SLIPPAGE_FRAC)
             * (_leg_spread(sp) + _leg_spread(lp) + _leg_spread(sc) + _leg_spread(lc))
-            * 100,
+            * 100
+            * quantity,
             4,
         ),
-        "quantity": 1,
+        "quantity": quantity,
         "put_delta_at_entry": sp.get("delta"),
         "call_delta_at_entry": sc.get("delta"),
         "long_put_delta_at_entry": lp.get("delta"),
@@ -1004,7 +1019,9 @@ def synthetic_entry_fill(
         "stop_limit_current": params.get("stop_limit_ratio", 1.02),
         "status": "open",
         "fill_confirmed_at": now,
-        "fees": chosen["open_fee"],
+        # `open_fee` is `evaluate_entry`'s one-contract fee; any other quantity is priced by the
+        # schedule itself (its per-leg commission cap makes it not simply N x one contract).
+        "fees": chosen["open_fee"] if quantity == 1 else open_fees(snapshot["symbol"], quantity),
         "arm": profile_name,
         "experiment_id": params.get("experiment_id"),
         "execution_mode": execution_mode,
@@ -1868,10 +1885,19 @@ def _touch_updates(decision: dict) -> dict:
     return {k: decision[k] for k in keys if k in decision}
 
 
+def _row_quantity(trade: dict) -> int:
+    """The contracts a row holds (`quantity`; 1 when unset, as on rows from before it was read)."""
+    try:
+        return max(1, int(trade.get("quantity") or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
 def _exit_slippage_update(trade: dict, decision: dict) -> dict:
     """Accumulate this exit's modeled slippage dollars onto the row's running total.
     Empty when the decision priced nothing (hold/expire — settlement crosses no spread)."""
     add = (decision.get("put_exit_slippage") or 0) + (decision.get("call_exit_slippage") or 0)
+    add *= _row_quantity(trade)  # the decision prices one contract; the row holds `quantity`
     if add <= 0:
         return {}
     return {"slippage_dollars": round(float(trade.get("slippage_dollars") or 0) + add, 4)}
@@ -1881,7 +1907,11 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
     action = decision["action"]
     now = str(_now_et())
     ic_order_id = trade["ic_order_id"]
-    mult = 100
+    # Whole-position dollars: x100 per contract, x the row's quantity (2026-10-12). Every paper row
+    # is quantity 1, so this is the x100 it always was there; a live row records the quantity its
+    # order carried, and its P&L and close fees follow it.
+    qty = _row_quantity(trade)
+    mult = 100 * qty
 
     # Folded together and spread into every branch below: the running per-side cost-to-close
     # high-water mark, and any first-touch instrumentation this iteration set (see
@@ -2001,7 +2031,7 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
         return
 
     if action in ("stop_call", "stop_put", "stop_both"):
-        fee = close_fees_one_side(symbol) if action != "stop_both" else close_fees_full_ic(symbol)
+        fee = close_fees_one_side(symbol, qty) if action != "stop_both" else close_fees_full_ic(symbol, qty)
         # `carryover_updates` folded in here so the peak isn't lost on the iteration that exits — the stop
         # cost IS the running max at that moment, and it's the datum the counterfactual compares against.
         updates = {
@@ -2070,9 +2100,9 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
 
     if action == "force_close":
         fee = (
-            close_fees_full_ic(symbol)
+            close_fees_full_ic(symbol, qty)
             if (decision["put_open"] and decision["call_open"])
-            else close_fees_one_side(symbol)
+            else close_fees_one_side(symbol, qty)
         )
         reason = decision.get("reason") or "force_close_eod"
         existing_pnl = trade.get("pnl") or 0

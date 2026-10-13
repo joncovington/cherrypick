@@ -6,25 +6,15 @@ empty bucket is `None`.
 
 from __future__ import annotations
 
+from cherrypick.bwb import db
+
 
 def headline(conn) -> dict:
     """Per-arm, per-symbol results over CLOSED positions, plus what is still open and each arm's
     fire count — the real effective sample for an arm-vs-control comparison, not the trade count
     (until an arm's add-on fires, its rows are byte-identical to control's, an expected
     `find_identical_readings` collision)."""
-    arms: dict[str, dict] = {}
-    for row in conn.execute(
-        "SELECT arm, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees, "
-        "SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins "
-        "FROM bwb_positions WHERE status = 'closed' GROUP BY arm, symbol ORDER BY arm, symbol"
-    ):
-        arms.setdefault(row["arm"], {})[row["symbol"]] = {
-            "positions": row["n"],
-            "gross_pnl": round(row["gross"], 2) if row["gross"] is not None else None,
-            "fees": round(row["fees"], 2) if row["fees"] is not None else None,
-            "net_pnl": round(row["net"], 2) if row["net"] is not None else None,
-            "win_rate": round(row["wins"] / row["n"], 4) if row["n"] else None,
-        }
+    arms = db._store.closed_results(conn)
     open_rows = conn.execute("SELECT COUNT(*) AS n FROM bwb_positions WHERE status != 'closed'").fetchone()
     return {"arms": arms, "open_positions": open_rows["n"], "fire_counts": fire_counts(conn)}
 

@@ -493,3 +493,95 @@ def test_advised_tag_is_one_rule_and_slug_safe():
     )
     assert advice.slug("  a:b  ") == "a-b"
     assert advice.is_advised("advised:x") and not advice.is_advised("control") and not advice.is_advised(None)
+
+
+# --------------------------------------------------------------------------- arms (2026-10-12)
+
+ARM_BOUNDS = {
+    "stop_trigger_ratio": {"min": 0.85, "max": 0.95},
+    "delta_trigger": {"min": 0.05, "max": 0.95, "arms": ["delta", "bounce"]},
+}
+
+
+def _entry_artifact(base, proposals):
+    art = _artifact([])
+    art["experiments"] = [
+        {"experiment_id": "exp-1", "name": "x", "tag": "advised:x", "base": base, "proposals": proposals}
+    ]
+    return art
+
+
+def test_a_param_declared_for_other_arms_is_refused_on_this_base():
+    """A bounds rule's `arms` is the module saying where the param acts. A twin of any other base
+    would write its base's rows under the experiment's name: refused, reject-all, on both sides."""
+    v = advice.validate(
+        _entry_artifact("control", [{"param": "delta_trigger", "value": 0.3}]), ARM_BOUNDS, SESSION, now=NOW
+    )
+    entry = v["experiments"][0]
+    assert entry["ok"] is False and entry["proposals"] == []
+    assert (
+        entry["rejected"][0]["reason"]
+        == "'delta_trigger' cannot act on base arm 'control' (declared for: delta, bounce)"
+    )
+    ok = advice.validate(
+        _entry_artifact("bounce", [{"param": "delta_trigger", "value": 0.3}]), ARM_BOUNDS, SESSION, now=NOW
+    )
+    assert ok["experiments"][0]["ok"] is True
+
+
+def test_no_arms_means_every_base_and_no_base_is_never_guessed():
+    assert advice.param_acts_on({"min": 0, "max": 1}, "control") is True
+    assert advice.param_acts_on(ARM_BOUNDS["delta_trigger"], None) is True
+    legacy = _artifact([{"param": "delta_trigger", "value": 0.3}])
+    assert advice.validate(legacy, ARM_BOUNDS, SESSION, now=NOW)["ok"] is True
+    legacy["base"] = "control"
+    assert advice.validate(legacy, ARM_BOUNDS, SESSION, now=NOW)["ok"] is False
+
+
+def test_a_malformed_arms_list_is_a_reason_not_a_raise():
+    bounds = {"delta_trigger": {"min": 0.05, "max": 0.95, "arms": "delta"}}
+    v = advice.validate_proposals([{"param": "delta_trigger", "value": 0.3}], bounds, "delta")
+    assert v["ok"] is False and "arms must be a list" in v["rejected"][0]["reason"]
+
+
+def test_base_for_reads_the_admitted_entry_then_the_tail_then_the_configured_base():
+    decision = {
+        "experiments": [
+            {"tag": "advised:wide", "base": "delta", "params": {"x": 1}},
+            {"tag": "advised:refused", "base": "delta", "params": None},  # rejected: opens no book
+        ]
+    }
+    assert advice.base_for("control", decision=decision) == "control"
+    assert advice.base_for("advised:wide", decision=decision) == "delta"
+    assert advice.base_for("advised:wide:iron_fly", decision=decision) == "delta"
+    # A rejected entry is not an advised book, so it never names the base here.
+    assert advice.base_for("advised:refused", decision=decision) == "control"
+    assert advice.base_for("advised:delta", is_base_arm=lambda t: t == "delta") == "delta"
+    assert advice.base_for("advised:x", advice_config={"base_book": "hook"}) == "hook"
+
+
+def test_base_for_asks_the_registry_only_for_an_unmatched_advised_arm():
+    asked = []
+    advice.base_for("control", is_base_arm=lambda t: asked.append(t) or False)
+    assert asked == []
+
+
+def test_effective_params_prefers_the_row_stamp_and_overlays_only_an_advised_row():
+    params = advice.effective_params(
+        {"arm": "advised:wide", "advice_base": "delta", "advice_params": '{"width": 3}'},
+        base_book=lambda arm: "control",
+        base_params=lambda base: {"width": 2, "base_seen": base},
+    )
+    assert params == {"width": 3, "base_seen": "delta", "arm": "advised:wide", "base_book": "delta"}
+    plain = advice.effective_params(
+        {"arm": "control", "advice_params": '{"width": 3}'},
+        base_book=lambda arm: arm,
+        base_params=lambda base: {"width": 2},
+    )
+    assert plain["width"] == 2 and plain["base_book"] == "control"
+    torn = advice.effective_params(
+        {"arm": "advised:wide", "advice_params": "{not json"},
+        base_book=lambda arm: "control",
+        base_params=lambda base: {"width": 2},
+    )
+    assert torn["width"] == 2

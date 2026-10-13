@@ -397,7 +397,12 @@ def test_build_order_credit_price_is_positive():
         "price": 2.5,
         "price_effect": "Credit",
         "legs": [
-            {"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}
+            {
+                "symbol": "XSP   261012C00600000",
+                "instrument_type": "Equity Option",
+                "action": "Sell to Open",
+                "quantity": 1,
+            }
         ],
     }
     order = tt._build_order(spec)
@@ -409,7 +414,12 @@ def test_build_order_debit_price_is_negative():
         "price": 2.5,
         "price_effect": "Debit",
         "legs": [
-            {"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1}
+            {
+                "symbol": "XSP   261012C00600000",
+                "instrument_type": "Equity Option",
+                "action": "Buy to Open",
+                "quantity": 1,
+            }
         ],
     }
     order = tt._build_order(spec)
@@ -420,7 +430,12 @@ def test_build_order_includes_stop_trigger_when_given():
     spec = {
         "stop_trigger": 5.0,
         "legs": [
-            {"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}
+            {
+                "symbol": "XSP   261012C00600000",
+                "instrument_type": "Equity Option",
+                "action": "Sell to Open",
+                "quantity": 1,
+            }
         ],
     }
     order = tt._build_order(spec)
@@ -451,7 +466,16 @@ def test_cmd_execute_trade_blocks_live_when_disabled(monkeypatch):
 
 def _quarter_end_order(action):
     return json.dumps(
-        {"legs": [{"symbol": "XSP_C", "instrument_type": "Equity Option", "action": action, "quantity": 1}]}
+        {
+            "legs": [
+                {
+                    "symbol": "XSP   261012C00600000",
+                    "instrument_type": "Equity Option",
+                    "action": action,
+                    "quantity": 1,
+                }
+            ]
+        }
     )
 
 
@@ -495,7 +519,12 @@ def test_cmd_execute_trade_dry_run_returns_without_submitting(monkeypatch):
         "price": 1.0,
         "price_effect": "Credit",
         "legs": [
-            {"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}
+            {
+                "symbol": "XSP   261012C00600000",
+                "instrument_type": "Equity Option",
+                "action": "Sell to Open",
+                "quantity": 1,
+            }
         ],
     }
 
@@ -528,7 +557,12 @@ def test_cmd_execute_trade_dry_run_returns_without_submitting(monkeypatch):
 def test_cmd_execute_trade_preflight_errors_block_submission(monkeypatch):
     order_spec = {
         "legs": [
-            {"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}
+            {
+                "symbol": "XSP   261012C00600000",
+                "instrument_type": "Equity Option",
+                "action": "Sell to Open",
+                "quantity": 1,
+            }
         ]
     }
 
@@ -559,7 +593,12 @@ def test_cmd_execute_trade_preflight_errors_block_submission(monkeypatch):
 def test_cmd_execute_trade_live_submits_order(monkeypatch):
     order_spec = {
         "legs": [
-            {"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}
+            {
+                "symbol": "XSP   261012C00600000",
+                "instrument_type": "Equity Option",
+                "action": "Sell to Open",
+                "quantity": 1,
+            }
         ]
     }
 
@@ -604,7 +643,12 @@ def test_cmd_execute_trade_deploy_governor_blocks_live_over_cap(monkeypatch):
     # order that would push deployed BP over the cap, before any live submit.
     order_spec = {
         "legs": [
-            {"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}
+            {
+                "symbol": "XSP   261012C00600000",
+                "instrument_type": "Equity Option",
+                "action": "Sell to Open",
+                "quantity": 1,
+            }
         ]
     }
 

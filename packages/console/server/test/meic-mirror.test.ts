@@ -68,20 +68,20 @@ if (!available) {
 }
 
 const consoleProfiles = () =>
-  readMeicPerformance(loadConfig(), "paper", "session", null, null, "ALL").profiles;
+  readMeicPerformance(loadConfig(), "paper", "session", null, null, "ALL").arms;
 
 describe.skipIf(!available)("the console's MEIC mirror agrees with the module itself", () => {
   it("reports the same set of arms", () => {
     const theirs = moduleHeadline()!.headline.arms;
     const mine = consoleProfiles();
-    expect(new Set(mine.map((p) => p.profile))).toEqual(new Set(Object.keys(theirs)));
+    expect(new Set(mine.map((p) => p.arm))).toEqual(new Set(Object.keys(theirs)));
   });
 
   it("reports the same trade and session count per arm", () => {
     const theirs = moduleHeadline()!.headline.arms;
     for (const row of consoleProfiles()) {
-      expect.soft(row.trades, `${row.profile} trades`).toBe(theirs[row.profile]?.trades);
-      expect.soft(row.sessions, `${row.profile} sessions`).toBe(theirs[row.profile]?.sessions);
+      expect.soft(row.trades, `${row.arm} trades`).toBe(theirs[row.arm]?.trades);
+      expect.soft(row.sessions, `${row.arm} sessions`).toBe(theirs[row.arm]?.sessions);
     }
   });
 
@@ -92,9 +92,9 @@ describe.skipIf(!available)("the console's MEIC mirror agrees with the module it
     // beside them read net. One of those is exactly how a mirror goes quietly wrong.
     const theirs = moduleHeadline()!.headline.arms;
     for (const row of consoleProfiles()) {
-      expect.soft(row.netPnl, `${row.profile} net`).toBeCloseTo(theirs[row.profile]?.net_pnl ?? NaN, 2);
-      expect.soft(row.grossPnl, `${row.profile} gross`).toBeCloseTo(theirs[row.profile]?.gross_pnl ?? NaN, 2);
-      expect.soft(row.fees, `${row.profile} fees`).toBeCloseTo(theirs[row.profile]?.fees ?? NaN, 2);
+      expect.soft(row.netPnl, `${row.arm} net`).toBeCloseTo(theirs[row.arm]?.net_pnl ?? NaN, 2);
+      expect.soft(row.grossPnl, `${row.arm} gross`).toBeCloseTo(theirs[row.arm]?.gross_pnl ?? NaN, 2);
+      expect.soft(row.fees, `${row.arm} fees`).toBeCloseTo(theirs[row.arm]?.fees ?? NaN, 2);
     }
   });
 
@@ -102,7 +102,7 @@ describe.skipIf(!available)("the console's MEIC mirror agrees with the module it
     // Guards the case where both sides are internally consistent and both wrong in the same way:
     // if either started reporting gross AS net, the comparisons above would still pass.
     for (const row of consoleProfiles()) {
-      expect.soft(row.netPnl, `${row.profile}`).toBeCloseTo(row.grossPnl - row.fees, 2);
+      expect.soft(row.netPnl, `${row.arm}`).toBeCloseTo(row.grossPnl - row.fees, 2);
     }
   });
 

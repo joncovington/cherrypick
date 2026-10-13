@@ -26,6 +26,7 @@ from cherrypick.core import home as _home
 from cherrypick.core import jsonio as _jsonio
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
+from cherrypick.core import streamcache as _streamcache
 
 from cherrypick.flies import book as bookmod  # noqa: E402
 from cherrypick.flies import cli as climod  # noqa: E402
@@ -77,11 +78,7 @@ def stream_cache_path(config: dict) -> str:
     the managed home, and `~` expands — portable paths only, no machine-specific absolutes anywhere in
     the suite. The default (`data/marketdata/stream_cache.db`) is producer-agnostic: whichever streamer
     is the active producer (MEIC's, or the standalone `packages/streamer` daemon) writes that one file."""
-    configured = (config.get("source") or {}).get("stream_cache_db")
-    if configured:
-        return os.path.expanduser(os.path.expandvars(configured))
-    home = str(_home.home())
-    return os.path.join(home, "data", "marketdata", "stream_cache.db")
+    return str(_streamcache.cache_path(config))
 
 
 _logger = logging.getLogger("flies_paper_loop")
@@ -153,12 +150,7 @@ def _beat() -> None:
     about what the tick then decided. Failures are swallowed — a heartbeat that costs a tick would be
     worse than the problem it solves.
     """
-    try:
-        path = heartbeat_file()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(provider.now_et().isoformat(timespec="seconds"), encoding="utf-8")
-    except OSError:
-        pass
+    _home.beat("flies")
 
 
 def in_session(now_min: int) -> bool:

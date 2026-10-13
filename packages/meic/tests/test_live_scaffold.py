@@ -29,6 +29,28 @@ def _init_db(tmp_path, name="live.db"):
 
 
 # --------------------------------------------------------------------------- order builders
+# Real symbols: the row and the candidate carry the DXLink streamer symbol (the stream cache key),
+# the broker takes and reports OCC. Placeholder names here once hid that every live order named its
+# legs by the streamer symbol (2026-10-12); `FakeBroker.place` now refuses anything but OCC.
+SP, LP, SC, LC = ".XSP260708P583", ".XSP260708P578", ".XSP260708C598", ".XSP260708C603"
+OCC = {
+    SP: "XSP   260708P00583000",
+    LP: "XSP   260708P00578000",
+    SC: "XSP   260708C00598000",
+    LC: "XSP   260708C00603000",
+}
+
+
+def _is_occ(symbol) -> bool:
+    """An OCC 2010 option symbol: 21 characters, and the cache's converter maps it to a streamer
+    symbol that maps straight back."""
+    from cherrypick.core.streamcache import occ_to_streamer_symbol, streamer_to_occ_symbol
+
+    return (
+        isinstance(symbol, str)
+        and len(symbol) == 21
+        and streamer_to_occ_symbol(occ_to_streamer_symbol(symbol)) == symbol
+    )
 
 
 def _leg(strike, sym, bid, ask):
@@ -36,10 +58,10 @@ def _leg(strike, sym, bid, ask):
 
 
 CHOSEN = {
-    "short_put": _leg(583, "SP", 0.55, 0.65),
-    "long_put": _leg(578, "LP", 0.15, 0.25),
-    "short_call": _leg(598, "SC", 0.50, 0.60),
-    "long_call": _leg(603, "LC", 0.12, 0.22),
+    "short_put": _leg(583, SP, 0.55, 0.65),
+    "long_put": _leg(578, LP, 0.15, 0.25),
+    "short_call": _leg(598, SC, 0.50, 0.60),
+    "long_call": _leg(603, LC, 0.12, 0.22),
     "net_credit": 1.07,
 }
 
@@ -55,8 +77,8 @@ def test_entry_spec_sells_shorts_buys_longs_at_floored_credit():
     spec = live_orders.entry_spec(CHOSEN)
     assert spec["price"] == 1.05 and spec["price_effect"] == "credit"
     actions = {leg["symbol"]: leg["action"] for leg in spec["legs"]}
-    assert actions["SP"] == "sell to open" and actions["LP"] == "buy to open"
-    assert actions["SC"] == "sell to open" and actions["LC"] == "buy to open"
+    assert actions[OCC[SP]] == "sell to open" and actions[OCC[LP]] == "buy to open"
+    assert actions[OCC[SC]] == "sell to open" and actions[OCC[LC]] == "buy to open"
 
 
 def test_entry_spec_refuses_non_positive_credit():
@@ -71,17 +93,17 @@ def test_entry_spec_refuses_legs_without_streamer_symbol():
 
 
 TRADE = {
-    "put_symbol": "SP",
-    "long_put_symbol": "LP",
-    "call_symbol": "SC",
-    "long_call_symbol": "LC",
+    "put_symbol": SP,
+    "long_put_symbol": LP,
+    "call_symbol": SC,
+    "long_call_symbol": LC,
     "quantity": 1,
 }
 LEG_QUOTES = {
-    "SP": {"bid": 0.55, "ask": 0.65},
-    "LP": {"bid": 0.15, "ask": 0.25},
-    "SC": {"bid": 0.50, "ask": 0.60},
-    "LC": {"bid": 0.12, "ask": 0.22},
+    SP: {"bid": 0.55, "ask": 0.65},
+    LP: {"bid": 0.15, "ask": 0.25},
+    SC: {"bid": 0.50, "ask": 0.60},
+    LC: {"bid": 0.12, "ask": 0.22},
 }
 
 
@@ -91,13 +113,46 @@ def test_stop_close_spec_prices_the_cushioned_crossing_debit():
     assert spec["price"] == live_orders.tick_ceil(raw * 1.02)
     assert spec["price_effect"] == "debit"
     actions = {leg["symbol"]: leg["action"] for leg in spec["legs"]}
-    assert actions["SP"] == "buy to close" and actions["LP"] == "sell to close"
+    assert actions[OCC[SP]] == "buy to close" and actions[OCC[LP]] == "sell to close"
 
 
 def test_force_close_spec_covers_only_the_open_sides():
     spec = live_orders.force_close_spec(TRADE, LEG_QUOTES, put_open=True, call_open=False)
     symbols = {leg["symbol"] for leg in spec["legs"]}
-    assert symbols == {"SP", "LP"}
+    assert symbols == {OCC[SP], OCC[LP]}
+
+
+def test_every_order_builder_names_its_legs_by_occ_symbol():
+    """Shown to fail before 2026-10-12: all three builders sent the streamer symbol, which no
+    tastytrade order accepts. Pairs as the streamer recorded them (`stream_chain`) included."""
+    specs = [
+        live_orders.entry_spec(CHOSEN, 2),
+        live_orders.stop_close_spec(TRADE, "put", LEG_QUOTES),
+        live_orders.stop_close_spec(TRADE, "call", LEG_QUOTES),
+        live_orders.force_close_spec(TRADE, LEG_QUOTES),
+    ]
+    sent = [leg["symbol"] for spec in specs for leg in spec["legs"]]
+    assert all(_is_occ(s) for s in sent), sent
+    assert set(sent) == set(OCC.values())
+    assert [leg["quantity"] for leg in specs[0]["legs"]] == [2, 2, 2, 2]
+    for streamer, occ in (
+        (".XSP261009P460", "XSP   261009P00460000"),
+        (".SPXW261009C3000", "SPXW  261009C03000000"),
+        (".QQQ261009P450", "QQQ   261009P00450000"),
+        (".KR260918P52.5", "KR    260918P00052500"),
+    ):
+        assert live_orders.order_symbol(streamer) == occ
+        assert live_orders.order_symbol(occ) == occ  # an OCC symbol passes through
+
+
+def test_a_leg_with_no_occ_form_is_never_sent():
+    for bad in ("SP", "", None, ".XSP260708Q583", "XSP"):
+        with pytest.raises(ValueError, match="no OCC form"):
+            live_orders.order_symbol(bad)
+    with pytest.raises(ValueError, match="no OCC form"):
+        live_orders.stop_close_spec(
+            {**TRADE, "put_symbol": "SP"}, "put", {**LEG_QUOTES, "SP": LEG_QUOTES[SP]}
+        )
 
 
 def test_force_close_spec_refuses_nothing_open():
@@ -174,6 +229,10 @@ class FakeBroker:
         self._statuses = dict(statuses or {})
 
     def place(self, spec, live):
+        # tastytrade identifies an option leg by its OCC symbol and rejects anything else. Raised,
+        # not returned as a rejection: a refused order would read as an ordinary skip in the loop.
+        bad = [leg.get("symbol") for leg in spec.get("legs", []) if not _is_occ(leg.get("symbol"))]
+        assert not bad, f"order leg symbols must be OCC, got {bad}"
         self.placed.append({"spec": spec, "live": live})
         return {"ok": True, "response": {"order": {"id": f"ORD{len(self.placed)}"}}}
 
@@ -205,10 +264,10 @@ def _entry_snapshot(symbol="XSP", **over):
 
     candidate = {
         "wing_width": 5,
-        "short_put": q(583, "SP", 0.55, 0.65, -0.15),
-        "long_put": q(578, "LP", 0.15, 0.25, -0.06),
-        "short_call": q(598, "SC", 0.50, 0.60, 0.15),
-        "long_call": q(603, "LC", 0.12, 0.22, 0.06),
+        "short_put": q(583, SP, 0.55, 0.65, -0.15),
+        "long_put": q(578, LP, 0.15, 0.25, -0.06),
+        "short_call": q(598, SC, 0.50, 0.60, 0.15),
+        "long_call": q(603, LC, 0.12, 0.22, 0.06),
         "short_delta": 0.16,
         "is_default_delta": True,
     }
@@ -229,7 +288,7 @@ def _entry_snapshot(symbol="XSP", **over):
         "candidates": [candidate],
         "leg_quotes": {
             sym: {"bid": b, "ask": a}
-            for sym, b, a in (("SP", 0.55, 0.65), ("LP", 0.15, 0.25), ("SC", 0.50, 0.60), ("LC", 0.12, 0.22))
+            for sym, b, a in ((SP, 0.55, 0.65), (LP, 0.15, 0.25), (SC, 0.50, 0.60), (LC, 0.12, 0.22))
         },
     }
     snap.update(over)
@@ -321,10 +380,10 @@ def _open_trade_row(symbol="QQQ"):
         "put_strike": 583,
         "call_strike": 598,
         "wing_width": 5,
-        "put_symbol": "SP",
-        "call_symbol": "SC",
-        "long_put_symbol": "LP",
-        "long_call_symbol": "LC",
+        "put_symbol": SP,
+        "call_symbol": SC,
+        "long_put_symbol": LP,
+        "long_call_symbol": LC,
         "put_credit": 0.55,
         "call_credit": 0.52,
         "net_credit": 1.07,
@@ -393,6 +452,114 @@ def test_a_confirmed_entry_opens_at_the_actual_credit(tmp_path):
     # slippage_dollars is MEASURED on a live row (2026-09-18): mid at submission minus the fill.
     assert row["entry_mid_at_submit"] is not None
     assert row["slippage_dollars"] == pytest.approx((row["entry_mid_at_submit"] - 1.37) * 100.0)
+    # No per-leg fills on this status: the sides split the fill in the modelled ratio and add up.
+    assert row["side_credit_source"] == "proportional"
+    assert row["put_credit"] + row["call_credit"] == pytest.approx(1.37)
+
+
+# --------------------------------------------------------------------------- per-side credits (2026-10-12)
+def _fills(sp=0.62, lp=0.18, sc=0.55, lc=0.15, syms=(OCC[SP], OCC[LP], OCC[SC], OCC[LC])):
+    """Per-leg executions as the broker reports them: OCC symbols."""
+    out = []
+    for sym, action, price in zip(
+        syms, ("Sell to Open", "Buy to Open", "Sell to Open", "Buy to Open"), (sp, lp, sc, lc), strict=True
+    ):
+        if price is not None:
+            out.append({"symbol": sym, "action": action, "quantity": "1", "fill_price": str(price)})
+    return out
+
+
+_PENDING = {
+    "put_symbol": SP,
+    "long_put_symbol": LP,
+    "call_symbol": SC,
+    "long_call_symbol": LC,
+    "put_credit": 0.45,  # modelled at quote time
+    "call_credit": 0.35,
+    "net_credit": 0.75,  # the limit asked
+}
+
+
+def test_entry_fill_credits_take_each_side_from_its_own_leg_fills():
+    out = live_loop.entry_fill_credits(_PENDING, {"price": "0.75", "fills": _fills()}, 0.75)
+    assert out == {
+        "net_credit": 0.84,  # 0.44 + 0.40: what was received, not the 0.75 limit
+        "put_credit": 0.44,
+        "call_credit": 0.40,
+        "side_credit_source": "broker_legs",
+    }
+
+
+def test_entry_fill_credits_match_the_brokers_occ_symbols_to_the_rows_streamer_symbols():
+    trade = {
+        **_PENDING,
+        "put_symbol": ".XSP260708P583",
+        "long_put_symbol": ".XSP260708P578",
+        "call_symbol": ".XSP260708C598",
+        "long_call_symbol": ".XSP260708C603",
+    }
+    occ = ("XSP   260708P00583000", "XSP   260708P00578000", "XSP   260708C00598000", "XSP   260708C00603000")
+    out = live_loop.entry_fill_credits(trade, {"fills": _fills(syms=occ)}, 0.75)
+    assert out["side_credit_source"] == "broker_legs" and out["put_credit"] == 0.44
+
+
+def test_entry_fill_credits_fall_back_to_the_modelled_ratio_and_still_add_up():
+    """No fills, a missing leg, a leg on the wrong action, or a leg sum below the limit (a credit
+    limit cannot fill worse than itself): the booked fill is split 0.45 : 0.35, never re-derived."""
+    cases = (
+        {"price": "0.80"},
+        {"fills": _fills(lc=None)},
+        {"fills": [{**f, "action": "Buy to Open"} if f["symbol"] == OCC[SP] else f for f in _fills()]},
+        {"fills": _fills(sp=0.50)},  # 0.32 + 0.40 = 0.72 < the 0.75 limit
+    )
+    for status in cases:
+        out = live_loop.entry_fill_credits(_PENDING, status, 0.80)
+        assert out["side_credit_source"] == "proportional", status
+        assert out["net_credit"] == 0.80
+        assert out["put_credit"] == pytest.approx(0.80 * 0.45 / 0.80)
+        assert out["put_credit"] + out["call_credit"] == pytest.approx(0.80)
+    lopsided = {**_PENDING, "call_credit": -0.02}
+    assert live_loop.entry_fill_credits(lopsided, {}, 0.80)["put_credit"] == 0.40  # halves, never > net
+
+
+def _place_and_fill(tmp_path, fills):
+    db_path, broker = _place_one(tmp_path)
+    broker._statuses = {"ORD1": {"status": "Filled", "price": "-0.75", "filled": True, "fills": fills}}
+    live_loop.run_once(_config(), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None)
+    return db_path, broker, live_loop._trade_row("LIVE-XSP-ORD1", db_path)
+
+
+def test_a_confirmed_entry_books_the_sides_the_broker_filled(tmp_path):
+    """Shown to fail on the pre-change loop, which left both sides at the quote-time model."""
+    db_path, _broker, row = _place_and_fill(tmp_path, _fills())
+    assert row["status"] == "open" and row["side_credit_source"] == "broker_legs"
+    assert (row["put_credit"], row["call_credit"], row["net_credit"]) == (0.44, 0.40, 0.84)
+    assert row["put_credit_fraction"] == pytest.approx(0.44 / 0.84, abs=1e-4)
+    assert row["slippage_dollars"] == pytest.approx((row["entry_mid_at_submit"] - 0.84) * 100.0)
+
+
+def test_live_stop_and_expiry_pnl_are_charged_against_the_filled_side_credits(tmp_path):
+    """The point of the split: a stop and an expiry on a live row add up to the net received."""
+    db_path, _broker, row = _place_and_fill(tmp_path, _fills())
+    paper._apply_exit_decision(
+        row, {"action": "stop_put", "put_exit_price": 1.10, "put_exit_slippage": 0}, "XSP", db_path
+    )
+    row = live_loop._trade_row("LIVE-XSP-ORD1", db_path)
+    assert row["pnl"] == pytest.approx((0.44 - 1.10) * 100)
+    paper._apply_exit_decision(
+        row,
+        {
+            "action": "expire",
+            "put_open": False,
+            "call_open": True,
+            "call_exit_price": 0.0,
+            "settle_underlying": 590.0,
+        },
+        "XSP",
+        db_path,
+    )
+    row = live_loop._trade_row("LIVE-XSP-ORD1", db_path)
+    assert row["pnl"] == pytest.approx((0.84 - 1.10 - 0.0) * 100)
 
 
 def test_a_rejected_entry_is_cancelled_and_frees_its_slot(tmp_path):
@@ -424,10 +591,10 @@ def _stopping_snapshot():
     """A snapshot where the QQQ put side's cost-to-close has blown through the stop trigger."""
     snap = _entry_snapshot(symbol="QQQ", now_et="11:00", candidates=[])
     snap["leg_quotes"] = {
-        "SP": {"bid": 2.40, "ask": 2.50},  # short put: was 0.55 credit, now 2.5 to close
-        "LP": {"bid": 0.10, "ask": 0.15},
-        "SC": {"bid": 0.30, "ask": 0.35},
-        "LC": {"bid": 0.05, "ask": 0.08},
+        SP: {"bid": 2.40, "ask": 2.50},  # short put: was 0.55 credit, now 2.5 to close
+        LP: {"bid": 0.10, "ask": 0.15},
+        SC: {"bid": 0.30, "ask": 0.35},
+        LC: {"bid": 0.05, "ask": 0.08},
     }
     return snap
 
@@ -484,7 +651,7 @@ def test_a_working_close_is_cancelled_and_replaced_at_fresh_quotes_each_tick(tmp
     live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None)
     first = live_loop._trade_row("OPEN1", db_path)["put_stop_order_id"]
     # next tick, still Live at the broker, quotes moved: cancel, replace at the new crossing price
-    snap["leg_quotes"]["SP"] = {"bid": 2.90, "ask": 3.00}
+    snap["leg_quotes"][SP] = {"bid": 2.90, "ask": 3.00}
     s2 = live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None)
     assert s2["closes_repriced"] == 1 and broker.cancelled == [first]
     row = live_loop._trade_row("OPEN1", db_path)
@@ -558,3 +725,138 @@ def test_the_live_seam_is_the_shared_adapter(monkeypatch):
     assert out["error"] == "live submission gated" and any(
         "enable_live_trading" in g for g in out["unmet_gates"]
     )
+
+
+# --------------------------------------------------------------------------- exit fills (2026-10-12)
+def _close_fills(short=2.38, long=0.12, short_sym=None, long_sym=None, short_action="Buy to Close"):
+    out = []
+    if short is not None:
+        out.append(
+            {
+                "symbol": short_sym or OCC[SP],
+                "action": short_action,
+                "quantity": "1",
+                "fill_price": str(short),
+            }
+        )
+    if long is not None:
+        out.append(
+            {
+                "symbol": long_sym or OCC[LP],
+                "action": "Sell to Close",
+                "quantity": "1",
+                "fill_price": str(long),
+            }
+        )
+    return out
+
+
+def test_exit_fill_price_takes_the_debit_from_the_sides_own_leg_fills():
+    out = live_loop.exit_fill_price(TRADE, "put", {"price": "2.45", "fills": _close_fills()}, 2.45, 2.45)
+    assert out == (2.26, "broker_legs")  # 2.38 - 0.12, inside the 2.45 limit
+    call = live_loop.exit_fill_price(
+        TRADE, "call", {"fills": _close_fills(0.85, 0.20, OCC[SC], OCC[LC])}, 0.60, 0.60
+    )
+    assert call == (0.60, "booked"), "a 0.65 debit above its own 0.60 limit is a bad read, not a fill"
+    call = live_loop.exit_fill_price(
+        TRADE, "call", {"fills": _close_fills(0.50, 0.20, OCC[SC], OCC[LC])}, 0.60, 0.60
+    )
+    assert call == (0.30, "broker_legs")
+
+
+def test_exit_fill_price_falls_back_to_the_booked_price():
+    for status in (
+        {"price": "2.45"},  # no fills at all
+        {"fills": _close_fills(long=None)},  # a leg missing
+        {"fills": _close_fills(short_action="Sell to Close")},  # the short on the wrong action
+        {"fills": _close_fills(short_sym=OCC[SC])},  # the other side's leg, not this one's
+        {"fills": _close_fills(short=0.10, long=0.12)},  # a negative debit
+    ):
+        assert live_loop.exit_fill_price(TRADE, "put", status, 2.45, 2.45) == (2.45, "booked"), status
+
+
+def test_a_confirmed_stop_is_booked_at_the_brokers_leg_fills_not_the_limit(tmp_path):
+    """Shown to fail before 2026-10-12: the side was booked at the limit asked (2.45 here), never
+    at what the broker filled it for."""
+    db_path = _init_db(tmp_path)
+    paper._save_trade(_open_trade_row("QQQ"), db_path)
+    broker = FakeBroker()
+    snap = _stopping_snapshot()
+    live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None)
+    row = live_loop._trade_row("OPEN1", db_path)
+    asked = float(broker.placed[-1]["spec"]["price"])
+    assert asked == pytest.approx(2.45)
+    broker._statuses = {
+        row["put_stop_order_id"]: {"status": "Filled", "price": "-2.45", "fills": _close_fills(2.38, 0.12)}
+    }
+    live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None)
+    row = live_loop._trade_row("OPEN1", db_path)
+    assert row["put_stop_cost"] == pytest.approx(2.26) and row["put_exit_fill_source"] == "broker_legs"
+    assert row["pnl"] == pytest.approx((0.55 - 2.26) * 100)
+    assert row["call_exit_fill_source"] is None
+
+
+def test_a_stop_without_usable_leg_fills_is_booked_at_its_price_and_says_so(tmp_path):
+    db_path = _init_db(tmp_path)
+    paper._save_trade(_open_trade_row("QQQ"), db_path)
+    broker = FakeBroker()
+    snap = _stopping_snapshot()
+    live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None)
+    row = live_loop._trade_row("OPEN1", db_path)
+    broker._statuses = {
+        row["put_stop_order_id"]: {"status": "Filled", "price": "-2.45", "fills": _close_fills(long=None)}
+    }
+    live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None)
+    row = live_loop._trade_row("OPEN1", db_path)
+    assert row["put_stop_cost"] == pytest.approx(2.45) and row["put_exit_fill_source"] == "booked"
+
+
+# --------------------------------------------------------------------------- quantity (2026-10-12)
+def test_a_live_entry_records_the_quantity_its_order_carried(tmp_path):
+    """Shown to fail before 2026-10-12: the order went out at `quantity: 2` and the row said 1, so
+    the ledger held half the position -- its capital, fees, slippage, P&L and the position export
+    the account risk layer reads."""
+    db_path = _init_db(tmp_path)
+    cfg = {**_config(), "quantity": 2}
+    broker = FakeBroker()
+    live_loop.run_once(cfg, _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None)
+    assert [leg["quantity"] for leg in broker.placed[0]["spec"]["legs"]] == [2, 2, 2, 2]
+    row = live_loop._trade_row("LIVE-XSP-ORD1", db_path)
+    assert row["quantity"] == 2
+    assert row["fees"] == pytest.approx(paper.open_fees("XSP", 2))
+    one = paper.synthetic_entry_fill(
+        _entry_snapshot(), "live", paper.evaluate_entry(
+            _entry_snapshot(), paper._merged_params(cfg, {}), [], account_open_count=0
+        )[2], paper._merged_params(cfg, {}), "live",
+    )  # fmt: skip
+    assert one["quantity"] == 1, "paper's default is unchanged"
+    assert row["slippage_dollars"] == pytest.approx(2 * one["slippage_dollars"])
+    # the mid is per share whatever the quantity
+    assert row["entry_mid_at_submit"] == pytest.approx(one["net_credit"] + one["slippage_dollars"] / 100.0)
+
+    broker._statuses = {"ORD1": {"status": "Filled", "price": "-1.05", "fills": []}}
+    live_loop.run_once(cfg, _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None)
+    row = live_loop._trade_row("LIVE-XSP-ORD1", db_path)
+    assert row["slippage_dollars"] == pytest.approx((row["entry_mid_at_submit"] - 1.05) * 100 * 2)
+    fees_open = row["fees"]
+    paper._apply_exit_decision(
+        row, {"action": "stop_put", "put_exit_price": 1.50, "put_exit_slippage": 0.5}, "XSP", db_path
+    )
+    done = live_loop._trade_row("LIVE-XSP-ORD1", db_path)
+    assert done["pnl"] == pytest.approx((row["put_credit"] - 1.50) * 100 * 2)
+    assert done["fees"] == pytest.approx(fees_open + paper.close_fees_one_side("XSP", 2))
+    assert done["slippage_dollars"] == pytest.approx(row["slippage_dollars"] + 0.5 * 2)
+
+
+def test_a_quantity_one_row_is_charged_exactly_as_before(tmp_path):
+    """Paper rows are all quantity 1: the exit accounting's x quantity must not move them."""
+    db_path = _init_db(tmp_path)
+    paper._save_trade(_open_trade_row("XSP"), db_path)
+    row = live_loop._trade_row("OPEN1", db_path)
+    paper._apply_exit_decision(
+        row, {"action": "stop_call", "call_exit_price": 1.10, "call_exit_slippage": 0.25}, "XSP", db_path
+    )
+    done = live_loop._trade_row("OPEN1", db_path)
+    assert done["pnl"] == round((0.52 - 1.10) * 100, 2)
+    assert done["fees"] == paper.close_fees_one_side("XSP")
+    assert done["slippage_dollars"] == 0.25

@@ -6,6 +6,7 @@ from pathlib import Path
 from cherrypick.core import db as _db
 from cherrypick.core import home as _home
 from cherrypick.core import openingrange as _or
+from cherrypick.core import streamcache as _streamcache
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -20,7 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     gex = Path(args.gex) if args.gex else _home.data_dir("gex") / "gex_history.db"
-    cache = Path(args.cache) if args.cache else _home.data_dir("marketdata") / "stream_cache.db"
+    cache = Path(args.cache) if args.cache else _streamcache.cache_path()
     try:
         spot_conn, cache_conn = _db.connect_ro(gex), _db.connect_ro(cache)
     except Exception as exc:  # noqa: BLE001 -- an unreadable store is a reported state

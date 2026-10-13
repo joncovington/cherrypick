@@ -17,6 +17,7 @@ from pathlib import Path
 
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core import looplock
+from cherrypick.core import streamrequests as _streamrequests
 from cherrypick.core.clock import ET as _ET
 from cherrypick.core.gex import (
     compute_gex_profile,
@@ -25,6 +26,7 @@ from cherrypick.core.gex import (
     volume_totals,
 )
 
+from cherrypick.gex import historydb as _historydb
 from cherrypick.gex import provider as _provider
 from cherrypick.gex import regime as _regime
 
@@ -95,12 +97,14 @@ QUOTE_STRIKES_EACH_SIDE = 20
 QUOTE_MAX_AGE_SECONDS = 120.0
 # Every tick, not every minute (2026-10-12): flies' paper loop prices every 15 s, and a completion is
 # often a touch of a few seconds that a minute sample misses, so a replay of a paper arm at a minute
-# would understate completion -- the number the strategy turns on. ~10 MB a session. The throttle
+# would understate completion -- the number the strategy turns on. ~8 MB a session. The throttle
 # sits under the 15 s tick so it only stops a double write; at 15 s, a tick landing a hair early
 # would be skipped and the cadence would halve.
 QUOTE_INTERVAL_SECONDS = 10
+# How `gex_quotes.side` encodes the right. `core.quotehistory` decodes it; change both or neither.
+QUOTE_SIDES = {"put": 0, "call": 1}
 
-# The config block (`quote_history`). OFF unless a machine's config turns it on: it is ~10 MB a
+# The config block (`quote_history`). OFF unless a machine's config turns it on: it is ~8 MB a
 # session per symbol, and a checkout set up from the example (SPX, XSP, QQQ) should not start
 # recording three chains nothing replays. `symbols` null means the recorder's own `symbols`.
 QUOTE_HISTORY_DEFAULTS = {
@@ -108,6 +112,10 @@ QUOTE_HISTORY_DEFAULTS = {
     "symbols": None,
     "strikes_each_side": QUOTE_STRIKES_EACH_SIDE,
     "interval_seconds": QUOTE_INTERVAL_SECONDS,
+    # Also keep, on both rights, every strike of the recorded chain a module declares it holds
+    # (`core.streamrequests.union_legs`: the open legs the streamer already keeps subscribed), so a
+    # stranded vertical that drifted past the window is still recorded. Only `false` turns it off.
+    "held_strikes": True,
 }
 
 
@@ -119,6 +127,7 @@ def quote_history_settings(cfg: dict) -> dict:
     if not isinstance(raw, dict):
         return out
     out["enabled"] = raw.get("enabled") is True
+    out["held_strikes"] = raw.get("held_strikes") is not False
     syms = raw.get("symbols")
     if isinstance(syms, list) and syms:
         out["symbols"] = [str(s).strip().upper() for s in syms]
@@ -162,13 +171,38 @@ def _ensure_history_table(conn: sqlite3.Connection, db_path: Path | str | None =
         + ")"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_gph_sym_ts ON gex_profile_history(symbol, ts)")
+    # flies' `wall-clear` arm reads this through `core.regime.gex_at` every tick, as "symbol = ? AND
+    # ts <= ? ORDER BY ts DESC"; without this index that is a walk of every row of the symbol.
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_grh_sym_ts ON gex_regime_history(symbol, ts)")
+    # The quotes, normalised (2026-10-12, before the first recorded session): one sample row per
+    # (symbol, tick) carrying what every quote of that tick shares, and the quotes keyed by it in a
+    # WITHOUT ROWID table with the side as an integer (QUOTE_SIDES). The first layout repeated
+    # symbol, date, expiration and the side's name on every one of ~125k rows a session and indexed
+    # them again: 15.3 MB for a synthetic session (1,560 ticks, 124,800 quotes) against 7.9 MB in
+    # this one. Same content and cadence.
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS gex_quote_history ("
-        "symbol TEXT NOT NULL, trade_date TEXT NOT NULL, ts REAL NOT NULL, expiration TEXT NOT NULL, "
-        "side TEXT NOT NULL, strike REAL NOT NULL, bid REAL NOT NULL, ask REAL NOT NULL, mid REAL NOT NULL, "
-        "age_s REAL, delta REAL)"
+        "CREATE TABLE IF NOT EXISTS gex_quote_samples ("
+        "id INTEGER PRIMARY KEY, symbol TEXT NOT NULL, trade_date TEXT NOT NULL, ts REAL NOT NULL, "
+        "expiration TEXT NOT NULL)"
     )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_gqh_sym_date ON gex_quote_history(symbol, trade_date, ts)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_gqs_sym_date_ts ON gex_quote_samples(symbol, trade_date, ts)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS gex_quotes ("
+        "sample_id INTEGER NOT NULL, side INTEGER NOT NULL, strike REAL NOT NULL, "
+        "bid REAL NOT NULL, ask REAL NOT NULL, mid REAL NOT NULL, age_s REAL, delta REAL, "
+        "PRIMARY KEY (sample_id, side, strike)) WITHOUT ROWID"
+    )
+    # The first layout's table, created by the recorder the day before any session was recorded into
+    # it. Dropped only while EMPTY: a file holding rows in it is left exactly as it is.
+    if (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'gex_quote_history'"
+        ).fetchone()
+        and not conn.execute("SELECT 1 FROM gex_quote_history LIMIT 1").fetchone()
+    ):
+        conn.execute("DROP TABLE gex_quote_history")
     have = {r[1] for r in conn.execute("PRAGMA table_info(gex_regime_history)")}
     for column in FLOW_COLUMNS:
         if column not in have:
@@ -211,7 +245,9 @@ def spot_max_age_seconds(cfg: dict) -> float | None:
     return DEFAULT_SPOT_MAX_AGE_SECONDS
 
 
-def record_spots(cfg: dict, symbols: list[str] | None = None) -> int:
+def record_spots(
+    cfg: dict, symbols: list[str] | None = None, *, conn: sqlite3.Connection | None = None
+) -> int:
     """Record the current spot for EVERY offered symbol (default `cfg['symbols']`) into this module's
     history DB — not just the one on screen — so each symbol's trail stays continuous and there is no
     gap when the viewer switches symbols. Best-effort: spots come from the read-only stream cache, and a
@@ -233,17 +269,13 @@ def record_spots(cfg: dict, symbols: list[str] | None = None) -> int:
     spots = _provider.read_spots(cfg["stream_cache_db"], syms, max_age_seconds=spot_max_age_seconds(cfg))
     if not spots:
         return 0
-    conn = sqlite3.connect(db_path)
-    try:
-        _ensure_history_table(conn, db_path)
+    with _historydb.step(db_path, conn) as db:
+        _ensure_history_table(db, db_path)
         today = _today()
         now = time.time()
         rows = [(sym, today, now, spots[sym]) for sym in syms if sym in spots]
-        conn.executemany("INSERT INTO gex_spot_history (symbol, trade_date, ts, spot) VALUES (?,?,?,?)", rows)
-        conn.commit()
+        db.executemany("INSERT INTO gex_spot_history (symbol, trade_date, ts, spot) VALUES (?,?,?,?)", rows)
         return len(rows)
-    finally:
-        conn.close()
 
 
 def _recorder_pid_file(cfg: dict) -> Path:
@@ -399,10 +431,11 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
     interval = int(interval or (cfg.get("serve", {}) or {}).get("refresh_seconds", 15))
 
     if once:
-        n = record_spots(cfg)
-        r = record_regimes(cfg)
-        qn = record_quotes(cfg)
-        m = _regime.sample(cfg)
+        with _historydb.tick(cfg["history_db_path"]) as conn:
+            n = record_spots(cfg, conn=conn)
+            r = record_regimes(cfg, conn=conn)
+            qn = record_quotes(cfg, conn=conn)
+            m = _regime.sample(cfg, conn=conn)
         print(
             f"recorded spot for {n}/{len(syms)} symbols, {r} gex regime row(s), {qn} quote row(s), "
             f"market regime: {m['status']} ({m['usable']}/{m['written']} usable)"
@@ -462,10 +495,14 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
         while True:
             _beat(cfg)  # top of every tick, before any work — liveness is published, never inferred
             try:
-                n = record_spots(cfg)
-                record_regimes(cfg)  # internally throttled to ~5-minute rows
-                record_quotes(cfg)  # every tick (~15 s), RTH-gated
-                _regime.sample(cfg)  # internally throttled to ~1-minute rows, RTH-gated
+                # One connection and one commit for the tick, each series in its own savepoint. A
+                # series that raises skips the ones after it, as before, and what the series before
+                # it wrote is still committed.
+                with _historydb.tick(cfg["history_db_path"]) as conn:
+                    n = record_spots(cfg, conn=conn)
+                    record_regimes(cfg, conn=conn)  # internally throttled to ~5-minute rows
+                    record_quotes(cfg, conn=conn)  # every tick (~15 s), RTH-gated
+                    _regime.sample(cfg, conn=conn)  # throttled to ~1-minute rows, RTH-gated
                 ticks += 1
                 if ticks % heartbeat_every == 0:
                     log.info("recorded %d/%d symbols (tick %d)", n, len(syms), ticks)
@@ -485,6 +522,7 @@ def record_regimes(
     min_interval_s: int = 300,
     *,
     now_et: datetime | None = None,
+    conn: sqlite3.Connection | None = None,
 ) -> int:
     """Persist a compact GEX regime row per symbol (net GEX by OI and by volume, zero
     gamma, walls, spot) into gex_regime_history — the historical dimension the audit
@@ -510,9 +548,8 @@ def record_regimes(
         return 0
     db_path = Path(cfg["history_db_path"])
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    try:
-        _ensure_history_table(conn)
+    with _historydb.step(db_path, conn) as conn:
+        _ensure_history_table(conn, db_path)
         today = when.astimezone(_ET).date().isoformat()  # `now_et` is tz-aware, like the default
         now = when.timestamp()
         written = 0
@@ -575,10 +612,7 @@ def record_regimes(
                 written += 1
             except Exception:
                 continue  # one symbol's hiccup must not lose the others
-        conn.commit()
         return written
-    finally:
-        conn.close()
 
 
 def record_quotes(
@@ -587,11 +621,13 @@ def record_quotes(
     min_interval_s: int | None = None,
     *,
     now_et: datetime | None = None,
+    conn: sqlite3.Connection | None = None,
 ) -> int:
-    """Persist the near-spot quotes of each symbol's chain into `gex_quote_history`, as the config's
-    `quote_history` block says (`quote_history_settings`; off unless enabled). RTH only, for
-    `record_regimes`' reason; throttled to one sample per symbol per interval, so the recorder calls
-    it every tick. Best-effort per symbol. Returns quote rows written."""
+    """Persist the near-spot quotes of each symbol's chain into `gex_quote_samples`/`gex_quotes`, as
+    the config's `quote_history` block says (`quote_history_settings`; off unless enabled). RTH only,
+    for `record_regimes`' reason; throttled to one sample per symbol per interval, so the recorder
+    calls it every tick. A tick with no usable quote writes no sample row. Best-effort per symbol.
+    Returns quote rows written."""
     settings = quote_history_settings(cfg)
     if not settings["enabled"]:
         return 0
@@ -602,22 +638,23 @@ def record_quotes(
     syms = [str(s).strip().upper() for s in symbols] if symbols is not None else settings["symbols"]
     if not syms:
         return 0
+    held = _held_legs() if settings["held_strikes"] else frozenset()
     db_path = Path(cfg["history_db_path"])
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    try:
-        _ensure_history_table(conn)
+    with _historydb.step(db_path, conn) as conn:
+        _ensure_history_table(conn, db_path)
         today = when.astimezone(_ET).date().isoformat()
         now = when.timestamp()
         written = 0
         for sym in syms:
             row = conn.execute(
-                "SELECT MAX(ts) FROM gex_quote_history WHERE symbol = ? AND trade_date = ?", (sym, today)
+                "SELECT MAX(ts) FROM gex_quote_samples WHERE symbol = ? AND trade_date = ?", (sym, today)
             ).fetchone()
             if row and row[0] is not None and (now - row[0]) < interval:
                 continue
             try:
-                snap = _provider.snapshot_from_stream_cache(cfg["stream_cache_db"], sym)
+                # The chain alone: the profile's greeks, OI and volume are not needed to pick it.
+                snap = _provider.chain_from_stream_cache(cfg["stream_cache_db"], sym)
                 if snap.source == "missing" or snap.expiration is None:
                     continue
                 quotes = _provider.chain_quotes(
@@ -625,34 +662,51 @@ def record_quotes(
                     snap,
                     each_side=settings["strikes_each_side"],
                     max_age_seconds=QUOTE_MAX_AGE_SECONDS,
+                    held_symbols=held,
                 )
-                conn.executemany(
-                    "INSERT INTO gex_quote_history (symbol, trade_date, ts, expiration, side, strike, bid, ask, "
-                    "mid, age_s, delta) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                    [
-                        (
-                            sym,
-                            today,
-                            now,
-                            str(snap.expiration),
-                            q["side"],
-                            q["strike"],
-                            q["bid"],
-                            q["ask"],
-                            q["mid"],
-                            q["age_seconds"],
-                            q["delta"],
-                        )
-                        for q in quotes
-                    ],
-                )
+                if not quotes:
+                    continue
+                conn.execute("SAVEPOINT quote_sample")
+                try:
+                    sample_id = conn.execute(
+                        "INSERT INTO gex_quote_samples (symbol, trade_date, ts, expiration) VALUES (?,?,?,?)",
+                        (sym, today, now, str(snap.expiration)),
+                    ).lastrowid
+                    conn.executemany(
+                        "INSERT INTO gex_quotes (sample_id, side, strike, bid, ask, mid, age_s, delta) "
+                        "VALUES (?,?,?,?,?,?,?,?)",
+                        [
+                            (
+                                sample_id,
+                                QUOTE_SIDES[q["side"]],
+                                q["strike"],
+                                q["bid"],
+                                q["ask"],
+                                q["mid"],
+                                q["age_seconds"],
+                                q["delta"],
+                            )
+                            for q in quotes
+                        ],
+                    )
+                except Exception:
+                    conn.execute("ROLLBACK TO quote_sample")  # never a sample without its quotes
+                    raise
+                finally:
+                    conn.execute("RELEASE quote_sample")
                 written += len(quotes)
             except Exception:
                 continue  # one symbol's hiccup must not lose the others
-        conn.commit()
         return written
-    finally:
-        conn.close()
+
+
+def _held_legs() -> frozenset[str]:
+    """Every streamer symbol a module declares it holds (`core.streamrequests.union_legs`). Empty on
+    any failure: the window is still recorded, only the held strikes beyond it are lost."""
+    try:
+        return frozenset(_streamrequests.union_legs())
+    except Exception:  # noqa: BLE001 -- telemetry; the window must not depend on another module's file
+        return frozenset()
 
 
 def flow_measures(series: list[dict], call_wall: float | None, put_wall: float | None, totals: dict) -> dict:

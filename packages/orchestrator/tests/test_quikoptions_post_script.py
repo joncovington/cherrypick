@@ -1,6 +1,7 @@
 """The QuikOptions Discord series (`scripts/quikoptions_post.py`), shown to fail where it must.
 
-What it guards: a header that carries its date and capture time whatever the title, mentions switched
+What it guards: image styles with no header message and a title line that carries the date whatever
+the title, a capture time on the embed and text styles, mentions switched
 off on every message, the webhook the config chose and never the other as a fallback, a series that
 resumes rather than repeats and finishes under the title and cards it started with, a capture
 failure that posts nothing, and a 429 waited out once. No network, no browser: the capture and the
@@ -98,8 +99,21 @@ def _run(**kw):
 # ------------------------------------------------------------------------------------------------
 
 
-def test_the_header_carries_date_and_capture_time_whatever_the_title_and_no_source():
-    embed = qp.header_embed(CAPTURE, "@everyone flow")
+def test_the_image_styles_send_no_header_message_and_the_title_line_keeps_the_date():
+    # No header message (2026-10-03, after the test posts): every image-style message carries a
+    # picture, none is an embed, and the series' title line rides on the first — with the date in
+    # it whatever the title.
+    for style in ("cards", "singles"):
+        plan = qp.plan_messages(CAPTURE, "@everyone flow", style, ["Trades", "Top sweeps"], None)
+        assert all(m["cards"] for m in plan), style
+        assert not any("embeds" in m["payload"] for m in plan), style
+        assert plan[0]["payload"]["content"].startswith("## @everyone flow — Fri 2 Oct 2026\n"), style
+        assert "QuikOptions" not in json.dumps(plan)  # no source attribution (2026-10-03)
+
+
+def test_the_summary_embed_carries_the_date_and_capture_time_and_no_source():
+    plan = qp.plan_messages(CAPTURE, "@everyone flow", "embed", [], None)
+    embed = plan[0]["payload"]["embeds"][0]
     assert embed["title"] == "@everyone flow — Fri 2 Oct 2026"
     assert embed["footer"]["text"] == "Captured 16:52 ET."
     assert "QuikOptions" not in json.dumps(embed)  # no source attribution (2026-10-03)
@@ -107,8 +121,7 @@ def test_the_header_carries_date_and_capture_time_whatever_the_title_and_no_sour
     assert fields["Most traded"] == "TSLA · 762.5K trades"
     assert fields["Largest trade"] == "VST $92.95M outright (neutral)"
     assert fields["Bullish / bearish"] == "$3.51M (5) / $3.38M (11)"
-    assert fields["In two or more tables"] == "SPCX · TSLA"
-    assert len(embed["fields"]) == 4  # a short header: the day does not need every figure
+    assert embed["description"] == "In two or more tables: SPCX · TSLA"
 
 
 CALENDAR = {
@@ -231,25 +244,6 @@ def test_cards_style_pairs_the_captures(harness):
     assert _run(cfg=_cfg(post_cards=["Derived flow", "Largest by contracts", "Top sweeps"])) == "posted"
     assert [len(p["files"]) for p in harness["posted"]] == [2, 1]
     assert all(p["url"] == "https://d/own" for p in harness["posted"])  # the reporting channel by default
-
-
-def test_the_header_leads_with_the_derived_flow_and_yesterdays_calls():
-    flow = {
-        "flows": [{"symbol": "PCG", "what": "15 Jan 27 16C", "direction": "bought", "score": 46.0}],
-        "unread": [{"symbol": "VST", "what": "17 Dec 27 195P", "delta_dollars": 1.16e8}],
-        "names": [{"symbol": "PCG", "net": 1.1e7}, {"symbol": "SMCI", "net": -1.33e7}],
-    }
-    prev = {
-        "flows": [{"symbol": "MU", "score": -39.0}, {"symbol": "F", "score": 45.0, "confirmed_score": 32.0}],
-        "outcomes": {"1d": {"returns": {"MU": -0.012, "F": -0.004}}},
-    }
-    embed = qp.header_embed({**CAPTURE, "_flow": flow}, "Hot options", prev=prev)
-    fields = {f["name"]: f["value"] for f in embed["fields"]}
-    assert fields["Bullish"] == "PCG +$11.00M" and fields["Bearish"] == "SMCI −$13.30M"
-    assert fields["Top flow"] == "+46 PCG 15 Jan 27 16C bought"
-    assert fields["Unread, largest"] == "VST 17 Dec 27 195P ($116.00M)"
-    assert fields["Yesterday's calls, a day on"] == "MU -39 -1.2% ✓ · F +32 -0.4% ✗"
-    assert qp.yesterday_line({"flows": [], "outcomes": {}}) is None  # no outcome yet: no line
 
 
 def test_the_morning_post_waits_for_the_confirmation_and_the_week_is_descriptive():
