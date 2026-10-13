@@ -306,8 +306,13 @@ const derivedCache = new Map<string, { stamp: string; value: unknown }>();
  */
 const DERIVED_CACHE_MAX = 16;
 
-export function memoOnStore<T>(dbPath: string, key: string, build: () => T): T {
-  const stamp = fileStamp(dbPath);
+/**
+ * `dbPath` may name several stores, for a read derived from more than one (the compare bridge reads
+ * every module's ledger and the advisor's store): the stamp is each store's stamp in order, so a
+ * write to ANY of them is a miss. A missing file stamps as absent, and its appearance is a miss too.
+ */
+export function memoOnStore<T>(dbPath: string | readonly string[], key: string, build: () => T): T {
+  const stamp = typeof dbPath === "string" ? fileStamp(dbPath) : dbPath.map(fileStamp).join("|");
   const hit = derivedCache.get(key);
   if (hit !== undefined && hit.stamp === stamp) {
     derivedCache.delete(key); // re-insert so the freshly used entry is evicted last
