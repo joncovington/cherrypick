@@ -489,3 +489,105 @@ def budget_status(
         "worst": ({"symbol": worst[0], **worst[1]} if worst else None),
         "by_symbol": est["by_symbol"],
     }
+
+
+# --------------------------------------------------------------------------- window escalation
+# The per-symbol ATM-window escalation flies built and pmcc copied ("flies' shape verbatim"): widen
+# on repeated window misses, decay back in a quiet spell. One copy, parameterized on the module's own
+# tables and miss reasons. bwb's one-sided `window_strikes` is a different rule and stays in bwb.
+
+
+def window_miss_occurrences(conn, decisions_table: str, miss_reasons, trade_date: str, symbol: str) -> int:
+    """The largest `occurrences` for a window-miss refusal (`miss_reasons`) on `symbol` today, across
+    every arm/mode. MAX rather than SUM: a shared window gap surfaces in multiple arms/modes at once,
+    and summing would inflate urgency for what is really one physical cause."""
+    reasons = tuple(miss_reasons)
+    placeholders = ", ".join("?" * len(reasons))
+    row = conn.execute(
+        f"SELECT MAX(occurrences) AS n FROM {decisions_table} "
+        f"WHERE trade_date = ? AND symbol = ? AND reason IN ({placeholders})",
+        (trade_date, symbol, *reasons),
+    ).fetchone()
+    return int(row["n"]) if row and row["n"] is not None else 0
+
+
+def window_state(conn, state_table: str, symbol: str) -> dict:
+    """The persisted escalation state for `symbol`, or a fresh one."""
+    row = conn.execute(f"SELECT * FROM {state_table} WHERE symbol = ?", (symbol,)).fetchone()
+    if row:
+        return dict(row)
+    return {
+        "symbol": symbol,
+        "width": None,
+        "last_escalated_occurrences": 0,
+        "last_checked_occurrences": 0,
+        "last_escalated_at": None,
+        "last_miss_at": None,
+    }
+
+
+def escalate_window(
+    conn,
+    symbol: str,
+    *,
+    state_table: str,
+    occurrences: int,
+    base_width: int,
+    increment: int,
+    max_width: int,
+    miss_threshold: int,
+    decay_after_minutes: int,
+    now: str,
+) -> int:
+    """The effective window width to request for `symbol` now, given today's miss `occurrences`.
+
+    Widens by `increment` (capped at `max_width`) once `miss_threshold` NEW occurrences have
+    accumulated since the last escalation; decays back down by one `increment` (never below
+    `base_width`) once `decay_after_minutes` have passed with no NEW miss. Persists the state to
+    `state_table` and returns the width."""
+    state = window_state(conn, state_table, symbol)
+    width = max(state["width"] or base_width, base_width)  # a raised config default still floors it
+
+    last_checked = state["last_checked_occurrences"] or 0
+    last_escalated = state["last_escalated_occurrences"] or 0
+    last_miss_at = state["last_miss_at"]
+    last_escalated_at = state["last_escalated_at"]
+
+    if occurrences > last_checked:
+        last_miss_at = now
+
+    delta = occurrences - last_escalated
+    if delta >= miss_threshold:
+        # Multi-step in one call for a burst that crosses several threshold multiples at once (e.g.
+        # a quiet symbol suddenly missing dozens of times before the next tick), not just one
+        # increment regardless of how far past the threshold -- leftover occurrences short of the
+        # next full threshold multiple stay un-escalated for a future tick.
+        steps = delta // miss_threshold
+        width = min(width + steps * increment, max_width)
+        last_escalated = last_escalated + steps * miss_threshold
+        last_escalated_at = now
+
+    if width > base_width and last_miss_at:
+        try:
+            quiet_minutes = (
+                datetime.fromisoformat(now) - datetime.fromisoformat(last_miss_at)
+            ).total_seconds() / 60
+        except ValueError:
+            quiet_minutes = 0.0
+        if quiet_minutes >= decay_after_minutes:
+            width = max(base_width, width - increment)
+            last_miss_at = now  # reset the clock so decay steps down gradually, not all at once
+
+    conn.execute(
+        f"INSERT INTO {state_table} "
+        "(symbol, width, last_escalated_occurrences, last_checked_occurrences, "
+        "last_escalated_at, last_miss_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(symbol) DO UPDATE SET "
+        "width=excluded.width, last_escalated_occurrences=excluded.last_escalated_occurrences, "
+        "last_checked_occurrences=excluded.last_checked_occurrences, "
+        "last_escalated_at=excluded.last_escalated_at, last_miss_at=excluded.last_miss_at, "
+        "updated_at=excluded.updated_at",
+        (symbol, width, last_escalated, occurrences, last_escalated_at, last_miss_at, now),
+    )
+    conn.commit()
+    return width
