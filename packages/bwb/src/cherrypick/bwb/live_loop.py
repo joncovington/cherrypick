@@ -146,15 +146,24 @@ def readiness(config: dict, *, designated: str | None) -> list[str]:
     all. Pure. bwb's own list (the suite keeps these per module on purpose: the gates ARE the
     module's posture). The halt flag is not here (2026-10-08): it stops new risk only -- the entry
     and the add-on -- while fills are still confirmed, resting orders managed and the ladder
-    settled (`run_once(halted=...)`)."""
+    settled (`run_once(halted=...)`).
+
+    This is also the account half of `broker_cli.live_gates`, which every live submission re-checks
+    (2026-10-12): one list, so the tick and the submission cannot disagree. They did: this read
+    `live.arm` through `_arm`'s `control` default while the gate refused a missing arm, so a config
+    without the key ticked and then had every order refused. The stricter reading won -- `live.arm`
+    must be written down and name a base arm; the wall arm and every advised twin are paper
+    experiments whose structures are not the pilot's, and a typo or a missing key refuses rather than
+    trading something else."""
     live = _live_cfg(config)
     unmet = []
     if not live.get("enabled"):
         unmet.append("live.enabled is false")
     if not str(live.get("gate0_confirmed") or "").strip():
         unmet.append("live.gate0_confirmed is empty -- a human must attest Gate 0 passed (who/when)")
-    if _arm(config) not in engine.ARMS:
-        unmet.append(f"live.arm {_arm(config)!r} is not a base arm (one of {', '.join(engine.ARMS)})")
+    arm = str(live.get("arm") or "").strip()
+    if arm not in engine.ARMS:
+        unmet.append(f"live.arm {arm!r} is not a base arm (one of {', '.join(engine.ARMS)})")
     if not designated:
         unmet.append("no designated account -- run `cherrypick account --module bwb --set <last4>`")
     return unmet
@@ -243,37 +252,21 @@ def _fee_estimate(result: dict) -> float | None:
 
 # --------------------------------------------------------------------------- orphans
 def _sweep_orphans(conn, broker, log, symbol: str) -> int | None:
-    """Broker truth against ledger belief, first thing every tick: a working order this ledger
-    never recorded is the one crash window nothing else covers (a tick dying between a placement
-    and its row). Persisted for `--status` and the arm command's stop rule; detection only --
-    cancelling an order this process cannot account for is a human's call."""
-    try:
-        orphans = _execution.orphans(broker, db.known_order_ids(conn))
-    except Exception as exc:  # noqa: BLE001 -- a failed sweep must not break the tick
-        log(f"orphan sweep failed ({type(exc).__name__}: {exc}) -- will retry next tick")
-        return None  # unknown -- and unknown blocks the entry
-    orphans = [o for o in orphans if o.get("underlying_symbol") in (None, symbol)]
-    try:
-        os.makedirs(_data_dir(), exist_ok=True)
-        with open(_orphans_path(), "w", encoding="utf-8") as f:
-            json.dump({"at": clock.now_iso(), "orphans": orphans}, f)
-    except OSError:
-        pass
-    if orphans:
-        log(
-            f"ORPHANED ORDERS at the broker, unknown to the ledger: {[o.get('order_id') for o in orphans]} "
-            "-- a placement was recorded nowhere (or another system is trading this account). "
-            "Review in the broker UI before any further arming."
-        )
-    return len(orphans)
+    """Broker truth against ledger belief, first thing every tick (`core.execution.sweep_orphans`):
+    a working order this ledger never recorded is the one crash window nothing else covers.
+    Persisted for `--status` and the arm command's stop rule; None (unknown) blocks the entry."""
+    return _execution.sweep_orphans(
+        broker,
+        db.known_order_ids(conn),
+        symbol=symbol,
+        path=_orphans_path(),
+        now_iso=clock.now_iso(),
+        log=log,
+    )
 
 
 def read_orphans() -> list[dict]:
-    try:
-        with open(_orphans_path(), encoding="utf-8") as f:
-            return json.load(f).get("orphans", [])
-    except (OSError, ValueError):
-        return []
+    return _execution.read_orphans(_orphans_path())
 
 
 # --------------------------------------------------------------------------- fill confirmation

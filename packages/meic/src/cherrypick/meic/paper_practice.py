@@ -720,36 +720,6 @@ def run(date, profile_names=None, cadence=120, dry=False, db_path=None, iv_rank=
     return result
 
 
-def run_day(
-    date,
-    profile_name="conservative",
-    cadence=120,
-    dry=False,
-    db_path=None,
-    iv_rank=None,
-    client=None,
-    log=print,
-):
-    """Single-profile convenience wrapper over run() (back-compat / focused runs)."""
-    res = run(
-        date,
-        [profile_name],
-        cadence=cadence,
-        dry=dry,
-        db_path=db_path,
-        iv_rank=iv_rank,
-        client=client,
-        log=log,
-    )
-    return {
-        "date": date,
-        "profile": profile_name,
-        "dry": dry,
-        "metered_snapshots": res["metered_snapshots"],
-        **res["profiles"].get(profile_name, {}),
-    }
-
-
 # ---------------------------------------------------------------------------
 # Multi-day batch (rate-limit paced)
 # ---------------------------------------------------------------------------

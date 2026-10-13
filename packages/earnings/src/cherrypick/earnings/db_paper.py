@@ -71,10 +71,10 @@ from datetime import date as _date
 # Make `import paths` resolve when this file is imported (not run as the __main__ script, which
 # gets its own directory on sys.path automatically) -- mirrors credentials.py's self-insert.
 from cherrypick.core import calendar as _calendar
-from cherrypick.core import config as _cfg
 from cherrypick.core import db as _db
 from cherrypick.core import profiles as _profiles
 
+from cherrypick.earnings import ledger_verbs as _verbs
 from cherrypick.earnings import paths as _paths
 
 # A hold this long is a bug, not a trade; the span walk stops rather than spinning on a timestamp
@@ -473,29 +473,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
 _ARM_TABLES = ("trades", "scan_log", "entry_reviews", "management_events")
 
 
-def _arm_of(spec: dict, default: str | None = "default") -> str | None:
-    """The arm a save spec is tagged with. The key was `profile` until 2026-09-24 (the column's old
-    name) and is `arm` after it; a caller still sending `profile` is read, never dropped -- dropping
-    it would file the row under `default`, i.e. under the wrong arm, with nothing raised."""
-    return _cfg.first_present(spec, "arm", "profile", default=default)
+_arm_of = _verbs.arm_of
 
 
 def _conn() -> sqlite3.Connection:
-    conn = _db.connect(DB_PATH)  # mkdir parent + row_factory=Row (see cherrypick.core.db)
-    # Before the DDL and the migrations, which now name `arm`: on a ledger that still says
-    # `profile` they would ADD `arm` beside it and split every table's history from its new rows.
-    _db.refuse_pre_rename(conn, _ARM_TABLES, "profile")
-    conn.executescript(_DDL)
-    _migrate(conn)
-    return conn
+    return _verbs.open_ledger(DB_PATH, _DDL, _migrate, _ARM_TABLES)
 
 
 def cmd_init_db(args) -> dict:
-    conn = _conn()
-    conn.executescript(_DDL)
-    conn.commit()
-    conn.close()
-    return {"ok": True, "db_path": str(DB_PATH)}
+    return _verbs.init_db(_conn, _DDL, DB_PATH)
 
 
 def _conn_ro() -> sqlite3.Connection:
@@ -509,12 +495,7 @@ def _conn_ro() -> sqlite3.Connection:
 
 
 def cmd_get_open_positions(args) -> dict:
-    conn = _conn()
-    try:
-        rows = conn.execute("SELECT * FROM trades WHERE closed_at IS NULL ORDER BY opened_at").fetchall()
-    finally:
-        conn.close()
-    return {"ok": True, "positions": [dict(r) for r in rows]}
+    return _verbs.get_open_positions(_conn)
 
 
 def cmd_save_trade(args) -> dict:
@@ -575,46 +556,11 @@ def cmd_save_trade(args) -> dict:
 
 
 def cmd_get_open_legs(args) -> dict:
-    order_id = args.order_id
-    conn = _conn()
-    try:
-        rows = conn.execute(
-            "SELECT * FROM trade_legs WHERE order_id = ? AND status = 'open' ORDER BY leg_role",
-            (order_id,),
-        ).fetchall()
-    finally:
-        conn.close()
-    return {"ok": True, "order_id": order_id, "legs": [dict(r) for r in rows]}
+    return _verbs.get_open_legs(_conn, args)
 
 
 def cmd_save_leg_close(args) -> dict:
-    spec = json.loads(args.data)
-    required = ("order_id", "leg_role")
-    missing = [k for k in required if not spec.get(k)]
-    if missing:
-        return {"ok": False, "error": f"missing required field(s): {', '.join(missing)}"}
-
-    conn = _conn()
-    try:
-        cur = conn.execute(
-            "UPDATE trade_legs SET status = 'closed', close_price = ?, closed_at = ? "
-            "WHERE order_id = ? AND leg_role = ? AND status = 'open'",
-            (
-                spec.get("close_price"),
-                spec.get("closed_at", time.time()),
-                spec["order_id"],
-                spec["leg_role"],
-            ),
-        )
-        conn.commit()
-        if cur.rowcount == 0:
-            return {
-                "ok": False,
-                "error": f"no open leg found for order_id={spec['order_id']} leg_role={spec['leg_role']}",
-            }
-    finally:
-        conn.close()
-    return {"ok": True, "order_id": spec["order_id"], "leg_role": spec["leg_role"]}
+    return _verbs.save_leg_close(_conn, args)
 
 
 def cmd_save_close(args) -> dict:
@@ -1044,133 +990,18 @@ def cmd_save_market_context(args) -> dict:
     return {"ok": True, "context_date": date}
 
 
-_ENTRY_REVIEW_COLUMNS = (
-    "scan_date",
-    "symbol",
-    "timing",
-    "timing_assumed",
-    "strategy",
-    "price",
-    "volume",
-    "winrate",
-    "winrate_sample",
-    "iv_rv_ratio",
-    "iv_rv_source",
-    "term_structure",
-    "market_cap",
-    "expected_move",
-    "expected_move_pct",
-    "combined_open_interest",
-    "combined_option_volume",
-    "bid_ask_spread_pct",
-    "net_combo_spread_pct",
-    "avg_actual_move_pct",
-    "move_dispersion_pct",
-    "max_actual_move_pct",
-    "implied_vs_avg_actual",
-    "move_tail_veto",
-    "iv_rank",
-    "iv_percentile",
-    "composite_score",
-    "selected",
-    "reason",
-    "criteria_json",
-    "logged_at",
-    "arm",
-)
+_ENTRY_REVIEW_COLUMNS = _verbs._ENTRY_REVIEW_COLUMNS
 
 
-def _entry_review_values(spec: dict) -> tuple:
-    """Positional values for _ENTRY_REVIEW_COLUMNS, applying each field's own default --
-    shared by db.py's identical INSERT so the two modules' entry_reviews rows never drift
-    apart (see this module's own docstring on schema parity)."""
-    crit = spec.get("criteria") if spec.get("criteria") is not None else spec.get("criteria_json")
-    return (
-        spec["scan_date"],
-        spec["symbol"],
-        spec.get("timing"),
-        (1 if spec.get("timing_assumed") else (0 if spec.get("timing_assumed") is not None else None)),
-        spec.get("strategy"),
-        spec.get("price"),
-        spec.get("volume"),
-        spec.get("winrate"),
-        spec.get("winrate_sample"),
-        spec.get("iv_rv_ratio"),
-        spec.get("iv_rv_source"),
-        spec.get("term_structure"),
-        spec.get("market_cap"),
-        spec.get("expected_move"),
-        spec.get("expected_move_pct"),
-        spec.get("combined_open_interest"),
-        spec.get("combined_option_volume"),
-        spec.get("bid_ask_spread_pct"),
-        spec.get("net_combo_spread_pct"),
-        spec.get("avg_actual_move_pct"),
-        spec.get("move_dispersion_pct"),
-        spec.get("max_actual_move_pct"),
-        spec.get("implied_vs_avg_actual"),
-        (1 if spec.get("move_tail_veto") else (0 if spec.get("move_tail_veto") is not None else None)),
-        spec.get("iv_rank"),
-        spec.get("iv_percentile"),
-        spec.get("composite_score"),
-        1 if spec.get("selected") else 0,
-        spec.get("reason"),
-        json.dumps(crit) if crit is not None else None,
-        spec.get("logged_at", time.time()),
-        _arm_of(spec),
-    )
+_entry_review_values = _verbs.entry_review_values
 
 
 def cmd_save_entry_review(args) -> dict:
-    """Upsert one per-symbol entry-review record — the data reviewed for a symbol during an entry scan
-    plus the chosen/rejected decision (see scanner.build_entry_review_spec for the field set). Read by
-    the orchestrator's trade-notify (per-symbol push), the EOD analysis, and scout's read-only earnings
-    page. Idempotent on (scan_date, symbol, arm) so a re-run of the scan overwrites."""
-    spec = json.loads(args.data)
-    for req in ("scan_date", "symbol"):
-        if not spec.get(req):
-            return {"ok": False, "error": f"missing required field: {req}"}
-    conn = _conn()
-    try:
-        cols = ", ".join(_ENTRY_REVIEW_COLUMNS)
-        placeholders = ", ".join("?" for _ in _ENTRY_REVIEW_COLUMNS)
-        updates = ", ".join(
-            f"{c}=excluded.{c}" for c in _ENTRY_REVIEW_COLUMNS if c not in ("scan_date", "symbol", "arm")
-        )
-        conn.execute(
-            f"INSERT INTO entry_reviews ({cols}) VALUES ({placeholders}) "
-            f"ON CONFLICT(scan_date, symbol, arm) DO UPDATE SET {updates}",
-            _entry_review_values(spec),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    return {"ok": True, "scan_date": spec["scan_date"], "symbol": spec["symbol"]}
+    return _verbs.save_entry_review(_conn, args)
 
 
 def cmd_get_entry_reviews(args) -> dict:
-    """Entry reviews for a scan date (default: the most recent scan on or before --date, i.e. the entry
-    round whose positions are settling by that session). Ordered selected-first, then by symbol."""
-    conn = _conn()
-    try:
-        scan_date = getattr(args, "scan_date", None)
-        if not scan_date:
-            on_or_before = getattr(args, "date", None)
-            q = "SELECT MAX(scan_date) FROM entry_reviews"
-            params: list = []
-            if on_or_before:
-                q += " WHERE scan_date <= ?"
-                params.append(on_or_before)
-            row = conn.execute(q, params).fetchone()
-            scan_date = row[0] if row else None
-        if not scan_date:
-            return {"ok": True, "scan_date": None, "reviews": []}
-        rows = conn.execute(
-            "SELECT * FROM entry_reviews WHERE scan_date = ? ORDER BY selected DESC, symbol", (scan_date,)
-        ).fetchall()
-    finally:
-        conn.close()
-    return {"ok": True, "scan_date": scan_date, "reviews": [dict(r) for r in rows]}
+    return _verbs.get_entry_reviews(_conn, args)
 
 
 def cmd_get_market_context(args) -> dict:
@@ -1189,34 +1020,7 @@ def cmd_get_market_context(args) -> dict:
 
 
 def cmd_log_scan(args) -> dict:
-    spec = json.loads(args.data)
-    required = ("scan_date", "symbol")
-    missing = [k for k in required if not spec.get(k)]
-    if missing:
-        return {"ok": False, "error": f"missing required field(s): {', '.join(missing)}"}
-
-    conn = _conn()
-    try:
-        conn.execute(
-            "INSERT INTO scan_log (scan_date, strategy, symbol, tier, outcome, reason, stage, "
-            "reject_details, logged_at, arm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                spec["scan_date"],
-                spec.get("strategy", "iron_fly"),
-                spec["symbol"],
-                spec.get("tier"),
-                spec.get("outcome"),
-                spec.get("reason"),
-                spec.get("stage", "screen"),
-                json.dumps(spec["reject_details"]) if spec.get("reject_details") else None,
-                spec.get("logged_at", time.time()),
-                _arm_of(spec),
-            ),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    return {"ok": True}
+    return _verbs.log_scan(_conn, args)
 
 
 def cmd_get_pnl_summary(args) -> dict:

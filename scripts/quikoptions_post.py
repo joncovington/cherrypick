@@ -2,10 +2,10 @@
 
 The styles (`quikoptions.post_style`, docs/quikoptions-plan.md):
 
-    cards    a header embed (title, date, the day in four fields, the capture time in its footer),
-             then the chosen cards as images, two to a message so Discord shows them side
-             by side
-    singles  the same header, then one card image per message
+    cards    the chosen cards as images, two to a message so Discord shows them side by side, each
+             message under its cards' bold titles and the first led by the series' title line
+             as a heading (no header message, 2026-10-03)
+    singles  the same, one card image per message
     embed    one embed and no images: the summary, then each chosen section as a small table
     text     one plain message (split at a section if it would pass Discord's 2,000 characters):
              the summary and each section as a small monospace table
@@ -20,9 +20,9 @@ the others stay configurable). The day does not need every table told.
 
 The images are the console's own Options flow cards, captured with `tools/ui-check.mjs --card`,
 which refuses rather than crops the wrong thing: every card is titled "<name> — <session>", so a
-page still showing another day fails the run instead of posting it under this one's header. Every
-image is captured before anything is posted, so a capture failure never leaves a header without its
-pictures. Every figure in text comes from the saved capture, never from a picture.
+page still showing another day fails the run instead of posting it under this one's title. Every
+image is captured before anything is posted, so a capture failure never leaves a title line without
+its pictures. Every figure in text comes from the saved capture, never from a picture.
 
 A script, not a package: it drives a browser and pushes a webhook, so a failure costs a post and
 never a capture. It posts to the reporting webhook (`cherrypick secrets-set --channel
@@ -401,97 +401,12 @@ def _footer(doc: dict) -> str:
 # ------------------------------------------------------------------------------------------------
 
 
-def _net_names(flow: dict, sign: int, n: int = 3) -> str:
-    names = [x for x in flow.get("names") or [] if (x.get("net") or 0) * sign > 0]
-    names.sort(key=lambda x: -abs(x["net"]))
-    return (
-        " · ".join(f"{x['symbol']} {'+' if sign > 0 else '−'}{_dollars(x['net'])}" for x in names[:n]) or "—"
-    )
-
-
 def _shown(f: dict) -> float | None:
     return f.get("confirmed_score") if f.get("confirmed_score") is not None else f.get("score")
 
 
-def yesterday_line(prev: dict | None, n: int = ROWS) -> str | None:
-    """The previous session's top calls, one day on: each name's move and whether it went the call's
-    way. None until that session has a 1-day outcome (recorded by the next day's scoring)."""
-    returns = (((prev or {}).get("outcomes") or {}).get("1d") or {}).get("returns") or {}
-    if not returns:
-        return None
-    out = []
-    for f in (prev.get("flows") or [])[:n]:
-        move, s = returns.get(f["symbol"]), _shown(f)
-        if move is None or s is None:
-            continue
-        mark = "✓" if (move > 0) == (s > 0) and move != 0 else "✗" if move != 0 else "·"
-        out.append(f"{f['symbol']} {s:+.0f} {move:+.1%} {mark}")
-    return " · ".join(out) or None
-
-
-def header_embed(
-    doc: dict, title: str, calendar: dict | None = None, with_calendar: bool = False, prev: dict | None = None
-) -> dict:
-    """The image styles' first message: the title, the date and the day in a few fields — led by
-    the derived flow once it is scored (the names by net delta dollars, the top flow, the largest
-    trade with no read, yesterday's calls one day on), else the site's own summary; Events when it is
-    a chosen section. The date is always in the title line and the capture time in the footer,
-    whatever the title, so no title can drop them."""
-    flow = doc.get("_flow")
-    if flow and flow.get("flows"):
-        top = flow["flows"][0]
-        fields = [
-            {"name": "Bullish", "value": _net_names(flow, +1), "inline": False},
-            {"name": "Bearish", "value": _net_names(flow, -1), "inline": False},
-            {
-                "name": "Top flow",
-                "value": " ".join(
-                    x
-                    for x in (f"{_shown(top):+.0f}", top["symbol"], top.get("what"), top.get("direction"))
-                    if x
-                ),
-                "inline": True,
-            },
-        ]
-        if flow.get("unread"):
-            u = flow["unread"][0]
-            fields.append(
-                {
-                    "name": "Unread, largest",
-                    "value": f"{u['symbol']} {u.get('what') or ''} "
-                    f"({_dollars(u.get('delta_dollars') or u.get('premium'))})",
-                    "inline": True,
-                }
-            )
-        line = yesterday_line(prev)
-        if line:
-            fields.append({"name": "Yesterday's calls, a day on", "value": line[:1000], "inline": False})
-    else:
-        s = summary(doc)
-        fields = [
-            {"name": "Most traded", "value": s["most"], "inline": True},
-            {"name": "Largest trade", "value": s["largest"], "inline": True},
-            {"name": "Bullish / bearish", "value": s["sides"], "inline": True},
-            {"name": "In two or more tables", "value": s["names"][:1000], "inline": False},
-        ]
-    if with_calendar:
-        fields.append(
-            {
-                "name": "Events",
-                "value": f"```\n{calendar_text(doc['session'], calendar)[:990]}\n```",
-                "inline": False,
-            }
-        )
-    return {
-        "title": _title_line(title, date.fromisoformat(doc["session"])),
-        "color": EMBED_COLOUR,
-        "fields": fields,
-        "footer": {"text": _footer(doc)},
-    }
-
-
 def plan_messages(
-    doc: dict, title: str, style: str, sections: list[str], calendar: dict | None, prev: dict | None = None
+    doc: dict, title: str, style: str, sections: list[str], calendar: dict | None
 ) -> list[dict]:
     """The messages a style sends, in order: {"payload": payload_json, "cards": [card titles to
     attach]}. Images are named here and captured by the caller."""
@@ -757,17 +672,13 @@ def webhook_entry(choice: str) -> str | None:
 
 
 def inputs_of(session: str) -> list[Path]:
-    """The files a session's series is built from: its capture, its scored flows, the calendar
-    captured with it, and the previous session's flows (the header's yesterday)."""
-    earlier = [d for d in _capture_sessions() if d < session]
-    out = [
+    """The files a session's series is built from: its capture, its scored flows and the calendar
+    captured with it."""
+    return [
         capture_path(session),
         capture_path(session).with_name(f"{session}.flow.json"),
         calendar_path(session),
     ]
-    if earlier:
-        out.append(capture_path(earlier[-1]).with_name(f"{earlier[-1]}.flow.json"))
-    return out
 
 
 def webhook_url(choice: str) -> tuple[str | None, str | None]:
@@ -826,11 +737,7 @@ def run(
         _log(f"{session}: the series settings cannot be used ({why}); nothing posted")
         return "failed"
     doc = {**doc, "_flow": load_flow(session)}
-    earlier = [d for d in _capture_sessions() if d < session]
-    prev = load_flow(earlier[-1]) if earlier else None
-    messages = plan_messages(
-        doc, how["title"], how["style"], list(how["cards"]), load_calendar(session), prev
-    )
+    messages = plan_messages(doc, how["title"], how["style"], list(how["cards"]), load_calendar(session))
     if len(sent) >= len(messages):
         _log(f"{session}: already posted")
         return "skipped"

@@ -57,22 +57,17 @@ import sys
 import time
 from datetime import date as _date
 from datetime import datetime as _dt
-from pathlib import Path
-
-from cherrypick.core import viz
 
 from cherrypick.earnings import (
     advice,
     costs,
     db_paper,
     management,
-    paths,
     rank_strategies,
     scanner,
     sizing,
     symbol_watch,
 )
-from cherrypick.earnings import strategy_metrics as metrics
 from cherrypick.earnings.bounded import OpTimeout as _OpTimeout
 from cherrypick.earnings.bounded import run_bounded as _run_bounded
 from cherrypick.earnings.strategies import (
@@ -156,7 +151,7 @@ def _leg_quotes_for_symbols(underlying: str, leg_symbols: list[str], price: floa
         # a missing delta as "skip that check", same optionality as iv).
         #
         # `streamer_symbol` rides along for the same reason and was discarded here until 2026-08-25:
-        # the response already carries it (scanner.fetch_streamer_symbols is the same call), and it
+        # the response already carries it, and it
         # is the ONLY way a leg can later be found in the shared stream cache, which is keyed by
         # streamer symbol rather than OCC. Without it every open position fell back to the broker
         # for every mark forever -- and it must be captured from the chain rather than derived from
@@ -367,142 +362,9 @@ def _save_entry_review(
 # ---------------------------------------------------------------------------
 
 
-def _logs_dir() -> Path:
-    """The earnings logs home (~/.cherrypick/logs/earnings by default; see paths.logs_dir). Created on
-    demand since paths.logs_dir returns a pure path."""
-    d = paths.logs_dir()
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _eod_report_path(day: str) -> Path:
-    return _logs_dir() / f"paper-eod-{day}.md"
-
-
-def _money(x) -> str:
-    # The suite's one formatter (cherrypick.core.viz), keeping this report's "-" placeholder.
-    return viz.fmt_money(x, none="-")
-
-
-def _close_session(trade: dict) -> str:
-    """Trading-session date (ISO) an earnings trade belongs to = its close date. Earnings
-    positions open one afternoon and close the next morning, so closed_at (not opened_at) is
-    the settlement session -- the same rule the orchestrator's report.py applies, so this
-    module's daily file and the suite roll-up never disagree about a trade's day."""
-    try:
-        return _date.fromtimestamp(float(trade["closed_at"])).isoformat()
-    except (TypeError, ValueError, OSError, OverflowError, KeyError):
-        return ""
-
-
-def _open_session(trade: dict) -> str:
-    """Trading-session date (ISO) an earnings trade was *entered* on = its opened_at date. The
-    counterpart to _close_session: a position opened this afternoon is carried overnight and does
-    not settle until the next morning, so its open session and close session are different days.
-    The EOD report shows both — what settled this morning (closed) and what was put on this
-    afternoon (opened) — because the close pass and the entry pass run six hours apart and each
-    only ever sees one of the two."""
-    try:
-        return _date.fromtimestamp(float(trade["opened_at"])).isoformat()
-    except (TypeError, ValueError, OSError, OverflowError, KeyError):
-        return ""
-
-
-def _open_positions_with_marks() -> list[dict]:
-    """Open positions, each carrying its latest USABLE mark and how long it has been held.
-
-    Usable only: a refused mark records that we looked and could not price it, which is worth
-    keeping but is not a valuation. Reporting one as the position's worth would put a number in the
-    report that no quote ever supported.
-    """
-    out = []
-    for trade in metrics.load_open_trades():
-        marks = db_paper.cmd_get_marks(
-            argparse.Namespace(order_id=trade["order_id"], session_date=None, limit=50)
-        )["marks"]
-        usable = next((m for m in marks if m.get("usable")), None)
-        out.append(
-            {
-                **trade,
-                "_mark": usable,
-                "_sessions_held": db_paper.session_span(trade.get("opened_at"), time.time()),
-            }
-        )
-    return out
-
-
-def _feed_quality(day: str) -> dict:
-    """What the data looked like on `day` — how many marks were taken, how many were refused and
-    why, and which decisions an execution gate held back."""
-    marks = db_paper.cmd_get_marks(argparse.Namespace(order_id=None, session_date=day, limit=5000))["marks"]
-    events = db_paper.cmd_get_management_events(
-        argparse.Namespace(order_id=None, session_date=day, limit=5000)
-    )["events"]
-
-    refusals: dict[str, int] = {}
-    for m in marks:
-        if not m.get("usable") and m.get("refusal"):
-            refusals[m["refusal"]] = refusals.get(m["refusal"], 0) + 1
-    gated: dict[str, int] = {}
-    for e in events:
-        if not e.get("executed") and e.get("gate"):
-            gated[e["gate"]] = gated.get(e["gate"], 0) + 1
-
-    return {
-        "marks": len(marks),
-        "usable": sum(1 for m in marks if m.get("usable")),
-        "refused": sum(1 for m in marks if not m.get("usable")),
-        "rest": sum(1 for m in marks if m.get("source") == "rest"),
-        "refusals": refusals,
-        "gated": gated,
-    }
-
-
-def _group_stats(trades: list[dict]) -> dict:
-    """Win/loss/net/expectancy/profit-factor over a trade list, all net of costs
-    (metrics.net_pnl subtracts entry+exit cost) -- the same numbers strategy_report.py reports."""
-    n = len(trades)
-    net = sum(metrics.net_pnl(t) for t in trades)
-    wins = sum(1 for t in trades if metrics.net_pnl(t) > 0)
-    return {
-        "trades": n,
-        "wins": wins,
-        "losses": n - wins,
-        "win_rate": metrics.win_rate(trades),
-        "net_pnl": net,
-        "expectancy": metrics.expectancy(trades),
-        "profit_factor": metrics.profit_factor(trades),
-    }
-
-
-def _group_by(trades: list[dict], key: str) -> dict[str, list[dict]]:
-    out: dict[str, list[dict]] = {}
-    for t in trades:
-        out.setdefault(t.get(key) or "?", []).append(t)
-    return out
-
-
 # ---------------------------------------------------------------------------
 # EOD analysis report -- conversational, 7-section, still fully deterministic
 # ---------------------------------------------------------------------------
-
-
-def _analysis_path(day: str) -> Path:
-    return _logs_dir() / f"eod-analysis-{day}.md"
-
-
-def _signed(x) -> str:
-    return f"+{x:.2f}" if x is not None and x >= 0 else (f"{x:.2f}" if x is not None else "?")
-
-
-def _entry_reviews_for(day: str) -> tuple:
-    """(scan_date, reviews) for the most recent entry scan on or before `day` — the entries whose
-    positions are settling by this session. Best-effort; ([], None) if unavailable."""
-    try:
-        res = db_paper.cmd_get_entry_reviews(argparse.Namespace(date=day, scan_date=None))
-        return res.get("scan_date"), res.get("reviews", [])
-    except Exception:
-        return None, []
 
 
 def _capture_market_context(day: str) -> None:

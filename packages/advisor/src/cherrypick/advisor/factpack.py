@@ -2136,7 +2136,19 @@ def pack_size(pack: dict, slot: str, *, warn=None) -> dict[str, Any]:
     }
 
 
-def write(session: str, slot: str, modules: tuple[str, ...] | list[str] | None = None) -> Path:
+def _warn_stderr(message: str) -> None:
+    import sys
+
+    print(f"WARNING: {message}", file=sys.stderr)
+
+
+def write(
+    session: str,
+    slot: str,
+    modules: tuple[str, ...] | list[str] | None = None,
+    *,
+    warn=None,
+) -> Path:
     """Build and persist the pack. Write-once by convention: the pack is the record of what the
     model was shown, so a re-run (`--force`) deliberately overwrites the whole (session, slot)
     triple — pack, raw reply and checkpoint — rather than leaving a pack that describes a different
@@ -2145,9 +2157,25 @@ def write(session: str, slot: str, modules: tuple[str, ...] | list[str] | None =
     `build` stays pure; this is the write path, so the enactment reconciliation is persisted here.
     It runs every slot, which is the point: a dropped artifact should be visible on the console at
     10am while the session can still be understood, not in the verdict that scores it that evening.
+
+    The size check runs here, on the pack as written (2026-10-12: `pack_size` was called nowhere,
+    so its warning could never fire). It measures after the write and touches nothing in the pack;
+    `warn` defaults to stderr, and a warn that raises is swallowed -- a size check must never cost
+    a session its advice.
     """
     pack = build(session, slot, modules)
     path = _store.write_json(_paths.pack_path(session, slot), pack)
+
+    def _safe_warn(message: str) -> None:
+        try:
+            (warn or _warn_stderr)(message)
+        except Exception:  # noqa: BLE001 -- reported, never fatal
+            pass
+
+    try:
+        pack_size(pack, slot, warn=_safe_warn)
+    except Exception:  # noqa: BLE001 -- the pack is written; a failed measurement costs nothing
+        pass
     conn = _store.connect()
     try:
         _enactment.record(conn, session, modules)

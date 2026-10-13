@@ -81,10 +81,15 @@ def _summarize(records: list[dict]) -> dict:
     """P&L stats over normalized closed-trade records. net_pnl is cost-adjusted; gross_pnl is
     before costs and cost is the total modeled cost (MEIC fees; earnings commission+slippage).
     win_rate is on net P&L; gross_win_rate is on gross -- the gap shows how many trades have edge
-    before costs but not after (the signal at 1-contract sizing, where cost dominates)."""
+    before costs but not after (the signal at 1-contract sizing, where cost dominates).
+
+    A record whose net the ledger never recorded (`net_pnl: None`, n/r) is no trade's result: it
+    joins no figure here and is counted in `unscored`, so `trades` and the sums describe one set."""
+    unscored = sum(1 for r in records if r.get("net_pnl") is None)
+    records = [r for r in records if r.get("net_pnl") is not None]
     net = [r["net_pnl"] for r in records]
-    gross = [r.get("gross_pnl", r["net_pnl"]) for r in records]
-    cost = [r.get("cost", 0.0) for r in records]
+    gross = [r["net_pnl"] if r.get("gross_pnl") is None else r["gross_pnl"] for r in records]
+    cost = [r.get("cost") or 0.0 for r in records]
     n = len(net)
     wins = [p for p in net if p > 0]
     gross_wins = [p for p in gross if p > 0]
@@ -96,6 +101,7 @@ def _summarize(records: list[dict]) -> dict:
     known_slips = [s for s in slips if s is not None]
     return {
         "trades": n,
+        "unscored": unscored,
         "gross_pnl": round(sum(gross), 2),
         "cost": round(sum(cost), 2),
         "net_pnl": round(sum(net), 2),
@@ -179,6 +185,8 @@ def run(
 
         if session_range is not None:
             for r in records:
+                if r.get("net_pnl") is None:
+                    continue  # n/r: counted in the module's `unscored`, never as a flat trade
                 day = daily.setdefault(r.get("session") or "", {"net_pnl": 0.0, "trades": 0, "by_module": {}})
                 day["net_pnl"] += r["net_pnl"]
                 day["trades"] += 1
@@ -292,46 +300,3 @@ def live_run(cfg: dict | None = None, session: str | None = None) -> dict:
         "modules": modules_out,
         "suite": suite,
     }
-
-
-# One MAX() per schema — latest_session used to re-run every full reader over every DB
-# just to compute a max date (a whole extra DB pass per overnight dashboard render).
-# Earnings' MAX is over the raw epoch, converted via the same tz-correct helper the
-# reader uses, so the two can't disagree on a session boundary.
-_LATEST_SQL = {
-    "meic_ic": "SELECT MAX(substr(exit_time, 1, 10)) FROM ic_trades WHERE exit_time IS NOT NULL",
-    "earnings": "SELECT MAX(closed_at) FROM trades WHERE closed_at IS NOT NULL",
-    "fly_book": "SELECT MAX(trade_date) FROM fly_positions WHERE status = 'settled'",
-    "dc_week": "SELECT MAX(closed_session) FROM dc_positions WHERE closed_session IS NOT NULL",
-    "pmcc": "SELECT MAX(closed_session) FROM pmcc_positions WHERE closed_session IS NOT NULL",
-    "curve_vx": "SELECT MAX(closed_session) FROM curve_positions WHERE closed_session IS NOT NULL",
-    "bwb_132": "SELECT MAX(closed_session) FROM bwb_positions WHERE closed_session IS NOT NULL",
-    "contango_etf": "SELECT MAX(exit_session) FROM contango_positions WHERE exit_session IS NOT NULL",
-}
-
-
-def latest_session(cfg: dict | None = None) -> str | None:
-    """Most recent settlement-session date (ISO) with any paper trade across enabled modules, or
-    None if there are none. Lets the EOD view fall back off an empty current day (e.g. overnight,
-    when the ET date has rolled to a session that hasn't traded yet) to the last real session."""
-    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
-    latest: str | None = None
-    for name, mcfg in cfgmod.enabled_modules(cfg).items():
-        schema = schemas.canonical(mcfg.get("paper", {}).get("trade_schema", "meic_ic"))
-        sql = _LATEST_SQL.get(schema)
-        db_path = cfgmod.paper_db_path(mcfg, name)
-        if sql is None or not db_path.exists():
-            continue
-        conn = _connect_ro(db_path)
-        try:
-            value = conn.execute(sql).fetchone()[0]
-        except sqlite3.Error:
-            continue
-        finally:
-            conn.close()
-        if value is None:
-            continue
-        s = _session_from_epoch(value) if schema == "earnings" else str(value)
-        if s and (latest is None or s > latest):
-            latest = s
-    return latest

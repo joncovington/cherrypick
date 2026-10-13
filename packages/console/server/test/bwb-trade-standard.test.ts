@@ -123,6 +123,7 @@ describe("bwb's completed positions", () => {
 
   it("total the same way the rows add up", () => {
     const t = history().totals;
+    if (t === null) throw new Error("totals missing on a ledger with completed positions");
     expect(t.positions).toBe(5);
     expect(t.gross).toBe(40);
     expect(t.net).toBeCloseTo(40 - 17.74 - 4.64 - 8 - 9.64 - 4.64, 2);
@@ -137,13 +138,15 @@ describe("bwb's history date range", () => {
 
   it("keeps the positions that closed inside it, totals included", () => {
     expect(ranged("2026-09-22", "2026-09-22").total).toBe(history().total);
-    expect(ranged("2026-09-22", null).totals.net).toBe(history().totals.net);
+    expect(ranged("2026-09-22", null).totals?.net).toBe(history().totals?.net);
+    expect(history().totals).not.toBeNull();
   });
 
   it("drops the ones that closed outside it, from the rows and the totals alike", () => {
     const r = ranged(null, "2026-09-21");
     expect(r.total).toBe(0);
-    expect(r.totals.positions).toBe(0);
+    // Nothing matched: no totals at all, never a row of zeros.
+    expect(r.totals).toBeNull();
     expect(ranged("2026-09-23", null).total).toBe(0);
   });
 });

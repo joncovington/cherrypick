@@ -207,13 +207,6 @@ def ic_expire_fee(itm_legs: int = 0) -> float:
     return round(itm_legs * ASSIGNMENT_FEE_PER_SETTLEMENT, 2)
 
 
-def ic_open_fee_table(symbols=("SPX", "XSP", "NDX", "RUT")) -> dict:
-    """{symbol: ic_open_fee(symbol)} plus a DEFAULT (equity/ETF, no index exchange fee)."""
-    table = {s: ic_open_fee(s) for s in symbols}
-    table["DEFAULT"] = ic_open_fee("__default__")  # unknown symbol -> 0.0 exchange fee
-    return table
-
-
 # --------------------------------------------------------------------------- 3. the SHARE side
 # What a cash-settled symbol never reaches: an American-style option that finishes ITM delivers
 # STOCK, and the stock then has to be disposed of. Two pass-throughs land on the disposal, both on

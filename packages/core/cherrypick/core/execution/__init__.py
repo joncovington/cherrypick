@@ -568,6 +568,64 @@ def orphans(broker: Any, known_order_ids: Iterable[Any]) -> list[dict]:
     return [o for o in broker.working_orders() if str(o.get("order_id")) not in known]
 
 
+def sweep_orphans(
+    broker: Any,
+    known_order_ids: Iterable[Any],
+    *,
+    symbol: str,
+    path: str | Path,
+    now_iso: str,
+    log: Callable[[str], None],
+) -> int | None:
+    """The live tick's orphan sweep, first thing every tick: broker truth against ledger belief.
+
+    The one crash window nothing else covers is a tick dying between a successful place and the DB
+    write, which leaves a real order resting at the broker with no ledger row. Any working order the
+    ledger has never heard of is persisted to `path` (which `--status` reports and the watchdog
+    raises on) and logged loudly. Detection only: cancelling an order this process cannot account
+    for is a human's call, made with the broker UI open.
+
+    Returns the orphan count, or **None when the sweep could not look** (the broker read raised, or
+    the broker offers no `working_orders` at all). Unknown is not zero, and the callers block new
+    entries on it.
+
+    Scoped to `symbol`, because the account is not exclusively the loop's: a resting order in
+    another underlying (manual trading, another module) is real and none of this sweep's business.
+    An order whose underlying is **unknown** (`None`) is kept. It could be ours, and counting it
+    blocks this loop's entries until a person looks, which is the safe direction for a live gate.
+    Dropping it would let the tick place a second order beside one nothing recorded. bwb always
+    kept it; flies dropped it until this fold (2026-10-12)."""
+    try:
+        found = orphans(broker, known_order_ids)
+    except Exception as exc:  # noqa: BLE001 -- a failed sweep must not break the tick
+        log(f"orphan sweep failed ({type(exc).__name__}: {exc}) -- will retry next tick")
+        return None  # unknown -- and unknown blocks the entry
+    found = [o for o in found if o.get("underlying_symbol") in (None, symbol)]
+    try:
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as f:
+            json.dump({"at": now_iso, "orphans": found}, f)
+    except OSError:
+        pass
+    if found:
+        log(
+            f"ORPHANED ORDERS at the broker, unknown to the ledger: {[o.get('order_id') for o in found]} "
+            "-- a placement was recorded nowhere (or another system is trading this account). "
+            "Review in the broker UI before any further arming."
+        )
+    return len(found)
+
+
+def read_orphans(path: str | Path) -> list[dict]:
+    """The last sweep's orphans, as persisted by `sweep_orphans`; [] when there is no readable file."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f).get("orphans", [])
+    except (OSError, ValueError):
+        return []
+
+
 def watch(
     broker: Any,
     pending: dict[str, Any],

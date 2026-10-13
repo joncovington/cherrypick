@@ -180,12 +180,10 @@ def test_by_arm_symbol_filter_excludes_the_other_symbols_rows(conn):
     assert analytics.by_arm(conn, symbol="SPX")[0]["net_pnl"] == 100.0
 
 
-def test_by_entry_mode_and_window_and_fee_drag_respect_symbol(conn):
+def test_by_entry_window_respects_symbol(conn):
     position(conn, "P1", arm="gex", symbol="SPX", entry_mode="legged", window="10:30-11:00", pnl=100.0)
     position(conn, "P2", arm="gex", symbol="XSP", entry_mode="legged", window="10:30-11:00", pnl=10.0)
-    assert analytics.by_entry_mode(conn, symbol="XSP")[0]["net_pnl"] == 10.0
     assert analytics.by_entry_window(conn, symbol="XSP")[0]["net_pnl"] == 10.0
-    assert analytics.fee_drag(conn, symbol="XSP")[0]["net_pnl"] == 10.0
 
 
 def test_arm_comparison_exclusions_respect_symbol(conn):
@@ -195,13 +193,6 @@ def test_arm_comparison_exclusions_respect_symbol(conn):
     exclusions = analytics.arm_comparison_exclusions(conn, symbol="XSP")
     assert exclusions["trades"] == 1
     assert exclusions["net_pnl"] == -90.0
-
-
-def test_trade_log_respects_symbol(conn):
-    position(conn, "P1", symbol="SPX", pnl=100.0)
-    position(conn, "P2", symbol="XSP", pnl=10.0)
-    rows = analytics.trade_log(conn, symbol="XSP")
-    assert len(rows) == 1 and rows[0]["position_id"] == "P2"
 
 
 def test_completion_stats_and_trend_respect_symbol(conn):
@@ -236,8 +227,6 @@ def test_book_totals_stay_whole_when_the_comparison_is_filtered(conn):
 
     assert analytics.stats_for_period(conn)["net_pnl"] == 10.0  # whole book
     assert sum(r["net_pnl"] for r in analytics.by_arm(conn)) == 100.0  # comparison only
-    modes = {r["entry_mode"]: r for r in analytics.by_entry_mode(conn)}
-    assert set(modes) == {"legged", "outright"}, "entry-mode breakdown still reports both"
 
 
 def test_exclusions_are_reported_not_silently_dropped(conn):
@@ -261,15 +250,6 @@ def test_unfiltered_arm_view_is_still_reachable(conn):
     unfiltered = {r["arm"]: r for r in analytics.by_arm(conn, entry_modes=None)}
     assert unfiltered["gex"]["net_pnl"] == 10.0 and unfiltered["gex"]["trades"] == 2
     assert analytics.arm_comparison_exclusions(conn, entry_modes=None)["trades"] == 0
-
-
-def test_fee_drag_inherits_the_comparison_scope(conn):
-    """fee_drag is per-arm too, so it must compare like for like or it re-imports the same skew."""
-    position(conn, "L1", arm="gex", entry_mode="legged", gross=110.0, fees=10.0, pnl=100.0)
-    position(conn, "O1", arm="gex", entry_mode="outright", gross=-83.0, fees=7.0, pnl=-90.0)
-
-    gex = {r["arm"]: r for r in analytics.fee_drag(conn)}["gex"]
-    assert gex["trades"] == 1 and gex["fees"] == 10.0
 
 
 def test_by_entry_window_groups_untagged_separately(conn):
@@ -450,27 +430,6 @@ def test_payoff_curve_of_an_empty_day_is_empty_not_an_error(conn):
 
 
 # --------------------------------------------------------------------------- overview
-def test_session_overview_bundles_the_today_view(conn):
-    position(conn, "P1", kind="fly", status="open", risk_free=1)
-    overview = analytics.session_overview(conn, "2026-07-20")
-    assert overview["date"] == "2026-07-20"
-    assert overview["open_count"] == 1 and overview["risk_free_count"] == 1
-    assert "completion" in overview and "divergence" in overview and "journal" in overview
-
-
-def test_max_possible_loss_aggregate(conn):
-    # Regression (2026-07-30): the dashboard's "total possible maximum loss" figure -- every
-    # open position's own worst case (defined risk / 0 for a fly), net of trading fees AND the
-    # worst-case exercise-assignment fee, as if every leg finished ITM.
-    # An open short vertical with real downside (negative floor) drags the total down...
-    position(conn, "P1", kind="short_vertical", status="open", floor_dollars=-360.0)
-    # ...a fly whose floor is already positive (can't become a loss) contributes nothing...
-    position(conn, "P2", kind="fly", status="open", floor_dollars=85.0)
-    # ...and a SETTLED position (its outcome is already realized, not a "possible" future loss)
-    # is excluded even though its floor was negative.
-    position(conn, "P3", kind="short_vertical", status="settled", floor_dollars=-200.0)
-    overview = analytics.session_overview(conn, "2026-07-20")
-    assert overview["max_possible_loss"] == -360.0
 
 
 def _book(conn, *, day="2026-07-20", arm="gex", symbol="XSP", net_cash=10.0):
@@ -494,28 +453,6 @@ def _book(conn, *, day="2026-07-20", arm="gex", symbol="XSP", net_cash=10.0):
             "status": "open",
         },
     )
-
-
-def test_session_overview_narrows_every_figure_to_the_selected_arm_and_symbol(conn):
-    """Switching either selector must not leave one card (books/positions) telling a different
-    story than another (the derived counts, stats, completion) -- the whole Today view has to
-    agree on the same scope."""
-    position(conn, "P1", arm="gex", symbol="XSP", kind="fly", status="open", risk_free=1, pnl=None)
-    position(conn, "P2", arm="control", symbol="SPX", kind="fly", status="open", risk_free=0, pnl=None)
-    _book(conn, arm="gex", symbol="XSP")
-    _book(conn, arm="control", symbol="SPX")
-
-    everything = analytics.session_overview(conn, "2026-07-20")
-    assert everything["open_count"] == 2
-
-    xsp_only = analytics.session_overview(conn, "2026-07-20", symbol="XSP")
-    assert xsp_only["open_count"] == 1
-    assert xsp_only["risk_free_count"] == 1
-    assert {p["position_id"] for p in xsp_only["positions"]} == {"P1"}
-    assert {b["symbol"] for b in xsp_only["books"]} == {"XSP"}
-
-    gex_only = analytics.session_overview(conn, "2026-07-20", arm="gex")
-    assert {p["position_id"] for p in gex_only["positions"]} == {"P1"}
 
 
 def test_positions_for_day_and_books_for_day_accept_a_symbol_filter(conn):

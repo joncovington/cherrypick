@@ -31,16 +31,11 @@ See ``docs/streamer-package-plan.md``.
 
 from __future__ import annotations
 
-import os
-import sqlite3
 from pathlib import Path
 
 from cherrypick.core import home as _home
 from cherrypick.core import jsonio as _jsonio
 from cherrypick.core import streamrequests as _streamrequests
-
-# A leg-source query gets a short read-only window; a locked/slow trades DB must not stall the poll.
-_LEG_QUERY_TIMEOUT_S = 2.0
 
 requests_dir = _streamrequests.requests_dir
 
@@ -95,63 +90,17 @@ def write_request(
 
 _read_all = _streamrequests.read_all
 
-# The symbol/window-hint union is shared code, not a copy: the orchestrator unions the same files to
-# decide whether a *running* producer's subscriptions have gone stale (underlyings bind once, at
-# startup). Two implementations of "what did every module ask for" would recycle this daemon over a
-# difference it never sees, or leave it short of one it does. `union_legs` stays here — legs are re-read
-# every poll from module-declared DBs, which is this package's own sqlite concern, not core's.
+# The unions are shared code, not copies: the orchestrator unions the same files to decide whether a
+# *running* producer's subscriptions have gone stale (underlyings bind once, at startup), and gex's
+# quote recorder reads the declared legs to keep their quotes. Two implementations of "what did every
+# module ask for" would recycle this daemon over a difference it never sees, or leave it short of one
+# it does. `union_legs` moved to core on 2026-10-12 for the second reader.
 union_symbols = _streamrequests.union_symbols
 union_window_hints = _streamrequests.union_window_hints
 union_expirations = _streamrequests.union_expirations
 union_history_days = _streamrequests.union_history_days
 union_window_events = _streamrequests.union_window_events
 union_nearest_window = _streamrequests.union_nearest_window
-
-
-def union_legs() -> list[str]:
-    """Extra streamer-symbols to keep subscribed: explicit ``legs`` plus everything the declared
-    ``leg_sources`` queries currently return, unioned across all modules."""
-    legs: set[str] = set()
-    for data in _read_all():
-        legs.update(_clean(data.get("legs"), upper=False))
-        for src in data.get("leg_sources") or []:
-            legs.update(_legs_from_source(src))
-    return sorted(legs)
-
-
-def _is_single_select(query: str) -> bool:
-    q = query.strip().rstrip(";").strip()
-    if not q or ";" in q:  # one statement only
-        return False
-    return q[:6].lower() == "select"
-
-
-def _legs_from_source(src) -> list[str]:
-    """Open a module-declared DB read-only and collect streamer-symbols from the ``SELECT`` it provides.
-
-    Every non-null string cell in the result set is treated as a streamer-symbol. Never fatal — a missing
-    DB, a non-SELECT query, a bad/locked DB just contributes nothing this poll (the streamer keeps running
-    on whatever the other sources return).
-    """
-    if not isinstance(src, dict):
-        return []
-    db, query = src.get("db"), src.get("query")
-    if not isinstance(db, str) or not isinstance(query, str) or not _is_single_select(query):
-        return []
-    path = os.path.expanduser(os.path.expandvars(db))
-    if not os.path.exists(path):
-        return []
-    try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=_LEG_QUERY_TIMEOUT_S)
-        try:
-            rows = conn.execute(query).fetchall()
-        finally:
-            conn.close()
-    except sqlite3.Error:
-        return []
-    out: list[str] = []
-    for row in rows:
-        for cell in row:
-            if isinstance(cell, str) and cell.strip():
-                out.append(cell.strip())
-    return out
+union_legs = _streamrequests.union_legs
+_is_single_select = _streamrequests.is_single_select
+_legs_from_source = _streamrequests.legs_from_source

@@ -40,7 +40,7 @@ describe("readDecisions after the arm rename", () => {
     it(`reads a ledger whose variant column is \`${column}\``, () => {
       const out = readDecisions(ledger(column), "bwb", "2026-09-24");
       // refusals first, most frequent first, then the accepted row
-      expect(out.rows.map((r) => [r.book, r.accepted, r.occurrences])).toEqual([
+      expect(out.rows.map((r) => [r.arm, r.accepted, r.occurrences])).toEqual([
         ["bounce", false, 9],
         ["control", false, 3],
         ["delta", true, 1],

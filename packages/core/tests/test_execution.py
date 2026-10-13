@@ -583,3 +583,50 @@ def test_no_hold_path_writes_nothing_and_an_unreadable_file_reads_empty(monkeypa
     bad = tmp_path / "bad.json"
     bad.write_text("{not json", encoding="utf-8")
     assert execution.read_broker_health(bad) == {}
+
+
+def test_the_sweep_scopes_to_the_symbol_but_keeps_an_order_of_unknown_underlying(tmp_path):
+    """Another underlying is somebody else's order; an unnamed one could be ours, and counting it
+    blocks this loop's entries until a person looks -- the safe direction for a live gate."""
+    b = _FakeBroker(
+        working=[
+            {"order_id": "known", "underlying_symbol": "SPX"},
+            {"order_id": "ghost", "underlying_symbol": "SPX"},
+            {"order_id": "manual", "underlying_symbol": "AAPL"},
+            {"order_id": "unnamed", "underlying_symbol": None},
+        ]
+    )
+    logs: list[str] = []
+    path = tmp_path / "data" / "live_orphans.json"
+    n = execution.sweep_orphans(b, ["known"], symbol="SPX", path=path, now_iso="t", log=logs.append)
+    assert n == 2
+    assert [o["order_id"] for o in execution.read_orphans(path)] == ["ghost", "unnamed"]
+    assert any("ORPHANED" in m for m in logs)
+
+
+def test_a_sweep_that_cannot_look_is_unknown_and_keeps_the_last_record(tmp_path):
+    path = tmp_path / "live_orphans.json"
+    execution.sweep_orphans(
+        _FakeBroker(working=[{"order_id": "ghost", "underlying_symbol": "SPX"}]),
+        [],
+        symbol="SPX",
+        path=path,
+        now_iso="t",
+        log=lambda m: None,
+    )
+
+    class Loud(_FakeBroker):
+        def working_orders(self):
+            raise RuntimeError("broker unreachable")
+
+    class Blind:  # no working_orders at all: it cannot say nothing is orphaned either
+        pass
+
+    logs: list[str] = []
+    for broker in (Loud(), Blind()):
+        assert (
+            execution.sweep_orphans(broker, [], symbol="SPX", path=path, now_iso="t", log=logs.append) is None
+        )
+    assert sum("orphan sweep failed" in m for m in logs) == 2
+    assert [o["order_id"] for o in execution.read_orphans(path)] == ["ghost"]
+    assert execution.read_orphans(tmp_path / "absent.json") == []

@@ -1,4 +1,4 @@
-import type { BwbPayload } from "@console/shared";
+import type { BwbPayload, TradingMode } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { DivergingBars } from "../../components/grid/DivergingBars";
 import { GridCard, StatTile } from "../../components/grid/GridCard";
@@ -14,15 +14,47 @@ import { fmtMoney } from "../../lib/format";
  * add-on fires, its positions are byte-identical to control's, so the effective sample for an
  * arm-vs-control comparison is the fire count, not the trade count.
  */
-export function BwbSession({ data, loading }: { data: BwbPayload | undefined; loading: boolean }) {
+export function BwbSession({
+  data,
+  loading,
+  mode = "paper",
+}: {
+  data: BwbPayload | undefined;
+  loading: boolean;
+  mode?: TradingMode;
+}) {
+  // The payload's own mode, once it has arrived: the page's toggle may have moved ahead of it.
+  const book = data?.mode ?? mode;
   if (data !== undefined && !data.dbPresent) {
     return (
       <div className="cards cards-wide">
         <Card title="bwb" collapseKey="bwb-absent">
+          {book === "live" ? (
+            <p className="muted">
+              There is no live ledger at <span className="mono">~/.cherrypick/data/bwb/live_trades.db</span> on this
+              machine -- the live pilot has never been armed here.
+            </p>
+          ) : (
+            <p className="muted">
+              This module has not run on this machine -- there is no paper store at{" "}
+              <span className="mono">~/.cherrypick/data/bwb/paper_trades.db</span> yet. The page fills in once its first
+              scheduled session runs.
+            </p>
+          )}
+        </Card>
+      </div>
+    );
+  }
+  // A live book that has never held a position has nothing to count: one card saying so, never a
+  // row of tiles reading 0 that look like a measured quiet day.
+  if (data !== undefined && book === "live" && data.fireCounts.length === 0 && data.openCount === 0) {
+    return (
+      <div className="cards cards-wide">
+        <Card title="bwb · live" collapseKey="bwb-live-empty">
           <p className="muted">
-            This module has not run on this machine -- there is no paper store at{" "}
-            <span className="mono">~/.cherrypick/data/bwb/paper_trades.db</span> yet. The page fills in once its first
-            scheduled session runs.
+            No live trades yet -- the live ledger holds no position. The pilot trades only on a day armed with{" "}
+            <span className="mono">/live-bwb-start</span>.
+            {data.today.lastIteration !== null && ` Last live loop iteration: ${data.today.lastIteration.phase} · ${data.today.lastIteration.status}.`}
           </p>
         </Card>
       </div>

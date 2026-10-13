@@ -23,6 +23,7 @@
         "task_name": "cherrypick-meic-paper-loop",
         "_tick_interval_note": "Supervisor cadence for the paper tick: the daemon spawns tick_argv (default: once_argv minus --force) every N seconds. 60 halves the old hardcoded 2-minute schtasks cadence (2026-08-09 supervisor cutover) for tighter exit management on open condors. At >= 60 this is a short-lived tick job; BELOW 60 the shape changes -- see the flies block's resident_start/resident_end note. `task_name` is the only legacy-schtasks key still read (tasks.legacy_task_names deletes the pre-cutover task by that name); the module's own --install-task remains for standalone use but the orchestrator never invokes it, which is why there is no install_argv/uninstall_argv here.",
         "tick_interval_seconds": 60,
+        "_tick_on_non_trading_days_note": "OPTIONAL, default false. A tick of 60s or more runs on trading days only (2026-10-12): no spawn-per-tick module had ever written a ledger row on a weekend or holiday. Set true for a module whose tick must run every day. Overnight on a trading day is never gated.",
         "_tick_argv_note": "OPTIONAL. The exact argv the supervisor spawns each tick. Omit it and the orchestrator derives one from once_argv by dropping --force, which is what every module here relies on; set it only when a module's tick must differ from its manual one-shot.",
         "status_argv": [
           "-m",

@@ -26,6 +26,7 @@ far more evidence than it is.
 from __future__ import annotations
 
 from cherrypick.core import metrics as _metrics
+from cherrypick.core import stats as _stats
 
 # Every P&L query filters to a resolved trade. An open position is not a result yet, and counting
 # it as one would flatter whichever stream happens to be holding something at read time.
@@ -1002,6 +1003,7 @@ def session_bootstrap(
     *,
     min_sessions: int = MIN_EFFECTIVE_N,
     iterations: int = 2000,
+    seed: int = _stats.DEFAULT_SEED,
 ) -> dict:
     """Session-level bootstrap for comparing two streams — the estimator two-tier cadence in
     docs/paper-experiments.md calls for: gate splits use per-SESSION means (a session with zero
@@ -1010,17 +1012,16 @@ def session_bootstrap(
 
     `values_by_session_a`/`_b`: {trade_date: mean_value_that_session} — the caller decides what
     "value" means (a stream's net P&L that session, its per-entry expectancy, etc.) and whether
-    zero-entry sessions are included as 0.0. Resamples the UNION of session dates with replacement
+    zero-entry sessions are included as 0.0. Resamples the SHARED session dates with replacement
     (bootstrap on the session axis, never the trade axis — trades within a session are correlated,
     sessions are the closer-to-independent unit). Refuses below `min_sessions` sessions shared by
     both, matching experiment.py's MIN_SESSIONS_FOR_INTERVAL convention.
 
-    Date.now()/random.random() are avoided in favor of Python's stdlib `random` module seeded
-    per-call by the caller if determinism is needed; this function does not seed globally.
+    The estimator is `cherrypick.core.stats` (paired per-session difference, seeded bootstrap of
+    its mean). Until 2026-10-12 this drew from the process-global `random`, so two runs over the
+    same sessions could quote different intervals; it is seeded now.
     """
-    import random as _random
-
-    shared = sorted(set(values_by_session_a) & set(values_by_session_b))
+    shared, diffs = _stats.paired_diffs(values_by_session_a, values_by_session_b)
     if len(shared) < min_sessions:
         return {
             "ok": False,
@@ -1028,14 +1029,8 @@ def session_bootstrap(
             "shared_sessions": len(shared),
         }
 
-    observed = sum(values_by_session_a[d] - values_by_session_b[d] for d in shared) / len(shared)
-    deltas = []
-    for _ in range(iterations):
-        sample = [_random.choice(shared) for _ in shared]
-        deltas.append(sum(values_by_session_a[d] - values_by_session_b[d] for d in sample) / len(sample))
-    deltas.sort()
-    lo = deltas[int(0.025 * iterations)]
-    hi = deltas[int(0.975 * iterations) - 1]
+    observed = sum(diffs) / len(diffs)
+    lo, hi = _stats.bootstrap_ci(diffs, level=0.95, resamples=iterations, seed=seed)
     return {
         "ok": True,
         "shared_sessions": len(shared),
