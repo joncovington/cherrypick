@@ -263,6 +263,12 @@ export const REPORTS_SLIDES = [
 ] as const satisfies readonly NavSlide[];
 
 /**
+ * Compare (2026-10-12): every arm beside its control, from `core.compare`. One tab; scope, sort and
+ * the open arm are query parameters.
+ */
+export const COMPARE_SLIDES = [{ id: "arms", label: "arms" }] as const satisfies readonly NavSlide[];
+
+/**
  * Charts (2026-10-01): the live intraday futures chart and the technicals package's one-name chart.
  * `technicals` was Reports' `chart` tab; `/reports/chart` redirects here with its query string.
  */
@@ -419,6 +425,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   live: { slides: LIVE_SLIDES },
   charts: { slides: CHARTS_SLIDES },
   reports: { slides: REPORTS_SLIDES },
+  compare: { slides: COMPARE_SLIDES },
   advisor: { slides: ADVISOR_SLIDES },
   system: { slides: SYSTEM_SLIDES },
   config: { slides: CONFIG_SLIDES },
