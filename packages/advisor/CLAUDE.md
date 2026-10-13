@@ -138,6 +138,16 @@ beside `qualification` and moves no threshold. It is **kept out of `delta` and o
 pack** (`test_verdict_paired.py` pins both, shown to fail with it moved into `delta`): adding it to
 the model's input is a measurement break for the advisor, to be declared and batched like the others.
 
+**A book that never diverged measured nothing.** Every pair carries `exposure` (does each closed
+advised row have an identical twin in the base on its session, to the cent?), and the verdict carries
+`no_exposure` and `conclusion` (`no_exposure` / `underpowered` / `measured`), ahead of any pass or
+fail: `declared` when every param is one the module's bounds say cannot act on the base (a rule's
+`arms`), `never_diverged` when the rows show it. No closed advised rows is no evidence either way.
+Admission, `tune` and `enact` refuse the declared case outright through `core.advice` (2026-10-12:
+bwb's `delta-trigger-early` and both earlier `flip_buffer` experiments sat on `control`, which never
+arms, and matched it row for row). The pack does not carry these fields until the 2026-10-19
+boundary.
+
 **A `kill` recommendation is actioned; `keep` and `promote` are recorded** (`advisor.kill_on_verdict`,
 on by default; off restores record-only). Admitting a kill takes the same path as a human `kill`:
 status `killed`, verdict stored with the model's block, the queue moves up, and the next session's

@@ -77,7 +77,26 @@ def advice_path(state_dir: Path | str, module: str, session: str) -> Path:
     return Path(state_dir) / ADVICE_DIR / f"{module}-{session}.json"
 
 
-def _check_proposal(p: Any, bounds: dict[str, Any]) -> str | None:
+def param_acts_on(rule: Any, base: str | None) -> bool:
+    """Can a param bounded by `rule` change anything on an advised twin of `base`?
+
+    A bounds rule may carry `arms`, the base arms whose rules read the param at all (bwb's trigger
+    thresholds act on the arm whose trigger they tune, and `control` has none). Absent means every
+    base, which is every rule written before 2026-10-12. An unknown base (`None`, a legacy entry)
+    is not refused: the declaration names arms, and nothing here guesses one.
+
+    This is the module's own declaration, read from its config like the ranges beside it, so a
+    proposal that cannot move its book from the base is refused by the same function both sides
+    call -- before it spends an experiment's sessions measuring nothing."""
+    if not isinstance(rule, dict) or base is None:
+        return True
+    arms = rule.get("arms")
+    if not isinstance(arms, list):
+        return True
+    return str(base) in {str(a) for a in arms}
+
+
+def _check_proposal(p: Any, bounds: dict[str, Any], base: str | None = None) -> str | None:
     """None if admissible, else the rejection reason."""
     if not isinstance(p, dict):
         return "proposal is not an object"
@@ -92,6 +111,13 @@ def _check_proposal(p: Any, bounds: dict[str, Any]) -> str | None:
         # not raise out of the validator and, on the producer side, abort every other module's
         # issuance for the night (2026-09-12).
         return f"{param!r} bounds rule is malformed (expected {{min, max}} or {{choices}})"
+    if "arms" in rule and not isinstance(rule["arms"], list):
+        return f"{param!r} bounds rule is malformed (arms must be a list of base arm names)"
+    if not param_acts_on(rule, base):
+        return (
+            f"{param!r} cannot act on base arm {base!r} "
+            f"(declared for: {', '.join(str(a) for a in rule['arms']) or 'no arm'})"
+        )
     value = p.get("value")
     if "choices" in rule:
         if value not in rule["choices"]:
@@ -114,7 +140,7 @@ def params_map(proposals: Any) -> dict[str, Any]:
     return {p["param"]: p["value"] for p in proposals or [] if isinstance(p, dict) and "param" in p}
 
 
-def validate_proposals(proposals: Any, bounds: dict[str, Any]) -> dict[str, Any]:
+def validate_proposals(proposals: Any, bounds: dict[str, Any], base: str | None = None) -> dict[str, Any]:
     """Admission check for ONE overlay -- one experiment's proposals list -- against the bounds.
     Returns {"ok", "reason", "proposals", "rejected"}; ok False always means empty proposals
     (reject-all, per overlay)."""
@@ -129,7 +155,7 @@ def validate_proposals(proposals: Any, bounds: dict[str, Any]) -> dict[str, Any]
     rejected: list[dict[str, Any]] = []
     admitted: list[dict[str, Any]] = []
     for p in proposals:
-        reason = _check_proposal(p, bounds)
+        reason = _check_proposal(p, bounds, base)
         if reason is None and isinstance(p, dict):
             if p.get("param") in seen:
                 reason = f"duplicate param {p.get('param')!r}"
@@ -165,7 +191,7 @@ def _experiment_entries(artifact: dict[str, Any]) -> list[dict[str, Any]]:
             "experiment_id": artifact_experiment_id(artifact),
             "name": None,
             "tag": None,
-            "base": None,
+            "base": artifact.get("base"),
             "proposals": artifact.get("proposals"),
             "rejected": artifact.get("rejected") or [],
         }
@@ -201,7 +227,7 @@ def validate(
 
     experiments: list[dict[str, Any]] = []
     for entry in _experiment_entries(artifact):
-        checked = validate_proposals(entry.get("proposals"), bounds)
+        checked = validate_proposals(entry.get("proposals"), bounds, entry.get("base"))
         experiments.append(
             {
                 "experiment_id": entry.get("experiment_id"),

@@ -204,6 +204,37 @@ describe("the advisor reader", () => {
     expect(readAdvisor(config).latest[0]).toMatchObject({ model: "opus", modelId: "claude-opus-5" });
   });
 
+  it("surfaces a no-exposure conclusion, and reads null where an older verdict never wrote one", () => {
+    const db = new Database(path.join(tmp, "advisor", "advisor.db"));
+    db.prepare(
+      "INSERT INTO experiments (id, module, base_profile, params_json, status, created_session," +
+        " expires_after_sessions, sessions_run, verdict_json, created_at, updated_at)" +
+        " VALUES ('exp-inert', 'bwb', 'control', '{}', 'expired', ?, 15, 15, ?, ?, ?)",
+    ).run(
+      SESSION,
+      JSON.stringify({
+        pairs: [],
+        underpowered: false,
+        no_exposure: { reason: "never_diverged", detail: "all 11 advised row(s) identical to 'control'", params: ["delta_trigger"] },
+        conclusion: "no_exposure",
+      }),
+      `${SESSION}T21:05:00+00:00`,
+      `${SESSION}T21:05:00+00:00`,
+    );
+    db.close();
+    const payload = readAdvisor(config);
+    const inert = payload.experiments.find((e) => e.id === "exp-inert");
+    expect(inert?.verdict?.noExposure).toEqual({
+      reason: "never_diverged",
+      detail: "all 11 advised row(s) identical to 'control'",
+    });
+    const other = payload.experiments.find((e) => e.id !== "exp-inert" && e.verdict !== null);
+    expect(other?.verdict?.noExposure ?? null).toBeNull();
+    const cleanup = new Database(path.join(tmp, "advisor", "advisor.db"));
+    cleanup.prepare("DELETE FROM experiments WHERE id = 'exp-inert'").run();
+    cleanup.close();
+  });
+
   it("surfaces a stalled conclusion, and reads null where an older verdict never wrote one", () => {
     const db = new Database(path.join(tmp, "advisor", "advisor.db"));
     db.prepare(

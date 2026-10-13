@@ -58,6 +58,7 @@
     "enabled": false,
     "base_book": "control",
     "_dte_target_note": "dte_target is NOT in bounds (2026-09-12): the module ignores it -- the target expiration is the next weekly Friday, and dte_target is reserved for the backlog nearest-with-floor experiment. Declaring it advisable let the model propose a value that did nothing.",
+    "_arms_note": "A bound may name `arms`: the base arms whose rules read that param at all. The trigger thresholds act only on the arm whose trigger they tune, and addon_credit_floor only on an arm that can arm, so none of them can act on `control` (which never arms) or `wall`. cherrypick.core.advice refuses a proposal whose param cannot act on the experiment's base (2026-10-12: delta-trigger-early put delta_trigger on control and its twin matched control row for row). A bound without `arms` acts on every base. tests/test_advice_arms.py derives each list from triggers/management and fails when one drifts.",
     "bounds": {
       "quantity": {
         "min": 1,
@@ -81,19 +82,23 @@
       },
       "addon_credit_floor": {
         "min": 0.0,
-        "max": 5.0
+        "max": 5.0,
+        "arms": ["delta", "bounce", "flip"]
       },
       "delta_trigger": {
         "min": 0.05,
-        "max": 0.95
+        "max": 0.95,
+        "arms": ["delta", "bounce"]
       },
       "bounce_pullback": {
         "min": 0.01,
-        "max": 0.4
+        "max": 0.4,
+        "arms": ["bounce"]
       },
       "flip_buffer": {
         "min": 1.0001,
-        "max": 1.05
+        "max": 1.05,
+        "arms": ["flip"]
       },
       "max_quote_age_seconds": {
         "min": 30,
