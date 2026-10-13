@@ -1,27 +1,24 @@
 """Unified cross-module paper P&L report (read-only).
 
 Reads each enabled module's paper DB — files only, no broker, no network, no trading — and produces one
-unified P&L summary across MEICAgent (`ic_trades`) and EarningsAgent (`trades`), broken down by module
-and, within each module, by risk profile. A read-mostly reporting surface for the walk-away user: the
-first slice of the reporting/alerting hub (later: the Part-14 status dashboard and drift/stall alerts).
+unified P&L summary across every trading module, broken down by module and, within each module, by
+arm. A read-mostly reporting surface for the walk-away user.
 
-Three paper-DB schemas are wired, dispatched by `paper.trade_schema` (same registry idea as
-trade_notifier), each yielding a normalized closed-trade record `{profile, symbol, strategy, net_pnl}`:
-  - "meic_ic"  : MEICAgent's `ic_trades`; closed = exit_time set; net = pnl - fees; tag = `risk_profile`.
-  - "earnings" : EarningsAgent's `trades`; closed = closed_at set; net = pnl - entry_cost - exit_cost;
-                 tag = profile.
-  - "fly_book" : cherrypick-flies' `fly_positions`; closed = status 'settled'; net = gross_pnl - fees;
-                 tag = arm. Note this reader is P&L only — the module's book-level floor and the price
-                 band it holds over live in `fly_books` and are NOT summarizable as a per-trade number,
-                 so `run.py status` remains the place to read them.
+The readers are not here. Every schema `schemas.SCHEMAS` names (meic_ic, earnings, fly_book, dc_week,
+pmcc, curve_vx, bwb_132, contango_etf) is read through `cherrypick.core.ledgers.READERS`, dispatched
+by `paper.trade_schema`, which is the one home for each module's net, cost, capital and session rules
+and documents them per schema. Each closed record is `{arm, symbol, strategy, gross_pnl, cost,
+net_pnl, slippage, capital, max_profit, session, experiment_id, ...}`; "net" is always net of costs.
+flies' book-level floor and the price band it holds over live in `fly_books` and are not a per-trade
+number, so `run.py status` remains the place to read them.
 
-The per-profile grouping uses cherrypick.core.profiles.group_by_tag (group closed trades by their
+The per-arm grouping uses cherrypick.core.profiles.group_by_tag (group closed trades by their
 attribution tag, summarize each group).
 
 Alongside the closed-trade P&L, each module also reports its **open** positions carried past the close
-(`_OPEN_READERS`): capital at risk, no realized P&L. Only the multi-day earnings module carries
-overnight; the 0DTE modules settle within the session and report an empty overnight view. This is a
-separate registry feeding only report/digest — not the four closed-trade adapter registries.
+(`_OPEN_READERS`, i.e. `core.ledgers.OPEN_READERS`): capital at risk, no realized P&L. The multi-day
+modules carry overnight; the 0DTE modules (meic, flies) settle within the session and report an empty
+overnight view by construction.
 """
 
 from __future__ import annotations
@@ -79,7 +76,8 @@ def _summarize_open(records: list[dict]) -> dict:
 # --------------------------------------------------------------------------- summarization
 def _summarize(records: list[dict]) -> dict:
     """P&L stats over normalized closed-trade records. net_pnl is cost-adjusted; gross_pnl is
-    before costs and cost is the total modeled cost (MEIC fees; earnings commission+slippage).
+    before costs and cost is each module's total modeled cost (its parts -- fees, settlement,
+    slippage and the slippage basis -- are on the record; see core.ledgers).
     win_rate is on net P&L; gross_win_rate is on gross -- the gap shows how many trades have edge
     before costs but not after (the signal at 1-contract sizing, where cost dominates)."""
     net = [r["net_pnl"] for r in records]

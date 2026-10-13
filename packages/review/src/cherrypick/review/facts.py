@@ -51,7 +51,28 @@ from cherrypick.review import paths as _paths
 # 9 (2026-10-06): pmcc's `expected` reads the held-long shorts (`basis`
 # `held_long_short_extrinsic_sold_vs_captured`, counted in `shorts_closed`) once control retired.
 # Additive: a session with no held-long short closed still carries control's basis.
-FACT_VERSION = 9
+# 10 (2026-10-12): `results` (and every `by_arm` row) splits `cost` into `fees`, `settlement` (None
+# when unrecorded, with `settlement_unrecorded` counting the rows) and `slippage` (with
+# `slippage_unrecorded`, and `slippage_basis`: `in_gross` for meic/flies, `cost` for the rest); each
+# module carries its `slippage_basis` too. ADDITIVE: `cost` stays as the total, so a v9 reader (the
+# console's review page, `reconcile`) reads a v10 set unchanged, and a v10 reader of a v9 set finds
+# the parts absent and falls back to `cost`.
+FACT_VERSION = 10
+
+RESULT_FIELDS = (
+    "closed",
+    "gross",
+    "cost",
+    "fees",
+    "settlement",
+    "settlement_unrecorded",
+    "slippage",
+    "slippage_unrecorded",
+    "slippage_basis",
+    "net",
+    "wins",
+    "losses",
+)
 
 STATUS_PROVISIONAL = "provisional"
 STATUS_FINAL = "final"
@@ -442,20 +463,30 @@ def _calendars_expected(conn, session: str) -> dict:
     }
 
 
+def _closed_records(conn, schema: str, session: str, arm: str | None = None) -> list[dict]:
+    """A schema's closed records for one session through `core.ledgers` (optionally one arm), or []
+    when the ledger has no such table yet -- the same "not yet, not an error" `_rows` grants."""
+    try:
+        records = _ledgers.READERS[schema](conn, start=session, end=session)
+    except sqlite3.OperationalError as exc:
+        if str(exc).startswith("no such table"):
+            return []
+        raise
+    return [r for r in records if r.get("session") == session and (arm is None or r.get("arm") == arm)]
+
+
 def _pmcc_held_long_expected(conn, session: str) -> dict:
     """Each held-long short closed this session: the extrinsic it sold (premium less intrinsic at
     the sale spot) against what it kept (sold less the extrinsic still in it at the close), both as
     a fraction of the sale spot. A held-long position closes ~10 months after entry, so its weekly
     short is the only weekly realisation it has. Held-long is the ledger's own long DTE at entry
     (the 240-540-day band), never an arm name."""
-    rows = _rows(
-        conn,
-        "SELECT l.strike, l.entry_mid, l.entry_spot, l.close_value, l.close_spot FROM pmcc_legs l "
-        "JOIN pmcc_positions p ON p.position_id = l.position_id "
-        "WHERE l.leg_role LIKE 'short_call%' AND l.status = 'closed' AND substr(l.closed_at, 1, 10) = ? "
-        "AND p.entry_long_dte >= 240",
-        (session,),
-    )
+    try:
+        rows = _ledgers.pmcc_closed_short_legs(conn, session, min_long_dte=240)
+    except sqlite3.OperationalError as exc:
+        if not str(exc).startswith("no such table"):
+            raise
+        rows = []
     sold, kept = [], []
     for r in rows:
         if None in (r["strike"], r["entry_mid"], r["entry_spot"], r["close_value"], r["close_spot"]):
@@ -485,26 +516,17 @@ def _pmcc_expected(conn, session: str) -> dict:
     held = _pmcc_held_long_expected(conn, session)
     if held["shorts_closed"]:
         return held
-    rows = _rows(
-        conn,
-        "SELECT entry_weekly_yield_pct, gross_pnl, fees, net_debit, quantity, entry_session "
-        "FROM pmcc_positions WHERE arm = 'control' AND status = 'closed' AND closed_session = ?",
-        (session,),
-    )
     expected, observed = [], []
-    for r in rows:
-        if r["entry_weekly_yield_pct"] is None or not r["net_debit"]:
+    for r in _closed_records(conn, "pmcc", session, arm="control"):
+        capital = r.get("capital")
+        if r.get("entry_weekly_yield_pct") is None or not capital or capital <= 0:
             continue
-        capital = float(r["net_debit"]) * 100 * (r["quantity"] or 1)
-        if capital <= 0:
-            continue
-        net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
         try:
             days = max((date.fromisoformat(session) - date.fromisoformat(r["entry_session"])).days, 1)
         except (TypeError, ValueError):
             continue
         expected.append(r["entry_weekly_yield_pct"])
-        observed.append((net / capital) * (7.0 / days))
+        observed.append((r["net_pnl"] / capital) * (7.0 / days))
     return {
         "basis": "entry_weekly_yield_vs_realized",
         "expected": (sum(expected) / len(expected)) if expected else None,
@@ -524,19 +546,18 @@ def _bwb_expected(conn, session: str) -> dict:
     divergence is the experiment, and it is measured by comparing arms, not by pooling them into one
     expectation.
     """
-    rows = _rows(
-        conn,
-        "SELECT entry_credit, quantity, gross_pnl, fees FROM bwb_positions"
-        " WHERE arm = 'control' AND status = 'closed' AND closed_session = ?",
-        (session,),
-    )
+    return _credit_vs_net(conn, "bwb_132", session)
+
+
+def _credit_vs_net(conn, schema: str, session: str) -> dict:
+    """The control arm's credit taken at entry against its realised net, both from `core.ledgers`
+    (`entry_credit`, `net_pnl`) -- bwb's and curve's shared expectation."""
     expected, observed = [], []
-    for r in rows:
-        if r["entry_credit"] is None:
+    for r in _closed_records(conn, schema, session, arm="control"):
+        if r.get("entry_credit") is None:
             continue
-        credit = float(r["entry_credit"]) * 100 * (r["quantity"] or 1)
-        expected.append(credit)
-        observed.append((r["gross_pnl"] or 0.0) - (r["fees"] or 0.0))
+        expected.append(r["entry_credit"])
+        observed.append(r["net_pnl"])
     return {
         "basis": "entry_credit_vs_realized_net",
         "expected": (sum(expected) / len(expected)) if expected else None,
@@ -552,24 +573,7 @@ def _curve_expected(conn, session: str) -> dict:
     until a regime flip fires, so pooling them would double-weight every session on which none did —
     which is most of them.
     """
-    rows = _rows(
-        conn,
-        "SELECT entry_credit, quantity, gross_pnl, fees FROM curve_positions"
-        " WHERE arm = 'control' AND status = 'closed' AND closed_session = ?",
-        (session,),
-    )
-    expected, observed = [], []
-    for r in rows:
-        if r["entry_credit"] is None:
-            continue
-        expected.append(float(r["entry_credit"]) * 100 * (r["quantity"] or 1))
-        observed.append((r["gross_pnl"] or 0.0) - (r["fees"] or 0.0))
-    return {
-        "basis": "entry_credit_vs_realized_net",
-        "expected": (sum(expected) / len(expected)) if expected else None,
-        "observed": (sum(observed) / len(observed)) if observed else None,
-        "positions_closed": len(expected) or None,
-    }
+    return _credit_vs_net(conn, "curve_vx", session)
 
 
 def _contango_expected(conn, session: str) -> dict:
@@ -725,6 +729,32 @@ def _returns(records: list[dict]) -> dict:
     }
 
 
+def _known_sum(records: list[dict], key: str) -> tuple[float | None, int]:
+    """(sum of the recorded values or None when none was recorded, how many were not recorded)."""
+    known = [r[key] for r in records if r.get(key) is not None]
+    return (round(sum(known), 2) if known else None), len(records) - len(known)
+
+
+def _cost_parts(records: list[dict]) -> dict:
+    """`cost` split the way the suite's money layout states it (root CLAUDE.md), from the parts each
+    `core.ledgers` record carries: trading `fees`; `settlement` (exercise / assignment / delivery),
+    None when no record in the group recorded it -- the charge, if any, then sits inside `fees`,
+    never as a zero -- with the unrecorded count beside it; and `slippage` with the basis it is on.
+    `in_gross` slippage (meic, flies) is already inside gross and is a measure, never subtracted;
+    `cost` slippage (fills at mid) is a charge, so gross - fees - settlement - slippage = net."""
+    settlement, settlement_unrecorded = _known_sum(records, "settlement")
+    slippage, slippage_unrecorded = _known_sum(records, "slippage")
+    bases = {r.get("slippage_basis") for r in records if r.get("slippage_basis")}
+    return {
+        "fees": round(sum(r.get("fees") or 0.0 for r in records), 2) if records else 0.0,
+        "settlement": settlement,
+        "settlement_unrecorded": settlement_unrecorded,
+        "slippage": slippage,
+        "slippage_unrecorded": slippage_unrecorded,
+        "slippage_basis": bases.pop() if len(bases) == 1 else None,
+    }
+
+
 def _summarize(records: list[dict]) -> dict:
     """The per-group figures. Shared by the module total and each of its arms so the parts always
     add up to the whole."""
@@ -733,7 +763,9 @@ def _summarize(records: list[dict]) -> dict:
     return {
         "closed": len(records),
         "gross": round(gross, 2),
+        # The total, kept beside its parts from v10 because the console and `reconcile` read it.
         "cost": round(cost, 2),
+        **_cost_parts(records),
         "net": round(gross - cost, 2),
         "wins": sum(1 for r in records if (r.get("net_pnl") or 0) > 0),
         # Losses counted separately rather than inferred as closed - wins: a trade that netted
@@ -825,7 +857,10 @@ def build_module_facts(module: str, session: str, db_path=None) -> dict:
         "book": "paper",
         "settles_intraday": spec["settles_intraday"],
         "health": health,
-        "results": {k: totals[k] for k in ("closed", "gross", "cost", "net", "wins", "losses")},
+        "results": {k: totals[k] for k in RESULT_FIELDS},
+        # Where this module's slippage sits, stated even on a session with nothing closed, so a
+        # reader never subtracts an in-gross measure or misses a charged cost.
+        "slippage_basis": _ledgers.SLIPPAGE_BASIS[spec["schema"]],
         # The arms, kept because for MEIC and flies the comparison between them IS the experiment.
         "by_arm": _by_arm(closed),
         # ...and how much of the net above is ONE of them. A module total averages its arms, which

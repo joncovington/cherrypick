@@ -69,6 +69,44 @@ def _attention(facts: dict) -> list[str]:
     return out
 
 
+def _slippage_cell(r: dict) -> str:
+    basis = r.get("slippage_basis")
+    if r.get("slippage") is None:
+        return "n/r"
+    tag = {"in_gross": " (in gross)", "cost": " (cost)"}.get(basis or "", "")
+    return f"{_money(r['slippage'])}{tag}"
+
+
+def _money_table(facts: dict) -> list[str]:
+    """Each module's costs as separate columns (fact set v10 on): gross - fees - settlement -
+    charged slippage = net, where slippage `(in gross)` is already inside gross and is shown as a
+    measure only. Settlement never recorded reads n/r, not 0. A set written before v10 has only the
+    total, and the table says so instead of inventing the split."""
+    rows = [(n, m) for n, m in (facts.get("modules") or {}).items() if m.get("ok")]
+    if not rows:
+        return []
+    if not any("fees" in (m.get("results") or {}) for _, m in rows):
+        return ["_Costs are one total (`cost`) in this fact set; the split arrived with v10._", ""]
+    out = ["| Module | Gross | Fees | Settlement | Slippage | Net |", "|---|---:|---:|---:|---:|---:|"]
+    for name, m in rows:
+        r = m["results"]
+        settlement = "n/r" if r.get("settlement") is None else _money(r["settlement"])
+        if r.get("settlement") is not None and r.get("settlement_unrecorded"):
+            settlement += f" ({r['settlement_unrecorded']} n/r)"
+        out.append(
+            f"| {name} | {_money(r.get('gross'))} | {_money(r.get('fees'))} | {settlement} | "
+            f"{_slippage_cell(r)} | {_money(r.get('net'))} |"
+        )
+    out += [
+        "",
+        "_Slippage **(in gross)** is already conceded in the modelled fill (meic, flies) and is a "
+        "measure, never subtracted again; **(cost)** is charged against fills at mid and is part of "
+        "the net. n/r = not recorded._",
+        "",
+    ]
+    return out
+
+
 def render(session: str, window: int = _trends.DEFAULT_WINDOW) -> str:
     facts = _facts.read(session)
     if not facts:
@@ -127,6 +165,7 @@ def render(session: str, window: int = _trends.DEFAULT_WINDOW) -> str:
         "one event, not hundreds._"
     )
     L.append("")
+    L.extend(_money_table(facts))
 
     # --- arms ----------------------------------------------------------------
     # For MEIC and flies the comparison between arms IS the experiment: they run against the same

@@ -61,6 +61,23 @@ formula from `capital` alone.
                  own column there, so `cost` here is fees + slippage); tag = arm; capital = the
                  stint's purchase (shares x entry mid), all of it at risk in a fund.
 
+The cost split (added 2026-10-12, for the suite's money layout in the root `CLAUDE.md`): beside
+`cost` -- each module's TOTAL cost, unchanged, so `net_pnl = gross_pnl - cost` still holds -- every
+closed record carries the parts:
+
+    fees            trading fees only (commission, exchange): `cost` less settlement, less slippage
+                    where slippage is a charged cost
+    settlement      exercise / assignment / delivery charges, or None where the row never recorded
+                    the split (then the charge, if any, is still inside `fees` -- never a zero)
+    slippage_basis  "in_gross" (the modelled fill already concedes it: meic, flies -- slippage is a
+                    measure, never subtracted again) or "cost" (fills at mid, slippage charged as
+                    its own cost: earnings, calendars, pmcc, curve, bwb, contango)
+    entry_credit    the credit received at entry, whole-position dollars, for a single-credit
+                    structure (meic, curve, bwb); None elsewhere
+
+so `gross_pnl - fees - (settlement or 0) - (slippage if basis is "cost" else 0) == net_pnl` on
+every row. The rules are the console's (`readers/*TradeCash`), which drew the layout first.
+
 `None` never means zero anywhere in here. A row written before an instrumentation column existed
 reports `slippage: None` and `capital: None`, because "not recorded" and "was zero" are different
 facts and averaging them together is how a cost model quietly flatters itself.
@@ -99,6 +116,46 @@ _NOT_ON_BOOK = "('closed', 'cancelled')"
 MEIC_UNTAGGED = "unassigned"
 EARNINGS_UNTAGGED = "default"
 FLIES_UNTAGGED = "unassigned"
+
+SLIPPAGE_IN_GROSS = "in_gross"
+SLIPPAGE_COST = "cost"
+#: Where each schema's slippage sits: inside gross (the modelled fill concedes it) or charged as a
+#: cost. A figure subtracted in one module and not in another is never one unqualified number.
+SLIPPAGE_BASIS = {
+    "meic_ic": SLIPPAGE_IN_GROSS,
+    "fly_book": SLIPPAGE_IN_GROSS,
+    "earnings": SLIPPAGE_COST,
+    "dc_week": SLIPPAGE_COST,
+    "pmcc": SLIPPAGE_COST,
+    "curve_vx": SLIPPAGE_COST,
+    "bwb_132": SLIPPAGE_COST,
+    "contango_etf": SLIPPAGE_COST,
+}
+
+
+def _cost_split(schema: str, total: float, settlement, slippage) -> dict:
+    """The record's `fees` / `settlement` / `slippage_basis`, from the module's total cost. Each
+    part comes out of the total once: settlement where it was recorded, slippage where it is a
+    charged cost and was recorded. What was never split stays inside `fees`."""
+    basis = SLIPPAGE_BASIS[schema]
+    charged = slippage if (basis == SLIPPAGE_COST and slippage is not None) else 0.0
+    # Unrounded, like `cost`: a total over hundreds of rows must add back to the summed net, and
+    # rounding each row's part to the cent drifted MEIC's day by ~$1 over 494 trades.
+    return {
+        "fees": (total or 0.0) - (settlement or 0.0) - charged,
+        "settlement": settlement,
+        "slippage_basis": basis,
+    }
+
+
+def _opt(cols: set, name: str) -> str:
+    """`, name` when the column exists, else '' -- for a column added after a ledger's first rows."""
+    return f", {name}" if name in cols else ""
+
+
+def _get(r, name: str):
+    """A row's column, or None when the reader did not select it (an older ledger)."""
+    return r[name] if name in r.keys() else None
 
 
 # --------------------------------------------------------------------------- per-schema readers
@@ -153,8 +210,8 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
     exp_col, has_exp = _experiment_select(conn, "ic_trades")
     arm = core_db.arm_column(conn, "ic_trades")  # `risk_profile` until meic's column moves
     rows = conn.execute(
-        f"SELECT symbol, {arm} AS arm, pnl, fees, exit_time{slip_col}{cap_cols}{mult_col}{exp_col} "
-        f"FROM ic_trades WHERE exit_time IS NOT NULL{where}",
+        f"SELECT symbol, {arm} AS arm, pnl, fees, exit_time{slip_col}{cap_cols}{mult_col}{exp_col}"
+        f"{_opt(cols, 'settlement_fees')} FROM ic_trades WHERE exit_time IS NOT NULL{where}",
         params,
     ).fetchall()
 
@@ -184,11 +241,19 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             "strategy": None,
-            # gross = spread P&L (already at the modeled fill prices); cost = exchange fees.
+            # gross = spread P&L (already at the modeled fill prices); cost = exchange fees, with
+            # the cash-settlement charge inside them (`settlement_fees` is the part).
             "gross_pnl": (r["pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
             "net_pnl": (r["pnl"] or 0.0) - (r["fees"] or 0.0),
             "slippage": (r["slippage_dollars"] if has_slip else None),
+            **_cost_split(
+                "meic_ic",
+                r["fees"] or 0.0,
+                _get(r, "settlement_fees"),
+                r["slippage_dollars"] if has_slip else None,
+            ),
+            "entry_credit": _max_profit(r),
             "capital": _capital(r),
             "max_profit": _max_profit(r),
             # Session date for calibration (distinct-days count); ISO date prefix of exit_time.
@@ -212,7 +277,8 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
     arm = core_db.arm_column(conn, "trades")  # `profile` until earnings' column moves
     rows = conn.execute(
         f"SELECT symbol, {arm} AS arm, strategy, pnl, entry_cost, exit_cost, closed_at"
-        f"{slip_cols}{cap_col}{exp_col} FROM trades WHERE closed_at IS NOT NULL"
+        f"{slip_cols}{cap_col}{exp_col}{_opt(cols, 'settlement_fees')} "
+        "FROM trades WHERE closed_at IS NOT NULL"
     ).fetchall()
 
     def _slip(r):
@@ -231,6 +297,14 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
             "cost": (r["entry_cost"] or 0.0) + (r["exit_cost"] or 0.0),
             "net_pnl": (r["pnl"] or 0.0) - (r["entry_cost"] or 0.0) - (r["exit_cost"] or 0.0),
             "slippage": _slip(r),
+            # entry_cost + exit_cost carry the slippage charge and (exit_cost) any settlement fee.
+            **_cost_split(
+                "earnings",
+                (r["entry_cost"] or 0.0) + (r["exit_cost"] or 0.0),
+                _get(r, "settlement_fees"),
+                _slip(r),
+            ),
+            "entry_credit": None,  # credit and debit structures mixed; no one credit to name
             # sizing.compute_position_size's defined max loss, stored at entry.
             "capital": (r["capital_at_risk"] if has_capital else None),
             # Earnings mixes credit and debit-shaped defined-risk strategies (module CLAUDE.md) --
@@ -252,12 +326,14 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
     # center_reason arrived after the first release, so an older ledger simply has no centring
     # provenance -- degrade to None rather than failing the whole read, the same way this file
     # already treats slippage_dollars and the capital columns.
-    has_reason = "center_reason" in _table_cols(conn, "fly_positions")
+    cols = _table_cols(conn, "fly_positions")
+    has_reason = "center_reason" in cols
     reason_col = ", center_reason" if has_reason else ""
     where, params = _session_where("trade_date", start, end)
     exp_col, has_exp = _experiment_select(conn, "fly_positions")
+    extra = _opt(cols, "settlement_fees") + _opt(cols, "slippage_dollars")
     rows = conn.execute(
-        f"SELECT symbol, arm, entry_mode, gross_pnl, fees, trade_date{reason_col}{exp_col} "
+        f"SELECT symbol, arm, entry_mode, gross_pnl, fees, trade_date{reason_col}{exp_col}{extra} "
         f"FROM fly_positions WHERE status = 'settled'{where}",
         params,
     ).fetchall()
@@ -279,10 +355,15 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
             "gross_pnl": (r["gross_pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
             "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
-            # Slippage capture deferred for flies: its decisive metrics are floor/completion
-            # based, and its fills already price the haircut into gross_pnl. Unknown != zero,
-            # and likewise capital: a legged book's risk depends on completion state.
-            "slippage": None,
+            # The fills already price the haircut into gross_pnl, so `slippage_dollars` is a
+            # measure, never subtracted again (basis in_gross, like meic's). None on a row from
+            # before the column -- unknown, not zero -- and likewise capital: a legged book's risk
+            # depends on completion state.
+            "slippage": _get(r, "slippage_dollars"),
+            **_cost_split(
+                "fly_book", r["fees"] or 0.0, _get(r, "settlement_fees"), _get(r, "slippage_dollars")
+            ),
+            "entry_credit": None,  # legged/debit/bwb entry modes: no single credit to name
             "capital": None,
             # A fly's max profit at expiry is a payoff-curve computation over the book's actual
             # centres and wing structure, not a fixed formula this per-trade row can support --
@@ -304,9 +385,11 @@ def _calendars_closed(conn, start: str | None = None, end: str | None = None) ->
     different trade from a dc_4_7 and pooling them would blend structures."""
     where, params = _session_where("closed_session", start, end)
     exp_col, has_exp = _experiment_select(conn, "dc_positions")
+    settle_col = _opt(_table_cols(conn, "dc_positions"), "settlement_fees")
     rows = conn.execute(
         f"SELECT symbol, arm, structure, gross_pnl, fees, entry_slippage, exit_slippage, "
-        f"entry_debit, quantity, closed_session{exp_col} FROM dc_positions WHERE status = 'closed'{where}",
+        f"entry_debit, quantity, closed_session{exp_col}{settle_col} FROM dc_positions "
+        f"WHERE status = 'closed'{where}",
         params,
     ).fetchall()
 
@@ -333,6 +416,8 @@ def _calendars_closed(conn, start: str | None = None, end: str | None = None) ->
             "cost": (r["fees"] or 0.0),
             "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
             "slippage": _slip(r),
+            **_cost_split("dc_week", r["fees"] or 0.0, _get(r, "settlement_fees"), _slip(r)),
+            "entry_credit": None,  # a debit structure
             "capital": _capital(r),
             # A long calendar is a DEBIT structure: its max profit depends on where the underlying
             # sits relative to the short leg's strike at ITS expiry, not a fixed value known at
@@ -361,11 +446,14 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
     exp_col, has_exp = _experiment_select(conn, "pmcc_positions")
     # `era` is an ADDED column (2026-08-23); a row from before it reads NULL and never equals a
     # stamped era, which is the module's own rule (`analytics.headline`). See ERA_SCHEMAS.
-    has_era = "era" in _table_cols(conn, "pmcc_positions")
+    cols = _table_cols(conn, "pmcc_positions")
+    has_era = "era" in cols
     era_col = ", era" if has_era else ""
+    # pmcc's own expectation (review's) reads the entry yield and the holding period off the record.
+    extra = "".join(_opt(cols, c) for c in ("settlement_fees", "entry_session", "entry_weekly_yield_pct"))
     rows = conn.execute(
         f"SELECT symbol, arm, gross_pnl, fees, entry_slippage, exit_slippage, "
-        f"net_debit, quantity, closed_session{exp_col}{era_col} "
+        f"net_debit, quantity, closed_session{exp_col}{era_col}{extra} "
         f"FROM pmcc_positions WHERE status = 'closed'{where}",
         params,
     ).fetchall()
@@ -390,7 +478,11 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
             "cost": (r["fees"] or 0.0),
             "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
             "slippage": _slip(r),
+            **_cost_split("pmcc", r["fees"] or 0.0, _get(r, "settlement_fees"), _slip(r)),
+            "entry_credit": None,  # a debit structure
             "capital": _capital(r),
+            "entry_session": _get(r, "entry_session"),
+            "entry_weekly_yield_pct": _get(r, "entry_weekly_yield_pct"),
             # PMCC is a debit structure (deep-ITM long call as a stock substitute + a short call):
             # its max profit depends on where spot sits relative to the short strike at ITS
             # expiry, same reasoning as calendars' debit structure above -- no fixed ceiling known
@@ -401,6 +493,23 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
         }
         for r in rows
     ]
+
+
+def pmcc_closed_short_legs(conn, session: str, min_long_dte: int | None = None) -> list[dict]:
+    """pmcc's short-call legs closed on `session` -- the weekly realisation a held-long position
+    has, since the position itself closes ~10 months after entry. `min_long_dte` keeps legs whose
+    position's long was bought at or beyond that DTE (the ledger's own entry_long_dte, never an arm
+    name). Each: strike, entry_mid, entry_spot, close_value, close_spot, as recorded."""
+    long_dte = " AND p.entry_long_dte >= ?" if min_long_dte is not None else ""
+    params: tuple = (session,) + ((min_long_dte,) if min_long_dte is not None else ())
+    rows = conn.execute(
+        "SELECT l.strike, l.entry_mid, l.entry_spot, l.close_value, l.close_spot FROM pmcc_legs l "
+        "JOIN pmcc_positions p ON p.position_id = l.position_id "
+        "WHERE l.leg_role LIKE 'short_call%' AND l.status = 'closed' "
+        f"AND substr(l.closed_at, 1, 10) = ?{long_dte}",
+        params,
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 CURVE_UNTAGGED = "unassigned"
@@ -416,9 +525,10 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
     over a weekend is the one exposure not bounded by it, same caveat as pmcc's delivered shares."""
     where, params = _session_where("closed_session", start, end)
     exp_col, has_exp = _experiment_select(conn, "curve_positions")
+    settle_col = _opt(_table_cols(conn, "curve_positions"), "settlement_fees")
     rows = conn.execute(
         f"SELECT symbol, arm, gross_pnl, fees, entry_slippage, exit_slippage, "
-        f"entry_max_loss, entry_credit, quantity, closed_session{exp_col} FROM curve_positions "
+        f"entry_max_loss, entry_credit, quantity, closed_session{exp_col}{settle_col} FROM curve_positions "
         f"WHERE status = 'closed'{where}",
         params,
     ).fetchall()
@@ -454,6 +564,12 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
             "cost": (r["fees"] or 0.0),
             "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
             "slippage": _slip(r),
+            **_cost_split("curve_vx", r["fees"] or 0.0, _get(r, "settlement_fees"), _slip(r)),
+            "entry_credit": (
+                round(float(r["entry_credit"]) * 100 * (r["quantity"] or 1), 2)
+                if r["entry_credit"] is not None
+                else None
+            ),
             "capital": _capital(r),
             "max_profit": _max_profit(r),
             "session": r["closed_session"] or "",
@@ -507,6 +623,12 @@ def _contango_closed(conn, start: str | None = None, end: str | None = None) -> 
             "cost": round((r["fees"] or 0.0) + (r["slippage"] or 0.0), 2),
             "net_pnl": r["net_pnl"] or 0.0,
             "slippage": r["slippage"],
+            # Shares: no exercise, assignment or delivery charge exists, and none is recorded --
+            # settlement reads None (n/r), as the console's contango page shows it.
+            **_cost_split(
+                "contango_etf", round((r["fees"] or 0.0) + (r["slippage"] or 0.0), 2), None, r["slippage"]
+            ),
+            "entry_credit": None,
             "capital": round(r["shares"] * r["entry_mid"], 2) if r["entry_mid"] is not None else None,
             "max_profit": None,
             "session": r["exit_session"] or "",
@@ -551,9 +673,10 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
         ", entry_slippage" + (", addon_slippage" if "addon_slippage" in cols else "") if has_slip else ""
     )
     src_col = ", fees_source" if "fees_source" in cols else ""
+    extra = _opt(cols, "settlement_fees") + _opt(cols, "entry_credit")
     rows = conn.execute(
         f"SELECT symbol, arm, gross_pnl, fees, entry_max_loss, quantity, closed_session{exp_col}"
-        f"{slip_cols}{src_col} FROM bwb_positions WHERE status = 'closed'{where}",
+        f"{slip_cols}{src_col}{extra} FROM bwb_positions WHERE status = 'closed'{where}",
         params,
     ).fetchall()
 
@@ -586,6 +709,13 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
             "cost": (r["fees"] or 0.0),
             "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
             "slippage": _slip(r),
+            **_cost_split("bwb_132", r["fees"] or 0.0, _get(r, "settlement_fees"), _slip(r)),
+            # The base fly's credit; a fired add-on's credit is its own figure and not included.
+            "entry_credit": (
+                round(float(r["entry_credit"]) * 100 * (r["quantity"] or 1), 2)
+                if _get(r, "entry_credit") is not None
+                else None
+            ),
             "capital": _capital(r),
             # A broken-wing fly's max profit depends on the strike geometry (which wing is
             # narrower, where the short strikes sit), not on entry_credit alone the way a plain
