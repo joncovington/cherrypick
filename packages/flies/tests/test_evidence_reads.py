@@ -77,6 +77,28 @@ def test_live_paper_gap_pairs_by_structure_and_splits_at_the_completion_rule(tmp
     assert out["eras"]["pays_limit"]["credit_gap_sum"] is None
 
 
+def test_live_paper_gap_leaves_voided_rows_out_on_both_sides(tmp_path):
+    """A voided row stays `settled` with its pnl (`void_reason` alone marks it): the 10-08 outage left
+    22 such paper rows. Counted, P2 would pair as live's twin, halve paper's completion and take
+    -300 off its net; a session whose only live row is void is no session at all."""
+    live, paper = _ledger(tmp_path / "live.db"), _ledger(tmp_path / "paper.db")
+    _pos(live, "L1", "2026-10-08", "control", center=7700, minute="10:22", pnl=20.0)
+    _pos(live, "LV", "2026-10-07", "control", center=7700, pnl=5.0)
+    _pos(paper, "P1", "2026-10-08", "control", center=7700, minute="10:40", pnl=12.0)
+    _pos(paper, "P2", "2026-10-08", "control", center=7700, kind="short_vertical", minute="10:20", pnl=-300.0)
+    _pos(paper, "P7", "2026-10-07", "control", center=7700, pnl=9.0)
+    live.execute("UPDATE fly_positions SET void_reason = 'outage' WHERE position_id = 'LV'")
+    paper.execute("UPDATE fly_positions SET void_reason = 'outage' WHERE position_id = 'P2'")
+    live.commit()
+    paper.commit()
+
+    (day,) = analytics.live_paper_gap(live, paper, arm="control")["sessions"]
+    assert day["session"] == "2026-10-08"
+    assert day["paper"]["entries"] == 1 and day["completion_gap"] == 0.0
+    assert day["net_gap"] == 8.0
+    assert day["pairs"][0]["paper_position"] == "P1"
+
+
 def test_live_paper_gap_withholds_net_until_the_session_settles(tmp_path):
     live, paper = _ledger(tmp_path / "live.db"), _ledger(tmp_path / "paper.db")
     _pos(live, "L1", "2026-10-12", "control", center=7700, status="open", kind="short_vertical")
