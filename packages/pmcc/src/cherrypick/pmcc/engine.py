@@ -579,23 +579,6 @@ def worksheet_metrics(
 
 
 # --------------------------------------------------------------------------- structure math
-def position_value(leg_marks: dict) -> float | None:
-    """The position's per-share value at current marks: what closing it would COLLECT at mid
-    (long mid minus short mid). None on any missing leg — never zero, `not recorded` and
-    `worthless` are different facts."""
-    long_mid = short_mid = None
-    for role, mark in leg_marks.items():
-        if mark is None or mark.get("mid") is None:
-            return None
-        if role == "long_call":
-            long_mid = mark["mid"]
-        else:
-            short_mid = mark["mid"]
-    if long_mid is None:
-        return None
-    return round(long_mid - (short_mid or 0.0), 4)
-
-
 def pnl_to_date(
     position: dict, legs: list[dict], leg_marks: dict, assignments: list[dict], spot: float | None
 ) -> dict | None:

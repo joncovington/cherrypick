@@ -240,20 +240,3 @@ def test_spread_pct_is_unknown_rather_than_zero_without_a_mid():
 
 
 # --------------------------------------------------------------------------- symbol capture
-def test_streamer_symbols_are_attached_from_the_chain():
-    """Read from the broker rather than derived: the OCC-to-DXLink transformation looks mechanical
-    and is not, and an invented symbol would not fail loudly — it would just never match."""
-    from cherrypick.earnings import scanner
-
-    legs = [{"symbol": f"AAPL  {EXPIRY}C00190000", "action": "Sell to Open", "quantity": 1}]
-    attached = scanner.attach_streamer_symbols(legs, {f"AAPL  {EXPIRY}C00190000": f".AAPL{EXPIRY}C190"})
-
-    assert attached[0]["streamer_symbol"] == f".AAPL{EXPIRY}C190"
-    assert legs[0].get("streamer_symbol") is None  # the input is not mutated
-
-
-def test_a_leg_the_chain_did_not_know_is_left_unmarked_rather_than_guessed():
-    from cherrypick.earnings import scanner
-
-    legs = [{"symbol": f"AAPL  {EXPIRY}C00190000", "action": "Sell to Open", "quantity": 1}]
-    assert "streamer_symbol" not in scanner.attach_streamer_symbols(legs, {})[0]

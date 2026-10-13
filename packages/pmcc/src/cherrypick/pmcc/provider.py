@@ -340,24 +340,6 @@ def build_mark_snapshot(
         conn.close()
 
 
-def read_session(db_path, symbol: str, trade_date: str) -> dict | None:
-    """Today's `stream_summary` row for one symbol — the keltner reversal gate's live inputs
-    (`day_low`, `prev_day_close`). None when the cache has no row yet (early session, cold feed) —
-    the gate refuses `keltner_no_day_low` rather than guessing."""
-    db_path = Path(db_path)
-    if not db_path.exists():
-        return None
-    conn = _connect_ro(db_path)
-    try:
-        r = conn.execute(
-            "SELECT * FROM stream_summary WHERE symbol = ? AND trade_date = ?",
-            (symbol.strip().upper(), trade_date),
-        ).fetchone()
-        return dict(r) if r else None
-    finally:
-        conn.close()
-
-
 # --------------------------------------------------------------------------- calibration
 def _open_interest(conn, streamer_syms: list[str]) -> dict:
     """Open interest per streamer symbol. Deliberately NOT age-bounded: OI is published once a day
