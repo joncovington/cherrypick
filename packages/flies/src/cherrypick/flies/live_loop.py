@@ -71,7 +71,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 
 from cherrypick.core import calendar as _cal  # noqa: E402
@@ -508,6 +508,22 @@ def _confirm_entry_fill(conn, pos: dict, broker, log) -> dict:
     return pos  # still working — stays pending, still blocks a second entry
 
 
+def broker_fill_time_et(status: dict | None) -> str | None:
+    """The broker's fill time for an order status (its LAST leg fill's `filled_at`) as an ET ISO
+    stamp, the ledger's own convention, or None when no leg carries a readable one. The broker's
+    stamps are UTC; one with no offset is read as UTC, never as this machine's local time."""
+    raw = fill_model.latest_fill_time((status or {}).get("fills"))
+    if raw is None:
+        return None
+    try:
+        when = fill_model.parse_ts(raw)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return when.astimezone(fill_facts.ET).isoformat(timespec="seconds")
+
+
 def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = None) -> dict:
     """Poll a pending completion order; flip kind='fly' with the ACTUAL debit once confirmed.
 
@@ -515,7 +531,11 @@ def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = 
     before-API) records `completion_latency_min`/`spot_at_completion` the same way paper's
     book.py always has. Regression (2026-07-30): live never recorded either, so every live
     Performance card's Completion panel (median latency, latency range, median spot move) read
-    blank for a real session with real completions."""
+    blank for a real session with real completions.
+
+    `completed_at`, the latency and the decision row are stamped at the broker's fill time
+    (`broker_fill_time_et`), and at the moment of noticing only when the broker gives none: a fill
+    confirmed after an outage once read as a completion at settlement time (2026-10-13)."""
     status = broker.status(pos["completion_order_id"])
     state, price = _execution.fill_state(status, fallback_price=pos.get("debit") or 0.0)
     if state == "filled":
@@ -526,7 +546,9 @@ def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = 
         completion_fee = fly.vertical_open_fee(pos["symbol"], pos.get("quantity", 1))
         new_net = pos["net"] - actual_debit
         new_fees = (pos.get("fees") or 0.0) + completion_fee
-        now = clock.now_iso()
+        # The broker's own fill time, when its leg fills carry one: a fill noticed late (an outage,
+        # a settle-time confirmation) is still a completion at the moment it filled.
+        now = broker_fill_time_et(status) or clock.now_iso()
         latency = bookmod._minutes_since(pos.get("entry_time"), now)
         updated = {**pos, "kind": "fly", "net": new_net, "fees": new_fees}
         floor = fly.position_floor(updated)
@@ -571,6 +593,9 @@ def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = 
         )
         return {
             **updated,
+            "debit": actual_debit,
+            "completion_fill_status": "filled",
+            "completed_at": now,
             "floor_dollars": floor,
             "risk_free": int(risk_free),
             "completion_latency_min": latency,
@@ -1472,6 +1497,47 @@ def _relabel_reconciled_settlement(conn, book_id, held, reconciled, settlement, 
     }
 
 
+def _status_seam(broker):
+    """`broker` when it can read an order status, else None. The settlement callers hand
+    `run_settle_live` a price source that may be the live adapter (which can) or a bare dated close
+    (`core.settlement.DatedClose`, which cannot)."""
+    return broker if callable(getattr(broker, "status", None)) else None
+
+
+def confirm_pending_fills(conn, book_id: str, broker, log) -> list[str]:
+    """Ask the broker about every OPEN position in `book_id` whose entry or completion fill is still
+    'pending', through the same `_confirm_entry_fill` / `_confirm_completion_fill` the tick uses, and
+    return the position ids whose answer is still unknown -- empty means the book may settle.
+
+    A filled order is booked (a completion flips the row to a fly at the broker's fill price and
+    time); a terminal-unfilled one resolves as the tick resolves it (a dead entry is cancelled, a
+    dead completion leaves the vertical). An unreachable broker reads as 'working' in
+    `fill_state`, so it stays pending and is returned. With no broker every pending row is.
+    No spot is recorded at a completion confirmed here: the settle-time spot is not the fill's."""
+    rows = conn.execute(
+        "SELECT * FROM fly_positions WHERE book_id = ? AND status = 'open' "
+        "AND (entry_fill_status = 'pending' OR completion_fill_status = 'pending')",
+        (book_id,),
+    ).fetchall()
+    unconfirmed = []
+    for pos in (dict(r) for r in rows):
+        if broker is not None:
+            if pos.get("entry_fill_status") == "pending" and pos.get("entry_order_id"):
+                pos = _confirm_entry_fill(conn, pos, broker, log)
+            if (
+                pos.get("status") == "open"
+                and pos.get("completion_fill_status") == "pending"
+                and pos.get("completion_order_id")
+            ):
+                pos = _confirm_completion_fill(conn, pos, broker, log)
+        if pos.get("status") == "open" and "pending" in (
+            pos.get("entry_fill_status"),
+            pos.get("completion_fill_status"),
+        ):
+            unconfirmed.append(pos["position_id"])
+    return unconfirmed
+
+
 def run_settle_live(
     config: dict,
     conn,
@@ -1481,6 +1547,7 @@ def run_settle_live(
     price: float | None = None,
     force: bool = False,
     broker=None,
+    fill_broker=None,
 ) -> dict:
     """Settle the live arm's books. No `price` = try the official print first (`broker`, when
     given, auto-fetches it — tastytrade -> Yahoo -> Barchart, see
@@ -1492,7 +1559,14 @@ def run_settle_live(
     The auto-fetch is retried on every call, not just the first: a still-provisional book (source
     != 'official') keeps trying on each subsequent tick until a source answers or the loop
     self-disarms — the real settlement print isn't guaranteed to exist the instant the market
-    closes."""
+    closes.
+
+    Before anything settles, every open position with a pending entry or completion is confirmed
+    with the broker (`confirm_pending_fills`, through `fill_broker`, else `broker` when it can read
+    an order status). Any answer still unknown -- the broker unreachable, the order still reading
+    working, no broker to ask -- refuses the whole book with `pending_fill_unconfirmed`; it stays
+    open and the next call retries. 2026-10-13: a completion that filled during an outage was
+    settled as a bare short vertical because nothing asked."""
     when = when or provider.now_et()
     day = when.date().isoformat()
     live_cfg = _live_cfg(config)
@@ -1509,6 +1583,22 @@ def run_settle_live(
 
     if already_official and not force:
         return {"ok": False, "reason": "already settled with the official print (use --force to override)"}
+
+    # Never settle on a fill status nobody asked the broker about (2026-10-13): every pending entry
+    # and completion in the book is confirmed first, and an unknown answer refuses the book.
+    unconfirmed = confirm_pending_fills(conn, book_id, fill_broker or _status_seam(broker), _log)
+    if unconfirmed:
+        _log(
+            f"live settle REFUSED for {book_id}: the broker has not confirmed the pending fill(s) of "
+            f"{', '.join(unconfirmed)} -- settling now would guess; the next tick or "
+            f"--settle-overdue retries"
+        )
+        return {
+            "ok": False,
+            "reason": "pending_fill_unconfirmed",
+            "book_id": book_id,
+            "positions": unconfirmed,
+        }
 
     auto_source = None
     if price is None and broker is not None and not already_official:
@@ -2057,27 +2147,33 @@ def should_disarm(config: dict, now_min: int, today: str) -> str | None:
 
 
 # --------------------------------------------------------------------------- status
-def settle_overdue(config: dict, conn, *, cache_path: str, today: str, close_fn=None) -> dict:
+def settle_overdue(config: dict, conn, *, cache_path: str, today: str, close_fn=None, broker=None) -> dict:
     """Settle every past session the live ledger still holds open, at THAT session's official close
     (`core.settlement.dated_index_close`, source `yahoo_daily`) -- never a provisional price. The
     catch-up for a machine that was down between the close and the disarm (2026-10-08; the owner
-    chose official-print-only). A session with a pending entry is left for a person: whether that
-    order filled is the broker's word, not this function's. No close found: left, still alerting."""
+    chose official-print-only). A pending entry or completion is the broker's word, not this
+    function's: `run_settle_live` asks `broker` (the live adapter) about each first, and a session
+    it cannot confirm -- or any pending fill with no broker given -- is left, reason
+    `pending_fill_unconfirmed`, for the next run (2026-10-13; before that a pending entry left the
+    session for a person and a pending completion was not looked at). No close found: left, still
+    alerting."""
     close_fn = close_fn or _settlement.dated_index_close
     symbol = _live_cfg(config).get("symbol", "XSP")
     done, left = [], []
     for item in overdue_settlement(conn, today):
         session = item["session"]
-        if item["pending_entries"]:
-            left.append({"session": session, "reason": "pending_entries"})
-            continue
         price = close_fn(symbol, session)
         if price is None:
             left.append({"session": session, "reason": "no_official_close"})
             continue
         when = datetime.fromisoformat(f"{session}T16:30:00")
         out = run_settle_live(
-            config, conn, cache_path=cache_path, when=when, broker=_settlement.DatedClose(price)
+            config,
+            conn,
+            cache_path=cache_path,
+            when=when,
+            broker=_settlement.DatedClose(price),
+            fill_broker=broker,
         )
         (done if out.get("ok") else left).append({"session": session, "price": price, **out})
     return {"ok": True, "settled": done, "left": left}
@@ -2271,7 +2367,10 @@ def main() -> int:
             return 0
         if args.settle_overdue:
             today = provider.now_et().date().isoformat()
-            print(json.dumps(settle_overdue(config, conn, cache_path=cache_path, today=today), default=str))
+            out = settle_overdue(
+                config, conn, cache_path=cache_path, today=today, broker=BrokerAdapter(config)
+            )
+            print(json.dumps(out, default=str))
             return 0
         if args.settle:
             when = None
