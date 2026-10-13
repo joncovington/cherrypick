@@ -63,7 +63,11 @@ formula from `capital` alone.
 
 `None` never means zero anywhere in here. A row written before an instrumentation column existed
 reports `slippage: None` and `capital: None`, because "not recorded" and "was zero" are different
-facts and averaging them together is how a cost model quietly flatters itself.
+facts and averaging them together is how a cost model quietly flatters itself. The same holds for
+the money itself where a ledger can close a row without it (meic's `pnl`/`fees`, earnings' `pnl`
+and costs, contango's stored figures): `gross_pnl`, `cost` and `net_pnl` are None there, and
+`core.metrics` and the orchestrator report leave such a record out of every sum and count it as
+unscored. The other schemas write their money in the same statement that closes the row.
 
 OPEN_READERS is a deliberately separate registry answering "what is still on the book", not "what
 settled". Only a multi-day strategy carries overnight; the 0DTE modules are empty by construction
@@ -95,6 +99,21 @@ connect_ro = core_db.connect_ro
 #: calendars, pmcc and curve write neither today (open / short_settled / closed), so for them the
 #: filter is the same rule stated once.
 _NOT_ON_BOOK = "('closed', 'cancelled')"
+
+
+def _plus(a: float | None, b: float | None) -> float | None:
+    """a + b, or None when either is unrecorded -- a sum with a hole in it is not a total."""
+    return None if a is None or b is None else a + b
+
+
+def _less(a: float | None, b: float | None) -> float | None:
+    """a - b, or None when either is unrecorded."""
+    return None if a is None or b is None else a - b
+
+
+def _round2(v: float | None) -> float | None:
+    return None if v is None else round(v, 2)
+
 
 MEIC_UNTAGGED = "unassigned"
 EARNINGS_UNTAGGED = "default"
@@ -185,9 +204,11 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
             "symbol": r["symbol"],
             "strategy": None,
             # gross = spread P&L (already at the modeled fill prices); cost = exchange fees.
-            "gross_pnl": (r["pnl"] or 0.0),
-            "cost": (r["fees"] or 0.0),
-            "net_pnl": (r["pnl"] or 0.0) - (r["fees"] or 0.0),
+            # A closed row can carry neither: the live book's 2026-06-29 stop has an exit_time and
+            # NULL pnl and fees. That is n/r (None), never a flat, costless trade.
+            "gross_pnl": r["pnl"],
+            "cost": r["fees"],
+            "net_pnl": _less(r["pnl"], r["fees"]),
             "slippage": (r["slippage_dollars"] if has_slip else None),
             "capital": _capital(r),
             "max_profit": _max_profit(r),
@@ -227,9 +248,11 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
             "symbol": r["symbol"],
             "strategy": r["strategy"],
             # gross = mid-priced spread P&L; cost = commission + pass-through + slippage.
-            "gross_pnl": (r["pnl"] or 0.0),
-            "cost": (r["entry_cost"] or 0.0) + (r["exit_cost"] or 0.0),
-            "net_pnl": (r["pnl"] or 0.0) - (r["entry_cost"] or 0.0) - (r["exit_cost"] or 0.0),
+            # `save-close` writes pnl and exit_cost from whatever the caller passed, so a closed
+            # row can lack either: n/r (None), never zero.
+            "gross_pnl": r["pnl"],
+            "cost": _plus(r["entry_cost"], r["exit_cost"]),
+            "net_pnl": _less(r["pnl"], _plus(r["entry_cost"], r["exit_cost"])),
             "slippage": _slip(r),
             # sizing.compute_position_size's defined max loss, stored at entry.
             "capital": (r["capital_at_risk"] if has_capital else None),
@@ -503,9 +526,11 @@ def _contango_closed(conn, start: str | None = None, end: str | None = None) -> 
             "experiment_id": None,
             "symbol": r["symbol"],
             "strategy": "contango_etf",
-            "gross_pnl": r["gross_pnl"] or 0.0,
-            "cost": round((r["fees"] or 0.0) + (r["slippage"] or 0.0), 2),
-            "net_pnl": r["net_pnl"] or 0.0,
+            # Read as stored, and a NULL stays None (n/r): `or 0.0` reported an unrecorded stint as
+            # a flat one, which a total then counted as a real, costless trade.
+            "gross_pnl": r["gross_pnl"],
+            "cost": _round2(_plus(r["fees"], r["slippage"])),
+            "net_pnl": r["net_pnl"],
             "slippage": r["slippage"],
             "capital": round(r["shares"] * r["entry_mid"], 2) if r["entry_mid"] is not None else None,
             "max_profit": None,
