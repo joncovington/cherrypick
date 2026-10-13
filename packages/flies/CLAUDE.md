@@ -49,7 +49,7 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `cherrypick/flies/engine.py` | centre selection, entry gates, the completion gate, settlement. Pure. |
 | `cherrypick/flies/provider.py` | builds snapshots from the shared stream cache, read-only. No decisions. |
 | `cherrypick/flies/paper_loop.py` | session driver: fetch, run every arm, settle at the bell. |
-| `cherrypick/flies/book.py` | wires engine decisions to the paper DB; one book per (date, arm, symbol). |
+| `cherrypick/flies/book.py` | wires engine decisions to the paper DB; one book per (date, arm, symbol). A replay hands `process_snapshot`/`settle_book` the tick's `now` (or `paper_loop.run_once` its `when`) and every stamp — entry_time, completed_at, latencies, the cadence clock, the journals — is that instant (`clock.pinned`); the loops pass none and stamp the wall clock. |
 | `cherrypick/flies/db.py` | `fly_positions` (ledger) and `fly_books` (roll-up with the floor's price band). |
 | `cherrypick/flies/analytics.py` | the one query layer every read surface goes through. Read-only. |
 | `cherrypick/flies/eod.py` | Report builders, retired 2026-08-13 (`packages/review` reports the session now). `logs_dir()` is still the loops' path helper. |

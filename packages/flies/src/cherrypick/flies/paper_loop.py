@@ -30,6 +30,7 @@ from cherrypick.core import looplock
 from cherrypick.flies import book as bookmod  # noqa: E402
 from cherrypick.flies import cli as climod  # noqa: E402
 from cherrypick.flies import (
+    clock,  # noqa: E402
     close_tags,  # noqa: E402
     engine,  # noqa: E402
     intraday_advice,  # noqa: E402
@@ -740,7 +741,15 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
 
     Also owns end-of-day settlement. The recurring task calls only this, so there is exactly one
     thing to schedule and one thing that can fail.
+
+    A `when` handed in (a test, a replay) also stamps everything the tick writes, so the ledger
+    says the time the tick stood for; the scheduled loop passes none and stamps the wall clock.
     """
+    with clock.pinned(when):
+        return _run_once(config, conn, cache_path=cache_path, when=when, force=force)
+
+
+def _run_once(config: dict, conn, *, cache_path: str, when, force: bool) -> dict:
     _beat()  # before every gate below: liveness is "the loop is turning over", not "it did work"
     when = when or provider.now_et()
     now_min = provider.minute_of_day(when)
@@ -866,7 +875,14 @@ def run_settle(config: dict, conn, *, cache_path: str, when=None, price: float |
     usually small, and it is systematic rather than random — but a position centred within a point of
     spot can settle on the wrong side of its centre because of it. Pass `--price` with the official
     print for a book that matters.
+
+    A `when` handed in stamps the settlement's writes, as in `run_once`.
     """
+    with clock.pinned(when):
+        return _run_settle(config, conn, cache_path=cache_path, when=when, price=price)
+
+
+def _run_settle(config: dict, conn, *, cache_path: str, when, price: float | None) -> dict:
     when = when or provider.now_et()
     trade_date = when.date().isoformat()
     out = []
