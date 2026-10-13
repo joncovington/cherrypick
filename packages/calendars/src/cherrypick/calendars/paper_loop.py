@@ -528,6 +528,10 @@ def _try_entry(
     # two arms with two stamps, never one id shared).
     advised: dict[str, dict] = {}
     decision: dict | None = None
+    # Captured BEFORE `arms` is filled in below: the paired-debit record keys on "this is the
+    # default (Monday) regime's pass", and testing `arms is None` after the rebind never fired --
+    # dc_paired_debits held no row from 2026-08-24 to 10-12 although four Friday weeks traded.
+    default_regime = arms is None
     if arms is None:
         arms, advised = session_books(config, day)
         if advised:
@@ -611,7 +615,7 @@ def _try_entry(
     # from the default regime's own pass (docs/friday-entry-arm.md). Pure telemetry beside the
     # entry, never a position: it prices the strikes the Friday arm already bought, so the two
     # entrances hold identical contracts and the difference in what they paid is the whole effect.
-    if arms is None:
+    if default_regime:
         _record_paired_debits(conn, snapshot, week=week, day=day)
 
     params = engine.merged_params(config, "control")
