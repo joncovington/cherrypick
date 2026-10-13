@@ -219,7 +219,8 @@ function ConcludedList({ items }: { items: AdvisorExperiment[] }) {
           <span className="muted">
             {e.sessionsRun} of {e.expiresAfter} sessions
             {e.verdict?.stalled != null && " · stalled"}
-            {e.verdict?.underpowered === true && " · underpowered"}
+            {e.verdict?.noExposure != null && " · no exposure, measured nothing"}
+            {e.verdict?.noExposure == null && e.verdict?.underpowered === true && " · underpowered"}
             {e.verdict?.recommendation != null && ` · model: ${e.verdict.recommendation.value}`}
           </span>
           {e.verdict?.recommendation != null && (
@@ -312,7 +313,8 @@ export function AdvisorSlideBody({ data }: { data: AdvisorModulePayload }) {
                 <p className="muted">
                   {d !== undefined && <>net delta {money(d["net_pnl"])}</>}
                   {gate !== null && <> · gate: {gate}</>}
-                  {e.verdict!.underpowered && <> · below the gate, so not yet measured</>}
+                  {e.verdict!.noExposure != null && <> · no exposure: {e.verdict!.noExposure.detail}</>}
+                  {e.verdict!.noExposure == null && e.verdict!.underpowered && <> · below the gate, so not yet measured</>}
                 </p>
               );
             })()}

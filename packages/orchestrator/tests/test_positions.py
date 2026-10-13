@@ -7,6 +7,7 @@ credential, and no market are needed.
 """
 
 import pytest
+from cherrypick.core.home import data_dir
 
 from cherrypick.orchestrator import positions
 
@@ -152,7 +153,7 @@ def _stub_broker(monkeypatch, positions_payload, quotes=None, *, record=None):
 
     monkeypatch.setattr(positions.reconcile, "_tt", fake_tt)
     monkeypatch.setattr(positions.cfgmod, "enabled_modules", lambda cfg: {"meic": {}})
-    monkeypatch.setattr(positions.cfgmod, "module_root", lambda mcfg, name: positions.data_dir("x"))
+    monkeypatch.setattr(positions.cfgmod, "module_root", lambda mcfg, name: data_dir("x"))
     monkeypatch.setattr(positions.cfgmod, "broker_tool", lambda mcfg, name: ["-m", "x"])
 
 
@@ -224,7 +225,7 @@ def test_the_same_symbol_in_two_accounts_is_quoted_once(monkeypatch):
 
     monkeypatch.setattr(positions.reconcile, "_tt", fake_tt)
     monkeypatch.setattr(positions.cfgmod, "enabled_modules", lambda cfg: {"meic": {}})
-    monkeypatch.setattr(positions.cfgmod, "module_root", lambda mcfg, name: positions.data_dir("x"))
+    monkeypatch.setattr(positions.cfgmod, "module_root", lambda mcfg, name: data_dir("x"))
     monkeypatch.setattr(positions.cfgmod, "broker_tool", lambda mcfg, name: ["-m", "x"])
     monkeypatch.setattr(positions, "_cached_marks", lambda syms: {})
 
@@ -250,7 +251,7 @@ def test_the_account_filter_takes_a_last_4(monkeypatch):
     )
     monkeypatch.setattr(positions.reconcile, "_tt", lambda *a, **k: {"ok": True, "quotes": {}})
     monkeypatch.setattr(positions.cfgmod, "enabled_modules", lambda cfg: {"meic": {}})
-    monkeypatch.setattr(positions.cfgmod, "module_root", lambda mcfg, name: positions.data_dir("x"))
+    monkeypatch.setattr(positions.cfgmod, "module_root", lambda mcfg, name: data_dir("x"))
     monkeypatch.setattr(positions.cfgmod, "broker_tool", lambda mcfg, name: ["-m", "x"])
     monkeypatch.setattr(positions, "_cached_marks", lambda syms: {})
 

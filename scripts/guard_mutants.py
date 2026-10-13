@@ -219,11 +219,9 @@ def main(argv=None) -> int:
     # A partial run (`--only`) proves only its own mutants, so it never vouches for the checkout.
     report["fingerprint"] = fingerprint if not args.only else None
     try:
-        path = _state_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f"{path.name}.tmp")
-        tmp.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        tmp.replace(path)
+        from cherrypick.core.jsonio import write_json_atomic
+
+        write_json_atomic(_state_path(), report, indent=2, default=None)
     except Exception:  # noqa: BLE001 -- the verdict matters more than the record of it
         pass
     if args.json:

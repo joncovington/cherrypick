@@ -16,6 +16,7 @@ from cherrypick.core.streamcache import chain_for_expiration as _chain_for_expir
 from cherrypick.core.streamcache import greeks_for as _greeks
 from cherrypick.core.streamcache import occ_root, read_spot  # noqa: F401
 from cherrypick.core.streamcache import usable_quote as _usable_quote
+from cherrypick.core.streamcache import usable_quotes as _usable_quotes
 
 from cherrypick.curve.clock import now_et  # noqa: F401
 
@@ -29,24 +30,6 @@ def _fail(symbol: str, reason: str, **extra) -> dict:
 def snapshot_kwargs(config: dict) -> dict:
     defaults = config.get("defaults", {}) or {}
     return {"max_quote_age_seconds": defaults.get("max_quote_age_seconds", DEFAULT_MAX_QUOTE_AGE_SECONDS)}
-
-
-def _quotes_for(conn, streamer_syms: list[str], now_ts: float, max_age: float) -> tuple[dict, int]:
-    quotes: dict[str, dict] = {}
-    stale = 0
-    for i in range(0, len(streamer_syms), 900):
-        chunk = streamer_syms[i : i + 900]
-        placeholders = ", ".join("?" * len(chunk))
-        for row in conn.execute(
-            f"SELECT symbol, bid, ask, mid, updated_at FROM stream_quotes WHERE symbol IN ({placeholders})",
-            chunk,
-        ):
-            quote = _usable_quote(row, now_ts, max_age)
-            if quote is None:
-                stale += 1
-                continue
-            quotes[row["symbol"]] = quote
-    return quotes, stale
 
 
 def build_entry_snapshot(
@@ -83,7 +66,7 @@ def build_entry_snapshot(
 
         now_ts = time.time()
         syms = [e["streamer_symbol"] for e in chain if e["option_type"] == "call"]
-        quotes, stale = _quotes_for(conn, syms, now_ts, max_quote_age_seconds)
+        quotes, stale = _usable_quotes(conn, syms, now_ts, max_quote_age_seconds)
         if not quotes:
             return _fail(symbol, "no_fresh_quotes", rejected=stale)
         greeks = _greeks(conn, list(quotes), now_ts=now_ts, max_age_seconds=max_quote_age_seconds * 6)

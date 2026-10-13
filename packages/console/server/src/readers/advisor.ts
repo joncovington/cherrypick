@@ -93,11 +93,20 @@ function verdict(raw: unknown): AdvisorVerdict | null {
       baseTag: str(raw["baseTag"]) ?? str(raw["base_tag"]) ?? "",
     };
   });
+  const exposureRaw = body["no_exposure"];
+  const noExposure =
+    exposureRaw !== null && typeof exposureRaw === "object"
+      ? {
+          reason: str((exposureRaw as Record<string, unknown>)["reason"]) ?? "",
+          detail: str((exposureRaw as Record<string, unknown>)["detail"]) ?? "",
+        }
+      : null;
   return {
     pairs,
     underpowered: v.underpowered === true,
     recommendation: v.recommendation ?? null,
     stalled,
+    noExposure,
   };
 }
 

@@ -105,3 +105,13 @@ def _isolated_home(tmp_path_factory, monkeypatch):
     ):
         monkeypatch.delenv(leaked, raising=False)
     return home
+
+
+@pytest.fixture(autouse=True)
+def _a_designated_account(monkeypatch):
+    """`tt execute_trade` refuses without a designated account (2026-10-12), and the real lookup reads
+    the machine's keyring. Pinned to a fake here so no test reads a keyring; the refusal's own tests
+    pin it to None."""
+    from cherrypick.earnings import tt
+
+    monkeypatch.setattr(tt, "_designated_account", lambda: "TEST0001")

@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 from cherrypick.core import streamcache
 from cherrypick.core import streamrequests as _streamrequests
 
@@ -153,11 +154,7 @@ def write_stamp(
     if subscriptions is not None:
         payload["subscriptions"] = subscriptions
     try:
-        path = stamp_path(service_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        tmp.replace(path)
+        _jsonio.write_json_atomic(stamp_path(service_id), payload, indent=2, default=None)
     except OSError:
         pass
 

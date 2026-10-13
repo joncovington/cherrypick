@@ -192,11 +192,9 @@ def main(argv=None) -> int:
         "days": args.days,
         "rows": rows,
     }
-    path = out_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(doc, indent=1), encoding="utf-8")
-    tmp.replace(path)
+    from cherrypick.core.jsonio import write_json_atomic
+
+    path = write_json_atomic(out_path(), doc, indent=1, default=None)
     print(
         json.dumps(
             {

@@ -27,6 +27,9 @@ they cannot disagree.
 
 - **`None` is not zero.** A field with no recorded value is null (averaging missing slippage as zero
   once understated earnings' cost by ~90%).
+- **Costs are separate columns** (fact set v10): `fees`, `settlement` (null and counted when
+  unrecorded) and `slippage` with its `slippage_basis` (`in_gross` for meic/flies, a charged `cost`
+  elsewhere), from `core.ledgers`' record parts. The total `cost` stays beside them for older readers.
 - **Effective sample sits beside raw N.** Trades sharing a symbol and session share one market event.
 - **Measurement breaks travel with the numbers**, and results either side are never pooled. A module
   with no breaks table reports `null`, not `[]`, so a trend cannot assume continuity it never verified.

@@ -149,7 +149,7 @@ def pnl_series(conn, granularity: str = "daily", arm=None, symbol=None) -> list[
 # them, every one a loser, -$199.45 total), which charged its column with a cost no other arm could
 # incur and made "gex vs control" partly a legged-vs-outright comparison instead of a centring one.
 # The arm comparison therefore reads legged only. This is a READ-LAYER filter on purpose — the rows
-# stay in the ledger, `by_entry_mode` still reports both, and the book totals in `stats_for_period` /
+# stay in the ledger, and the book totals in `stats_for_period` /
 # `pnl_series` remain whole, because the book really did pay for those flies and rule 6 says a
 # negative result is the finding rather than something to remove.
 COMPARISON_ENTRY_MODES = ("legged",)
@@ -787,19 +787,6 @@ def regime_cuts(
     return doc
 
 
-def by_entry_mode(conn, start=None, end=None, symbol=None) -> list[dict]:
-    """legged vs outright. They perform differently enough that averaging them together would hide
-    the finding — legged manufactures its own floor, outright spends one."""
-    where, params = _period_clause(start, end, symbol=symbol)
-    rows = conn.execute(
-        f"SELECT entry_mode, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params
-    ).fetchall()
-    grouped: dict[str, list] = {}
-    for r in rows:
-        grouped.setdefault(r["entry_mode"] or "unknown", []).append(r)
-    return [{"entry_mode": m, **_summarize(rs)} for m, rs in sorted(grouped.items())]
-
-
 # The drift past which a session's direction is treated as committed, as a FRACTION of spot rather
 # than in points. 0.0026 is the 20 points that were measured on SPX (~7710), and expressing it
 # relatively is not cosmetic: the EOD writer reports per day across every book, so an absolute band
@@ -911,22 +898,6 @@ def by_entry_window(conn, start=None, end=None, symbol=None) -> list[dict]:
     for r in rows:
         grouped.setdefault(r["entry_window"] or "unwindowed", []).append(r)
     return [{"window": w, **_summarize(rs)} for w, rs in sorted(grouped.items())]
-
-
-def fee_drag(conn, start=None, end=None, symbol=None) -> list[dict]:
-    """Fee drag per arm. Broken out because a legged fly pays two fee stacks against a credit that may
-    be $35-105 — costs are not a rounding error for this strategy, they are the experiment."""
-    return [
-        {
-            "arm": r["arm"],
-            "gross_pnl": r["gross_pnl"],
-            "fees": r["fees"],
-            "net_pnl": r["net_pnl"],
-            "fee_drag_pct": r["fee_drag_pct"],
-            "trades": r["trades"],
-        }
-        for r in by_arm(conn, start, end, symbol=symbol)
-    ]
 
 
 def daily_pnl(conn, arm=None, symbol=None) -> list[dict]:
@@ -1724,12 +1695,16 @@ def live_vs_paper(live_conn, paper_conn, arm: str = "gex") -> dict:
     (`advisor.flies_live_today/v1`). Until the 2026-10-19 boundary it carried this function's tag,
     `flies.analytics.live_vs_paper/v1`, which claimed a parity it never had; the advisor's
     `test_factpack` now fails if it claims this shape without this shape's keys. This remains the
-    one place a live-vs-paper number is *reported* from."""
+    one place a live-vs-paper number is *reported* from.
+
+    Voided rows (`void_reason` set) are out on both sides and out of the session list, as on every
+    other read surface: they keep `status = 'settled'`, so `status != 'cancelled'` alone counted the
+    22 paper rows of the 2026-10-08 outage against live's two entries that day."""
     days = [
         r[0]
         for r in live_conn.execute(
             "SELECT DISTINCT trade_date FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' "
-            "AND status != 'cancelled' ORDER BY trade_date",
+            "AND status != 'cancelled' AND void_reason IS NULL ORDER BY trade_date",
             (arm,),
         )
     ]
@@ -1751,7 +1726,7 @@ def live_vs_paper(live_conn, paper_conn, arm: str = "gex") -> dict:
             dict(r)
             for r in conn.execute(
                 f"SELECT * FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' "
-                f"AND status != 'cancelled' AND trade_date IN ({marks})",
+                f"AND status != 'cancelled' AND void_reason IS NULL AND trade_date IN ({marks})",
                 (arm, *days),
             )
         ]
@@ -1871,15 +1846,6 @@ def positions_for_day(
     ).fetchall()
     out = [dict(r) for r in rows]
     return out if include_cancelled else fly.held(out)
-
-
-def trade_log(conn, limit: int = 1000, arm=None, symbol=None) -> list[dict]:
-    where, params = _period_clause(arm=arm, symbol=symbol)
-    rows = conn.execute(
-        f"SELECT * FROM fly_positions WHERE {where} ORDER BY trade_date DESC, entry_time DESC LIMIT ?",
-        [*params, limit],
-    ).fetchall()
-    return [dict(r) for r in rows]
 
 
 def books_for_day(conn, day: str, arm: str | None = None, symbol: str | None = None) -> list[dict]:
@@ -2206,39 +2172,6 @@ def today() -> str:
     still yesterday well after the ET date has rolled, so a local date would ask for the wrong
     session's rows on any evening read."""
     return clock.today_iso()
-
-
-def session_overview(conn, day: str | None = None, arm: str | None = None, symbol: str | None = None) -> dict:
-    """Everything the Today view and the section card need, in one call.
-
-    `arm`/`symbol` narrow every figure here (books, positions, and the derived counts/stats/
-    completion) to the selected scope — the same filter the payoff curve and the History/
-    Performance views already apply, so switching either selector can't leave one card telling a
-    different story than the rest of the page.
-    """
-    day = day or today()
-    books = books_for_day(conn, day, arm, symbol)
-    positions = positions_for_day(conn, day, arm, symbol)
-    open_positions = [p for p in positions if p["status"] == "open"]
-    flies = [p for p in positions if p["kind"] == "fly"]
-    return {
-        "date": day,
-        "books": books,
-        "positions": positions,
-        "open_count": len(open_positions),
-        "fly_count": len(flies),
-        "risk_free_count": len([p for p in flies if p["risk_free"]]),
-        # The worst realistic dollar loss across every still-open position, net of trading fees
-        # AND the worst-case $5/contract exercise-assignment fee (as if every leg finished ITM --
-        # see fly.position_floor). A position whose own floor is already non-negative contributes
-        # nothing here (it cannot become a loss), so this is genuinely "how much could this book
-        # still lose," not a raw sum of every floor regardless of sign.
-        "max_possible_loss": round(sum(min(0.0, p.get("floor_dollars") or 0.0) for p in open_positions), 2),
-        "stats": stats_for_period(conn, day, day, arm=arm, symbol=symbol),
-        "completion": completion_stats(conn, day, day, symbol=symbol, arm=arm),
-        "divergence": arm_divergence(conn, day),
-        "journal": decision_journal(conn, day, arm),
-    }
 
 
 # --------------------------------------------------------------------------- band placement
@@ -2985,3 +2918,594 @@ def close_tag_tracker(ledgers: dict, start=None, end=None, symbol=None) -> dict:
                 }
             )
     return {"arms": out}
+
+
+# --------------------------------------------------------------------------- paired live vs paper
+# How far apart a live entry and its paper twin may sit in time and still be called the same trade.
+# The duplicate rule makes a structure unique per arm per session, so the structure alone names the
+# twin; the window only stops a pairing across a market that has moved on. Live's cadence clock runs
+# from its own fills and its window opens later than paper's, so the same structure is often entered
+# 10-20 minutes apart (10-08: paper's 7790 put at 10:07, live's at 10:22). Every pair carries its
+# `gap_min`, so a reader can see how far apart the two fills were.
+LIVE_PAPER_MATCH_MINUTES = 30.0
+
+
+def _completion_rule_from(paper_conn) -> str | None:
+    """The date paper legged completions started paying the live limit (`engine.pays_limit`), read
+    off the ledger's own `completion_rule` break -- never typed here, so a re-dated break moves it."""
+    try:
+        row = paper_conn.execute(
+            "SELECT MIN(break_date) FROM measurement_breaks WHERE kind = 'completion_rule' AND scope = '*'"
+        ).fetchone()
+    except Exception:  # noqa: BLE001 - an older ledger without the table has no break to report
+        return None
+    return row[0] if row and row[0] else None
+
+
+def _legged_rows(conn, arm: str, days: list[str]) -> list[dict]:
+    if not days:
+        return []
+    marks = ",".join("?" * len(days))
+    return [
+        dict(r)
+        for r in conn.execute(
+            f"SELECT * FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' "
+            f"AND status != 'cancelled' AND void_reason IS NULL "
+            f"AND COALESCE(closed_before_expiry, 0) = 0 AND trade_date IN ({marks}) "
+            f"ORDER BY trade_date, entry_time",
+            (arm, *days),
+        )
+    ]
+
+
+def _completed(row: dict) -> bool:
+    return row.get("kind") in ("fly", "iron_fly")
+
+
+def _side_totals(rows: list[dict]) -> dict:
+    settled = [r for r in rows if r.get("status") == "settled"]
+    done = [r for r in rows if _completed(r)]
+    return {
+        "entries": len(rows),
+        "completed": len(done),
+        "completion_rate": _rate(len(done), len(rows)),
+        "settled": len(settled),
+        "open": len(rows) - len(settled),
+        # Net only over settled rows, and None until every row of the session has settled: a
+        # session half-settled is not a session's net.
+        "net": _round(sum(r["pnl"] or 0.0 for r in settled)) if rows and len(settled) == len(rows) else None,
+        "fees": _round(sum(r["fees"] or 0.0 for r in settled)) if settled else None,
+    }
+
+
+def _match_live_to_paper(live_rows: list[dict], paper_rows: list[dict], window: float) -> tuple[list, list]:
+    """Each live entry paired with the paper entry of the same structure (side, centre, wing width)
+    nearest in entry time within `window` minutes, each paper row used once. Returns (pairs, the
+    live rows left unmatched)."""
+    used: set = set()
+    pairs, unmatched = [], []
+    for lv in live_rows:
+        l_min = _entry_minute(lv.get("entry_time"))
+        best = None
+        for pp in paper_rows:
+            if pp["position_id"] in used or l_min is None:
+                continue
+            if (pp["side"], pp["center"], pp["wing_width"]) != (lv["side"], lv["center"], lv["wing_width"]):
+                continue
+            p_min = _entry_minute(pp.get("entry_time"))
+            if p_min is None:
+                continue
+            gap = abs(p_min - l_min)
+            if gap <= window and (best is None or gap < best[0]):
+                best = (gap, pp)
+        if best is None:
+            unmatched.append(lv)
+            continue
+        used.add(best[1]["position_id"])
+        pairs.append((lv, best[1], best[0]))
+    return pairs, unmatched
+
+
+def _pair_detail(lv: dict, pp: dict, gap: float) -> dict:
+    """One matched pair's gaps. Every gap is live minus paper in the direction that favours live:
+    + is live better off. Prices are per share, money is whole-position dollars."""
+    both_done = _completed(lv) and _completed(pp)
+    both_settled = lv.get("status") == "settled" and pp.get("status") == "settled"
+    credit_gap = (
+        _round(lv["credit"] - pp["credit"], 4)
+        if lv.get("credit") is not None and pp.get("credit") is not None
+        else None
+    )
+    debit_gap = (
+        _round(pp["debit"] - lv["debit"], 4)
+        if both_done and lv.get("debit") is not None and pp.get("debit") is not None
+        else None
+    )
+    return {
+        "live_position": lv["position_id"],
+        "paper_position": pp["position_id"],
+        "side": lv["side"],
+        "center": lv["center"],
+        "wing_width": lv["wing_width"],
+        "live_entry_time": lv.get("entry_time"),
+        "paper_entry_time": pp.get("entry_time"),
+        "gap_min": round(gap, 1),
+        "live_credit": lv.get("credit"),
+        "paper_credit": pp.get("credit"),
+        "credit_gap": credit_gap,
+        "live_completed": _completed(lv),
+        "paper_completed": _completed(pp),
+        "live_debit": lv.get("debit") if _completed(lv) else None,
+        "paper_debit": pp.get("debit") if _completed(pp) else None,
+        "debit_gap": debit_gap,
+        "live_fees": lv.get("fees") if both_settled else None,
+        "paper_fees": pp.get("fees") if both_settled else None,
+        # Fees are a cost, so live paying LESS is the favourable direction.
+        "fee_gap": _round((pp["fees"] or 0.0) - (lv["fees"] or 0.0)) if both_settled else None,
+        "live_fees_source": "broker"
+        if lv.get("broker_reconciliation_status") == "reconciled"
+        else "modelled",
+        "live_net": lv.get("pnl") if both_settled else None,
+        "paper_net": pp.get("pnl") if both_settled else None,
+        "net_gap": _round((lv["pnl"] or 0.0) - (pp["pnl"] or 0.0)) if both_settled else None,
+    }
+
+
+def _sum_or_none(values) -> float | None:
+    vals = [v for v in values if v is not None]
+    return _round(sum(vals), 4) if vals else None
+
+
+def live_paper_gap(live_conn, paper_conn, arm: str = "control", start=None, end=None) -> dict:
+    """The live arm's sessions, each paired with paper's book of the same arm on the same session.
+
+    Per session: both books' entries, completion rate and settled net (the NET gap, live minus paper,
+    over books of different sizes -- live takes fewer entries); and over the entries that match
+    (same structure, nearest in time within `LIVE_PAPER_MATCH_MINUTES`): the entry FILL gap (live's
+    broker credit minus paper's modelled credit), the completion debit gap (paper's debit minus
+    live's), the FEE gap (paper's modelled fees minus live's, broker-reconciled where live's are)
+    and the matched net gap. The COMPLETION gap is paper's rate minus live's, `live_vs_paper`'s sign.
+
+    **Paper's completion price changed meaning on the `completion_rule` break** (2026-10-05,
+    `engine.pays_limit`): before it paper paid its modelled debit, from it paper pays the live
+    limit. Every session carries `completion_rule` ("modelled_debit" | "pays_limit") and the totals
+    are split at the break, never pooled across it. Read-only; nothing here is a verdict."""
+    clause, params = (
+        ["arm = ?", "entry_mode = 'legged'", "status != 'cancelled'", "void_reason IS NULL"],
+        [arm],
+    )
+    if start:
+        clause.append("trade_date >= ?")
+        params.append(start)
+    if end:
+        clause.append("trade_date <= ?")
+        params.append(end)
+    days = [
+        r[0]
+        for r in live_conn.execute(
+            f"SELECT DISTINCT trade_date FROM fly_positions WHERE {' AND '.join(clause)} ORDER BY trade_date",
+            params,
+        )
+    ]
+    break_from = _completion_rule_from(paper_conn) if paper_conn is not None else None
+    live_rows = _legged_rows(live_conn, arm, days)
+    paper_rows = _legged_rows(paper_conn, arm, days) if paper_conn is not None else []
+
+    sessions = []
+    for day in days:
+        lv = [r for r in live_rows if r["trade_date"] == day]
+        pp = [r for r in paper_rows if r["trade_date"] == day]
+        pairs, unmatched = _match_live_to_paper(lv, pp, LIVE_PAPER_MATCH_MINUTES)
+        detail = [_pair_detail(a, b, g) for a, b, g in pairs]
+        live_tot, paper_tot = _side_totals(lv), _side_totals(pp)
+        sessions.append(
+            {
+                "session": day,
+                "completion_rule": "pays_limit" if break_from and day >= break_from else "modelled_debit",
+                "live": live_tot,
+                "paper": paper_tot,
+                "net_gap": _round(live_tot["net"] - paper_tot["net"])
+                if live_tot["net"] is not None and paper_tot["net"] is not None
+                else None,
+                "completion_gap": _round(paper_tot["completion_rate"] - live_tot["completion_rate"], 4)
+                if live_tot["completion_rate"] is not None and paper_tot["completion_rate"] is not None
+                else None,
+                "matched": len(pairs),
+                "unmatched_live": len(unmatched),
+                "unmatched_paper": len(pp) - len(pairs),
+                "credit_gap_sum": _sum_or_none(d["credit_gap"] for d in detail),
+                "debit_gap_sum": _sum_or_none(d["debit_gap"] for d in detail),
+                "debit_pairs": sum(1 for d in detail if d["debit_gap"] is not None),
+                "fee_gap": _sum_or_none(d["fee_gap"] for d in detail),
+                "matched_net_gap": _sum_or_none(d["net_gap"] for d in detail),
+                "broker_fees": sum(1 for d in detail if d["live_fees_source"] == "broker"),
+                "pairs": detail,
+            }
+        )
+
+    def era(rule: str) -> dict:
+        rows = [s for s in sessions if s["completion_rule"] == rule]
+        return {
+            "sessions": len(rows),
+            "net_gap": _sum_or_none(s["net_gap"] for s in rows),
+            "matched": sum(s["matched"] for s in rows),
+            "credit_gap_sum": _sum_or_none(s["credit_gap_sum"] for s in rows),
+            "debit_gap_sum": _sum_or_none(s["debit_gap_sum"] for s in rows),
+            "debit_pairs": sum(s["debit_pairs"] for s in rows),
+            "fee_gap": _sum_or_none(s["fee_gap"] for s in rows),
+            "matched_net_gap": _sum_or_none(s["matched_net_gap"] for s in rows),
+            "live_completion_rate": _rate(
+                sum(s["live"]["completed"] for s in rows), sum(s["live"]["entries"] for s in rows)
+            ),
+            "paper_completion_rate": _rate(
+                sum(s["paper"]["completed"] for s in rows), sum(s["paper"]["entries"] for s in rows)
+            ),
+        }
+
+    return {
+        "arm": arm,
+        "match_window_minutes": LIVE_PAPER_MATCH_MINUTES,
+        "completion_rule_from": break_from,
+        "sessions": sessions,
+        "eras": {"modelled_debit": era("modelled_debit"), "pays_limit": era("pays_limit")},
+    }
+
+
+# --------------------------------------------------------------------------- gate arms vs control
+# Each gate arm is control plus one variable; what it does differently is named here by the reason
+# its own engine function records (`engine.low_vol_refusal`, `range_high_refusal`,
+# `wall_clearance_refusal`, the trend gate in `evaluate_credit_spread_entry`) or, for `restack`, by
+# the one thing its relaxed rule permits: a second entry on a structure the arm already holds.
+# `test_gate_sessions.py` checks every refusal named here is a string the engine returns.
+GATE_ARMS: dict[str, dict] = {
+    "vol-floor": {"refusals": ("straddle_below_floor",)},
+    "range-high": {"refusals": ("near_session_high",)},
+    "wall-clear": {"refusals": ("call_wall_not_cleared", "put_wall_not_cleared")},
+    "restack": {"restack": True},
+    "trend-rule": {"refusals": ("completion_against_drift",), "close_tags": True},
+    "intraday-agent": {"refusals": ("completion_against_drift",), "close_tags": True},
+}
+GATE_BASE_ARM = "control"
+
+
+def _settled_net(conn, arm: str, day: str) -> tuple[float | None, int, int]:
+    """(net, entries, settled) for an arm's session; net is None until every row has settled."""
+    rows = conn.execute(
+        "SELECT status, pnl FROM fly_positions WHERE arm = ? AND trade_date = ? AND void_reason IS NULL "
+        "AND status != 'cancelled' AND COALESCE(closed_before_expiry, 0) = 0",
+        (arm, day),
+    ).fetchall()
+    settled = [r for r in rows if r["status"] == "settled"]
+    net = _round(sum(r["pnl"] or 0.0 for r in settled)) if rows and len(settled) == len(rows) else None
+    if not rows:
+        net = 0.0
+    return net, len(rows), len(settled)
+
+
+def _restacks(conn, arm: str, day: str) -> int:
+    """Entries the arm made on a structure (centre, wing, far wing) it had already entered that
+    session -- what the duplicate rule refuses for every other arm."""
+    seen: set = set()
+    n = 0
+    for r in conn.execute(
+        "SELECT center, wing_width, far_width FROM fly_positions WHERE arm = ? AND trade_date = ? "
+        "AND status != 'cancelled' AND void_reason IS NULL ORDER BY entry_time",
+        (arm, day),
+    ):
+        key = (r["center"], r["wing_width"], r["far_width"])
+        if key in seen:
+            n += 1
+        seen.add(key)
+    return n
+
+
+def gate_sessions(conn, session: str | None = None) -> dict:
+    """Every gate arm, session by session over its OWN comparison window: did its gate act, and
+    what did the arm net against control that session.
+
+    The window is the ledger's: `core.regimecuts.era_bounds` over `measurement_breaks` as of
+    `session` (default: the ledger's latest), and the arm's own `arm_added` break where later. So
+    each arm is compared only on sessions where it and control ran under one set of rules.
+
+    "Acted" is the arm's one variable doing something: a refusal of its own gate (counted per
+    evaluated tick, `fly_entry_attempts`), a tagged close (trend-rule, intraday-agent), or a
+    restacked entry. A session where it did not act should differ from control only through
+    cadence and the sign rule; one where it did is where the variable shows. Nets are settled net
+    (`pnl`), None until the session's rows have all settled. Counts, never a verdict."""
+    session = session or (conn.execute("SELECT MAX(trade_date) FROM fly_positions").fetchone()[0] or "")
+    breaks = [dict(r) for r in conn.execute("SELECT * FROM measurement_breaks ORDER BY break_date")]
+    era = _rc.era_bounds(breaks, session)
+    partial = {str(b["break_date"]) for b in breaks if b.get("kind") == "partial_session"}
+    have_attempts = bool(
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'fly_entry_attempts'"
+        ).fetchone()
+    )
+    out = []
+    for arm, spec in GATE_ARMS.items():
+        start, brk = _rc.arm_start(era, arm)
+        days = [
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT trade_date FROM fly_positions WHERE arm = ? AND trade_date >= ? "
+                "AND trade_date <= ? AND void_reason IS NULL ORDER BY trade_date",
+                (arm, start or "", session),
+            )
+        ]
+        if have_attempts:
+            days = sorted(
+                set(days)
+                | {
+                    r[0]
+                    for r in conn.execute(
+                        "SELECT DISTINCT trade_date FROM fly_entry_attempts WHERE arm = ? AND trade_date >= ? "
+                        "AND trade_date <= ?",
+                        (arm, start or "", session),
+                    )
+                }
+            )
+        rows = []
+        for day in days:
+            refusals: dict[str, int] = {}
+            if have_attempts and spec.get("refusals"):
+                marks = ",".join("?" * len(spec["refusals"]))
+                for r in conn.execute(
+                    f"SELECT block_detail, COUNT(*) AS n FROM fly_entry_attempts WHERE arm = ? AND trade_date = ? "
+                    f"AND outcome = 'gate_blocked' AND block_detail IN ({marks}) GROUP BY block_detail",
+                    (arm, day, *spec["refusals"]),
+                ):
+                    refusals[r["block_detail"]] = r["n"]
+            tags = (
+                conn.execute(
+                    "SELECT COUNT(*) FROM fly_positions WHERE arm = ? AND trade_date = ? AND close_tag_at IS NOT NULL "
+                    "AND void_reason IS NULL",
+                    (arm, day),
+                ).fetchone()[0]
+                if spec.get("close_tags")
+                else 0
+            )
+            restacks = _restacks(conn, arm, day) if spec.get("restack") else 0
+            arm_net, arm_entries, _ = _settled_net(conn, arm, day)
+            base_net, base_entries, _ = _settled_net(conn, GATE_BASE_ARM, day)
+            rows.append(
+                {
+                    "session": day,
+                    "acted": bool(refusals or tags or restacks),
+                    "refused_ticks": sum(refusals.values()),
+                    "refusals": refusals,
+                    "close_tags": tags,
+                    "restacks": restacks,
+                    "arm_entries": arm_entries,
+                    "control_entries": base_entries,
+                    "arm_net": arm_net,
+                    "control_net": base_net,
+                    "diff": _round(arm_net - base_net)
+                    if arm_net is not None and base_net is not None
+                    else None,
+                    "partial_session": day in partial,
+                }
+            )
+
+        def block(items):
+            scored = [i for i in items if i["diff"] is not None]
+            return {
+                "sessions": len(items),
+                "scored": len(scored),
+                "arm_net": _round(sum(i["arm_net"] for i in scored)) if scored else None,
+                "control_net": _round(sum(i["control_net"] for i in scored)) if scored else None,
+                "diff": _round(sum(i["diff"] for i in scored)) if scored else None,
+                "arm_ahead": sum(1 for i in scored if i["diff"] > 0),
+                "arm_behind": sum(1 for i in scored if i["diff"] < 0),
+            }
+
+        out.append(
+            {
+                "arm": arm,
+                "base": GATE_BASE_ARM,
+                "window_start": start,
+                "window_break": {k: brk.get(k) for k in ("break_date", "scope", "kind", "reason")}
+                if brk
+                else None,
+                "acts_by": sorted(
+                    [*spec.get("refusals", ())]
+                    + (["close_tag"] if spec.get("close_tags") else [])
+                    + (["restack"] if spec.get("restack") else [])
+                ),
+                "acted": block([r for r in rows if r["acted"]]),
+                "quiet": block([r for r in rows if not r["acted"]]),
+                "all": block(rows),
+                "sessions": rows,
+            }
+        )
+    return {
+        "as_of": session,
+        "era_start": era["start"],
+        "era_break": {k: era["bounding_break"].get(k) for k in ("break_date", "kind", "reason")}
+        if era["bounding_break"]
+        else None,
+        "arms": out,
+    }
+
+
+# --------------------------------------------------------------------------- the selector's sessions
+SELECTOR_ARM = "selector"
+# The selector's judging rule (experiment log 2026-10-04, amended 2026-10-12): only DEPARTING
+# sessions count -- where it booked something other than exactly what control booked -- and the
+# first read is per-session net against control over the first ten of them, by sign test.
+SELECTOR_FIRST_READ_DEPARTING = 10
+# The choice reasons that are a departure from the default by construction (`selector.choose`).
+SELECTOR_DEPARTING_REASONS = ("model_preferred", "default_cell_negative")
+
+
+def _booked(conn, arm: str, day: str) -> list[tuple]:
+    """What an arm booked that session, as comparable trades: mode, side, structure, entry minute."""
+    return sorted(
+        (
+            r["entry_mode"],
+            r["side"],
+            r["center"],
+            r["wing_width"],
+            r["far_width"],
+            str(r["entry_time"] or "")[:16],
+        )
+        for r in conn.execute(
+            "SELECT entry_mode, side, center, wing_width, far_width, entry_time FROM fly_positions "
+            "WHERE arm = ? AND trade_date = ? AND status != 'cancelled' AND void_reason IS NULL",
+            (arm, day),
+        )
+    )
+
+
+def _model_cells(model: dict | None) -> list[dict]:
+    """The procedure-v2 readout of one session's frozen model: every cell's per-source evidence and
+    whether its session interval is wholly clear of zero (`selector._clear`), the only thing that
+    lets the selector depart or skip."""
+    if not model:
+        return []
+    from cherrypick.flies import selector as _sel
+
+    min_sessions = model.get("min_sessions", _sel.DEFAULT_MIN_SESSIONS)
+    out = []
+    for cell, sources in sorted((model.get("cells") or {}).items()):
+        for source, stats in sorted(sources.items()):
+            out.append(
+                {
+                    "cell": cell,
+                    "source": source,
+                    "sessions": stats.get("sessions"),
+                    "entries": stats.get("entries"),
+                    "net_per_entry": stats.get("net_per_entry"),
+                    "interval": stats.get("interval"),
+                    "eligible": (stats.get("sessions") or 0) >= min_sessions,
+                    "clear_above": _sel._clear(stats, positive=True),
+                    "clear_below": _sel._clear(stats, positive=False),
+                }
+            )
+    return out
+
+
+def selector_sessions(conn, model_loader=None, latest_model: dict | None = None) -> dict:
+    """The selector arm per session: what each tick chose (`fly_selector_choices`), whether the
+    session DEPARTED from control (it booked something other than exactly control's trades), its net
+    against control's, and the frozen model's procedure-v2 readout (each cell's interval and whether
+    it is clear of zero). `model_loader(session) -> dict | None` reads a session's model; without one
+    the readout is empty. `latest_model`, the newest model `selector-fit` has written, is read the
+    same way, so what the selector WOULD do is visible before it trades.
+
+    The first read is at `SELECTOR_FIRST_READ_DEPARTING` departing sessions; before that the sign
+    test is not reported, because it is not yet the read the experiment declared."""
+    from cherrypick.flies import selector as _sel
+
+    have = bool(
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'fly_selector_choices'"
+        ).fetchone()
+    )
+    days = sorted(
+        {
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT trade_date FROM fly_positions WHERE arm = ?", (SELECTOR_ARM,)
+            )
+        }
+        | (
+            {r[0] for r in conn.execute("SELECT DISTINCT trade_date FROM fly_selector_choices")}
+            if have
+            else set()
+        )
+    )
+    sessions = []
+    for day in days:
+        reasons: dict[str, int] = {}
+        chosen: dict[str, int] = {}
+        model_ids: set = set()
+        ticks = 0
+        if have:
+            for r in conn.execute(
+                "SELECT model_id, chosen, reason FROM fly_selector_choices WHERE trade_date = ?", (day,)
+            ):
+                ticks += 1
+                base_reason = str(r["reason"]).split(":")[0]
+                reasons[base_reason] = reasons.get(base_reason, 0) + 1
+                if r["chosen"]:
+                    chosen[r["chosen"]] = chosen.get(r["chosen"], 0) + 1
+                if r["model_id"]:
+                    model_ids.add(r["model_id"])
+        selected_from: dict[str, int] = {}
+        for r in conn.execute(
+            "SELECT selected_from, COUNT(*) AS n FROM fly_positions WHERE arm = ? AND trade_date = ? "
+            "AND status != 'cancelled' GROUP BY selected_from",
+            (SELECTOR_ARM, day),
+        ):
+            selected_from[r["selected_from"] or "(none)"] = r["n"]
+        mine, base = _booked(conn, SELECTOR_ARM, day), _booked(conn, GATE_BASE_ARM, day)
+        sel_net, sel_entries, _ = _settled_net(conn, SELECTOR_ARM, day)
+        ctl_net, ctl_entries, _ = _settled_net(conn, GATE_BASE_ARM, day)
+        model = model_loader(day) if model_loader else None
+        ok, why = _sel.validate_model(model, day) if model_loader else (False, "not_read")
+        sessions.append(
+            {
+                "session": day,
+                "ticks": ticks,
+                "reasons": reasons,
+                "chosen": chosen,
+                "departing_ticks": sum(reasons.get(k, 0) for k in SELECTOR_DEPARTING_REASONS),
+                "departed": mine != base,
+                "selected_from": selected_from,
+                "selector_entries": sel_entries,
+                "control_entries": ctl_entries,
+                "selector_net": sel_net,
+                "control_net": ctl_net,
+                "diff": _round(sel_net - ctl_net) if sel_net is not None and ctl_net is not None else None,
+                "model_ids": sorted(model_ids),
+                "model": {"ok": ok, "reason": why, "cells": _model_cells(model) if ok else []},
+            }
+        )
+    departing = [s for s in sessions if s["departed"] and s["diff"] is not None]
+    ahead = sum(1 for s in departing if s["diff"] > 0)
+    behind = sum(1 for s in departing if s["diff"] < 0)
+    due = len(departing) >= SELECTOR_FIRST_READ_DEPARTING
+    first = departing[:SELECTOR_FIRST_READ_DEPARTING]
+    latest = None
+    if latest_model is not None:
+        session = latest_model.get("session") if isinstance(latest_model, dict) else None
+        ok, why = _sel.validate_model(latest_model, str(session))
+        latest = {
+            "session": session,
+            "model_id": _sel.model_id(latest_model) if ok else None,
+            "fitted_through": latest_model.get("fitted_through") if isinstance(latest_model, dict) else None,
+            "procedure_version": latest_model.get("procedure_version")
+            if isinstance(latest_model, dict)
+            else None,
+            "arm_starts": latest_model.get("arm_starts") if isinstance(latest_model, dict) else None,
+            "ok": ok,
+            "reason": why,
+            "cells": _model_cells(latest_model) if ok else [],
+        }
+    return {
+        "arm": SELECTOR_ARM,
+        "base": GATE_BASE_ARM,
+        "procedure_version": _sel.PROCEDURE_VERSION,
+        "features": list(_sel.FEATURES),
+        "latest_model": latest,
+        "sessions": sessions,
+        "departing": {
+            "sessions": len(departing),
+            "first_read_at": SELECTOR_FIRST_READ_DEPARTING,
+            "due": due,
+            "ahead": ahead,
+            "behind": behind,
+            "diff": _round(sum(s["diff"] for s in departing)) if departing else None,
+            # The declared read: the first ten departing sessions, per-session net, sign test. Only
+            # once they exist; before that a p-value would be a read the experiment never declared.
+            "first_read": {
+                "ahead": sum(1 for s in first if s["diff"] > 0),
+                "behind": sum(1 for s in first if s["diff"] < 0),
+                "sign_test_p": _rc.sign_test_p(
+                    sum(1 for s in first if s["diff"] > 0), sum(1 for s in first if s["diff"] < 0)
+                ),
+            }
+            if due
+            else None,
+        },
+    }

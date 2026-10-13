@@ -26,9 +26,17 @@ import statistics
 from collections.abc import Mapping, Sequence
 
 
+def _scored(records: Sequence[Mapping]) -> list[Mapping]:
+    """The records whose net is recorded. A closed row the ledger left without its money reads
+    `net_pnl: None` (n/r, `core.ledgers`): it is no trade's result, so it joins no sum, mean or
+    count of wins -- `calibration_reading` reports how many there were as `unscored`."""
+    return [r for r in records if r.get("net_pnl") is not None]
+
+
 def return_on_capital(records: Sequence[Mapping]) -> float | None:
     """Sum(net_pnl) / sum(capital) over the records that carry a positive capital.
     None when no record does — unknown capital is not free capital."""
+    records = _scored(records)
     capitals = [r["capital"] for r in records if r.get("capital")]
     if not capitals:
         return None
@@ -43,6 +51,7 @@ def capture_rate(records: Sequence[Mapping]) -> dict:
     `value` is None when no record carries max_profit (a schema that never populates it, per
     `ledgers`' own None-for-debit/geometry-dependent rule); `n` is the coverage count either way,
     same shape as `return_on_capital`'s own "unknown is not free/zero" discipline."""
+    records = _scored(records)
     profits = [r["max_profit"] for r in records if r.get("max_profit")]
     n = len(profits)
     if n == 0:
@@ -57,6 +66,7 @@ def max_profit_pct(records: Sequence[Mapping]) -> dict:
     carry max_profit -- how close a typical win came to the structure's own ceiling. A losing
     trade is excluded on purpose: a negative ratio here would be a fact about capture_rate's
     aggregate, not about how well a WIN was captured, and pooling the two would blur both."""
+    records = _scored(records)
     ratios = [r["net_pnl"] / r["max_profit"] for r in records if r.get("max_profit") and r["net_pnl"] > 0]
     return {"median": round(statistics.median(ratios), 4) if ratios else None, "n": len(ratios)}
 
@@ -67,6 +77,7 @@ def max_loss_pct(records: Sequence[Mapping]) -> dict:
     `max_profit_pct`'s split by sign, over `capital` (every schema's defined-risk bound) rather
     than `max_profit` (only ever populated for a plain credit spread) since a loss is bounded by
     capital at risk regardless of whether the structure's profit ceiling is known."""
+    records = _scored(records)
     ratios = [abs(r["net_pnl"]) / r["capital"] for r in records if r.get("capital") and r["net_pnl"] < 0]
     return {"median": round(statistics.median(ratios), 4) if ratios else None, "n": len(ratios)}
 
@@ -197,7 +208,7 @@ def session_nets(records: Sequence[Mapping]) -> list[float]:
     by_session: dict[str, float] = {}
     for r in records:
         s = r.get("session")
-        if s:
+        if s and r.get("net_pnl") is not None:
             by_session[s] = by_session.get(s, 0.0) + r["net_pnl"]
     return [round(by_session[s], 2) for s in sorted(by_session)]
 
@@ -261,7 +272,7 @@ def session_nets_dated(records: Sequence[Mapping]) -> list[tuple[str, float]]:
     by_session: dict[str, float] = {}
     for r in records:
         s = r.get("session")
-        if s:
+        if s and r.get("net_pnl") is not None:
             by_session[s] = by_session.get(s, 0.0) + r["net_pnl"]
     return [(s, round(by_session[s], 2)) for s in sorted(by_session)]
 
@@ -271,7 +282,7 @@ def worst_session(records: Sequence[Mapping]) -> dict | None:
     by_session: dict[str, float] = {}
     for r in records:
         s = r.get("session")
-        if s:
+        if s and r.get("net_pnl") is not None:
             by_session[s] = by_session.get(s, 0.0) + r["net_pnl"]
     if not by_session:
         return None
@@ -347,7 +358,9 @@ def calibration_reading(records: Sequence[Mapping]) -> dict:
     reads as "never wired up" rather than "measured and happened to be zero." Both checks are
     skipped for an empty group (n=0), where a literal 0.0 is not standing in for anything
     unmeasured."""
-    ordered = sorted(records, key=lambda r: r.get("session") or "")
+    # A record with no recorded net (n/r) is counted, not scored: `sample` and every figure below
+    # are over the scored ones, and `unscored` says how many were left out.
+    ordered = sorted(_scored(records), key=lambda r: r.get("session") or "")
     nets = [r["net_pnl"] for r in ordered]
     n = len(nets)
     wins = sum(1 for v in nets if v > 0)
@@ -362,6 +375,7 @@ def calibration_reading(records: Sequence[Mapping]) -> dict:
     max_profit_coverage = sum(1 for r in ordered if r.get("max_profit"))
     return {
         "sample": n,
+        "unscored": len(records) - n,
         "win_rate": round(wins / n, 4) if n else None,
         "sessions": len(sessions),
         "net_pnl": round(sum(nets), 2),

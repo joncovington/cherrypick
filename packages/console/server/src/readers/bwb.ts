@@ -21,9 +21,11 @@ import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js
 /**
  * bwb's read layer.
  *
- * Paper only, and that is structural rather than a default: the module has no live loop and no live
- * DB (packages/bwb/CLAUDE.md's Guardrails section), the same pmcc/calendars/curve reasoning -- no
- * `mode` anywhere in this file.
+ * Paper by default, with a narrow live path since 2026-09-18 (`packages/bwb/live_loop.py`, armed
+ * per day by `/live-bwb-start`): the live book is the same schema in its own file
+ * (`db.live_db_path()`, `live_trades.db`). Every read here takes a `mode`, opens exactly one of the
+ * two files, and stamps that mode on its payload -- the two books are never merged. A live ledger
+ * with no positions reads as empty (no rows, null totals), never as a book of zeros.
  *
  * Every query here mirrors `packages/bwb/src/cherrypick/bwb/analytics.py`, the module's stated ONE
  * query layer. That layer is Python and this one is TypeScript, so the two cannot share code -- the
@@ -97,8 +99,8 @@ function dbPath(config: ConsoleConfig, mode: TradingMode = "paper"): string {
 /** The same session `latestSession` resolves for every other card on this page, exposed for
  *  readers outside this file (the decisions card) that need it without duplicating the fallback
  *  chain -- see pmcc's `resolvePmccSession` for the incident this pattern exists to prevent. */
-export function resolveBwbSession(config: ConsoleConfig): string | null {
-  return withReadOnlyDb<string | null>(dbPath(config), null, (db) => latestSession(db));
+export function resolveBwbSession(config: ConsoleConfig, mode: TradingMode = "paper"): string | null {
+  return withReadOnlyDb<string | null>(dbPath(config, mode), null, (db) => latestSession(db));
 }
 
 /** The session every card on the page names -- the loop's own iterations first, the pmcc/curve
@@ -350,6 +352,7 @@ function schemaDrift(db: DatabaseHandle): string[] {
 
 export function readBwb(config: ConsoleConfig, mode: TradingMode = "paper"): BwbPayload {
   const empty: BwbPayload = {
+    mode,
     session: null,
     dbPresent: false,
     openPositions: [],
@@ -385,6 +388,7 @@ export function readBwb(config: ConsoleConfig, mode: TradingMode = "paper"): Bwb
       .map((r) => ({ date: str(r["break_date"]) ?? "", key: str(r["key"]) ?? "", note: str(r["note"]) }));
 
     return {
+      mode,
       session,
       dbPresent: true,
       openPositions,
@@ -498,10 +502,15 @@ function bwbTradeCash(r: Record<string, unknown>): Pick<
 
 const EMPTY_BWB_TOTALS: BwbHistoryTotals = { positions: 0, gross: 0, fees: 0, settlementFees: 0, slippage: 0, net: 0 };
 
+/**
+ * Completed positions in `mode`'s book. `totals` is null when nothing matched: an empty book (the
+ * live one before its first fill) has no net, and a summed zero would read as a flat result.
+ */
 export function readBwbHistory(
   config: ConsoleConfig,
   filter: BwbHistoryFilter,
   page: PageRequest = FIRST_PAGE,
+  mode: TradingMode = "paper",
 ): BwbHistory {
   const clauses = ["status = 'closed'"];
   const params: string[] = [];
@@ -518,7 +527,7 @@ export function readBwbHistory(
   clauses.push(...range.clauses);
   params.push(...range.params);
 
-  return withReadOnlyDb<BwbHistory>(dbPath(config), { ...emptyPage(page), totals: EMPTY_BWB_TOTALS }, (db) => {
+  return withReadOnlyDb<BwbHistory>(dbPath(config, mode), { ...emptyPage(page), mode, totals: null }, (db) => {
     const where = clauses.join(" AND ");
     const cols = `position_id, symbol, arm, entry_session, closed_session, status, exit_reason,
                   body_strike, near_strike, far_strike, expiration, entry_spot, entry_credit,
@@ -579,14 +588,14 @@ export function readBwbHistory(
         };
       },
     );
-    return { ...paged, totals };
+    return { ...paged, mode, totals: totals.positions === 0 ? null : totals };
   });
 }
 
 /** The history filter's own options. No era mechanism: the module has one era and no pooled data yet. */
-export function readBwbMeta(config: ConsoleConfig): BwbMeta {
-  const empty: BwbMeta = { arms: [], symbols: [], sessions: [] };
-  return withReadOnlyDb<BwbMeta>(dbPath(config), empty, (db) => {
+export function readBwbMeta(config: ConsoleConfig, mode: TradingMode = "paper"): BwbMeta {
+  const empty: BwbMeta = { mode, arms: [], symbols: [], sessions: [] };
+  return withReadOnlyDb<BwbMeta>(dbPath(config, mode), empty, (db) => {
     const column = (name: string, table: string): string[] =>
       db
         .prepare<[], Record<string, unknown>>(`SELECT DISTINCT ${name} AS v FROM ${table} ORDER BY ${name}`)
@@ -594,6 +603,7 @@ export function readBwbMeta(config: ConsoleConfig): BwbMeta {
         .map((r) => str(r["v"]) ?? "")
         .filter((v) => v !== "");
     return {
+      mode,
       arms: column("arm", "bwb_positions"),
       symbols: column("symbol", "bwb_positions"),
       sessions: column("entry_session", "bwb_positions").reverse(),

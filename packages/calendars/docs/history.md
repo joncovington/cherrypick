@@ -43,6 +43,18 @@ side closed normally at 0.222. The position missed its exit, its front expired, 
 Monday under `long_disposition`, and the result differed from the replay by $1.30. Journaled as
 `exit_gate_absolute_spread_floor`.
 
+## The replay's validation tightened to a cent (2026-10-12)
+
+`validate_against_control` defaulted to a $0.50 tolerance while every description of it said "to
+the cent". Read against the paper ledger, `control` matched within a cent on every graded week but
+`path` came out $0.44–0.49 rich on all six: the recorder marks open legs only, so the Monday
+disposal tick is the last one written and lands before the disposition minute, the derivation falls
+back to the recorded close price, and the fallback dropped the disposal's fee and slippage. The
+fallback now carries the recorded disposal cost (the row's exit charges net of its settlement
+charges) and the default is $0.01. All twelve graded week-arms now agree within a cent (path to
+$0.00, control to −$0.01 from rounding), and `expiry-longs-mon` in the policy table is $0.44–0.49 a
+week lower than before. A correction of a wrong number, not a measurement change.
+
 ## Advice ordering (2026-09-15)
 
 Since this date the session's advice decision is derived and recorded BEFORE the ex-dividend gate,
@@ -53,6 +65,25 @@ never reached the loop.
 
 `/calendars` landed 2026-08-17; it reads the ledger directly for state and calls `cli.py` for
 policies and the week plan (see CLAUDE.md for why).
+
+## `dc_paired_debits` never recorded a row (2026-08-24..10-12, fixed 10-12)
+
+The Friday regime's primary measurement -- the Monday-moment price of the strikes the Friday arm
+bought -- was never written. `_try_entry` rebinds `arms` to the session roster before it tests
+`arms is None` to mean "the default regime's pass", so the test was always false and
+`_record_paired_debits` never ran, from the day it was added. Four Friday weeks traded (09-07,
+09-28, 10-05, 10-12) and should have left eight rows. The direct tests of `_record_paired_debits`
+could not see it; `tests/test_paired_debits_wiring.py` now drives the real Monday path and was
+shown to fail on the old line. A recording fix, not a measurement change: it lands immediately.
+**The lost weeks cannot be backfilled** (the cache keeps no Monday-morning history), so the paired
+sample starts with the next Monday, 10-19, and the retirement bar in friday-entry-arm.md that reads
+it (15 paired weeks) starts counting there.
+
+Two smaller fixes beside it: a failed paired-debit write now prints to stderr instead of passing
+silently, and `run.py record-break` opens the ledger for writing (the 09-24 switch of every CLI verb
+to read-only caught it, and it raised on every call since). Still open: `friday_week_skipped` can
+never be journaled (it waits for `now_min > 16:00`, and the loop stops at 16:00), and the read-side
+exit grid covers `path` but not `friday:path`.
 
 ## `time_exit` out of the advice bounds at the 2026-10-19 boundary (declared 2026-10-12)
 

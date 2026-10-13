@@ -88,6 +88,14 @@ const SPECS: Partial<Record<ExitReasonsModule, Spec>> = {
     netExpr: "gross_pnl - fees",
     events: { table: "bwb_management_events", positionKey: "position_id", eventKey: "position_id" },
   },
+  // A stint ends on a switch; the loop has no management verdict to hold back.
+  contango: {
+    dir: (config) => config.paths.contangoDir,
+    positionsTable: "contango_positions",
+    closedWhere: "status = 'closed'",
+    netExpr: "net_pnl",
+    events: null,
+  },
 };
 
 const NO_CONCEPT = "flies has no exit_reason column and no management-events table — 0DTE legs settle or stop, with no single exit-reason concept a multi-day structure has";

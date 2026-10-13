@@ -5,7 +5,7 @@ import { withReadOnlyDb, readJson } from "./db.js";
 import { streamerFreshness } from "./streamcache.js";
 import { readMeicLoopStatus, readMeicOpenExposure } from "./meic.js";
 import { readFliesLoopStatus, readFliesAnalytics } from "./flies.js";
-import { readEntryAttempts } from "./attempts.js";
+import { readAttemptCounts, type AttemptCounts } from "./attempts.js";
 import { readPmcc, resolvePmccSession } from "./pmcc.js";
 import { readCurve, resolveCurveSession } from "./curve.js";
 import { readBwb } from "./bwb.js";
@@ -32,8 +32,10 @@ function onlyEnabled<T>(rows: T[], idOf: (r: T) => string, features: SuiteFeatur
  * The Overview's suite matrix, in one composed read.
  *
  * Deliberately reuses the readers each module's own page already calls (readPmcc/readCurve/
- * readBwb/readCalendars, readEntryAttempts, buildSuiteReport) rather than opening a second set of
- * queries against the same stores -- this is a COMPOSITION, not a second opinion. The one genuinely
+ * readBwb/readCalendars, buildSuiteReport) rather than opening a second set of queries against the
+ * same stores -- this is a COMPOSITION, not a second opinion. Entry counts are the exception that
+ * proves it: they come from `readAttemptCounts`, the attempts reader's own exact count, because the
+ * attempts PAGE payload carries a chart-thinned timeline that cannot be counted. The one genuinely
  * new read is cadence: no reader here read a producer's declared tick interval against its own
  * config before, and it is deliberately the one thing that can come back `null` ("cadence
  * unknown") rather than a guessed threshold.
@@ -101,6 +103,12 @@ function readGexLoop(config: ConsoleConfig): GexLoop {
   });
 }
 
+/** The entries row's four counts, without the session they were read for. */
+function entryCounts(c: AttemptCounts): { filled: number; refused: number; noFill: number; topRefusal: string | null } {
+  return { filled: c.filled, refused: c.refused, noFill: c.noFill, topRefusal: c.topRefusal };
+}
+
+/** For rows that are already one per entry decision (calendars, bwb) -- never a thinned timeline. */
 function countOutcomes(
   rows: Array<{ outcome: string; blockDetail?: string | null }>,
 ): { filled: number; refused: number; noFill: number; topRefusal: string | null } {
@@ -266,17 +274,15 @@ export function readDesk(config: ConsoleConfig, features?: SuiteFeatures): DeskP
     },
   ];
 
-  const meicAttempts = readEntryAttempts(config, "meic", "paper", null);
-  const fliesAttempts = readEntryAttempts(config, "flies", "paper", null);
-  // Both resolve the module's own canonical session rather than readEntryAttempts' own
+  // Counted exactly by one grouped query per ledger (readAttemptCounts), never off the attempts
+  // page's timeline: that one is thinned for its chart, and counting it undercounted refusals.
+  const meicCounts = entryCounts(readAttemptCounts(config, "meic", "paper", null));
+  const fliesCounts = entryCounts(readAttemptCounts(config, "flies", "paper", null));
+  // Both resolve the module's own canonical session rather than the attempts table's own
   // MAX(trade_date) guess -- the same pmcc-attempts-timeline incident this reader must not
   // reintroduce (a loop that ran and found nothing to evaluate vs. this table's own last row).
-  const pmccAttempts = readEntryAttempts(config, "pmcc", "paper", resolvePmccSession(config));
-  const curveAttempts = readEntryAttempts(config, "curve", "paper", resolveCurveSession(config));
-  const meicCounts = countOutcomes(meicAttempts.timeline);
-  const fliesCounts = countOutcomes(fliesAttempts.timeline);
-  const pmccCounts = countOutcomes(pmccAttempts.timeline);
-  const curveCounts = countOutcomes(curveAttempts.timeline);
+  const pmccCounts = entryCounts(readAttemptCounts(config, "pmcc", "paper", resolvePmccSession(config)));
+  const curveCounts = entryCounts(readAttemptCounts(config, "curve", "paper", resolveCurveSession(config)));
   const calendarsCounts = countOutcomes(readCalendarsEntryAttempts(config, null).rows);
   const bwbCounts = countOutcomes(
     bwb.entryAttemptsToday.map((a: { outcome: string }) => ({ outcome: a.outcome, blockDetail: null })),
@@ -360,6 +366,11 @@ export function readDesk(config: ConsoleConfig, features?: SuiteFeatures): DeskP
     const closed = lastSessionFacts?.[mod]?.closed ?? null;
     return { module: mod, net, closed, netPerTrade: closed !== null && closed > 0 ? net / closed : null };
   });
+  // A module whose fact set carries no net is not in the suite's sums; list it with no net rather
+  // than drop it, so the row reads unrecorded instead of absent.
+  for (const [mod, fact] of Object.entries(lastSessionFacts ?? {})) {
+    if (fact.net === null) eodRows.push({ module: mod, net: null, closed: fact.closed, netPerTrade: null });
+  }
 
   const keep = <T,>(rows: T[], idOf: (r: T) => string): T[] => onlyEnabled(rows, idOf, features);
   return {
@@ -470,7 +481,7 @@ export function readDeskLive(config: ConsoleConfig, features?: SuiteFeatures): D
     },
   ];
 
-  const meicCounts = countOutcomes(readEntryAttempts(config, "meic", "live", null).timeline);
+  const meicCounts = entryCounts(readAttemptCounts(config, "meic", "live", null));
   const fliesCounts = readFliesLiveEntries(config, fliesAnalytics.today.tradeDate);
   const bwbCounts = countOutcomes(
     bwb.entryAttemptsToday.map((a: { outcome: string }) => ({ outcome: a.outcome, blockDetail: null })),

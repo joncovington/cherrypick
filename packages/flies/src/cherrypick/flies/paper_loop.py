@@ -26,10 +26,12 @@ from cherrypick.core import home as _home
 from cherrypick.core import jsonio as _jsonio
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
+from cherrypick.core import streamcache as _streamcache
 
 from cherrypick.flies import book as bookmod  # noqa: E402
 from cherrypick.flies import cli as climod  # noqa: E402
 from cherrypick.flies import (
+    clock,  # noqa: E402
     close_tags,  # noqa: E402
     engine,  # noqa: E402
     intraday_advice,  # noqa: E402
@@ -76,11 +78,7 @@ def stream_cache_path(config: dict) -> str:
     the managed home, and `~` expands — portable paths only, no machine-specific absolutes anywhere in
     the suite. The default (`data/marketdata/stream_cache.db`) is producer-agnostic: whichever streamer
     is the active producer (MEIC's, or the standalone `packages/streamer` daemon) writes that one file."""
-    configured = (config.get("source") or {}).get("stream_cache_db")
-    if configured:
-        return os.path.expanduser(os.path.expandvars(configured))
-    home = str(_home.home())
-    return os.path.join(home, "data", "marketdata", "stream_cache.db")
+    return str(_streamcache.cache_path(config))
 
 
 _logger = logging.getLogger("flies_paper_loop")
@@ -152,12 +150,7 @@ def _beat() -> None:
     about what the tick then decided. Failures are swallowed — a heartbeat that costs a tick would be
     worse than the problem it solves.
     """
-    try:
-        path = heartbeat_file()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(provider.now_et().isoformat(timespec="seconds"), encoding="utf-8")
-    except OSError:
-        pass
+    _home.beat("flies")
 
 
 def in_session(now_min: int) -> bool:
@@ -769,7 +762,15 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
 
     Also owns end-of-day settlement. The recurring task calls only this, so there is exactly one
     thing to schedule and one thing that can fail.
+
+    A `when` handed in (a test, a replay) also stamps everything the tick writes, so the ledger
+    says the time the tick stood for; the scheduled loop passes none and stamps the wall clock.
     """
+    with clock.pinned(when):
+        return _run_once(config, conn, cache_path=cache_path, when=when, force=force)
+
+
+def _run_once(config: dict, conn, *, cache_path: str, when, force: bool) -> dict:
     _beat()  # before every gate below: liveness is "the loop is turning over", not "it did work"
     when = when or provider.now_et()
     now_min = provider.minute_of_day(when)
@@ -895,7 +896,14 @@ def run_settle(config: dict, conn, *, cache_path: str, when=None, price: float |
     usually small, and it is systematic rather than random — but a position centred within a point of
     spot can settle on the wrong side of its centre because of it. Pass `--price` with the official
     print for a book that matters.
+
+    A `when` handed in stamps the settlement's writes, as in `run_once`.
     """
+    with clock.pinned(when):
+        return _run_settle(config, conn, cache_path=cache_path, when=when, price=price)
+
+
+def _run_settle(config: dict, conn, *, cache_path: str, when, price: float | None) -> dict:
     when = when or provider.now_et()
     trade_date = when.date().isoformat()
     out = []

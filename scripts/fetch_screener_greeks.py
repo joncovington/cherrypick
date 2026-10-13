@@ -560,10 +560,9 @@ def main(argv: list[str] | None = None) -> int:
     }
     if args.limit:
         out = out.with_name(f"{day}.trial.json")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_suffix(".tmp")
-    tmp.write_text(json.dumps(doc), encoding="utf-8")
-    tmp.replace(out)
+    from cherrypick.core.jsonio import write_json_atomic
+
+    write_json_atomic(out, doc, indent=None, default=None)
     strikes = [
         leg
         for s in result.values()

@@ -25,6 +25,14 @@ quick_check) does NOT replace the last good one: it lands as `cherrypick-backup.
 run reports failure, because overwriting the only good copy with a damaged one is the one outcome a
 single-copy backup cannot recover from.
 
+**An unchanged file is carried over, not rebuilt** (2026-10-12). The technicals history store is
+3.1 GB and changes about weekly, yet every night snapshotted it, quick_checked it and compressed it
+again -- most of a 7.5-minute run. Each manifest entry now records its source's size, mtime and
+sha256; a file whose size and mtime match last night's and whose sha256 still matches (a SQLite
+file also needing no unmerged WAL) is copied from last night's zip as its compressed bytes, with
+last night's manifest entry (verdict and sha256 included) and `reused_from` naming that night. Any
+doubt -- no previous zip, no recorded source, a copy that fails -- takes the full path instead.
+
 **Restore never touches the live tree.** `restore` extracts the backup into a directory you name,
 which must not be inside the cherrypick home; putting a file back is a deliberate copy by a person,
 with the suite stopped.
@@ -133,6 +141,107 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+_CHUNK = 8 * 1024 * 1024
+
+
+def _file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        while chunk := fh.read(_CHUNK):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _source(path: Path, st: os.stat_result) -> dict[str, Any]:
+    """What tomorrow night compares against to decide whether this file changed."""
+    return {"src_size": st.st_size, "src_mtime_ns": st.st_mtime_ns, "src_sha256": _file_sha256(path)}
+
+
+def _previous(dest: Path) -> tuple[zipfile.ZipFile | None, dict[str, dict[str, Any]], str | None]:
+    """Last good night's zip (open), its manifest entries by path, and its night -- or nothing,
+    when there is no previous zip or it cannot be read (then every file takes the full path)."""
+    path = dest / LATEST
+    if not path.exists():
+        return None, {}, None
+    try:
+        zf = zipfile.ZipFile(path)
+        manifest = json.loads(zf.read(MANIFEST))
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+        return None, {}, None
+    return zf, {e["path"]: e for e in manifest.get("files", [])}, manifest.get("night")
+
+
+def _unchanged(path: Path, st: os.stat_result, prev: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The source record when `path` is byte-for-byte what last night backed up, else None.
+
+    Size and mtime first, because they are free; then the sha256, because an mtime can be restored
+    and a size can match by chance. A SQLite file with a non-empty `-wal` beside it may hold writes
+    its main file does not show yet, so it is never judged unchanged."""
+    if not prev or prev.get("src_size") != st.st_size or prev.get("src_mtime_ns") != st.st_mtime_ns:
+        return None
+    if prev.get("kind") == "sqlite":
+        wal = path.with_name(path.name + "-wal")
+        try:
+            if wal.exists() and wal.stat().st_size > 0:
+                return None
+        except OSError:
+            return None
+    src = _source(path, st)
+    return src if src["src_sha256"] == prev.get("src_sha256") else None
+
+
+def _copy_member_raw(src: zipfile.ZipFile, name: str, dst: zipfile.ZipFile) -> None:
+    """Append `name` from `src` to `dst` as its stored compressed bytes: no decompression, no
+    recompression, CRC and sizes carried over (`verify` re-checks the CRC from the new zip).
+
+    zipfile has no public raw-copy call, so this writes the local header and the bytes the way
+    `ZipFile.mkdir` writes a header, under the archive's own lock. Anything unexpected raises, and
+    the caller falls back to the full path."""
+    info = src.getinfo(name)
+    if info.flag_bits & 0x1:
+        raise ValueError(f"{name}: encrypted member")
+    new = zipfile.ZipInfo(info.filename, info.date_time)
+    new.compress_type = info.compress_type
+    new.CRC = info.CRC
+    new.compress_size = info.compress_size
+    new.file_size = info.file_size
+    new.external_attr = info.external_attr
+    new.create_system = info.create_system
+    new.flag_bits = info.flag_bits & ~0x08  # sizes go in the header; no trailing data descriptor
+    zip64 = new.file_size > zipfile.ZIP64_LIMIT or new.compress_size > zipfile.ZIP64_LIMIT
+    with open(src.filename, "rb") as fh:
+        fh.seek(info.header_offset)
+        header = fh.read(30)
+        if header[:4] != b"PK\x03\x04":
+            raise ValueError(f"{name}: no local header at {info.header_offset}")
+        name_len = int.from_bytes(header[26:28], "little")
+        extra_len = int.from_bytes(header[28:30], "little")
+        fh.seek(info.header_offset + 30 + name_len + extra_len)
+        with dst._lock:
+            dst.fp.seek(dst.start_dir)
+            new.header_offset = dst.fp.tell()
+            dst._writecheck(new)
+            try:
+                dst.fp.write(new.FileHeader(zip64))
+                remaining = info.compress_size
+                while remaining:
+                    chunk = fh.read(min(_CHUNK, remaining))
+                    if not chunk:
+                        raise ValueError(f"{name}: archive ended {remaining} bytes early")
+                    dst.fp.write(chunk)
+                    remaining -= len(chunk)
+            except BaseException:
+                # Leave the new archive exactly as it was: the next member (or the central
+                # directory) starts at start_dir, and nothing half-written may trail the end.
+                dst.fp.seek(dst.start_dir)
+                dst.fp.truncate()
+                raise
+            dst._didModify = True
+            dst.filelist.append(new)
+            dst.NameToInfo[new.filename] = new
+            dst.start_dir = dst.fp.tell()
+
+
 def run(cfg: dict[str, Any], *, dry_run: bool = False, today: date | None = None) -> dict[str, Any]:
     """Write tonight's backup over the last one (or, with dry_run, report what it would hold)."""
     s = settings(cfg)
@@ -155,48 +264,71 @@ def run(cfg: dict[str, Any], *, dry_run: bool = False, today: date | None = None
     problems: list[str] = []
     vanished: list[str] = []
     raw_bytes = 0
+    reused: list[str] = []
+    reused_bytes = 0
     started = datetime.now(timezone.utc).isoformat()
-    with (
-        tempfile.TemporaryDirectory(prefix="cp-backup-") as tmp,
-        zipfile.ZipFile(partial, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf,
-    ):
-        scratch = Path(tmp)
-        for f in files:
-            arc = f.relative_to(root).as_posix()
-            try:
-                if _is_sqlite(f):
-                    snap, verdict = _sqlite_snapshot(f, scratch)
-                    data = snap.read_bytes()
-                    snap.unlink()
-                    entry = {"path": arc, "kind": "sqlite", "quick_check": verdict}
-                    if verdict != "ok":
-                        problems.append(f"{arc}: quick_check {verdict}")
-                else:
-                    data = f.read_bytes()
-                    entry = {"path": arc, "kind": "file"}
-            except FileNotFoundError:
-                # Listed by the walk, gone by the copy: something deleted it in between (a daemon
-                # stopping, a rotation). Nothing was lost that existed when the copy ran, so it is
-                # recorded, not a failed night. A file that exists and cannot be read still is.
-                vanished.append(arc)
-                continue
-            except (OSError, sqlite3.Error) as exc:
-                problems.append(f"{arc}: {type(exc).__name__}: {exc}")
-                continue
-            zf.writestr(arc, data)
-            raw_bytes += len(data)
-            entries.append({**entry, "bytes": len(data), "sha256": _sha256(data)})
-        manifest = {
-            "night": night,
-            "started_at": started,
-            "finished_at": datetime.now(timezone.utc).isoformat(),
-            "home": cfgmod.portable_path(root),
-            "files": entries,
-            "vanished": vanished,
-            "skipped": skipped,
-            "problems": problems,
-        }
-        zf.writestr(MANIFEST, json.dumps(manifest, indent=1))
+    prev_zf, prev_entries, prev_night = _previous(s["dest"])
+    try:
+        with (
+            tempfile.TemporaryDirectory(prefix="cp-backup-") as tmp,
+            zipfile.ZipFile(partial, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf,
+        ):
+            scratch = Path(tmp)
+            for f in files:
+                arc = f.relative_to(root).as_posix()
+                try:
+                    st = f.stat()
+                    same = _unchanged(f, st, prev_entries.get(arc)) if prev_zf is not None else None
+                    if same is not None:
+                        try:
+                            _copy_member_raw(prev_zf, arc, zf)
+                        except (OSError, ValueError, KeyError, AttributeError, zipfile.BadZipFile):
+                            same = None  # take the full path below
+                    if same is not None:
+                        prev = prev_entries[arc]
+                        entries.append({**prev, **same, "reused_from": prev.get("reused_from") or prev_night})
+                        reused.append(arc)
+                        reused_bytes += int(prev.get("bytes") or 0)
+                        raw_bytes += int(prev.get("bytes") or 0)
+                        continue
+                    source = _source(f, st)
+                    if _is_sqlite(f):
+                        snap, verdict = _sqlite_snapshot(f, scratch)
+                        data = snap.read_bytes()
+                        snap.unlink()
+                        entry = {"path": arc, "kind": "sqlite", "quick_check": verdict}
+                        if verdict != "ok":
+                            problems.append(f"{arc}: quick_check {verdict}")
+                    else:
+                        data = f.read_bytes()
+                        entry = {"path": arc, "kind": "file"}
+                except FileNotFoundError:
+                    # Listed by the walk, gone by the copy: something deleted it in between (a daemon
+                    # stopping, a rotation). Nothing was lost that existed when the copy ran, so it is
+                    # recorded, not a failed night. A file that exists and cannot be read still is.
+                    vanished.append(arc)
+                    continue
+                except (OSError, sqlite3.Error) as exc:
+                    problems.append(f"{arc}: {type(exc).__name__}: {exc}")
+                    continue
+                zf.writestr(arc, data)
+                raw_bytes += len(data)
+                entries.append({**entry, "bytes": len(data), "sha256": _sha256(data), **source})
+            manifest = {
+                "night": night,
+                "started_at": started,
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "home": cfgmod.portable_path(root),
+                "files": entries,
+                "reused": len(reused),
+                "vanished": vanished,
+                "skipped": skipped,
+                "problems": problems,
+            }
+            zf.writestr(MANIFEST, json.dumps(manifest, indent=1))
+    finally:
+        if prev_zf is not None:
+            prev_zf.close()  # before the swap: Windows will not replace a file held open
     # Only a clean night replaces the backup; a night with problems never overwrites the good one.
     final = s["dest"] / (LATEST if not problems else FAILED)
     os.replace(partial, final)
@@ -209,6 +341,8 @@ def run(cfg: dict[str, Any], *, dry_run: bool = False, today: date | None = None
         "kept_previous": bool(problems),
         "files": len(entries),
         "sqlite": sum(1 for e in entries if e["kind"] == "sqlite"),
+        "reused": len(reused),
+        "bytes_reused": reused_bytes,
         "bytes_raw": raw_bytes,
         "bytes_zip": final.stat().st_size,
         "skipped": skipped,

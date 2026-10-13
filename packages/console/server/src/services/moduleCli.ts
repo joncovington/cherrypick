@@ -23,9 +23,24 @@ export interface SpawnedJson {
   error: string | null;
 }
 
+/** The `error` of a `{"ok": false, "error": "..."}` document on stdout, else null. */
+function stdoutError(stdout: string | null | undefined): string | null {
+  try {
+    const doc = JSON.parse((stdout ?? "").trim()) as unknown;
+    if (typeof doc === "object" && doc !== null && (doc as Record<string, unknown>)["ok"] === false) {
+      const err = (doc as Record<string, unknown>)["error"];
+      return typeof err === "string" && err !== "" ? err : null;
+    }
+  } catch {
+    // not JSON: the caller falls back to stderr
+  }
+  return null;
+}
+
 /** Spawn `python <argv>`, parse stdout as JSON. `unavailableMessage` names the package this argv
  * needs installed, and prefixes every failure branch -- a spawn failure, a nonzero exit (its
- * detail is the last stderr line), or a response that didn't parse as JSON. */
+ * detail is the CLI's own `{"ok": false, "error"}` from stdout where it wrote one, else the last
+ * stderr line), or a response that didn't parse as JSON. */
 export function spawnModuleCli(argv: string[], unavailableMessage: string): SpawnedJson {
   let out;
   try {
@@ -37,7 +52,10 @@ export function spawnModuleCli(argv: string[], unavailableMessage: string): Spaw
     return { ok: false, json: null, error: `${unavailableMessage} (${out.error.message})` };
   }
   if (out.status !== 0) {
-    const detail = (out.stderr ?? "").trim().split(/\r?\n/).pop() ?? `exit ${String(out.status)}`;
+    // A CLI that reports its own failure as `{"ok": false, "error": ...}` on stdout and exits 1
+    // (core.compare does) leaves stderr empty, so its reason is only in stdout; without this the
+    // page would say "exit 1" where the module had said what broke.
+    const detail = stdoutError(out.stdout) ?? ((out.stderr ?? "").trim().split(/\r?\n/).pop() || `exit ${String(out.status)}`);
     return { ok: false, json: null, error: `${unavailableMessage} — ${detail}` };
   }
   try {

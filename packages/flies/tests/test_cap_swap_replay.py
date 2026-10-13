@@ -256,3 +256,50 @@ def test_the_freed_spread_is_the_stalest_not_the_newest(script, ledgers):
     run = _run(script, live, paper)["runs"][0]
     assert run["position_id"] == STALE
     assert run["held_net"] == -275.94
+
+
+# --------------------------------------------------------------------------- the baseline guard
+def test_the_fixture_ledger_is_reproduced_and_the_replay_reports(script, ledgers, capsys):
+    live, paper = ledgers
+    out = _run(script, live, paper)
+    assert out["baseline_rows_checked"] == 2 and out["baseline_mismatches"] == []
+    assert script.main(["--session", DAY]) == 0
+    assert '"refusal_runs": 1' in capsys.readouterr().out
+
+
+def test_a_live_row_the_pricing_does_not_reproduce_refuses_the_whole_report(script, ledgers, capsys):
+    """Break the ledger on purpose: the stale spread's recorded P&L no longer follows from its parts."""
+    live, paper = ledgers
+    live.execute("UPDATE fly_positions SET pnl = -270.94 WHERE position_id = ?", (STALE,))
+    live.commit()
+    out = _run(script, live, paper)
+    assert [m["position_id"] for m in out["baseline_mismatches"]] == [STALE]
+    assert script.main(["--session", DAY]) == 2
+    printed = capsys.readouterr().out
+    assert printed.startswith("REFUSED") and STALE in printed and '"c1"' not in printed
+
+
+def test_a_completion_price_that_drifts_from_the_ledger_refuses(script, ledgers, monkeypatch):
+    """Break the pricing on purpose: a completed live fly repriced a dollar off is caught."""
+    live, paper = ledgers
+    _position(
+        live,
+        position_id="live-control-7695-done",
+        kind="fly",
+        side="put",
+        center=7695.0,
+        net=0.25,
+        credit=2.2,
+        debit=1.95,
+        fees=19.38,
+        settlement_fees=12.5,
+        settlement_price=7683.69,
+        entry_time=f"{DAY}T10:20:00-04:00",
+        completed_at=f"{DAY}T10:40:00-04:00",
+        pnl=5.62,
+    )
+    assert _run(script, live, paper)["baseline_mismatches"] == []
+    real = script.force_completed_net
+    monkeypatch.setattr(script, "force_completed_net", lambda p, debit: real(p, debit) - 1.0)
+    missed = _run(script, live, paper)["baseline_mismatches"]
+    assert [m["position_id"] for m in missed] == ["live-control-7695-done"]

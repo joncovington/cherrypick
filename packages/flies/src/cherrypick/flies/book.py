@@ -27,8 +27,9 @@ def book_id_for(trade_date: str, arm: str, symbol: str) -> str:
 
 def _now() -> str:
     """ET, with offset — see clock.py. Was machine-local until 2026-07-27, which put every stored
-    entry_time two hours out from the entry_window recorded beside it."""
-    return clock.now_iso()
+    entry_time two hours out from the entry_window recorded beside it. The tick's own instant while
+    a replay pins one (`clock.pinned`)."""
+    return clock.stamp_iso()
 
 
 def _minutes_since(started: str | None, ended: str) -> float | None:
@@ -411,13 +412,40 @@ def process_snapshot(
     experiment_id: str | None = None,
     selector_model: dict | None = None,
     selector_model_reason: str | None = None,
+    now: datetime | None = None,
 ) -> dict:
     """Run one iteration of one arm against one snapshot. Returns a summary of what it did.
 
     Order matters: completions are evaluated BEFORE new entries. A credit spread that can be squared
     into a risk-free fly right now is worth more than a new credit spread, and evaluating entries
     first could consume the position slot that the completion needs.
+
+    `now` is the instant the snapshot stands for, for a replay: every timestamp the tick writes
+    (entry_time, completed_at, the latencies, entry_time_min, the journals, the position id) is
+    stamped with it. Omitted, as the live and paper loops omit it, the wall clock stamps as before.
     """
+    with clock.pinned(now):
+        return _process_snapshot(
+            snapshot,
+            config,
+            conn,
+            arm,
+            experiment_id=experiment_id,
+            selector_model=selector_model,
+            selector_model_reason=selector_model_reason,
+        )
+
+
+def _process_snapshot(
+    snapshot: dict,
+    config: dict,
+    conn,
+    arm: str,
+    *,
+    experiment_id: str | None,
+    selector_model: dict | None,
+    selector_model_reason: str | None,
+) -> dict:
     params = engine.merged_params(config, arm)
 
     def pos_params(pos):
@@ -908,7 +936,7 @@ def process_snapshot(
         books its chosen plan through exactly the code every legged arm uses; `extra` carries the
         selector's own columns onto the row."""
         extra = extra or {}
-        position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}"
+        position_id = f"FLY-{arm}-{symbol}-{clock.stamp_et().strftime('%Y%m%d%H%M%S%f')}"
         hedge = engine.hedge_candidate(snapshot, plan["side"], plan["center"], plan["wing_width"], params)
         hedge_columns = {}
         if hedge is not None:
@@ -999,7 +1027,7 @@ def process_snapshot(
         """Book a debit-first entry the engine has already approved -- step 2.5's booking, split out for
         the same reason as `book_legged`."""
         extra = extra or {}
-        position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-D"
+        position_id = f"FLY-{arm}-{symbol}-{clock.stamp_et().strftime('%Y%m%d%H%M%S%f')}-D"
         pos = {
             "kind": "long_vertical",
             "side": plan["side"],
@@ -1109,7 +1137,7 @@ def process_snapshot(
             snapshot, params, open_positions, positions, gate_detail
         )
         if enter:
-            position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-B"
+            position_id = f"FLY-{arm}-{symbol}-{clock.stamp_et().strftime('%Y%m%d%H%M%S%f')}-B"
             pos = {
                 "kind": "bwb",
                 "side": plan["side"],
@@ -1197,7 +1225,7 @@ def process_snapshot(
         )
         enter, reason, plan = engine.evaluate_outright_entry(snapshot, params, open_positions, realized)
         if enter:
-            position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-O"
+            position_id = f"FLY-{arm}-{symbol}-{clock.stamp_et().strftime('%Y%m%d%H%M%S%f')}-O"
             pos = {
                 "kind": "fly",
                 "side": plan["side"],
@@ -1340,8 +1368,13 @@ def settle_book(
     settlement_price: float,
     config: dict,
     settlement_source: str | None = None,
+    *,
+    now: datetime | None = None,
 ) -> dict:
     """Cash-settle every open position in a book at the settlement print and close the book out.
+
+    `now` stamps `exit_time` (and the rows' updated_at) for a replayed settlement; omitted, the wall
+    clock, as before.
 
     `settlement_source` says WHERE the price came from -- `"last_trade"` for the feed's final print,
     `"explicit"` when an operator passed the official one. The column has existed since the schema
@@ -1356,6 +1389,11 @@ def settle_book(
     own centre for exactly this reason, and without the source recorded there is no way to tell a
     session priced off the official print from one priced off a last tick.
     """
+    with clock.pinned(now):
+        return _settle_book(conn, trade_date, arm, symbol, settlement_price, config, settlement_source)
+
+
+def _settle_book(conn, trade_date, arm, symbol, settlement_price, config, settlement_source) -> dict:
     params = engine.merged_params(config, arm)
     book_id = book_id_for(trade_date, arm, symbol)
     rows = dbmod.book_positions(conn, book_id)
