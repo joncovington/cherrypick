@@ -11,7 +11,7 @@ fetcher keeps, the technicals history store) and writes nothing under `~/.cherry
 | 2 | How often does curve's `hook` fire, and what does it earn? | `curve_replay.py --section hook` | this one |
 | 3 | A deterministic pmcc roll policy | `pmcc_shield_replay.py --policy-study` | #182 |
 | 4 | The /VXM half-size second-month arm | `contango_vx_replay.py`, `contango_replay.py --validate` | #191 |
-| 5 | Premium-selling cycle and the education recipes | `premium_cycle_replay.py` | PREMIUM_PR |
+| 5 | Premium-selling cycle and the education recipes | `premium_cycle_replay.py` | pending |
 | 6 | calendars' replay "validated to the cent" | `exit_policies.validate_against_control` | #180 |
 | 7 | Hourly SPX bars for close-or-hold and range features | skipped | – |
 
@@ -153,7 +153,9 @@ that at this size. 1× notional remains unsurvivable. This replaces "after a qua
 
 ## 5. The premium-selling cycle and the education recipes
 
-PREMIUM_SECTION
+Pending. The replay (`scripts/premium_cycle_replay.py`, SPY chains from the Dolt options clone
+2020 onward, with Cboe PUT and BXM as the cross-check) was still running when this was written. Its
+results and PR number go here when it lands.
 
 ## 6. calendars' replay validation (#180)
 
