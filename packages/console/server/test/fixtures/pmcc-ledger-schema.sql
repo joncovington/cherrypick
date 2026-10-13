@@ -252,6 +252,7 @@ CREATE INDEX idx_pmcc_events_session ON pmcc_management_events(session_date);
 CREATE INDEX idx_pmcc_iterations_session ON pmcc_loop_iterations(session_date, ran_at);
 CREATE INDEX idx_pmcc_legs_status ON pmcc_legs(status, expiration);
 CREATE INDEX idx_pmcc_marks_position ON pmcc_marks(position_id, marked_at);
+CREATE INDEX idx_pmcc_marks_position_leg ON pmcc_marks(position_id, leg_role, marked_at);
 CREATE INDEX idx_pmcc_marks_session ON pmcc_marks(session_date);
 CREATE INDEX idx_pmcc_positions_session ON pmcc_positions(entry_session, arm);
 CREATE INDEX idx_pmcc_positions_status ON pmcc_positions(status);

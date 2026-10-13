@@ -56,6 +56,12 @@ import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+# scripts/_common.py, beside this file (a test loading this script by path has no scripts/ on sys.path).
+_HERE = str(Path(__file__).resolve().parent)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+import _common  # noqa: E402
+
 KEYRING_SERVICE = "cherrypick-vendor-report"
 USERNAME, PASSWORD = "username", "password"
 
@@ -236,19 +242,11 @@ def _state_path() -> Path:
 
 
 def cooldown_until() -> datetime | None:
-    try:
-        raw = json.loads(_state_path().read_text(encoding="utf-8")).get("cooldown_until")
-        return datetime.fromisoformat(raw) if raw else None
-    except (OSError, ValueError):
-        return None
+    return _common.cooldown_until(_state_path())
 
 
 def start_cooldown(reason: str) -> None:
-    until = datetime.now(UTC) + COOLDOWN
-    _state_path().parent.mkdir(parents=True, exist_ok=True)
-    _state_path().write_text(
-        json.dumps({"cooldown_until": until.isoformat(), "reason": reason}, indent=2), encoding="utf-8"
-    )
+    _common.start_cooldown(_state_path(), reason, COOLDOWN)
 
 
 # An expired session that the one auto-login could not renew stops every fetch until a person signs
@@ -274,10 +272,9 @@ def _write_session_alert(state: dict | None) -> None:
     if not state or not state.get("pending"):
         path.unlink(missing_ok=True)
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    from cherrypick.core.jsonio import write_json_atomic
+
+    write_json_atomic(path, state, indent=2, default=None)
 
 
 def mark_session_expired(fetch: str, reason: str, now: datetime | None = None) -> tuple[dict, bool]:
@@ -354,16 +351,7 @@ def cmd_session_alert(_args) -> int:
 def _warn(title: str, message: str) -> None:
     """Best-effort WARNING through the orchestrator's notifier; a machine without it loses only the
     notification."""
-    print(f"WARNING: {title}\n{message}", file=sys.stderr)
-    try:
-        from cherrypick.notify.notifier import Notifier
-        from cherrypick.orchestrator import config as cfgmod
-
-        Notifier(cfgmod.load_config().get("notify")).notify(
-            "WARNING", "market_report.collector", title, message
-        )
-    except Exception:  # noqa: BLE001
-        pass
+    _common.warn("market_report.collector", title, message)
 
 
 def _snapshot(page) -> Path | str:
@@ -1188,9 +1176,9 @@ def save_screener(name: str, body: dict, out_root: Path) -> tuple[bool, list[str
     out.mkdir(parents=True, exist_ok=True)
     dest = out / f"{name}.rejected.json" if problems else target
     record = {"name": name, "fetched_at": datetime.now(UTC).isoformat(), "body": body}
-    tmp = dest.with_suffix(".tmp")
-    tmp.write_text(json.dumps(record), encoding="utf-8")
-    tmp.replace(dest)
+    from cherrypick.core.jsonio import write_json_atomic
+
+    write_json_atomic(dest, record, indent=None, default=None)
     return not problems, problems
 
 

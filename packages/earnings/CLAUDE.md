@@ -106,7 +106,7 @@ follows `stamp_for`; since 09-17 the tag names the experiment and the stamp is c
   `paths.data_path`; the console resolves the same path independently and must never import this
   package. Logs: `paths.logs_dir()` (`~/.cherrypick/logs/earnings`, `$EARNINGS_LOGS_DIR`, or
   `$CHERRYPICK_HOME/logs/earnings`). Config: `paths.config_path()` (`~/.cherrypick/config/earnings.json`,
-  else in-repo `config/config.json`, else the shipped `config/config.example.json`). Reports: `paths.reports_dir()`. The Dolt databases share the
+  else in-repo `config/config.json`, else the shipped `config/config.example.json`). The Dolt databases share the
   directory without collision. The module's own EOD reports were retired 2026-08-13 —
   `packages/review` builds them.
 - **The orchestrator boundary is strict.** It drives this module by subprocess for unattended
@@ -146,7 +146,7 @@ cherrypick.earnings.scanner <command>` (engine), `python src/strategies/<name>.p
 | `python -m cherrypick.earnings.tt get_option_chain --symbol X --expiration DATE --include_greeks --include_quotes --include_oi --include_volume` | Live chain for re-verification |
 | `python -m cherrypick.earnings.tt get_market_metrics --symbol X` | Market cap for liquidity gates |
 | `python -m cherrypick.earnings.tt get_account_info` | Buying power, NLV — live mode only; paper uses `available_capital_paper_mode`, never a real balance |
-| `python -m cherrypick.earnings.tt execute_trade --order '<JSON>' [--live]` | Dry-run validate (no `--live`) or submit live |
+| `python -m cherrypick.earnings.tt execute_trade --order '<JSON>' [--live]` | Dry-run validate (no `--live`) or submit live. Both act on the designated account or refuse (`AccountNotDesignated`) — never the login's first account; an explicit `--account_number` must be the designated one |
 | `python -m cherrypick.earnings.db get_open_positions` / `save_trade` / `save_close` / `get_open_legs` / `save_leg_close` / `log_scan` / `save_entry_review` / `get_entry_reviews` | Persistence (real trades) |
 | `python -m cherrypick.earnings.db_paper` (same, plus `get_pnl_summary`) | Persistence (paper) |
 | `python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY` | All strategies × all symbols, each symbol's best, ranked; audit trail to `scan_log`. Step 4b. |

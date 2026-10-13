@@ -3,13 +3,17 @@ import type {
   ContangoArmParams,
   ContangoArmState,
   ContangoFill,
+  ContangoHistory,
+  ContangoHistoryRow,
   ContangoParams,
   ContangoPayload,
   ContangoSessionRow,
   ContangoStint,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
+import { rangeClauses, type DateRange } from "./dateRange.js";
 import { hasTable, num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
+import { EMPTY_TRADE_TOTALS, tradeTotals } from "./positionCash.js";
 
 /**
  * contango's read layer (packages/contango). Paper only and structural, like curve: no live loop,
@@ -137,6 +141,9 @@ function readStints(db: DatabaseHandle): ContangoStint[] {
     });
 }
 
+/** Each stint's entry and exit as fills. `value` is the module's own signed cash flow (the purchase
+ *  −, the sale +), and an unrecorded value, fee or slippage stays null: "not recorded" is not a
+ *  free fill. */
 function fills(db: DatabaseHandle): ContangoFill[] {
   const out: ContangoFill[] = [];
   const bps = (slip: number | null, value: number | null) =>
@@ -151,10 +158,10 @@ function fills(db: DatabaseHandle): ContangoFill[] {
       ...base,
       session: str(r["entry_session"]) ?? "",
       side: "buy",
-      value: Math.abs(entryValue ?? 0),
-      slippage: entrySlip ?? 0,
+      value: entryValue,
+      slippage: entrySlip,
       slippageBps: bps(entrySlip, entryValue),
-      fees: num(r["entry_fees"]) ?? 0,
+      fees: num(r["entry_fees"]),
     });
     if (str(r["status"]) === "closed") {
       const exitValue = num(r["exit_value"]);
@@ -163,14 +170,72 @@ function fills(db: DatabaseHandle): ContangoFill[] {
         ...base,
         session: str(r["exit_session"]) ?? "",
         side: "sell",
-        value: Math.abs(exitValue ?? 0),
-        slippage: exitSlip ?? 0,
+        value: exitValue,
+        slippage: exitSlip,
         slippageBps: bps(exitSlip, exitValue),
-        fees: num(r["exit_fees"]) ?? 0,
+        fees: num(r["exit_fees"]),
       });
     }
   }
   return out.sort((a, b) => b.session.localeCompare(a.session));
+}
+
+/** A closed stint in the trade table standard. Every figure is the module's own column: entry and
+ *  exit are already signed cash flow, and net is `net_pnl` (gross − fees − slippage). A share
+ *  trade records no settlement, so that column is null and renders `n/r`. */
+export function contangoTradeCash(r: Record<string, unknown>): ContangoHistoryRow {
+  const entryMid = num(r["entry_mid"]);
+  return {
+    positionId: str(r["position_id"]) ?? "",
+    arm: str(r["arm"]) ?? "",
+    symbol: str(r["symbol"]) ?? "",
+    role: str(r["role"]) ?? "",
+    entrySession: str(r["entry_session"]) ?? "",
+    exitSession: str(r["exit_session"]),
+    exitMid: num(r["exit_mid"]),
+    exitReason: str(r["exit_reason"]),
+    quantity: num(r["shares"]),
+    // The one per-share figure: a purchase, so a debit.
+    price: entryMid === null ? null : -entryMid,
+    entryCash: num(r["entry_value"]),
+    exitCash: num(r["exit_value"]),
+    distributions: num(r["distributions"]),
+    exitKind: str(r["status"]) === "closed" ? "closed" : null,
+    grossPnl: num(r["gross_pnl"]),
+    fees: num(r["fees"]),
+    settlementFees: null,
+    slippage: num(r["slippage"]),
+    netPnl: num(r["net_pnl"]),
+  };
+}
+
+export interface ContangoHistoryFilter {
+  arm: string | null;
+  range?: DateRange;
+}
+
+/** Closed stints, newest close first. A result belongs to the session it was realised on, so the
+ *  range bounds the exit session, and the totals are over every stint the filter matches. */
+export function readContangoHistory(config: ConsoleConfig, filter: ContangoHistoryFilter): ContangoHistory {
+  const clauses = ["status = 'closed'"];
+  const params: string[] = [];
+  if (filter.arm !== null) {
+    clauses.push("arm = ?");
+    params.push(filter.arm);
+  }
+  const range = rangeClauses("exit_session", filter.range);
+  clauses.push(...range.clauses);
+  params.push(...range.params);
+  return withReadOnlyDb<ContangoHistory>(dbPath(config), { rows: [], totals: EMPTY_TRADE_TOTALS }, (db) => {
+    if (!hasTable(db, "contango_positions")) return { rows: [], totals: EMPTY_TRADE_TOTALS };
+    const rows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT * FROM contango_positions WHERE ${clauses.join(" AND ")} ORDER BY exit_session DESC, id DESC`,
+      )
+      .all(...params)
+      .map(contangoTradeCash);
+    return { rows, totals: tradeTotals(rows) };
+  });
 }
 
 function emptyPayload(params: ContangoParams): ContangoPayload {

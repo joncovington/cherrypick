@@ -5,6 +5,11 @@
     python scripts/pmcc_shield_replay.py --until 2026-10-02     # the window docs/shield-study.md states
     python scripts/pmcc_shield_replay.py --fetch                # fetch the Cboe vol-index files first
     python scripts/pmcc_shield_replay.py --skew-check           # the model against the sampled quotes
+    python scripts/pmcc_shield_replay.py --policy-study --symbols XSP QQQ GLD IWM SLV SMH
+    python scripts/pmcc_shield_replay.py --index-dir DIR ...    # vol-index CSVs downloaded elsewhere
+
+SMH is not in the default run: before VXSMH's 2025-09 start it is priced off VXN scaled by a
+13-month ratio, a proxy graded below the other five's own indexes (see `SYMBOLS`).
 
 Read-only, except that `--fetch` writes the vol-index histories it needs under
 `$CHERRYPICK_HOME/data/pmcc/replay/` (VIX and VXN are read from the copies
@@ -47,6 +52,21 @@ assumption decides). The 30% stop is run on and off, to show what it does.
   at sale (85% decayed) or spot reaches its strike, at most once a session.
 - Ex-dividend (QQQ, IWM): a short whose life [sale day, expiry] spans an ex-date is refused, at entry
   (no position) and at a roll (the position runs without a short until a later day clears it).
+
+**The roll policy** (`roll_policy`, declared 2026-10-12 before any of its results were run; the
+deterministic policy the shield study recommended and nobody had built). It is `shield_hold` in every
+respect -- the same long, the same 0.70-delta short, the same expiry-day roll, the same 45-DTE long
+close and 30% stop -- except that it also rolls the short EARLY when, and only when, the short is
+both spent and deep in the money: its extrinsic is at or below 15% of its value at sale AND its delta
+is at or above 0.90, with at least a day to expiry, at most once a session. There is no breach roll.
+The reasoning, written down before the numbers: an early roll is worth its two extra fills only when
+the short has nothing left to earn and sits where a real short gets assigned early (the module's
+`assignment_exposure_tv` region); a short that spot has fallen back to still holds its extrinsic, and
+rolling it there buys that extrinsic back and re-strikes lower into the fall, which is the breach
+roll `shield` carries. So the policy keeps `shield`'s upside roll and drops its downside one.
+`--policy-study` prints the three side by side, per symbol: over the whole window, in the shield
+study's three five-year windows and in every five-year window starting each January, and at skew
+b 0, 0.2 and 0.4.
 
 **The put benchmark** (asked 2026-10-04): a short 20-delta put at the same year-long expiry, held
 to 45 DTE and re-entered, on the same notional sizing (which keeps it cash-secured). It matches the
@@ -127,8 +147,18 @@ SYMBOLS = {
         basis="the video's SLV prices", bridge=("GVZ", 1.73, "2022-02-11", "2025-12-31"),
         spread=dict(short_atm=0.0005, short_itm=0.0008, long_21=0.003, long_year=0.006),
     ),
+    # VXSMH starts 2025-09-16, so before it SMH is priced off VXN x 1.79, the median VXSMH/VXN ratio
+    # over its first 13 months (1.44-2.40). A proxy, graded below the five above; spreads are assumed
+    # at twice QQQ's. SMH's own history starts with its 2011-12-20 relaunch.
+    "SMH": dict(
+        source="SMH", index="VXSMH", c=0.83, b=0.20, q=0.005, grid=0.003, settlement="physical",
+        basis="as XSP, before 2025-09 on VXN x1.79", bridge=("VXN", 1.79, "2011-01-01", "2025-09-16"),
+        spread=dict(short_atm=0.0004, short_itm=0.0006, long_21=0.006, long_year=0.008),
+    ),
 }  # fmt: skip
-INDEXES = ("VIX", "VIX9D", "VXN", "GVZ", "RVX", "VXSLV", "WPUT")
+INDEXES = ("VIX", "VIX9D", "VXN", "GVZ", "RVX", "VXSLV", "VXSMH", "WPUT")
+DEFAULT_SYMBOLS = ("XSP", "QQQ", "GLD", "IWM", "SLV")  # SMH is a proxy: asked for by name
+INDEX_DIR: Path | None = None  # `--index-dir`: read the vol-index files from here where it has them
 
 
 @dataclass(frozen=True)
@@ -139,6 +169,7 @@ class Arm:
     short: str  # "atm" | "delta"
     short_delta: float = 0.0
     early_decay: float | None = None  # roll when extrinsic <= this fraction of its value at sale
+    early_min_delta: float | None = None  # ... and only while the short's delta is at least this
     breach_roll: bool = False
     stop_loss_frac: float | None = None
     long_close_dte: int = 45
@@ -150,10 +181,12 @@ SHIELD_HOLD = Arm(
     "shield_hold", long="year", long_delta=0.925, short="delta", short_delta=0.70, stop_loss_frac=0.30
 )
 SHIELD = replace(SHIELD_HOLD, name="shield", early_decay=0.15, breach_roll=True)
+ROLL_POLICY = replace(SHIELD_HOLD, name="roll_policy", early_decay=0.15, early_min_delta=0.90)
 ARMS = (
     CONTROL,
     SHIELD_HOLD,
     SHIELD,
+    ROLL_POLICY,
     replace(SHIELD_HOLD, name="shield_hold, no stop", stop_loss_frac=None),
     replace(SHIELD, name="shield, no stop", stop_loss_frac=None),
 )
@@ -167,8 +200,20 @@ def replay_dir() -> Path:
 
 
 def index_path(name: str) -> Path:
-    """The routine fetcher's copy where it keeps one, so the shared indexes are never two files."""
+    """The routine fetcher's copy where it keeps one, so the shared indexes are never two files. An
+    `--index-dir` copy wins where it exists: a fresher download read without writing under the home."""
+    if INDEX_DIR is not None and (INDEX_DIR / f"{name}.csv").exists():
+        return INDEX_DIR / f"{name}.csv"
     return _files.cboe_path(name) if name in _files.CBOE_INDEXES else replay_dir() / f"{name}.csv"
+
+
+def needed_indexes(symbols) -> list[str]:
+    """The files a run over `symbols` reads: the term structure, the WPUT check, and each symbol's own."""
+    out = ["VIX", "VIX9D", "WPUT"]
+    for s in symbols:
+        spec = SYMBOLS[s]
+        out += [spec["index"]] + ([spec["bridge"][0]] if "bridge" in spec else [])
+    return list(dict.fromkeys(out))
 
 
 def fetch_indexes() -> list[str]:
@@ -540,7 +585,10 @@ def run(m: Market, arm: Arm, *, iv_scale=1.0, cost_scale=1.0, since=None, until=
             elif arm.early_decay is not None and yrs(d, pos.short.exp) * 365 >= 1:
                 s = pos.short
                 mid = m.price(d, S, s.K, yrs(d, s.exp), iv_scale)
-                if mid - max(S - s.K, 0.0) <= arm.early_decay * s.ext0 or (arm.breach_roll and S <= s.K):
+                spent = mid - max(S - s.K, 0.0) <= arm.early_decay * s.ext0
+                if spent and arm.early_min_delta is not None:
+                    spent = m.delta(d, S, s.K, yrs(d, s.exp), iv_scale) >= arm.early_min_delta
+                if spent or (arm.breach_roll and S <= s.K):
                     buy_short(d, S)
                     sell_short(d, S, cap)
                     counts["early_rolls"] += 1
@@ -794,6 +842,100 @@ def print_report(rep: dict, calibrated: bool) -> None:
     )
 
 
+POLICY_ARMS = (SHIELD_HOLD, SHIELD, ROLL_POLICY)
+STUDY_WINDOWS = (("2011-01-01", "2015-12-31"), ("2016-01-01", "2020-12-31"), ("2021-01-01", None))
+STUDY_SKEWS = (0.0, 0.2, 0.4)
+
+
+def five_year_windows(first: str, last: str) -> list[tuple[str, str]]:
+    """Every five calendar years starting a January, the first one clipped to the data, kept only
+    when the data reaches its last day."""
+    return [
+        (f"{y}-01-01", f"{y + 4}-12-31")
+        for y in range(int(first[:4]), int(last[:4]) - 3)
+        if f"{y + 4}-12-31" <= last
+    ]
+
+
+def policy_study(conn, symbol, args) -> dict:
+    """`roll_policy` against `shield_hold` and `shield` (see the module docstring), one symbol."""
+    m = Market(conn, symbol)
+
+    def window(since, until):
+        lo = max(since, args.since) if args.since else since
+        hi = until if args.until is None else (args.until if until is None else min(until, args.until))
+        return {arm.name: run(m, arm, since=lo, until=hi) for arm in POLICY_ARMS}
+
+    def wins(windows):
+        base = SHIELD_HOLD.name
+        return {
+            arm.name: sum(1 for *_, w in windows if w[arm.name]["cagr"] > w[base]["cagr"])
+            for arm in POLICY_ARMS
+            if arm.name != base
+        }
+
+    def at_skew(b):
+        m.b = b
+        full = window(START, None)
+        first, last = full[SHIELD_HOLD.name]["start"], full[SHIELD_HOLD.name]["end"]
+        fixed = [(lo, hi or last, window(lo, hi)) for lo, hi in STUDY_WINDOWS]
+        rolling = [(lo, hi, window(lo, hi)) for lo, hi in five_year_windows(first, last)]
+        return {
+            "b": b,
+            "first": first,
+            "last": last,
+            "full": full,
+            "fixed": fixed,
+            "rolling": rolling,
+            "wins_fixed": wins(fixed),
+            "wins_rolling": wins(rolling),
+        }
+
+    base = at_skew(m.spec["b"])
+    skews = {b: base if b == m.spec["b"] else at_skew(b) for b in STUDY_SKEWS}
+    m.b = m.spec["b"]
+    return {"symbol": symbol, **base, "skews": skews}
+
+
+def print_policy_study(rep: dict, calibrated: bool) -> None:
+    flag = "" if calibrated else "   ** UNCALIBRATED **"
+    print(f"\n=== {rep['symbol']} roll-policy study, {rep['first']}..{rep['last']}, skew b {rep['b']}{flag}")
+    print(
+        f"  {'arm':12} {'CAGR':>6} {'MDD':>6} {'alpha':>6} {'entries':>7} {'shorts':>6} {'early':>5} "
+        f"{'stops':>5}  CAGR by window "
+        + " ".join(f"{lo[:4]}-{(hi or rep['last'])[:4]}" for lo, hi in STUDY_WINDOWS)
+    )
+    for arm in POLICY_ARMS:
+        r, c = rep["full"][arm.name], rep["full"][arm.name]["counts"]
+        cells = " ".join(f"{_pct(w[arm.name]['cagr'], 9, True)}" for *_, w in rep["fixed"])
+        print(
+            f"  {arm.name:12} {_pct(r['cagr'])} {_pct(r['mdd'])} {_pct(r['alpha_beta'][0], 6, True)} "
+            f"{c['entries']:7} {c['shorts_sold']:6} {c['early_rolls']:5} {c['stops']:5}  {cells}"
+        )
+    n_fixed, n_rolling = len(rep["fixed"]), len(rep["rolling"])
+    for name in rep["wins_fixed"]:
+        print(
+            f"  {name} beats shield_hold on CAGR in {rep['wins_fixed'][name]} of {n_fixed} study windows "
+            f"and {rep['wins_rolling'][name]} of {n_rolling} rolling five-year windows"
+        )
+    print(
+        "  by skew b: CAGR / alpha / MDD a year, and windows won against shield_hold "
+        f"(of {n_fixed}; of {n_rolling})"
+    )
+    for b, sk in rep["skews"].items():
+        cells = []
+        for name, r in sk["full"].items():
+            won = (
+                f" won {sk['wins_fixed'][name]};{sk['wins_rolling'][name]}"
+                if name in sk["wins_fixed"]
+                else ""
+            )
+            cells.append(
+                f"{name} {_pct(r['cagr'], 5)} /{_pct(r['alpha_beta'][0], 5, True)} /{_pct(r['mdd'], 5)}{won}"
+            )
+        print(f"    b {b:.1f}: " + " | ".join(cells))
+
+
 def skew_check(conn) -> list[str]:
     """The model's IV against what the paper loop sampled (`pmcc_skew_samples`, skew.py), per symbol
     and target: the observed IV, the model's at the same strike, expiry and session, and the skew `b`
@@ -855,25 +997,39 @@ def skew_check(conn) -> list[str]:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--symbols", nargs="*", default=list(SYMBOLS))
+    ap.add_argument("--symbols", nargs="*", default=list(DEFAULT_SYMBOLS))
     ap.add_argument("--since", default=None)
     ap.add_argument("--until", default=None)
     ap.add_argument("--iv-scales", nargs="*", type=float, default=[0.9, 1.0, 1.1])
     ap.add_argument("--fetch", action="store_true", help="fetch the Cboe vol-index files first")
     ap.add_argument("--skew-check", action="store_true", help="compare the model with the sampled quotes")
+    ap.add_argument(
+        "--policy-study",
+        action="store_true",
+        help="roll_policy against shield_hold and shield, by window and skew",
+    )
+    ap.add_argument(
+        "--index-dir",
+        type=Path,
+        default=None,
+        help="read vol-index CSVs from here where it has them (read-only)",
+    )
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
+    global INDEX_DIR
+    INDEX_DIR = args.index_dir
     if args.fetch:
         for p in fetch_indexes():
             print(f"fetch: {p}", file=sys.stderr)
-    missing = [n for n in INDEXES if not index_path(n).exists()]
-    if missing:
-        print(f"missing vol-index files: {', '.join(missing)} -- run with --fetch", file=sys.stderr)
-        return 2
     unknown = [s for s in args.symbols if s.upper() not in SYMBOLS]
     if unknown:
         print(f"no pricing parameters for {', '.join(unknown)}; known: {', '.join(SYMBOLS)}", file=sys.stderr)
+        return 2
+    args.symbols = [s.upper() for s in args.symbols]
+    missing = [n for n in needed_indexes(args.symbols) if not index_path(n).exists()]
+    if missing:
+        print(f"missing vol-index files: {', '.join(missing)} -- run with --fetch", file=sys.stderr)
         return 2
 
     conn = sqlite3.connect(f"file:{_paths.history_db()}?mode=ro", uri=True)
@@ -883,6 +1039,17 @@ def main(argv=None) -> int:
         conn.close()
         return 0
     cal = calibration(conn, args.since, args.until)
+    if args.policy_study:
+        studies = [policy_study(conn, s, args) for s in args.symbols]
+        conn.close()
+        if args.json:
+            print(json.dumps({"calibration": cal, "studies": studies}, indent=2, default=str))
+        else:
+            verdict = "OK" if cal["ok"] else "FAILED"
+            print(f"calibration: {verdict} ({cal.get('diff', 0) * 100:+.1f} points vs WPUT)")
+            for rep in studies:
+                print_policy_study(rep, cal["ok"])
+        return 0 if cal["ok"] else 1
     reports = [symbol_report(conn, s.upper(), args) for s in args.symbols]
     conn.close()
 

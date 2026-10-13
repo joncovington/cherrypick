@@ -16,7 +16,8 @@ Two honesty rails, both load-bearing:
 - **The derivation is validated against reality every time it runs.** `validate_against_control`
   re-derives the `control` policy from the control arm's OWN marks and compares it to that arm's
   real recorded net (they should agree to the cent — same ticks, same mids, same cost model), and
-  the `expiry-longs-mon` policy against the path arm's real net. A derivation that cannot
+  the `expiry-longs-mon` policy against the path arm's real net — and the Friday regime's
+  `friday:control` and `friday:path` likewise, each against its own. A derivation that cannot
   reproduce the arms it is derived beside has no business ranking the policies between them.
 
 Granularity caveat, stated rather than hidden: a trigger is evaluated at the recorded tick cadence,
@@ -53,6 +54,19 @@ POLICIES = {
 }
 
 _ROLES = ("front_put", "back_put", "front_call", "back_call")
+
+# Each entry regime's path arm is the substrate for its own weeks, and each real arm is validated
+# against the policy that IS its rule. The Friday regime (docs/friday-entry-arm.md) is listed beside
+# the Monday one rather than derived by prefix-stripping, so an arm only joins the grid or the
+# validation by being named here. Its weeks carry their own structure tag (`dc_7_10` against
+# `dc_4_7`), so they land in their own buckets and never pool.
+PATH_ARMS = ("path", f"{engine.FRIDAY_PREFIX}path")
+VALIDATED_ARMS = (
+    ("control", "control"),
+    ("path", "expiry-longs-mon"),
+    (f"{engine.FRIDAY_PREFIX}control", "control"),
+    (f"{engine.FRIDAY_PREFIX}path", "expiry-longs-mon"),
+)
 
 
 # --------------------------------------------------------------------------- path assembly
@@ -276,18 +290,30 @@ def derive(week: dict, policy_name: str, config: dict) -> dict:
             if tick is not None:
                 exit_costs += _close_roles(week, tick, long_roles, config, exits)["total"]
             else:
-                # Never disposed — fall back to what the real arm recorded (its own expiry
-                # settlement); a derivation inventing a Monday price the record does not hold
-                # would be a guess.
+                # No mark at the disposition minute — fall back to what the real arm recorded; a
+                # derivation inventing a Monday price the record does not hold would be a guess.
+                # This is the USUAL case, not the rare one: the recorder marks open legs only, so
+                # the tick the arm disposed on is the last one it writes, and it lands before the
+                # minute is reached.
+                itm_cash_longs = 0
                 for role in long_roles:
                     leg = week["legs"][role]
                     if leg["close_value"] is None:
                         return _not_derivable(week, policy_name, "no_mark_mon_open")
-                    exits[role] = {
-                        "value": leg["close_value"],
-                        "kind": leg["close_kind"] or "cash_settled",
-                        "session": leg["expiration"],
-                    }
+                    kind = leg["close_kind"] or "cash_settled"
+                    exits[role] = {"value": leg["close_value"], "kind": kind, "session": leg["expiration"]}
+                    if kind == "cash_settled" and leg["close_value"] > 0:
+                        itm_cash_longs += 1
+                # The recorded price comes with the recorded cost of getting it. Every exit charge
+                # on the row that is not a settlement charge is the disposal's fee and slippage
+                # (the shorts' settlement is re-derived above, and an ITM long that cash-settled
+                # pays its own settlement fee). Leaving this out made every path week $0.44-0.49
+                # rich, inside the old $0.50 tolerance and so never reported.
+                for p in week["positions"].values():
+                    exit_costs += (
+                        (p["exit_cost"] or 0) + (p["exit_slippage"] or 0) - (p["settlement_fees"] or 0)
+                    )
+                exit_costs += engine.settlement_fee(itm_cash_longs)
         trigger = {"reason": f"expiry_longs_{spec['longs']}", "session": day}
 
     # Anything not exited by its trigger falls through to the control terminal.
@@ -346,10 +372,15 @@ def _completed_weeks(conn, arm: str) -> list[str]:
 
 
 def comparison_table(conn, config: dict) -> dict:
-    """Every policy over every completed path-arm week, grouped by structure tag (distinct tags
-    are distinct trades and never pool). This table is the module's answer to "which exit
-    parameters work" — read beside `validation`, which says whether to believe it."""
-    weeks = [w for w in (week_data(conn, week_of, "path") for week_of in _completed_weeks(conn, "path")) if w]
+    """Every policy over every completed path-arm week — both entry regimes' — grouped by structure
+    tag (distinct tags are distinct trades and never pool). This table is the module's answer to
+    "which exit parameters work" — read beside `validation`, which says whether to believe it."""
+    weeks = [
+        w
+        for arm in PATH_ARMS
+        for w in (week_data(conn, week_of, arm) for week_of in _completed_weeks(conn, arm))
+        if w
+    ]
     breaks = [dict(r) for r in conn.execute("SELECT * FROM measurement_breaks ORDER BY break_date")]
     table: dict[str, dict] = {}
     for policy_name in POLICIES:
@@ -395,13 +426,22 @@ def _break_date(conn, key: str) -> str | None:
     return None if row is None else str(row[0])
 
 
-def validate_against_control(conn, config: dict, tolerance: float = 0.50) -> dict:
+def validate_against_control(conn, config: dict, tolerance: float = 0.01) -> dict:
     """The derivation reproduced against reality: derived `control` vs the control arm's real
     recorded net (from the control arm's OWN marks), and derived `expiry-longs-mon` vs the path
     arm's real net. A mismatch past `tolerance` dollars means the replay and the arms disagree
-    about the same trade, and the policy table should not be trusted until it is explained."""
+    about the same trade, and the policy table should not be trusted until it is explained.
+
+    The default is one cent, which is what "to the cent" means: the derived net and the recorded
+    net round their components separately, so a one-cent difference is rounding and anything more
+    is a disagreement. It was $0.50 until 2026-10-12, wide enough to hide a $0.49 bias on every
+    path week (the long disposal's cost, missing from the derivation).
+
+    The Friday regime's arms are checked the same way, each against its own recorded net. Until
+    2026-10-12 only `control` and `path` were named here, so `friday:control` and `friday:path`
+    weeks were never validated at all."""
     checks = []
-    for arm, policy_name in (("control", "control"), ("path", "expiry-longs-mon")):
+    for arm, policy_name in VALIDATED_ARMS:
         for week_of in _completed_weeks(conn, arm):
             week = week_data(conn, week_of, arm)
             if week is None:
@@ -420,7 +460,7 @@ def validate_against_control(conn, config: dict, tolerance: float = 0.50) -> dic
                     "derived_net": derived["net_pnl"],
                     "real_net": round(real_gross - real_fees, 2),
                     "diff": diff,
-                    "ok": abs(diff) <= tolerance,
+                    "ok": abs(diff) <= tolerance + 1e-9,
                 }
             )
 

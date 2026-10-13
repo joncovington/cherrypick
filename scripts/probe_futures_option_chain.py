@@ -59,7 +59,7 @@ def _reference_price() -> tuple[float | None, str | None]:
         sym = fmap["contracts"]["NQ"][0]["streamer_symbol"]
     except (OSError, ValueError, KeyError, IndexError):
         return None, None
-    cache = _home.data_dir("marketdata") / "stream_cache.db"
+    cache = streamcache.cache_path()
     try:
         conn = sqlite3.connect(f"file:{cache}?mode=ro", uri=True)
         row = conn.execute("SELECT last FROM stream_trades WHERE symbol = ?", (sym,)).fetchone()

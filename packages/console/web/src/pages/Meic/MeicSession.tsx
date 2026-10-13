@@ -1,4 +1,4 @@
-import type { TradingMode } from "@console/shared";
+import { feeDragPct, type TradingMode } from "@console/shared";
 import { useAttempts } from "../../components/Attempts";
 import { DivergingBars } from "../../components/grid/DivergingBars";
 import { GridCard, StatTile } from "../../components/grid/GridCard";
@@ -25,8 +25,10 @@ export function MeicSession({ mode, scope }: { mode: TradingMode; scope: MeicSco
   const t = closed.data?.totals;
   const entered = held.data?.trades.total;
   const open = entered !== undefined && t !== undefined ? entered - t.trades : undefined;
-  const costs = t !== undefined ? t.fees + t.settlementFees : undefined;
-  const dragPct = t !== undefined && t.credit > 0 && costs !== undefined ? (costs / t.credit) * 100 : null;
+  // Every cost the ledger charged (gross − net holds whether or not settlement was split out), and
+  // fee drag as the suite defines it: trading fees alone ÷ premium collected.
+  const costs = t !== undefined ? t.gross - t.net : undefined;
+  const dragPct = t !== undefined ? feeDragPct(t.fees, t.credit) : null;
 
   const armRows = attempts.data?.arms ?? [];
   const tries = armRows.reduce((n, r) => n + r.attempts, 0);
@@ -68,7 +70,7 @@ export function MeicSession({ mode, scope }: { mode: TradingMode; scope: MeicSco
         foot={
           t === undefined
             ? "—"
-            : `fees ${fmtMoney(t.fees)} · settlement ${fmtMoney(t.settlementFees)}${dragPct !== null ? ` · ${dragPct.toFixed(1)}% of premium` : ""}`
+            : `fees ${fmtMoney(t.fees)} · settlement ${t.settlementFees === null ? "n/r" : fmtMoney(t.settlementFees)}${dragPct !== null ? ` · fee drag ${dragPct.toFixed(1)}%` : ""}`
         }
       />
       <StatTile

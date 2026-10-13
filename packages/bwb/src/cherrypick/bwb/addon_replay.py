@@ -61,21 +61,6 @@ def _sale(tick: dict, quotes: dict) -> dict:
     }
 
 
-def addon_only_fire(ticks: list[dict], params: dict) -> dict | None:
-    """The delta arm's add-on on one cohort's recorded path: armed on the first `delta_fires` tick,
-    fired on the first tick from there whose bracket prices as a credit above the floor."""
-    floor = float(params.get("addon_credit_floor", 0.0) or 0.0)
-    armed = False
-    for tick in ticks:
-        if not armed and triggers.delta_fires(tick.get("near_abs_delta"), params):
-            armed = True
-        if armed:
-            quotes = bracket_quotes(tick)
-            if quotes is not None and quotes["credit"] > floor:
-                return _sale(tick, quotes)
-    return None
-
-
 def daily_sale(ticks: list[dict], entry_session: str, params: dict) -> dict | None:
     """The same bracket sold on the cohort's entry session, at the first tick it prices as a credit."""
     floor = float(params.get("addon_credit_floor", 0.0) or 0.0)

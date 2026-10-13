@@ -69,7 +69,7 @@ interface FliesAnalytics {
     medianCompletionMin?: number | null;
   };
   byArm: Array<{ arm: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
-  feeDrag: Array<{ arm: string; gross: number; fees: number; net: number; dragPct: number | null }>;
+  feeDrag: Array<{ arm: string; premium: number; gross: number; fees: number; settlementFees: number | null; net: number; dragPct: number | null }>;
 }
 
 function useFliesAnalytics(mode: TradingMode, filter: FliesFilter) {

@@ -149,7 +149,7 @@ def pnl_series(conn, granularity: str = "daily", arm=None, symbol=None) -> list[
 # them, every one a loser, -$199.45 total), which charged its column with a cost no other arm could
 # incur and made "gex vs control" partly a legged-vs-outright comparison instead of a centring one.
 # The arm comparison therefore reads legged only. This is a READ-LAYER filter on purpose — the rows
-# stay in the ledger, `by_entry_mode` still reports both, and the book totals in `stats_for_period` /
+# stay in the ledger, and the book totals in `stats_for_period` /
 # `pnl_series` remain whole, because the book really did pay for those flies and rule 6 says a
 # negative result is the finding rather than something to remove.
 COMPARISON_ENTRY_MODES = ("legged",)
@@ -787,19 +787,6 @@ def regime_cuts(
     return doc
 
 
-def by_entry_mode(conn, start=None, end=None, symbol=None) -> list[dict]:
-    """legged vs outright. They perform differently enough that averaging them together would hide
-    the finding — legged manufactures its own floor, outright spends one."""
-    where, params = _period_clause(start, end, symbol=symbol)
-    rows = conn.execute(
-        f"SELECT entry_mode, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params
-    ).fetchall()
-    grouped: dict[str, list] = {}
-    for r in rows:
-        grouped.setdefault(r["entry_mode"] or "unknown", []).append(r)
-    return [{"entry_mode": m, **_summarize(rs)} for m, rs in sorted(grouped.items())]
-
-
 # The drift past which a session's direction is treated as committed, as a FRACTION of spot rather
 # than in points. 0.0026 is the 20 points that were measured on SPX (~7710), and expressing it
 # relatively is not cosmetic: the EOD writer reports per day across every book, so an absolute band
@@ -911,22 +898,6 @@ def by_entry_window(conn, start=None, end=None, symbol=None) -> list[dict]:
     for r in rows:
         grouped.setdefault(r["entry_window"] or "unwindowed", []).append(r)
     return [{"window": w, **_summarize(rs)} for w, rs in sorted(grouped.items())]
-
-
-def fee_drag(conn, start=None, end=None, symbol=None) -> list[dict]:
-    """Fee drag per arm. Broken out because a legged fly pays two fee stacks against a credit that may
-    be $35-105 — costs are not a rounding error for this strategy, they are the experiment."""
-    return [
-        {
-            "arm": r["arm"],
-            "gross_pnl": r["gross_pnl"],
-            "fees": r["fees"],
-            "net_pnl": r["net_pnl"],
-            "fee_drag_pct": r["fee_drag_pct"],
-            "trades": r["trades"],
-        }
-        for r in by_arm(conn, start, end, symbol=symbol)
-    ]
 
 
 def daily_pnl(conn, arm=None, symbol=None) -> list[dict]:
@@ -1724,12 +1695,16 @@ def live_vs_paper(live_conn, paper_conn, arm: str = "gex") -> dict:
     depends on `cherrypick.core` alone and spawns no subprocess, which is what keeps it unable to
     reach anything but a paper advice artifact. Its copy is facts-for-context handed to a model,
     never a report surface — this remains the one place a live-vs-paper number is *reported* from.
-    If the shape here changes, bump that tag."""
+    If the shape here changes, bump that tag.
+
+    Voided rows (`void_reason` set) are out on both sides and out of the session list, as on every
+    other read surface: they keep `status = 'settled'`, so `status != 'cancelled'` alone counted the
+    22 paper rows of the 2026-10-08 outage against live's two entries that day."""
     days = [
         r[0]
         for r in live_conn.execute(
             "SELECT DISTINCT trade_date FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' "
-            "AND status != 'cancelled' ORDER BY trade_date",
+            "AND status != 'cancelled' AND void_reason IS NULL ORDER BY trade_date",
             (arm,),
         )
     ]
@@ -1751,7 +1726,7 @@ def live_vs_paper(live_conn, paper_conn, arm: str = "gex") -> dict:
             dict(r)
             for r in conn.execute(
                 f"SELECT * FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' "
-                f"AND status != 'cancelled' AND trade_date IN ({marks})",
+                f"AND status != 'cancelled' AND void_reason IS NULL AND trade_date IN ({marks})",
                 (arm, *days),
             )
         ]
@@ -1871,15 +1846,6 @@ def positions_for_day(
     ).fetchall()
     out = [dict(r) for r in rows]
     return out if include_cancelled else fly.held(out)
-
-
-def trade_log(conn, limit: int = 1000, arm=None, symbol=None) -> list[dict]:
-    where, params = _period_clause(arm=arm, symbol=symbol)
-    rows = conn.execute(
-        f"SELECT * FROM fly_positions WHERE {where} ORDER BY trade_date DESC, entry_time DESC LIMIT ?",
-        [*params, limit],
-    ).fetchall()
-    return [dict(r) for r in rows]
 
 
 def books_for_day(conn, day: str, arm: str | None = None, symbol: str | None = None) -> list[dict]:
@@ -2206,39 +2172,6 @@ def today() -> str:
     still yesterday well after the ET date has rolled, so a local date would ask for the wrong
     session's rows on any evening read."""
     return clock.today_iso()
-
-
-def session_overview(conn, day: str | None = None, arm: str | None = None, symbol: str | None = None) -> dict:
-    """Everything the Today view and the section card need, in one call.
-
-    `arm`/`symbol` narrow every figure here (books, positions, and the derived counts/stats/
-    completion) to the selected scope — the same filter the payoff curve and the History/
-    Performance views already apply, so switching either selector can't leave one card telling a
-    different story than the rest of the page.
-    """
-    day = day or today()
-    books = books_for_day(conn, day, arm, symbol)
-    positions = positions_for_day(conn, day, arm, symbol)
-    open_positions = [p for p in positions if p["status"] == "open"]
-    flies = [p for p in positions if p["kind"] == "fly"]
-    return {
-        "date": day,
-        "books": books,
-        "positions": positions,
-        "open_count": len(open_positions),
-        "fly_count": len(flies),
-        "risk_free_count": len([p for p in flies if p["risk_free"]]),
-        # The worst realistic dollar loss across every still-open position, net of trading fees
-        # AND the worst-case $5/contract exercise-assignment fee (as if every leg finished ITM --
-        # see fly.position_floor). A position whose own floor is already non-negative contributes
-        # nothing here (it cannot become a loss), so this is genuinely "how much could this book
-        # still lose," not a raw sum of every floor regardless of sign.
-        "max_possible_loss": round(sum(min(0.0, p.get("floor_dollars") or 0.0) for p in open_positions), 2),
-        "stats": stats_for_period(conn, day, day, arm=arm, symbol=symbol),
-        "completion": completion_stats(conn, day, day, symbol=symbol, arm=arm),
-        "divergence": arm_divergence(conn, day),
-        "journal": decision_journal(conn, day, arm),
-    }
 
 
 # --------------------------------------------------------------------------- band placement

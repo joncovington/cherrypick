@@ -152,3 +152,27 @@ def test_official_sources_is_the_posted_close_set():
         "tastytrade_last_provisional"
     )
     assert not settlement.is_official_source(None)
+
+
+def test_physical_settlement_arithmetic_is_keyword_only():
+    """bwb's engine has a settle_intrinsic with another argument order; a positional call written for
+    it must fail here rather than settle a leg on the wrong numbers."""
+    with pytest.raises(TypeError):
+        settlement.settle_intrinsic(6400.0, "put", 6350.0)  # type: ignore[misc]
+    assert settlement.settle_intrinsic(strike=6400.0, option_type="put", spot=6350.0) == 50.0
+    assert settlement.settle_intrinsic(strike=6600.0, option_type="call", spot=6550.0) == 0.0
+    short_put = {"option_type": "put", "strike": 780.0, "action": "Sell to Open"}
+    a = settlement.assignment_from(short_put, spot=770.0, quantity=2)
+    assert a == {"direction": "long", "shares": 200, "basis": 770.0, "strike": 780.0, "option_type": "put"}
+    assert settlement.assignment_from(short_put, spot=790.0, quantity=1) is None
+
+
+def test_declared_dividends_cover_and_span():
+    cfg = {"dividends": {"SPY": {"ex_dates": ["2026-09-18"], "declared_through": "2026-12-31"}}}
+    assert settlement.ex_dividend_dates(cfg, symbol="spy") == ["2026-09-18"]
+    assert settlement.dividend_coverage_ok(cfg, symbol="SPY", through_day="2026-12-31") is True
+    assert settlement.dividend_coverage_ok(cfg, symbol="SPY", through_day="2027-01-04") is False
+    assert settlement.dividend_coverage_ok({}, symbol="SPY", through_day="2026-09-18") is False
+    span = settlement.ex_date_in_span(cfg, symbol="SPY", start_day="2026-09-18", end_day="2026-09-25")
+    assert span == "2026-09-18"
+    assert settlement.ex_date_in_span(cfg, symbol="SPY", start_day="2026-09-19", end_day="2026-09-25") is None

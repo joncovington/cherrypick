@@ -80,14 +80,28 @@ def nearest_strikes(strikes, spot: float, each_side: int) -> list[float]:
 
 
 def chain_quotes(
-    db_path: Path | str, snap: GexSnapshot, *, each_side: int, max_age_seconds: float
+    db_path: Path | str,
+    snap: GexSnapshot,
+    *,
+    each_side: int,
+    max_age_seconds: float,
+    held_symbols: frozenset[str] | set[str] = frozenset(),
 ) -> list[dict]:
     """The usable quotes (`core.streamcache.usable_quote`, the suite's one definition) and fresh
     deltas for the strikes nearest spot on `snap`'s chain, read-only. One row per (side, strike);
-    a strike with no usable quote is absent, never a zero."""
+    a strike with no usable quote is absent, never a zero.
+
+    `held_symbols` adds, on both rights, every strike of this chain one of those streamer symbols
+    names -- the legs modules declare they hold, so a position that drifted outside the window is
+    still recorded. A symbol on another chain matches nothing."""
     if not snap.chain_entries or snap.spot is None:
         return []
     keep = set(nearest_strikes((e["strike_price"] for e in snap.chain_entries), snap.spot, each_side))
+    keep.update(
+        float(e["strike_price"])
+        for e in snap.chain_entries
+        if e["streamer_symbol"] in held_symbols and e["strike_price"] is not None
+    )
     legs = {
         e["streamer_symbol"]: (
             "call" if "C" in str(e["option_type"]).upper() else "put",
@@ -179,6 +193,108 @@ def read_spots(
     return out
 
 
+def chain_from_stream_cache(db_path: Path | str, symbol: str, today: str | None = None) -> GexSnapshot:
+    """The chain ``snapshot_from_stream_cache`` would pick -- spot, expiration and chain entries, by
+    the same rule -- without the greeks, open interest and volume behind a profile. What the quote
+    recorder needs every tick: it prices nothing, and the full read loads all three for every
+    contract on the chain only to discard them."""
+    symbol = symbol.strip().upper()
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return GexSnapshot(symbol=symbol, spot=None, expiration=None, source="missing")
+    conn = _connect_ro(db_path)
+    try:
+        spot, expiration, entries, _ = _nearest_live_chain(conn, symbol, today)
+        return GexSnapshot(symbol=symbol, spot=spot, expiration=expiration, chain_entries=entries)
+    finally:
+        conn.close()
+
+
+def _nearest_live_chain(conn, symbol: str, today: str | None) -> tuple:
+    """(spot, expiration, chain entries, streamer symbols) of the nearest expiration at or after
+    `today` with live greeks; see `snapshot_from_stream_cache` for why each clause is there."""
+    tr = conn.execute("SELECT last FROM stream_trades WHERE symbol = ?", (symbol,)).fetchone()
+    spot = float(tr["last"]) if tr and tr["last"] is not None else None
+
+    # Candidate expirations for this underlying, nearest first. The underlying_symbol filter
+    # matters: XSP and SPX share 0DTE dates, so an expiration-only match would blend two chains.
+    #
+    # **Never an expiration that has already passed**, and this is the load-bearing clause. It
+    # used to order by ABS(JULIANDAY(expiration) - JULIANDAY('now')), which ranks yesterday's
+    # chain as near as tomorrow's and nearer than the day after. Nothing prunes `stream_greeks`,
+    # so an expired chain keeps stale non-zero gammas, satisfies the has-greeks test in the loop
+    # below, and wins — producing a GEX reading frozen at one value for the whole session.
+    #
+    # It was not rare. Measured 2026-08-26 over `gex_regime_history`: 3,991 of 10,516 recorded
+    # readings (38%) came from a chain that had already expired, nearly all of them a single
+    # constant net_gex repeated for hours — 96 readings on 2026-08-19 all reading -16.99bn off
+    # the expired 08-18 chain, and so on across 23 sessions. Those readings reach the advisor's
+    # fact pack as `market.gex.today_counts` and the overview's gamma flip and walls, and they
+    # are what made the advisor report a regime signal that "three sources in this pack describe
+    # three different ways".
+    #
+    # A forward-only ordering, so "nearest" means nearest AHEAD. When nothing valid has greeks
+    # the loop below falls back to the nearest future expiration and the caller reports "not
+    # ready", which is the correct answer and the one a stale chain was silently replacing.
+    today = today or _clock.today_iso()
+    exps = [
+        r["expiration"]
+        for r in conn.execute(
+            "SELECT expiration FROM stream_chain WHERE underlying_symbol = ? "
+            "AND expiration >= ? "
+            "GROUP BY expiration ORDER BY JULIANDAY(expiration) - JULIANDAY(?)",
+            (symbol, today, today),
+        )
+    ]
+    if not exps:
+        return spot, None, [], []
+
+    # Pick the nearest expiration that actually has LIVE greeks. Nearest-by-date alone can land on a
+    # future expiration that has chain metadata but no greeks yet — the streamer only subscribes
+    # Greeks/Summary/Trade for its active 0DTE ATM window, so an all-strikes metadata chain for a
+    # later date reads as all-zero GEX. Fall back to plain nearest (a "not ready" zero profile) when
+    # no cached expiration has greeks.
+    expiration = exps[0]
+    entries: list[dict] = []
+    chain_syms: list[str] = []
+    for cand in exps:
+        cand_entries: list[dict] = []
+        cand_syms: list[str] = []
+        for row in conn.execute(
+            "SELECT data_json FROM stream_chain WHERE expiration = ? AND underlying_symbol = ?",
+            (cand, symbol),
+        ):
+            try:
+                opt = json.loads(row["data_json"])
+            except Exception:
+                continue
+            sym = opt.get("streamer_symbol")
+            if not sym:
+                continue
+            cand_syms.append(sym)
+            cand_entries.append(
+                {
+                    "strike_price": opt.get("strike_price"),
+                    "streamer_symbol": sym,
+                    "option_type": opt.get("option_type"),
+                    "shares_per_contract": opt.get("shares_per_contract") or 100,
+                }
+            )
+        if not cand_syms:
+            continue
+        if cand == exps[0]:  # remember the nearest as the fallback
+            expiration, entries, chain_syms = cand, cand_entries, cand_syms
+        ph = ", ".join("?" * len(cand_syms))
+        has_greeks = conn.execute(
+            f"SELECT COUNT(*) FROM stream_greeks WHERE symbol IN ({ph}) AND gamma IS NOT NULL AND gamma != 0",
+            cand_syms,
+        ).fetchone()[0]
+        if has_greeks:
+            expiration, entries, chain_syms = cand, cand_entries, cand_syms
+            break
+    return spot, expiration, entries, chain_syms
+
+
 def snapshot_from_stream_cache(db_path: Path | str, symbol: str, today: str | None = None) -> GexSnapshot:
     """Build a ``GexSnapshot`` for ``symbol`` from a MEIC-style stream cache, read-only.
 
@@ -194,86 +310,9 @@ def snapshot_from_stream_cache(db_path: Path | str, symbol: str, today: str | No
 
     conn = _connect_ro(db_path)
     try:
-        tr = conn.execute("SELECT last FROM stream_trades WHERE symbol = ?", (symbol,)).fetchone()
-        spot = float(tr["last"]) if tr and tr["last"] is not None else None
-
-        # Candidate expirations for this underlying, nearest first. The underlying_symbol filter
-        # matters: XSP and SPX share 0DTE dates, so an expiration-only match would blend two chains.
-        #
-        # **Never an expiration that has already passed**, and this is the load-bearing clause. It
-        # used to order by ABS(JULIANDAY(expiration) - JULIANDAY('now')), which ranks yesterday's
-        # chain as near as tomorrow's and nearer than the day after. Nothing prunes `stream_greeks`,
-        # so an expired chain keeps stale non-zero gammas, satisfies the has-greeks test in the loop
-        # below, and wins — producing a GEX reading frozen at one value for the whole session.
-        #
-        # It was not rare. Measured 2026-08-26 over `gex_regime_history`: 3,991 of 10,516 recorded
-        # readings (38%) came from a chain that had already expired, nearly all of them a single
-        # constant net_gex repeated for hours — 96 readings on 2026-08-19 all reading -16.99bn off
-        # the expired 08-18 chain, and so on across 23 sessions. Those readings reach the advisor's
-        # fact pack as `market.gex.today_counts` and the overview's gamma flip and walls, and they
-        # are what made the advisor report a regime signal that "three sources in this pack describe
-        # three different ways".
-        #
-        # A forward-only ordering, so "nearest" means nearest AHEAD. When nothing valid has greeks
-        # the loop below falls back to the nearest future expiration and the caller reports "not
-        # ready", which is the correct answer and the one a stale chain was silently replacing.
-        today = today or _clock.today_iso()
-        exps = [
-            r["expiration"]
-            for r in conn.execute(
-                "SELECT expiration FROM stream_chain WHERE underlying_symbol = ? "
-                "AND expiration >= ? "
-                "GROUP BY expiration ORDER BY JULIANDAY(expiration) - JULIANDAY(?)",
-                (symbol, today, today),
-            )
-        ]
-        if not exps:
+        spot, expiration, entries, chain_syms = _nearest_live_chain(conn, symbol, today)
+        if expiration is None:
             return GexSnapshot(symbol=symbol, spot=spot, expiration=None)
-
-        # Pick the nearest expiration that actually has LIVE greeks. Nearest-by-date alone can land on a
-        # future expiration that has chain metadata but no greeks yet — the streamer only subscribes
-        # Greeks/Summary/Trade for its active 0DTE ATM window, so an all-strikes metadata chain for a
-        # later date reads as all-zero GEX. Fall back to plain nearest (a "not ready" zero profile) when
-        # no cached expiration has greeks.
-        expiration = exps[0]
-        entries: list[dict] = []
-        chain_syms: list[str] = []
-        for cand in exps:
-            cand_entries: list[dict] = []
-            cand_syms: list[str] = []
-            for row in conn.execute(
-                "SELECT data_json FROM stream_chain WHERE expiration = ? AND underlying_symbol = ?",
-                (cand, symbol),
-            ):
-                try:
-                    opt = json.loads(row["data_json"])
-                except Exception:
-                    continue
-                sym = opt.get("streamer_symbol")
-                if not sym:
-                    continue
-                cand_syms.append(sym)
-                cand_entries.append(
-                    {
-                        "strike_price": opt.get("strike_price"),
-                        "streamer_symbol": sym,
-                        "option_type": opt.get("option_type"),
-                        "shares_per_contract": opt.get("shares_per_contract") or 100,
-                    }
-                )
-            if not cand_syms:
-                continue
-            if cand == exps[0]:  # remember the nearest as the fallback
-                expiration, entries, chain_syms = cand, cand_entries, cand_syms
-            ph = ", ".join("?" * len(cand_syms))
-            has_greeks = conn.execute(
-                f"SELECT COUNT(*) FROM stream_greeks WHERE symbol IN ({ph}) "
-                "AND gamma IS NOT NULL AND gamma != 0",
-                cand_syms,
-            ).fetchone()[0]
-            if has_greeks:
-                expiration, entries, chain_syms = cand, cand_entries, cand_syms
-                break
 
         greeks: dict[str, dict] = {}
         oi: dict[str, int] = {}

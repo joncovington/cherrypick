@@ -44,8 +44,10 @@ def test_a_refused_start_of_a_running_service_is_not_a_failure(monkeypatch):
 
 
 def test_a_replace_held_for_a_moment_is_retried_and_one_held_for_good_still_raises(monkeypatch, tmp_path):
+    from cherrypick.core import jsonio
+
     calls = {"n": 0}
-    real = util.os.replace
+    real = jsonio.os.replace
 
     def flaky(src, dst):
         calls["n"] += 1
@@ -53,15 +55,15 @@ def test_a_replace_held_for_a_moment_is_retried_and_one_held_for_good_still_rais
             raise PermissionError(5, "Access is denied")
         real(src, dst)
 
-    monkeypatch.setattr(util.os, "replace", flaky)
-    monkeypatch.setattr(util, "_REPLACE_PAUSE_S", 0)
+    monkeypatch.setattr(jsonio.os, "replace", flaky)
+    monkeypatch.setattr(jsonio, "_REPLACE_PAUSE_S", 0)
     util.atomic_write_json(tmp_path / "x.json", {"a": 1})
     assert calls["n"] == 3 and (tmp_path / "x.json").read_text(encoding="utf-8").strip().startswith("{")
 
     def held(src, dst):
         raise PermissionError(5, "Access is denied")
 
-    monkeypatch.setattr(util.os, "replace", held)
+    monkeypatch.setattr(jsonio.os, "replace", held)
     with pytest.raises(PermissionError):
         util.atomic_write_json(tmp_path / "y.json", {"a": 1})
 

@@ -1395,14 +1395,6 @@ def _save_state(state: dict[str, Any]) -> None:
     _STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
-def _parse_hhmm(value: str, default: time) -> time:
-    try:
-        h, m = (int(x) for x in str(value).split(":", 1))
-        return time(h, m)
-    except (ValueError, TypeError):
-        return default
-
-
 def _check_eval_activity(
     name: str, mcfg: dict[str, Any], now_et: datetime, in_session: bool, settings: dict[str, Any]
 ) -> list[Finding]:
@@ -1453,9 +1445,10 @@ def _decision_window_open(mcfg: dict[str, Any], now_et: datetime) -> bool:
         return True
 
 
-# The trade-notify job runs every 30s and the watchdog tick runs it again, and every pass that gets
-# the lock saves its state whether or not anything was sent. A state file this old means passes are
-# failing before the save, not that the market was quiet.
+# The trade-notify job runs every 30s in session (less often off it) and the watchdog tick runs it
+# again, and every pass that gets the lock either writes its state or, when nothing changed, touches
+# the file's mtime (2026-10-12: it no longer rewrites an unchanged file). A state file this old means
+# passes are failing before the save, not that the market was quiet.
 _TRADE_NOTIFY_STALE_MIN = 30
 
 
@@ -2759,8 +2752,8 @@ def run_streamer_health(cfg: dict[str, Any] | None = None, *, require_enabled: b
     tz = cfg.get("timezone", "America/New_York")
     now = timeutil.now_et(tz)
     if not timeutil.is_trading_day(now, timeutil.load_holidays()):
-        # The task has no day-of-week filter (see tasks.create_windowed_minute_task), so weekends
-        # and holidays reach here and stop here.
+        # Run by hand, or by a scheduler without a day-of-week filter, weekends and holidays
+        # reach here and stop here.
         return {"ok": True, "skipped": "not a trading day"}
 
     findings: list[Finding] = []

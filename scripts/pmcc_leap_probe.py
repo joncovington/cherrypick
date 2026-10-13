@@ -25,9 +25,8 @@ import asyncio
 import json
 import sqlite3
 from datetime import date
-from pathlib import Path
 
-from cherrypick.core import home as _home
+from cherrypick.core import streamcache as _streamcache
 from cherrypick.pmcc import clock
 
 DEFAULT_SYMBOLS = ["XSP", "QQQ", "GLD", "IWM", "SLV"]
@@ -37,7 +36,7 @@ DEEP_PCT = {"XSP": 0.30, "QQQ": 0.35, "GLD": 0.35, "IWM": 0.35, "SLV": 0.45}
 
 
 def _spot(symbol: str) -> float | None:
-    path = Path(_home.home()) / "data" / "marketdata" / "stream_cache.db"
+    path = _streamcache.cache_path()
     if not path.exists():
         return None
     try:

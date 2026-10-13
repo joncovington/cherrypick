@@ -4,6 +4,7 @@ import type {
   ArmCostsPayload,
   EquityPayload,
   ContangoMetrics,
+  ContangoHistory,
   ContangoPayload,
   CurveEquity,
   OverviewPayload,
@@ -580,13 +581,13 @@ export function useCurveMeta() {
 }
 
 /**
- * bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment). No mode
- * argument: paper-only by construction, the same reasoning as pmcc/curve above.
+ * bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment). Paper by
+ * default; `live` reads the narrow live pilot's own ledger, and the payload says which book it is.
  */
-export function useBwb() {
+export function useBwb(mode: TradingMode = "paper") {
   return useQuery<BwbPayload>({
-    queryKey: ["bwb"],
-    queryFn: () => getJson<BwbPayload>("/api/bwb"),
+    queryKey: ["bwb", mode],
+    queryFn: () => getJson<BwbPayload>(`/api/bwb?mode=${mode}`),
     refetchInterval: 15_000,
     placeholderData: (prev) => prev,
   });
@@ -597,24 +598,25 @@ export interface BwbHistoryFilter extends DateRangeQuery {
   symbol: string | null;
 }
 
-export function useBwbHistory(filter: BwbHistoryFilter, page: PageState) {
+export function useBwbHistory(filter: BwbHistoryFilter, page: PageState, mode: TradingMode = "paper") {
   const params = new URLSearchParams();
+  params.set("mode", mode);
   if (filter.arm !== null) params.set("arm", filter.arm);
   if (filter.symbol !== null) params.set("symbol", filter.symbol);
   rangeParams(params, filter);
   pageParams(params, "", page);
   return useQuery<BwbHistory>({
-    queryKey: ["bwb-history", filter, page],
+    queryKey: ["bwb-history", mode, filter, page],
     queryFn: () => getJson<BwbHistory>(`/api/bwb/history?${params.toString()}`),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });
 }
 
-export function useBwbMeta() {
+export function useBwbMeta(mode: TradingMode = "paper") {
   return useQuery<BwbMeta>({
-    queryKey: ["bwb-meta"],
-    queryFn: () => getJson<BwbMeta>("/api/bwb/meta"),
+    queryKey: ["bwb-meta", mode],
+    queryFn: () => getJson<BwbMeta>(`/api/bwb/meta?mode=${mode}`),
     staleTime: 300_000,
   });
 }
@@ -635,14 +637,16 @@ export interface DecisionRow {
 
 export interface DecisionsPayload {
   module: DecisionsModule;
+  mode: TradingMode;
   tradeDate: string | null;
   rows: DecisionRow[];
 }
 
-export function useDecisions(module: DecisionsModule) {
+/** `mode` is honoured only by a module with a live book (bwb); the rest are paper-only routes. */
+export function useDecisions(module: DecisionsModule, mode: TradingMode = "paper") {
   return useQuery<DecisionsPayload>({
-    queryKey: ["decisions", module],
-    queryFn: () => getJson<DecisionsPayload>(`/api/${module}/decisions`),
+    queryKey: ["decisions", module, mode],
+    queryFn: () => getJson<DecisionsPayload>(`/api/${module}/decisions${mode === "live" ? "?mode=live" : ""}`),
     refetchInterval: 30_000,
   });
 }
@@ -943,6 +947,19 @@ export function useContango() {
     queryKey: ["contango"],
     queryFn: () => getJson<ContangoPayload>("/api/contango"),
     refetchInterval: 30_000,
+  });
+}
+
+/** contango's closed stints over the date range (by exit session), with totals over all of them. */
+export function useContangoHistory(filter: { arm: string | null; from: string | null; to: string | null }) {
+  const params = new URLSearchParams();
+  if (filter.arm !== null) params.set("arm", filter.arm);
+  rangeParams(params, filter);
+  return useQuery<ContangoHistory>({
+    queryKey: ["contango-history", filter],
+    queryFn: () => getJson<ContangoHistory>(`/api/contango/history?${params.toString()}`),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
   });
 }
 

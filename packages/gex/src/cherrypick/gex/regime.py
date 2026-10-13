@@ -40,6 +40,7 @@ from cherrypick.core import home as _home
 from cherrypick.core import structures as _structures
 from cherrypick.core.clock import ET as _ET
 
+from cherrypick.gex import historydb as _historydb
 from cherrypick.gex import provider as _provider
 
 # reading name -> source symbol. The reading name is the stable identity (it survives a source
@@ -335,7 +336,7 @@ def _read_volumes(cache_path: Path | str, symbols: list[str]) -> dict[str, tuple
     return out
 
 
-def sample(cfg: dict, *, now: datetime | None = None) -> dict:
+def sample(cfg: dict, *, now: datetime | None = None, conn: sqlite3.Connection | None = None) -> dict:
     """One sampling pass: write a row per reading (usable or refused) plus the daily-close harvest.
     Self-throttled to SAMPLE_INTERVAL_SECONDS against the DB, RTH-gated, best-effort by contract —
     the caller (the recorder loop) already wraps a try/except so a hiccup never kills the daemon.
@@ -348,8 +349,7 @@ def sample(cfg: dict, *, now: datetime | None = None) -> dict:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     now_ts = now.timestamp()
     today = now.strftime("%Y-%m-%d")
-    conn = sqlite3.connect(db_path)
-    try:
+    with _historydb.step(db_path, conn) as conn:
         ensure_tables(conn, db_path)
         last = conn.execute(
             "SELECT MAX(ts) FROM market_regime_history WHERE trade_date = ?", (today,)
@@ -420,7 +420,6 @@ def sample(cfg: dict, *, now: datetime | None = None) -> dict:
             set(READINGS.values()) | {str(s).strip().upper() for s in (cfg.get("symbols") or [])}
         )
         harvest_daily_closes(conn, cfg["stream_cache_db"], close_symbols)
-        conn.commit()
         return {
             "status": "sampled",
             "written": len(rows) + chain_rows,
@@ -430,8 +429,6 @@ def sample(cfg: dict, *, now: datetime | None = None) -> dict:
             "expected_unusable": expected_unusable,
             "chain_rows": chain_rows,
         }
-    finally:
-        conn.close()
 
 
 def dropped_readings(conn: sqlite3.Connection, *, today: str) -> set[str]:

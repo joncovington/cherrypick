@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 from cherrypick.core import advice as _advice
+from cherrypick.core import compare as _compare
 from cherrypick.core import ledgers as _ledgers
 from cherrypick.core.config import SESSIONS_KEYS, first_present
 from cherrypick.core.metrics import calibration_reading
@@ -148,9 +149,50 @@ def reading_pair(
         "advised": advised,
         "base": base,
         "delta": _delta(advised, base),
+        "paired": _paired(module, records, tag_advised, tag_base),
         "qualification": qualified,
         "rule": thresholds,
         "underpowered": _underpowered(advised, thresholds),
+    }
+
+
+def _paired(module: str, records: list[dict], tag_advised: str, tag_base: str) -> dict[str, Any] | None:
+    """The advised book against its base, session by session (`core.compare.pair_with_control`,
+    the rule the console's compare page uses): mean difference per session with its seeded 95%
+    session-bootstrap interval, the exact sign test, and how many more sessions the interval would
+    need to exclude zero at the observed mean and spread (`sessions_to_decision`).
+
+    Beside the qualification, never in it: `qualify_readings` and its thresholds
+    (`core.profiles.QUALIFICATION_RULE`) are untouched, and `underpowered` still means what it did.
+    Kept out of `delta` on purpose, because the fact pack carries `delta` into the model's input
+    and a new field there is a measurement break for the advisor; this rides on the stored verdict
+    and the console. None when either book has no dated rows in the window."""
+    schema = SCHEMAS.get(module)
+    if schema is None:
+        return None
+    vs = _compare.pair_with_control(
+        [r for r in records if r.get("arm") == tag_advised],
+        [r for r in records if r.get("arm") == tag_base],
+        schema=schema,
+    )
+    if vs is None:
+        return None
+    return {
+        "sessions": vs["sessions"],
+        "paired_on": vs["paired_on"],
+        "mean_diff": vs["mean_diff"],
+        "total_diff": vs["total_diff"],
+        "ci": vs["ci"],
+        "ci_level": vs["ci_level"],
+        "ci_excludes_zero": vs["ci_excludes_zero"],
+        "t_lower": vs["t_lower"],
+        "advised_better": vs["arm_better"],
+        "base_better": vs["control_better"],
+        "ties": vs["ties"],
+        "sign_test_p": vs["sign_test_p"],
+        "sessions_to_decision": vs["sessions_to_exclude_zero"],
+        "advised_only_sessions": vs["arm_only_sessions"],
+        "base_only_sessions": vs["control_only_sessions"],
     }
 
 

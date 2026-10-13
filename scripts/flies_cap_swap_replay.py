@@ -18,8 +18,7 @@ a tick t inside each run, free a slot by acting on the stalest open, uncompleted
   `settlement_price` by `fly.position_pnl`, with the completion priced by `fly.vertical_open_fee`.
   The print's fee is what the row really paid there plus the module's own fee for any strike the
   completion adds, so a row that did complete, replayed at its own debit, returns its recorded
-  `pnl` (checked on every settled live fly whose settlement fees were split out). Mid is reported
-  beside it.
+  `pnl`. Mid is reported beside it.
 - **C2, abort.** Buy the spread back at `fly_live_marks.structure_mid` nearest at or before t, plus
   slippage and a two-leg close fee (`cherrypick.core.fees.ic_close_fee`, 2 legs / 1 sell leg). The
   marks carry no bid-ask, so `slippage_frac` of a spread cannot be applied; the slippage charged is
@@ -31,6 +30,13 @@ run (its first to last tick, each widened by `TWIN_TOLERANCE_SECONDS` because th
 their own clocks), nearest the first tick, and its settled `pnl`. t is the twin's entry, held inside
 the run: the tick the freed slot would have been filled on. Hold is the live position's settled
 `pnl`. Per option, swap = twin + acted-on position under that option - held.
+
+**The baseline must reproduce live before anything is reported** (as `flies_completion_replay.py`).
+Every settled live legged row in the window is priced the replay's own way as it really went -- a
+completed one completed at its own debit, a stranded one held as its spread, from the same fee
+parts (`analysis_rows`) -- and must come back to its recorded `pnl` within a cent. A miss means the
+pricing every swap is built from is wrong for that row, and the script prints the rows and exits 2
+rather than value a swap against it.
 
 **Rules.** One action per refusal run, not per tick: a run is one blocked opportunity. A position
 acted on is not acted on again by a later run that session, nor is a paper entry counted twice. A
@@ -56,16 +62,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import sqlite3
+import sys
 from collections import defaultdict
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import fees as core_fees
 from cherrypick.core.regimecuts import robustness
-from cherrypick.flies import fly
+from cherrypick.flies import analysis_rows, fly
 
 ET = ZoneInfo("America/New_York")
 CAP_REASON = "max_open_margin%"
@@ -81,18 +85,6 @@ CAVEAT = (
     "natural needs order-path quotes, which the backfilled history does not have; c1_bound is an "
     "upper bound on C1, not a measurement."
 )
-
-
-def _ledger(name: str) -> Path:
-    home = os.environ.get("CHERRYPICK_HOME")
-    root = (Path(home) if home else Path.home() / ".cherrypick") / "data" / "flies"
-    return root / f"{name}_trades.db"
-
-
-def _open(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def ts(value) -> datetime | None:
@@ -180,50 +172,29 @@ def _qty(p: dict) -> int:
     return int(p.get("quantity") or 1)
 
 
-def open_cash(p: dict) -> float:
-    """Per-contract cash the spread held at t: its opening credit. A row that completed later carries
-    net = credit - debit, so the debit is put back."""
-    return p["net"] + ((p["debit"] or 0.0) if p["kind"] == "fly" else 0.0)
+# The spread's cash at t, and its settled net completed at t for a debit: `analysis_rows`' pricing,
+# which gives back a completed row's recorded `pnl` at its own debit (`baseline_mismatches`).
+open_cash = analysis_rows.open_cash
+force_completed_net = analysis_rows.completed_pnl
 
 
-def settlement_fees(p: dict) -> float:
-    """What the row paid at the print: the broker's figure where it was split out, else the module's
-    own assignment fee for this row's shape at its settlement price."""
-    if p.get("settlement_fees") is not None:
-        return p["settlement_fees"]
-    return fly.assignment_fee(p, p["settlement_price"])
+def as_recorded(p: dict) -> float:
+    """The replay's own pricing of a live row as it really went: completed at its own debit, or
+    held as its spread. Must equal the row's `pnl`."""
+    if analysis_rows.completed(p):
+        return force_completed_net(p, p["debit"])
+    return analysis_rows.held_pnl(p)
 
 
-def entry_fees(p: dict) -> float:
-    """Fees the spread had paid by t: the row's total less its settlement fees and, on a row that
-    completed later, the completion's own two-leg fee."""
-    paid = (p["fees"] or 0.0) - settlement_fees(p)
-    if p["kind"] == "fly":
-        paid -= fly.vertical_open_fee(p["symbol"] or "SPX", _qty(p))
-    return paid
-
-
-def force_completed_net(p: dict, debit: float) -> float:
-    """Settled net of the spread completed at t for `debit` points, at its own settlement print.
-
-    The print's fee starts from what the row really paid there and adds only the settlement events
-    the completing leg brings (the module's table: the fly's ITM strikes less the row's own), so a
-    row that did complete, completed here at its own debit, gives back its recorded `pnl`."""
-    sym, qty = p["symbol"] or "SPX", _qty(p)
-    completed = {
-        "kind": "fly",
-        "side": p["side"],
-        "center": p["center"],
-        "wing_width": p["wing_width"],
-        "quantity": qty,
-        "net": open_cash(p) - debit,
-        "status": "settled",
-        "settlement_price": p["settlement_price"],
-    }
-    sp = p["settlement_price"]
-    added = fly.assignment_fee(completed, sp) - fly.assignment_fee(p, sp)
-    completed["fees"] = entry_fees(p) + fly.vertical_open_fee(sym, qty) + settlement_fees(p) + added
-    return fly.position_pnl(completed, p["settlement_price"])
+def baseline(live, arm: str, since: str, until: str | None) -> dict:
+    """Every settled live legged row in the window, priced by the replay as it really went, against
+    the ledger. The swaps are differences against these rows, so a miss here is a miss in every
+    swap: `mismatches` non-empty means the replay refuses to report."""
+    rows = analysis_rows.settled_positions(
+        live, arm=arm, symbol=None, since=since, until=until, entry_mode="legged"
+    )
+    rows = [r for r in rows if r["kind"] in ("fly", "short_vertical")]
+    return {"rows_checked": len(rows), "mismatches": analysis_rows.ledger_mismatches(rows, as_recorded)}
 
 
 def aborted_net(p: dict, structure_mid: float) -> float:
@@ -232,7 +203,7 @@ def aborted_net(p: dict, structure_mid: float) -> float:
     sym, qty = p["symbol"] or "SPX", _qty(p)
     close_fee = core_fees.ic_close_fee(sym, qty, legs=2, sell_legs=1, ndigits=4)
     gross = (open_cash(p) + structure_mid) * fly.CONTRACT_MULTIPLIER * qty
-    return gross - entry_fees(p) - close_fee - (p["slippage_dollars"] or 0.0)
+    return gross - analysis_rows.entry_fees(p) - close_fee - (p["slippage_dollars"] or 0.0)
 
 
 # --------------------------------------------------------------------------- the replay
@@ -327,6 +298,7 @@ def summarise(runs: list[dict], key: str) -> dict:
 
 
 def replay(live, paper, arm: str, since: str, until: str | None) -> dict:
+    base = baseline(live, arm, since, until)
     runs = refusal_runs(live, arm, since, until)
     valued: list[dict] = []
     acted: dict[str, set] = defaultdict(set)
@@ -367,11 +339,13 @@ def replay(live, paper, arm: str, since: str, until: str | None) -> dict:
         "c1_at_mid": summarise(ok, "c1_at_mid"),
         "c1_bound": summarise(ok, "c1_bound"),
         "c2": summarise(ok, "c2"),
+        "baseline_rows_checked": base["rows_checked"],
+        "baseline_mismatches": base["mismatches"],
         "runs": valued,
     }
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--arm", default="control")
     ap.add_argument("--session", help="one trade date (YYYY-MM-DD)")
@@ -380,11 +354,19 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--detail", action="store_true", help="include every refusal run")
     a = ap.parse_args(argv)
     since, until = (a.session, a.session) if a.session else (a.since, a.until)
-    out = replay(_open(_ledger("live")), _open(_ledger("paper")), a.arm, since, until)
+    out = replay(analysis_rows.open_ledger("live"), analysis_rows.open_ledger("paper"), a.arm, since, until)
+    if out["baseline_mismatches"]:
+        print(
+            "REFUSED: the replay's pricing does not reproduce the live ledger; no swap is valued against it"
+        )
+        for m in out["baseline_mismatches"]:
+            print(f"  {m['position_id']} ({m['trade_date']}, {m['kind']}): {m['problem']}")
+        return 2
     if not a.detail:
         out.pop("runs")
     print(json.dumps(out, indent=2))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
