@@ -39,7 +39,8 @@ formula from `capital` alone.
                  Capital at risk is derived: (wing_width - net_credit) x multiplier x quantity.
   - "earnings" : earnings' `trades`; closed = closed_at set; net = pnl - entry_cost - exit_cost;
                  tag = `profile`; capital = capital_at_risk stored at entry.
-  - "fly_book" : flies' `fly_positions`; closed = status 'settled'; net = gross_pnl - fees;
+  - "fly_book" : flies' `fly_positions`; closed = status 'settled' and not voided (`void_reason`
+                 NULL); net = gross_pnl - fees;
                  tag = arm. P&L only -- the module's book-level floor and the price band it holds
                  over live in `fly_books` and are not summarisable as a per-trade number.
   - "dc_week"  : calendars' `dc_positions`; closed = status 'closed'; net = gross_pnl - fees
@@ -80,7 +81,11 @@ every row. The rules are the console's (`readers/*TradeCash`), which drew the la
 
 `None` never means zero anywhere in here. A row written before an instrumentation column existed
 reports `slippage: None` and `capital: None`, because "not recorded" and "was zero" are different
-facts and averaging them together is how a cost model quietly flatters itself.
+facts and averaging them together is how a cost model quietly flatters itself. The same holds for
+the money itself where a ledger can close a row without it (meic's `pnl`/`fees`, earnings' `pnl`
+and costs, contango's stored figures): `gross_pnl`, `cost` and `net_pnl` are None there, and
+`core.metrics` and the orchestrator report leave such a record out of every sum and count it as
+unscored. The other schemas write their money in the same statement that closes the row.
 
 OPEN_READERS is a deliberately separate registry answering "what is still on the book", not "what
 settled". Only a multi-day strategy carries overnight; the 0DTE modules are empty by construction
@@ -113,6 +118,21 @@ connect_ro = core_db.connect_ro
 #: filter is the same rule stated once.
 _NOT_ON_BOOK = "('closed', 'cancelled')"
 
+
+def _plus(a: float | None, b: float | None) -> float | None:
+    """a + b, or None when either is unrecorded -- a sum with a hole in it is not a total."""
+    return None if a is None or b is None else a + b
+
+
+def _less(a: float | None, b: float | None) -> float | None:
+    """a - b, or None when either is unrecorded."""
+    return None if a is None or b is None else a - b
+
+
+def _round2(v: float | None) -> float | None:
+    return None if v is None else round(v, 2)
+
+
 MEIC_UNTAGGED = "unassigned"
 EARNINGS_UNTAGGED = "default"
 FLIES_UNTAGGED = "unassigned"
@@ -133,16 +153,17 @@ SLIPPAGE_BASIS = {
 }
 
 
-def _cost_split(schema: str, total: float, settlement, slippage) -> dict:
+def _cost_split(schema: str, total: float | None, settlement, slippage) -> dict:
     """The record's `fees` / `settlement` / `slippage_basis`, from the module's total cost. Each
     part comes out of the total once: settlement where it was recorded, slippage where it is a
-    charged cost and was recorded. What was never split stays inside `fees`."""
+    charged cost and was recorded. What was never split stays inside `fees`. A total that was
+    never recorded (`cost` None, the n/r rows above) leaves `fees` None too, never a zero."""
     basis = SLIPPAGE_BASIS[schema]
     charged = slippage if (basis == SLIPPAGE_COST and slippage is not None) else 0.0
     # Unrounded, like `cost`: a total over hundreds of rows must add back to the summed net, and
     # rounding each row's part to the cent drifted MEIC's day by ~$1 over 494 trades.
     return {
-        "fees": (total or 0.0) - (settlement or 0.0) - charged,
+        "fees": None if total is None else total - (settlement or 0.0) - charged,
         "settlement": settlement,
         "slippage_basis": basis,
     }
@@ -165,6 +186,35 @@ def session_from_epoch(closed_at) -> str:
         return date.fromtimestamp(float(closed_at)).isoformat()
     except (TypeError, ValueError, OSError, OverflowError):
         return ""
+
+
+def _net(gross, *costs) -> float | None:
+    """gross less every cost given; None when the gross itself was never recorded. A missing cost
+    column subtracts nothing (the closed readers' long-standing convention)."""
+    if gross is None:
+        return None
+    return gross - sum((c or 0.0) for c in costs)
+
+
+#: The net rule per schema, over one raw ledger row (anything indexable by column name). The
+#: closed readers below compute `net_pnl` with the same `_net` over the same columns, and a surface
+#: that shows a single row's P&L -- the trade notifier's exit cards -- calls these rather than
+#: re-deriving: MEIC's `pnl` and
+#: earnings' `pnl` are GROSS, and printing either under "P&L" overstated every exit by its fees.
+#: None means the row has no gross yet (or, for contango, no stored net): render it as unrecorded.
+#: MEIC and earnings follow their closed readers' stricter rule (2026-10-12): a missing cost
+#: column there is n/r too, never a costless trade.
+ROW_NET = {
+    "meic_ic": lambda r: _less(r["pnl"], r["fees"]),
+    "earnings": lambda r: _less(r["pnl"], _plus(r["entry_cost"], r["exit_cost"])),
+    "fly_book": lambda r: _net(r["gross_pnl"], r["fees"]),
+    "dc_week": lambda r: _net(r["gross_pnl"], r["fees"]),
+    "pmcc": lambda r: _net(r["gross_pnl"], r["fees"]),
+    "curve_vx": lambda r: _net(r["gross_pnl"], r["fees"]),
+    "bwb_132": lambda r: _net(r["gross_pnl"], r["fees"]),
+    # contango stores the whole layout on the row (gross - fees - slippage = net); read, not derived.
+    "contango_etf": lambda r: r["net_pnl"],
+}
 
 
 def _table_cols(conn, table: str) -> set:
@@ -241,15 +291,16 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             "strategy": None,
-            # gross = spread P&L (already at the modeled fill prices); cost = exchange fees, with
-            # the cash-settlement charge inside them (`settlement_fees` is the part).
-            "gross_pnl": (r["pnl"] or 0.0),
-            "cost": (r["fees"] or 0.0),
-            "net_pnl": (r["pnl"] or 0.0) - (r["fees"] or 0.0),
+            # gross = spread P&L (already at the modeled fill prices); cost = exchange fees.
+            # A closed row can carry neither: the live book's 2026-06-29 stop has an exit_time and
+            # NULL pnl and fees. That is n/r (None), never a flat, costless trade.
+            "gross_pnl": r["pnl"],
+            "cost": r["fees"],
+            "net_pnl": _less(r["pnl"], r["fees"]),
             "slippage": (r["slippage_dollars"] if has_slip else None),
             **_cost_split(
                 "meic_ic",
-                r["fees"] or 0.0,
+                r["fees"],
                 _get(r, "settlement_fees"),
                 r["slippage_dollars"] if has_slip else None,
             ),
@@ -293,14 +344,16 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
             "symbol": r["symbol"],
             "strategy": r["strategy"],
             # gross = mid-priced spread P&L; cost = commission + pass-through + slippage.
-            "gross_pnl": (r["pnl"] or 0.0),
-            "cost": (r["entry_cost"] or 0.0) + (r["exit_cost"] or 0.0),
-            "net_pnl": (r["pnl"] or 0.0) - (r["entry_cost"] or 0.0) - (r["exit_cost"] or 0.0),
+            # `save-close` writes pnl and exit_cost from whatever the caller passed, so a closed
+            # row can lack either: n/r (None), never zero.
+            "gross_pnl": r["pnl"],
+            "cost": _plus(r["entry_cost"], r["exit_cost"]),
+            "net_pnl": _less(r["pnl"], _plus(r["entry_cost"], r["exit_cost"])),
             "slippage": _slip(r),
             # entry_cost + exit_cost carry the slippage charge and (exit_cost) any settlement fee.
             **_cost_split(
                 "earnings",
-                (r["entry_cost"] or 0.0) + (r["exit_cost"] or 0.0),
+                _plus(r["entry_cost"], r["exit_cost"]),
                 _get(r, "settlement_fees"),
                 _slip(r),
             ),
@@ -315,6 +368,14 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
         }
         for r in rows
     ]
+
+
+def _flies_not_void(conn) -> str:
+    """The SQL that keeps flies' voided rows out. flies voids a row by stamping `void_reason` and
+    leaving it `settled` with its P&L, so status alone counts them (47 paper rows, -994.41 as of
+    2026-10-12: the 08-04..06 bwb rolls and the 10-08 outage). The module's own read surfaces and
+    the console exclude them; a ledger older than the column has nothing voided, so it reads whole."""
+    return " AND void_reason IS NULL" if "void_reason" in _table_cols(conn, "fly_positions") else ""
 
 
 def _flies_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
@@ -334,7 +395,7 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
     extra = _opt(cols, "settlement_fees") + _opt(cols, "slippage_dollars")
     rows = conn.execute(
         f"SELECT symbol, arm, entry_mode, gross_pnl, fees, trade_date{reason_col}{exp_col}{extra} "
-        f"FROM fly_positions WHERE status = 'settled'{where}",
+        f"FROM fly_positions WHERE status = 'settled'{_flies_not_void(conn)}{where}",
         params,
     ).fetchall()
     return [
@@ -354,7 +415,7 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
             "center_reason": (r["center_reason"] if has_reason else None),
             "gross_pnl": (r["gross_pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
-            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "net_pnl": _net(r["gross_pnl"] or 0.0, r["fees"]),
             # The fills already price the haircut into gross_pnl, so `slippage_dollars` is a
             # measure, never subtracted again (basis in_gross, like meic's). None on a row from
             # before the column -- unknown, not zero -- and likewise capital: a legged book's risk
@@ -414,7 +475,7 @@ def _calendars_closed(conn, start: str | None = None, end: str | None = None) ->
             # `fees` is that module's TOTAL modeled cost (entry+exit+settlement, slippage included),
             # so net is one subtraction and slippage is NOT additionally deducted here.
             "cost": (r["fees"] or 0.0),
-            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "net_pnl": _net(r["gross_pnl"] or 0.0, r["fees"]),
             "slippage": _slip(r),
             **_cost_split("dc_week", r["fees"] or 0.0, _get(r, "settlement_fees"), _slip(r)),
             "entry_credit": None,  # a debit structure
@@ -476,7 +537,7 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
             "strategy": "pmcc",
             "gross_pnl": (r["gross_pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
-            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "net_pnl": _net(r["gross_pnl"] or 0.0, r["fees"]),
             "slippage": _slip(r),
             **_cost_split("pmcc", r["fees"] or 0.0, _get(r, "settlement_fees"), _slip(r)),
             "entry_credit": None,  # a debit structure
@@ -562,7 +623,7 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
             "strategy": "curve_vx",
             "gross_pnl": (r["gross_pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
-            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "net_pnl": _net(r["gross_pnl"] or 0.0, r["fees"]),
             "slippage": _slip(r),
             **_cost_split("curve_vx", r["fees"] or 0.0, _get(r, "settlement_fees"), _slip(r)),
             "entry_credit": (
@@ -619,15 +680,15 @@ def _contango_closed(conn, start: str | None = None, end: str | None = None) -> 
             "experiment_id": None,
             "symbol": r["symbol"],
             "strategy": "contango_etf",
-            "gross_pnl": r["gross_pnl"] or 0.0,
-            "cost": round((r["fees"] or 0.0) + (r["slippage"] or 0.0), 2),
-            "net_pnl": r["net_pnl"] or 0.0,
+            # Read as stored, and a NULL stays None (n/r): `or 0.0` reported an unrecorded stint as
+            # a flat one, which a total then counted as a real, costless trade.
+            "gross_pnl": r["gross_pnl"],
+            "cost": _round2(_plus(r["fees"], r["slippage"])),
+            "net_pnl": r["net_pnl"],
             "slippage": r["slippage"],
             # Shares: no exercise, assignment or delivery charge exists, and none is recorded --
             # settlement reads None (n/r), as the console's contango page shows it.
-            **_cost_split(
-                "contango_etf", round((r["fees"] or 0.0) + (r["slippage"] or 0.0), 2), None, r["slippage"]
-            ),
+            **_cost_split("contango_etf", _round2(_plus(r["fees"], r["slippage"])), None, r["slippage"]),
             "entry_credit": None,
             "capital": round(r["shares"] * r["entry_mid"], 2) if r["entry_mid"] is not None else None,
             "max_profit": None,
@@ -707,7 +768,7 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
             "strategy": "bwb_132",
             "gross_pnl": (r["gross_pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
-            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "net_pnl": _net(r["gross_pnl"] or 0.0, r["fees"]),
             "slippage": _slip(r),
             **_cost_split("bwb_132", r["fees"] or 0.0, _get(r, "settlement_fees"), _slip(r)),
             # The base fly's credit; a fired add-on's credit is its own figure and not included.
@@ -895,8 +956,10 @@ def _meic_held(conn) -> list[dict]:
 
 
 def _flies_held(conn) -> list[dict]:
-    """flies positions held right now (status 'open'), before the session's settlement."""
-    rows = conn.execute("SELECT symbol, arm, trade_date FROM fly_positions WHERE status = 'open'").fetchall()
+    """flies positions held right now (status 'open', not voided), before the session's settlement."""
+    rows = conn.execute(
+        f"SELECT symbol, arm, trade_date FROM fly_positions WHERE status = 'open'{_flies_not_void(conn)}"
+    ).fetchall()
     return [
         {"arm": r["arm"] or FLIES_UNTAGGED, "symbol": r["symbol"], "strategy": None, "capital": None,
          "session": r["trade_date"] or ""}
@@ -1024,19 +1087,3 @@ def concentration(
         "sign_flips_without_largest": flips,
         "contributors": len(rows),
     }
-
-
-def tail_to_credit(worst: float | None, credit: float | None) -> float | None:
-    """How many times the collected credit the modelled worst case is.
-
-    A book's floor and the band it holds over already travel together by the flies module's own
-    rule; this is the same argument for the other tail. The session that prompted it collected
-    7,852.50 against a modelled worst of -27,171.58 — a ratio of 3.46 — and nothing in the output
-    said so, while the book's positive settlement was being read as a result.
-
-    ``None`` when there is no credit to compare against, rather than a large number or a zero: an
-    undefined ratio and a small one are different facts.
-    """
-    if not credit or credit <= 0 or worst is None:
-        return None
-    return round(abs(min(worst, 0.0)) / credit, 2)

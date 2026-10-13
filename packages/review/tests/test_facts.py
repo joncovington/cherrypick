@@ -310,6 +310,35 @@ def test_reconcile_passes_when_the_ledger_agrees(store, monkeypatch):
     assert reconcile.check_session("2026-08-12")["ok"] is True
 
 
+@pytest.mark.parametrize("with_column", [True, False])
+def test_a_voided_flies_row_is_out_of_the_fact_set_and_the_reconcile_alike(
+    store, tmp_path, monkeypatch, with_column
+):
+    """flies voids a row by stamping `void_reason` and leaving it settled with its P&L (the 10-08
+    outage: 22 paper rows). The fact set leaves it out, so the independent count must too, or every
+    voided session reconciles as a mismatch; a ledger older than the column reads whole."""
+    db = tmp_path / "flies.db"
+    conn = sqlite3.connect(db)
+    void = ", void_reason TEXT" if with_column else ""
+    conn.execute(
+        "CREATE TABLE fly_positions (symbol TEXT, arm TEXT, entry_mode TEXT, kind TEXT, gross_pnl REAL, "
+        f"fees REAL, trade_date TEXT, status TEXT{void})"
+    )
+    rows = [("SPX", "control", "legged", "fly", 50.0, 5.0, "2026-10-08", "settled")]
+    if with_column:
+        rows = [r + (None,) for r in rows] + [
+            ("SPX", "control", "legged", "fly", -80.0, 7.0, "2026-10-08", "settled", "outage")
+        ]
+    conn.executemany(f"INSERT INTO fly_positions VALUES ({', '.join('?' * len(rows[0]))})", rows)
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(facts._paths, "module_db", lambda module, filename="paper_trades.db": db)
+
+    facts.write(facts.build("2026-10-08", modules=["flies"]))
+    assert facts.read("2026-10-08")["modules"]["flies"]["results"]["closed"] == 1
+    assert reconcile.check_session("2026-10-08") == {"session": "2026-10-08", "ok": True, "mismatches": []}
+
+
 def test_reconcile_says_so_when_there_is_no_fact_set(store):
     assert reconcile.check_session("1999-01-01")["ok"] is False
 

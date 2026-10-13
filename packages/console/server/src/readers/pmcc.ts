@@ -16,7 +16,7 @@ import type {
   PmccShortLeg,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { hasColumn, num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
+import { hasColumn, memoOnStore, num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
 import { unrealisedByPosition, NO_UNREALISED } from "./unrealised.js";
 import { armMoney, entryOutcomes } from "./armCosts.js";
 import type { ArmCostsPayload } from "@console/shared";
@@ -227,8 +227,19 @@ function latestSession(db: DatabaseHandle): string | null {
   return db.prepare<[], { d: string | null }>("SELECT MAX(entry_session) AS d FROM pmcc_positions").get()?.d ?? null;
 }
 
-/** Mirrors `analytics.exposure()`: exposed and marked tick counts per position. */
+/**
+ * Mirrors `analytics.exposure()`: exposed and marked tick counts per position.
+ *
+ * Whole-ledger on purpose -- the integrity card totals it over every position, closed ones
+ * included, so it cannot be narrowed to the open book. It is a scan of every mark (~80-400 ms on
+ * 124k rows) that readPmcc asked for twice a call, and its answer moves only when pmcc writes, so it
+ * is memoised on the store's stamp.
+ */
 function exposureByPosition(db: DatabaseHandle): Map<string, { exposed: number; marked: number }> {
+  return memoOnStore(db.name, `pmcc-exposure:${db.name}`, () => scanExposure(db));
+}
+
+function scanExposure(db: DatabaseHandle): Map<string, { exposed: number; marked: number }> {
   const out = new Map<string, { exposed: number; marked: number }>();
   const rows = db
     .prepare<[], Record<string, unknown>>(

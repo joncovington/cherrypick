@@ -40,6 +40,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from cherrypick.core import home as _home
+from cherrypick.core.jsonio import write_json_atomic
 
 STATE_NAME = "dolt_data.json"
 # The clones the earnings module reads. `earnings` carries the announcement calendar that decides
@@ -225,11 +226,7 @@ def compact_loose(base: Path, names, threshold: int = COMPACT_LOOSE_BYTES, gc=_g
 
 
 def _write_state(payload: dict) -> None:
-    path = _home.state_dir() / STATE_NAME
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    write_json_atomic(_home.state_dir() / STATE_NAME, payload, indent=2, default=None)
 
 
 def recheck() -> dict:

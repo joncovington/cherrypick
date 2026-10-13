@@ -35,7 +35,7 @@ ALLOWED = {
     "packages/core/cherrypick/core/db/__init__.py": "ARM_COLUMNS, the Python alias list",
     "packages/console/server/src/readers/db.ts": "ARM_COLUMNS, the TypeScript alias list",
     "scripts/arm_column_preflight.py": "OLD_NAMES: the preflight looks for exactly these",
-    "scripts/retag_advised_books.py": "one-off, ran 2026-09-17 against the pre-rename ledgers",
+    "scripts/archive/retag_advised_books.py": "one-off, ran 2026-09-17 against the pre-rename ledgers",
     "packages/meic/src/cherrypick/meic/db.py": "_refuse_pre_rename names the old column to refuse it",
 }
 
@@ -96,7 +96,7 @@ PROFILE_AS_COLUMN = re.compile(
 COMMENT = re.compile(r"^\s*(#|//|\*|/\*)")
 # Files that query earnings tables and may name `profile` bare, with why.
 PROFILE_ALLOWED = {
-    "scripts/retag_advised_books.py": "one-off, ran 2026-09-17 against the pre-rename ledgers",
+    "scripts/archive/retag_advised_books.py": "one-off, ran 2026-09-17 against the pre-rename ledgers",
 }
 
 

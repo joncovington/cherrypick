@@ -82,6 +82,42 @@ def test_the_other_open_readers_exclude_cancelled_too(table, schema, cols):
     assert len(ledgers.OPEN_READERS[schema](conn)) == 2
 
 
+def _flies(with_void=True):
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    void = ", void_reason TEXT" if with_void else ""
+    conn.execute(
+        "CREATE TABLE fly_positions (symbol TEXT, arm TEXT, entry_mode TEXT, gross_pnl REAL, fees REAL, "
+        f"trade_date TEXT, status TEXT{void})"
+    )
+    return conn
+
+
+def test_a_voided_flies_row_is_neither_closed_nor_held():
+    """flies voids a row by stamping `void_reason` and leaving it `settled` with its P&L (47 paper
+    rows, -994.41, by 2026-10-12); the module's own surfaces and the console leave them out, and
+    calibrate, review and the compare bridge read this registry."""
+    conn = _flies()
+    conn.executemany(
+        "INSERT INTO fly_positions VALUES ('SPX', 'control', 'legged', ?, ?, '2026-10-08', ?, ?)",
+        [(50.0, 5.0, "settled", None), (-80.0, 7.0, "settled", "outage"), (0, 0, "open", None),
+         (0, 0, "open", "outage")],
+    )  # fmt: skip
+    closed = ledgers.READERS["fly_book"](conn)
+    assert [r["net_pnl"] for r in closed] == [pytest.approx(45.0)]
+    assert len(ledgers.HELD_READERS["fly_book"](conn)) == 1
+
+
+def test_a_flies_ledger_older_than_void_reason_reads_whole():
+    conn = _flies(with_void=False)
+    conn.execute(
+        "INSERT INTO fly_positions VALUES ('SPX', 'control', 'legged', 50, 5, '2026-08-01', 'settled')"
+    )
+    conn.execute("INSERT INTO fly_positions VALUES ('SPX', 'control', 'legged', 0, 0, '2026-08-01', 'open')")
+    assert len(ledgers.READERS["fly_book"](conn)) == 1
+    assert len(ledgers.HELD_READERS["fly_book"](conn)) == 1
+
+
 def test_held_readers_answer_the_0dte_schemas_intraday():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row

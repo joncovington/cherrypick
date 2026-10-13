@@ -247,11 +247,27 @@ export function MeicHistoryTable({
             {t !== undefined && t.trades > 0 && (
               <span
                 className="chip"
-                title="Over every row matching these filters — not just this page. Gross − fees − settlement = net. Slippage is inside the fill prices, so inside gross; it is shown, never subtracted."
+                title={
+                  "Over every row matching these filters — not just this page. Gross − fees − settlement = net. " +
+                  (t.settlementFees === null
+                    ? `Settlement was recorded on ${t.settlementTrades.toLocaleString()} of these ${t.trades.toLocaleString()} trades ` +
+                      `(${fmtMoney(t.settlementRecorded)}); the rest is inside fees. `
+                    : "") +
+                  "Slippage is inside the fill prices, so inside gross; it is shown, never subtracted" +
+                  (t.slippageTrades < t.trades
+                    ? ` — recorded on ${t.slippageTrades.toLocaleString()} of these ${t.trades.toLocaleString()} trades.`
+                    : ".")
+                }
               >
                 net <PnlCell v={t.net} /> · {t.trades.toLocaleString()} trades · {t.sessions.toLocaleString()} session
                 {t.sessions === 1 ? "" : "s"} · gross {fmtMoney(t.gross)} · fees {fmtMoney(t.fees)} · settlement{" "}
-                {fmtMoney(t.settlementFees)} · slippage {fmtMoney(t.slippage)}
+                {t.settlementFees === null
+                  ? `n/r (recorded on ${t.settlementTrades.toLocaleString()} of ${t.trades.toLocaleString()})`
+                  : fmtMoney(t.settlementFees)}{" "}
+                · slippage{" "}
+                {t.slippageTrades === t.trades
+                  ? fmtMoney(t.slippage)
+                  : `${fmtMoney(t.slippage)} (recorded on ${t.slippageTrades.toLocaleString()} of ${t.trades.toLocaleString()})`}
               </span>
             )}
             <Pager

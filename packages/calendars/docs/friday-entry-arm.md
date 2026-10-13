@@ -58,8 +58,10 @@ means two different things in one ledger.
   (entry, front, back) — so a Friday entry is tagged `dc_7_10` automatically and is a distinct
   population by construction.
 - **The read-side exit grid already groups by structure tag** — `exit_policies.py` states that
-  distinct tags never pool. The whole policy derivation therefore extends to the new regime for
-  free, including its validation against the real books.
+  distinct tags never pool. The policy derivation therefore extends to the new regime unchanged —
+  but the arms it reads are named, so `friday:path` (the grid's substrate) and `friday:control`
+  had to be added to `PATH_ARMS` / `VALIDATED_ARMS`, which happened on 2026-10-12. Before that
+  the Friday weeks were neither in the table nor validated.
 - **`cherrypick.core.ledgers`' `dc_week` schema** reads positions regardless of entry day.
 
 **Needs building:**
@@ -216,7 +218,12 @@ in the trade for. Both are second-order against the debit differential, but neit
 
 The regime reports on itself rather than needing a watcher. After the window closes with nothing
 entered, it journals `friday_week_skipped` into `dc_decisions` with the **dominant attempt outcome**
-as the detail — which is the whole diagnosis, because the two silences are otherwise identical:
+as the detail — which is the whole diagnosis, because the two silences are otherwise identical.
+The window ends at the bell, when the resident loop stops, so the row is written by the first
+**off-session** tick after it (`calendars-paper-offsession`, every 60 s; the settle pass included).
+Until 2026-10-12 it was written only from the in-session entry phase, which no tick past 16:00
+reaches, so no Friday ever journaled one — 2026-09-11 and 09-18 (both `ex_dividend_week`) have no
+row. A week with the off-session job switched off still journals nothing.
 
 | detail | what it means | what to do |
 |---|---|---|

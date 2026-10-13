@@ -34,6 +34,18 @@ def test_meic_slippage_is_inside_gross_and_never_taken_out_of_fees():
     assert _identity(rec) == pytest.approx(rec["net_pnl"])
 
 
+def test_an_unrecorded_cost_leaves_fees_unrecorded_never_zero():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        "CREATE TABLE ic_trades (id INTEGER PRIMARY KEY, symbol TEXT, risk_profile TEXT, pnl REAL, fees REAL,"
+        " exit_time TEXT)"
+    )
+    conn.execute("INSERT INTO ic_trades VALUES (1, 'SPX', 'c', NULL, NULL, '2026-06-29 16:00')")
+    (rec,) = ledgers.READERS["meic_ic"](conn)
+    assert rec["cost"] is None and rec["fees"] is None and rec["net_pnl"] is None
+
+
 def test_a_charged_slippage_and_settlement_each_come_out_of_the_total_once():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row

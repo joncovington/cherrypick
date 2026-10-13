@@ -215,3 +215,28 @@ def test_seed_watches_todays_orders_but_not_older_ones(tmp_path, spy):
     filled = {"status": "Filled", "price": "0.96"}
     out = desk_notifier.run(_cfg(journal), status_fn=lambda oid: filled)
     assert [p["key"] for p in spy.pushes] == ["desk.filled.today"]
+
+
+def test_a_pass_with_nothing_to_do_does_not_rewrite_the_state(tmp_path, spy):
+    # Every pass used to rewrite the file with a fresh updated_at.
+    journal = _journal(tmp_path, _submitted("111"))
+    desk_notifier.run(_cfg(journal), status_fn=lambda oid: None)  # seed
+    state_file = tmp_path / "desk_notify.json"
+    before = state_file.read_text(encoding="utf-8")
+    out = desk_notifier.run(_cfg(journal), status_fn=lambda oid: None)
+    assert out["written"] is False
+    assert state_file.read_text(encoding="utf-8") == before
+
+    journal = _journal(tmp_path, _submitted("111"), _submitted("222"))
+    assert desk_notifier.run(_cfg(journal), status_fn=lambda oid: None)["written"] is True
+
+
+def test_orders_past_the_id_cap_are_never_announced_twice(tmp_path, spy, monkeypatch):
+    # The remembered list used to be cut to the newest 500 while the journal kept every order, so
+    # from the 501st order on the oldest ones carded again on every pass.
+    monkeypatch.setattr(desk_notifier, "_ID_CAP", 3)
+    journal = _journal(tmp_path, *[_submitted(str(i)) for i in range(5)])
+    desk_notifier.run(_cfg(journal), status_fn=lambda oid: None)  # seed
+    for _ in range(3):
+        desk_notifier.run(_cfg(journal), status_fn=lambda oid: None)
+    assert spy.pushes == []
