@@ -39,7 +39,8 @@ formula from `capital` alone.
                  Capital at risk is derived: (wing_width - net_credit) x multiplier x quantity.
   - "earnings" : earnings' `trades`; closed = closed_at set; net = pnl - entry_cost - exit_cost;
                  tag = `profile`; capital = capital_at_risk stored at entry.
-  - "fly_book" : flies' `fly_positions`; closed = status 'settled'; net = gross_pnl - fees;
+  - "fly_book" : flies' `fly_positions`; closed = status 'settled' and not voided (`void_reason`
+                 NULL); net = gross_pnl - fees;
                  tag = arm. P&L only -- the module's book-level floor and the price band it holds
                  over live in `fly_books` and are not summarisable as a per-trade number.
   - "dc_week"  : calendars' `dc_positions`; closed = status 'closed'; net = gross_pnl - fees
@@ -266,6 +267,14 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
     ]
 
 
+def _flies_not_void(conn) -> str:
+    """The SQL that keeps flies' voided rows out. flies voids a row by stamping `void_reason` and
+    leaving it `settled` with its P&L, so status alone counts them (47 paper rows, -994.41 as of
+    2026-10-12: the 08-04..06 bwb rolls and the 10-08 outage). The module's own read surfaces and
+    the console exclude them; a ledger older than the column has nothing voided, so it reads whole."""
+    return " AND void_reason IS NULL" if "void_reason" in _table_cols(conn, "fly_positions") else ""
+
+
 def _flies_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
     """cherrypick-flies' `fly_positions`; closed = settled. The attribution tag is the ARM, because
     comparing the arms is the entire point of the module — a per-symbol view would hide the one
@@ -281,7 +290,7 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
     exp_col, has_exp = _experiment_select(conn, "fly_positions")
     rows = conn.execute(
         f"SELECT symbol, arm, entry_mode, gross_pnl, fees, trade_date{reason_col}{exp_col} "
-        f"FROM fly_positions WHERE status = 'settled'{where}",
+        f"FROM fly_positions WHERE status = 'settled'{_flies_not_void(conn)}{where}",
         params,
     ).fetchall()
     return [
@@ -790,8 +799,10 @@ def _meic_held(conn) -> list[dict]:
 
 
 def _flies_held(conn) -> list[dict]:
-    """flies positions held right now (status 'open'), before the session's settlement."""
-    rows = conn.execute("SELECT symbol, arm, trade_date FROM fly_positions WHERE status = 'open'").fetchall()
+    """flies positions held right now (status 'open', not voided), before the session's settlement."""
+    rows = conn.execute(
+        f"SELECT symbol, arm, trade_date FROM fly_positions WHERE status = 'open'{_flies_not_void(conn)}"
+    ).fetchall()
     return [
         {"arm": r["arm"] or FLIES_UNTAGGED, "symbol": r["symbol"], "strategy": None, "capital": None,
          "session": r["trade_date"] or ""}
