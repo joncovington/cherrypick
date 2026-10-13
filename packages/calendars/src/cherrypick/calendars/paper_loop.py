@@ -235,6 +235,8 @@ def run_once(
             f"{len(overdue)} leg(s) past expiration remain open — settle manually with "
             f"--settle --date <expiration> --price <official print>"
         )
+    if not in_session(now_min):
+        _journal_friday_skip_after_window(config, conn, when=when, now_min=now_min)
     past_settle = now_min >= settle_time_min(config)
     if past_settle and _unsettled_today(conn, day):
         _log(f"past settle time — settling legs expiring {day}")
@@ -447,6 +449,26 @@ def _journal_friday_skip(conn, config: dict, plan: dict) -> None:
         )
     except Exception as exc:  # noqa: BLE001 — journalling must never cost a tick
         _log(f"friday-skip journalling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
+def _journal_friday_skip_after_window(config: dict, conn, *, when: datetime, now_min: int) -> None:
+    """The skipped-week journal from the ticks that actually run after the Friday window.
+
+    The window ends at the bell (16:00 by default) and so does the resident loop: `in_session` is
+    false from 16:00, and every later tick is the off-session `--once` job, which returns at the
+    settle pass or the RTH gate long before `_maybe_friday_entry`. Journaling only from there meant
+    `friday_week_skipped` was never written (2026-09-11 and 09-18 refused every attempt
+    `ex_dividend_week` and left no row). Called from `run_once` ahead of both early returns, so the
+    first off-session tick past the window writes it. Journal only: no entry, exit or gate reads it.
+    """
+    settings = friday_settings(config)
+    if not settings.get("enabled"):
+        return
+    plan = clock.friday_entry_plan(when.date())
+    if plan is None:
+        return
+    if now_min > clock.hhmm_to_min(settings.get("window_end"), 16 * 60):
+        _journal_friday_skip(conn, config, plan)
 
 
 def _maybe_friday_entry(config: dict, conn, *, cache_path: str, when: datetime, now_min: int) -> int:
