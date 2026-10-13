@@ -142,6 +142,24 @@ CATCHUP_MINUTES = {
     "quikoptions-weekly": 300,
 }
 
+# Quiet-hours cadences (2026-10-12). The interval jobs below ran at their session cadence around the
+# clock -- trade-notify every 30 s, desk-notify, power-watch and the paper ticks every minute -- which
+# came to ~18,000 process launches on a Sunday that traded nothing. Each pair is (quiet cadence,
+# active window ET); outside the window on a trading day, and all day on any other, the job runs at
+# the quiet cadence instead. The windows are wide on purpose: settlements and the MEIC digest land
+# after the bell, and a dead Dolt server must be back before the 06:30 scan.
+QUIET_CADENCE = {
+    # Fills and settlements reach the user within 5 min off hours; the watchdog tick (10 min) also
+    # runs the notifier, and its freshness check allows 30 min.
+    "trade-notify": (300, ("09:00", "17:00")),
+    # A desk order is a person at the keyboard; its submit card can wait 10 min outside the session.
+    "desk-notify": (600, ("09:00", "16:30")),
+    # The script keeps its own 15-min repeat; this only bounds how late a first alert can be.
+    "power-watch": (300, ("08:30", "17:00")),
+    # ensure-dolt: the 05:30 pull and the 06:30 scan are inside the active window.
+    "dolt": (900, ("05:00", "17:00")),
+}
+
 # Mirrors packages/advisor/src/cherrypick/advisor/factpack.py's LIGHT_SLOTS. Not imported -- this
 # package drives the advisor by subprocess, never by import (see packages/advisor/CLAUDE.md's
 # fence) -- so the two lists are kept in sync by hand, the same way advisor_checkpoint.py carries
@@ -260,6 +278,13 @@ class JobSpec:
     # config exposes the port it will bind.
     port: int | None = None
     reclaim_stuck_port: bool = True
+    # A slower cadence for an interval job's quiet hours: a non-trading day, or a trading day outside
+    # `active_start`-`active_end` ET (the whole trading day when no active window is given). None
+    # keeps one cadence around the clock. Unlike a window this never stops a job, it only spaces it
+    # out, and a quiet-hours wait never delays the first run of the active window (`should_start`).
+    quiet_interval_seconds: int | None = None
+    active_start: str | None = None
+    active_end: str | None = None
 
     def __post_init__(self) -> None:
         """Validate at construction so a malformed config block fails inside `derive_jobs`'s
@@ -279,6 +304,17 @@ class JobSpec:
                 raise ValueError(f"{self.id}: window end must follow its start")
         if self.backoff_cap_seconds is not None and int(self.backoff_cap_seconds) <= 0:
             raise ValueError(f"{self.id}: backoff_cap_seconds must be positive")
+        if self.quiet_interval_seconds is not None:
+            if self.kind != KIND_INTERVAL:
+                raise ValueError(f"{self.id}: quiet_interval_seconds applies to interval jobs only")
+            if int(self.quiet_interval_seconds) < int(self.interval_seconds):
+                raise ValueError(
+                    f"{self.id}: quiet_interval_seconds must not be faster than interval_seconds"
+                )
+        if bool(self.active_start) != bool(self.active_end):
+            raise ValueError(f"{self.id}: active_start and active_end must be set together")
+        if self.active_start and self.active_end and _hhmm(self.active_start) >= _hhmm(self.active_end):
+            raise ValueError(f"{self.id}: active end must follow its start")
 
     def describe(self) -> str:
         if self.kind == KIND_INTERVAL:
@@ -294,6 +330,9 @@ class JobSpec:
             base += f" {side} {self.window_start}-{self.window_end} ET"
         if self.trading_days_only:
             base += ", trading days"
+        if self.quiet_interval_seconds:
+            hours = f" {self.active_start}-{self.active_end} ET" if self.active_start else ""
+            base += f", every {self.quiet_interval_seconds}s outside trading-day{hours}"
         return base
 
 
@@ -316,6 +355,35 @@ def in_window(spec: JobSpec, now: datetime) -> bool:
     t = now.time()
     inside = (t.hour, t.minute) >= (sh, sm) and (t.hour, t.minute) <= (eh, em)
     return not inside if spec.window_invert else inside
+
+
+def _quiet(key: str, active_interval: int = 0) -> dict[str, Any]:
+    """JobSpec keywords for a `QUIET_CADENCE` entry. A configured active cadence already slower than
+    the quiet one keeps its own pace around the clock (the quiet cadence never speeds a job up)."""
+    quiet, (start, end) = QUIET_CADENCE[key]
+    if active_interval and active_interval >= quiet:
+        return {}
+    return {"quiet_interval_seconds": quiet, "active_start": start, "active_end": end}
+
+
+def is_quiet(spec: JobSpec, now: datetime, holidays: set[str] | None = None) -> bool:
+    """Is `now` (ET) inside the job's quiet hours -- a non-trading day, or a trading day outside its
+    active window? Always False for a job with no quiet cadence."""
+    if not spec.quiet_interval_seconds:
+        return False
+    if not timeutil.is_trading_day(now, holidays):
+        return True
+    if not spec.active_start or not spec.active_end:
+        return False
+    t = (now.hour, now.minute)
+    return not (_hhmm(spec.active_start) <= t <= _hhmm(spec.active_end))
+
+
+def effective_interval(spec: JobSpec, now: datetime, holidays: set[str] | None = None) -> int:
+    """The cadence that applies at `now`: the quiet one in quiet hours, else `interval_seconds`."""
+    if is_quiet(spec, now, holidays):
+        return int(spec.quiet_interval_seconds or spec.interval_seconds)
+    return int(spec.interval_seconds)
 
 
 def _gates_pass(spec: JobSpec, now: datetime, holidays: set[str] | None) -> tuple[bool, str]:
@@ -343,6 +411,24 @@ def should_start(
 
     if spec.kind == KIND_INTERVAL:
         now_epoch = now.timestamp()
+        if spec.quiet_interval_seconds:
+            # A run in quiet hours books the next one a quiet interval out, and also records when
+            # it would be due at the active cadence -- so 09:00 does not wait out a 5-minute gap
+            # booked at 08:58.
+            quiet = is_quiet(spec, now, holidays)
+            if now_epoch < float(state.get("next_run_epoch") or 0.0):
+                active_due = state.get("active_next_epoch")
+                if quiet or active_due is None or now_epoch < float(active_due):
+                    return False, "not due", {}
+            interval = effective_interval(spec, now, holidays)
+            return (
+                True,
+                "due",
+                {
+                    "next_run_epoch": now_epoch + interval,
+                    "active_next_epoch": now_epoch + spec.interval_seconds,
+                },
+            )
         if now_epoch < float(state.get("next_run_epoch") or 0.0):
             return False, "not due", {}
         return True, "due", {"next_run_epoch": now_epoch + spec.interval_seconds}
@@ -571,6 +657,7 @@ def derive_jobs(
             argv=_run_py(pythonw, launcher, "notify-trades"),
             kind=KIND_INTERVAL,
             interval_seconds=int(tn.get("interval_seconds") or int(tn.get("interval_minutes", 0)) * 60 or 30),
+            **_quiet("trade-notify"),
             enabled=bool(tn.get("task_name") or tn.get("enabled", False) or tn.get("interval_seconds")),
             enabled_reason="" if tn else "no trade_notify config",
         ),
@@ -589,6 +676,7 @@ def derive_jobs(
             argv=_run_py(pythonw, launcher, "notify-desk"),
             kind=KIND_INTERVAL,
             interval_seconds=int(dn["interval_minutes"]) * 60,
+            **_quiet("desk-notify", int(dn["interval_minutes"]) * 60),
             enabled=dn["enabled"],
             enabled_reason="" if dn["enabled"] else "disabled in config (desk_notify)",
         ),
@@ -778,6 +866,7 @@ def derive_jobs(
                     argv=_run_py(pythonw, launcher, "ensure-dolt"),
                     kind=KIND_INTERVAL,
                     interval_seconds=int(svc.get("interval_minutes", 5)) * 60,
+                    **_quiet("dolt", int(svc.get("interval_minutes", 5)) * 60),
                 ),
             )
 
@@ -1210,12 +1299,14 @@ def derive_jobs(
         "power-watch",
         lambda: JobSpec(
             id="power-watch",
-            # Offline and local: Windows' power status and one state file. Every minute, every day --
-            # a laptop runs down on a Saturday too -- and the script keeps the 15-minute repeat, so
-            # this interval only bounds how late the first alert can be (2026-10-08 outage).
+            # Offline and local: Windows' power status and one state file. Every day -- a laptop runs
+            # down on a Saturday too -- every minute around the session and every 5 off it; the script
+            # keeps the 15-minute repeat, so this interval only bounds how late the first alert can be
+            # (2026-10-08 outage).
             argv=_run_py(pythonw, launcher, "power-watch"),
             kind=KIND_INTERVAL,
             interval_seconds=60,
+            **_quiet("power-watch"),
             enabled=bool(pw["enabled"]),
             enabled_reason="" if pw["enabled"] else "disabled in config (power_watch.enabled)",
         ),
@@ -1581,6 +1672,14 @@ def _add_self_healing_jobs(add, name, mcfg, paper, tick, pythonw, root) -> None:
     interval = int(paper.get("tick_interval_seconds", 120))
 
     if interval >= 60:
+        # Trading days only, unless the module says otherwise (2026-10-12). Every spawn-per-tick paper
+        # module (meic, pmcc, curve, contango, bwb, earnings) ticked every minute through weekends
+        # and holidays, and none of them has ever written a ledger row on a non-trading day: their
+        # timestamped rows from 2026-09 on show none, and their logs for the weekend of 10-10/10-11
+        # show nothing but meic's "outside trading window - skipping". Gating them is therefore not
+        # measurement-affecting. Overnight on a TRADING day is different and stays ungated: curve
+        # records its daily regime row around 00:40 ET, bwb writes add-on misses and settlements after
+        # the close, pmcc refreshes its stream window in the evening, and earnings ticks pre-open.
         add(
             f"{name}-paper",
             lambda: JobSpec(
@@ -1589,6 +1688,7 @@ def _add_self_healing_jobs(add, name, mcfg, paper, tick, pythonw, root) -> None:
                 kind=KIND_INTERVAL,
                 cwd=root,
                 interval_seconds=interval,
+                trading_days_only=not paper.get("tick_on_non_trading_days", False),
             ),
         )
         return
