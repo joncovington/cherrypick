@@ -14,6 +14,7 @@ compared on identical, reproducible criteria. See docs/paper-trading.md.
 """
 
 import argparse
+import contextlib
 import json
 import os
 import sqlite3
@@ -23,9 +24,28 @@ from datetime import datetime
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET  # noqa: E402
 
+# The instant a catch-up settlement pass stands at (`pinned_clock`), or None for the wall clock.
+_PINNED_NOW: datetime | None = None
+
 
 def _now_et():
-    return datetime.now(_ET)
+    return _PINNED_NOW if _PINNED_NOW is not None else datetime.now(_ET)
+
+
+@contextlib.contextmanager
+def pinned_clock(instant: datetime):
+    """Every timestamp this engine writes reads `instant` for the duration of the block.
+
+    For `paper_loop.settle_overdue`, which settles a session hours (or days) after its close: the
+    exit_time of a position that expired at the bell is the bell, not the moment an outage ended.
+    That pass is the only caller; the loop's own ticks run on the wall clock."""
+    global _PINNED_NOW
+    previous = _PINNED_NOW
+    _PINNED_NOW = instant
+    try:
+        yield
+    finally:
+        _PINNED_NOW = previous
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1627,14 +1647,24 @@ def _profile_day_stats(profile: str, trade_date: str, db_path: str, symbol: str 
 
 
 def process_symbol(
-    snapshot: dict, db_path: str, execution_mode: str, profiles_filter=None, extra_profiles=None
+    snapshot: dict,
+    db_path: str,
+    execution_mode: str,
+    profiles_filter=None,
+    extra_profiles=None,
+    evaluate_entries: bool = True,
 ) -> dict:
     """Run all four profiles' mark-to-market/exit + entry evaluation for one symbol against
     one already-fetched snapshot. Returns a per-profile action summary for logging.
 
     `extra_profiles` are synthetic, caller-built profile defs evaluated alongside the registry
     -- the advised shadow book (paper_loop._advice_profiles) rides this seam. Merged after the
-    registry so a synthetic name is never silently shadowed by a registry entry."""
+    registry so a synthetic name is never silently shadowed by a registry entry.
+
+    `evaluate_entries=False` runs the exit half only: no entry is evaluated and no entry_attempts
+    row is written. For `paper_loop.settle_overdue`, a settlement pass after the session, whose
+    snapshot carries a closing print and nothing else -- an entry evaluation against it would
+    record a refusal per arm ("iv_rank_below_floor") for a tick that never happened."""
     base_config = load_base_config()
     all_profiles = load_profiles()
     if extra_profiles:
@@ -1688,6 +1718,10 @@ def process_symbol(
             )
             actions.append({"ic_order_id": trade["ic_order_id"], "decision": decision})
             _apply_exit_decision(trade, decision, symbol, db_path)
+
+        if not evaluate_entries:
+            results[name] = actions
+            continue
 
         still_open = _get_open_trades(symbol, name, snapshot["date"], db_path)
         # max_concurrent_ics is a per-(profile × symbol) cap: each portfolio (this profile on this
@@ -1785,7 +1819,8 @@ def process_symbol(
 
         results[name] = actions
 
-    _log_arm_divergence(snapshot, results, db_path)
+    if evaluate_entries:
+        _log_arm_divergence(snapshot, results, db_path)
     return {"ok": True, "symbol": symbol, "results": results}
 
 
