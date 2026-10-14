@@ -1349,3 +1349,54 @@ overnight, so no advised position outlives Friday's settlement.
 **Also at this boundary:** the `selector` is enabled by the same script, as declared (2026-10-04,
 amended 2026-10-12; `--skip-selector` leaves it off). The live entry-pricing option (its own
 entry, built off) is offered by the script behind its own flag and is not part of the batch.
+
+## 2026-10-14 — a ladder gate and an edge-side gate replayed; neither declared
+
+SPX fell from the open all day, and live entered in the bottom 16% of the range so far on every one
+of its 11 entries. Every put spread stranded, and every call spread that filled completed. The
+question was whether a gate could keep the loop off the range edges. Both candidates were replayed
+after the close the way `replay_gates.py` works, which can express neither: drop the recorded entries
+the rule would have refused and sum the rest. That is an upper bound in the gate's favour, because a
+slot freed by a refusal is never refilled, and a refusal could have moved later strikes. Rows: legged
+`control`, settled SPX, from 2026-08-21 and including 10-14: paper 268 entries over 36 sessions
+(+$3,268), live 95 over 19 (+$382). Range position as in the 2026-10-09 entry: the gex spot trail at
+the entry instant, no look-ahead.
+
+**Range position alone is the wrong variable.** Paper put spreads entered at the session low made
++$3,596 (43 entries, 91% completed), and those on a day already 20 points down made +$2,154 (23, 96%).
+That is today's trade, and it has been control's best cell. Where position mattered was the side: at
+either edge, call spreads lost in both ledgers (paper −$1,644 over 80 entries, live −$627 over 23)
+while put spreads made money. That table was read on the morning of 10-14 over about 20 cells, so
+candidate B below is in-sample.
+
+**A. Ladder gate:** refuse a legged entry while an earlier same-side spread of the same arm and session
+is still uncompleted and spot sits X wing widths past its short strike, against its completion.
+- **X up to 2 is one rule.** The same-strike sign rule keeps a new same-side spread at least two
+  strikes from an open one, so every such re-entry is at least 2 widths past. 2.5, 3.5 and 4.5 were
+  added to get distinct settings.
+- **Paper loses at every X:** −$2,035 (X ≤ 2), −$2,055, −$1,156, −$842; sessions helped to hurt 7/25,
+  6/22, 5/20, 1/16. Most refused entries would have completed (74 of 93 at X ≤ 2). The first half of the
+  era (08-21..09-17) carries the loss, and the second half is small and positive except at 4.5.
+- **Live is mixed and small:** −$156, +$128, −$152, −$156. The one positive setting (2.5) hurt 8 of 11
+  sessions it changed and turns negative without the two best and worst sessions (−$173).
+- It pays on a day like 10-14 (paper +$478, live +$275 at X ≤ 2) and costs on the rest.
+
+**B. Edge-side gate:** at position ≤ 0.1 or ≥ 0.9 of the range so far, refuse call spreads (which
+complete on a fall); sell put spreads only.
+- **Paper +$1,472**, 85 refused (58 had completed), sessions 16 helped and 19 hurt, +$544 without the
+  best and worst two, halves −$798 / +$2,271. **Live +$184**, 26 refused, 7 helped and 7 hurt, +$8
+  without the best and worst two, halves −$572 / +$756.
+- **Most of it is `range-high`'s.** That arm's rule would refuse 39 of these paper entries; 23 are also
+  B refusals, and they carry $1,196 of B's $1,472. B on its own adds about +$277 in paper and −$91 in
+  live.
+- **It loses on the day that prompted it:** 10-14 −$172 paper, −$443 live, because the call spreads
+  were the ones that completed.
+
+**Searched:** A at six settings (four distinct), B as one rule, both ledgers, plus the morning's ~20-cell
+table that produced B. Paper's second half also straddles the 2026-10-05 `completion_rule` break.
+
+**Not declared.** A is dropped. B is not worth an arm while `range-high` is running: revisit it only if
+`range-high` passes its 14-session read, and then only as the part `range-high` does not already
+refuse. Live is unchanged. 10-14 is the stranded-vertical loss again, a one-way tape that never came
+back to the put spreads; the intraday agent's gate, in live shadow, is the route already being
+measured for those days.
