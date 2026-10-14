@@ -537,10 +537,48 @@ def _open_browser(pw, headed: bool):
     )
 
 
-def _watch_for_throttling(page, hits: list[str]) -> None:
+# The vendor calls this collector actually reads. A 403 on one of them is the vendor refusing the
+# collector; a 403 anywhere else is the web app's own business. On 2026-10-13 a fresh login's page
+# fired three entitlement checks this account is not entitled to -- a TradeStation order link
+# (`/orders/live/tradestation/`), a la carte pricing (`/alacarte/`), Pro saved chart views
+# (`/Powerhouse/Pro/getUserChartViews`) -- the app shrugged them off, and the collector read them as
+# throttling: no charts that night and a 24-hour cooldown over the next morning's edition.
+_CHART_DATA_PATHS = ("/why/", "/ranks/", "/how/", "/tradeIdeas")
+_SECURITIES_PATHS = ("/securities", "getAllCachedSecurities")
+
+
+def _consumed(url: str) -> bool:
+    paths = _CHART_DATA_PATHS + _SECURITIES_PATHS + tuple(path for _, path, _, _ in SCREENERS)
+    return any(p in url for p in paths)
+
+
+def counts_as_refusal(status: int, url: str, resource_type: str | None = None) -> bool:
+    """Whether a response means the vendor is throttling or refusing the collector.
+
+    A 429 always does. A 403 does when it is a page the collector navigated to, or one of the calls
+    it reads (`_consumed`); a 403 on anything else is not the collector's request being refused."""
+    if status == 429:
+        return True
+    if status != 403:
+        return False
+    return resource_type == "document" or _consumed(url)
+
+
+def _watch_for_throttling(page, hits: list[str], ignored: list[str] | None = None) -> None:
     def on_response(resp):
-        if resp.status in (403, 429):
-            hits.append(f"{resp.status} {resp.url}")
+        if resp.status not in (403, 429):
+            return
+        try:
+            kind = resp.request.resource_type
+        except Exception:  # noqa: BLE001 -- unknown kind: judge by the URL alone
+            kind = None
+        line = f"{resp.status} {resp.url}"
+        if counts_as_refusal(resp.status, resp.url, kind):
+            hits.append(line)
+        else:
+            print(f"ignored (not a call the collector reads): {line}")
+            if ignored is not None:
+                ignored.append(line)
 
     page.on("response", on_response)
 
