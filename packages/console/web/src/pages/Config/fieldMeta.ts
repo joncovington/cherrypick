@@ -275,9 +275,9 @@ export const FIELDS: FieldMeta[] = [
     target: "manage",
     pointer: "/trade_grouping",
     label: "Trade grouping",
-    help: "expiry_chain keeps a diagonal's short with its long and splits independent spreads; underlying makes each name one trade.",
+    help: "order_chain follows the broker's order chains (opening order and every roll) and uses their net cash as the basis; expiry_chain and underlying price the open legs only.",
     type: "enum",
-    options: ["expiry_chain", "underlying"],
+    options: ["order_chain", "expiry_chain", "underlying"],
     section: "rules",
   },
   {

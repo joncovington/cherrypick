@@ -35,6 +35,18 @@ export interface ManageOrder {
   netSide: "cr" | "db" | null;
 }
 
+/** One order in a trade's broker order chain: the opening, then every roll or adjustment. */
+export interface ManageChainOrder {
+  date: string;
+  role: "open" | "roll" | "close" | "add" | string;
+  /** Signed cash flow: + received. */
+  net: number | null;
+  netPrice: number | null;
+  netSide: "cr" | "db" | null;
+  fees: number | null;
+  legs: string[];
+}
+
 export interface ManageLevel {
   /** The trade's whole-position value at which the rule fires. */
   closeValue: number | null;
@@ -53,6 +65,12 @@ export interface ManageTrade {
   cost: number | null;
   value: number | null;
   pnlGross: number | null;
+  /** Gross less the chain's recorded fees; null when the basis came from the open legs (no fee record). */
+  pnlNet: number | null;
+  fees: number | null;
+  /** `order_chain`: the broker's chain set the basis. `open_legs`: no reconciled chain, open legs only. */
+  basis: "order_chain" | "open_legs" | null;
+  chain: { orders: ManageChainOrder[]; cash: number | null; fees: number | null; rolls: number } | null;
   /** Credit trade: share of the credit kept. Debit trade: return on the debit. */
   capture: number | null;
   nearestShortExpiry: string | null;
@@ -104,6 +122,7 @@ export interface ManagePayload {
   ok: boolean;
   error: string | null;
   metricsError: string | null;
+  transactionsError: string | null;
   ruleset: string | null;
   rulesSource: string | null;
   ruleWarnings: string[];

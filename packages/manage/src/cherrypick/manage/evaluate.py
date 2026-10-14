@@ -24,6 +24,7 @@ from typing import Any
 
 from cherrypick.core import calendar as _calendar
 
+from cherrypick.manage import chains as _chains
 from cherrypick.manage import explain as _explain
 from cherrypick.manage import pricing
 from cherrypick.manage import rules as _rules
@@ -165,7 +166,10 @@ def evaluate_trade(
     session: date,
     net_liq: float | None,
     rules: dict[str, Any],
+    chain: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """`chain`, when the broker history reconciled one, sets the basis: the chain's net cash across its
+    opening order and every roll, not the open legs' average prices."""
     metrics = metrics or {}
     spot = _f(metrics.get("last"))
     pr = rules["pricing"]
@@ -186,6 +190,10 @@ def evaluate_trade(
         "cost": None,
         "value": None,
         "pnl_gross": None,
+        "pnl_net": None,
+        "fees": None,
+        "basis": None,
+        "chain": _chain_view(chain) if chain else None,
         "capture": None,
         "nearest_expiry": None,
         "nearest_short_expiry": None,
@@ -204,8 +212,14 @@ def evaluate_trade(
         ]
         return _decide(trade, rules, legs)
 
-    cost = sum(leg["cost"] for leg in legs)
     value = sum(leg["value"] for leg in legs)
+    if chain:
+        # The chain's net cash is what this trade has actually cost (or paid) since it opened.
+        cost = -chain["cash"]
+        trade.update(basis="order_chain", fees=chain["fees"])
+    else:
+        cost = sum(leg["cost"] for leg in legs)
+        trade["basis"] = "open_legs"
     pnl = value - cost
     kind = "credit" if cost < 0 else "debit"
     basis = abs(cost)
@@ -214,7 +228,9 @@ def evaluate_trade(
         cost=cost,
         value=value,
         pnl_gross=pnl,
-        capture=(pnl / basis) if basis > 0 else None,
+        pnl_net=(pnl + trade["fees"]) if trade["fees"] is not None else None,
+        # Under a dollar of net cash (a roll that paid for the whole trade) no percentage means anything.
+        capture=(pnl / basis) if basis >= 1 else None,
     )
     options = [leg for leg in legs if leg["right"]]
     shorts = [leg for leg in options if leg["quantity"] < 0]
@@ -571,6 +587,11 @@ def _price_levels(trade: dict[str, Any], legs: list[dict[str, Any]]) -> None:
 
 def _opening(trade: dict[str, Any], legs: list[dict[str, Any]]) -> dict[str, Any] | None:
     """What the trade was opened for, as signed cash flow (a credit received is +) and a net price."""
+    chain = trade.get("chain")
+    if chain and chain["orders"]:
+        # The order that opened the chain; the rolls since are on the chain itself.
+        first = chain["orders"][0]
+        return {"net": first["net"], "net_price": first["net_price"], "net_side": first["net_side"]}
     cost = trade.get("cost")
     if cost is None:
         return None
@@ -674,6 +695,78 @@ def split_trades(legs: list[dict[str, Any]], grouping: str | None) -> list[list[
     return trades
 
 
+ACTION_CODE = {"Buy to Open": "BTO", "Sell to Open": "STO", "Buy to Close": "BTC", "Sell to Close": "STC"}
+
+
+def _occ_label(symbol: str) -> str:
+    """'GLD 261120C00410000' -> '2026-11-20 410C'; anything else unchanged."""
+    parts = symbol.split()
+    if len(parts) == 2 and len(parts[1]) == 15:
+        code = parts[1]
+        strike = int(code[7:]) / 1000
+        return f"20{code[:2]}-{code[2:4]}-{code[4:6]} {strike:g}{code[6]}"
+    return symbol
+
+
+def _chain_view(chain: dict[str, Any]) -> dict[str, Any]:
+    """The chain as the evaluation records it: each order's role, cash and legs, oldest first."""
+    orders = []
+    for o in chain["orders"]:
+        net = o["net"]
+        orders.append(
+            {
+                "executed_at": o["executed_at"],
+                "date": o["executed_at"][:10],
+                "role": o["role"],
+                "net": net,
+                "net_price": abs(net) / pricing.MULTIPLIER / (o.get("unit") or 1),
+                "net_side": "cr" if net >= 0 else "db",
+                "fees": o["fees"],
+                "legs": [
+                    f"{ACTION_CODE.get(leg['action'], leg['action'])} {leg['quantity']:g} "
+                    f"{_occ_label(leg['symbol'])} @ {leg['price']:.2f}"
+                    for leg in o["legs"]
+                ],
+            }
+        )
+    return {
+        "orders": orders,
+        "cash": chain["cash"],
+        "fees": chain["fees"],
+        "rolls": sum(1 for o in chain["orders"] if o["role"] == "roll"),
+    }
+
+
+def group_trades(
+    legs: list[dict[str, Any]],
+    grouping: str | None,
+    history: list[dict[str, Any]] | None,
+    history_ok: bool,
+) -> list[tuple[list[dict[str, Any]], dict[str, Any] | None]]:
+    """An underlying's legs as trades, each with its reconciled order chain or None.
+
+    `order_chain` (the default) groups by the broker's own chains when the history reconciles them;
+    any leg it cannot explain falls back to `expiry_chain`, priced from the open legs.
+    """
+    if grouping != "order_chain" or not history_ok or history is None:
+        fallback = "expiry_chain" if grouping == "order_chain" else grouping
+        return [(g, None) for g in split_trades(legs, fallback)]
+    built = _chains.build(legs, history)
+    out: list[tuple[list[dict[str, Any]], dict[str, Any] | None]] = []
+
+    def norm(leg: dict[str, Any]) -> str:
+        return " ".join(str(leg.get("symbol") or "").split())
+
+    for chain in built["chains"]:
+        if chain["reconciled"]:
+            members = [leg for leg in legs if norm(leg) in chain["symbols"]]
+            if members:
+                out.append((members, chain))
+    loose = [leg for leg in legs if norm(leg) in set(built["unchained"])]
+    out += [(g, None) for g in split_trades(loose, "expiry_chain")]
+    return out
+
+
 # --------------------------------------------------------------------------- the whole snapshot
 def evaluate(
     snapshot: dict[str, Any], rules: dict[str, Any], warnings: list[str] | None = None
@@ -683,16 +776,22 @@ def evaluate(
         raise ValueError("snapshot has no session date")
     positions = snapshot.get("positions") or {}
     metrics = snapshot.get("metrics") or {}
+    # Trade history arrived with snapshot v2; without it (or when its fetch failed) every trade falls back
+    # to the open legs' prices, and says so.
+    history = snapshot.get("transactions") or {}
+    history_ok = "transactions" in snapshot and not snapshot.get("transactions_error")
     accounts = []
     for account in positions.get("accounts") or []:
         balances = account.get("balances") or {}
         net_liq = _f(balances.get("net_liquidating_value"))
         trades = []
         for u in account.get("underlyings") or []:
-            groups = split_trades(u.get("legs") or [], rules.get("trade_grouping"))
-            for i, group in enumerate(groups):
+            groups = group_trades(
+                u.get("legs") or [], rules.get("trade_grouping"), history.get(u["underlying"]), history_ok
+            )
+            for i, (group, chain) in enumerate(groups):
                 trade = evaluate_trade(
-                    u["underlying"], group, metrics.get(u["underlying"]), session, net_liq, rules
+                    u["underlying"], group, metrics.get(u["underlying"]), session, net_liq, rules, chain
                 )
                 trade["trade_id"] = u["underlying"] if len(groups) == 1 else f"{u['underlying']}#{i + 1}"
                 trades.append(trade)
@@ -721,6 +820,9 @@ def evaluate(
         "ok": bool(positions.get("ok")),
         "error": positions.get("error"),
         "metrics_error": snapshot.get("metrics_error"),
+        "transactions_error": snapshot.get("transactions_error")
+        if "transactions" in snapshot
+        else "no trade history in this snapshot (taken before chains were read)",
         "marks": positions.get("marks"),
         "ruleset": rules.get("ruleset"),
         "rules": rules,

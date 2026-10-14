@@ -21,10 +21,17 @@ Run it by hand any time with `python run.py manage`, and try a rule change on a 
 
 ## How a trade is judged
 
-Each underlying's legs become trades. By default an expiry stands alone unless its shorts are only
-covered by a later expiry, in which case they are one trade; a diagonal stays whole, while a weekly
-put spread and a monthly call spread on the same name are two. A trade opened for a net credit is a
-**credit trade**, one opened for a net debit a **debit trade**.
+Each position is judged as the broker's **order chain**: the order that opened it and every roll or
+adjustment since, rebuilt from the account's trade history. The chain's net cash is the trade's basis,
+so a roll's credit counts. GLD on 2026-10-13 was opened for 8.33 db and rolled twice for 6.40 cr:
+1.93 db in all, where its open legs alone said 11.04 db. Two orders on one name that never touched
+each other are two trades (SOFI's short put and its call spread). The chain's recorded fees give a net
+P&L beside the gross one.
+
+A chain is used only when its own orders, replayed, leave exactly the quantities held today. When the
+history is missing, starts after the position did, or the broker moved a leg without an order, the
+trade falls back to grouping by expiry (a diagonal stays whole) and is priced from its open legs, and
+the page says so. A net credit is a **credit trade**, a net debit a **debit trade**.
 
 Every rule that fires names an action. The trade's recommendation is the most decisive one (close,
 then take profit, then roll-or-close, then close legs, then review) at that rule's confidence, less 10
@@ -59,7 +66,7 @@ does not roll.
 
 - **Marks are mids** and the payoff model is Black-Scholes at today's IV per leg, with no dividends.
   It bounds what a trade can still do; it is not a price.
-- **P&L is gross of fees**; the broker snapshot carries no fee record.
+- **Fees are known only for a reconciled chain.** A trade priced from its open legs shows gross P&L only, and its basis misses any earlier roll.
 - **Ex-dividend dates are the last declared ones.** The rule fires once the next ex-date is announced.
 - **Earnings dates are the broker's expected dates**, which can move.
 - **Thesis is not knowable.** `credit.breached` is a mechanical stand-in for "the reason for the trade
