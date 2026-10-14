@@ -77,6 +77,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 _PID_FILE = _paths.data_path("paper_loop.pid")
 _LOCK_FILE = _paths.data_path("paper_loop.once.lock")
 _LOG_FILE = _paths.log_path("paper_loop.log")
+_OUTSIDE_FILE = _paths.data_path("paper_loop.outside")
 _PAPER_DB = str(_paths.paper_db_path())
 # `-m` rather than a path to the script: independent of this file's depth on disk and of the child's
 # working directory, which matters because the supervisor runs it from its own.
@@ -934,6 +935,30 @@ def _beat() -> None:
     _core_home.beat("meic")
 
 
+def _log_outside_once(now, verb: str) -> None:
+    """Log "outside trading window" on the first off-window tick only, not on every one.
+
+    Every off-hours minute used to write this line -- about 80% of the log, and nothing reads it. The
+    record that each tick ran is the supervisor's `--- start:` banner in the job's stderr log, which
+    stays. Each `--once` tick is its own process, so "already said it" lives in a marker file that
+    the next in-window tick removes. Best-effort: a marker that cannot be read or written only costs
+    a repeated line."""
+    try:
+        if _OUTSIDE_FILE.exists():
+            return
+        _OUTSIDE_FILE.write_text(now.isoformat(timespec="seconds"), encoding="utf-8")
+    except OSError:
+        pass
+    logger.info("outside trading window (%s ET) - %s; quiet until it reopens.", now.strftime("%H:%M"), verb)
+
+
+def _clear_outside() -> None:
+    try:
+        _OUTSIDE_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def run_iteration(cfg, force=False):
     _beat()  # before every gate below: "the loop is turning over", never "it did work"
     # Wall-clock for this whole iteration, logged below alongside open-position count. Was
@@ -944,13 +969,14 @@ def run_iteration(cfg, force=False):
     _iter_t0 = time.time()
     now = _now_et()
     if not force and not _is_trading_time(now, cfg):
-        logger.info("outside trading window (%s ET) - skipping.", now.strftime("%H:%M"))
+        _log_outside_once(now, "skipping")
         # The one thing this branch does: settle a session the in-window pass never could (an
         # outage across the close, 2026-10-13). Two SQLite reads when nothing is overdue.
         caught_up = _settle_overdue_quietly(cfg)
         if caught_up:
             return {"skipped": "outside_trading_window", "settle_overdue": caught_up}
         return {"skipped": "outside_trading_window"}
+    _clear_outside()
     # Refresh the streamer request file every tick (best-effort, never raises): a config symbols
     # change propagates without manual steps, and the paper ledger's open legs stay subscribed.
     # Underlyings still bind at streamer start, so a NEW underlying needs one streamer restart.
@@ -1272,7 +1298,7 @@ def _loop():
                 except Exception as exc:
                     logger.exception("iteration error: %s", exc)
             else:
-                logger.info("outside trading window (%s ET) - idling.", now.strftime("%H:%M"))
+                _log_outside_once(now, "idling")
                 _settle_overdue_quietly(cfg)
             delay = _sleep_seconds(_now_et(), cfg, _open_count())
             # Sleep in short slices so a SIGTERM is honored promptly.

@@ -44,6 +44,7 @@ def ledger(tmp_path, monkeypatch):
     db.cmd_init_db(None)
     monkeypatch.setattr(paper_loop, "_PAPER_DB", path)
     monkeypatch.setattr(paper_loop, "_DB", [sys.executable, "-m", "cherrypick.meic.db", "--db", path])
+    monkeypatch.setattr(paper_loop, "_OUTSIDE_FILE", tmp_path / "paper_loop.outside")
     return path
 
 
@@ -274,6 +275,25 @@ def test_the_tick_survives_a_failed_catch_up(ledger, monkeypatch):
     out = paper_loop.run_iteration(paper_loop._load_config())
     assert out["skipped"] == "outside_trading_window"
     assert _rows(ledger)["OTM"]["status"] == "open"
+
+
+def test_the_off_window_line_is_logged_once_per_stretch(ledger, monkeypatch, caplog):
+    """Every off-hours minute used to log "outside trading window"; now the first tick says it and
+    the rest are quiet until an in-window tick clears the marker."""
+    monkeypatch.setattr(paper_loop, "_now_et", lambda: NEXT_MORNING)
+    monkeypatch.setattr(paper_loop, "_beat", lambda: None)
+    cfg = paper_loop._load_config()
+
+    def said():
+        return sum("outside trading window" in r.getMessage() for r in caplog.records)
+
+    with caplog.at_level("INFO", logger="paper_loop"):
+        for _ in range(3):
+            assert paper_loop.run_iteration(cfg)["skipped"] == "outside_trading_window"
+        assert said() == 1
+        paper_loop._clear_outside()  # what the next in-window tick does
+        paper_loop.run_iteration(cfg)
+        assert said() == 2
 
 
 # --------------------------------------------------------------------------- the clock and the source
