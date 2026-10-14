@@ -1197,6 +1197,8 @@ _REJECT_REASON_MAP: dict[str, tuple[str, object, str]] = {
     ),
     "move_tail_veto": ("move_tail_veto", "move_tail_multiple", "flag"),
     "chain_complete_unverified": ("chain_complete", None, "flag"),
+    # expected_move_butterfly: the skew read sits between its two cuts, so no side is called.
+    "direction_signal_neutral": ("rr25", None, "flag"),
     **{
         f"{name}_below_minimum": (name, (f"min_{name}", f"near_miss_min_{name}"), "<")
         for name in _SOFT_REJECT_CRITERIA
@@ -1219,6 +1221,7 @@ _REJECT_REASON_MAP: dict[str, tuple[str, object, str]] = {
             ("bid_ask_spread_pct", "bid_ask_spread_pct"),
             ("has_weekly_options", "has_weekly_options"),
             ("skew_abs", "skew_abs"),
+            ("rr25", "rr25"),
         )
     },
 }

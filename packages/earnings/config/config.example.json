@@ -332,6 +332,36 @@
       "near_miss_min_market_cap": 1000000000,
       "min_combined_option_volume": 500,
       "near_miss_min_combined_option_volume": 200
+    },
+    "expected_move_butterfly": {
+      "_note": "1-2-1 debit fly with its body one expected move from spot: a call fly above on a bullish read, a put fly below on a bearish one. Paper only, opening from 2026-10-19 (strat_test_harness.STRAT_TEST_STARTS). The history study (docs/expected-move-fly-plan.md) found it fairly priced at mid with costs of 16-18% of the debit and no signal near the 68-83% hit rate it needs -- this book measures real fills against that.",
+      "_side_note": "rr25 = (25-delta call IV - 25-delta put IV) / ATM IV. Below rr25_put_rich_max buys the CALL fly, above rr25_call_rich_min buys the PUT fly, between them nothing opens (direction_signal_neutral). The cuts are the 2020-2023 terciles from scripts/emfly_history.py on Dolt's end-of-day IV; the read is contrarian to the published smirk studies and held in 6 of 7 years at 53%.",
+      "rr25_put_rich_max": -0.116,
+      "rr25_call_rich_min": -0.055,
+      "skew_delta_target": 0.25,
+      "_strikes_note": "Body: the listed strike nearest spot +/- body_em_multiple x EM (EM = 0.85 x the front ATM straddle). Wings: the symmetric listed distance nearest wing_em_multiple x EM, refused (no_symmetric_wings) when none lies within 0.5-1.5x of it.",
+      "body_em_multiple": 1.0,
+      "wing_em_multiple": 0.85,
+      "_exit_note": "Held to management's 15:30 expiry close, or closed when the fly is worth take_profit_width_frac of its width at the far touch. No stop (the debit is the max loss) and no first-morning loser close: in the study closing on the reaction day lost most of the six rules compared. House rule from the study, not research-backed.",
+      "take_profit_width_frac": 0.5,
+      "max_risk_per_trade_pct": 0.05,
+      "min_price": 10.0,
+      "min_expected_move_pct": 0.04,
+      "max_front_expiration_days": 9,
+      "_soft_criteria_note": "The soft criteria match the other strategies' so the symbol-watch prefilter (the loosest bar across strategies) does not widen or narrow anyone's universe. The study screened on none of them.",
+      "min_avg_volume": 1500000,
+      "near_miss_min_avg_volume": 1000000,
+      "min_iv_rv_ratio": 1.25,
+      "near_miss_min_iv_rv_ratio": 1.0,
+      "min_winrate": 0.5,
+      "near_miss_min_winrate": 0.4,
+      "require_weekly_options": true,
+      "min_combined_open_interest": 2000,
+      "max_bid_ask_spread_pct": 0.15,
+      "min_market_cap": 2000000000,
+      "near_miss_min_market_cap": 1000000000,
+      "min_combined_option_volume": 500,
+      "near_miss_min_combined_option_volume": 200
     }
   }
 }

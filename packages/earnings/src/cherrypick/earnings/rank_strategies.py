@@ -48,6 +48,7 @@ from cherrypick.earnings.strategies import (
     broken_wing_butterfly,
     directional_credit_spread,
     double_calendar,
+    expected_move_butterfly,
     iron_condor,
     iron_fly,
 )
@@ -183,6 +184,12 @@ STRATEGY_REGISTRY = [
         "fetch_criteria_fn": broken_wing_butterfly.fetch_price_and_expected_move,
         "apply_tiering_fn": broken_wing_butterfly.apply_tiering,
         "strategy_config_fn": broken_wing_butterfly._strategy_config,
+    },
+    {
+        "name": "expected_move_butterfly",
+        "fetch_criteria_fn": expected_move_butterfly.fetch_price_and_expected_move,
+        "apply_tiering_fn": expected_move_butterfly.apply_tiering,
+        "strategy_config_fn": expected_move_butterfly._strategy_config,
     },
 ]
 

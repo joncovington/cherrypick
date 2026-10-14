@@ -62,6 +62,8 @@ def _out_of_range_criteria():
         "iv_rv_ratio": 0.0,
         "market_cap": 0,
         "combined_option_volume": 0,
+        # expected_move_butterfly's skew read, between its two cuts: measurable, and calls no side.
+        "rr25": -0.08,
     }
 
 

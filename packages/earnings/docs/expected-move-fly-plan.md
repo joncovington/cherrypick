@@ -3,8 +3,9 @@
 A debit butterfly with its body one expected move from spot, on the call side above or the put side
 below, opened before an earnings print. Status: **history study run 2026-10-13 (step 1): don't
 build.** The fly is fairly priced at mid, costs take about a sixth of the debit, and no direction
-signal comes close to the hit rate the costs demand. Step 2 below is kept as the design should the
-inputs change (a much cheaper fill, or a signal near 70%).
+signal comes close to the hit rate the costs demand. **Built anyway, paper only (2026-10-13), to
+measure real fills against the study's cost model**: `strategies/expected_move_butterfly.py`, opening in
+`strat_test` from 2026-10-19 (step 2 below, as built).
 
 ## The trade
 

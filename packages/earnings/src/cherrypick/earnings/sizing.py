@@ -25,6 +25,7 @@ Per-contract max loss (strikes in points, one contract = 100 shares):
   directional_credit_spread        (|long - short| - credit) * 100
   atm_calendar / double_calendar   debit * 100
   broken_wing_butterfly            (far_width - near_width + net_debit) * 100
+  expected_move_butterfly          net_debit * 100
 
 Every strategy is defined-risk (max loss known at entry from the order's own strikes/
 debit) -- there is no undefined-risk/naked margin-proxy path. The BWB gap term is a
@@ -80,6 +81,13 @@ def per_contract_max_loss(order: dict, config: dict) -> float | None:
         # Broken-wing gap is the structural risk; a net debit adds to it, a
         # net credit (negative net_debit) offsets it.
         return max((far_w - near_w) + net_debit, 0.0) * CONTRACT_MULTIPLIER
+
+    if strategy == "expected_move_butterfly":
+        # A symmetric long fly: the debit is the most it can lose.
+        net_debit = order.get("net_debit")
+        if net_debit is None:
+            return None
+        return net_debit * CONTRACT_MULTIPLIER
 
     return None
 

@@ -143,6 +143,7 @@ All defined-risk, all evaluated nightly against live tastytrade chains and DoltH
 | `broken_wing_butterfly` | Asymmetric (skip-strike) butterfly, wings sized to skew | Asymmetric expected moves |
 | `atm_calendar` | Short front-month + long back-month, same strike | Low IV, term-structure edge |
 | `double_calendar` | ATM calendar on both the call and put side | Low IV, symmetric term structure |
+| `expected_move_butterfly` | 1-2-1 debit fly, body at spot +/- EM, side by skew (paper only) | Measuring a directional fly's real fills |
 
 See [docs/05-strategies.md](./docs/05-strategies.md) for full structure, entry conditions, and
 exit rules per strategy, and [docs/screening-criteria.md](./docs/screening-criteria.md) for the

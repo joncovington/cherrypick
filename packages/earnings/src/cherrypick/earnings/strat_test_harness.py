@@ -75,6 +75,7 @@ from cherrypick.earnings.strategies import (
     broken_wing_butterfly,
     directional_credit_spread,
     double_calendar,
+    expected_move_butterfly,
     iron_condor,
     iron_fly,
 )
@@ -88,6 +89,7 @@ _ORDER_FNS = {
     "atm_calendar": atm_calendar.fetch_atm_calendar_order,
     "directional_credit_spread": directional_credit_spread.fetch_directional_credit_spread_order,
     "broken_wing_butterfly": broken_wing_butterfly.fetch_broken_wing_butterfly_order,
+    "expected_move_butterfly": expected_move_butterfly.fetch_expected_move_butterfly_order,
 }
 
 # Multi-day strategies are MANAGED, not force-closed: the 09:45 sweep consults the
@@ -100,6 +102,9 @@ _ORDER_FNS = {
 _MULTI_DAY = {
     "atm_calendar": atm_calendar,
     "double_calendar": double_calendar,
+    # Held to its expiry close or its take-profit, never swept the morning after: in the history
+    # study a next-morning close paid a second set of costs on an unmatured fly and lost most.
+    "expected_move_butterfly": expected_move_butterfly,
 }
 
 # Overnight-hold strategies keep Step 3's unconditional close-window backstop --
@@ -285,6 +290,9 @@ def _entry_context(criteria: dict, composite_score) -> dict:
         "combined_option_volume": criteria.get("combined_option_volume"),
         # Sample quality -- a winrate means little without the size behind it
         "skew_abs": criteria.get("skew_abs"),
+        # The side a directional strategy took and the skew read behind it (expected_move_butterfly)
+        "side": criteria.get("side"),
+        "rr25": criteria.get("rr25"),
         "winrate": criteria.get("winrate"),
         "winrate_sample_size": criteria.get("winrate_sample_size"),
         "composite_score": composite_score,
@@ -305,6 +313,19 @@ def strategy_retired(strategy_name: str, session: str) -> bool:
     """Is this strategy retired from the harness as of `session` (an ISO date)?"""
     since = STRAT_TEST_RETIRED.get(strategy_name)
     return since is not None and str(session) >= since
+
+
+# Strategies added to strat_test, each with the first session it may open anything -- the same
+# dated-in-code shape as STRAT_TEST_RETIRED, so the code can merge ahead of the declared boundary
+# and bind on it. Before that session the screen row is still written and the opening is refused as
+# an execution-stage `strategy_not_started` drop.
+STRAT_TEST_STARTS = {"expected_move_butterfly": "2026-10-19"}
+
+
+def strategy_not_started(strategy_name: str, session: str) -> bool:
+    """Is `session` (an ISO date) before this strategy's first strat_test session?"""
+    since = STRAT_TEST_STARTS.get(strategy_name)
+    return since is not None and str(session) < since
 
 
 def _book_tag(config: dict, strategy_name: str) -> str:
@@ -664,6 +685,9 @@ def cmd_run_entries(args) -> dict:
             # close path (cmd_run_closes reads the ledger, not this table).
             if strategy_retired(strategy_name, scan_date):
                 drop("strategy_retired")
+                continue
+            if strategy_not_started(strategy_name, scan_date):
+                drop("strategy_not_started")
                 continue
 
             try:

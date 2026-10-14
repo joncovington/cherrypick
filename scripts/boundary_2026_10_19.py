@@ -429,15 +429,29 @@ def step_earnings(plan: Plan, h: Path) -> None:
     plan.notes.append(
         "earnings: the retirement is dated in code (STRAT_TEST_RETIRED); only the break is written"
     )
+    # The expected-move butterfly starts on the same session, dated the same way. Named in the break
+    # only when this checkout carries it, so the boundary never records an arm the code does not have.
+    added = getattr(harness, "STRAT_TEST_STARTS", {}).get("expected_move_butterfly") == BOUNDARY
+    if added:
+        plan.notes.append("earnings: expected_move_butterfly opens from this session (STRAT_TEST_STARTS)")
     plan.breaks.append(
         _key_break(
             h / "data" / "earnings" / "paper_trades.db",
             "strat_test_strategies",
             "every registered strategy",
-            "atm_calendar and double_calendar retired",
+            "atm_calendar and double_calendar retired"
+            + ("; expected_move_butterfly added (paper only)" if added else ""),
             "atm_calendar 56 trades 21% won -$6,349; double_calendar 35, 14%, -$3,660 (through 10-12). "
             "Their open rows run off under the ordinary close path; the advised dc-stop-at-75pct-debit "
-            "twin was concluded by advisor kill. " + JOURNAL,
+            "twin was concluded by advisor kill. "
+            + (
+                "expected_move_butterfly is a 1-2-1 debit fly at spot +/- EM, side by a contrarian "
+                "25-delta skew read; scripts/emfly_history.py found it fair at mid with 16-18% costs, "
+                "so it measures real fills. "
+                if added
+                else ""
+            )
+            + JOURNAL,
         )
     )
 

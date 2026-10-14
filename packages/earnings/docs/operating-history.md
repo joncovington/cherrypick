@@ -53,6 +53,15 @@ An earlier note claimed a 2,349-vs-64 acceptance gap; that was a miscount — 2,
 legacy capital-R `Reject` rows, i.e. rejections. Real acceptances reconcile with trades opened, so
 the execution stage records a gap that is currently small, not a hole.
 
+## `expected_move_butterfly` added to `strat_test` from 2026-10-19 (declared 2026-10-13)
+
+Built paper-only after `scripts/emfly_history.py` said not to build it
+([expected-move-fly-plan.md](expected-move-fly-plan.md)), to measure real fills against the
+study's cost model. It is dated in code the same way as the retirements below:
+`strat_test_harness.STRAT_TEST_STARTS` maps it to 2026-10-19. Before that session its screen row
+is written and the opening is refused as an execution-stage `strategy_not_started` drop. It lands
+on the same boundary as the retirements, under the same `strat_test_strategies` break.
+
 ## The two calendars retired from `strat_test` from 2026-10-19 (declared 2026-10-12)
 
 The config's own 20-session review said to retire `atm_calendar` and `double_calendar` from the

@@ -147,8 +147,9 @@ is just `available_capital_paper_mode` — there's no per-book capital or risk m
 
 ## `strategies.<name>`
 
-Every one of the 6 strategies (`iron_fly`, `iron_condor`, `directional_credit_spread`,
-`broken_wing_butterfly`, `atm_calendar`, `double_calendar`) gets its own block
+Every one of the 7 strategies (`iron_fly`, `iron_condor`, `directional_credit_spread`,
+`broken_wing_butterfly`, `atm_calendar`, `double_calendar`, `expected_move_butterfly`) gets its
+own block
 under `strategies`, keyed by the exact module name in `src/strategies/`. This avoids threshold
 collisions — each strategy tunes its own liquidity/quality bars independently, even though many
 of them share the same starting values today.
@@ -359,6 +360,17 @@ Common keys apply to every strategy; `management.<strategy>` overrides them for 
   "iron_fly": { "hold_winners_max_days": 1 }
 }
 ```
+
+### `expected_move_butterfly`
+
+Paper only, from 2026-10-19. The skew cuts (`rr25_put_rich_max` -0.116, `rr25_call_rich_min`
+-0.055), strike multiples (`body_em_multiple` 1.0, `wing_em_multiple` 0.85) and exit
+(`take_profit_width_frac` 0.5) are described in [05-strategies.md](./05-strategies.md#7-expected-move-butterfly).
+Its soft criteria match the other strategies' on purpose: the symbol-watch prefilter takes the
+loosest bar across strategies, so a looser value here would widen every book's universe.
+`max_risk_per_trade_pct` is in the block itself, because the example config has no
+`strategy_defaults`. The deployed config needs the block before the code reaches it: a
+registered strategy with no block fails its screen.
 
 ### `broken_wing_butterfly`
 
