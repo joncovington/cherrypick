@@ -125,14 +125,23 @@ def check_session(session: str, facts: dict | None = None) -> dict:
     return {"session": session, "ok": not mismatches, "mismatches": mismatches}
 
 
-def run(since: str | None = None) -> dict:
-    """Reconcile every written fact set. Returns the mismatches, not just a verdict."""
+def run(since: str | None = None, today: str | None = None) -> dict:
+    """Reconcile every written fact set. Returns the mismatches, not just a verdict.
+
+    A session still trading is left out and named in `skipped`. Its provisional fact set is a
+    snapshot (the status digest refreshes it hourly from 10:00 ET) and the ledger keeps moving, so
+    the two disagree whenever a trade closes between the snapshot and the 10:15 final pass -- on
+    2026-10-14 two earnings closes did, and the suite was told its review was wrong.
+    """
     store = _paths.data_dir()
     if not store.exists():
         return {"ok": False, "reason": "no fact sets written yet"}
     sessions = sorted(p.stem.removeprefix("eod-") for p in store.glob("eod-*.json"))
     if since:
         sessions = [s for s in sessions if s >= since]
+    today = today or _facts.today()
+    skipped = [s for s in sessions if s >= today]
+    sessions = [s for s in sessions if s < today]
 
     results = [check_session(s) for s in sessions]
     failures = [r for r in results if not r["ok"]]
@@ -140,5 +149,6 @@ def run(since: str | None = None) -> dict:
         "ok": not failures,
         "sessions_checked": len(results),
         "sessions_matching": len(results) - len(failures),
+        "skipped": skipped,
         "failures": failures,
     }
