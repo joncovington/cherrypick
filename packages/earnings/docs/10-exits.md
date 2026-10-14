@@ -219,6 +219,7 @@ and the number is a reasoned starting point. Say which, always — the two invit
 | `directional_credit_spread` | 50% of credit | 2.0× credit | 3 sessions | **House rule.** No published backtest of stop multiples for an *overnight earnings* vertical was found; this is the generic credit-spread convention carried over. Stop widened from 1.5× at the cutover to match it. |
 | `broken_wing_butterfly` | 25% of credit | 2.0× credit, plus `leg_stop_delta_abs` 0.60 | 3 sessions | **House rule.** tastylive has traded BWBs into earnings but published no management study. Exits through the *credit*-spread path despite pricing as a net debit. |
 | `double_calendar` | 15% of debit | 50% of debit | front-leg 5 DTE; leg-delta 0.45 | **Research-backed.** A 30-name backtest puts the target at 15% of debit, usually hit within minutes of the open, at an 87% win rate. Stop and time exit from the same source. |
+| `expected_move_butterfly` | fly worth 50% of its width (far touch) | none (the debit is the max loss) | the 15:30 expiry close; not in `OVERNIGHT` | **House rule, from history.** `scripts/emfly_history.py`: holding to expiry or to this take-profit lost least of six rules on 4,950 events; closing on the reaction day lost most. |
 | `atm_calendar` | 15% of debit | 50% of debit | front-leg 5 DTE | **Thin.** No earnings-specific backtest as clean as the double calendar's; aligned with it deliberately rather than guessed at separately. |
 
 The credit strategies all run through `scanner.evaluate_credit_spread_exit()`:
