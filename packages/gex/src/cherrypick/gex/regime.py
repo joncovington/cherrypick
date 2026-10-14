@@ -24,6 +24,7 @@ Rules, each inherited from a lesson already paid for elsewhere:
 ``day_close`` rows (each row's close belongs to its OWN session — the trap ``overview`` documents)
 into a permanent table, because the cache offers no retention guarantee and the moving-average /
 percentile family needs a durable series. Append-only: a (symbol, date) pair is written once.
+``daily_sessions`` does the same for each finished session's open/high/low/close (2026-10-14).
 """
 
 from __future__ import annotations
@@ -199,6 +200,12 @@ def ensure_tables(conn: sqlite3.Connection, db_path: Path | str | None = None) -
         "recorded_at REAL NOT NULL, source TEXT NOT NULL, "
         "PRIMARY KEY (symbol, trade_date))"
     )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS daily_sessions ("
+        "symbol TEXT NOT NULL, trade_date TEXT NOT NULL, day_open REAL, day_high REAL NOT NULL, "
+        "day_low REAL NOT NULL, day_close REAL, recorded_at REAL NOT NULL, source TEXT NOT NULL, "
+        "PRIMARY KEY (symbol, trade_date))"
+    )
     if db_path is not None:
         _ensured_dbs.add(str(Path(db_path).resolve()))
 
@@ -284,6 +291,56 @@ def harvest_daily_closes(conn: sqlite3.Connection, cache_path: Path | str, symbo
         "INSERT OR IGNORE INTO daily_closes (symbol, trade_date, close, recorded_at, source) "
         "VALUES (?,?,?,?,?)",
         [(sym, day, close, now, "stream_summary:prev_day_close") for sym, day, close in recovered],
+    )
+    return conn.total_changes - before
+
+
+def harvest_daily_sessions(
+    conn: sqlite3.Connection, cache_path: Path | str, symbols: list[str], *, today: str
+) -> int:
+    """Copy each FINISHED session's exchange open/high/low/close for ``symbols`` from
+    ``stream_summary`` into ``daily_sessions`` (2026-10-14). The day's range is what flies'
+    `range-high` arm, its trend tag and band placement read, and the cache keeps it with no retention
+    guarantee; the spot trail samples every ~15 s and misses a touch between samples. Only sessions
+    before ``today`` are taken, because the current row's high and low still move. Append-only like
+    ``daily_closes``: a (symbol, date) pair is written once. A row whose high or low is missing is
+    left for the next run, never filled in (the producer has cleared a settled field before; see
+    `harvest_daily_closes`). Returns rows newly written."""
+    cache_path = Path(cache_path)
+    if not cache_path.exists() or not symbols:
+        return 0
+    src = _provider._connect_ro(cache_path)
+    try:
+        placeholders = ",".join("?" for _ in symbols)
+        rows = src.execute(
+            f"SELECT symbol, trade_date, day_open, day_high, day_low, day_close FROM stream_summary "
+            f"WHERE symbol IN ({placeholders}) AND trade_date < ? "
+            f"AND day_high IS NOT NULL AND day_low IS NOT NULL",
+            [*symbols, today],
+        ).fetchall()
+    finally:
+        src.close()
+    if not rows:
+        return 0
+    now = time.time()
+    before = conn.total_changes
+    conn.executemany(
+        "INSERT OR IGNORE INTO daily_sessions "
+        "(symbol, trade_date, day_open, day_high, day_low, day_close, recorded_at, source) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        [
+            (
+                str(r["symbol"]).upper(),
+                r["trade_date"],
+                None if r["day_open"] is None else float(r["day_open"]),
+                float(r["day_high"]),
+                float(r["day_low"]),
+                None if r["day_close"] is None else float(r["day_close"]),
+                now,
+                "stream_summary",
+            )
+            for r in rows
+        ],
     )
     return conn.total_changes - before
 
@@ -420,6 +477,7 @@ def sample(cfg: dict, *, now: datetime | None = None, conn: sqlite3.Connection |
             set(READINGS.values()) | {str(s).strip().upper() for s in (cfg.get("symbols") or [])}
         )
         harvest_daily_closes(conn, cfg["stream_cache_db"], close_symbols)
+        harvest_daily_sessions(conn, cfg["stream_cache_db"], close_symbols, today=today)
         return {
             "status": "sampled",
             "written": len(rows) + chain_rows,
