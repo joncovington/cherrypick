@@ -2203,7 +2203,14 @@ def main() -> None:
         except (AttributeError, OSError):
             pass
 
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args, extra = parser.parse_known_args()
+    # WinSW 2.x runs its stop helper as `<stoparguments> + " " + <arguments>`, so `supervise --stop`
+    # arrives with a second `"run.py" supervise` behind it. Refusing that exited 2 before the stop
+    # file was written, and WinSW then waits on the supervisor with no timeout -- every service stop
+    # hung in StopPending until 2026-10-14. Only the stop request tolerates trailing arguments.
+    if extra and not (args.command == "supervise" and (args.stop or args.restart)):
+        parser.error(f"unrecognized arguments: {' '.join(extra)}")
 
     # `init` scaffolds config.json, so it must run before the config pre-load (a fresh user has none).
     if args.command == "init":

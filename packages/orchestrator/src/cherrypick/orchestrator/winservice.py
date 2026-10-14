@@ -109,7 +109,12 @@ def logon_path(read=None, expand=os.path.expandvars) -> str | None:
 def build_xml(
     s: dict[str, Any], *, python: str, launcher: str, workdir: str, path_env: str, logdir: str
 ) -> str:
-    """The WinSW v2 service definition. Pure, so its every line is tested."""
+    """The WinSW v2 service definition. Pure, so its every line is tested.
+
+    WinSW 2.x appends `<arguments>` to `<stoparguments>` when it runs the stop helper, and then waits
+    on the supervisor with no timeout (`stoptimeout` only bounds its Ctrl+C path). `supervise --stop`
+    therefore tolerates trailing arguments (`cli.main`); a helper that fails leaves the service hung
+    in StopPending, which is what every service stop did until 2026-10-14."""
     e = lambda v: escape(str(v), {'"': "&quot;"})  # noqa: E731
     failures = "\n".join(
         f'  <onfailure action="restart" delay="{int(d)} sec"/>' for d in s["restart_delays_seconds"]
