@@ -32,14 +32,13 @@ confirmation, a current status readout, and a visible way to stop.
      python -c "
    from cherrypick.flies.cli import load_config
    from cherrypick.flies import live_loop, credentials as creds
-   import os
    cfg = load_config()
-   unmet = live_loop.readiness(cfg, halt_present=os.path.exists(live_loop.halt_flag_path()), designated=creds.designated_account())
+   unmet = live_loop.readiness(cfg, designated=creds.designated_account())
    print('unmet gates:', unmet or 'NONE -- readiness passes')
    "
      ```
-     If any gate other than the halt flag is unmet, **stop here** and report — there is nothing
-     to arm if every tick would refuse.
+     If any gate is unmet, **stop here** and report — there is nothing to arm if every tick
+     would refuse. (The halt flag is not a readiness gate; it blocks new entries only.)
    - **Halt flag**: if `--status` shows `halt_flag: true`, surface it PROMINENTLY — the watchdog
      backstop may have set it after a failed self-disarm, which is worth understanding before
      re-arming. Only a fresh YES may clear it (step 4).
