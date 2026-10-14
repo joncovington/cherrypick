@@ -137,8 +137,18 @@ def main(argv: list[str] | None = None) -> int:
     rh.add_argument("--apply", action="store_true", help="delete them, after copying the DB beside itself")
     rh.add_argument("--json", action="store_true", help="emit the report as JSON")
 
+    cov = sub.add_parser("coverage", help="did the recorder keep a whole session of every series (JSON)")
+    cov.add_argument("--session", default=None, help="YYYY-MM-DD (default: today, ET)")
+
     args = parser.parse_args(argv)
     cfg = _config.load()
+    if args.command == "coverage":
+        from cherrypick.core.clock import today_iso
+
+        from cherrypick.gex import coverage as _coverage
+
+        print(json.dumps(_coverage.run(cfg, args.session or today_iso()), indent=2))
+        return 0  # stored history only: like pin-study, nothing registered with the streamer
     if args.command == "pin-study":
         # A read over stored history needs nothing streamed; registering would grow the shared
         # producer's symbol union as a side effect of running a study.

@@ -123,6 +123,13 @@ and pushes alerts through `notify/notifier.py`, with a dedup / re-notify / recov
 (`members`: `jobs.failed`, `jobs.missed`, one id per job and stamp) is re-posted only when a new
 incident joins, never on the `renotify_minutes` clock, and posts one all-clear when the list empties.
 
+**Recording coverage** (2026-10-14, `_check_recording_coverage`). Once per finished session (15
+minutes after the calendar's close), the watchdog runs the gex recorder's `run.py coverage --session
+D` by subprocess and caches the verdict in `state/recording_coverage.json`. Each series with a gap
+is a `members` entry, so a session's gaps notify once. The recorder's heartbeat cannot see this: on
+2026-10-13 the spot trail and quotes stopped at 14:53 while the process and its GEX series ran on,
+and the quote history it lost cannot be fetched again.
+
 **Read side.** `report.py` (`run(session=…)` scopes to one settlement day) and `calibrate.py`, over the
 ledger readers in **`cherrypick.core.ledgers`**. Read-only and file-only. The console is the one page
 that composes it; this package serves nothing of its own. `logrotate.py` (`archive`, the monthly
