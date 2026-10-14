@@ -22,6 +22,9 @@ from datetime import date, timedelta
 from functools import reduce
 from typing import Any
 
+from cherrypick.core import calendar as _calendar
+
+from cherrypick.manage import explain as _explain
 from cherrypick.manage import pricing
 from cherrypick.manage import rules as _rules
 
@@ -66,6 +69,12 @@ def _label(leg: dict[str, Any]) -> str:
     strike = leg["strike"]
     strike_txt = f"{strike:g}"
     return f"{leg['quantity']:+g} {leg['expiration']} {strike_txt}{leg['right']}"
+
+
+def _exit_day(expiry: date, dte: int) -> str:
+    """The time exit: `dte` days before expiry, or the trading day before that when it is a holiday."""
+    day = expiry - timedelta(days=dte)
+    return (day if _calendar.is_trading_day(day) else _calendar.previous_trading_day(day)).isoformat()
 
 
 def _fire(rule: str, action: str, confidence: Any, reason: str, legs: list[str] | None = None) -> dict:
@@ -339,9 +348,7 @@ def evaluate_trade(
             )
         te = cr["time_exit"]
         if trade["nearest_short_dte"] is not None:
-            trade["exit_levels"]["time_exit"] = {
-                "date": (_date(short_expiries[0]) - timedelta(days=int(te["dte"]))).isoformat()
-            }
+            trade["exit_levels"]["time_exit"] = {"date": _exit_day(_date(short_expiries[0]), int(te["dte"]))}
             if not off("credit.time_exit") and 0 <= trade["nearest_short_dte"] <= int(te["dte"]):
                 winner = pnl > 0
                 fired.append(
@@ -434,7 +441,7 @@ def evaluate_trade(
             when = (_date(expiries[0]) - session).days if expiries else None
             anchor = _date(expiries[0]) if expiries else None
         if anchor:
-            trade["exit_levels"]["time_exit"] = {"date": (anchor - timedelta(days=limit)).isoformat()}
+            trade["exit_levels"]["time_exit"] = {"date": _exit_day(anchor, limit)}
         if not off("debit.time_exit") and when is not None and 0 <= when <= limit:
             winner = pnl > 0
             fired.append(
@@ -562,8 +569,27 @@ def _price_levels(trade: dict[str, Any], legs: list[dict[str, Any]]) -> None:
             level["net_side"] = "cr" if value >= 0 else "db"
 
 
+def _opening(trade: dict[str, Any], legs: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """What the trade was opened for, as signed cash flow (a credit received is +) and a net price."""
+    cost = trade.get("cost")
+    if cost is None:
+        return None
+    out: dict[str, Any] = {"net": -cost, "net_price": None, "net_side": "cr" if cost < 0 else "db"}
+    if legs and all(leg["right"] for leg in legs):
+        unit = reduce(math.gcd, [int(abs(leg["quantity"])) or 1 for leg in legs])
+        out["net_price"] = abs(cost) / pricing.MULTIPLIER / unit
+    return out
+
+
 def _decide(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str, Any]]) -> dict[str, Any]:
     _price_levels(trade, legs)
+    _recommend(trade, rules, legs)
+    trade["opening"] = _opening(trade, legs)
+    trade["explanation"] = _explain.explain(trade)
+    return trade
+
+
+def _recommend(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str, Any]]) -> dict[str, Any]:
     fired = trade["fired"]
     if not fired:
         hold = rules["hold"]

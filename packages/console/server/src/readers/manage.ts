@@ -85,6 +85,12 @@ function order(v: unknown): ManageOrder | null {
   };
 }
 
+function opening(v: unknown): ManageTrade["opening"] {
+  const o = rec(v);
+  if (Object.keys(o).length === 0) return null;
+  return { net: num(o["net"]), netPrice: num(o["net_price"]), netSide: side(o["net_side"]) };
+}
+
 function leg(v: unknown): ManageLeg {
   const l = rec(v);
   return {
@@ -136,10 +142,12 @@ function trade(v: unknown): ManageTrade {
     confidence: num(r["confidence"]),
     rule: str(r["rule"]),
     reason: str(r["reason"]) ?? "",
+    explanation: str(t["explanation"]),
     agreeing: strs(r["agreeing"]),
     conflicts: strs(r["conflicts"]),
     fired: arr(t["fired"]).map(fired),
     legs: arr(t["legs"]).map(leg),
+    opening: opening(t["opening"]),
     order: order(t["order"]),
     takeProfit: level(levels["take_profit"]),
     stop: level(levels["stop"]),

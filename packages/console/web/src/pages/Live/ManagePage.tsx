@@ -64,6 +64,12 @@ function levelText(l: ManageLevel | null): string {
 function TradeDetail({ t }: { t: ManageTrade }) {
   return (
     <div className="manage-detail" style={{ display: "grid", gap: "0.75rem", padding: "0.5rem 0" }}>
+      {t.opening && (
+        <div>
+          <strong>opened for</strong> · net {net(t.opening.netPrice, t.opening.netSide)} ({fmtMoney(t.opening.net)}
+          {t.opening.netSide === "cr" ? " received" : " paid"})
+        </div>
+      )}
       {t.order && (
         <div>
           <strong>closing order</strong> · net {net(t.order.netPrice, t.order.netSide)} ({fmtMoney(t.order.net)}) at mid
@@ -226,6 +232,13 @@ function TradesCard({
               </>
             )}
           </tr>
+          {t.explanation && (
+            <tr className="manage-explanation">
+              <td colSpan={8 + tail.length} style={{ whiteSpace: "normal", paddingTop: 0, paddingLeft: "2rem" }}>
+                <span className="muted">{t.explanation}</span>
+              </td>
+            </tr>
+          )}
           {open === t.tradeId && (
             <tr>
               <td colSpan={8 + tail.length}>
