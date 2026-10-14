@@ -363,7 +363,7 @@ Common keys apply to every strategy; `management.<strategy>` overrides them for 
 
 ### `expected_move_butterfly`
 
-Paper only, from 2026-10-19. The skew cuts (`rr25_put_rich_max` -0.116, `rr25_call_rich_min`
+Paper only, from 2026-10-14. The skew cuts (`rr25_put_rich_max` -0.116, `rr25_call_rich_min`
 -0.055), strike multiples (`body_em_multiple` 1.0, `wing_em_multiple` 0.85) and exit
 (`take_profit_width_frac` 0.5) are described in [05-strategies.md](./05-strategies.md#7-expected-move-butterfly).
 Its soft criteria match the other strategies' on purpose: the symbol-watch prefilter takes the

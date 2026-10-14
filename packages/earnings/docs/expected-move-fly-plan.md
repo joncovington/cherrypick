@@ -5,7 +5,7 @@ below, opened before an earnings print. Status: **history study run 2026-10-13 (
 build.** The fly is fairly priced at mid, costs take about a sixth of the debit, and no direction
 signal comes close to the hit rate the costs demand. **Built anyway, paper only (2026-10-13), to
 measure real fills against the study's cost model**: `strategies/expected_move_butterfly.py`, opening in
-`strat_test` from 2026-10-19 (step 2 below, as built).
+`strat_test` from 2026-10-14 (step 2 below, as built).
 
 ## The trade
 

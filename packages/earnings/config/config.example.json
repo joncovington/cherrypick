@@ -334,7 +334,7 @@
       "near_miss_min_combined_option_volume": 200
     },
     "expected_move_butterfly": {
-      "_note": "1-2-1 debit fly with its body one expected move from spot: a call fly above on a bullish read, a put fly below on a bearish one. Paper only, opening from 2026-10-19 (strat_test_harness.STRAT_TEST_STARTS). The history study (docs/expected-move-fly-plan.md) found it fairly priced at mid with costs of 16-18% of the debit and no signal near the 68-83% hit rate it needs -- this book measures real fills against that.",
+      "_note": "1-2-1 debit fly with its body one expected move from spot: a call fly above on a bullish read, a put fly below on a bearish one. Paper only, opening from 2026-10-14 (strat_test_harness.STRAT_TEST_STARTS). The history study (docs/expected-move-fly-plan.md) found it fairly priced at mid with costs of 16-18% of the debit and no signal near the 68-83% hit rate it needs -- this book measures real fills against that.",
       "_side_note": "rr25 = (25-delta call IV - 25-delta put IV) / ATM IV. Below rr25_put_rich_max buys the CALL fly, above rr25_call_rich_min buys the PUT fly, between them nothing opens (direction_signal_neutral). The cuts are the 2020-2023 terciles from scripts/emfly_history.py on Dolt's end-of-day IV; the read is contrarian to the published smirk studies and held in 6 of 7 years at 53%.",
       "rr25_put_rich_max": -0.116,
       "rr25_call_rich_min": -0.055,

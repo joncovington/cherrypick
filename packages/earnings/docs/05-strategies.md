@@ -210,7 +210,7 @@ Total entry debit: $0.60 (both calendars)
 
 ## 7. Expected-Move Butterfly
 
-**Paper only, opening from 2026-10-19** (`strat_test_harness.STRAT_TEST_STARTS`). A 1-2-1 debit fly
+**Paper only, opening from 2026-10-14** (`strat_test_harness.STRAT_TEST_STARTS`). A 1-2-1 debit fly
 with its body one expected move from spot: a **call** fly above on a bullish read, a **put** fly
 below on a bearish one.
 

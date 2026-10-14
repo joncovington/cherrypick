@@ -216,7 +216,7 @@ def _drive(monkeypatch, today):
 
 
 def test_before_its_start_it_opens_nothing(monkeypatch):
-    _drive(monkeypatch, dt.date(2026, 10, 16))
+    _drive(monkeypatch, dt.date(2026, 10, 13))
     monkeypatch.setitem(
         harness._ORDER_FNS,
         "expected_move_butterfly",
@@ -229,7 +229,7 @@ def test_before_its_start_it_opens_nothing(monkeypatch):
 
 def test_from_its_start_the_order_build_is_reached(monkeypatch):
     """The guard, shown to stop firing on its date."""
-    _drive(monkeypatch, dt.date(2026, 10, 19))
+    _drive(monkeypatch, dt.date(2026, 10, 14))
     reached = []
     monkeypatch.setitem(
         harness._ORDER_FNS,

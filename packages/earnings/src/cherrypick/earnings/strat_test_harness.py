@@ -316,10 +316,11 @@ def strategy_retired(strategy_name: str, session: str) -> bool:
 
 
 # Strategies added to strat_test, each with the first session it may open anything -- the same
-# dated-in-code shape as STRAT_TEST_RETIRED, so the code can merge ahead of the declared boundary
-# and bind on it. Before that session the screen row is still written and the opening is refused as
-# an execution-stage `strategy_not_started` drop.
-STRAT_TEST_STARTS = {"expected_move_butterfly": "2026-10-19"}
+# dated-in-code shape as STRAT_TEST_RETIRED. Before that session the screen row is still written and
+# the opening is refused as an execution-stage `strategy_not_started` drop. expected_move_butterfly
+# starts 2026-10-14, ahead of the 10-19 boundary at the operator's request, under its own
+# `strat_test_strategies` break (docs/operating-history.md).
+STRAT_TEST_STARTS = {"expected_move_butterfly": "2026-10-14"}
 
 
 def strategy_not_started(strategy_name: str, session: str) -> bool:
