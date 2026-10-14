@@ -80,13 +80,28 @@ def arm_record_path(module: str) -> Path:
 
 
 def write_arm_record(
-    module: str, *, date: str, armed_by: str, at: str, confirmation: str = "literal-YES"
+    module: str,
+    *,
+    date: str,
+    armed_by: str,
+    at: str,
+    confirmation: str = "literal-YES",
+    companions: dict[str, dict] | None = None,
 ) -> Path:
     """Write the record. ``date`` is the session (ET) it arms; ``armed_by`` names the command that
-    asked for the confirmation, so the record says who authorised it, not just when."""
+    asked for the confirmation, so the record says who authorised it, not just when.
+
+    ``companions`` are helper processes the module wants kept up while it is armed, by name:
+    ``{"argv": ["-m", "cherrypick.<module>.<mod>", ...], "heartbeat": <path>, "until": "HH:MM"}``.
+    The supervisor derives one ``<module>-<name>`` resident job from each, so a reboot or a crash
+    restarts it instead of losing it for the day (2026-10-14: a Windows Update restart at 03:30 ET
+    took the flies alert daemon down until someone noticed). A companion never decides or places
+    anything -- the alert daemon's shape, a hint whose death costs latency and nothing else."""
     path = arm_record_path(module)
     path.parent.mkdir(parents=True, exist_ok=True)
     record = {"date": date, "at": at, "armed_by": armed_by, "confirmation": confirmation}
+    if companions:
+        record["companions"] = companions
     with open(path, "w", encoding="utf-8") as f:
         json.dump(record, f)
     return path
@@ -142,6 +157,7 @@ def arm(
     armed_by: str,
     spawn_first_tick: Callable[[], None] | None = None,
     heartbeat_fresh: Callable[[], bool] | None = None,
+    companions: dict[str, dict] | None = None,
 ) -> dict:
     """Arm ``module`` for ``date`` under a live supervisor: write the record, fire one immediate
     tick so arming does not wait a full interval, and say so. Refuses (``ok: False``) when no
@@ -153,7 +169,7 @@ def arm(
             "ok": False,
             "error": "no supervisor running -- the arm record only arms when the supervisor derives the job",
         }
-    path = write_arm_record(module, date=date, at=at, armed_by=armed_by)
+    path = write_arm_record(module, date=date, at=at, armed_by=armed_by, companions=companions)
     if spawn_first_tick is not None:
         try:
             spawn_first_tick()
@@ -166,6 +182,8 @@ def arm(
         "armed_for": date,
         "detail": f"arm record written: {path}",
     }
+    if companions:
+        out["companions"] = sorted(f"{module}-{name}" for name in companions)
     warning = quarter_end_warning(date)
     if warning is not None:
         out["warning"] = warning

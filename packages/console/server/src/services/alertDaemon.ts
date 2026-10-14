@@ -1,7 +1,7 @@
 /**
  * The flies order-alert daemon's health, off the files it writes itself: its pid file and its
  * status JSON (`data/flies/live_alert_daemon.{pid,status.json}`). Read-only; the console never
- * starts or stops it -- `/live-flies-start` does.
+ * starts or stops it -- the supervisor does, as a companion job of the flies arm record.
  *
  * The same two checks `cherrypick.flies.alert_daemon --status` makes: is the pid-file process alive,
  * and is its heartbeat fresh. The daemon rewrites `heartbeat_at` after every listen slice

@@ -55,6 +55,31 @@ def test_arm_under_supervisor_writes_record_and_never_touches_schtasks(
     assert spawned and spawned[0][-2:] == ["--once", "--live"]
 
 
+def test_arming_with_the_alert_daemon_names_it_a_companion(
+    fresh_supervisor_heartbeat, no_schtasks, monkeypatch
+):
+    """The supervisor starts and restarts the daemon off the record, so a reboot mid-day brings it
+    back (2026-10-14). Its command must be one the orchestrator's companion guard accepts."""
+    monkeypatch.setattr(ll.subprocess, "Popen", lambda argv, **kw: None)
+    out = ll.install_task({"live": {"use_order_alert_daemon": True, "disarm_time": "16:45"}})
+    assert out["ok"] and out["companions"] == ["flies-alert-daemon"]
+    rec = json.loads(open(ll.arm_stamp_path(), encoding="utf-8").read())
+    comp = rec["companions"]["alert-daemon"]
+    assert comp["argv"][:2] == ["-m", "cherrypick.flies.alert_daemon"]
+    assert comp["until"] == "16:45"
+    assert comp["heartbeat"].endswith("live_alert_daemon.status.json")
+
+
+@pytest.mark.parametrize("config", [None, {}, {"live": {"use_order_alert_daemon": False}}])
+def test_arming_without_the_alert_daemon_names_no_companion(
+    fresh_supervisor_heartbeat, no_schtasks, monkeypatch, config
+):
+    monkeypatch.setattr(ll.subprocess, "Popen", lambda argv, **kw: None)
+    out = ll.install_task(config)
+    assert out["ok"] and "companions" not in out
+    assert "companions" not in json.loads(open(ll.arm_stamp_path(), encoding="utf-8").read())
+
+
 @pytest.mark.parametrize("day,warned", [("2026-12-31", True), ("2026-12-30", False)])
 def test_arming_on_a_quarter_end_session_arms_and_says_no_entries_today(
     fresh_supervisor_heartbeat, no_schtasks, monkeypatch, day, warned

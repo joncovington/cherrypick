@@ -2010,12 +2010,33 @@ def _spawn_first_tick() -> None:
         pass  # the next scheduled tick covers it
 
 
-def install_task() -> dict:
+def alert_daemon_companion(config: dict | None) -> dict | None:
+    """The order-alert daemon as an arm-record companion, or None when `live.use_order_alert_daemon`
+    is off. The supervisor keeps it up while armed and until `disarm_time`, restarting it on death and
+    on a heartbeat silent for `silence_seconds` (four of its 30 s listen slices)."""
+    live_cfg = _live_cfg(config or {})
+    if not live_cfg.get("use_order_alert_daemon"):
+        return None
+    from cherrypick.flies import alert_daemon
+
+    return {
+        "argv": ["-m", "cherrypick.flies.alert_daemon"],
+        "heartbeat": alert_daemon.status_path(),
+        "silence_seconds": 120,
+        "until": live_cfg.get("disarm_time") or DEFAULT_DISARM,
+    }
+
+
+def install_task(config: dict | None = None) -> dict:
     """Arm the live loop FOR TODAY: the arm record, under a live supervisor, and nothing else
     (`cherrypick.core.live.arm`; the supervisor derives the `flies-live` job from it within one pass
     and one tick fires at once). No supervisor, no arming -- the Windows-only scheduled-task fallback
     was removed on 2026-10-08, after every box had run under the supervisor for two months; it was a
-    second, less-watched way to drive a live loop."""
+    second, less-watched way to drive a live loop.
+
+    With the alert daemon on, the record names it as a companion and the supervisor starts it too
+    (2026-10-14: started by hand, it did not survive a Windows Update restart)."""
+    daemon = alert_daemon_companion(config)
     out = _live.arm(
         "flies",
         date=provider.now_et().date().isoformat(),
@@ -2023,6 +2044,7 @@ def install_task() -> dict:
         armed_by="live-flies-start",
         spawn_first_tick=_spawn_first_tick,
         heartbeat_fresh=_supervisor_heartbeat_fresh,
+        companions={"alert-daemon": daemon} if daemon else None,
     )
     if out.get("ok"):
         out["cadence"] = "every 60s (supervisor job flies-live)"
@@ -2343,7 +2365,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.install_task:
-        print(json.dumps(install_task(), indent=2))
+        print(json.dumps(install_task(load_config(args.config)), indent=2))
         return 0
     if args.uninstall_task:
         print(json.dumps(uninstall_task(), indent=2))

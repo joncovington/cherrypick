@@ -397,6 +397,59 @@ def test_derive_flies_live_enabled_with_todays_arm_record():
     assert live.argv == ("pythonw", "-m", "cherrypick.flies.live_loop", "--once", "--live")
 
 
+_DAEMON = {
+    "argv": ["-m", "cherrypick.flies.alert_daemon"],
+    "heartbeat": "/x/live_alert_daemon.status.json",
+    "silence_seconds": 120,
+    "until": "17:00",
+}
+
+
+def test_derive_companion_resident_while_armed():
+    """A companion the arm record names is a resident job, up from midnight to its `until` and
+    restarted on a silent heartbeat -- what brings the alert daemon back after a reboot."""
+    rec = {"flies": {"date": "2026-08-10", "companions": {"alert-daemon": _DAEMON}}}
+    jobs, errors = derive(suite_cfg(), now=et(2026, 8, 10, 10, 0), arm_records=rec)
+    assert errors == {}
+    d = next(j for j in jobs if j.id == "flies-alert-daemon")
+    assert d.enabled and d.kind == jobspec.KIND_RESIDENT
+    assert d.argv == ("pythonw", "-m", "cherrypick.flies.alert_daemon")
+    assert (d.window_start, d.window_end) == ("00:00", "17:00")
+    assert d.silence_file == _DAEMON["heartbeat"] and d.silence_seconds == 120
+    assert jobspec.resident_should_run(d, et(2026, 8, 10, 3, 30))[0]
+    assert not jobspec.resident_should_run(d, et(2026, 8, 10, 17, 1))[0]
+
+
+def test_derive_companion_follows_the_arm():
+    stale = {"flies": {"date": "2026-08-09", "companions": {"alert-daemon": _DAEMON}}}
+    jobs, _ = derive(suite_cfg(), now=et(2026, 8, 10, 10, 0), arm_records=stale)
+    d = next(j for j in jobs if j.id == "flies-alert-daemon")
+    assert not d.enabled and "not today" in d.enabled_reason
+    jobs, _ = derive(suite_cfg(), now=et(2026, 8, 10, 10, 0), arm_records={"flies": {"date": "2026-08-10"}})
+    assert not any(j.id == "flies-alert-daemon" for j in jobs)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["-m", "cherrypick.bwb.live_loop", "--once", "--live"],  # another module's package
+        ["-m", "cherrypick.flies"],  # the package itself, not a module in it
+        ["-c", "import os"],
+        ["C:/evil.exe"],
+        "-m cherrypick.flies.alert_daemon",
+        None,
+    ],
+)
+def test_derive_companion_refuses_a_command_outside_its_module(argv):
+    """The record is a state file; its command must stay inside the module's own package. A refused
+    companion is a derivation error for that one job -- it never runs, and nothing else is lost."""
+    rec = {"flies": {"date": "2026-08-10", "companions": {"alert-daemon": {**_DAEMON, "argv": argv}}}}
+    jobs, errors = derive(suite_cfg(), now=et(2026, 8, 10, 10, 0), arm_records=rec)
+    assert "flies-alert-daemon" in errors
+    assert not any(j.id == "flies-alert-daemon" for j in jobs)
+    assert next(j for j in jobs if j.id == "flies-live").enabled
+
+
 def test_derive_disabled_optins_included_disabled():
     """Off-by-choice jobs stay visible (doctor's healthy-disabled distinction), never omitted."""
     jobs, _ = derive(suite_cfg())
