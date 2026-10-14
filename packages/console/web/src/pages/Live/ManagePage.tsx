@@ -36,6 +36,7 @@ const ACTION_LABEL: Record<string, string> = {
   CLOSE: "close",
   TAKE_PROFIT: "take profit",
   ROLL_OR_CLOSE: "roll or close",
+  ROLL_FOR_CREDIT: "roll for credit",
   CLOSE_LEGS: "close legs",
   REVIEW: "review",
   SETTLES: "settles",
@@ -93,6 +94,17 @@ function TradeDetail({ t }: { t: ManageTrade }) {
             )}
           </div>
         )
+      )}
+      {t.roll && (
+        <div>
+          <strong>proposed roll</strong> · about {t.roll.credit === null ? "—" : `${t.roll.credit.toFixed(2)} cr`} (
+          {fmtMoney(t.roll.net)}) <span className="muted">modelled from today's IV; send only for a net credit</span>
+          <ul style={{ margin: "0.25rem 0 0 1rem" }}>
+            {t.roll.legs.map((l, i) => (
+              <li key={i}>{l}</li>
+            ))}
+          </ul>
+        </div>
       )}
       {t.order && (
         <div>

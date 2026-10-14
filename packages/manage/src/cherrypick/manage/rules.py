@@ -79,6 +79,15 @@ DEFAULT_RULES: dict[str, Any] = {
         # A short leg that has given up this share of its premium is bought back, whatever the trade does.
         "short_take_profit": {"enabled": True, "capture": 0.80, "confidence": 85},
     },
+    "roll": {
+        # A roll is only ever for a net credit; one that would cost a debit is a close instead.
+        "credit_only": True,
+        # A naked short put that a rule says to close may instead roll out in time at the same strike,
+        # to the first monthly at least `out_days` past its expiry, when that is modelled to take in at
+        # least `min_credit` per share. The credit is MODELLED (the put's own IV, flat term structure):
+        # confirm it on the live quote before sending.
+        "naked_put": {"enabled": True, "out_days": 28, "min_credit": 0.10, "confidence": 60},
+    },
     "expiry": {
         "enabled": True,
         # Physically-settled legs are closed at or inside this many calendar days to expiry.
@@ -121,6 +130,7 @@ RULE_IDS = (
     "debit.take_profit",
     "debit.time_exit",
     "legs.short_take_profit",
+    "roll.naked_put",
     "ex_dividend",
     "risk.oversize",
 )

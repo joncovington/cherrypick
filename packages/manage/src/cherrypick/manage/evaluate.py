@@ -34,14 +34,31 @@ EVAL_VERSION = 1
 CLOSE = "CLOSE"
 TAKE_PROFIT = "TAKE_PROFIT"
 ROLL_OR_CLOSE = "ROLL_OR_CLOSE"
+ROLL_FOR_CREDIT = "ROLL_FOR_CREDIT"
 CLOSE_LEGS = "CLOSE_LEGS"
 REVIEW = "REVIEW"
 SETTLES = "SETTLES"
 HOLD = "HOLD"
 
-PRIORITY = {CLOSE: 1, TAKE_PROFIT: 2, ROLL_OR_CLOSE: 3, CLOSE_LEGS: 4, REVIEW: 5, SETTLES: 6, HOLD: 7}
+# A credit roll only fires when a rule already says to close, and is offered in that close's place.
+PRIORITY = {
+    ROLL_FOR_CREDIT: 0,
+    CLOSE: 1,
+    TAKE_PROFIT: 2,
+    ROLL_OR_CLOSE: 3,
+    CLOSE_LEGS: 4,
+    REVIEW: 5,
+    SETTLES: 6,
+    HOLD: 7,
+}
 # Which way an action points. Two fired rules pointing different ways are a conflict.
-DIRECTION = {CLOSE: "reduce", TAKE_PROFIT: "reduce", CLOSE_LEGS: "reduce", ROLL_OR_CLOSE: "roll"}
+DIRECTION = {
+    CLOSE: "reduce",
+    TAKE_PROFIT: "reduce",
+    CLOSE_LEGS: "reduce",
+    ROLL_OR_CLOSE: "roll",
+    ROLL_FOR_CREDIT: "roll",
+}
 
 
 # --------------------------------------------------------------------------- small helpers
@@ -194,6 +211,7 @@ def evaluate_trade(
         "fees": None,
         "basis": None,
         "chain": _chain_view(chain) if chain else None,
+        "roll": None,
         "capture": None,
         "nearest_expiry": None,
         "nearest_short_expiry": None,
@@ -374,7 +392,7 @@ def evaluate_trade(
                         te["confidence"],
                         f"nearest short is {trade['nearest_short_dte']} DTE (exit at {te['dte']}); "
                         + (
-                            "profitable, so it may roll out to ~45 DTE"
+                            "profitable, so it may roll out to ~45 DTE, for a net credit only"
                             if winner
                             else "losing, so close; never roll a loser"
                         ),
@@ -467,7 +485,7 @@ def evaluate_trade(
                     te["confidence"],
                     f"{'nearest short' if shorts else 'nearest leg'} is {when} DTE (exit at {limit}); "
                     + (
-                        "profitable, so the shorts may roll out"
+                        "profitable, so the shorts may roll out, for a net credit only"
                         if winner
                         else "losing, so close; never roll a loser"
                     ),
@@ -569,8 +587,77 @@ def evaluate_trade(
                 )
             )
 
+    # ---- a naked short put told to close may roll out in time instead, for a credit only
+    rp = rules["roll"]["naked_put"]
+    exiting = any(f["action"] in (CLOSE, ROLL_OR_CLOSE) for f in fired)
+    if exiting and spot and not off("roll.naked_put"):
+        roll = _naked_put_roll(options, session, spot, rate, rp)
+        if roll and roll["credit"] >= float(rp["min_credit"]):
+            trade["roll"] = roll
+            fired.append(
+                _fire(
+                    "roll.naked_put",
+                    ROLL_FOR_CREDIT,
+                    rp["confidence"],
+                    f"roll the short {roll['strike']:g} put out to {roll['expiration']} for about "
+                    f"{roll['credit']:.2f} cr (modelled) instead of closing it; "
+                    "close if it will not fill for a credit",
+                )
+            )
+
     trade["fired"] = fired
     return _decide(trade, rules, legs)
+
+
+def _monthly_on_or_after(day: date) -> date:
+    """The first standard monthly expiry (third Friday, or the trading day before it) on or after `day`."""
+    y, m = day.year, day.month
+    while True:
+        d = date(y, m, 15)
+        while d.weekday() != 4:
+            d += timedelta(days=1)
+        if not _calendar.is_trading_day(d):
+            d = _calendar.previous_trading_day(d)
+        if d >= day:
+            return d
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+
+
+def _naked_put_roll(
+    options: list[dict[str, Any]], session: date, spot: float, rate: float, cfg: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Same strike, out to the next monthly at least `out_days` past today's expiry: the modelled credit.
+
+    Only for a trade that is nothing but short puts at one strike and expiry -- a naked short put. The new
+    put is priced at the current put's own IV (a flat term structure), so the credit is an estimate.
+    """
+    if not options or any(leg["right"] != "P" or leg["quantity"] >= 0 for leg in options):
+        return None
+    if len({(leg["strike"], leg["expiration"]) for leg in options}) != 1:
+        return None
+    leg = options[0]
+    if leg["iv"] is None or leg["mid"] is None or leg["dte"] is None or leg["dte"] < 0:
+        return None
+    current = _date(leg["expiration"])
+    new_exp = _monthly_on_or_after(current + timedelta(days=int(cfg["out_days"])))
+    years = (new_exp - session).days / 365.0
+    new_mid = pricing.price(spot, leg["strike"], years, leg["iv"], "P", rate)
+    qty = abs(sum(x["quantity"] for x in options))
+    credit = new_mid - leg["mid"]
+    return {
+        "strike": leg["strike"],
+        "expiration": new_exp.isoformat(),
+        "dte": (new_exp - session).days,
+        "close_mid": leg["mid"],
+        "open_mid": new_mid,
+        "credit": credit,
+        "net": credit * pricing.MULTIPLIER * qty,
+        "modelled": True,
+        "legs": [
+            f"BTC {qty:g} {leg['expiration']} {leg['strike']:g}P @ {leg['mid']:.2f}",
+            f"STO {qty:g} {new_exp.isoformat()} {leg['strike']:g}P @ ~{new_mid:.2f} (modelled)",
+        ],
+    }
 
 
 def _price_levels(trade: dict[str, Any], legs: list[dict[str, Any]]) -> None:
@@ -637,6 +724,11 @@ def _recommend(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str
         for f in fired
         if direction and DIRECTION.get(f["action"]) and DIRECTION[f["action"]] != direction
     ]
+    # A credit roll is offered BECAUSE a close fired: those rules are its trigger, not its opposition.
+    replaces: list[str] = []
+    if chosen["action"] == ROLL_FOR_CREDIT:
+        replaces = [f["rule"] for f in fired if f["action"] in (CLOSE, ROLL_OR_CLOSE)]
+        conflicts = [r for r in conflicts if r not in replaces]
     confidence = chosen["confidence"]
     if confidence is not None and conflicts:
         confidence = max(0, confidence - int(rules["conflict_penalty"]) * len(conflicts))
@@ -647,8 +739,9 @@ def _recommend(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str
         "reason": chosen["reason"],
         "agreeing": [f["rule"] for f in fired if f is not chosen and f["action"] == chosen["action"]],
         "conflicts": conflicts,
+        "replaces": replaces,
     }
-    if chosen["action"] in (CLOSE, TAKE_PROFIT, ROLL_OR_CLOSE):
+    if chosen["action"] in (CLOSE, TAKE_PROFIT, ROLL_OR_CLOSE, ROLL_FOR_CREDIT):
         trade["order"] = _order(legs)
     elif chosen["action"] == CLOSE_LEGS:
         named = set(chosen["legs"] or [])

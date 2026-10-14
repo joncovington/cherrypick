@@ -4,7 +4,15 @@
  * them. Money is whole-position dollars, signed cash flow, and every P&L is a mark P&L GROSS of fees.
  */
 
-export type ManageAction = "CLOSE" | "TAKE_PROFIT" | "ROLL_OR_CLOSE" | "CLOSE_LEGS" | "REVIEW" | "SETTLES" | "HOLD";
+export type ManageAction =
+  | "ROLL_FOR_CREDIT"
+  | "CLOSE"
+  | "TAKE_PROFIT"
+  | "ROLL_OR_CLOSE"
+  | "CLOSE_LEGS"
+  | "REVIEW"
+  | "SETTLES"
+  | "HOLD";
 
 export interface ManageFired {
   rule: string;
@@ -83,6 +91,10 @@ export interface ManageTrade {
   explanation: string | null;
   agreeing: string[];
   conflicts: string[];
+  /** For a credit roll: the close rules it is offered in place of. */
+  replaces: string[];
+  /** A proposed credit roll (naked short puts). The credit is MODELLED; confirm it on the live quote. */
+  roll: { expiration: string; strike: number; credit: number | null; net: number | null; legs: string[] } | null;
   fired: ManageFired[];
   legs: ManageLeg[];
   /** What the trade was opened for: signed cash flow (a credit received is +) and the net price. */

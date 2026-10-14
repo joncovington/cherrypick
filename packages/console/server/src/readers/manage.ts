@@ -39,7 +39,16 @@ function strs(v: unknown): string[] {
   return arr(v).filter((x): x is string => typeof x === "string");
 }
 
-const ACTIONS: readonly ManageAction[] = ["CLOSE", "TAKE_PROFIT", "ROLL_OR_CLOSE", "CLOSE_LEGS", "REVIEW", "SETTLES", "HOLD"];
+const ACTIONS: readonly ManageAction[] = [
+  "ROLL_FOR_CREDIT",
+  "CLOSE",
+  "TAKE_PROFIT",
+  "ROLL_OR_CLOSE",
+  "CLOSE_LEGS",
+  "REVIEW",
+  "SETTLES",
+  "HOLD",
+];
 
 function action(v: unknown): ManageAction {
   return ACTIONS.includes(v as ManageAction) ? (v as ManageAction) : "REVIEW";
@@ -110,6 +119,18 @@ function chain(v: unknown): ManageTrade["chain"] {
   return { orders, cash: num(c["cash"]), fees: num(c["fees"]), rolls: num(c["rolls"]) ?? 0 };
 }
 
+function roll(v: unknown): ManageTrade["roll"] {
+  const r = rec(v);
+  if (Object.keys(r).length === 0) return null;
+  return {
+    expiration: str(r["expiration"]) ?? "?",
+    strike: num(r["strike"]) ?? 0,
+    credit: num(r["credit"]),
+    net: num(r["net"]),
+    legs: strs(r["legs"]),
+  };
+}
+
 function leg(v: unknown): ManageLeg {
   const l = rec(v);
   return {
@@ -168,6 +189,8 @@ function trade(v: unknown): ManageTrade {
     explanation: str(t["explanation"]),
     agreeing: strs(r["agreeing"]),
     conflicts: strs(r["conflicts"]),
+    replaces: strs(r["replaces"]),
+    roll: roll(t["roll"]),
     fired: arr(t["fired"]).map(fired),
     legs: arr(t["legs"]).map(leg),
     opening: opening(t["opening"]),
