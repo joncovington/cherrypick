@@ -202,6 +202,7 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
 |---|---|---|
 | `python -m cherrypick.meic.tt get_connection_status` | Verify OAuth session and account access | No |
 | `python -m cherrypick.meic.tt get_market_overview --symbols XSP` | IV rank, underlying price, market summary | No |
+| `python -m cherrypick.meic.tt get_transactions --underlyings GLD --since 2026-01-01` | Trade history per underlying, GET only -- the order chains the daily position evaluation (packages/manage) judges | No |
 | `python -m cherrypick.meic.tt get_quote --symbol XSP` | Last trade price (stream cache → DXLink fallback) | No |
 | `python -m cherrypick.meic.tt get_vix1d` | Live VIX1D via direct DXLink fetch — feeds the `vix1d_ratio` trigger (Step 4) | No |
 | `python -m cherrypick.meic.tt get_calendar [--year N]` | Shared market calendar from `cherrypick.core.calendar`: `nyse_holidays`, `fomc_dates` (+ `fomc_year_known`), `quarterly_expiry_dates`, `triple_witching_dates`. No broker. | No |

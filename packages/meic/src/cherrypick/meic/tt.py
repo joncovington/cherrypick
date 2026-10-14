@@ -537,6 +537,49 @@ async def cmd_get_positions(args) -> dict:
         return _error(exc)
 
 
+TRANSACTION_FIELDS = (
+    "id",
+    "order_id",
+    "executed_at",
+    "transaction_type",
+    "transaction_sub_type",
+    "action",
+    "symbol",
+    "underlying_symbol",
+    "instrument_type",
+    "quantity",
+    "price",
+    "value",
+    "net_value",
+    "commission",
+    "clearing_fees",
+    "regulatory_fees",
+    "proprietary_index_option_fees",
+)
+
+
+async def cmd_get_transactions(args) -> dict:
+    """Trade history per underlying since a date -- GET only (`core.broker.transaction_history`).
+
+    The read the position evaluation needs to see an order chain: the orders that opened, rolled and
+    adjusted a position, which the positions endpoint flattens into one average open price per leg.
+    Rows carry only the fields that read uses; no account number is returned.
+    """
+    try:
+        account = await _get_account(getattr(args, "account_number", None))
+        session = get_session()
+        since = date.fromisoformat(args.since)
+        out: dict[str, list] = {}
+        for sym in args.underlyings:
+            rows = await _broker.transaction_history(
+                account, session, start_date=since, end_date=date.today(), underlying_symbol=sym.upper()
+            )
+            out[sym.upper()] = [{k: r.get(k) for k in TRANSACTION_FIELDS} for r in rows]
+        return {"ok": True, "since": args.since, "transactions": out}
+    except Exception as exc:
+        return _error(exc)
+
+
 async def cmd_list_accounts(_args) -> dict:
     return await _broker_cli.account_list(lambda: get_session())
 
@@ -1657,6 +1700,11 @@ def main():
     p_pos = sub.add_parser("get_positions")
     p_pos.add_argument("--account_number", default=None)
 
+    p_tx = sub.add_parser("get_transactions")
+    p_tx.add_argument("--underlyings", nargs="+", required=True)
+    p_tx.add_argument("--since", required=True, help="YYYY-MM-DD")
+    p_tx.add_argument("--account_number", default=None)
+
     p_mo = sub.add_parser("get_market_overview")
     p_mo.add_argument("--symbols", nargs="+", required=True)
     p_mo.add_argument("--quotes_timeout", type=float, default=4.0)
@@ -1797,6 +1845,7 @@ def main():
         "list_accounts": cmd_list_accounts,
         "get_account_info": cmd_get_account_info,
         "get_positions": cmd_get_positions,
+        "get_transactions": cmd_get_transactions,
         "get_quotes": cmd_get_quotes,
         "get_market_overview": cmd_get_market_overview,
         "get_quote": cmd_get_quote,

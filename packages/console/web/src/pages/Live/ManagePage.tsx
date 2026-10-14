@@ -64,11 +64,34 @@ function levelText(l: ManageLevel | null): string {
 function TradeDetail({ t }: { t: ManageTrade }) {
   return (
     <div className="manage-detail" style={{ display: "grid", gap: "0.75rem", padding: "0.5rem 0" }}>
-      {t.opening && (
+      {t.chain && t.chain.orders.length > 0 ? (
         <div>
-          <strong>opened for</strong> · net {net(t.opening.netPrice, t.opening.netSide)} ({fmtMoney(t.opening.net)}
-          {t.opening.netSide === "cr" ? " received" : " paid"})
+          <strong>order chain</strong>
+          <ul style={{ margin: "0.25rem 0 0 1rem" }}>
+            {t.chain.orders.map((o, i) => (
+              <li key={i}>
+                {o.date} · {i === 0 ? "opened for" : o.role} {net(o.netPrice, o.netSide)} ({fmtMoney(o.net)}
+                {o.netSide === "cr" ? " received" : " paid"})
+                <span className="muted"> — {o.legs.join(", ")}</span>
+              </li>
+            ))}
+          </ul>
+          <div style={{ marginTop: "0.25rem" }}>
+            net {t.kind === "credit" ? "taken in" : "paid in"} {fmtMoney(t.chain.cash === null ? null : Math.abs(t.chain.cash))}
+            {t.chain.rolls > 0 ? ` across the opening and ${t.chain.rolls} roll${t.chain.rolls === 1 ? "" : "s"}` : ""} ·
+            fees {fmtMoney(t.fees)} · P&L gross {fmtMoney(t.pnlGross)}, net of fees {fmtMoney(t.pnlNet)}
+          </div>
         </div>
+      ) : (
+        t.opening && (
+          <div>
+            <strong>opened for</strong> · net {net(t.opening.netPrice, t.opening.netSide)} ({fmtMoney(t.opening.net)}
+            {t.opening.netSide === "cr" ? " received" : " paid"})
+            {t.basis === "open_legs" && (
+              <span className="muted"> · from the open legs' average prices; no order chain was reconciled, so earlier rolls are not counted</span>
+            )}
+          </div>
+        )
       )}
       {t.order && (
         <div>
@@ -284,12 +307,18 @@ export function ManagePage() {
       <Card title="position evaluation" updatedAt={dataUpdatedAt} isError={isError} controls={picker}>
         <p className="muted" style={{ margin: 0 }}>
           {data?.session ?? "…"} · snapshot {data?.snapshotGeneratedAt ?? "—"} · ruleset {data?.ruleset ?? "—"} (
-          {data?.rulesSource ?? "shipped default"}) · advice only: marks are mids, P&L is gross of fees, and nothing here
+          {data?.rulesSource ?? "shipped default"}) · advice only: marks are mids, table P&L is gross (net of fees is in each trade's chain), and nothing here
           places an order
         </p>
         {data?.error && <p className="pnl-neg">evaluation error: {data.error}</p>}
         {data?.metricsError && (
           <p className="muted">earnings and dividend dates unavailable ({data.metricsError}); price rules still ran</p>
+        )}
+        {data?.transactionsError && (
+          <p className="muted">
+            order chains unavailable ({data.transactionsError}): every trade is priced from its open legs, so a rolled
+            trade's earlier credits are not in its basis
+          </p>
         )}
         {(data?.ruleWarnings ?? []).map((w) => (
           <p key={w} className="pnl-neg">

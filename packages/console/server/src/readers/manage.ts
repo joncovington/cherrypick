@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type {
   ManageAccount,
+  ManageChainOrder,
   ManageAction,
   ManageFired,
   ManageLeg,
@@ -91,6 +92,24 @@ function opening(v: unknown): ManageTrade["opening"] {
   return { net: num(o["net"]), netPrice: num(o["net_price"]), netSide: side(o["net_side"]) };
 }
 
+function chain(v: unknown): ManageTrade["chain"] {
+  const c = rec(v);
+  if (Object.keys(c).length === 0) return null;
+  const orders: ManageChainOrder[] = arr(c["orders"]).map((raw) => {
+    const o = rec(raw);
+    return {
+      date: str(o["date"]) ?? "?",
+      role: str(o["role"]) ?? "?",
+      net: num(o["net"]),
+      netPrice: num(o["net_price"]),
+      netSide: side(o["net_side"]),
+      fees: num(o["fees"]),
+      legs: strs(o["legs"]),
+    };
+  });
+  return { orders, cash: num(c["cash"]), fees: num(c["fees"]), rolls: num(c["rolls"]) ?? 0 };
+}
+
 function leg(v: unknown): ManageLeg {
   const l = rec(v);
   return {
@@ -135,6 +154,10 @@ function trade(v: unknown): ManageTrade {
     cost: num(t["cost"]),
     value: num(t["value"]),
     pnlGross: num(t["pnl_gross"]),
+    pnlNet: num(t["pnl_net"]),
+    fees: num(t["fees"]),
+    basis: t["basis"] === "order_chain" || t["basis"] === "open_legs" ? t["basis"] : null,
+    chain: chain(t["chain"]),
     capture: num(t["capture"]),
     nearestShortExpiry: str(t["nearest_short_expiry"]),
     nearestShortDte: num(t["nearest_short_dte"]),
@@ -203,6 +226,7 @@ export function readManage(config: ConsoleConfig, session?: string): ManagePaylo
     ok: false,
     error: null,
     metricsError: null,
+    transactionsError: null,
     ruleset: null,
     rulesSource: null,
     ruleWarnings: [],
@@ -223,6 +247,7 @@ export function readManage(config: ConsoleConfig, session?: string): ManagePaylo
     ok: doc["ok"] === true,
     error: str(doc["error"]),
     metricsError: str(doc["metrics_error"]),
+    transactionsError: str(doc["transactions_error"]),
     ruleset: str(doc["ruleset"]),
     rulesSource: str(doc["rules_source"]),
     ruleWarnings: strs(doc["rule_warnings"]),

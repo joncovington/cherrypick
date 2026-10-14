@@ -10,7 +10,7 @@ position at a time, with the rules re-derived each time.
 
 **It is advice, and read-only.** It evaluates a snapshot file and writes only into
 `~/.cherrypick/data/manage`. It has no broker credentials and no network: the snapshot is taken by
-the orchestrator's `manage` verb (`orchestrator/managesnap.py`, two read-only broker calls), which then
+the orchestrator's `manage` verb (`orchestrator/managesnap.py`, three read-only broker calls), which then
 runs this package by subprocess. Nothing here places, closes, rolls or sizes an order, and no loop may
 import it. The closing order an evaluation lists is what a person would enter, priced at mid.
 
@@ -26,16 +26,17 @@ of that day, not today's.
 
 ## Rules the evaluation enforces
 
-- **A trade is not an underlying.** `trade_grouping: expiry_chain` splits a name by expiry and folds an
-  expiry into the next only while its shorts are uncovered inside it — a diagonal's short stays with
-  its long, an unrelated weekly spread does not drag a monthly one into its exit. Share legs make the
-  name one trade.
+- **A trade is its order chain.** `trade_grouping: order_chain` (`chains.py`) rebuilds the broker's
+  chain from trade history — opening order and every roll — and takes its net cash as the basis; the
+  positions endpoint's per-leg average price drops a roll's credit. A chain counts only when replaying
+  its orders reproduces today's quantities; otherwise the trade falls back to `expiry_chain` (split by
+  expiry, a diagonal's short kept with its long) priced from the open legs, labelled `open_legs`.
 - **Credit or debit is decided by the net open cost**, never by the strategy's name.
 - **`None` is not zero.** An unpriced leg makes the trade `REVIEW` with no rule judged; a field with
   no input is null.
 - **Every modelled number says so.** Max loss, downside and upside are Black-Scholes at each leg's own
   IV at the nearest expiry. They bound what a trade can still do; they are never a price.
-- **P&L is a mark, gross of fees** — the snapshot carries no fee record. Labelled that way everywhere.
+- **P&L is a mark.** Gross always; net of the chain's recorded fees where a chain reconciled, and null (never gross relabelled) where it did not.
 - **The ruleset is data.** Thresholds and confidences live in `rules.DEFAULT_RULES` and the operator's
   `~/.cherrypick/config/manage.json`; an override key the default lacks is reported, never applied.
   `config.example.json` is the documented default and `tests/test_rules.py` fails if it drifts.

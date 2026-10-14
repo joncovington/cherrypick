@@ -1,7 +1,7 @@
 {
   "_comment": "Position-management ruleset. Copy to ~/.cherrypick/config/manage.json and keep only what you change: the file is merged key by key over this default, and a key the default does not have is reported, not applied. Every rule carries `confidence` (0-100), reported beside its verdict. Money is gross of fees.",
   "ruleset": "zhang-2026-10",
-  "trade_grouping": "expiry_chain",
+  "trade_grouping": "order_chain",
   "hold": {
     "confidence": 70,
     "earnings_penalty": 10

@@ -27,9 +27,11 @@ RULESET_NAME = "zhang-2026-10"
 DEFAULT_RULES: dict[str, Any] = {
     "ruleset": RULESET_NAME,
     # How an underlying's legs become trades (each trade is sized, stopped and closed as one):
-    # "expiry_chain" splits by expiry, keeping a diagonal's short with the long it is sold against;
-    # "underlying" makes every underlying one trade.
-    "trade_grouping": "expiry_chain",
+    # "order_chain" follows the broker's order chains (the opening order and every roll), and takes the
+    # chain's net cash as the basis -- falling back to "expiry_chain" for any leg the history cannot
+    # explain; "expiry_chain" splits by expiry, keeping a diagonal's short with the long it is sold
+    # against; "underlying" makes every underlying one trade. Both fallbacks price the open legs only.
+    "trade_grouping": "order_chain",
     # A trade where no rule fired: how far the ruleset supports holding it, less a penalty when an
     # earnings report falls inside its short legs' life.
     "hold": {"confidence": 70, "earnings_penalty": 10},

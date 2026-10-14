@@ -36,6 +36,28 @@ def opened(t: dict[str, Any]) -> str:
     cost, value = t.get("cost"), t.get("value")
     if cost is None or value is None:
         return ""
+    chain = t.get("chain") or {}
+    orders = chain.get("orders") or []
+    later = orders[1:]
+    if later:
+        # A rolled trade: say what opened it and what the rolls brought in, then the net it stands on.
+        first = orders[0]
+        opened_for = f"{'took in' if first['net'] >= 0 else 'paid'} {_usd(first['net'])}"
+        moved = sum(o["net"] for o in later)
+        n = len(later)
+        times = "once" if n == 1 else "twice" if n == 2 else f"{n} times"
+        rolls = f"{'taking in' if moved >= 0 else 'paying'} {_usd(moved)}"
+        net_in = (
+            f"so you are in for {_usd(cost)} net" if cost >= 0 else f"so you are {_usd(cost)} ahead in cash"
+        )
+        if value >= 0:
+            stand = f"it is worth {_usd(value)} now"
+        else:
+            stand = f"closing it would cost {_usd(value)}"
+        return (
+            f"You opened this on {_day(first['date'])} and {opened_for}, then adjusted it {times}, "
+            f"{rolls}, {net_in}; {stand}"
+        )
     if t.get("kind") == "credit":
         now = -value
         stand = (
