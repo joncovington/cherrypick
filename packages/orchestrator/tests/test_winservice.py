@@ -40,6 +40,36 @@ def test_the_definition_runs_the_supervisor_as_a_restartable_delayed_service():
     assert root.find("serviceaccount") is None and "password" not in _xml().lower().replace("/p", "")
 
 
+@pytest.mark.parametrize("flag", ["--stop", "--restart"])
+def test_the_stop_helper_works_with_the_arguments_winsw_appends(monkeypatch, tmp_path, flag):
+    """WinSW 2.x runs `<stoparguments> + " " + <arguments>`, so the helper is handed a second
+    `"run.py" supervise` behind its own flag. Rejecting that as unrecognized exited 2 before the stop
+    file was written, and WinSW then waits on the supervisor with no timeout: every service stop hung
+    in StopPending (2026-10-14). The argv is built from the definition the service actually runs."""
+    import shlex
+
+    from cherrypick.orchestrator import supervisor
+
+    root = ET.fromstring(_xml())
+    helper = root.findtext("stoparguments").replace("--stop", flag) + " " + root.findtext("arguments")
+    stop = tmp_path / "supervisor.stop"
+    monkeypatch.setattr(supervisor, "stop_path", lambda: stop)
+    monkeypatch.setattr(cli.cfgmod, "load_config", lambda: {})
+    monkeypatch.setattr(cli.cfgmod, "ensure_dirs", lambda: None)
+    monkeypatch.setattr(cli.sys, "argv", shlex.split(helper, posix=False))
+    monkeypatch.setattr(cli.sys, "argv", [a.strip('"') for a in cli.sys.argv])
+    cli.main()
+    assert stop.exists()
+
+
+def test_other_commands_still_refuse_unknown_arguments(monkeypatch):
+    monkeypatch.setattr(cli.cfgmod, "load_config", lambda: {})
+    monkeypatch.setattr(cli.sys, "argv", ["run.py", "status", "stray", "extra"])
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+    assert exc.value.code == 2
+
+
 def test_the_definition_follows_the_config_block():
     root = ET.fromstring(
         _xml(id="cp-svc", delayed_start=False, restart_delays_seconds=[5], stop_timeout_seconds=9)
