@@ -439,6 +439,19 @@ def cmd_fill_model(args) -> int:
             cutoff=args.cutoff,
         ),
     }
+    # The entry shadow: which paper entries live would have missed, under a rule fitted on live's own
+    # entry orders. The fit reads the gex spot trail (the order path stops at the fill).
+    from cherrypick.flies import fill_facts
+
+    trail = fill_facts.trail_reader(fill_facts._open_trail(args.gex), args.symbol or "SPX")
+    out["entry"] = {
+        "fit": analytics.entry_rule_fit(
+            fill_facts.entry_spot_paths(live, trail, start=args.start, end=args.end)
+        ),
+        "shadow": analytics.shadow_entry(
+            paper, start=args.start, end=args.end, symbol=args.symbol, arm=args.arm
+        ),
+    }
     if not args.grid:
         out["live"].pop("rule_fit", None)
     print(json.dumps(out, indent=2, default=str))
@@ -759,6 +772,7 @@ def main(argv=None) -> int:
     p_fill.add_argument("--basis", choices=("mid", "natural", "dist"), default="mid")
     p_fill.add_argument("--cutoff", default="15:30", help="the shadow's completion cutoff, HH:MM ET")
     p_fill.add_argument("--live-db", help="the live ledger (default: the live ledger's own path)")
+    p_fill.add_argument("--gex", help="the gex history DB with the spot trail (default: the recorder's own)")
     p_fill.add_argument("--grid", action="store_true", help="include the per-value rule fit")
     p_fill.set_defaults(func=cmd_fill_model)
 

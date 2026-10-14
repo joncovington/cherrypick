@@ -1430,3 +1430,28 @@ cancelled orders as entries. Live settled seven entries on 10-14. Two put spread
 The 13:30 put spread completed, and so did the four call spreads, one pinning for +$407. Live control
 netted −$82.33, paper control −$604.52. The intraday agent's shadow gate would have refused only the
 13:30 entry, a winner. The replays in that entry used settled rows and are unaffected.
+
+## 2026-10-14 — live entry fills: 86%, adversely selected; the entry shadow starts recording
+
+The question was how to carry live's entry fill rate into paper. Read from `fly_live_orders` (the 50
+entry orders recorded at placement, 10-05..10-14; the 72 earlier rows are backfills with no mid) and
+the gex spot trail.
+
+- **43 of 50 filled** at the plan's credit floored to the tick (mid − 0.05), most within 0–4 s, 9
+  better than the limit. 6 of the 7 misses were re-placed on the next tick and usually filled a minute
+  later at a new centre or side; 1 was lost.
+- **The misses are adversely selected.** Spot moved toward the completing side in 6 of 7 (+0.76
+  points at 20 s, +1.00 at 60 s), against about half the fills (−0.07 / −0.02). Live misses the
+  entries that were going its way, so a random 14% haircut on paper would understate the gap.
+- **A first read from the order path was wrong.** It compared spread moves (−0.24 against +0.01), but
+  the path stops at the fill, so fills had no later moves to compare. The trail has no such bias.
+- **No per-order rule yet.** Scored on the trail over windows of 10–60 s and moves of 0.25–3 points,
+  the best rule (15 s, 1.5 points) agreed 88% against 86% for assuming every entry fills, catching 1
+  of the 7 misses.
+
+**Built, telemetry only (not measurement-affecting):** the paper entry shadow. Every legged entry
+stamps the limit live would ask and its first 60 s (`shadow_entry_limit`, `shadow_entry_path`), and
+`run.py fill-model` reports the rule fit beside `always_fill` and paper's net split by the rule.
+Paper's entries are unchanged. **Re-read at about 20–30 live misses**, and fit the price basis (the
+quote history for live orders, from 10-13) beside the spot one. A rule that beats `always_fill` is
+shadowed first and switched only at a declared boundary.

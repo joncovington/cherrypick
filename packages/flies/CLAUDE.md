@@ -139,6 +139,14 @@ assumed:
   book-wide `completion_rule` break (`paper_loop._note_completion_rule`): **never pool completion
   P&L across 2026-10-05.** The trigger's timing is the next step, fitted from quoted live paths
   against the shadow, as a second break.
+- **The entry shadow (2026-10-14, step 1f′).** Live entry orders fill 86% (43 of 50), and the misses
+  are not random: spot was moving toward completion in 6 of 7, so live misses the entries that were
+  going its way. Each paper legged entry stamps the limit live would ask (`shadow_entry_limit`) and
+  its first 60 s (`shadow_entry_path`: spot's move toward completion, the entry spread's gaps).
+  `run.py fill-model`'s `entry` block fits a miss rule on live's orders off the gex spot trail,
+  never the order path (it stops at the fill), and splits paper's net by it. **No rule yet beats
+  assuming every entry fills**, so the split is not read until one does. Paper still enters on the
+  tick. [docs/fill-model.md](docs/fill-model.md#the-entry-shadow-2026-10-14).
 
 **Two shadow streams from 2026-10-05, both tag-don't-gate:**
 - **`hedge_mid_at_completion`** is the overlay hedge's sale value on the legged completion tick.

@@ -686,6 +686,14 @@ _ADDED_POSITION_COLUMNS = {
     "completion_event_labels": "TEXT",
     "shadow_completion_limit": "REAL",
     "shadow_touches": "TEXT",
+    # PAPER only (2026-10-14): the live-like ENTRY shadow (fill_model.py). Every legged entry stamps
+    # the limit a live entry order would have asked (`live_orders.entry_spec`: the plan's credit
+    # floored to the tick) and, for `fill_model.ENTRY_SHADOW_WINDOW_SECONDS` after it, one look per
+    # tick at spot's move toward completion and the entry spread's gaps to that limit (JSON list:
+    # fill_model.entry_observation). Tag-don't-gate: the read side decides which entries live would
+    # have missed, with a rule fitted on live's own orders.
+    "shadow_entry_limit": "REAL",
+    "shadow_entry_path": "TEXT",
     # Tagged closes (2026-10-06, close_tags.py): the trend-rule and intraday-agent arms' decision
     # to close a stranded vertical, recorded at its NATURAL price at the decision tick and never
     # executed -- the position settles as always, and the read side values the arm as if it had

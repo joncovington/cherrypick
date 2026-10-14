@@ -2610,6 +2610,94 @@ def shadow_completion(
     return out
 
 
+def shadow_entry(
+    paper_conn,
+    start=None,
+    end=None,
+    symbol=None,
+    arm=None,
+    basis: str = "move",
+    values=None,
+    window: float = fill_model.ENTRY_SHADOW_WINDOW_SECONDS,
+) -> dict:
+    """The live-like ENTRY shadow over settled PAPER legged entries, per arm: under the rule "live
+    misses an entry whose market moved `value` its way within `window`" (fill_model.entry_fills),
+    how many entries live would have missed and what they earned, beside the ones it would have
+    filled. Paper's own book is untouched; this says how much of its net rests on entries live
+    would not have got.
+
+    A missed live entry is re-placed on the next tick, often at another centre or side, so a miss
+    here is an entry this one would not have been -- not a trade the day never made. Rows recorded
+    before the shadow carry no limit and are not counted; rows the rule cannot judge (no look after
+    the entry) are counted apart, never as fills."""
+    grid = (
+        values if values is not None else (fill_model.MOVE_GRID if basis == "move" else fill_model.GAP_GRID)
+    )
+    where, params = _period_clause(start, end, arm, symbol)
+    rows = [
+        dict(r)
+        for r in paper_conn.execute(
+            f"SELECT arm, trade_date, pnl, kind, shadow_entry_path FROM fly_positions WHERE {where} "
+            "AND entry_mode = 'legged' AND COALESCE(closed_before_expiry, 0) = 0 "
+            "AND shadow_entry_limit IS NOT NULL ORDER BY arm, entry_time",
+            params,
+        ).fetchall()
+    ]
+    by_arm: dict[str, list[dict]] = {}
+    for r in rows:
+        r["path"] = fill_model.load_entry_path(r.pop("shadow_entry_path"))
+        by_arm.setdefault(r["arm"], []).append(r)
+    out = {"basis": basis, "window": window, "arms": {}}
+    for name, arm_rows in by_arm.items():
+        cells = []
+        for v in grid:
+            verdicts = [(r, fill_model.entry_fills(r["path"], basis, v, window=window)) for r in arm_rows]
+            missed = [r for r, f in verdicts if f is False]
+            filled = [r for r, f in verdicts if f is True]
+            cells.append(
+                {
+                    "value": v,
+                    "unjudged": sum(1 for _, f in verdicts if f is None),
+                    "would_fill": len(filled),
+                    "would_miss": len(missed),
+                    "fill_rate": _rate(len(filled), len(filled) + len(missed)),
+                    "filled_net": _round(sum(r["pnl"] or 0.0 for r in filled)),
+                    "missed_net": _round(sum(r["pnl"] or 0.0 for r in missed)),
+                    "missed_completed": sum(1 for r in missed if r["kind"] == "fly"),
+                }
+            )
+        out["arms"][name] = {
+            "positions": len(arm_rows),
+            "sessions": len({r["trade_date"] for r in arm_rows}),
+            "paper_net": _round(sum(r["pnl"] or 0.0 for r in arm_rows)),
+            "shadow": cells,
+        }
+    return out
+
+
+def entry_rule_fit(
+    orders: list[dict],
+    basis: str = "move",
+    values=None,
+    window: float = fill_model.ENTRY_SHADOW_WINDOW_SECONDS,
+) -> dict:
+    """`fill_model.score_entry_rule` over live's entry orders (`fill_facts.entry_spot_paths`) at
+    every grid value: which threshold best reproduces the fills and misses live actually had.
+
+    `always_fill` is the agreement of assuming every entry fills -- the bar any rule must clear
+    before the shadow's misses mean anything. On the first 50 orders (2026-10-05..10-14, 7 misses)
+    no rule cleared it by more than one order: spot moved toward completion in 6 of the 7 misses,
+    but fills see moves that size as often, so the group difference does not pick out the order."""
+    grid = values if values is not None else fill_model.MOVE_GRID
+    filled = sum(1 for o in orders if o["filled"])
+    return {
+        "orders": len(orders),
+        "filled": filled,
+        "always_fill": _rate(filled, len(orders)),
+        "rules": [fill_model.score_entry_rule(orders, basis, v, window=window) for v in grid],
+    }
+
+
 # --------------------------------------------------------------------------- the debit-first shadow ladder
 LADDER_PAIR_SECONDS = 300  # a delta-arm fill and a rung are one trade within five minutes...
 LADDER_PAIR_STRIKES = 1  # ...and one strike of each other
