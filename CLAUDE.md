@@ -70,6 +70,10 @@ consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/ro
 - **packages/review** — the cross-module end-of-day review: one versioned fact set per session, read
   via `cherrypick.core.ledgers` (the single home for per-schema net/risk rules), written only to its own
   store. No credentials, no network, no AI — the narrative is written outside by a scheduled agent.
+- **packages/manage** — the daily position-management evaluation of the REAL account: a pure function
+  of a broker snapshot (taken read-only by the orchestrator's `manage` verb) and a configurable ruleset,
+  giving each trade an action, the rule behind it and a confidence. **Advice only** — no order path,
+  no credentials, no network; read on the console's Live → manage tab. Off until `manage.enabled`.
 - **packages/advisor** — the deterministic half of the AI advisor: fact packs, validation of replies,
   and the paper A/B experiments. **It contains no AI** (the model is invoked by
   `scripts/advisor_checkpoint.py`). Read-only over every other package; its one output toward a loop is

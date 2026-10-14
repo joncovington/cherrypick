@@ -601,6 +601,13 @@
     "narrative_at": "10:45",
     "file_issues": false
   },
+  "manage_header": "x",
+  "manage": {
+    "_comment": "Daily position-management evaluation of the REAL broker account (packages/manage, `run.py manage`). At 'at' (ET) on trading days the orchestrator reads the account read-only - priced positions and balances (the `positions` verb) plus each underlying's last price, earnings and ex-dividend dates - and packages/manage judges every trade against its ruleset (credit: take profit at 50%, stop at a loss equal to the credit, 21 DTE; debit: stop at -50%, take profit at +75%; never hold a physically-settled option into expiry; never roll a loser). The evaluation lands in data/manage/eval-<day>.json and on the console's Live page. Advice only: nothing places, closes or sizes an order. The ruleset is manage's own config, ~/.cherrypick/config/manage.json (see packages/manage/config.example.json; keep only what you change). OFF by default because it reads the live account daily; 'notify' sends one summary when any trade needs action. Re-run `install` after turning it on.",
+    "enabled": false,
+    "at": "10:00",
+    "notify": true
+  },
   "morning_header": "x",
   "morning": {
     "_comment": "Pre-open market overview (packages/overview, `python -m cherrypick.overview`) - the morning sibling of the review. One scheduled pass per trading day at 'factpack_at' (ET, box-local clock) builds a deterministic fact pack (data/overview/morning-<day>.json) plus its render: index/vol/sector readings from the shared stream cache (prior-session values labeled prior, live pre-open quotes labeled live), gamma flip and walls from the suite's own GEX history, and a mechanical GREEN/YELLOW/RED phase computed from five declared gates - missing data can never produce RED and always blocks GREEN. Pure stream-cache + GEX consumer: no credential, no network, writes only into overview's own home, so a failed pass costs a report, never a trade. The pack's breadth symbols (VIX/VIX3M/VVIX, sector ETFs, USO/GLD proxies) are declared via state/stream_requests/overview.json; the FIRST build registers them, and the streamer picks them up on its next producer recycle. ON by default; opt out with enabled=false then re-run `install`. 'narrative' (OFF by default) schedules the agent-written morning note at 'narrative_at' via scripts/morning_narrative.py - it shells out to Claude Code (`claude` on PATH) and, unlike the EOD narrative, is allowed web lookups for the macro calendar; market numbers still come only from the pack, and the note is written BESIDE the facts, never inside them.",

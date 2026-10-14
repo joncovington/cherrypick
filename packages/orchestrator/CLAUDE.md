@@ -32,6 +32,7 @@ python run.py preopen-check      # deprecated alias for streamer-health (honours
 python run.py report             # cross-module paper P&L; --eod / --date YYYY-MM-DD for one session; --live reads the live-tagged ledgers (never feeds calibrate/promotion)
 python run.py calibrate          # per-arm calibration readings + promotion recommendations
 python run.py positions          # live P/L of the REAL broker account (read-only, on demand); --detail / --account <last4> / --json
+python run.py manage             # daily position evaluation: broker snapshot (read-only) judged by packages/manage
 python run.py archive            # monthly rotation of finished months' reports + logs to logs/archive/ (--dry-run / --month YYYY-MM)
 python run.py backup             # nightly suite backup (the suite-backup job, 01:30 ET): ONE verified zip, rewritten; a bad night never replaces it (--dry-run / --list / --verify / --restore-to DIR)
 python run.py settings           # local config editor + secrets manager on loopback:8804; --organize [target] [--apply] reorders configs instead
@@ -133,6 +134,10 @@ ledgers copy through SQLite's online backup API and are quick_checked, a night w
 36h. Only `.dolt/` is skipped, never its parent: `data/earnings` holds ledgers beside one.
 
 **This package holds no AI and no review or advisor logic; it only schedules them.**
+- The position evaluation is `packages/manage`: job `manage-eval` (10:00 ET, trading days, OFF until
+  `manage.enabled`) runs `run.py manage`, whose one job here is the snapshot (`managesnap.py`: the
+  `positions` read plus each underlying's market metrics, both read-only). The rules and verdicts are
+  manage's; the evaluation runs by subprocess.
 - The end-of-day review is `packages/review`: jobs `review-provisional` (16:30 ET) and `review-final`
   (10:15 next morning), trading days only, invoke `python -m cherrypick.review`
   (`cfgmod.review_settings`; on by default, opt out with `"review": {"enabled": false}`).

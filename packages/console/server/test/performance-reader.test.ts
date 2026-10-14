@@ -46,6 +46,7 @@ function fakeConfig(dataEpochDate: string | null): ConsoleConfig {
       contangoDir: path.join(data, "contango"),
       gexDir: "",
       reviewDir: "",
+      manageDir: "",
       overviewDir: "",
       advisorDir: "",
       adviceDir: "",

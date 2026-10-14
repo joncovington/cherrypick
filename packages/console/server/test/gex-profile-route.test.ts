@@ -58,6 +58,7 @@ beforeAll(async () => {
       meicDir: path.join(tmp, "meic"), fliesDir: path.join(tmp, "flies"),
       earningsDir: path.join(tmp, "earnings"), gexDir: path.join(tmp, "gex"),
       reviewDir: path.join(tmp, "review"), overviewDir: path.join(tmp, "overview"),
+      manageDir: path.join(tmp, "manage"), overviewDir: path.join(tmp, "overview"),
       advisorDir: path.join(tmp, "advisor"), adviceDir: path.join(tmp, "advice"),
       meicRiskConfig: path.join(tmp, "r.json"), fliesConfig: path.join(tmp, "f.json"),
     },

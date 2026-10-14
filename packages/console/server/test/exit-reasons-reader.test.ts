@@ -33,6 +33,7 @@ function tmpConfig(): { config: ConsoleConfig; tmp: string } {
       bwbDir: path.join(tmp, "bwb"),
       gexDir: "",
       reviewDir: "",
+      manageDir: "",
       overviewDir: "",
       advisorDir: "",
       adviceDir: "",

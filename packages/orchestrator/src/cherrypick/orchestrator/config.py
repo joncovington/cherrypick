@@ -408,6 +408,24 @@ def review_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved daily position-management evaluation config (packages/manage).
+
+    OFF by default, unlike the review: the job reads the REAL broker account (positions, balances,
+    earnings and dividend dates) every trading day, and that is a choice for whoever owns the account.
+    Read-only all the same -- the evaluation is advice; nothing here places, closes or sizes an order.
+    The ruleset itself is manage's own config (~/.cherrypick/config/manage.json), not this block.
+    """
+    mg = cfg.get("manage", {}) or {}
+    return {
+        "enabled": bool(mg.get("enabled", False)),
+        # ET. 10:00 leaves the open's first half hour to settle the marks the rules are judged on.
+        "at": mg.get("at", "10:00"),
+        # One notification summarising the actions when any trade needs one.
+        "notify": bool(mg.get("notify", True)),
+    }
+
+
 def morning_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved pre-open market-overview config (packages/overview). ON by default for the pack,
     OFF for the narrative, mirroring the review's posture.

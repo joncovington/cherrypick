@@ -48,6 +48,7 @@ function cfg(root: string): ConsoleConfig {
       bwbDir: "",
       gexDir: path.join(root, "gex"),
       reviewDir: "",
+      manageDir: "",
       overviewDir: "",
       advisorDir: "",
       adviceDir: "",

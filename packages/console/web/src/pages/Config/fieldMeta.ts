@@ -12,7 +12,7 @@ import type { ConfigTargetId, ConfigTargetModel } from "@console/shared";
  * Everything else stays where it already works — a text editor, with the config's own notes in view.
  */
 
-export type FieldSection = "arms" | "modules" | "timing" | "notify" | "dev";
+export type FieldSection = "arms" | "modules" | "timing" | "notify" | "rules" | "dev";
 export type FieldType = "boolean" | "number" | "string" | "time" | "stringList" | "enum";
 
 export interface FieldMeta {
@@ -61,6 +61,13 @@ export const SECTIONS: SectionMeta[] = [
     blurb: "Entry windows and loop pacing. A change lands on the next supervisor pass — no reinstall.",
   },
   { id: "notify", title: "Notifications & jobs", blurb: "Where alerts go, and how often the scheduled checks run." },
+  {
+    id: "rules",
+    title: "Position rules",
+    blurb:
+      "The daily position evaluation (Live → manage): when it runs, and the thresholds it judges the live " +
+      "account by. Advice only — it never places an order. A change applies at the next evaluation.",
+  },
   {
     id: "dev",
     title: "Dev knobs",
@@ -253,6 +260,104 @@ export const FIELDS: FieldMeta[] = [
     help: "Push each commit to the repository's remote. Use a PRIVATE remote: the files hold your strategy settings.",
   },
 
+  // --- position rules ----------------------------------------------------------------------
+  {
+    target: "orchestrator",
+    pointer: "/manage/enabled",
+    label: "Daily position evaluation",
+    help: "Reads the live account read-only each trading day. Re-run install after turning it on.",
+    type: "boolean",
+    section: "rules",
+  },
+  { target: "orchestrator", pointer: "/manage/at", label: "Evaluation time (ET)", type: "time", section: "rules" },
+  { target: "orchestrator", pointer: "/manage/notify", label: "Notify when action is needed", type: "boolean", section: "rules" },
+  {
+    target: "manage",
+    pointer: "/trade_grouping",
+    label: "Trade grouping",
+    help: "expiry_chain keeps a diagonal's short with its long and splits independent spreads; underlying makes each name one trade.",
+    type: "enum",
+    options: ["expiry_chain", "underlying"],
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/credit/take_profit/capture",
+    label: "Credit: take profit at share of credit",
+    type: "number",
+    min: 0.05,
+    max: 1,
+    step: 0.05,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/credit/stop/loss_multiple_of_credit",
+    label: "Credit: stop at loss × credit",
+    type: "number",
+    min: 0.25,
+    max: 5,
+    step: 0.25,
+    section: "rules",
+  },
+  { target: "manage", pointer: "/credit/time_exit/dte", label: "Credit: close at DTE", type: "number", min: 0, max: 60, section: "rules" },
+  {
+    target: "manage",
+    pointer: "/credit/close_before_earnings/enabled",
+    label: "Credit: close before earnings",
+    type: "boolean",
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/debit/stop/loss_fraction",
+    label: "Debit: stop at loss of debit",
+    type: "number",
+    min: 0.1,
+    max: 1,
+    step: 0.05,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/debit/take_profit/gain_fraction",
+    label: "Debit: take profit at gain on debit",
+    type: "number",
+    min: 0.1,
+    max: 5,
+    step: 0.05,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/legs/short_take_profit/capture",
+    label: "Short leg: buy back at share of premium",
+    type: "number",
+    min: 0.5,
+    max: 1,
+    step: 0.05,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/expiry/close_by_dte",
+    label: "Close physically-settled legs at DTE",
+    type: "number",
+    min: 0,
+    max: 14,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/risk/max_risk_pct",
+    label: "Per-trade risk budget (share of net liq)",
+    type: "number",
+    min: 0.005,
+    max: 0.2,
+    step: 0.005,
+    section: "rules",
+  },
+
   // --- dev knobs ---------------------------------------------------------------------------
   {
     target: "orchestrator",
@@ -379,4 +484,5 @@ export const TARGET_TITLES: Record<ConfigTargetId, string> = {
   earnings: "earnings",
   streamer: "streamer",
   "meic-risk": "meic risk profiles",
+  manage: "position rules",
 };

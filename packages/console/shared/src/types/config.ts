@@ -14,7 +14,8 @@ export type ConfigTargetId =
   | "gex"
   | "earnings"
   | "streamer"
-  | "meic-risk";
+  | "meic-risk"
+  | "manage";
 
 export interface GuardedPointer {
   /** RFC 6901 pointer the config editor refuses to write, in either direction. */

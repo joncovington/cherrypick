@@ -34,6 +34,8 @@ export interface ConsoleConfig {
     bwbDir: string;
     gexDir: string;
     reviewDir: string;
+    /** `data/manage/` -- the daily position evaluations (`eval-<session>.json`) the Live page shows. */
+    manageDir: string;
     /** `data/overview/` — the morning fact packs (`morning-<session>.json`) and their narratives. */
     overviewDir: string;
     advisorDir: string;
@@ -96,6 +98,7 @@ export function loadConfig(): ConsoleConfig {
       bwbDir: path.join(data, "bwb"),
       gexDir: path.join(data, "gex"),
       reviewDir: path.join(data, "review"),
+      manageDir: path.join(data, "manage"),
       overviewDir: path.join(data, "overview"),
       advisorDir: path.join(data, "advisor"),
       technicalsDir: path.join(data, "technicals"),
