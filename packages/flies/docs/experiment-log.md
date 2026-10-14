@@ -1400,3 +1400,33 @@ table that produced B. Paper's second half also straddles the 2026-10-05 `comple
 refuse. Live is unchanged. 10-14 is the stranded-vertical loss again, a one-way tape that never came
 back to the put spreads; the intraday agent's gate, in live shadow, is the route already being
 measured for those days.
+
+## 2026-10-14 — the completion-limit replay re-run on 13 strands; still no raise
+
+`scripts/flies_completion_replay.py` (the 2026-10-07 entry) over 10-05..10-14: 43 live positions,
+13 strands it can replay, baseline +$257.58. The live ledger holds 16 strands since 10-02, but the
+three from 10-02..10-04 carry no order-path quotes, and `--since 2026-10-02` replays the same 13.
+
+| Rule | vs baseline | rescued | overpaid | sessions helped / hurt | without its best session |
+|---|---|---|---|---|---|
+| +0.50 once spot is 1.0w away | +$191 | 5 | 16 ($800) | 4 / 4 | −$27 |
+| +0.25 flat | +$169 | 4 | 30 ($750) | 3 / 5 | −$224 |
+| +0.50 flat | +$165 | 8 | 30 ($1,500) | 4 / 4 | −$73 |
+| +0.25 once 1.0w away | +$118 | 2 | 16 ($400) | 1 / 6 | −$275 |
+| +0.50 once 0.5w away | +$67 | 6 | 23 ($1,150) | 4 / 4 | −$151 |
+| every time-triggered ladder | −$5 to −$180 | 0–1 | | | |
+
+- **Every positive cell is one session.** Without its best session each goes negative, and in four of
+  the five that session is 10-14 (+$393 or +$218). 10-12 and 10-13 are negative in every cell.
+- **The mechanism:** a raise rescues a strand on a one-way day and overpays every completion that
+  would have filled at the live limit, every other day.
+- The margin a rescue frees would have let in 5 to 8 more entries, paper-scored at −$272 to +$257.
+  That is optimistic and kept out of the table.
+
+**No change.** Re-run at about 20 replayable strands. Any raise it supports is measurement-affecting.
+
+**Correction to the entry above.** Its first paragraph was read before settlement and counted
+cancelled orders as entries. Live settled seven entries on 10-14. Two put spreads stranded (−$562).
+The 13:30 put spread completed, and so did the four call spreads, one pinning for +$407. Live control
+netted −$82.33, paper control −$604.52. The intraday agent's shadow gate would have refused only the
+13:30 entry, a winner. The replays in that entry used settled rows and are unaffected.
