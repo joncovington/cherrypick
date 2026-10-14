@@ -343,6 +343,25 @@ def test_reconcile_says_so_when_there_is_no_fact_set(store):
     assert reconcile.check_session("1999-01-01")["ok"] is False
 
 
+def test_reconcile_leaves_out_the_session_still_trading(store, monkeypatch):
+    """2026-10-14: the status digest wrote today's provisional set at 10:00, two earnings trades
+    closed, and the 10:15 final pass reported today as disagreeing with its ledger. A closed
+    session is still checked; the open one is named, not judged."""
+    for session in ("2026-10-13", "2026-10-14"):
+        facts.write(
+            {
+                "session": session,
+                "modules": {"earnings": {"ok": True, "results": {"closed": 0, "gross": 0, "cost": 0}}},
+            }
+        )
+    monkeypatch.setattr(
+        reconcile, "_independent_totals", lambda m, s: {"closed": 2, "gross": -836.0, "cost": 48.54}
+    )
+    got = reconcile.run(today="2026-10-14")
+    assert got["skipped"] == ["2026-10-14"]
+    assert [f["session"] for f in got["failures"]] == ["2026-10-13"]
+
+
 # --------------------------------------------------------------------------- which session --final closes
 def test_a_final_pass_closes_out_the_prior_trading_day_never_today():
     """The bug that put "nothing closed today" under a page showing 645 closed trades.
