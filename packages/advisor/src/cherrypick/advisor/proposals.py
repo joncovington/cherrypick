@@ -38,18 +38,64 @@ class ParseError(ValueError):
     """The reply held no readable JSON object at all."""
 
 
+def _drop_trailing_commas(text: str) -> str:
+    """Remove a comma whose next non-blank character closes an array or object, outside strings.
+
+    Strict JSON refuses `[..., {...},\\n  ]`, and a model writes exactly that now and then: the
+    2026-10-13 deep reply ended its flags list with one, and the whole night's verdicts were lost to
+    a single character. Only a comma in that position is touched, and only outside a string, so no
+    value the model wrote can change -- the repair can only turn a reply that did not parse into the
+    one it plainly meant.
+    """
+    out: list[str] = []
+    in_string = escaped = False
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if in_string:
+            out.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+            out.append(ch)
+        elif ch == ",":
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j < n and text[j] in "]}":
+                i += 1
+                continue
+            out.append(ch)
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def locate_json(raw: str) -> dict[str, Any]:
-    """Recover the JSON object from a model reply. Raises :class:`ParseError` if there is none."""
+    """Recover the JSON object from a model reply. Raises :class:`ParseError` if there is none.
+
+    Strict first; a reply that fails is retried once with trailing commas removed
+    (`_drop_trailing_commas`), and fails as before if that does not parse either."""
     if not raw or not raw.strip():
         raise ParseError("empty reply")
     text = raw.strip()
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end <= start:
         raise ParseError("no JSON object found in reply")
+    body = text[start : end + 1]
     try:
-        payload = json.loads(text[start : end + 1])
+        payload = json.loads(body)
     except ValueError as exc:
-        raise ParseError(f"reply JSON did not parse: {exc}") from exc
+        try:
+            payload = json.loads(_drop_trailing_commas(body))
+        except ValueError:
+            raise ParseError(f"reply JSON did not parse: {exc}") from exc
     if not isinstance(payload, dict):
         raise ParseError("reply JSON is not an object")
     return payload
