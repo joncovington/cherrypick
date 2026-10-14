@@ -460,6 +460,125 @@ def shadow_outcome(row: dict, basis: str, value: float, *, cutoff: str | None) -
     }
 
 
+# --------------------------------------------------------------------------- the entry shadow
+# Would a live ENTRY order have filled? (2026-10-14.) Live asks the plan's credit floored to the tick
+# (`live_orders.entry_spec`; mid less 0.05 on SPX) and fills in seconds -- 43 of its first 50 recorded
+# entry orders, most within 0-4 s. The 7 it missed were not a random 14%: on the gex spot trail, spot
+# moved toward the completing side in 6 of them (+0.76 pts at 20 s, +1.00 at 60 s) against about half
+# of the fills (-0.07 / -0.02). A spread that starts working cheapens under the limit before the order
+# fills, so live misses the entries that were going its way. Paper ticks every 15 s and cannot see
+# the seconds that decide it, so it keeps the first `ENTRY_SHADOW_WINDOW_SECONDS` after each entry and
+# a rule fitted on live's own orders judges the path on the read side. The order path cannot fit that
+# rule: it stops at the fill, so a filled order's later moves were never observed.
+ENTRY_SHADOW_WINDOW_SECONDS = 60
+# Spot's move toward the completing side since entry, in points.
+MOVE_GRID = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0)
+ENTRY_BASES = ("move", "mid_gap", "natural_gap")
+
+
+def entry_move(side: str, spot0: float | None, spot: float | None) -> float | None:
+    """Spot's move since entry, signed so `+` is the completing direction (a put spread completes on
+    a rise). None when either spot is unknown -- never a zero, which would read as "stood still"."""
+    if spot0 is None or spot is None:
+        return None
+    sign = 1.0 if fly.completing_side_direction(side) == "up" else -1.0
+    return round(sign * (float(spot) - float(spot0)), 4)
+
+
+def entry_observation(
+    *,
+    seconds: float,
+    side: str,
+    spot0: float | None,
+    spot: float | None,
+    limit: float | None,
+    prices: dict | None,
+) -> dict:
+    """One look at an entry's market `seconds` after it: spot, its move toward completion, and the
+    entry spread's gaps to the limit live would have asked (`+` = the market had fallen under it)."""
+    g = gaps(ENTRY, limit, prices)
+    return {
+        "s": int(round(seconds)),
+        "spot": spot,
+        "move": entry_move(side, spot0, spot),
+        "mid_gap": g["mid_gap"],
+        "natural_gap": g["natural_gap"],
+    }
+
+
+def extend_entry_path(
+    path: list | None, obs: dict, *, window: float = ENTRY_SHADOW_WINDOW_SECONDS
+) -> tuple[list, bool]:
+    """Append `obs` to an entry's path when it is inside the window and later than the last look.
+    Returns (path, changed); never mutates `path`."""
+    rows = list(path or [])
+    if obs["s"] < 0 or obs["s"] > window or (rows and obs["s"] <= rows[-1]["s"]):
+        return rows, False
+    return [*rows, obs], True
+
+
+def load_entry_path(raw) -> list | None:
+    """A stored entry path (JSON text), or None; an unreadable one reads as None (telemetry)."""
+    if not raw:
+        return None
+    if isinstance(raw, list):
+        return raw
+    try:
+        out = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return out if isinstance(out, list) else None
+
+
+def entry_fills(
+    path: list | None, basis: str, value: float, *, window: float = ENTRY_SHADOW_WINDOW_SECONDS
+) -> bool | None:
+    """The rule "live misses an entry whose market moved `value` or more its way within `window`":
+    False when any look after the entry has `basis` at or past `value`, True otherwise. None when
+    there is no look after the entry, or none carries the basis -- an unwatched entry is unjudged,
+    never a fill."""
+    if basis not in ENTRY_BASES:
+        raise ValueError(f"unknown entry basis {basis!r}")
+    seen = False
+    for o in path or []:
+        if not 0 < o.get("s", 0) <= window or o.get(basis) is None:
+            continue
+        seen = True
+        if o[basis] >= value - _EPS:
+            return False
+    return True if seen else None
+
+
+def score_entry_rule(
+    orders: list[dict], basis: str, value: float, *, window: float = ENTRY_SHADOW_WINDOW_SECONDS
+) -> dict:
+    """How well `entry_fills` reproduces live's entry orders. Each order is {"filled": bool,
+    "path": entry path}. A rule that says miss on a filled order is a false miss; one that says fill
+    on an unfilled order is a false fill. Orders the rule cannot judge are counted apart."""
+    hit = false_miss = false_fill = true_miss = unjudged = 0
+    for o in orders:
+        verdict = entry_fills(o.get("path"), basis, value, window=window)
+        if verdict is None:
+            unjudged += 1
+        elif o.get("filled"):
+            hit, false_miss = (hit + 1, false_miss) if verdict else (hit, false_miss + 1)
+        else:
+            false_fill, true_miss = (false_fill + 1, true_miss) if verdict else (false_fill, true_miss + 1)
+    n = hit + false_miss + false_fill + true_miss
+    return {
+        "basis": basis,
+        "value": value,
+        "window": window,
+        "orders": n,
+        "unjudged": unjudged,
+        "hit": hit,
+        "false_miss": false_miss,
+        "false_fill": false_fill,
+        "true_miss": true_miss,
+        "agreement": round((hit + true_miss) / n, 4) if n else None,
+    }
+
+
 # --------------------------------------------------------------------------- helpers
 def parse_ts(ts: str) -> datetime:
     """A stored or broker timestamp (ISO, any offset, `Z` accepted) as an aware datetime."""

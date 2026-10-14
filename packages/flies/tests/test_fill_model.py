@@ -238,3 +238,58 @@ def test_a_negative_price_value_is_a_deeper_limit_and_pays_it():
     )
     assert out["pnl"] == pytest.approx(round(expected, 2))
     assert fm.grid_key(-0.75) in {fm.grid_key(g) for g in fm.GAP_GRID}, "net targets to credit - 1.00"
+
+
+# --------------------------------------------------------------------------- the entry shadow
+def test_entry_move_is_signed_toward_completion_for_both_sides():
+    # A put spread completes on a rise, a call spread on a fall: the 10-14 11:12 put missed live
+    # while spot rose from 7738.52.
+    assert fm.entry_move(fly.PUT, 7738.52, 7739.83) == pytest.approx(1.31)
+    assert fm.entry_move(fly.CALL, 7738.52, 7739.83) == pytest.approx(-1.31)
+    assert fm.entry_move(fly.PUT, None, 7739.83) is None, "an unknown origin is no move, not zero"
+
+
+def test_entry_observation_gaps_are_the_entry_credits_against_the_limit():
+    # Sell 7740P / buy 7735P at mid 2.30, limit 2.25: the market sits 0.05 PAST the limit (-0.05);
+    # once the spread's mid falls to 2.10 it is 0.15 under it (+0.15), the way a credit goes unfilled.
+    at_entry = fm.spread_prices(fm.ENTRY, buy_bid=1.0, buy_ask=1.2, sell_bid=3.3, sell_ask=3.5)
+    later = fm.spread_prices(fm.ENTRY, buy_bid=1.1, buy_ask=1.3, sell_bid=3.2, sell_ask=3.4)
+    o0 = fm.entry_observation(seconds=0, side=fly.PUT, spot0=7738.5, spot=7738.5, limit=2.25, prices=at_entry)
+    o1 = fm.entry_observation(seconds=15, side=fly.PUT, spot0=7738.5, spot=7739.5, limit=2.25, prices=later)
+    assert (o0["move"], o0["mid_gap"]) == (pytest.approx(0.0), pytest.approx(-0.05))
+    assert (o1["s"], o1["move"], o1["mid_gap"]) == (15, pytest.approx(1.0), pytest.approx(0.15))
+
+
+def test_the_entry_path_keeps_only_later_looks_inside_the_window():
+    path, _ = fm.extend_entry_path(None, {"s": 0, "move": 0.0})
+    path, changed = fm.extend_entry_path(path, {"s": 15, "move": 0.4})
+    assert changed and [o["s"] for o in path] == [0, 15]
+    assert fm.extend_entry_path(path, {"s": 15, "move": 0.9}) == (path, False), "a repeat look"
+    assert fm.extend_entry_path(path, {"s": 61, "move": 0.9}) == (path, False), "past the window"
+    assert fm.extend_entry_path(path, {"s": -3, "move": 0.9}) == (path, False), "before the entry"
+
+
+def test_entry_fills_is_judged_after_the_entry_and_never_guessed():
+    path = [{"s": 0, "move": 0.0}, {"s": 15, "move": 0.4}, {"s": 30, "move": 1.1}]
+    assert fm.entry_fills(path, "move", 1.0) is False, "spot ran its way: live would have missed"
+    assert fm.entry_fills(path, "move", 1.5) is True
+    assert fm.entry_fills(path, "move", 1.0, window=20) is True, "the 1.1 came after the window"
+    assert fm.entry_fills(path[:1], "move", 1.0) is None, "no look after the entry is unjudged"
+    assert fm.entry_fills(None, "move", 1.0) is None
+    with pytest.raises(ValueError):
+        fm.entry_fills(path, "dist", 1.0)
+
+
+def test_score_entry_rule_counts_each_way_a_rule_can_be_wrong():
+    ran = [{"s": 0, "move": 0.0}, {"s": 15, "move": 1.2}]
+    still = [{"s": 0, "move": 0.0}, {"s": 15, "move": 0.1}]
+    orders = [
+        {"filled": True, "path": still},  # hit
+        {"filled": True, "path": ran},  # false miss
+        {"filled": False, "path": still},  # false fill
+        {"filled": False, "path": ran},  # true miss
+        {"filled": True, "path": still[:1]},  # unjudged
+    ]
+    out = fm.score_entry_rule(orders, "move", 1.0)
+    assert (out["hit"], out["false_miss"], out["false_fill"], out["true_miss"]) == (1, 1, 1, 1)
+    assert out["unjudged"] == 1 and out["orders"] == 4 and out["agreement"] == 0.5

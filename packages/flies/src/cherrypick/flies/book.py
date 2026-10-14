@@ -16,6 +16,7 @@ from cherrypick.flies import (
     fill_model,  # noqa: E402
     fly,  # noqa: E402
     ladder,  # noqa: E402
+    live_orders,  # noqa: E402
     selector,  # noqa: E402
 )
 from cherrypick.flies import db as dbmod  # noqa: E402
@@ -287,6 +288,9 @@ def _to_position(row: dict) -> dict:
         # The live-like completion shadow, so its first-touch record survives a restart.
         "shadow_completion_limit": dict(row).get("shadow_completion_limit"),
         "shadow_touches": fill_model.load_touches(dict(row).get("shadow_touches")),
+        # The live-like entry shadow, so its first minute survives a restart.
+        "shadow_entry_limit": dict(row).get("shadow_entry_limit"),
+        "shadow_entry_path": fill_model.load_entry_path(dict(row).get("shadow_entry_path")),
         # The selector arm's positions complete under the params of the source that proposed them.
         "selected_from": dict(row).get("selected_from"),
     }
@@ -327,6 +331,51 @@ def _record_shadow_touches(conn, position: dict, snapshot: dict, when: str) -> N
     position["shadow_touches"] = touches
     dbmod.save_position(
         conn, {"position_id": position["position_id"], "shadow_touches": json.dumps(touches, sort_keys=True)}
+    )
+
+
+def shadow_entry_limit(plan: dict) -> float | None:
+    """The limit a LIVE entry order for this plan would ask: the plan's credit floored to the tick,
+    exactly what `live_orders.entry_spec` submits. None when that floors to nothing submittable."""
+    limit = live_orders.tick_floor(plan["credit"])
+    return limit if limit > 0 else None
+
+
+def _entry_look(snapshot: dict, position: dict, seconds: float) -> dict:
+    """This tick's look at an entry's market, `seconds` after it (fill_model.entry_observation). The
+    entry tick's own look is the origin every later move is measured from."""
+    side, center, width = position["side"], position["center"], position["wing_width"]
+    q = fill_model.quotes_for(
+        fill_model.ENTRY, side, center, width, lambda s, k: engine.quote(snapshot, s, k)
+    )
+    path = position.get("shadow_entry_path") or []
+    spot = snapshot.get("underlying_price")
+    return fill_model.entry_observation(
+        seconds=seconds,
+        side=side,
+        spot0=path[0]["spot"] if path else spot,
+        spot=spot,
+        limit=position["shadow_entry_limit"],
+        prices=fill_model.spread_prices(fill_model.ENTRY, **q),
+    )
+
+
+def _record_shadow_entry(conn, position: dict, snapshot: dict, when: str) -> None:
+    """Add this tick's look to an entry's first minute, while it lasts. Telemetry only."""
+    entered = position.get("entry_time")
+    if not entered or not position.get("shadow_entry_path"):
+        return
+    seconds = (fill_model.parse_ts(when) - fill_model.parse_ts(entered)).total_seconds()
+    if not 0 < seconds <= fill_model.ENTRY_SHADOW_WINDOW_SECONDS:
+        return
+    path, changed = fill_model.extend_entry_path(
+        position["shadow_entry_path"], _entry_look(snapshot, position, seconds)
+    )
+    if not changed:
+        return
+    position["shadow_entry_path"] = path
+    dbmod.save_position(
+        conn, {"position_id": position["position_id"], "shadow_entry_path": json.dumps(path, sort_keys=True)}
     )
 
 
@@ -918,6 +967,14 @@ def _process_snapshot(
             continue
         _record_shadow_touches(conn, pos, snapshot, now)
 
+    # --- 1f'. the live-like ENTRY shadow (fill_model.py): for the first minute after each legged
+    # entry, one look per tick at spot's move toward completion and the entry spread against the
+    # limit live would have asked. Records, never gates: which entries live would have missed is
+    # decided on the read side, by a rule fitted on live's own entry orders.
+    for pos in positions:
+        if pos.get("entry_mode") == "legged" and pos.get("shadow_entry_limit") is not None:
+            _record_shadow_entry(conn, pos, snapshot, now)
+
     # --- 1g. the debit-first shadow ladder (ladder.py): carry every rung this arm stamped today one
     # tick forward under the arm's own completion rule. Same posture as 1d-1f -- records, never
     # gates -- and only on an arm that declared `debit_ladder`.
@@ -978,6 +1035,13 @@ def _process_snapshot(
             "entry_time_min": _minute_of_day(now),
         }
         pos["shadow_completion_limit"] = shadow_completion_limit(pos, symbol, params)
+        pos["entry_time"] = now
+        pos["shadow_entry_limit"] = shadow_entry_limit(plan)
+        pos["shadow_entry_path"] = (
+            [_entry_look(snapshot, {**pos, "shadow_entry_path": None}, 0)]
+            if pos["shadow_entry_limit"] is not None
+            else None
+        )
         positions.append(pos)
         open_positions.append(pos)
         dbmod.save_position(
@@ -986,6 +1050,10 @@ def _process_snapshot(
                 **entry_row_base("legged", "short_vertical", position_id, plan),
                 **extra,
                 "shadow_completion_limit": pos["shadow_completion_limit"],
+                "shadow_entry_limit": pos["shadow_entry_limit"],
+                "shadow_entry_path": (
+                    json.dumps(pos["shadow_entry_path"], sort_keys=True) if pos["shadow_entry_path"] else None
+                ),
                 "net": plan["credit"],
                 "credit": plan["credit"],
                 "entry_center_delta": plan.get("center_delta"),
