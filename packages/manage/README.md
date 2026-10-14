@@ -38,6 +38,24 @@ then take profit, then roll-or-close, then close legs, then review) at that rule
 points for each fired rule pointing the other way (rolling against closing). A trade where nothing
 fired is a **hold** at 70, less 10 when an earnings report falls inside its short legs' life.
 
+## Shapes
+
+Every trade is named (`shapes.py`) and the page shows it. Two shape families change how a trade is
+judged:
+
+- **Super bear / super bull / risk reversal.** A super bear is a long put spread below a short call
+  spread (OIC's double bear spread); a super bull is the mirror. A risk reversal is long one side and short
+  the other. These earn from direction, and are usually opened near even money. When the net premium is
+  under a quarter of the modelled max loss, the trade is `directional`: it takes profit at half its max
+  gain (capped at 1x its risk), stops at half its max loss, and exits at 21 DTE. Percentages of a $23 credit
+  measure nothing; XLU on 2026-10-13 was being closed on a $30 loss against a $277 risk.
+- **Jade lizard** (and the variant with a put wing). Taken in for at least the call spread's width, it has
+  no upside risk, so an in-the-money call is not a broken thesis: the breached-strike rule looks only at
+  its puts.
+
+Butterflies (including broken-wing ones), condors, verticals and diagonals are named but judged by their
+premium as before.
+
 ## The default ruleset (`zhang-2026-10`)
 
 Built on 2026-10-13 from an options-education vendor's webinar library (2022–2026), following the

@@ -164,12 +164,13 @@ function trade(v: unknown): ManageTrade {
   const er = rec(t["earnings"]);
   const xd = rec(t["ex_dividend"]);
   const pf = rec(t["profile"]);
-  const kind = t["kind"] === "credit" || t["kind"] === "debit" ? t["kind"] : null;
+  const kind = t["kind"] === "credit" || t["kind"] === "debit" || t["kind"] === "directional" ? t["kind"] : null;
   return {
     tradeId: str(t["trade_id"]) ?? str(t["underlying"]) ?? "?",
     underlying: str(t["underlying"]) ?? "?",
     spot: num(t["spot"]),
     kind,
+    shape: str(t["shape"]),
     intent: str(t["intent"]),
     note: str(t["note"]),
     cost: num(t["cost"]),

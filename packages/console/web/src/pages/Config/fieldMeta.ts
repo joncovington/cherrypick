@@ -394,6 +394,24 @@ export const FIELDS: FieldMeta[] = [
     max: 365,
     section: "rules",
   },
+  {
+    target: "manage",
+    pointer: "/directional/enabled",
+    label: "Judge near-even-money trades on their risk",
+    help: "Super bears and bulls and risk reversals opened for a premium under the share below of their max loss are judged on max gain and max loss, not a percentage of the premium.",
+    type: "boolean",
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/directional/max_premium_share",
+    label: "Near even money: premium under this share of max loss",
+    type: "number",
+    min: 0,
+    max: 1,
+    step: 0.05,
+    section: "rules",
+  },
 
   // --- dev knobs ---------------------------------------------------------------------------
   {
