@@ -61,10 +61,14 @@ export interface ManageTrade {
   confidence: number | null;
   rule: string | null;
   reason: string;
+  /** The verdict in plain English, written by packages/manage from the same numbers. */
+  explanation: string | null;
   agreeing: string[];
   conflicts: string[];
   fired: ManageFired[];
   legs: ManageLeg[];
+  /** What the trade was opened for: signed cash flow (a credit received is +) and the net price. */
+  opening: { net: number | null; netPrice: number | null; netSide: "cr" | "db" | null } | null;
   order: ManageOrder | null;
   takeProfit: ManageLevel | null;
   stop: ManageLevel | null;
