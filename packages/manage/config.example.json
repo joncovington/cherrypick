@@ -76,6 +76,7 @@
       "enabled": true,
       "out_days": 28,
       "min_credit": 0.1,
+      "skip_through_earnings": true,
       "confidence": 60
     }
   },
