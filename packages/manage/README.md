@@ -53,8 +53,33 @@ judged:
   no upside risk, so an in-the-money call is not a broken thesis: the breached-strike rule looks only at
   its puts.
 
-Butterflies (including broken-wing ones), condors, verticals and diagonals are named but judged by their
-premium as before.
+A **broken-wing butterfly** bought for under a quarter of its max loss is judged the same way (`risk-judged`):
+its premium says little about the tail beyond its wider wing. GLD on 2026-10-13 was $193 in with $1,693
+at risk, and the percentage of the $193 said nothing useful. Ordinary butterflies, condors, verticals and
+diagonals are named but judged by their premium as before.
+
+## Checking a roll before sending it
+
+A credit roll is not automatically a good roll. `check-roll` judges a proposed order against the trade
+as the latest evaluation sees it:
+
+    python -m cherrypick.manage check-roll --trade GLD \
+        --close "-2 2026-10-23 425C @0.14" --close "+1 2026-10-23 445C @0.05" \
+        --open "-2 2026-11-20 415C @2.57" --open "+1 2026-11-20 435C @1.01"
+
+It checks:
+- that the roll takes in a net credit;
+- the shape before and after;
+- whether the shorts move into the long's own expiry;
+- strikes where the trade ends up net short (unlimited for calls);
+- that every short stays beyond the long's breakeven, counting the roll's credit;
+- max loss before and after, and against the per-trade budget;
+- earnings inside the new shorts' life.
+
+The verdict is `reject` for a debit roll, an unlimited loss, or a naked put rolled through earnings;
+`risky` with its reasons; or `ok`. GLD's own 10/09 roll comes back risky on three counts: the shape
+changes from diagonal to broken-wing butterfly, the shorts move into the long's expiry, and what it can
+lose grows.
 
 ## The default ruleset (`zhang-2026-10`)
 

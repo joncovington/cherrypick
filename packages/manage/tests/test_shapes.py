@@ -102,3 +102,17 @@ def test_a_jade_lizards_call_side_in_the_money_is_not_a_broken_thesis():
     assert t["shape"] == "jade lizard (put wing)"
     assert "credit.breached" not in fired(t)
     assert "no upside risk" in t["explanation"]
+
+
+def test_a_cheap_broken_wing_butterfly_is_judged_on_its_tail():
+    # Priced at the chain's 1.93 net debit (opened 8.33, rolled twice for 6.40), not the open legs.
+    chain_basis = [
+        leg(1, "C", 410, NOV, 3.96, 2.365),
+        leg(-2, "C", 415, NOV, 2.04, 1.825),
+        leg(1, "C", 435, NOV, 0.05, 0.705),
+    ]
+    t = run(chain_basis, spot=381.65, net_liq=15889)
+    assert t["kind"] == "risk-judged"
+    assert "debit.stop" not in fired(t)
+    assert t["recommendation"]["rule"] == "risk.oversize"
+    assert "broken-wing butterfly" in t["explanation"]

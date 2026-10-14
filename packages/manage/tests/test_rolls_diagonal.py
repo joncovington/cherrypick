@@ -44,10 +44,11 @@ def test_no_roll_when_the_long_would_not_outlast_the_new_short():
 
 
 def test_no_roll_when_the_short_would_sit_inside_the_longs_breakeven():
-    # Paid 40 for the 350 long: breakeven 350 + 30 net debit = 380, above the 370 short.
+    # Paid 40 for the 350 long: 30 net debit before the roll.
     t = run(diagonal(long_open=40.0, long_mid=44.0), spot=SPOT)
     assert t["roll_blocked"]["reason"] == "breakeven"
-    assert t["roll_blocked"]["breakeven"] == 380.0
+    # The roll's credit lowers the basis, so the line sits below the pre-roll 380, but still above 370.
+    assert 370 < t["roll_blocked"]["breakeven"] < 380
 
 
 def test_earnings_are_flagged_by_default_and_block_when_asked():
