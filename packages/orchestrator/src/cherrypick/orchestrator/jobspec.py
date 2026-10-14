@@ -597,6 +597,47 @@ def arm_record_valid(arm: dict[str, Any] | None, live_cfg: dict[str, Any], now: 
     return True, f"armed for {today}"
 
 
+def _companion_job(
+    module: str, name: str, comp: Any, *, pythonw: str, cwd: str, armed: bool, why: str
+) -> JobSpec:
+    """A resident job for one companion an arm record names (`cherrypick.core.live.write_arm_record`).
+
+    The record is a state file, so its command is held to the module's own package: `-m
+    cherrypick.<module>.<name>` and nothing else. Anything else raises, which `derive_jobs` turns
+    into a derivation error for this one job -- it never runs. Windowed from midnight to `until` (the
+    module's disarm time): the companion exits 0 there by itself, and a windowed resident's clean exit
+    is taken as session complete rather than respawned."""
+    if not isinstance(comp, dict):
+        raise ValueError("companion entry is not an object")
+    argv = comp.get("argv")
+    if (
+        not isinstance(argv, list)
+        or len(argv) < 2
+        or not all(isinstance(a, str) for a in argv)
+        or argv[0] != "-m"
+        or not argv[1].startswith(f"cherrypick.{module}.")
+    ):
+        raise ValueError(f"companion argv must be ['-m', 'cherrypick.{module}.<module>', ...], got {argv!r}")
+    until = str(comp.get("until") or "17:00")
+    _hhmm(until)
+    silence = int(comp.get("silence_seconds") or 120)
+    heartbeat = comp.get("heartbeat")
+    return JobSpec(
+        id=f"{module}-{name}",
+        argv=(pythonw, *argv),
+        kind=KIND_RESIDENT,
+        cwd=cwd,
+        interval_seconds=silence,
+        window_start="00:00",
+        window_end=until,
+        silence_file=str(heartbeat) if heartbeat else None,
+        silence_seconds=silence if heartbeat else 0,
+        enabled=armed,
+        enabled_reason=why,
+        tags=("live",),
+    )
+
+
 def derive_jobs(
     cfg: dict[str, Any],
     *,
@@ -893,6 +934,16 @@ def derive_jobs(
                     tags=("live",),
                 ),
             )
+            # Companions the arm record names (flies' order-alert daemon): one resident job each,
+            # up while the arm is valid and until the companion's own `until`, so a reboot or crash
+            # restarts it instead of losing it for the day (2026-10-14).
+            for cname, comp in ((arm_records.get(name) or {}).get("companions") or {}).items():
+                add(
+                    f"{name}-{cname}",
+                    lambda name=name, cname=cname, comp=comp, armed=armed, why=why, root=root: _companion_job(
+                        name, cname, comp, pythonw=pythonw, cwd=root, armed=armed, why=why
+                    ),
+                )
 
         # The nightly regime-cuts artifact, for any module that declares it (2026-09-19). Driven off
         # the module's own paper block -- `regime_cuts_at` and `regime_cuts_argv` -- so a third
