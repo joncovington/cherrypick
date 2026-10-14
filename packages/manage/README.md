@@ -56,6 +56,7 @@ presenter who cuts losers rather than the one who repairs them, and checked agai
 | `debit.take_profit` | +75% on the debit | take profit, roll or add | 65 | vendor (75–100%) | No outside test |
 | `debit.time_exit` | nearest short at 21 DTE, or long-only at 14 DTE | roll or close | 70 | vendor | Long premium decays fastest in its last weeks |
 | `roll.naked_put` | a naked short put a rule says to close: same strike, next monthly 4+ weeks out, modelled credit ≥ 0.10 | roll for credit (in the close's place) | 60 | your rule, 2026-10-14: rolling out in time for a credit can be useful, especially for naked short puts | Mixed: rolling tested short puts beat holding them (tastylive); repairing defined-risk spreads did not |
+| `roll.diagonal_short` | a diagonal's short structure at 21 DTE or 80% captured: same strikes, next monthly 4+ weeks out | roll for credit | 60 | your rule, 2026-10-14; the vendor's PMCC teaching (close or roll the short at 14-21 DTE) | Our own PMCC study: the short calls' edge rests on the IV assumption and the held long does most of the work, so the roll is routine, not a rescue |
 | `legs.short_take_profit` | a short leg 80% captured, bought back with its wings | close legs | 85 | vendor: buy back nickels; close credit legs near max before earnings | Mechanically sound; nothing left to earn |
 | `ex_dividend` | ITM short call over a declared ex-date with time value < the dividend | review | 80 | vendor | Confirmed by option theory; in practice often not exercised |
 | `risk.oversize` | modelled downside > 3× (2% of net liq) | review | 60 | vendor's 2%-per-trade rule | Direction supported (fractional Kelly); the numbers are convention |
@@ -71,6 +72,19 @@ credit is an estimate (today's IV for the new expiry, no term structure), so it 
 only for a net credit and to close the put if it will not fill for one. **A put is never rolled through
 earnings** (`skip_through_earnings`): when the report falls on or before the new expiry, the close stands,
 and the explanation suggests re-opening after the report.
+
+**A diagonal rolls its short side for a credit** (`roll.diagonal_short`, confidence 60). In a trade whose
+shorts expire before a long they are sold against, the short structure (the shorts and any wings in
+their expiry) rolls out to the next monthly at least four weeks later, at the same strikes, when it
+reaches the 21-day exit or has given up 80% of its premium. It applies only when all of these hold:
+- the trade is not stopped out (selling new shorts against a long that has failed is repairing a loser);
+- the long outlives the new short by 45 days;
+- the roll is modelled to take in at least 0.10 per unit;
+- every new short stays beyond the long's breakeven (the long strike plus the chain's net debit per share,
+  or minus it for puts), so an assignment cannot lock in a loss.
+
+Earnings inside the new short's life are flagged, not blocked, because the long covers the short through
+a report. When the roll is not taken, the explanation says which condition stopped it.
 
 ## Known limits
 

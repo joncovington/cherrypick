@@ -78,6 +78,14 @@
       "min_credit": 0.1,
       "skip_through_earnings": true,
       "confidence": 60
+    },
+    "diagonal_short": {
+      "enabled": true,
+      "out_days": 28,
+      "min_credit": 0.1,
+      "min_long_days": 45,
+      "skip_through_earnings": false,
+      "confidence": 60
     }
   },
   "expiry": {
@@ -120,6 +128,6 @@
     "grid_high": 3.0,
     "grid_steps": 600
   },
-  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, ex_dividend, risk.oversize",
+  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, ex_dividend, risk.oversize",
   "positions": {}
 }

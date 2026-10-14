@@ -200,6 +200,23 @@ def explain(t: dict[str, Any]) -> str:
             "keeps you paid for the risk while giving the stock more time. Only send it for a net credit; "
             "if it will not fill for one, close the put instead."
         )
+    elif rule == "roll.diagonal_short":
+        r = t.get("roll") or {}
+        due = _names(rec.get("replaces") or [])
+        front, when = _day(r.get("from")), _day(r.get("expiration"))
+        per_unit, total = f"{r.get('credit', 0):.2f}", _usd(r.get("net"))
+        why = (
+            f"The short side of this diagonal is due ({due}). Rather than close the trade, roll the short "
+            f"structure out: close the {front} legs and sell the same strikes for {when}, about {per_unit} "
+            f"a unit (roughly {total} in credit, an estimate from today's volatility). The long keeps "
+            "working underneath, and the new short stays beyond its breakeven. Only send it for a net "
+            "credit; if it will not fill for one, close the short side instead."
+        )
+        if r.get("earnings_date"):
+            why += (
+                f" Earnings on {_day(r['earnings_date'])} fall inside the new short's life: the long covers "
+                "it, but expect a bigger move."
+            )
     elif rule == "ex_dividend":
         why = (
             "A short call is in the money ahead of an ex-dividend date, with less time value left than the "
@@ -224,16 +241,48 @@ def explain(t: dict[str, Any]) -> str:
     conflict = ""
     if rec.get("conflicts"):
         conflict = " The " + _names(rec["conflicts"]) + " points the other way, which lowers the confidence."
-    blocked = ""
     rb = t.get("roll_blocked") or {}
-    if rb.get("reason") == "earnings":
+    if rb.get("rule") == "roll.naked_put" and rb.get("reason") == "earnings":
         blocked = (
             f" Rolling it out instead is not an option: a roll to {_day(rb.get('expiration'))} would carry "
             f"the put through earnings on {_day(rb.get('earnings_date'))}. Consider re-opening it after "
             "the report."
         )
         return f"{pos} {why}{cash}{also}{conflict}{blocked}"
-    return f"{pos} {why}{cash}{also}{conflict}{_earnings(t)}"
+    return f"{pos} {why}{cash}{also}{conflict}{_diagonal_blocked(rb)}{_earnings(t)}"
+
+
+def _diagonal_blocked(rb: dict[str, Any]) -> str:
+    """Why the short side of a diagonal was not rolled, when it was due."""
+    if rb.get("rule") != "roll.diagonal_short":
+        return ""
+    reason = rb.get("reason")
+    if reason == "stopped":
+        return (
+            " Rolling the short side is not on the table: the trade has hit its stop, and selling new shorts "
+            "against a long that has failed is repairing a loser."
+        )
+    if reason == "long_too_short":
+        return (
+            " Rolling the short side would leave too little life in the long, which expires "
+            f"{_day(rb.get('long_expiration'))}: it should outlast the new short by {rb.get('min_days', 45)} "
+            "days or more. "
+            "Close, or roll the long out first."
+        )
+    if reason == "breakeven":
+        return (
+            f" Rolling the short at the same strike would leave it at {rb.get('strike'):g}, inside the "
+            "long's "
+            f"breakeven of {rb.get('breakeven'):.2f}: an assignment there would lock in a loss."
+        )
+    if reason == "credit":
+        return (
+            f" A same-strike roll would take in only about {rb.get('credit', 0):.2f}, under the minimum, so "
+            "it is not worth doing."
+        )
+    if reason == "earnings":
+        return f" Rolling would carry the short side through earnings on {_day(rb.get('earnings_date'))}."
+    return ""
 
 
 PLAIN = {
@@ -248,6 +297,7 @@ PLAIN = {
     "debit.time_exit": "time exit",
     "legs.short_take_profit": "short-leg buy-back rule",
     "roll.naked_put": "naked-put credit roll",
+    "roll.diagonal_short": "diagonal short roll",
     "ex_dividend": "ex-dividend check",
     "risk.oversize": "risk budget check",
 }

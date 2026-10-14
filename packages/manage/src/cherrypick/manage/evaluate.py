@@ -601,6 +601,7 @@ def evaluate_trade(
             and session <= er_date <= _date(roll["expiration"])
         ):
             trade["roll_blocked"] = {
+                "rule": "roll.naked_put",
                 "reason": "earnings",
                 "earnings_date": er_date.isoformat(),
                 "expiration": roll["expiration"],
@@ -619,8 +620,117 @@ def evaluate_trade(
                 )
             )
 
+    # ---- a diagonal's short structure rolls out for a credit when it is due, if the long still works
+    rd = rules["roll"]["diagonal_short"]
+    names = {f["rule"] for f in fired}
+    due = {"credit.time_exit", "debit.time_exit", "legs.short_take_profit"} & names
+    stopped = {"debit.stop", "credit.stop"} & names
+    if due and spot and not off("roll.diagonal_short"):
+        roll, blocked = _diagonal_roll(options, session, spot, rate, rd, cost)
+        if stopped and (roll or blocked):
+            # A stopped trade is not rolled whatever else holds: its long has failed.
+            blocked, roll = {"reason": "stopped", "rules": sorted(stopped)}, None
+        if roll and er_date is not None and session <= er_date <= _date(roll["expiration"]):
+            if rd.get("skip_through_earnings"):
+                blocked, roll = {"reason": "earnings", "earnings_date": er_date.isoformat()}, None
+            else:
+                roll["earnings_date"] = er_date.isoformat()
+        if roll and roll["credit"] < float(rd["min_credit"]):
+            blocked, roll = {"reason": "credit", "credit": roll["credit"]}, None
+        if blocked:
+            trade["roll_blocked"] = {**blocked, "rule": "roll.diagonal_short"}
+        if roll:
+            trade["roll"] = roll
+            fired.append(
+                _fire(
+                    "roll.diagonal_short",
+                    ROLL_FOR_CREDIT,
+                    rd["confidence"],
+                    f"roll the {roll['from']} short structure out to {roll['expiration']} "
+                    "at the same strikes "
+                    f"for about {roll['credit']:.2f} cr (modelled), keeping the long; "
+                    "only for a net credit",
+                    roll["legs"],
+                )
+            )
+
     trade["fired"] = fired
     return _decide(trade, rules, legs)
+
+
+def _diagonal_roll(
+    options: list[dict[str, Any]],
+    session: date,
+    spot: float,
+    rate: float,
+    cfg: dict[str, Any],
+    cost: float,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """(roll, None) or (None, why not) for a diagonal's short structure.
+
+    The structure is every leg in the nearest expiry that holds a short; the longs it is sold against
+    are the legs expiring later. Priced at each leg's own IV on the new expiry (flat term structure), so
+    the credit is an estimate.
+    """
+    shorts = [leg for leg in options if leg["quantity"] < 0]
+    if not shorts:
+        return None, None
+    front = min(leg["expiration"] for leg in shorts)
+    group = [leg for leg in options if leg["expiration"] == front]
+    longs = [leg for leg in options if leg["expiration"] > front and leg["quantity"] > 0]
+    if not longs or any(leg["iv"] is None or leg["mid"] is None for leg in group):
+        return None, None  # not a diagonal, or the front cannot be priced
+    new_exp = _monthly_on_or_after(_date(front) + timedelta(days=int(cfg["out_days"])))
+    long_exp = min(_date(leg["expiration"]) for leg in longs)
+    if (long_exp - new_exp).days < int(cfg["min_long_days"]):
+        return None, {
+            "reason": "long_too_short",
+            "long_expiration": long_exp.isoformat(),
+            "min_days": int(cfg["min_long_days"]),
+        }
+    # The long's breakeven: an assignment on a short beyond it cannot lock in a loss.
+    long_qty = sum(leg["quantity"] for leg in longs)
+    per_share = max(cost, 0.0) / pricing.MULTIPLIER / long_qty if long_qty else 0.0
+    for short in (leg for leg in group if leg["quantity"] < 0):
+        same = [leg for leg in longs if leg["right"] == short["right"]]
+        if not same:
+            continue
+        if short["right"] == "C":
+            line = min(leg["strike"] for leg in same) + per_share
+            bad = short["strike"] < line
+        else:
+            line = max(leg["strike"] for leg in same) - per_share
+            bad = short["strike"] > line
+        if bad:
+            return None, {"reason": "breakeven", "strike": short["strike"], "breakeven": round(line, 2)}
+    years = (new_exp - session).days / 365.0
+    new_mids = [pricing.price(spot, leg["strike"], years, leg["iv"], leg["right"], rate) for leg in group]
+    unit = reduce(math.gcd, [int(abs(leg["quantity"])) or 1 for leg in group])
+    net = sum(leg["quantity"] * (leg["mid"] - new) for leg, new in zip(group, new_mids, strict=True))
+    credit = net / unit
+    close_rows = [
+        f"{'BTC' if leg['quantity'] < 0 else 'STC'} {abs(leg['quantity']):g} {front} "
+        f"{leg['strike']:g}{leg['right']} @ {leg['mid']:.2f}"
+        for leg in group
+    ]
+    open_rows = [
+        f"{'STO' if leg['quantity'] < 0 else 'BTO'} {abs(leg['quantity']):g} {new_exp.isoformat()} "
+        f"{leg['strike']:g}{leg['right']} @ ~{new:.2f} (modelled)"
+        for leg, new in zip(group, new_mids, strict=True)
+    ]
+    return (
+        {
+            "kind": "diagonal_short",
+            "from": front,
+            "expiration": new_exp.isoformat(),
+            "strike": shorts[0]["strike"],
+            "credit": credit,
+            "net": net * pricing.MULTIPLIER,
+            "modelled": True,
+            "legs": close_rows + open_rows,
+        },
+        None,
+    )
 
 
 def _monthly_on_or_after(day: date) -> date:
@@ -741,7 +851,7 @@ def _recommend(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str
     # A credit roll is offered BECAUSE a close fired: those rules are its trigger, not its opposition.
     replaces: list[str] = []
     if chosen["action"] == ROLL_FOR_CREDIT:
-        replaces = [f["rule"] for f in fired if f["action"] in (CLOSE, ROLL_OR_CLOSE)]
+        replaces = [f["rule"] for f in fired if f["action"] in (CLOSE, ROLL_OR_CLOSE, CLOSE_LEGS)]
         conflicts = [r for r in conflicts if r not in replaces]
     confidence = chosen["confidence"]
     if confidence is not None and conflicts:
