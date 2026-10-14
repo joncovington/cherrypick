@@ -115,6 +115,9 @@ def _butterfly(legs: list[dict[str, Any]]) -> str | None:
 # The shapes that own a direction and are usually opened near even money: judged on what they can win
 # and lose, never on a percentage of their premium.
 DIRECTIONAL = frozenset({"super bear", "super bull", "risk reversal (bear)", "risk reversal (bull)"})
+# Also judged on risk when bought cheaply against a large tail: a broken-wing butterfly's premium says
+# little about what it can lose on the wide-wing side (GLD on 2026-10-13: $193 in, $1,693 at risk).
+RISK_JUDGED = DIRECTIONAL | {"broken-wing butterfly"}
 
 
 def _spread_kind(cost: float | None) -> str:

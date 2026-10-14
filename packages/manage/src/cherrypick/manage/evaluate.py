@@ -283,14 +283,14 @@ def evaluate_trade(
     dr = rules["directional"]
     directional = bool(
         dr["enabled"]
-        and trade["shape"] in _shapes.DIRECTIONAL
+        and trade["shape"] in _shapes.RISK_JUDGED
         and profile
         and not profile["unbounded_low"]
         and -profile["max_loss_from_open"] > 0
         and abs(cost) < float(dr["max_premium_share"]) * -profile["max_loss_from_open"]
     )
     if directional:
-        trade["kind"] = "directional"
+        trade["kind"] = "directional" if trade["shape"] in _shapes.DIRECTIONAL else "risk-judged"
 
     fired: list[dict] = []
 
@@ -729,6 +729,24 @@ def evaluate_trade(
     return _decide(trade, rules, legs)
 
 
+def long_breakeven(longs: list[dict[str, Any]], basis: float) -> dict[str, float]:
+    """Per right, the strike a short may not cross: the long's strike moved by the trade's net debit per
+    long contract (calls: lowest long call + debit; puts: highest long put - debit). A net credit moves
+    nothing."""
+    out: dict[str, float] = {}
+    for right in ("C", "P"):
+        same = [leg for leg in longs if leg["right"] == right and leg["quantity"] > 0]
+        qty = sum(leg["quantity"] for leg in same)
+        if not same or not qty:
+            continue
+        per_share = max(basis, 0.0) / pricing.MULTIPLIER / qty
+        if right == "C":
+            out[right] = min(leg["strike"] for leg in same) + per_share
+        else:
+            out[right] = max(leg["strike"] for leg in same) - per_share
+    return out
+
+
 def _diagonal_roll(
     options: list[dict[str, Any]],
     session: date,
@@ -759,26 +777,19 @@ def _diagonal_roll(
             "long_expiration": long_exp.isoformat(),
             "min_days": int(cfg["min_long_days"]),
         }
-    # The long's breakeven: an assignment on a short beyond it cannot lock in a loss.
-    long_qty = sum(leg["quantity"] for leg in longs)
-    per_share = max(cost, 0.0) / pricing.MULTIPLIER / long_qty if long_qty else 0.0
-    for short in (leg for leg in group if leg["quantity"] < 0):
-        same = [leg for leg in longs if leg["right"] == short["right"]]
-        if not same:
-            continue
-        if short["right"] == "C":
-            line = min(leg["strike"] for leg in same) + per_share
-            bad = short["strike"] < line
-        else:
-            line = max(leg["strike"] for leg in same) - per_share
-            bad = short["strike"] > line
-        if bad:
-            return None, {"reason": "breakeven", "strike": short["strike"], "breakeven": round(line, 2)}
     years = (new_exp - session).days / 365.0
     new_mids = [pricing.price(spot, leg["strike"], years, leg["iv"], leg["right"], rate) for leg in group]
     unit = reduce(math.gcd, [int(abs(leg["quantity"])) or 1 for leg in group])
     net = sum(leg["quantity"] * (leg["mid"] - new) for leg, new in zip(group, new_mids, strict=True))
     credit = net / unit
+    # The long's breakeven after the roll (its credit counts): a short beyond it cannot lock in a loss.
+    line = long_breakeven(longs, cost - net * pricing.MULTIPLIER)
+    for short in (leg for leg in group if leg["quantity"] < 0):
+        edge = line.get(short["right"])
+        if edge is None:
+            continue
+        if (short["strike"] < edge) if short["right"] == "C" else (short["strike"] > edge):
+            return None, {"reason": "breakeven", "strike": short["strike"], "breakeven": round(edge, 2)}
     close_rows = [
         f"{'BTC' if leg['quantity'] < 0 else 'STC'} {abs(leg['quantity']):g} {front} "
         f"{leg['strike']:g}{leg['right']} @ {leg['mid']:.2f}"

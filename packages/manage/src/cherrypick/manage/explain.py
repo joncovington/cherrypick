@@ -350,6 +350,11 @@ SHAPE_NOTES = {
         "This is a bullish risk reversal: long calls paid for by short puts. It earns from the stock rising, "
         "so it is judged on what it can win and lose, not on its small premium."
     ),
+    "broken-wing butterfly": (
+        "This is a broken-wing butterfly: it pays most if the stock finishes at the short strike, and its "
+        "risk sits beyond the wider wing. Bought cheaply against that tail, it is judged on what it can win "
+        "and lose, not on its small premium."
+    ),
     "jade lizard": (
         "This is a jade lizard: taken in for at least the call spread's width, so it has no upside risk; "
         "all of its risk is the short put."

@@ -68,7 +68,7 @@ export interface ManageTrade {
   underlying: string;
   spot: number | null;
   /** `directional`: opened near even money (a super bear or bull, a risk reversal), judged on risk. */
-  kind: "credit" | "debit" | "directional" | null;
+  kind: "credit" | "debit" | "directional" | "risk-judged" | null;
   /** The trade's shape, named by packages/manage (super bear, jade lizard, diagonal, ...). */
   shape: string | null;
   intent: string | null;

@@ -105,9 +105,9 @@ def test_the_evaluation_takes_the_chain_as_the_basis_not_the_open_legs():
     assert t["pnl_net"] == pytest.approx(-58 - 193 - 11 * 1.12)
     assert t["opening"]["net_price"] == pytest.approx(8.33)
     assert t["chain"]["rolls"] == 2
-    assert t["explanation"].startswith(
+    assert (
         "You opened this on Sep 2 and paid $833, then adjusted it twice, taking in $640, "
-        "so you are in for $193 net"
+        "so you are in for $193 net" in t["explanation"]
     )
 
 

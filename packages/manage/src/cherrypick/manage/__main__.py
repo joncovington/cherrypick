@@ -3,6 +3,7 @@
     python -m cherrypick.manage evaluate --snapshot PATH [--rules PATH]
     python -m cherrypick.manage reevaluate [--session YYYY-MM-DD] [--rules PATH]
     python -m cherrypick.manage rules [--rules PATH]
+    python -m cherrypick.manage check-roll --trade ID --close LEG ... --open LEG ...
 
 `evaluate` reads a broker snapshot (written by the orchestrator's `manage` verb, the only caller that
 touches the broker), stores it, and writes the evaluation beside it. `reevaluate` re-runs a stored
@@ -69,6 +70,41 @@ def cmd_rules(args) -> dict:
     return {"ok": not warnings, "source": source, "warnings": warnings, "rules": rules}
 
 
+def cmd_check_roll(args) -> dict:
+    """Judge a proposed roll of one trade against the stored snapshot (latest by default)."""
+    from datetime import date
+
+    from cherrypick.manage import rollcheck as _rollcheck
+
+    path = _paths.snapshot_path(args.session) if args.session else None
+    if path is None:
+        found = sorted(_paths.data_dir().glob("snapshot-*.json"))
+        if not found:
+            return {"ok": False, "error": "no stored snapshot; run `run.py manage` first"}
+        path = found[-1]
+    snapshot = json.loads(path.read_text(encoding="utf-8"))
+    rules, _warnings, _source = _rules.load(Path(args.rules) if args.rules else None)
+    result = _evaluate.evaluate(snapshot, rules)
+    wanted = args.trade.upper()
+    for account in result["accounts"]:
+        for trade in account["trades"]:
+            if str(trade.get("trade_id", "")).upper() == wanted:
+                metrics = (snapshot.get("metrics") or {}).get(trade["underlying"]) or {}
+                verdict = _rollcheck.check(
+                    trade,
+                    [_rollcheck.parse_leg(x) for x in args.close],
+                    [_rollcheck.parse_leg(x) for x in args.open],
+                    session=date.fromisoformat(result["session"]),
+                    spot=trade["spot"],
+                    rules=rules,
+                    net_liq=account.get("net_liq"),
+                    earnings_date=metrics.get("earnings_date"),
+                )
+                return {"ok": True, "session": result["session"], "trade": trade["trade_id"], **verdict}
+    ids = [t.get("trade_id") for a in result["accounts"] for t in a["trades"]]
+    return {"ok": False, "error": f"no trade {args.trade!r} in the {result['session']} snapshot; have {ids}"}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -82,11 +118,25 @@ def main() -> None:
     p_re.add_argument("--rules", default=None)
     p_rules = sub.add_parser("rules")
     p_rules.add_argument("--rules", default=None)
+    p_check = sub.add_parser("check-roll")
+    p_check.add_argument("--trade", required=True, help="trade id as the page shows it, e.g. GLD or SOFI#2")
+    p_check.add_argument(
+        "--close", action="append", default=[], help="a held leg to close, '-2 2026-10-23 425C @0.14'"
+    )
+    p_check.add_argument(
+        "--open", action="append", default=[], help="a leg to open, '-2 2026-11-20 415C @2.57'"
+    )
+    p_check.add_argument("--session", default=None)
+    p_check.add_argument("--rules", default=None)
     args = parser.parse_args()
+    commands = {
+        "evaluate": cmd_evaluate,
+        "reevaluate": cmd_reevaluate,
+        "rules": cmd_rules,
+        "check-roll": cmd_check_roll,
+    }
     try:
-        result = {"evaluate": cmd_evaluate, "reevaluate": cmd_reevaluate, "rules": cmd_rules}[args.command](
-            args
-        )
+        result = commands[args.command](args)
     except (OSError, ValueError) as exc:
         result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     json.dump(result, sys.stdout, indent=2, default=str)
