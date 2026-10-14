@@ -249,6 +249,7 @@ function TradesCard({
               >
                 {open === t.tradeId ? "▾" : "▸"} {t.tradeId}
               </button>
+              {t.shape ? <span className="muted"> · {t.shape}</span> : null}
               {t.intent ? <span className="muted"> · {t.intent}</span> : null}
             </td>
             <td>

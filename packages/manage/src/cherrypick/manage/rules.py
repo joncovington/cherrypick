@@ -133,6 +133,20 @@ DEFAULT_RULES: dict[str, Any] = {
     },
     "earnings": {"enabled": True, "warn_days": 14},
     "ex_dividend": {"enabled": True, "warn_days": 10, "confidence": 80},
+    # A trade whose net premium is under `max_premium_share` of its modelled max loss (a super bear or
+    # bull, a risk reversal) earns from direction, not premium, so the credit and debit rules -- each a
+    # percentage of that small premium -- give way to these, judged on what it can win and lose.
+    "directional": {
+        "enabled": True,
+        "max_premium_share": 0.25,
+        "take_profit": {
+            "enabled": True,
+            "share_of_max_gain": 0.50,
+            "max_reward_multiple": 1.0,
+            "confidence": 65,
+        },
+        "stop": {"enabled": True, "share_of_max_loss": 0.50, "confidence": 65},
+    },
     "conflict_penalty": 10,
     # Legs left out of the evaluation entirely. SPX 0DTE is the flies live loop's own book: it is
     # managed by that loop and settles in cash at the close, so judging it here only adds noise.
@@ -156,6 +170,8 @@ RULE_IDS = (
     "legs.short_take_profit",
     "roll.naked_put",
     "roll.diagonal_short",
+    "directional.take_profit",
+    "directional.stop",
     "ex_dividend",
     "risk.oversize",
 )

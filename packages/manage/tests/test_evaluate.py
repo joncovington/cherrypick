@@ -68,13 +68,14 @@ def test_credit_time_exit_rolls_a_winner_and_closes_a_loser():
 
 
 def test_breached_credit_trade_that_would_not_be_opened_today_is_closed():
-    # META-shaped: put spread far below, call spread fully in the money.
+    # An iron condor (4.24 taken in, under the 5-wide call wing, so not a jade lizard): put spread far
+    # below, call spread fully in the money.
     t = run(
         [
             leg(1, "C", 725, "2026-11-20", 51.52, 63.80),
             leg(-1, "C", 720, "2026-11-20", 53.76, 67.425),
-            leg(1, "P", 635, "2026-11-20", 18.20, 4.575),
-            leg(-1, "P", 655, "2026-11-20", 24.05, 6.775),
+            leg(1, "P", 635, "2026-11-20", 8.00, 4.575),
+            leg(-1, "P", 655, "2026-11-20", 10.00, 6.775),
         ],
         spot=762.47,
     )

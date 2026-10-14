@@ -116,6 +116,21 @@
     "warn_days": 10,
     "confidence": 80
   },
+  "directional": {
+    "enabled": true,
+    "max_premium_share": 0.25,
+    "take_profit": {
+      "enabled": true,
+      "share_of_max_gain": 0.5,
+      "max_reward_multiple": 1.0,
+      "confidence": 65
+    },
+    "stop": {
+      "enabled": true,
+      "share_of_max_loss": 0.5,
+      "confidence": 65
+    }
+  },
   "conflict_penalty": 10,
   "exclude": {
     "zero_dte_underlyings": [
@@ -128,6 +143,6 @@
     "grid_high": 3.0,
     "grid_steps": 600
   },
-  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, ex_dividend, risk.oversize",
+  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, directional.take_profit, directional.stop, ex_dividend, risk.oversize",
   "positions": {}
 }

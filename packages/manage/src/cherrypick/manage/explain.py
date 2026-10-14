@@ -58,7 +58,7 @@ def opened(t: dict[str, Any]) -> str:
             f"You opened this on {_day(first['date'])} and {opened_for}, then adjusted it {times}, "
             f"{rolls}, {net_in}; {stand}"
         )
-    if t.get("kind") == "credit":
+    if cost < 0:
         now = -value
         stand = (
             f"buying it back would cost {_usd(now)}" if now > 0 else f"closing it would pay you {_usd(now)}"
@@ -72,7 +72,11 @@ def _pnl(t: dict[str, Any]) -> str:
     pnl = t.get("pnl_gross")
     if pnl is None:
         return ""
-    return f"a {'gain' if pnl >= 0 else 'loss'} of {_usd(pnl)} ({_pct(t.get('capture'))})"
+    word = "gain" if pnl >= 0 else "loss"
+    d = t.get("directional") or {}
+    if d:
+        return f"a {word} of {_usd(pnl)} ({_pct(t.get('capture'))} of the {_usd(d['max_loss'])} at risk)"
+    return f"a {word} of {_usd(pnl)} ({_pct(t.get('capture'))})"
 
 
 def _close_cash(t: dict[str, Any]) -> str:
@@ -97,8 +101,16 @@ def _fired(t: dict[str, Any], rule: str) -> dict[str, Any] | None:
 def _hold(t: dict[str, Any]) -> str:
     levels = t.get("exit_levels") or {}
     tp, stop, te = levels.get("take_profit"), levels.get("stop"), levels.get("time_exit")
-    head = f"Nothing to do today. {opened(t)}, {_pnl(t)}. No rule has been triggered."
+    head = f"Nothing to do today.{_shape_note(t)} {opened(t)}, {_pnl(t)}. No rule has been triggered."
     waits = []
+    d = t.get("directional") or {}
+    if d:
+        if stop and stop.get("close_value") is not None:
+            waits.append(f"take profit once it is up {_usd(d['target'])}")
+            waits.append(f"cut it if it is down {_usd(-(stop['close_value'] - t['cost']))}")
+        if te and te.get("date"):
+            waits.append(f"close it on {_day(te['date'])} whatever happens")
+        return head + " It is waiting to " + "; ".join(waits) + "." + _earnings(t)
     if t.get("kind") == "credit":
         if tp and tp.get("close_value") is not None:
             waits.append(f"take the profit once buying it back costs {_usd(tp['close_value'])} or less")
@@ -128,9 +140,19 @@ def explain(t: dict[str, Any]) -> str:
             "print, with no shares and no assignment risk, so there is nothing to do."
         )
 
-    pos = f"{opened(t)}, {_pnl(t)}."
+    pos = f"{_shape_note(t).strip()} {opened(t)}, {_pnl(t)}.".strip()
     levels = t.get("exit_levels") or {}
-    if rule == "debit.stop":
+    if rule == "directional.take_profit":
+        why = (
+            "It has made half of what it can, or as much as it risked. A directional trade is closed there: "
+            "the rest needs the move to keep going, with the whole gain at stake. Close it."
+        )
+    elif rule == "directional.stop":
+        why = (
+            "It has lost half of what it can lose. The move it was betting on has gone the other way, so "
+            "the rule cuts it there rather than ride it to the maximum loss. Close it."
+        )
+    elif rule == "debit.stop":
         why = (
             "The rule cuts any trade bought for a debit once it has lost half of what was paid. "
             "Past that point it rarely recovers, and holding on turns a planned loss into a bigger one. "
@@ -300,9 +322,45 @@ PLAIN = {
     "roll.diagonal_short": "diagonal short roll",
     "ex_dividend": "ex-dividend check",
     "risk.oversize": "risk budget check",
+    "directional.take_profit": "directional take-profit",
+    "directional.stop": "directional stop",
 }
 
 
 def _names(rules: list[str]) -> str:
     names = [PLAIN.get(r, r) for r in rules]
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+SHAPE_NOTES = {
+    "super bear": (
+        "This is a super bear: a long put spread below a short call spread, opened near even money. It earns "
+        "from the stock falling, so it is judged on what it can win and lose, not on its small premium."
+    ),
+    "super bull": (
+        "This is a super bull: a long call spread above a short put spread, opened near even money. It earns "
+        "from the stock rising, so it is judged on what it can win and lose, not on its small premium."
+    ),
+    "risk reversal (bear)": (
+        "This is a bearish risk reversal: long puts paid for by short calls. It earns from the stock "
+        "falling, "
+        "so it is judged on what it can win and lose, not on its small premium."
+    ),
+    "risk reversal (bull)": (
+        "This is a bullish risk reversal: long calls paid for by short puts. It earns from the stock rising, "
+        "so it is judged on what it can win and lose, not on its small premium."
+    ),
+    "jade lizard": (
+        "This is a jade lizard: taken in for at least the call spread's width, so it has no upside risk; "
+        "all of its risk is the short put."
+    ),
+    "jade lizard (put wing)": (
+        "This is a jade lizard with a put wing: taken in for at least the call spread's width, so it has no "
+        "upside risk; its risk is the put spread below."
+    ),
+}
+
+
+def _shape_note(t: dict[str, Any]) -> str:
+    note = SHAPE_NOTES.get(t.get("shape") or "")
+    return f" {note}" if note else ""

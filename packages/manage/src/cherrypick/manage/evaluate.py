@@ -28,6 +28,7 @@ from cherrypick.manage import chains as _chains
 from cherrypick.manage import explain as _explain
 from cherrypick.manage import pricing
 from cherrypick.manage import rules as _rules
+from cherrypick.manage import shapes as _shapes
 
 EVAL_VERSION = 1
 
@@ -213,6 +214,8 @@ def evaluate_trade(
         "chain": _chain_view(chain) if chain else None,
         "roll": None,
         "roll_blocked": None,
+        "shape": None,
+        "directional": None,
         "capture": None,
         "nearest_expiry": None,
         "nearest_short_expiry": None,
@@ -267,10 +270,27 @@ def evaluate_trade(
         profile.update(
             horizon=expiries[0],
             max_loss_from_open=profile["min_value"] - cost,
+            max_gain_from_open=profile["max_value"] - cost,
             downside_from_now=profile["min_value"] - value,
             upside_from_now=profile["max_value"] - value,
         )
         trade["profile"] = profile
+
+    trade["shape"] = _shapes.classify(options, cost)
+    # A trade opened near even money (a super bear or bull, a risk reversal) earns from direction, not
+    # premium: a percentage of a tiny credit or debit measures nothing, so it is judged on what it can
+    # still win and lose instead.
+    dr = rules["directional"]
+    directional = bool(
+        dr["enabled"]
+        and trade["shape"] in _shapes.DIRECTIONAL
+        and profile
+        and not profile["unbounded_low"]
+        and -profile["max_loss_from_open"] > 0
+        and abs(cost) < float(dr["max_premium_share"]) * -profile["max_loss_from_open"]
+    )
+    if directional:
+        trade["kind"] = "directional"
 
     fired: list[dict] = []
 
@@ -346,8 +366,56 @@ def evaluate_trade(
     if xd and xd > session:
         trade["ex_dividend"] = {"date": xd.isoformat(), "days": (xd - session).days}
 
+    # ---- trades judged on their risk, not their premium
+    if directional:
+        max_loss = -profile["max_loss_from_open"]
+        max_gain = profile["max_gain_from_open"]
+        tp_share = float(dr["take_profit"]["share_of_max_gain"])
+        stop_share = float(dr["stop"]["share_of_max_loss"])
+        # A long option's max gain can be near-unlimited; the target never asks for more than
+        # `max_reward_multiple` times the risk taken.
+        target = min(tp_share * max_gain, float(dr["take_profit"]["max_reward_multiple"]) * max_loss)
+        trade["exit_levels"]["take_profit"] = {"close_value": cost + target}
+        trade["exit_levels"]["stop"] = {"close_value": cost - stop_share * max_loss, "basis": "max_loss"}
+        trade["capture"] = pnl / max_loss  # P&L as a share of the risk taken
+        trade["directional"] = {"max_gain": max_gain, "max_loss": max_loss, "target": target}
+        if not off("directional.take_profit") and target > 0 and pnl >= target:
+            fired.append(
+                _fire(
+                    "directional.take_profit",
+                    TAKE_PROFIT,
+                    dr["take_profit"]["confidence"],
+                    f"up ${pnl:,.0f}, past the ${target:,.0f} target "
+                    f"(the lesser of {tp_share:.0%} of the ${max_gain:,.0f} it can make and "
+                    f"{float(dr['take_profit']['max_reward_multiple']):g}x the ${max_loss:,.0f} at risk)",
+                )
+            )
+        if not off("directional.stop") and -pnl >= stop_share * max_loss:
+            fired.append(
+                _fire(
+                    "directional.stop",
+                    CLOSE,
+                    dr["stop"]["confidence"],
+                    f"down ${-pnl:,.0f}, {-pnl / max_loss:.0%} of the ${max_loss:,.0f} it can lose "
+                    f"(stop at {stop_share:.0%})",
+                )
+            )
+        te = rules["credit"]["time_exit"]
+        if trade["nearest_short_dte"] is not None:
+            trade["exit_levels"]["time_exit"] = {"date": _exit_day(_date(short_expiries[0]), int(te["dte"]))}
+            if not off("credit.time_exit") and 0 <= trade["nearest_short_dte"] <= int(te["dte"]):
+                fired.append(
+                    _fire(
+                        "credit.time_exit",
+                        TAKE_PROFIT if pnl > 0 else CLOSE,
+                        te["confidence"],
+                        f"nearest short is {trade['nearest_short_dte']} DTE (exit at {te['dte']}); "
+                        "a directional trade is closed rather than rolled into the last weeks",
+                    )
+                )
+
     # ---- credit trades
-    if kind == "credit":
+    elif kind == "credit":
         credit = basis
         cr = rules["credit"]
         loss = -pnl
@@ -402,6 +470,9 @@ def evaluate_trade(
         br = cr["breached"]
         if not off("credit.breached") and profile and spot:
             itm = [leg for leg in shorts if (leg["intrinsic"] or 0) > 0]
+            if trade["shape"].startswith("jade lizard"):
+                # No upside risk by construction: a call spread trading through is not a broken thesis.
+                itm = [leg for leg in itm if leg["right"] == "P"]
             downside = -profile["downside_from_now"]
             if itm and downside > 0:
                 ratio = profile["upside_from_now"] / downside
