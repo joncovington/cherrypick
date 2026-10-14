@@ -162,7 +162,7 @@ def explain(t: dict[str, Any]) -> str:
             why = (
                 when + "In the last three weeks the remaining premium comes with the most risk, so the rule "
                 "exits now. This trade is profitable, so you can either close it or roll it out to about 45 "
-                "days."
+                "days, but only for a net credit. If the roll would cost money, close it instead."
             )
         else:
             why = (
@@ -187,6 +187,18 @@ def explain(t: dict[str, Any]) -> str:
         why = (
             f"Close only these legs: {legs}. The short leg has given up almost all of its premium, so buying "
             "it back is cheap and removes risk that no longer pays. Keep the rest of the trade."
+        )
+    elif rule == "roll.naked_put":
+        r = t.get("roll") or {}
+        closers = _names(rec.get("replaces") or [])
+        strike, when = f"{r.get('strike', 0):g}", _day(r.get("expiration"))
+        per_share, total = f"{r.get('credit', 0):.2f}", _usd(r.get("net"))
+        why = (
+            f"The rules say to close this naked short put ({closers}). Rolling it out in time can be the "
+            f"better exit: buy it back and sell the same {strike} put for {when}, about {per_share} a share "
+            f"more than the buy-back (roughly {total} in credit, an estimate from today's volatility). That "
+            "keeps you paid for the risk while giving the stock more time. Only send it for a net credit; "
+            "if it will not fill for one, close the put instead."
         )
     elif rule == "ex_dividend":
         why = (
@@ -226,6 +238,7 @@ PLAIN = {
     "debit.take_profit": "debit take-profit rule",
     "debit.time_exit": "time exit",
     "legs.short_take_profit": "short-leg buy-back rule",
+    "roll.naked_put": "naked-put credit roll",
     "ex_dividend": "ex-dividend check",
     "risk.oversize": "risk budget check",
 }

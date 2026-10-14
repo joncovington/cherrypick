@@ -358,6 +358,25 @@ export const FIELDS: FieldMeta[] = [
     section: "rules",
   },
 
+  {
+    target: "manage",
+    pointer: "/roll/naked_put/enabled",
+    label: "Naked short puts: roll out for a credit instead of closing",
+    help: "When a rule says to close a naked short put, offer a same-strike roll to the next monthly 4+ weeks out if it is modelled to take in a credit.",
+    type: "boolean",
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/roll/naked_put/min_credit",
+    label: "Naked put roll: minimum credit per share",
+    type: "number",
+    min: 0,
+    max: 5,
+    step: 0.05,
+    section: "rules",
+  },
+
   // --- dev knobs ---------------------------------------------------------------------------
   {
     target: "orchestrator",
