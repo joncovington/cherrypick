@@ -213,6 +213,10 @@ function account(v: unknown): ManageAccount {
     pnlGross: num(a["pnl_gross"]),
     counts,
     trades: arr(a["trades"]).map(trade),
+    excluded: arr(a["excluded"]).map((raw) => {
+      const e = rec(raw);
+      return { underlying: str(e["underlying"]) ?? "?", legs: num(e["legs"]) ?? 0, reason: str(e["reason"]) ?? "" };
+    }),
   };
 }
 

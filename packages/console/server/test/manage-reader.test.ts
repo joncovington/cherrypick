@@ -118,6 +118,7 @@ describe("readManage", () => {
     expect(iwm!.opening).toBeNull();
     expect(iwm!.explanation).toBeNull();
     expect(out.accounts[0]!.counts).toEqual({ CLOSE: 1, HOLD: 1 });
+    expect(out.accounts[0]!.excluded).toEqual([]);
   });
 
   it("reads an older session when asked", () => {

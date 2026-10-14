@@ -99,6 +99,11 @@
     "confidence": 80
   },
   "conflict_penalty": 10,
+  "exclude": {
+    "zero_dte_underlyings": [
+      "SPX"
+    ]
+  },
   "pricing": {
     "rate": 0.04,
     "grid_low": 0.01,

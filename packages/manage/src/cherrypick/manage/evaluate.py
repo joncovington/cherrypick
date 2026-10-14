@@ -737,6 +737,22 @@ def _chain_view(chain: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _without_excluded(
+    underlying: dict[str, Any], session: date, rules: dict[str, Any]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """An underlying's legs split into those evaluated and those the ruleset excludes: legs expiring
+    today (or already expired) on an underlying listed in `exclude.zero_dte_underlyings`."""
+    legs = underlying.get("legs") or []
+    names = {str(s).upper() for s in ((rules.get("exclude") or {}).get("zero_dte_underlyings") or [])}
+    if str(underlying.get("underlying") or "").upper() not in names:
+        return legs, []
+    keep, drop = [], []
+    for leg in legs:
+        exp = _date(leg.get("expiration")) if leg.get("right") in ("C", "P") else None
+        (drop if exp is not None and exp <= session else keep).append(leg)
+    return keep, drop
+
+
 def group_trades(
     legs: list[dict[str, Any]],
     grouping: str | None,
@@ -785,10 +801,20 @@ def evaluate(
         balances = account.get("balances") or {}
         net_liq = _f(balances.get("net_liquidating_value"))
         trades = []
+        excluded = []
         for u in account.get("underlyings") or []:
-            groups = group_trades(
-                u.get("legs") or [], rules.get("trade_grouping"), history.get(u["underlying"]), history_ok
-            )
+            legs, dropped = _without_excluded(u, session, rules)
+            if dropped:
+                excluded.append(
+                    {
+                        "underlying": u["underlying"],
+                        "legs": len(dropped),
+                        "reason": "0DTE excluded by the ruleset",
+                    }
+                )
+            if not legs:
+                continue
+            groups = group_trades(legs, rules.get("trade_grouping"), history.get(u["underlying"]), history_ok)
             for i, (group, chain) in enumerate(groups):
                 trade = evaluate_trade(
                     u["underlying"], group, metrics.get(u["underlying"]), session, net_liq, rules, chain
@@ -811,6 +837,7 @@ def evaluate(
                 "pnl_gross": sum(t["pnl_gross"] for t in trades if t["pnl_gross"] is not None),
                 "counts": counts,
                 "trades": trades,
+                "excluded": excluded,
             }
         )
     return {
