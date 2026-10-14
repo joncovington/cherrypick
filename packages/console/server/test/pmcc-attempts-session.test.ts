@@ -39,6 +39,7 @@ function fakeConfig(pmccDir: string): ConsoleConfig {
       gexDir: "",
       overviewDir: "",
       reviewDir: "",
+      manageDir: "",
       advisorDir: "",
       streamerDir: "",
     },

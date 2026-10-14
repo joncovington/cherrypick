@@ -269,7 +269,10 @@ export const GEX_SLIDES = [
 
 export type GexSlideId = (typeof GEX_SLIDES)[number]["id"];
 
-export const LIVE_SLIDES = [{ id: "today", label: "today" }] as const satisfies readonly NavSlide[];
+export const LIVE_SLIDES = [
+  { id: "today", label: "today" },
+  { id: "manage", label: "manage" },
+] as const satisfies readonly NavSlide[];
 
 export const REPORTS_SLIDES = [
   { id: "morning", label: "morning" },

@@ -337,6 +337,7 @@ def test_derive_full_suite_job_table():
         "review-narrative",
         "morning-factpack",
         "morning-narrative",
+        "manage-eval",
         "advisor-deep",
         *QUIKOPTIONS_JOBS,
     }
@@ -542,6 +543,19 @@ def test_morning_can_be_turned_off():
     by_id = {j.id: j for j in derive(cfg)[0]}
     assert not by_id["morning-factpack"].enabled
     assert "disabled in config (morning)" in by_id["morning-factpack"].enabled_reason
+
+
+def test_manage_eval_off_by_default_and_runs_at_ten_on_trading_days_when_on():
+    """It reads the real broker account every day, so it waits for the account owner to turn it on."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    assert not by_id["manage-eval"].enabled
+    assert "disabled in config (manage)" in by_id["manage-eval"].enabled_reason
+    cfg = suite_cfg()
+    cfg["manage"] = {"enabled": True}
+    job = {j.id: j for j in derive(cfg)[0]}["manage-eval"]
+    assert job.enabled and job.trading_days_only
+    assert job.at_et == "10:00"
+    assert job.argv[-1] == "manage"
 
 
 def test_every_derived_run_py_job_actually_parses():

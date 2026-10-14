@@ -908,6 +908,68 @@ def _run_review(cfg, *, final: bool) -> None:
     _emit(rec)
 
 
+def _run_manage(cfg) -> None:
+    """Invoked by the daily manage-eval job (see cfgmod.manage_settings), or by hand.
+
+    Takes the broker snapshot here (orchestrator/managesnap.py: two read-only broker calls) and hands
+    it to packages/manage, which judges it against the configured ruleset and writes the evaluation
+    into its own home for the console. The evaluation is advice: nothing on this path places, closes
+    or sizes an order, so a failed pass costs a missing page and is a WARNING.
+    """
+    from cherrypick.core.jsonio import write_json_atomic
+
+    from cherrypick.orchestrator import managesnap
+
+    hb_path = cfgmod.state_file("manage.last.json")
+    log_path = _module_log("manage")
+    settings = cfgmod.manage_settings(cfg)
+    result: dict = {}
+    try:
+        snapshot = managesnap.build(cfg)
+        snap_path = cfgmod.state_file("manage.snapshot.json")
+        write_json_atomic(snap_path, snapshot)
+        if not (snapshot.get("positions") or {}).get("ok"):
+            raise RuntimeError(
+                (snapshot.get("positions") or {}).get("error") or "broker positions unavailable"
+            )
+        r = subprocess.run(
+            [cfgmod.python_exe(), "-m", "cherrypick.manage", "evaluate", "--snapshot", str(snap_path)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        try:
+            result = json.loads(r.stdout or "{}")
+        except json.JSONDecodeError:
+            result = {"raw": (r.stdout or "")[:2000]}
+        ok = r.returncode == 0 and result.get("ok", True) is not False
+        error = None if ok else (result.get("error") or (r.stderr or "")[:500])
+        if snapshot.get("metrics_error"):
+            result["metrics_error"] = snapshot["metrics_error"]
+    except Exception as exc:
+        ok, error = False, f"{type(exc).__name__}: {exc}"
+
+    counts = (result or {}).get("counts") or {}
+    rec = {"ok": ok, "error": error, "session": (result or {}).get("session"), "counts": counts}
+    hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    _append_log(log_path, {**rec, "result": result})
+
+    notifier = Notifier(cfg.get("notify"))
+    if not ok:
+        notifier.notify(
+            "WARNING", "manage", "Position evaluation failed", f"{error or 'see logs/manage.log'}"
+        )
+    elif settings["notify"]:
+        acting = {a: n for a, n in counts.items() if a not in ("HOLD", "SETTLES")}
+        if acting:
+            summary = ", ".join(f"{n} {a.lower().replace('_', ' ')}" for a, n in sorted(acting.items()))
+            notifier.notify(
+                "INFO", "manage", "Position evaluation", f"{summary}; see the console's Live page"
+            )
+    _emit(rec)
+
+
 def _run_morning(cfg) -> None:
     """Invoked by the daily morning-factpack job (see cfgmod.morning_settings). Runs
     packages/overview, a pure stream-cache + GEX-history consumer that writes only into its own
@@ -1857,6 +1919,7 @@ def build_parser() -> argparse.ArgumentParser:
             "run-earnings-symbol-watch",
             "review",
             "morning",
+            "manage",
             "restart-console",
             "power-watch",
             "live-positions",
@@ -2183,6 +2246,7 @@ def main() -> None:
         "run-earnings-symbol-watch": lambda: _run_earnings_symbol_watch(cfg),
         "review": lambda: _run_review(cfg, final="--final" in sys.argv),
         "morning": lambda: _run_morning(cfg),
+        "manage": lambda: _run_manage(cfg),
         "restart-console": lambda: cmd_restart_console(cfg),
         "ps": lambda: cmd_ps(cfg),
         "restart": lambda: cmd_restart(cfg, args.name, direct=args.direct, result=args.result),

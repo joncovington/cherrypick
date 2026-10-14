@@ -1,4 +1,5 @@
 import { LivePage, useLiveFlies } from "../../pages/Live/LivePage";
+import { ManagePage } from "../../pages/Live/ManagePage";
 import { LoopPill } from "../../components/ScopeBar";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
@@ -9,7 +10,11 @@ import type { SlideDef } from "../types";
  * halt flag, the pilot's arm and symbol -- and the live loop's own pill, so the first glance says
  * whether anything can trade before the tiles say what it did.
  */
-const slides: SlideDef[] = [{ id: "today", label: "today", render: () => <LivePage /> }];
+const slides: SlideDef[] = [
+  { id: "today", label: "today", render: () => <LivePage /> },
+  // The daily position evaluation (packages/manage): every live trade against the ruleset.
+  { id: "manage", label: "manage", render: () => <ManagePage /> },
+];
 
 function ArmBadge() {
   const { data } = useLiveFlies();

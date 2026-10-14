@@ -70,6 +70,9 @@ CATCHUP_MINUTES = {
     # that already opened. Late enough to still fire after a 09:00 wake, dead by mid-morning.
     "morning-factpack": 90,
     "morning-narrative": 90,
+    # The daily position evaluation judges the session's marks; caught up any time before the close it
+    # still describes today's positions, after the close it would judge stale ones.
+    "manage-eval": 5 * 60,
     # The market files: the evening fetch is good until the pack builds at 08:30, and the pre-pack
     # retry is worth nothing after it.
     # The end-of-day landing reads the local Dolt clones; a late one is the same landing, and the
@@ -194,6 +197,7 @@ NOTIFIES_OWN_FAILURE = frozenset(
         "quikoptions-browser-check",
         "review-provisional",  # "Suite review (...) failed"
         "review-final",
+        "manage-eval",  # "Position evaluation failed"
         "reconcile",  # its scheduled run pushes every non-FLAT verdict; the exit code is the verdict
     }
 )
@@ -1178,6 +1182,20 @@ def derive_jobs(
             trading_days_only=True,
             enabled=em_on,
             enabled_reason="" if em_on else "disabled in config (morning.earnings_moves)",
+        ),
+    )
+    mg = cfgmod.manage_settings(cfg)
+    add(
+        "manage-eval",
+        lambda: JobSpec(
+            id="manage-eval",
+            argv=_run_py(pythonw, launcher, "manage"),
+            kind=KIND_DAILY,
+            at_et=mg["at"],
+            catchup_minutes=CATCHUP_MINUTES["manage-eval"],
+            trading_days_only=True,
+            enabled=mg["enabled"],
+            enabled_reason="" if mg["enabled"] else "disabled in config (manage)",
         ),
     )
     add(

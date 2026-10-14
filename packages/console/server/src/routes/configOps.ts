@@ -27,7 +27,7 @@ import { getPrefs, setPref } from "../store/consoleDb.js";
 /** The literal that must be typed to clear the halt. Checked server-side, not just in the UI. */
 export const RESUME_CONFIRMATION = "RESUME LIVE";
 
-const TARGETS = ["orchestrator", "meic", "flies", "gex", "earnings", "streamer", "meic-risk"] as const;
+const TARGETS = ["orchestrator", "meic", "flies", "gex", "earnings", "streamer", "meic-risk", "manage"] as const;
 
 /**
  * Pass a refusal through with its meaning intact: a guarded pointer, a stale file and a validation

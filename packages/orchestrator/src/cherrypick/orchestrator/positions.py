@@ -7,8 +7,10 @@ redone (and mis-done) each time. This is that question as one command.
 
 Like `reconcile` and `doctor`, this is an on-demand, broker-touching **read**: it enumerates accounts,
 reads positions and balances, prices them, and never places, cancels, or modifies an order. It is
-deliberately NOT on the watchdog reliability path and never scheduled — nothing downstream depends on
-it, so a broker outage costs a report, not a loop. Account numbers are masked (`****1234`).
+deliberately NOT on the watchdog reliability path — nothing downstream depends on it, so a broker
+outage costs a report, not a loop. Its one scheduled caller is the opt-in `manage-eval` job (via
+`managesnap`), whose failure costs that day's position evaluation and nothing else. Account numbers are
+masked (`****1234`).
 
 **Marks come from the stream cache first, the feed second** (the suite-wide rule). The cache is the
 suite's single producer of market data and already carries every symbol some module declared; only the

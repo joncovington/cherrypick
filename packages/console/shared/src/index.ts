@@ -29,3 +29,4 @@ export * from "./types/optionsFlow.js";
 export * from "./types/bwbEvidence.js";
 export * from "./types/dataEvidence.js";
 export * from "./types/compare.js";
+export * from "./types/manage.js";
