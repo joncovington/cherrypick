@@ -8,6 +8,25 @@ import pytest
 
 from cherrypick.advisor import proposals
 
+
+def test_a_trailing_comma_before_a_closing_bracket_is_tolerated():
+    """2026-10-13: the deep reply ended its flags list with `},\\n  ],` and every verdict that night
+    was lost to it. The comma is dropped; nothing else in the reply changes."""
+    raw = (
+        '{"observations": ["a, b", "c"],\n "flags": [\n  {"module": "x", "text": "keep, it ,]"},\n ],\n'
+        ' "proposals": [],\n}'
+    )
+    got = proposals.locate_json(raw)
+    assert got["observations"] == ["a, b", "c"]
+    assert got["flags"] == [{"module": "x", "text": "keep, it ,]"}]
+    assert got["proposals"] == []
+
+
+def test_a_reply_broken_some_other_way_still_fails():
+    with pytest.raises(proposals.ParseError):
+        proposals.locate_json('{"observations": ["a" "b"]}')
+
+
 CLEAN = {
     "observations": ["control took no stops all session"],
     "flags": [{"module": "flies", "severity": "warn", "text": "completion rate halved"}],
