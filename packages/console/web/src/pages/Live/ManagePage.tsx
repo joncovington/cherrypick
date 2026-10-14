@@ -141,11 +141,12 @@ function TradeDetail({ t }: { t: ManageTrade }) {
   );
 }
 
+/** Actions that ask a person to do nothing today: a hold waits on its levels, a settling trade on the print. */
+const PASSIVE = new Set(["HOLD", "SETTLES"]);
+
 function AccountView({ a, loading }: { a: ManageAccount; loading: boolean }) {
-  const [open, setOpen] = useState<string | null>(null);
-  const acting = Object.entries(a.counts)
-    .filter(([k]) => k !== "HOLD" && k !== "SETTLES")
-    .reduce((s, [, n]) => s + (n ?? 0), 0);
+  const acting = a.trades.filter((t) => !PASSIVE.has(t.action));
+  const holding = a.trades.filter((t) => PASSIVE.has(t.action));
   return (
     <>
       <TileGrid count={6}>
@@ -153,55 +154,88 @@ function AccountView({ a, loading }: { a: ManageAccount; loading: boolean }) {
         <Tile label="per-trade budget" value={fmtMoney(a.riskBudget)} title="max-loss budget per trade (risk.max_risk_pct of net liq)" />
         <Tile label="mark P&L (gross)" value={fmtMoney(a.pnlGross)} tone={a.pnlGross === null ? "dim" : a.pnlGross >= 0 ? "pos" : "neg"} />
         <Tile label="trades" value={String(a.trades.length)} />
-        <Tile label="need action" value={String(acting)} />
-        <Tile label="hold" value={String(a.counts.HOLD ?? 0)} tone="dim" />
+        <Tile label="action needed" value={String(acting.length)} />
+        <Tile label="holding" value={String(holding.length)} tone="dim" />
       </TileGrid>
-      <DataCard
-        title="trades"
-        headers={["trade", "action", "conf.", "kind", "mark P&L (gross)", "capture / return", "short dte", "earnings", "reason"]}
-        loading={loading}
-        rowCount={a.trades.length}
-        empty="no open positions"
-      >
-        {a.trades.map((t) => (
-          <Fragment key={t.tradeId}>
-            <tr>
-              <td>
-                <button
-                  type="button"
-                  className="btn btn-quiet"
-                  aria-expanded={open === t.tradeId}
-                  onClick={() => setOpen(open === t.tradeId ? null : t.tradeId)}
-                >
-                  {open === t.tradeId ? "▾" : "▸"} {t.tradeId}
-                </button>
-                {t.intent ? <span className="muted"> · {t.intent}</span> : null}
-              </td>
-              <td>
-                <span className="chip">{ACTION_LABEL[t.action] ?? t.action}</span>
-              </td>
-              <td style={RIGHT}>{t.confidence ?? "—"}</td>
-              <td>{t.kind ?? "—"}</td>
-              <td className={tone(t.pnlGross)} style={RIGHT}>{fmtMoney(t.pnlGross)}</td>
-              <td className={tone(t.capture)} style={RIGHT}>{pct(t.capture)}</td>
-              <td style={RIGHT}>{t.nearestShortDte ?? "—"}</td>
-              <td>{t.earnings ? `${t.earnings.date} (${t.earnings.days}d)` : "—"}</td>
+      <TradesCard title="action needed" trades={acting} loading={loading} empty="nothing to do today" variant="act" />
+      <TradesCard title="holding" trades={holding} loading={loading} empty="no trades on hold" variant="hold" />
+    </>
+  );
+}
+
+/**
+ * One table of trades. `act` rows carry the rule's reason; `hold` rows carry the levels the trade is
+ * waiting on instead, since "no rule fired" is the same sentence on every one of them.
+ */
+function TradesCard({
+  title,
+  trades,
+  loading,
+  empty,
+  variant,
+}: {
+  title: string;
+  trades: ManageTrade[];
+  loading: boolean;
+  empty: string;
+  variant: "act" | "hold";
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+  const tail = variant === "act" ? ["reason"] : ["take profit", "stop", "time exit"];
+  return (
+    <DataCard
+      title={title}
+      headers={["trade", "action", "conf.", "kind", "mark P&L (gross)", "capture / return", "short dte", "earnings", ...tail]}
+      loading={loading}
+      rowCount={trades.length}
+      empty={empty}
+    >
+      {trades.map((t) => (
+        <Fragment key={t.tradeId}>
+          <tr>
+            <td>
+              <button
+                type="button"
+                className="btn btn-quiet"
+                aria-expanded={open === t.tradeId}
+                onClick={() => setOpen(open === t.tradeId ? null : t.tradeId)}
+              >
+                {open === t.tradeId ? "▾" : "▸"} {t.tradeId}
+              </button>
+              {t.intent ? <span className="muted"> · {t.intent}</span> : null}
+            </td>
+            <td>
+              <span className="chip">{ACTION_LABEL[t.action] ?? t.action}</span>
+            </td>
+            <td style={RIGHT}>{t.confidence ?? "—"}</td>
+            <td>{t.kind ?? "—"}</td>
+            <td className={tone(t.pnlGross)} style={RIGHT}>{fmtMoney(t.pnlGross)}</td>
+            <td className={tone(t.capture)} style={RIGHT}>{pct(t.capture)}</td>
+            <td style={RIGHT}>{t.nearestShortDte ?? "—"}</td>
+            <td>{t.earnings ? `${t.earnings.date} (${t.earnings.days}d)` : "—"}</td>
+            {variant === "act" ? (
               <td style={{ whiteSpace: "normal", minWidth: "18rem" }}>
                 {t.reason}
                 {t.conflicts.length > 0 ? <span className="muted"> · conflicts: {t.conflicts.join(", ")}</span> : null}
               </td>
-            </tr>
-            {open === t.tradeId && (
-              <tr>
-                <td colSpan={9}>
-                  <TradeDetail t={t} />
-                </td>
-              </tr>
+            ) : (
+              <>
+                <td style={RIGHT}>{net(t.takeProfit?.netPrice ?? null, t.takeProfit?.netSide ?? null)}</td>
+                <td style={RIGHT}>{net(t.stop?.netPrice ?? null, t.stop?.netSide ?? null)}</td>
+                <td>{t.timeExit ?? "—"}</td>
+              </>
             )}
-          </Fragment>
-        ))}
-      </DataCard>
-    </>
+          </tr>
+          {open === t.tradeId && (
+            <tr>
+              <td colSpan={8 + tail.length}>
+                <TradeDetail t={t} />
+              </td>
+            </tr>
+          )}
+        </Fragment>
+      ))}
+    </DataCard>
   );
 }
 
