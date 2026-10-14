@@ -64,6 +64,7 @@ function levelText(l: ManageLevel | null): string {
 function TradeDetail({ t }: { t: ManageTrade }) {
   return (
     <div className="manage-detail" style={{ display: "grid", gap: "0.75rem", padding: "0.5rem 0" }}>
+      {t.explanation && <p style={{ margin: 0, whiteSpace: "normal", maxWidth: "70rem" }}>{t.explanation}</p>}
       {t.chain && t.chain.orders.length > 0 ? (
         <div>
           <strong>order chain</strong>
@@ -186,6 +187,11 @@ function AccountView({ a, loading }: { a: ManageAccount; loading: boolean }) {
         <Tile label="action needed" value={String(acting.length)} />
         <Tile label="holding" value={String(holding.length)} tone="dim" />
       </TileGrid>
+      {a.excluded.length > 0 && (
+        <p className="muted" style={{ margin: 0 }}>
+          not evaluated: {a.excluded.map((e) => `${e.underlying} (${e.legs} leg${e.legs === 1 ? "" : "s"}, ${e.reason})`).join("; ")}
+        </p>
+      )}
       <TradesCard title="action needed" trades={acting} loading={loading} empty="nothing to do today" variant="act" />
       <TradesCard title="holding" trades={holding} loading={loading} empty="no trades on hold" variant="hold" />
     </>
@@ -255,13 +261,6 @@ function TradesCard({
               </>
             )}
           </tr>
-          {t.explanation && (
-            <tr className="manage-explanation">
-              <td colSpan={8 + tail.length} style={{ whiteSpace: "normal", paddingTop: 0, paddingLeft: "2rem" }}>
-                <span className="muted">{t.explanation}</span>
-              </td>
-            </tr>
-          )}
           {open === t.tradeId && (
             <tr>
               <td colSpan={8 + tail.length}>

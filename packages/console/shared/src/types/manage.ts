@@ -112,6 +112,8 @@ export interface ManageAccount {
   pnlGross: number | null;
   counts: Partial<Record<ManageAction, number>>;
   trades: ManageTrade[];
+  /** Legs the ruleset leaves out entirely (SPX 0DTE by default), per underlying. */
+  excluded: Array<{ underlying: string; legs: number; reason: string }>;
 }
 
 export interface ManagePayload {

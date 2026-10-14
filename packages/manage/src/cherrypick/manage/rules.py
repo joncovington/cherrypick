@@ -101,6 +101,9 @@ DEFAULT_RULES: dict[str, Any] = {
     "earnings": {"enabled": True, "warn_days": 14},
     "ex_dividend": {"enabled": True, "warn_days": 10, "confidence": 80},
     "conflict_penalty": 10,
+    # Legs left out of the evaluation entirely. SPX 0DTE is the flies live loop's own book: it is
+    # managed by that loop and settles in cash at the close, so judging it here only adds noise.
+    "exclude": {"zero_dte_underlyings": ["SPX"]},
     "pricing": {"rate": 0.04, "grid_low": 0.01, "grid_high": 3.0, "grid_steps": 600},
     # Per-underlying overrides: {"SPY": {"intent": "hedge", "disable": ["debit.stop"], "note": "..."}}.
     "positions": {},
