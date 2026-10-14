@@ -11,6 +11,7 @@ def test_a_naked_put_is_never_rolled_through_earnings_it_closes():
     assert "roll.naked_put" not in fired(t)
     assert t["roll"] is None
     assert t["roll_blocked"] == {
+        "rule": "roll.naked_put",
         "reason": "earnings",
         "earnings_date": "2026-10-27",
         "expiration": "2026-12-18",

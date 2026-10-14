@@ -95,6 +95,22 @@ DEFAULT_RULES: dict[str, Any] = {
             "skip_through_earnings": True,
             "confidence": 60,
         },
+        # A diagonal (shorts expiring before a long they are sold against) rolls its SHORT STRUCTURE --
+        # the shorts and any wings in their expiry -- out to the first monthly at least `out_days` later,
+        # same strikes, when the short reaches the time exit or has given up most of its premium. Only
+        # when the trade is not stopped out (rolling against a failed long is repairing a loser), the
+        # long outlives the new short by `min_long_days`, the roll is modelled to take in `min_credit` per
+        # unit, and every new short stays beyond the long's breakeven (long strike +/- the chain's net
+        # debit per share) so an assignment cannot lock in a loss. Earnings inside the new short's life
+        # are flagged, not blocked: the long covers the short through a report.
+        "diagonal_short": {
+            "enabled": True,
+            "out_days": 28,
+            "min_credit": 0.10,
+            "min_long_days": 45,
+            "skip_through_earnings": False,
+            "confidence": 60,
+        },
     },
     "expiry": {
         "enabled": True,
@@ -139,6 +155,7 @@ RULE_IDS = (
     "debit.time_exit",
     "legs.short_take_profit",
     "roll.naked_put",
+    "roll.diagonal_short",
     "ex_dividend",
     "risk.oversize",
 )

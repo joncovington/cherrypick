@@ -377,6 +377,24 @@ export const FIELDS: FieldMeta[] = [
     section: "rules",
   },
 
+  {
+    target: "manage",
+    pointer: "/roll/diagonal_short/enabled",
+    label: "Diagonals: roll the short side out for a credit",
+    help: "At the short's 21-day exit or 80% captured, roll the shorts (and their wings) to the next monthly at the same strikes, if the trade is not stopped, the long outlives the new short, and the short stays beyond the long's breakeven.",
+    type: "boolean",
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/roll/diagonal_short/min_long_days",
+    label: "Diagonal roll: long must outlive the new short by (days)",
+    type: "number",
+    min: 0,
+    max: 365,
+    section: "rules",
+  },
+
   // --- dev knobs ---------------------------------------------------------------------------
   {
     target: "orchestrator",
