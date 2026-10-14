@@ -212,6 +212,7 @@ def evaluate_trade(
         "basis": None,
         "chain": _chain_view(chain) if chain else None,
         "roll": None,
+        "roll_blocked": None,
         "capture": None,
         "nearest_expiry": None,
         "nearest_short_expiry": None,
@@ -592,6 +593,19 @@ def evaluate_trade(
     exiting = any(f["action"] in (CLOSE, ROLL_OR_CLOSE) for f in fired)
     if exiting and spot and not off("roll.naked_put"):
         roll = _naked_put_roll(options, session, spot, rate, rp)
+        # Never roll a short put through earnings: close it, and re-open after the report if still wanted.
+        if (
+            roll
+            and rp.get("skip_through_earnings", True)
+            and er_date is not None
+            and session <= er_date <= _date(roll["expiration"])
+        ):
+            trade["roll_blocked"] = {
+                "reason": "earnings",
+                "earnings_date": er_date.isoformat(),
+                "expiration": roll["expiration"],
+            }
+            roll = None
         if roll and roll["credit"] >= float(rp["min_credit"]):
             trade["roll"] = roll
             fired.append(

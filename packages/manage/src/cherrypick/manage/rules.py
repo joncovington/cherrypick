@@ -86,7 +86,15 @@ DEFAULT_RULES: dict[str, Any] = {
         # to the first monthly at least `out_days` past its expiry, when that is modelled to take in at
         # least `min_credit` per share. The credit is MODELLED (the put's own IV, flat term structure):
         # confirm it on the live quote before sending.
-        "naked_put": {"enabled": True, "out_days": 28, "min_credit": 0.10, "confidence": 60},
+        # A roll that would carry the put through an earnings report is never offered: close it, and
+        # re-open after the report if the trade is still wanted.
+        "naked_put": {
+            "enabled": True,
+            "out_days": 28,
+            "min_credit": 0.10,
+            "skip_through_earnings": True,
+            "confidence": 60,
+        },
     },
     "expiry": {
         "enabled": True,

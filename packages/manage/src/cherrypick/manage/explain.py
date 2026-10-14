@@ -224,6 +224,15 @@ def explain(t: dict[str, Any]) -> str:
     conflict = ""
     if rec.get("conflicts"):
         conflict = " The " + _names(rec["conflicts"]) + " points the other way, which lowers the confidence."
+    blocked = ""
+    rb = t.get("roll_blocked") or {}
+    if rb.get("reason") == "earnings":
+        blocked = (
+            f" Rolling it out instead is not an option: a roll to {_day(rb.get('expiration'))} would carry "
+            f"the put through earnings on {_day(rb.get('earnings_date'))}. Consider re-opening it after "
+            "the report."
+        )
+        return f"{pos} {why}{cash}{also}{conflict}{blocked}"
     return f"{pos} {why}{cash}{also}{conflict}{_earnings(t)}"
 
 

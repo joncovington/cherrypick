@@ -68,7 +68,9 @@ says to close a trade that is nothing but short puts at one strike, the evaluati
 strike at the first monthly at least four weeks further out. If that roll is modelled to take in at
 least 0.10 a share, it is recommended in the close's place, with the close kept as the fallback. The
 credit is an estimate (today's IV for the new expiry, no term structure), so it says to send the roll
-only for a net credit and to close the put if it will not fill for one.
+only for a net credit and to close the put if it will not fill for one. **A put is never rolled through
+earnings** (`skip_through_earnings`): when the report falls on or before the new expiry, the close stands,
+and the explanation suggests re-opening after the report.
 
 ## Known limits
 
