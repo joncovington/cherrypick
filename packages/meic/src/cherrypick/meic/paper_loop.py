@@ -959,6 +959,19 @@ def _clear_outside() -> None:
         pass
 
 
+def _live_config_warnings(cfg: dict, profiles: dict) -> list[str]:
+    """`paper.live_config_warnings` against the shipped example. Best-effort: an unreadable example
+    costs the top-level check, never the tick."""
+    try:
+        example = json.loads(_paths.example_config_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        example = {}
+    try:
+        return paper.live_config_warnings(cfg, profiles, example)
+    except Exception as exc:  # a warning helper must never stop the loop
+        return [f"could not check the live block: {exc}"]
+
+
 def run_iteration(cfg, force=False):
     _beat()  # before every gate below: "the loop is turning over", never "it did work"
     # Wall-clock for this whole iteration, logged below alongside open-position count. Was
@@ -990,6 +1003,8 @@ def run_iteration(cfg, force=False):
     # Load the profile registry once per iteration so each symbol's candidate menu is the UNION
     # of every profile's wing widths (each profile then picks its own allowed subset in paper.py).
     profiles = paper.load_profiles()
+    for warning in _live_config_warnings(cfg, profiles):
+        logger.warning("live config: %s", warning)
     advice_profiles, _advice_reason = _advice_profiles(cfg, today, persist=not force)
     session = _session_quality(now)
 

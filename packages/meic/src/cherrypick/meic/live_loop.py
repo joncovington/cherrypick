@@ -103,7 +103,10 @@ def readiness(config: dict, *, designated: str | None) -> list[str]:
     ACCOUNT gates only. The halt flag and the daily-loss breaker are entry blockers
     (`entry_blockers`, 2026-10-08): they stop new ICs, never a stop-loss close or a force-close --
     before that date both returned the tick ahead of `run_once`, and the halt also gated every submit
-    at the seam, so a halt left open 0DTE ICs with no stop management at all."""
+    at the seam, so a halt left open 0DTE ICs with no stop management at all.
+
+    A `live.arm` that names no arm, or an arm that follows live itself, is refused here (2026-10-14):
+    the only impurity, a registry read, happens only when an arm is named."""
     live = config.get("live") or {}
     unmet = []
     if not config.get("enable_live_trading"):
@@ -112,6 +115,9 @@ def readiness(config: dict, *, designated: str | None) -> list[str]:
         unmet.append("live.symbol is unset -- pin the one symbol this rung trades")
     if not str(live.get("gate0_confirmed") or "").strip():
         unmet.append("live.gate0_confirmed is empty -- a human must attest Gate 0 (who/when)")
+    problem = paper.live_arm_problem(config)
+    if problem:
+        unmet.append(problem)
     if not designated:
         unmet.append("no designated account -- run `cherrypick account --module meic --set <last4>`")
     return unmet
@@ -691,9 +697,10 @@ def run_once(
     entry_block: list[str] | None = None,
 ) -> dict:
     """One live iteration for the pinned `live.symbol`. `broker` is the injected submission
-    seam -- an object with `place(spec, live) -> {ok, response?, error?}`."""
+    seam -- an object with `place(spec, live) -> {ok, response?, error?}`. It trades
+    `paper.live_params`: `live.arm` (the top level when unset) with the live block's overrides."""
     symbol = (config.get("live") or {}).get("symbol")
-    params = paper._merged_params(config, {})
+    params = paper.live_params(config)
     # Broker truth first: what filled, what died. Only the live ledger has orders to confirm.
     fills = _confirm_fills(symbol, snapshot, db_path, broker, log=log, params=params) if live else {}
     manage = _manage_open_trades(symbol, snapshot, params, db_path, broker, live=live, log=log)
@@ -737,22 +744,23 @@ def _build_snapshot(cfg: dict, symbol: str):
     vix = _pl._fetch_vix()
     vix1d = _pl._run_json(_pl._TT + ["get_vix1d"]).get("last")
     vix1d_ratio = round(vix1d / vix, 3) if (vix1d and vix) else None
-    delta_target = _pl._delta_target(cfg, vix)
+    # The candidate menu is built from what live trades, not the top level: a live block that
+    # narrows the widths must narrow what is priced, or entry would see widths it may not take.
+    params = paper.live_params(cfg)
+    delta_target = _pl._delta_target(params, vix)
     session = _pl._session_quality(now)
 
     price, ivr, ivp = _pl._fetch_overview(symbol)
     if price is None:
         return None, "no price"
-    widths = cfg.get("wing_widths_by_symbol", {}).get(symbol) or cfg.get("wing_widths_by_symbol", {}).get(
-        "DEFAULT", []
-    )
+    widths = paper._profile_widths_for_symbol(params, symbol) or []
     candidates, leg_quotes, cand_err = _pl._build_candidates(
         symbol, price, widths, [delta_target], delta_target, today
     )
     if cand_err and not candidates:
         return None, cand_err
     gex = _pl._run_json(_pl._TT + ["get_gex", "--symbol", symbol])
-    atr_lookback = int(cfg.get("regime_atr_lookback_days", 5))
+    atr_lookback = int(params.get("regime_atr_lookback_days", 5))
     snapshot = {
         "symbol": symbol,
         "date": today,
@@ -868,6 +876,8 @@ def main() -> int:
         return 1
     if unmet:
         print(f"note: dry-run with unmet live gates: {unmet}", file=sys.stderr)
+    for warning in _pl._live_config_warnings(cfg, paper.load_profiles()):
+        print(f"warning: live config: {warning}", file=sys.stderr)
 
     symbol = (cfg.get("live") or {}).get("symbol")
     if not symbol:

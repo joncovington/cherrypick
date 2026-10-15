@@ -344,8 +344,9 @@ def test_live_entry_records_the_real_order_id(tmp_path):
 def test_live_ignores_a_paper_profile_overlap_scope_and_still_refuses_overlap(tmp_path):
     """A paper stream can set overlap_scope: 'none' (config.risk.json, profile-level) to sample
     every tick independently -- live must never inherit that. live_loop.run_once builds its
-    params as paper._merged_params(config, {}) — an EMPTY profile overlay — so no
-    config.risk.json key can reach it regardless of what any paper profile declares; only
+    params as paper.live_params(config); with no `live.arm` that is an EMPTY profile overlay, so no
+    registry key can reach it regardless of what any paper profile declares (only the arm a person
+    names in `live.arm` can, test_live_block.py); only
     config.json's own (unset) overlap_scope applies, which defaults to the strictest 'all'.
     This proves the isolation both directions: paper accepts the overlap under 'none', live
     refuses the identical candidate through the real run_once path."""
@@ -360,7 +361,7 @@ def test_live_ignores_a_paper_profile_overlap_scope_and_still_refuses_overlap(tm
     )
     assert entered is True, reason
 
-    # Live side: config.risk.json is never consulted (params = _merged_params(config, {})), so
+    # Live side: with no live.arm the registry is never consulted (paper.live_params(config)), so
     # only config.json's own top-level overlap_scope ("shorts", the independent-sampling
     # default) applies -- still refuses an exact short-pair repeat, unlike paper's "none" stream.
     broker = FakeBroker()

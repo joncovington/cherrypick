@@ -95,6 +95,11 @@ def log_path(name: str) -> Path:
 _PKG_ROOT = Path(__file__).resolve().parents[3]
 
 
+def example_config_path() -> Path:
+    """The shipped ``config.example.json`` -- the defaults a top-level value is compared against."""
+    return _PKG_ROOT / "config.example.json"
+
+
 def risk_profiles_path() -> Path:
     """MEIC's arm registry. ``$MEIC_RISK_CONFIG`` if set, else the machine's own
     ``~/.cherrypick/config/meic.risk.json``, else the shipped control-only

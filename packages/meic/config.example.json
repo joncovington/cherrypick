@@ -76,7 +76,7 @@
   ],
   "_cash_settled_symbols_note": "Symbols that settle in cash at expiration (SPX/XSP/NDX/RUT). Membership drives the end-of-day exit: cash-settled positions are LEFT TO EXPIRE (settled at expiration_settlement_time) rather than force-closed, since there is no assignment risk; symbols NOT listed (QQQ/IWM/equities/futures) are physically settled and force-closed before the bell to avoid assignment. It also controls whether a missed non-cash force-close is escalated as a critical assignment-risk failure. Leave any equity or physically-settled symbol you add to 'symbols' out of this list.",
   "trading_window_and_caps_header": "===== Trading Window & Daily Caps =====",
-  "_live_baseline_note": "2026-09-28: this top level IS the live configuration -- live_loop.run_once trades paper._merged_params(config, {}), no profile -- and it differs from the paper `control` profile on sixteen settings (min_iv_rank 0.3, the negative-GEX block on by code default because this file never sets it, OTM floors 0.0035/0.003, VIX / VIX1D-ratio / ATR pauses, per-side stops, a 14:30 entry end, overlap_scope shorts, late-entry bias, a 200/day target). Control's paper result does not describe it; the `live-shadow` profile in the arm registry (~/.cherrypick/config/meic.risk.json) (from 2026-09-29) is its measurement. Change nothing here to go live without reading that arm first.",
+  "_live_baseline_note": "2026-09-28: this top level IS the live configuration -- live_loop.run_once trades it (paper.live_params; from 2026-10-14 `live.arm` and the live block can shape it, see _live_block_note) -- and it differs from the paper `control` profile on sixteen settings (min_iv_rank 0.3, the negative-GEX block on by code default because this file never sets it, OTM floors 0.0035/0.003, VIX / VIX1D-ratio / ATR pauses, per-side stops, a 14:30 entry end, overlap_scope shorts, late-entry bias, a 200/day target). Control's paper result does not describe it; the `live-shadow` profile in the arm registry (~/.cherrypick/config/meic.risk.json) (from 2026-09-29) is its measurement. Change nothing here to go live without reading that arm first.",
   "enable_live_trading": false,
   "_enable_live_trading_note": "Set to true to allow execute_trade/adjust_order/close_position to submit real orders. Requires tastytrade OAuth credentials in the OS keyring (via `python src/tt.py secrets_set`). Left false in this example so a fresh setup starts in dry-run.",
   "advice": {
@@ -110,8 +110,14 @@
   "live": {
     "symbol": null,
     "gate0_confirmed": "",
-    "daily_loss_halt_dollars": 200
+    "daily_loss_halt_dollars": 200,
+    "arm": null,
+    "max_open_bp_dollars": null,
+    "wing_widths_by_symbol": null,
+    "entry_window_start": null,
+    "entry_window_end": null
   },
+  "_live_block_note": "2026-10-14, the seam flies has as live.arm. `arm`: the registry arm live trades, merged onto this top level; null trades the top level itself, as before this date. The four keys after it apply to LIVE ALONE, over that arm, and can only narrow it: the later start, the earlier end and the smaller buying-power cap win; a width list replaces the arm's. Put live-only sizing here, never at the top level -- every paper arm that leaves a top-level key unset inherits it, control included. A paper arm marked `follows_live: true` in the registry (live-shadow) resolves to exactly what live trades plus its own keys. readiness() refuses a live.arm that is missing or follows live itself. `python -m cherrypick.meic.live_migrate` moves top-level live sizing here (dry run by default).",
   "_live_note": "Gates for src/live_loop.py (rung-1 measurement pilot), on top of enable_live_trading above. `symbol`: the ONE symbol this rung trades (live is single-symbol only; XSP is the natural first choice -- cash-settled, simplest EOD handling, cheapest fees). `gate0_confirmed`: empty until a human attests the pinned symbol's paper book clears recommend_promotion under the hardened rule (who/when, e.g. 'jon 2026-08-01') -- live_loop.readiness() refuses to place live orders while this is empty. `daily_loss_halt_dollars`: halts new live entries once today's realized P&L on the live ledger is at or below -this amount; open positions still exit normally.",
   "loop_interval_minutes": 5,
   "entry_window_start": "10:00",

@@ -272,15 +272,23 @@ era (`ic_trades.era`, from `analytics.CURRENT_ERA` via `cmd_save_trade`), journa
 `measurement_breaks`. The closed 2026-08 forward test is recorded in
 [docs/paper-experiments.md](docs/paper-experiments.md) and [docs/history.md](docs/history.md).
 
-- **`live-shadow`** is an EMPTY profile: it merges to exactly the dict `live_loop.run_once` trades
-  (`paper._merged_params(config, {})`) and keeps doing so as `config.json` changes;
-  `test_risk_profiles.py` pins it override-free and equal to the live merge. Live's top level differs
+- **`live-shadow`** carries no overrides, only `follows_live: true`: it resolves to exactly the dict
+  `live_loop.run_once` trades (`paper.live_params`) and keeps doing so as the config changes;
+  `test_risk_profiles.py` pins it override-free and equal to the live params. Live's top level differs
   from control on sixteen settings, so control's result describes a configuration live does not run.
-  Live stays disabled; enabling it, and what it trades, is a decision this arm's rows inform. (A
-  `live.profile` seam like flies' `live.arm` was considered and deferred until then.) **Verdict at 10
-  sessions: live as configured almost never trades** (1 fill session of 10). From 2026-10-15 four
-  `live-minus-*` arms each relax ONE of the gates that refused, to name the one keeping it dark
-  (docs/history.md, 2026-10-12).
+  Live stays disabled; enabling it, and what it trades, is a decision this arm's rows inform. **Verdict
+  at 10 sessions: live as configured almost never trades** (1 fill session of 10). From 2026-10-15 four
+  `live-minus-*` arms (also `follows_live`) each relax ONE of the gates that refused, to name the one
+  keeping it dark (docs/history.md, 2026-10-12).
+- **The live block (2026-10-14), flies' `live.arm` seam.** `live.arm` names the registry arm live
+  trades (unset: the top level, as before); `live.max_open_bp_dollars`, `wing_widths_by_symbol`,
+  `entry_window_start` and `entry_window_end` apply to live alone and only narrow the arm (later start,
+  earlier end, smaller cap; widths replace). **Live-only sizing belongs there, never at the top level**:
+  every paper arm that leaves a top-level key unset inherits it, `control` included -- which is how a
+  $500 live cap would have capped the sampling substrate. Both loops warn while a live-only key sits at
+  the top level off its shipped default, or while the block shapes live and no enabled arm follows it;
+  `python -m cherrypick.meic.live_migrate` moves such keys (dry run by default, `--apply` backs up).
+  `readiness` refuses a `live.arm` that is missing or itself follows live.
 - **`bp-5k` / `bp-10k` / `bp-25k`** — control's gates and hold-to-expiry exits under live-account limits:
   `max_open_bp_dollars` (open ICs' (width − credit) × 100 plus the candidate's must fit, checked per
   candidate so a too-wide candidate falls to a narrower one — `paper.ic_buying_power`),
