@@ -17,7 +17,7 @@ _CAL = [{"symbol": "AAA", "date": "2026-10-20", "timing": "After market close"}]
 
 def test_retirement_binds_from_its_session_and_not_before():
     for name in ("atm_calendar", "double_calendar"):
-        assert not r.strategy_retired(name, "2026-10-16")
+        assert not r.strategy_retired(name, "2026-10-14")
         assert r.strategy_retired(name, "2026-10-15")
         assert r.strategy_retired(name, "2026-11-02")
     assert not r.strategy_retired("iron_fly", "2027-01-04")
@@ -77,8 +77,8 @@ def test_a_retired_strategy_is_dropped_at_execution_with_its_screen_row_kept(mon
 
 
 def test_before_the_boundary_the_strategy_still_builds_its_order(monkeypatch):
-    """The guard, shown to fire only from its date: on 10-16 the order build is reached."""
-    _drive(monkeypatch, dt.date(2026, 10, 16))
+    """The guard, shown to fire only from its date: on 10-14 the order build is reached."""
+    _drive(monkeypatch, dt.date(2026, 10, 14))
     reached = []
     monkeypatch.setitem(
         r._ORDER_FNS, "atm_calendar", lambda *a: reached.append(1) or {"ok": False, "error": "stub"}
