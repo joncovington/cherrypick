@@ -354,6 +354,21 @@ def test_evaluate_entry_rejects_regime_vix_elevated():
     assert reason == "regime_vix_elevated"
 
 
+def test_the_both_mode_blocks_only_when_volume_gex_is_negative_too():
+    """2026-10-15: mode "both" lets OI-negative/volume-positive through and still blocks when both are
+    negative; a missing volume reading keeps the OI rule. The default ("oi") is unchanged. Shown to
+    fail by ignoring the mode: the volume-positive case is refused."""
+    base = {**_params(CONSERVATIVE), "regime_gex_block_mode": "both"}
+    oi_neg_vol_pos = _base_snapshot(gex={"ok": True, "gex_positive": False, "net_gex_vol": 3.0e8})
+    both_neg = _base_snapshot(gex={"ok": True, "gex_positive": False, "net_gex_vol": -1.0e8})
+    no_vol = _base_snapshot(gex={"ok": True, "gex_positive": False})
+    assert paper.evaluate_entry(oi_neg_vol_pos, base, [])[1] != "regime_gex_negative"
+    assert paper.evaluate_entry(both_neg, base, [])[1] == "regime_gex_negative"
+    assert paper.evaluate_entry(no_vol, base, [])[1] == "regime_gex_negative"
+    oi_only = _params(CONSERVATIVE)  # the default mode still blocks on OI alone
+    assert paper.evaluate_entry(oi_neg_vol_pos, oi_only, [])[1] == "regime_gex_negative"
+
+
 def test_evaluate_entry_rejects_regime_gex_negative():
     snap = _base_snapshot(gex={"ok": True, "gex_positive": False})
     entered, reason, _ = paper.evaluate_entry(snap, _params(CONSERVATIVE), [])
