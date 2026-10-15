@@ -1,5 +1,11 @@
 # The trade-summary redesign branch
 
+***LANDED 2026-10-15 — merged via the trade-summary PR, kept for reference.** The branch this
+records is out of the local-only posture; the landing note lives in
+`packages/console/docs/history.md`, and the rule it fixes — summaries are module-local, MEIC's
+slide the pattern — is in `packages/console/CLAUDE.md`. The notes below stand as written at the
+moment the PR opened.*
+
 Status notes for `console/trade-summary-redesign`, kept on the branch itself so they travel with the
 work. If this branch merges to `main`, this file either goes with it or moves to `docs/history/` —
 it should not survive on `main` as a living doc.

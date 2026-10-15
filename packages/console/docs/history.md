@@ -179,3 +179,32 @@ live-pilot tile links to `/live/today`. For MEIC, deriving entry from the rounde
 of the two side credits showed a one-cent exit on 1,798 worthless expiries. bwb was the first module on
 the charged-slippage model. The date picker (2026-09-26) replaced two native date inputs that made you
 type MM/DD/YYYY.
+
+## The trade-summary redesign lands (2026-10-15)
+
+The MEIC summary slide began as a prototype under a borrowed visual language, scoped to `.ts-root`
+so the rest of the console stayed untouched while the style was judged. It was adopted on the
+branch (2026-10-10): the palette moved to `:root` as the suite's tokens, the legacy aliases died,
+the light theme came home as a global pref, and the chrome, shared components, chart kit and rail
+icons were swept onto the new vocabulary. The branch's own working notes are frozen at
+[`docs/history/trade-summary-branch.md`](../../history/trade-summary-branch.md).
+
+The landing also fixes the rule the prototype implied: **a summary is a per-module surface, and
+MEIC's is the pattern.** One-read payload, every figure computed server-side to the cent,
+presentation arithmetic only in the component, money in the suite's one layout, tone from a
+number's sign alone — and each module's summary carrying its own KPIs in its own vocabulary
+(entry-time and weekday bands are MEIC's; capture and capital-at-risk mean nothing to a legged
+flies book; cash deployed is contango's). One central summary page for every module was built
+under Reports and withdrawn the same day (2026-10-11): the modules' KPIs are not the same book,
+and one comparison surface kept either flattening them to their common denominator or carrying
+per-module exceptions until it was a registry of special cases. `core.metrics summary` remains
+the one shared normalisation a module summary may stand on; the console surface stays
+module-local.
+
+The branch ran as a local-only line kept current with main by the machine's hourly merge timer
+(fetch, count, skip when dirty or checked out elsewhere, abort on conflict — never a push, never
+a rebase; resolutions accrued in rerere). Two conflicts needed hands across the train and both
+resolved the same way — main's functionality, re-expressed in the redesign's vocabulary (the
+Compare-page block on the new token names; the MEIC forest hover readout on `CHART_GRID_STRONG`).
+It reached the PR current with main. Web 365/365, server 784 passed / 31 skipped, typecheck and
+build clean, and each visual step verified in the rebuilt browser rather than by tests alone.

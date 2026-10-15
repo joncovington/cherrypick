@@ -360,6 +360,17 @@ the intervals, paired differences, t bounds, sign tests and projections are `cor
   recorded capital (flies) shows a dash there, never zero, and a partial record says how many trades
   carry one.
 
+**A summary slide is a module's own.** MEIC's summary slide is the pattern — one-read payload
+computed server-side to the cent, presentation arithmetic only in the component, money in the
+suite's one layout, tone from a number's sign — and each module's summary carries its own KPIs in
+its own vocabulary: entry-time and weekday bands are MEIC's, capture and capital-at-risk mean
+nothing to a legged flies book, cash deployed is contango's alone. There is deliberately no
+central summary page: one was built under Reports and withdrawn the same day (2026-10-11,
+`docs/history.md`) — the modules' KPIs are not the same book, and a shared surface kept flattening
+them to their common denominator or growing a registry of per-module exceptions.
+`core.metrics summary` is the one shared normalisation (hero/by-arm/daily/capture at arbitrary
+windows); a module summary renders it in its own shape, it does not import a common page.
+
 **Module advisor slides.** `readers/advisor.ts`'s `readAdvisorModule` serves
 `/api/advisor/module/:module`: active experiments with progress against length and stall budget, the
 session strip from the advisor's `enactment` table (read, never re-derived), the paired comparison as
