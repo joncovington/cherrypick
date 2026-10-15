@@ -108,6 +108,9 @@ def test_dry_run_then_apply_then_nothing_to_do(tmp_path, monkeypatch, capsys):
     assert flies["arms"]["bwb-atm"]["enabled"] is False
     assert flies["arms"]["control"]["enabled"] is True
     assert flies["arms"]["live-shadow"]["mirror_live"] is True
+    for name, (variable, _) in mod.FLIES_ADD.items():
+        added = {k: v for k, v in flies["arms"][name].items() if not k.startswith("_")}
+        assert added == {"enabled": True, **variable}, "a copy of control plus its one variable"
     assert flies["arms"]["selector"]["enabled"] is True
     assert (
         "miss_stop_minutes" not in flies["advice"]["bounds"]

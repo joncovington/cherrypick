@@ -147,6 +147,16 @@ ARMS = (
     # ledger over the same sessions, never against control. `tests/test_live_shadow.py` pins it and
     # lists what paper cannot express.
     "live-shadow",
+    # control plus a placement gate (declared 2026-10-14, from 2026-10-19): no entry while spot sits
+    # at or above `range_pos_max` of the session range so far, or while the ATM centre sits more than
+    # `center_above_spot_max` points above spot (`placement_refusal`). One variable vs control; found
+    # by searching the pooled legged rows, ahead of control in all three eras, hence an arm.
+    "range-centre",
+    # control with its entries confined to 13:00-13:59 (declared 2026-10-14, from 2026-10-19). One
+    # variable vs control: the window. Control's own 13:00-hour entries were ahead in the two later
+    # eras, on 33 entries; this arm's book is empty at 13:00 where control's is not, so it also
+    # measures what the hour pays without the morning's positions occupying its centres.
+    "window-1300",
 )
 
 # The live loop's completion cutoff when its block names none (`live_loop.DEFAULT_CUTOFF`).
@@ -1013,6 +1023,38 @@ def range_high_refusal(snapshot: dict, params: dict) -> str | None:
     return "near_session_high" if (spot - low) / width >= float(pct) else None
 
 
+def placement_refusal(snapshot: dict, params: dict, center: float) -> str | None:
+    """The `range-centre` arm's one variable (declared 2026-10-14, from 2026-10-19): refuse an entry
+    while spot sits at or above `range_pos_max` of the session range so far (`range_position_high`),
+    or while the centre sits more than `center_above_spot_max` points above spot
+    (`center_above_spot`). Each check is off while its key is null/absent.
+
+    On an ATM arm the centre is always within half a strike of spot, and `choose_side` sells the put
+    spread whenever the centre is above spot -- so the second check refuses the put spreads sold
+    furthest in the money. Over the pooled 5-wide legged rows, 2026-07-20..10-14, the two together
+    were ahead of control in each of three eras (on control's own rows: -$782 vs -$3,762,
+    +$3,547 vs +$2,899, +$401 vs -$330), and held from 0.75 to 0.85 of the range and from 0.5 to
+    2.0 points of centre. Found by search over ~8,700 cuts whose best performers did NOT carry to
+    unseen sessions as a group, so this is an arm to be read forward, not a finding.
+
+    Unlike `range-high` it has no narrow-range condition: the position is read on any range. The
+    range is the `stream_summary` session row `range_high_refusal` reads, and an unread range (no
+    row, a missing end, zero width) fails OPEN for that check only.
+    """
+    over = params.get("center_above_spot_max")
+    spot = snapshot.get("underlying_price")
+    if over is not None and spot is not None and center - spot > float(over):
+        return "center_above_spot"
+    pos_max = params.get("range_pos_max")
+    if pos_max is None or spot is None:
+        return None
+    session = snapshot.get("session") or {}
+    high, low = session.get("day_high"), session.get("day_low")
+    if high is None or low is None or high <= low:
+        return None
+    return "range_position_high" if (spot - low) / (high - low) >= float(pos_max) else None
+
+
 def wall_clearance_refusal(snapshot: dict, params: dict, side: str, detail: dict | None = None) -> str | None:
     """Refuse a legged entry while the GEX wall its completion must travel toward has not been
     cleared (`wall_clear_ahead_points` null/absent = off). The `wall-clear` arm's one variable.
@@ -1405,6 +1447,12 @@ def evaluate_credit_spread_entry(
     center, center_reason = select_center(snapshot, params)
     if center is None:
         return False, center_reason, None
+
+    # Placement gate (the `range-centre` arm; off unless it sets its keys). After centre selection
+    # because one of its two checks is where the centre landed against spot.
+    refusal = placement_refusal(snapshot, params, center)
+    if refusal:
+        return False, refusal, None
 
     width = params.get("wing_width", 5)
     # `choose_side` sells the side spot is on the far end of, which for a centre ABOVE spot means

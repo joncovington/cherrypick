@@ -410,6 +410,21 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   - **The cost is concentration:** every contract on a centre settles to the same payoff.
   - **The one variable is pinned** by `tests/test_restack.py`; the read is
     `scripts/flies_restack_read.py`, and the judging rule is in the experiment log (2026-10-11).
+- `range-centre` — `control` plus one variable, a placement gate, **from 2026-10-19** (declared
+  2026-10-14): no entry while spot is at or above `range_pos_max` (0.8) of the session range so far,
+  on any range width (refusal `range_position_high`), or while the ATM centre sits more than
+  `center_above_spot_max` (1.25) points above spot, which on an ATM arm is the put spread sold
+  furthest in the money (refusal `center_above_spot`). `engine.placement_refusal`; the range check
+  fails open without a session range.
+  - **Why:** ahead of control in each of three eras on control's own rows, and flat across nearby
+    thresholds. Found by search over ~8,700 cuts whose best performers did not carry to unseen
+    sessions as a group, so it is read forward, not trusted.
+  - **The one variable is pinned** by `tests/test_range_centre.py`; the judging rule is in the
+    experiment log (2026-10-14).
+- `window-1300` — `control` with its entries confined to 13:00–13:59, **from 2026-10-19** (declared
+  2026-10-14). One variable: the window. Its book is empty at 13:00 where control's is not, so it
+  measures the hour without the morning's positions occupying its centres. Pinned by
+  `tests/test_range_centre.py`; judging rule in the experiment log (2026-10-14).
 
 ### Regime tagging
 
