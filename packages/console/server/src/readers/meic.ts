@@ -9,6 +9,7 @@ import { readOnlyDb, withReadOnlyDb, hasColumn, hasTable, num, str, armColumnOf,
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
+import { cachedQuote } from "./streamcache.js";
 import { equityCurve, periodKey, riskSummary, stdev } from "../analytics/riskMetrics.js";
 
 
@@ -1297,7 +1298,35 @@ export interface MeicForest {
   /** Strikes released by a stop today: drawn as vacated so the forest and the
    *  occupancy map can never disagree about what the book still holds. */
   releasedStrikes: Array<{ arm: string; strike: number; right: "P" | "C"; at: string | null }>;
+  /** The spot marker (`forestSpot`): the stream cache's last trade on today's session, the settlement
+   *  print on a past one, the last entry's spot only when neither is there. */
   lastSpot: number | null;
+}
+
+/** A cached spot older than this is not drawn as "now": a stalled streamer looks like a quiet market. */
+const FOREST_SPOT_MAX_AGE_S = 15 * 60;
+
+/** Where the forest's spot marker goes. Until 2026-10-15 this was the last ENTRY's spot, so the
+ *  marker froze at the day's final entry while the 30-second refetch redrew the same number. Today's
+ *  session now reads the shared stream cache (the loops' own source, age-gated); a past session
+ *  shows its settlement print; the last entry is the fallback. */
+function forestSpot(
+  config: ConsoleConfig,
+  tradeDate: string,
+  symbol: string | null,
+  rows: Array<Record<string, unknown>>,
+): number | null {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  if (tradeDate === today && symbol) {
+    const q = cachedQuote(config, symbol, FOREST_SPOT_MAX_AGE_S);
+    const mid = q?.bid !== undefined && q?.ask !== undefined ? (q.bid + q.ask) / 2 : undefined;
+    const live = q?.last ?? mid;
+    if (live !== undefined) return live;
+  } else {
+    const settled = rows.map((r) => num(r["settle_underlying"])).find((v) => v !== null);
+    if (settled !== undefined && settled !== null) return settled;
+  }
+  return num(rows[rows.length - 1]?.["underlying_price_entry"]);
 }
 
 /**
@@ -1376,6 +1405,7 @@ export function readMeicForest(
       .prepare<string[], Record<string, unknown>>(
         `SELECT ic_order_id, ${armColumnOf(db, "ic_trades")} AS arm, symbol, put_strike, call_strike, wing_width,
                 net_credit, quantity, status, underlying_price_entry,
+                ${hasColumn(db, "ic_trades", "settle_underlying") ? "settle_underlying" : "NULL AS settle_underlying"},
                 pnl, COALESCE(fees, 0) AS fees
            FROM ic_trades
           WHERE trade_date = ?${and}`,
@@ -1473,7 +1503,7 @@ export function readMeicForest(
     }
 
     const symbol = str(open[0]?.["symbol"] ?? rows[0]?.["symbol"]) ?? null;
-    const lastSpot = num(rows[rows.length - 1]?.["underlying_price_entry"]);
+    const lastSpot = forestSpot(config, tradeDate, symbol, rows);
     return {
       mode,
       tradeDate,
