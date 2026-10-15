@@ -12,13 +12,16 @@ import type { SlideDef } from "../types";
  * whether anything can trade before the tiles say what it did. On the `meic` tab (2026-10-15) the
  * strip is MEIC's own arm record instead: each live loop is armed separately, so one badge for both
  * would say the wrong thing about one of them.
+ *
+ * Each live loop's tab carries its module's name (2026-10-15): flies' was `today` from when it was
+ * the only live loop, beside `meic`. `/live/today` redirects to `flies` (navGroups' `legacy`).
  */
 const slides: SlideDef[] = [
-  { id: "today", label: "today", render: () => <LivePage /> },
-  // The daily position evaluation (packages/manage): every live trade against the ruleset.
-  { id: "manage", label: "manage", render: () => <ManagePage /> },
+  { id: "flies", label: "flies", render: () => <LivePage /> },
   // MEIC's live loop: arming, halt, orphans, held submissions, open ICs and resolved history.
   { id: "meic", label: "meic", render: () => <MeicLivePage /> },
+  // The daily position evaluation (packages/manage): every live trade against the ruleset.
+  { id: "manage", label: "manage", render: () => <ManagePage /> },
 ];
 
 function ArmBadge() {

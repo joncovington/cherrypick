@@ -61,7 +61,7 @@ describe("the Overview's live panel", () => {
   it("draws only the books with activity and names the quiet ones", () => {
     const html = renderPanel({
       books: [
-        { module: "flies", to: "/live/today", ...quiet },
+        { module: "flies", to: "/live/flies", ...quiet },
         { module: "bwb", to: "/bwb/livegap", ...quiet, positions: 3, open: 2, latestSession: "2026-10-20", latestNet: -45.5, latestNetSession: "2026-10-16", totalNet: 120.25 },
       ],
     });
@@ -75,7 +75,7 @@ describe("the Overview's live panel", () => {
   it("says so when no module has live activity, and shows a failed read as a failure", () => {
     const html = renderPanel({
       books: [
-        { module: "flies", to: "/live/today", ...quiet, ledger: "absent" },
+        { module: "flies", to: "/live/flies", ...quiet, ledger: "absent" },
         { module: "bwb", to: "/bwb/livegap", ...quiet, ledger: "failed", error: "no such column" },
       ],
     });
