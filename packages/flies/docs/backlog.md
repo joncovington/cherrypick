@@ -22,6 +22,10 @@ alone, and nothing tracked the gate after that.
   completed 91% (20 of 22) and made +$1,127. Re-run at 15 sessions (about 10-15).
 - **2026-10-12:** taken out of the advisor's bounds at the 10-15 boundary (experiment log). The live
   re-run at 15 sessions is still the reopen condition for live; the advisor no longer proposes it.
+- **Re-run 2026-10-15** (live control, 09-25..10-15, 15 sessions, 88 entries; experiment-log): not
+  met. 15 and 30 minutes net +$224 / +$251 over no gate, but only by cutting the worst day (about
+  +$510); losing days rise from 7 to 9–10, the median day falls from +$26 to about −$215, and 45
+  minutes and up lose more than no gate. Re-run at 30 sessions.
 
 ## Variants of the delta-placed debit-first pair, by config only
 
