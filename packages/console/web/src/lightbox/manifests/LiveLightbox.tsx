@@ -1,6 +1,7 @@
 import { LivePage, useLiveFlies } from "../../pages/Live/LivePage";
 import { ManagePage } from "../../pages/Live/ManagePage";
 import { MeicLivePage, useLiveMeic } from "../../pages/Live/MeicLivePage";
+import { LiveTodayPage, suiteBadgeText, useLiveToday } from "../../pages/Live/LiveTodayPage";
 import { LoopPill } from "../../components/ScopeBar";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
@@ -14,9 +15,13 @@ import type { SlideDef } from "../types";
  * would say the wrong thing about one of them.
  *
  * Each live loop's tab carries its module's name (2026-10-15): flies' was `today` from when it was
- * the only live loop, beside `meic`. `/live/today` redirects to `flies` (navGroups' `legacy`).
+ * the only live loop, beside `meic`. The same day `today` became the all-loops summary, first: one row
+ * per live loop (flies, meic, bwb), the attention list and the suite totals, with a suite badge in
+ * the header ("2 armed · HALTED") rather than one loop's.
  */
 const slides: SlideDef[] = [
+  // Every live loop on one page: what is armed, open and settled, and what needs a person.
+  { id: "today", label: "today", render: () => <LiveTodayPage /> },
   { id: "flies", label: "flies", render: () => <LivePage /> },
   // MEIC's live loop: arming, halt, orphans, held submissions, open ICs and resolved history.
   { id: "meic", label: "meic", render: () => <MeicLivePage /> },
@@ -53,6 +58,26 @@ function MeicArmBadge() {
   );
 }
 
+function SuiteBadge() {
+  const { data } = useLiveToday();
+  if (!data) return null;
+  const n = data.suite.armed.length;
+  const cls = data.halted ? "pnl-neg" : n > 0 ? "pnl-pos" : "muted";
+  const attention = data.attention.length;
+  return (
+    <span
+      className={`chip ${cls}`}
+      title={
+        `armed now: ${n > 0 ? data.suite.armed.join(", ") : "none"} of ${data.suite.loops} live loops; ` +
+        `halt flag ${data.halted ? "present" : "absent"}; ${attention} item${attention === 1 ? "" : "s"} needing a person`
+      }
+    >
+      {suiteBadgeText(data)}
+      {attention > 0 ? ` · ${attention} need${attention === 1 ? "s" : ""} a person` : ""}
+    </span>
+  );
+}
+
 function LivePill() {
   const { data } = useLiveFlies();
   const l = data?.loop;
@@ -61,14 +86,15 @@ function LivePill() {
 
 export function LiveLightbox({ slide }: { slide: string }) {
   const meic = slide === "meic";
+  const today = slide === "today";
   return (
     <ModuleFrame
       module="live"
       slide={slide}
       slides={slides}
       session={null}
-      badge={meic ? <MeicArmBadge /> : <ArmBadge />}
-      loopPill={meic ? undefined : <LivePill />}
+      badge={today ? <SuiteBadge /> : meic ? <MeicArmBadge /> : <ArmBadge />}
+      loopPill={meic || today ? undefined : <LivePill />}
     />
   );
 }

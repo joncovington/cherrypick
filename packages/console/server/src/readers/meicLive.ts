@@ -63,7 +63,7 @@ function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
-function etParts(now: Date): { session: string; minute: number } {
+export function etParts(now: Date): { session: string; minute: number } {
   const session = now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
@@ -77,7 +77,7 @@ function etParts(now: Date): { session: string; minute: number } {
 }
 
 /** `HH:MM` to minutes, or null for anything else (an unreadable time disarms nothing here). */
-function minutesOf(hhmm: string): number | null {
+export function minutesOf(hhmm: string): number | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 }
@@ -108,7 +108,7 @@ function readArm(config: ConsoleConfig, session: string, minute: number): LiveMe
 }
 
 /** `core.execution.read_orphans`: the last sweep's list, [] with no readable file. */
-function readOrphans(dir: string): LiveMeicPayload["orphans"] {
+export function readOrphans(dir: string): LiveMeicPayload["orphans"] {
   const doc = readJson(path.join(dir, "live_orphans.json"));
   if (doc === null) return { at: null, orders: [] };
   const raw = Array.isArray(doc["orphans"]) ? (doc["orphans"] as unknown[]) : [];
@@ -126,7 +126,7 @@ function readOrphans(dir: string): LiveMeicPayload["orphans"] {
 }
 
 /** `core.execution.read_hold`: an absent file holds nothing; an unreadable one is reported held. */
-function readHeld(dir: string): LiveMeicHeld {
+export function readHeld(dir: string): LiveMeicHeld {
   const p = path.join(dir, "live_held.json");
   if (!fs.existsSync(p)) return { unresolved: [], unrecorded: [] };
   const doc = readJson(p);
@@ -146,7 +146,7 @@ function readHeld(dir: string): LiveMeicHeld {
 }
 
 /** `core.execution.read_broker_health`: the persisted broker-contact record, null with none. */
-function readBrokerHealth(dir: string): LiveMeicBrokerHealth | null {
+export function readBrokerHealth(dir: string): LiveMeicBrokerHealth | null {
   const doc = readJson(path.join(dir, "live_broker_health.json"));
   if (doc === null || Array.isArray(doc)) return null;
   return {

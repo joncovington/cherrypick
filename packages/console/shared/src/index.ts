@@ -19,6 +19,7 @@ export * from "./types/performance.js";
 export * from "./types/live.js";
 export * from "./types/liveBooks.js";
 export * from "./types/liveMeic.js";
+export * from "./types/liveToday.js";
 export * from "./types/regimeCuts.js";
 export * from "./types/fliesAgent.js";
 export * from "./types/fliesEvidence.js";

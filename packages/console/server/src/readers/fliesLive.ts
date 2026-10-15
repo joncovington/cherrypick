@@ -139,7 +139,7 @@ export function resolveLiveSession(
 // tile and the performance slide: one peak, whichever page reads it.
 
 // --------------------------------------------------------------------------- the day's rows
-function positionsFor(db: Database.Database, session: string): LivePosition[] {
+export function positionsFor(db: Database.Database, session: string): LivePosition[] {
   const hasMarks = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='fly_live_marks'").get() !== undefined;
   const markFor = hasMarks
     ? db.prepare<[string], Record<string, unknown>>(
@@ -193,7 +193,7 @@ function minuteOf(ts: string): number {
 }
 
 /** The summed mark path and the open-margin path, one point per tick, plus the feed's refusals. */
-function markSeries(db: Database.Database, session: string): {
+export function markSeries(db: Database.Database, session: string): {
   markPnl: LivePoint[];
   openMargin: LivePoint[];
   latest: { at: string; total: number } | null;

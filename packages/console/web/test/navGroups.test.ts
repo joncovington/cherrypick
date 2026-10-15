@@ -50,16 +50,16 @@ describe("the flies nav declaration", () => {
 });
 
 describe("the live nav declaration", () => {
-  // 2026-10-15: each live loop's tab carries its module's name; flies' used to be `today`. A future
-  // all-loops summary page may take `today` back -- this test then fails until the alias goes.
+  // 2026-10-15: each live loop's tab carries its module's name; flies' used to be `today`, and the
+  // all-loops summary took `today` back the same day, so the `today -> flies` alias went with it.
   const decl = NAV_DECL.live!;
 
-  it("names each live loop for its module, loops before manage", () => {
-    expect(navSlideIds("live")).toEqual(["flies", "meic", "manage"]);
+  it("opens on the all-loops summary, then names each live loop for its module, loops before manage", () => {
+    expect(navSlideIds("live")).toEqual(["today", "flies", "meic", "manage"]);
   });
 
-  it("sends an old /live/today link to the flies tab", () => {
-    expect(resolveSlide("live", "today", decl.slides)).toBe("flies");
+  it("resolves /live/today to the summary itself", () => {
+    expect(resolveSlide("live", "today", decl.slides)).toBe("today");
   });
 
   it("every legacy id points at a tab that exists, and shadows none", () => {
