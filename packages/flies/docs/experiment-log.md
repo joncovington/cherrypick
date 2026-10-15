@@ -1540,3 +1540,23 @@ Nothing else moves. Every judging rule counts sessions, not dates, so the read d
 by the same four sessions: `range-centre` and `window-1300` are read at 15 sessions, about 2026-11-04.
 The selector's model for 10-15 was fitted through 10-14 as its procedure requires.
 `debit-first-atm`'s ladder read was already going to miss this boundary and still does.
+
+## 2026-10-15 — live completions rest to the close (a break in the live record)
+
+At the operator's request, live's `completion_cutoff` moves from 15:30 to 16:00. A resting
+completion is no longer cancelled at 15:30. It works until the close and dies there as a Day order.
+The 15:30 cancel had fired 25 times over 17 live sessions (`fly_live_orders`, 08-04..10-14), and
+every one of those left a short vertical to settle. Entries do not change: live still trades
+`control`'s 10:00–14:30 window from 10:15, so nothing new opens after 14:30.
+
+The config was changed at 14:42 ET, before that session's 15:30, so 10-15 is the first live session
+under the new rule. The live ledger journals it as a `completion_rule` break with scope `live`; live
+completion rates before and after it are not pooled.
+
+`live-shadow` copies live's cutoff, and it also started on 10-15. Its whole record therefore runs
+under 16:00, and it has no break of its own. Its `arm_added` journal row restates the cutoff from
+config, so it now reads 16:00.
+
+The code needed no change. Each tick confirms a completion fill, a completion that dies unfilled
+leaves the vertical to settle, and settlement asks the broker about any pending completion before
+it settles. To revert, set `live.completion_cutoff` back to 15:30.
