@@ -95,7 +95,7 @@ export function MeicPositionsTable({ mode, scope }: { mode: TradingMode; scope: 
  * The history's columns (components/table/columns.ts). MEIC's slippage is conceded inside the
  * modelled fill prices, so `slip` is a measure beside the costs and nothing subtracts it.
  */
-const HISTORY_COLUMNS: ColumnDef<MeicTradeRow>[] = [
+export const HISTORY_COLUMNS: ColumnDef<MeicTradeRow>[] = [
   { id: "date", header: "date", kind: "describe", render: (r) => r.tradeDate },
   { id: "time", header: "time", kind: "describe", className: "muted", render: (r) => r.entryTime?.slice(11, 16) ?? "—" },
   { id: "sym", header: "sym", kind: "describe", render: (r) => r.symbol },

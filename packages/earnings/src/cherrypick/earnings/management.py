@@ -39,6 +39,7 @@ from cherrypick.earnings.strategies import (
     broken_wing_butterfly,
     directional_credit_spread,
     double_calendar,
+    expected_move_butterfly,
     iron_condor,
     iron_fly,
 )
@@ -63,11 +64,15 @@ _EVALUATORS = {
     "broken_wing_butterfly": (broken_wing_butterfly, True, False, False),
     "atm_calendar": (atm_calendar, True, False, True),
     "double_calendar": (double_calendar, True, True, True),
+    "expected_move_butterfly": (expected_move_butterfly, True, False, False),
 }
 
 # Strategies entered the afternoon before an announcement and meant to be out once the crush is
 # realised. The calendars are excluded: they are held across expirations by construction and run
-# their own front-expiration time stop.
+# their own front-expiration time stop. expected_move_butterfly is excluded too: it is a bet on
+# where the stock settles by its front expiry, so a first-morning loser close (the PEAD gate) would
+# take the reaction-day exit the history study found worst; it holds to the expiry close or its
+# take-profit.
 OVERNIGHT = ("iron_fly", "iron_condor", "directional_credit_spread", "broken_wing_butterfly")
 
 POLICY_DEFAULTS = {

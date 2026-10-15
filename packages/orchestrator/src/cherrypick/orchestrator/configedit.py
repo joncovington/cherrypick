@@ -32,9 +32,19 @@ from . import init as initmod
 # gate0 attestation, hand-edited enable_live_trading) keep their single deliberate path. Values are
 # the hint shown beside the locked field.
 GUARDED: dict[str, dict[str, str]] = {
+    # meic's live block grew an arm selector, a sizing seam and a per-day budget on 2026-10-14/15
+    # (the flies/bwb posture). The same lesson as theirs: a surface that cannot arm the loop must not
+    # be able to widen it once armed. Timing (entry window, disarm_time) stays editable, as for bwb.
     "meic": {
         "/enable_live_trading": "hand-edit after the live-trading plan's gates; never from this surface",
         "/account_deploy_limit_pct": "live risk cap — hand-edit deliberately, not from this surface",
+        "/live/symbol": "which underlying trades live money — hand-edit deliberately, never from here",
+        "/live/gate0_confirmed": "a human attestation string — write it by hand, with the plan doc open",
+        "/live/arm": "which arm trades live money — switching it is a journaled measurement break, by hand",
+        "/live/max_open_bp_dollars": "live buying-power cap — hand-edit deliberately, never from here",
+        "/live/wing_widths_by_symbol": "live structure size — hand-edit deliberately, never from here",
+        "/live/max_structures_per_day": "live entry budget — hand-edit deliberately, never from here",
+        "/live/daily_loss_halt_dollars": "live loss halt — hand-edit deliberately, not from this surface",
     },
     "earnings": {
         "/enable_live_trading": "hand-edit after the live-trading plan's gates; never from this surface",
@@ -97,6 +107,7 @@ _MODULE_TARGETS: tuple[str, ...] = (
     "earnings",
     "flies",
     "gex",
+    "manage",
     "meic",
     "pmcc",
     "streamer",
@@ -113,6 +124,7 @@ _EXAMPLE_REL: dict[str, str] = {
     "earnings": "../earnings/config/config.example.json",
     "flies": "../flies/config.example.json",
     "gex": "../gex/config.example.json",
+    "manage": "../manage/config.example.json",
     "meic": "../meic/config.example.json",
     "meic-risk": "../meic/config.risk.example.json",
     "pmcc": "../pmcc/config.example.json",

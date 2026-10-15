@@ -17,11 +17,14 @@ it true. Anything that would make a fill *depend* on this daemon belongs in the 
 
 LIFECYCLE
 ---------
-Tied to arming, not always-on: `/live-flies-start` starts it, disarm stops it, and it exits on its
-own at `live.disarm_time` so a missed stop can't leave an authenticated broker session connected
-overnight. That mirrors the live loop's per-day-arming contract rather than the suite's always-on
-`packages/streamer` daemon (which is watchdog-supervised precisely because market data is needed
-whenever the market is open -- order alerts are only needed while something is armed).
+Tied to arming, not always-on: arming names it on the arm record as a companion
+(`live_loop.alert_daemon_companion`), and the orchestrator's supervisor keeps it up as a resident job
+while the record is valid -- restarted on death and on a silent heartbeat, so a reboot mid-day brings
+it back (2026-10-14: started by hand, it stayed down after a Windows Update restart at 03:30 ET).
+Disarm stops it, and it exits on its own at `live.disarm_time` so a missed stop can't leave an
+authenticated broker session connected overnight. That mirrors the live loop's per-day-arming
+contract rather than the suite's always-on `packages/streamer` daemon (market data is needed whenever
+the market is open -- order alerts only while something is armed).
 
 Modeled on `packages/streamer/src/daemon.py`: PID file + a Windows-safe liveness probe, rotating
 file logs, `--status` (one line of JSON) and `--stop` (SIGTERM to the PID-file pid).

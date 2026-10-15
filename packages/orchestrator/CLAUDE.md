@@ -32,6 +32,7 @@ python run.py preopen-check      # deprecated alias for streamer-health (honours
 python run.py report             # cross-module paper P&L; --eod / --date YYYY-MM-DD for one session; --live reads the live-tagged ledgers (never feeds calibrate/promotion)
 python run.py calibrate          # per-arm calibration readings + promotion recommendations
 python run.py positions          # live P/L of the REAL broker account (read-only, on demand); --detail / --account <last4> / --json
+python run.py manage             # daily position evaluation: broker snapshot (read-only) judged by packages/manage
 python run.py archive            # monthly rotation of finished months' reports + logs to logs/archive/ (--dry-run / --month YYYY-MM)
 python run.py backup             # nightly suite backup (the suite-backup job, 01:30 ET): ONE verified zip, rewritten; a bad night never replaces it (--dry-run / --list / --verify / --restore-to DIR)
 python run.py settings           # local config editor + secrets manager on loopback:8804; --organize [target] [--apply] reorders configs instead
@@ -122,6 +123,13 @@ and pushes alerts through `notify/notifier.py`, with a dedup / re-notify / recov
 (`members`: `jobs.failed`, `jobs.missed`, one id per job and stamp) is re-posted only when a new
 incident joins, never on the `renotify_minutes` clock, and posts one all-clear when the list empties.
 
+**Recording coverage** (2026-10-14, `_check_recording_coverage`). Once per finished session (15
+minutes after the calendar's close), the watchdog runs the gex recorder's `run.py coverage --session
+D` by subprocess and caches the verdict in `state/recording_coverage.json`. Each series with a gap
+is a `members` entry, so a session's gaps notify once. The recorder's heartbeat cannot see this: on
+2026-10-13 the spot trail and quotes stopped at 14:53 while the process and its GEX series ran on,
+and the quote history it lost cannot be fetched again.
+
 **Read side.** `report.py` (`run(session=…)` scopes to one settlement day) and `calibrate.py`, over the
 ledger readers in **`cherrypick.core.ledgers`**. Read-only and file-only. The console is the one page
 that composes it; this package serves nothing of its own. `logrotate.py` (`archive`, the monthly
@@ -133,6 +141,10 @@ ledgers copy through SQLite's online backup API and are quick_checked, a night w
 36h. Only `.dolt/` is skipped, never its parent: `data/earnings` holds ledgers beside one.
 
 **This package holds no AI and no review or advisor logic; it only schedules them.**
+- The position evaluation is `packages/manage`: job `manage-eval` (10:00 ET, trading days, OFF until
+  `manage.enabled`) runs `run.py manage`, whose one job here is the snapshot (`managesnap.py`: the
+  `positions` read plus each underlying's market metrics, both read-only). The rules and verdicts are
+  manage's; the evaluation runs by subprocess.
 - The end-of-day review is `packages/review`: jobs `review-provisional` (16:30 ET) and `review-final`
   (10:15 next morning), trading days only, invoke `python -m cherrypick.review`
   (`cfgmod.review_settings`; on by default, opt out with `"review": {"enabled": false}`).

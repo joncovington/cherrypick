@@ -1087,7 +1087,8 @@ def _check_producer(cfg: dict[str, Any], in_session: bool) -> list[Finding]:
             # the log rather than something to reconstruct afterwards.
             msg = f"running (off-hours; staleness not checked){_streamer_identity(status)}"
         else:
-            msg = "not running (off-hours; auto-start at the first in-session tick, 9:15 ET)"
+            start = timeutil.parse_hhmm(spec.get("session_start"), timeutil.NEAR_OPEN)
+            msg = f"not running (off-hours; auto-start at the first in-session tick, {start:%H:%M} ET)"
         return [Finding("streamer", OK, "Streamer", msg)]
     return _check_streamer_health("streamer", root, spec)
 
@@ -1592,6 +1593,112 @@ def _check_advice_enactment(cfg: dict[str, Any], now_et: datetime, is_trading: b
             f"An artifact was issued for {session} and the loop's own record disagrees with it. "
             f"The session buys those experiments nothing and their counters do not advance. "
             f"{listed}",
+        )
+    ]
+
+
+# How long after the close a session's recordings are judged: the recorder's last samples have landed.
+_COVERAGE_AFTER_CLOSE = timedelta(minutes=15)
+_COVERAGE_SERVICE = "gex-recorder"
+
+
+def _coverage_state_path() -> Path:
+    return cfgmod.state_file("recording_coverage.json")
+
+
+def _last_judgeable_session(now_et: datetime) -> str:
+    """The latest trading session whose close passed `_COVERAGE_AFTER_CLOSE` ago (ET)."""
+    from cherrypick.core import calendar as _calendar
+
+    day = now_et.date()
+    while True:
+        if _calendar.is_trading_day(day):
+            hh, mm = (int(x) for x in _calendar.session_close_hhmm(day).split(":"))
+            close = datetime(day.year, day.month, day.day, hh, mm, tzinfo=now_et.tzinfo)
+            if now_et >= close + _COVERAGE_AFTER_CLOSE:
+                return day.isoformat()
+        day -= timedelta(days=1)
+
+
+def _check_recording_coverage(cfg: dict[str, Any], now_et: datetime) -> list[Finding]:
+    """Did the gex recorder keep a whole session of every series it owns? (2026-10-14.)
+
+    The recorder's heartbeat proves the process is alive, not that each series is on disk, and the
+    two came apart on 2026-10-13: from 14:53 the spot trail and the chain's quotes stopped (the
+    recorder found no SPX spot) while the GEX regime series kept writing, and nothing said so. The
+    quote history is the suite's only record of those quotes, so a missed hour is lost for good.
+
+    Once per finished session, `run.py coverage --session D` in the gex checkout (by subprocess, as
+    this package drives modules) judges every series against its own cadence; the verdict is cached
+    in `state/recording_coverage.json`, so the module runs once a session, not every tick. Each
+    failing series is a `members` entry, so a session's gaps notify once and the next complete
+    session posts the all-clear."""
+    svc = next((s for s in cfgmod.enabled_services(cfg) if s.get("id") == _COVERAGE_SERVICE), None)
+    if svc is None:
+        return []
+    session = _last_judgeable_session(now_et)
+    path = _coverage_state_path()
+    try:
+        cache = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except (OSError, ValueError):
+        cache = {}
+    verdict = cache.get(session)
+    if verdict is None:
+        try:
+            r = _run_module(
+                cfgmod.module_root(svc, _COVERAGE_SERVICE),
+                ["run.py", "coverage", "--session", session],
+                timeout=60,
+            )
+            payload = first_json(r.stdout or "")
+        except Exception as exc:  # noqa: BLE001 -- a check that cannot run must not break the sweep
+            return [
+                Finding(
+                    "recording.coverage",
+                    WARN,
+                    "Recording coverage unknown",
+                    f"Could not judge {session}'s recordings: {type(exc).__name__}: {exc}",
+                )
+            ]
+        if not isinstance(payload, dict) or not payload.get("ok"):
+            return [
+                Finding(
+                    "recording.coverage",
+                    WARN,
+                    "Recording coverage unknown",
+                    f"gex coverage gave no verdict for {session} (exit {r.returncode}).",
+                )
+            ]
+        verdict = {
+            "complete": bool(payload.get("complete")),
+            "failing": list(payload.get("failing") or []),
+            "detail": {
+                k: [f"{g['from']}-{g['to']}" for g in (v.get("gaps") or [])]
+                or ("missing" if not v.get("ok") else [])
+                for k, v in (payload.get("series") or {}).items()
+                if not v.get("ok")
+            },
+        }
+        cache[session] = verdict
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            keep = dict(sorted(cache.items())[-30:])  # a month of verdicts is plenty to look back on
+            path.write_text(json.dumps(keep, indent=2), encoding="utf-8")
+        except OSError:
+            pass  # uncached: the next tick asks again, which costs one subprocess
+    if verdict.get("complete"):
+        return [
+            Finding("recording.coverage", OK, "Recordings complete", f"{session}: every series recorded.")
+        ]
+    listed = "; ".join(f"{k} {v}" for k, v in sorted((verdict.get("detail") or {}).items()))
+    return [
+        Finding(
+            "recording.coverage",
+            WARN,
+            f"{session}: {len(verdict['failing'])} recording(s) incomplete",
+            f"The gex recorder did not keep a whole session of: {listed}. Quote history cannot be "
+            "re-fetched, so the gap is permanent; check the recorder log for the cause.",
+            members=tuple(f"{session}:{k}" for k in verdict["failing"]),
         )
     ]
 
@@ -2916,6 +3023,16 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     # Was last night's advice actually applied? Deterministic, and it replaced an AI checkpoint
     # that never once caught this (see _check_advice_enactment).
     findings += _check_advice_enactment(cfg, now, is_trading)
+    # Did the recorder keep every series it owns for the last finished session? Its heartbeat cannot
+    # say (see _check_recording_coverage).
+    try:
+        findings += _check_recording_coverage(cfg, now)
+    except Exception as exc:
+        findings.append(
+            Finding(
+                "recording.coverage", WARN, "Recording coverage check failed", f"{type(exc).__name__}: {exc}"
+            )
+        )
     # The trade notifier runs below inside a bare except; its own state is the only trace of a
     # failure (see _check_trade_notify).
     try:
@@ -2929,7 +3046,10 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
 
     # Watchdog the standalone market-data producer (dormant until the cutover enables the top-level
     # `streamer` block; today MEIC still owns the streamer under modules.meic.streamer).
-    findings += _check_producer(cfg, in_session)
+    # The streamer's own start (`streamer.session_start`, 2026-10-15): it may come up before the
+    # 09:15 every other session check keys on, so quotes are warm well before the bell.
+    streamer_start = timeutil.parse_hhmm((cfg.get("streamer") or {}).get("session_start"), timeutil.NEAR_OPEN)
+    findings += _check_producer(cfg, timeutil.is_session_window(now, holidays, start=streamer_start))
 
     overall = OK
     for f in findings:

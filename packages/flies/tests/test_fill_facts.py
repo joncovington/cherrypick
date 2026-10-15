@@ -481,6 +481,115 @@ def test_paper_legged_entries_stamp_the_live_limit_and_track_first_touches(tmp_p
     assert touches["max_dist"][0] == pytest.approx((6004.0 - row["center"]) / row["wing_width"])
 
 
+def test_paper_legged_entries_stamp_the_live_entry_limit_and_watch_the_first_minute(tmp_path):
+    """Shown to fail without the entry shadow: the limit is what `live_orders.entry_spec` would
+    ask, the entry tick is the path's origin, a look 30 s later is kept with spot's move toward
+    completion, and a look past the minute is not."""
+    conn = dbmod.connect(str(tmp_path / "paper_trades.db"))
+    config = one_arm_config(entry_modes=["legged"])
+    t0 = datetime(2026, 7, 20, 12, 0, 0, tzinfo=clock.ET)
+    first = bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control", now=t0)
+    pid = next(a for a in first["actions"] if a["action"] == "credit_spread_opened")["position_id"]
+
+    def row():
+        return dict(conn.execute("SELECT * FROM fly_positions WHERE position_id = ?", (pid,)).fetchone())
+
+    r = row()
+    assert r["side"] == "put", "spot under the centre sells the put spread"
+    assert r["shadow_entry_limit"] == pytest.approx(live_orders.tick_floor(r["credit"]))
+    (origin,) = json.loads(r["shadow_entry_path"])
+    assert (origin["s"], origin["spot"], origin["move"]) == (0, 5998.0, pytest.approx(0.0))
+
+    bookmod.process_snapshot(
+        snapshot(underlying_price=5999.5), config, conn, "control", now=t0 + timedelta(seconds=30)
+    )
+    bookmod.process_snapshot(
+        snapshot(underlying_price=6003.0), config, conn, "control", now=t0 + timedelta(seconds=75)
+    )
+    path = json.loads(row()["shadow_entry_path"])
+    assert [o["s"] for o in path] == [0, 30], "the 75 s look is past the window"
+    assert path[1]["move"] == pytest.approx(1.5), "a put spread completes on a rise"
+    assert path[1]["mid_gap"] is not None
+
+
+def test_shadow_entry_splits_paper_net_by_what_live_would_have_filled(tmp_path):
+    conn = dbmod.connect(str(tmp_path / "paper_trades.db"))
+    ran = json.dumps([{"s": 0, "move": 0.0}, {"s": 15, "move": 1.2}])
+    still = json.dumps([{"s": 0, "move": 0.0}, {"s": 15, "move": 0.1}])
+    for pid, path, kind, pnl in (
+        ("P1", ran, "fly", 30.0),
+        ("P2", still, "short_vertical", -250.0),
+        ("P3", None, "fly", 5.0),
+    ):
+        dbmod.save_position(
+            conn,
+            {
+                "position_id": pid,
+                "book_id": f"{DAY}:control:SPX",
+                "trade_date": DAY,
+                "arm": "control",
+                "entry_mode": "legged",
+                "symbol": "SPX",
+                "kind": kind,
+                "side": "put",
+                "center": 7495.0,
+                "wing_width": 5,
+                "quantity": 1,
+                "credit": 1.20,
+                "net": 1.20,
+                "fees": 6.88,
+                "pnl": pnl,
+                "status": "settled",
+                "entry_time": f"{DAY}T10:30:00-04:00",
+                "shadow_entry_limit": 1.20,
+                "shadow_entry_path": path,
+            },
+        )
+    out = analytics.shadow_entry(conn, values=[1.0])
+    (cell,) = out["arms"]["control"]["shadow"]
+    assert (cell["would_fill"], cell["would_miss"], cell["unjudged"]) == (1, 1, 1)
+    assert (cell["filled_net"], cell["missed_net"], cell["missed_completed"]) == (-250.0, 30.0, 1)
+
+
+def test_live_entry_paths_come_from_the_spot_trail_for_fills_and_misses_alike(live_conn):
+    """The order path stops at the fill, so the fit reads the trail: a filled order's first minute
+    is there as fully as a missed one's."""
+    for oid, outcome, side in (("E1", "filled", "put"), ("E2", "replaced", "call"), ("E3", "working", "put")):
+        dbmod.save_live_order(
+            live_conn,
+            {
+                "order_id": oid,
+                "trade_date": DAY,
+                "position_id": f"P-{oid}",
+                "leg": fm.ENTRY,
+                "side": side,
+                "placed_at": f"{DAY}T11:00:00-04:00",
+                "spot_at_submit": 7500.0,
+                "outcome": outcome,
+                "source": "live",
+            },
+        )
+    trail = _trail(
+        [
+            (f"{DAY}T10:59:50-04:00", 7499.0),  # before placement: never a look
+            (f"{DAY}T11:00:15-04:00", 7500.6),
+            (f"{DAY}T11:00:30-04:00", 7501.2),
+            (f"{DAY}T11:01:10-04:00", 7505.0),  # past the minute
+        ]
+    )
+    orders = {o["order_id"]: o for o in fill_facts.entry_spot_paths(live_conn, trail)}
+    assert set(orders) == {"E1", "E2"}, "a working order is not judged"
+    assert orders["E1"]["filled"] and not orders["E2"]["filled"]
+    assert [(o["s"], o["move"]) for o in orders["E1"]["path"]] == [
+        (0, 0.0),
+        (15, pytest.approx(0.6)),
+        (30, pytest.approx(1.2)),
+    ]
+    assert orders["E2"]["path"][-1]["move"] == pytest.approx(-1.2), "a call spread completes on a fall"
+    fit = analytics.entry_rule_fit(list(orders.values()), values=[1.0])
+    assert fit["always_fill"] == 0.5 and fit["rules"][0]["false_miss"] == 1
+
+
 def test_shadow_completion_reads_settled_rows_per_arm(tmp_path):
     conn = dbmod.connect(str(tmp_path / "paper_trades.db"))
     k = fm.grid_key(0.10)

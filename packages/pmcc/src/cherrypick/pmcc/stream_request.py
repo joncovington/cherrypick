@@ -129,11 +129,20 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
     kinds = {a: management.is_held_long(management.effective_params({"arm": a}, config)) for a in arms}
     # A held-long entry's short, asked for in its own right: it used to ride on control's plan
     # short, which it usually equals, and stopped being asked for when control retired.
+    #
+    # Asked for even when there is no plan, because the listing the plan is read from only exists
+    # once something asks. The producer fetches a symbol's whole chain -- and writes
+    # `stream_expirations` from it -- only for a symbol with a requested expiration, and until
+    # 2026-10-13 a new symbol had none: no listing, so no plan, so no dates, so no listing. SMH
+    # and AMZN refused `no_listing` on every tick of their first sessions while the symbols that
+    # already held positions kept theirs. The uncapped weekly short is the date an entry would
+    # sell anyway (the cap is a ~1-year long, never nearer than the short).
     for symbol in entry_symbols:
         listed = None
         for arm in (a for a, held in kinds.items() if held):
             listed = listed if listed is not None else provider.listed_expirations(cache_path, symbol)
-            plan = clock.held_long_plan(today, listed, management.effective_params({"arm": arm}, config))
+            params = management.effective_params({"arm": arm}, config)
+            plan = clock.held_long_plan(today, listed, params) or clock.short_expiration(today, params)
             if plan is not None:
                 extra.setdefault(symbol, set()).add(plan["short_expiration"])
     for symbol in entry_symbols:

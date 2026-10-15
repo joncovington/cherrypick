@@ -1349,3 +1349,214 @@ overnight, so no advised position outlives Friday's settlement.
 **Also at this boundary:** the `selector` is enabled by the same script, as declared (2026-10-04,
 amended 2026-10-12; `--skip-selector` leaves it off). The live entry-pricing option (its own
 entry, built off) is offered by the script behind its own flag and is not part of the batch.
+
+## 2026-10-14 — a ladder gate and an edge-side gate replayed; neither declared
+
+SPX fell from the open all day, and live entered in the bottom 16% of the range so far on every one
+of its 11 entries. Every put spread stranded, and every call spread that filled completed. The
+question was whether a gate could keep the loop off the range edges. Both candidates were replayed
+after the close the way `replay_gates.py` works, which can express neither: drop the recorded entries
+the rule would have refused and sum the rest. That is an upper bound in the gate's favour, because a
+slot freed by a refusal is never refilled, and a refusal could have moved later strikes. Rows: legged
+`control`, settled SPX, from 2026-08-21 and including 10-14: paper 268 entries over 36 sessions
+(+$3,268), live 95 over 19 (+$382). Range position as in the 2026-10-09 entry: the gex spot trail at
+the entry instant, no look-ahead.
+
+**Range position alone is the wrong variable.** Paper put spreads entered at the session low made
++$3,596 (43 entries, 91% completed), and those on a day already 20 points down made +$2,154 (23, 96%).
+That is today's trade, and it has been control's best cell. Where position mattered was the side: at
+either edge, call spreads lost in both ledgers (paper −$1,644 over 80 entries, live −$627 over 23)
+while put spreads made money. That table was read on the morning of 10-14 over about 20 cells, so
+candidate B below is in-sample.
+
+**A. Ladder gate:** refuse a legged entry while an earlier same-side spread of the same arm and session
+is still uncompleted and spot sits X wing widths past its short strike, against its completion.
+- **X up to 2 is one rule.** The same-strike sign rule keeps a new same-side spread at least two
+  strikes from an open one, so every such re-entry is at least 2 widths past. 2.5, 3.5 and 4.5 were
+  added to get distinct settings.
+- **Paper loses at every X:** −$2,035 (X ≤ 2), −$2,055, −$1,156, −$842; sessions helped to hurt 7/25,
+  6/22, 5/20, 1/16. Most refused entries would have completed (74 of 93 at X ≤ 2). The first half of the
+  era (08-21..09-17) carries the loss, and the second half is small and positive except at 4.5.
+- **Live is mixed and small:** −$156, +$128, −$152, −$156. The one positive setting (2.5) hurt 8 of 11
+  sessions it changed and turns negative without the two best and worst sessions (−$173).
+- It pays on a day like 10-14 (paper +$478, live +$275 at X ≤ 2) and costs on the rest.
+
+**B. Edge-side gate:** at position ≤ 0.1 or ≥ 0.9 of the range so far, refuse call spreads (which
+complete on a fall); sell put spreads only.
+- **Paper +$1,472**, 85 refused (58 had completed), sessions 16 helped and 19 hurt, +$544 without the
+  best and worst two, halves −$798 / +$2,271. **Live +$184**, 26 refused, 7 helped and 7 hurt, +$8
+  without the best and worst two, halves −$572 / +$756.
+- **Most of it is `range-high`'s.** That arm's rule would refuse 39 of these paper entries; 23 are also
+  B refusals, and they carry $1,196 of B's $1,472. B on its own adds about +$277 in paper and −$91 in
+  live.
+- **It loses on the day that prompted it:** 10-14 −$172 paper, −$443 live, because the call spreads
+  were the ones that completed.
+
+**Searched:** A at six settings (four distinct), B as one rule, both ledgers, plus the morning's ~20-cell
+table that produced B. Paper's second half also straddles the 2026-10-05 `completion_rule` break.
+
+**Not declared.** A is dropped. B is not worth an arm while `range-high` is running: revisit it only if
+`range-high` passes its 14-session read, and then only as the part `range-high` does not already
+refuse. Live is unchanged. 10-14 is the stranded-vertical loss again, a one-way tape that never came
+back to the put spreads; the intraday agent's gate, in live shadow, is the route already being
+measured for those days.
+
+## 2026-10-14 — the completion-limit replay re-run on 13 strands; still no raise
+
+`scripts/flies_completion_replay.py` (the 2026-10-07 entry) over 10-05..10-14: 43 live positions,
+13 strands it can replay, baseline +$257.58. The live ledger holds 16 strands since 10-02, but the
+three from 10-02..10-04 carry no order-path quotes, and `--since 2026-10-02` replays the same 13.
+
+| Rule | vs baseline | rescued | overpaid | sessions helped / hurt | without its best session |
+|---|---|---|---|---|---|
+| +0.50 once spot is 1.0w away | +$191 | 5 | 16 ($800) | 4 / 4 | −$27 |
+| +0.25 flat | +$169 | 4 | 30 ($750) | 3 / 5 | −$224 |
+| +0.50 flat | +$165 | 8 | 30 ($1,500) | 4 / 4 | −$73 |
+| +0.25 once 1.0w away | +$118 | 2 | 16 ($400) | 1 / 6 | −$275 |
+| +0.50 once 0.5w away | +$67 | 6 | 23 ($1,150) | 4 / 4 | −$151 |
+| every time-triggered ladder | −$5 to −$180 | 0–1 | | | |
+
+- **Every positive cell is one session.** Without its best session each goes negative, and in four of
+  the five that session is 10-14 (+$393 or +$218). 10-12 and 10-13 are negative in every cell.
+- **The mechanism:** a raise rescues a strand on a one-way day and overpays every completion that
+  would have filled at the live limit, every other day.
+- The margin a rescue frees would have let in 5 to 8 more entries, paper-scored at −$272 to +$257.
+  That is optimistic and kept out of the table.
+
+**No change.** Re-run at about 20 replayable strands. Any raise it supports is measurement-affecting.
+
+**Correction to the entry above.** Its first paragraph was read before settlement and counted
+cancelled orders as entries. Live settled seven entries on 10-14. Two put spreads stranded (−$562).
+The 13:30 put spread completed, and so did the four call spreads, one pinning for +$407. Live control
+netted −$82.33, paper control −$604.52. The intraday agent's shadow gate would have refused only the
+13:30 entry, a winner. The replays in that entry used settled rows and are unaffected.
+
+## 2026-10-14 — live entry fills: 86%, adversely selected; the entry shadow starts recording
+
+The question was how to carry live's entry fill rate into paper. Read from `fly_live_orders` (the 50
+entry orders recorded at placement, 10-05..10-14; the 72 earlier rows are backfills with no mid) and
+the gex spot trail.
+
+- **43 of 50 filled** at the plan's credit floored to the tick (mid − 0.05), most within 0–4 s, 9
+  better than the limit. 6 of the 7 misses were re-placed on the next tick and usually filled a minute
+  later at a new centre or side; 1 was lost.
+- **The misses are adversely selected.** Spot moved toward the completing side in 6 of 7 (+0.76
+  points at 20 s, +1.00 at 60 s), against about half the fills (−0.07 / −0.02). Live misses the
+  entries that were going its way, so a random 14% haircut on paper would understate the gap.
+- **A first read from the order path was wrong.** It compared spread moves (−0.24 against +0.01), but
+  the path stops at the fill, so fills had no later moves to compare. The trail has no such bias.
+- **No per-order rule yet.** Scored on the trail over windows of 10–60 s and moves of 0.25–3 points,
+  the best rule (15 s, 1.5 points) agreed 88% against 86% for assuming every entry fills, catching 1
+  of the 7 misses.
+
+**Built, telemetry only (not measurement-affecting):** the paper entry shadow. Every legged entry
+stamps the limit live would ask and its first 60 s (`shadow_entry_limit`, `shadow_entry_path`), and
+`run.py fill-model` reports the rule fit beside `always_fill` and paper's net split by the rule.
+Paper's entries are unchanged. **Re-read at about 20–30 live misses**, and fit the price basis (the
+quote history for live orders, from 10-13) beside the spot one. A rule that beats `always_fill` is
+shadowed first and switched only at a declared boundary.
+
+## 2026-10-14 — `range-centre` and `window-1300` declared for 10-19, after a day of negative results
+
+The question was whether any flies arm could be built that beats `control`, starting from the
+debit-first idea and widening to every arm's rows. Most of the day's answers were no, and they are
+recorded here so they are not proposed again. All replays were read-only passes over the paper and
+live ledgers, run as one-off scripts outside the repo; the modelled ones say so.
+
+**Debit-first, every variant tried, negative.**
+
+- **Both 15-delta debit spreads at once, completion resting at debit + $0.50** (the delta pair's
+  rows, 17 sessions): −$318, 16 of 34 sides completed, 4 of 17 days up. Negative at every fixed
+  target from +0.10 to +1.00 and at targets of 1.15–2.5× the debit. A completed side nets about
+  +$43; a miss costs $60–110; break-even needs about 62% completion against the 47% observed.
+- **Cancel the other side and sell it back when one side completes** (marks modelled on the spot
+  path, the model reproducing 31 of 34 recorded outcomes): −$529 against −$422 for leaving both
+  working. The spread sold back is worth $0.10–0.35 by then, and the cancel gives up the reversal
+  days when both would have completed.
+- **Closer to spot** (the `debit-first-atm` shadow ladder, 5–30 points, 7–8 sessions): no distance
+  positive under both start times. A miss grows with the debit; the completion rate barely moves.
+- The family as a whole: `debit-first-atm` is the only debit arm with a gross edge (+$924 on 139
+  entries), and its fees are twice that.
+
+**Managing the stranded spread, negative on real prices.**
+
+- **Dollar stops** (−$50 to −$200, `control`'s 419 entries, marks modelled): −$2,400 to −$13,300
+  against holding. Most spreads that complete are down first.
+- **Time stops** (close if not completed in T minutes) looked like +$1,600 to +$5,000 on the model.
+  Checked against the live loop's recorded mids (`fly_live_marks`), the model is optimistic exactly
+  where the stop acts (−$52 mean error at 90–180 minutes), and on 95 live positions every T from 60
+  to 240 minutes lost to holding (−$118 to −$1,059). Not proposed.
+- The hedge overlay (an opposite-side long at entry) is still negative: +$803 unhedged, −$4,813
+  hedged.
+
+**Outside sources add no tested method.** A vendor education library (54 sessions mentioning
+butterflies) teaches no net-credit legging at all, only repairs that leave a debit, and calls 5-wide
+too narrow. A web search found no published legged 0DTE fly backtest with costs; the closest
+practitioner method sells the same ATM 5-wide spread and differs from this module in cutting
+strands at −$50 to −$100, which is the dollar stop above.
+
+**The search.** Every 5-wide legged entry from arms that complete by control's rule (620 after
+collapsing the same trade taken by several arms; pre-10-05 completions charged the ~$4 the limit
+rule costs), ~8,700 single and paired entry conditions, thresholds cut on 07-20..09-18 and read on
+09-21..10-14. The top 25 by training net beat taking everything on the held-out sessions 9 times,
+against 48% for a random rule; run the other way round, 12 of 25 against 55%. The search as a whole
+found nothing. Two conditions were nevertheless ahead in each of three eras, which is why they are
+declared as arms rather than adopted.
+
+**Declared, from 2026-10-19** (`scripts/boundary_2026_10_19.py` adds both, each a copy of the
+machine's `control` plus its one variable; each journals its own `arm_added` break):
+
+| Arm | Its one variable | On control's rows: 07-20..08-20 / 08-21..09-18 / 09-21..10-14 (control) |
+|---|---|---|
+| `range-centre` | no entry at or above 0.8 of the session range, or with the ATM centre more than 1.25 points above spot | −$782 / +$3,547 / +$401 (−$3,762 / +$2,899 / −$330) |
+| `window-1300` | entries only 13:00–13:59 | −$75 / +$1,409 / +$1,437 on 14 / 5 / 14 entries |
+
+`range-centre` held from 0.75 to 0.85 of the range and from 0.5 to 2.0 points of centre. The
+replay's range came from the loop's own ticks; the engine reads `stream_summary`'s session high and
+low, which can differ in the first minutes. `window-1300` rests on 33 entries, and its book is empty
+at 13:00 where control's was not, so it will take more entries in the hour than control did.
+
+**The judging rule, declared now.** Read each against `control` over its own window at 15 settled
+sessions (about 2026-11-06), on `run.py gate-sessions`: keep running if the arm is ahead on net and
+ahead on at least as many sessions as it is behind; retire at the next boundary if it is behind on
+net; otherwise run to 20 sessions and decide then. A result at 15 sessions is evidence for a longer
+read, not a default.
+
+## 2026-10-14 — the 10-19 boundary moved to 10-15
+
+At the operator's request, the evening before, with no session yet run under the new roster. This
+follows the `wall-clear` and `restack` move of 10-12, done the same way. Everything the batch
+declared lands four sessions earlier, unchanged:
+
+- the retirements;
+- `live-shadow`, the `selector`, `range-centre` and `window-1300`;
+- `miss_stop_minutes` out of the advice bounds;
+- the other modules' steps in `scripts/boundary_2026_10_19.py`.
+
+The script keeps its file name. Its `BOUNDARY` is now 2026-10-15 and it may be applied from
+2026-10-14. The four `*_ARM_FROM` dates and earnings' `STRAT_TEST_RETIRED` move with it.
+
+Nothing else moves. Every judging rule counts sessions, not dates, so the read dates come forward
+by the same four sessions: `range-centre` and `window-1300` are read at 15 sessions, about 2026-11-04.
+The selector's model for 10-15 was fitted through 10-14 as its procedure requires.
+`debit-first-atm`'s ladder read was already going to miss this boundary and still does.
+
+## 2026-10-15 — live completions rest to the close (a break in the live record)
+
+At the operator's request, live's `completion_cutoff` moves from 15:30 to 16:00. A resting
+completion is no longer cancelled at 15:30. It works until the close and dies there as a Day order.
+The 15:30 cancel had fired 25 times over 17 live sessions (`fly_live_orders`, 08-04..10-14), and
+every one of those left a short vertical to settle. Entries do not change: live still trades
+`control`'s 10:00–14:30 window from 10:15, so nothing new opens after 14:30.
+
+The config was changed at 14:42 ET, before that session's 15:30, so 10-15 is the first live session
+under the new rule. The live ledger journals it as a `completion_rule` break with scope `live`; live
+completion rates before and after it are not pooled.
+
+`live-shadow` copies live's cutoff, and it also started on 10-15. Its whole record therefore runs
+under 16:00, and it has no break of its own. Its `arm_added` journal row restates the cutoff from
+config, so it now reads 16:00.
+
+The code needed no change. Each tick confirms a completion fill, a completion that dies unfilled
+leaves the vertical to settle, and settlement asks the broker about any pending completion before
+it settles. To revert, set `live.completion_cutoff` back to 15:30.

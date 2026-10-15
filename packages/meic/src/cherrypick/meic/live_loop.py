@@ -25,8 +25,11 @@ It will not place a live order today, by construction:
 
 Scaffold boundaries (deliberate, rung-1 only -- see docs/live-trading-plan.md once written):
 no ORB debit spreads, no multi-symbol (one pinned `live.symbol`), no working-order repricing.
-Task registration (`--install-task`) is a manual step the user runs themselves; the
-orchestrator never installs or runs this loop.
+
+Arming (2026-10-14, the flies/bwb posture): `/live-meic-start` arms ONE day by writing the arm
+record (`--install-task`); the orchestrator's supervisor runs `meic-live` ticks only while that
+record is today's, and each `--live` tick deletes it once it is stale or past `live.disarm_time`.
+The orchestrator still never arms anything -- it reads the record a human's YES wrote.
 
 Fill confirmation (2026-09-17). Until then every accepted placement was recorded as a fill at
 the submitted limit -- an entry became an OPEN row the moment the broker accepted the order,
@@ -66,6 +69,8 @@ from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import execution as _execution  # noqa: E402
 from cherrypick.core import home as _home  # noqa: E402
 from cherrypick.core import live as _live  # noqa: E402
+from cherrypick.core import livepositions as _livepos  # noqa: E402
+from cherrypick.core import looplock as _looplock  # noqa: E402
 from cherrypick.core.streamcache import occ_to_streamer_symbol as _occ_to_streamer  # noqa: E402
 
 from cherrypick.meic import credentials as _creds  # noqa: E402
@@ -103,7 +108,10 @@ def readiness(config: dict, *, designated: str | None) -> list[str]:
     ACCOUNT gates only. The halt flag and the daily-loss breaker are entry blockers
     (`entry_blockers`, 2026-10-08): they stop new ICs, never a stop-loss close or a force-close --
     before that date both returned the tick ahead of `run_once`, and the halt also gated every submit
-    at the seam, so a halt left open 0DTE ICs with no stop management at all."""
+    at the seam, so a halt left open 0DTE ICs with no stop management at all.
+
+    A `live.arm` that names no arm, or an arm that follows live itself, is refused here (2026-10-14):
+    the only impurity, a registry read, happens only when an arm is named."""
     live = config.get("live") or {}
     unmet = []
     if not config.get("enable_live_trading"):
@@ -112,6 +120,9 @@ def readiness(config: dict, *, designated: str | None) -> list[str]:
         unmet.append("live.symbol is unset -- pin the one symbol this rung trades")
     if not str(live.get("gate0_confirmed") or "").strip():
         unmet.append("live.gate0_confirmed is empty -- a human must attest Gate 0 (who/when)")
+    problem = paper.live_arm_problem(config)
+    if problem:
+        unmet.append(problem)
     if not designated:
         unmet.append("no designated account -- run `cherrypick account --module meic --set <last4>`")
     return unmet
@@ -151,6 +162,343 @@ def entry_blockers(config: dict, db_path: str, day: str, *, halt_present: bool) 
 
 
 EXECUTION_MODE = "live"
+
+# --------------------------------------------------------------------------- arming (2026-10-14)
+#
+# The flies/bwb posture, through `cherrypick.core.live`: live is armed FOR ONE DAY by
+# `/live-meic-start` (status readout, disclaimer, literal YES), which writes the arm record the
+# supervisor turns into the `meic-live` job. Every `--live` tick checks the record first and
+# deletes it once it is not today's or the clock is past `live.disarm_time`. Before this,
+# `enable_live_trading` was the only switch and stayed on until someone edited the file. It stays
+# the master switch (tt.py enforces it too); the arm record is what makes a day live.
+
+ARMED_BY = "live-meic-start"
+DEFAULT_DISARM = "17:00"
+DEFAULT_MAX_STRUCTURES = 1
+
+
+def _live_cfg(config: dict) -> dict:
+    return config.get("live") or {}
+
+
+def _data_dir() -> str:
+    return os.path.dirname(str(_paths.live_db_path()))
+
+
+def _once_lock_path() -> str:
+    return os.path.join(_data_dir(), "live_once.lock")
+
+
+def _orphans_path() -> str:
+    return os.path.join(_data_dir(), "live_orphans.json")
+
+
+def _hold_path() -> str:
+    return os.path.join(_data_dir(), "live_held.json")
+
+
+def _now_min(now: datetime) -> int:
+    return now.hour * 60 + now.minute
+
+
+def disarm_min(config: dict) -> int:
+    return paper._time_to_minutes(_live_cfg(config).get("disarm_time") or DEFAULT_DISARM)
+
+
+def arm_stamp_date() -> str | None:
+    return _live.arm_record_date("meic")
+
+
+def should_disarm(config: dict, now_min: int, today: str) -> str | None:
+    return _live.should_disarm(
+        arm_stamp_date(),
+        today=today,
+        now_min=now_min,
+        disarm_min=disarm_min(config),
+        disarm_label=_live_cfg(config).get("disarm_time") or DEFAULT_DISARM,
+    )
+
+
+def _spawn_first_tick() -> None:
+    """One detached `--once --live` right away, so arming does not wait a full interval."""
+    import subprocess
+
+    exe = sys.executable
+    if os.name == "nt" and exe.lower().endswith("python.exe") and os.path.exists(exe[:-10] + "pythonw.exe"):
+        exe = exe[:-10] + "pythonw.exe"
+    flags = 0x00000008 | 0x08000000 | 0x00000200 if os.name == "nt" else 0  # DETACHED|NO_WINDOW|NEW_GROUP
+    subprocess.Popen(
+        [exe, "-m", "cherrypick.meic.live_loop", "--once", "--live"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=flags,
+        start_new_session=(os.name != "nt"),
+    )
+
+
+def alert_daemon_companion(config: dict | None) -> dict | None:
+    """The order-alert daemon as an arm-record companion (2026-10-15, flies' shape), or None when
+    `live.use_order_alert_daemon` is off. The supervisor keeps it up while armed and until
+    `disarm_time`, restarting it on death and on a heartbeat silent for four of its 30 s slices."""
+    live = _live_cfg(config or {})
+    if not live.get("use_order_alert_daemon"):
+        return None
+    from cherrypick.meic import alert_daemon
+
+    return {
+        "argv": ["-m", "cherrypick.meic.alert_daemon"],
+        "heartbeat": alert_daemon.daemon().status_path,
+        "silence_seconds": 120,
+        "until": live.get("disarm_time") or DEFAULT_DISARM,
+    }
+
+
+def install_task(config: dict | None = None) -> dict:
+    """Arm for TODAY: the arm record, under a live supervisor, and nothing else. With the alert daemon
+    on, the record names it as a companion and the supervisor keeps it up too."""
+    now = _pl._now_et()
+    companion = alert_daemon_companion(config if config is not None else paper.load_base_config())
+    return _live.arm(
+        "meic",
+        date=now.strftime("%Y-%m-%d"),
+        at=now.isoformat(timespec="seconds"),
+        armed_by=ARMED_BY,
+        spawn_first_tick=_spawn_first_tick,
+        companions={"alert-daemon": companion} if companion else None,
+    )
+
+
+def uninstall_task() -> dict:
+    return _live.disarm("meic")
+
+
+# --------------------------------------------------------------------------- caps and sweep
+
+
+def max_structures_per_day(config: dict) -> int | None:
+    """New ICs live may open in one session (2026-10-14, flies/bwb's cap). A cancelled entry never
+    established anything and does not spend it; a pending one does -- it is a position at risk.
+
+    Absent: the default of 1. Set to null (2026-10-15): no count cap at all, so live is sized by
+    `max_open_bp_dollars` alone -- every entry still has to fit under it with what is open."""
+    live = _live_cfg(config)
+    if "max_structures_per_day" in live and live["max_structures_per_day"] is None:
+        return None
+    return int(live.get("max_structures_per_day", DEFAULT_MAX_STRUCTURES))
+
+
+def entries_today(db_path: str, symbol: str, day: str) -> int:
+    """Today's live ICs on `symbol` that were not cancelled. An unreadable ledger answers with a
+    count no cap admits: it cannot show the budget is unspent, and this only blocks entries."""
+    import sqlite3
+
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            row = con.execute(
+                "SELECT COUNT(*) FROM ic_trades WHERE trade_date = ? AND symbol = ? AND status != 'cancelled'",
+                (day, symbol),
+            ).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return 10**9
+    return int(row[0] or 0)
+
+
+_ORDER_ID_COLUMNS = (
+    "put_spread_entry_order_id",
+    "call_spread_entry_order_id",
+    "put_stop_order_id",
+    "call_stop_order_id",
+)
+
+
+def _known_order_ids(db_path: str) -> list[str]:
+    """Every broker order id this ledger has recorded: the entry and each side's close. A ledger
+    with no file or no table yet has recorded nothing -- an empty set, not a failure."""
+    import sqlite3
+
+    if not os.path.exists(db_path):
+        return []
+    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        cols = " UNION ".join(f"SELECT {c} FROM ic_trades WHERE {c} IS NOT NULL" for c in _ORDER_ID_COLUMNS)
+        return [str(r[0]) for r in con.execute(cols).fetchall()]
+    except sqlite3.OperationalError as exc:
+        if "no such table" in str(exc):
+            return []
+        raise
+    finally:
+        con.close()
+
+
+def _sweep_orphans(broker, db_path: str, symbol: str, log) -> int | None:
+    """Broker truth against ledger belief (`core.execution.sweep_orphans`), counting the other live
+    loops' published orders as known -- flies and bwb trade SPX in this account too. Detection only;
+    None means the sweep could not look, and unknown blocks new entries."""
+    import sqlite3
+
+    try:
+        known = _known_order_ids(db_path)
+    except sqlite3.Error as exc:
+        log(f"orphan sweep: live ledger unreadable ({exc}) -- will retry next tick")
+        return None
+    return _execution.sweep_orphans(
+        broker,
+        known,
+        symbol=symbol,
+        path=_orphans_path(),
+        now_iso=_pl._now_et().isoformat(timespec="seconds"),
+        log=log,
+        module="meic",
+    )
+
+
+def read_orphans() -> list[dict]:
+    return _execution.read_orphans(_orphans_path())
+
+
+# --------------------------------------------------------------------------- status
+
+
+def _ledger_rows(db_path: str, where: str, params: tuple) -> list[dict]:
+    import sqlite3
+
+    if not os.path.exists(db_path):
+        return []
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        con.row_factory = sqlite3.Row
+        try:
+            return [dict(r) for r in con.execute(f"SELECT * FROM ic_trades WHERE {where}", params)]
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []
+
+
+def overdue_settlement(db_path: str, today: str) -> list[dict]:
+    """Past sessions the live ledger still holds open (or pending) ICs for, oldest first. A 0DTE
+    IC settles inside its own session's ticks, so one left open is a session nothing finished."""
+    out: dict[str, dict] = {}
+    for t in _ledger_rows(
+        db_path, "trade_date < ? AND status IN ('pending', 'open', 'partial', 'partial_entry')", (today,)
+    ):
+        row = out.setdefault(
+            t["trade_date"], {"session": t["trade_date"], "positions": 0, "pending_entries": 0}
+        )
+        row["pending_entries" if t["status"] == "pending" else "positions"] += 1
+    return [out[k] for k in sorted(out)]
+
+
+class _NoBroker:
+    """The broker a settlement of a PAST session needs: nothing is placed, and a close order left
+    working from that day died at its close as a Day order, so cancelling it is already true."""
+
+    def cancel(self, order_id):
+        return {"ok": True, "order_id": order_id}
+
+
+def settle_session(
+    config: dict, db_path: str, session: str, symbol: str, price: float, source: str, *, log
+) -> dict:
+    """Settle `symbol`'s ICs still held from `session` at `price` -- through `_manage_open_trades`,
+    the path a live tick takes at the bell, so a catch-up and a hand-settled day write exactly what
+    the tick would have. `source` must be official (`core.settlement.OFFICIAL_SOURCES`)."""
+    base_config = paper.load_base_config()
+    settle_min = paper._time_to_minutes(base_config.get("expiration_settlement_time", "16:00")) + 1
+    snapshot = {
+        "symbol": symbol,
+        "date": session,
+        "expiration": session,
+        "now_et": f"{settle_min // 60:02d}:{settle_min % 60:02d}",
+        "underlying_price": price,
+        "leg_quotes": {},
+    }
+    return _manage_open_trades(
+        symbol,
+        snapshot,
+        paper.live_params(config),
+        db_path,
+        _NoBroker(),
+        live=True,
+        log=log,
+        settle_price=lambda _s: (price, source),
+    )
+
+
+def settle_overdue(config: dict, db_path: str, today: str, *, close_fn=None, log=print) -> dict:
+    """Settle every past session the live ledger still holds open, at THAT session's official close
+    (`core.settlement.dated_index_close`, source `yahoo_daily`) -- never a provisional price, the
+    flies/bwb rule. A session with a pending entry (its order died at that close) is left for a
+    person, and one with no posted close found is left open and keeps alerting."""
+    from cherrypick.core import settlement as _settlement
+
+    close_fn = close_fn or _settlement.dated_index_close
+    done, left = [], []
+    for item in overdue_settlement(db_path, today):
+        session = item["session"]
+        if item["pending_entries"]:
+            left.append({"session": session, "reason": "pending_entries", "count": item["pending_entries"]})
+        if not item["positions"]:
+            continue
+        held = _ledger_rows(
+            db_path, "trade_date = ? AND status IN ('open', 'partial', 'partial_entry')", (session,)
+        )
+        for symbol in sorted({t["symbol"] for t in held}):
+            price = close_fn(symbol, session)
+            if price is None:
+                left.append({"session": session, "symbol": symbol, "reason": "no_official_close"})
+                continue
+            counts = settle_session(config, db_path, session, symbol, price, "yahoo_daily", log=log)
+            done.append({"session": session, "symbol": symbol, "price": price, **counts})
+    return {"ok": True, "settled": done, "left": left}
+
+
+def run_status(config: dict, *, designated: str | None) -> dict:
+    """One JSON object for the arming command and the watchdog -- files and the ledger only, never
+    the broker. Keys the watchdog reads: armed_for, orphaned_orders, broker_held, broker_health,
+    overdue_settlement, session_settled, open_positions."""
+    now = _pl._now_et()
+    today = now.strftime("%Y-%m-%d")
+    db_path = str(_paths.live_db_path())
+    live = _live_cfg(config)
+    symbol = live.get("symbol")
+    params = paper.live_params(config)
+    open_rows = _ledger_rows(
+        db_path, "trade_date = ? AND status IN ('open', 'partial', 'partial_entry')", (today,)
+    )
+    pending = _ledger_rows(db_path, "status = 'pending'", ())
+    return {
+        "ok": True,
+        "date": today,
+        "armed_for": arm_stamp_date(),
+        "disarm_time": live.get("disarm_time") or DEFAULT_DISARM,
+        "enable_live_trading": bool(config.get("enable_live_trading")),
+        "unmet_gates": readiness(config, designated=designated),
+        "symbol": symbol,
+        "arm": paper.live_arm_name(config),
+        "entry_window": [
+            params.get("paper_entry_window_start") or params.get("entry_window_start"),
+            params.get("entry_window_end"),
+        ],
+        "max_open_bp_dollars": params.get("max_open_bp_dollars"),
+        "max_structures_per_day": max_structures_per_day(config),
+        "entries_today": entries_today(db_path, symbol, today) if symbol else 0,
+        "per_side_stop_management": params.get("per_side_stop_management"),
+        "open_positions": len(open_rows),
+        "pending_orders": [t["ic_order_id"] for t in pending],
+        "session_settled": not open_rows and not [t for t in pending if t["trade_date"] == today],
+        "halt_flag": os.path.exists(halt_flag_path()),
+        "breaker_tripped": daily_loss_tripped(db_path, today, live.get("daily_loss_halt_dollars")),
+        "orphaned_orders": read_orphans(),
+        "broker_held": _execution.read_hold(_hold_path()),
+        "broker_health": _execution.read_broker_health(os.path.join(_data_dir(), _execution.HEALTH_FILENAME)),
+        "overdue_settlement": overdue_settlement(db_path, today),
+        "supervisor_fresh": _live.supervisor_heartbeat_fresh(),
+        "live_db": db_path,
+    }
 
 
 _extract_order_id = _execution.order_id_of  # one reading of a placement result, suite-wide
@@ -263,13 +611,43 @@ def _sides_to_close(decision: dict) -> list[str]:
     return []
 
 
+def official_close(broker, symbol: str) -> tuple[float | None, str]:
+    """Today's settlement print for `symbol` (`core.settlement.official_index_close`): tastytrade's
+    posted close, else Yahoo's or Barchart's post-close quote, else a provisional tick or nothing.
+    Run on the broker's own loop (`Broker.run`) -- the cached session is bound to it, and a second
+    loop would hang it. Never raises: a fetch that fails is 'no source', and the next tick asks."""
+    from cherrypick.core import settlement as _settlement
+
+    from cherrypick.meic.session import get_session
+
+    if not hasattr(broker, "run"):
+        return None, "no_broker_loop"
+    try:
+        return broker.run(_settlement.official_index_close(get_session(), symbol), _counts_as_contact=False)
+    except Exception as exc:  # noqa: BLE001 -- a missing print is retried, never guessed
+        return None, f"error: {type(exc).__name__}"
+
+
 def _manage_open_trades(
-    symbol: str, snapshot: dict, params: dict, db_path: str, broker, *, live: bool, log
+    symbol: str,
+    snapshot: dict,
+    params: dict,
+    db_path: str,
+    broker,
+    *,
+    live: bool,
+    log,
+    settle_price=None,
 ) -> dict:
     """Mark-to-market + exit every open live IC on `symbol`, submitting a real close order for
     any actionable decision. Reuses `paper.evaluate_open_trade` (the exact function paper_loop
     calls) and `paper._apply_exit_decision` (the exact write path), with the decision's modeled
-    exit price(s) overridden by what was actually submitted before the write."""
+    exit price(s) overridden by what was actually submitted before the write.
+
+    Settlement (2026-10-15, the flies/bwb rule): a held side settles ONLY on an official print,
+    `settle_price(symbol) -> (price, source)` -- today's posted close by default, a past session's
+    for the catch-up. Until one is posted the IC is left open and the next tick asks again; it was
+    settled at whatever spot the 16:00 tick happened to read until this date."""
     open_ics = paper._get_open_trades(symbol, EXECUTION_MODE, snapshot["date"], db_path)
     base_config = paper.load_base_config()
     is_cash = paper._is_cash_settled(symbol, base_config)
@@ -278,6 +656,21 @@ def _manage_open_trades(
     counts = {"stopped": 0, "force_closed": 0, "expired": 0, "held": 0, "closing": 0, "order_failed": 0}
     stop_limit_ratio = params.get("stop_limit_ratio", 1.02)
     leg_quotes = snapshot.get("leg_quotes", {})
+    underlying = snapshot.get("underlying_price")
+    if settle and any(t.get("status") != "pending" for t in open_ics):
+        from cherrypick.core import settlement as _settlement
+
+        price, source = settle_price(symbol) if settle_price else official_close(broker, symbol)
+        counts["settle_source"] = source
+        if price is None or not _settlement.is_official_source(source):
+            # No posted close yet: nothing is settled and nothing else is done to a held IC after
+            # the settlement time -- its quotes are dead, so a stop decided off them would be wrong.
+            log(f"settlement: no official {symbol} close yet ({source}) -- open ICs left for the next tick")
+            counts["awaiting_official_close"] = sum(1 for t in open_ics if t.get("status") != "pending")
+            open_ics = [t for t in open_ics if t.get("status") == "pending"]
+        else:
+            underlying = price
+            counts["settle_price"] = price
 
     for trade in open_ics:
         if trade.get("status") == "pending":
@@ -290,7 +683,7 @@ def _manage_open_trades(
             leg_quotes,
             params,
             force_close,
-            underlying_price=snapshot.get("underlying_price"),
+            underlying_price=underlying,
             is_cash_settled=is_cash,
             force_close_reason=force_close_reason,
             settle=settle,
@@ -390,6 +783,14 @@ def _manage_entry(
     except ValueError as exc:
         log(f"CRITICAL: could not build entry order: {exc}")
         return {"entry": "skipped", "reason": f"order_build_failed: {exc}"}
+
+    # flies and bwb trade SPX in this account too (2026-10-15): a leg opposite one they hold or have
+    # working would net at the broker into a position neither ledger describes. Refused, not repaired;
+    # the next tick evaluates afresh.
+    clash = _livepos.cross_module_conflict("meic", symbol, spec)
+    if clash is not None:
+        log(f"entry refused: {_livepos.describe(clash)} sits opposite another live loop's leg")
+        return {"entry": "skipped", "reason": f"cross_module_sign_conflict: {_livepos.describe(clash)}"}
 
     result = broker.place(spec, live=live)
     log(f"entry order ({'LIVE' if live else 'dry-run'}): {json.dumps(result, default=str)[:300]}")
@@ -563,6 +964,7 @@ def _confirm_fills(
     """
     counts = {
         "entries_confirmed": 0,
+        "entries_unrecorded": 0,
         "entries_cancelled": 0,
         "closes_filled": 0,
         "closes_dead": 0,
@@ -598,7 +1000,18 @@ def _confirm_fills(
                     # modeled (their asked price is a crossing limit, not a mid) and say so.
                     qty = int(trade.get("quantity") or 1)
                     fields["slippage_dollars"] = round((float(mid) - float(price)) * 100.0 * qty, 4)
-                paper._update_trade(ic_order_id, fields, db_path)
+                saved = paper._update_trade(ic_order_id, fields, db_path)
+                if saved.get("ok") is False:
+                    # 2026-10-15: a live ledger missing `side_credit_source` refused every confirm,
+                    # the tick still counted it, and two filled XSP condors sat `pending` -- out of
+                    # expected_legs (a CRITICAL positions mismatch) and out of settlement. The row
+                    # stays pending, so the next tick retries; say so loudly instead of counting it.
+                    log(
+                        f"CRITICAL: entry FILLED {ic_order_id} at {price} but the ledger refused the "
+                        f"write ({saved.get('error')}) -- still pending, retried next tick"
+                    )
+                    counts["entries_unrecorded"] += 1
+                    continue
                 log(
                     f"entry FILLED {ic_order_id}: asked {trade.get('net_credit')}, filled {price} "
                     f"(put {credits.get('put_credit')}, call {credits.get('call_credit')}, "
@@ -689,21 +1102,51 @@ def run_once(
     live: bool,
     log=print,
     entry_block: list[str] | None = None,
+    settle_price=None,
 ) -> dict:
     """One live iteration for the pinned `live.symbol`. `broker` is the injected submission
-    seam -- an object with `place(spec, live) -> {ok, response?, error?}`."""
+    seam -- an object with `place(spec, live) -> {ok, response?, error?}`. It trades
+    `paper.live_params`: `live.arm` (the top level when unset) with the live block's overrides."""
     symbol = (config.get("live") or {}).get("symbol")
-    params = paper._merged_params(config, {})
+    params = paper.live_params(config)
+    # Broker truth against ledger belief, before anything else (2026-10-14, the flies/bwb sweep):
+    # a working order this ledger never recorded is the one crash window nothing else covers.
+    # Unknown (None) blocks entries exactly as a found orphan does; neither touches a close.
+    orphans = _sweep_orphans(broker, db_path, symbol, log)
+    # What this loop holds or has working, for flies' and bwb's entries to check against (2026-10-15).
+    _livepos.publish_open_legs(
+        "meic",
+        expected_legs(config, db_path, include_pending=True)["legs"],
+        now_iso=_pl._now_et().isoformat(timespec="seconds"),
+    )
     # Broker truth first: what filled, what died. Only the live ledger has orders to confirm.
     fills = _confirm_fills(symbol, snapshot, db_path, broker, log=log, params=params) if live else {}
-    manage = _manage_open_trades(symbol, snapshot, params, db_path, broker, live=live, log=log)
-    if entry_block:
-        # The halt flag or the daily-loss breaker: no new IC. Everything above has already run.
-        log(f"new entries blocked ({', '.join(entry_block)}) -- open ICs still managed")
-        entry = {"blocked": list(entry_block)}
+    manage = _manage_open_trades(
+        symbol, snapshot, params, db_path, broker, live=live, log=log, settle_price=settle_price
+    )
+    block = list(entry_block or [])
+    if orphans is None:
+        block.append("orphan_sweep_failed")
+    elif orphans:
+        block.append(f"orphaned_orders ({orphans})")
+    if block:
+        # The halt flag, the daily-loss breaker or the sweep: no new IC. Everything above has run.
+        log(f"new entries blocked ({', '.join(block)}) -- open ICs still managed")
+        entry = {"blocked": block}
+    elif (cap := max_structures_per_day(config)) is not None and entries_today(
+        db_path, symbol, snapshot["date"]
+    ) >= cap:
+        entry = {"entry": "skipped", "reason": "max_structures_per_day_reached"}
     else:
         entry = _manage_entry(symbol, snapshot, params, db_path, broker, live=live, log=log)
-    return {"symbol": symbol, "live": live, **fills, **manage, "entry": entry}
+        if entry.get("entry") == "placed":
+            # The working order, now, not at the next tick: the other loops check against it from here.
+            _livepos.publish_open_legs(
+                "meic",
+                expected_legs(config, db_path, include_pending=True)["legs"],
+                now_iso=_pl._now_et().isoformat(timespec="seconds"),
+            )
+    return {"symbol": symbol, "live": live, "orphans": orphans, **fills, **manage, "entry": entry}
 
 
 def make_broker(config: dict, designated: str | None) -> _execution.Broker:
@@ -724,7 +1167,7 @@ def make_broker(config: dict, designated: str | None) -> _execution.Broker:
         deploy_limit_pct=config.get("account_deploy_limit_pct") or None,
         # An uncertain submit's hold outlives this tick's process (2026-10-08): each tick is its own
         # process, and an in-memory hold let the next tick submit the duplicate it exists to prevent.
-        hold_path=os.path.join(os.path.dirname(str(_paths.live_db_path())), "live_held.json"),
+        hold_path=_hold_path(),
     )
 
 
@@ -737,22 +1180,23 @@ def _build_snapshot(cfg: dict, symbol: str):
     vix = _pl._fetch_vix()
     vix1d = _pl._run_json(_pl._TT + ["get_vix1d"]).get("last")
     vix1d_ratio = round(vix1d / vix, 3) if (vix1d and vix) else None
-    delta_target = _pl._delta_target(cfg, vix)
+    # The candidate menu is built from what live trades, not the top level: a live block that
+    # narrows the widths must narrow what is priced, or entry would see widths it may not take.
+    params = paper.live_params(cfg)
+    delta_target = _pl._delta_target(params, vix)
     session = _pl._session_quality(now)
 
     price, ivr, ivp = _pl._fetch_overview(symbol)
     if price is None:
         return None, "no price"
-    widths = cfg.get("wing_widths_by_symbol", {}).get(symbol) or cfg.get("wing_widths_by_symbol", {}).get(
-        "DEFAULT", []
-    )
+    widths = paper._profile_widths_for_symbol(params, symbol) or []
     candidates, leg_quotes, cand_err = _pl._build_candidates(
         symbol, price, widths, [delta_target], delta_target, today
     )
     if cand_err and not candidates:
         return None, cand_err
     gex = _pl._run_json(_pl._TT + ["get_gex", "--symbol", symbol])
-    atr_lookback = int(cfg.get("regime_atr_lookback_days", 5))
+    atr_lookback = int(params.get("regime_atr_lookback_days", 5))
     snapshot = {
         "symbol": symbol,
         "date": today,
@@ -775,14 +1219,17 @@ def _build_snapshot(cfg: dict, symbol: str):
     return snapshot, None
 
 
-def expected_legs(cfg: dict, db_path: str) -> dict:
+def expected_legs(cfg: dict, db_path: str, *, include_pending: bool = False) -> dict:
     """The contracts this LIVE ledger says the broker holds right now, for the orchestrator's
     positions-vs-ledger check (`cherrypick.core.livepositions`, 2026-10-08). Read-only.
 
     Counted: each side still held of an `open`/`partial` IC -- held means no recorded stop cost,
     the same rule the exit path uses -- as its short and its long (`paper.ic_legs`, wings derived).
     A `pending` entry has filled nothing yet and is not counted; a working stop's close is counted as
-    still held until its fill is confirmed. `pending` counts both."""
+    still held until its fill is confirmed. `pending` counts both.
+
+    `include_pending` (2026-10-15) counts a pending entry's legs too: what the other live loops must
+    not open against is what this one holds OR could hold the moment a working order fills."""
     import sqlite3
 
     legs, pending, symbols = [], 0, set()
@@ -804,7 +1251,8 @@ def expected_legs(cfg: dict, db_path: str) -> dict:
         symbols.add(t["symbol"])
         if t["status"] == "pending":
             pending += 1
-            continue
+            if not include_pending:
+                continue
         if t.get("put_stop_fill_status") == "pending" or t.get("call_stop_fill_status") == "pending":
             pending += 1
         held = {"P": t.get("put_stop_cost") is None, "C": t.get("call_stop_cost") is None}
@@ -825,13 +1273,14 @@ def expected_legs(cfg: dict, db_path: str) -> dict:
         "ok": True,
         "module": "meic",
         "underlyings": sorted(symbols | ({live_symbol} if live_symbol else set())),
-        "armed_today": bool(cfg.get("enable_live_trading")),
+        # Armed means today's arm record (2026-10-14), not the master switch, which stays on.
+        "armed_today": arm_stamp_date() == _pl._now_et().strftime("%Y-%m-%d"),
         "legs": legs,
         "pending": pending,
     }
 
 
-def main() -> int:
+def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--once", action="store_true", help="Single iteration (the trading mode)")
     ap.add_argument(
@@ -850,24 +1299,93 @@ def main() -> int:
         "--live",
         dest="dry_run",
         action="store_false",
-        help="Place real orders. Requires every readiness gate AND the daily-loss breaker clear.",
+        help="Place real orders. Requires today's arm record, every readiness gate and the breaker clear.",
     )
-    args = ap.parse_args()
+    ap.add_argument(
+        "--status", action="store_true", help="armed state, gates, caps, orphans, holds (JSON; no broker)"
+    )
+    ap.add_argument("--install-task", action="store_true", help="arm for TODAY (the /live-meic-start path)")
+    ap.add_argument("--uninstall-task", action="store_true", help="disarm now")
+    ap.add_argument(
+        "--settle-overdue",
+        action="store_true",
+        help="settle past sessions still open, each at its own official close (the hourly catch-up job)",
+    )
+    ap.add_argument("--settle", action="store_true", help="settle one session by hand: --date and --price")
+    ap.add_argument("--date", help="YYYY-MM-DD, with --settle")
+    ap.add_argument("--price", type=float, help="the official settlement print, with --settle")
+    ap.add_argument("--symbol", help="with --settle: only this symbol (default: every symbol held that day)")
+    args = ap.parse_args(argv)
 
     cfg = paper.load_base_config()
+
+    def out(payload: dict) -> int:
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok", True) else 1
+
+    if args.install_task:
+        return out(install_task(cfg))
+    if args.uninstall_task:
+        return out(uninstall_task())
+    if args.settle_overdue or args.settle:
+        # Under the tick's own lock: a tick and a settlement writing the same rows is P&L corruption.
+        if not _looplock.acquire(_once_lock_path(), 180, alive=_looplock.pid_alive):
+            return out({"ok": False, "error": "a live tick is running; try again in a minute"})
+        try:
+            db_path = str(_paths.live_db_path())
+            if args.settle_overdue:
+                return out(settle_overdue(cfg, db_path, _pl._now_et().strftime("%Y-%m-%d"), log=_quiet))
+            if not args.date or args.price is None:
+                return out({"ok": False, "error": "--settle needs --date and --price (the official print)"})
+            held = _ledger_rows(
+                db_path, "trade_date = ? AND status IN ('open', 'partial', 'partial_entry')", (args.date,)
+            )
+            symbols = [args.symbol.upper()] if args.symbol else sorted({t["symbol"] for t in held})
+            settled = [
+                {
+                    "symbol": s,
+                    **settle_session(cfg, db_path, args.date, s, args.price, "official", log=_quiet),
+                }
+                for s in symbols
+            ]
+            return out({"ok": True, "session": args.date, "price": args.price, "settled": settled})
+        finally:
+            _looplock.release(_once_lock_path())
+    if args.status:
+        return out(run_status(cfg, designated=_designated_account()))
     if args.expected_legs:
         print(json.dumps(expected_legs(cfg, str(_paths.live_db_path())), default=str))
         return 0
     if not args.once:
-        ap.error("--once is required (or --expected-legs)")
+        ap.error("--once is required (or --status, --expected-legs, --install-task, --uninstall-task)")
+    live = not args.dry_run
+    if live:
+        # The dead-man's switch, before any broker read: a record that is not today's, or a clock
+        # past disarm_time, deletes the record and ends the tick. Manual live ticks need an arm too.
+        now = _pl._now_et()
+        reason = should_disarm(cfg, _now_min(now), now.strftime("%Y-%m-%d"))
+        if reason:
+            uninstall_task()
+            return out({"ok": True, "disarmed": reason})
     designated = _designated_account()
     unmet = readiness(cfg, designated=designated)
-    live = not args.dry_run
     if live and unmet:
         print(json.dumps({"ok": False, "error": "live gates unmet", "unmet": unmet}))
         return 1
+    # One tick at a time: a slow broker call must not let the next minute's tick submit beside it.
+    if not _looplock.acquire(_once_lock_path(), 180, alive=_looplock.pid_alive):
+        return out({"ok": True, "skipped": "another live tick is running"})
+    try:
+        return _tick(cfg, designated, unmet, live)
+    finally:
+        _looplock.release(_once_lock_path())
+
+
+def _tick(cfg: dict, designated: str | None, unmet: list[str], live: bool) -> int:
     if unmet:
         print(f"note: dry-run with unmet live gates: {unmet}", file=sys.stderr)
+    for warning in _pl._live_config_warnings(cfg, paper.load_profiles()):
+        print(f"warning: live config: {warning}", file=sys.stderr)
 
     symbol = (cfg.get("live") or {}).get("symbol")
     if not symbol:
@@ -886,13 +1404,54 @@ def main() -> int:
         return 1
 
     db_path = str(_paths.live_db_path())
+    _ensure_live_schema(db_path)
     # The halt flag and the daily-loss breaker stop NEW ICs only; open ones are still managed.
     blockers = entry_blockers(cfg, db_path, snapshot["date"], halt_present=os.path.exists(halt_flag_path()))
     summary = run_once(cfg, snapshot, db_path, make_broker(cfg, designated), live=live, entry_block=blockers)
-    print(
-        json.dumps({"ok": True, "at": datetime.now().isoformat(timespec="seconds"), **summary}, default=str)
+    line = json.dumps(
+        {"ok": True, "at": datetime.now().isoformat(timespec="seconds"), **summary}, default=str
     )
+    print(line)
+    _append_log(line)
     return 0
+
+
+def _ensure_live_schema(db_path: str) -> None:
+    """Bring the live ledger's schema up to date before the tick writes to it -- the paper loop's
+    `_ensure_paper_schema`, which the live loop never had. db.py's additive migrations run only from
+    `init_db`, so a column added after the live ledger was created (`side_credit_source`, the exit
+    fill sources, 2026-10-12) was missing from it, and on 2026-10-15 every fill confirm failed.
+    Idempotent and in-process (`db.call` captures init_db's JSON, so stdout keeps its one line).
+    Non-fatal: the confirm's own write check is the backstop that makes a failure loud."""
+    try:
+        res = paper._db(["init_db"], db_path)
+        if res.get("ok") is False:
+            _quiet(f"CRITICAL: live schema ensure failed: {res.get('error')}")
+    except Exception as exc:  # noqa: BLE001 -- schema maintenance never costs the tick
+        _quiet(f"CRITICAL: live schema ensure errored: {type(exc).__name__}: {exc}")
+
+
+def _quiet(message: str) -> None:
+    """A settlement's log lines go to the live log, not stdout -- stdout is the one JSON result."""
+    _append_log(json.dumps({"at": datetime.now().isoformat(timespec="seconds"), "note": message}))
+
+
+def log_file():
+    """One JSON line per tick (2026-10-14): what the watchdog's freshness fallback and a person
+    tailing the loop read. Account numbers are masked at the sink, the flies/bwb rule."""
+    return _paths.log_path("meic_live.log")
+
+
+def _append_log(line: str) -> None:
+    from cherrypick.core import redact as _redact
+
+    try:
+        path = log_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(_redact.redact_accounts(line) + "\n")
+    except OSError:
+        pass  # a log that cannot be written must never cost the tick
 
 
 if __name__ == "__main__":

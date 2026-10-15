@@ -18,6 +18,7 @@ CLI:
   python src/paper_loop.py            # run the loop in the foreground
   python src/paper_loop.py --once     # run a single iteration and exit (for testing)
   python src/paper_loop.py --status   # print daemon status
+  python src/paper_loop.py --settle-overdue  # settle past-close sessions at the official close
   python src/paper_loop.py --stop     # stop a running daemon
 
 Launch hidden in the background (like the streamer):
@@ -42,6 +43,7 @@ from cherrypick.core import config as _cfg
 from cherrypick.core import home as _core_home  # the shared state dir
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
+from cherrypick.core import settlement as _settlement  # the suite's one official-close source
 from cherrypick.core import viz as _viz  # the suite's one money formatter
 
 # One ET for the suite — see cherrypick.core.clock.
@@ -75,6 +77,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 _PID_FILE = _paths.data_path("paper_loop.pid")
 _LOCK_FILE = _paths.data_path("paper_loop.once.lock")
 _LOG_FILE = _paths.log_path("paper_loop.log")
+_OUTSIDE_FILE = _paths.data_path("paper_loop.outside")
 _PAPER_DB = str(_paths.paper_db_path())
 # `-m` rather than a path to the script: independent of this file's depth on disk and of the child's
 # working directory, which matters because the supervisor runs it from its own.
@@ -408,6 +411,234 @@ def _open_count():
 
 
 # ---------------------------------------------------------------------------
+# Settle-overdue: a cash-settled session the in-window pass never settled
+# ---------------------------------------------------------------------------
+
+# The paper tick's window ends here (see _is_trading_time): five minutes past the 16:00 close, so
+# the in-window pass can settle at the bell. Past it the tick only logs "outside trading window".
+_WINDOW_END_MIN = 16 * 60 + 5
+
+# Today's session is caught up no earlier than this many minutes past the settlement time. The public
+# fallbacks behind `official_index_close` serve a quote that may lag the tape, and minutes after the
+# bell it can still be a pre-close tick; twenty minutes on, it is the close. Earlier than the
+# watchdog's 45-minute settlement grace, so the catch-up lands before anyone is told it is missing.
+_OFFICIAL_PRINT_GRACE_MIN = 20
+
+
+def _at_et(session: str, hhmm: str) -> datetime:
+    """`session` at `hhmm` ET, as an aware datetime (zoneinfo, or pytz where core fell back to it)."""
+    naive = datetime.strptime(f"{session} {hhmm}", "%Y-%m-%d %H:%M")
+    localize = getattr(_ET, "localize", None)
+    return localize(naive) if localize else naive.replace(tzinfo=_ET)
+
+
+def _official_close(symbol: str, session: str, today: str) -> tuple[float | None, str]:
+    """(price, source) for `symbol`'s official close on `session`, from the suite's one settlement
+    source, `cherrypick.core.settlement`. The caller settles only when `source` is in
+    `OFFICIAL_SOURCES`.
+
+    A PAST session is read by date (`dated_index_close`, source `yahoo_daily`) -- the flies/bwb
+    catch-up path. Today's is `tt.py get_official_close` (`official_index_close`: tastytrade's posted
+    close, then Yahoo, then Barchart; a provisional intraday tick is labelled so). Never the market
+    overview's close/last/mark, which is what left 2026-10-13 open: it has no close after hours."""
+    if session < today:
+        price = _settlement.dated_index_close(symbol, session)
+        return (price, "yahoo_daily") if price is not None else (None, "no_dated_close")
+    d = _run_json(_TT + ["get_official_close", "--symbol", symbol], timeout=60)
+    if not d.get("ok"):
+        return None, str(d.get("error") or "fetch_failed")[:120]
+    return d.get("price"), str(d.get("source") or "unknown")
+
+
+def _overdue_groups(conn, cfg, now) -> list[dict]:
+    """`{session, symbol, arms}` for every (session, symbol) still holding open paper ICs past its
+    settlement, oldest first. These are 0DTE, so a past session has expired outright; today's is
+    overdue once the tick's window has closed and the official print has had time to post."""
+    today = now.strftime("%Y-%m-%d")
+    sett_min = paper._time_to_minutes(cfg.get("expiration_settlement_time", "16:00"))
+    now_min = now.hour * 60 + now.minute
+    today_due = now_min >= max(_WINDOW_END_MIN, sett_min + _OFFICIAL_PRINT_GRACE_MIN)
+    rows = conn.execute(
+        "SELECT trade_date, symbol, arm, COUNT(*) FROM ic_trades WHERE status IN ('open', 'partial') "
+        "AND trade_date <= ? GROUP BY trade_date, symbol, arm ORDER BY trade_date, symbol, arm",
+        (today,),
+    ).fetchall()
+    groups: dict[tuple[str, str], dict] = {}
+    for day, symbol, arm, n in rows:
+        if day < today or today_due:
+            g = groups.setdefault((day, str(symbol).upper()), {"session": day, "symbol": str(symbol).upper()})
+            g.setdefault("arms", {})[arm] = n
+    return list(groups.values())
+
+
+def _settled_prints(conn, session: str, symbol: str) -> set[float]:
+    """The settlement prices rows of this (session, symbol) were already settled at."""
+    rows = conn.execute(
+        "SELECT DISTINCT settle_underlying FROM ic_trades WHERE trade_date = ? AND symbol = ? "
+        "AND exit_reason LIKE '%expired_settlement' AND settle_underlying IS NOT NULL",
+        (session, symbol),
+    ).fetchall()
+    return {float(r[0]) for r in rows}
+
+
+def _settlement_profiles(arms, registry: dict, base_default: str) -> tuple[dict, list[str]]:
+    """(extra_profiles, unknown arms) for settling `arms`. A registry arm settles under its own def
+    (a disabled one too: `enabled: false` stops entries, not the settlement of what it holds). An
+    advised book gets the management-only twin `_advice_profiles` would give it, built without
+    reading or recording an advice decision. Anything else cannot be evaluated, and is reported."""
+    extra, unknown = {}, []
+    for arm in arms:
+        if arm in registry:
+            continue
+        if _core_advice.is_advised(arm):
+            base_def = registry.get(_advised_base({}, arm, registry, base_default))
+            if isinstance(base_def, dict):
+                extra[arm] = {**base_def, "max_concurrent_ics": 0}
+                continue
+        unknown.append(arm)
+    return extra, unknown
+
+
+def settle_overdue(cfg, *, now=None, db_path=None, close_fn=None) -> dict:
+    """Settle every cash-settled session the paper ledger still holds open past its settlement, at
+    that session's OFFICIAL close, through `paper.process_symbol` -- the 2026-10-13 hand fix, made
+    automatic. The tick runs this from its outside-window branch; `--settle-overdue` runs it by hand.
+
+    2026-10-13: an internet outage from ~14:53 ET past the close. The in-window pass settles only
+    when the market overview returns a price, every tick logged "SPX: ERROR no price", and after
+    16:05 the loop only skipped -- 656 positions stayed open, and `--once --force` could not help
+    because the overview carries no close after hours.
+
+    Each (session, symbol) settles at one official print (`core.settlement.OFFICIAL_SOURCES`), as
+    the bell would have: the snapshot's time is the settlement time, it carries no candidates and no
+    quotes, the engine's clock is pinned to the settlement instant so every exit_time reads the
+    close, and no entry is evaluated. The idempotent daily_summary roll-up is then re-run for the
+    session. Refusals, each left open and reported: no official print (never an intraday or
+    provisional price -- nothing settles, and the next tick asks again); a physically settled symbol
+    (force-closed before the bell, never settled at the close); rows of the session already settled
+    at a different print (one settlement price per session and symbol); an FOMC or quarterly-expiry
+    day, where the engine force-closes at quotes rather than settling; an arm no profile can run.
+    """
+    db_path = db_path or _PAPER_DB
+    now = now or _now_et()
+    today = now.strftime("%Y-%m-%d")
+    close_fn = close_fn or _official_close
+    sett = cfg.get("expiration_settlement_time", "16:00")
+    cash = {str(s).upper() for s in cfg.get("cash_settled_symbols", [])}
+    registry = paper.load_profiles()
+    base_default = _cfg.first_present(cfg.get("advice") or {}, *_cfg.BASE_ARM_KEYS, default="control")
+    settled, left = [], []
+    try:
+        conn = sqlite3.connect(db_path, timeout=10)
+    except sqlite3.Error as exc:
+        return {"ok": False, "error": f"paper ledger: {exc}", "settled": [], "left": []}
+    try:
+        groups = _overdue_groups(conn, cfg, now)
+        if not groups:
+            return {"ok": True, "settled": [], "left": []}
+        prints: dict[tuple[str, str], tuple[float | None, str]] = {}
+        for g in groups:
+            session, symbol, arms = g["session"], g["symbol"], g["arms"]
+            n = sum(arms.values())
+            if symbol not in cash:
+                left.append({**g, "positions": n, "reason": "physically_settled"})
+                continue
+            if (symbol, session) not in prints:
+                prints[(symbol, session)] = close_fn(symbol, session, today)
+            price, source = prints[(symbol, session)]
+            if price is None or not _settlement.is_official_source(source) or float(price) <= 0:
+                left.append({**g, "positions": n, "reason": "no_official_print", "source": source})
+                continue
+            price = float(price)
+            other = {p for p in _settled_prints(conn, session, symbol) if abs(p - price) > 0.005}
+            if other:
+                left.append(
+                    {
+                        **g,
+                        "positions": n,
+                        "reason": "settled_at_another_price",
+                        "price": price,
+                        "other": sorted(other),
+                    }
+                )
+                continue
+            extra, unknown = _settlement_profiles(arms, registry, base_default)
+            runnable = [a for a in arms if a not in unknown]
+            snapshot = {
+                "symbol": symbol,
+                "date": session,
+                "now_et": sett,
+                "expiration": session,
+                "dte": 0,
+                "underlying_price": price,
+                "candidates": [],
+                "leg_quotes": {},
+            }
+            # On an FOMC or quarterly-expiry day the engine force-closes at the bell rather than
+            # settling, and a force-close needs leg quotes this pass does not have: it would only
+            # count unmarked iterations. Those positions are a person's call, not this one's.
+            if paper.force_close_active(snapshot, cfg, True)[0]:
+                left.append({**g, "positions": n, "reason": "event_force_close_day"})
+                continue
+            if runnable:
+                with paper.pinned_clock(_at_et(session, sett)):
+                    paper.process_symbol(
+                        snapshot,
+                        db_path,
+                        "paper",
+                        profiles_filter=runnable,
+                        extra_profiles=extra or None,
+                        evaluate_entries=False,
+                    )
+            still = conn.execute(
+                "SELECT COUNT(*) FROM ic_trades WHERE status IN ('open', 'partial') AND trade_date = ? "
+                "AND symbol = ?",
+                (session, symbol),
+            ).fetchone()[0]
+            if n - still:
+                settled.append({**g, "positions": n - still, "price": price, "source": source})
+            if still:
+                left.append({**g, "positions": still, "reason": "still_open", "unknown_arms": unknown})
+        for session in sorted({s["session"] for s in settled}):
+            res = paper._db(["rollup_daily_summary", "--date", session], db_path)
+            if res.get("ok") is False:
+                logger.warning(
+                    "settle-overdue: daily_summary roll-up for %s failed: %s", session, res.get("error")
+                )
+    finally:
+        conn.close()
+    for s in settled:
+        logger.info(
+            "settle-overdue: %s %s settled %d position(s) at %.2f (%s)",
+            s["session"],
+            s["symbol"],
+            s["positions"],
+            s["price"],
+            s["source"],
+        )
+    for item in left:
+        logger.warning(
+            "settle-overdue: %s %s left %d position(s) open: %s",
+            item["session"],
+            item["symbol"],
+            item["positions"],
+            item["reason"],
+        )
+    return {"ok": True, "settled": settled, "left": left}
+
+
+def _settle_overdue_quietly(cfg) -> dict | None:
+    """`settle_overdue` from the tick's outside-window branch, never raising: a catch-up that cannot
+    run must not take the tick (and its heartbeat) down with it. None when there was nothing to do."""
+    try:
+        out = settle_overdue(cfg)
+    except Exception as exc:  # noqa: BLE001 -- the tick outlives a failed catch-up
+        logger.warning("settle-overdue failed: %s: %s", type(exc).__name__, exc)
+        return {"ok": False, "error": str(exc)}
+    return out if (out.get("settled") or out.get("left") or not out.get("ok")) else None
+
+
+# ---------------------------------------------------------------------------
 # Iteration
 # ---------------------------------------------------------------------------
 
@@ -704,6 +935,43 @@ def _beat() -> None:
     _core_home.beat("meic")
 
 
+def _log_outside_once(now, verb: str) -> None:
+    """Log "outside trading window" on the first off-window tick only, not on every one.
+
+    Every off-hours minute used to write this line -- about 80% of the log, and nothing reads it. The
+    record that each tick ran is the supervisor's `--- start:` banner in the job's stderr log, which
+    stays. Each `--once` tick is its own process, so "already said it" lives in a marker file that
+    the next in-window tick removes. Best-effort: a marker that cannot be read or written only costs
+    a repeated line."""
+    try:
+        if _OUTSIDE_FILE.exists():
+            return
+        _OUTSIDE_FILE.write_text(now.isoformat(timespec="seconds"), encoding="utf-8")
+    except OSError:
+        pass
+    logger.info("outside trading window (%s ET) - %s; quiet until it reopens.", now.strftime("%H:%M"), verb)
+
+
+def _clear_outside() -> None:
+    try:
+        _OUTSIDE_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _live_config_warnings(cfg: dict, profiles: dict) -> list[str]:
+    """`paper.live_config_warnings` against the shipped example. Best-effort: an unreadable example
+    costs the top-level check, never the tick."""
+    try:
+        example = json.loads(_paths.example_config_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        example = {}
+    try:
+        return paper.live_config_warnings(cfg, profiles, example)
+    except Exception as exc:  # a warning helper must never stop the loop
+        return [f"could not check the live block: {exc}"]
+
+
 def run_iteration(cfg, force=False):
     _beat()  # before every gate below: "the loop is turning over", never "it did work"
     # Wall-clock for this whole iteration, logged below alongside open-position count. Was
@@ -714,8 +982,14 @@ def run_iteration(cfg, force=False):
     _iter_t0 = time.time()
     now = _now_et()
     if not force and not _is_trading_time(now, cfg):
-        logger.info("outside trading window (%s ET) - skipping.", now.strftime("%H:%M"))
+        _log_outside_once(now, "skipping")
+        # The one thing this branch does: settle a session the in-window pass never could (an
+        # outage across the close, 2026-10-13). Two SQLite reads when nothing is overdue.
+        caught_up = _settle_overdue_quietly(cfg)
+        if caught_up:
+            return {"skipped": "outside_trading_window", "settle_overdue": caught_up}
         return {"skipped": "outside_trading_window"}
+    _clear_outside()
     # Refresh the streamer request file every tick (best-effort, never raises): a config symbols
     # change propagates without manual steps, and the paper ledger's open legs stay subscribed.
     # Underlyings still bind at streamer start, so a NEW underlying needs one streamer restart.
@@ -729,6 +1003,8 @@ def run_iteration(cfg, force=False):
     # Load the profile registry once per iteration so each symbol's candidate menu is the UNION
     # of every profile's wing widths (each profile then picks its own allowed subset in paper.py).
     profiles = paper.load_profiles()
+    for warning in _live_config_warnings(cfg, profiles):
+        logger.warning("live config: %s", warning)
     advice_profiles, _advice_reason = _advice_profiles(cfg, today, persist=not force)
     session = _session_quality(now)
 
@@ -890,7 +1166,7 @@ def _is_trading_time(now, cfg):
     # fire so cash-settled positions left to expire get settled at the close (paper.settlement_
     # active fires at expiration_settlement_time, default 16:00). Entries are independently
     # blocked after entry_window_end (14:30), so the extension only affects marking/settlement.
-    return 9 * 60 + 30 <= mins < 16 * 60 + 5
+    return 9 * 60 + 30 <= mins < _WINDOW_END_MIN
 
 
 def _sleep_seconds(now, cfg, open_positions):
@@ -1037,7 +1313,8 @@ def _loop():
                 except Exception as exc:
                     logger.exception("iteration error: %s", exc)
             else:
-                logger.info("outside trading window (%s ET) - idling.", now.strftime("%H:%M"))
+                _log_outside_once(now, "idling")
+                _settle_overdue_quietly(cfg)
             delay = _sleep_seconds(_now_et(), cfg, _open_count())
             # Sleep in short slices so a SIGTERM is honored promptly.
             for _ in range(delay):
@@ -1100,6 +1377,12 @@ def main():
     parser.add_argument(
         "--force", action="store_true", help="With --once, run even outside market hours (for testing)"
     )
+    parser.add_argument(
+        "--settle-overdue",
+        action="store_true",
+        help="Settle cash-settled sessions still open past their settlement, at the official close "
+        "only, then exit (the tick also does this outside its window)",
+    )
     parser.add_argument("--date", default=None, help="A session day (YYYY-MM-DD); default today")
     parser.add_argument("--_run", action="store_true", help=argparse.SUPPRESS)  # internal: the detached child
     args = parser.parse_args()
@@ -1112,6 +1395,18 @@ def main():
         return
     if args.start:
         _spawn_detached()
+        return
+    if args.settle_overdue:
+        _setup_logging(console=True)
+        # Under the tick's own lock: two processes settling the same rows is P&L corruption.
+        if not _acquire_once_lock():
+            _emit({"ok": False, "error": "a paper tick is running; try again in a minute"})
+            return
+        try:
+            _ensure_paper_schema()
+            _emit(settle_overdue(_load_config()))
+        finally:
+            _release_once_lock()
         return
 
     if args.once:

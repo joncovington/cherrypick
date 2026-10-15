@@ -316,14 +316,14 @@ def tick_config(config: dict, arm: str, day: str, now: float) -> tuple[dict, dic
     return {**config, "arms": arms}, decision
 
 
-SELECTOR_ARM_FROM = "2026-10-19"
+SELECTOR_ARM_FROM = "2026-10-15"
 WALL_CLEAR_ARM_FROM = "2026-10-12"
 RESTACK_ARM_FROM = "2026-10-12"
 
 
 def _note_selector_arm(conn, config: dict) -> None:
     """Journal the `selector` arm's entry to the roster (an `arm_added` break dated its declared
-    first session, 2026-10-19), once a machine's config enables it. Idempotent and best-effort, as
+    first session, 2026-10-15), once a machine's config enables it. Idempotent and best-effort, as
     the vol-floor note. Recorded early is harmless: a future-dated break binds nothing until it
     passes (`core.regimecuts.era_bounds`)."""
     try:
@@ -490,12 +490,12 @@ def _note_restack_arm(conn, config: dict) -> None:
         _log(f"restack arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
-LIVE_SHADOW_ARM_FROM = "2026-10-19"
+LIVE_SHADOW_ARM_FROM = "2026-10-15"
 
 
 def _note_live_shadow_arm(conn, config: dict) -> None:
     """Journal the `live-shadow` arm's entry to the roster (an `arm_added` break dated its declared
-    first session, 2026-10-19), once a machine's config enables it with `mirror_live`. Idempotent
+    first session, 2026-10-15), once a machine's config enables it with `mirror_live`. Idempotent
     and best-effort, as the other notes; a future-dated break binds nothing until it passes."""
     try:
         arm = (config.get("arms") or {}).get("live-shadow")
@@ -517,6 +517,57 @@ def _note_live_shadow_arm(conn, config: dict) -> None:
         )
     except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
         _log(f"live-shadow arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
+RANGE_CENTRE_ARM_FROM = "2026-10-15"
+WINDOW_1300_ARM_FROM = "2026-10-15"
+
+
+def _note_range_centre_arm(conn, config: dict) -> None:
+    """Journal the `range-centre` arm's entry to the roster (an `arm_added` break dated its declared
+    first session, 2026-10-15), once a machine's config enables it. Idempotent and best-effort, as
+    the range-high note; a future-dated break binds nothing until it passes."""
+    try:
+        arm = (config.get("arms") or {}).get("range-centre")
+        if not isinstance(arm, dict) or not arm.get("enabled", True):
+            return
+        dbmod.record_measurement_break(
+            conn,
+            break_date=RANGE_CENTRE_ARM_FROM,
+            scope="range-centre",
+            kind="arm_added",
+            reason=(
+                "range-centre arm enters the roster: control plus no entry while spot is at or above "
+                f"range_pos_max ({arm.get('range_pos_max')}) of the session range so far, or while the "
+                f"centre sits more than center_above_spot_max ({arm.get('center_above_spot_max')}) points "
+                "above spot"
+            ),
+            detail="docs/experiment-log.md 2026-10-14",
+        )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"range-centre arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
+def _note_window_1300_arm(conn, config: dict) -> None:
+    """Journal the `window-1300` arm's entry to the roster (an `arm_added` break dated its declared
+    first session, 2026-10-15), once a machine's config enables it. Idempotent and best-effort."""
+    try:
+        arm = (config.get("arms") or {}).get("window-1300")
+        if not isinstance(arm, dict) or not arm.get("enabled", True):
+            return
+        dbmod.record_measurement_break(
+            conn,
+            break_date=WINDOW_1300_ARM_FROM,
+            scope="window-1300",
+            kind="arm_added",
+            reason=(
+                "window-1300 arm enters the roster: control with its entries confined to "
+                f"{arm.get('entry_windows')}"
+            ),
+            detail="docs/experiment-log.md 2026-10-14",
+        )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"window-1300 arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
 def _entry_cadence_state_path() -> str:
@@ -1084,6 +1135,8 @@ def main(argv=None) -> int:
             _note_wall_clear_arm(conn, config)
             _note_restack_arm(conn, config)
             _note_live_shadow_arm(conn, config)
+            _note_range_centre_arm(conn, config)
+            _note_window_1300_arm(conn, config)
             # Stale-checkout guard (2026-08-05). The loop imports from the working tree, so a session
             # run from an older branch writes NULL to any regime column that branch predates --
             # silently, all day, with no backfill path afterwards. Logged rather than enforced: a

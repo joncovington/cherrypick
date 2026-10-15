@@ -253,7 +253,8 @@ export type CalendarsSlideId = (typeof CALENDARS_SLIDES)[number]["id"];
  * The suite surfaces, on the frame since 2026-09-25 -- the last five, so the lightbox is gone.
  *
  * - GEX keeps its four former page tabs.
- * - Live is one page: the flies live pilot's day, read-only.
+ * - Live: every live loop's day on one page, the flies live pilot's day, MEIC's live loop and the manage
+ *   evaluation -- all read-only.
  * - Reports keeps its two artifacts, `morning` and `eod`, written by separate packages, plus
  *   `chart`: one name at a time from the technicals package's chart files.
  * - Advisor stays ONE page holding its own internal tabs (today / proposals / experiments /
@@ -272,7 +273,15 @@ export const GEX_SLIDES = [
 
 export type GexSlideId = (typeof GEX_SLIDES)[number]["id"];
 
-export const LIVE_SLIDES = [{ id: "today", label: "today" }] as const satisfies readonly NavSlide[];
+// `today` (2026-10-15): every live loop on one page, first. Then each live loop's tab, named for its
+// module (flies' was `today` until the summary took the name back the same day), and the
+// account-wide manage evaluation after them.
+export const LIVE_SLIDES = [
+  { id: "today", label: "today" },
+  { id: "flies", label: "flies" },
+  { id: "meic", label: "meic" },
+  { id: "manage", label: "manage" },
+] as const satisfies readonly NavSlide[];
 
 export const REPORTS_SLIDES = [
   { id: "morning", label: "morning" },

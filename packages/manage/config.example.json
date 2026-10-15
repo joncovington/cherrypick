@@ -1,0 +1,148 @@
+{
+  "_comment": "Position-management ruleset. Copy to ~/.cherrypick/config/manage.json and keep only what you change: the file is merged key by key over this default, and a key the default does not have is reported, not applied. Every rule carries `confidence` (0-100), reported beside its verdict. Money is gross of fees.",
+  "ruleset": "zhang-2026-10",
+  "trade_grouping": "order_chain",
+  "hold": {
+    "confidence": 70,
+    "earnings_penalty": 10
+  },
+  "risk": {
+    "enabled": true,
+    "max_risk_pct": 0.02,
+    "oversize_multiple": 3.0,
+    "oversize_action": "REVIEW",
+    "confidence": 60
+  },
+  "credit": {
+    "_comment": "A trade opened for a net credit. capture = share of the credit kept; stop fires when the loss reaches loss_multiple_of_credit x the credit; time_exit acts at the nearest short's DTE (a winner may roll, a loser closes).",
+    "take_profit": {
+      "enabled": true,
+      "capture": 0.5,
+      "confidence": 80
+    },
+    "stop": {
+      "enabled": true,
+      "loss_multiple_of_credit": 1.0,
+      "fallback_max_loss_fraction": 0.5,
+      "confidence": 70
+    },
+    "time_exit": {
+      "enabled": true,
+      "dte": 21,
+      "roll_if_profitable": true,
+      "confidence": 75
+    },
+    "breached": {
+      "enabled": true,
+      "min_reward_to_risk": 0.5,
+      "confidence": 70
+    },
+    "close_before_earnings": {
+      "enabled": false,
+      "confidence": 55
+    }
+  },
+  "debit": {
+    "_comment": "A trade opened for a net debit (spreads, long options, diagonals). stop at -loss_fraction, take profit at +gain_fraction; time_exit uses short_leg_dte when the trade carries shorts, long_only_dte otherwise.",
+    "stop": {
+      "enabled": true,
+      "loss_fraction": 0.5,
+      "confidence": 65
+    },
+    "take_profit": {
+      "enabled": true,
+      "gain_fraction": 0.75,
+      "confidence": 65
+    },
+    "time_exit": {
+      "enabled": true,
+      "short_leg_dte": 21,
+      "long_only_dte": 14,
+      "roll_if_profitable": true,
+      "confidence": 70
+    }
+  },
+  "legs": {
+    "_comment": "A short leg that has given up `capture` of its premium is bought back with its wings, whatever the trade does.",
+    "short_take_profit": {
+      "enabled": true,
+      "capture": 0.8,
+      "confidence": 85
+    }
+  },
+  "roll": {
+    "credit_only": true,
+    "naked_put": {
+      "enabled": true,
+      "out_days": 28,
+      "min_credit": 0.1,
+      "skip_through_earnings": true,
+      "confidence": 60
+    },
+    "diagonal_short": {
+      "enabled": true,
+      "out_days": 28,
+      "min_credit": 0.1,
+      "min_long_days": 45,
+      "skip_through_earnings": false,
+      "confidence": 60
+    }
+  },
+  "expiry": {
+    "_comment": "Physically-settled legs are closed at or inside close_by_dte; roots listed as cash-settled settle instead.",
+    "enabled": true,
+    "close_by_dte": 3,
+    "cash_settled_roots": [
+      "SPX",
+      "SPXW",
+      "XSP",
+      "NDX",
+      "NDXP",
+      "RUT",
+      "RUTW",
+      "MRUT",
+      "VIX",
+      "VIXW",
+      "DJX"
+    ],
+    "confidence": 90
+  },
+  "earnings": {
+    "enabled": true,
+    "warn_days": 14
+  },
+  "ex_dividend": {
+    "enabled": true,
+    "warn_days": 10,
+    "confidence": 80
+  },
+  "directional": {
+    "enabled": true,
+    "max_premium_share": 0.25,
+    "take_profit": {
+      "enabled": true,
+      "share_of_max_gain": 0.5,
+      "max_reward_multiple": 1.0,
+      "confidence": 65
+    },
+    "stop": {
+      "enabled": true,
+      "share_of_max_loss": 0.5,
+      "confidence": 65
+    }
+  },
+  "conflict_penalty": 10,
+  "exclude": {
+    "zero_dte_underlyings": [
+      "SPX"
+    ]
+  },
+  "pricing": {
+    "rate": 0.04,
+    "grid_low": 0.01,
+    "grid_high": 3.0,
+    "grid_steps": 600
+  },
+  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, directional.take_profit, directional.stop, ex_dividend, risk.oversize",
+  "positions": {}
+}

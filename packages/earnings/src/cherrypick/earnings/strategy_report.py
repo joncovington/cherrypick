@@ -22,6 +22,7 @@ STRATEGY_NAMES = [
     "atm_calendar",
     "directional_credit_spread",
     "broken_wing_butterfly",
+    "expected_move_butterfly",
 ]
 
 

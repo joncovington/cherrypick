@@ -14,7 +14,9 @@ compared on identical, reproducible criteria. See docs/paper-trading.md.
 """
 
 import argparse
+import contextlib
 import json
+import logging
 import os
 import sqlite3
 import sys
@@ -23,9 +25,28 @@ from datetime import datetime
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET  # noqa: E402
 
+# The instant a catch-up settlement pass stands at (`pinned_clock`), or None for the wall clock.
+_PINNED_NOW: datetime | None = None
+
 
 def _now_et():
-    return datetime.now(_ET)
+    return _PINNED_NOW if _PINNED_NOW is not None else datetime.now(_ET)
+
+
+@contextlib.contextmanager
+def pinned_clock(instant: datetime):
+    """Every timestamp this engine writes reads `instant` for the duration of the block.
+
+    For `paper_loop.settle_overdue`, which settles a session hours (or days) after its close: the
+    exit_time of a position that expired at the bell is the bell, not the moment an outage ended.
+    That pass is the only caller; the loop's own ticks run on the wall clock."""
+    global _PINNED_NOW
+    previous = _PINNED_NOW
+    _PINNED_NOW = instant
+    try:
+        yield
+    finally:
+        _PINNED_NOW = previous
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -228,8 +249,138 @@ def load_base_config() -> dict:
 def _merged_params(base_config: dict, profile: dict) -> dict:
     """Profile keys override base config keys, matching /set-risk-profile's partial-override
     semantics — unspecified keys (force_close_time, max_wing_width, etc.) fall through. Flat overlay
-    via cherrypick.core.profiles."""
+    via cherrypick.core.profiles.
+
+    A profile marked `follows_live: true` is merged onto what live trades (`live_params`) instead
+    of onto the top level, so a shadow of live stays live's twin when the `live` block changes."""
+    if profile.get(FOLLOWS_LIVE_KEY):
+        base, problem = _live_resolution(base_config, None)
+        if problem and problem not in _WARNED:  # merged once per arm per symbol per tick: say it once
+            _WARNED.add(problem)
+            logging.getLogger(__name__).warning("follows_live arm: %s; using the top level", problem)
+        return _profiles.merge_profile(base, profile)
     return _profiles.merge_profile(base_config, profile)
+
+
+_WARNED: set[str] = set()
+
+
+# ---------------------------------------------------------------------------
+# The live block (2026-10-14)
+# ---------------------------------------------------------------------------
+#
+# Until this date live traded config.json's top level -- which is also the base every paper arm
+# inherits -- so a live-only change (a buying-power cap, a narrower width, a later start) could not
+# be made without moving every paper arm that left the key unset, `control` included. Flies never
+# had the problem: its `live` block names the arm live trades and adds live's own limits over it.
+# This is that seam for MEIC. `live.arm` (optional) names a registry arm; absent, live trades the
+# top level exactly as before, so a config without the new keys behaves byte-identically. The keys
+# below may then be set in the `live` block and apply to live alone. Each can only NARROW what the
+# arm allows -- the later start, the earlier end, the smaller cap -- except the width list, which
+# replaces the arm's (one list is not "narrower" than another).
+
+LIVE_OVERRIDE_KEYS = (
+    "max_open_bp_dollars",
+    "wing_widths_by_symbol",
+    "entry_window_start",
+    "entry_window_end",
+)
+FOLLOWS_LIVE_KEY = "follows_live"
+
+
+def live_arm_name(config: dict) -> str | None:
+    return str((config.get("live") or {}).get("arm") or "").strip() or None
+
+
+def _live_resolution(config: dict, registry: dict | None) -> tuple[dict, str | None]:
+    """(what live trades, the reason `live.arm` cannot be resolved or None). On a problem the params
+    are the top level with the live overrides -- readiness refuses live on the same problem, so the
+    fallback only ever reaches a paper shadow, which logs it."""
+    live = config.get("live") or {}
+    arm = live_arm_name(config)
+    profile: dict = {}
+    problem = None
+    if arm:
+        registry = load_profiles() if registry is None else registry
+        found = registry.get(arm)
+        if not isinstance(found, dict) or arm.startswith("_"):
+            problem = f"live.arm {arm!r} is not a configured arm"
+        elif found.get(FOLLOWS_LIVE_KEY):
+            problem = f"live.arm {arm!r} follows live itself -- live would trade its own shadow"
+        else:
+            profile = found
+    params = _profiles.merge_profile(config, profile)
+    # Live trades its one pinned symbol (2026-10-15). Said here, so a follows_live paper arm trades
+    # only that symbol too -- live-shadow on XSP while control stays on SPX -- instead of every symbol
+    # the paper loop scans under sizing meant for another instrument.
+    symbol = str(live.get("symbol") or "").strip().upper()
+    if symbol:
+        params["symbols"] = [symbol]
+    if live.get("max_open_bp_dollars") is not None:
+        cap = params.get("max_open_bp_dollars")
+        params["max_open_bp_dollars"] = (
+            min(cap, live["max_open_bp_dollars"]) if cap else live["max_open_bp_dollars"]
+        )
+    if live.get("wing_widths_by_symbol"):
+        params["wing_widths_by_symbol"] = live["wing_widths_by_symbol"]
+        params.pop("wing_width_points", None)  # the scalar seam outranks the dict; live's list must win
+    if live.get("entry_window_start"):
+        arm_start = params.get("paper_entry_window_start") or params.get("entry_window_start", "10:00")
+        start = max(str(live["entry_window_start"]), str(arm_start))  # zero-padded HH:MM sorts as time
+        params["entry_window_start"] = params["paper_entry_window_start"] = start
+    if live.get("entry_window_end"):
+        params["entry_window_end"] = min(
+            str(live["entry_window_end"]), str(params.get("entry_window_end", "14:30"))
+        )
+    return params, problem
+
+
+def live_params(config: dict, registry: dict | None = None) -> dict:
+    """The params live_loop.run_once trades: `live.arm` merged onto the top level (the top level
+    alone when unset), then the live block's own overrides."""
+    return _live_resolution(config, registry)[0]
+
+
+def live_arm_problem(config: dict, registry: dict | None = None) -> str | None:
+    """Why `live.arm` cannot be traded, or None. Only reads the registry when an arm is named."""
+    if not live_arm_name(config):
+        return None
+    return _live_resolution(config, registry)[1]
+
+
+def live_config_warnings(config: dict, registry: dict, example: dict) -> list[str]:
+    """What a person should hear about the live seam, every tick, until they fix it. Two cases a
+    config file cannot make loud by itself:
+
+    - a live-only key sitting at the TOP level with a value other than the shipped default. It may be
+      deliberate, but it moves every paper arm that leaves the key unset (`control` included), which
+      is exactly how a live sizing change used to leak into the measurement.
+    - a `live` block that changes what live trades while no enabled arm follows live, so nothing on
+      paper measures the configuration live would run."""
+    out = []
+    for key in LIVE_OVERRIDE_KEYS:
+        if key in config and config[key] != example.get(key):
+            out.append(
+                f"top-level {key} = {config[key]!r} (shipped default {example.get(key)!r}) reaches every "
+                f"paper arm that does not set it; if it is meant for live alone, move it into the `live` "
+                f"block (python -m cherrypick.meic.live_migrate)"
+            )
+    live = config.get("live") or {}
+    shapes_live = live_arm_name(config) or any(live.get(k) is not None for k in LIVE_OVERRIDE_KEYS)
+    followers = [
+        n
+        for n, p in registry.items()
+        if not n.startswith("_")
+        and isinstance(p, dict)
+        and p.get(FOLLOWS_LIVE_KEY)
+        and p.get("enabled", True)
+    ]
+    if shapes_live and not followers:
+        out.append("the `live` block shapes what live trades but no enabled arm has follows_live: true")
+    problem = live_arm_problem(config, registry)
+    if problem:
+        out.append(problem)
+    return out
 
 
 def _profile_widths_for_symbol(params: dict, symbol: str) -> list | None:
@@ -629,8 +780,17 @@ def evaluate_entry(
     # (SPX net-GEX sign runs ~61% positive, and swings hard by day: 2.3% positive on 2026-07-29,
     # 98.3% on 2026-07-31), and nothing yet establishes that the trades it cuts were worse than the
     # ones it keeps. That question is only answerable by running both, which requires this switch.
+    #
+    # `regime_gex_block_mode` (2026-10-15): "oi" (the default, unchanged) blocks on open-interest GEX
+    # alone; "both" blocks only when the VOLUME-weighted reading (`net_gex_vol`, today's flow) is
+    # negative too. Open interest is yesterday's book and misses every 0DTE position opened today.
+    # Over control's advisor era (held to expiry, 12:00-14:30) OI-negative/volume-positive sessions
+    # won 14 of 17, while the worst session sat where both were negative. A missing volume reading
+    # falls back to the OI rule rather than waving the entry through.
     if params.get("regime_gex_block_negative", True) and gex.get("ok") and gex.get("gex_positive") is False:
-        return False, "regime_gex_negative", None
+        vol = gex.get("net_gex_vol")
+        if not (params.get("regime_gex_block_mode", "oi") == "both" and vol is not None and vol > 0):
+            return False, "regime_gex_negative", None
     # Strict variant (opt-in per profile): require GEX to be explicitly positive, so entries
     # also pause when GEX is unknown/unavailable -- not just when it is confirmed negative. Used
     # opt-in per profile to isolate the effect of the GEX gate.
@@ -1627,14 +1787,24 @@ def _profile_day_stats(profile: str, trade_date: str, db_path: str, symbol: str 
 
 
 def process_symbol(
-    snapshot: dict, db_path: str, execution_mode: str, profiles_filter=None, extra_profiles=None
+    snapshot: dict,
+    db_path: str,
+    execution_mode: str,
+    profiles_filter=None,
+    extra_profiles=None,
+    evaluate_entries: bool = True,
 ) -> dict:
     """Run all four profiles' mark-to-market/exit + entry evaluation for one symbol against
     one already-fetched snapshot. Returns a per-profile action summary for logging.
 
     `extra_profiles` are synthetic, caller-built profile defs evaluated alongside the registry
     -- the advised shadow book (paper_loop._advice_profiles) rides this seam. Merged after the
-    registry so a synthetic name is never silently shadowed by a registry entry."""
+    registry so a synthetic name is never silently shadowed by a registry entry.
+
+    `evaluate_entries=False` runs the exit half only: no entry is evaluated and no entry_attempts
+    row is written. For `paper_loop.settle_overdue`, a settlement pass after the session, whose
+    snapshot carries a closing print and nothing else -- an entry evaluation against it would
+    record a refusal per arm ("iv_rank_below_floor") for a tick that never happened."""
     base_config = load_base_config()
     all_profiles = load_profiles()
     if extra_profiles:
@@ -1688,6 +1858,10 @@ def process_symbol(
             )
             actions.append({"ic_order_id": trade["ic_order_id"], "decision": decision})
             _apply_exit_decision(trade, decision, symbol, db_path)
+
+        if not evaluate_entries:
+            results[name] = actions
+            continue
 
         still_open = _get_open_trades(symbol, name, snapshot["date"], db_path)
         # max_concurrent_ics is a per-(profile × symbol) cap: each portfolio (this profile on this
@@ -1785,7 +1959,8 @@ def process_symbol(
 
         results[name] = actions
 
-    _log_arm_divergence(snapshot, results, db_path)
+    if evaluate_entries:
+        _log_arm_divergence(snapshot, results, db_path)
     return {"ok": True, "symbol": symbol, "results": results}
 
 

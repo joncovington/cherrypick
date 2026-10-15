@@ -5,7 +5,7 @@ import { fmtMoney } from "../../components/DataTable";
 import { AXIS_MUTED } from "../../components/Charts";
 import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
-import { SpotMarker } from "../../components/chart/Tooltip";
+import { SpotMarker, HoverReadout } from "../../components/chart/Tooltip";
 import { useHoverX } from "../../components/chart/useHoverX";
 import type { MeicScope } from "./MeicTables";
 import { CHART_GRID, CHART_GRID_STRONG } from "../../components/Charts";
@@ -83,6 +83,9 @@ function useMeicForest(mode: TradingMode, scope: MeicScope) {
     refetchInterval: 30_000,
   });
 }
+
+/** Condor lines the hover readout lists before it says "+N more": a paper day can stack dozens. */
+const HOVER_CONDOR_CAP = 10;
 
 function path(prices: number[], pnl: number[], X: (v: number) => number, Y: (v: number) => number): string {
   return prices.map((p, i) => `${i === 0 ? "M" : "L"}${X(p).toFixed(1)},${Y(pnl[i] ?? 0).toFixed(1)}`).join(" ");
@@ -233,9 +236,46 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
           />
         )}
 
-        {hoverIdx !== null && hoverPrice !== null && (
-          <line x1={X(hoverPrice)} x2={X(hoverPrice)} y1={pad.t} y2={height - pad.b} stroke={CHART_GRID_STRONG} strokeDasharray="3 3" />
-        )}
+        {/* Hover line + readout, as the flies forest: the price, each arm's payoff there, and each
+            condor's while the nested curves are on (capped). */}
+        {hoverIdx !== null && hoverPrice !== null && (() => {
+          const at = prices[hoverIdx]!;
+          const condors = showNested
+            ? shown.flatMap((a) =>
+                a.perPosition.map((pp, k) => {
+                  const pos = a.positions[k]!;
+                  return {
+                    arm: a.arm,
+                    label: `  ${pos.putStrike - pos.wingWidth}/${pos.putStrike}p ${pos.callStrike}/${pos.callStrike + pos.wingWidth}c`,
+                    pnl: pp.pnl[hoverIdx] ?? 0,
+                  };
+                }),
+              )
+            : [];
+          const listed = condors.slice(0, HOVER_CONDOR_CAP);
+          const lines = [
+            `at ${at.toFixed(0)}`,
+            ...shown.map((a) => `${a.arm}  ${fmtMoney(a.pnl[hoverIdx] ?? 0)}`),
+            ...listed.map((c) => `${c.label}  ${fmtMoney(c.pnl)}`),
+            ...(condors.length > listed.length ? [`  +${condors.length - listed.length} more`] : []),
+          ];
+          return (
+            <>
+              <line x1={X(at)} x2={X(at)} y1={pad.t} y2={height - pad.b} stroke={CHART_GRID_STRONG} strokeDasharray="3 3" />
+              <HoverReadout
+                x={X(at)}
+                width={width}
+                lines={lines}
+                lineColor={(i) => {
+                  if (i === 0) return "var(--text)";
+                  if (i <= shown.length) return colorOf(shown[i - 1]!.arm);
+                  const c = listed[i - 1 - shown.length];
+                  return c ? colorOf(c.arm) : AXIS_MUTED;
+                }}
+              />
+            </>
+          );
+        })()}
       </svg>
     );
   }

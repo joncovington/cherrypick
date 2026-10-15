@@ -121,6 +121,109 @@ def confirmed(previous: Iterable[dict[str, Any]], current: Iterable[dict[str, An
     return [d for d in current if _diff_id(d) in seen]
 
 
+# --------------------------------------------------------------------------- cross-module legs
+#
+# 2026-10-15. flies, bwb and MEIC trade SPX in ONE account, and each loop's leg-sign rule
+# (`core.entry.sign_conflict`) sees its own ledger only. The broker nets per contract across the
+# account, so MEIC short the 5800 put beside flies long it is one flat position two ledgers both
+# think they hold: a later close is rejected or opens a new position, and neither P&L is right.
+# Same-sign stacking is fine -- each loop closes its own quantity. So every live loop publishes the
+# legs it holds or has working (`publish_open_legs`) each tick, and refuses an ENTRY whose
+# opening legs would sit opposite another loop's (`cross_module_conflict`). Files only; a stale
+# file can only refuse more, and a missing one is a loop that has never ticked.
+
+OPEN_LEGS_DIRNAME = "live_open_legs"
+
+
+def _open_legs_dir():
+    from cherrypick.core import home as _home
+
+    return _home.state_dir() / OPEN_LEGS_DIRNAME
+
+
+def publish_open_legs(module: str, legs: Iterable[dict[str, Any]], *, now_iso: str) -> None:
+    """Write `module`'s held and working legs (``{underlying, expiry, right, strike, qty}``) for the
+    other live loops to read. Best-effort: a failed write leaves the previous file, which can only
+    make the others refuse more."""
+    import json
+
+    try:
+        target = _open_legs_dir() / f"{module}.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(".tmp")
+        rows = [
+            {"underlying": k[0], "expiry": k[1], "right": k[2], "strike": k[3], "qty": q}
+            for k, q in sorted(expected_legs(legs).items())
+        ]
+        tmp.write_text(json.dumps({"module": module, "at": now_iso, "legs": rows}), encoding="utf-8")
+        tmp.replace(target)
+    except OSError:
+        pass
+
+
+def other_modules_legs(module: str) -> dict[Key, int]:
+    """Every other live loop's published legs, netted by key as the broker would. An unreadable file
+    contributes nothing."""
+    import json
+
+    legs: list[dict[str, Any]] = []
+    try:
+        files = list(_open_legs_dir().glob("*.json"))
+    except OSError:
+        return {}
+    for f in files:
+        if f.stem == module:
+            continue
+        try:
+            legs.extend(json.loads(f.read_text(encoding="utf-8")).get("legs") or [])
+        except (OSError, ValueError, AttributeError):
+            continue
+    try:
+        return expected_legs(legs)
+    except (KeyError, TypeError, ValueError):
+        return {}
+
+
+def order_opening_legs(spec: dict[str, Any], underlying: str) -> dict[Key, int]:
+    """The legs an order spec would OPEN, keyed like everything else here. Closing legs are left out:
+    a close reduces this loop's own position and cannot set it against another's. Raises ValueError
+    on a leg that is not an OCC option symbol -- a leg this cannot read must not pass as harmless."""
+    out: dict[Key, int] = {}
+    for leg in spec.get("legs") or []:
+        action = str(leg.get("action") or "").lower()
+        if "to open" not in action:
+            continue
+        parsed = parse_occ(str(leg.get("symbol") or ""))
+        if parsed is None:
+            raise ValueError(f"order leg {leg.get('symbol')!r} is not an OCC option symbol")
+        _, expiry, right, strike = parsed
+        sign = -1 if action.startswith("sell") else 1
+        key = (underlying.upper(), expiry, right, strike)
+        out[key] = out.get(key, 0) + sign * int(leg.get("quantity") or 1)
+    return out
+
+
+def cross_module_conflict(module: str, underlying: str, spec: dict[str, Any]) -> Key | None:
+    """The first contract where `spec` would open a leg opposite one another live loop holds or has
+    working, or None. A spec this cannot read is reported as a conflict on a placeholder key -- the
+    entry is refused rather than sent unchecked."""
+    try:
+        proposed = order_opening_legs(spec, underlying)
+    except ValueError:
+        return (underlying.upper(), "?", "?", 0.0)
+    others = other_modules_legs(module)
+    for key, qty in proposed.items():
+        held = others.get(key, 0)
+        if held and (held > 0) != (qty > 0):
+            return key
+    return None
+
+
+def describe(key: Key) -> str:
+    under, expiry, right, strike = key
+    return f"{under} {expiry} {strike:g}{right}"
+
+
 def _diff_id(d: dict[str, Any]) -> tuple:
     return (
         d["underlying"],

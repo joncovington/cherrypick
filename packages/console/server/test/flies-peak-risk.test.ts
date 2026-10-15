@@ -143,7 +143,7 @@ function fakeConfig(): ConsoleConfig {
       cherrypick: home, streamCacheDb: "", watchdogLast: "", orchestratorConfig, consoleData: "",
       meicDir: path.join(data, "meic"), fliesDir: path.join(data, "flies"), earningsDir: path.join(data, "earnings"),
       calendarsDir: path.join(data, "calendars"), pmccDir: path.join(data, "pmcc"), curveDir: path.join(data, "curve"),
-      bwbDir: path.join(data, "bwb"), gexDir: "", reviewDir: "", overviewDir: "", advisorDir: "", adviceDir: "",
+      bwbDir: path.join(data, "bwb"), gexDir: "", reviewDir: "", manageDir: "", overviewDir: "", advisorDir: "", adviceDir: "",
       meicRiskConfig: "", fliesConfig: "", pmccConfigCandidates: [], calendarsConfigCandidates: [], curveConfigCandidates: [],
     },
   } as unknown as ConsoleConfig;

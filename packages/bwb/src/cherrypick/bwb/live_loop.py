@@ -42,6 +42,7 @@ from cherrypick.core import calendar as _cal
 from cherrypick.core import execution as _execution
 from cherrypick.core import home as _home
 from cherrypick.core import live as _live
+from cherrypick.core import livepositions as _livepos
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
 from cherrypick.core import redact as _redact
@@ -262,6 +263,7 @@ def _sweep_orphans(conn, broker, log, symbol: str) -> int | None:
         path=_orphans_path(),
         now_iso=clock.now_iso(),
         log=log,
+        module="bwb",  # flies and MEIC trade SPX in this account too: their orders are not ours to flag
     )
 
 
@@ -759,6 +761,12 @@ def _try_live_entry(
         return refuse(
             "credit_below_live_floor" if "credit_below_live_floor" in str(exc) else "not_a_credit", str(exc)
         )
+    # flies and MEIC trade SPX in this account too (2026-10-15): a leg opposite one they hold or have
+    # working nets at the broker into a position neither ledger describes. Friday's 0DTE contracts are
+    # this ladder's expiring ones.
+    clash = _livepos.cross_module_conflict("bwb", symbol, spec)
+    if clash is not None:
+        return refuse("cross_module_sign_conflict", _livepos.describe(clash))
 
     reserve = arm != "control"
     exceeded, totals = live_orders.margin_cap_exceeded(
@@ -1117,6 +1125,10 @@ def run_once(
 
     # 1. broker truth against ledger belief
     summary["orphans"] = _sweep_orphans(conn, broker, log, symbol)
+    # 1b. what this ledger holds or has working, for flies' and MEIC's entries to check (2026-10-15)
+    _livepos.publish_open_legs(
+        "bwb", expected_legs(config, conn, include_pending=True)["legs"], now_iso=clock.now_iso()
+    )
 
     # 2. what filled, what died
     summary["confirm"] = _confirm_pending(conn, broker, log, config, day=day)
@@ -1171,6 +1183,10 @@ def run_once(
     summary["entry"] = entry
     if entry.get("entry") == "placed" and entry.get("order_id"):
         placed[entry["order_id"]] = {"position_id": entry["position_id"], "kind": "entry"}
+        # The working order, now, not at the next tick: the other loops check against it from here.
+        _livepos.publish_open_legs(
+            "bwb", expected_legs(config, conn, include_pending=True)["legs"], now_iso=clock.now_iso()
+        )
 
     # 6. the paper tick's own pass over the live positions, with the fire seam swapped
     ticks = _pl._record_trigger_ticks(config, conn, cache_path=cache_path, when=when, day=day)
@@ -1261,18 +1277,22 @@ def _pythonw() -> str:
     return exe
 
 
-def expected_legs(config: dict, conn) -> dict:
+def expected_legs(config: dict, conn, *, include_pending: bool = False) -> dict:
     """The contracts this ledger says the broker holds right now, for the orchestrator's
     positions-vs-ledger check (`cherrypick.core.livepositions`, 2026-10-08). Files and DB only.
 
     Counted: `open` legs of positions whose entry fill is confirmed (`open`/`short_settled`). A
     pending entry's legs are written `open` before anything fills, and a cancelled entry's legs stay
     `open` -- the position's status is what says whether they exist, so the join decides. An add-on's
-    legs are written only once it fills. `pending` counts orders still working."""
+    legs are written only once it fills. `pending` counts orders still working.
+
+    `include_pending` (2026-10-15) counts a pending entry's legs too -- what flies' and MEIC's entries
+    must not open against is what this ledger holds OR could hold the moment a working order fills."""
+    statuses = "('open', 'short_settled', 'pending')" if include_pending else "('open', 'short_settled')"
     rows = conn.execute(
         "SELECT p.symbol AS underlying, l.expiration, l.option_type, l.strike, l.action, l.quantity "
         "FROM bwb_legs l JOIN bwb_positions p ON p.position_id = l.position_id "
-        "WHERE l.status = 'open' AND p.status IN ('open', 'short_settled')"
+        f"WHERE l.status = 'open' AND p.status IN {statuses}"
     ).fetchall()
     legs = [
         {

@@ -87,3 +87,78 @@ def test_drop_expired_keeps_future_and_todays_until_the_close():
     assert dropped == 1 and ("SPX", "2026-10-08", "P", 5800.0) in kept
     kept, dropped = lp.drop_expired(legs, "2026-10-08", after_close=True)
     assert dropped == 2 and list(kept) == [("SPX", "2026-10-09", "P", 5800.0)]
+
+
+# --------------------------------------------------------------------------- cross-module legs
+
+
+def _spec(*legs):
+    """An order spec from (occ, action, quantity) triples."""
+    return {"legs": [{"symbol": s, "action": a, "quantity": q} for s, a, q in legs]}
+
+
+P5800 = "SPXW  261015P05800000"
+P5795 = "SPXW  261015P05795000"
+
+
+def _flies_short_5800p(tmp_path, monkeypatch):
+    monkeypatch.setattr(lp, "_open_legs_dir", lambda: tmp_path / "legs")
+    lp.publish_open_legs(
+        "flies",
+        [{"underlying": "SPX", "expiry": "2026-10-15", "right": "P", "strike": 5800, "qty": -1}],
+        now_iso="t",
+    )
+
+
+def test_opening_opposite_another_loops_leg_is_a_conflict(tmp_path, monkeypatch):
+    """flies is short the 5800 put; MEIC buying it to open would net the account flat at that
+    contract while both ledgers hold a leg."""
+    _flies_short_5800p(tmp_path, monkeypatch)
+    spec = _spec((P5795, "sell to open", 1), (P5800, "buy to open", 1))
+    assert lp.cross_module_conflict("meic", "SPX", spec) == ("SPX", "2026-10-15", "P", 5800.0)
+
+
+def test_stacking_the_same_side_is_not_a_conflict(tmp_path, monkeypatch):
+    _flies_short_5800p(tmp_path, monkeypatch)
+    assert lp.cross_module_conflict("meic", "SPX", _spec((P5800, "sell to open", 1))) is None
+
+
+def test_a_loop_never_conflicts_with_itself(tmp_path, monkeypatch):
+    """Its own legs are its own sign rule's business, and its own file is skipped here."""
+    _flies_short_5800p(tmp_path, monkeypatch)
+    assert lp.cross_module_conflict("flies", "SPX", _spec((P5800, "buy to open", 1))) is None
+
+
+def test_closing_legs_are_never_checked(tmp_path, monkeypatch):
+    _flies_short_5800p(tmp_path, monkeypatch)
+    assert lp.cross_module_conflict("meic", "SPX", _spec((P5800, "buy to close", 1))) is None
+
+
+def test_another_underlying_or_expiry_is_another_contract(tmp_path, monkeypatch):
+    _flies_short_5800p(tmp_path, monkeypatch)
+    assert lp.cross_module_conflict("meic", "XSP", _spec((P5800, "buy to open", 1))) is None
+    other_day = "SPXW  261016P05800000"
+    assert lp.cross_module_conflict("meic", "SPX", _spec((other_day, "buy to open", 1))) is None
+
+
+def test_an_unreadable_order_leg_is_refused_not_passed(tmp_path, monkeypatch):
+    _flies_short_5800p(tmp_path, monkeypatch)
+    clash = lp.cross_module_conflict("meic", "SPX", _spec((".SPXW261015P5800", "buy to open", 1)))
+    assert clash is not None
+
+
+def test_legs_from_two_other_loops_net_as_the_broker_would(tmp_path, monkeypatch):
+    """bwb long one and flies short one: the account is flat there, so neither side is refused."""
+    _flies_short_5800p(tmp_path, monkeypatch)
+    lp.publish_open_legs(
+        "bwb",
+        [{"underlying": "SPX", "expiry": "2026-10-15", "right": "P", "strike": 5800, "qty": 1}],
+        now_iso="t",
+    )
+    assert lp.other_modules_legs("meic") == {}
+    assert lp.cross_module_conflict("meic", "SPX", _spec((P5800, "buy to open", 1))) is None
+
+
+def test_no_published_legs_means_no_conflict(tmp_path, monkeypatch):
+    monkeypatch.setattr(lp, "_open_legs_dir", lambda: tmp_path / "absent")
+    assert lp.cross_module_conflict("meic", "SPX", _spec((P5800, "buy to open", 1))) is None

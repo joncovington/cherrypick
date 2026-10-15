@@ -98,7 +98,9 @@ def test_dry_run_then_apply_then_nothing_to_do(tmp_path, monkeypatch, capsys):
     assert {p.name: p.read_bytes() for p in (home / "config").iterdir()} == before, "a dry run writes nothing"
     assert _breaks(home, "bwb") == []
 
-    assert mod.main(["--apply"]) == 1, "refused before 2026-10-17 without --allow-early"
+    with monkeypatch.context() as m:  # pinned ahead of today, whatever today is
+        m.setattr(mod, "EARLIEST_APPLY", "2999-01-01")
+        assert mod.main(["--apply"]) == 1, "refused before EARLIEST_APPLY without --allow-early"
     assert mod.main(["--apply", "--allow-early"]) == 0
 
     flies = json.loads((home / "config" / "flies.json").read_text(encoding="utf-8"))
@@ -108,6 +110,9 @@ def test_dry_run_then_apply_then_nothing_to_do(tmp_path, monkeypatch, capsys):
     assert flies["arms"]["bwb-atm"]["enabled"] is False
     assert flies["arms"]["control"]["enabled"] is True
     assert flies["arms"]["live-shadow"]["mirror_live"] is True
+    for name, (variable, _) in mod.FLIES_ADD.items():
+        added = {k: v for k, v in flies["arms"][name].items() if not k.startswith("_")}
+        assert added == {"enabled": True, **variable}, "a copy of control plus its one variable"
     assert flies["arms"]["selector"]["enabled"] is True
     assert (
         "miss_stop_minutes" not in flies["advice"]["bounds"]
@@ -136,7 +141,7 @@ def test_dry_run_then_apply_then_nothing_to_do(tmp_path, monkeypatch, capsys):
     assert [r[2] for r in _breaks(home, "calendars")] == ["advice_bounds"]
     assert [r[2] for r in _breaks(home, "earnings")] == ["strat_test_strategies"]
     assert sorted(r[2] for r in _breaks(home, "meic")) == sorted(mod.MEIC_MINUS)
-    assert {r[1] for r in _breaks(home, "meic")} == {"2026-10-19"}
+    assert {r[1] for r in _breaks(home, "meic")} == {mod.BOUNDARY}
 
     after = {p.name: p.read_bytes() for p in (home / "config").iterdir()}
     capsys.readouterr()
@@ -219,6 +224,6 @@ def test_mid_first_only_with_its_own_flag_and_with_a_live_break(tmp_path, monkey
     )
     conn = sqlite3.connect(str(d / "live_trades.db"))
     assert conn.execute("SELECT break_date, scope, kind FROM measurement_breaks").fetchall() == [
-        ("2026-10-19", "*", "entry_pricing")
+        ("2026-10-15", "*", "entry_pricing")
     ]
     conn.close()

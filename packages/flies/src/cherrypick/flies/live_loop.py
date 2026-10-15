@@ -71,7 +71,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 
 from cherrypick.core import calendar as _cal  # noqa: E402
@@ -80,6 +80,7 @@ from cherrypick.core import execution as _execution
 from cherrypick.core import home as _home  # noqa: E402
 from cherrypick.core import jsonio as _jsonio  # noqa: E402
 from cherrypick.core import live as _live  # noqa: E402
+from cherrypick.core import livepositions as _livepos  # noqa: E402
 from cherrypick.core import redact as _redact  # noqa: E402
 from cherrypick.core import settlement as _settlement  # noqa: E402
 
@@ -508,6 +509,22 @@ def _confirm_entry_fill(conn, pos: dict, broker, log) -> dict:
     return pos  # still working — stays pending, still blocks a second entry
 
 
+def broker_fill_time_et(status: dict | None) -> str | None:
+    """The broker's fill time for an order status (its LAST leg fill's `filled_at`) as an ET ISO
+    stamp, the ledger's own convention, or None when no leg carries a readable one. The broker's
+    stamps are UTC; one with no offset is read as UTC, never as this machine's local time."""
+    raw = fill_model.latest_fill_time((status or {}).get("fills"))
+    if raw is None:
+        return None
+    try:
+        when = fill_model.parse_ts(raw)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return when.astimezone(fill_facts.ET).isoformat(timespec="seconds")
+
+
 def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = None) -> dict:
     """Poll a pending completion order; flip kind='fly' with the ACTUAL debit once confirmed.
 
@@ -515,7 +532,11 @@ def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = 
     before-API) records `completion_latency_min`/`spot_at_completion` the same way paper's
     book.py always has. Regression (2026-07-30): live never recorded either, so every live
     Performance card's Completion panel (median latency, latency range, median spot move) read
-    blank for a real session with real completions."""
+    blank for a real session with real completions.
+
+    `completed_at`, the latency and the decision row are stamped at the broker's fill time
+    (`broker_fill_time_et`), and at the moment of noticing only when the broker gives none: a fill
+    confirmed after an outage once read as a completion at settlement time (2026-10-13)."""
     status = broker.status(pos["completion_order_id"])
     state, price = _execution.fill_state(status, fallback_price=pos.get("debit") or 0.0)
     if state == "filled":
@@ -526,7 +547,9 @@ def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = 
         completion_fee = fly.vertical_open_fee(pos["symbol"], pos.get("quantity", 1))
         new_net = pos["net"] - actual_debit
         new_fees = (pos.get("fees") or 0.0) + completion_fee
-        now = clock.now_iso()
+        # The broker's own fill time, when its leg fills carry one: a fill noticed late (an outage,
+        # a settle-time confirmation) is still a completion at the moment it filled.
+        now = broker_fill_time_et(status) or clock.now_iso()
         latency = bookmod._minutes_since(pos.get("entry_time"), now)
         updated = {**pos, "kind": "fly", "net": new_net, "fees": new_fees}
         floor = fly.position_floor(updated)
@@ -571,6 +594,9 @@ def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = 
         )
         return {
             **updated,
+            "debit": actual_debit,
+            "completion_fill_status": "filled",
+            "completed_at": now,
             "floor_dollars": floor,
             "risk_free": int(risk_free),
             "completion_latency_min": latency,
@@ -793,6 +819,7 @@ def _sweep_orphans(conn, broker, log, symbol: str) -> int | None:
         path=_orphans_path(),
         now_iso=clock.now_iso(),
         log=log,
+        module="flies",  # bwb and MEIC trade SPX in this account too: their orders are not ours to flag
     )
 
 
@@ -894,6 +921,10 @@ def run_once(
     # --- 0. orphan sweep: broker truth vs ledger belief ---
     if live:
         summary["orphaned_orders"] = _sweep_orphans(conn, broker, log, symbol)
+    # What this ledger holds or has working, for bwb's and MEIC's entries to check (2026-10-15).
+    _livepos.publish_open_legs(
+        "flies", expected_legs(config, conn, include_pending=True)["legs"], now_iso=clock.now_iso()
+    )
 
     # --- 1. fill confirmation (before anything else acts on a position's current state) ---
     if live:
@@ -1185,6 +1216,22 @@ def run_once(
                     entry_pricing_used = live_orders.ENTRY_PRICING_MID_FIRST
             elif spec is not None and entry_pricing == live_orders.ENTRY_PRICING_MID_FIRST:
                 entry_pricing_used = "conceded"
+            # bwb and MEIC trade SPX in this account too (2026-10-15): a leg opposite one they hold
+            # or have working nets at the broker into a position neither ledger describes.
+            clash = _livepos.cross_module_conflict("flies", symbol, spec) if spec is not None else None
+            if clash is not None:
+                summary["skips"].append(
+                    {
+                        "entry": f"cross_module_sign_conflict: {_livepos.describe(clash)} opposite another live loop"
+                    }
+                )
+                journal(
+                    "entry",
+                    "cross_module_sign_conflict",
+                    center=plan["center"],
+                    detail=_livepos.describe(clash),
+                )
+                spec = None
             if spec is not None:
                 # Per-attempt unique (paper's book.py convention: microsecond timestamp), not
                 # day+arm+center alone — a retry at the SAME centre after an earlier rejection
@@ -1307,6 +1354,11 @@ def run_once(
                 # fill watcher with nothing to watch (2026-10-08). A dry run still counts its would-be entry.
                 if not live or (res.get("ok") and res.get("order_id")):
                     summary["entered"] += 1
+    if summary.get("entered"):
+        # The working order, now, not at the next tick: the other loops check against it from here.
+        _livepos.publish_open_legs(
+            "flies", expected_legs(config, conn, include_pending=True)["legs"], now_iso=clock.now_iso()
+        )
 
     # --- 4b. the agent's named closes, TAGGED on the live rows at live natural (close_tags.py) ---
     # Never an order: no live closing path exists (intraday_advice.LIVE_CLOSES_BUILT). The tags are
@@ -1472,6 +1524,47 @@ def _relabel_reconciled_settlement(conn, book_id, held, reconciled, settlement, 
     }
 
 
+def _status_seam(broker):
+    """`broker` when it can read an order status, else None. The settlement callers hand
+    `run_settle_live` a price source that may be the live adapter (which can) or a bare dated close
+    (`core.settlement.DatedClose`, which cannot)."""
+    return broker if callable(getattr(broker, "status", None)) else None
+
+
+def confirm_pending_fills(conn, book_id: str, broker, log) -> list[str]:
+    """Ask the broker about every OPEN position in `book_id` whose entry or completion fill is still
+    'pending', through the same `_confirm_entry_fill` / `_confirm_completion_fill` the tick uses, and
+    return the position ids whose answer is still unknown -- empty means the book may settle.
+
+    A filled order is booked (a completion flips the row to a fly at the broker's fill price and
+    time); a terminal-unfilled one resolves as the tick resolves it (a dead entry is cancelled, a
+    dead completion leaves the vertical). An unreachable broker reads as 'working' in
+    `fill_state`, so it stays pending and is returned. With no broker every pending row is.
+    No spot is recorded at a completion confirmed here: the settle-time spot is not the fill's."""
+    rows = conn.execute(
+        "SELECT * FROM fly_positions WHERE book_id = ? AND status = 'open' "
+        "AND (entry_fill_status = 'pending' OR completion_fill_status = 'pending')",
+        (book_id,),
+    ).fetchall()
+    unconfirmed = []
+    for pos in (dict(r) for r in rows):
+        if broker is not None:
+            if pos.get("entry_fill_status") == "pending" and pos.get("entry_order_id"):
+                pos = _confirm_entry_fill(conn, pos, broker, log)
+            if (
+                pos.get("status") == "open"
+                and pos.get("completion_fill_status") == "pending"
+                and pos.get("completion_order_id")
+            ):
+                pos = _confirm_completion_fill(conn, pos, broker, log)
+        if pos.get("status") == "open" and "pending" in (
+            pos.get("entry_fill_status"),
+            pos.get("completion_fill_status"),
+        ):
+            unconfirmed.append(pos["position_id"])
+    return unconfirmed
+
+
 def run_settle_live(
     config: dict,
     conn,
@@ -1481,6 +1574,7 @@ def run_settle_live(
     price: float | None = None,
     force: bool = False,
     broker=None,
+    fill_broker=None,
 ) -> dict:
     """Settle the live arm's books. No `price` = try the official print first (`broker`, when
     given, auto-fetches it — tastytrade -> Yahoo -> Barchart, see
@@ -1492,7 +1586,14 @@ def run_settle_live(
     The auto-fetch is retried on every call, not just the first: a still-provisional book (source
     != 'official') keeps trying on each subsequent tick until a source answers or the loop
     self-disarms — the real settlement print isn't guaranteed to exist the instant the market
-    closes."""
+    closes.
+
+    Before anything settles, every open position with a pending entry or completion is confirmed
+    with the broker (`confirm_pending_fills`, through `fill_broker`, else `broker` when it can read
+    an order status). Any answer still unknown -- the broker unreachable, the order still reading
+    working, no broker to ask -- refuses the whole book with `pending_fill_unconfirmed`; it stays
+    open and the next call retries. 2026-10-13: a completion that filled during an outage was
+    settled as a bare short vertical because nothing asked."""
     when = when or provider.now_et()
     day = when.date().isoformat()
     live_cfg = _live_cfg(config)
@@ -1509,6 +1610,22 @@ def run_settle_live(
 
     if already_official and not force:
         return {"ok": False, "reason": "already settled with the official print (use --force to override)"}
+
+    # Never settle on a fill status nobody asked the broker about (2026-10-13): every pending entry
+    # and completion in the book is confirmed first, and an unknown answer refuses the book.
+    unconfirmed = confirm_pending_fills(conn, book_id, fill_broker or _status_seam(broker), _log)
+    if unconfirmed:
+        _log(
+            f"live settle REFUSED for {book_id}: the broker has not confirmed the pending fill(s) of "
+            f"{', '.join(unconfirmed)} -- settling now would guess; the next tick or "
+            f"--settle-overdue retries"
+        )
+        return {
+            "ok": False,
+            "reason": "pending_fill_unconfirmed",
+            "book_id": book_id,
+            "positions": unconfirmed,
+        }
 
     auto_source = None
     if price is None and broker is not None and not already_official:
@@ -1920,12 +2037,33 @@ def _spawn_first_tick() -> None:
         pass  # the next scheduled tick covers it
 
 
-def install_task() -> dict:
+def alert_daemon_companion(config: dict | None) -> dict | None:
+    """The order-alert daemon as an arm-record companion, or None when `live.use_order_alert_daemon`
+    is off. The supervisor keeps it up while armed and until `disarm_time`, restarting it on death and
+    on a heartbeat silent for `silence_seconds` (four of its 30 s listen slices)."""
+    live_cfg = _live_cfg(config or {})
+    if not live_cfg.get("use_order_alert_daemon"):
+        return None
+    from cherrypick.flies import alert_daemon
+
+    return {
+        "argv": ["-m", "cherrypick.flies.alert_daemon"],
+        "heartbeat": alert_daemon.status_path(),
+        "silence_seconds": 120,
+        "until": live_cfg.get("disarm_time") or DEFAULT_DISARM,
+    }
+
+
+def install_task(config: dict | None = None) -> dict:
     """Arm the live loop FOR TODAY: the arm record, under a live supervisor, and nothing else
     (`cherrypick.core.live.arm`; the supervisor derives the `flies-live` job from it within one pass
     and one tick fires at once). No supervisor, no arming -- the Windows-only scheduled-task fallback
     was removed on 2026-10-08, after every box had run under the supervisor for two months; it was a
-    second, less-watched way to drive a live loop."""
+    second, less-watched way to drive a live loop.
+
+    With the alert daemon on, the record names it as a companion and the supervisor starts it too
+    (2026-10-14: started by hand, it did not survive a Windows Update restart)."""
+    daemon = alert_daemon_companion(config)
     out = _live.arm(
         "flies",
         date=provider.now_et().date().isoformat(),
@@ -1933,6 +2071,7 @@ def install_task() -> dict:
         armed_by="live-flies-start",
         spawn_first_tick=_spawn_first_tick,
         heartbeat_fresh=_supervisor_heartbeat_fresh,
+        companions={"alert-daemon": daemon} if daemon else None,
     )
     if out.get("ok"):
         out["cadence"] = "every 60s (supervisor job flies-live)"
@@ -1951,20 +2090,24 @@ def uninstall_task() -> dict:
     }
 
 
-def expected_legs(config: dict, conn) -> dict:
+def expected_legs(config: dict, conn, *, include_pending: bool = False) -> dict:
     """The contracts this ledger says the broker holds right now, for the orchestrator's
     positions-vs-ledger check (`cherrypick.core.livepositions`, 2026-10-08). Files and DB only.
 
     Counted: open rows whose entry FILL is confirmed, expanded by `fly.position_legs` (a pending
     completion leaves `kind` a vertical, so its unfilled leg is not counted). Not counted: a pending
     entry (nothing filled yet), cancelled and settled rows, and the paper-only hedge leg. `pending`
-    says how many orders are still working, so a reader knows the book may be mid-change."""
+    says how many orders are still working, so a reader knows the book may be mid-change.
+
+    `include_pending` (2026-10-15) counts a pending entry's vertical too -- what bwb's and MEIC's
+    entries must not open against is what this ledger holds OR could hold the moment it fills."""
     rows = [dict(r) for r in conn.execute("SELECT * FROM fly_positions WHERE status = 'open'").fetchall()]
     legs, pending = [], 0
     for row in rows:
         if row.get("entry_fill_status") == "pending":
             pending += 1
-            continue
+            if not include_pending:
+                continue
         if row.get("completion_fill_status") == "pending":
             pending += 1
         qty = int(row.get("quantity") or 1)
@@ -2057,27 +2200,33 @@ def should_disarm(config: dict, now_min: int, today: str) -> str | None:
 
 
 # --------------------------------------------------------------------------- status
-def settle_overdue(config: dict, conn, *, cache_path: str, today: str, close_fn=None) -> dict:
+def settle_overdue(config: dict, conn, *, cache_path: str, today: str, close_fn=None, broker=None) -> dict:
     """Settle every past session the live ledger still holds open, at THAT session's official close
     (`core.settlement.dated_index_close`, source `yahoo_daily`) -- never a provisional price. The
     catch-up for a machine that was down between the close and the disarm (2026-10-08; the owner
-    chose official-print-only). A session with a pending entry is left for a person: whether that
-    order filled is the broker's word, not this function's. No close found: left, still alerting."""
+    chose official-print-only). A pending entry or completion is the broker's word, not this
+    function's: `run_settle_live` asks `broker` (the live adapter) about each first, and a session
+    it cannot confirm -- or any pending fill with no broker given -- is left, reason
+    `pending_fill_unconfirmed`, for the next run (2026-10-13; before that a pending entry left the
+    session for a person and a pending completion was not looked at). No close found: left, still
+    alerting."""
     close_fn = close_fn or _settlement.dated_index_close
     symbol = _live_cfg(config).get("symbol", "XSP")
     done, left = [], []
     for item in overdue_settlement(conn, today):
         session = item["session"]
-        if item["pending_entries"]:
-            left.append({"session": session, "reason": "pending_entries"})
-            continue
         price = close_fn(symbol, session)
         if price is None:
             left.append({"session": session, "reason": "no_official_close"})
             continue
         when = datetime.fromisoformat(f"{session}T16:30:00")
         out = run_settle_live(
-            config, conn, cache_path=cache_path, when=when, broker=_settlement.DatedClose(price)
+            config,
+            conn,
+            cache_path=cache_path,
+            when=when,
+            broker=_settlement.DatedClose(price),
+            fill_broker=broker,
         )
         (done if out.get("ok") else left).append({"session": session, "price": price, **out})
     return {"ok": True, "settled": done, "left": left}
@@ -2247,7 +2396,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.install_task:
-        print(json.dumps(install_task(), indent=2))
+        print(json.dumps(install_task(load_config(args.config)), indent=2))
         return 0
     if args.uninstall_task:
         print(json.dumps(uninstall_task(), indent=2))
@@ -2271,7 +2420,10 @@ def main() -> int:
             return 0
         if args.settle_overdue:
             today = provider.now_et().date().isoformat()
-            print(json.dumps(settle_overdue(config, conn, cache_path=cache_path, today=today), default=str))
+            out = settle_overdue(
+                config, conn, cache_path=cache_path, today=today, broker=BrokerAdapter(config)
+            )
+            print(json.dumps(out, default=str))
             return 0
         if args.settle:
             when = None

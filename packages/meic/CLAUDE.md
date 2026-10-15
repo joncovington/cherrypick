@@ -156,8 +156,17 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
   files, env vars or logs.
 - All broker operations are `python -m cherrypick.meic.tt <command>`, JSON to stdout. Secrets: `tt
   secrets_set` / `tt secrets_status`.
-- **`enable_live_trading: true` in `config.json` is the ONLY arming surface.** There is no environment
+- **`enable_live_trading: true` in `config.json` is the master switch.** There is no environment
   fallback: an env var is outside the orchestrator's guarded config table and carries no attestation.
+- **The live loop is armed one day at a time (2026-10-14, the flies/bwb posture).** `/live-meic-start`
+  writes the arm record (`--install-task`, `cherrypick.core.live`); the supervisor runs `meic-live`
+  only while it is today's, and each `--live` tick deletes it once stale or past `live.disarm_time`,
+  before any broker read. A manual `--once --live` needs the record too. `--status` is the arming
+  command's and the watchdog's read (no broker). `live.max_structures_per_day` (default 1) caps new
+  ICs a session; a one-tick lock keeps a slow tick from overlapping the next.
+- **The orphan sweep is suite-wide.** flies, bwb and MEIC trade SPX in one account, so each loop
+  publishes its ledger's order ids (`core.execution.publish_known_orders`) and counts the others' as
+  known; an order none of them records blocks new entries, and a sweep that cannot look does too.
 - **Every live submit goes through `cherrypick.core.execution.Broker` (`make_broker`)**, which re-checks
   `readiness` on every submit and applies the deploy governor. `adjust_order` goes through
   `cherrypick.core.broker.replace_order` (same preflight and governor as `execute_trade`); a core test
@@ -202,6 +211,8 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
 |---|---|---|
 | `python -m cherrypick.meic.tt get_connection_status` | Verify OAuth session and account access | No |
 | `python -m cherrypick.meic.tt get_market_overview --symbols XSP` | IV rank, underlying price, market summary | No |
+| `python -m cherrypick.meic.tt get_transactions --underlyings GLD --since 2026-01-01` | Trade history per underlying, GET only -- the order chains the daily position evaluation (packages/manage) judges | No |
+| `python -m cherrypick.meic.fee_reconcile [--date D] [--symbol S] [--apply]` | Settled LIVE rows' fees against the broker's: trade lines by the row's own order ids, settlement lines per contract on the sides `ic_spread_legs` records `expired`. Dry-run reports; `--apply` writes `fees`/`settlement_fees` and keeps the model once in `fee_reconciliations`. The gross is reported, never written (it is split per side in `ic_spread_legs`). The supervisor's `meic-fee-reconcile` job runs it with `--apply` daily, armed or not | No |
 | `python -m cherrypick.meic.tt get_quote --symbol XSP` | Last trade price (stream cache → DXLink fallback) | No |
 | `python -m cherrypick.meic.tt get_vix1d` | Live VIX1D via direct DXLink fetch — feeds the `vix1d_ratio` trigger (Step 4) | No |
 | `python -m cherrypick.meic.tt get_calendar [--year N]` | Shared market calendar from `cherrypick.core.calendar`: `nyse_holidays`, `fomc_dates` (+ `fomc_year_known`), `quarterly_expiry_dates`, `triple_witching_dates`. No broker. | No |
@@ -271,15 +282,24 @@ era (`ic_trades.era`, from `analytics.CURRENT_ERA` via `cmd_save_trade`), journa
 `measurement_breaks`. The closed 2026-08 forward test is recorded in
 [docs/paper-experiments.md](docs/paper-experiments.md) and [docs/history.md](docs/history.md).
 
-- **`live-shadow`** is an EMPTY profile: it merges to exactly the dict `live_loop.run_once` trades
-  (`paper._merged_params(config, {})`) and keeps doing so as `config.json` changes;
-  `test_risk_profiles.py` pins it override-free and equal to the live merge. Live's top level differs
+- **`live-shadow`** carries no overrides, only `follows_live: true`: it resolves to exactly the dict
+  `live_loop.run_once` trades (`paper.live_params`) and keeps doing so as the config changes;
+  `test_risk_profiles.py` pins it override-free and equal to the live params. Live's top level differs
   from control on sixteen settings, so control's result describes a configuration live does not run.
-  Live stays disabled; enabling it, and what it trades, is a decision this arm's rows inform. (A
-  `live.profile` seam like flies' `live.arm` was considered and deferred until then.) **Verdict at 10
-  sessions: live as configured almost never trades** (1 fill session of 10). From 2026-10-19 four
-  `live-minus-*` arms each relax ONE of the gates that refused, to name the one keeping it dark
-  (docs/history.md, 2026-10-12).
+  Live stays disabled; enabling it, and what it trades, is a decision this arm's rows inform. **Verdict
+  at 10 sessions: live as configured almost never trades** (1 fill session of 10). From 2026-10-15 four
+  `live-minus-*` arms (also `follows_live`) each relax ONE of the gates that refused, to name the one
+  keeping it dark (docs/history.md, 2026-10-12). From 2026-10-16 `live-minus-otmfloor` is retired
+  (live dropped its OTM floors) and `live-plus-otmfloor` puts them back on live-shadow instead.
+- **The live block (2026-10-14), flies' `live.arm` seam.** `live.arm` names the registry arm live
+  trades (unset: the top level, as before); `live.max_open_bp_dollars`, `wing_widths_by_symbol`,
+  `entry_window_start` and `entry_window_end` apply to live alone and only narrow the arm (later start,
+  earlier end, smaller cap; widths replace). **Live-only sizing belongs there, never at the top level**:
+  every paper arm that leaves a top-level key unset inherits it, `control` included -- which is how a
+  $500 live cap would have capped the sampling substrate. Both loops warn while a live-only key sits at
+  the top level off its shipped default, or while the block shapes live and no enabled arm follows it;
+  `python -m cherrypick.meic.live_migrate` moves such keys (dry run by default, `--apply` backs up).
+  `readiness` refuses a `live.arm` that is missing or itself follows live.
 - **`bp-5k` / `bp-10k` / `bp-25k`** — control's gates and hold-to-expiry exits under live-account limits:
   `max_open_bp_dollars` (open ICs' (width − credit) × 100 plus the candidate's must fit, checked per
   candidate so a too-wide candidate falls to a narrower one — `paper.ic_buying_power`),
@@ -454,6 +474,15 @@ side, own status/exit/P&L), `daily_summary` (key `summary_date`), `loop_log` (ap
   `positions_today` and `data_reason`, `settlement_check` is enabled for meic in the orchestrator, and
   `tests/test_paper_loop_status.py` pins those field names — a check that cannot fire is worse than
   none.
+- **A session left open past the close is settled at the official close, and only that.**
+  `paper_loop.settle_overdue` runs from the tick's outside-window branch (and `--settle-overdue` by
+  hand): each cash-settled (session, symbol) still open — a past day at once, today's from 20 minutes
+  after settlement — settles through `paper.process_symbol` at one print from
+  `core.settlement.OFFICIAL_SOURCES` (a past day by date, today's via `tt.py get_official_close`),
+  clock pinned to the settlement instant, no entries evaluated, then the daily_summary roll-up.
+  No official print, a physically settled symbol, an event force-close day, or a session already
+  partly settled at another print: left open and logged, never a guess (2026-10-13: an outage across
+  the close left 656 positions open).
 - **`analytics.settlement_audit` (`run.py settlement-audit`) is re-runnable** and reproduces each
   resolved fill from the written convention with its own `_side_settle_value`, **deliberately
   duplicated, not imported** — an audit that imports what it audits only confirms the function equals

@@ -70,6 +70,9 @@ CATCHUP_MINUTES = {
     # that already opened. Late enough to still fire after a 09:00 wake, dead by mid-morning.
     "morning-factpack": 90,
     "morning-narrative": 90,
+    # The daily position evaluation judges the session's marks; caught up any time before the close it
+    # still describes today's positions, after the close it would judge stale ones.
+    "manage-eval": 5 * 60,
     # The market files: the evening fetch is good until the pack builds at 08:30, and the pre-pack
     # retry is worth nothing after it.
     # The end-of-day landing reads the local Dolt clones; a late one is the same landing, and the
@@ -194,6 +197,7 @@ NOTIFIES_OWN_FAILURE = frozenset(
         "quikoptions-browser-check",
         "review-provisional",  # "Suite review (...) failed"
         "review-final",
+        "manage-eval",  # "Position evaluation failed"
         "reconcile",  # its scheduled run pushes every non-FLAT verdict; the exit code is the verdict
     }
 )
@@ -593,6 +597,47 @@ def arm_record_valid(arm: dict[str, Any] | None, live_cfg: dict[str, Any], now: 
     return True, f"armed for {today}"
 
 
+def _companion_job(
+    module: str, name: str, comp: Any, *, pythonw: str, cwd: str, armed: bool, why: str
+) -> JobSpec:
+    """A resident job for one companion an arm record names (`cherrypick.core.live.write_arm_record`).
+
+    The record is a state file, so its command is held to the module's own package: `-m
+    cherrypick.<module>.<name>` and nothing else. Anything else raises, which `derive_jobs` turns
+    into a derivation error for this one job -- it never runs. Windowed from midnight to `until` (the
+    module's disarm time): the companion exits 0 there by itself, and a windowed resident's clean exit
+    is taken as session complete rather than respawned."""
+    if not isinstance(comp, dict):
+        raise ValueError("companion entry is not an object")
+    argv = comp.get("argv")
+    if (
+        not isinstance(argv, list)
+        or len(argv) < 2
+        or not all(isinstance(a, str) for a in argv)
+        or argv[0] != "-m"
+        or not argv[1].startswith(f"cherrypick.{module}.")
+    ):
+        raise ValueError(f"companion argv must be ['-m', 'cherrypick.{module}.<module>', ...], got {argv!r}")
+    until = str(comp.get("until") or "17:00")
+    _hhmm(until)
+    silence = int(comp.get("silence_seconds") or 120)
+    heartbeat = comp.get("heartbeat")
+    return JobSpec(
+        id=f"{module}-{name}",
+        argv=(pythonw, *argv),
+        kind=KIND_RESIDENT,
+        cwd=cwd,
+        interval_seconds=silence,
+        window_start="00:00",
+        window_end=until,
+        silence_file=str(heartbeat) if heartbeat else None,
+        silence_seconds=silence if heartbeat else 0,
+        enabled=armed,
+        enabled_reason=why,
+        tags=("live",),
+    )
+
+
 def derive_jobs(
     cfg: dict[str, Any],
     *,
@@ -889,6 +934,16 @@ def derive_jobs(
                     tags=("live",),
                 ),
             )
+            # Companions the arm record names (flies' order-alert daemon): one resident job each,
+            # up while the arm is valid and until the companion's own `until`, so a reboot or crash
+            # restarts it instead of losing it for the day (2026-10-14).
+            for cname, comp in ((arm_records.get(name) or {}).get("companions") or {}).items():
+                add(
+                    f"{name}-{cname}",
+                    lambda name=name, cname=cname, comp=comp, armed=armed, why=why, root=root: _companion_job(
+                        name, cname, comp, pythonw=pythonw, cwd=root, armed=armed, why=why
+                    ),
+                )
 
         # The nightly regime-cuts artifact, for any module that declares it (2026-09-19). Driven off
         # the module's own paper block -- `regime_cuts_at` and `regime_cuts_argv` -- so a third
@@ -1180,6 +1235,20 @@ def derive_jobs(
             enabled_reason="" if em_on else "disabled in config (morning.earnings_moves)",
         ),
     )
+    mg = cfgmod.manage_settings(cfg)
+    add(
+        "manage-eval",
+        lambda: JobSpec(
+            id="manage-eval",
+            argv=_run_py(pythonw, launcher, "manage"),
+            kind=KIND_DAILY,
+            at_et=mg["at"],
+            catchup_minutes=CATCHUP_MINUTES["manage-eval"],
+            trading_days_only=True,
+            enabled=mg["enabled"],
+            enabled_reason="" if mg["enabled"] else "disabled in config (manage)",
+        ),
+    )
     add(
         "morning-factpack",
         lambda: JobSpec(
@@ -1329,6 +1398,36 @@ def derive_jobs(
             trading_days_only=True,
             enabled=bool(lp["enabled"]),
             enabled_reason="" if lp["enabled"] else "disabled in config (live_positions.enabled)",
+        ),
+    )
+    # LIVE fill alerts from the order-alert inboxes (2026-10-15, livefills.py): a few seconds after the
+    # broker reports a fill, instead of the trade notifier's minutes. Enabled only while some live
+    # module's arm record is valid -- the inboxes are written only by armed modules' daemons, so an
+    # unarmed day costs nothing.
+    lfa = cfg.get("live_fill_alerts") or {}
+    armed_now = [
+        name
+        for name, mcfg in cfgmod.enabled_modules(cfg).items()
+        if (mcfg.get("live") or {}).get("task_name")
+        and arm_record_valid(arm_records.get(name), mcfg.get("live") or {}, now)[0]
+    ]
+    lfa_on = bool(lfa.get("enabled", True)) and bool(armed_now)
+    add(
+        "live-fill-alerts",
+        lambda: JobSpec(
+            id="live-fill-alerts",
+            argv=_run_py(pythonw, launcher, "live-fill-alerts"),
+            kind=KIND_INTERVAL,
+            interval_seconds=int(lfa.get("interval_seconds", 15)),
+            enabled=lfa_on,
+            enabled_reason=""
+            if lfa_on
+            else (
+                "disabled in config (live_fill_alerts.enabled)"
+                if not lfa.get("enabled", True)
+                else "no live module armed"
+            ),
+            tags=("live",),
         ),
     )
     los = cfg.get("live_settle_overdue") or {}

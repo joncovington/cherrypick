@@ -908,6 +908,68 @@ def _run_review(cfg, *, final: bool) -> None:
     _emit(rec)
 
 
+def _run_manage(cfg) -> None:
+    """Invoked by the daily manage-eval job (see cfgmod.manage_settings), or by hand.
+
+    Takes the broker snapshot here (orchestrator/managesnap.py: two read-only broker calls) and hands
+    it to packages/manage, which judges it against the configured ruleset and writes the evaluation
+    into its own home for the console. The evaluation is advice: nothing on this path places, closes
+    or sizes an order, so a failed pass costs a missing page and is a WARNING.
+    """
+    from cherrypick.core.jsonio import write_json_atomic
+
+    from cherrypick.orchestrator import managesnap
+
+    hb_path = cfgmod.state_file("manage.last.json")
+    log_path = _module_log("manage")
+    settings = cfgmod.manage_settings(cfg)
+    result: dict = {}
+    try:
+        snapshot = managesnap.build(cfg)
+        snap_path = cfgmod.state_file("manage.snapshot.json")
+        write_json_atomic(snap_path, snapshot)
+        if not (snapshot.get("positions") or {}).get("ok"):
+            raise RuntimeError(
+                (snapshot.get("positions") or {}).get("error") or "broker positions unavailable"
+            )
+        r = subprocess.run(
+            [cfgmod.python_exe(), "-m", "cherrypick.manage", "evaluate", "--snapshot", str(snap_path)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        try:
+            result = json.loads(r.stdout or "{}")
+        except json.JSONDecodeError:
+            result = {"raw": (r.stdout or "")[:2000]}
+        ok = r.returncode == 0 and result.get("ok", True) is not False
+        error = None if ok else (result.get("error") or (r.stderr or "")[:500])
+        if snapshot.get("metrics_error"):
+            result["metrics_error"] = snapshot["metrics_error"]
+    except Exception as exc:
+        ok, error = False, f"{type(exc).__name__}: {exc}"
+
+    counts = (result or {}).get("counts") or {}
+    rec = {"ok": ok, "error": error, "session": (result or {}).get("session"), "counts": counts}
+    hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    _append_log(log_path, {**rec, "result": result})
+
+    notifier = Notifier(cfg.get("notify"))
+    if not ok:
+        notifier.notify(
+            "WARNING", "manage", "Position evaluation failed", f"{error or 'see logs/manage.log'}"
+        )
+    elif settings["notify"]:
+        acting = {a: n for a, n in counts.items() if a not in ("HOLD", "SETTLES")}
+        if acting:
+            summary = ", ".join(f"{n} {a.lower().replace('_', ' ')}" for a, n in sorted(acting.items()))
+            notifier.notify(
+                "INFO", "manage", "Position evaluation", f"{summary}; see the console's Live page"
+            )
+    _emit(rec)
+
+
 def _run_morning(cfg) -> None:
     """Invoked by the daily morning-factpack job (see cfgmod.morning_settings). Runs
     packages/overview, a pure stream-cache + GEX-history consumer that writes only into its own
@@ -1528,6 +1590,13 @@ def cmd_settle_overdue_live(cfg) -> None:
     _emit(livesettle.run(cfg))
 
 
+def cmd_live_fill_alerts(cfg) -> None:
+    """A LIVE fill alert within seconds, from the order-alert inboxes (orchestrator/livefills.py)."""
+    from cherrypick.orchestrator import livefills
+
+    _emit(livefills.run(cfg))
+
+
 def cmd_notify_status(cfg, force: bool = False, close: bool = False) -> None:
     _emit(status_digest.run(cfg, force=force, close=close))
 
@@ -1857,10 +1926,12 @@ def build_parser() -> argparse.ArgumentParser:
             "run-earnings-symbol-watch",
             "review",
             "morning",
+            "manage",
             "restart-console",
             "power-watch",
             "live-positions",
             "settle-overdue-live",
+            "live-fill-alerts",
             "service",
             "ps",
             "restart",
@@ -2140,7 +2211,14 @@ def main() -> None:
         except (AttributeError, OSError):
             pass
 
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args, extra = parser.parse_known_args()
+    # WinSW 2.x runs its stop helper as `<stoparguments> + " " + <arguments>`, so `supervise --stop`
+    # arrives with a second `"run.py" supervise` behind it. Refusing that exited 2 before the stop
+    # file was written, and WinSW then waits on the supervisor with no timeout -- every service stop
+    # hung in StopPending until 2026-10-14. Only the stop request tolerates trailing arguments.
+    if extra and not (args.command == "supervise" and (args.stop or args.restart)):
+        parser.error(f"unrecognized arguments: {' '.join(extra)}")
 
     # `init` scaffolds config.json, so it must run before the config pre-load (a fresh user has none).
     if args.command == "init":
@@ -2176,6 +2254,7 @@ def main() -> None:
         "live-positions": lambda: cmd_live_positions(cfg),
         "service": lambda: cmd_service(cfg, args.name),
         "settle-overdue-live": lambda: cmd_settle_overdue_live(cfg),
+        "live-fill-alerts": lambda: cmd_live_fill_alerts(cfg),
         "notify-send": lambda: cmd_notify_send(args),
         "sent": lambda: cmd_sent(args),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
@@ -2183,6 +2262,7 @@ def main() -> None:
         "run-earnings-symbol-watch": lambda: _run_earnings_symbol_watch(cfg),
         "review": lambda: _run_review(cfg, final="--final" in sys.argv),
         "morning": lambda: _run_morning(cfg),
+        "manage": lambda: _run_manage(cfg),
         "restart-console": lambda: cmd_restart_console(cfg),
         "ps": lambda: cmd_ps(cfg),
         "restart": lambda: cmd_restart(cfg, args.name, direct=args.direct, result=args.result),

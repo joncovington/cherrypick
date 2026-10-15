@@ -7,6 +7,7 @@ Usage:
   python src/tt.py list_accounts
   python src/tt.py get_market_overview --symbols XSP [XSP ...]
   python src/tt.py get_quote --symbol XSP
+  python src/tt.py get_official_close --symbol SPX   # today's official closing print, read-only
   python src/tt.py get_option_chain --symbol XSP [--expiration YYYY-MM-DD]
       [--include_greeks] [--include_quotes] [--strike_count N] [--around_price F]
   python src/tt.py get_strategies --symbol XSP [--target_dte N] [--wing_width N]
@@ -536,6 +537,49 @@ async def cmd_get_positions(args) -> dict:
         return _error(exc)
 
 
+TRANSACTION_FIELDS = (
+    "id",
+    "order_id",
+    "executed_at",
+    "transaction_type",
+    "transaction_sub_type",
+    "action",
+    "symbol",
+    "underlying_symbol",
+    "instrument_type",
+    "quantity",
+    "price",
+    "value",
+    "net_value",
+    "commission",
+    "clearing_fees",
+    "regulatory_fees",
+    "proprietary_index_option_fees",
+)
+
+
+async def cmd_get_transactions(args) -> dict:
+    """Trade history per underlying since a date -- GET only (`core.broker.transaction_history`).
+
+    The read the position evaluation needs to see an order chain: the orders that opened, rolled and
+    adjusted a position, which the positions endpoint flattens into one average open price per leg.
+    Rows carry only the fields that read uses; no account number is returned.
+    """
+    try:
+        account = await _get_account(getattr(args, "account_number", None))
+        session = get_session()
+        since = date.fromisoformat(args.since)
+        out: dict[str, list] = {}
+        for sym in args.underlyings:
+            rows = await _broker.transaction_history(
+                account, session, start_date=since, end_date=date.today(), underlying_symbol=sym.upper()
+            )
+            out[sym.upper()] = [{k: r.get(k) for k in TRANSACTION_FIELDS} for r in rows]
+        return {"ok": True, "since": args.since, "transactions": out}
+    except Exception as exc:
+        return _error(exc)
+
+
 async def cmd_list_accounts(_args) -> dict:
     return await _broker_cli.account_list(lambda: get_session())
 
@@ -596,6 +640,34 @@ async def cmd_get_vix1d(args) -> dict:
         return result
     except Exception as exc:
         return _error(exc)
+
+
+async def cmd_get_official_close(args) -> dict:
+    """Today's official closing print for an index, read-only: `core.settlement.official_index_close`,
+    the source flies and bwb settle on (tastytrade's posted `close`, then Yahoo, then Barchart).
+
+    `official` says whether `source` is one of `core.settlement.OFFICIAL_SOURCES`; a provisional
+    intraday tick comes back `official: false` and the caller must not settle on it. Distinct from
+    `get_market_overview`, whose metrics carry no close after hours (2026-10-13). A session that
+    cannot be opened still tries the public sources: no credential is needed to read a close."""
+    from cherrypick.core import settlement as _settlement
+
+    symbol = args.symbol.strip().upper()
+    try:
+        session = get_session()
+    except Exception:  # noqa: BLE001 -- the public sources still answer without one
+        session = None
+    try:
+        price, source = await _settlement.official_index_close(session, symbol)
+    except Exception as exc:
+        return _error(exc)
+    return {
+        "ok": True,
+        "symbol": symbol,
+        "price": price,
+        "source": source,
+        "official": price is not None and _settlement.is_official_source(source),
+    }
 
 
 async def cmd_get_quote(args) -> dict:
@@ -1628,6 +1700,11 @@ def main():
     p_pos = sub.add_parser("get_positions")
     p_pos.add_argument("--account_number", default=None)
 
+    p_tx = sub.add_parser("get_transactions")
+    p_tx.add_argument("--underlyings", nargs="+", required=True)
+    p_tx.add_argument("--since", required=True, help="YYYY-MM-DD")
+    p_tx.add_argument("--account_number", default=None)
+
     p_mo = sub.add_parser("get_market_overview")
     p_mo.add_argument("--symbols", nargs="+", required=True)
     p_mo.add_argument("--quotes_timeout", type=float, default=4.0)
@@ -1714,6 +1791,9 @@ def main():
     p_ir = sub.add_parser("get_intraday_range")
     p_ir.add_argument("--symbol", required=True, help="Trading symbol (e.g. SPX)")
 
+    p_oc_close = sub.add_parser("get_official_close")
+    p_oc_close.add_argument("--symbol", required=True, help="Index symbol (e.g. SPX)")
+
     p_gqs = sub.add_parser("get_quotes")
     p_gqs.add_argument(
         "--symbols", nargs="+", required=True, help="Streamer symbols to quote (no cache write)"
@@ -1749,8 +1829,13 @@ def main():
     # between "daemon answered" and "daemon doesn't know this command" --
     # skip the shortcut entirely for commands the daemon was never meant to
     # own (VIX1D isn't a traded/managed symbol in its subscription window).
+    # get_official_close likewise: a settlement read is never answered by a cache.
     args_dict = {k: v for k, v in vars(args).items() if k != "command" and v is not None}
-    http_result = None if args.command == "get_vix1d" else _try_streamer_http(args.command, args_dict)
+    http_result = (
+        None
+        if args.command in ("get_vix1d", "get_official_close")
+        else _try_streamer_http(args.command, args_dict)
+    )
     if http_result is not None:
         _out(http_result)
         return
@@ -1760,10 +1845,12 @@ def main():
         "list_accounts": cmd_list_accounts,
         "get_account_info": cmd_get_account_info,
         "get_positions": cmd_get_positions,
+        "get_transactions": cmd_get_transactions,
         "get_quotes": cmd_get_quotes,
         "get_market_overview": cmd_get_market_overview,
         "get_quote": cmd_get_quote,
         "get_vix1d": cmd_get_vix1d,
+        "get_official_close": cmd_get_official_close,
         "get_option_chain": cmd_get_option_chain,
         "get_strategies": cmd_get_strategies,
         "get_gex": cmd_get_gex,

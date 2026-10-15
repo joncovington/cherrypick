@@ -222,11 +222,17 @@ def test_live_ledger_is_a_separate_file():
 
 
 class FakeBroker:
-    def __init__(self, statuses=None):
+    def __init__(self, statuses=None, working=None):
         self.placed = []
         self.polled = []
         self.cancelled = []
         self._statuses = dict(statuses or {})
+        self.working = list(working or [])
+
+    def working_orders(self):
+        # The orphan sweep's read (2026-10-14). None of the loop's own orders need listing: the
+        # sweep only reports ids the ledger does not know.
+        return list(self.working)
 
     def place(self, spec, live):
         # tastytrade identifies an option leg by its OCC symbol and rejects anything else. Raised,
@@ -344,8 +350,9 @@ def test_live_entry_records_the_real_order_id(tmp_path):
 def test_live_ignores_a_paper_profile_overlap_scope_and_still_refuses_overlap(tmp_path):
     """A paper stream can set overlap_scope: 'none' (config.risk.json, profile-level) to sample
     every tick independently -- live must never inherit that. live_loop.run_once builds its
-    params as paper._merged_params(config, {}) — an EMPTY profile overlay — so no
-    config.risk.json key can reach it regardless of what any paper profile declares; only
+    params as paper.live_params(config); with no `live.arm` that is an EMPTY profile overlay, so no
+    registry key can reach it regardless of what any paper profile declares (only the arm a person
+    names in `live.arm` can, test_live_block.py); only
     config.json's own (unset) overlap_scope applies, which defaults to the strictest 'all'.
     This proves the isolation both directions: paper accepts the overlap under 'none', live
     refuses the identical candidate through the real run_once path."""
@@ -360,11 +367,12 @@ def test_live_ignores_a_paper_profile_overlap_scope_and_still_refuses_overlap(tm
     )
     assert entered is True, reason
 
-    # Live side: config.risk.json is never consulted (params = _merged_params(config, {})), so
+    # Live side: with no live.arm the registry is never consulted (paper.live_params(config)), so
     # only config.json's own top-level overlap_scope ("shorts", the independent-sampling
     # default) applies -- still refuses an exact short-pair repeat, unlike paper's "none" stream.
     broker = FakeBroker()
-    summary = live_loop.run_once(_config(), snap, db_path, broker, live=True, log=lambda *_: None)
+    cfg = _config(max_structures_per_day=99)  # the overlap gate under test, not the daily cap
+    summary = live_loop.run_once(cfg, snap, db_path, broker, live=True, log=lambda *_: None)
     assert summary["entry"]["entry"] == "skipped"
     assert summary["entry"]["reason"] == "short_pair_occupied"
     assert broker.placed == []  # nothing submitted
@@ -455,6 +463,45 @@ def test_a_confirmed_entry_opens_at_the_actual_credit(tmp_path):
     # No per-leg fills on this status: the sides split the fill in the modelled ratio and add up.
     assert row["side_credit_source"] == "proportional"
     assert row["put_credit"] + row["call_credit"] == pytest.approx(1.37)
+
+
+def _drop_column(db_path, column):
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(f"ALTER TABLE ic_trades DROP COLUMN {column}")
+    conn.commit()
+    conn.close()
+
+
+def test_a_fill_the_ledger_refuses_is_not_counted_and_stays_pending(tmp_path):
+    """2026-10-15: a live ledger missing `side_credit_source` refused every confirm, and the tick
+    counted it anyway. Shown to fail on the pre-change loop (entries_confirmed == 1, no CRITICAL)."""
+    db_path, broker = _place_one(tmp_path, {"ORD1": {"status": "Filled", "price": "-1.37", "filled": True}})
+    _drop_column(db_path, "side_credit_source")
+    lines = []
+    summary = live_loop.run_once(_config(), _entry_snapshot(), db_path, broker, live=True, log=lines.append)
+    assert summary["entries_confirmed"] == 0 and summary["entries_unrecorded"] == 1
+    assert live_loop._trade_row("LIVE-XSP-ORD1", db_path)["status"] == "pending"
+    assert any(line.startswith("CRITICAL") and "side_credit_source" in line for line in lines)
+
+
+def test_the_tick_brings_an_old_live_ledger_up_to_date_and_the_fill_lands(tmp_path, monkeypatch):
+    """The live loop never ran db.py's migrations (only the paper loop did). Shown to fail without
+    `_ensure_live_schema`: the column stays missing and the confirm is refused again."""
+    db_path, broker = _place_one(tmp_path, {"ORD1": {"status": "Filled", "price": "-1.37", "filled": True}})
+    for column in ("side_credit_source", "put_exit_fill_source", "call_exit_fill_source"):
+        _drop_column(db_path, column)
+    notes = []
+    monkeypatch.setattr(live_loop, "_quiet", notes.append)
+    live_loop._ensure_live_schema(db_path)
+    assert notes == []
+    summary = live_loop.run_once(
+        _config(), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None
+    )
+    assert summary["entries_confirmed"] == 1
+    row = live_loop._trade_row("LIVE-XSP-ORD1", db_path)
+    assert row["status"] == "open" and row["side_credit_source"] == "proportional"
 
 
 # --------------------------------------------------------------------------- per-side credits (2026-10-12)
@@ -579,7 +626,7 @@ def test_a_rejected_entry_is_cancelled_and_frees_its_slot(tmp_path):
 
 
 def test_a_pending_entry_holds_its_slot_but_is_not_managed(tmp_path):
-    cfg = _config()
+    cfg = _config(max_structures_per_day=99)  # the concurrency gate under test, not the daily cap
     cfg["max_concurrent_ics"] = 1
     db_path, broker = _place_one(tmp_path)
     summary = live_loop.run_once(cfg, _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None)
@@ -703,7 +750,15 @@ def test_settlement_cancels_a_working_close_and_falls_through_to_expiry(tmp_path
     snap["underlying_price"] = 590.0  # between the strikes: both sides expire worthless
     snap["leg_quotes"] = {}
     broker = FakeBroker()  # W1 still Live at the broker
-    summary = live_loop.run_once(_config(symbol="XSP"), snap, db_path, broker, live=True, log=lambda *_: None)
+    summary = live_loop.run_once(
+        _config(symbol="XSP"),
+        snap,
+        db_path,
+        broker,
+        live=True,
+        log=lambda *_: None,
+        settle_price=lambda _s: (590.0, "tastytrade_close"),  # a posted close (2026-10-15 rule)
+    )
     assert summary["expired"] == 1
     assert broker.cancelled == ["W1"], "the working close is cancelled, not chased into the bell"
     done = live_loop._trade_row("OPEN1", db_path)

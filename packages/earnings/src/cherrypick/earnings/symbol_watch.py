@@ -121,6 +121,7 @@ _TIER_STRATEGIES = (
     "atm_calendar",
     "directional_credit_spread",
     "broken_wing_butterfly",
+    "expected_move_butterfly",
 )
 
 # Criteria whose 06:30 reading cannot decide the 15:35 verdict.

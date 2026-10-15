@@ -146,6 +146,44 @@ via `analytics.fill_realism` and `analytics.shadow_completion`.
    - **Changing it** is a live, measurement-affecting change. Rule 6 permits a lower floor only
      against that measured alternative.
 
-Entries are recorded the same way. There is no paper entry shadow yet: paper enters at its modelled
-credit on the tick, and what a live entry needs (fill rate per submission, time to fill, the mid gap
-at the fill) has to be measured before a rule for it can be written down.
+Entries are recorded the same way.
+
+## The entry shadow (2026-10-14)
+
+**What live entries do.** Live asks the plan's credit floored to the tick (mid less 0.05 on SPX).
+Of the first 50 entry orders recorded at placement (10-05..10-14), 43 filled, most within 0–4 s and 9
+of them better than the limit. 6 of the 7 misses were cancelled and re-placed on the next tick, which
+usually filled a minute later at a new centre or side. One (10-14 11:12) was lost.
+
+**The misses are not a random 14%.** On the gex spot trail, spot moved toward the completing side in
+6 of the 7 (+0.76 points at 20 s, +1.00 at 60 s), against about half the fills (−0.07 / −0.02). A
+spread that starts working cheapens under the limit before the order fills, so live misses the
+entries that were going its way. A random haircut on paper would take out average trades. This one
+takes out good ones.
+
+**Do not measure it from the order path.** `fly_order_path` stops at the fill, so a filled order's
+later moves were never observed there. The first read of this effect compared spread moves from the
+path and found −0.24 against +0.01; that was survivorship. The trail covers every order alike.
+
+**What paper records.** Every legged entry stamps `shadow_entry_limit` (what `live_orders.entry_spec`
+would ask) and `shadow_entry_path`: one look per tick for the first `ENTRY_SHADOW_WINDOW_SECONDS`
+(60) after it, at spot's move toward completion and the entry spread's gaps to that limit
+(`fill_model.entry_observation`). Tag-don't-gate: paper still enters at its modelled credit on the
+tick.
+
+**Reading it** (`run.py fill-model`, the `entry` block). `fit` scores the rule "live misses an
+entry whose market moved `value` its way within `window`" (`fill_model.entry_fills`) against live's
+entry orders on the spot trail (`fill_facts.entry_spot_paths`), beside `always_fill`, the agreement of
+assuming every entry fills. `shadow` applies the rule to paper's legged rows per arm and splits their
+net into would-fill and would-miss.
+
+**No rule clears the bar yet.** Over the first 50 orders, the best window and threshold (15 s, 1.5
+points) agreed 88% against 86% for always-fill, catching 1 of the 7 misses. Spot moves the size the
+misses saw are as common among fills, so the group difference does not pick out the order. Read the
+shadow only once a rule beats `always_fill` by a margin that survives more misses (about 20–30).
+Paper's 15 s look cannot see the seconds that decide a live entry, so the price basis (`mid_gap` on
+paper; the quote history for live orders from 2026-10-13) is the next thing to fit.
+
+**What would change paper.** As for completions: fit, shadow, then switch only at a declared
+boundary, journaled as a break. A missed entry is re-placed on the next tick, so a paper rule must
+re-evaluate rather than drop the trade.

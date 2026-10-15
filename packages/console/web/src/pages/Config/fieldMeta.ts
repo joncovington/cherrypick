@@ -12,7 +12,7 @@ import type { ConfigTargetId, ConfigTargetModel } from "@console/shared";
  * Everything else stays where it already works — a text editor, with the config's own notes in view.
  */
 
-export type FieldSection = "arms" | "modules" | "timing" | "notify" | "dev";
+export type FieldSection = "arms" | "modules" | "timing" | "notify" | "rules" | "dev";
 export type FieldType = "boolean" | "number" | "string" | "time" | "stringList" | "enum";
 
 export interface FieldMeta {
@@ -61,6 +61,13 @@ export const SECTIONS: SectionMeta[] = [
     blurb: "Entry windows and loop pacing. A change lands on the next supervisor pass — no reinstall.",
   },
   { id: "notify", title: "Notifications & jobs", blurb: "Where alerts go, and how often the scheduled checks run." },
+  {
+    id: "rules",
+    title: "Position rules",
+    blurb:
+      "The daily position evaluation (Live → manage): when it runs, and the thresholds it judges the live " +
+      "account by. Advice only — it never places an order. A change applies at the next evaluation.",
+  },
   {
     id: "dev",
     title: "Dev knobs",
@@ -253,6 +260,159 @@ export const FIELDS: FieldMeta[] = [
     help: "Push each commit to the repository's remote. Use a PRIVATE remote: the files hold your strategy settings.",
   },
 
+  // --- position rules ----------------------------------------------------------------------
+  {
+    target: "orchestrator",
+    pointer: "/manage/enabled",
+    label: "Daily position evaluation",
+    help: "Reads the live account read-only each trading day. Re-run install after turning it on.",
+    type: "boolean",
+    section: "rules",
+  },
+  { target: "orchestrator", pointer: "/manage/at", label: "Evaluation time (ET)", type: "time", section: "rules" },
+  { target: "orchestrator", pointer: "/manage/notify", label: "Notify when action is needed", type: "boolean", section: "rules" },
+  {
+    target: "manage",
+    pointer: "/trade_grouping",
+    label: "Trade grouping",
+    help: "order_chain follows the broker's order chains (opening order and every roll) and uses their net cash as the basis; expiry_chain and underlying price the open legs only.",
+    type: "enum",
+    options: ["order_chain", "expiry_chain", "underlying"],
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/credit/take_profit/capture",
+    label: "Credit: take profit at share of credit",
+    type: "number",
+    min: 0.05,
+    max: 1,
+    step: 0.05,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/credit/stop/loss_multiple_of_credit",
+    label: "Credit: stop at loss × credit",
+    type: "number",
+    min: 0.25,
+    max: 5,
+    step: 0.25,
+    section: "rules",
+  },
+  { target: "manage", pointer: "/credit/time_exit/dte", label: "Credit: close at DTE", type: "number", min: 0, max: 60, section: "rules" },
+  {
+    target: "manage",
+    pointer: "/credit/close_before_earnings/enabled",
+    label: "Credit: close before earnings",
+    type: "boolean",
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/debit/stop/loss_fraction",
+    label: "Debit: stop at loss of debit",
+    type: "number",
+    min: 0.1,
+    max: 1,
+    step: 0.05,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/debit/take_profit/gain_fraction",
+    label: "Debit: take profit at gain on debit",
+    type: "number",
+    min: 0.1,
+    max: 5,
+    step: 0.05,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/legs/short_take_profit/capture",
+    label: "Short leg: buy back at share of premium",
+    type: "number",
+    min: 0.5,
+    max: 1,
+    step: 0.05,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/expiry/close_by_dte",
+    label: "Close physically-settled legs at DTE",
+    type: "number",
+    min: 0,
+    max: 14,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/risk/max_risk_pct",
+    label: "Per-trade risk budget (share of net liq)",
+    type: "number",
+    min: 0.005,
+    max: 0.2,
+    step: 0.005,
+    section: "rules",
+  },
+
+  {
+    target: "manage",
+    pointer: "/roll/naked_put/enabled",
+    label: "Naked short puts: roll out for a credit instead of closing",
+    help: "When a rule says to close a naked short put, offer a same-strike roll to the next monthly 4+ weeks out if it is modelled to take in a credit.",
+    type: "boolean",
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/roll/naked_put/min_credit",
+    label: "Naked put roll: minimum credit per share",
+    type: "number",
+    min: 0,
+    max: 5,
+    step: 0.05,
+    section: "rules",
+  },
+
+  {
+    target: "manage",
+    pointer: "/roll/diagonal_short/enabled",
+    label: "Diagonals: roll the short side out for a credit",
+    help: "At the short's 21-day exit or 80% captured, roll the shorts (and their wings) to the next monthly at the same strikes, if the trade is not stopped, the long outlives the new short, and the short stays beyond the long's breakeven.",
+    type: "boolean",
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/roll/diagonal_short/min_long_days",
+    label: "Diagonal roll: long must outlive the new short by (days)",
+    type: "number",
+    min: 0,
+    max: 365,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/directional/enabled",
+    label: "Judge near-even-money trades on their risk",
+    help: "Super bears and bulls and risk reversals opened for a premium under the share below of their max loss are judged on max gain and max loss, not a percentage of the premium.",
+    type: "boolean",
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/directional/max_premium_share",
+    label: "Near even money: premium under this share of max loss",
+    type: "number",
+    min: 0,
+    max: 1,
+    step: 0.05,
+    section: "rules",
+  },
+
   // --- dev knobs ---------------------------------------------------------------------------
   {
     target: "orchestrator",
@@ -379,4 +539,5 @@ export const TARGET_TITLES: Record<ConfigTargetId, string> = {
   earnings: "earnings",
   streamer: "streamer",
   "meic-risk": "meic risk profiles",
+  manage: "position rules",
 };

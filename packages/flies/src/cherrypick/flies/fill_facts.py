@@ -549,6 +549,50 @@ def trail_reader(spot_conn, symbol: str):
     return trail_path
 
 
+def entry_spot_paths(conn, trail_path, *, start: str | None = None, end: str | None = None) -> list[dict]:
+    """Every resolved LIVE entry order (recorded at placement, not backfilled) with its first
+    `fill_model.ENTRY_SHADOW_WINDOW_SECONDS` off the gex spot trail: {"order_id", "filled", "path"},
+    the path in `fill_model.entry_observation`'s shape with spot and move only. The trail, not the
+    order path, because the order path stops at the fill -- a filled order's later moves were never
+    observed there, and the rule `fill_model.score_entry_rule` fits needs them for every order alike.
+    The origin is the spot recorded at placement, else the trail's at that moment."""
+    clause, params = ["leg = ?", "source = 'live'", "outcome NOT IN ('working')"], [fill_model.ENTRY]
+    if start:
+        clause.append("trade_date >= ?")
+        params.append(start)
+    if end:
+        clause.append("trade_date <= ?")
+        params.append(end)
+    point = _point_trail(trail_path)
+    out = []
+    for o in conn.execute(
+        f"SELECT order_id, placed_at, side, spot_at_submit, outcome FROM fly_live_orders "
+        f"WHERE {' AND '.join(clause)} ORDER BY placed_at",
+        params,
+    ).fetchall():
+        o = dict(o)
+        if not o.get("placed_at") or o.get("outcome") is None:
+            continue
+        t0 = fill_model.parse_ts(o["placed_at"])
+        spot0 = o.get("spot_at_submit") or point(o["placed_at"])
+        if spot0 is None:
+            continue
+        end_iso = (t0 + timedelta(seconds=fill_model.ENTRY_SHADOW_WINDOW_SECONDS)).isoformat()
+        path = [
+            fill_model.entry_observation(
+                seconds=0, side=o["side"], spot0=spot0, spot=spot0, limit=None, prices=None
+            )
+        ]
+        for ts, spot in trail_path(o["placed_at"], end_iso):
+            seconds = (fill_model.parse_ts(ts) - t0).total_seconds()
+            obs = fill_model.entry_observation(
+                seconds=seconds, side=o["side"], spot0=spot0, spot=spot, limit=None, prices=None
+            )
+            path, _ = fill_model.extend_entry_path(path, obs)
+        out.append({"order_id": o["order_id"], "filled": o["outcome"] == "filled", "path": path})
+    return out
+
+
 def _point_trail(trail_path):
     """The last trail spot at or before a moment, within `MAX_SPOT_AGE_SECONDS`."""
 

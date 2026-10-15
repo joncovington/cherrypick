@@ -35,7 +35,7 @@ consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/ro
   assignment-exposed, so the paper result is an explicit upper bound. No live path yet.
 - **packages/curve** — VXX call-credit spreads gated by a daily VIX/VIX3M regime read; **paper-only,
   credential-free**. Books `control`, `noflip` (byte-identical to control until a flip fires),
-  `hook` (retired from 2026-10-19) and (from 2026-10-06) `near`, a 0.40-delta short, differ in entry gate, exit rule or short
+  `hook` (retired from 2026-10-15) and (from 2026-10-06) `near`, a 0.40-delta short, differ in entry gate, exit rule or short
   delta; $2-wide from 2026-10-06, its credit floor net of entry costs against max loss. The daily classification is recorded every session,
   traded or not. Early assignment and VXX reverse splits are measured, never modelled (an upper
   bound). `regime-history` is a signal-separation benchmark, never suite P&L. No live path.
@@ -70,6 +70,10 @@ consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/ro
 - **packages/review** — the cross-module end-of-day review: one versioned fact set per session, read
   via `cherrypick.core.ledgers` (the single home for per-schema net/risk rules), written only to its own
   store. No credentials, no network, no AI — the narrative is written outside by a scheduled agent.
+- **packages/manage** — the daily position-management evaluation of the REAL account: a pure function
+  of a broker snapshot (taken read-only by the orchestrator's `manage` verb) and a configurable ruleset,
+  giving each trade an action, the rule behind it and a confidence. **Advice only** — no order path,
+  no credentials, no network; read on the console's Live → manage tab. Off until `manage.enabled`.
 - **packages/advisor** — the deterministic half of the AI advisor: fact packs, validation of replies,
   and the paper A/B experiments. **It contains no AI** (the model is invoked by
   `scripts/advisor_checkpoint.py`). Read-only over every other package; its one output toward a loop is

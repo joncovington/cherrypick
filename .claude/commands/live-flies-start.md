@@ -32,14 +32,13 @@ confirmation, a current status readout, and a visible way to stop.
      python -c "
    from cherrypick.flies.cli import load_config
    from cherrypick.flies import live_loop, credentials as creds
-   import os
    cfg = load_config()
-   unmet = live_loop.readiness(cfg, halt_present=os.path.exists(live_loop.halt_flag_path()), designated=creds.designated_account())
+   unmet = live_loop.readiness(cfg, designated=creds.designated_account())
    print('unmet gates:', unmet or 'NONE -- readiness passes')
    "
      ```
-     If any gate other than the halt flag is unmet, **stop here** and report — there is nothing
-     to arm if every tick would refuse.
+     If any gate is unmet, **stop here** and report — there is nothing to arm if every tick
+     would refuse. (The halt flag is not a readiness gate; it blocks new entries only.)
    - **Halt flag**: if `--status` shows `halt_flag: true`, surface it PROMINENTLY — the watchdog
      backstop may have set it after a failed self-disarm, which is worth understanding before
      re-arming. Only a fresh YES may clear it (step 4).
@@ -59,7 +58,8 @@ confirmation, a current status readout, and a visible way to stop.
      an `alert_daemon` block. Report it, but treat it as INFORMATIONAL — the daemon only makes
      fills get *noticed* sooner; a dead or missing one costs latency and nothing else, and is
      never a reason to refuse to arm. If it reports `running: true` with a stale `heartbeat_at`,
-     say so (that's the silently-dead-websocket tell) — arming will restart it anyway.
+     say so (that's the silently-dead-websocket tell) — once armed, the supervisor restarts a
+     silent one on its own.
    - **The per-day contract**: state that this arms TODAY only — the loop self-disarms at the
      configured `disarm_time` and tomorrow needs a fresh `/live-flies-start`.
 
@@ -81,20 +81,22 @@ confirmation, a current status readout, and a visible way to stop.
 4. **Arm.** Once YES is confirmed:
    - If the halt flag exists, delete it now (`~/.cherrypick/state/halt-live.flag`) — the YES
      covers this explicitly; say that it was cleared and why it existed if known.
+   - **Only if `live.use_order_alert_daemon` is true**, first stop any daemon left running by
+     hand, so the supervisor's own start is not refused as "already running":
+     ```bash
+     python -m cherrypick.flies.alert_daemon --stop
+     ```
    - ```bash
      python -m cherrypick.flies.live_loop --install-task
      ```
      This writes today's arm record (the supervisor enables its `flies-live` job within one
      pass) and fires the first tick immediately. With no supervisor running it refuses
      (`ok: false`, "no supervisor running"): start it with `run.py ensure-supervisor`, then retry.
-   - **Only if `live.use_order_alert_daemon` is true**, also start the order-alert daemon,
-     detached and headless, after first stopping any stale one:
-     ```bash
-     python -m cherrypick.flies.alert_daemon --stop
-     pythonw -m cherrypick.flies.alert_daemon
-     ```
-     It self-exits at `disarm_time`. If it fails to start, say so and CONTINUE — the loop
-     confirms fills without it (just later); a failed daemon never blocks arming.
+     With the alert daemon on, the record names it (`companions: ["flies-alert-daemon"]` in the
+     JSON) and the supervisor starts it as a resident job, restarting it on death or a silent
+     heartbeat until `disarm_time` — a reboot mid-day brings it back. Never start it by hand
+     here. If it fails to come up, say so and CONTINUE — the loop confirms fills without it
+     (just later); a failed daemon never blocks arming.
 
    **If the JSON carries a `warning`, report it first and prominently.** Today it means a
    quarter-end session: arming succeeded, but the loop places no new entries all day (fills,
@@ -122,7 +124,8 @@ confirmation, a current status readout, and a visible way to stop.
 
 5. **Verify + report**: confirm `--status` now shows `armed_for` = today, and (supervisor-driven)
    that `python packages/orchestrator/run.py status` shows the `flies-live` job enabled with a
-   future `next_run`. Then report: the driver (supervisor job or legacy task), the armed-for
+   future `next_run` (and, with the alert daemon on, `flies-alert-daemon` enabled and its
+   `resident_state` running within a pass or two). Then report: the driver (supervisor job or legacy task), the armed-for
    date, the self-disarm time, the log to watch
    (`tail -f ~/.cherrypick/logs/flies/flies_live.log`), the console's flies page with its
    mode set to live (http://127.0.0.1:5070/flies), and how to stop early: `/live-flies-start --stop`,
@@ -144,7 +147,8 @@ confirmation, a current status readout, and a visible way to stop.
    This deletes the arm record (the supervisor's `flies-live` job disables within one pass) and
    removes the legacy scheduled task if one exists.
    Then, if `live.use_order_alert_daemon` is true, also stop the alert daemon (it holds an
-   authenticated broker session open; disarming should not leave one running):
+   authenticated broker session open; disarming should not leave one running). The supervisor
+   drops its job with the record but never kills a resident, so this stop is still needed:
    ```bash
    python -m cherrypick.flies.alert_daemon --stop
    ```

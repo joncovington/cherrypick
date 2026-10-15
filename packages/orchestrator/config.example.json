@@ -18,6 +18,23 @@
       ],
       "_live_db_note": "Phase-5 seam: the module's LIVE-trades ledger, read ONLY by the explicitly live-tagged surfaces (`cherrypick report --live`). Deliberately a separate key from paper.paper_db — calibrate and every promotion reading go through the paper path and can never see this file. Same resolution rules as paper_db (absolute / ~-expanded / module-root relative).",
       "live_db": "~/.cherrypick/data/meic/meic_trades.db",
+      "_live_note": "2026-10-14, the flies/bwb posture: the supervisor's meic-live job runs one `cherrypick.meic.live_loop --once --live` tick a minute ONLY while today's arm record (written by /live-meic-start after a literal YES) is valid; the tick self-disarms past the module's own live.disarm_time and the watchdog backstops at disarm_time + grace. The module's enable_live_trading stays its master switch.",
+      "live": {
+        "task_name": "cherrypick-meic-live-loop",
+        "status_argv": [
+          "-m",
+          "cherrypick.meic.live_loop",
+          "--status"
+        ],
+        "log": "meic_live.log",
+        "freshness_minutes": 5,
+        "tick_interval_seconds": 60,
+        "_notify_trades_note": "LIVE fills, stops and exits from meic_trades.db through the meic_ic adapter, relabelled LIVE with a desktop toast (trade_notifier._LiveNotifier). A pending entry is announced once the broker confirms it. Known limit: a later IC recorded while an earlier one is still pending moves the entry watermark past it, so that earlier fill goes unannounced -- unreachable at max_structures_per_day 1.",
+        "notify_trades": true,
+        "disarm_time": "17:00",
+        "disarm_grace_minutes": 30,
+        "settlement_grace_minutes": 30
+      },
       "paper": {
         "kind": "self_healing",
         "task_name": "cherrypick-meic-paper-loop",
@@ -45,6 +62,13 @@
           "-m",
           "cherrypick.meic.regime_cuts",
           "--write"
+        ],
+        "_fee_reconcile_note": "Broker fee reconciliation of settled LIVE ICs (2026-10-15), the job flies and bwb run, and unconditional on arming for the same reason: a session traded on a day that was never followed by an armed one must still be confirmed. At fee_reconcile_at (ET, trading days) the supervisor runs fee_reconcile_argv, which matches each settled live row's broker order ids and settlement lines and, with --apply, replaces the ledger's modeled fees and settlement_fees with the broker's (the modeled values kept once in fee_reconciliations). The gross is reported, never rewritten. Without --apply it only reports. No --symbol: it reconciles whatever symbol each pending row traded, since the live loop's pinned symbol can change. 09:25 is after the broker posts the prior session's settlement lines and clear of flies (09:15) and bwb (09:20). Needs the module's broker credentials (GET-only). Remove both keys to drop the job.",
+        "fee_reconcile_at": "09:25",
+        "fee_reconcile_argv": [
+          "-m",
+          "cherrypick.meic.fee_reconcile",
+          "--apply"
         ],
         "_paper_db_note": "Path to the module's paper-trades SQLite DB — MUST point at the file the module actually WRITES (a mismatch silently blinds the orchestrator's report/reconcile/dashboard and the watchdog freshness check). Relative resolves against the module checkout; a leading '~' or env var expands (use e.g. '~/.cherrypick/data/meic/paper_trades.db' when the module keeps its data in the managed home); an absolute path is used as-is.",
         "paper_db": "~/.cherrypick/data/meic/paper_trades.db",
@@ -470,7 +494,9 @@
       "--stop"
     ],
     "auto_restart": true,
-    "stale_restart_seconds": 240
+    "stale_restart_seconds": 240,
+    "_session_start_note": "OPTIONAL, default 09:15 ET. When the watchdog starts the streamer on a trading day -- this check alone; every other session-gated check stays at 09:15. The watchdog ticks every interval_minutes, so the start lands up to one tick later. Not before the open is useful: equity options do not trade and the index level is static until 09:30, so the silence restart would loop.",
+    "session_start": "09:15"
   },
   "services": [
     {
@@ -600,6 +626,13 @@
     "narrative": false,
     "narrative_at": "10:45",
     "file_issues": false
+  },
+  "manage_header": "x",
+  "manage": {
+    "_comment": "Daily position-management evaluation of the REAL broker account (packages/manage, `run.py manage`). At 'at' (ET) on trading days the orchestrator reads the account read-only - priced positions and balances (the `positions` verb) plus each underlying's last price, earnings and ex-dividend dates - and packages/manage judges every trade against its ruleset (credit: take profit at 50%, stop at a loss equal to the credit, 21 DTE; debit: stop at -50%, take profit at +75%; never hold a physically-settled option into expiry; never roll a loser). The evaluation lands in data/manage/eval-<day>.json and on the console's Live page. Advice only: nothing places, closes or sizes an order. The ruleset is manage's own config, ~/.cherrypick/config/manage.json (see packages/manage/config.example.json; keep only what you change). OFF by default because it reads the live account daily; 'notify' sends one summary when any trade needs action. Re-run `install` after turning it on.",
+    "enabled": false,
+    "at": "10:00",
+    "notify": true
   },
   "morning_header": "x",
   "morning": {

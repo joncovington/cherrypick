@@ -34,6 +34,7 @@ Two shared facts apply to every strategy below, so they aren't repeated six time
 | 4 | `broken_wing_butterfly` | Body-anchored butterfly, asymmetric wings (skew) | Credit | Asymmetric expected moves |
 | 5 | `atm_calendar` | Short front-month ATM call + long back-month same strike | Debit | Low IV, term-structure edge |
 | 6 | `double_calendar` | ATM-ish calendar on both call and put side | Debit | Low IV, symmetric term structure |
+| 7 | `expected_move_butterfly` | 1-2-1 fly, body at spot +/- EM, side by skew (paper only) | Debit | Measuring a directional fly's real fills |
 
 ---
 
@@ -207,6 +208,43 @@ Total entry debit: $0.60 (both calendars)
 
 ---
 
+## 7. Expected-Move Butterfly
+
+**Paper only, opening from 2026-10-14** (`strat_test_harness.STRAT_TEST_STARTS`). A 1-2-1 debit fly
+with its body one expected move from spot: a **call** fly above on a bullish read, a **put** fly
+below on a bearish one.
+
+**Read the history first.** `scripts/emfly_history.py` priced it on 4,950 events 2020-2026
+([expected-move-fly-plan.md](./expected-move-fly-plan.md)): fairly priced at mid, entry costs
+16-18% of the debit, and a side call needs to be right 68-83% of the time to break even. The best
+signal found is right about 53%. This book measures real fills against that; history does not
+say it earns.
+
+**Side:** `rr25 = (25-delta call IV - 25-delta put IV) / ATM IV`, read **contrarian** to the
+published smirk studies, as history found it in 6 of 7 years. Below `rr25_put_rich_max` (-0.116),
+a rich put wing, it buys the call fly. Above `rr25_call_rich_min` (-0.055) it buys the put fly.
+Between them nothing opens (`direction_signal_neutral`). The cuts are the 2020-2023 terciles.
+
+**Strikes:** the body is the listed strike nearest spot +/- `body_em_multiple` x EM (1.0). The
+wings are the symmetric listed distance nearest `wing_em_multiple` x EM (0.85). A candidate with no
+symmetric pair within 0.5-1.5x of that is refused; the wings are never snapped one at a time.
+
+**Exit:** held to the 15:30 expiry close, or closed at the far touch once the fly is worth
+`take_profit_width_frac` (0.5) of its width. No stop: the debit is the max loss. It is not in
+`management.OVERNIGHT`, so neither the first-morning loser close nor the three-session cap applies.
+In the study, closing on the reaction day lost the most of the six exit rules compared.
+
+**Never a symbol's single best.** Its criteria carry neither `term_structure` nor `skew_abs`, so
+`compute_composite_score` is None and the agent's ranked path never offers it.
+
+```
+SCHW 2026-10-13, spot 96.31, EM 3.51, puts rich (rr25 below -0.116) -> bullish
+Buy 1x 97 call / sell 2x 100 call / buy 1x 103 call, Oct 16, 0.51 debit
+Max profit 2.49 at 100; breakevens 97.51 / 102.49; max loss the debit
+```
+
+---
+
 ## Strategy Selection at a Glance
 
 There's no fixed lookup table mapping a market condition to a strategy — `rank_strategies.py`
@@ -217,6 +255,8 @@ clear their own screen. As a rough mental model of what tends to win under which
   (the choice between them is a scoring outcome, not a rule — see
   [Entry Conditions Framework](./04-entry-conditions.md))
 - **Clear directional skew** → `directional_credit_spread` or `broken_wing_butterfly`
+  (`expected_move_butterfly` is opened by the harness on its own skew read but never ranked as a
+  symbol's best)
 - **Low IV, clean term-structure edge, quiet historical moves** → `atm_calendar` or
   `double_calendar`
 

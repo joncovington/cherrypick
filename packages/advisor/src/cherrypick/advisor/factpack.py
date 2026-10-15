@@ -1011,7 +1011,7 @@ def _live(session: str) -> dict[str, Any]:
     `cherrypick.flies.analytics.live_vs_paper` cannot be called from here, and nothing here copies
     it: the block is today's status counts and settled P&L on each side, with no completion rate,
     gap or abort rule to round or compare. Its shape tag names it as the advisor's own
-    (`advisor.flies_live_today/v1`); until the 2026-10-19 boundary it carried flies' tag, which
+    (`advisor.flies_live_today/v1`); until the 2026-10-15 boundary it carried flies' tag, which
     claimed a parity it never had. Facts-for-context, never a report surface.
     """
     state = _paths.state_dir()
@@ -1091,7 +1091,7 @@ def _live(session: str) -> dict[str, Any]:
 
     live_vs_paper = {
         # Not flies' live_vs_paper shape, and never was: this is today's counts on each side, with
-        # no completion rate, gap or abort rule. The tag claimed that shape until the 2026-10-19
+        # no completion rate, gap or abort rule. The tag claimed that shape until the 2026-10-15
         # boundary; `test_factpack` now fails if it claims a shape whose keys it does not carry.
         "shape": "advisor.flies_live_today/v1",
         "live": _read(_live_db("flies"), live_flies),
@@ -1145,7 +1145,7 @@ def _experiments_running(conn) -> list[dict[str, Any]]:
                 for p in pairs
             ],
         }
-        # From the 2026-10-19 boundary: an advised book that never traded differently from its
+        # From the 2026-10-15 boundary: an advised book that never traded differently from its
         # base says so here, beside the delta it would otherwise be read from. Absent when false.
         if body.get("no_exposure"):
             entry["no_exposure"] = body["no_exposure"]
@@ -1169,7 +1169,7 @@ _VERDICT_KEEP = (
     "stalled",
     "killed_reason",
     "error",
-    # 2026-10-19 boundary: the verdict's own "measured nothing" conclusion, ahead of pass/fail.
+    # 2026-10-15 boundary: the verdict's own "measured nothing" conclusion, ahead of pass/fail.
     "no_exposure",
     "conclusion",
 )

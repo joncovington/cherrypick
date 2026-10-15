@@ -314,6 +314,7 @@ def test_derive_full_suite_job_table():
         "power-watch",
         "live-positions",
         "settle-overdue-live",
+        "live-fill-alerts",
         "report-session-alert",
         "report-screener-measure-1",
         "report-screener-measure-2",
@@ -337,6 +338,7 @@ def test_derive_full_suite_job_table():
         "review-narrative",
         "morning-factpack",
         "morning-narrative",
+        "manage-eval",
         "advisor-deep",
         *QUIKOPTIONS_JOBS,
     }
@@ -394,6 +396,71 @@ def test_derive_flies_live_enabled_with_todays_arm_record():
     live = next(j for j in jobs if j.id == "flies-live")
     assert live.enabled and live.interval_seconds == 60
     assert live.argv == ("pythonw", "-m", "cherrypick.flies.live_loop", "--once", "--live")
+
+
+_DAEMON = {
+    "argv": ["-m", "cherrypick.flies.alert_daemon"],
+    "heartbeat": "/x/live_alert_daemon.status.json",
+    "silence_seconds": 120,
+    "until": "17:00",
+}
+
+
+def test_derive_companion_resident_while_armed():
+    """A companion the arm record names is a resident job, up from midnight to its `until` and
+    restarted on a silent heartbeat -- what brings the alert daemon back after a reboot."""
+    rec = {"flies": {"date": "2026-08-10", "companions": {"alert-daemon": _DAEMON}}}
+    jobs, errors = derive(suite_cfg(), now=et(2026, 8, 10, 10, 0), arm_records=rec)
+    assert errors == {}
+    d = next(j for j in jobs if j.id == "flies-alert-daemon")
+    assert d.enabled and d.kind == jobspec.KIND_RESIDENT
+    assert d.argv == ("pythonw", "-m", "cherrypick.flies.alert_daemon")
+    assert (d.window_start, d.window_end) == ("00:00", "17:00")
+    assert d.silence_file == _DAEMON["heartbeat"] and d.silence_seconds == 120
+    assert jobspec.resident_should_run(d, et(2026, 8, 10, 3, 30))[0]
+    assert not jobspec.resident_should_run(d, et(2026, 8, 10, 17, 1))[0]
+
+
+def test_live_fill_alerts_run_only_while_a_live_module_is_armed():
+    """2026-10-15: the inboxes are written only by armed modules' daemons, so the job is off otherwise.
+    Shown to fail by enabling it unconditionally: the unarmed assertion goes red."""
+    now = et(2026, 8, 10, 10, 0)
+    jobs, _ = derive(suite_cfg(), now=now, arm_records={})
+    job = next(j for j in jobs if j.id == "live-fill-alerts")
+    assert not job.enabled and job.enabled_reason == "no live module armed"
+    jobs, _ = derive(suite_cfg(), now=now, arm_records={"flies": {"date": "2026-08-10"}})
+    job = next(j for j in jobs if j.id == "live-fill-alerts")
+    assert job.enabled and job.interval_seconds == 15
+
+
+def test_derive_companion_follows_the_arm():
+    stale = {"flies": {"date": "2026-08-09", "companions": {"alert-daemon": _DAEMON}}}
+    jobs, _ = derive(suite_cfg(), now=et(2026, 8, 10, 10, 0), arm_records=stale)
+    d = next(j for j in jobs if j.id == "flies-alert-daemon")
+    assert not d.enabled and "not today" in d.enabled_reason
+    jobs, _ = derive(suite_cfg(), now=et(2026, 8, 10, 10, 0), arm_records={"flies": {"date": "2026-08-10"}})
+    assert not any(j.id == "flies-alert-daemon" for j in jobs)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["-m", "cherrypick.bwb.live_loop", "--once", "--live"],  # another module's package
+        ["-m", "cherrypick.flies"],  # the package itself, not a module in it
+        ["-c", "import os"],
+        ["C:/evil.exe"],
+        "-m cherrypick.flies.alert_daemon",
+        None,
+    ],
+)
+def test_derive_companion_refuses_a_command_outside_its_module(argv):
+    """The record is a state file; its command must stay inside the module's own package. A refused
+    companion is a derivation error for that one job -- it never runs, and nothing else is lost."""
+    rec = {"flies": {"date": "2026-08-10", "companions": {"alert-daemon": {**_DAEMON, "argv": argv}}}}
+    jobs, errors = derive(suite_cfg(), now=et(2026, 8, 10, 10, 0), arm_records=rec)
+    assert "flies-alert-daemon" in errors
+    assert not any(j.id == "flies-alert-daemon" for j in jobs)
+    assert next(j for j in jobs if j.id == "flies-live").enabled
 
 
 def test_derive_disabled_optins_included_disabled():
@@ -542,6 +609,19 @@ def test_morning_can_be_turned_off():
     by_id = {j.id: j for j in derive(cfg)[0]}
     assert not by_id["morning-factpack"].enabled
     assert "disabled in config (morning)" in by_id["morning-factpack"].enabled_reason
+
+
+def test_manage_eval_off_by_default_and_runs_at_ten_on_trading_days_when_on():
+    """It reads the real broker account every day, so it waits for the account owner to turn it on."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    assert not by_id["manage-eval"].enabled
+    assert "disabled in config (manage)" in by_id["manage-eval"].enabled_reason
+    cfg = suite_cfg()
+    cfg["manage"] = {"enabled": True}
+    job = {j.id: j for j in derive(cfg)[0]}["manage-eval"]
+    assert job.enabled and job.trading_days_only
+    assert job.at_et == "10:00"
+    assert job.argv[-1] == "manage"
 
 
 def test_every_derived_run_py_job_actually_parses():
@@ -847,20 +927,31 @@ def test_fee_reconcile_is_declared_per_module_not_hardcoded_for_flies():
 
 
 def test_every_module_with_a_live_ledger_declares_the_reconcile_job():
-    """Driven off the shipped example rather than a hand-kept list. flies and bwb are the two
-    modules that place live orders, and reconciliation must not depend on either being armed --
-    a live path whose cash is never confirmed against the broker is the defect this guards."""
+    """Driven off the shipped example rather than a hand-kept list: every module that declares a
+    `live` block places live orders, and reconciliation must not depend on it being armed -- a
+    live path whose cash is never confirmed against the broker is the defect this guards. It read
+    a hand-kept ("flies", "bwb") until 2026-10-15, which is how meic's live loop shipped without
+    the job; shown to fail on meic with its keys removed from the example."""
     import json
     from pathlib import Path
 
     example = json.loads(
         (Path(__file__).resolve().parents[1] / "config.example.json").read_text(encoding="utf-8")
     )
-    for module in ("flies", "bwb"):
+    live_modules = sorted(name for name, mod in example["modules"].items() if mod.get("live"))
+    assert {"flies", "bwb", "meic"} <= set(live_modules), live_modules
+    for module in live_modules:
         paper = example["modules"][module]["paper"]
         assert paper.get("fee_reconcile_at"), f"{module} declares no fee_reconcile_at"
         argv = paper.get("fee_reconcile_argv") or []
         assert argv[:2] == ["-m", f"cherrypick.{module}.fee_reconcile"], argv
+    cfg = suite_cfg()
+    cfg["modules"]["meic"]["paper"].update(
+        {k: example["modules"]["meic"]["paper"][k] for k in ("fee_reconcile_at", "fee_reconcile_argv")}
+    )
+    job = {j.id: j for j in derive(cfg)[0]}["meic-fee-reconcile"]
+    assert job.argv == ("pythonw", "-m", "cherrypick.meic.fee_reconcile", "--apply")
+    assert job.enabled is True and job.trading_days_only
 
 
 def test_fee_reconcile_job_is_absent_when_a_module_does_not_declare_it():

@@ -381,7 +381,7 @@ def test_the_selector_arm_is_journaled_once_when_enabled(tmp_path):
     paper_loop._note_selector_arm(conn, cfg)
     paper_loop._note_selector_arm(conn, cfg)
     rows = [r for r in dbmod.measurement_breaks(conn) if r["scope"] == "selector"]
-    assert len(rows) == 1 and rows[0]["kind"] == "arm_added" and rows[0]["break_date"] == "2026-10-19"
+    assert len(rows) == 1 and rows[0]["kind"] == "arm_added" and rows[0]["break_date"] == "2026-10-15"
     for absent in ({"control": {}}, {"selector": {**cfg["arms"]["selector"], "enabled": False}}):
         other = dbmod.connect(str(tmp_path / f"other-{len(absent)}-{id(absent)}.db"))
         paper_loop._note_selector_arm(other, {"arms": absent})

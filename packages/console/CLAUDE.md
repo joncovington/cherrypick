@@ -413,6 +413,28 @@ net per period, the intraday series and the broker account. Rules, stated on the
   (`core.metrics` over `live_trades.db`, rendered by `MetricTiles`). Their two max drawdowns differ on
   purpose — daily against per trade — and the page labels which is which.
 
+**The Live page's `meic` tab** (`pages/Live/MeicLivePage.tsx` over `GET /api/live/meic` →
+`readers/meicLive.ts`, 2026-10-15) is MEIC's live loop from files alone: the arm record (armed =
+dated today; past `live.disarm_time` is said), the halt flag, the orphan / hold / broker-health files
+beside `meic_trades.db` (read as `core.execution` reads them: an unreadable hold file is held), open
+ICs (`live_loop.overdue_settlement`'s status list; `pending` is a working order with no entry cash; a
+side with a recorded close cost is closed) and resolved history (`stopped`/`expired`/`force_closed`)
+through `meicTradeCash` and the MEIC page's own history columns, less slippage (a live fill is the
+broker's). Cancelled rows are in neither table. No curve or feed: the live loop writes no marks and
+no `loop_log`, so there is no loop pill either. Pinned by `server/test/meic-live-reader.test.ts`.
+
+**The Live page's `today` tab** (`pages/Live/LiveTodayPage.tsx` over `GET /api/live/today` →
+`readers/liveToday.ts`, 2026-10-15) opens `/live`: one row per live loop (flies, meic, bwb), the
+attention list above it, the suite line and a header badge (`2 armed · HALTED`). It **composes** the
+per-loop readers (`fliesLive`/`flies`, `readMeicLive`, `readBwb`/`readBwbHistory` in live mode,
+`liveBooks`' bwb read for absent-vs-failed) and adds only each loop's own `daily_loss_tripped` and
+flies' `overdue_settlement` queries, mirrored and named. Attention: orphaned orders, held
+submissions, a tripped breaker, overdue settlement, failing broker contact, an unreadable ledger;
+"no limit" is never shown as a clear breaker. The suite total sums **only today's realised net**
+(resolved today, gross − fees − settlement, broker fills): any loop's failed read makes it n/r, and
+the worst case and the mark are each loop's own measure, shown per loop, never added. `/live/today`
+is this tab now, not an alias for flies. Pinned by `server/test/live-today.test.ts`.
+
 **The Overview's live panel** (`pages/Overview/LivePanel.tsx`, 2026-10-12) lists every module with a
 live book (`readers/liveBooks.ts`, `GET /api/live/books`: flies and bwb, each module's own
 settled-net rule mirrored) and draws only those with live activity — flies through its own

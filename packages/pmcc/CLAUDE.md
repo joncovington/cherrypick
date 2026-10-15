@@ -217,6 +217,10 @@ Their identities: entry + exit = gross; gross − costs = net; the last weekly r
   entry pricing.
 - **The producer persists every listed expiry** (`stream_expirations`). A request for a date the
   broker does not list is a WARN, never a stall restart.
+- **The listing exists only once something asks.** The producer lists a symbol only from a
+  full-chain fetch, and fetches one only for a symbol with a requested expiration. So a held-long
+  arm asks for the weekly short even with no plan (no listing, or no LEAP in the band); without it,
+  a new symbol never gets a listing and refuses `no_listing` forever (SMH and AMZN, 2026-10-12/13).
 - **The skew sampler** (`skew.py`, `skew_samples` in the config) records, once a session per symbol
   from an hour before the close (`pmcc_skew_samples`), what the market charged at the points the
   replay can only model:

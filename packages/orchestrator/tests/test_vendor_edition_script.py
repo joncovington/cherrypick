@@ -508,3 +508,39 @@ def test_main_runs_a_browser_command_under_the_lock_and_returns_75_when_busy(mon
     assert fve.main(["smoke"]) == 0 and seen and seen[0] is not None  # held while it ran
     monkeypatch.setattr(fve, "profile_lock", Busy)
     assert fve.main(["smoke"]) == fve.PROFILE_BUSY_EXIT
+
+
+# 2026-10-13: a fresh login's page fired three entitlement checks this account is not entitled to; the
+# collector read them as throttling and lost a night of charts plus the next morning's edition.
+TODAYS_ENTITLEMENT_403S = (
+    "https://vendor.example/api/v1/orders/live/tradestation/istncaccepted",
+    "https://vendor.example/api/alacarte/getSubscriptionAndPricingDetails",
+    "https://vendor.example/api/Powerhouse/Pro/getUserChartViews",
+)
+
+
+@pytest.mark.parametrize("url", TODAYS_ENTITLEMENT_403S)
+def test_an_entitlement_403_on_a_call_the_collector_does_not_read_is_not_throttling(url):
+    assert fve.counts_as_refusal(403, url, "fetch") is False
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://vendor.example/api/why/AAPL.US",
+        "https://vendor.example/api/ranks/AAPL.US",
+        "https://vendor.example/api/how/AAPL.US",
+        "https://vendor.example/api/Powerhouse/Pro/tradeIdeas",
+        "https://vendor.example/api/Powerhouse/Pro/getAllCachedSecurities",
+        "https://vendor.example/api/v1/securities",
+        "https://vendor.example/api/reports/creditspreads/all",
+    ],
+)
+def test_a_403_on_a_call_the_collector_reads_still_counts(url):
+    assert fve.counts_as_refusal(403, url, "fetch") is True
+
+
+def test_a_429_anywhere_and_a_403_on_a_page_load_still_count():
+    assert fve.counts_as_refusal(429, TODAYS_ENTITLEMENT_403S[0], "fetch") is True
+    assert fve.counts_as_refusal(403, "https://vendor.example/dashboard", "document") is True
+    assert fve.counts_as_refusal(200, "https://vendor.example/api/why/AAPL.US", "fetch") is False

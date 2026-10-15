@@ -69,20 +69,40 @@ def leg_sources(*, live: bool = False) -> list[dict]:
     return [_sr.leg_source(db, _LEG_QUERY)]
 
 
-def write(symbols, *, live: bool = False) -> Path:
+def write(symbols, *, live: bool = False, arm_rosters=None) -> Path:
     """Atomically (over)write this loop's request file — delegated to core (write-then-rename, so a
     concurrent reader in the streamer never sees a partial file), plus the leg source for the ledger
     this loop writes. ``live=True`` writes the LIVE loop's own file (see module docstring for why
     paper/live never share one)."""
     module = _MODULE_LIVE if live else _MODULE
-    return _sr.write_request(module, symbols, leg_sources=leg_sources(live=live))
+    return _sr.write_request(module, symbols, leg_sources=leg_sources(live=live), arm_rosters=arm_rosters)
+
+
+def arm_rosters(config: dict, profiles: dict | None = None) -> dict[str, list[str]]:
+    """Which symbols each enabled paper arm enters (its own `symbols`, else the loop's), for the
+    suite's same-index lint, which judges a multi-arm module arm by arm (2026-10-15): control on SPX
+    beside live-shadow following live onto XSP is two books, not one book on the index twice."""
+    from cherrypick.meic import paper  # lazily: paper imports the loop's helpers, not the reverse
+
+    profiles = paper.load_profiles() if profiles is None else profiles
+    base = [str(s).upper() for s in config.get("symbols") or []]
+    out: dict[str, list[str]] = {}
+    for name in paper.all_profile_names(profiles):
+        params = paper._merged_params(config, profiles[name])
+        own = [str(s).upper() for s in params.get("symbols") or []]
+        out[name] = sorted(set(own) & set(base)) if own else base
+    return out
 
 
 def register(config: dict) -> None:
     """Best-effort: declare the configured ``symbols`` (and the paper ledger's open legs) to the
-    streamer. Never raises into the caller."""
+    streamer, with each arm's roster for the same-index lint. Never raises into the caller."""
     symbols = config.get("symbols") or ([config["symbol"]] if config.get("symbol") else [])
-    _sr.register_best_effort(write, symbols, log=_log)
+
+    def _write(syms):
+        return write(syms, arm_rosters=arm_rosters(config))
+
+    _sr.register_best_effort(_write, symbols, log=_log)
 
 
 def register_live(config: dict) -> None:

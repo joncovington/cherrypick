@@ -707,3 +707,41 @@ def test_a_sweep_that_cannot_look_is_unknown_and_keeps_the_last_record(tmp_path)
     assert sum("orphan sweep failed" in m for m in logs) == 2
     assert [o["order_id"] for o in execution.read_orphans(path)] == ["ghost"]
     assert execution.read_orphans(tmp_path / "absent.json") == []
+
+
+def test_loops_sharing_an_underlying_do_not_flag_each_others_orders(tmp_path, monkeypatch):
+    """flies, bwb and MEIC all trade SPX in one account (2026-10-14): each loop's resting order was
+    every other loop's orphan, and an orphan blocks entries. Shown to fail by dropping `module=`
+    from the second sweep: flies' order is counted."""
+    monkeypatch.setattr(execution, "_known_orders_dir", lambda: tmp_path / "known")
+    working = [
+        {"order_id": "FLY-1", "underlying_symbol": "SPX"},
+        {"order_id": "IC-1", "underlying_symbol": "SPX"},
+    ]
+    quiet = {"symbol": "SPX", "now_iso": "t", "log": lambda m: None}
+    # flies sweeps first and publishes its own ids; MEIC's IC-1 is an orphan to it until MEIC publishes
+    assert (
+        execution.sweep_orphans(
+            _FakeBroker(working=working), ["FLY-1"], path=tmp_path / "f.json", module="flies", **quiet
+        )
+        == 1
+    )
+    assert (
+        execution.sweep_orphans(
+            _FakeBroker(working=working), ["IC-1"], path=tmp_path / "m.json", module="meic", **quiet
+        )
+        == 0
+    )
+    assert (
+        execution.sweep_orphans(
+            _FakeBroker(working=working), ["FLY-1"], path=tmp_path / "f.json", module="flies", **quiet
+        )
+        == 0
+    )
+    # without a module name the sweep is the ledger's alone, exactly as before
+    assert (
+        execution.sweep_orphans(_FakeBroker(working=working), ["IC-1"], path=tmp_path / "x.json", **quiet)
+        == 1
+    )
+    # a loop never counts its own published file as another's
+    assert execution.other_modules_known_orders("meic") == {"FLY-1"}

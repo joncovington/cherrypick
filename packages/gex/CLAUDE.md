@@ -26,6 +26,20 @@ commodity proxies, the eleven SPDR sectors) into `market_regime_history`, plus a
 - **A missing `day_close` is recovered from the NEXT session's `prev_day_close`**, only where the
   calendar confirms the two rows are consecutive trading days (a `prev_day_close` carries no date).
   It repairs retroactively, and recovered rows are sourced `stream_summary:prev_day_close`.
+- **`daily_sessions` keeps each finished session's exchange open/high/low/close** (2026-10-14,
+  `regime.harvest_daily_sessions`), harvested beside the closes. The day's range is what flies'
+  `range-high` arm, trend tag and band placement read, and the spot trail misses a touch between
+  samples. Sessions before today only (today's range still moves), append-only, and a row with a
+  missing high or low is left for a later run, never filled in.
+
+**Coverage: did a session's recordings land?** (2026-10-14, `coverage.py`, `run.py coverage
+--session D`, JSON.) The heartbeat proves the recorder is alive, not that each series is on disk,
+and the two came apart on 2026-10-13: from 14:53 the spot trail and quotes stopped (no SPX spot)
+while the GEX series carried on. Each series is judged against its own cadence's allowance
+(`MAX_GAP_SECONDS`), the session edges included and the close taken from the calendar (13:00 on an
+early close); quotes only where the machine records them; `daily_sessions` for the previous
+session, from 2026-10-15. The orchestrator's watchdog runs it once per finished session and
+notifies on any failing series. Read-only.
 - **`regime.INTERMITTENT_INTRADAY`** declares readings the feed serves only in bursts (SKEW). They
   stay in `READINGS` and the value is still never recorded, but the refusal is EXPECTED: rows say
   `intermittent_feed` rather than `stale_quote`, and `sample()` returns `expected_unusable` beside
@@ -95,6 +109,7 @@ python run.py record                  # always-on spot-trail + regime recorder (
 python run.py gex --symbol SPX --json # one-shot payload to the terminal
 python run.py pin-study [--json]      # which recorded level the close settled nearest, over stored history
 python run.py repair-history [--json] # report off-hours gex_regime_history rows (--apply removes; DB copied first)
+python run.py coverage [--session D]  # did the recorder keep a whole session of every series (JSON, read-only)
 python -m pytest                      # tests seed a temp cache; no streamer required
 ruff check . ; ruff format .          # line-length 110
 ```
@@ -138,7 +153,7 @@ file's directory.
   `expiration >= trade_date`. This series (`gex_regime_history`) is not MEIC's gate input — the gate
   reads its own same-tick 0DTE snapshot — so it affects the advisor's pack, the console's GEX page and
   `core.regime.regime_at`, not `meic.analytics.gex_gate_counterfactual`. It **is** a gate input for
-  flies' `wall-clear` arm (from 2026-10-19), which reads the walls through `core.regime.gex_at` each
+  flies' `wall-clear` arm (from 2026-10-12), which reads the walls through `core.regime.gex_at` each
   tick and fails open past 600 s: a recorder stall turns that arm into control, silently except in
   the join. Keep the 5-minute cadence and the column meanings stable, or journal the change there.
 - **GEX regime rows are RTH only** (`core.clock.in_rth`). Off-hours the session's chain has no greeks

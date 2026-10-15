@@ -459,6 +459,23 @@ def test_a_symbol_before_its_start_date_is_neither_entered_nor_requested(cache, 
     assert {p["symbol"] for p in db.open_positions(conn)} == {"TQQQ"}
 
 
+def test_a_new_symbol_with_no_listing_still_asks_for_a_date_so_the_listing_gets_fetched(
+    cache, shield, tmp_path
+):
+    """The producer writes a symbol's listing only from a full-chain fetch, and fetches the full
+    chain only for a symbol with a requested expiration. SMH (2026-10-12) and AMZN (10-13) joined
+    with no listing, so no plan and no dates -- and so never a listing: `no_listing` every tick."""
+    conn = db.connect(str(tmp_path / "paper.db"))
+    cache.spot("TQQQ", 70.60)  # spot and nothing else: no position, no listing
+    paper_loop.run_once(shield, conn, cache_path=cache.path, when=MONDAY)
+    assert "no_listing" in {r["reason"] for r in conn.execute("SELECT reason FROM pmcc_decisions")}
+    assert _request(cache, shield, conn, tmp_path).get("expirations", {}).get("TQQQ") == ["2026-09-04"]
+
+    # A listing with no LEAP in the band keeps asking too, so the 6-hourly re-list can find one.
+    streamcache.write_listed_expirations(cache.conn, "TQQQ", ["2026-09-04", "2027-01-15"])
+    assert _request(cache, shield, conn, tmp_path)["expirations"]["TQQQ"] == ["2026-09-04"]
+
+
 def test_a_settled_short_leaves_the_position_open_and_shares_block_the_next_sale(
     cache, shield, tmp_path, monkeypatch
 ):
