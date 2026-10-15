@@ -68,7 +68,7 @@ import sys
 from cherrypick.core import ledgers
 from cherrypick.core.profiles import group_by_tag
 
-from . import calibration_reading, capture_rate, return_on_capital, session_nets_dated
+from . import calibration_reading, capture_rate, session_nets_dated
 
 
 def cmd_read(args) -> dict:
@@ -194,7 +194,9 @@ def cmd_summary(args) -> dict:
         # SESSIONS: the dates that exist, never wall-clock days that may hold none.
         end = date.fromisoformat(anchor)
         floor = end - timedelta(days=WINDOW_DAYS[width] - 1)
-        in_window = [r for r in records if r.get("session") and floor <= date.fromisoformat(r["session"]) <= end]
+        in_window = [
+            r for r in records if r.get("session") and floor <= date.fromisoformat(r["session"]) <= end
+        ]
 
     def apply(rs: list[dict]) -> list[dict]:
         out = rs

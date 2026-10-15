@@ -187,7 +187,7 @@ so the rest of the console stayed untouched while the style was judged. It was a
 branch (2026-10-10): the palette moved to `:root` as the suite's tokens, the legacy aliases died,
 the light theme came home as a global pref, and the chrome, shared components, chart kit and rail
 icons were swept onto the new vocabulary. The branch's own working notes are frozen at
-[`docs/history/trade-summary-branch.md`](../../history/trade-summary-branch.md).
+[`docs/history/trade-summary-branch.md`](../../../docs/history/trade-summary-branch.md).
 
 The landing also fixes the rule the prototype implied: **a summary is a per-module surface, and
 MEIC's is the pattern.** One-read payload, every figure computed server-side to the cent,

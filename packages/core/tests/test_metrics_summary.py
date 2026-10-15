@@ -141,9 +141,7 @@ def test_week_window_is_seven_inclusive_days(meic_db):
     assert week["hero"]["trades"] == 4
     # The 19th is six days back from the 21st, so a five-day width would drop it -- the window
     # boundaries are inclusive calendar days, exactly the number the width name promises.
-    five = cli.cmd_summary(
-        _args(db=meic_db, schema="meic_ic", session="2026-08-20", width="week")
-    )
+    five = cli.cmd_summary(_args(db=meic_db, schema="meic_ic", session="2026-08-20", width="week"))
     assert five["hero"]["trades"] == 3  # the 19th sits outside 2026-08-16..20
     assert len(five["daily"]) == 2
 
@@ -194,26 +192,24 @@ def test_unreadable_db_reports_not_throws(tmp_path):
 
 
 @pytest.mark.skipif(
-    not sqlite3.connect(
-        "file:/home/pitufo/.cherrypick/data/meic/paper_trades.db?mode=ro", uri=True
-    ).execute(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ic_trades'"
-    ).fetchone()[0],
+    not sqlite3.connect("file:/home/pitufo/.cherrypick/data/meic/paper_trades.db?mode=ro", uri=True)
+    .execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ic_trades'")
+    .fetchone()[0],
     reason="no local meic paper ledger",
 )
 def test_live_ledger_matches_the_review_artifact():
     """Where their windows coincide -- the day resolved to the review's own session -- the
     summary's ratio is the fact set's `on_max_risk`, to the fourth decimal. Skipped, visibly,
     wherever the ledger or the artifact is not on this machine."""
-    import glob
     import json
     import os
 
     db = "/home/pitufo/.cherrypick/data/meic/paper_trades.db"
     sessions = [
         r[0]
-        for r in sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        .execute("SELECT DISTINCT substr(exit_time, 1, 10) FROM ic_trades WHERE exit_time IS NOT NULL")
+        for r in sqlite3.connect(f"file:{db}?mode=ro", uri=True).execute(
+            "SELECT DISTINCT substr(exit_time, 1, 10) FROM ic_trades WHERE exit_time IS NOT NULL"
+        )
     ]
     checked = 0
     for day in sessions:
