@@ -235,6 +235,7 @@ def write_request(
     window_events=None,
     nearest_window=None,
     entry_symbols=None,
+    arm_rosters=None,
 ) -> Path:
     """Atomically (over)write a module's request file and return its path.
 
@@ -243,6 +244,11 @@ def write_request(
     either way and never reads this. It is declared for what judges a module's trading roster (the
     orchestrator's same-index lint), which a run-off symbol would otherwise trip. Absent when not
     given, so a module that does not declare it reads exactly as before.
+
+    ``arm_rosters`` (2026-10-15), ``{arm: [symbols]}``, says which symbols each of a multi-arm module's
+    arms enters, for the same lint: per-symbol caps are per ARM, so two arms on one index each through
+    its own vehicle (MEIC's control on SPX, live-shadow on XSP) is not one book trading an index
+    twice, while one arm on both still is. Absent when not given.
 
     Write-then-rename so a concurrent reader never sees a partial file. Raises on I/O failure —
     best-effort behavior (log and continue) belongs in the module's ``register()`` adapter, which
@@ -261,6 +267,8 @@ def write_request(
     }
     if entry_symbols is not None:
         payload["entry_symbols"] = clean_symbols(entry_symbols)
+    if arm_rosters is not None:
+        payload["arm_rosters"] = {str(arm): clean_symbols(syms) for arm, syms in dict(arm_rosters).items()}
     return write_json_atomic(path, payload, indent=None, default=None)
 
 

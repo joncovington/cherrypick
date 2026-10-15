@@ -39,7 +39,33 @@ def _cfg(**live):
 def test_without_a_live_block_live_trades_the_top_level_unchanged():
     """The compatibility promise: a config with no new keys trades exactly what it did."""
     assert paper.live_params(TOP, REGISTRY) == paper._merged_params(TOP, {})
-    assert paper.live_params(_cfg(symbol="SPX"), REGISTRY) == paper._merged_params(_cfg(symbol="SPX"), {})
+    # live.symbol pins the symbol list (2026-10-15) and changes nothing else
+    pinned = paper.live_params(_cfg(symbol="SPX"), REGISTRY)
+    assert pinned.pop("symbols") == ["SPX"]
+    assert pinned == paper._merged_params(_cfg(symbol="SPX"), {})
+
+
+def test_a_follows_live_arm_trades_only_lives_symbol(monkeypatch):
+    """live on XSP: live-shadow scans XSP alone, while control keeps every symbol the loop scans."""
+    monkeypatch.setattr(paper, "load_profiles", lambda: REGISTRY)
+    cfg = {
+        **_cfg(symbol="xsp", wing_widths_by_symbol={"XSP": [2]}, max_open_bp_dollars=500),
+        "symbols": ["SPX", "XSP"],
+    }
+    shadow = paper._merged_params(cfg, REGISTRY["live-shadow"])
+    assert shadow["symbols"] == ["XSP"] and paper._profile_widths_for_symbol(shadow, "XSP") == [2]
+    assert paper._merged_params(cfg, REGISTRY["control"])["symbols"] == ["SPX", "XSP"]
+
+
+def test_each_arm_declares_its_own_roster_for_the_same_index_lint(monkeypatch):
+    from cherrypick.meic import stream_request
+
+    registry = {**REGISTRY, "control": {**REGISTRY["control"], "symbols": ["SPX"]}}
+    monkeypatch.setattr(paper, "load_profiles", lambda: registry)
+    cfg = {**_cfg(symbol="XSP"), "symbols": ["SPX", "XSP"]}
+    rosters = stream_request.arm_rosters(cfg, registry)
+    assert rosters["control"] == ["SPX"] and rosters["live-shadow"] == ["XSP"]
+    assert rosters["capped"] == ["SPX", "XSP"]  # an arm that pins nothing scans both -- the lint's case
 
 
 def test_live_arm_is_merged_onto_the_top_level():

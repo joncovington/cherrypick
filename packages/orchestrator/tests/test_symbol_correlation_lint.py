@@ -85,7 +85,11 @@ def _declared(request_dir: Path = REQUEST_DIR) -> dict[str, list[str]]:
     module states it (what it still ENTERS), else every subscribed symbol. A symbol held only to run
     off open positions -- pmcc's TQQQ beside QQQ from 2026-10-05 -- is not a roster that trades one
     index twice, and must not trip the guard; a module that declares nothing is judged on all of
-    them, exactly as before `entry_symbols` existed."""
+    them, exactly as before `entry_symbols` existed.
+
+    A file that declares `arm_rosters` (2026-10-15, MEIC) is judged ARM BY ARM, as `<module>:<arm>`:
+    per-symbol caps are per arm, so control on SPX beside live-shadow on XSP is two books on two
+    vehicles, while any one arm on both is still the doubled bet this guard exists for."""
     if not request_dir.exists():
         return {}
     out: dict[str, list[str]] = {}
@@ -94,9 +98,31 @@ def _declared(request_dir: Path = REQUEST_DIR) -> dict[str, list[str]]:
             data = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
+        arms = data.get("arm_rosters")
+        if isinstance(arms, dict) and arms:
+            for arm, symbols in arms.items():
+                out[f"{f.stem}:{arm}"] = list(symbols or [])
+            continue
         roster = data.get("entry_symbols")
         out[f.stem] = (roster if isinstance(roster, list) else data.get("symbols")) or []
     return out
+
+
+def test_arm_rosters_are_judged_arm_by_arm(tmp_path):
+    """Two arms on one index through two vehicles pass; one arm on both still fails."""
+    (tmp_path / "meic.json").write_text(
+        json.dumps(
+            {
+                "symbols": ["SPX", "XSP"],
+                "arm_rosters": {"control": ["SPX"], "live-shadow": ["XSP"], "both": ["SPX", "XSP"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    declared = _declared(tmp_path)
+    assert declared == {"meic:control": ["SPX"], "meic:live-shadow": ["XSP"], "meic:both": ["SPX", "XSP"]}
+    offenders = {m for m, syms in declared.items() if same_index_pairs(syms)}
+    assert offenders == {"meic:both"}
 
 
 def test_the_roster_is_what_a_module_enters_not_what_it_runs_off(tmp_path):
