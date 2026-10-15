@@ -69,6 +69,7 @@ from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import execution as _execution  # noqa: E402
 from cherrypick.core import home as _home  # noqa: E402
 from cherrypick.core import live as _live  # noqa: E402
+from cherrypick.core import livepositions as _livepos  # noqa: E402
 from cherrypick.core import looplock as _looplock  # noqa: E402
 from cherrypick.core.streamcache import occ_to_streamer_symbol as _occ_to_streamer  # noqa: E402
 
@@ -648,6 +649,14 @@ def _manage_entry(
         log(f"CRITICAL: could not build entry order: {exc}")
         return {"entry": "skipped", "reason": f"order_build_failed: {exc}"}
 
+    # flies and bwb trade SPX in this account too (2026-10-15): a leg opposite one they hold or have
+    # working would net at the broker into a position neither ledger describes. Refused, not repaired;
+    # the next tick evaluates afresh.
+    clash = _livepos.cross_module_conflict("meic", symbol, spec)
+    if clash is not None:
+        log(f"entry refused: {_livepos.describe(clash)} sits opposite another live loop's leg")
+        return {"entry": "skipped", "reason": f"cross_module_sign_conflict: {_livepos.describe(clash)}"}
+
     result = broker.place(spec, live=live)
     log(f"entry order ({'LIVE' if live else 'dry-run'}): {json.dumps(result, default=str)[:300]}")
     if not result.get("ok"):
@@ -956,6 +965,12 @@ def run_once(
     # a working order this ledger never recorded is the one crash window nothing else covers.
     # Unknown (None) blocks entries exactly as a found orphan does; neither touches a close.
     orphans = _sweep_orphans(broker, db_path, symbol, log)
+    # What this loop holds or has working, for flies' and bwb's entries to check against (2026-10-15).
+    _livepos.publish_open_legs(
+        "meic",
+        expected_legs(config, db_path, include_pending=True)["legs"],
+        now_iso=_pl._now_et().isoformat(timespec="seconds"),
+    )
     # Broker truth first: what filled, what died. Only the live ledger has orders to confirm.
     fills = _confirm_fills(symbol, snapshot, db_path, broker, log=log, params=params) if live else {}
     manage = _manage_open_trades(symbol, snapshot, params, db_path, broker, live=live, log=log)
@@ -972,6 +987,13 @@ def run_once(
         entry = {"entry": "skipped", "reason": "max_structures_per_day_reached"}
     else:
         entry = _manage_entry(symbol, snapshot, params, db_path, broker, live=live, log=log)
+        if entry.get("entry") == "placed":
+            # The working order, now, not at the next tick: the other loops check against it from here.
+            _livepos.publish_open_legs(
+                "meic",
+                expected_legs(config, db_path, include_pending=True)["legs"],
+                now_iso=_pl._now_et().isoformat(timespec="seconds"),
+            )
     return {"symbol": symbol, "live": live, "orphans": orphans, **fills, **manage, "entry": entry}
 
 
@@ -1045,14 +1067,17 @@ def _build_snapshot(cfg: dict, symbol: str):
     return snapshot, None
 
 
-def expected_legs(cfg: dict, db_path: str) -> dict:
+def expected_legs(cfg: dict, db_path: str, *, include_pending: bool = False) -> dict:
     """The contracts this LIVE ledger says the broker holds right now, for the orchestrator's
     positions-vs-ledger check (`cherrypick.core.livepositions`, 2026-10-08). Read-only.
 
     Counted: each side still held of an `open`/`partial` IC -- held means no recorded stop cost,
     the same rule the exit path uses -- as its short and its long (`paper.ic_legs`, wings derived).
     A `pending` entry has filled nothing yet and is not counted; a working stop's close is counted as
-    still held until its fill is confirmed. `pending` counts both."""
+    still held until its fill is confirmed. `pending` counts both.
+
+    `include_pending` (2026-10-15) counts a pending entry's legs too: what the other live loops must
+    not open against is what this one holds OR could hold the moment a working order fills."""
     import sqlite3
 
     legs, pending, symbols = [], 0, set()
@@ -1074,7 +1099,8 @@ def expected_legs(cfg: dict, db_path: str) -> dict:
         symbols.add(t["symbol"])
         if t["status"] == "pending":
             pending += 1
-            continue
+            if not include_pending:
+                continue
         if t.get("put_stop_fill_status") == "pending" or t.get("call_stop_fill_status") == "pending":
             pending += 1
         held = {"P": t.get("put_stop_cost") is None, "C": t.get("call_stop_cost") is None}

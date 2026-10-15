@@ -8,6 +8,7 @@ import json
 import pytest
 from cherrypick.core import execution as _execution
 from cherrypick.core import live as _live
+from cherrypick.core import livepositions as _livepos
 from test_live_scaffold import DAY, FakeBroker, _config, _entry_snapshot, _init_db
 
 from cherrypick.meic import live_loop, paper
@@ -187,8 +188,39 @@ def test_status_reports_a_past_session_left_open(tmp_path, monkeypatch):
     assert live_loop.overdue_settlement(db_path, DAY) == []
 
 
+# --------------------------------------------------------------------------- other live loops' legs
+
+
+def _flies_holds_583p(qty):
+    _livepos.publish_open_legs(
+        "flies", [{"underlying": "XSP", "expiry": DAY, "right": "P", "strike": 583, "qty": qty}], now_iso="t"
+    )
+
+
+def test_an_entry_opposite_another_loops_leg_is_refused(tmp_path):
+    """flies long the 583 put this IC would sell: the broker would net them flat while both ledgers
+    held a leg. Refused before the broker sees it (2026-10-15)."""
+    _flies_holds_583p(+1)
+    db_path = _init_db(tmp_path)
+    broker = FakeBroker()
+    summary = live_loop.run_once(_config(), _entry_snapshot(), db_path, broker, live=True, **QUIET)
+    assert summary["entry"]["reason"].startswith("cross_module_sign_conflict")
+    assert broker.placed == []
+
+
+def test_the_same_side_as_another_loop_is_allowed(tmp_path):
+    _flies_holds_583p(-1)
+    assert _place_one(_init_db(tmp_path), _config())["entry"]["entry"] == "placed"
+
+
+def test_meic_publishes_what_it_holds_and_has_working(tmp_path):
+    _place_one(_init_db(tmp_path), _config())  # a pending entry: working, not yet filled
+    legs = _livepos.other_modules_legs("flies")
+    assert legs[("XSP", DAY, "P", 583.0)] == -1 and legs[("XSP", DAY, "C", 598.0)] == -1
+
+
 @pytest.fixture(autouse=True)
 def _clean_known_orders():
     yield
-    for f in _execution._known_orders_dir().glob("*.json"):
+    for f in [*_execution._known_orders_dir().glob("*.json"), *_livepos._open_legs_dir().glob("*.json")]:
         f.unlink()
