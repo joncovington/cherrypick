@@ -63,6 +63,13 @@
           "cherrypick.meic.regime_cuts",
           "--write"
         ],
+        "_fee_reconcile_note": "Broker fee reconciliation of settled LIVE ICs (2026-10-15), the job flies and bwb run, and unconditional on arming for the same reason: a session traded on a day that was never followed by an armed one must still be confirmed. At fee_reconcile_at (ET, trading days) the supervisor runs fee_reconcile_argv, which matches each settled live row's broker order ids and settlement lines and, with --apply, replaces the ledger's modeled fees and settlement_fees with the broker's (the modeled values kept once in fee_reconciliations). The gross is reported, never rewritten. Without --apply it only reports. No --symbol: it reconciles whatever symbol each pending row traded, since the live loop's pinned symbol can change. 09:25 is after the broker posts the prior session's settlement lines and clear of flies (09:15) and bwb (09:20). Needs the module's broker credentials (GET-only). Remove both keys to drop the job.",
+        "fee_reconcile_at": "09:25",
+        "fee_reconcile_argv": [
+          "-m",
+          "cherrypick.meic.fee_reconcile",
+          "--apply"
+        ],
         "_paper_db_note": "Path to the module's paper-trades SQLite DB — MUST point at the file the module actually WRITES (a mismatch silently blinds the orchestrator's report/reconcile/dashboard and the watchdog freshness check). Relative resolves against the module checkout; a leading '~' or env var expands (use e.g. '~/.cherrypick/data/meic/paper_trades.db' when the module keeps its data in the managed home); an absolute path is used as-is.",
         "paper_db": "~/.cherrypick/data/meic/paper_trades.db",
         "notify_trades": true,

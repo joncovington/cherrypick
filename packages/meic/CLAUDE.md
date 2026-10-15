@@ -212,6 +212,7 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
 | `python -m cherrypick.meic.tt get_connection_status` | Verify OAuth session and account access | No |
 | `python -m cherrypick.meic.tt get_market_overview --symbols XSP` | IV rank, underlying price, market summary | No |
 | `python -m cherrypick.meic.tt get_transactions --underlyings GLD --since 2026-01-01` | Trade history per underlying, GET only -- the order chains the daily position evaluation (packages/manage) judges | No |
+| `python -m cherrypick.meic.fee_reconcile [--date D] [--symbol S] [--apply]` | Settled LIVE rows' fees against the broker's: trade lines by the row's own order ids, settlement lines per contract on the sides `ic_spread_legs` records `expired`. Dry-run reports; `--apply` writes `fees`/`settlement_fees` and keeps the model once in `fee_reconciliations`. The gross is reported, never written (it is split per side in `ic_spread_legs`). The supervisor's `meic-fee-reconcile` job runs it with `--apply` daily, armed or not | No |
 | `python -m cherrypick.meic.tt get_quote --symbol XSP` | Last trade price (stream cache → DXLink fallback) | No |
 | `python -m cherrypick.meic.tt get_vix1d` | Live VIX1D via direct DXLink fetch — feeds the `vix1d_ratio` trigger (Step 4) | No |
 | `python -m cherrypick.meic.tt get_calendar [--year N]` | Shared market calendar from `cherrypick.core.calendar`: `nyse_holidays`, `fomc_dates` (+ `fomc_year_known`), `quarterly_expiry_dates`, `triple_witching_dates`. No broker. | No |

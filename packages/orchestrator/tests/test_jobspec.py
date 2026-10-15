@@ -927,20 +927,31 @@ def test_fee_reconcile_is_declared_per_module_not_hardcoded_for_flies():
 
 
 def test_every_module_with_a_live_ledger_declares_the_reconcile_job():
-    """Driven off the shipped example rather than a hand-kept list. flies and bwb are the two
-    modules that place live orders, and reconciliation must not depend on either being armed --
-    a live path whose cash is never confirmed against the broker is the defect this guards."""
+    """Driven off the shipped example rather than a hand-kept list: every module that declares a
+    `live` block places live orders, and reconciliation must not depend on it being armed -- a
+    live path whose cash is never confirmed against the broker is the defect this guards. It read
+    a hand-kept ("flies", "bwb") until 2026-10-15, which is how meic's live loop shipped without
+    the job; shown to fail on meic with its keys removed from the example."""
     import json
     from pathlib import Path
 
     example = json.loads(
         (Path(__file__).resolve().parents[1] / "config.example.json").read_text(encoding="utf-8")
     )
-    for module in ("flies", "bwb"):
+    live_modules = sorted(name for name, mod in example["modules"].items() if mod.get("live"))
+    assert {"flies", "bwb", "meic"} <= set(live_modules), live_modules
+    for module in live_modules:
         paper = example["modules"][module]["paper"]
         assert paper.get("fee_reconcile_at"), f"{module} declares no fee_reconcile_at"
         argv = paper.get("fee_reconcile_argv") or []
         assert argv[:2] == ["-m", f"cherrypick.{module}.fee_reconcile"], argv
+    cfg = suite_cfg()
+    cfg["modules"]["meic"]["paper"].update(
+        {k: example["modules"]["meic"]["paper"][k] for k in ("fee_reconcile_at", "fee_reconcile_argv")}
+    )
+    job = {j.id: j for j in derive(cfg)[0]}["meic-fee-reconcile"]
+    assert job.argv == ("pythonw", "-m", "cherrypick.meic.fee_reconcile", "--apply")
+    assert job.enabled is True and job.trading_days_only
 
 
 def test_fee_reconcile_job_is_absent_when_a_module_does_not_declare_it():
