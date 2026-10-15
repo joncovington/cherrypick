@@ -1596,3 +1596,48 @@ The reopen condition ("15 sessions, and the replay shows the gate paying") is no
 missing one or two trend days, and on this sample that cannot be told from luck. Live stays as it is.
 Re-run at 30 sessions. A 30-minute paper arm is the cheap way to gather evidence meanwhile, and it
 would land at a declared boundary.
+
+## 2026-10-15 — the config the loop was reading: the 10-12 clean restart shipped only the `arms` block
+
+Found answering why every arm capped at four entries a session. The 2026-10-12 clean restart rebuilt
+`~/.cherrypick/config/flies.json` with only the `arms` block. `cherrypick.core.home.load_module_config`
+reads ONE file with no merge, so every other block — `source`, `live`, `symbols`, `stream_window`,
+`defaults`, `advice`, `intraday_agent` — was absent and the engine ran on its own code fallbacks
+instead of the values the example declares. `max_positions` fell to its literal 4 (`engine.py`), which
+is the cap: on 10-15 `block_detail = max_positions_reached` on 1,033 of control's attempts and every
+arm filled exactly four.
+
+The fallbacks differ from `config.example.json` on more than the cap:
+
+| key | code fallback | example |
+|---|---|---|
+| `max_positions` | 4 | 99 |
+| `min_seconds_between_entries` | 0 | 360 |
+| `min_floor_dollars` | 0.0 | −10.0 |
+| `max_fly_debit` | 0.50 | 2.5 |
+| `max_bwb_tail_dollars` | 150.0 | 750.0 |
+| `stream_window` | 60 / false | 45 / true |
+
+`wing_width`, `strike_increment`, the credit/debit percentage gates and every regime threshold fell
+back to values that happen to match the example, so the cap and the five above are the behaviour
+change.
+
+**Fixed** by restoring those blocks from `config.example.json` on 2026-10-15 after the close (the arms
+roster is unchanged; backup `~/.cherrypick/backups/config-restore-2026-10-15-20261015-152005/flies.json`).
+One exception to verbatim: live's `completion_cutoff` is 16:00, per the entry above — the example still
+says 15:30. Everything restored is off: `live.enabled`, `advice.enabled` and `intraday_agent.enabled`
+are all false.
+
+**Journaled as a measurement break** (`config_restored`, scope `*`, from 2026-10-16): the 10-12..10-15
+sessions ran under the fallbacks — capped at four, no entry cadence, floor 0 — so their entry counts
+and completion rates are not poolable with 10-16 onward. The entry-cadence part (0 → 360) is
+additionally auto-journaled by `paper_loop._note_entry_cadence_change`.
+
+**`live-shadow` moves with it.** It mirrors the `live` block, so from 10-16 its start goes None → 10:15,
+its buying-power cap None → $1,000 and its cutoff 15:30 → 16:00. Its one session, 10-15, ran under the
+pre-restore values (its `arm_added` row records them: "start None, completion cutoff 15:30,
+buying-power cap $None") and is read separately, never pooled with 10-16 onward. A `config_restored`
+row scoped to `live-shadow` carries the change.
+
+No arm gained or lost a gate and the roster is unchanged: a configuration regression corrected,
+journaled as a break because it moves entry pacing — not a new experiment.
