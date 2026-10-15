@@ -18,11 +18,11 @@
  * beside it. The range segments and day arrows drive the reader's window: "day" scopes to the
  * page's resolved session, the rest widen from it, ET-anchored server-side.
  *
- * Styling is scoped to `.ts-root` (see styles.css, "Trade summary prototype"): this slide ships
+ * Styling is scoped to `.ts-root` (see styles.css, the trade-summary block): this slide shipped
  * its own palette (rounded cards, blue selection, mint/salmon tones) borrowed from a reference
- * design, deliberately at odds with the console's terminal-luxe chrome around it. Scoped so the
- * rest of the console is untouched while the style is under judgement; if adopted, the tokens
- * move outward and the scope is dropped.
+ * design, scoped so the rest of the console stayed untouched while the style was judged. It was
+ * adopted 2026-10-10 — the tokens moved to `:root` as the suite's and the scope's second palette
+ * died — but the `.ts-` class names stay, wired here and pinned by the tests.
  *
  * Charts are hand-rolled FIXED-SIZE SVG (no scaling) so the useMeasure grid rule is not invoked.
  * Colour carries only the sign of a number (pos/neg), never a verdict — the package's tone rule

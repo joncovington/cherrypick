@@ -100,8 +100,9 @@ export type FliesSlideId = (typeof FLIES_SLIDES)[number]["id"];
  */
 export const MEIC_SLIDES = [
   { id: "session", label: "session" },
-  // Trade-summary prototype (2026-10): the gauge-led day summary, fixture data, under judgement.
-  // In the `today` group while it is judged; dropped with no alias if it never earns the rail.
+  // The gauge-led day summary (2026-10): the slide whose adopted visual language became the
+  // suite's theme, and the pattern for every module's own summary — one per module, each in its
+  // own KPI vocabulary; no central summary page.
   { id: "summary", label: "summary" },
   { id: "forest", label: "forest" },
   { id: "attempts", label: "attempts" },

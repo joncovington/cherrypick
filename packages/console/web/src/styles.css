@@ -4377,7 +4377,7 @@ td > .desk-refusal-reason {
   margin-left: 8px;
 }
 
-/* Trade summary prototype — empty-state and off-session additions (wired read). */
+/* Trade summary — empty-state and off-session additions (wired read). */
 .ts-empty {
   margin: 0;
   padding: 0.75rem 0 0.25rem;
