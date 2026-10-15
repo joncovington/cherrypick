@@ -171,6 +171,13 @@ gross by hand came out $55k off before it was noticed — hence the net-of-fees 
   posted close, else Yahoo/Barchart); a provisional tick leaves the IC open for the next tick. A past
   session left open is settled by `--settle-overdue` at that day's close (the hourly
   `settle-overdue-live` job now covers MEIC), or by hand with `--settle --date --price`.
+- **2026-10-16 — `live-minus-otmfloor` retired, `live-plus-otmfloor` added.** At ~12:55 ET on 10-15
+  live's OTM floors went to control's 0.0001 (from call 0.0035 / put 0.003), which made
+  `live-minus-otmfloor` live-shadow under another name. It is disabled and kept for its book. Its
+  successor, `live-plus-otmfloor` (`follows_live`), is live-shadow with those floors put back, the
+  other side of the same decision, read against `live-shadow`. Both breaks are journaled for 10-16
+  (`arm_retired`, `arm_added`). `test_risk_profiles.py` now refuses any follows-live arm whose
+  override equals live's own value, which is the state the retired arm was in.
 
 ## The gex regime tag
 

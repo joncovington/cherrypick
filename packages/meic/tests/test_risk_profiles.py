@@ -38,9 +38,17 @@ ACTIVE_STREAMS = {"control", "live-shadow", *BP_ARMS}
 LIVE_MINUS_ARMS = {
     "live-minus-ivrank": {"min_iv_rank": 0.0},
     "live-minus-gexblock": {"regime_gex_block_negative": False},
-    "live-minus-otmfloor": {"min_call_otm_pct": 0.0001, "min_put_otm_pct": 0.0001},
     "live-minus-latebias": {"late_entry_bias_enabled": False},
 }
+# live-minus-otmfloor retired from 2026-10-16: live's own OTM floors went to control's 0.0001 at
+# ~12:55 ET on 10-15, which made it live-shadow under another name. Kept, disabled, for its book.
+RETIRED_LIVE_ARMS = {"live-minus-otmfloor"}
+# live plus one gate (from 2026-10-16): live-shadow with ONE gate live no longer runs put back at the
+# value live ran until it was dropped -- the other side of that decision, read against live-shadow.
+LIVE_PLUS_ARMS = {
+    "live-plus-otmfloor": {"min_call_otm_pct": 0.0035, "min_put_otm_pct": 0.003},
+}
+LIVE_ROSTER = set(LIVE_MINUS_ARMS) | RETIRED_LIVE_ARMS | set(LIVE_PLUS_ARMS)
 LADDER = {"conservative", "moderate", "aggressive", "very-aggressive"}
 RETIRED_STUDY_ARMS = {
     "gex-open",
@@ -147,7 +155,7 @@ def test_config_risk_json_has_the_expected_profiles(sample_risk_profiles):
     kept for the record. Any name outside that set must be a recognized experiment prefix."""
     names = set(sample_risk_profiles["profiles"].keys())
     assert ACTIVE_STREAMS <= names
-    for extra in names - ACTIVE_STREAMS - LADDER - RETIRED_STUDY_ARMS - set(LIVE_MINUS_ARMS):
+    for extra in names - ACTIVE_STREAMS - LADDER - RETIRED_STUDY_ARMS - LIVE_ROSTER:
         assert extra.split("-")[0] in EXPERIMENT_PREFIXES, f"unexpected profile {extra!r}"
 
 
@@ -155,18 +163,18 @@ def test_registry_is_the_active_streams_plus_the_historical_record(sample_risk_p
     """What the registry holds, pinned exactly: the active streams and the retired record. Adding or removing a profile should be a
     deliberate edit here, not a silent one."""
     names = set(sample_risk_profiles["profiles"])
-    minus = names & set(LIVE_MINUS_ARMS)
-    assert minus in (set(), set(LIVE_MINUS_ARMS)), "the live-minus arms land together or not at all"
-    assert names - minus == ACTIVE_STREAMS | LADDER | RETIRED_STUDY_ARMS
+    live = names & LIVE_ROSTER
+    assert live in (set(), LIVE_ROSTER), "the live-minus/plus arms land together or not at all"
+    assert names - live == ACTIVE_STREAMS | LADDER | RETIRED_STUDY_ARMS
 
 
 def test_only_the_active_streams_are_enabled(sample_risk_profiles):
     """Every ladder tier and every retired study arm must be `enabled: false` — kept for history,
     not competing with the active streams for the same ticks."""
     profiles = sample_risk_profiles["profiles"]
-    for name in ACTIVE_STREAMS | (set(profiles) & set(LIVE_MINUS_ARMS)):
+    for name in ACTIVE_STREAMS | (set(profiles) & (set(LIVE_MINUS_ARMS) | set(LIVE_PLUS_ARMS))):
         assert profiles[name].get("enabled", True) is True, f"{name} must be enabled"
-    for name in LADDER | RETIRED_STUDY_ARMS:
+    for name in LADDER | RETIRED_STUDY_ARMS | (set(profiles) & RETIRED_LIVE_ARMS):
         assert profiles[name].get("enabled") is False, f"{name} must be disabled"
 
 
@@ -191,18 +199,25 @@ def test_live_shadow_resolves_to_exactly_the_params_live_trades(
     assert {k for k in set(shadow) | set(live) if shadow.get(k) != live.get(k)} <= META_KEYS
 
 
-def _check_live_minus(profiles: dict, live_top: dict) -> None:
-    """Each live-minus arm is live-shadow (no overrides) plus exactly its declared keys, each at
-    control's value, and each key must actually differ between live and control -- an override
-    equal to live's own value would be a copy of live-shadow under another name."""
-    control = _gates(profiles["control"])
-    for name, keys in LIVE_MINUS_ARMS.items():
+def _check_one_change(profiles: dict, live_top: dict, arms: dict) -> None:
+    """Each arm is live-shadow (no overrides) plus exactly its declared keys, and each key must
+    actually differ from live -- an override equal to live's own value is a copy of live-shadow under
+    another name, which is how live-minus-otmfloor went dark on 2026-10-15."""
+    for name, keys in arms.items():
         assert _gates(profiles[name]) == keys, name
         for key, value in keys.items():
-            assert control.get(key) == value, f"{name}.{key} is not control's value"
             assert live_top.get(key, _CODE_DEFAULTS.get(key)) != value, (
                 f"{name}.{key} does not differ from live"
             )
+
+
+def _check_live_minus(profiles: dict, live_top: dict) -> None:
+    """A live-minus arm's keys are also each at control's value: it relaxes a gate to control's."""
+    _check_one_change(profiles, live_top, LIVE_MINUS_ARMS)
+    control = _gates(profiles["control"])
+    for name, keys in LIVE_MINUS_ARMS.items():
+        for key, value in keys.items():
+            assert control.get(key) == value, f"{name}.{key} is not control's value"
 
 
 # Live's value where meic.json leaves a key to the code's default (paper.py reads it with a default).
@@ -239,6 +254,26 @@ def test_the_live_minus_check_fails_on_a_second_relaxed_gate():
     profiles["live-minus-ivrank"]["late_entry_bias_enabled"] = False
     with pytest.raises(AssertionError):
         _check_live_minus(profiles, live_top)
+
+
+def test_the_live_plus_arms_are_live_shadow_with_one_gate_restored(sample_risk_profiles):
+    profiles = sample_risk_profiles["profiles"]
+    if not set(LIVE_PLUS_ARMS) <= set(profiles):
+        pytest.skip("live-plus arms not yet added to this machine's registry (from 2026-10-16)")
+    live_top = json.loads((Path.home() / ".cherrypick" / "config" / "meic.json").read_text(encoding="utf-8"))
+    _check_one_change(profiles, live_top, LIVE_PLUS_ARMS)
+
+
+def test_the_live_plus_check_fails_once_live_runs_the_same_floor():
+    """The guard, shown to fire: if live puts its OTM floors back, live-plus-otmfloor is live-shadow
+    again and must be retired, as live-minus-otmfloor was."""
+    profiles = {name: {"enabled": True, **keys} for name, keys in LIVE_PLUS_ARMS.items()}
+    live_top = {"min_call_otm_pct": 0.0001, "min_put_otm_pct": 0.0001}
+    _check_one_change(profiles, live_top, LIVE_PLUS_ARMS)
+    with pytest.raises(AssertionError):
+        _check_one_change(
+            profiles, live_top | {"min_call_otm_pct": 0.0035, "min_put_otm_pct": 0.003}, LIVE_PLUS_ARMS
+        )
 
 
 _BP_KEYS = {

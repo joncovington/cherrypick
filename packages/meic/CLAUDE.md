@@ -289,7 +289,8 @@ era (`ic_trades.era`, from `analytics.CURRENT_ERA` via `cmd_save_trade`), journa
   Live stays disabled; enabling it, and what it trades, is a decision this arm's rows inform. **Verdict
   at 10 sessions: live as configured almost never trades** (1 fill session of 10). From 2026-10-15 four
   `live-minus-*` arms (also `follows_live`) each relax ONE of the gates that refused, to name the one
-  keeping it dark (docs/history.md, 2026-10-12).
+  keeping it dark (docs/history.md, 2026-10-12). From 2026-10-16 `live-minus-otmfloor` is retired
+  (live dropped its OTM floors) and `live-plus-otmfloor` puts them back on live-shadow instead.
 - **The live block (2026-10-14), flies' `live.arm` seam.** `live.arm` names the registry arm live
   trades (unset: the top level, as before); `live.max_open_bp_dollars`, `wing_widths_by_symbol`,
   `entry_window_start` and `entry_window_end` apply to live alone and only narrow the arm (later start,
