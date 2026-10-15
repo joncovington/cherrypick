@@ -465,6 +465,45 @@ def test_a_confirmed_entry_opens_at_the_actual_credit(tmp_path):
     assert row["put_credit"] + row["call_credit"] == pytest.approx(1.37)
 
 
+def _drop_column(db_path, column):
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(f"ALTER TABLE ic_trades DROP COLUMN {column}")
+    conn.commit()
+    conn.close()
+
+
+def test_a_fill_the_ledger_refuses_is_not_counted_and_stays_pending(tmp_path):
+    """2026-10-15: a live ledger missing `side_credit_source` refused every confirm, and the tick
+    counted it anyway. Shown to fail on the pre-change loop (entries_confirmed == 1, no CRITICAL)."""
+    db_path, broker = _place_one(tmp_path, {"ORD1": {"status": "Filled", "price": "-1.37", "filled": True}})
+    _drop_column(db_path, "side_credit_source")
+    lines = []
+    summary = live_loop.run_once(_config(), _entry_snapshot(), db_path, broker, live=True, log=lines.append)
+    assert summary["entries_confirmed"] == 0 and summary["entries_unrecorded"] == 1
+    assert live_loop._trade_row("LIVE-XSP-ORD1", db_path)["status"] == "pending"
+    assert any(line.startswith("CRITICAL") and "side_credit_source" in line for line in lines)
+
+
+def test_the_tick_brings_an_old_live_ledger_up_to_date_and_the_fill_lands(tmp_path, monkeypatch):
+    """The live loop never ran db.py's migrations (only the paper loop did). Shown to fail without
+    `_ensure_live_schema`: the column stays missing and the confirm is refused again."""
+    db_path, broker = _place_one(tmp_path, {"ORD1": {"status": "Filled", "price": "-1.37", "filled": True}})
+    for column in ("side_credit_source", "put_exit_fill_source", "call_exit_fill_source"):
+        _drop_column(db_path, column)
+    notes = []
+    monkeypatch.setattr(live_loop, "_quiet", notes.append)
+    live_loop._ensure_live_schema(db_path)
+    assert notes == []
+    summary = live_loop.run_once(
+        _config(), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None
+    )
+    assert summary["entries_confirmed"] == 1
+    row = live_loop._trade_row("LIVE-XSP-ORD1", db_path)
+    assert row["status"] == "open" and row["side_credit_source"] == "proportional"
+
+
 # --------------------------------------------------------------------------- per-side credits (2026-10-12)
 def _fills(sp=0.62, lp=0.18, sc=0.55, lc=0.15, syms=(OCC[SP], OCC[LP], OCC[SC], OCC[LC])):
     """Per-leg executions as the broker reports them: OCC symbols."""
