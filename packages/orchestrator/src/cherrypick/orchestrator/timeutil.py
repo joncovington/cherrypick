@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import datetime
 from datetime import time as dtime
+from typing import Any
 
 try:  # stdlib first (no third-party dep)
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -95,9 +96,23 @@ def is_market_hours(dt: datetime | None = None, holidays: set[str] | None = None
     return MARKET_OPEN <= dt.time() <= MARKET_CLOSE
 
 
-def is_session_window(dt: datetime | None = None, holidays: set[str] | None = None) -> bool:
-    """True from just before the open through the close on a trading day (for service liveness)."""
+def is_session_window(
+    dt: datetime | None = None, holidays: set[str] | None = None, start: dtime | None = None
+) -> bool:
+    """True from just before the open through the close on a trading day (for service liveness).
+    `start` moves the beginning for one caller (the streamer's own `session_start`) without moving
+    every other session-gated check with it."""
     dt = dt or now_et()
     if not is_trading_day(dt, holidays):
         return False
-    return NEAR_OPEN <= dt.time() <= MARKET_CLOSE
+    return (start or NEAR_OPEN) <= dt.time() <= MARKET_CLOSE
+
+
+def parse_hhmm(value: Any, default: dtime) -> dtime:
+    """`"HH:MM"` as a time, or `default` when absent or unreadable -- a bad value must not move a
+    session gate somewhere nobody chose."""
+    try:
+        h, m = str(value).strip().split(":")
+        return dtime(int(h), int(m))
+    except (AttributeError, TypeError, ValueError):
+        return default

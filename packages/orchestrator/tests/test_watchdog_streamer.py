@@ -267,6 +267,15 @@ def test_producer_off_hours_down_is_ok_not_warn(monkeypatch, calls, tmp_path):
     assert calls["start"] == [] and calls["stop"] == []
 
 
+def test_producer_off_hours_names_its_own_start(monkeypatch, calls, tmp_path):
+    """`streamer.session_start` (2026-10-15) is the time the finding promises, not a hard-coded 9:15."""
+    _status(monkeypatch, {"running": False})
+    cfg = {"streamer": {**_spec(enabled=True, path=str(tmp_path)), "session_start": "08:45"}}
+    assert "08:45 ET" in wd._check_producer(cfg, in_session=False)[0].message
+    cfg = {"streamer": _spec(enabled=True, path=str(tmp_path))}
+    assert "09:15 ET" in wd._check_producer(cfg, in_session=False)[0].message
+
+
 def test_producer_off_hours_missing_checkout_is_ok_not_warn(tmp_path):
     cfg = {"streamer": _spec(enabled=True, path=str(tmp_path / "nope"))}
     findings = wd._check_producer(cfg, in_session=False)
