@@ -43,7 +43,7 @@ const BAND_LABEL: Record<string, string> = { "1": "1 lot", "2-10": "2–10", "11
 // gets MIN_BAND pixels, so the block trades are always visible.
 const BAND_FILL: Record<string, string> = {
   "1": "var(--text-dim)",
-  "2-10": "rgba(210, 63, 87, 0.5)",
+  "2-10": "color-mix(in srgb, var(--neg) 50%, transparent)",
   "11-99": "var(--accent)",
   "100+": "var(--warn)",
 };
@@ -862,7 +862,7 @@ export function FlowBirdseye({ day }: { day: OptionsFlowDay }) {
                     const v = r.buckets[k] ?? null;
                     const a = v === null || m <= 0 ? 0 : 0.08 + 0.5 * (v / m);
                     return (
-                      <td key={k} className="num" style={{ background: `rgba(210, 63, 87, ${a.toFixed(3)})` }}>
+                      <td key={k} className="num" style={{ background: `color-mix(in srgb, var(--neg) ${Math.round(a * 100)}%, transparent)` }}>
                         {r.shown[k] ?? fmtCount(v)}
                       </td>
                     );

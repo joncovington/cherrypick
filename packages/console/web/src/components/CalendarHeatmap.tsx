@@ -41,7 +41,7 @@ export function CalendarHeatmap({ days, countLabel = "trades" }: { days: Calenda
             if (cell === undefined)
               return <div key={wd} style={{ width: 14, height: 14, background: "var(--track)", borderRadius: 2 }} />;
             const alpha = 0.15 + 0.85 * (Math.abs(cell.net) / maxAbs);
-            const color = cell.net >= 0 ? `rgba(67, 181, 122, ${alpha})` : `rgba(217, 92, 74, ${alpha})`;
+            const color = `color-mix(in srgb, var(${cell.net >= 0 ? "--pos" : "--neg"}) ${Math.round(alpha * 100)}%, transparent)`;
             return (
               <div
                 key={wd}

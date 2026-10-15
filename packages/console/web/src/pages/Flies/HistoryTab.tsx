@@ -144,7 +144,7 @@ export function FliesCalendar({
             if (cell === undefined)
               return <div key={wd} style={{ width: 18, height: 18, background: "var(--track)", borderRadius: 3 }} />;
             const alpha = 0.2 + 0.8 * (Math.abs(cell.netPnl) / maxAbs);
-            const color = cell.netPnl >= 0 ? `rgba(67, 181, 122, ${alpha})` : `rgba(217, 92, 74, ${alpha})`;
+            const color = `color-mix(in srgb, var(${cell.netPnl >= 0 ? "--pos" : "--neg"}) ${Math.round(alpha * 100)}%, transparent)`;
             return (
               <div
                 key={wd}

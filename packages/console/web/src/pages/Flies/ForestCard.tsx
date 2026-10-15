@@ -382,8 +382,8 @@ export function ForestCard({
             };
             return (
               <>
-                {poly(1, "rgba(67, 181, 122, 0.28)")}
-                {poly(-1, "rgba(217, 92, 74, 0.24)")}
+                {poly(1, "color-mix(in srgb, var(--pos) 28%, transparent)")}
+                {poly(-1, "color-mix(in srgb, var(--neg) 24%, transparent)")}
               </>
             );
           })()}

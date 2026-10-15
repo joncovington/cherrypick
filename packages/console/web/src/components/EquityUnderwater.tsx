@@ -49,7 +49,7 @@ export function EquityUnderwater({ equity }: { equity: EquityPoint[] }) {
         style={{ width: "100%", height: "auto", display: "block" }}
       >
         <polyline
-          fill="rgba(217, 92, 74, 0.2)"
+          fill="color-mix(in srgb, var(--neg) 20%, transparent)"
           stroke="var(--neg)"
           strokeWidth="1.2"
           points={

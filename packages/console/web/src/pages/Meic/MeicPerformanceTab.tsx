@@ -8,6 +8,7 @@ import { TimeBarChart } from "../../components/chart/TimeBarChart";
 import { TabStrip } from "../../components/ScopeBar";
 import { powerNote, WithheldNote } from "../../lib/power";
 import { DailyRiskTiles } from "../../components/performance/DailyRiskTiles";
+import { tokenAlpha } from "../../components/chart/cssvars";
 
 interface BreakdownRow {
   bucket: string;
@@ -148,7 +149,7 @@ export function MeicPerformanceTab({
                 {
                   label: "drawdown",
                   color: "var(--neg)",
-                  fill: "rgba(217, 92, 74, 0.2)",
+                  fill: tokenAlpha("--neg", 0.2),
                   points: equity.map((e) => ({ x: e.date, y: -e.drawdown })),
                 },
               ]}

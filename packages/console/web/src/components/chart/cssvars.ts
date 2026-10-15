@@ -37,6 +37,18 @@ export function hexOf(name: string, fallback: string): string {
   return v || fallback;
 }
 
+/** A token at an alpha, for a canvas (`rgba(r, g, b, a)` off the token's hex): the area fills and
+ *  volume bars that used to hard-code the old palette's green/red. Follows the theme, since the
+ *  page reloads on a theme change and this is read at chart construction. */
+export function tokenAlpha(name: string, alpha: number, fallback = "#888888"): string {
+  const hex = hexOf(name, fallback);
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex);
+  if (m === null) return hex;
+  const h = m[1]!.length === 3 ? m[1]!.split("").map((c) => c + c).join("") : m[1]!;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 /** Resolve a colour the stylesheet might have written as a var() into the hex a canvas needs.
  *  Anything not a var() — a hex, a rgba(), a color-mix the canvas could never read either —
  *  passes through unchanged; callers must not hand this a color-mix and expect it to resolve. */

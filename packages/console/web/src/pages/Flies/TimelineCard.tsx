@@ -271,10 +271,10 @@ export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter:
           const lines = [`no data · ${Math.round(mins[i]! - mins[i - 1]!)}m`, gapReason(mins[i - 1]!, mins[i]!)];
           return (
             <g key={`gap${i}`}>
-              <rect x={x0} y={pad.t} width={x1 - x0} height={height - pad.b - pad.t} fill="rgba(217, 161, 59, 0.07)" />
+              <rect x={x0} y={pad.t} width={x1 - x0} height={height - pad.b - pad.t} fill="color-mix(in srgb, var(--amber-line) 7%, transparent)" />
               {lines.map((s, k) =>
                 x1 - x0 > s.length * 5.5 + 6 ? (
-                  <text key={k} x={(x0 + x1) / 2} y={pad.t + 11 + k * 12} fontSize={9} fill="rgba(217, 161, 59, 0.8)" textAnchor="middle">
+                  <text key={k} x={(x0 + x1) / 2} y={pad.t + 11 + k * 12} fontSize={9} fill="color-mix(in srgb, var(--amber-line) 80%, transparent)" textAnchor="middle">
                     {s}
                   </text>
                 ) : null,
@@ -339,7 +339,7 @@ export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter:
 
         {/* the replayed book */}
         {pnlFills.map((f, k) => (
-          <polygon key={`fill${k}`} points={f.pts} fill={f.pos ? "rgba(67, 181, 122, 0.22)" : "rgba(217, 92, 74, 0.2)"} />
+          <polygon key={`fill${k}`} points={f.pts} fill={f.pos ? "color-mix(in srgb, var(--pos) 22%, transparent)" : "color-mix(in srgb, var(--neg) 20%, transparent)"} />
         ))}
         {pnlLines.map((l) =>
           l.segs.map((seg, k) => (

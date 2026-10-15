@@ -148,7 +148,7 @@ export function JournalCard({ mode, filter }: { mode: TradingMode; filter: Flies
           {gantt}
           <div className="forest-legend">
             <span><i style={{ background: "var(--pos)" }} /> entry taken</span>
-            <span><i style={{ background: "rgba(217, 92, 74, 0.6)" }} /> refused (bar spans how long)</span>
+            <span><i style={{ background: "color-mix(in srgb, var(--neg) 60%, transparent)" }} /> refused (bar spans how long)</span>
           </div>
           <div className="table-scroll" style={{ marginTop: "0.6rem", maxHeight: "18rem", overflowY: "auto" }}>
             <table className="data-table">

@@ -6,6 +6,7 @@ import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../compone
 import { LineChart, SeriesLegend } from "../../components/Charts";
 import { TimeLineChart } from "../../components/chart/TimeLineChart";
 import { TabStrip } from "../../components/ScopeBar";
+import { tokenAlpha } from "../../components/chart/cssvars";
 
 interface StrategyDetail {
   strategy: string;
@@ -101,7 +102,7 @@ export function EarningsDetailCards({ mode, era }: { mode: TradingMode; era: str
                 {
                   label: "cum net P&L",
                   color: "var(--pos)",
-                  fill: "rgba(67, 181, 122, 0.15)",
+                  fill: tokenAlpha("--pos", 0.15),
                   points: windowed.map((e) => ({ x: e.date, y: e.cumulative })),
                 },
               ]}
@@ -162,7 +163,7 @@ export function EarningsDetailCards({ mode, era }: { mode: TradingMode; era: str
                     {
                       label: "drawdown",
                       color: "var(--neg)",
-                      fill: "rgba(217, 92, 74, 0.18)",
+                      fill: tokenAlpha("--neg", 0.18),
                       points: s.curve.map((c) => ({ x: String(c.i).padStart(4, "0"), y: -c.drawdown })),
                     },
                   ]}
@@ -199,7 +200,7 @@ export function EarningsDetailCards({ mode, era }: { mode: TradingMode; era: str
                               key={`${iv}-${dp}`}
                               style={{
                                 textAlign: "center",
-                                background: n > 0 ? `rgba(122, 162, 255, ${0.12 + 0.6 * (n / maxCell)})` : undefined,
+                                background: n > 0 ? `color-mix(in srgb, var(--accent) ${Math.round((0.12 + 0.6 * (n / maxCell)) * 100)}%, transparent)` : undefined,
                               }}
                             >
                               {n > 0 ? n : ""}

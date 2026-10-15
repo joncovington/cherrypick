@@ -95,7 +95,7 @@ export function MonthlyHeatmap({ monthly, kind }: { monthly: Record<string, numb
   const maxAbs = Math.max(...entries.map(([, v]) => Math.abs(v)), 1e-9);
   const fmt = fmtSeries(kind);
   const shade = (v: number) =>
-    v >= 0 ? `rgba(67, 181, 122, ${(0.15 + 0.6 * (v / maxAbs)).toFixed(2)})` : `rgba(217, 92, 74, ${(0.15 + 0.6 * (-v / maxAbs)).toFixed(2)})`;
+    `color-mix(in srgb, var(${v >= 0 ? "--pos" : "--neg"}) ${Math.round((0.15 + 0.6 * (Math.abs(v) / maxAbs)) * 100)}%, transparent)`;
   return (
     <div className="table-scroll">
       <table className="data-table num-from-1">

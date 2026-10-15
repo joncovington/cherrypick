@@ -14,6 +14,7 @@ import { useFuturesTicker } from "../../lib/api";
 import { useWsState } from "../../lib/useQuote";
 import { wsClient } from "../../lib/wsClient";
 import { canvasPalette as _pal, hexOf } from "../../components/chart/cssvars";
+import { tokenAlpha } from "../../components/chart/cssvars";
 
 const PAL = _pal();
 
@@ -28,8 +29,8 @@ const PAL = _pal();
 
 const UP = hexOf("--pos", "#3af3a0");
 const DOWN = hexOf("--neg", "#ee6760");
-const UP_VOL = "rgba(67, 181, 122, 0.35)";
-const DOWN_VOL = "rgba(217, 92, 74, 0.35)";
+const UP_VOL = tokenAlpha("--pos", 0.35);
+const DOWN_VOL = tokenAlpha("--neg", 0.35);
 /** Bars in view when the history lands; the rest is a scroll away. */
 const INITIAL_BARS = 150;
 

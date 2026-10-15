@@ -16,8 +16,19 @@ export const CHART_GRID_MID = "var(--chart-grid-mid)";
 export const AXIS_FONT = { fontSize: 9, fill: AXIS_MUTED, fontFamily: "Consolas, monospace" } as const;
 // No brand accent (#d23f57) in a general-purpose categorical palette -- that color is reserved
 // for brand/live/alert moments elsewhere in the app, and a rotating series palette would spend it
-// on "just the first series," shown constantly and neutrally.
-export const SERIES_COLORS = ["#7aa2ff", "#43b57a", "#d9a13b", "#a06bd9", "#4fc3d9", "#e88a5c", "#8a9c4a"];
+// on "just the first series," shown constantly and neutrally. The first four are the theme's own
+// tokens (they were the old palette's blue/green/amber/purple, which never followed the light
+// theme); the tail stays literal, a categorical spread both themes share, like ARM_COLORS's.
+// Every consumer resolves var() (SVG natively, canvas through `resolveColor`).
+export const SERIES_COLORS = [
+  "var(--accent)",
+  "var(--pos)",
+  "var(--amber-line)",
+  "var(--chart-special)",
+  "#4fc3d9",
+  "#e88a5c",
+  "#8a9c4a",
+];
 
 // Re-exported for the ~existing call sites that import niceTicks from here -- the one
 // implementation now lives in components/chart/scales.ts, alongside the rest of the kit.
