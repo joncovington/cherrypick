@@ -214,6 +214,53 @@ prices without running an arm.
 - *Out of sample:* every session recorded from 10-13 on. No width other than 5 has been replayed or
   read on them.
 
+**Declared question: dealer gamma at entry (declared 2026-10-14, after looking at control's settled
+rows through 10-14 and nothing later).** What decides a credit-first entry is the tape after it.
+Over control's 419 entries (07-20..10-14, SPX spot trail):
+
+- in the 60 minutes after entry, the straightest fifth of paths completed 67% for −$55 an entry and
+  the choppiest fifth 78% for +$43;
+- spreads that saw spot go 5 points both ways within the hour completed 85% (+$27), against 72%
+  (−$7);
+- chop before entry does not forecast that usefully. Swing counts persist (rho about 0.55), but
+  trailing measures show no stable link to P&L, and their sign flips between eras.
+
+Dealer gamma at entry did forecast it, the opposite way to the pinning story:
+
+- with net GEX below zero (dealers short gamma), entries saw more swings after (6.3 against 5.9 of
+  3 points or more in 60 minutes) and more two-way hours (33% against 25%);
+- they completed 80% against 74% and netted +$13 an entry against −$2 (162 against 231 entries);
+- that gap is about one standard error;
+- the GEX sign was wrong on about 14% of entries before the 10-06 surface fix, and the 10-12
+  one-gamma change redefined the inputs again. The 41 entries since 10-06 are too few to read P&L
+  on, though swings tracked GEX more strongly there (rho −0.46).
+
+- *The signal, fixed now:* the sign of net GEX at entry as the paper loop sees it (`entry_net_gex`;
+  in the replay, the recorded GEX surface at or before the tick, as Phase 1 enriches it).
+  - Sign only, not a level or concentration threshold. A level would be one more searched cut.
+  - Zero or missing is no reading; the gate fails open on it.
+- *Grid:* control, and control refusing a legged entry while net GEX at entry is zero or above
+  (`short-gamma-only`). One variable, one comparison: no family correction.
+  - `long-gamma-only` is replayed beside it as the mirror, to confirm the split, never as a
+    candidate.
+  - Width, window, gates and completion rule are control's.
+- *Measures, paired per session against control:*
+  - **The result:** net per session, entries, completion rate against its break-even, and net ÷
+    maximum risk.
+  - **The mechanism, reported beside it:** swings of 3 points or more and the two-way-hour share in
+    the 60 minutes after each entry, split by GEX sign. The result is only believed if the mechanism
+    shows too.
+- *Decision rule:* `short-gamma-only` becomes a declared paper arm, and GEX sign a `selector`
+  feature, at the next boundary only if all three hold over at least 20 sessions out of sample:
+  - its paired per-session net difference against control has a one-sided 95% lower bound above
+    zero;
+  - its entries complete at a higher rate than control's;
+  - short-gamma entries show more post-entry swings than long-gamma ones over the same sessions.
+  - Anything less reads "not shown". It never becomes a live gate without its own paper read.
+- *Out of sample:* sessions from 10-15 on, under the 10-12 GEX definition. 10-06..10-14 were looked
+  at in the 41-entry aggregate above, so they are reported but not counted. Rows before 10-06 are
+  never pooled with later ones.
+
 ## Phase 2 — the MEIC replay
 
 **Shape.** The same foundation: `core.quotehistory`, the same enrichment, MEIC's own entry and
@@ -285,3 +332,4 @@ disagree, the shared code moves to `cherrypick.core`, following core's own bar.
 | ~14 sessions out of sample | First tuning reads (credit floor, restack, start time), against their declared grids; an effect of ~$100 a session needs ~42 (gap 3) |
 | ≥20 sessions out of sample | Live tick cadence read (60 s vs 30 s vs 15 s), against its declared grid and decision rule |
 | ≥20 sessions out of sample | Wing-width read (5 / 10 / 15 / 20 at width-scaled caps), then the salvage grid on any width that passes |
+| ≥20 sessions from 10-15 (~11-12) | Dealer-gamma read: `short-gamma-only` against control, with the post-entry chop beside it |
