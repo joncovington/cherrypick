@@ -14,6 +14,7 @@ import {
   readMeicAnalytics,
   readMeicDivergence,
   readMeicDeepAnalytics,
+  readMeicSummary,
   readMeicPerformance,
   readMeicScope,
   readMeicLoopStatus,
@@ -142,6 +143,18 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/meic/deep", async (req) =>
     readMeicDeepAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),
   );
+  // The summary slide's one read (readers/meic.ts, "The summary slide's one read"): every figure
+  // the slide renders from one payload, so the cards cannot disagree. `range` is the toolbar's
+  // day/week/month/year/all; `date` is the page's resolved session, which "day" scopes to.
+  app.get("/api/meic/summary", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const rawDay = q["date"];
+    const day = typeof rawDay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawDay) ? rawDay : null;
+    const rawPage = q["page"];
+    // A page that is not a positive integer is the first page; the reader clamps the top.
+    const entryPage = typeof rawPage === "string" && /^[1-9][0-9]*$/.test(rawPage) ? Number(rawPage) : undefined;
+    return readMeicSummary(config, parseMode(req.query), parseMeicScope(req.query), typeof q["range"] === "string" ? q["range"] : undefined, day, entryPage);
+  });
   app.get("/api/meic/scope", async (req) => readMeicScope(config, parseMode(req.query), parseMeicScope(req.query).era));
   // Scope (era x symbol x profile) reaches the forest, so the header's arm/symbol/era controls
   // narrow the curves the way they already narrow the session, history and calibration slides.

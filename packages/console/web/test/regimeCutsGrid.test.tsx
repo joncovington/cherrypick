@@ -36,8 +36,8 @@ describe("CrossTabGrid", () => {
         thinBelowSessions={3}
       />,
     );
-    expect(html).toContain("rgba(67, 181, 122, 0.83"); // 0.15 + 0.85 * 0.8
-    expect(html).toContain("rgba(67, 181, 122, 0.32"); // 0.15 + 0.85 * 0.2
+    expect(html).toContain("color-mix(in srgb, var(--pos) 83%"); // 0.15 + 0.85 * 0.8
+    expect(html).toContain("color-mix(in srgb, var(--pos) 32%"); // 0.15 + 0.85 * 0.2
     expect(html).toContain("80%");
     expect(html).toContain("8s");
   });
@@ -46,7 +46,7 @@ describe("CrossTabGrid", () => {
     const html = text(
       <CrossTabGrid tab={tab([cell(["diffuse", "with"], { thin: true, completionRate: 0.9 })])} thinBelowSessions={3} />,
     );
-    expect(html).toContain("var(--row-line)");
+    expect(html).toContain("var(--track)");
     expect(html).toContain(">thin<");
     expect(html).not.toContain("rgba(67");
   });
@@ -70,7 +70,7 @@ describe("CrossTabGrid", () => {
         thinBelowSessions={3}
       />,
     );
-    expect(html).toContain("rgba(67, 181, 122, 0.575"); // 0.15 + 0.85 * 0.5
+    expect(html).toContain("color-mix(in srgb, var(--pos) 57%"); // 0.15 + 0.85 * 0.5
     expect(html).toContain("Colour is win rate");
   });
   it("prints the writer's fragile and sign-change stamps, with their numbers in the title", () => {

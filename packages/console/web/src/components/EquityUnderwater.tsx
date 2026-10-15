@@ -37,7 +37,7 @@ export function EquityUnderwater({ equity }: { equity: EquityPoint[] }) {
       >
         <polyline
           fill="none"
-          stroke="#43b57a"
+          stroke="var(--pos)"
           strokeWidth="1.5"
           points={equity.map((e, i) => `${X(i).toFixed(1)},${Y(e.equity).toFixed(1)}`).join(" ")}
         />
@@ -50,7 +50,7 @@ export function EquityUnderwater({ equity }: { equity: EquityPoint[] }) {
       >
         <polyline
           fill="rgba(217, 92, 74, 0.2)"
-          stroke="#d95c4a"
+          stroke="var(--neg)"
           strokeWidth="1.2"
           points={
             `${X(0).toFixed(1)},${Yd(0).toFixed(1)} ` +

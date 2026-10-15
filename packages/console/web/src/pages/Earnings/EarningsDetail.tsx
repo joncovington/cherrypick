@@ -41,10 +41,10 @@ const WINDOWS = ["cumulative", "rolling 4w", "rolling 1w"] as const;
 /** Sample-progress bar: n/target, colored once the significance gates are met. */
 function SampleBar({ s }: { s: StrategyDetail }) {
   const pct = Math.round(s.sampleProgress * 100);
-  const color = s.significant ? "var(--ok)" : s.directional ? "var(--warn)" : "var(--border)";
+  const color = s.significant ? "var(--pos)" : s.directional ? "var(--warn)" : "var(--border)";
   return (
     <div title={`${s.trades}/30 trades — ${s.significant ? "significant" : s.directional ? "directional only" : "too small to read"}`}>
-      <div style={{ height: 6, background: "var(--row-line)", borderRadius: 3, overflow: "hidden" }}>
+      <div style={{ height: 6, background: "var(--track)", borderRadius: 3, overflow: "hidden" }}>
         <div style={{ width: `${pct}%`, height: "100%", background: color }} />
       </div>
       <span className="muted" style={{ fontSize: 10.5 }}>
@@ -100,7 +100,7 @@ export function EarningsDetailCards({ mode, era }: { mode: TradingMode; era: str
               series={[
                 {
                   label: "cum net P&L",
-                  color: "#43b57a",
+                  color: "var(--pos)",
                   fill: "rgba(67, 181, 122, 0.15)",
                   points: windowed.map((e) => ({ x: e.date, y: e.cumulative })),
                 },
@@ -158,10 +158,10 @@ export function EarningsDetailCards({ mode, era }: { mode: TradingMode; era: str
                 <LineChart
                   height={130}
                   series={[
-                    { label: "equity", color: "#43b57a", points: s.curve.map((c) => ({ x: String(c.i).padStart(4, "0"), y: c.equity })) },
+                    { label: "equity", color: "var(--pos)", points: s.curve.map((c) => ({ x: String(c.i).padStart(4, "0"), y: c.equity })) },
                     {
                       label: "drawdown",
-                      color: "#d95c4a",
+                      color: "var(--neg)",
                       fill: "rgba(217, 92, 74, 0.18)",
                       points: s.curve.map((c) => ({ x: String(c.i).padStart(4, "0"), y: -c.drawdown })),
                     },
@@ -171,7 +171,7 @@ export function EarningsDetailCards({ mode, era }: { mode: TradingMode; era: str
             ))}
           </div>
         )}
-        <SeriesLegend items={[{ label: "equity", color: "#43b57a" }, { label: "drawdown from peak", color: "#d95c4a" }]} />
+        <SeriesLegend items={[{ label: "equity", color: "var(--pos)" }, { label: "drawdown from peak", color: "var(--neg)" }]} />
       </Card>
 
       <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(22rem, 1fr))" }}>

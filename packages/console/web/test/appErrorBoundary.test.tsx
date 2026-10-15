@@ -39,10 +39,11 @@ describe("app error boundary", () => {
 });
 
 describe("pre-stylesheet background", () => {
-  it("index.html paints the theme's --bg before styles.css loads", () => {
+  it("index.html paints the theme's --canvas before styles.css loads", () => {
     const css = fs.readFileSync(path.join(web, "src", "styles.css"), "utf8");
     const html = fs.readFileSync(path.join(web, "index.html"), "utf8");
-    const bg = /--bg:\s*(#[0-9a-f]{3,8})\s*;/i.exec(css)?.[1];
+    // --canvas is the adopted theme's authority (2026-10); --bg aliases it for un-swept surfaces.
+    const bg = /--canvas:\s*(#[0-9a-f]{3,8})\s*;/i.exec(css)?.[1];
     expect(bg).toBeDefined();
     expect(html.toLowerCase()).toContain(`background: ${bg!.toLowerCase()};`);
   });

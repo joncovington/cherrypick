@@ -67,14 +67,14 @@ export function Spark({
   const ends = series[series.length - 1] ?? 0;
   const stroke =
     tone === "pos"
-      ? "var(--ok)"
+      ? "var(--pos)"
       : tone === "neg"
-        ? "var(--err)"
+        ? "var(--neg)"
         : tone === "muted"
           ? "var(--text-muted)"
           : ends >= 0
-            ? "var(--ok)"
-            : "var(--err)";
+            ? "var(--pos)"
+            : "var(--neg)";
 
   const clamped = series.some((v) => v < lo || v > hi);
   const label = title ?? "trend";

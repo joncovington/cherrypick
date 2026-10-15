@@ -100,6 +100,10 @@ export type FliesSlideId = (typeof FLIES_SLIDES)[number]["id"];
  */
 export const MEIC_SLIDES = [
   { id: "session", label: "session" },
+  // The gauge-led day summary (2026-10): the slide whose adopted visual language became the
+  // suite's theme, and the pattern for every module's own summary — one per module, each in its
+  // own KPI vocabulary; no central summary page.
+  { id: "summary", label: "summary" },
   { id: "forest", label: "forest" },
   { id: "attempts", label: "attempts" },
   { id: "exits", label: "exits" },
@@ -368,7 +372,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   meic: {
     slides: MEIC_SLIDES,
     groups: [
-      { label: "today", ids: ["session", "forest", "attempts"] },
+      { label: "today", ids: ["session", "summary", "forest", "attempts"] },
       { label: "evidence", ids: ["exits", "regime"] },
       { label: "study", ids: ["calibration", "performance", "costs", "advisor"] },
       { label: "tables", ids: ["positions", "history", "sessions"] },

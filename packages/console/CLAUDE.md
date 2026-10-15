@@ -213,8 +213,18 @@ alone):
 
 ## Pages
 
-**Shell.** A top bar (menu, the futures ticker, the clock) and a bottom status bar (health chips,
-watchdog/session/morning phase, logs) are on every page; only the content between them scrolls.
+**Shell.** A grid, not a stack (2026-10-12): the brand head and the top bar are row 1's two
+halves (ticker, session chip, clock, the palette trigger), the rail and the content pane are row
+2's, the status bar (health chips, watchdog/session/morning phase, logs) is row 3. The brand
+head's underline is the same grid track as the top bar's — one rule across the window in both
+rail widths — and the rail's vertical is the brand head's right border continued by the nav's,
+unbroken from the top of the window to the status bar. **The rail is the one nav** (mounted in
+the shell since 2026-10-11, Overview included; collapsed to a 64px icon strip by default, its own
+toggle at its foot — the top bar holds no menu and never opens one). The command palette
+(`Ctrl/Cmd+K`, or `?` outside a text field; `CommandPalette` over `paletteStore`'s open flag) is
+the searchable shortcut legend — every page, the current module's tabs, and the `g`/digit hints,
+built from `navLinks.ts`/`navGroups.ts` so it cannot name a page the rail lacks. The palette
+closes on any navigation, Escape (restoring focus), a pick, or Ctrl+K again.
 
 **System page** (`/system`): the suite's own health, read-only, from the files the suite writes
 (supervisor registry and heartbeat, watchdog and its renotify memory, holds, pid files, stamps).
@@ -349,6 +359,17 @@ the intervals, paired differences, t bounds, sign tests and projections are `cor
   `per_entry` / `per_100_risk` paired blocks, keyed and windowed as the dollar pair. A ledger with no
   recorded capital (flies) shows a dash there, never zero, and a partial record says how many trades
   carry one.
+
+**A summary slide is a module's own.** MEIC's summary slide is the pattern — one-read payload
+computed server-side to the cent, presentation arithmetic only in the component, money in the
+suite's one layout, tone from a number's sign — and each module's summary carries its own KPIs in
+its own vocabulary: entry-time and weekday bands are MEIC's, capture and capital-at-risk mean
+nothing to a legged flies book, cash deployed is contango's alone. There is deliberately no
+central summary page: one was built under Reports and withdrawn the same day (2026-10-11,
+`docs/history.md`) — the modules' KPIs are not the same book, and a shared surface kept flattening
+them to their common denominator or growing a registry of per-module exceptions.
+`core.metrics summary` is the one shared normalisation (hero/by-arm/daily/capture at arbitrary
+windows); a module summary renders it in its own shape, it does not import a common page.
 
 **Module advisor slides.** `readers/advisor.ts`'s `readAdvisorModule` serves
 `/api/advisor/module/:module`: active experiments with progress against length and stall budget, the

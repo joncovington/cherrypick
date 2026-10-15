@@ -101,8 +101,8 @@ export function SpreadsPostTable({ rows }: { rows: DerivedFlowRow[] }) {
               <td className={`num ${tone}`}>{s === null ? "—" : `${s > 0 ? "+" : ""}${fmtNum(s, 0)}`}</td>
               <td>
                 <svg width={56} height={8} aria-hidden="true">
-                  <rect width={56} height={8} fill="var(--row-line)" />
-                  <rect x={s !== null && s < 0 ? 28 - w : 28} width={w} height={8} fill={s === null ? "none" : s >= 0 ? "var(--ok)" : "var(--err)"} />
+                  <rect width={56} height={8} fill="var(--track)" />
+                  <rect x={s !== null && s < 0 ? 28 - w : 28} width={w} height={8} fill={s === null ? "none" : s >= 0 ? "var(--pos)" : "var(--neg)"} />
                 </svg>
               </td>
               <td>

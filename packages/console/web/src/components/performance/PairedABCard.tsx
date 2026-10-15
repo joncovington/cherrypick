@@ -2,6 +2,9 @@ import { useEffect, useRef } from "react";
 import { createChart, LineSeries, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import type { AdvisedPair, ModulePerformanceGroup } from "../../lib/api";
 import { Card } from "../DataTable";
+import { canvasPalette as _pal } from "../chart/cssvars";
+
+const PAL = _pal();
 
 /**
  * One experiment's advised book against the base it shadows: both cumulative curves, plus their
@@ -35,26 +38,26 @@ export function PairedABCard({
     if (el === null) return;
     const chart = createChart(el, {
       autoSize: true,
-      layout: { background: { color: "transparent" }, textColor: "#a6adb8" },
-      grid: { vertLines: { color: "#1a1d23" }, horzLines: { color: "#1a1d23" } },
-      rightPriceScale: { borderColor: "#23262d" },
-      timeScale: { borderColor: "#23262d" },
+      layout: { background: { color: "transparent" }, textColor: PAL.textMuted },
+      grid: { vertLines: { color: PAL.grid }, horzLines: { color: PAL.grid } },
+      rightPriceScale: { borderColor: PAL.gridMid },
+      timeScale: { borderColor: PAL.gridMid },
     });
     chartRef.current = chart;
     advisedLineRef.current = chart.addSeries(LineSeries, {
-      color: "#7aa2ff",
+      color: PAL.accent,
       lineWidth: 2,
       title: pair.advised,
       priceLineVisible: false,
     });
     baseLineRef.current = chart.addSeries(LineSeries, {
-      color: "#82878f",
+      color: PAL.textMuted,
       lineWidth: 1,
       title: pair.base,
       priceLineVisible: false,
     });
     diffLineRef.current = chart.addSeries(LineSeries, {
-      color: "#43b57a",
+      color: PAL.pos,
       lineWidth: 1,
       lineStyle: 2, // dashed
       title: "difference",

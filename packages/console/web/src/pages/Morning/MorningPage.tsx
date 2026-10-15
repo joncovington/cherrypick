@@ -910,9 +910,9 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
                       The tiles stay beneath for the exact figures and their basis labels. */}
                   <LevelStrip
                     levels={[
-                      { label: "put wall", value: levels.putWall, color: "#d95c4a" },
-                      { label: "flip", value: levels.zeroGamma, color: "#7aa2ff" },
-                      { label: "call wall", value: levels.callWall, color: "#43b57a" },
+                      { label: "put wall", value: levels.putWall, color: "var(--neg)" },
+                      { label: "flip", value: levels.zeroGamma, color: "var(--accent)" },
+                      { label: "call wall", value: levels.callWall, color: "var(--pos)" },
                     ]}
                     marker={{
                       label: "spot",

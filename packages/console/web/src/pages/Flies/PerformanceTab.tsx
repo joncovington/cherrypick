@@ -124,9 +124,9 @@ function PnlBars({ series, cumulative }: { series: Performance["series"]; cumula
   const bw = (width - m.l - m.r) / series.length;
   return (
     <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="P&L over time" style={{ width: "100%", height: "auto", display: "block" }}>
-      <line x1={m.l} y1={Y(0)} x2={width - m.r} y2={Y(0)} stroke="#3d4653" />
+      <line x1={m.l} y1={Y(0)} x2={width - m.r} y2={Y(0)} stroke="var(--chart-grid-strong)" />
       {[yMax, 0, yMin].map((v, i) => (
-        <text key={i} x={4} y={Y(v) + 3} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">{fmtMoney(v)}</text>
+        <text key={i} x={4} y={Y(v) + 3} fontSize={9} fill="var(--text-muted)" fontFamily="Consolas, monospace">{fmtMoney(v)}</text>
       ))}
       {series.map((s, i) => (
         <rect
@@ -135,7 +135,7 @@ function PnlBars({ series, cumulative }: { series: Performance["series"]; cumula
           y={Math.min(Y(0), Y(s.netPnl))}
           width={Math.max(bw * 0.7, 1)}
           height={Math.max(Math.abs(Y(s.netPnl) - Y(0)), 1)}
-          fill={s.netPnl >= 0 ? "#43b57a" : "#d95c4a"}
+          fill={s.netPnl >= 0 ? "var(--pos)" : "var(--neg)"}
         >
           <title>{`${s.bucket}: ${fmtMoney(s.netPnl)} (cum ${fmtMoney(s.cumulative)})`}</title>
         </rect>
@@ -144,14 +144,14 @@ function PnlBars({ series, cumulative }: { series: Performance["series"]; cumula
         <polyline
           points={series.map((s, i) => `${(m.l + (i + 0.5) * bw).toFixed(1)},${Y(s.cumulative).toFixed(1)}`).join(" ")}
           fill="none"
-          stroke="#7aa2ff"
+          stroke="var(--accent)"
           strokeWidth={1.6}
         />
       )}
       {series.length > 0 && (
         <>
-          <text x={m.l} y={height - 6} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">{series[0]!.bucket}</text>
-          <text x={width - m.r} y={height - 6} fontSize={9} fill="#82878f" textAnchor="end" fontFamily="Consolas, monospace">
+          <text x={m.l} y={height - 6} fontSize={9} fill="var(--text-muted)" fontFamily="Consolas, monospace">{series[0]!.bucket}</text>
+          <text x={width - m.r} y={height - 6} fontSize={9} fill="var(--text-muted)" textAnchor="end" fontFamily="Consolas, monospace">
             {series[series.length - 1]!.bucket}
           </text>
         </>
@@ -172,25 +172,25 @@ export function CompletionTrend({ trend }: { trend: Performance["completionTrend
     <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="completion trend" style={{ width: "100%", height: "auto", display: "block" }}>
       {[0, 50, 100].map((p) => (
         <g key={p}>
-          <line x1={m.l} y1={Y(p)} x2={width - m.r} y2={Y(p)} stroke="#15181e" />
-          <text x={4} y={Y(p) + 3} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">{p}%</text>
+          <line x1={m.l} y1={Y(p)} x2={width - m.r} y2={Y(p)} stroke="var(--chart-grid)" />
+          <text x={4} y={Y(p) + 3} fontSize={9} fill="var(--text-muted)" fontFamily="Consolas, monospace">{p}%</text>
         </g>
       ))}
       <polyline
         points={trend.filter((t) => t.ratePct !== null).map((t, i) => `${X(i).toFixed(1)},${Y(t.ratePct!).toFixed(1)}`).join(" ")}
         fill="none"
-        stroke="#43b57a"
+        stroke="var(--pos)"
         strokeWidth={1.6}
       />
       {trend.map((t, i) =>
         t.ratePct !== null ? (
-          <circle key={t.day} cx={X(i)} cy={Y(t.ratePct)} r={2.5} fill="#43b57a">
+          <circle key={t.day} cx={X(i)} cy={Y(t.ratePct)} r={2.5} fill="var(--pos)">
             <title>{`${t.day}: ${t.completed}/${t.legged} (${t.ratePct.toFixed(0)}%)`}</title>
           </circle>
         ) : null,
       )}
-      <text x={m.l} y={height - 4} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">{trend[0]!.day}</text>
-      <text x={width - m.r} y={height - 4} fontSize={9} fill="#82878f" textAnchor="end" fontFamily="Consolas, monospace">{trend[trend.length - 1]!.day}</text>
+      <text x={m.l} y={height - 4} fontSize={9} fill="var(--text-muted)" fontFamily="Consolas, monospace">{trend[0]!.day}</text>
+      <text x={width - m.r} y={height - 4} fontSize={9} fill="var(--text-muted)" textAnchor="end" fontFamily="Consolas, monospace">{trend[trend.length - 1]!.day}</text>
     </svg>
   );
 }

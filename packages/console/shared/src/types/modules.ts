@@ -1539,3 +1539,172 @@ export interface MeicDivergence {
   /** The outcomes seen, most common first — what the arms were agreeing or disagreeing ABOUT. */
   outcomes: Array<{ outcome: string; count: number }>;
 }
+
+// ---- MEIC summary slide (the one-read payload) ----
+// Declared in @console/shared so the server reader and the slide cannot drift apart: the server
+// builds it, the slide renders it, and this file is the contract between them. Money follows the
+// suite's one layout (net = gross − fees, settlement its own column, signed cash flow).
+
+/** A signal breakdown row — the module's own bucket and measures (`readMeicDeepAnalytics`). */
+export interface MeicSummaryBreakdown {
+  bucket: string;
+  trades: number;
+  winPct: number | null;
+  avgNet: number | null;
+}
+
+export interface MeicSummarySlice {
+  mode: TradingMode;
+  /** The window the numbers answer for: ISO bounds, null = open, with the label the toolbar shows. */
+  window: { from: string | null; to: string | null; label: string };
+  /** The era bound in force — null means "ALL". */
+  era: string | null;
+  hero: {
+    trades: number;
+    sessions: number;
+    gross: number;
+    fees: number;
+    settlement: number;
+    slippage: number;
+    net: number;
+    credit: number;
+    /** The window's settled trades, fee-adjusted — the one rate covering everything realised. */
+    winPct: number | null;
+    wins: number;
+    /** Sessions whose net was positive / negative over the window — the rings' session arc. */
+    daysWon: number;
+    daysLost: number;
+    openTrades: number;
+    /** Capital at risk over open rows: the module's own formula, mirrored (readMeicOpenExposure). */
+    openRisk: number;
+  };
+  /** Net kept of premium sold, clamped −50..+50 for the gauge needle; `captureRawPct` unclamped
+   *  for the label. Null when no premium was collected. */
+  capturePct: number | null;
+  captureRawPct: number | null;
+  /** Return on risk — the review fact set's `on_max_risk`, mirrored: net ÷ the window's capital
+   *  at risk, capital = (wing width − credit) × multiplier × quantity summed over the same settled
+   *  rows the hero's money sums (core.ledgers._meic_closed._capital). `rorPct` clamped
+   *  −100..+100 for the gauge needle — a defined-risk trade's return lives inside those bounds
+   *  up to fee drag — `rorRawPct` unclamped for the label. Null when the window's settled rows
+   *  carry no usable capital. `coverage` says how many settled rows could support the
+   *  computation ("10/10"), so a partial denominator is never read as a whole one. */
+  returnOnRisk: { capitalAtRisk: number | null; rorPct: number | null; rorRawPct: number | null; coverage: string | null };
+  /** Leg outcomes per wing: credit SOLD (per-side net is not a ledger fact), leg state counts,
+   *  stop cost charged. `other` holds states a newer ledger may add, so they show as a count. */
+  legs: Array<{ side: "put" | "call"; credit: number; expired: number; stopped: number; settled: number; other: number; stopCost: number }>;
+  /** The leg-pair identity the module's margin read is built on: clean = both expired, double-stop
+   *  = both stopped, fee bar = avg fee over avg credit sold. Nulls when no legs are recorded. */
+  pairs: { trades: number; clean: number; cleanPct: number | null; doubleStopPct: number | null; breakevenBarPct: number | null };
+  /** Entry-hour bands (ET), the deep-analytics bucket verbatim, over the window. `net` is the
+   *  window's total over the bucket; `avg` the net per trade (the bar the card draws —
+   *  opportunity and edge are different questions); `winPct` over the bucket's SETTLED trades,
+   *  a number, never a tint — colour carries sign, never a verdict. */
+  entryTime: Array<{
+    hour: string;
+    label: string;
+    offSession: boolean;
+    net: number;
+    count: number;
+    avg: number | null;
+    winPct: number | null;
+  }>;
+  /** The gate's ledger: one row per outcome, dominant block_detail beside it, and the
+   *  market-at-refusal sketch aggregated from exactly the refused rows the outcomes count. */
+  evaluations: {
+    evaluated: number;
+    filled: number;
+    refused: number;
+    outcomes: Array<{ outcome: string; n: number; dominantDetail: string | null }>;
+    market: { gexNegPct: number | null; medianIvRank: number | null; quality: string | null };
+  };
+  /** By arm over the window: the hero's money per arm plus the arm's own slice of the gate. */
+  arms: Array<{ arm: string; symbol: string; evaluated: number; filled: number; refused: number; dominant: string | null; net: number }>;
+  /** Era-window signal breakdowns — the module's own buckets and measures. */
+  delta: MeicSummaryBreakdown[];
+  wing: MeicSummaryBreakdown[];
+  weekday: MeicSummaryBreakdown[];
+  /** The window's entries, newest first, one settled page of 40 (`?page=` names the page;
+   *  `page` is the reader's clamp onto 1..pages). The window at a glance; the session and history
+   *  tables keep the full log. `provisional` marks an unsettled row (a mark, not a print) — none
+   *  are listed, and `total` counts the same settled rows the money figures count. */
+  entries: {
+    rows: Array<{ time: string | null; arm: string; symbol: string; credit: number; structure: string; net: number; provisional: boolean }>;
+    total: number;
+    pages: number;
+    page: number;
+  };
+}
+
+// --------------------------------------------------------------------- trade summary (shared)
+// The Reports summary page's one payload (GET /api/reports/summary) — the MEIC summary's shape
+// generalised over every module, computed by `python -m cherrypick.core.metrics summary` (the
+// console's bridge fans it over schemas; nothing is re-derived in TypeScript). Field names inside
+// `reading` stay snake_case, matching `calibration_reading`'s own JSON verbatim (the bridge
+// convention); the composed fields are camelCase, as this file's own types are.
+
+/** `capital` is `ledgers`' per-row capital at risk — max loss for the defined-risk option
+ *  structures, cash deployed for contango's shares — so the ratio's label follows the MODULE:
+ *  "return on risk" where capital is a max loss, "on deployed" where it is cash (review's own
+ *  distinction). `capitalAtRisk`/`returnOnRiskPct` are null when the rows in scope carry none —
+ *  unknown capital is not free capital — and the coverage string keeps a partial denominator
+ *  visible ("9/10"). `returnOnRiskRawPct` is the UNROUNDED-numerator figure, unclamped, for the
+ *  gauge label; `returnOnRiskPct` is clamped −100..+100 for the needle. */
+export interface TradeSummaryReturn {
+  capitalAtRisk: number | null;
+  returnOnRiskPct: number | null;
+  returnOnRiskRawPct: number | null;
+  coverage: string;
+}
+
+/** One module's slice of the Reports summary: the hero money (the suite's one layout, minus the
+ *  cost columns the schema's ledger does not separate — a cost never recorded is not a zero),
+ *  the return-on-risk block, the by-arm roll-up (the hero shape minus capital, each arm with its
+ *  own ratio), the daily path and the capture gauge — present only where `max_profit` coverage
+ *  is FULL (`calibration_reading`'s own rule; absent for a schema that never populates it, e.g.
+ *  flies), so the card's presence follows the module's honesty rule rather than a hand list.
+ *  Every slice is one population: the by-arm nets add up to the hero's, the daily nets to the
+ *  same. `facets` is the WHOLE-LEDGER value lists driving the page's own selects — filters
+ *  narrow the slices, never the facets. */
+export interface TradeSummarySlice {
+  module: string;
+  mode: TradingMode;
+  schema: string;
+  /** The window the numbers answer for: the resolved SESSION bounds (the dates that exist in
+   *  the window, not calendar guesses), null = open. The label the toolbar shows rides at the
+   *  payload level. */
+  window: { from: string | null; to: string | null };
+  hero: {
+    trades: number;
+    sessions: number;
+    gross: number;
+    fees: number;
+    net: number;
+    wins: number;
+    winPct: number | null;
+  };
+  return: TradeSummaryReturn;
+  byArm: Array<{ arm: string; trades: number; sessions: number; net: number; gross: number; fees: number; wins: number; winPct: number | null; capitalCoverage: string; return: number | null }>;
+  /** [session, net, trades, wins], in session order — the window's path. */
+  daily: Array<{ session: string; net: number; trades: number; wins: number }>;
+  capture: { value: number | null; n: number } | null;
+  facets: { sessions: string[]; symbols: string[]; arms: string[] };
+}
+
+/** The one-read payload: the module requested PLUS one slice per schema, so switching modules
+ *  re-renders from the SAME payload (no refetch on a module change) and "module=all" is a
+ *  comparison over one read, never a pool. `modulesRead`/`moduleErrors` keep an unreadable
+ *  ledger audible per module (the reader rule), so one absent db degrades its own slice and
+ *  never the page. */
+export interface TradeSummaryPayload {
+  requested: string | null;
+  mode: TradingMode;
+  range: string;
+  session: string | null;
+  symbol: string | null;
+  arm: string | null;
+  era: { key: string; from: string | null };
+  slices: TradeSummarySlice[];
+  modulesRead: string[];
+  moduleErrors: Record<string, string>;
+}

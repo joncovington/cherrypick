@@ -9,6 +9,9 @@ import {
 } from "lightweight-charts";
 import { fmtMoney } from "../DataTable";
 import { SERIES_COLORS } from "../Charts";
+import { canvasPalette as _pal, resolveColor } from "./cssvars";
+
+const PAL = _pal();
 
 export interface TimeLineSeries {
   label: string;
@@ -45,10 +48,10 @@ export function TimeLineChart({
     if (el === null) return;
     const chart = createChart(el, {
       autoSize: true,
-      layout: { background: { color: "transparent" }, textColor: "#a6adb8" },
-      grid: { vertLines: { color: "#1a1d23" }, horzLines: { color: "#1a1d23" } },
-      rightPriceScale: { borderColor: "#23262d" },
-      timeScale: { borderColor: "#23262d" },
+      layout: { background: { color: "transparent" }, textColor: PAL.textMuted },
+      grid: { vertLines: { color: PAL.grid }, horzLines: { color: PAL.grid } },
+      rightPriceScale: { borderColor: PAL.gridMid },
+      timeScale: { borderColor: PAL.gridMid },
       localization: { priceFormatter: yFormat },
     });
     chartRef.current = chart;
@@ -76,14 +79,14 @@ export function TimeLineChart({
     }
 
     series.forEach((s, i) => {
-      const color = s.color ?? SERIES_COLORS[i % SERIES_COLORS.length]!;
+      const color = resolveColor(s.color ?? SERIES_COLORS[i % SERIES_COLORS.length]!);
       let line = lines.get(s.label);
       if (line === undefined) {
         line =
           s.fill !== undefined
             ? chart.addSeries(AreaSeries, {
                 lineColor: color,
-                topColor: s.fill,
+                topColor: s.fill !== undefined ? resolveColor(s.fill) : undefined,
                 bottomColor: "rgba(0, 0, 0, 0)",
                 lineWidth: 2,
                 title: s.label,

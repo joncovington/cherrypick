@@ -61,6 +61,54 @@ columns (queued for next session; did THIS session's artifact land) with the fai
   unsettled day) and band edges landed up to a grid step off. 2026-09-11 control was a "locked" book:
   two stranded verticals whose loss four adjacent 5-wide flies cancel exactly at every price.
 
+## The palette earned its polish (2026-10-12)
+
+A frontend design spec arrived for the command palette and, as with the border spec, its claims
+split under measurement: shortcut badges and a footer legend already existed, the 12px radius was
+already right, and its surface hexes were this suite's own tokens spelled in vendor grey —
+`#1A1D23`/`#14171D`/`#232730` are `--surface`/`--surface-sunken`/`--surface-hover` verbatim, and
+its `#282C34` "border" is `--border-strong`, which this suite reserves for tracks. What the probe
+confirmed as real landed, re-spelled to tokens: the rows are NavLinks and the shell's anchor rule
+underlined every one (the unstyled-link look the spec saw), the overlay had no depth blur, the
+scrollbar was the browser's, and the box was 34rem where the spec asked 640px. Alongside them the
+search head gained a magnifier and took ownership of the bottom rule, and the keyboard's row
+gained the accent marker the token ladder reserves for selection.
+
+The probe also caught a bug the facelift would have amplified: react-router's NavLink appends its
+own `active` to a plain-string className, so on `/flies/forest` three rows wore the keyboard
+marker at rest. `className` is now a function of the arrow selection, and exactly one row is
+active — verified against the served bundle in both themes.
+
+## The shell became a grid (2026-10-12)
+
+The rail move left three seams nobody had drawn: the brand head (a row inside the nav) carried an
+underline that met the top bar's rule at slightly different heights and read as a step; the rail's
+vertical began at the header rule, leaving the brand head floating; and the toggle, parked in the
+head row, sat in empty space above the menu. The fix was one decision — the shell's flex column
+became a grid with the brand head and the top bar as row 1's two halves, rail and content as row
+2's, status bar as row 3 — after which the lines are shared tracks by construction: the header
+rule is continuous across the window (pixel-verified, zero breaks in both rail widths), and the
+vertical is the brand head's right border continued by the nav's. The toggle moved to the rail's
+foot (a `margin-top: auto` middle slot had gapped the whole menu away from the brand head), the
+scroll to a middle region under the pinned head, and the collapsed cherry grew from 18px to 26px.
+A `margin-top: auto` above a footer inside a scrolling rail is how the empty space got there; the
+lesson is that alignment seams are grid tracks, not margins to keep in step.
+
+## The one nav (2026-10-11)
+
+The header's hamburger menu and the module frame's left rail were the same list in two places, and
+had been since 2026-10-01, when the menu replaced an earlier side nav and the rail replaced the
+menu's width cost one page at a time. The two had already disagreed once by construction — the menu
+renumbered the digit shortcuts over what was visible, the rail did not — and a third copy was being
+asked for. The menu went, the rail moved into the shell (one mount, every page, Overview included;
+`ModuleRoute` renders the content pane only), and the brand block became a static link home with no
+dropdown. The menu's printed shortcut legend — `g o`, `g r`, `1`–`8`, which `lib/keyboardNav.ts` has
+implemented since the menu was written — became the command palette (`Ctrl/Cmd+K`, or `?` outside a
+text field): searchable, built from `navLinks.ts`/`navGroups.ts` so it cannot name a page the rail
+lacks, closing on any navigation like the menu did. The rail's collapsed posture moved from the old
+frame grid to the shell's own `.shell-main` grid, so the collapse is one class on one element, not
+per page.
+
 ## Module frame migration (2026-09-22 → 2026-09-25)
 
 Pages moved one at a time — flies first, the seven trading modules, then the suite surfaces (GEX,
@@ -131,3 +179,32 @@ live-pilot tile links to `/live/today`. For MEIC, deriving entry from the rounde
 of the two side credits showed a one-cent exit on 1,798 worthless expiries. bwb was the first module on
 the charged-slippage model. The date picker (2026-09-26) replaced two native date inputs that made you
 type MM/DD/YYYY.
+
+## The trade-summary redesign lands (2026-10-15)
+
+The MEIC summary slide began as a prototype under a borrowed visual language, scoped to `.ts-root`
+so the rest of the console stayed untouched while the style was judged. It was adopted on the
+branch (2026-10-10): the palette moved to `:root` as the suite's tokens, the legacy aliases died,
+the light theme came home as a global pref, and the chrome, shared components, chart kit and rail
+icons were swept onto the new vocabulary. The branch's own working notes are frozen at
+[`docs/history/trade-summary-branch.md`](../../history/trade-summary-branch.md).
+
+The landing also fixes the rule the prototype implied: **a summary is a per-module surface, and
+MEIC's is the pattern.** One-read payload, every figure computed server-side to the cent,
+presentation arithmetic only in the component, money in the suite's one layout, tone from a
+number's sign alone — and each module's summary carrying its own KPIs in its own vocabulary
+(entry-time and weekday bands are MEIC's; capture and capital-at-risk mean nothing to a legged
+flies book; cash deployed is contango's). One central summary page for every module was built
+under Reports and withdrawn the same day (2026-10-11): the modules' KPIs are not the same book,
+and one comparison surface kept either flattening them to their common denominator or carrying
+per-module exceptions until it was a registry of special cases. `core.metrics summary` remains
+the one shared normalisation a module summary may stand on; the console surface stays
+module-local.
+
+The branch ran as a local-only line kept current with main by the machine's hourly merge timer
+(fetch, count, skip when dirty or checked out elsewhere, abort on conflict — never a push, never
+a rebase; resolutions accrued in rerere). Two conflicts needed hands across the train and both
+resolved the same way — main's functionality, re-expressed in the redesign's vocabulary (the
+Compare-page block on the new token names; the MEIC forest hover readout on `CHART_GRID_STRONG`).
+It reached the PR current with main. Web 365/365, server 784 passed / 31 skipped, typecheck and
+build clean, and each visual step verified in the rebuilt browser rather than by tests alone.

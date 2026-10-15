@@ -2,7 +2,7 @@ import { hasRange, rangeClauses } from "./dateRange.js";
 import { concededArmMoney, entryOutcomes } from "./armCosts.js";
 import { feeDragPct, sumIfAllRecorded, type ArmCostsPayload } from "@console/shared";
 import path from "node:path";
-import type { MeicDivergence, MeicPayload, MeicTradeRow, MeicTradeTotals, MeicSummaryRow, Paged, TradingMode } from "@console/shared";
+import type { MeicDivergence, MeicPayload, MeicTradeRow, MeicTradeTotals, MeicSummaryRow, MeicSummarySlice, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
 import { readOnlyDb, withReadOnlyDb, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
@@ -1643,6 +1643,609 @@ export function readMeicCosts(config: ConsoleConfig, mode: TradingMode, era: str
       since: scoped ? since : null,
       entryOutcomes: entryOutcomes(db, "entry_attempts", scoped ? since : null),
       entryOutcomesAll: entryOutcomes(db, "entry_attempts", null),
+    };
+  });
+}
+
+// ---- The summary slide's one read -------------------------------------------------------------
+//
+// One endpoint returning every figure the slide renders, so the slide's cards cannot disagree
+// with each other the way per-card fetches would let them (the hero's fees summed over one
+// window while the by-arm rows summed over another). The slide derives NOTHING itself beyond
+// presentation arithmetic (a percentage of a figure this payload already carries) — every number
+// is computed once, here, from the ledger.
+//
+// Money follows the suite's one layout (packages/console/CLAUDE.md), the same arithmetic
+// `readMeic`'s totals block uses (line ~385): `pnl` is GROSS in this ledger and `fees` its
+// total, so net = pnl − fees, with the settlement split read out of the total exactly once. Win
+// rates are fee-adjusted like every net here. Breakdown buckets are the module's own SQL
+// verbatim from `readMeicDeepAnalytics` — the same labels the sessions page renders.
+
+export interface MeicSummaryBreakdown {
+  bucket: string;
+  trades: number;
+  winPct: number | null;
+  avgNet: number | null;
+}
+
+/** The toolbar's range segments. Exported so the web side and the tests speak one list. */
+export const MEIC_SUMMARY_RANGES = ["day", "week", "month", "year", "all"] as const;
+export type MeicSummaryRange = (typeof MEIC_SUMMARY_RANGES)[number];
+
+/**
+ * The window each range name stands for, ET-anchored the same way `readMeicAnalytics`'s periods
+ * are: the module's sessions are ET facts, so a "week" starting on the viewer's Sunday would pool
+ * the wrong days. "day" is scoped to the page's RESOLVED session, not wall-clock today — a weekend
+ * view of Friday's session must not answer "no trades" — and an unknown range name falls back to
+ * it rather than silently widening.
+ */
+function summaryWindow(range: string | undefined, day: string | null): { from: string | null; to: string | null; label: string } {
+  const nowEt = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const today = iso(new Date(Date.UTC(nowEt.getFullYear(), nowEt.getMonth(), nowEt.getDate())));
+  const monday = new Date(Date.UTC(nowEt.getFullYear(), nowEt.getMonth(), nowEt.getDate()));
+  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+  switch (range) {
+    case "week":
+      return { from: iso(monday), to: null, label: `week of ${iso(monday)}` };
+    case "month":
+      return { from: `${today.slice(0, 8)}01`, to: null, label: `month of ${today.slice(0, 7)}` };
+    case "year":
+      return { from: `${today.slice(0, 4)}-01-01`, to: null, label: today.slice(0, 4) };
+    case "all":
+      return { from: null, to: null, label: "all time" };
+    default:
+      return day === null
+        ? { from: null, to: null, label: "all time" }
+        : { from: day, to: day, label: "day" };
+  }
+}
+
+function toNum(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function readMeicSummary(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  scope: MeicScopeFilter,
+  range: string | undefined,
+  day: string | null,
+  entryPage: number | undefined,
+): MeicSummarySlice {
+  const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.meicDir, file);
+  const empty: MeicSummarySlice = {
+    mode,
+    window: { from: null, to: null, label: "" },
+    era: scope.era ?? CURRENT_ERA,
+    hero: { trades: 0, sessions: 0, gross: 0, fees: 0, settlement: 0, slippage: 0, net: 0, credit: 0, winPct: null, wins: 0, daysWon: 0, daysLost: 0, openTrades: 0, openRisk: 0 },
+    capturePct: null,
+    captureRawPct: null,
+    returnOnRisk: { capitalAtRisk: null, rorPct: null, rorRawPct: null, coverage: null },
+    legs: [],
+    pairs: { trades: 0, clean: 0, cleanPct: null, doubleStopPct: null, breakevenBarPct: null },
+    entryTime: [],
+    evaluations: { evaluated: 0, filled: 0, refused: 0, outcomes: [], market: { gexNegPct: null, medianIvRank: null, quality: null } },
+    arms: [],
+    delta: [],
+    wing: [],
+    weekday: [],
+    entries: { rows: [], total: 0, pages: 0, page: 1 },
+  };
+  // No day named: resolve the latest session IN THE SCOPE'S ERA, exactly as every other MEIC card
+  // does (`readMeic`'s own comment: "today" scoped to nothing answers the wrong day on a no-trade
+  // session). The window bounds are computed from the RESOLVED day, so "day" means the session
+  // the rest of the page names.
+  const resolvedDay = day ?? resolveMeicSession(config, mode, scope.era);
+  return withReadOnlyDb<MeicSummarySlice>(dbPath, empty, (db) => {
+    const win = summaryWindow(range, resolvedDay);
+    const era = scope.era ?? CURRENT_ERA;
+    const eraBound = era !== "ALL";
+    // The trade side takes the file's own scope helper (era + symbol + arm, column-guarded), then
+    // the window bounds on trade_date — the history table's own convention (`rangeClauses`).
+    const sc = scopeSql(db, scope);
+    const rc = rangeClauses("trade_date", { from: win.from, to: win.to });
+    const winAnd = rc.clauses.length > 0 ? ` AND ${rc.clauses.join(" AND ")}` : "";
+    const where = `${RESOLVED}${sc.and}${winAnd}`;
+    const params = [...sc.params, ...rc.params];
+    const mult = `COALESCE(${meicCol(db, "dollar_multiplier")}, 100) * COALESCE(quantity, 1)`;
+    const settleCol = meicCol(db, "settlement_fees");
+    const slipCol = meicCol(db, "slippage_dollars");
+    const armCol = armColumnOf(db, "ic_trades");
+    // Same settled-row denominators the analytics read defines (line ~1096): trades that contribute
+    // to a money figure, and the fee-adjusted net they sum to.
+    const NET = "COALESCE(SUM(pnl - COALESCE(fees, 0)), 0)";
+    const SETTLED = "SUM(CASE WHEN pnl IS NOT NULL THEN 1 ELSE 0 END)";
+
+    // -- Hero. The totals shape readMeic computes (line ~385) over the window: gross = SUM(pnl)
+    //    over settled rows, fees = total − settlement, net = gross − total. Unsettled rows (NULL
+    //    pnl) drop out of every money figure but still count toward trades-attributed fields.
+    const t = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT COUNT(*) AS trades, COUNT(DISTINCT trade_date) AS sessions,
+                COALESCE(SUM(pnl), 0) AS gross, COALESCE(SUM(fees), 0) AS fees_total,
+                COALESCE(SUM(${settleCol}), 0) AS settlement,
+                COALESCE(SUM(${slipCol}), 0) AS slippage,
+                COALESCE(SUM(net_credit * ${mult}), 0) AS credit,
+                SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END) AS wins
+           FROM ic_trades WHERE ${where} AND pnl IS NOT NULL`,
+      )
+      .get(...params) ?? {};
+    // The rings' session arc: sessions whose fee-adjusted net was positive or negative. Same
+    // settled-row rule — a session of only unsettled rows counts in neither.
+    const days = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT COALESCE(SUM(pnl - COALESCE(fees, 0)), 0) AS net
+           FROM ic_trades WHERE ${where} AND pnl IS NOT NULL GROUP BY trade_date`,
+      )
+      .all(...params);
+    let daysWon = 0;
+    let daysLost = 0;
+    for (const r of days) {
+      if (Number(r["net"] ?? 0) > 0) daysWon += 1;
+      else if (Number(r["net"] ?? 0) < 0) daysLost += 1;
+    }
+    const open = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT COUNT(*) AS n,
+                COALESCE(SUM((wing_width - COALESCE(net_credit, 0.0)) * 100 * COALESCE(quantity, 1)), 0.0) AS cap
+           FROM ic_trades WHERE status IN ('open', 'partial')${sc.and}${winAnd}`,
+      )
+      .get(...params) ?? {};
+    const gross = Math.round(Number(t["gross"] ?? 0) * 100) / 100;
+    const feesTotal = Number(t["fees_total"] ?? 0);
+    // The UNrounded net sum, kept beside the hero's cent-rounded one: the return-on-risk ratio
+    // divides what the review fact set's own division divides — the unrounded sum, of which the
+    // displayed net is the rounded key. A cent in the fourth decimal place of a percentage.
+    const netRaw = Number(t["gross"] ?? 0) - feesTotal;
+    const settlement = Math.round(Number(t["settlement"] ?? 0) * 100) / 100;
+    const trades = Number(t["trades"] ?? 0);
+    const wins = Number(t["wins"] ?? 0);
+    const hero = {
+      trades,
+      sessions: Number(t["sessions"] ?? 0),
+      gross,
+      fees: Math.round((feesTotal - settlement) * 100) / 100,
+      settlement,
+      slippage: Math.round(Number(t["slippage"] ?? 0) * 100) / 100,
+      net: Math.round((gross - feesTotal) * 100) / 100,
+      credit: Math.round(Number(t["credit"] ?? 0) * 100) / 100,
+      winPct: trades > 0 ? (wins / trades) * 100 : null,
+      wins,
+      daysWon,
+      daysLost,
+      openTrades: Number(open["n"] ?? 0),
+      openRisk: Math.round(Number(open["cap"] ?? 0) * 100) / 100,
+    };
+
+    // -- Capture: net kept of premium sold, clamped to the gauge's domain.
+    const captureRawPct = hero.credit > 0 ? (hero.net / hero.credit) * 100 : null;
+    const capturePct = captureRawPct === null ? null : Math.max(-50, Math.min(50, captureRawPct));
+
+    // -- Return on risk: the review fact set's `on_max_risk`, mirrored. The denominator is
+    //    core.ledgers._meic_closed._capital's formula per settled row — (wing width − credit-or-0)
+    //    × multiplier × quantity, ROUNDED PER ROW as _capital rounds it, a missing credit reading
+    //    as zero exactly as `net_credit or 0.0` does there — summed over the same rows the hero's
+    //    money sums, so the ratio's two sides are one population. A row that cannot support the
+    //    formula drops from the DENOMINATOR, never silently from the ratio; its count rides out
+    //    as "coverage" so a partial denominator is visible ("9/10"). The numerator is the
+    //    window's UNROUNDED net — the fact set's own division divides the unrounded sum while its
+    //    displayed net is the rounded key — pinned to the artifact by
+    //    test/meic-summary-reconcile.test.ts. Clamped −100..+100 for the needle — a defined-risk
+    //    trade cannot lose more than its capital — with the unclamped value kept for the label.
+    const capRow = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT COALESCE(SUM(ROUND((wing_width - COALESCE(net_credit, 0.0)) * ${mult}, 2)), 0.0) AS cap,
+                COUNT(*) AS n,
+                SUM(CASE WHEN wing_width IS NOT NULL
+                          AND (wing_width - COALESCE(net_credit, 0.0)) * ${mult} > 0
+                    THEN 1 ELSE 0 END) AS cap_n
+           FROM ic_trades WHERE ${where} AND pnl IS NOT NULL`,
+      )
+      .get(...params) ?? {};
+    const capN = Number(capRow["cap_n"] ?? 0);
+    const capitalAtRisk = capN > 0 ? Math.round(Number(capRow["cap"] ?? 0) * 100) / 100 : null;
+    const rorRawPct =
+      capitalAtRisk !== null && capitalAtRisk > 0 ? (netRaw / capitalAtRisk) * 100 : null;
+    const returnOnRisk = {
+      capitalAtRisk,
+      rorPct: rorRawPct === null ? null : Math.max(-100, Math.min(100, rorRawPct)),
+      rorRawPct,
+      coverage: `${capN}/${trades}`,
+    };
+
+    // -- Leg outcomes and the pair identity, one pass over the window's resolved ICs joined to
+    //    their legs. The subquery-first shape keeps the two `status` columns unambiguous — the
+    //    module's own margin read does the same join the same way (analytics.py's comment).
+    const legRows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT t.ic_order_id, t.fees, t.net_credit, ${mult} AS mult,
+                COALESCE(${meicCol(db, "put_stop_cost")}, 0) AS put_stop_cost,
+                COALESCE(${meicCol(db, "call_stop_cost")}, 0) AS call_stop_cost,
+                ${meicCol(db, "put_settle_value")} AS put_settle_value,
+                ${meicCol(db, "call_settle_value")} AS call_settle_value,
+                MAX(CASE WHEN l.side = 'put' THEN l.status END) AS put_status,
+                MAX(CASE WHEN l.side = 'call' THEN l.status END) AS call_status
+           FROM (SELECT * FROM ic_trades WHERE ${where}) t
+           LEFT JOIN ic_spread_legs l ON l.ic_order_id = t.ic_order_id
+          GROUP BY t.ic_order_id`,
+      )
+      .all(...params);
+    // Per-side credit SOLD — the wings' split of the entry cash, the same multiplicands the
+    // hero's credit sums. Per-side NET is not computed anywhere: pnl is the condor's.
+    const creditSums = db
+      .prepare<string[], { put: number; call: number }>(
+        `SELECT COALESCE(SUM(put_credit * ${mult}), 0) AS put,
+                COALESCE(SUM(call_credit * ${mult}), 0) AS call
+           FROM ic_trades WHERE ${where} AND pnl IS NOT NULL`,
+      )
+      .get(...params) ?? { put: 0, call: 0 };
+    const legCount = (side: "put" | "call", status: string): number =>
+      legRows.filter((r) => str(r[`${side}_status`]) === status).length;
+    const perSideStop = {
+      put: legRows.reduce((s, r) => s + (toNum(r["put_stop_cost"]) ?? 0), 0),
+      call: legRows.reduce((s, r) => s + (toNum(r["call_stop_cost"]) ?? 0), 0),
+    };
+    const legs = (["put", "call"] as const).map((side) => {
+      const expired = legCount(side, "expired");
+      const stopped = legCount(side, "stopped");
+      const known = legRows.filter((r) => str(r[`${side}_status`]) !== null).length;
+      // The third state: a leg still OPEN whose settle value is recorded and non-zero is
+      // cash-settled ITM — `meicExitKind`'s own settled test, applied per leg.
+      const settled = legRows.filter(
+        (r) => str(r[`${side}_status`]) === "open" && Math.abs(toNum(r[`${side}_settle_value`]) ?? 0) > 0,
+      ).length;
+      return {
+        side,
+        credit: Math.round((side === "put" ? creditSums.put : creditSums.call) * 100) / 100,
+        expired,
+        stopped,
+        settled,
+        other: Math.max(0, known - expired - stopped - settled),
+        stopCost: Math.round((perSideStop[side] ?? 0) * 100) / 100,
+      };
+    });
+    {
+      const drift = Math.round(hero.credit * 100) - Math.round(legs.reduce((s, l) => s + l.credit, 0) * 100);
+      if (drift !== 0 && legs.length > 0) {
+        const idx = legs.reduce((best, l, i) => (l.credit > legs[best]!.credit ? i : best), 0);
+        const row = legs[idx]!;
+        row.credit = Math.round((row.credit + drift / 100) * 100) / 100;
+      }
+    }
+    const withLegs = legRows.filter((r) => str(r["put_status"]) !== null && str(r["call_status"]) !== null);
+    const pairCount = withLegs.length;
+    const clean = withLegs.filter((r) => str(r["put_status"]) === "expired" && str(r["call_status"]) === "expired").length;
+    const doubleStop = withLegs.filter((r) => str(r["put_status"]) === "stopped" && str(r["call_status"]) === "stopped").length;
+    const avgPairFee = pairCount > 0 ? withLegs.reduce((s, r) => s + (toNum(r["fees"]) ?? 0), 0) / pairCount : 0;
+    const avgPairCredit = pairCount > 0 ? withLegs.reduce((s, r) => s + (toNum(r["net_credit"]) ?? 0) * (toNum(r["mult"]) ?? 10000), 0) / pairCount : 0;
+    const pairs = {
+      trades: pairCount,
+      clean,
+      cleanPct: pairCount > 0 ? (clean / pairCount) * 100 : null,
+      doubleStopPct: pairCount > 0 ? (doubleStop / pairCount) * 100 : null,
+      breakevenBarPct: avgPairCredit > 0 ? (avgPairFee / avgPairCredit) * 100 : null,
+    };
+
+    // -- Entry-hour bands: the deep-analytics bucket verbatim, over the window. Fee-adjusted net
+    //    per band; unsettled rows contribute nothing to the net but count in the band's trades.
+    const hourRows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT ${ENTRY_HOUR} AS hour, COUNT(*) AS n,
+                COALESCE(SUM(CASE WHEN pnl IS NOT NULL THEN pnl - COALESCE(fees, 0) ELSE 0 END), 0) AS net,
+                SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END) AS wins,
+                SUM(CASE WHEN pnl IS NOT NULL THEN 1 ELSE 0 END) AS settled_n
+           FROM ic_trades WHERE ${where} GROUP BY hour ORDER BY hour`,
+      )
+      .all(...params);
+    const entryTime = hourRows
+      .filter((r) => r["hour"] !== null)
+      .map((r) => {
+        const h = Number(r["hour"]);
+        const count = Number(r["n"] ?? 0);
+        const net = Math.round(Number(r["net"] ?? 0) * 100) / 100;
+        const wins = Number(r["wins"] ?? 0);
+        // Avg per trade is the bar the card draws — opportunity and edge are different
+        // questions, and total net answers only the first. The average never travels without
+        // its n; the card says the count beside every bar.
+        const avg = count > 0 ? Math.round((net / count) * 100) / 100 : null;
+        // Wins are counted among settled rows (pnl NOT NULL), the module's convention; the
+        // percentage is over the bucket's SETTLED trades, so an hour with all trades still
+        // open does not read as 0%.
+        const settledN = Number(r["settled_n"] ?? 0);
+        return {
+          hour: String(h),
+          label: `${String(h).padStart(2, "0")}:00-${String(h + 1).padStart(2, "0")}:00`,
+          offSession: h < 9 || h > 15,
+          net,
+          count,
+          avg,
+          winPct: settledN > 0 ? Math.round((wins / settledN) * 1000) / 10 : null,
+        };
+      });
+
+    // -- The gate's ledger. `entry_attempts` carries arm/symbol/trade_date in its own columns, so
+    //    the scope rebuilds here — but the ARM column name still comes from the shared detector,
+    //    since older ledgers spell it `risk_profile`. The era column is newer still: an untagged
+    //    ledger stays unbounded rather than matching nothing.
+    const attemptArm = findArmColumn(db, "entry_attempts") ?? "arm";
+    const attemptHasEra = hasColumn(db, "entry_attempts", "era");
+    // `entry_attempts` has no era column in this ledger generation (checked 2026-10), so the era
+    // bound rides the era's DATE SPAN via `eraDateSql` — the same bound `daily_summary` takes. A
+    // ledger that adds the column uses it directly.
+    const attemptEraSql = attemptHasEra ? (eraBound ? { sql: "era = ?", params: [era] } : { sql: null, params: [] }) : eraDateSql(era, "trade_date");
+    const attemptClauses: string[] = [];
+    const attemptParams: string[] = [];
+    const addClause = (clause: string | null, param: string | null): void => {
+      if (clause !== null && param !== null) {
+        attemptClauses.push(clause);
+        attemptParams.push(param);
+      }
+    };
+    addClause(win.from !== null ? "trade_date >= ?" : null, win.from);
+    addClause(win.to !== null ? "trade_date <= ?" : null, win.to);
+    addClause(scope.profile !== null ? `${attemptArm} = ?` : null, scope.profile);
+    addClause(scope.symbol !== null ? "symbol = ?" : null, scope.symbol);
+    if (attemptEraSql.sql !== null) {
+      attemptClauses.push(attemptEraSql.sql);
+      attemptParams.push(...attemptEraSql.params);
+    }
+    const attemptWhere = attemptClauses.length > 0 ? attemptClauses.join(" AND ") : "1=1";
+    // The dominant-detail subquery repeats the outer WHERE over the same table, aliased a2. Every
+    // clause here starts with a bare column name, so the alias prefixes cleanly; the params bind
+    // SUBQUERY-FIRST, the order the placeholders appear in the SQL text.
+    const attemptWhereA2 = attemptClauses.length > 0 ? attemptClauses.map((c) => `a2.${c}`).join(" AND ") : "1=1";
+    const attemptParamsTwice = [...attemptParams, ...attemptParams];
+    const outcomeOrder = ["filled", "no_fill", "cadence_blocked", "sign_rule_blocked", "gate_blocked", "window_blocked", "no_candidate"];
+    const outcomeRows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT outcome, COUNT(*) AS n,
+                (SELECT a2.block_detail FROM entry_attempts a2
+                  WHERE a2.outcome = a.outcome AND ${attemptWhereA2}
+                  GROUP BY a2.block_detail ORDER BY COUNT(*) DESC LIMIT 1) AS detail
+           FROM entry_attempts a
+          WHERE ${attemptWhere}
+          GROUP BY outcome`,
+      )
+      .all(...attemptParamsTwice);
+    const evaluated = outcomeRows.reduce((s, r) => s + Number(r["n"] ?? 0), 0);
+    const filledN = Number(outcomeRows.find((r) => str(r["outcome"]) === "filled")?.["n"] ?? 0);
+    const outcomes = outcomeRows
+      .filter((r) => str(r["outcome"]) !== "filled")
+      .map((r) => ({ outcome: str(r["outcome"]) ?? "?", n: Number(r["n"] ?? 0), dominantDetail: str(r["detail"]) }))
+      .sort((a, b) => {
+        const ia = outcomeOrder.indexOf(a.outcome);
+        const ib = outcomeOrder.indexOf(b.outcome);
+        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || b.n - a.n;
+      });
+    // The market sketch aggregates exactly the refused rows the outcomes count — one WHERE, no
+    // separate sample that could disagree with the bars above it.
+    const refusedWhere = `outcome != 'filled' AND ${attemptWhere}`;
+    const gexRow = db
+      .prepare<string[], { gex: number | null; n: number }>(
+        `SELECT AVG(CASE WHEN gex_net < 0 THEN 1.0 ELSE 0.0 END) AS gex, COUNT(*) AS n
+           FROM entry_attempts WHERE ${refusedWhere} AND gex_net IS NOT NULL`,
+      )
+      .get(...attemptParams) ?? { gex: null, n: 0 };
+    const ivCountRow = db
+      .prepare<string[], { n: number }>(`SELECT COUNT(*) AS n FROM entry_attempts WHERE ${refusedWhere} AND iv_rank IS NOT NULL`)
+      .get(...attemptParams) ?? { n: 0 };
+    const ivMedian =
+      ivCountRow.n > 0
+        ? (db
+            .prepare<string[], { iv: number | null }>(
+              `SELECT iv_rank AS iv FROM entry_attempts WHERE ${refusedWhere} AND iv_rank IS NOT NULL
+                ORDER BY iv_rank LIMIT 1 OFFSET ${Math.floor(ivCountRow.n / 2)}`,
+            )
+            .get(...attemptParams)?.iv ?? null)
+        : null;
+    const qualityRow = db
+      .prepare<string[], { q: string | null }>(
+        `SELECT session_quality AS q FROM entry_attempts WHERE ${refusedWhere} AND session_quality IS NOT NULL
+          GROUP BY session_quality ORDER BY COUNT(*) DESC LIMIT 1`,
+      )
+      .get(...attemptParams);
+    const evaluations = {
+      evaluated,
+      filled: filledN,
+      refused: evaluated - filledN,
+      outcomes,
+      market: {
+        gexNegPct: gexRow.gex === null ? null : gexRow.gex * 100,
+        medianIvRank: ivMedian,
+        quality: qualityRow?.q ?? null,
+      },
+    };
+
+    // -- By arm: the hero's money per arm, plus each arm's own slice of the gate's ledger, joined
+    //    in the map below (not in SQL — the attempts table has no pnl, the trades table no
+    //    outcome; the JOIN key is the arm name both sides already speak).
+    const armMoney = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT ${armCol} AS arm, symbol,
+                ${SETTLED} AS trades, ${NET} AS net,
+                COALESCE(SUM(pnl), 0) AS gross, COALESCE(SUM(fees), 0) AS fees_total,
+                COALESCE(SUM(${settleCol}), 0) AS settlement
+           FROM ic_trades WHERE ${where} GROUP BY ${armCol}, symbol`,
+      )
+      .all(...params);
+    const attemptPerArm = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT ${attemptArm} AS arm, COUNT(*) AS evaluated,
+                SUM(CASE WHEN outcome = 'filled' THEN 1 ELSE 0 END) AS filled
+           FROM entry_attempts WHERE ${attemptWhere} GROUP BY ${attemptArm}`,
+      )
+      .all(...attemptParams);
+    const dominantPerArm = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT ${attemptArm} AS arm, outcome, COUNT(*) AS n FROM entry_attempts
+          WHERE ${attemptWhere} AND outcome != 'filled' GROUP BY ${attemptArm}, outcome`,
+      )
+      .all(...attemptParams);
+    // Rounding residual: each arm's net is round2 of ITS OWN exact value, so the arms' rounded
+    // sums can drift a cent from the hero's rounded total. The suite's money rule says rows add
+    // up, so the residual — display rounding, never a money error — is assigned to the
+    // largest-magnitude arm, the way a ledger foots a column.
+    const plugResidual = (rows: Array<{ net: number }>, total: number): void => {
+      const drift = Math.round(total * 100) - Math.round(rows.reduce((s, r) => s + r.net, 0) * 100);
+      if (drift !== 0 && rows.length > 0) {
+        const idx = rows.reduce((best, r, i) => (Math.abs(r.net) > Math.abs(rows[best]!.net) ? i : best), 0);
+        const row = rows[idx]!;
+        row.net = Math.round((row.net + drift / 100) * 100) / 100;
+      }
+    };
+    const arms = armMoney
+      .map((r) => {
+        const arm = str(r["arm"]) ?? "—";
+        const ev = attemptPerArm.find((x) => str(x["arm"]) === arm);
+        const dom = dominantPerArm.filter((x) => str(x["arm"]) === arm).sort((a, b) => Number(b["n"]) - Number(a["n"]))[0];
+        return {
+          arm,
+          symbol: str(r["symbol"]) ?? "—",
+          evaluated: Number(ev?.["evaluated"] ?? 0),
+          filled: Number(ev?.["filled"] ?? 0),
+          refused: ev === undefined ? 0 : Number(ev["evaluated"]) - Number(ev["filled"]),
+          dominant: dom === undefined ? null : (str(dom["outcome"]) ?? null),
+          net: Math.round((Number(r["gross"] ?? 0) - Number(r["fees_total"] ?? 0)) * 100) / 100,
+        };
+      });
+    plugResidual(arms, hero.net);
+    arms.sort((a, b) => b.net - a.net);
+
+    // -- Signal breakdowns: the module's buckets verbatim, over the window. Same denominators as
+    //    the deep-analytics read: resolved, settled rows; avg net re-derived per bucket, never an
+    //    average of averages.
+    const signalWhere = `${RESOLVED} AND pnl IS NOT NULL${sc.and}${winAnd}`;
+    const breakdown = (bucketExpr: string): MeicSummaryBreakdown[] =>
+      db
+        .prepare<string[], Record<string, unknown>>(
+          `SELECT ${bucketExpr} AS bucket, COUNT(*) AS trades,
+                  SUM(CASE WHEN pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END) AS wins,
+                  AVG(pnl - COALESCE(fees, 0)) AS avg_net
+             FROM ic_trades WHERE ${signalWhere} GROUP BY bucket ORDER BY bucket`,
+        )
+        .all(...params)
+        .map((r) => ({
+          bucket: String(r["bucket"] ?? "?"),
+          trades: Number(r["trades"] ?? 0),
+          winPct: Number(r["trades"] ?? 0) > 0 ? (Number(r["wins"] ?? 0) / Number(r["trades"] ?? 1)) * 100 : null,
+          avgNet: r["avg_net"] === null ? null : Math.round(Number(r["avg_net"]) * 100) / 100,
+        }));
+    const delta = breakdown(
+      `CASE WHEN ABS(COALESCE(call_delta_at_entry, 0)) < 0.10 THEN '<0.10'
+            WHEN ABS(call_delta_at_entry) < 0.15 THEN '0.10-0.15'
+            WHEN ABS(call_delta_at_entry) < 0.20 THEN '0.15-0.20'
+            ELSE '>=0.20' END`,
+    );
+    const wing = breakdown(`CAST(CAST(wing_width AS INTEGER) AS TEXT) || '-wide'`);
+    // Weekday in CALENDAR order, Mon-Fri, every day present even at zero trades — the label's
+    // alphabetical order is not the week's order, and a day that didn't trade is part of the
+    // answer (0 trades is a fact of the week, not a missing bucket).
+    const weekdayRows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT CASE CAST(strftime('%w', trade_date) AS INTEGER)
+               WHEN 1 THEN 'Mon' WHEN 2 THEN 'Tue' WHEN 3 THEN 'Wed'
+               WHEN 4 THEN 'Thu' WHEN 5 THEN 'Fri' END AS bucket,
+               COUNT(*) AS trades, COUNT(DISTINCT trade_date) AS sessions,
+               SUM(CASE WHEN pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END) AS wins,
+               AVG(pnl - COALESCE(fees, 0)) AS avg_net
+          FROM ic_trades WHERE ${where} AND pnl IS NOT NULL
+         GROUP BY bucket`,
+      )
+      .all(...params);
+    const byDay = new Map(weekdayRows.map((r) => [String(r["bucket"] ?? "?"), r]));
+    const weekday: MeicBreakdownRow[] = ["Mon", "Tue", "Wed", "Thu", "Fri"].map((day) => {
+      const r = byDay.get(day);
+      if (!r) return { bucket: day, trades: 0, sessions: 0, winPct: null, avgNet: null };
+      const trades = Number(r["trades"]);
+      return {
+        bucket: day,
+        trades,
+        sessions: Number(r["sessions"]),
+        winPct: trades > 0 ? (Number(r["wins"]) / trades) * 100 : null,
+        avgNet: r["avg_net"] === null ? null : Number(r["avg_net"]),
+      };
+    });
+
+    // -- Entries: the window's settled rows, newest first, ONE PAGE of 40 (the card says "page k
+    //    of n", the URL carries ?page=, and the count is the same settled rows the money figures
+    //    count — the slice's arithmetic stays closed over what it shows). Structure text is the
+    //    leg pair in the module's vocabulary; provisional = unsettled (mark, not settlement — the
+    //    honesty badge).
+    const ENTRY_PAGE_SIZE = 40;
+    const page = Math.max(1, Math.floor(entryPage ?? 1));
+    const entryTotal = Number(
+      (
+        db
+          .prepare<string[], Record<string, unknown>>(
+            `SELECT COUNT(*) AS n FROM ic_trades WHERE ${where} AND pnl IS NOT NULL`,
+          )
+          .get(...params) ?? {}
+      )["n"] ?? 0,
+    );
+    const entryPages = Math.max(1, Math.ceil(entryTotal / ENTRY_PAGE_SIZE));
+    const entryPageClamped = Math.min(page, entryPages);
+    const entryRows = db
+      .prepare<[...string[], number, number], Record<string, unknown>>(
+        `SELECT entry_time, ${armCol} AS arm, symbol, net_credit, ${mult} AS mult,
+                status, pnl, fees, ${settleCol} AS settlement,
+                ${meicCol(db, "put_settle_value")} AS put_settle_value,
+                ${meicCol(db, "call_settle_value")} AS call_settle_value,
+                exit_reason
+           FROM ic_trades WHERE ${where} AND pnl IS NOT NULL ORDER BY id DESC
+          LIMIT ? OFFSET ?`,
+      )
+      .all(...params, ENTRY_PAGE_SIZE, (entryPageClamped - 1) * ENTRY_PAGE_SIZE);
+    const entries = {
+      rows: entryRows.map((r) => {
+        const credit = (toNum(r["net_credit"]) ?? 0) * (toNum(r["mult"]) ?? 10000);
+        const gross = toNum(r["pnl"]);
+        const feeTotal = toNum(r["fees"]) ?? 0;
+        const setFees = toNum(r["settlement"]) ?? 0;
+        const net = gross === null ? null : Math.round((gross - feeTotal) * 100) / 100;
+        const exitKind = meicExitKind(gross, str(r["exit_reason"]), setFees, toNum(r["put_settle_value"]), toNum(r["call_settle_value"]));
+        return {
+          time: str(r["entry_time"]) === null ? null : (str(r["entry_time"]) ?? "").slice(11, 16),
+          arm: str(r["arm"]) ?? "—",
+          symbol: str(r["symbol"]) ?? "—",
+          credit: Math.round(credit * 100) / 100,
+          structure:
+            exitKind === "settled"
+              ? "settled"
+              : exitKind === "closed"
+                ? "stopped/closed"
+                : exitKind === "expired"
+                  ? "expired OTM"
+                  : str(r["status"]) ?? "open",
+          net: net ?? 0,
+          provisional: exitKind === null,
+        };
+      }),
+      total: entryTotal,
+      pages: entryPages,
+      page: entryPageClamped,
+    };
+
+    return {
+      mode,
+      window: win,
+      era: eraBound ? era : null,
+      hero,
+      capturePct,
+      captureRawPct,
+      returnOnRisk,
+      legs,
+      pairs,
+      entryTime,
+      evaluations,
+      arms,
+      delta,
+      wing,
+      weekday,
+      entries,
     };
   });
 }

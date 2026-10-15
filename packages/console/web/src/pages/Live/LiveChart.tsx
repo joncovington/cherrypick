@@ -3,6 +3,7 @@ import { hhmm } from "../../components/chart/time";
 import { niceTicks, timeTicks } from "../../components/chart/scales";
 import { useHoverX } from "../../components/chart/useHoverX";
 import { AXIS_FONT_FAMILY, AXIS_MUTED_HEX, SPOT_COLOR } from "../../components/chart/tokens";
+import { hexOf } from "../../components/chart/cssvars";
 import { fmtMoney } from "../../lib/format";
 
 /**
@@ -13,10 +14,10 @@ import { fmtMoney } from "../../lib/format";
  * reason, never interpolated, the same rule `Flies/TimelineCard` follows. A mark is a mid, not a
  * fill; the card title says so.
  */
-const VIX_COLOR = "#8a6fd1";
-const VIX3M_COLOR = "#5b8ad1";
-const MARK_COLOR = "#d95b5b";
-const BP_COLOR = "#d9a13b";
+const VIX_COLOR = hexOf("--chart-special", "#8a6fd1");
+const VIX3M_COLOR = hexOf("--chart-special", "#5b8ad1");
+const MARK_COLOR = hexOf("--neg", "#d95b5b");
+const BP_COLOR = hexOf("--amber-line", "#f59e0b");
 
 type Pt = { m: number; v: number };
 
@@ -110,7 +111,7 @@ export function LiveChart({ data }: { data: LiveFliesPayload }) {
       {/* top panel grid: SPX % left, VIX right */}
       {niceTicks(pLo, pHi, 4).map((v) => (
         <g key={`p${v}`}>
-          <line x1={pad.l} y1={PY(v)} x2={width - pad.r} y2={PY(v)} stroke={Math.abs(v) < 1e-9 ? "#3d4653" : "#15181e"} />
+          <line x1={pad.l} y1={PY(v)} x2={width - pad.r} y2={PY(v)} stroke={Math.abs(v) < 1e-9 ? "var(--chart-grid-strong)" : "var(--chart-grid)" } />
           <text x={4} y={PY(v) + 3} fontSize={9} fill={AXIS_MUTED_HEX} fontFamily={AXIS_FONT_FAMILY}>{`${v >= 0 ? "+" : ""}${v.toFixed(2)}%`}</text>
         </g>
       ))}
@@ -121,7 +122,7 @@ export function LiveChart({ data }: { data: LiveFliesPayload }) {
       {/* bottom panel grid: mark $ left, BP right */}
       {niceTicks(mLo, mHi, 3).map((v) => (
         <g key={`m${v}`}>
-          <line x1={pad.l} y1={MY(v)} x2={width - pad.r} y2={MY(v)} stroke={Math.abs(v) < 1e-9 ? "#3d4653" : "#15181e"} />
+          <line x1={pad.l} y1={MY(v)} x2={width - pad.r} y2={MY(v)} stroke={Math.abs(v) < 1e-9 ? "var(--chart-grid-strong)" : "var(--chart-grid)" } />
           <text x={4} y={MY(v) + 3} fontSize={9} fill={AXIS_MUTED_HEX} fontFamily={AXIS_FONT_FAMILY}>{fmtMoney(v)}</text>
         </g>
       ))}
@@ -130,15 +131,15 @@ export function LiveChart({ data }: { data: LiveFliesPayload }) {
       ))}
       {timeTicks(tMin, tMax, 8).map((m) => (
         <g key={`t${m}`}>
-          <line x1={X(m)} y1={pad.t} x2={X(m)} y2={height - pad.b} stroke="#15181e" />
+          <line x1={X(m)} y1={pad.t} x2={X(m)} y2={height - pad.b} stroke="var(--chart-grid)" />
           <text x={X(m)} y={height - 7} fontSize={9} fill={AXIS_MUTED_HEX} textAnchor="middle" fontFamily={AXIS_FONT_FAMILY}>{hhmm(m)}</text>
         </g>
       ))}
       {/* gaps: named refusals from the feed */}
       {gaps.map((g, i) => (
         <g key={`g${i}`}>
-          <line x1={X(g.m)} y1={botTop} x2={X(g.m)} y2={height - pad.b} stroke="#5a2f2f" strokeDasharray="2 3" />
-          {i % 4 === 0 && <text x={X(g.m) + 2} y={botTop + 10} fontSize={8} fill="#a05a5a" fontFamily={AXIS_FONT_FAMILY}>{g.reason}</text>}
+          <line x1={X(g.m)} y1={botTop} x2={X(g.m)} y2={height - pad.b} stroke="color-mix(in srgb, var(--neg) 32%, var(--surface))" strokeDasharray="2 3" />
+          {i % 4 === 0 && <text x={X(g.m) + 2} y={botTop + 10} fontSize={8} fill="color-mix(in srgb, var(--neg) 62%, var(--text))" fontFamily={AXIS_FONT_FAMILY}>{g.reason}</text>}
         </g>
       ))}
       {/* buying power as a step, cap as a line */}
@@ -169,14 +170,14 @@ export function LiveChart({ data }: { data: LiveFliesPayload }) {
       {/* hover */}
       {hover !== null && hoverM !== null && (
         <g>
-          <line x1={hover} y1={pad.t} x2={hover} y2={height - pad.b} stroke="#3d4653" />
-          <text x={Math.min(hover + 6, width - 200)} y={pad.t + 24} fontSize={10} fill="#c9ccd1" fontFamily={AXIS_FONT_FAMILY}>
+          <line x1={hover} y1={pad.t} x2={hover} y2={height - pad.b} stroke="var(--chart-grid-strong)" />
+          <text x={Math.min(hover + 6, width - 200)} y={pad.t + 24} fontSize={10} fill="var(--text)" fontFamily={AXIS_FONT_FAMILY}>
             {hhmm(hoverM)}
             {hSpx ? `  ${data.arm.symbol ?? "SPX"} ${hSpx.v >= 0 ? "+" : ""}${hSpx.v.toFixed(2)}%` : ""}
             {hVix ? `  VIX ${hVix.v.toFixed(2)}` : ""}
             {hVix3m ? `  VIX3M ${hVix3m.v.toFixed(2)}` : ""}
           </text>
-          <text x={Math.min(hover + 6, width - 200)} y={botTop + 24} fontSize={10} fill="#c9ccd1" fontFamily={AXIS_FONT_FAMILY}>
+          <text x={Math.min(hover + 6, width - 200)} y={botTop + 24} fontSize={10} fill="var(--text)" fontFamily={AXIS_FONT_FAMILY}>
             {hMark ? `mark ${fmtMoney(hMark.v)}` : "no mark"}
             {hBp ? `  open ${fmtMoney(hBp.v)}` : ""}
           </text>

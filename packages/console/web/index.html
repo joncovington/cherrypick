@@ -4,14 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>cherrypick console</title>
-    <!-- The theme's background (styles.css --bg), inline so it holds before or without the
-         stylesheet. A blank console then says which side failed: dark is the app (it loaded and
-         rendered nothing), white is the browser (the tab was never repainted, or it reloaded without
-         its build). -->
+    <!-- The theme, applied before first paint: the light pref lives in the same localStorage
+         mirror lib/prefs.ts hydrates from, so reading it here costs nothing and the page never
+         flashes dark on its way to light. Falls back to dark — the house default. The inline
+         background below (styles.css --canvas's dark value) still holds before or without the
+         stylesheet; the light override below it keeps a light boot from flashing dark, too. -->
+    <script>
+      try {
+        var prefs = JSON.parse(localStorage.getItem("cherrypick-console-prefs-v1") ?? "{}");
+        if (prefs.theme === "light") document.documentElement.dataset.theme = "light";
+      } catch {
+        /* no mirror yet — dark */
+      }
+    </script>
     <style>
       html,
       body {
-        background: #0b0c0f;
+        background: #0f1115;
+      }
+      html[data-theme="light"],
+      html[data-theme="light"] body {
+        background: #f6f8f9;
       }
     </style>
   </head>

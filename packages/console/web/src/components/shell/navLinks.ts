@@ -4,13 +4,13 @@ import { isModuleVisible } from "../../lib/visibility";
 /**
  * The suite's page list, in one place.
  *
- * Three things read it and must not disagree: the header's hamburger menu, the module frame's
- * left rail, and the keyboard handler that makes the `g o` / `1`–`8` hints in that menu do
- * something. Before the rail existed the table lived inside `HeaderMenu`, which was fine while
- * the menu was the only nav; a second nav reading a second copy is how the two end up listing
+ * Three things read it and must not disagree: the left rail (the ONE nav, mounted in the shell
+ * on every page since 2026-10-11 — the header's hamburger menu is gone), the command palette
+ * (which lists the same pages with their shortcut hints), and the keyboard handler that makes
+ * those hints do something. A second nav reading a second copy is how the two end up listing
  * different modules.
  *
- * `key` is the shortcut character the menu advertises. It is advertised in exactly one place
+ * `key` is the shortcut character the palette advertises. It is advertised in exactly one place
  * (this file) and implemented in exactly one place (`lib/keyboardNav.ts`), so a hint cannot
  * survive the shortcut being dropped.
  */

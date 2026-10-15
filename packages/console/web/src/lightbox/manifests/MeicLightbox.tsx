@@ -18,6 +18,7 @@ import { OccupancyMap } from "../../components/OccupancyMap";
 import { MeicForestCard } from "../../pages/Meic/MeicForestCard";
 import { MeicPerformanceTab } from "../../pages/Meic/MeicPerformanceTab";
 import { MeicSession } from "../../pages/Meic/MeicSession";
+import { MeicSummary } from "../../pages/Meic/SummarySlide";
 import { MeicHistoryTable, MeicPositionsTable, type MeicScope } from "../../pages/Meic/MeicTables";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
@@ -146,6 +147,31 @@ export function MeicLightbox({ slide }: { slide: string }) {
 
   const slides: Array<SlideDef & { id: MeicSlideId }> = [
     { id: "session", label: MEIC_LABEL.session, render: () => <MeicSession mode={mode} scope={scopeArgs} /> },
+    {
+      // Trade summary — the one-read slide (readers/meic.ts, "The summary slide's one read").
+      // Scope, mode and session come from the page's own state; the day arrows step the header's
+      // session select, so every page still names one day.
+      id: "summary",
+      label: MEIC_LABEL.summary,
+      render: () => (
+        <MeicSummary
+          mode={mode}
+          scope={scopeArgs}
+          day={day}
+          canStepDay={(data?.summaries.length ?? 0) > 0}
+          onDayStep={(delta) => {
+            const days = (data?.summaries ?? []).map((sm) => sm.summaryDate).sort();
+            if (days.length === 0) return;
+            const current = day ?? data?.session ?? null;
+            if (current === null) return;
+            const i = days.indexOf(current);
+            if (i < 0) return;
+            const next = days[Math.max(0, Math.min(days.length - 1, i + delta))] ?? null;
+            if (next !== current && next !== null) setDay(next);
+          }}
+        />
+      ),
+    },
     { id: "forest", label: MEIC_LABEL.forest, render: () => <MeicForestCard mode={mode} scope={scopeArgs} /> },
     {
       // Attempts and occupancy merged (2026-09): both are bounded snapshots regardless of session

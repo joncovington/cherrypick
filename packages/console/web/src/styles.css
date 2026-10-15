@@ -1,21 +1,74 @@
-/* Terminal luxe: density as luxury — hairlines, mono numerals, sharp corners,
-   one cherry accent reserved for brand, live-mode, and alert moments. */
+/* The adopted house theme (2026-10): the MEIC summary slide's visual language, hoisted to the
+   root and extended across the console — see docs/trade-summary-branch.md for the decisions.
+   Density as luxury: hairlines, mono numerals, rounded cards, one cherry accent reserved for
+   brand, live-mode, and alert moments (the halt control most deliberately).
+
+   The names below are the only palette — no aliases remain; a surface reading a retired name
+   is a defect, not an un-swept surface. */
 :root {
-  --bg: #0b0c0f;
-  --bg-raised: #0e1013;
-  --bg-card: #101216;
-  --border: #23262d;
-  --row-line: #1a1d23;
-  --row-hover: #15181e;
-  --text: #eceff3;
-  --text-muted: #a6adb8;
-  --accent: #d23f57;
-  --ok: #43b57a;
-  --warn: #d9a13b;
-  --err: #d95c4a;
-  --live: #43b57a;
-  --cached: #d9a13b;
+  --canvas: #0f1115; /* deep charcoal canvas — the page behind the cards */
+  --surface: #1a1d23; /* elevated card surface */
+  --surface-sunken: #14171d; /* table header rows, the ticker, any inset strip */
+  --surface-raised: #16181e; /* zebra stripe 2, quiet fills */
+  --surface-hover: #232730; /* row hover, chart grid lines, progress tracks */
+  --border: #262a32; /* hairline card and divider border */
+  --border-strong: #282c34; /* the spec's border tone — reserved for hover/dividers that must read */
+  --track: #2a2e37; /* progress and gauge tracks */
+  --chart-grid: #15181e; /* chart gridlines — fainter than the border, a texture not a rule */
+  --chart-grid-strong: #3d4653; /* the zero line and hover crosshairs — a gridline that must read */
+  --chart-grid-mid: #23262d; /* between the two: occasional marks, pane separators */
+  --accent: #3761e1; /* interactive blue — selection, links, focus, active segments */
+  --accent-live: #d23f57; /* the cherry: brand, the LIVE badge, alert moments — never decoration */
+  --pos: #3af3a0; /* positive, by sign only */
+  --neg: #ee6760; /* negative, by sign only */
+  --warn: #fbbf24; /* amber — provisional states and warnings */
+  --amber-line: #f59e0b; /* the chart amber: price lines, payoff stranded bands, entry arrows */
+  --chart-neutral: #3f4654; /* neutral bar fill */
+  --chart-special: #a78bfa; /* the lavender special — emphasis the data stamps, never a verdict */
+  --live: #43b57a; /* liveness in the suite sense (a heartbeat up), distinct from mode */
+  --text: #ffffff;
+  --text-muted: #9ca3af;
+  --text-dim: #6b7280; /* category headers; 3.5:1 on the card — headings only, never body */
   --num-face: "Cascadia Code", "Consolas", ui-monospace, monospace;
+
+  color-scheme: dark;
+}
+
+/* The light theme: the summary slide's ORIGINAL palette, come home. When the slide's language
+   was hoisted to :root (2026-10) the slide's own .ts-light set died with its scope; these are
+   those values, promoted to be the light reading of the same tokens. Every surface derives
+   from :root, so re-specifying the tokens here is the whole theme — nothing below this block
+   names a hex. The sign tones are the prototype's (#208a56/#c2372c), not the dark ones dimmed:
+   a mint tuned for a charcoal card is invisible on white. The grey ramp is derived from the
+   prototype's border (#e5e7eb) — sunken/raised/hover/grid each a step from it. Canvas charts
+   read these at construction (chart/cssvars.ts), so a switch lands on them at the next full
+   page load; everything CSS-derived flips immediately. */
+:root[data-theme="light"] {
+  --canvas: #f6f8f9;
+  --surface: #ffffff;
+  --surface-sunken: #eef1f4;
+  --surface-raised: #f3f5f7;
+  --surface-hover: #e2e6ea;
+  --border: #e5e7eb;
+  --border-strong: #d1d5db;
+  --track: #e5e7eb;
+  --chart-grid: #eceff2;
+  --chart-grid-strong: #b9c0c9;
+  --chart-grid-mid: #dde2e7;
+  --accent: #3761e1;
+  --accent-live: #d23f57;
+  --pos: #208a56;
+  --neg: #c2372c;
+  --warn: #92610a;
+  --amber-line: #b45309;
+  --chart-neutral: #94a3b8;
+  --chart-special: #7c5cd6;
+  --live: #1f8a4d;
+  --text: #111827;
+  --text-muted: #6b7280;
+  --text-dim: #9aa1ab;
+
+  color-scheme: light;
 }
 
 * {
@@ -24,7 +77,7 @@
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--canvas);
   color: var(--text);
   font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
@@ -35,104 +88,247 @@ body {
    so while the WINDOW was the thing that scrolled, a sticky page header had a scrollport that never
    moved and could never stick. Bounding the shell to the viewport puts the scrolling where the
    sticky elements already expect it, and keeps the nav and status header in view as a bonus. */
+/* The shell's grid (2026-10-12): the rail is the FIRST column and spans the header and content
+   rows, so its right border is one unbroken vertical from the top of the window to the status
+   bar; the top bar lives in the second column and cannot leave a notch where it meets the rail.
+   Before this the shell was a flex column with the rail below the header, and every junction
+   needed its own alignment to stay flush. */
 .shell {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 222px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100vh;
   overflow: hidden;
 }
-
-/* The hamburger dropdown that replaced the fixed-width side nav (2026-09) — see
-   components/shell/HeaderMenu.tsx. Reuses .nav-dot (the Config unsaved-changes marker, defined
-   further down) from the old nav; everything else here is new. */
-.header-menu {
-  position: relative;
+.shell.shell-rail-collapsed {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+/* Explicit placements — the rail and its brand head own column 1 of the first two rows; the
+   top bar and the content own column 2. Auto-placement stays correct for the status bar
+   (row 3, both columns) but is written out anyway, as a guard against reordering the children. */
+.brand-block {
+  grid-column: 1;
+  grid-row: 1;
+}
+.status-header {
+  grid-column: 2;
+  grid-row: 1;
 }
 
-.header-menu-btn {
+/* The command palette (2026-10-11): the keyboard-driven jump-to-anything dialog, opened with
+   Ctrl/Cmd+K or `?` from any page. It replaced the hamburger menu's printed shortcut legend, so
+   the hints stay written down somewhere — searchable now, and no longer cluttering a nav. */
+.cmdk-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: color-mix(in srgb, var(--canvas) 65%, transparent);
+  /* Depth cue behind the dialog: the page blurs under the overlay. Canvas-tinted, so it holds
+     in both themes; the blur is the palette-spec's one elevation idea this suite lacked. */
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: start center;
+  padding-top: 12vh;
+}
+.cmdk {
+  width: min(40rem, calc(100vw - 4rem));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+/* The search head: a magnifier, then the field. The head owns the bottom rule (the input is
+   borderless inside it), so the separator reads as the dialog's own, not a form control's. */
+.cmdk-head {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.3rem 0.6rem;
-  background: var(--bg-card);
+  padding: 0.85rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+.cmdk-search-icon {
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+.cmdk-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  padding: 0;
+  outline: none;
+}
+.cmdk-input::placeholder {
+  color: var(--text-dim);
+}
+.cmdk-list {
+  max-height: min(46vh, 24rem);
+  overflow-y: auto;
+  padding: 0.25rem 0.35rem 0.4rem;
+  /* The palette-spec's scrollbar: a 6px thumb on a transparent track, in track-colour tokens
+     (--border-strong is the thumb, --chart-grid-strong its hover — both already the suite's
+     "texture, not a rule" greys). scrollbar-width/colour carry Firefox. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.cmdk-list::-webkit-scrollbar {
+  width: 6px;
+}
+.cmdk-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.cmdk-list::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 9999px;
+}
+.cmdk-list::-webkit-scrollbar-thumb:hover {
+  background: var(--chart-grid-strong);
+}
+.cmdk-group {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 0.5rem 0.6rem 0.15rem;
+}
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.32rem 0.6rem;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--text-muted);
+  /* A NavLink is an <a>, and the shell underlines links — a palette row is not a link row.
+     Explicit none, whatever the anchor rules around it do. */
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.cmdk-item:hover,
+.cmdk-item.active {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+/* The keyboard's row: an accent-tinted ground (selection is the accent's job per the token)
+   and a 2px left bar — the marker travels with ArrowUp/ArrowDown, so it reads at a glance
+   which row Enter will take. Weight steps up; the row height must not. */
+.cmdk-item.active {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-hover));
+  box-shadow: inset 2px 0 0 var(--accent);
+  font-weight: 600;
+}
+.cmdk-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmdk-kbd {
+  font-family: var(--num-face);
+  font-size: 10px;
+  color: var(--text-dim);
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: 4px;
-  color: var(--text);
-  cursor: pointer;
+  padding: 1px 5px;
+  /* The key-cap's bottom edge. Not a hex: mixed from the text token, so it answers to the
+     light theme too. */
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--text) 12%, transparent);
+}
+.cmdk-empty {
+  padding: 0.9rem 0.6rem;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.cmdk-foot {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem 1.1rem;
+  border-top: 1px solid var(--border);
+  /* The dock: the dialog's plinth, sunken like the statusbar it echoes. */
+  background: var(--surface-sunken);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.cmdk-foot kbd {
+  font-family: var(--num-face);
+  font-size: 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
 }
 
-.header-menu-btn:hover {
-  border-color: var(--text-muted);
+/* The brand head — the rail's HALF of the shell's header row (2026-10-12): its own grid item in
+   row 1, column 1, NOT a row inside the nav, so its bottom border sits on the same track as the
+   top bar's and the two read as one continuous rule across the window, in both widths. It is
+   NOT a menu: the rail is the one nav, and the shortcut legend lives in the command palette.
+   The cherry (two berries, one knot, a leaf) is one of the three cherry roles: brand, LIVE,
+   alert. */
+.brand-block {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  /* The rail's vertical, top segment: the brand head is the rail's row-1 half, so IT carries
+     the right border here — the nav's own border continues it from row 2 down. Without this
+     the vertical started at the header rule and left the brand head floating against the
+     header's line. */
+  border-right: 1px solid var(--border);
+  background: var(--surface-sunken);
+  text-decoration: none;
+  overflow: hidden;
 }
-
-.header-menu-brand {
+.brand-mark {
+  flex-shrink: 0;
+}
+/* Collapsed: the wordmark folds away and the cherry grows to fill the 64px strip. */
+.shell-rail-collapsed .brand-block {
+  justify-content: center;
+  padding: 0.55rem 0;
+}
+.shell-rail-collapsed .brand-name {
+  display: none;
+}
+.shell-rail-collapsed .brand-mark {
+  width: 26px;
+  height: 26px;
+}
+.brand-name {
   font-weight: 650;
-  color: var(--accent);
+  color: var(--accent-live);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   font-size: 0.85rem;
 }
-
-.header-menu-current {
-  font-size: 12px;
-}
-
-.header-menu-dropdown {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  width: 15rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-  padding: 0.4rem 0;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-}
-
-.header-menu-group + .header-menu-group {
-  margin-top: 0.3rem;
-  border-top: 1px solid var(--row-line);
-  padding-top: 0.3rem;
-}
-
-.header-menu-group-label {
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  opacity: 0.65;
-  padding: 0.2rem 1rem 0.15rem;
-}
-
-.header-menu-link {
-  display: flex;
+/* The palette's top-bar trigger: the chord, clickable for the mouse-first reader. */
+.cmdk-trigger {
+  display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
   color: var(--text-muted);
-  text-decoration: none;
-  padding: 0.4rem 1rem;
-  border-left: 2px solid transparent;
+  cursor: pointer;
 }
-
-.header-menu-link:hover {
+.cmdk-trigger:hover {
   color: var(--text);
+  border-color: var(--text-muted);
 }
-
-.header-menu-link.active {
-  color: var(--text);
-  border-left-color: var(--accent);
-  background: rgba(210, 63, 87, 0.06);
-}
-
-.header-menu-kbd {
-  margin-left: auto;
+.cmdk-trigger-kbd {
   font-family: var(--num-face);
   font-size: 10px;
-  color: var(--text-muted);
-  opacity: 0.7;
 }
 
 .status-header {
@@ -140,9 +336,12 @@ body {
   align-items: center;
   gap: 1rem;
   padding: 0.5rem 1.25rem;
-  background: var(--bg-raised);
+  background: var(--surface-sunken);
   border-bottom: 1px solid var(--border);
   min-height: 2.6rem;
+  flex-shrink: 0;
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .status-right {
@@ -168,7 +367,7 @@ body {
 
 .chip {
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 999px;
   padding: 0.1rem 0.6rem;
   font-size: 12px;
   color: var(--text-muted);
@@ -189,36 +388,37 @@ a.chip:hover {
 }
 
 .chip-ok {
-  color: var(--ok);
-  border-color: rgba(67, 181, 122, 0.4);
+  color: var(--pos);
+  border-color: color-mix(in srgb, var(--pos) 40%, transparent);
 }
 
 .chip-warn {
   color: var(--warn);
-  border-color: rgba(217, 161, 59, 0.4);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
 }
 
 .chip-live {
   color: var(--live);
-  border-color: rgba(67, 181, 122, 0.4);
+  border-color: color-mix(in srgb, var(--pos) 40%, transparent);
 }
 
 .chip-cached {
-  color: var(--cached);
-  border-color: rgba(217, 161, 59, 0.4);
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
 }
 
 .chip-disconnected,
 .chip-missing {
-  color: var(--err);
-  border-color: rgba(217, 92, 74, 0.4);
+  color: var(--neg);
+  border-color: color-mix(in srgb, var(--neg) 40%, transparent);
 }
 
 .shell-content {
   padding: 1.25rem;
   overflow: auto;
-  flex: 1;
   min-height: 0;
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .page-title-row {
@@ -229,7 +429,7 @@ a.chip:hover {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: var(--bg);
+  background: var(--canvas);
   padding: 0 0 0.4rem;
   margin-bottom: 0.5rem;
   border-bottom: 1px solid var(--border);
@@ -251,7 +451,9 @@ a.chip:hover {
 }
 
 /* The top bar's futures ticker: one chip per contract beside the menu. The chip carries the
-   day's direction in its colour; the tick flash (.flash-up/.flash-down) rides over it. */
+   day's direction in its colour; the tick flash (.flash-up/.flash-down) rides over it. The
+   strip itself is layout only — the chips are already pills, and a pill around pills read
+   as double-framed. */
 .futures-ticker {
   display: flex;
   align-items: center;
@@ -292,13 +494,13 @@ a.chip:hover {
 }
 
 .futures-chip-up {
-  color: var(--ok);
-  border-color: rgba(67, 181, 122, 0.45);
+  color: var(--pos);
+  border-color: color-mix(in srgb, var(--pos) 45%, transparent);
 }
 
 .futures-chip-down {
-  color: var(--err);
-  border-color: rgba(217, 92, 74, 0.45);
+  color: var(--neg);
+  border-color: color-mix(in srgb, var(--neg) 45%, transparent);
 }
 
 .futures-chip-cached {
@@ -395,9 +597,9 @@ h2 {
 }
 
 .card {
-  background: var(--bg-card);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 14px;
   padding: 0.85rem 0.95rem;
 }
 
@@ -425,12 +627,12 @@ h2 {
   margin: 0 0 0.7rem;
   padding: 0.45rem 0.6rem;
   border-left: 2px solid var(--border);
-  background: var(--bg-raised);
+  background: var(--surface-sunken);
 }
 
 .verdict-promote {
-  border-left-color: var(--ok);
-  color: var(--ok);
+  border-left-color: var(--pos);
+  color: var(--pos);
 }
 
 .verdict-neutral {
@@ -444,13 +646,13 @@ h2 {
 
 .arm-card {
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 10px;
   padding: 0.55rem 0.7rem;
 }
 
 /* Cleared the rule — enough evidence to believe the number, whatever it says. */
 .arm-card-qualified {
-  border-color: rgba(67, 181, 122, 0.45);
+  border-color: color-mix(in srgb, var(--pos) 45%, transparent);
 }
 
 .arm-head {
@@ -508,7 +710,7 @@ h2 {
   position: relative;
   display: block;
   height: 12px;
-  background: var(--row-line);
+  background: var(--track);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -537,11 +739,11 @@ h2 {
 }
 
 .signed-bar-pos {
-  background: var(--ok);
+  background: var(--pos);
 }
 
 .signed-bar-neg {
-  background: var(--err);
+  background: var(--neg);
 }
 
 .netbar-value {
@@ -568,7 +770,7 @@ h2 {
 .check-track {
   flex: 1;
   height: 6px;
-  background: var(--row-line);
+  background: var(--track);
   border-radius: 3px;
 }
 
@@ -609,9 +811,9 @@ h2 {
 }
 
 .pager-btn {
-  background: var(--bg-raised);
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 8px;
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1;
@@ -621,7 +823,7 @@ h2 {
 }
 
 .pager-btn:hover:not(:disabled) {
-  color: var(--fg);
+  color: var(--text);
   border-color: var(--accent);
 }
 
@@ -657,7 +859,7 @@ h2 {
 }
 
 .link-button:hover {
-  color: var(--fg);
+  color: var(--text);
 }
 
 /* A scope select holding something other than its default, so a narrowed or
@@ -685,12 +887,13 @@ h2 {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   border-bottom: 1px solid var(--border);
+  background: var(--surface-sunken);
   white-space: nowrap;
 }
 
 .data-table td {
   padding: 0.28rem 0.55rem;
-  border-bottom: 1px solid var(--row-line);
+  border-bottom: 1px solid var(--border);
   vertical-align: top;
   font-size: 13px;
   font-family: var(--num-face);
@@ -721,7 +924,7 @@ h2 {
 }
 
 .data-table tbody tr:hover td {
-  background: var(--row-hover);
+  background: var(--surface-raised);
 }
 
 /* Numbers read down a column: right-align from the first numeric column on. */
@@ -752,7 +955,7 @@ h2 {
 }
 
 .status-ok {
-  background: var(--ok);
+  background: var(--pos);
 }
 
 .status-warn {
@@ -760,7 +963,7 @@ h2 {
 }
 
 .status-err {
-  background: var(--err);
+  background: var(--neg);
 }
 
 .status-off {
@@ -768,42 +971,42 @@ h2 {
 }
 
 .pnl-pos {
-  color: var(--ok);
+  color: var(--pos);
 }
 
 .pnl-neg {
-  color: var(--err);
+  color: var(--neg);
 }
 
 .row-selected td {
-  background: rgba(67, 181, 122, 0.07);
+  background: color-mix(in srgb, var(--pos) 7%, transparent);
 }
 
 .badge {
   font-size: 10.5px;
   font-weight: 700;
-  border-radius: 3px;
+  border-radius: 999px;
   padding: 0.08rem 0.45rem;
   letter-spacing: 0.06em;
 }
 
 .badge-live {
-  background: rgba(210, 63, 87, 0.14);
-  color: var(--accent);
-  border: 1px solid rgba(210, 63, 87, 0.55);
+  background: color-mix(in srgb, var(--accent-live) 14%, transparent);
+  color: var(--accent-live);
+  border: 1px solid color-mix(in srgb, var(--accent-live) 55%, transparent);
 }
 
 .badge-paper {
-  background: rgba(67, 181, 122, 0.12);
-  color: var(--ok);
-  border: 1px solid rgba(67, 181, 122, 0.4);
+  background: color-mix(in srgb, var(--pos) 12%, transparent);
+  color: var(--pos);
+  border: 1px solid color-mix(in srgb, var(--pos) 40%, transparent);
 }
 
 .mode-toggle {
   display: inline-flex;
   position: relative;
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 999px;
   overflow: hidden;
   margin-left: auto;
 }
@@ -817,7 +1020,7 @@ h2 {
   position: absolute;
   inset: 0;
   width: 50%;
-  background: var(--row-hover);
+  background: var(--surface-hover);
   transition: transform 0.22s ease;
   pointer-events: none;
 }
@@ -843,12 +1046,15 @@ h2 {
 }
 
 .mode-btn-live.active {
-  color: var(--accent);
+  /* live mode is one of the cherry roles (--accent-live); written for the cherry accent,
+     briefly blue between the token hoist and the chrome sweep */
+  color: var(--accent-live);
 }
 
 .mode-btn:focus-visible,
-.header-menu-link:focus-visible,
-.header-menu-btn:focus-visible {
+.brand-block:focus-visible,
+.cmdk-trigger:focus-visible,
+.cmdk-item:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -858,9 +1064,9 @@ h2 {
   font-size: 12px;
   cursor: pointer;
   color: var(--text);
-  background: var(--row-hover);
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 8px;
   padding: 0.28rem 0.8rem;
   transition: border-color 0.15s ease;
 }
@@ -881,7 +1087,7 @@ h2 {
 }
 
 .btn-quiet:hover {
-  color: var(--err);
+  color: var(--neg);
   border-color: transparent;
 }
 
@@ -895,9 +1101,9 @@ h2 {
   font: inherit;
   font-size: 13px;
   color: var(--text);
-  background: var(--bg);
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 8px;
   padding: 0.28rem 0.6rem;
   text-transform: uppercase;
 }
@@ -968,26 +1174,26 @@ select.text-input {
 }
 
 .chain-sell:hover {
-  background: rgba(217, 92, 74, 0.14);
+  background: color-mix(in srgb, var(--neg) 14%, transparent);
 }
 
 .chain-buy:hover {
-  background: rgba(67, 181, 122, 0.14);
+  background: color-mix(in srgb, var(--pos) 14%, transparent);
 }
 
 .chain-atm td {
-  background: var(--row-hover);
+  background: var(--surface-hover);
 }
 
 /* Selected strikes: red border = short (STO), green = long (BTO). */
 .chain-held-short td {
-  border-top: 1px solid rgba(217, 92, 74, 0.7);
-  border-bottom: 1px solid rgba(217, 92, 74, 0.7);
+  border-top: 1px solid color-mix(in srgb, var(--neg) 70%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--neg) 70%, transparent);
 }
 
 .chain-held-long td {
-  border-top: 1px solid rgba(67, 181, 122, 0.7);
-  border-bottom: 1px solid rgba(67, 181, 122, 0.7);
+  border-top: 1px solid color-mix(in srgb, var(--pos) 70%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--pos) 70%, transparent);
 }
 
 .chain-badge-cell {
@@ -1005,9 +1211,9 @@ select.text-input {
 }
 
 .chain-badge-short {
-  color: var(--err);
-  background: rgba(217, 92, 74, 0.14);
-  border: 1px solid rgba(217, 92, 74, 0.5);
+  color: var(--neg);
+  background: color-mix(in srgb, var(--neg) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--neg) 50%, transparent);
 }
 
 .chain-badge:not(.chain-badge-short):not(.chain-badge-long) {
@@ -1016,19 +1222,19 @@ select.text-input {
 }
 
 .chain-badge-long {
-  color: var(--ok);
-  background: rgba(67, 181, 122, 0.12);
-  border: 1px solid rgba(67, 181, 122, 0.45);
+  color: var(--pos);
+  background: color-mix(in srgb, var(--pos) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pos) 45%, transparent);
 }
 
 /* Expected-move band on the strike column. */
 .chain-em-band {
-  box-shadow: inset 3px 0 0 #a0703c;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--amber-line) 65%, var(--text-muted));
 }
 
 .chip-em {
-  color: #c99a66;
-  border-color: rgba(160, 112, 60, 0.55);
+  color: color-mix(in srgb, var(--amber-line) 55%, var(--text-muted));
+  border-color: color-mix(in srgb, var(--amber-line) 45%, transparent);
 }
 
 .legs-table td {
@@ -1097,7 +1303,7 @@ select.text-input {
 
 .gex-panel {
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 14px;
   padding: 0.6rem 0.8rem;
 }
 
@@ -1188,7 +1394,7 @@ select.text-input {
 
 .stat-tile {
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 10px;
   padding: 0.5rem 0.7rem;
 }
 
@@ -1212,7 +1418,7 @@ select.text-input {
   font-size: 12px;
   font-family: var(--num-face);
   padding: 0.1rem 0;
-  border-bottom: 1px solid var(--row-line);
+  border-bottom: 1px solid var(--border);
 }
 
 .log-level {
@@ -1235,18 +1441,18 @@ select.text-input {
   text-overflow: ellipsis;
 }
 
-.lvl-CRITICAL, .lvl-ERROR { color: var(--err); }
+.lvl-CRITICAL, .lvl-ERROR { color: var(--neg); }
 .lvl-WARN, .lvl-WARNING { color: var(--warn); }
-.lvl-OK { color: var(--ok); }
+.lvl-OK { color: var(--pos); }
 .lvl-INFO, .lvl-DEBUG, .lvl-NOTIFY { color: var(--text-muted); }
 
 /* Skeletons: cards render at final size with ghost content — no spinners, no hidden cards. */
 .skeleton {
   display: inline-block;
-  background: linear-gradient(90deg, var(--border) 25%, #343a47 50%, var(--border) 75%);
+  background: linear-gradient(90deg, var(--border) 25%, color-mix(in srgb, var(--border) 60%, var(--text-dim)) 50%, var(--border) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s infinite;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 .skeleton-text {
@@ -1257,7 +1463,7 @@ select.text-input {
 .skeleton-chip {
   height: 1.35rem;
   width: 6.5rem;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 @keyframes shimmer {
@@ -1272,7 +1478,7 @@ select.text-input {
 /* Motion: motion means information. Tick flashes + number roll for live values (M3). */
 @keyframes flash-up {
   0% {
-    background: rgba(67, 181, 122, 0.26);
+    background: color-mix(in srgb, var(--pos) 26%, transparent);
   }
   100% {
     background: transparent;
@@ -1281,7 +1487,7 @@ select.text-input {
 
 @keyframes flash-down {
   0% {
-    background: rgba(217, 92, 74, 0.26);
+    background: color-mix(in srgb, var(--neg) 26%, transparent);
   }
   100% {
     background: transparent;
@@ -1348,21 +1554,21 @@ select.text-input {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
-  background: var(--bg-card);
+  background: var(--surface-raised);
   border: 1px solid var(--border);
   border-left: 3px solid var(--text-muted);
-  border-radius: 4px;
+  border-radius: 12px;
   padding: 0.6rem 0.7rem;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   animation: toast-in 180ms ease-out;
 }
 
 .toast-entry {
-  border-left-color: #7aa2ff;
+  border-left-color: var(--accent);
 }
 
 .toast-exit {
-  border-left-color: var(--ok);
+  border-left-color: var(--pos);
 }
 
 .toast-warn {
@@ -1436,11 +1642,13 @@ select.text-input {
    actually flagged, green when the day is clear. A card that always looks urgent stops meaning
    anything. */
 .review-attention {
-  border-left: 2px solid var(--ok);
+  border-left: 2px solid var(--pos);
 }
 
 .review-attention-flagged {
-  border-left-color: var(--accent);
+  /* cherry when flagged, per the block comment above; written for the cherry accent, briefly
+     blue between the token hoist and the chrome sweep */
+  border-left-color: var(--accent-live);
 }
 
 .review-flags {
@@ -1501,9 +1709,9 @@ select.text-input {
   margin: 0.55rem 0 0;
   padding: 0.6rem 0.7rem;
   color: var(--text);
-  background: var(--row-hover);
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 8px;
   overflow-x: auto;
   white-space: pre;
   user-select: text;
@@ -1532,7 +1740,7 @@ select.text-input {
   font-size: 11px;
   margin: 0.9rem 0 0.5rem;
   padding-top: 0.7rem;
-  border-top: 1px solid var(--row-line);
+  border-top: 1px solid var(--border);
   color: var(--text-muted);
   font-weight: 600;
   letter-spacing: 0.09em;
@@ -1546,7 +1754,7 @@ select.text-input {
   color: var(--text-muted);
   margin: 0.9rem 0 0.45rem;
   padding-top: 0.7rem;
-  border-top: 1px solid var(--row-line);
+  border-top: 1px solid var(--border);
 }
 
 /* The proportion bar behind an arm's net. Scaled to the largest ABSOLUTE net in the group, so a
@@ -1560,7 +1768,7 @@ select.text-input {
 .review-expected {
   margin-top: 0.9rem;
   padding-top: 0.7rem;
-  border-top: 1px solid var(--row-line);
+  border-top: 1px solid var(--border);
 }
 
 .review-expected-figures {
@@ -1569,7 +1777,7 @@ select.text-input {
 }
 
 .review-session-select {
-  background: var(--bg-card);
+  background: var(--surface-sunken);
   color: var(--text);
   font-family: var(--num-face);
   cursor: pointer;
@@ -1628,11 +1836,11 @@ select.text-input {
 }
 
 .note-figure-pos {
-  color: var(--ok);
+  color: var(--pos);
 }
 
 .note-figure-neg {
-  color: var(--err);
+  color: var(--neg);
 }
 
 .note-list {
@@ -1683,10 +1891,10 @@ select.text-input {
 .note-rec {
   display: flex;
   gap: 0.65rem;
-  background: var(--bg-raised);
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-left: 2px solid var(--warn);
-  border-radius: 3px;
+  border-radius: 8px;
   padding: 0.55rem 0.75rem;
 }
 
@@ -1731,16 +1939,16 @@ select.text-input {
 
 .lock-hero {
   border: 1px solid var(--border);
-  border-left: 3px solid var(--ok);
-  background: var(--bg-card);
+  border-left: 3px solid var(--pos);
+  background: var(--surface);
   padding: 0.9rem 1.1rem;
   margin-bottom: 1rem;
 }
 
 .lock-hero.halted {
-  border-color: rgba(210, 63, 87, 0.55);
-  border-left-color: var(--accent);
-  background: linear-gradient(to right, rgba(210, 63, 87, 0.08), var(--bg-card) 40%);
+  border-color: color-mix(in srgb, var(--accent-live) 55%, transparent);
+  border-left-color: var(--accent-live);
+  background: linear-gradient(to right, color-mix(in srgb, var(--accent-live) 8%, transparent), var(--surface) 40%);
 }
 
 .lock-hero-main {
@@ -1758,7 +1966,9 @@ select.text-input {
 }
 
 .lock-hero.halted .lock-hero-title {
-  color: var(--accent);
+  /* cherry: the halted hero's borders above are --accent-live; written for the cherry accent,
+     briefly blue between the token hoist and the shared sweep */
+  color: var(--accent-live);
   text-transform: uppercase;
 }
 
@@ -1781,8 +1991,8 @@ select.text-input {
 
 /* One click, and it looks like what it does. The safe direction is never behind a dialog. */
 .lock-btn-halt {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-live);
+  border-color: var(--accent-live);
   color: #fff;
   font-weight: 650;
   letter-spacing: 0.08em;
@@ -1803,8 +2013,8 @@ select.text-input {
 .lock-confirm {
   margin-top: 0.9rem;
   padding: 0.75rem 0.9rem;
-  border: 1px solid rgba(210, 63, 87, 0.35);
-  background: rgba(210, 63, 87, 0.05);
+  border: 1px solid color-mix(in srgb, var(--accent-live) 35%, transparent);
+  background: color-mix(in srgb, var(--accent-live) 5%, transparent);
 }
 
 .lock-confirm p {
@@ -1828,7 +2038,7 @@ select.text-input {
 
 .lock-error {
   margin: 0.6rem 0 0;
-  color: var(--err);
+  color: var(--neg);
   font-size: 12px;
 }
 
@@ -1897,7 +2107,7 @@ select.text-input {
   justify-content: space-between;
   gap: 1.5rem;
   padding: 0.5rem 0;
-  border-bottom: 1px solid var(--row-line);
+  border-bottom: 1px solid var(--border);
 }
 
 .cfg-row:last-child {
@@ -1905,7 +2115,7 @@ select.text-input {
 }
 
 .cfg-row-dirty {
-  background: rgba(217, 161, 59, 0.05);
+  background: color-mix(in srgb, var(--warn) 5%, transparent);
   box-shadow: inset 2px 0 0 var(--warn);
   padding-left: 0.5rem;
 }
@@ -1982,8 +2192,8 @@ select.text-input {
   flex-wrap: wrap;
   margin-top: 0.75rem;
   padding: 0.7rem 0.9rem;
-  border: 1px solid rgba(217, 161, 59, 0.4);
-  background: rgba(217, 161, 59, 0.06);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 6%, transparent);
 }
 
 .cfg-savebar-changes strong {
@@ -2011,7 +2221,7 @@ select.text-input {
 
 .cfg-save-error {
   margin: 0.5rem 0 0;
-  color: var(--err);
+  color: var(--neg);
   font-size: 11.5px;
   max-width: 70ch;
 }
@@ -2272,7 +2482,7 @@ select.text-input {
 }
 
 .pmcc-tv-at {
-  color: var(--ok);
+  color: var(--pos);
   font-weight: 600;
 }
 
@@ -2291,7 +2501,7 @@ select.text-input {
 }
 
 .pmcc-detail-row > td {
-  background: var(--bg-raised);
+  background: var(--surface-sunken);
 }
 
 .pmcc-detail {
@@ -2376,7 +2586,7 @@ select.text-input {
 
 
 .cal-ok {
-  color: var(--ok);
+  color: var(--pos);
 }
 
 
@@ -2432,7 +2642,7 @@ select.text-input {
 }
 
 .cal-entry-ok {
-  border-left-color: var(--ok);
+  border-left-color: var(--pos);
 }
 
 .cal-feed {
@@ -2464,7 +2674,7 @@ select.text-input {
 }
 
 .cal-row-click:hover {
-  background: var(--row-hover, rgba(255, 255, 255, 0.03));
+  background: var(--surface-hover);
 }
 
 /* The expanded week. `.data-table td` is nowrap by house rule; this one holds prose and legs
@@ -2541,7 +2751,7 @@ select.text-input {
   color: var(--warn);
 }
 .integrity-err {
-  color: var(--err);
+  color: var(--neg);
 }
 .integrity-chip {
   margin-left: 0.4rem;
@@ -2606,7 +2816,7 @@ select.text-input {
   display: block;
   height: 8px;
   border-radius: 4px;
-  background: var(--surface-2, #1d2129);
+  background: var(--surface-sunken);
   overflow: hidden;
 }
 
@@ -2616,7 +2826,7 @@ select.text-input {
   border-radius: 4px;
   /* Amber, not the brand red: red on a trading surface reads as loss, and this bar states a
      neutral position-in-range that gates nothing. Matches the curve stroke above it. */
-  background: #d9a13b;
+  background: var(--amber-line);
 }
 
 .pct-refusal {
@@ -2746,6 +2956,10 @@ td > .desk-refusal-reason {
    second row only takes its height from the content area above, which scrolls. A clipped health
    chip was the worse failure: a stale producer's warning scrolled out of sight. */
 .statusbar-wrap {
+  /* The shell grid's LAST row, both columns: auto-placement would otherwise drop this into the
+     row-3 slot under the rail (column 1) and leave the content column's foot empty. */
+  grid-column: 1 / -1;
+  grid-row: 3;
   flex-shrink: 0;
 }
 
@@ -2755,7 +2969,7 @@ td > .desk-refusal-reason {
   flex-wrap: wrap;
   gap: 0.35rem 0.45rem;
   border-top: 1px solid var(--border);
-  background: var(--bg-raised);
+  background: var(--surface-sunken);
   padding: 0.35rem 1rem;
   font-size: 12px;
   color: var(--text-muted);
@@ -2793,12 +3007,12 @@ td > .desk-refusal-reason {
   width: 16px;
   height: 16px;
   border-radius: 3px;
-  background: #3d4653;
+  background: var(--chart-grid-strong);
 }
-.advisor-cell-enacted { background: #43b57a; }
-.advisor-cell-carried { background: #4f8fd6; }
-.advisor-cell-not_enacted { background: #d95c4a; }
-.advisor-cell-no_artifact { background: #3d4653; }
+.advisor-cell-enacted { background: var(--pos); }
+.advisor-cell-carried { background: var(--accent); }
+.advisor-cell-not_enacted { background: var(--neg); }
+.advisor-cell-no_artifact { background: var(--chart-grid-strong); }
 /* One strip per experiment when a module runs several at once (2026-09-17). */
 .advisor-strips {
   display: flex;
@@ -2838,16 +3052,16 @@ td > .desk-refusal-reason {
 .advisor-bar {
   height: 8px;
   border-radius: 4px;
-  background: #1c222b;
+  background: var(--surface-sunken);
   overflow: hidden;
   margin: 0.3rem 0;
 }
 .advisor-bar-thin { height: 4px; }
 .advisor-bar-fill {
   height: 100%;
-  background: #43b57a;
+  background: var(--pos);
 }
-.advisor-bar-warn { background: #e3b341; }
+.advisor-bar-warn { background: var(--warn); }
 .advisor-concluded, .advisor-queue {
   padding-left: 1.2rem;
 }
@@ -2889,9 +3103,9 @@ td > .desk-refusal-reason {
 
 .gcard {
   box-sizing: border-box;
-  background: var(--bg-card);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 14px;
   padding: 0.65rem 0.8rem;
   display: flex;
   flex-direction: column;
@@ -2924,7 +3138,7 @@ td > .desk-refusal-reason {
   text-decoration: none;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 8px;
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1;
@@ -2950,7 +3164,7 @@ td > .desk-refusal-reason {
   flex-shrink: 0;
   font-size: 11px;
   color: var(--text-muted);
-  border-top: 1px solid var(--row-line);
+  border-top: 1px solid var(--border);
   padding-top: 0.4rem;
   margin-top: 0.4rem;
   white-space: nowrap;
@@ -2979,7 +3193,7 @@ td > .desk-refusal-reason {
   position: relative;
   display: block;
   height: 10px;
-  background: var(--row-line);
+  background: var(--track);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -2987,14 +3201,14 @@ td > .desk-refusal-reason {
   position: absolute;
   top: 0;
   bottom: 0;
-  background: rgba(67, 181, 122, 0.22);
+  background: color-mix(in srgb, var(--pos) 22%, transparent);
 }
 .bullet-value {
   position: absolute;
   left: 0;
   top: 3px;
   bottom: 3px;
-  background: #7aa2ff;
+  background: var(--accent);
   border-radius: 1px;
 }
 .bullet-marker {
@@ -3031,7 +3245,7 @@ td > .desk-refusal-reason {
 /* For a measure whose sign carries no verdict — fee drag is always positive, and tinting the
    column green would imply something nobody claimed. */
 .diverge-neutral .signed-bar-fill {
-  background: #a06bd9;
+  background: var(--chart-special);
 }
 
 /* A cross-tab is as wide as its buckets; inside a fixed-height card it scrolls rather than
@@ -3063,33 +3277,31 @@ td > .desk-refusal-reason {
   display: flex;
   flex-direction: column;
 }
-.mf {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 222px minmax(0, 1fr);
-}
-/* Collapsed (the default since 2026-10-01): the rail folds to a strip holding only its toggle. */
-.mf.mf-rail-collapsed {
-  grid-template-columns: 26px minmax(0, 1fr);
-}
+/* The rail's own collapse class (the shell's .shell-main grid owns the columns; this keeps the
+   nav element's collapsed posture — one glyph per page at reading size, the active page marked,
+   the toggle above). */
 .mf-nav-collapsed {
   overflow: hidden;
 }
 .mf-nav-toggle {
   display: block;
   width: 100%;
-  padding: 0.1rem 0.5rem 0.4rem;
+  padding: 0.4rem 0.5rem 0.35rem;
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1;
   text-align: right;
   cursor: pointer;
+  /* The rail's LAST row, below the scrollable link list (2026-10-12): the head-row slot it
+     used to hold was an empty line before the brand, and a margin-top:auto middle slot gapped
+     the whole menu away from the brand head. At the foot it costs no row the links could use
+     and stays reachable without scrolling. */
+  flex-shrink: 0;
 }
 .mf-nav-collapsed .mf-nav-toggle {
-  padding: 0.1rem 0;
+  padding: 0.4rem 0;
   text-align: center;
 }
 .mf-nav-toggle:hover {
@@ -3097,64 +3309,143 @@ td > .desk-refusal-reason {
 }
 .mf-nav {
   border-right: 1px solid var(--border);
-  background: var(--bg-raised);
-  padding: 0.5rem 0;
-  overflow-y: auto;
+  background: var(--surface-sunken);
   min-height: 0;
+  /* Column 1, row 2: beneath the brand head (its own grid row, sharing row 1 with the top
+     bar). Three rows inside the nav: the scrollable link list (flex 1), the toggle (pinned
+     foot). The scroll lives on the middle region, not here — an auto margin above the toggle
+     would otherwise gap the menu away from the brand head (2026-10-12, and fixed the same day). */
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+}
+.mf-nav-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* The link list owns its vertical padding (the brand head and the toggle carry their own). */
+#mf-nav-links {
+  padding: 0.4rem 0 0.75rem;
 }
 .mf-nav-link {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
   padding: 0.3rem 0.9rem;
   font-size: 13px;
   color: var(--text-muted);
   text-decoration: none;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.mf-nav-ic {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* The collapsed strip (2026-10, the icon rail): one Link per page, navigable with the rail
+   folded — the glyph is the link, `aria-label` names it. Tooltips repeat the name on hover;
+   focus shows the ring. The active page wears the blue left rule the expanded rail uses; an
+   experimental module wears the amber corner; Config's dirty dot rides along as in the menu. */
+.mf-nav-icons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0.35rem 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+.mf-nav-icons[hidden] {
+  display: none; /* the author display above beats the UA [hidden] rule; say it once here */
+}
+.mf-nav-ic-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 34px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  text-decoration: none;
+  cursor: pointer;
+}
+.mf-nav-ic-wrap:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.mf-nav-ic-on {
+  position: absolute;
+  left: -12px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.mf-nav-ic-wrap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  color: var(--text);
+}
+.mf-nav-ic-exp {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warn);
 }
 .mf-nav-link:hover {
   color: var(--text);
-  background: var(--row-hover);
+  background: var(--surface-hover);
 }
 .mf-nav-link.active {
   color: var(--text);
-  background: var(--row-hover);
-  box-shadow: inset 2px 0 0 #7aa2ff;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 /* The current module is a heading rather than a link -- see ModuleNav. */
 .mf-nav-current {
   font-weight: 600;
   color: var(--text);
-  background: var(--row-hover);
-  box-shadow: inset 2px 0 0 #7aa2ff;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
   margin-top: 0.2rem;
 }
 .mf-nav-section {
   font-size: 9.5px;
   letter-spacing: 0.11em;
   text-transform: uppercase;
-  color: #5f666f;
+  color: var(--text-dim);
   padding: 0.7rem 0.9rem 0.25rem;
 }
 .mf-nav-group {
   font-size: 9px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #5f666f;
+  color: var(--text-dim);
   padding: 0.45rem 0.9rem 0.15rem 1.6rem;
 }
 .mf-nav-slide {
   display: block;
-  padding: 0.25rem 0.9rem 0.25rem 1.75rem;
+  padding: 0.25rem 0.9rem 0.25rem 2rem;
   font-size: 12.5px;
   color: var(--text-muted);
   text-decoration: none;
+  transition: background-color 150ms ease, color 150ms ease;
 }
 .mf-nav-slide:hover {
   color: var(--text);
-  background: var(--row-hover);
+  background: var(--surface-hover);
 }
 .mf-nav-slide.active {
-  color: var(--text);
-  background: var(--row-hover);
-  box-shadow: inset 2px 0 0 #7aa2ff;
+  color: var(--pos);
+  font-weight: 600;
+  background: var(--surface-hover);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .mf-layout {
@@ -3178,7 +3469,7 @@ td > .desk-refusal-reason {
   font-size: 15px;
 }
 .mf-crumb-sep {
-  color: #5f666f;
+  color: var(--text-dim);
   white-space: pre;
 }
 .mf-crumb-slide {
@@ -3197,7 +3488,7 @@ td > .desk-refusal-reason {
 .mf-integrity-chip {
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 999px;
   color: var(--text-muted);
   font-size: 11.5px;
   padding: 3px 8px;
@@ -3219,7 +3510,7 @@ td > .desk-refusal-reason {
   overflow: auto;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--canvas);
   flex-shrink: 0;
 }
 .mf-warn {
@@ -3240,14 +3531,7 @@ td > .desk-refusal-reason {
 }
 
 /* Below this the rail costs more than it gives; the header menu still reaches every page. */
-@media (max-width: 1000px) {
-  .mf {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .mf-nav {
-    display: none;
-  }
-}
+
 
 /* History-table controls (2026-09-25): a date range kept in the URL, and a columns panel that drops
    from its button rather than opening a dialog -- the table stays visible and updates behind it. */
@@ -3275,7 +3559,7 @@ td > .desk-refusal-reason {
   max-height: 70vh;
   overflow-y: auto;
   padding: 0.5rem;
-  background: var(--bg-raised);
+  background: var(--surface-raised);
   border: 1px solid var(--border);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
@@ -3296,7 +3580,7 @@ td > .desk-refusal-reason {
   align-items: center;
   gap: 0.4rem;
   padding: 0.15rem 0.25rem;
-  border-bottom: 1px solid var(--row-line);
+  border-bottom: 1px solid var(--border);
 }
 .cols-item.dragging {
   opacity: 0.4;
@@ -3350,7 +3634,7 @@ td > .desk-refusal-reason {
   top: calc(100% + 4px);
   z-index: 20;
   padding: 0.6rem;
-  background: var(--bg-raised);
+  background: var(--surface-raised);
   border: 1px solid var(--border);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
@@ -3401,7 +3685,7 @@ td > .desk-refusal-reason {
   cursor: pointer;
 }
 .dp-day:hover:not(:disabled) {
-  background: var(--row-hover);
+  background: var(--surface-hover);
   outline: 1px solid var(--border);
 }
 .dp-day:disabled {
@@ -3415,12 +3699,12 @@ td > .desk-refusal-reason {
   opacity: 0.55;
 }
 .dp-day.dp-inside {
-  background: var(--row-hover);
+  background: var(--surface-hover);
   opacity: 1;
 }
 .dp-day.dp-edge {
   background: var(--text);
-  color: var(--bg);
+  color: var(--canvas);
   opacity: 1;
 }
 .dp-day.dp-today:not(.dp-edge) {
@@ -3480,13 +3764,13 @@ td > .desk-refusal-reason {
   border-left: 3px solid var(--border);
 }
 .system-ok {
-  border-left-color: var(--ok);
+  border-left-color: var(--pos);
 }
 .system-warn {
   border-left-color: var(--warn);
 }
 .system-critical {
-  border-left-color: var(--err);
+  border-left-color: var(--neg);
 }
 
 .system-check-value {
@@ -3517,7 +3801,7 @@ td > .desk-refusal-reason {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--err);
+  color: var(--neg);
 }
 
 .system-mini {
@@ -3558,7 +3842,7 @@ td > .desk-refusal-reason {
 .system-disk-bar {
   height: 6px;
   border-radius: 3px;
-  background: var(--row-line);
+  background: var(--track);
   overflow: hidden;
 }
 .system-disk-bar > div {
@@ -3577,10 +3861,10 @@ td > .desk-refusal-reason {
   margin-left: 0 !important;
 }
 .system-log-controls select {
-  background: var(--bg-card);
+  background: var(--surface-sunken);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 8px;
   padding: 0.2rem 0.4rem;
   font-size: 12px;
 }
@@ -3593,7 +3877,7 @@ td > .desk-refusal-reason {
   margin-left: 0.4rem;
   letter-spacing: 0.04em;
   color: var(--warn);
-  border-color: rgba(217, 161, 59, 0.35);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
   vertical-align: 1px;
 }
 
@@ -3640,7 +3924,7 @@ td > .desk-refusal-reason {
 .post-page {
   width: 1280px;
   padding: 12px;
-  background: var(--bg);
+  background: var(--canvas);
 }
 .gcard.post-card {
   height: auto;
@@ -3683,6 +3967,532 @@ td > .desk-refusal-reason {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 0 0.6em;
+}
+
+/* ---------------------------------------------------------------------------
+ * The MEIC summary slide — the surface that seeded the adopted theme (2026-10,
+ * docs/trade-summary-branch.md): rounded cards, blue selection, mint/salmon sign tones. Its
+ * private scope and token aliases are gone; these rules read the shared vocabulary directly,
+ * exactly as every other card in the suite does. The .ts- class names stay — they are wired in
+ * SummarySlide.tsx and pinned by its tests.
+ * ------------------------------------------------------------------------- */
+.ts-root {
+  background: var(--canvas);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+
+.ts-row {
+  display: grid;
+  gap: 14px;
+}
+.ts-row-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+/* The money row grew to four cards (net / capture / return-on-risk / win-rate); the gauge cards
+   hold their width via the shared max-widths below, so no card takes a different fraction. */
+.ts-row-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+.ts-row-2 {
+  grid-template-columns: 3fr 2fr;
+}
+@media (max-width: 1100px) {
+  .ts-row-3,
+  .ts-row-4,
+  .ts-row-2 {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 1500px) and (min-width: 1101px) {
+  .ts-row-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.ts-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  min-width: 0; /* lets the grid cell, not the content, set the width (charts measure it) */
+}
+.ts-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.ts-card-head h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ts-pos {
+  color: var(--pos);
+}
+.ts-neg {
+  color: var(--neg);
+}
+.ts-muted {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.ts-num {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+
+/* toolbar */
+.ts-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.ts-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.ts-seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+.ts-seg button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.ts-seg button.ts-seg-on {
+  background: var(--accent);
+  color: #fff;
+}
+.ts-daynav {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.ts-daynav button {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 8px;
+  width: 24px;
+  height: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ts-badge {
+  display: inline-block;
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.ts-badge-warn {
+  color: var(--warn);
+}
+
+/* hero */
+.ts-hero {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 42px;
+  font-weight: 700;
+  margin: 6px 0 12px;
+}
+.ts-kv {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.ts-kv div {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.ts-kv dt {
+  color: var(--text-muted);
+}
+.ts-kv dd {
+  margin: 0;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+
+/* gauges */
+.ts-gauge {
+  width: 100%;
+  max-width: 220px;
+  display: block;
+  margin: 0 auto;
+}
+.ts-track {
+  stroke: var(--track);
+}
+.ts-arc-pos {
+  stroke: var(--pos);
+}
+.ts-arc-neg {
+  stroke: var(--neg);
+}
+.ts-needle {
+  stroke: var(--text);
+  fill: var(--text);
+}
+.ts-tick {
+  fill: var(--text-muted);
+  font-size: 9px;
+  font-family: var(--num-face);
+}
+.ts-gauge-value {
+  text-align: center;
+  font-family: var(--num-face);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+/* win-rate rings */
+.ts-rings {
+  position: relative;
+  width: 140px;
+  margin: 4px auto 8px;
+}
+.ts-rings svg {
+  display: block;
+  width: 100%;
+}
+.ts-ring-days {
+  stroke: var(--pos);
+}
+.ts-ring-entries {
+  stroke: var(--accent);
+}
+.ts-rings-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.ts-rings-center .ts-pos {
+  font-family: var(--num-face);
+  font-size: 22px;
+  font-weight: 700;
+}
+.ts-legend {
+  margin: 0;
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.ts-legend div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ts-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+/* A swatch states its colour — the ring class it is paired with — rather than inheriting the
+   legend text's; `background: currentColor` rendered both swatches white (shown to fail). */
+.ts-swatch.ts-ring-days {
+  background: var(--pos);
+}
+.ts-swatch.ts-ring-entries {
+  background: var(--accent);
+}
+
+/* by side */
+.ts-side {
+  margin-bottom: 12px;
+}
+.ts-side-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.ts-hbar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+.ts-hbar-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+.ts-hbar-fill.ts-pos {
+  background: var(--pos);
+}
+.ts-hbar-fill.ts-neg {
+  background: var(--neg);
+}
+.ts-side-sub {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* by entry time */
+.ts-times {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  min-height: 120px;
+}
+.ts-time {
+  flex: 1;
+  text-align: center;
+}
+.ts-time-area {
+  height: 90px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.ts-vbar {
+  width: 26px;
+  border-radius: 4px 4px 0 0;
+}
+.ts-vbar.ts-pos {
+  background: var(--pos);
+}
+.ts-vbar.ts-neg {
+  background: var(--neg);
+}
+/* a loss renders as a short marker, not a full-height bar, per the reference design */
+.ts-vbar.ts-marker {
+  border-radius: 2px;
+  max-height: 6px;
+}
+.ts-time-label {
+  font-family: var(--num-face);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.ts-time-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* evaluations — the refusal ledger */
+.ts-funnel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.ts-funnel {
+  height: 8px;
+}
+.ts-funnel-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+}
+.ts-refusal-bars {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+.ts-refusal-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-bottom: 3px;
+}
+.ts-refusal-head .ts-num {
+  font-variant-numeric: tabular-nums;
+}
+/* Neutral tone: a refusal count has no sign, so no tone. Deliberately not pos/neg/accent —
+   standing aside is a decision, not a loss, and a gate count must not read as a verdict. */
+.ts-hbar-fill.ts-neutral {
+  background: var(--chart-neutral);
+}
+.ts-market {
+  margin: 12px 0 0;
+}
+
+/* entries table */
+.ts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ts-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.ts-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.ts-table tr:last-child td {
+  border-bottom: 0;
+}
+.ts-table .num {
+  text-align: right;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+.ts-table .ts-badge {
+  margin-left: 8px;
+}
+
+/* Trade summary — empty-state and off-session additions (wired read). */
+.ts-empty {
+  margin: 0;
+  padding: 0.75rem 0 0.25rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.ts-time-label.ts-off {
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+/* Trade summary — entry-time card, second row: the evidence strip (entries per hour, the
+ * activity measure on its own scale, beneath the per-trade bars). */
+.ts-evidence {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+.ts-evidence-fill {
+  height: 4px;
+  flex: 0 0 auto;
+  border-radius: 2px;
+  background: var(--text-muted);
+  min-width: 2px;
+}
+.ts-evidence-n {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ts-timescale {
+  margin-top: 0.4rem;
+  font-size: 0.66rem;
+}
+
+/* Trade summary — weekday card: calendar-order columns on a true zero baseline (a negative day
+ * drops below it), with count and win-% pills beside the day label. */
+.ts-week {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-end;
+}
+.ts-wday {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.ts-wday-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  width: 100%;
+  max-width: 44px;
+}
+.ts-wday-axis .ts-vbar {
+  width: 100%;
+}
+.ts-wday-label {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  margin-top: 0.35rem;
+}
+.ts-wday-day {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.ts-wday-pill {
+  font-size: 0.62rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ts-wday-pill.ts-wday-win {
+  color: var(--pos);
+  border-color: color-mix(in srgb, var(--pos) 45%, transparent);
+}
+.ts-wday-pill.ts-wday-lose {
+  color: var(--neg);
+  border-color: color-mix(in srgb, var(--neg) 45%, transparent);
+}
+.ts-wday-sub {
+  margin-top: 0.15rem;
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+/* Trade summary — the entries pager: quiet arrows in the card's aside, the page stated between. */
+.ts-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-right: 0.75rem;
+}
+.ts-pager button {
+  border: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  padding: 0.08rem 0.42rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ts-pager button:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 /* Compare (pages/Compare/): every arm beside its control. No verdict colours: the only tone is a
    number's sign (pnl-pos/pnl-neg) and a histogram bin's side of zero. */
@@ -3732,7 +4542,7 @@ td > .desk-refusal-reason {
   text-align: left;
 }
 .cmp-row-open td {
-  background: var(--row-line);
+  background: var(--surface-raised);
 }
 .cmp-hist-head {
   font-size: 12px;
@@ -3756,11 +4566,11 @@ td > .desk-refusal-reason {
   font-family: var(--num-face);
 }
 .cmp-hist-loss {
-  fill: var(--err);
+  fill: var(--neg);
   opacity: 0.75;
 }
 .cmp-hist-gain {
-  fill: var(--ok);
+  fill: var(--pos);
   opacity: 0.75;
 }
 .cmp-error,

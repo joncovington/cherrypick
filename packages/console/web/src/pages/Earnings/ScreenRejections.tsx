@@ -84,7 +84,7 @@ export function ScreenRejections({ mode, era }: { mode: TradingMode; era: string
                 <tr key={r.reason}>
                   <td style={{ whiteSpace: "nowrap" }}>{r.reason}</td>
                   <td>
-                    <div style={{ height: 8, background: "var(--row-line)", borderRadius: 2, position: "relative" }}>
+                    <div style={{ height: 8, background: "var(--track)", borderRadius: 2, position: "relative" }}>
                       <div
                         style={{
                           width: `${(r.total / max) * 100}%`,

@@ -1,8 +1,6 @@
 import { Suspense } from "react";
 import { useParams } from "react-router-dom";
 import { NotFoundPage } from "./NotFoundPage";
-import { ModuleNav, RAIL_PREF } from "../components/shell/ModuleNav";
-import { useBoolPref } from "../lib/prefs";
 import { FrameChrome } from "../lightbox/ModuleFrame";
 import { MODULE_FRAMES } from "../lightbox/registry";
 import { isModuleId } from "../lightbox/moduleOrder";
@@ -12,32 +10,25 @@ import { isSlideVisible, offReason } from "../lib/visibility";
 import { ModuleOffCard } from "./ModuleOffCard";
 
 /**
- * `/:module` and `/:module/:slide`: every page renders here, inside the shell's own outlet, as a
- * rail plus a content pane.
+ * `/:module` and `/:module/:slide`: the page body inside the shell's own rail+content grid.
  *
- * The rail and the breadcrumb sit OUTSIDE the Suspense boundary deliberately. The manifest is
+ * Since 2026-10-11 the rail lives in the SHELL (one nav for every page), so this route renders
+ * the content pane only — the module context bar (`FrameChrome`), then the manifest's frame. The
+ * rail and the breadcrumb still sit OUTSIDE the Suspense boundary deliberately. The manifest is
  * lazy, and React's server renderer emits the fallback rather than resolving it, so anything
  * inside the boundary is invisible to every test this package has. Outside it, the route tests
- * can assert on the nav and on which tab a URL resolved to — which is most of what there is to
- * get wrong here. It also means a reader sees the frame and their place in it immediately, with
- * only the content arriving late, rather than an empty screen for the length of a chunk fetch.
+ * can assert on which tab a URL resolved to — which is most of what there is to get wrong here.
+ * It also means a reader sees their place immediately, with only the content arriving late,
+ * rather than an empty screen for the length of a chunk fetch.
  */
 export function ModuleRoute() {
   const { module = "", slide = "" } = useParams();
-  const railExpanded = useBoolPref(RAIL_PREF);
   const features = useFeatures();
   if (!isModuleId(module)) return <NotFoundPage />;
 
   // A page the suite has turned off is a card saying so, never the module and never a 404.
   const off = offReason(module, features);
-  if (off !== null) {
-    return (
-      <div className={railExpanded ? "mf" : "mf mf-rail-collapsed"}>
-        <ModuleNav module={module} slide="" />
-        <ModuleOffCard module={module} off={off} />
-      </div>
-    );
-  }
+  if (off !== null) return <ModuleOffCard module={module} off={off} />;
 
   const Frame = MODULE_FRAMES[module];
   const slides = NAV_DECL[module].slides.filter((s) => isSlideVisible(module, s.id, features));
@@ -45,18 +36,15 @@ export function ModuleRoute() {
   const label = slides.find((s) => s.id === activeId)?.label ?? activeId;
 
   return (
-    <div className={railExpanded ? "mf" : "mf mf-rail-collapsed"}>
-      <ModuleNav module={module} slide={activeId} />
-      <Suspense
-        fallback={
-          <div className="mf-layout">
-            <FrameChrome module={module} slideLabel={label} />
-            <div className="mf-body" />
-          </div>
-        }
-      >
-        <Frame slide={slide} />
-      </Suspense>
-    </div>
+    <Suspense
+      fallback={
+        <div className="mf-layout">
+          <FrameChrome module={module} slideLabel={label} />
+          <div className="mf-body" />
+        </div>
+      }
+    >
+      <Frame slide={slide} />
+    </Suspense>
   );
 }
