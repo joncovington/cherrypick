@@ -309,3 +309,41 @@ def test_live_wrapper_strips_paper_from_every_schema_title():
     for raw_title in ("Paper entry", "Paper exit", "Paper stop", "Paper settled"):
         wrapped.notify("INFO", "trade.x", raw_title, "msg")
     assert inner.sent == ["LIVE: entry", "LIVE: exit", "LIVE: stop", "LIVE: settled"]
+
+
+# --------------------------------------------------------------------------- live entries, on the fill
+
+
+def _live_conn(rows):
+    """The live ledger's shape: entry_fill_status says whether the entry ORDER has filled."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        "CREATE TABLE fly_positions (position_id TEXT PRIMARY KEY, symbol TEXT, arm TEXT, "
+        "entry_mode TEXT, kind TEXT, side TEXT, center REAL, wing_width REAL, far_width REAL, "
+        "roll_debit REAL, net REAL, floor_dollars REAL, entry_time TEXT, completing_direction TEXT, "
+        "completed_at TEXT, exit_time TEXT, pnl REAL, pinned INTEGER, status TEXT, entry_fill_status TEXT)"
+    )
+    for pid, status, fill in rows:
+        conn.execute(
+            "INSERT INTO fly_positions (position_id, symbol, arm, kind, side, center, wing_width, net, "
+            "pinned, status, entry_fill_status) "
+            "VALUES (?, 'SPX', 'control', 'short_vertical', 'put', 6000, 5, 2.5, 0, ?, ?)",
+            (pid, status, fill),
+        )
+    conn.commit()
+    return conn
+
+
+def test_a_live_entry_is_announced_on_its_fill_not_its_order():
+    """2026-10-15: a working entry order is not an entry; an order cancelled unfilled never was one.
+    Shown to fail by restoring the unfiltered query: the pending and cancelled rows are announced."""
+    conn = _live_conn([("W1", "open", "pending"), ("C1", "cancelled", "cancelled")])
+    rec = _Recorder()
+    st = {"notified_entry_ids": [], "notified_completion_ids": [], "notified_exit_ids": []}
+    tn._flies_process(conn, st, rec, "flies")
+    assert [k for k, _ in rec.sent if ".entry." in k] == []
+    conn.execute("UPDATE fly_positions SET entry_fill_status = 'filled' WHERE position_id = 'W1'")
+    conn.commit()
+    tn._flies_process(conn, st, rec, "flies")
+    assert [k for k, _ in rec.sent if ".entry." in k] == ["trade.flies.entry.W1"]

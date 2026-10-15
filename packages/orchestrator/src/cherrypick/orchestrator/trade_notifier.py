@@ -1149,6 +1149,19 @@ def _embed_flies_exit(r) -> dict:
     return _embed(COLOR_EXIT, title, details, footer=r["arm"])
 
 
+def _flies_entry_query(conn) -> str:
+    """Entries worth announcing: on the LIVE ledger a row is written when the entry ORDER is placed
+    (`entry_fill_status` 'pending'), so until 2026-10-15 a live "entry" alert meant "order placed",
+    and an order cancelled unfilled was announced as an entry too. Now a live row is announced once
+    the broker has filled it; a pending row is simply picked up on the pass after it fills, and a
+    cancelled one never is. Paper rows leave the column empty and are announced as before; a ledger
+    without the column reads every row, as before."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(fly_positions)")}
+    if "entry_fill_status" not in cols:
+        return "SELECT * FROM fly_positions"
+    return "SELECT * FROM fly_positions WHERE entry_fill_status IS NULL OR entry_fill_status = 'filled'"
+
+
 def _flies_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     stages = [
         (
@@ -1157,7 +1170,7 @@ def _flies_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
             "Paper entry",
             _fmt_flies_entry,
             _embed_flies_entry,
-            "SELECT * FROM fly_positions",
+            _flies_entry_query(conn),
         ),
         (
             "notified_completion_ids",
