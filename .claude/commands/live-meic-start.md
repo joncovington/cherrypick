@@ -3,8 +3,8 @@ description: Arm (or disarm) the MEIC LIVE trading loop for TODAY, gated behind 
 argument-hint: [--stop]
 ---
 
-Arm the MEIC live loop for today. That means real money, real SPX 0DTE iron condors, against the
-real designated account. Arming writes the **arm record**
+Arm the MEIC live loop for today. That means real money, real 0DTE iron condors on the pinned
+`live.symbol` (read it from `--status`; never assume SPX), against the real designated account. Arming writes the **arm record**
 (`~/.cherrypick/state/meic-live-arm.json`). The orchestrator's supervisor reads it to enable its
 `meic-live` job, one `cherrypick.meic.live_loop --once --live` tick per minute. Without a running
 supervisor, arming is refused. The loop **self-disarms at `live.disarm_time` (default 17:00 ET)**:
@@ -16,13 +16,21 @@ the arm record is what makes one day live.
 What the loop does once armed, so the YES is informed: inside the live entry window (the `live`
 block's `entry_window_start`/`entry_window_end`, over `live.arm` or the top level) it evaluates
 the same entry function the paper arms use, with live's own gates (IV rank floor, GEX block, OTM
-floors, VIX/ATR pauses). When an IC clears them and fits under `max_open_bp_dollars`, it places ONE
-four-leg SPX iron condor as a limit order. It opens at most `live.max_structures_per_day` ICs a
-day (default 1; a cancelled entry does not count). Each side is stopped by the per-side stop
-(`stop_trigger_ratio`, re-priced every tick) and force-closed at `force_close_time`. A held side
-cash-settles at 16:00. Every fill is recorded only on the broker's confirmation. Each tick first
-sweeps the broker's working SPX orders. One that no live ledger knows (MEIC's, flies' or bwb's)
-blocks new entries until a person looks.
+floors, VIX/ATR pauses). When an IC clears them and fits under `max_open_bp_dollars` together with
+what is already open, it places one four-leg iron condor on `live.symbol` as a limit order, at the
+width the `live` block names. `live.max_structures_per_day` caps new ICs a day (absent: 1; `null`:
+no count cap, sizing by buying power alone; a cancelled entry never counts). Exits depend on
+`per_side_stop_management` -- READ IT from `--status` and say it: when true each side is stopped
+at `stop_trigger_ratio` (re-priced every tick); when false every IC is held to settlement and the
+worst case per IC is its width less its credit. A cash-settled symbol (SPX, XSP) is never
+force-closed at 15:45 -- only on an FOMC day (from 13:30) or a triple-witching/quarterly expiry
+day (from 14:00) -- and a held side settles ONLY on the official closing print (tastytrade's
+posted close, else Yahoo/Barchart); until one is posted the IC stays open and the next tick asks
+again, and a session the machine missed is settled by the hourly `settle-overdue-live` job at
+that day's close. Every fill is recorded only on the broker's confirmation. Each tick first
+sweeps the broker's working orders on the symbol; one that no live ledger knows (MEIC's, flies'
+or bwb's) blocks new entries until a person looks, and an entry opposite a leg another live loop
+holds is refused.
 
 `--stop`: disarm (see "Stop" below). Anything else: the arm flow.
 
@@ -44,8 +52,10 @@ blocks new entries until a person looks.
      set it after a failed self-disarm, which is worth understanding before re-arming. Only a
      fresh YES may clear it (step 4).
    - **What live trades, said out loud**: `symbol`, `arm` (null = the top level), `entry_window`,
-     `max_open_bp_dollars`, `max_structures_per_day`, `per_side_stop_management`, and the
-     `daily_loss_halt_dollars` breaker from the config's `live` block.
+     `max_open_bp_dollars`, `max_structures_per_day`, `per_side_stop_management`, the width from
+     the `live` block's `wing_widths_by_symbol`, and the `daily_loss_halt_dollars` breaker from the
+     config's `live` block. If the breaker is unset, say so PROMINENTLY and offer to set it before
+     the YES -- with stops off it is the only intraday brake besides the halt flag.
    - **Open positions / pending orders / `entries_today` / `breaker_tripped`**, plus whether
      today's session is already settled (`session_settled`).
    - **Orphaned orders**: if `orphaned_orders` is non-empty, **stop here**. The last tick's sweep
@@ -74,8 +84,8 @@ blocks new entries until a person looks.
    > responsible for every order and every loss.** Full text: `DISCLAIMER.md`.
 
    Then **ask for explicit confirmation** with the AskUserQuestion tool (never free-text parsing).
-   Name the masked account, the symbol, the entry window, `max_structures_per_day`, the BP cap and
-   the self-disarm time. Offer exactly two options: **"YES — I accept the disclaimer; arm live
+   Name the masked account, the symbol and width, the entry window, `max_structures_per_day`, the
+   BP cap, whether stops are on, and the self-disarm time. Offer exactly two options: **"YES — I accept the disclaimer; arm live
    trading for today"** and **"No, cancel"**. Anything but the literal YES option stops here with
    no action taken.
 
@@ -117,8 +127,10 @@ blocks new entries until a person looks.
    force-closed once the loop is disarmed**. Its working stop orders stay at the broker, but no tick
    re-prices them. Either re-arm, run manual ticks, or manage it in the broker UI. A resting entry
    order is NOT cancelled by disarming (it dies at the close as a Day order, or cancel it in the
-   broker UI). For a harder stop that keeps managing open ICs but blocks new ones, use the halt
-   flag instead of disarming.
+   broker UI). An IC still held at the close is settled later by the hourly `settle-overdue-live`
+   job at that day's official close, or by hand with `python -m cherrypick.meic.live_loop --settle
+   --date <YYYY-MM-DD> --price <official close>`. For a harder stop that keeps managing open ICs
+   but blocks new ones, use the halt flag instead of disarming.
 
 ## Escape hatch
 

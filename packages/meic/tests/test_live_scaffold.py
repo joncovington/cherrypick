@@ -711,7 +711,15 @@ def test_settlement_cancels_a_working_close_and_falls_through_to_expiry(tmp_path
     snap["underlying_price"] = 590.0  # between the strikes: both sides expire worthless
     snap["leg_quotes"] = {}
     broker = FakeBroker()  # W1 still Live at the broker
-    summary = live_loop.run_once(_config(symbol="XSP"), snap, db_path, broker, live=True, log=lambda *_: None)
+    summary = live_loop.run_once(
+        _config(symbol="XSP"),
+        snap,
+        db_path,
+        broker,
+        live=True,
+        log=lambda *_: None,
+        settle_price=lambda _s: (590.0, "tastytrade_close"),  # a posted close (2026-10-15 rule)
+    )
     assert summary["expired"] == 1
     assert broker.cancelled == ["W1"], "the working close is cancelled, not chased into the bell"
     done = live_loop._trade_row("OPEN1", db_path)
