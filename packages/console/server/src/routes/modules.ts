@@ -7,6 +7,7 @@ import { readEntryAttempts } from "../readers/attempts.js";
 import { readDecisions } from "../readers/decisions.js";
 import { readFliesArmGuide, readMeicProfileGuide } from "../readers/experimentGuide.js";
 import { readOccupancy } from "../readers/occupancy.js";
+import { readRetiredArms } from "../readers/armStatus.js";
 import {
   readMeic,
   readMeicCosts,
@@ -285,6 +286,8 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   // The experiment guides: what each arm/profile is and how it got there. Config + ledger only, so
   // they cost nothing and never need the market.
   app.get("/api/flies/arms", async (req) => readFliesArmGuide(config, parseMode(req.query)));
+  // Which arms each module's config retires: the arm filters hide them unless asked.
+  app.get("/api/arms/retired", async () => readRetiredArms(config));
   // Costs pages (fee drag, where the premium went, entry outcomes per session), paper or live,
   // scoped to an era like the trade logs: "ALL" pools every era, anything else is checked here.
   const costsEra = (q: unknown): string | null => {

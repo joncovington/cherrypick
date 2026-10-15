@@ -4,6 +4,7 @@ import type { PmccCycleRow } from "@console/shared";
 import { usePmccAssignments, usePmccHistory, usePmccMeta } from "../../lib/api";
 import { Card, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { Pager, ScopeSelect, usePage } from "../../components/ScopeBar";
+import { ArmSelect } from "../../components/ArmSelect";
 import { fmtStrike } from "../../lib/optionFormat";
 import { TradeTotalsChip, tradeMoneyColumns } from "../../components/TradeMoney";
 import { HistoryTable } from "../../components/table/HistoryTable";
@@ -286,7 +287,7 @@ export function HistoryTab() {
         dateBasis="closed"
         filters={
           <>
-            <ScopeSelect label="arm filter" value={arm} options={meta.data?.arms} onChange={setBook} allLabel="all arms" />
+            <ArmSelect module="pmcc" value={arm} options={meta.data?.arms} onChange={setBook} />
             <ScopeSelect
               label="symbol filter"
               value={symbol}

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ContangoHistoryRow, ContangoMetrics, ContangoPayload, ContangoSessionRow, DatedValue } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtNum } from "../../components/DataTable";
-import { ScopeSelect } from "../../components/ScopeBar";
+import { ArmSelect } from "../../components/ArmSelect";
 import { TradeTotalsChip, tradeMoneyColumns } from "../../components/TradeMoney";
 import { HistoryTable } from "../../components/table/HistoryTable";
 import { useUrlDateRange } from "../../components/table/DateRange";
@@ -502,13 +502,7 @@ function ContangoStintHistory({ data }: { data: ContangoPayload | undefined }) {
       updatedAt={history.data === undefined ? undefined : history.dataUpdatedAt}
       dateBasis="closed"
       filters={
-        <ScopeSelect
-          label="arm filter"
-          value={arm}
-          options={data?.params.arms.map((a) => a.arm)}
-          onChange={setArm}
-          allLabel="all arms"
-        />
+        <ArmSelect module="contango" value={arm} options={data?.params.arms.map((a) => a.arm)} onChange={setArm} />
       }
       footer={history.data !== undefined && <TradeTotalsChip totals={history.data.totals} noun="stints" settlementRecorded={false} />}
     />
