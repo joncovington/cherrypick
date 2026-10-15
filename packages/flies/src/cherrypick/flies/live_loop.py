@@ -80,6 +80,7 @@ from cherrypick.core import execution as _execution
 from cherrypick.core import home as _home  # noqa: E402
 from cherrypick.core import jsonio as _jsonio  # noqa: E402
 from cherrypick.core import live as _live  # noqa: E402
+from cherrypick.core import livepositions as _livepos  # noqa: E402
 from cherrypick.core import redact as _redact  # noqa: E402
 from cherrypick.core import settlement as _settlement  # noqa: E402
 
@@ -920,6 +921,10 @@ def run_once(
     # --- 0. orphan sweep: broker truth vs ledger belief ---
     if live:
         summary["orphaned_orders"] = _sweep_orphans(conn, broker, log, symbol)
+    # What this ledger holds or has working, for bwb's and MEIC's entries to check (2026-10-15).
+    _livepos.publish_open_legs(
+        "flies", expected_legs(config, conn, include_pending=True)["legs"], now_iso=clock.now_iso()
+    )
 
     # --- 1. fill confirmation (before anything else acts on a position's current state) ---
     if live:
@@ -1211,6 +1216,22 @@ def run_once(
                     entry_pricing_used = live_orders.ENTRY_PRICING_MID_FIRST
             elif spec is not None and entry_pricing == live_orders.ENTRY_PRICING_MID_FIRST:
                 entry_pricing_used = "conceded"
+            # bwb and MEIC trade SPX in this account too (2026-10-15): a leg opposite one they hold
+            # or have working nets at the broker into a position neither ledger describes.
+            clash = _livepos.cross_module_conflict("flies", symbol, spec) if spec is not None else None
+            if clash is not None:
+                summary["skips"].append(
+                    {
+                        "entry": f"cross_module_sign_conflict: {_livepos.describe(clash)} opposite another live loop"
+                    }
+                )
+                journal(
+                    "entry",
+                    "cross_module_sign_conflict",
+                    center=plan["center"],
+                    detail=_livepos.describe(clash),
+                )
+                spec = None
             if spec is not None:
                 # Per-attempt unique (paper's book.py convention: microsecond timestamp), not
                 # day+arm+center alone — a retry at the SAME centre after an earlier rejection
@@ -1333,6 +1354,11 @@ def run_once(
                 # fill watcher with nothing to watch (2026-10-08). A dry run still counts its would-be entry.
                 if not live or (res.get("ok") and res.get("order_id")):
                     summary["entered"] += 1
+    if summary.get("entered"):
+        # The working order, now, not at the next tick: the other loops check against it from here.
+        _livepos.publish_open_legs(
+            "flies", expected_legs(config, conn, include_pending=True)["legs"], now_iso=clock.now_iso()
+        )
 
     # --- 4b. the agent's named closes, TAGGED on the live rows at live natural (close_tags.py) ---
     # Never an order: no live closing path exists (intraday_advice.LIVE_CLOSES_BUILT). The tags are
@@ -2064,20 +2090,24 @@ def uninstall_task() -> dict:
     }
 
 
-def expected_legs(config: dict, conn) -> dict:
+def expected_legs(config: dict, conn, *, include_pending: bool = False) -> dict:
     """The contracts this ledger says the broker holds right now, for the orchestrator's
     positions-vs-ledger check (`cherrypick.core.livepositions`, 2026-10-08). Files and DB only.
 
     Counted: open rows whose entry FILL is confirmed, expanded by `fly.position_legs` (a pending
     completion leaves `kind` a vertical, so its unfilled leg is not counted). Not counted: a pending
     entry (nothing filled yet), cancelled and settled rows, and the paper-only hedge leg. `pending`
-    says how many orders are still working, so a reader knows the book may be mid-change."""
+    says how many orders are still working, so a reader knows the book may be mid-change.
+
+    `include_pending` (2026-10-15) counts a pending entry's vertical too -- what bwb's and MEIC's
+    entries must not open against is what this ledger holds OR could hold the moment it fills."""
     rows = [dict(r) for r in conn.execute("SELECT * FROM fly_positions WHERE status = 'open'").fetchall()]
     legs, pending = [], 0
     for row in rows:
         if row.get("entry_fill_status") == "pending":
             pending += 1
-            continue
+            if not include_pending:
+                continue
         if row.get("completion_fill_status") == "pending":
             pending += 1
         qty = int(row.get("quantity") or 1)
