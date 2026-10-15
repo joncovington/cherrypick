@@ -153,6 +153,24 @@ gross by hand came out $55k off before it was noticed — hence the net-of-fees 
   id 6's fee split exact. Separately, `live_loop.py` updates only `net_credit` on a fill, while stop
   and expiry P&L read the per-side `put_credit`/`call_credit` modelled at quote time, so live P&L
   leaves out any fill improvement. No live row exists since 06-30; fix before MEIC goes live.
+- **2026-10-14/15 — live gets its own block, a per-day arm and XSP.** A live-only $500 cap could not
+  be set without capping `control` (live traded the top level every paper arm inherits), so the
+  `live` block gained flies' seam (#269): `live.arm`, live-only sizing that only narrows, and
+  `follows_live` arms (`live-shadow`, the `live-minus` arms). #270 brought the flies/bwb posture:
+  `/live-meic-start` arms one day, the supervisor's `meic-live` job runs only while that record is
+  today's, ticks self-disarm at 17:00, a per-day count cap, an orphan sweep made suite-wide (each
+  live loop publishes its order ids), a tick lock and `--status`. #272 refuses an entry opposite a
+  leg another live loop holds (flies, bwb and MEIC share SPX in one account). On 10-15, before the
+  open, live moved from SPX to XSP 2-wide, $500 buying power and no count cap (#273: `live.symbol`
+  pins the `follows_live` arms to it; `control` and `bp-*` were pinned to SPX), and per-side stops
+  were turned off for live and its followers. Breaks are journaled on `live-shadow` and the four
+  `live-minus` arms for 10-15; `control` and `bp-*` did not move. Live was armed 10-15 with no
+  daily-loss breaker, by the owner's choice, and Gate 0 attested without current-era XSP evidence.
+- **2026-10-15 — live settles on the official print.** A held side was settled at whatever spot the
+  first post-16:00 tick read. It now settles only on `core.settlement.official_index_close` (the
+  posted close, else Yahoo/Barchart); a provisional tick leaves the IC open for the next tick. A past
+  session left open is settled by `--settle-overdue` at that day's close (the hourly
+  `settle-overdue-live` job now covers MEIC), or by hand with `--settle --date --price`.
 
 ## The gex regime tag
 

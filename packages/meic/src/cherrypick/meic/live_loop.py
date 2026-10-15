@@ -372,6 +372,70 @@ def overdue_settlement(db_path: str, today: str) -> list[dict]:
     return [out[k] for k in sorted(out)]
 
 
+class _NoBroker:
+    """The broker a settlement of a PAST session needs: nothing is placed, and a close order left
+    working from that day died at its close as a Day order, so cancelling it is already true."""
+
+    def cancel(self, order_id):
+        return {"ok": True, "order_id": order_id}
+
+
+def settle_session(
+    config: dict, db_path: str, session: str, symbol: str, price: float, source: str, *, log
+) -> dict:
+    """Settle `symbol`'s ICs still held from `session` at `price` -- through `_manage_open_trades`,
+    the path a live tick takes at the bell, so a catch-up and a hand-settled day write exactly what
+    the tick would have. `source` must be official (`core.settlement.OFFICIAL_SOURCES`)."""
+    base_config = paper.load_base_config()
+    settle_min = paper._time_to_minutes(base_config.get("expiration_settlement_time", "16:00")) + 1
+    snapshot = {
+        "symbol": symbol,
+        "date": session,
+        "expiration": session,
+        "now_et": f"{settle_min // 60:02d}:{settle_min % 60:02d}",
+        "underlying_price": price,
+        "leg_quotes": {},
+    }
+    return _manage_open_trades(
+        symbol,
+        snapshot,
+        paper.live_params(config),
+        db_path,
+        _NoBroker(),
+        live=True,
+        log=log,
+        settle_price=lambda _s: (price, source),
+    )
+
+
+def settle_overdue(config: dict, db_path: str, today: str, *, close_fn=None, log=print) -> dict:
+    """Settle every past session the live ledger still holds open, at THAT session's official close
+    (`core.settlement.dated_index_close`, source `yahoo_daily`) -- never a provisional price, the
+    flies/bwb rule. A session with a pending entry (its order died at that close) is left for a
+    person, and one with no posted close found is left open and keeps alerting."""
+    from cherrypick.core import settlement as _settlement
+
+    close_fn = close_fn or _settlement.dated_index_close
+    done, left = [], []
+    for item in overdue_settlement(db_path, today):
+        session = item["session"]
+        if item["pending_entries"]:
+            left.append({"session": session, "reason": "pending_entries", "count": item["pending_entries"]})
+        if not item["positions"]:
+            continue
+        held = _ledger_rows(
+            db_path, "trade_date = ? AND status IN ('open', 'partial', 'partial_entry')", (session,)
+        )
+        for symbol in sorted({t["symbol"] for t in held}):
+            price = close_fn(symbol, session)
+            if price is None:
+                left.append({"session": session, "symbol": symbol, "reason": "no_official_close"})
+                continue
+            counts = settle_session(config, db_path, session, symbol, price, "yahoo_daily", log=log)
+            done.append({"session": session, "symbol": symbol, "price": price, **counts})
+    return {"ok": True, "settled": done, "left": left}
+
+
 def run_status(config: dict, *, designated: str | None) -> dict:
     """One JSON object for the arming command and the watchdog -- files and the ledger only, never
     the broker. Keys the watchdog reads: armed_for, orphaned_orders, broker_held, broker_health,
@@ -527,13 +591,43 @@ def _sides_to_close(decision: dict) -> list[str]:
     return []
 
 
+def official_close(broker, symbol: str) -> tuple[float | None, str]:
+    """Today's settlement print for `symbol` (`core.settlement.official_index_close`): tastytrade's
+    posted close, else Yahoo's or Barchart's post-close quote, else a provisional tick or nothing.
+    Run on the broker's own loop (`Broker.run`) -- the cached session is bound to it, and a second
+    loop would hang it. Never raises: a fetch that fails is 'no source', and the next tick asks."""
+    from cherrypick.core import settlement as _settlement
+
+    from cherrypick.meic.session import get_session
+
+    if not hasattr(broker, "run"):
+        return None, "no_broker_loop"
+    try:
+        return broker.run(_settlement.official_index_close(get_session(), symbol), _counts_as_contact=False)
+    except Exception as exc:  # noqa: BLE001 -- a missing print is retried, never guessed
+        return None, f"error: {type(exc).__name__}"
+
+
 def _manage_open_trades(
-    symbol: str, snapshot: dict, params: dict, db_path: str, broker, *, live: bool, log
+    symbol: str,
+    snapshot: dict,
+    params: dict,
+    db_path: str,
+    broker,
+    *,
+    live: bool,
+    log,
+    settle_price=None,
 ) -> dict:
     """Mark-to-market + exit every open live IC on `symbol`, submitting a real close order for
     any actionable decision. Reuses `paper.evaluate_open_trade` (the exact function paper_loop
     calls) and `paper._apply_exit_decision` (the exact write path), with the decision's modeled
-    exit price(s) overridden by what was actually submitted before the write."""
+    exit price(s) overridden by what was actually submitted before the write.
+
+    Settlement (2026-10-15, the flies/bwb rule): a held side settles ONLY on an official print,
+    `settle_price(symbol) -> (price, source)` -- today's posted close by default, a past session's
+    for the catch-up. Until one is posted the IC is left open and the next tick asks again; it was
+    settled at whatever spot the 16:00 tick happened to read until this date."""
     open_ics = paper._get_open_trades(symbol, EXECUTION_MODE, snapshot["date"], db_path)
     base_config = paper.load_base_config()
     is_cash = paper._is_cash_settled(symbol, base_config)
@@ -542,6 +636,21 @@ def _manage_open_trades(
     counts = {"stopped": 0, "force_closed": 0, "expired": 0, "held": 0, "closing": 0, "order_failed": 0}
     stop_limit_ratio = params.get("stop_limit_ratio", 1.02)
     leg_quotes = snapshot.get("leg_quotes", {})
+    underlying = snapshot.get("underlying_price")
+    if settle and any(t.get("status") != "pending" for t in open_ics):
+        from cherrypick.core import settlement as _settlement
+
+        price, source = settle_price(symbol) if settle_price else official_close(broker, symbol)
+        counts["settle_source"] = source
+        if price is None or not _settlement.is_official_source(source):
+            # No posted close yet: nothing is settled and nothing else is done to a held IC after
+            # the settlement time -- its quotes are dead, so a stop decided off them would be wrong.
+            log(f"settlement: no official {symbol} close yet ({source}) -- open ICs left for the next tick")
+            counts["awaiting_official_close"] = sum(1 for t in open_ics if t.get("status") != "pending")
+            open_ics = [t for t in open_ics if t.get("status") == "pending"]
+        else:
+            underlying = price
+            counts["settle_price"] = price
 
     for trade in open_ics:
         if trade.get("status") == "pending":
@@ -554,7 +663,7 @@ def _manage_open_trades(
             leg_quotes,
             params,
             force_close,
-            underlying_price=snapshot.get("underlying_price"),
+            underlying_price=underlying,
             is_cash_settled=is_cash,
             force_close_reason=force_close_reason,
             settle=settle,
@@ -961,6 +1070,7 @@ def run_once(
     live: bool,
     log=print,
     entry_block: list[str] | None = None,
+    settle_price=None,
 ) -> dict:
     """One live iteration for the pinned `live.symbol`. `broker` is the injected submission
     seam -- an object with `place(spec, live) -> {ok, response?, error?}`. It trades
@@ -979,7 +1089,9 @@ def run_once(
     )
     # Broker truth first: what filled, what died. Only the live ledger has orders to confirm.
     fills = _confirm_fills(symbol, snapshot, db_path, broker, log=log, params=params) if live else {}
-    manage = _manage_open_trades(symbol, snapshot, params, db_path, broker, live=live, log=log)
+    manage = _manage_open_trades(
+        symbol, snapshot, params, db_path, broker, live=live, log=log, settle_price=settle_price
+    )
     block = list(entry_block or [])
     if orphans is None:
         block.append("orphan_sweep_failed")
@@ -1162,6 +1274,15 @@ def main(argv=None) -> int:
     )
     ap.add_argument("--install-task", action="store_true", help="arm for TODAY (the /live-meic-start path)")
     ap.add_argument("--uninstall-task", action="store_true", help="disarm now")
+    ap.add_argument(
+        "--settle-overdue",
+        action="store_true",
+        help="settle past sessions still open, each at its own official close (the hourly catch-up job)",
+    )
+    ap.add_argument("--settle", action="store_true", help="settle one session by hand: --date and --price")
+    ap.add_argument("--date", help="YYYY-MM-DD, with --settle")
+    ap.add_argument("--price", type=float, help="the official settlement print, with --settle")
+    ap.add_argument("--symbol", help="with --settle: only this symbol (default: every symbol held that day)")
     args = ap.parse_args(argv)
 
     cfg = paper.load_base_config()
@@ -1174,6 +1295,30 @@ def main(argv=None) -> int:
         return out(install_task())
     if args.uninstall_task:
         return out(uninstall_task())
+    if args.settle_overdue or args.settle:
+        # Under the tick's own lock: a tick and a settlement writing the same rows is P&L corruption.
+        if not _looplock.acquire(_once_lock_path(), 180, alive=_looplock.pid_alive):
+            return out({"ok": False, "error": "a live tick is running; try again in a minute"})
+        try:
+            db_path = str(_paths.live_db_path())
+            if args.settle_overdue:
+                return out(settle_overdue(cfg, db_path, _pl._now_et().strftime("%Y-%m-%d"), log=_quiet))
+            if not args.date or args.price is None:
+                return out({"ok": False, "error": "--settle needs --date and --price (the official print)"})
+            held = _ledger_rows(
+                db_path, "trade_date = ? AND status IN ('open', 'partial', 'partial_entry')", (args.date,)
+            )
+            symbols = [args.symbol.upper()] if args.symbol else sorted({t["symbol"] for t in held})
+            settled = [
+                {
+                    "symbol": s,
+                    **settle_session(cfg, db_path, args.date, s, args.price, "official", log=_quiet),
+                }
+                for s in symbols
+            ]
+            return out({"ok": True, "session": args.date, "price": args.price, "settled": settled})
+        finally:
+            _looplock.release(_once_lock_path())
     if args.status:
         return out(run_status(cfg, designated=_designated_account()))
     if args.expected_legs:
@@ -1236,6 +1381,11 @@ def _tick(cfg: dict, designated: str | None, unmet: list[str], live: bool) -> in
     print(line)
     _append_log(line)
     return 0
+
+
+def _quiet(message: str) -> None:
+    """A settlement's log lines go to the live log, not stdout -- stdout is the one JSON result."""
+    _append_log(json.dumps({"at": datetime.now().isoformat(timespec="seconds"), "note": message}))
 
 
 def log_file():

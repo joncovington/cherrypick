@@ -379,7 +379,9 @@ def test_width_arms_differ_from_open_only_in_wing_width(sample_risk_profiles):
     effect rather than a width-times-stop-policy confound — see width-5's _note)."""
     profiles = sample_risk_profiles["profiles"]
     open_arm = profiles["control"]
-    allowed_diff = {"_note", "wing_widths_by_symbol", "per_side_stop_management"}
+    # `symbols`: control was pinned to SPX on 2026-10-15 when XSP joined the paper loop for live's
+    # shadows -- a roster, not a gate, and the retired width arms traded SPX in their own era.
+    allowed_diff = {"_note", "wing_widths_by_symbol", "per_side_stop_management", "symbols"}
     for name in ("width-5", "width-10"):
         arm = profiles[name]
         # Documentation keys (_note, _gate_thresholds_note, ...) don't count against the invariant.

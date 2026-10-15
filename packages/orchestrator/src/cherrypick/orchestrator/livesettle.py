@@ -22,7 +22,7 @@ from . import config as cfgmod
 from . import doctor
 from .util import first_json
 
-MODULES = ("flies", "bwb")
+MODULES = ("flies", "bwb", "meic")
 
 
 def run(cfg: dict[str, Any] | None = None, *, notifier: Notifier | None = None) -> dict[str, Any]:
