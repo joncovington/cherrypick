@@ -3,7 +3,7 @@ import { NavLink, useSearchParams } from "react-router-dom";
 import { type ModuleId, isExperimental } from "../../lightbox/moduleOrder";
 import { NAV_DECL, navGroups, viewSlides } from "../../lightbox/navGroups";
 import { useViewMode } from "../../lib/viewMode";
-import { CONFIG_LINK, visibleNavLinks, type NavLinkDef } from "./navLinks";
+import { CONFIG_LINK, suiteLinksFor, visibleNavLinks, type NavLinkDef } from "./navLinks";
 import { useFeatures } from "../../lib/useFeatures";
 import { isSlideVisible } from "../../lib/visibility";
 import { ExperimentalChip } from "../ExperimentalChip";
@@ -59,9 +59,12 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
   // An off module, the advisor and its tabs, and the technicals chart leave the rail when the suite has
   // turned them off (`visibility.ts`); Config keeps every toggle, so it is never filtered.
   const features = useFeatures();
-  const { suite, modules } = visibleNavLinks(features);
   // The open module's tabs in the reader's view (simple or detail); the tab they are on always stays.
+  // Simple view also leaves the developer surfaces (Compare, Advisor, System) off the rail.
   const view = useViewMode();
+  const visible = visibleNavLinks(features);
+  const suite = suiteLinksFor(visible.suite, view, module);
+  const { modules } = visible;
   const grouping = navGroups(
     module ?? ("meic" as ModuleId), // never read when module is null — grouping is built only for the open module
     module === null

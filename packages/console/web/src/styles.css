@@ -3360,32 +3360,22 @@ td > .desk-refusal-reason {
   min-height: 0;
 }
 
-/* Below 1000px an expanded rail costs more than it gives: the rail folds to its 64px icon strip
-   whatever the toggle says (the toggle hides, since it would do nothing), and the brand folds to
-   the cherry. The reader's own setting returns as the window widens. */
+/* Below 1000px the content keeps its width: the rail's column stays the 64px icon strip, and an
+   EXPANDED rail opens over the content instead of beside it (the toggle still works). A Windows
+   display at 150-200% scaling puts an ordinary window under 1000 CSS px, so a rule that forced
+   the strip and hid the toggle left the rail impossible to open (2026-10-15). */
 @media (max-width: 1000px) {
   .shell {
     grid-template-columns: 64px minmax(0, 1fr);
   }
-  #mf-nav-links {
-    display: none;
+  .shell:not(.shell-rail-collapsed) .mf-nav,
+  .shell:not(.shell-rail-collapsed) .brand-block {
+    width: 222px;
+    position: relative;
+    z-index: 40;
   }
-  .mf-nav-icons[hidden] {
-    display: flex;
-  }
-  .mf-nav-toggle {
-    display: none;
-  }
-  .brand-block {
-    justify-content: center;
-    padding: 0.55rem 0;
-  }
-  .brand-name {
-    display: none;
-  }
-  .brand-mark {
-    width: 26px;
-    height: 26px;
+  .shell:not(.shell-rail-collapsed) .mf-nav {
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.35);
   }
 }
 

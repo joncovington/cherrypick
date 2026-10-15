@@ -50,6 +50,17 @@ export const MODULE_LINKS: readonly NavLinkDef[] = [
 
 export const CONFIG_LINK: NavLinkDef = { to: "/config", label: "Config" };
 
+/** Suite pages the SIMPLE view leaves off the rail: the experiment comparison, the advisor and the
+ *  suite's own health are developer surfaces. Still reachable by URL and shortcut, and listed while
+ *  you are on one, the same rule as a module's detail tabs. */
+export const SIMPLE_HIDDEN_PAGES: readonly string[] = ["/compare", "/advisor", "/system"];
+
+/** The suite links a view lists; `current` is the page the reader is on (always kept). */
+export function suiteLinksFor<T extends NavLinkDef>(links: readonly T[], view: "simple" | "detail", current: string | null): T[] {
+  if (view === "detail") return [...links];
+  return links.filter((l) => !SIMPLE_HIDDEN_PAGES.includes(l.to) || l.to.slice(1) === current);
+}
+
 export const ALL_NAV_LINKS: readonly NavLinkDef[] = [...SUITE_LINKS, ...MODULE_LINKS, CONFIG_LINK];
 
 /**

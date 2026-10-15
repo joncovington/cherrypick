@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { NAV_DECL, resolveSlide, viewSlides, type ModuleNavDecl } from "../src/lightbox/navGroups";
 import type { ModuleId } from "../src/lightbox/moduleOrder";
+import { SUITE_LINKS, suiteLinksFor } from "../src/components/shell/navLinks";
 
 /** Every `simple` id must name a declared tab, or the simple view silently drops a page. */
 function unknownSimpleIds(decls: Record<string, ModuleNavDecl>): string[] {
@@ -11,6 +12,23 @@ function unknownSimpleIds(decls: Record<string, ModuleNavDecl>): string[] {
   }
   return bad;
 }
+
+describe("the suite pages each view lists", () => {
+  const to = (links: Array<{ to: string }>) => links.map((l) => l.to);
+
+  it("simple leaves Compare, Advisor and System off the rail; detail lists them", () => {
+    expect(to(suiteLinksFor(SUITE_LINKS, "simple", null))).not.toEqual(expect.arrayContaining(["/compare"]));
+    for (const hidden of ["/compare", "/advisor", "/system"]) {
+      expect(to(suiteLinksFor(SUITE_LINKS, "simple", null))).not.toContain(hidden);
+      expect(to(suiteLinksFor(SUITE_LINKS, "detail", null))).toContain(hidden);
+    }
+    expect(to(suiteLinksFor(SUITE_LINKS, "simple", null))).toContain("/live");
+  });
+
+  it("keeps a hidden page listed while the reader is on it", () => {
+    expect(to(suiteLinksFor(SUITE_LINKS, "simple", "system"))).toContain("/system");
+  });
+});
 
 describe("the simple and detail views", () => {
   it("names only tabs each module actually has", () => {

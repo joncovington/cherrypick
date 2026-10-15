@@ -206,8 +206,10 @@ cards and the MEIC summary and changed four things:
 - **No command palette.** The entries above describe one (2026-10-11 and -12); it did not land. The
   rail is the one nav, its tooltips carry the keyboard hints, and the palette's Ctrl/Cmd+K no
   longer takes over the browser's own.
-- **Narrow windows.** Below 1000px the rail folds to its 64px icon strip, which the contributed
-  branch had left to the toggle.
+- **Narrow windows.** Below 1000px the rail's column stays its 64px icon strip and an expanded
+  rail opens over the content (a Windows display at high scaling puts an ordinary window below
+  1000 CSS px, so forcing the strip would leave the rail impossible to open). The contributed
+  branch kept the expanded rail's full width at every size.
 - **The summary's money, against the suite's layout.** Stop costs were per-share exit prices summed
   as dollars (now price × multiplier × quantity, labelled stop debits); fee drag divided by gross
   (now by premium collected); settlement summed only the rows that recorded it (now n/r, the total

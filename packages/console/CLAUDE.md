@@ -220,15 +220,16 @@ head's underline is the same grid track as the top bar's — one rule across the
 rail widths — and the rail's vertical is the brand head's right border continued by the nav's,
 unbroken from the top of the window to the status bar. **The rail is the one nav** (mounted in
 the shell since 2026-10-11, Overview included; collapsed to a 64px icon strip by default, its own
-toggle at its foot — the top bar holds no menu and never opens one). Below 1000px the rail
-folds to the icon strip whatever the toggle says. There is no command palette: the keyboard hints
+toggle at its foot — the top bar holds no menu and never opens one). Below 1000px the rail's
+column stays the icon strip and an expanded rail opens over the content. There is no command palette: the keyboard hints
 (`g` + key for suite pages, a bare digit for modules, `j`/`k` for tabs) are in the rail's link
 tooltips, built from `navLinks.ts` so a hint cannot outlive its shortcut.
 
 **Views.** One console pref (`viewMode`; absent means `detail`) switches every module between
 `simple` and `detail`. Each module lists its simple tabs in its own vocabulary (`ModuleNavDecl.simple`
 in `navGroups.ts`); detail shows every tab; a module that declares no list shows everything in both.
-A bare module URL lands on the view's first tab, a deep link to a tab outside the view still renders
+Simple view also leaves Compare, Advisor and System off the rail (`SIMPLE_HIDDEN_PAGES`,
+`navLinks.ts`). A bare module URL lands on the view's first tab, a deep link to a tab outside the view still renders
 (and the rail keeps it listed while you are on it), and `j`/`k` step through the view's tabs.
 
 **System page** (`/system`): the suite's own health, read-only, from the files the suite writes
