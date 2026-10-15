@@ -290,7 +290,7 @@ export function meicExitKind(
  * total (core.ledgers' meic rule), so net = pnl − fees and the settlement part comes out of the
  * total exactly once. Exit = gross − entry, so the row adds up by construction.
  */
-function meicTradeCash(r: Record<string, unknown>): Pick<
+export function meicTradeCash(r: Record<string, unknown>): Pick<
   MeicTradeRow,
   "entryCash" | "exitCash" | "exitKind" | "gross" | "fees" | "settlementFees" | "slippage" | "net"
 > {
