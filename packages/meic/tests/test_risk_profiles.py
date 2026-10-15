@@ -56,7 +56,7 @@ EXPERIMENT_PREFIXES = {"small", "medium", "large", "explore", "width", "gex"}
 STUDY_ARM_PREFIXES = ("width-", "gex-")
 # Keys that describe the registry entry itself (documentation, enable switch), never a gate value
 # — excluded whenever a test compares a profile's gate keys against config.json or another profile.
-META_KEYS = {"enabled"}
+META_KEYS = {"enabled", "follows_live"}
 
 
 EXAMPLE_REGISTRY = Path(__file__).parent.parent / "config.risk.example.json"
@@ -172,19 +172,23 @@ def test_only_the_active_streams_are_enabled(sample_risk_profiles):
 
 def test_live_shadow_carries_no_overrides(sample_risk_profiles):
     """One override and the arm stops being live's twin while keeping the name. Shown to fail by
-    adding `min_iv_rank: 0.0` to the profile."""
+    adding `min_iv_rank: 0.0` to the profile. Since 2026-10-14 it may (and once a `live` block
+    shapes live, must) carry `follows_live` -- a marker, not an override."""
     spec = sample_risk_profiles["profiles"]["live-shadow"]
-    assert {k for k in spec if not k.startswith("_")} == {"enabled"}
+    assert {k for k in spec if not k.startswith("_")} <= META_KEYS
 
 
-def test_live_shadow_resolves_to_exactly_the_params_live_trades(sample_risk_profiles, sample_config):
-    """live_loop.run_once trades `paper._merged_params(config, {})`; the shadow must merge to the
-    same dict apart from its own `enabled` flag."""
+def test_live_shadow_resolves_to_exactly_the_params_live_trades(
+    sample_risk_profiles, sample_config, monkeypatch
+):
+    """live_loop.run_once trades `paper.live_params(config)`; the shadow must merge to the same dict
+    apart from its own marker keys."""
     from cherrypick.meic import paper
 
+    monkeypatch.setattr(paper, "load_profiles", lambda: sample_risk_profiles["profiles"])
     shadow = paper._merged_params(sample_config, sample_risk_profiles["profiles"]["live-shadow"])
-    live = paper._merged_params(sample_config, {})
-    assert {k for k in set(shadow) | set(live) if shadow.get(k) != live.get(k)} <= {"enabled"}
+    live = paper.live_params(sample_config, sample_risk_profiles["profiles"])
+    assert {k for k in set(shadow) | set(live) if shadow.get(k) != live.get(k)} <= META_KEYS
 
 
 def _check_live_minus(profiles: dict, live_top: dict) -> None:

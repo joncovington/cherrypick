@@ -16,6 +16,7 @@ compared on identical, reproducible criteria. See docs/paper-trading.md.
 import argparse
 import contextlib
 import json
+import logging
 import os
 import sqlite3
 import sys
@@ -248,8 +249,132 @@ def load_base_config() -> dict:
 def _merged_params(base_config: dict, profile: dict) -> dict:
     """Profile keys override base config keys, matching /set-risk-profile's partial-override
     semantics — unspecified keys (force_close_time, max_wing_width, etc.) fall through. Flat overlay
-    via cherrypick.core.profiles."""
+    via cherrypick.core.profiles.
+
+    A profile marked `follows_live: true` is merged onto what live trades (`live_params`) instead
+    of onto the top level, so a shadow of live stays live's twin when the `live` block changes."""
+    if profile.get(FOLLOWS_LIVE_KEY):
+        base, problem = _live_resolution(base_config, None)
+        if problem and problem not in _WARNED:  # merged once per arm per symbol per tick: say it once
+            _WARNED.add(problem)
+            logging.getLogger(__name__).warning("follows_live arm: %s; using the top level", problem)
+        return _profiles.merge_profile(base, profile)
     return _profiles.merge_profile(base_config, profile)
+
+
+_WARNED: set[str] = set()
+
+
+# ---------------------------------------------------------------------------
+# The live block (2026-10-14)
+# ---------------------------------------------------------------------------
+#
+# Until this date live traded config.json's top level -- which is also the base every paper arm
+# inherits -- so a live-only change (a buying-power cap, a narrower width, a later start) could not
+# be made without moving every paper arm that left the key unset, `control` included. Flies never
+# had the problem: its `live` block names the arm live trades and adds live's own limits over it.
+# This is that seam for MEIC. `live.arm` (optional) names a registry arm; absent, live trades the
+# top level exactly as before, so a config without the new keys behaves byte-identically. The keys
+# below may then be set in the `live` block and apply to live alone. Each can only NARROW what the
+# arm allows -- the later start, the earlier end, the smaller cap -- except the width list, which
+# replaces the arm's (one list is not "narrower" than another).
+
+LIVE_OVERRIDE_KEYS = (
+    "max_open_bp_dollars",
+    "wing_widths_by_symbol",
+    "entry_window_start",
+    "entry_window_end",
+)
+FOLLOWS_LIVE_KEY = "follows_live"
+
+
+def live_arm_name(config: dict) -> str | None:
+    return str((config.get("live") or {}).get("arm") or "").strip() or None
+
+
+def _live_resolution(config: dict, registry: dict | None) -> tuple[dict, str | None]:
+    """(what live trades, the reason `live.arm` cannot be resolved or None). On a problem the params
+    are the top level with the live overrides -- readiness refuses live on the same problem, so the
+    fallback only ever reaches a paper shadow, which logs it."""
+    live = config.get("live") or {}
+    arm = live_arm_name(config)
+    profile: dict = {}
+    problem = None
+    if arm:
+        registry = load_profiles() if registry is None else registry
+        found = registry.get(arm)
+        if not isinstance(found, dict) or arm.startswith("_"):
+            problem = f"live.arm {arm!r} is not a configured arm"
+        elif found.get(FOLLOWS_LIVE_KEY):
+            problem = f"live.arm {arm!r} follows live itself -- live would trade its own shadow"
+        else:
+            profile = found
+    params = _profiles.merge_profile(config, profile)
+    if live.get("max_open_bp_dollars") is not None:
+        cap = params.get("max_open_bp_dollars")
+        params["max_open_bp_dollars"] = (
+            min(cap, live["max_open_bp_dollars"]) if cap else live["max_open_bp_dollars"]
+        )
+    if live.get("wing_widths_by_symbol"):
+        params["wing_widths_by_symbol"] = live["wing_widths_by_symbol"]
+        params.pop("wing_width_points", None)  # the scalar seam outranks the dict; live's list must win
+    if live.get("entry_window_start"):
+        arm_start = params.get("paper_entry_window_start") or params.get("entry_window_start", "10:00")
+        start = max(str(live["entry_window_start"]), str(arm_start))  # zero-padded HH:MM sorts as time
+        params["entry_window_start"] = params["paper_entry_window_start"] = start
+    if live.get("entry_window_end"):
+        params["entry_window_end"] = min(
+            str(live["entry_window_end"]), str(params.get("entry_window_end", "14:30"))
+        )
+    return params, problem
+
+
+def live_params(config: dict, registry: dict | None = None) -> dict:
+    """The params live_loop.run_once trades: `live.arm` merged onto the top level (the top level
+    alone when unset), then the live block's own overrides."""
+    return _live_resolution(config, registry)[0]
+
+
+def live_arm_problem(config: dict, registry: dict | None = None) -> str | None:
+    """Why `live.arm` cannot be traded, or None. Only reads the registry when an arm is named."""
+    if not live_arm_name(config):
+        return None
+    return _live_resolution(config, registry)[1]
+
+
+def live_config_warnings(config: dict, registry: dict, example: dict) -> list[str]:
+    """What a person should hear about the live seam, every tick, until they fix it. Two cases a
+    config file cannot make loud by itself:
+
+    - a live-only key sitting at the TOP level with a value other than the shipped default. It may be
+      deliberate, but it moves every paper arm that leaves the key unset (`control` included), which
+      is exactly how a live sizing change used to leak into the measurement.
+    - a `live` block that changes what live trades while no enabled arm follows live, so nothing on
+      paper measures the configuration live would run."""
+    out = []
+    for key in LIVE_OVERRIDE_KEYS:
+        if key in config and config[key] != example.get(key):
+            out.append(
+                f"top-level {key} = {config[key]!r} (shipped default {example.get(key)!r}) reaches every "
+                f"paper arm that does not set it; if it is meant for live alone, move it into the `live` "
+                f"block (python -m cherrypick.meic.live_migrate)"
+            )
+    live = config.get("live") or {}
+    shapes_live = live_arm_name(config) or any(live.get(k) is not None for k in LIVE_OVERRIDE_KEYS)
+    followers = [
+        n
+        for n, p in registry.items()
+        if not n.startswith("_")
+        and isinstance(p, dict)
+        and p.get(FOLLOWS_LIVE_KEY)
+        and p.get("enabled", True)
+    ]
+    if shapes_live and not followers:
+        out.append("the `live` block shapes what live trades but no enabled arm has follows_live: true")
+    problem = live_arm_problem(config, registry)
+    if problem:
+        out.append(problem)
+    return out
 
 
 def _profile_widths_for_symbol(params: dict, symbol: str) -> list | None:
