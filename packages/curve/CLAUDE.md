@@ -54,7 +54,7 @@ Suite-wide context: the root [documentation index](../../docs/README.md).
   redefined), which entered twice where control could not. Planned from its own params, so it is
   NOT fill-paired with control; arms whose params resolve identically still share one plan
   (`paper_loop.plan_arms`), which is what keeps control and noflip byte-identical.
-- **`hook`** — **retired from 2026-10-19** (0 signals in 33 sessions; docs/history.md). Enters ONLY
+- **`hook`** — **retired from 2026-10-15** (0 signals in 33 sessions; docs/history.md). Enters ONLY
   on the two-day-confirmed hook (`ratio > hook_threshold` AND below
   yesterday's), its own tick; exits by control's rules. **Nearly always idle** — honest, not a
   failure (~16% of days are backwardation, the hook rarer still); read surfaces must say so and carry

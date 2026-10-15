@@ -1,16 +1,17 @@
-"""The 2026-10-19 measurement boundary: every config change, ledger break and experiment wind-down
+"""The 2026-10-15 measurement boundary: every config change, ledger break and experiment wind-down
 the batch needs, in one dry-run-by-default pass.
 
     python scripts/boundary_2026_10_19.py                         # dry run: what would change, as diffs
-    python scripts/boundary_2026_10_19.py --apply                 # back up, then write (from 2026-10-17)
+    python scripts/boundary_2026_10_19.py --apply                 # back up, then write (from 2026-10-14)
     python scripts/boundary_2026_10_19.py --apply --enable-flies-mid-first   # also the live pricing switch
 
-Run it on the weekend of 2026-10-17/18, from the live checkout with main merged (it checks the code it
-needs is there and refuses a step whose code is missing). Every in-session loop reads its config at
-session start, so Monday's first session runs the new roster; nothing needs a restart over a weekend.
+Moved from 2026-10-19 to 2026-10-15 on the evening of 2026-10-14, before any session ran under it (the
+file keeps its name). Run it that evening, from the live checkout with main merged (it checks the code
+it needs is there and refuses a step whose code is missing). Every in-session loop reads its config at
+session start, so the next morning's first session runs the new roster; nothing needs a restart.
 
 What takes effect by itself, with no help from this script, once the batch is merged:
-  - earnings: atm_calendar and double_calendar open nothing in strat_test from 2026-10-19
+  - earnings: atm_calendar and double_calendar open nothing in strat_test from 2026-10-15
     (strat_test_harness.STRAT_TEST_RETIRED); this script only journals the break.
   - flies: the live-shadow, selector, range-centre and window-1300 arms' arm_added breaks journal
     themselves once enabled.
@@ -33,9 +34,9 @@ What this script does (each step idempotent; a step already applied reports "not
   4. curve.json: retires the hook book.
   5. calendars.json: removes time_exit from the advice bounds.
   6. meic.risk.json: adds the four live-minus-one-gate arms.
-  7. measurement_breaks, one row per change, dated 2026-10-19, in each ledger's own schema.
+  7. measurement_breaks, one row per change, dated 2026-10-15, in each ledger's own schema.
 
-Everything it writes is copied first to ~/.cherrypick/backups/boundary-2026-10-19-<stamp>/; ledgers
+Everything it writes is copied first to ~/.cherrypick/backups/boundary-2026-10-15-<stamp>/; ledgers
 are copied with SQLite's backup API (WAL-safe). Nothing here talks to a broker.
 """
 
@@ -54,8 +55,8 @@ import sys
 import time
 from pathlib import Path
 
-BOUNDARY = "2026-10-19"
-EARLIEST_APPLY = "2026-10-17"
+BOUNDARY = "2026-10-15"
+EARLIEST_APPLY = "2026-10-14"
 JOURNAL = "docs/experiment-log.md and each module's journal, 2026-10-12"
 
 FLIES_RETIRE = {
@@ -96,7 +97,7 @@ MEIC_MINUS = {
     "live-minus-otmfloor": {"min_call_otm_pct": 0.0001, "min_put_otm_pct": 0.0001},
     "live-minus-latebias": {"late_entry_bias_enabled": False},
 }
-_WOUND = "wound down at the 2026-10-19 boundary: "
+_WOUND = "wound down at the 2026-10-15 boundary: "
 KILLS = {
     "exp-2026-10-12-flies-1": _WOUND + "miss_stop_minutes leaves flies' advice bounds",
     "exp-2026-09-24-flies-1": _WOUND + "miss_stop_minutes leaves flies' advice bounds",
@@ -347,7 +348,7 @@ def step_bwb(plan: Plan, h: Path) -> None:
         plan.files[path] = change
         after = _roster(json.loads(change[1]).get("books") or {}, ("control", "delta", "bounce", "flip"))
         # An `arms` declaration on the advice bounds changes no book: it is the advisor's input
-        # (its 2026-10-19 break, in packages/advisor/CLAUDE.md), never a bwb ledger break.
+        # (its 2026-10-15 break, in packages/advisor/CLAUDE.md), never a bwb ledger break.
         if before != after:
             plan.breaks.append(
                 _key_break(
@@ -658,7 +659,7 @@ def main(argv=None) -> int:
     show(plan)
 
     if not args.apply:
-        print("\ndry run: nothing written. Re-run with --apply on the weekend of 2026-10-17/18.")
+        print(f"\ndry run: nothing written. Re-run with --apply (from {EARLIEST_APPLY}).")
         return 1 if plan.refused else 0
     if plan.refused:
         print("\nrefusing to apply: a step's code is missing (see REFUSED above)")

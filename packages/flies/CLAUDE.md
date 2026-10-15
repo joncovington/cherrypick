@@ -303,10 +303,10 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   - **Safety and credit trade directly**: pushing the tail away from spot shrinks the credit, so
     `min_bwb_credit_pct_of_tail` (0.15), not the price gate, is what binds. The roll trap it tests is
     in [docs/faq.md](docs/faq.md).
-- **Retired at the 2026-10-19 boundary** (experiment log, 2026-10-12): `debit-first-up`,
+- **Retired at the 2026-10-15 boundary** (experiment log, 2026-10-12): `debit-first-up`,
   `debit-first-down`, `bwb-up`, `bwb-down`, `bwb-up-w2`, `bwb-down-w2` and `bwb-atm`. Their entries
   below are kept as the record. `debit-first-atm` stays: its shadow ladder's 10-session read cannot
-  be complete by 10-19 (the 10-08 outage voided that session's anchors), so it slips to the next
+  be complete by 10-15 (the 10-08 outage voided that session's anchors), so it slips to the next
   boundary.
 - `bwb-atm`, `debit-first-atm` — ATM twins of the two GEX-centred construction arms, restoring the
   one-variable rule: **X-atm vs `control`** isolates construction, **X-atm vs X** isolates centring. ATM
@@ -349,7 +349,7 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   a model fitted the night before and pinned for the session, and books at most one through the
   same booking code its source uses. **With no model it is control's exact twin**, and a test pins
   that through settlement. Its positions complete under the proposing source's params
-  (`selected_from`). Every tick writes `fly_selector_choices`. **Declared for 2026-10-19**; the
+  (`selected_from`). Every tick writes `fly_selector_choices`. **Declared for 2026-10-15**; the
   first read is at 10 departing sessions, on per-session net against control (experiment log,
   2026-10-04, amended 2026-10-12).
   - **Procedure v2** (2026-10-12, before it traded): it skips or departs only on a cell whose
@@ -394,7 +394,7 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
     inputs. Fails open when unmeasured.
   - **The one variable is pinned** by `tests/test_wall_clear.py`; the judging rule is in the
     experiment log (2026-10-05).
-- `live-shadow` — **the live configuration in paper, from 2026-10-19**. Not a variant of `control`:
+- `live-shadow` — **the live configuration in paper, from 2026-10-15**. Not a variant of `control`:
   an arm declaring `mirror_live` takes its params from the live block (`engine.live_mirror_params`:
   `live.arm`'s params, live's start, completion cutoff and buying-power cap, the entry credit floored
   to the tick), and ignores any key of its own. Read against the **live ledger** over the same
@@ -410,7 +410,7 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   - **The cost is concentration:** every contract on a centre settles to the same payoff.
   - **The one variable is pinned** by `tests/test_restack.py`; the read is
     `scripts/flies_restack_read.py`, and the judging rule is in the experiment log (2026-10-11).
-- `range-centre` — `control` plus one variable, a placement gate, **from 2026-10-19** (declared
+- `range-centre` — `control` plus one variable, a placement gate, **from 2026-10-15** (declared
   2026-10-14): no entry while spot is at or above `range_pos_max` (0.8) of the session range so far,
   on any range width (refusal `range_position_high`), or while the ATM centre sits more than
   `center_above_spot_max` (1.25) points above spot, which on an ATM arm is the put spread sold
@@ -421,7 +421,7 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
     sessions as a group, so it is read forward, not trusted.
   - **The one variable is pinned** by `tests/test_range_centre.py`; the judging rule is in the
     experiment log (2026-10-14).
-- `window-1300` — `control` with its entries confined to 13:00–13:59, **from 2026-10-19** (declared
+- `window-1300` — `control` with its entries confined to 13:00–13:59, **from 2026-10-15** (declared
   2026-10-14). One variable: the window. Its book is empty at 13:00 where control's is not, so it
   measures the hour without the morning's positions occupying its centres. Pinned by
   `tests/test_range_centre.py`; judging rule in the experiment log (2026-10-14).
@@ -498,7 +498,7 @@ every entry while the session's trend-from-open bucket is the named one — the 
 `engine.miss_stop_refusal` (`miss_stop_minutes`) stops an arm entering for the day once any of its
 spreads has sat uncompleted that long (losing sessions were RUNS of misses into one tape). Both are
 off unless an arm or advice sets them; `refuse_trend_bucket` is declared in `advice.bounds`, and
-`miss_stop_minutes` was taken out of them at the 2026-10-19 boundary (negative on live, re-proposed
+`miss_stop_minutes` was taken out of them at the 2026-10-15 boundary (negative on live, re-proposed
 repeatedly; experiment log 2026-10-12) -- an arm may still set it; both sit ahead of strike
 selection so a refusal is attributed to the session; legged only. Because each reads only facts every
 row carries, `replay_gates.py` (`replay-gates`) re-runs recorded sessions under either rule exactly —

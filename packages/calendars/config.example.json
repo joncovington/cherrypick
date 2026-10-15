@@ -77,7 +77,7 @@
   "advice": {
     "enabled": false,
     "base_book": "control",
-    "_removed_bounds": "time_exit: taken out of the bounds at the 2026-10-19 boundary (docs/history.md). The read side already replays every time exit, Friday noon included, over every week's real marks (exit_policies.py, validated to the cent each run), so a forward advised book on it buys nothing the replay does not; its running experiment (fri-noon-cycle-extension) was concluded with a verdict by `advisor kill`, and its open rows keep their frozen params.",
+    "_removed_bounds": "time_exit: taken out of the bounds at the 2026-10-15 boundary (docs/history.md). The read side already replays every time exit, Friday noon included, over every week's real marks (exit_policies.py, validated to the cent each run), so a forward advised book on it buys nothing the replay does not; its running experiment (fri-noon-cycle-extension) was concluded with a verdict by `advisor kill`, and its open rows keep their frozen params.",
     "bounds": {
       "profit_target_pct": { "min": 0.05, "max": 0.5 },
       "stop_loss_pct_of_debit": { "min": 0.25, "max": 1.0 },
