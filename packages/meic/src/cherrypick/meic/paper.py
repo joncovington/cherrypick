@@ -310,6 +310,12 @@ def _live_resolution(config: dict, registry: dict | None) -> tuple[dict, str | N
         else:
             profile = found
     params = _profiles.merge_profile(config, profile)
+    # Live trades its one pinned symbol (2026-10-15). Said here, so a follows_live paper arm trades
+    # only that symbol too -- live-shadow on XSP while control stays on SPX -- instead of every symbol
+    # the paper loop scans under sizing meant for another instrument.
+    symbol = str(live.get("symbol") or "").strip().upper()
+    if symbol:
+        params["symbols"] = [symbol]
     if live.get("max_open_bp_dollars") is not None:
         cap = params.get("max_open_bp_dollars")
         params["max_open_bp_dollars"] = (

@@ -96,6 +96,16 @@ def test_the_cap_is_configurable():
     assert live_loop.max_structures_per_day(_config(max_structures_per_day=3)) == 3
 
 
+def test_a_null_cap_leaves_sizing_to_buying_power(tmp_path):
+    """null = no count cap (2026-10-15): the second attempt is judged by the entry gates, not the
+    budget -- here the overlap rule refuses the same short pair, and the cap never speaks."""
+    cfg = _config(max_structures_per_day=None)
+    assert live_loop.max_structures_per_day(cfg) is None
+    db_path = _init_db(tmp_path)
+    assert _place_one(db_path, cfg)["entry"]["entry"] == "placed"
+    assert _place_one(db_path, cfg)["entry"]["reason"] != "max_structures_per_day_reached"
+
+
 def test_an_unreadable_ledger_spends_the_whole_budget(tmp_path):
     assert live_loop.entries_today(str(tmp_path / "missing.db"), "XSP", DAY) >= 10**6
 

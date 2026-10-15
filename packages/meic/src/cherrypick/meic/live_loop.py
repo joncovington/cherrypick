@@ -255,10 +255,16 @@ def uninstall_task() -> dict:
 # --------------------------------------------------------------------------- caps and sweep
 
 
-def max_structures_per_day(config: dict) -> int:
+def max_structures_per_day(config: dict) -> int | None:
     """New ICs live may open in one session (2026-10-14, flies/bwb's cap). A cancelled entry never
-    established anything and does not spend it; a pending one does -- it is a position at risk."""
-    return int(_live_cfg(config).get("max_structures_per_day", DEFAULT_MAX_STRUCTURES))
+    established anything and does not spend it; a pending one does -- it is a position at risk.
+
+    Absent: the default of 1. Set to null (2026-10-15): no count cap at all, so live is sized by
+    `max_open_bp_dollars` alone -- every entry still has to fit under it with what is open."""
+    live = _live_cfg(config)
+    if "max_structures_per_day" in live and live["max_structures_per_day"] is None:
+        return None
+    return int(live.get("max_structures_per_day", DEFAULT_MAX_STRUCTURES))
 
 
 def entries_today(db_path: str, symbol: str, day: str) -> int:
@@ -983,7 +989,9 @@ def run_once(
         # The halt flag, the daily-loss breaker or the sweep: no new IC. Everything above has run.
         log(f"new entries blocked ({', '.join(block)}) -- open ICs still managed")
         entry = {"blocked": block}
-    elif entries_today(db_path, symbol, snapshot["date"]) >= max_structures_per_day(config):
+    elif (cap := max_structures_per_day(config)) is not None and entries_today(
+        db_path, symbol, snapshot["date"]
+    ) >= cap:
         entry = {"entry": "skipped", "reason": "max_structures_per_day_reached"}
     else:
         entry = _manage_entry(symbol, snapshot, params, db_path, broker, live=live, log=log)
