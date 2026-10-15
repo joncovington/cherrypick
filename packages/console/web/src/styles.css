@@ -451,7 +451,9 @@ a.chip:hover {
 }
 
 /* The top bar's futures ticker: one chip per contract beside the menu. The chip carries the
-   day's direction in its colour; the tick flash (.flash-up/.flash-down) rides over it. */
+   day's direction in its colour; the tick flash (.flash-up/.flash-down) rides over it. The
+   strip itself is layout only — the chips are already pills, and a pill around pills read
+   as double-framed. */
 .futures-ticker {
   display: flex;
   align-items: center;
@@ -460,10 +462,6 @@ a.chip:hover {
   overflow-x: auto;
   font-family: var(--num-face);
   font-variant-numeric: tabular-nums;
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.1rem 0.4rem;
 }
 
 /* Symbol on the left spanning both rows; price over change on the right. */
