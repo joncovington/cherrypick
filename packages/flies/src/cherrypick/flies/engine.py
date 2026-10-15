@@ -140,19 +140,19 @@ ARMS = (
     # follows the agent's fresh decision (paper_loop.tick_config) and falls back to the rule.
     "trend-rule",
     "intraday-agent",
-    # The live configuration, in paper (declared 2026-10-12, from 2026-10-19). Not a variant of
+    # The live configuration, in paper (declared 2026-10-12, from 2026-10-15). Not a variant of
     # control: an arm declaring `mirror_live` takes ITS params from the live block itself
     # (`live_mirror_params`) -- the live arm's params with live's start, completion cutoff and
     # buying-power cap on top -- so it cannot drift from what live trades. Read against the LIVE
     # ledger over the same sessions, never against control. `tests/test_live_shadow.py` pins it and
     # lists what paper cannot express.
     "live-shadow",
-    # control plus a placement gate (declared 2026-10-14, from 2026-10-19): no entry while spot sits
+    # control plus a placement gate (declared 2026-10-14, from 2026-10-15): no entry while spot sits
     # at or above `range_pos_max` of the session range so far, or while the ATM centre sits more than
     # `center_above_spot_max` points above spot (`placement_refusal`). One variable vs control; found
     # by searching the pooled legged rows, ahead of control in all three eras, hence an arm.
     "range-centre",
-    # control with its entries confined to 13:00-13:59 (declared 2026-10-14, from 2026-10-19). One
+    # control with its entries confined to 13:00-13:59 (declared 2026-10-14, from 2026-10-15). One
     # variable vs control: the window. Control's own 13:00-hour entries were ahead in the two later
     # eras, on 33 entries; this arm's book is empty at 13:00 where control's is not, so it also
     # measures what the hour pays without the morning's positions occupying its centres.
@@ -184,7 +184,7 @@ def merged_params(config: dict, arm: str) -> dict:
 
 
 def live_mirror_params(config: dict, arm: str) -> dict:
-    """The params of an arm declaring `mirror_live` (the `live-shadow` arm, from 2026-10-19): what
+    """The params of an arm declaring `mirror_live` (the `live-shadow` arm, from 2026-10-15): what
     the live loop trades, run in paper. The live arm's own params (`live.arm`), with the three live
     overrides paper can express on top, each read exactly as `live_loop` reads it:
       - `no_entry_before`: the later of live's and the arm's (`live_loop._merged_live_params`);
@@ -1024,7 +1024,7 @@ def range_high_refusal(snapshot: dict, params: dict) -> str | None:
 
 
 def placement_refusal(snapshot: dict, params: dict, center: float) -> str | None:
-    """The `range-centre` arm's one variable (declared 2026-10-14, from 2026-10-19): refuse an entry
+    """The `range-centre` arm's one variable (declared 2026-10-14, from 2026-10-15): refuse an entry
     while spot sits at or above `range_pos_max` of the session range so far (`range_position_high`),
     or while the centre sits more than `center_above_spot_max` points above spot
     (`center_above_spot`). Each check is off while its key is null/absent.

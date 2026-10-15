@@ -1,6 +1,6 @@
-"""Strategies retired from strat_test by date (2026-10-12, effective 2026-10-19).
+"""Strategies retired from strat_test by date (2026-10-12, effective 2026-10-15).
 
-`atm_calendar` and `double_calendar` open nothing from 2026-10-19; their screen rows are still written
+`atm_calendar` and `double_calendar` open nothing from 2026-10-15; their screen rows are still written
 and the refusal is an execution-stage drop, so "retired" never reads as "nothing qualified".
 """
 
@@ -18,7 +18,7 @@ _CAL = [{"symbol": "AAA", "date": "2026-10-20", "timing": "After market close"}]
 def test_retirement_binds_from_its_session_and_not_before():
     for name in ("atm_calendar", "double_calendar"):
         assert not r.strategy_retired(name, "2026-10-16")
-        assert r.strategy_retired(name, "2026-10-19")
+        assert r.strategy_retired(name, "2026-10-15")
         assert r.strategy_retired(name, "2026-11-02")
     assert not r.strategy_retired("iron_fly", "2027-01-04")
 
@@ -27,7 +27,7 @@ def test_only_the_two_calendars_are_retired_and_both_still_registered():
     """Retired from the harness, not removed from the registry: the screen keeps scoring them and
     their open rows still resolve their exits by name."""
     assert set(r.STRAT_TEST_RETIRED) == {"atm_calendar", "double_calendar"}
-    assert set(r.STRAT_TEST_RETIRED.values()) == {"2026-10-19"}
+    assert set(r.STRAT_TEST_RETIRED.values()) == {"2026-10-15"}
     names = {s["name"] if isinstance(s, dict) else s for s in rank_strategies.STRATEGY_REGISTRY}
     assert set(r.STRAT_TEST_RETIRED) <= names
 

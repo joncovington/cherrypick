@@ -940,7 +940,7 @@ def test_experiments_full_carries_one_fresh_verdict_per_experiment_not_raw_rows(
 
 
 def test_a_no_exposure_conclusion_reaches_the_pack(seeded, monkeypatch):
-    """From the 2026-10-19 boundary: a verdict whose advised book never traded differently from its
+    """From the 2026-10-15 boundary: a verdict whose advised book never traded differently from its
     base carries `no_exposure`/`conclusion`, and the pack keeps both -- in the compacted verdict
     and beside the running delta -- so the model reads "measured nothing" before the delta."""
     from cherrypick.advisor import experiments, store, verdicts
@@ -1274,7 +1274,7 @@ def test_regime_cuts_carries_the_flies_gate_replay_one_line_per_rule(tmp_home):
 
 def test_the_gate_replay_note_calls_a_param_a_bound_only_while_flies_declares_one():
     """The note tells the model which replayed gates it may propose. miss_stop_minutes left flies'
-    advice bounds at the 2026-10-19 boundary while its replay line stays (evidence, not a lever);
+    advice bounds at the 2026-10-15 boundary while its replay line stays (evidence, not a lever);
     a note still listing it as a bound invites a proposal the validator will refuse. Driven off
     flies' own example config, so the next bound that leaves fails here too."""
     import re

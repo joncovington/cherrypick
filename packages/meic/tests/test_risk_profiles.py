@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 # sign rule, 10:00-14:30 and cap-scaled spacing -- a live-sizable book at three sizes.
 BP_ARMS = {"bp-5k": 5000, "bp-10k": 10000, "bp-25k": 25000}
 ACTIVE_STREAMS = {"control", "live-shadow", *BP_ARMS}
-# live minus one gate (declared 2026-10-12, from 2026-10-19): live-shadow (the live top level) with
+# live minus one gate (declared 2026-10-12, from 2026-10-15): live-shadow (the live top level) with
 # ONE gate set back to control's value, to learn which gate keeps live dark (live-shadow filled 1 of
 # 10 sessions). Four of the gates live adds over control, picked by live-shadow's refusal counts
 # 09-29..10-12; the rest never refused. Added to a machine's registry by
@@ -208,7 +208,7 @@ _CODE_DEFAULTS = {"regime_gex_block_negative": True}
 def test_the_live_minus_arms_are_live_shadow_with_one_gate_relaxed(sample_risk_profiles):
     profiles = sample_risk_profiles["profiles"]
     if not set(LIVE_MINUS_ARMS) <= set(profiles):
-        pytest.skip("live-minus arms not yet added to this machine's registry (from 2026-10-19)")
+        pytest.skip("live-minus arms not yet added to this machine's registry (from 2026-10-15)")
     live_top = json.loads((Path.home() / ".cherrypick" / "config" / "meic.json").read_text(encoding="utf-8"))
     _check_live_minus(profiles, live_top)
 

@@ -20,7 +20,7 @@ alone, and nothing tracked the gate after that.
   paying. Every threshold from 15 to 90 minutes nets below no gate (−$368 → −$570 to −$979), and
   paper on the same dates agrees. Entries made while a spread that went on to strand was still open
   completed 91% (20 of 22) and made +$1,127. Re-run at 15 sessions (about 10-15).
-- **2026-10-12:** taken out of the advisor's bounds at the 10-19 boundary (experiment log). The live
+- **2026-10-12:** taken out of the advisor's bounds at the 10-15 boundary (experiment log). The live
   re-run at 15 sessions is still the reopen condition for live; the advisor no longer proposes it.
 
 ## Variants of the delta-placed debit-first pair, by config only
@@ -127,15 +127,15 @@ the slippage model, and that a lower floor's P&L split by side with the tape.
   ways (bwb-up +$109 unrolled → +$30 rolled; bwb-atm −$240 → −$144), so the replay overstates both
   tails. A positive result is not a rolled-arm result.
 
-## The selector arm: landing it on 2026-10-19
+## The selector arm: landing it on 2026-10-15
 
-Built and off (2026-10-04, [selector.md](selector.md)). **Declared for 2026-10-19**, with its
+Built and off (2026-10-04, [selector.md](selector.md)). **Declared for 2026-10-15**, with its
 judging rule in the experiment log (2026-10-04): the first read comes at 10 departing sessions, on
 per-session net against `control`. Before that date:
 
 - **Built (2026-10-04):** the orchestrator's `selector_fit_at` / `selector_fit_argv` job, which
   catches up only until midnight; a `selector-fit` that is a stated no-op until a `selector` arm is
-  declared, and fits one that is declared but disabled; and the `arm_added` break for 10-19
+  declared, and fits one that is declared but disabled; and the `arm_added` break for 10-15
   (`_note_selector_arm`), recorded once the arm is enabled.
 - **Staged (2026-10-04)** on this machine: both orchestrator keys, and the `selector` arm declared
   `enabled: false`. The nightly fit writes a model from 10-05's close onward; nothing reads it until
@@ -143,7 +143,7 @@ per-session net against `control`. Before that date:
 - **On the date:** merge to main and flip the arm to `enabled: true` before the first tick. The
   break journals itself. Land any other roster change from that fortnight with it.
 - **`wall-clear` lands with it** (declared 2026-10-05, experiment log): staged `enabled: false` on this
-  machine, `arm_added` break dated 10-19 (`_note_wall_clear_arm`). Flip it in the same edit.
+  machine, `arm_added` break dated 10-15 (`_note_wall_clear_arm`). Flip it in the same edit.
 - **Not live-eligible** until debit-first has a live order path (`live_orders.py` builds legged
   specs only). A legged-only selector is the live candidate if one is ever wanted.
 - **Extract to `cherrypick.core.selector`** (model file, `fit`, `arm_starts`, `validate_model`) when

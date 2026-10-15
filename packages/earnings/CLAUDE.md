@@ -16,7 +16,7 @@ strategies, **all defined-risk**: `iron_fly`, `double_calendar`, `iron_condor`, 
 (`docs/05-strategies.md`). `expected_move_butterfly` is **paper only**: it opens in `strat_test`
 from 2026-10-14 (`STRAT_TEST_STARTS`), and is never ranked as a symbol's best, so never propose it
 live. `atm_calendar` and
-`double_calendar` stay registered but open nothing in `strat_test` from 2026-10-19
+`double_calendar` stay registered but open nothing in `strat_test` from 2026-10-15
 (`strat_test_harness.STRAT_TEST_RETIRED`, a dated retirement; docs/operating-history.md). Undefined-risk/naked
 strategies were deliberately removed — a naked short on a single-name gap can blow out arbitrarily
 overnight. New strategies go under `src/strategies/` without touching the engine.

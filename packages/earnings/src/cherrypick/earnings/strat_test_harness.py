@@ -306,7 +306,7 @@ def _entry_context(criteria: dict, composite_score) -> dict:
 # boundary and bind on it. The 20-session review in the config's own note set the rule: fewer than 5
 # entries, or losing, retires the calendars. Through 10-12 atm_calendar ran 56 trades at 21% won for
 # -$6,349, double_calendar 35 at 14% for -$3,660.
-STRAT_TEST_RETIRED = {"atm_calendar": "2026-10-19", "double_calendar": "2026-10-19"}
+STRAT_TEST_RETIRED = {"atm_calendar": "2026-10-15", "double_calendar": "2026-10-15"}
 
 
 def strategy_retired(strategy_name: str, session: str) -> bool:

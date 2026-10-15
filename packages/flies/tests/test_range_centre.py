@@ -1,4 +1,4 @@
-"""The `range-centre` and `window-1300` arms (declared 2026-10-14, from 2026-10-19): control plus one
+"""The `range-centre` and `window-1300` arms (declared 2026-10-14, from 2026-10-15): control plus one
 variable each -- a placement gate, and a 13:00-13:59 entry window."""
 
 import pytest
@@ -107,7 +107,7 @@ def _live_keys(d):
 def test_this_machines_range_centre_differs_from_control_in_one_variable():
     arms = _machine_config()["arms"]
     if "range-centre" not in arms:
-        pytest.skip("this machine does not run the range-centre arm yet (added at the 2026-10-19 boundary)")
+        pytest.skip("this machine does not run the range-centre arm yet (added at the 2026-10-15 boundary)")
     rc, ctl = _live_keys(arms["range-centre"]), _live_keys(arms["control"])
     assert rc.pop("range_pos_max") == pytest.approx(0.8)
     assert rc.pop("center_above_spot_max") == pytest.approx(1.25)
@@ -117,7 +117,7 @@ def test_this_machines_range_centre_differs_from_control_in_one_variable():
 def test_this_machines_window_1300_differs_from_control_in_one_variable():
     arms = _machine_config()["arms"]
     if "window-1300" not in arms:
-        pytest.skip("this machine does not run the window-1300 arm yet (added at the 2026-10-19 boundary)")
+        pytest.skip("this machine does not run the window-1300 arm yet (added at the 2026-10-15 boundary)")
     w, ctl = _live_keys(arms["window-1300"]), _live_keys(arms["control"])
     assert w.pop("entry_windows") == [["13:00", "13:59"]]
     ctl.pop("entry_windows", None)
@@ -136,7 +136,7 @@ def test_each_arm_is_journaled_once_when_configured(tmp_path, name, note, cfg):
     getattr(paper_loop, note)(conn, {"arms": {name: cfg}})
     getattr(paper_loop, note)(conn, {"arms": {name: cfg}})
     rows = [r for r in dbmod.measurement_breaks(conn) if r["scope"] == name]
-    assert len(rows) == 1 and rows[0]["kind"] == "arm_added" and rows[0]["break_date"] == "2026-10-19"
+    assert len(rows) == 1 and rows[0]["kind"] == "arm_added" and rows[0]["break_date"] == "2026-10-15"
     other = dbmod.connect(str(tmp_path / "other.db"))
     getattr(paper_loop, note)(other, {"arms": {"control": {}}})
     getattr(paper_loop, note)(other, {"arms": {name: {**cfg, "enabled": False}}})

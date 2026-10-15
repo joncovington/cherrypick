@@ -1521,3 +1521,22 @@ sessions (about 2026-11-06), on `run.py gate-sessions`: keep running if the arm 
 ahead on at least as many sessions as it is behind; retire at the next boundary if it is behind on
 net; otherwise run to 20 sessions and decide then. A result at 15 sessions is evidence for a longer
 read, not a default.
+
+## 2026-10-14 — the 10-19 boundary moved to 10-15
+
+At the operator's request, the evening before, with no session yet run under the new roster. This
+follows the `wall-clear` and `restack` move of 10-12, done the same way. Everything the batch
+declared lands four sessions earlier, unchanged:
+
+- the retirements;
+- `live-shadow`, the `selector`, `range-centre` and `window-1300`;
+- `miss_stop_minutes` out of the advice bounds;
+- the other modules' steps in `scripts/boundary_2026_10_19.py`.
+
+The script keeps its file name. Its `BOUNDARY` is now 2026-10-15 and it may be applied from
+2026-10-14. The four `*_ARM_FROM` dates and earnings' `STRAT_TEST_RETIRED` move with it.
+
+Nothing else moves. Every judging rule counts sessions, not dates, so the read dates come forward
+by the same four sessions: `range-centre` and `window-1300` are read at 15 sessions, about 2026-11-04.
+The selector's model for 10-15 was fitted through 10-14 as its procedure requires.
+`debit-first-atm`'s ladder read was already going to miss this boundary and still does.

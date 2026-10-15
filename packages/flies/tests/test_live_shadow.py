@@ -1,4 +1,4 @@
-"""The `live-shadow` arm (declared 2026-10-12, from 2026-10-19): the live configuration, in paper.
+"""The `live-shadow` arm (declared 2026-10-12, from 2026-10-15): the live configuration, in paper.
 
 An arm declaring `mirror_live` takes its params from the live block (`engine.live_mirror_params`), so
 these tests pin it to what `live_loop` trades and name, key by key, what paper cannot express.
@@ -227,7 +227,7 @@ def test_the_arm_added_break_is_dated_the_boundary_and_needs_mirror_live(tmp_pat
     ] == []
     paper_loop._note_live_shadow_arm(conn, _with_shadow(_example()))
     rows = [b for b in dbmod.measurement_breaks(conn, scope="live-shadow") if b["scope"] == "live-shadow"]
-    assert [(b["break_date"], b["kind"]) for b in rows] == [("2026-10-19", "arm_added")]
+    assert [(b["break_date"], b["kind"]) for b in rows] == [("2026-10-15", "arm_added")]
     assert "$1000" in rows[0]["reason"] and "10:15" in rows[0]["reason"]
 
 

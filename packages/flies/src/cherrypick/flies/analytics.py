@@ -1692,7 +1692,7 @@ def live_vs_paper(live_conn, paper_conn, arm: str = "gex") -> dict:
     The console mirrors this rule in TypeScript (`flies-live-vs-paper-mirror.test.ts` pins it,
     rounding included). `packages/advisor`'s fact pack does NOT: its `flies_live` block is today's
     counts on each side, with no rate, gap or abort rule, tagged as its own
-    (`advisor.flies_live_today/v1`). Until the 2026-10-19 boundary it carried this function's tag,
+    (`advisor.flies_live_today/v1`). Until the 2026-10-15 boundary it carried this function's tag,
     `flies.analytics.live_vs_paper/v1`, which claimed a parity it never had; the advisor's
     `test_factpack` now fails if it claims this shape without this shape's keys. This remains the
     one place a live-vs-paper number is *reported* from.
