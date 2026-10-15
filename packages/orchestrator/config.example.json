@@ -29,7 +29,8 @@
         "log": "meic_live.log",
         "freshness_minutes": 5,
         "tick_interval_seconds": 60,
-        "notify_trades": false,
+        "_notify_trades_note": "LIVE fills, stops and exits from meic_trades.db through the meic_ic adapter, relabelled LIVE with a desktop toast (trade_notifier._LiveNotifier). A pending entry is announced once the broker confirms it. Known limit: a later IC recorded while an earlier one is still pending moves the entry watermark past it, so that earlier fill goes unannounced -- unreachable at max_structures_per_day 1.",
+        "notify_trades": true,
         "disarm_time": "17:00",
         "disarm_grace_minutes": 30,
         "settlement_grace_minutes": 30

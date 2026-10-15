@@ -155,6 +155,20 @@ def test_meic_deploy_limit_is_guarded_with_its_switch():
     assert {"/enable_live_trading", "/account_deploy_limit_pct"} <= set(GUARDED["meic"])
 
 
+def test_meic_guards_the_rules_that_widen_its_live_loop():
+    """2026-10-15: meic's live block gained an arm selector, a buying-power cap, a width list and a
+    per-day budget. Each can widen an armed loop, so each is the flies/bwb lesson again."""
+    assert {
+        "/live/symbol",
+        "/live/gate0_confirmed",
+        "/live/arm",
+        "/live/max_open_bp_dollars",
+        "/live/wing_widths_by_symbol",
+        "/live/max_structures_per_day",
+        "/live/daily_loss_halt_dollars",
+    } <= set(GUARDED["meic"])
+
+
 def test_bwb_keeps_every_live_sizing_and_admission_rule_guarded():
     """bwb's live block carries the arm, the floor, both caps and both breakers beside the switch;
     a surface that cannot arm the loop but can widen it once armed is the flies lesson again."""
