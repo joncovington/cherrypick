@@ -964,6 +964,7 @@ def _confirm_fills(
     """
     counts = {
         "entries_confirmed": 0,
+        "entries_unrecorded": 0,
         "entries_cancelled": 0,
         "closes_filled": 0,
         "closes_dead": 0,
@@ -999,7 +1000,18 @@ def _confirm_fills(
                     # modeled (their asked price is a crossing limit, not a mid) and say so.
                     qty = int(trade.get("quantity") or 1)
                     fields["slippage_dollars"] = round((float(mid) - float(price)) * 100.0 * qty, 4)
-                paper._update_trade(ic_order_id, fields, db_path)
+                saved = paper._update_trade(ic_order_id, fields, db_path)
+                if saved.get("ok") is False:
+                    # 2026-10-15: a live ledger missing `side_credit_source` refused every confirm,
+                    # the tick still counted it, and two filled XSP condors sat `pending` -- out of
+                    # expected_legs (a CRITICAL positions mismatch) and out of settlement. The row
+                    # stays pending, so the next tick retries; say so loudly instead of counting it.
+                    log(
+                        f"CRITICAL: entry FILLED {ic_order_id} at {price} but the ledger refused the "
+                        f"write ({saved.get('error')}) -- still pending, retried next tick"
+                    )
+                    counts["entries_unrecorded"] += 1
+                    continue
                 log(
                     f"entry FILLED {ic_order_id}: asked {trade.get('net_credit')}, filled {price} "
                     f"(put {credits.get('put_credit')}, call {credits.get('call_credit')}, "
@@ -1392,6 +1404,7 @@ def _tick(cfg: dict, designated: str | None, unmet: list[str], live: bool) -> in
         return 1
 
     db_path = str(_paths.live_db_path())
+    _ensure_live_schema(db_path)
     # The halt flag and the daily-loss breaker stop NEW ICs only; open ones are still managed.
     blockers = entry_blockers(cfg, db_path, snapshot["date"], halt_present=os.path.exists(halt_flag_path()))
     summary = run_once(cfg, snapshot, db_path, make_broker(cfg, designated), live=live, entry_block=blockers)
@@ -1401,6 +1414,21 @@ def _tick(cfg: dict, designated: str | None, unmet: list[str], live: bool) -> in
     print(line)
     _append_log(line)
     return 0
+
+
+def _ensure_live_schema(db_path: str) -> None:
+    """Bring the live ledger's schema up to date before the tick writes to it -- the paper loop's
+    `_ensure_paper_schema`, which the live loop never had. db.py's additive migrations run only from
+    `init_db`, so a column added after the live ledger was created (`side_credit_source`, the exit
+    fill sources, 2026-10-12) was missing from it, and on 2026-10-15 every fill confirm failed.
+    Idempotent and in-process (`db.call` captures init_db's JSON, so stdout keeps its one line).
+    Non-fatal: the confirm's own write check is the backstop that makes a failure loud."""
+    try:
+        res = paper._db(["init_db"], db_path)
+        if res.get("ok") is False:
+            _quiet(f"CRITICAL: live schema ensure failed: {res.get('error')}")
+    except Exception as exc:  # noqa: BLE001 -- schema maintenance never costs the tick
+        _quiet(f"CRITICAL: live schema ensure errored: {type(exc).__name__}: {exc}")
 
 
 def _quiet(message: str) -> None:
