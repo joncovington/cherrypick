@@ -1400,6 +1400,36 @@ def derive_jobs(
             enabled_reason="" if lp["enabled"] else "disabled in config (live_positions.enabled)",
         ),
     )
+    # LIVE fill alerts from the order-alert inboxes (2026-10-15, livefills.py): a few seconds after the
+    # broker reports a fill, instead of the trade notifier's minutes. Enabled only while some live
+    # module's arm record is valid -- the inboxes are written only by armed modules' daemons, so an
+    # unarmed day costs nothing.
+    lfa = cfg.get("live_fill_alerts") or {}
+    armed_now = [
+        name
+        for name, mcfg in cfgmod.enabled_modules(cfg).items()
+        if (mcfg.get("live") or {}).get("task_name")
+        and arm_record_valid(arm_records.get(name), mcfg.get("live") or {}, now)[0]
+    ]
+    lfa_on = bool(lfa.get("enabled", True)) and bool(armed_now)
+    add(
+        "live-fill-alerts",
+        lambda: JobSpec(
+            id="live-fill-alerts",
+            argv=_run_py(pythonw, launcher, "live-fill-alerts"),
+            kind=KIND_INTERVAL,
+            interval_seconds=int(lfa.get("interval_seconds", 15)),
+            enabled=lfa_on,
+            enabled_reason=""
+            if lfa_on
+            else (
+                "disabled in config (live_fill_alerts.enabled)"
+                if not lfa.get("enabled", True)
+                else "no live module armed"
+            ),
+            tags=("live",),
+        ),
+    )
     los = cfg.get("live_settle_overdue") or {}
     add(
         "settle-overdue-live",

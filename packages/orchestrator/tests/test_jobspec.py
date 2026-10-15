@@ -314,6 +314,7 @@ def test_derive_full_suite_job_table():
         "power-watch",
         "live-positions",
         "settle-overdue-live",
+        "live-fill-alerts",
         "report-session-alert",
         "report-screener-measure-1",
         "report-screener-measure-2",
@@ -418,6 +419,18 @@ def test_derive_companion_resident_while_armed():
     assert d.silence_file == _DAEMON["heartbeat"] and d.silence_seconds == 120
     assert jobspec.resident_should_run(d, et(2026, 8, 10, 3, 30))[0]
     assert not jobspec.resident_should_run(d, et(2026, 8, 10, 17, 1))[0]
+
+
+def test_live_fill_alerts_run_only_while_a_live_module_is_armed():
+    """2026-10-15: the inboxes are written only by armed modules' daemons, so the job is off otherwise.
+    Shown to fail by enabling it unconditionally: the unarmed assertion goes red."""
+    now = et(2026, 8, 10, 10, 0)
+    jobs, _ = derive(suite_cfg(), now=now, arm_records={})
+    job = next(j for j in jobs if j.id == "live-fill-alerts")
+    assert not job.enabled and job.enabled_reason == "no live module armed"
+    jobs, _ = derive(suite_cfg(), now=now, arm_records={"flies": {"date": "2026-08-10"}})
+    job = next(j for j in jobs if j.id == "live-fill-alerts")
+    assert job.enabled and job.interval_seconds == 15
 
 
 def test_derive_companion_follows_the_arm():
