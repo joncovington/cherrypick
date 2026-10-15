@@ -236,15 +236,35 @@ def _spawn_first_tick() -> None:
     )
 
 
-def install_task() -> dict:
-    """Arm for TODAY: the arm record, under a live supervisor, and nothing else."""
+def alert_daemon_companion(config: dict | None) -> dict | None:
+    """The order-alert daemon as an arm-record companion (2026-10-15, flies' shape), or None when
+    `live.use_order_alert_daemon` is off. The supervisor keeps it up while armed and until
+    `disarm_time`, restarting it on death and on a heartbeat silent for four of its 30 s slices."""
+    live = _live_cfg(config or {})
+    if not live.get("use_order_alert_daemon"):
+        return None
+    from cherrypick.meic import alert_daemon
+
+    return {
+        "argv": ["-m", "cherrypick.meic.alert_daemon"],
+        "heartbeat": alert_daemon.daemon().status_path,
+        "silence_seconds": 120,
+        "until": live.get("disarm_time") or DEFAULT_DISARM,
+    }
+
+
+def install_task(config: dict | None = None) -> dict:
+    """Arm for TODAY: the arm record, under a live supervisor, and nothing else. With the alert daemon
+    on, the record names it as a companion and the supervisor keeps it up too."""
     now = _pl._now_et()
+    companion = alert_daemon_companion(config if config is not None else paper.load_base_config())
     return _live.arm(
         "meic",
         date=now.strftime("%Y-%m-%d"),
         at=now.isoformat(timespec="seconds"),
         armed_by=ARMED_BY,
         spawn_first_tick=_spawn_first_tick,
+        companions={"alert-daemon": companion} if companion else None,
     )
 
 
@@ -1292,7 +1312,7 @@ def main(argv=None) -> int:
         return 0 if payload.get("ok", True) else 1
 
     if args.install_task:
-        return out(install_task())
+        return out(install_task(cfg))
     if args.uninstall_task:
         return out(uninstall_task())
     if args.settle_overdue or args.settle:

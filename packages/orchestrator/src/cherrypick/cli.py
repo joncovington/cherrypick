@@ -1590,6 +1590,13 @@ def cmd_settle_overdue_live(cfg) -> None:
     _emit(livesettle.run(cfg))
 
 
+def cmd_live_fill_alerts(cfg) -> None:
+    """A LIVE fill alert within seconds, from the order-alert inboxes (orchestrator/livefills.py)."""
+    from cherrypick.orchestrator import livefills
+
+    _emit(livefills.run(cfg))
+
+
 def cmd_notify_status(cfg, force: bool = False, close: bool = False) -> None:
     _emit(status_digest.run(cfg, force=force, close=close))
 
@@ -1924,6 +1931,7 @@ def build_parser() -> argparse.ArgumentParser:
             "power-watch",
             "live-positions",
             "settle-overdue-live",
+            "live-fill-alerts",
             "service",
             "ps",
             "restart",
@@ -2246,6 +2254,7 @@ def main() -> None:
         "live-positions": lambda: cmd_live_positions(cfg),
         "service": lambda: cmd_service(cfg, args.name),
         "settle-overdue-live": lambda: cmd_settle_overdue_live(cfg),
+        "live-fill-alerts": lambda: cmd_live_fill_alerts(cfg),
         "notify-send": lambda: cmd_notify_send(args),
         "sent": lambda: cmd_sent(args),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
