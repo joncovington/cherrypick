@@ -173,53 +173,10 @@ def _settlement_lines(transactions: list[dict], trade_date: str) -> dict[str, li
     return out
 
 
-def _qty(txn: dict) -> float:
-    return abs(float(txn["quantity"])) if txn.get("quantity") not in (None, "") else 0.0
-
-
-def _allocate_settlement(
-    legs: dict[str, int], lines: dict[str, list[dict]], referenced_by: dict[str, int]
-) -> tuple[float, float] | None:
-    """(settlement cash, settlement fees) in dollars that belong to ONE position, or None when a leg
-    cannot be priced from the broker's record.
-
-    **A settlement line is per strike, not per position.** The broker settles its NET holding in
-    each option once, so when two positions share a strike -- which adjacent flies five points
-    apart always do, one fly's upper wing being the next one's lower -- a single line carries the
-    cash for both. This used to credit every position with every line on any of its leg symbols,
-    at full value: on 2026-09-22 the 7765P line ($72 for 2 contracts, one in each put fly) was
-    counted in both flies, and so was its $5 fee, and the session was written up $67.00 above the
-    cash the broker actually paid.
-
-    So each line is reduced to a per-contract value -- cash over the line's own quantity -- and the
-    position takes its own signed contracts' worth. That is exact whoever else holds the strike: a
-    second position, or another strategy trading the same expiry. The sign comes from the POSITION
-    (long receives, short pays), the magnitude from the broker. Fees split the same way.
-
-    A line without a quantity cannot be split. It is still unambiguous when this is the only
-    position referencing that symbol, and then the whole line is its own, as before; when it is
-    shared, the position is left unmatched rather than guessed at.
-    """
-    cash_total = 0.0
-    fee_total = 0.0
-    for sym, q in legs.items():
-        sym_lines = lines.get(sym)
-        if not sym_lines:
-            return None  # a leg with no settlement line at all: nothing to price it from
-        cash_lines = [t for t in sym_lines if float(t.get("value") or 0) != 0]
-        fees = sum(_fee_total(t) for t in sym_lines)
-        if all(_qty(t) > 0 for t in cash_lines) and (not fees or any(_qty(t) > 0 for t in sym_lines)):
-            contracts = sum(_qty(t) for t in cash_lines)
-            per_contract = sum(abs(float(t["value"])) for t in cash_lines) / contracts if contracts else 0.0
-            cash_total += q * per_contract
-            fee_basis = sum(_qty(t) for t in sym_lines if _fee_total(t) > 0) or contracts
-            fee_total += abs(q) * (fees / fee_basis if fee_basis else 0.0)
-        elif referenced_by.get(sym, 0) == 1:
-            cash_total += sum(float(t["value"]) for t in sym_lines)
-            fee_total += fees
-        else:
-            return None
-    return cash_total, fee_total
+# One position's share of the day's per-strike settlement lines. Lives in `cherrypick.core.fees`
+# since MEIC's live reconciler needed the identical split (2026-10-15); the history of why a line
+# is split per contract (the 2026-09-22 shared-strike double count) is on that function.
+_allocate_settlement = _fees.allocate_settlement
 
 
 def pending_reconciliation(conn, symbol: str, lookback_days: int = 5, today: str | None = None) -> list[str]:
