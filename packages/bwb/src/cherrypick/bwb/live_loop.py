@@ -262,6 +262,7 @@ def _sweep_orphans(conn, broker, log, symbol: str) -> int | None:
         path=_orphans_path(),
         now_iso=clock.now_iso(),
         log=log,
+        module="bwb",  # flies and MEIC trade SPX in this account too: their orders are not ours to flag
     )
 
 

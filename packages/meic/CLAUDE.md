@@ -156,8 +156,17 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
   files, env vars or logs.
 - All broker operations are `python -m cherrypick.meic.tt <command>`, JSON to stdout. Secrets: `tt
   secrets_set` / `tt secrets_status`.
-- **`enable_live_trading: true` in `config.json` is the ONLY arming surface.** There is no environment
+- **`enable_live_trading: true` in `config.json` is the master switch.** There is no environment
   fallback: an env var is outside the orchestrator's guarded config table and carries no attestation.
+- **The live loop is armed one day at a time (2026-10-14, the flies/bwb posture).** `/live-meic-start`
+  writes the arm record (`--install-task`, `cherrypick.core.live`); the supervisor runs `meic-live`
+  only while it is today's, and each `--live` tick deletes it once stale or past `live.disarm_time`,
+  before any broker read. A manual `--once --live` needs the record too. `--status` is the arming
+  command's and the watchdog's read (no broker). `live.max_structures_per_day` (default 1) caps new
+  ICs a session; a one-tick lock keeps a slow tick from overlapping the next.
+- **The orphan sweep is suite-wide.** flies, bwb and MEIC trade SPX in one account, so each loop
+  publishes its ledger's order ids (`core.execution.publish_known_orders`) and counts the others' as
+  known; an order none of them records blocks new entries, and a sweep that cannot look does too.
 - **Every live submit goes through `cherrypick.core.execution.Broker` (`make_broker`)**, which re-checks
   `readiness` on every submit and applies the deploy governor. `adjust_order` goes through
   `cherrypick.core.broker.replace_order` (same preflight and governor as `execute_trade`); a core test

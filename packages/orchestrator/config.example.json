@@ -18,6 +18,22 @@
       ],
       "_live_db_note": "Phase-5 seam: the module's LIVE-trades ledger, read ONLY by the explicitly live-tagged surfaces (`cherrypick report --live`). Deliberately a separate key from paper.paper_db — calibrate and every promotion reading go through the paper path and can never see this file. Same resolution rules as paper_db (absolute / ~-expanded / module-root relative).",
       "live_db": "~/.cherrypick/data/meic/meic_trades.db",
+      "_live_note": "2026-10-14, the flies/bwb posture: the supervisor's meic-live job runs one `cherrypick.meic.live_loop --once --live` tick a minute ONLY while today's arm record (written by /live-meic-start after a literal YES) is valid; the tick self-disarms past the module's own live.disarm_time and the watchdog backstops at disarm_time + grace. The module's enable_live_trading stays its master switch.",
+      "live": {
+        "task_name": "cherrypick-meic-live-loop",
+        "status_argv": [
+          "-m",
+          "cherrypick.meic.live_loop",
+          "--status"
+        ],
+        "log": "meic_live.log",
+        "freshness_minutes": 5,
+        "tick_interval_seconds": 60,
+        "notify_trades": false,
+        "disarm_time": "17:00",
+        "disarm_grace_minutes": 30,
+        "settlement_grace_minutes": 30
+      },
       "paper": {
         "kind": "self_healing",
         "task_name": "cherrypick-meic-paper-loop",

@@ -612,6 +612,48 @@ def orphans(broker: Any, known_order_ids: Iterable[Any]) -> list[dict]:
     return [o for o in broker.working_orders() if str(o.get("order_id")) not in known]
 
 
+KNOWN_ORDERS_DIRNAME = "live_known_orders"
+
+
+def _known_orders_dir() -> Path:
+    from cherrypick.core import home as _home
+
+    return _home.state_dir() / KNOWN_ORDERS_DIRNAME
+
+
+def publish_known_orders(module: str, order_ids: Iterable[Any], *, now_iso: str) -> None:
+    """Write `module`'s ledger order ids where every other live loop's sweep can read them
+    (`state/live_known_orders/<module>.json`). Best-effort: a failed write costs the other loops
+    a false orphan -- which blocks their entries, the safe direction -- never a missed one."""
+    try:
+        target = _known_orders_dir() / f"{module}.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(".tmp")
+        ids = sorted({str(i) for i in order_ids if i is not None})
+        tmp.write_text(json.dumps({"module": module, "at": now_iso, "order_ids": ids}), encoding="utf-8")
+        tmp.replace(target)
+    except OSError:
+        pass
+
+
+def other_modules_known_orders(module: str) -> set[str]:
+    """Every order id another live loop has published (`publish_known_orders`), excluding
+    `module`'s own. An unreadable file contributes nothing."""
+    out: set[str] = set()
+    try:
+        files = list(_known_orders_dir().glob("*.json"))
+    except OSError:
+        return out
+    for f in files:
+        if f.stem == module:
+            continue
+        try:
+            out.update(str(i) for i in json.loads(f.read_text(encoding="utf-8")).get("order_ids") or [])
+        except (OSError, ValueError, AttributeError):
+            continue
+    return out
+
+
 def sweep_orphans(
     broker: Any,
     known_order_ids: Iterable[Any],
@@ -620,6 +662,7 @@ def sweep_orphans(
     path: str | Path,
     now_iso: str,
     log: Callable[[str], None],
+    module: str | None = None,
 ) -> int | None:
     """The live tick's orphan sweep, first thing every tick: broker truth against ledger belief.
 
@@ -638,9 +681,18 @@ def sweep_orphans(
     An order whose underlying is **unknown** (`None`) is kept. It could be ours, and counting it
     blocks this loop's entries until a person looks, which is the safe direction for a live gate.
     Dropping it would let the tick place a second order beside one nothing recorded. bwb always
-    kept it; flies dropped it until this fold (2026-10-12)."""
+    kept it; flies dropped it until this fold (2026-10-12).
+
+    `module` (2026-10-14): the loops share an account AND an underlying -- flies, bwb and MEIC all
+    trade SPX -- so one loop's resting order was another's orphan, and a loop that found one blocked
+    its own entries. Given its name, a loop publishes its own ids (`publish_known_orders`) and
+    counts every other loop's as known. Without it the sweep is the ledger's alone, as before."""
+    known = [str(k) for k in known_order_ids if k is not None]
+    if module:
+        publish_known_orders(module, known, now_iso=now_iso)
+        known = [*known, *other_modules_known_orders(module)]
     try:
-        found = orphans(broker, known_order_ids)
+        found = orphans(broker, known)
     except Exception as exc:  # noqa: BLE001 -- a failed sweep must not break the tick
         log(f"orphan sweep failed ({type(exc).__name__}: {exc}) -- will retry next tick")
         return None  # unknown -- and unknown blocks the entry
