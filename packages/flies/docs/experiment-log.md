@@ -1455,3 +1455,69 @@ stamps the limit live would ask and its first 60 s (`shadow_entry_limit`, `shado
 Paper's entries are unchanged. **Re-read at about 20–30 live misses**, and fit the price basis (the
 quote history for live orders, from 10-13) beside the spot one. A rule that beats `always_fill` is
 shadowed first and switched only at a declared boundary.
+
+## 2026-10-14 — `range-centre` and `window-1300` declared for 10-19, after a day of negative results
+
+The question was whether any flies arm could be built that beats `control`, starting from the
+debit-first idea and widening to every arm's rows. Most of the day's answers were no, and they are
+recorded here so they are not proposed again. All replays were read-only passes over the paper and
+live ledgers, run as one-off scripts outside the repo; the modelled ones say so.
+
+**Debit-first, every variant tried, negative.**
+
+- **Both 15-delta debit spreads at once, completion resting at debit + $0.50** (the delta pair's
+  rows, 17 sessions): −$318, 16 of 34 sides completed, 4 of 17 days up. Negative at every fixed
+  target from +0.10 to +1.00 and at targets of 1.15–2.5× the debit. A completed side nets about
+  +$43; a miss costs $60–110; break-even needs about 62% completion against the 47% observed.
+- **Cancel the other side and sell it back when one side completes** (marks modelled on the spot
+  path, the model reproducing 31 of 34 recorded outcomes): −$529 against −$422 for leaving both
+  working. The spread sold back is worth $0.10–0.35 by then, and the cancel gives up the reversal
+  days when both would have completed.
+- **Closer to spot** (the `debit-first-atm` shadow ladder, 5–30 points, 7–8 sessions): no distance
+  positive under both start times. A miss grows with the debit; the completion rate barely moves.
+- The family as a whole: `debit-first-atm` is the only debit arm with a gross edge (+$924 on 139
+  entries), and its fees are twice that.
+
+**Managing the stranded spread, negative on real prices.**
+
+- **Dollar stops** (−$50 to −$200, `control`'s 419 entries, marks modelled): −$2,400 to −$13,300
+  against holding. Most spreads that complete are down first.
+- **Time stops** (close if not completed in T minutes) looked like +$1,600 to +$5,000 on the model.
+  Checked against the live loop's recorded mids (`fly_live_marks`), the model is optimistic exactly
+  where the stop acts (−$52 mean error at 90–180 minutes), and on 95 live positions every T from 60
+  to 240 minutes lost to holding (−$118 to −$1,059). Not proposed.
+- The hedge overlay (an opposite-side long at entry) is still negative: +$803 unhedged, −$4,813
+  hedged.
+
+**Outside sources add no tested method.** A vendor education library (54 sessions mentioning
+butterflies) teaches no net-credit legging at all, only repairs that leave a debit, and calls 5-wide
+too narrow. A web search found no published legged 0DTE fly backtest with costs; the closest
+practitioner method sells the same ATM 5-wide spread and differs from this module in cutting
+strands at −$50 to −$100, which is the dollar stop above.
+
+**The search.** Every 5-wide legged entry from arms that complete by control's rule (620 after
+collapsing the same trade taken by several arms; pre-10-05 completions charged the ~$4 the limit
+rule costs), ~8,700 single and paired entry conditions, thresholds cut on 07-20..09-18 and read on
+09-21..10-14. The top 25 by training net beat taking everything on the held-out sessions 9 times,
+against 48% for a random rule; run the other way round, 12 of 25 against 55%. The search as a whole
+found nothing. Two conditions were nevertheless ahead in each of three eras, which is why they are
+declared as arms rather than adopted.
+
+**Declared, from 2026-10-19** (`scripts/boundary_2026_10_19.py` adds both, each a copy of the
+machine's `control` plus its one variable; each journals its own `arm_added` break):
+
+| Arm | Its one variable | On control's rows: 07-20..08-20 / 08-21..09-18 / 09-21..10-14 (control) |
+|---|---|---|
+| `range-centre` | no entry at or above 0.8 of the session range, or with the ATM centre more than 1.25 points above spot | −$782 / +$3,547 / +$401 (−$3,762 / +$2,899 / −$330) |
+| `window-1300` | entries only 13:00–13:59 | −$75 / +$1,409 / +$1,437 on 14 / 5 / 14 entries |
+
+`range-centre` held from 0.75 to 0.85 of the range and from 0.5 to 2.0 points of centre. The
+replay's range came from the loop's own ticks; the engine reads `stream_summary`'s session high and
+low, which can differ in the first minutes. `window-1300` rests on 33 entries, and its book is empty
+at 13:00 where control's was not, so it will take more entries in the hour than control did.
+
+**The judging rule, declared now.** Read each against `control` over its own window at 15 settled
+sessions (about 2026-11-06), on `run.py gate-sessions`: keep running if the arm is ahead on net and
+ahead on at least as many sessions as it is behind; retire at the next boundary if it is behind on
+net; otherwise run to 20 sessions and decide then. A result at 15 sessions is evidence for a longer
+read, not a default.

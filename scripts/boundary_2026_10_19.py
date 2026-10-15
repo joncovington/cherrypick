@@ -12,7 +12,8 @@ session start, so Monday's first session runs the new roster; nothing needs a re
 What takes effect by itself, with no help from this script, once the batch is merged:
   - earnings: atm_calendar and double_calendar open nothing in strat_test from 2026-10-19
     (strat_test_harness.STRAT_TEST_RETIRED); this script only journals the break.
-  - flies: the live-shadow arm's and the selector's arm_added breaks journal themselves once enabled.
+  - flies: the live-shadow, selector, range-centre and window-1300 arms' arm_added breaks journal
+    themselves once enabled.
 
 What this script does (each step idempotent; a step already applied reports "nothing to do"):
   1. advisor: concludes the experiments being wound down with `python -m cherrypick.advisor kill`,
@@ -21,9 +22,11 @@ What this script does (each step idempotent; a step already applied reports "not
        flies miss-stop-30 (and miss-stop-90 if still active), calendars fri-noon-cycle-extension,
        earnings dc-stop-at-75pct-debit, meic live-stop-vs-hold.
   2. flies.json: retires debit-first-up/-down, bwb-up/-down, bwb-up-w2/-down-w2 and bwb-atm (enabled
-     false, a dated note; never deleted); adds the live-shadow arm; enables the selector (declared for
-     this boundary 2026-10-04; --skip-selector leaves it); removes miss_stop_minutes from the advice
-     bounds. With --enable-flies-mid-first only: live.entry_pricing "mid_first" and a LIVE ledger break.
+     false, a dated note; never deleted); adds the live-shadow arm; adds the range-centre and
+     window-1300 arms (declared 2026-10-14), each a copy of this machine's control with its one
+     variable on top; enables the selector (declared for this boundary 2026-10-04; --skip-selector
+     leaves it); removes miss_stop_minutes from the advice bounds. With --enable-flies-mid-first
+     only: live.entry_pricing "mid_first" and a LIVE ledger break.
   3. bwb.json: retires the delta and wall books (enabled false). Their open rows run off by expiry.
      Copies the add-on bounds' `arms` from packages/bwb/config.example.json (PR #224), so the
      advisor refuses a trigger param on a base that never arms; skipped with a note before #224.
@@ -73,6 +76,19 @@ LIVE_SHADOW = {
     "_note": f"From {BOUNDARY} ({JOURNAL}): the LIVE configuration in paper. mirror_live takes every "
     "param from the live block (engine.live_mirror_params); any other key here is ignored. Read against "
     "the live ledger over the same sessions, never against control.",
+}
+# control plus one variable each (declared 2026-10-14, docs/experiment-log.md 2026-10-14). The step
+# copies the machine's own control and lays these on top, so neither can differ from it in anything else.
+FLIES_ADD = {
+    "range-centre": (
+        {"range_pos_max": 0.8, "center_above_spot_max": 1.25},
+        "control plus a placement gate: no entry at or above 0.8 of the session range so far, or with the "
+        "ATM centre more than 1.25 points above spot (engine.placement_refusal)",
+    ),
+    "window-1300": (
+        {"entry_windows": [["13:00", "13:59"]]},
+        "control with its entries confined to 13:00-13:59",
+    ),
 }
 MEIC_MINUS = {
     "live-minus-ivrank": {"min_iv_rank": 0.0},
@@ -216,6 +232,11 @@ def step_flies(plan: Plan, h: Path, *, selector: bool, mid_first: bool) -> None:
     if "live-shadow" not in engine.ARMS or not hasattr(engine, "live_mirror_params"):
         plan.refused.append("flies: this checkout has no live-shadow arm; merge the boundary PR first")
         return
+    if not set(FLIES_ADD) <= set(engine.ARMS) or not hasattr(engine, "placement_refusal"):
+        plan.refused.append(
+            "flies: this checkout has no range-centre / window-1300 arms; merge their PR first"
+        )
+        return
     if mid_first and not hasattr(live_orders, "entry_pricing_mode"):
         plan.refused.append("flies: this checkout has no live.entry_pricing; merge the pricing PR first")
         return
@@ -231,6 +252,16 @@ def step_flies(plan: Plan, h: Path, *, selector: bool, mid_first: bool) -> None:
                 )
         if "live-shadow" not in arms:
             arms["live-shadow"] = dict(LIVE_SHADOW)
+        control = {k: v for k, v in (arms.get("control") or {}).items() if not k.startswith("_")}
+        for name, (variable, what) in FLIES_ADD.items():
+            if name not in arms:
+                arms[name] = {
+                    **control,
+                    **variable,
+                    "enabled": True,
+                    "_note": f"From {BOUNDARY} (docs/experiment-log.md 2026-10-14): {what}. One variable vs "
+                    "control: keep every other key identical to control's.",
+                }
         if selector and "selector" in arms and not arms["selector"].get("enabled", True):
             arms["selector"]["enabled"] = True
         bounds = (doc.get("advice") or {}).get("bounds") or {}
