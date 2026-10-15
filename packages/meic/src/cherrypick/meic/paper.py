@@ -780,8 +780,17 @@ def evaluate_entry(
     # (SPX net-GEX sign runs ~61% positive, and swings hard by day: 2.3% positive on 2026-07-29,
     # 98.3% on 2026-07-31), and nothing yet establishes that the trades it cuts were worse than the
     # ones it keeps. That question is only answerable by running both, which requires this switch.
+    #
+    # `regime_gex_block_mode` (2026-10-15): "oi" (the default, unchanged) blocks on open-interest GEX
+    # alone; "both" blocks only when the VOLUME-weighted reading (`net_gex_vol`, today's flow) is
+    # negative too. Open interest is yesterday's book and misses every 0DTE position opened today.
+    # Over control's advisor era (held to expiry, 12:00-14:30) OI-negative/volume-positive sessions
+    # won 14 of 17, while the worst session sat where both were negative. A missing volume reading
+    # falls back to the OI rule rather than waving the entry through.
     if params.get("regime_gex_block_negative", True) and gex.get("ok") and gex.get("gex_positive") is False:
-        return False, "regime_gex_negative", None
+        vol = gex.get("net_gex_vol")
+        if not (params.get("regime_gex_block_mode", "oi") == "both" and vol is not None and vol > 0):
+            return False, "regime_gex_negative", None
     # Strict variant (opt-in per profile): require GEX to be explicitly positive, so entries
     # also pause when GEX is unknown/unavailable -- not just when it is confirmed negative. Used
     # opt-in per profile to isolate the effect of the GEX gate.
