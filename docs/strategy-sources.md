@@ -8,8 +8,8 @@ the video genre — which the repo docs only half-record. The other modules' nam
 the end, because they follow the same pattern.
 
 External links were verified live on 2026-10-12 (pages fetched and read, not assumed from titles).
-Search engines rate-limited partway through, so the flies-side video survey is representative rather
-than exhaustive; everything stated about a video was read off its page.
+The flies-side video survey is representative rather than exhaustive; everything stated about a
+video was read off its page.
 
 ---
 
@@ -141,7 +141,7 @@ well documented on YouTube:
   SPX (1 DTE Strategy)"](https://www.youtube.com/watch?v=Q9w4RpKHh8Q) (LoganLaj, 2021-05-18, ~57K
   views); [a live 0DTE SPX call BWB](https://www.youtube.com/watch?v=qyxCNvt42rw) (Trading Litt,
   2023-12-30); ["REFINED 0DTE Broken Wing Butterfly SPX strategy!"](https://www.youtube.com/watch?v=X3fS-8euWq8)
-  (Optionsmith, 2025-11-04 — the same channel that surfaced in flies' "profit forest" genre above);
+  (Optionsmith, 2025-11-04 — the same channel that surfaced in flies' "profit forest" genre below);
   ["This Broken Wing Butterfly Strategy Works!"](https://www.youtube.com/watch?v=RW3JAph8Tag)
   (Stock Market Options Trading, 2021-07-11, ~79K views); [How to Trade the SPX Broken Wing
   Butterfly](https://www.youtube.com/watch?v=8-V5vCQM2Ao) (Al Losada, 2022-05-06); ["Instead Of
@@ -259,9 +259,9 @@ short premium into the earnings IV crush, defined-risk structures chosen per eve
 structures — short straddle and calendar spread — are two of the module's six), PEAD named in an
 aside, and sizing by Kelly (the module sizes on simulated NLV; the advisor's `kelly-cap` rule caps
 the same idea read-side). It is nonetheless **not the lineage**: nothing in the repo references the
-channel or its oquants.com tool, the module predates it (2026-07-06 against 2025-02-12 is the other
-way round — the video is the earlier artefact, predating the module by five months), and the module's
-screen and structures came from EarningsEdgeDetection plus the written literature above. The
+channel or its oquants.com tool, and although the video (2025-02-12) is older than the module
+(2026-07-06), the module's screen and structures came from EarningsEdgeDetection plus the written
+literature above. The
 resemblance is convergence from the same public research, not derivation — and the module's own
 discipline answers the video where they differ: every parameter goes through the strat_test forward
 test rather than a simulation whose results the video's own disclaimer calls "hypothetical,
@@ -338,8 +338,7 @@ the completion gates, the arm methodology) are the suite's own, measured in the 
 
 The "Chambless" of the MEIC convention is **Tammy Chambless**, called "the Queen of 0DTE" in the
 coverage below — a full-time options trader, trading options since 2006 and exclusively 0DTE since
-2019. Formerly a licensed architect and principal at GFF Architects in Dallas (joined 1984, retired
-2017). She founded the Quantum Options Facebook Group and Discord Group, where her research is
+2019. She founded the Quantum Options Facebook Group and Discord Group, where her research is
 posted, and has presented to trading groups in the US and abroad.
 
 **Her YouTube channel — [Tammy Chambless 0 DTE Options Trading](https://www.youtube.com/@tammychambless-0dteoptions)** —
@@ -425,12 +424,11 @@ against it. Every named source found:
 |---|---|---|
 | **PMCC** | Tom King's "Income Shield" (Theta Profits, [video `P43DluId17o`](https://www.youtube.com/watch?v=P43DluId17o)): a ~1-year call at about 0.925 delta, a ~0.70-delta weekly call sold against it | [`packages/pmcc/docs/shield-study.md`](../packages/pmcc/docs/shield-study.md) |
 | **ivan** (shelved /NQ proposal) | Rob and Maria Helmick, "Math Makes Money" on YouTube, described in full on Theta Profits' *My Trade* segment recorded 2026-09-14 — their own parameter table is carried, thresholds converted to percentages | [`docs/history/ivan-plan.md`](history/ivan-plan.md) |
-| **volcrush** (plan-only branch) | Options Omega's "Tasty Vol Crush" — an SPX short-call backtest, 2013–2026 | commit `e51318bf`, 2026-10-09 |
+| **volcrush** (plan-only branch) | Option Omega's "Tasty Vol Crush" — an SPX short-call backtest, 2013–2026 | commit `e51318bf`, 2026-10-09 |
 | **GEX engine** | What gexbot.com, SpotGamma and MenthorQ sell — a self-hosted lightweight take | [`packages/gex/README.md`](../packages/gex/README.md) |
-| **Earnings** | MenthorQ's ACES earnings-calendar strategy guide is referenced in the strategy-optimization notes | [`packages/earnings/docs/strategy-optimization.md`](../packages/earnings/docs/strategy-optimization.md) |
 | **MEIC** | Chambless (convention + MEIC+), Option Alpha (stop literature), 0DTESPX.com (rejected data source) | cited in the module docs above |
 | **BWB** | No source named in the module; the structure is tastylive's flagship SPX broken-wing butterfly genre, with a 0DTE practitioner wing on YouTube — and tastylive cited for a **negative** (they have published no management study for earnings BWBs) | [tastylive's own concept page](https://www.tastylive.com/concepts-strategies/broken-wing-butterfly) and the genre survey above |
-| **Earnings** | EarningsEdgeDetection (the screen's thresholds and tier language, named in-repo, since reimplemented as pure functions); the written sources in `strategy-optimization.md`; the PEAD gate, named without its academic citation (Ball & Brown 1968, Bernard & Thomas 1989); tastylive cited for a negative on earnings BWBs | cited in the module docs above |
+| **Earnings** | EarningsEdgeDetection (the screen's thresholds and tier language, named in-repo, since reimplemented as pure functions); the written sources in `strategy-optimization.md`; the PEAD gate, named without its academic citation (Ball & Brown 1968, Bernard & Thomas 1989); tastylive cited for a negative on earnings BWBs; MenthorQ's ACES earnings-calendar guide, referenced in [`strategy-optimization.md`](../packages/earnings/docs/strategy-optimization.md) | cited in the module docs above |
 
 MEIC and flies are the only two strategy engines with academic-literature or named-originator
 citations inside their docs (MEIC the convention, flies the stopping paper). Earnings names its
@@ -459,6 +457,5 @@ four modules is the suite's own measurement.
   which carries the effect's name but never the two classic papers behind it (recorded above), and
   the fact that the shipped thresholds are EarningsEdgeDetection's numbers carried over — stated in
   a code comment, not in the screening doc, where a reader would look for it.
-- Search coverage caveat: the video lists above were gathered under one rate-limited search engine
-  (DuckDuckGo refused requests; Brave and Bing used). The tastylive genre list is broad enough to
-  characterise the genre, not an exhaustive catalogue.
+- Search coverage caveat: the video lists above are a sample, not an exhaustive catalogue. The
+  tastylive genre list is broad enough to characterise the genre.
