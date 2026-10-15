@@ -165,6 +165,55 @@ start times, so cadence plausibly matters, in an unknown direction.
 - *Landing:* if adopted, the change lands at a declared boundary with a live-ledger break
   (`tick_cadence`), and `live-shadow`'s list of what paper cannot express drops the 1-minute tick.
 
+**Declared question: the wing width (declared 2026-10-14, before any recorded session was replayed
+at a width other than control's).** The 10-wide was set aside on 2026-09-29 (flies experiment log)
+on net ÷ risk. Read through the three outcomes, its 15 paper sessions (08-17..09-04) also say:
+
+- a miss cost about 1.1 times a completion, against 2.4 on 5-wide (−$292 / +$258 against −$256 /
+  +$106), so break-even completion fell from about 71% to 53%;
+- fees were 6% of winning gross against 14%;
+- strands were not all-or-nothing (19 full, 9 partial, 5 worthless), and 11 of 24 staged-salvage
+  cells beat holding, against 0 of 24 on 5-wide (flies backlog, "Staged salvage completion").
+
+Against that, completion fell from 78% to 60%. Net ÷ maximum risk was 6.4% against 10.5% over
+08-21..09-04 and −19.6% against −14.7% over 08-17..08-20. The quote history can settle it at real
+prices without running an arm.
+
+- *Grid, fixed now:* control's rules at `wing_width_strikes` 1 (5-wide, the baseline), 2, 3 and 4
+  (10, 15 and 20 points).
+  - **Everything else is control's:** the ticks, centre and side rule, the entry gates, and the
+    completion rule (`credit − fee_buffer` on the paper side, live's resting limit on the live-rules
+    side). The width is the one variable.
+  - **Nothing wider is replayed.** A far leg can leave the ±100-point window on a trend day, and a
+    replayed structure's legs are not declared held, so its quotes would be missing.
+  - **Missing quotes are reported, not dropped.** Every replay reports its missing-quote ticks per
+    width, and a session where an open leg lost its quotes is listed.
+- *Buying-power cap on the live-rules side scales with width:* $1,000 per 5 points, so $2,000 at
+  10-wide, $3,000 at 15 and $4,000 at 20. The paper side stays uncapped, as paper is.
+- *Salvage, a second stage, on widths of 10 and over:* `scripts/flies_stranded_replay.py`'s staged
+  completion. The completion limit relaxes from `credit − fee_buffer` to `credit + x` after T
+  minutes.
+  - x as a share of the width: 0, 2%, 5% and 10% (its 0 / 0.10 / 0.25 / 0.50 on 5-wide).
+  - T: 5, 15, 30, 45, 60 and 90 minutes.
+  - Read only for a width that passes the first stage, against that width's own no-salvage result,
+    with the 24 cells Holm-corrected.
+- *Measures, every width, paired per session against the 5-wide:*
+  - **Both reported side by side:** net per session, and net ÷ maximum risk (the sum of
+    `(width − credit) × 100` over entries, the buying power a live account holds).
+  - **Beside them:** entries, completion rate against its break-even, average completed and
+    stranded, strands full / partial / worthless, and fees and settlement as a share of winning
+    gross. On the live-rules side, cap refusals too.
+- *Decision rule:* a width advances to a declared paper arm (control plus `wing_width_strikes`,
+  landed at a boundary) only if two things hold over at least 20 sessions replayed out of sample:
+  - (a) its paired per-session net difference against the 5-wide has a one-sided 95% lower bound
+    above zero, Holm-corrected across the three widths; and
+  - (b) its net ÷ maximum risk is at least the 5-wide's over the same sessions.
+  - Passing (a) alone reads "pays more by risking more" and does not advance. Passing neither reads
+    "not shown". The live width changes only after that arm's own paper read and `live-shadow`
+    agreement.
+- *Out of sample:* every session recorded from 10-13 on. No width other than 5 has been replayed or
+  read on them.
+
 ## Phase 2 — the MEIC replay
 
 **Shape.** The same foundation: `core.quotehistory`, the same enrichment, MEIC's own entry and
@@ -235,3 +284,4 @@ disagree, the shared code moves to `cherrypick.core`, following core's own bar.
 | after Phase 1 validates | Phase 2 (MEIC) |
 | ~14 sessions out of sample | First tuning reads (credit floor, restack, start time), against their declared grids; an effect of ~$100 a session needs ~42 (gap 3) |
 | ≥20 sessions out of sample | Live tick cadence read (60 s vs 30 s vs 15 s), against its declared grid and decision rule |
+| ≥20 sessions out of sample | Wing-width read (5 / 10 / 15 / 20 at width-scaled caps), then the salvage grid on any width that passes |
