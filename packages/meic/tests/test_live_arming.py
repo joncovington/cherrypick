@@ -152,6 +152,7 @@ def test_a_held_lock_skips_the_tick(monkeypatch, capsys):
     _pin_config(monkeypatch)
     monkeypatch.setattr(live_loop._looplock, "acquire", lambda *a, **k: False)
     monkeypatch.setattr(live_loop, "readiness", lambda *a, **k: [])
+    monkeypatch.setattr(live_loop, "_designated_account", lambda: "1234")  # CI has no keyring backend
     assert live_loop.main(["--once"]) == 0
     assert json.loads(capsys.readouterr().out)["skipped"] == "another live tick is running"
 
