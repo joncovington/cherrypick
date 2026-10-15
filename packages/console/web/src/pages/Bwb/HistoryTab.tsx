@@ -3,6 +3,7 @@ import type { BwbCycleRow, TradingMode } from "@console/shared";
 import { useBwbHistory, useBwbMeta } from "../../lib/api";
 import { PnlCell, fmtMoney } from "../../components/DataTable";
 import { Pager, ScopeSelect, usePage } from "../../components/ScopeBar";
+import { ArmSelect } from "../../components/ArmSelect";
 import { HistoryTable } from "../../components/table/HistoryTable";
 import { useUrlDateRange } from "../../components/table/DateRange";
 import type { ColumnDef } from "../../components/table/columns";
@@ -165,7 +166,7 @@ export function HistoryTab({ mode = "paper" }: { mode?: TradingMode }) {
         dateBasis="closed"
         filters={
           <>
-            <ScopeSelect label="arm filter" value={arm} options={meta.data?.arms} onChange={setBook} allLabel="all arms" />
+            <ArmSelect module="bwb" value={arm} options={meta.data?.arms} onChange={setBook} />
             <ScopeSelect
               label="symbol filter"
               value={symbol}
