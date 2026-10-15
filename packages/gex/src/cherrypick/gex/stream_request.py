@@ -50,9 +50,19 @@ def regime_legs(symbols) -> list[str]:
 
 def write(symbols) -> Path:
     """Atomically (over)write this module's request file — delegated to core (write-then-rename, so a
-    concurrent reader in the streamer never sees a partial file)."""
+    concurrent reader in the streamer never sees a partial file).
+
+    ``entry_symbols=[]`` (2026-10-15): gex computes and records, and enters nothing. Its roster is
+    what the suite's same-index lint judges, and SPX beside XSP -- recorded together for MEIC's
+    replay -- is two instruments watched, not one directional bet held twice."""
     legs = regime_legs(symbols)
-    return _sr.write_request(_MODULE, symbols, legs=legs, history_days={leg: _HISTORY_DAYS for leg in legs})
+    return _sr.write_request(
+        _MODULE,
+        symbols,
+        legs=legs,
+        history_days={leg: _HISTORY_DAYS for leg in legs},
+        entry_symbols=[],
+    )
 
 
 def register(config: dict) -> None:

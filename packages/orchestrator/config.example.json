@@ -494,7 +494,9 @@
       "--stop"
     ],
     "auto_restart": true,
-    "stale_restart_seconds": 240
+    "stale_restart_seconds": 240,
+    "_session_start_note": "OPTIONAL, default 09:15 ET. When the watchdog starts the streamer on a trading day -- this check alone; every other session-gated check stays at 09:15. The watchdog ticks every interval_minutes, so the start lands up to one tick later. Not before the open is useful: equity options do not trade and the index level is static until 09:30, so the silence restart would loop.",
+    "session_start": "09:15"
   },
   "services": [
     {

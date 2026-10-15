@@ -1087,7 +1087,8 @@ def _check_producer(cfg: dict[str, Any], in_session: bool) -> list[Finding]:
             # the log rather than something to reconstruct afterwards.
             msg = f"running (off-hours; staleness not checked){_streamer_identity(status)}"
         else:
-            msg = "not running (off-hours; auto-start at the first in-session tick, 9:15 ET)"
+            start = timeutil.parse_hhmm(spec.get("session_start"), timeutil.NEAR_OPEN)
+            msg = f"not running (off-hours; auto-start at the first in-session tick, {start:%H:%M} ET)"
         return [Finding("streamer", OK, "Streamer", msg)]
     return _check_streamer_health("streamer", root, spec)
 
@@ -3045,7 +3046,10 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
 
     # Watchdog the standalone market-data producer (dormant until the cutover enables the top-level
     # `streamer` block; today MEIC still owns the streamer under modules.meic.streamer).
-    findings += _check_producer(cfg, in_session)
+    # The streamer's own start (`streamer.session_start`, 2026-10-15): it may come up before the
+    # 09:15 every other session check keys on, so quotes are warm well before the bell.
+    streamer_start = timeutil.parse_hhmm((cfg.get("streamer") or {}).get("session_start"), timeutil.NEAR_OPEN)
+    findings += _check_producer(cfg, timeutil.is_session_window(now, holidays, start=streamer_start))
 
     overall = OK
     for f in findings:

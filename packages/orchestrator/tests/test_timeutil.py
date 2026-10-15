@@ -47,6 +47,21 @@ def test_off_hours_not_in_session():
     assert timeutil.is_session_window(_et(2026, 7, 10, 3, 30)) is False
 
 
+def test_one_caller_can_start_its_window_earlier():
+    """The streamer's `session_start` (2026-10-15): 08:45 opens its window, and only its window."""
+    early = timeutil.parse_hhmm("08:45", timeutil.NEAR_OPEN)
+    dt = _et(2026, 7, 10, 8, 50)
+    assert timeutil.is_session_window(dt, start=early) is True
+    assert timeutil.is_session_window(dt) is False  # every other check still opens at 09:15
+    assert timeutil.is_session_window(_et(2026, 7, 11, 8, 50), start=early) is False  # a Saturday
+
+
+def test_an_unreadable_start_keeps_the_default():
+    assert timeutil.parse_hhmm(None, timeutil.NEAR_OPEN) == timeutil.NEAR_OPEN
+    assert timeutil.parse_hhmm("8.45", timeutil.NEAR_OPEN) == timeutil.NEAR_OPEN
+    assert timeutil.parse_hhmm("25:00", timeutil.NEAR_OPEN) == timeutil.NEAR_OPEN
+
+
 # --------------------------------------------------------------------------- the holiday source
 def test_load_holidays_returns_real_dates():
     """The regression this exists for: `load_holidays` used to scan MEIC's config for

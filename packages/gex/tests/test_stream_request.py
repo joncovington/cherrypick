@@ -20,6 +20,14 @@ def test_register_writes_deduped_upper_symbols(managed_home):
     assert payload["expirations"] == {}
 
 
+def test_gex_declares_that_it_enters_nothing(managed_home):
+    """2026-10-15: gex records SPX and XSP for MEIC's replay; the same-index lint judges what a module
+    ENTERS, and gex enters nothing. Shown to fail by dropping `entry_symbols=[]`: the key is absent."""
+    stream_request.register({"symbols": ["SPX", "XSP"]})
+    payload = json.loads((managed_home / "state" / "stream_requests" / "gex.json").read_text())
+    assert payload["symbols"] == ["SPX", "XSP"] and payload["entry_symbols"] == []
+
+
 def test_register_empty_symbols(managed_home):
     stream_request.register({})
     path = managed_home / "state" / "stream_requests" / "gex.json"
