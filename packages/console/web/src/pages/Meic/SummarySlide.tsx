@@ -28,12 +28,13 @@
  * Colour carries only the sign of a number (pos/neg), never a verdict — the package's tone rule
  * applied to pixels.
  */
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMeicSummary } from "../../lib/api";
 import type { MeicSummarySlice } from "@console/shared";
 import type { TradingMode } from "@console/shared";
 import type { MeicScope } from "./MeicTables";
+import { RANGES, type Range, fmtUsd, sessionLabel, TsCard, TsEmpty, Gauge, WinRateArcs as KitWinRateArcs } from "../../components/summary/kit";
 
 export interface MeicSummaryProps {
   /** The page's mode (the PaperLiveBadge toggle) and scope, from the manifest header. Defaults
@@ -47,52 +48,6 @@ export interface MeicSummaryProps {
   onDayStep: (delta: -1 | 1) => void;
   /** Whether the arrows can move at all (the manifest has a session list to step through). */
   canStepDay: boolean;
-}
-
-const RANGES = ["day", "week", "month", "year", "all"] as const;
-type Range = (typeof RANGES)[number];
-
-/* `+$1,580.00` — signed, grouped, whole-position dollars. The summary's own display format for
- * the hero and charts; the entries table keeps the suite's `fmtCash` vocabulary. */
-function fmtUsd(v: number): string {
-  const sign = v < 0 ? "-" : "+";
-  return `${sign}$${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-/* The window's session label, as the header's day select says it. An ISO date becomes
- * "Wednesday, October 7, 2026"; an open window (week/month/…) shows the reader's own label. */
-function sessionLabel(iso: string): string {
-  const d = new Date(`${iso}T12:00:00Z`);
-  return d.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
-}
-
-/* ---------------------------------------------------------------------------
- * Shared bits
- * ------------------------------------------------------------------------- */
-
-function TsCard({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="ts-card">
-      <header className="ts-card-head">
-        <h3>{title}</h3>
-        {aside}
-      </header>
-      {children}
-    </section>
-  );
-}
-
-/* A card whose payload has nothing for it. Says why, draws nothing — a zero would read as
- * "traded and broke even", which is a different claim from "no rows in this window". */
-function TsEmpty({ what }: { what: string }) {
-  return (
-    <section className="ts-card">
-      <header className="ts-card-head">
-        <h3>{what}</h3>
-      </header>
-      <p className="ts-empty">no rows in this window</p>
-    </section>
-  );
 }
 
 /* ---------------------------------------------------------------------------
@@ -132,142 +87,29 @@ function NetCard({ s }: { s: MeicSummarySlice }) {
  * misreports its own percentage.
  * ------------------------------------------------------------------------- */
 
-const G = { min: -50, max: 50, cx: 90, cy: 84, r: 70, stroke: 13 };
-
-function gpolar(r: number, theta: number): [number, number] {
-  const rad = (theta * Math.PI) / 180;
-  return [G.cx - r * Math.cos(rad), G.cy - r * Math.sin(rad)];
-}
-
-function gaugeArc(a: number, b: number): string {
-  const [x1, y1] = gpolar(G.r, a);
-  const [x2, y2] = gpolar(G.r, b);
-  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${G.r} ${G.r} 0 0 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
-}
-
-function thetaOf(v: number): number {
-  const t = Math.min(Math.max(v, G.min), G.max);
-  return ((t - G.min) / (G.max - G.min)) * 180;
-}
-
 function CaptureGauge({ s }: { s: MeicSummarySlice }) {
-  const raw = s.captureRawPct;
-  if (raw === null) {
-    return <TsEmpty what="premium capture" />;
-  }
-  const value = s.capturePct ?? 0;
-  const zero = thetaOf(0);
-  const at = thetaOf(value);
-  const [from, to] = value >= 0 ? [zero, at] : [at, zero];
-  const [nx, ny] = gpolar(G.r - 18, at);
-  return (
-    <TsCard title="premium capture">
-      <svg className="ts-gauge" viewBox="0 0 180 104" role="img" aria-label={`capture ${raw.toFixed(1)}%`}>
-        <path d={gaugeArc(0, 180)} className="ts-track" strokeWidth={G.stroke} fill="none" strokeLinecap="round" />
-        <path d={gaugeArc(from, to)} className={value >= 0 ? "ts-arc-pos" : "ts-arc-neg"} strokeWidth={G.stroke} fill="none" strokeLinecap="round" />
-        <line x1={G.cx} y1={G.cy} x2={nx} y2={ny} className="ts-needle" strokeWidth={2} />
-        <circle cx={G.cx} cy={G.cy} r={3.5} className="ts-needle" />
-        <text x={8} y={100} className="ts-tick">{G.min}</text>
-        <text x={168} y={100} className="ts-tick">{G.max}</text>
-      </svg>
-      <div className={`ts-gauge-value ${raw >= 0 ? "ts-pos" : "ts-neg"}`}>{raw.toFixed(1)}%</div>
-      <p className="ts-muted">of premium sold kept after fees</p>
-    </TsCard>
-  );
+  return <Gauge title="premium capture" rawPct={s.captureRawPct} min={-50} max={50} caption="of premium sold kept after fees" />;
 }
-
-/* ---------------------------------------------------------------------------
- * Return-on-risk gauge — the capture gauge's sibling, domain −100..+100: a defined-risk
- * condor's return lives inside its own worst case, so the scale ends where the position can.
- * Needle at the value, arc filling from the zero at centre (mint right, salmon left); the
- * needle clamps to the domain, the label shows the reader's UNclamped figure — a big day pins
- * the rail without misreporting itself. Beside the value, the denominator that made it: the
- * window's capital at risk, and the settled-row coverage, so "9/10" is never read as "10/10".
- * The figure is the review fact set's on_max_risk, mirrored server-side (readers/meic.ts) and
- * pinned to it by test/meic-summary-reconcile.test.ts.
- * ------------------------------------------------------------------------- */
 
 function ReturnOnRiskGauge({ s }: { s: MeicSummarySlice }) {
   // `!r` covers a payload from an OLDER server (a field the reader had not grown yet): the card
   // says "nothing" rather than crashing the slide while the build and the process disagree.
   const r = s.returnOnRisk;
-  if (!r || r.rorRawPct === null) return <TsEmpty what="return on risk" />;
-  const value = r.rorPct ?? 0;
-  const zero = thetaOf(0);
-  const at = thetaOf(value);
-  const [from, to] = value >= 0 ? [zero, at] : [at, zero];
-  const [nx, ny] = gpolar(G.r - 18, at);
+  if (!r) return <TsEmpty what="return on risk" />;
   return (
-    <TsCard title="return on risk">
-      <svg className="ts-gauge" viewBox="0 0 180 104" role="img" aria-label={`return on risk ${r.rorRawPct.toFixed(1)}%`}>
-        <path d={gaugeArc(0, 180)} className="ts-track" strokeWidth={G.stroke} fill="none" strokeLinecap="round" />
-        <path
-          d={gaugeArc(from, to)}
-          className={value >= 0 ? "ts-arc-pos" : "ts-arc-neg"}
-          strokeWidth={G.stroke}
-          fill="none"
-          strokeLinecap="round"
-        />
-        <line x1={G.cx} y1={G.cy} x2={nx} y2={ny} className="ts-needle" strokeWidth={2} />
-        <circle cx={G.cx} cy={G.cy} r={3.5} className="ts-needle" />
-        <text x={8} y={100} className="ts-tick">−100</text>
-        <text x={160} y={100} className="ts-tick">+100</text>
-      </svg>
-      <div className={`ts-gauge-value ${r.rorRawPct >= 0 ? "ts-pos" : "ts-neg"}`}>{r.rorRawPct.toFixed(1)}%</div>
-      <p className="ts-muted">
-        of {r.capitalAtRisk === null ? "—" : fmtUsd(r.capitalAtRisk).replace("+$", "$")} capital at risk · {r.coverage ??
-        "n/r"} settled rows
-      </p>
-    </TsCard>
-  );
-}
-
-/* ---------------------------------------------------------------------------
- * Win-rate arcs — two concentric radial bars, outer = sessions with positive net, inner = the
- * window's settled trades. Both fractions come from the payload's own counts.
- * ------------------------------------------------------------------------- */
-
-function Ring({ r, fraction, className }: { r: number; fraction: number; className: string }) {
-  const c = 2 * Math.PI * r;
-  return (
-    <>
-      <circle cx={70} cy={70} r={r} className="ts-track" strokeWidth={11} fill="none" />
-      <circle
-        cx={70} cy={70} r={r}
-        className={className}
-        strokeWidth={11} fill="none" strokeLinecap="round"
-        strokeDasharray={`${(fraction * c).toFixed(2)} ${c.toFixed(2)}`}
-        transform="rotate(-90 70 70)"
-      />
-    </>
+    <Gauge
+      title="return on risk"
+      rawPct={r.rorRawPct}
+      min={-100}
+      max={100}
+      caption={`of ${r.capitalAtRisk === null ? "—" : fmtUsd(r.capitalAtRisk).replace("+$", "$")} capital at risk · ${r.coverage ?? "n/r"} settled rows`}
+    />
   );
 }
 
 function WinRateArcs({ s }: { s: MeicSummarySlice }) {
   const { hero } = s;
-  const tradesOf = hero.trades;
-  const daysOf = hero.daysWon + hero.daysLost;
-  if (tradesOf === 0 && daysOf === 0) return <TsEmpty what="win rate" />;
-  const dayPct = daysOf > 0 ? (hero.daysWon / daysOf) * 100 : 0;
-  const tradePct = tradesOf > 0 ? (hero.wins / tradesOf) * 100 : 0;
-  return (
-    <TsCard title="win rate">
-      <div className="ts-rings">
-        <svg viewBox="0 0 140 140" role="img" aria-label={`sessions ${dayPct.toFixed(1)}%, trades ${tradePct.toFixed(1)}%`}>
-          <Ring r={54} fraction={dayPct / 100} className="ts-ring-days" />
-          <Ring r={36} fraction={tradePct / 100} className="ts-ring-entries" />
-        </svg>
-        <div className="ts-rings-center">
-          <span className={dayPct >= 50 ? "ts-pos" : "ts-neg"}>{dayPct.toFixed(0)}%</span>
-          <span className="ts-muted">sessions</span>
-        </div>
-      </div>
-      <dl className="ts-legend">
-        <div><span className="ts-swatch ts-ring-days" /> sessions {hero.daysWon}/{daysOf}</div>
-        <div><span className="ts-swatch ts-ring-entries" /> trades {hero.wins}/{tradesOf}</div>
-      </dl>
-    </TsCard>
-  );
+  return <KitWinRateArcs daysWon={hero.daysWon} days={hero.daysWon + hero.daysLost} wins={hero.wins} trades={hero.trades} />;
 }
 
 /* ---------------------------------------------------------------------------

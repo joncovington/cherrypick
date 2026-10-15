@@ -19,6 +19,7 @@ import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { ModuleFrame } from "../ModuleFrame";
 import { EARNINGS_SLIDES, type EarningsSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
+import { ModuleSummary } from "../../components/summary/ModuleSummary";
 
 interface UpcomingRow {
   symbol: string;
@@ -109,6 +110,7 @@ export function EarningsLightbox({ slide }: { slide: string }) {
   const t = data?.totals;
 
   const slides: Array<SlideDef & { id: EarningsSlideId }> = [
+    { id: "summary", label: EARNINGS_LABEL.summary, render: () => <ModuleSummary module="earnings" mode={mode} /> },
     {
       id: "session",
       label: EARNINGS_LABEL.session,

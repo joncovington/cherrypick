@@ -17,6 +17,7 @@ import { ModuleFrame } from "../ModuleFrame";
 import { PMCC_SLIDES, type PmccSlideId } from "../navGroups";
 import { PmccSession } from "../../pages/Pmcc/PmccSession";
 import type { SlideDef } from "../types";
+import { ModuleSummary } from "../../components/summary/ModuleSummary";
 
 const PMCC_LABEL = Object.fromEntries(PMCC_SLIDES.map((s) => [s.id, s.label])) as Record<PmccSlideId, string>;
 
@@ -32,6 +33,7 @@ export function PmccLightbox({ slide }: { slide: string }) {
     data?.today.lastIteration == null ? "no-data" : data.today.lastIteration.ageSeconds < 900 ? "live" : "idle";
 
   const slides: Array<SlideDef & { id: PmccSlideId }> = [
+    { id: "summary", label: PMCC_LABEL.summary, render: () => <ModuleSummary module="pmcc" mode={"paper"} /> },
     { id: "session", label: PMCC_LABEL.session, render: () => <PmccSession data={data} loading={isLoading} symbol={symbol} /> },
     {
       id: "decisions",

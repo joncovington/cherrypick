@@ -8,6 +8,7 @@ import { readDecisions } from "../readers/decisions.js";
 import { readFliesArmGuide, readMeicProfileGuide } from "../readers/experimentGuide.js";
 import { readOccupancy } from "../readers/occupancy.js";
 import { readRetiredArms } from "../readers/armStatus.js";
+import { SUMMARY_READERS } from "../readers/summary/index.js";
 import {
   readMeic,
   readMeicCosts,
@@ -154,6 +155,17 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     // A page that is not a positive integer is the first page; the reader clamps the top.
     const entryPage = typeof rawPage === "string" && /^[1-9][0-9]*$/.test(rawPage) ? Number(rawPage) : undefined;
     return readMeicSummary(config, parseMode(req.query), parseMeicScope(req.query), typeof q["range"] === "string" ? q["range"] : undefined, day, entryPage);
+  });
+  // Every other module's simplified-view summary: one mechanism, each module's own reader and
+  // KPIs (readers/summary/). An unknown module is a 404, never an empty summary.
+  app.get("/api/summary/:module", async (req, reply) => {
+    const { module } = req.params as { module: string };
+    const reader = Object.prototype.hasOwnProperty.call(SUMMARY_READERS, module) ? SUMMARY_READERS[module] : undefined;
+    if (reader === undefined) return reply.code(404).send({ error: `no summary for ${module}` });
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const rawDay = q["date"];
+    const day = typeof rawDay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawDay) ? rawDay : null;
+    return reader(config, { mode: parseMode(req.query), range: typeof q["range"] === "string" ? q["range"] : undefined, day });
   });
   app.get("/api/meic/scope", async (req) => readMeicScope(config, parseMode(req.query), parseMeicScope(req.query).era));
   // Scope (era x symbol x profile) reaches the forest, so the header's arm/symbol/era controls

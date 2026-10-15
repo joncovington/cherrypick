@@ -13,6 +13,7 @@ import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { ModuleFrame } from "../ModuleFrame";
 import { CALENDARS_SLIDES, type CalendarsSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
+import { ModuleSummary } from "../../components/summary/ModuleSummary";
 
 const CALENDARS_LABEL = Object.fromEntries(CALENDARS_SLIDES.map((s) => [s.id, s.label])) as Record<CalendarsSlideId, string>;
 
@@ -31,6 +32,7 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
   const absent = data !== undefined && !data.dbPresent;
 
   const slides: Array<SlideDef & { id: CalendarsSlideId }> = [
+    { id: "summary", label: CALENDARS_LABEL.summary, render: () => <ModuleSummary module="calendars" mode={"paper"} /> },
     { id: "session", label: CALENDARS_LABEL.session, render: () => <CalendarsSession data={data} loading={isLoading} /> },
     {
       id: "plan",

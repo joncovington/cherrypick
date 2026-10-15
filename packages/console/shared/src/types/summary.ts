@@ -1,0 +1,107 @@
+import type { TradingMode } from "./status.js";
+
+/**
+ * A module's simplified-view summary (`GET /api/summary/:module`): the MEIC summary's pattern,
+ * generalised as a MECHANISM. What fills it is each module's own — its reader picks its KPIs, its
+ * gauges and its breakdowns in its own vocabulary (capture means nothing to a legged flies book,
+ * cash deployed is contango's alone), so there is still no central summary page. MEIC keeps its
+ * own richer slide (`MeicSummarySlice`).
+ *
+ * Money is the suite's one layout, computed server-side from the module's own history reader so
+ * the summary and the module's history table cannot disagree: net = gross − every cost line, each
+ * cost line labelled as the module records it (fees; settlement; slippage where it is CHARGED as
+ * a cost). A cost a ledger never recorded is `null` (n/r), never zero.
+ */
+
+export type SummaryRange = "day" | "week" | "month" | "year" | "all";
+
+/** A figure's unit, so the component formats it and the reader never sends a string. */
+export type SummaryUnit = "usd" | "pct" | "count" | "ratio" | "price" | "days";
+
+export interface SummaryCost {
+  /** As the module names it: "fees", "settlement", "slippage (charged)". */
+  label: string;
+  /** Positive = a cost; null = not recorded (n/r). */
+  amount: number | null;
+  note?: string;
+}
+
+export interface SummaryHero {
+  net: number;
+  gross: number;
+  /** Every cost subtracted from gross to reach net, once each. */
+  costs: SummaryCost[];
+  /** Settled (resolved) trades in the window, and how many of them netted positive. */
+  trades: number;
+  wins: number;
+  sessions: number;
+  /** Sessions whose summed net was positive / negative. */
+  daysWon: number;
+  daysLost: number;
+  /** Positions still open in the window's scope (none of their money is in the figures above). */
+  open: number;
+  /** Optional premium line under the hero ("premium collected", "debit paid", "cash deployed"). */
+  basis?: { label: string; amount: number } | null;
+}
+
+export interface SummaryTile {
+  label: string;
+  value: number | null;
+  unit: SummaryUnit;
+  /** One line under the value: the denominator, the sample, the caveat. */
+  note?: string;
+  /** Tone follows the value's sign only; set false for a figure whose sign is not good/bad. */
+  signed?: boolean;
+}
+
+export interface SummaryGauge {
+  title: string;
+  /** The unclamped percentage for the label; null = n/r. */
+  rawPct: number | null;
+  /** The needle's domain, e.g. -50..50 for capture, -100..100 for return on risk. */
+  min: number;
+  max: number;
+  caption: string;
+}
+
+export interface SummaryBreakdownRow {
+  bucket: string;
+  trades: number;
+  net: number;
+  winPct: number | null;
+  avgNet: number | null;
+}
+
+export interface SummaryBreakdown {
+  title: string;
+  /** The bucket column's heading ("entry hour", "strategy", "symbol"). */
+  column: string;
+  rows: SummaryBreakdownRow[];
+}
+
+export interface SummaryArmRow {
+  arm: string;
+  trades: number;
+  net: number;
+  winPct: number | null;
+  /** True when the module's config retires this arm (the console's retired-arms rule). */
+  retired?: boolean;
+}
+
+export interface ModuleSummarySlice {
+  module: string;
+  mode: TradingMode;
+  /** The window the numbers answer for, as summaryWindow resolved it. */
+  window: { from: string | null; to: string | null; label: string };
+  /** The session the page is on, and its neighbours with rows, for the day arrows. */
+  session: { day: string | null; prev: string | null; next: string | null };
+  /** The module's one-line description of what a "trade" is here ("a legged fly", "a weekly double calendar"). */
+  unit: string;
+  hero: SummaryHero;
+  tiles: SummaryTile[];
+  gauges: SummaryGauge[];
+  breakdowns: SummaryBreakdown[];
+  arms: SummaryArmRow[];
+  /** Plain-language caveats the module wants stated (e.g. "paper fills at mid; slippage charged"). */
+  notes: string[];
+}

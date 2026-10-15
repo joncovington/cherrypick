@@ -13,6 +13,7 @@ import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { ModuleFrame } from "../ModuleFrame";
 import { CURVE_SLIDES, type CurveSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
+import { ModuleSummary } from "../../components/summary/ModuleSummary";
 
 const CURVE_LABEL = Object.fromEntries(CURVE_SLIDES.map((s) => [s.id, s.label])) as Record<CurveSlideId, string>;
 
@@ -27,6 +28,7 @@ export function CurveLightbox({ slide }: { slide: string }) {
   const todayRegime = data?.regimeSeries.find((r) => r.tradeDate === data.session);
 
   const slides: Array<SlideDef & { id: CurveSlideId }> = [
+    { id: "summary", label: CURVE_LABEL.summary, render: () => <ModuleSummary module="curve" mode={"paper"} /> },
     { id: "session", label: CURVE_LABEL.session, render: () => <CurveSession data={data} loading={isLoading} /> },
     {
       id: "regime",

@@ -9,6 +9,7 @@ import { readOnlyDb, withReadOnlyDb, hasColumn, hasTable, num, str, armColumnOf,
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
+import { summaryWindow } from "./summary/common.js";
 import { cachedQuote } from "./streamcache.js";
 import { equityCurve, periodKey, riskSummary, stdev } from "../analytics/riskMetrics.js";
 
@@ -1679,36 +1680,7 @@ export type MeicSummaryRange = (typeof MEIC_SUMMARY_RANGES)[number];
  * view of Friday's session must not answer "no trades" — and an unknown range name falls back to
  * it rather than silently widening.
  */
-export function summaryWindow(range: string | undefined, day: string | null): { from: string | null; to: string | null; label: string } {
-  // The wider ranges are the calendar week/month/year CONTAINING the page's session, so the day
-  // arrows move them too; with no session resolved they fall back to ET today.
-  const nowEt = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  const base = day ?? iso(new Date(Date.UTC(nowEt.getFullYear(), nowEt.getMonth(), nowEt.getDate())));
-  const [y, m, d] = base.split("-").map(Number) as [number, number, number];
-  const monday = new Date(Date.UTC(y, m - 1, d));
-  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
-  const sunday = new Date(monday);
-  sunday.setUTCDate(monday.getUTCDate() + 6);
-  switch (range) {
-    case "week":
-      return { from: iso(monday), to: iso(sunday), label: `week of ${iso(monday)}` };
-    case "month":
-      return {
-        from: `${base.slice(0, 8)}01`,
-        to: iso(new Date(Date.UTC(y, m, 0))),
-        label: `month of ${base.slice(0, 7)}`,
-      };
-    case "year":
-      return { from: `${base.slice(0, 4)}-01-01`, to: `${base.slice(0, 4)}-12-31`, label: base.slice(0, 4) };
-    case "all":
-      return { from: null, to: null, label: "all time" };
-    default:
-      return day === null
-        ? { from: null, to: null, label: "all time" }
-        : { from: day, to: day, label: "day" };
-  }
-}
+export { summaryWindow };
 
 function toNum(v: unknown): number | null {
   if (v === null || v === undefined) return null;

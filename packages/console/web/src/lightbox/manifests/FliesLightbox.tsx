@@ -33,6 +33,7 @@ import { FliesSession } from "../../pages/Flies/FliesSession";
 import { AgentSlide } from "../../pages/Flies/AgentSlide";
 import type { SlideDef } from "../types";
 import { ArmSelect } from "../../components/ArmSelect";
+import { ModuleSummary } from "../../components/summary/ModuleSummary";
 
 /**
  * Labels come from the nav declaration, not from here. The rail is built from that file and the
@@ -130,6 +131,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
   };
 
   const slides: Array<SlideDef & { id: FliesSlideId }> = [
+    { id: "summary", label: FLIES_LABEL.summary, render: () => <ModuleSummary module="flies" mode={mode} /> },
     {
       id: "session",
       label: FLIES_LABEL.session,

@@ -3843,6 +3843,34 @@ td > .desk-refusal-reason {
 }
 
 
+/* The module summaries' KPI tiles, the unit line and the notes (components/summary/ModuleSummary). */
+.ts-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.9rem 1.2rem;
+}
+.ts-tile-label {
+  font-size: 11px;
+  text-transform: lowercase;
+}
+.ts-tile-value {
+  font-family: var(--num-face);
+  font-size: 20px;
+  margin-top: 0.15rem;
+}
+.ts-tile-note {
+  font-size: 11px;
+  margin-top: 0.1rem;
+}
+.ts-unit {
+  font-size: 12px;
+  margin: 0 0 0.6rem;
+}
+.ts-notes {
+  font-size: 12px;
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+}
 .ts-row {
   display: grid;
   gap: 14px;

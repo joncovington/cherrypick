@@ -66,6 +66,7 @@ export interface ModuleNavDecl {
  */
 export const FLIES_SLIDES = [
   { id: "session", label: "session" },
+  { id: "summary", label: "summary" },
   { id: "forest", label: "forest" },
   { id: "timeline", label: "timeline" },
   { id: "openingrange", label: "opening range" },
@@ -135,6 +136,7 @@ export type MeicSlideId = (typeof MEIC_SLIDES)[number]["id"];
  */
 export const BWB_SLIDES = [
   { id: "session", label: "session" },
+  { id: "summary", label: "summary" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
   { id: "vol", label: "entry vol" },
@@ -158,6 +160,7 @@ export type BwbSlideId = (typeof BWB_SLIDES)[number]["id"];
  */
 export const EARNINGS_SLIDES = [
   { id: "session", label: "session" },
+  { id: "summary", label: "summary" },
   { id: "decisions", label: "decisions" },
   { id: "strategies", label: "strategies" },
   { id: "screening", label: "screening" },
@@ -178,6 +181,7 @@ export type EarningsSlideId = (typeof EARNINGS_SLIDES)[number]["id"];
  */
 export const CURVE_SLIDES = [
   { id: "session", label: "session" },
+  { id: "summary", label: "summary" },
   { id: "regime", label: "regime" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
@@ -199,6 +203,7 @@ export type CurveSlideId = (typeof CURVE_SLIDES)[number]["id"];
  */
 export const CONTANGO_SLIDES = [
   { id: "session", label: "session" },
+  { id: "summary", label: "summary" },
   { id: "regime", label: "regime" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
@@ -219,6 +224,7 @@ export type ContangoSlideId = (typeof CONTANGO_SLIDES)[number]["id"];
  */
 export const PMCC_SLIDES = [
   { id: "session", label: "session" },
+  { id: "summary", label: "summary" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
   { id: "performance", label: "performance" },
@@ -240,6 +246,7 @@ export type PmccSlideId = (typeof PMCC_SLIDES)[number]["id"];
  */
 export const CALENDARS_SLIDES = [
   { id: "session", label: "session" },
+  { id: "summary", label: "summary" },
   { id: "plan", label: "plan" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
@@ -352,9 +359,9 @@ export const CONFIG_SLIDES: readonly NavSlide[] = [
 export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   flies: {
     slides: FLIES_SLIDES,
-    simple: ["session", "forest", "performance", "positions", "guide"],
+    simple: ["summary", "session", "forest", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "forest", "timeline"] },
+      { label: "today", ids: ["session", "summary", "forest", "timeline"] },
       {
         label: "evidence",
         ids: ["attempts", "decisions", "gates", "livegap", "selector", "openingrange", "regime", "agent"],
@@ -387,9 +394,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   bwb: {
     slides: BWB_SLIDES,
-    simple: ["session", "performance", "positions", "guide"],
+    simple: ["summary", "session", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session"] },
+      { label: "today", ids: ["session", "summary"] },
       { label: "evidence", ids: ["decisions", "arms", "vol", "livegap"] },
       { label: "study", ids: ["performance", "advisor"] },
       { label: "tables", ids: ["positions", "history"] },
@@ -399,9 +406,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   earnings: {
     slides: EARNINGS_SLIDES,
-    simple: ["session", "upcoming", "performance", "positions"],
+    simple: ["summary", "session", "upcoming", "performance", "positions"],
     groups: [
-      { label: "today", ids: ["session", "upcoming"] },
+      { label: "today", ids: ["session", "summary", "upcoming"] },
       { label: "evidence", ids: ["decisions", "screening", "strategies"] },
       { label: "study", ids: ["performance", "advisor"] },
       { label: "tables", ids: ["positions", "history"] },
@@ -410,9 +417,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   curve: {
     slides: CURVE_SLIDES,
-    simple: ["session", "regime", "performance", "positions", "guide"],
+    simple: ["summary", "session", "regime", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "regime"] },
+      { label: "today", ids: ["session", "summary", "regime"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "costs", "advisor"] },
       { label: "tables", ids: ["positions", "history"] },
@@ -422,9 +429,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   contango: {
     slides: CONTANGO_SLIDES,
-    simple: ["session", "regime", "performance", "positions", "guide"],
+    simple: ["summary", "session", "regime", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "regime"] },
+      { label: "today", ids: ["session", "summary", "regime"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "costs"] },
       { label: "tables", ids: ["positions", "history"] },
@@ -434,9 +441,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   calendars: {
     slides: CALENDARS_SLIDES,
-    simple: ["session", "plan", "performance", "positions", "guide"],
+    simple: ["summary", "session", "plan", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "plan"] },
+      { label: "today", ids: ["session", "summary", "plan"] },
       { label: "evidence", ids: ["decisions", "arms", "policies"] },
       { label: "study", ids: ["performance", "advisor"] },
       { label: "tables", ids: ["positions", "history"] },
@@ -446,9 +453,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   pmcc: {
     slides: PMCC_SLIDES,
-    simple: ["session", "performance", "positions", "guide"],
+    simple: ["summary", "session", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session"] },
+      { label: "today", ids: ["session", "summary"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "costs", "advisor"] },
       { label: "tables", ids: ["positions", "tracker", "history"] },
