@@ -32,6 +32,7 @@ import { FLIES_SLIDES, type FliesSlideId } from "../navGroups";
 import { FliesSession } from "../../pages/Flies/FliesSession";
 import { AgentSlide } from "../../pages/Flies/AgentSlide";
 import type { SlideDef } from "../types";
+import { ArmSelect } from "../../components/ArmSelect";
 
 /**
  * Labels come from the nav declaration, not from here. The rail is built from that file and the
@@ -316,12 +317,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
       }
       headerControls={
         <>
-          <select className="text-input" value={arm ?? ""} onChange={(e) => setArm(e.target.value === "" ? null : e.target.value)} aria-label="arm filter">
-            <option value="">all arms</option>
-            {meta.data?.arms.map((armName) => (
-              <option key={armName} value={armName}>{armName}</option>
-            ))}
-          </select>
+          <ArmSelect module="flies" value={arm} options={meta.data?.arms} onChange={setArm} />
           {(meta.data?.symbols.length ?? 0) > 1 && (
             <select className="text-input" value={symbol ?? ""} onChange={(e) => setSymbol(e.target.value === "" ? null : e.target.value)} aria-label="symbol filter">
               <option value="">all symbols</option>

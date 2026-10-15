@@ -8,6 +8,7 @@ import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { ScopeSelect, EraSelect, LoopPill } from "../../components/ScopeBar";
+import { ArmSelect } from "../../components/ArmSelect";
 import { ModuleIntegrityStrip } from "../../components/ModuleIntegrityStrip";
 import { MeicDeepCards } from "../../pages/Meic/MeicDeepCards";
 import { MeicDivergenceCard } from "../../pages/Meic/MeicDivergenceCard";
@@ -318,7 +319,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
             </select>
           )}
           <ScopeSelect label="symbol" value={symbol} options={scope.data?.symbols} onChange={setSymbol} allLabel="all symbols" />
-          <ScopeSelect label="arm" value={profile} options={scope.data?.arms} onChange={setProfile} allLabel="all arms" />
+          <ArmSelect module="meic" label="arm" value={profile} options={scope.data?.arms} onChange={setProfile} />
           <EraSelect value={era} eras={scope.data?.eras} currentEra={scope.data?.currentEra} onChange={setEra} />
           {l?.ivRank != null && <span className="chip">IV rank {fmtIvr(l.ivRank)}</span>}
           {l?.underlyingPrice != null && <span className="chip">{l.underlyingPrice.toFixed(2)}</span>}

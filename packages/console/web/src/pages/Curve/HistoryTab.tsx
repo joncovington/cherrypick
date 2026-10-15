@@ -3,6 +3,7 @@ import type { CurveCycleRow } from "@console/shared";
 import { useCurveHistory, useCurveMeta } from "../../lib/api";
 import { fmtNum } from "../../components/DataTable";
 import { Pager, ScopeSelect, usePage } from "../../components/ScopeBar";
+import { ArmSelect } from "../../components/ArmSelect";
 import { TradeTotalsChip, tradeMoneyColumns } from "../../components/TradeMoney";
 import { HistoryTable } from "../../components/table/HistoryTable";
 import { useUrlDateRange } from "../../components/table/DateRange";
@@ -85,7 +86,7 @@ export function HistoryTab() {
         dateBasis="closed"
         filters={
           <>
-            <ScopeSelect label="arm filter" value={arm} options={meta.data?.arms} onChange={setArm} allLabel="all arms" />
+            <ArmSelect module="curve" value={arm} options={meta.data?.arms} onChange={setArm} />
             <ScopeSelect
               label="symbol filter"
               value={symbol}
