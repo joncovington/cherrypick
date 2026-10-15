@@ -26,7 +26,7 @@ function WorstCaseTile({ open, worstNow, peak, peakAt }: { open: number; worstNo
       label="worst case · peak"
       value={fmtMoney(worstNow)}
       tone={worstNow > 0 ? "neg" : "dim"}
-      to="/live/today"
+      to="/live/flies"
       toLabel="the live pilot's exposure against its cap"
       span={4}
       title={

@@ -49,6 +49,28 @@ describe("the flies nav declaration", () => {
   });
 });
 
+describe("the live nav declaration", () => {
+  // 2026-10-15: each live loop's tab carries its module's name; flies' used to be `today`. A future
+  // all-loops summary page may take `today` back -- this test then fails until the alias goes.
+  const decl = NAV_DECL.live!;
+
+  it("names each live loop for its module, loops before manage", () => {
+    expect(navSlideIds("live")).toEqual(["flies", "meic", "manage"]);
+  });
+
+  it("sends an old /live/today link to the flies tab", () => {
+    expect(resolveSlide("live", "today", decl.slides)).toBe("flies");
+  });
+
+  it("every legacy id points at a tab that exists, and shadows none", () => {
+    const ids = new Set(navSlideIds("live"));
+    for (const [old, replacement] of Object.entries(decl.legacy ?? {})) {
+      expect(ids.has(replacement)).toBe(true);
+      expect(ids.has(old)).toBe(false);
+    }
+  });
+});
+
 describe("resolveSlide", () => {
   const slides = NAV_DECL.flies!.slides;
 

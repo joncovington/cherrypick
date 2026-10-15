@@ -269,10 +269,12 @@ export const GEX_SLIDES = [
 
 export type GexSlideId = (typeof GEX_SLIDES)[number]["id"];
 
+// Each live loop's tab named for its module (2026-10-15; flies' was `today`), the loops first and the
+// account-wide manage evaluation after them.
 export const LIVE_SLIDES = [
-  { id: "today", label: "today" },
-  { id: "manage", label: "manage" },
+  { id: "flies", label: "flies" },
   { id: "meic", label: "meic" },
+  { id: "manage", label: "manage" },
 ] as const satisfies readonly NavSlide[];
 
 export const REPORTS_SLIDES = [
@@ -444,7 +446,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
       { label: "tables", ids: ["birdseye", "trades", "spreads", "voloi"] },
     ],
   },
-  live: { slides: LIVE_SLIDES },
+  live: { slides: LIVE_SLIDES, legacy: { today: "flies" } },
   charts: { slides: CHARTS_SLIDES },
   reports: { slides: REPORTS_SLIDES },
   compare: { slides: COMPARE_SLIDES },

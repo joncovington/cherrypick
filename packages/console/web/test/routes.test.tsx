@@ -187,7 +187,7 @@ describe("the suite surfaces are on the frame", () => {
     ["/gex", "GEX / gex"],
     ["/flow", "Options flow / today"],
     ["/flow/spreads", "Options flow / spreads"],
-    ["/live", "Live / today"],
+    ["/live", "Live / flies"],
     ["/reports/eod", "Reports / eod"],
     ["/reports", "Reports / morning"],
     ["/compare", "Compare / arms"],

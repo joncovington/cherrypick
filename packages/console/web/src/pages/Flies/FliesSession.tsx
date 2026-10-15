@@ -275,7 +275,7 @@ export function FliesSession({
 
       <StatTile
         label="live pilot"
-        to="/live/today"
+        to="/live/flies"
         toLabel="the live pilot's day: arming, orders and fills"
         value={lv === undefined ? null : liveTrades > 0 && liveNet !== null ? fmtMoney(liveNet) : armedHere ? "armed" : "off"}
         tone={liveTrades > 0 && liveNet !== null ? (liveNet >= 0 ? "pos" : "neg") : "dim"}

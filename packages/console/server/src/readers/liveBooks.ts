@@ -36,7 +36,7 @@ export const LIVE_BOOKS: readonly Spec[] = [
   {
     module: "flies",
     dir: "fliesDir",
-    to: "/live/today",
+    to: "/live/flies",
     read: (db) => {
       if (!tableExists(db, "fly_positions")) return NONE;
       const counts = db
