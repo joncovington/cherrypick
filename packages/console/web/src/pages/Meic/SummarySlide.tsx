@@ -101,7 +101,8 @@ function TsEmpty({ what }: { what: string }) {
 
 function NetCard({ s }: { s: MeicSummarySlice }) {
   const { hero } = s;
-  const drag = hero.gross > 0 ? hero.fees / hero.gross : null;
+  // Fee drag is fees ÷ premium collected (the suite's definition), so a losing window still has one.
+  const drag = hero.credit > 0 ? hero.fees / hero.credit : null;
   const label = s.window.label === "day" && s.window.from !== null ? sessionLabel(s.window.from) : s.window.label;
   return (
     <TsCard title="net p&l" aside={<span className="ts-muted">{label}</span>}>
@@ -109,7 +110,14 @@ function NetCard({ s }: { s: MeicSummarySlice }) {
       <dl className="ts-kv">
         <div><dt>gross captured</dt><dd className="ts-pos">{fmtUsd(hero.gross)}</dd></div>
         <div><dt>fees</dt><dd className="ts-neg">−{fmtUsd(hero.fees).slice(1)}</dd></div>
-        <div><dt>settlement</dt><dd className="ts-neg">−{fmtUsd(hero.settlement).slice(1)}</dd></div>
+        <div>
+          <dt>settlement</dt>
+          {hero.settlement === null ? (
+            <dd className="ts-muted" title="a settled trade in this window never recorded its settlement split; it is inside fees">n/r</dd>
+          ) : (
+            <dd className="ts-neg">−{fmtUsd(hero.settlement).slice(1)}</dd>
+          )}
+        </div>
         <div><dt>open risk</dt><dd>{fmtUsd(hero.openRisk)}</dd></div>
         <div><dt>fee drag</dt><dd>{drag === null ? "n/r" : `${(drag * 100).toFixed(1)}%`}</dd></div>
       </dl>
@@ -293,8 +301,8 @@ function BySide({ s }: { s: MeicSummarySlice }) {
             <div className="ts-hbar-fill ts-pos" style={{ width: `${((l.credit / max) * 100).toFixed(1)}%` }} />
           </div>
           <div className="ts-side-sub">
-            {l.expired} expired · {l.stopped} stopped · {l.settled} settled{l.other > 0 ? ` · ${l.other} other` : ""} · stop cost −
-            {l.stopCost.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+            {l.expired} expired · {l.stopped} stopped · {l.settled} settled{l.other > 0 ? ` · ${l.other} other` : ""} · stop debits −
+            {fmtUsd(l.stopCost).slice(1)}
           </div>
         </div>
       ))}
@@ -586,7 +594,7 @@ function ByArm({ s }: { s: MeicSummarySlice }) {
         </thead>
         <tbody>
           {s.arms.map((a) => (
-            <tr key={a.arm}>
+            <tr key={`${a.arm}|${a.symbol}`}>
               <td>{a.arm}</td>
               <td>{a.symbol}</td>
               <td className="num">{a.evaluated.toLocaleString("en-US")}</td>

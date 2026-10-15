@@ -186,8 +186,8 @@ The MEIC summary slide began as a prototype under a borrowed visual language, sc
 so the rest of the console stayed untouched while the style was judged. It was adopted on the
 branch (2026-10-10): the palette moved to `:root` as the suite's tokens, the legacy aliases died,
 the light theme came home as a global pref, and the chrome, shared components, chart kit and rail
-icons were swept onto the new vocabulary. The branch's own working notes are frozen at
-[`docs/history/trade-summary-branch.md`](../../history/trade-summary-branch.md).
+icons were swept onto the new vocabulary. The branch's working notes stayed with the
+contributed PR (#289) and were not carried into the repo.
 
 The landing also fixes the rule the prototype implied: **a summary is a per-module surface, and
 MEIC's is the pattern.** One-read payload, every figure computed server-side to the cent,
@@ -197,14 +197,29 @@ number's sign alone — and each module's summary carrying its own KPIs in its o
 flies book; cash deployed is contango's). One central summary page for every module was built
 under Reports and withdrawn the same day (2026-10-11): the modules' KPIs are not the same book,
 and one comparison surface kept either flattening them to their common denominator or carrying
-per-module exceptions until it was a registry of special cases. `core.metrics summary` remains
-the one shared normalisation a module summary may stand on; the console surface stays
+per-module exceptions until it was a registry of special cases. The console surface stays
 module-local.
 
-The branch ran as a local-only line kept current with main by the machine's hourly merge timer
-(fetch, count, skip when dirty or checked out elsewhere, abort on conflict — never a push, never
-a rebase; resolutions accrued in rerere). Two conflicts needed hands across the train and both
-resolved the same way — main's functionality, re-expressed in the redesign's vocabulary (the
-Compare-page block on the new token names; the MEIC forest hover readout on `CHART_GRID_STRONG`).
-It reached the PR current with main. Web 365/365, server 784 passed / 31 skipped, typecheck and
-build clean, and each visual step verified in the rebuilt browser rather than by tests alone.
+The redesign was contributed as #289 and landed through its own PR, which kept the styles, the
+cards and the MEIC summary and changed four things:
+
+- **No command palette.** The entries above describe one (2026-10-11 and -12); it did not land. The
+  rail is the one nav, its tooltips carry the keyboard hints, and the palette's Ctrl/Cmd+K no
+  longer takes over the browser's own.
+- **Narrow windows.** Below 1000px the rail folds to its 64px icon strip, which the contributed
+  branch had left to the toggle.
+- **The summary's money, against the suite's layout.** Stop costs were per-share exit prices summed
+  as dollars (now price × multiplier × quantity, labelled stop debits); fee drag divided by gross
+  (now by premium collected); settlement summed only the rows that recorded it (now n/r, the total
+  left in fees); the entry-hour average and the leg outcomes counted open condors; week, month and
+  year were anchored to today rather than the page's session; the by-arm card narrowed with the arm
+  select and repeated arm-wide gate counts on each symbol's row; and a ledger with no
+  `entry_attempts` table blanked the slide. `test/meic-summary-money.test.ts` pins each one and
+  fails on the contributed reader.
+- **Simple and detail views** (`CLAUDE.md`, Views). MEIC's simple view opens on the summary.
+
+Smaller fixes rode along: `TradeNetHistogram` read two deleted tokens, VIX3M shared VIX's colour,
+flies' stranded verticals shared the spot line's amber, the regime grid's thin-cell guard could no
+longer fail, and a theme switch could reload before its own pref had saved. The contributed
+`core.metrics summary` verb and the docs survey did not come with it; the survey landed on its own
+as #290.

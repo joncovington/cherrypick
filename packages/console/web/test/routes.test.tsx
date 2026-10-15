@@ -125,8 +125,8 @@ describe("the module frame", () => {
     // passes it without a notch, which a top-bar cell could never promise). Not a dropdown.
     expect(html).not.toContain("header-menu");
     expect(html).toContain('class="brand-block"');
-    // The command palette is mounted and reachable from the top bar.
-    expect(html).toContain("cmdk-trigger");
+    // No command palette: the rail is the one nav.
+    expect(html).not.toContain("cmdk");
   });
 
   it("the brand head is the rail's row-1 twin, and the toggle is the nav's last child", () => {

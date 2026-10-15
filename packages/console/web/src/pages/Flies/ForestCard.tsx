@@ -173,7 +173,7 @@ const Y_WIDTHS = ["auto", "250", "500", "1000", "5000"] as const;
 
 const TENT_COLOR = "var(--pos)";
 /** Orange, not red: red already means "the book loses here" in the fill. */
-const STRANDED_COLOR = "var(--amber-line)";
+const STRANDED_COLOR = "var(--chart-orange)";
 
 function structureLabel(s: StructureCurve): string {
   const shape = s.stranded ? `stranded ${s.side} vertical` : s.kind === "fly" ? `${s.side} fly` : s.kind.replace("_", " ");

@@ -2,15 +2,15 @@ import type { SuiteFeatures } from "@console/shared";
 import { visibleNavLinks } from "../components/shell/navLinks";
 
 /**
- * The keyboard shortcuts the command palette advertises.
+ * The keyboard shortcuts the rail advertises in its link tooltips (`ModuleNav.shortcutTitle`).
  *
- * The hints used to hang off the header's hamburger menu, which itself is gone (2026-10-11, the
- * rail became the one nav on every page): the palette is where a reader now sees what `g o`,
- * `1`–`8` and `j`/`k` do, and it is also where they are SEARCHABLE rather than a fixed list.
+ * The header menu that first printed `g o`, `g r` and `1`–`8` is gone (the rail is the one nav);
+ * the hints moved to the rail's titles. A hint for a shortcut that does not exist is worse than no
+ * hint, so both are driven from `navLinks.ts`.
  *
  * Pure on purpose. The decision — is this key an action, and which — is the part worth testing,
  * and it is testable as a function in a package with no DOM. The hook around it does nothing but
- * listen, ask, and navigate (or open the palette).
+ * listen, ask, and navigate.
  *
  * `j`/`k` step tabs within the current module and stop at the ends. No wrapping into the next
  * module: that was the carousel's behaviour and it is the thing the rail replaced. It works only
@@ -24,22 +24,7 @@ export interface KeyState {
   pendingG: number | null;
 }
 
-export type KeyAction =
-  | { kind: "navigate"; to: string }
-  | { kind: "slide"; id: string }
-  | { kind: "palette" }
-  | null;
-
-/** What kind of palette-open key this raw event is, if it is one: `"chord"` for Ctrl/Cmd+K —
- *  the palette's own chord, which works from inside a text field, where every other key belongs
- *  to the field — or `"question"` for a bare `?`, which IS a typed character and so only opens
- *  when focus is not in one. One helper, because the hook and the tests must not re-derive it. */
-export function paletteKeyFor(e: { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean }): "chord" | "question" | null {
-  if (e.altKey) return null;
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") return "chord";
-  if (e.key === "?" && !e.ctrlKey && !e.metaKey) return "question";
-  return null;
-}
+export type KeyAction = { kind: "navigate"; to: string } | { kind: "slide"; id: string } | null;
 
 export interface KeyEvent {
   key: string;
@@ -49,21 +34,13 @@ export interface KeyEvent {
   modified: boolean;
   slides: string[];
   slide: string | null;
-  /** What the suite has turned on: the digits name the VISIBLE modules, in the palette's order,
-   *  and a chord to a hidden page does nothing. Undefined (loading, failed) means everything. */
+  /** What the suite has turned on: the digits name the VISIBLE modules, in the menu's order, and
+   *  a chord to a hidden page does nothing. Undefined (loading, failed) means everything. */
   features?: SuiteFeatures;
-  /** Pre-computed by `paletteKeyFor`: which palette-open key this is, if any. Checked before the
-   *  editable/modified short-circuits, since Ctrl+K must work from a text field. */
-  paletteKey?: "chord" | "question" | null;
 }
 
 export function reduceKey(state: KeyState, ev: KeyEvent): { state: KeyState; action: KeyAction } {
   const idle: KeyState = { pendingG: null };
-
-  // The palette opens first: the chord (Ctrl/Cmd+K) even from inside a text field, the bare `?`
-  // only when focus is not in one — a question mark typed into a search box is a question mark.
-  if (ev.paletteKey === "chord") return { state: idle, action: { kind: "palette" } };
-  if (ev.paletteKey === "question" && !ev.editable) return { state: idle, action: { kind: "palette" } };
 
   // Typing a symbol into a search box must not navigate, and neither should Ctrl+R.
   if (ev.editable || ev.modified) return { state: idle, action: null };

@@ -18,19 +18,21 @@ import { readMeic, readMeicSummary } from "../src/readers/meic.js";
 const LEDGER = path.join(os.homedir(), ".cherrypick", "data", "meic", "paper_trades.db");
 const available = fs.existsSync(LEDGER);
 
-describe.skipIf(!available)("readMeicSummary reconciles", () => {
+// Real-ledger reads: each summary is several full scans of the paper ledger, so under the suite's
+// parallel load these tests get more than vitest's 5 s default.
+describe.skipIf(!available)("readMeicSummary reconciles", { timeout: 30_000 }, () => {
   const config = loadConfig();
 
   it("hero equals the sum of the arms, over every window", () => {
     for (const range of ["day", "week", "month", "year", "all"] as const) {
-      const s = readMeicSummary(config, "paper", { symbol: null, profile: null, era: null }, range, null);
+      const s = readMeicSummary(config, "paper", { symbol: null, profile: null, era: null }, range, null, 1);
       const armSum = s.arms.reduce((sum, a) => sum + a.net, 0);
       expect(Math.round(armSum * 100)).toBe(Math.round(s.hero.net * 100));
     }
   });
 
   it("hero agrees with readMeic's totals for the same day window", () => {
-    const s = readMeicSummary(config, "paper", { symbol: null, profile: null, era: null }, "day", null);
+    const s = readMeicSummary(config, "paper", { symbol: null, profile: null, era: null }, "day", null, 1);
     if (s.window.from === null) return; // no resolved session — nothing to compare
     const m = readMeic(config, "paper", {
       ...{ symbol: null, profile: null, era: null },
@@ -55,7 +57,7 @@ describe.skipIf(!available)("readMeicSummary reconciles", () => {
     // The review artifact is the validated derivation (core.ledgers._meic_closed._capital);
     // the mirror is checked against it where their windows coincide: the "day" range resolves
     // to the review artifact's own session whenever the review has written one for it.
-    const s = readMeicSummary(config, "paper", { symbol: null, profile: null, era: null }, "day", null);
+    const s = readMeicSummary(config, "paper", { symbol: null, profile: null, era: null }, "day", null, 1);
     if (s.window.from === null || s.window.from !== s.window.to) return; // open window — nothing to compare
     const dir = path.join(os.homedir(), ".cherrypick", "data", "review");
     let raw: string;
@@ -79,7 +81,7 @@ describe.skipIf(!available)("readMeicSummary reconciles", () => {
   });
 
   it("the refusal ledger's parts account for every evaluation", () => {
-    const s = readMeicSummary(config, "paper", { symbol: null, profile: null, era: null }, "all", null);
+    const s = readMeicSummary(config, "paper", { symbol: null, profile: null, era: null }, "all", null, 1);
     const outcomeSum = s.evaluations.outcomes.reduce((sum, o) => sum + o.n, 0);
     expect(outcomeSum).toBe(s.evaluations.refused);
     expect(s.evaluations.filled + s.evaluations.refused).toBe(s.evaluations.evaluated);

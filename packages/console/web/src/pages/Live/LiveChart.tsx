@@ -15,7 +15,7 @@ import { fmtMoney } from "../../lib/format";
  * fill; the card title says so.
  */
 const VIX_COLOR = hexOf("--chart-special", "#8a6fd1");
-const VIX3M_COLOR = hexOf("--chart-special", "#5b8ad1");
+const VIX3M_COLOR = hexOf("--chart-special-2", "#5b8ad1");
 const MARK_COLOR = hexOf("--neg", "#d95b5b");
 const BP_COLOR = hexOf("--amber-line", "#f59e0b");
 

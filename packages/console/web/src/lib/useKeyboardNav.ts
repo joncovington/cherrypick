@@ -1,12 +1,11 @@
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { isModuleId } from "../lightbox/moduleOrder";
-import { navSlideIds, resolveSlide } from "../lightbox/navGroups";
-import { NAV_DECL } from "../lightbox/navGroups";
-import { reduceKey, paletteKeyFor, type KeyState } from "./keyboardNav";
+import { NAV_DECL, resolveSlide, viewSlides } from "../lightbox/navGroups";
+import { readViewMode } from "./viewMode";
+import { reduceKey, type KeyState } from "./keyboardNav";
 import { useFeatures } from "./useFeatures";
 import { isSlideVisible } from "./visibility";
-import { setPaletteOpen } from "../components/shell/paletteStore";
 
 function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -20,15 +19,10 @@ function isEditable(target: EventTarget | null): boolean {
 }
 
 /**
- * Mounted once, in the Shell. Listens, asks `reduceKey` what the key means, and navigates — or
- * opens the command palette (`Ctrl/Cmd+K`, or a bare `?` outside a text field; the decision lives
- * in `paletteKeyFor`, not here).
+ * Mounted once, in the Shell. Listens, asks `reduceKey` what the key means, and navigates.
  *
- * The palette OPEN action closes over `setPaletteOpen`, a store rather than state, because the
- * hook mounts once and the palette renders wherever the shell puts it.
- *
- * Escape is deliberately not handled here: the detail sheet and the palette own their own, and a
- * second listener racing them is how a single Escape closes two things.
+ * Escape is deliberately not handled here: the detail sheet and the header menu own their own,
+ * and a second listener racing them is how a single Escape closes two things.
  */
 export function useKeyboardNav() {
   const navigate = useNavigate();
@@ -41,12 +35,15 @@ export function useKeyboardNav() {
     const onKey = (e: KeyboardEvent) => {
       const seg = location.pathname.split("/")[1] ?? "";
       const module = isModuleId(seg) ? seg : null;
-      const slides = module === null ? [] : navSlideIds(module).filter((id) => isSlideVisible(module, id, features));
       const rawSlide = location.pathname.split("/")[2] ?? "";
+      const visible = module === null ? [] : (NAV_DECL[module]?.slides ?? []).filter((s) => isSlideVisible(module, s.id, features));
+      const view = readViewMode();
       const slide =
-        module === null || slides.length === 0
+        module === null || visible.length === 0
           ? null
-          : resolveSlide(module, rawSlide, NAV_DECL[module]?.slides ?? []);
+          : resolveSlide(module, rawSlide, visible, viewSlides(module, visible, view));
+      // j/k step through the tabs the rail lists in this view, the current one always included.
+      const slides = module === null ? [] : viewSlides(module, visible, view, slide).map((s) => s.id);
 
       const { state, action } = reduceKey(stateRef.current, {
         key: e.key,
@@ -56,16 +53,11 @@ export function useKeyboardNav() {
         slides,
         slide,
         features,
-        paletteKey: paletteKeyFor(e),
       });
       stateRef.current = state;
       if (action === null) return;
 
       e.preventDefault();
-      if (action.kind === "palette") {
-        setPaletteOpen(true);
-        return;
-      }
       const qs = params.toString();
       const withQs = (p: string) => (qs ? `${p}?${qs}` : p);
       if (action.kind === "navigate") navigate(action.to);

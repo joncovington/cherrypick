@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { NavLink, useSearchParams } from "react-router-dom";
 import { type ModuleId, isExperimental } from "../../lightbox/moduleOrder";
-import { NAV_DECL, navGroups } from "../../lightbox/navGroups";
+import { NAV_DECL, navGroups, viewSlides } from "../../lightbox/navGroups";
+import { useViewMode } from "../../lib/viewMode";
 import { CONFIG_LINK, visibleNavLinks, type NavLinkDef } from "./navLinks";
 import { useFeatures } from "../../lib/useFeatures";
 import { isSlideVisible } from "../../lib/visibility";
@@ -13,6 +14,13 @@ import { NavIcon } from "./navIcons";
 /** The rail's open/closed state, a console preference so it follows the reader to the desktop
  *  shell. Absent means collapsed: the rail starts folded to the left edge (2026-10-01). */
 export const RAIL_PREF = "navExpanded";
+
+/** A rail link's tooltip with its keyboard shortcut (`lib/keyboardNav.ts`): `g` then the key for a
+ *  suite page, the bare digit for a module. The rail is the only place the hints are shown. */
+export function shortcutTitle(l: NavLinkDef, isModule: boolean): string {
+  if (l.key === undefined) return l.label;
+  return `${l.label} (${isModule ? l.key : `g ${l.key}`})`;
+}
 
 /**
  * The left rail: every page in the suite, with the current module opened out into its tabs.
@@ -52,14 +60,19 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
   // turned them off (`visibility.ts`); Config keeps every toggle, so it is never filtered.
   const features = useFeatures();
   const { suite, modules } = visibleNavLinks(features);
+  // The open module's tabs in the reader's view (simple or detail); the tab they are on always stays.
+  const view = useViewMode();
   const grouping = navGroups(
     module ?? ("meic" as ModuleId), // never read when module is null — grouping is built only for the open module
-    module === null ? [] : NAV_DECL[module].slides.filter((s) => isSlideVisible(module, s.id, features)),
+    module === null
+      ? []
+      : viewSlides(module, NAV_DECL[module].slides.filter((s) => isSlideVisible(module, s.id, features)), view, slide),
   );
 
   // Any page opens out in place, wherever its link sits: a suite surface (Reports, Live, Config)
   // is on the frame like a module since 2026-09-25, and its tabs belong under its own name.
   const link = (l: NavLinkDef, extra?: ReactNode) => {
+    const title = shortcutTitle(l, modules.includes(l));
     extra = (
       <>
         <span className="mf-nav-ic" aria-hidden="true">
@@ -75,6 +88,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
           key={l.to}
           to={l.to}
           end={l.end}
+          title={title}
           className={({ isActive }) => (isActive ? "mf-nav-link active" : "mf-nav-link")}
         >
           {l.label}
@@ -157,7 +171,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
             to={l.to}
             className="mf-nav-ic-wrap"
             aria-label={l.label}
-            title={l.label}
+            title={shortcutTitle(l, modules.includes(l))}
           >
             <NavIcon to={l.to} />
             {l.to === "/config" && dirty > 0 && <span className="nav-dot" />}

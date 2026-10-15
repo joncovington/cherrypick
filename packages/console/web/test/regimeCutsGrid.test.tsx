@@ -48,7 +48,7 @@ describe("CrossTabGrid", () => {
     );
     expect(html).toContain("var(--track)");
     expect(html).toContain(">thin<");
-    expect(html).not.toContain("rgba(67");
+    expect(html).not.toContain("color-mix(in srgb, var(--pos)");
   });
 
   it("lays the first dimension down the rows and the second across the columns", () => {

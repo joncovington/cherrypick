@@ -34,6 +34,9 @@ export interface ModuleNavDecl {
   groups?: readonly NavGroup[];
   /** Ids that used to name a tab, mapped to the tab that replaced them. */
   legacy?: Readonly<Record<string, string>>;
+  /** The tabs the SIMPLE view shows, in the module's own vocabulary; the detail view shows every
+   *  tab. Absent means the module has not chosen, and both views show everything. */
+  simple?: readonly string[];
 }
 
 /**
@@ -349,6 +352,7 @@ export const CONFIG_SLIDES: readonly NavSlide[] = [
 export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   flies: {
     slides: FLIES_SLIDES,
+    simple: ["session", "forest", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["session", "forest", "timeline"] },
       {
@@ -371,6 +375,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   meic: {
     slides: MEIC_SLIDES,
+    simple: ["summary", "forest", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["session", "summary", "forest", "attempts"] },
       { label: "evidence", ids: ["exits", "regime"] },
@@ -382,6 +387,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   bwb: {
     slides: BWB_SLIDES,
+    simple: ["session", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["session"] },
       { label: "evidence", ids: ["decisions", "arms", "vol", "livegap"] },
@@ -393,6 +399,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   earnings: {
     slides: EARNINGS_SLIDES,
+    simple: ["session", "upcoming", "performance", "positions"],
     groups: [
       { label: "today", ids: ["session", "upcoming"] },
       { label: "evidence", ids: ["decisions", "screening", "strategies"] },
@@ -403,6 +410,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   curve: {
     slides: CURVE_SLIDES,
+    simple: ["session", "regime", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["session", "regime"] },
       { label: "evidence", ids: ["decisions", "arms"] },
@@ -414,6 +422,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   contango: {
     slides: CONTANGO_SLIDES,
+    simple: ["session", "regime", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["session", "regime"] },
       { label: "evidence", ids: ["decisions", "arms"] },
@@ -425,6 +434,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   calendars: {
     slides: CALENDARS_SLIDES,
+    simple: ["session", "plan", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["session", "plan"] },
       { label: "evidence", ids: ["decisions", "arms", "policies"] },
@@ -436,6 +446,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   pmcc: {
     slides: PMCC_SLIDES,
+    simple: ["session", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["session"] },
       { label: "evidence", ids: ["decisions", "arms"] },
@@ -448,6 +459,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   gex: { slides: GEX_SLIDES },
   flow: {
     slides: FLOW_SLIDES,
+    simple: ["today"],
     groups: [
       { label: "today", ids: ["today", "derived"] },
       { label: "tables", ids: ["birdseye", "trades", "spreads", "voloi"] },
@@ -474,11 +486,35 @@ export function navSlideIds(module: ModuleId): string[] {
  * module's first tab. `/flies/exits` landing on `session` would look like a working link and
  * silently show the wrong page, which is worse than a 404.
  */
-export function resolveSlide(module: ModuleId, slide: string, slides: readonly NavSlide[]): string {
+export function resolveSlide(
+  module: ModuleId,
+  slide: string,
+  slides: readonly { id: string }[],
+  preferred: readonly { id: string }[] = slides,
+): string {
   if (slides.some((s) => s.id === slide)) return slide;
   const alias = NAV_DECL[module]?.legacy?.[slide];
   if (alias !== undefined && slides.some((s) => s.id === alias)) return alias;
-  return slides[0]?.id ?? slide;
+  // No tab named (or an unknown one): the view's first tab, so the simple view lands on its own.
+  return preferred[0]?.id ?? slides[0]?.id ?? slide;
+}
+
+export type ViewMode = "simple" | "detail";
+
+/**
+ * The tabs a view lists. Detail is every tab; simple is the module's own `simple` list, in the
+ * module's tab order. A tab the reader is ON stays listed even when the view leaves it out, so a
+ * deep link into a detail tab is never a page the rail cannot place.
+ */
+export function viewSlides<T extends { id: string }>(
+  module: ModuleId,
+  slides: readonly T[],
+  view: ViewMode,
+  current: string | null = null,
+): T[] {
+  const simple = NAV_DECL[module]?.simple;
+  if (view === "detail" || simple === undefined) return [...slides];
+  return slides.filter((s) => simple.includes(s.id) || s.id === current);
 }
 
 export interface NavGrouping {

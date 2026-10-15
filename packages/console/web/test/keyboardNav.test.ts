@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reduceKey, paletteKeyFor, CHORD_MS, type KeyState } from "../src/lib/keyboardNav";
+import { reduceKey, CHORD_MS, type KeyState } from "../src/lib/keyboardNav";
 
 const IDLE: KeyState = { pendingG: null };
 const FLIES = ["session", "forest", "timeline", "openingrange"];
@@ -9,42 +9,16 @@ function press(
   key: string,
   over: Partial<Parameters<typeof reduceKey>[1]> = {},
 ) {
-  const editable = over.editable ?? false;
   return reduceKey(state, {
     key,
     now: 1000,
-    editable,
+    editable: false,
     modified: false,
     slides: FLIES,
     slide: "forest",
-    // The hook pre-computes this from the raw event (paletteKeyFor); the tests do the same, so
-    // the decision under test is reduceKey's, not the helper's.
-    paletteKey: paletteKeyFor({ key, ctrlKey: over.modified === true && key === "k", metaKey: false, altKey: false }),
     ...over,
   });
 }
-
-describe("the palette keys", () => {
-  it("the chord opens the palette, even from inside a text field", () => {
-    const chord = (key: string, over: Partial<Parameters<typeof reduceKey>[1]> = {}) =>
-      press(IDLE, key, { ...over, paletteKey: "chord" });
-    expect(chord("k", { modified: true }).action).toEqual({ kind: "palette" });
-    expect(chord("k", { modified: true, editable: true }).action).toEqual({ kind: "palette" });
-  });
-
-  it("a bare ? opens it outside a text field, and is just a typed character inside one", () => {
-    expect(press(IDLE, "?", { paletteKey: "question" }).action).toEqual({ kind: "palette" });
-    expect(press(IDLE, "?", { paletteKey: "question", editable: true }).action).toBeNull();
-  });
-
-  it("Alt+K is not the chord; plain k inside a field is never the chord either", () => {
-    expect(paletteKeyFor({ key: "k", ctrlKey: false, metaKey: false, altKey: true })).toBeNull();
-    expect(paletteKeyFor({ key: "k", ctrlKey: false, metaKey: false, altKey: false })).toBeNull();
-    expect(paletteKeyFor({ key: "K", ctrlKey: true, metaKey: false, altKey: false })).toBe("chord");
-    expect(paletteKeyFor({ key: "k", ctrlKey: false, metaKey: true, altKey: false })).toBe("chord");
-    expect(paletteKeyFor({ key: "?", ctrlKey: false, metaKey: false, altKey: false })).toBe("question");
-  });
-});
 
 describe("the g chord", () => {
   it("g then o goes to the overview", () => {

@@ -1679,19 +1679,28 @@ export type MeicSummaryRange = (typeof MEIC_SUMMARY_RANGES)[number];
  * view of Friday's session must not answer "no trades" — and an unknown range name falls back to
  * it rather than silently widening.
  */
-function summaryWindow(range: string | undefined, day: string | null): { from: string | null; to: string | null; label: string } {
+export function summaryWindow(range: string | undefined, day: string | null): { from: string | null; to: string | null; label: string } {
+  // The wider ranges are the calendar week/month/year CONTAINING the page's session, so the day
+  // arrows move them too; with no session resolved they fall back to ET today.
   const nowEt = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
   const iso = (d: Date) => d.toISOString().slice(0, 10);
-  const today = iso(new Date(Date.UTC(nowEt.getFullYear(), nowEt.getMonth(), nowEt.getDate())));
-  const monday = new Date(Date.UTC(nowEt.getFullYear(), nowEt.getMonth(), nowEt.getDate()));
+  const base = day ?? iso(new Date(Date.UTC(nowEt.getFullYear(), nowEt.getMonth(), nowEt.getDate())));
+  const [y, m, d] = base.split("-").map(Number) as [number, number, number];
+  const monday = new Date(Date.UTC(y, m - 1, d));
   monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
   switch (range) {
     case "week":
-      return { from: iso(monday), to: null, label: `week of ${iso(monday)}` };
+      return { from: iso(monday), to: iso(sunday), label: `week of ${iso(monday)}` };
     case "month":
-      return { from: `${today.slice(0, 8)}01`, to: null, label: `month of ${today.slice(0, 7)}` };
+      return {
+        from: `${base.slice(0, 8)}01`,
+        to: iso(new Date(Date.UTC(y, m, 0))),
+        label: `month of ${base.slice(0, 7)}`,
+      };
     case "year":
-      return { from: `${today.slice(0, 4)}-01-01`, to: null, label: today.slice(0, 4) };
+      return { from: `${base.slice(0, 4)}-01-01`, to: `${base.slice(0, 4)}-12-31`, label: base.slice(0, 4) };
     case "all":
       return { from: null, to: null, label: "all time" };
     default:
@@ -1768,6 +1777,7 @@ export function readMeicSummary(
         `SELECT COUNT(*) AS trades, COUNT(DISTINCT trade_date) AS sessions,
                 COALESCE(SUM(pnl), 0) AS gross, COALESCE(SUM(fees), 0) AS fees_total,
                 COALESCE(SUM(${settleCol}), 0) AS settlement,
+                SUM(CASE WHEN ${settleCol} IS NULL THEN 1 ELSE 0 END) AS settle_missing,
                 COALESCE(SUM(${slipCol}), 0) AS slippage,
                 COALESCE(SUM(net_credit * ${mult}), 0) AS credit,
                 SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END) AS wins
@@ -1791,7 +1801,7 @@ export function readMeicSummary(
     const open = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT COUNT(*) AS n,
-                COALESCE(SUM((wing_width - COALESCE(net_credit, 0.0)) * 100 * COALESCE(quantity, 1)), 0.0) AS cap
+                COALESCE(SUM((wing_width - COALESCE(net_credit, 0.0)) * ${mult}), 0.0) AS cap
            FROM ic_trades WHERE status IN ('open', 'partial')${sc.and}${winAnd}`,
       )
       .get(...params) ?? {};
@@ -1801,17 +1811,20 @@ export function readMeicSummary(
     // divides what the review fact set's own division divides — the unrounded sum, of which the
     // displayed net is the rounded key. A cent in the fourth decimal place of a percentage.
     const netRaw = Number(t["gross"] ?? 0) - feesTotal;
-    const settlement = Math.round(Number(t["settlement"] ?? 0) * 100) / 100;
+    // Settlement is n/r unless EVERY settled row recorded its split (the suite's money rule: a
+    // partial sum is never shown as the total, and an unrecorded split stays inside fees).
+    const settleMissing = Number(t["settle_missing"] ?? 0);
+    const settlement = settleMissing > 0 ? null : Math.round(Number(t["settlement"] ?? 0) * 100) / 100;
     const trades = Number(t["trades"] ?? 0);
     const wins = Number(t["wins"] ?? 0);
     const hero = {
       trades,
       sessions: Number(t["sessions"] ?? 0),
       gross,
-      fees: Math.round((feesTotal - settlement) * 100) / 100,
+      fees: Math.round((feesTotal - (settlement ?? 0)) * 100) / 100,
       settlement,
       slippage: Math.round(Number(t["slippage"] ?? 0) * 100) / 100,
-      net: Math.round((gross - feesTotal) * 100) / 100,
+      net: Math.round(netRaw * 100) / 100,
       credit: Math.round(Number(t["credit"] ?? 0) * 100) / 100,
       winPct: trades > 0 ? (wins / trades) * 100 : null,
       wins,
@@ -1869,7 +1882,7 @@ export function readMeicSummary(
                 ${meicCol(db, "call_settle_value")} AS call_settle_value,
                 MAX(CASE WHEN l.side = 'put' THEN l.status END) AS put_status,
                 MAX(CASE WHEN l.side = 'call' THEN l.status END) AS call_status
-           FROM (SELECT * FROM ic_trades WHERE ${where}) t
+           FROM (SELECT * FROM ic_trades WHERE ${where} AND pnl IS NOT NULL) t
            LEFT JOIN ic_spread_legs l ON l.ic_order_id = t.ic_order_id
           GROUP BY t.ic_order_id`,
       )
@@ -1885,9 +1898,14 @@ export function readMeicSummary(
       .get(...params) ?? { put: 0, call: 0 };
     const legCount = (side: "put" | "call", status: string): number =>
       legRows.filter((r) => str(r[`${side}_status`]) === status).length;
+    // `*_stop_cost` is the side's exit PRICE per share (paper.py records the decision's exit
+    // price), so the dollar debit is price × multiplier × quantity, summed in whole-position
+    // dollars like every other figure on the slide.
+    const stopDebit = (r: Record<string, unknown>, side: "put" | "call"): number =>
+      (toNum(r[`${side}_stop_cost`]) ?? 0) * (toNum(r["mult"]) ?? 100);
     const perSideStop = {
-      put: legRows.reduce((s, r) => s + (toNum(r["put_stop_cost"]) ?? 0), 0),
-      call: legRows.reduce((s, r) => s + (toNum(r["call_stop_cost"]) ?? 0), 0),
+      put: legRows.reduce((s, r) => s + stopDebit(r, "put"), 0),
+      call: legRows.reduce((s, r) => s + stopDebit(r, "call"), 0),
     };
     const legs = (["put", "call"] as const).map((side) => {
       const expired = legCount(side, "expired");
@@ -1951,11 +1969,11 @@ export function readMeicSummary(
         // Avg per trade is the bar the card draws — opportunity and edge are different
         // questions, and total net answers only the first. The average never travels without
         // its n; the card says the count beside every bar.
-        const avg = count > 0 ? Math.round((net / count) * 100) / 100 : null;
-        // Wins are counted among settled rows (pnl NOT NULL), the module's convention; the
-        // percentage is over the bucket's SETTLED trades, so an hour with all trades still
-        // open does not read as 0%.
+        // Wins and the average are over the bucket's SETTLED trades (pnl NOT NULL), the module's
+        // convention: an open condor is not a realised $0, so it must not dilute the average,
+        // and an hour with every trade still open reads n/r, not 0%.
         const settledN = Number(r["settled_n"] ?? 0);
+        const avg = settledN > 0 ? Math.round((net / settledN) * 100) / 100 : null;
         return {
           hour: String(h),
           label: `${String(h).padStart(2, "0")}:00-${String(h + 1).padStart(2, "0")}:00`,
@@ -1971,28 +1989,38 @@ export function readMeicSummary(
     //    the scope rebuilds here — but the ARM column name still comes from the shared detector,
     //    since older ledgers spell it `risk_profile`. The era column is newer still: an untagged
     //    ledger stays unbounded rather than matching nothing.
-    const attemptArm = findArmColumn(db, "entry_attempts") ?? "arm";
-    const attemptHasEra = hasColumn(db, "entry_attempts", "era");
+    // A ledger with no attempts table (an old or freshly created one) shows an empty gate
+    // ledger, not an error that would blank the whole slide through withReadOnlyDb's fallback.
+    const hasAttempts = hasTable(db, "entry_attempts");
+    const attemptsAll = (sql: string, p: string[]): Array<Record<string, unknown>> =>
+      hasAttempts ? db.prepare<string[], Record<string, unknown>>(sql).all(...p) : [];
+    const attemptArm = hasAttempts ? (findArmColumn(db, "entry_attempts") ?? "arm") : "arm";
+    const attemptHasEra = hasAttempts && hasColumn(db, "entry_attempts", "era");
     // `entry_attempts` has no era column in this ledger generation (checked 2026-10), so the era
     // bound rides the era's DATE SPAN via `eraDateSql` — the same bound `daily_summary` takes. A
     // ledger that adds the column uses it directly.
     const attemptEraSql = attemptHasEra ? (eraBound ? { sql: "era = ?", params: [era] } : { sql: null, params: [] }) : eraDateSql(era, "trade_date");
-    const attemptClauses: string[] = [];
-    const attemptParams: string[] = [];
-    const addClause = (clause: string | null, param: string | null): void => {
-      if (clause !== null && param !== null) {
-        attemptClauses.push(clause);
-        attemptParams.push(param);
+    // `withArm` false builds the by-arm card's scope: every arm, whatever the header's arm select.
+    const buildAttemptScope = (withArm: boolean): { clauses: string[]; params: string[] } => {
+      const clauses: string[] = [];
+      const ps: string[] = [];
+      const add = (clause: string | null, param: string | null): void => {
+        if (clause !== null && param !== null) {
+          clauses.push(clause);
+          ps.push(param);
+        }
+      };
+      add(win.from !== null ? "trade_date >= ?" : null, win.from);
+      add(win.to !== null ? "trade_date <= ?" : null, win.to);
+      if (withArm) add(scope.profile !== null ? `${attemptArm} = ?` : null, scope.profile);
+      add(scope.symbol !== null ? "symbol = ?" : null, scope.symbol);
+      if (attemptEraSql.sql !== null) {
+        clauses.push(attemptEraSql.sql);
+        ps.push(...attemptEraSql.params);
       }
+      return { clauses, params: ps };
     };
-    addClause(win.from !== null ? "trade_date >= ?" : null, win.from);
-    addClause(win.to !== null ? "trade_date <= ?" : null, win.to);
-    addClause(scope.profile !== null ? `${attemptArm} = ?` : null, scope.profile);
-    addClause(scope.symbol !== null ? "symbol = ?" : null, scope.symbol);
-    if (attemptEraSql.sql !== null) {
-      attemptClauses.push(attemptEraSql.sql);
-      attemptParams.push(...attemptEraSql.params);
-    }
+    const { clauses: attemptClauses, params: attemptParams } = buildAttemptScope(true);
     const attemptWhere = attemptClauses.length > 0 ? attemptClauses.join(" AND ") : "1=1";
     // The dominant-detail subquery repeats the outer WHERE over the same table, aliased a2. Every
     // clause here starts with a bare column name, so the alias prefixes cleanly; the params bind
@@ -2000,17 +2028,16 @@ export function readMeicSummary(
     const attemptWhereA2 = attemptClauses.length > 0 ? attemptClauses.map((c) => `a2.${c}`).join(" AND ") : "1=1";
     const attemptParamsTwice = [...attemptParams, ...attemptParams];
     const outcomeOrder = ["filled", "no_fill", "cadence_blocked", "sign_rule_blocked", "gate_blocked", "window_blocked", "no_candidate"];
-    const outcomeRows = db
-      .prepare<string[], Record<string, unknown>>(
-        `SELECT outcome, COUNT(*) AS n,
-                (SELECT a2.block_detail FROM entry_attempts a2
-                  WHERE a2.outcome = a.outcome AND ${attemptWhereA2}
-                  GROUP BY a2.block_detail ORDER BY COUNT(*) DESC LIMIT 1) AS detail
-           FROM entry_attempts a
-          WHERE ${attemptWhere}
-          GROUP BY outcome`,
-      )
-      .all(...attemptParamsTwice);
+    const outcomeRows = attemptsAll(
+      `SELECT outcome, COUNT(*) AS n,
+              (SELECT a2.block_detail FROM entry_attempts a2
+                WHERE a2.outcome = a.outcome AND ${attemptWhereA2}
+                GROUP BY a2.block_detail ORDER BY COUNT(*) DESC LIMIT 1) AS detail
+         FROM entry_attempts a
+        WHERE ${attemptWhere}
+        GROUP BY outcome`,
+      attemptParamsTwice,
+    );
     const evaluated = outcomeRows.reduce((s, r) => s + Number(r["n"] ?? 0), 0);
     const filledN = Number(outcomeRows.find((r) => str(r["outcome"]) === "filled")?.["n"] ?? 0);
     const outcomes = outcomeRows
@@ -2024,67 +2051,71 @@ export function readMeicSummary(
     // The market sketch aggregates exactly the refused rows the outcomes count — one WHERE, no
     // separate sample that could disagree with the bars above it.
     const refusedWhere = `outcome != 'filled' AND ${attemptWhere}`;
-    const gexRow = db
-      .prepare<string[], { gex: number | null; n: number }>(
-        `SELECT AVG(CASE WHEN gex_net < 0 THEN 1.0 ELSE 0.0 END) AS gex, COUNT(*) AS n
-           FROM entry_attempts WHERE ${refusedWhere} AND gex_net IS NOT NULL`,
-      )
-      .get(...attemptParams) ?? { gex: null, n: 0 };
-    const ivCountRow = db
-      .prepare<string[], { n: number }>(`SELECT COUNT(*) AS n FROM entry_attempts WHERE ${refusedWhere} AND iv_rank IS NOT NULL`)
-      .get(...attemptParams) ?? { n: 0 };
+    const gexRow = attemptsAll(
+      `SELECT AVG(CASE WHEN gex_net < 0 THEN 1.0 ELSE 0.0 END) AS gex, COUNT(*) AS n
+         FROM entry_attempts WHERE ${refusedWhere} AND gex_net IS NOT NULL`,
+      attemptParams,
+    )[0];
+    const ivCount = Number(
+      attemptsAll(`SELECT COUNT(*) AS n FROM entry_attempts WHERE ${refusedWhere} AND iv_rank IS NOT NULL`, attemptParams)[0]?.["n"] ?? 0,
+    );
     const ivMedian =
-      ivCountRow.n > 0
-        ? (db
-            .prepare<string[], { iv: number | null }>(
+      ivCount > 0
+        ? toNum(
+            attemptsAll(
               `SELECT iv_rank AS iv FROM entry_attempts WHERE ${refusedWhere} AND iv_rank IS NOT NULL
-                ORDER BY iv_rank LIMIT 1 OFFSET ${Math.floor(ivCountRow.n / 2)}`,
-            )
-            .get(...attemptParams)?.iv ?? null)
+                ORDER BY iv_rank LIMIT 1 OFFSET ${Math.floor(ivCount / 2)}`,
+              attemptParams,
+            )[0]?.["iv"],
+          )
         : null;
-    const qualityRow = db
-      .prepare<string[], { q: string | null }>(
-        `SELECT session_quality AS q FROM entry_attempts WHERE ${refusedWhere} AND session_quality IS NOT NULL
-          GROUP BY session_quality ORDER BY COUNT(*) DESC LIMIT 1`,
-      )
-      .get(...attemptParams);
+    const qualityRow = attemptsAll(
+      `SELECT session_quality AS q FROM entry_attempts WHERE ${refusedWhere} AND session_quality IS NOT NULL
+        GROUP BY session_quality ORDER BY COUNT(*) DESC LIMIT 1`,
+      attemptParams,
+    )[0];
+    const gexNeg = toNum(gexRow?.["gex"]);
     const evaluations = {
       evaluated,
       filled: filledN,
       refused: evaluated - filledN,
       outcomes,
       market: {
-        gexNegPct: gexRow.gex === null ? null : gexRow.gex * 100,
+        gexNegPct: gexNeg === null ? null : gexNeg * 100,
         medianIvRank: ivMedian,
-        quality: qualityRow?.q ?? null,
+        quality: str(qualityRow?.["q"]) ?? null,
       },
     };
 
     // -- By arm: the hero's money per arm, plus each arm's own slice of the gate's ledger, joined
     //    in the map below (not in SQL — the attempts table has no pnl, the trades table no
     //    outcome; the JOIN key is the arm name both sides already speak).
+    // The comparison card is every arm by design, so its scope drops the header's arm select
+    // (symbol and era still bind). Rows are arm x symbol, so the gate counts join on both.
+    const allArms = scopeSql(db, { ...scope, profile: null });
+    const armWhere = `${RESOLVED}${allArms.and}${winAnd}`;
+    const armParams = [...allArms.params, ...rc.params];
     const armMoney = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT ${armCol} AS arm, symbol,
                 ${SETTLED} AS trades, ${NET} AS net,
-                COALESCE(SUM(pnl), 0) AS gross, COALESCE(SUM(fees), 0) AS fees_total,
-                COALESCE(SUM(${settleCol}), 0) AS settlement
-           FROM ic_trades WHERE ${where} GROUP BY ${armCol}, symbol`,
+                COALESCE(SUM(pnl), 0) AS gross, COALESCE(SUM(fees), 0) AS fees_total
+           FROM ic_trades WHERE ${armWhere} GROUP BY ${armCol}, symbol`,
       )
-      .all(...params);
-    const attemptPerArm = db
-      .prepare<string[], Record<string, unknown>>(
-        `SELECT ${attemptArm} AS arm, COUNT(*) AS evaluated,
-                SUM(CASE WHEN outcome = 'filled' THEN 1 ELSE 0 END) AS filled
-           FROM entry_attempts WHERE ${attemptWhere} GROUP BY ${attemptArm}`,
-      )
-      .all(...attemptParams);
-    const dominantPerArm = db
-      .prepare<string[], Record<string, unknown>>(
-        `SELECT ${attemptArm} AS arm, outcome, COUNT(*) AS n FROM entry_attempts
-          WHERE ${attemptWhere} AND outcome != 'filled' GROUP BY ${attemptArm}, outcome`,
-      )
-      .all(...attemptParams);
+      .all(...armParams);
+    const armAttempt = buildAttemptScope(false);
+    const armAttemptWhere = armAttempt.clauses.length > 0 ? armAttempt.clauses.join(" AND ") : "1=1";
+    const attemptPerArm = attemptsAll(
+      `SELECT ${attemptArm} AS arm, symbol, COUNT(*) AS evaluated,
+              SUM(CASE WHEN outcome = 'filled' THEN 1 ELSE 0 END) AS filled
+         FROM entry_attempts WHERE ${armAttemptWhere} GROUP BY ${attemptArm}, symbol`,
+      armAttempt.params,
+    );
+    const dominantPerArm = attemptsAll(
+      `SELECT ${attemptArm} AS arm, symbol, outcome, COUNT(*) AS n FROM entry_attempts
+        WHERE ${armAttemptWhere} AND outcome != 'filled' GROUP BY ${attemptArm}, symbol, outcome`,
+      armAttempt.params,
+    );
     // Rounding residual: each arm's net is round2 of ITS OWN exact value, so the arms' rounded
     // sums can drift a cent from the hero's rounded total. The suite's money rule says rows add
     // up, so the residual — display rounding, never a money error — is assigned to the
@@ -2100,11 +2131,13 @@ export function readMeicSummary(
     const arms = armMoney
       .map((r) => {
         const arm = str(r["arm"]) ?? "—";
-        const ev = attemptPerArm.find((x) => str(x["arm"]) === arm);
-        const dom = dominantPerArm.filter((x) => str(x["arm"]) === arm).sort((a, b) => Number(b["n"]) - Number(a["n"]))[0];
+        const symbol = str(r["symbol"]);
+        const same = (x: Record<string, unknown>) => str(x["arm"]) === arm && str(x["symbol"]) === symbol;
+        const ev = attemptPerArm.find(same);
+        const dom = dominantPerArm.filter(same).sort((a, b) => Number(b["n"]) - Number(a["n"]))[0];
         return {
           arm,
-          symbol: str(r["symbol"]) ?? "—",
+          symbol: symbol ?? "—",
           evaluated: Number(ev?.["evaluated"] ?? 0),
           filled: Number(ev?.["filled"] ?? 0),
           refused: ev === undefined ? 0 : Number(ev["evaluated"]) - Number(ev["filled"]),
@@ -2112,7 +2145,9 @@ export function readMeicSummary(
           net: Math.round((Number(r["gross"] ?? 0) - Number(r["fees_total"] ?? 0)) * 100) / 100,
         };
       });
-    plugResidual(arms, hero.net);
+    // Footed to the card's OWN total (every arm), not the hero's, which the arm select narrows.
+    const armsTotal = armMoney.reduce((sum, r) => sum + Number(r["gross"] ?? 0) - Number(r["fees_total"] ?? 0), 0);
+    plugResidual(arms, Math.round(armsTotal * 100) / 100);
     arms.sort((a, b) => b.net - a.net);
 
     // -- Signal breakdowns: the module's buckets verbatim, over the window. Same denominators as

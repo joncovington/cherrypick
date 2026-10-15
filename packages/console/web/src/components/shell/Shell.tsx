@@ -3,11 +3,10 @@ import { StatusHeader } from "./StatusHeader";
 import { StatusBar } from "./StatusBar";
 import { PageErrorBoundary } from "./PageErrorBoundary";
 import { ToastStack } from "./ToastStack";
-import { CommandPalette } from "./CommandPalette";
 import { ModuleNav, RAIL_PREF } from "./ModuleNav";
 import { isModuleId, type ModuleId } from "../../lightbox/moduleOrder";
 import { useEffect } from "react";
-import { useBoolPref, usePrefsSync, usePrefsVersion, getPref } from "../../lib/prefs";
+import { useBoolPref, usePrefsSync, usePrefsVersion, getPref, prefWritesSettled } from "../../lib/prefs";
 import { useTradeNotifications } from "../../lib/useTradeNotifications";
 import { useKeyboardNav } from "../../lib/useKeyboardNav";
 
@@ -37,14 +36,16 @@ export function Shell() {
     if (el.dataset.theme === theme) return;
     if (el.dataset.theme !== undefined) {
       el.dataset.theme = theme;
-      window.location.reload();
+      // After the pref's own POST lands: reloading first aborted it, and the next load's sync
+      // pulled the old theme back.
+      void prefWritesSettled().then(() => window.location.reload());
       return;
     }
     el.dataset.theme = theme;
   }, [theme]);
   // Mounted once here (not per-page) so trade toasts fire regardless of which page is open.
   useTradeNotifications();
-  // Likewise: the chords (`g o`, `1`–`9`, `j`/`k`) and the palette chord work from every page.
+  // Likewise: the chords (`g o`, `1`–`9`, `j`/`k`) work from every page.
   useKeyboardNav();
   return (
     <div className={dense ? (railExpanded ? "shell dense" : "shell dense shell-rail-collapsed") : railExpanded ? "shell" : "shell shell-rail-collapsed"}>
@@ -71,8 +72,6 @@ export function Shell() {
       </main>
       <StatusBar />
       <ToastStack />
-      {/* The palette mounts once, at the shell's end, so it overlays everything on every page. */}
-      <CommandPalette />
     </div>
   );
 }

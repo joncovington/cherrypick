@@ -1563,8 +1563,10 @@ export interface MeicSummarySlice {
     trades: number;
     sessions: number;
     gross: number;
+    /** Trading fees; the fee TOTAL when `settlement` is n/r (the split was never recorded). */
     fees: number;
-    settlement: number;
+    /** Null (n/r) when any settled row in the window never recorded its settlement split. */
+    settlement: number | null;
     slippage: number;
     net: number;
     credit: number;
@@ -1590,8 +1592,9 @@ export interface MeicSummarySlice {
    *  carry no usable capital. `coverage` says how many settled rows could support the
    *  computation ("10/10"), so a partial denominator is never read as a whole one. */
   returnOnRisk: { capitalAtRisk: number | null; rorPct: number | null; rorRawPct: number | null; coverage: string | null };
-  /** Leg outcomes per wing: credit SOLD (per-side net is not a ledger fact), leg state counts,
-   *  stop cost charged. `other` holds states a newer ledger may add, so they show as a count. */
+  /** Leg outcomes per wing: credit SOLD (per-side net is not a ledger fact), leg state counts, and
+   *  `stopCost`, the DEBIT paid to close the stopped sides in whole-position dollars (the exit price
+   *  × multiplier × quantity; not the stop's net). `other` holds states a newer ledger may add. */
   legs: Array<{ side: "put" | "call"; credit: number; expired: number; stopped: number; settled: number; other: number; stopCost: number }>;
   /** The leg-pair identity the module's margin read is built on: clean = both expired, double-stop
    *  = both stopped, fee bar = avg fee over avg credit sold. Nulls when no legs are recorded. */
@@ -1634,77 +1637,4 @@ export interface MeicSummarySlice {
     pages: number;
     page: number;
   };
-}
-
-// --------------------------------------------------------------------- trade summary (shared)
-// The Reports summary page's one payload (GET /api/reports/summary) — the MEIC summary's shape
-// generalised over every module, computed by `python -m cherrypick.core.metrics summary` (the
-// console's bridge fans it over schemas; nothing is re-derived in TypeScript). Field names inside
-// `reading` stay snake_case, matching `calibration_reading`'s own JSON verbatim (the bridge
-// convention); the composed fields are camelCase, as this file's own types are.
-
-/** `capital` is `ledgers`' per-row capital at risk — max loss for the defined-risk option
- *  structures, cash deployed for contango's shares — so the ratio's label follows the MODULE:
- *  "return on risk" where capital is a max loss, "on deployed" where it is cash (review's own
- *  distinction). `capitalAtRisk`/`returnOnRiskPct` are null when the rows in scope carry none —
- *  unknown capital is not free capital — and the coverage string keeps a partial denominator
- *  visible ("9/10"). `returnOnRiskRawPct` is the UNROUNDED-numerator figure, unclamped, for the
- *  gauge label; `returnOnRiskPct` is clamped −100..+100 for the needle. */
-export interface TradeSummaryReturn {
-  capitalAtRisk: number | null;
-  returnOnRiskPct: number | null;
-  returnOnRiskRawPct: number | null;
-  coverage: string;
-}
-
-/** One module's slice of the Reports summary: the hero money (the suite's one layout, minus the
- *  cost columns the schema's ledger does not separate — a cost never recorded is not a zero),
- *  the return-on-risk block, the by-arm roll-up (the hero shape minus capital, each arm with its
- *  own ratio), the daily path and the capture gauge — present only where `max_profit` coverage
- *  is FULL (`calibration_reading`'s own rule; absent for a schema that never populates it, e.g.
- *  flies), so the card's presence follows the module's honesty rule rather than a hand list.
- *  Every slice is one population: the by-arm nets add up to the hero's, the daily nets to the
- *  same. `facets` is the WHOLE-LEDGER value lists driving the page's own selects — filters
- *  narrow the slices, never the facets. */
-export interface TradeSummarySlice {
-  module: string;
-  mode: TradingMode;
-  schema: string;
-  /** The window the numbers answer for: the resolved SESSION bounds (the dates that exist in
-   *  the window, not calendar guesses), null = open. The label the toolbar shows rides at the
-   *  payload level. */
-  window: { from: string | null; to: string | null };
-  hero: {
-    trades: number;
-    sessions: number;
-    gross: number;
-    fees: number;
-    net: number;
-    wins: number;
-    winPct: number | null;
-  };
-  return: TradeSummaryReturn;
-  byArm: Array<{ arm: string; trades: number; sessions: number; net: number; gross: number; fees: number; wins: number; winPct: number | null; capitalCoverage: string; return: number | null }>;
-  /** [session, net, trades, wins], in session order — the window's path. */
-  daily: Array<{ session: string; net: number; trades: number; wins: number }>;
-  capture: { value: number | null; n: number } | null;
-  facets: { sessions: string[]; symbols: string[]; arms: string[] };
-}
-
-/** The one-read payload: the module requested PLUS one slice per schema, so switching modules
- *  re-renders from the SAME payload (no refetch on a module change) and "module=all" is a
- *  comparison over one read, never a pool. `modulesRead`/`moduleErrors` keep an unreadable
- *  ledger audible per module (the reader rule), so one absent db degrades its own slice and
- *  never the page. */
-export interface TradeSummaryPayload {
-  requested: string | null;
-  mode: TradingMode;
-  range: string;
-  session: string | null;
-  symbol: string | null;
-  arm: string | null;
-  era: { key: string; from: string | null };
-  slices: TradeSummarySlice[];
-  modulesRead: string[];
-  moduleErrors: Record<string, string>;
 }

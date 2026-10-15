@@ -4,8 +4,9 @@ import { NotFoundPage } from "./NotFoundPage";
 import { FrameChrome } from "../lightbox/ModuleFrame";
 import { MODULE_FRAMES } from "../lightbox/registry";
 import { isModuleId } from "../lightbox/moduleOrder";
-import { NAV_DECL, resolveSlide } from "../lightbox/navGroups";
+import { NAV_DECL, resolveSlide, viewSlides } from "../lightbox/navGroups";
 import { useFeatures } from "../lib/useFeatures";
+import { useViewMode } from "../lib/viewMode";
 import { isSlideVisible, offReason } from "../lib/visibility";
 import { ModuleOffCard } from "./ModuleOffCard";
 
@@ -24,6 +25,7 @@ import { ModuleOffCard } from "./ModuleOffCard";
 export function ModuleRoute() {
   const { module = "", slide = "" } = useParams();
   const features = useFeatures();
+  const view = useViewMode();
   if (!isModuleId(module)) return <NotFoundPage />;
 
   // A page the suite has turned off is a card saying so, never the module and never a 404.
@@ -32,7 +34,7 @@ export function ModuleRoute() {
 
   const Frame = MODULE_FRAMES[module];
   const slides = NAV_DECL[module].slides.filter((s) => isSlideVisible(module, s.id, features));
-  const activeId = resolveSlide(module, slide, slides);
+  const activeId = resolveSlide(module, slide, slides, viewSlides(module, slides, view));
   const label = slides.find((s) => s.id === activeId)?.label ?? activeId;
 
   return (
