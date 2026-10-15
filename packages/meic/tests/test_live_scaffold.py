@@ -222,11 +222,17 @@ def test_live_ledger_is_a_separate_file():
 
 
 class FakeBroker:
-    def __init__(self, statuses=None):
+    def __init__(self, statuses=None, working=None):
         self.placed = []
         self.polled = []
         self.cancelled = []
         self._statuses = dict(statuses or {})
+        self.working = list(working or [])
+
+    def working_orders(self):
+        # The orphan sweep's read (2026-10-14). None of the loop's own orders need listing: the
+        # sweep only reports ids the ledger does not know.
+        return list(self.working)
 
     def place(self, spec, live):
         # tastytrade identifies an option leg by its OCC symbol and rejects anything else. Raised,
@@ -365,7 +371,8 @@ def test_live_ignores_a_paper_profile_overlap_scope_and_still_refuses_overlap(tm
     # only config.json's own top-level overlap_scope ("shorts", the independent-sampling
     # default) applies -- still refuses an exact short-pair repeat, unlike paper's "none" stream.
     broker = FakeBroker()
-    summary = live_loop.run_once(_config(), snap, db_path, broker, live=True, log=lambda *_: None)
+    cfg = _config(max_structures_per_day=99)  # the overlap gate under test, not the daily cap
+    summary = live_loop.run_once(cfg, snap, db_path, broker, live=True, log=lambda *_: None)
     assert summary["entry"]["entry"] == "skipped"
     assert summary["entry"]["reason"] == "short_pair_occupied"
     assert broker.placed == []  # nothing submitted
@@ -580,7 +587,7 @@ def test_a_rejected_entry_is_cancelled_and_frees_its_slot(tmp_path):
 
 
 def test_a_pending_entry_holds_its_slot_but_is_not_managed(tmp_path):
-    cfg = _config()
+    cfg = _config(max_structures_per_day=99)  # the concurrency gate under test, not the daily cap
     cfg["max_concurrent_ics"] = 1
     db_path, broker = _place_one(tmp_path)
     summary = live_loop.run_once(cfg, _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None)
