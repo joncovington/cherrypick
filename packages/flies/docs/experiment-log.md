@@ -1560,3 +1560,39 @@ config, so it now reads 16:00.
 The code needed no change. Each tick confirms a completion fill, a completion that dies unfilled
 leaves the vertical to settle, and settlement asks the broker about any pending completion before
 it settles. To revert, set `live.completion_cutoff` back to 15:30.
+
+## 2026-10-15 — `miss_stop_minutes` re-run on live at 15 sessions: a tail cut, not a gate that pays
+
+The re-run the 10-03 entry asked for, at the backlog's 15 sessions under the cap-only rule. Same
+command, `run.py --db <live ledger> replay-gates --start 2026-09-25`: live `control`, SPX,
+09-25..10-15, 15 sessions, 88 settled entries. Nothing was changed.
+
+| Rule | Kept | Net | Losing days | Worst day | Median day | Paper `control`, same dates |
+|---|---|---|---|---|---|---|
+| no gate (deployed) | 88 | −$523.38 | 7 / 15 | −$779.08 | +$26.24 | −$758.88 (117 entries) |
+| 15 min | 47 | −$299.57 | 9 / 15 | −$267.82 | −$219.70 | +$218.67 |
+| 30 min | 50 | −$272.75 | 10 / 15 | −$265.32 | −$214.11 | +$470.79 |
+| 45 min | 53 | −$853.52 | 10 / 15 | −$525.64 | −$204.08 | −$207.20 |
+| 60 min | 60 | −$933.80 | 9 / 15 | −$540.64 | −$204.08 | −$839.50 |
+| 90 min | 67 | −$1,347.59 | 9 / 15 | −$779.08 | −$204.08 | −$1,777.98 |
+
+- **The 15- and 30-minute gains are a cut tail.** Cutting the worst day alone is worth about +$510,
+  more than either gate's whole gain (+$224, +$251). Every other measure gets worse: losing days go
+  from 7 to 9–10 and the median day from +$26 to about −$215.
+- **Not monotone.** 15 and 30 minutes help; 45 and above lose more than no gate. A real effect of
+  the wait would move steadily with it.
+- **It flips with the window.** The first six sessions (the 10-03 run) were negative at every
+  setting. The nine since 10-05 carry the whole gain: live no gate −$160.34, 15 min +$304.59,
+  30 min +$297.05.
+- **Paper agrees in sign at 15 and 30 minutes** (+$978 and +$1,230 against its own no gate), with the
+  same shape: one bad day cut, more losing days, and worse from 45 minutes up.
+- **The advised experiments.** `advised:miss-stop-90` finished 0 of 13 sessions ahead of `control`
+  (−$1,404.29 behind). `advised:miss-stop-30` ran two sessions (10-13, 10-14) before the 10-15
+  boundary concluded it, ahead on both (+$552.02): too few to read.
+- **Caveat, as before.** A dropped entry frees room under the $1,000 cap that the replay cannot
+  spend, so a gated live loop would take entries the replay never sees.
+
+The reopen condition ("15 sessions, and the replay shows the gate paying") is not met: what pays is
+missing one or two trend days, and on this sample that cannot be told from luck. Live stays as it is.
+Re-run at 30 sessions. A 30-minute paper arm is the cheap way to gather evidence meanwhile, and it
+would land at a declared boundary.
