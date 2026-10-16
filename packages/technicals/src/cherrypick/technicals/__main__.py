@@ -420,6 +420,23 @@ def cmd_study_round5(args) -> int:
     return 0
 
 
+def cmd_study_round6(args) -> int:
+    """Round 6 (docs/signal-log-plan.md): an analyst revision inside the trend+RS direction, against
+    the same direction without one. `--count` reports frequencies only and scores nothing."""
+    from . import round6
+
+    progress = lambda m: print(m, flush=True)  # noqa: E731
+    if args.count:
+        b = round6.build(workers=args.workers, progress=progress)
+        b["pool"].shutdown()
+        print(json.dumps(round6.counts(b), indent=1))
+        return 0
+    result = round6.run(workers=args.workers, progress=progress)
+    path = round6.write(result)
+    print(json.dumps({"path": path, "seconds": result["seconds"], "summary": _tests(result)}, indent=1))
+    return 0
+
+
 def _tests(result: dict) -> list[dict]:
     """One line per declared test: verdict, size, net R, baseline, edge and its t."""
     out = []
@@ -520,6 +537,10 @@ def main(argv: list[str] | None = None) -> int:
     s5 = ss.add_parser("round5", help="round 5: the 1-10 score inside the fundamentals label")
     s5.add_argument("--workers", type=int, default=14)
     s5.set_defaults(fn=cmd_study_round5)
+    s6 = ss.add_parser("round6", help="round 6: an analyst revision inside the trend+RS direction")
+    s6.add_argument("--workers", type=int, default=14)
+    s6.add_argument("--count", action="store_true", help="frequencies only: entries and pools, no scoring")
+    s6.set_defaults(fn=cmd_study_round6)
     rp = sub.add_parser("report", help="write one session's market-report readings for the console")
     rp.add_argument("--session", help="ISO date (default: the latest session stored)")
     rp.set_defaults(fn=cmd_report)

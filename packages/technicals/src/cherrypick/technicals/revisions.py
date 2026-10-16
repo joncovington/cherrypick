@@ -66,10 +66,14 @@ class Event:
     pt_current: float | None
 
 
+RATING_ACTIONS = frozenset({"up", "down", "init"})
+
+
 @dataclass(frozen=True)
 class Tag:
     direction: int  # +1 bullish, -1 bearish
     events: tuple[Event, ...]  # every qualifying event that session, in time order
+    kind: str = "rating"  # what decided the direction: "rating" (up, down, init) or "target"
 
 
 def grade_side(grade: str | None) -> int:
@@ -106,20 +110,28 @@ def session_of(graded_at: datetime) -> str:
 
 
 def _rank(e: Event) -> tuple[int, float]:
-    return (0 if e.action in ("up", "down", "init") else 1, -abs(pt_change(e) or 0.0))
+    return (0 if e.action in RATING_ACTIONS else 1, -abs(pt_change(e) or 0.0))
+
+
+def _tag(evs: list[Event], pt_min: float) -> Tag:
+    lead = min(evs, key=_rank)
+    kind = "rating" if lead.action in RATING_ACTIONS else "target"
+    return Tag(score(lead, pt_min), tuple(sorted(evs, key=lambda e: e.graded_at)), kind)
+
+
+def by_session(events: list[Event], pt_min: float = PT_MIN) -> dict[tuple[str, str], Tag]:
+    """{(symbol, session): Tag} for every session any symbol has a qualifying event."""
+    grouped: dict[tuple[str, str], list[Event]] = {}
+    for e in events:
+        if score(e, pt_min):
+            grouped.setdefault((e.symbol, session_of(e.graded_at)), []).append(e)
+    return {key: _tag(evs, pt_min) for key, evs in grouped.items()}
 
 
 def tags(events: list[Event], session: str, pt_min: float = PT_MIN) -> dict[str, Tag]:
     """{symbol: Tag} for the session: every symbol with at least one qualifying event that day."""
-    by_symbol: dict[str, list[Event]] = {}
-    for e in events:
-        if session_of(e.graded_at) == session and score(e, pt_min):
-            by_symbol.setdefault(e.symbol, []).append(e)
-    out = {}
-    for sym, evs in by_symbol.items():
-        lead = min(evs, key=_rank)
-        out[sym] = Tag(score(lead, pt_min), tuple(sorted(evs, key=lambda e: e.graded_at)))
-    return out
+    mine = [e for e in events if session_of(e.graded_at) == session]
+    return {sym: t for (sym, _), t in by_session(mine, pt_min).items()}
 
 
 def score_boards(events: list[Event], boards: dict) -> dict:
