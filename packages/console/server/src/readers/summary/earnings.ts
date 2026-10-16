@@ -12,6 +12,7 @@ import {
   emptySlice,
   heroOf,
   inWindow,
+  scopeTrades,
   sessionNeighbours,
   summaryWindow,
   type SummaryQuery,
@@ -128,7 +129,7 @@ export function readEarningsSummary(config: ConsoleConfig, q: SummaryQuery): Mod
     q.day,
   );
   const window = summaryWindow(q.range, session.day);
-  const trades = settled.filter((t) => inWindow(t.session, window));
+  const trades = scopeTrades(settled.filter((t) => inWindow(t.session, window)), q);
   // Open now and already open by the window's end; none of their money is in the hero.
   const open = extras.value.openedSessions.filter((s) => window.to === null || s === null || s <= window.to).length;
   const hero = heroOf(trades, true, open);

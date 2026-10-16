@@ -11,6 +11,7 @@ import {
   emptySlice,
   heroOf,
   inWindow,
+  scopeTrades,
   sessionNeighbours,
   summaryWindow,
   type SummaryQuery,
@@ -201,7 +202,7 @@ export function readPmccSummary(config: ConsoleConfig, q: SummaryQuery): ModuleS
   }
 
   const { session, window, activity, unpriced } = read;
-  const trades = read.trades.filter((t) => inWindow(t.session, window));
+  const trades = scopeTrades(read.trades.filter((t) => inWindow(t.session, window)), q);
 
   const hero = heroOf(trades, true, activity.open);
   const costed = trades.filter((t) => t.longCost !== null);

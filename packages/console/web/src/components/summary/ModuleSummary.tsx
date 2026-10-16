@@ -11,11 +11,21 @@ import { Gauge, RangeToolbar, TsCard, TsEmpty, WinRateArcs, fmtUsd, fmtUsdPlain,
  * three different statements, never a wall of zeros.
  */
 
-export function useModuleSummary(module: string, mode: TradingMode, range: string, day: string | null) {
+/** The page header's scope, as the manifest holds it: the arm / symbol / era dropdowns. */
+export interface SummaryScope {
+  arm?: string | null;
+  symbol?: string | null;
+  era?: string | null;
+}
+
+export function useModuleSummary(module: string, mode: TradingMode, range: string, day: string | null, scope?: SummaryScope) {
   const params = new URLSearchParams({ mode, range });
   if (day !== null) params.set("date", day);
+  if (scope?.arm != null && scope.arm !== "") params.set("arm", scope.arm);
+  if (scope?.symbol != null && scope.symbol !== "") params.set("symbol", scope.symbol);
+  if (scope?.era != null && scope.era !== "") params.set("era", scope.era);
   return useQuery<ModuleSummarySlice>({
-    queryKey: ["module-summary", module, mode, range, day],
+    queryKey: ["module-summary", module, mode, range, day, scope?.arm ?? null, scope?.symbol ?? null, scope?.era ?? null],
     queryFn: async () => {
       const res = await fetch(`/api/summary/${module}?${params.toString()}`);
       if (!res.ok) throw new Error(`summary: HTTP ${res.status}`);
@@ -140,7 +150,7 @@ function Breakdown({ b }: { b: SummaryBreakdown }) {
   );
 }
 
-function ByArm({ s }: { s: ModuleSummarySlice }) {
+function ByArm({ s, arm }: { s: ModuleSummarySlice; arm?: string | null }) {
   const sort = useSort();
   if (s.arms.length === 0) return <TsEmpty what="by arm" />;
   const arms = sortRows(s.arms, sort, {
@@ -150,7 +160,7 @@ function ByArm({ s }: { s: ModuleSummarySlice }) {
     net: (a) => a.net,
   });
   return (
-    <TsCard title="by arm" aside={<span className="ts-muted">every arm in the window</span>}>
+    <TsCard title="by arm" aside={<span className="ts-muted">{arm != null && arm !== "" ? `the ${arm} arm` : "every arm in the window"}</span>}>
       <div className="table-scroll">
       <table className="ts-table">
         <thead>
@@ -180,12 +190,30 @@ function ByArm({ s }: { s: ModuleSummarySlice }) {
   );
 }
 
-export function ModuleSummary({ module, mode }: { module: string; mode: TradingMode }) {
+export function ModuleSummary({
+  module,
+  mode,
+  scope,
+  day,
+  onDay,
+}: {
+  module: string;
+  mode: TradingMode;
+  /** The page header's arm/symbol/era, so the summary narrows the way the page beside it does. */
+  scope?: SummaryScope;
+  /** The page's session. `undefined` = drive it from this component's own `?day=` (a module with
+   *  no session control in its header); a value (null = latest) = the header owns the day. */
+  day?: string | null;
+  /** Step the page's session to `day` (absolute, the reader's own neighbour). When given, the
+   *  arrows move the header's day; when absent, they write this component's own `?day=`. */
+  onDay?: (day: string | null) => void;
+}) {
   const [range, setRange] = useSummaryRange();
   const [params, setParams] = useSearchParams();
   const stated = params.get("day");
-  const day = stated !== null && /^\d{4}-\d{2}-\d{2}$/.test(stated) ? stated : null;
-  const q = useModuleSummary(module, mode, range, day);
+  const urlDay = stated !== null && /^\d{4}-\d{2}-\d{2}$/.test(stated) ? stated : null;
+  const effectiveDay = day !== undefined ? day : urlDay;
+  const q = useModuleSummary(module, mode, range, effectiveDay, scope);
   if (q.isError) {
     return (
       <div className="ts-root">
@@ -197,6 +225,10 @@ export function ModuleSummary({ module, mode }: { module: string; mode: TradingM
   const step = (delta: -1 | 1) => {
     const target = delta < 0 ? s?.session.prev : s?.session.next;
     if (!target) return;
+    if (onDay !== undefined) {
+      onDay(target);
+      return;
+    }
     const next = new URLSearchParams(params);
     next.set("day", target);
     setParams(next, { replace: true });
@@ -239,7 +271,7 @@ export function ModuleSummary({ module, mode }: { module: string; mode: TradingM
                 </div>
               )}
               <div className="ts-row">
-                <ByArm s={s} />
+                <ByArm s={s} arm={scope?.arm ?? null} />
               </div>
             </>
           )}
