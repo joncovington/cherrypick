@@ -119,6 +119,9 @@ CATCHUP_MINUTES = {
     "universe-measure-2": 60,
     "universe-daily": 300,
     "report-screener-greeks": 180,
+    # The late slot is the night's last chance at today's lists, and fails when they never came:
+    # its catch-up must end before midnight ET, when 'today' becomes tomorrow.
+    "report-screener-greeks-late": 25,
     "report-screener-measure-1": 60,
     "report-screener-measure-2": 60,
     "universe-watchlist": 300,
@@ -1481,6 +1484,22 @@ def derive_jobs(
         ),
     )
     sg_reason = "" if mr["screener_greeks"] else "disabled in config (market_report.screener_greeks)"
+    add(
+        "report-screener-greeks-late",
+        lambda: JobSpec(
+            id="report-screener-greeks-late",
+            # A capture can land hours late (2026-10-15: 22:46 ET). This records today's lists if they
+            # came after the evening slot, does nothing if that slot already did, and exits 1 if they
+            # never came -- the failed-job check then says so, instead of the session going missing.
+            argv=(pythonw, _suite_script(launcher, "fetch_screener_greeks.py"), "--final"),
+            kind=KIND_DAILY,
+            at_et=mr["screener_greeks_late_at"],
+            catchup_minutes=CATCHUP_MINUTES["report-screener-greeks-late"],
+            trading_days_only=True,
+            enabled=mr["screener_greeks"],
+            enabled_reason=sg_reason,
+        ),
+    )
     for i, at in enumerate(mr["screener_measure_at"][:2], 1):
         add(
             f"report-screener-measure-{i}",

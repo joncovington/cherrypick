@@ -202,3 +202,41 @@ def test_a_rate_limited_run_is_incomplete_but_a_dead_symbol_is_not():
     assert fsg.rate_limit_problem(limited) == "broker rate limit (429): 2 symbol(s) not fetched"
     delisted = {"AAPL": {"error": None}, "XYZ": {"error": "chain: no such symbol"}}
     assert fsg.rate_limit_problem(delisted) is None
+
+
+# --------------------------------------------------------------------------- which day it records
+def _store(tmp_path, monkeypatch, today, saved=(), recorded=()):
+    """A store with lists saved for `saved` days and complete greeks files for `recorded` ones."""
+    import json
+
+    for day in saved:
+        d = tmp_path / "vendor-screeners" / day
+        d.mkdir(parents=True)
+        (d / "short-puts.json").write_text(json.dumps({"body": LISTS["short-puts"]}), encoding="utf-8")
+    for day in recorded:
+        g = tmp_path / "screener-greeks"
+        g.mkdir(parents=True, exist_ok=True)
+        (g / f"{day}.json").write_text(json.dumps({"complete": True}), encoding="utf-8")
+    monkeypatch.setattr(fsg, "store_dir", lambda: tmp_path)
+    monkeypatch.setattr(fsg, "today_et", lambda: today)
+
+
+def test_a_late_capture_is_waited_for_not_mistaken_for_yesterdays(tmp_path, monkeypatch, capsys):
+    """2026-10-15: today's lists landed at 22:46 ET; the 19:00 run took the newest on disk (10-14,
+    already recorded), exited 0, and the session was lost. Now it names today, and waits."""
+    _store(tmp_path, monkeypatch, "2026-10-15", saved=["2026-10-14"], recorded=["2026-10-14"])
+    assert fsg.main([]) == 0
+    assert "no saved screener lists for 2026-10-15 yet" in capsys.readouterr().out
+
+
+def test_the_final_run_fails_when_todays_lists_never_came(tmp_path, monkeypatch, capsys):
+    _store(tmp_path, monkeypatch, "2026-10-15", saved=["2026-10-14"], recorded=["2026-10-14"])
+    assert fsg.main(["--final"]) == 1
+    assert "2026-10-15" in capsys.readouterr().err
+
+
+def test_the_final_run_leaves_a_recorded_day_alone(tmp_path, monkeypatch, capsys):
+    """The evening run already recorded today: the late run is a no-op, never a second fetch."""
+    _store(tmp_path, monkeypatch, "2026-10-15", saved=["2026-10-15"], recorded=["2026-10-15"])
+    assert fsg.main(["--final"]) == 0
+    assert "already exists" in capsys.readouterr().out
