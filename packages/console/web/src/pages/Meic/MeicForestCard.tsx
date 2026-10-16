@@ -50,7 +50,9 @@ interface ForestArm {
 interface MeicForest {
   mode: TradingMode;
   tradeDate: string | null;
+  /** The one symbol drawn, and every symbol the day traded (the switch appears for two or more). */
   symbol: string | null;
+  symbols?: string[];
   tradesToday: number;
   openPositions: number;
   asEntered: ForestArm[];
@@ -64,8 +66,9 @@ interface MeicForest {
  * the header's controls narrow the forest the way they already narrow the session and history
  * slides. Exported so the wiring is pinned without a DOM.
  */
-export function meicForestQuery(mode: TradingMode, scope: MeicScope): string {
+export function meicForestQuery(mode: TradingMode, scope: MeicScope, forestSymbol: string | null = null): string {
   const qs = new URLSearchParams({ mode });
+  if (forestSymbol !== null && scope.symbol === null) qs.set("fsym", forestSymbol);
   if (scope.day !== null) qs.set("date", scope.day);
   if (scope.symbol !== null) qs.set("symbol", scope.symbol);
   if (scope.profile !== null) qs.set("profile", scope.profile);
@@ -73,11 +76,11 @@ export function meicForestQuery(mode: TradingMode, scope: MeicScope): string {
   return qs.toString();
 }
 
-function useMeicForest(mode: TradingMode, scope: MeicScope) {
+function useMeicForest(mode: TradingMode, scope: MeicScope, forestSymbol: string | null) {
   return useQuery<MeicForest>({
-    queryKey: ["meic-forest", mode, scope],
+    queryKey: ["meic-forest", mode, scope, forestSymbol],
     queryFn: async () => {
-      const res = await fetch(`/api/meic/forest?${meicForestQuery(mode, scope)}`);
+      const res = await fetch(`/api/meic/forest?${meicForestQuery(mode, scope, forestSymbol)}`);
       if (!res.ok) throw new Error(`meic forest: HTTP ${res.status}`);
       return (await res.json()) as MeicForest;
     },
@@ -100,8 +103,13 @@ const X_WIDTHS = ["auto", "50", "100", "200", "500"] as const;
 const Y_WIDTHS = ["auto", "250", "500", "1000", "5000"] as const;
 
 export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: MeicScope }) {
-  const { data, isLoading } = useMeicForest(mode, scope);
+  // The card's own symbol pick (only when the page scope names none): one forest is one price axis.
+  const [forestSymbol, setForestSymbol] = useState<string | null>(null);
+  const { data, isLoading } = useMeicForest(mode, scope, forestSymbol);
   const [showNested, setShowNested] = useState(true);
+  // "per condor" divides each arm's curve by its condor count, so a 6-condor arm and a 332-condor
+  // arm read on one axis; "book" is each arm's whole book, the honest total.
+  const [perCondor, setPerCondor] = useState(false);
   const [xwidth, setXwidth] = useState<(typeof X_WIDTHS)[number]>("auto");
   const [ywidth, setYwidth] = useState<(typeof Y_WIDTHS)[number]>("auto");
   // XSP is a tenth of SPX, so a fixed width and the buffer floor scale with it.
@@ -114,7 +122,8 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
   const live = (data?.arms.length ?? 0) > 0;
   const arms = live ? (data?.arms ?? []) : (data?.asEntered ?? []);
 
-  const shown = arms.filter((a) => a.positions.length > 0 && a.prices.length > 0);
+  const drawn = arms.filter((a) => a.positions.length > 0 && a.prices.length > 0);
+  const shown = perCondor ? drawn.map((a) => ({ ...a, pnl: a.pnl.map((v) => v / a.positions.length) })) : drawn;
 
   const width = 1150;
   const height = 320;
@@ -198,7 +207,7 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
         {/* What the book ACTUALLY made, against what the curve says it would have made held to
             expiry. Flat because these trades are closed: their outcome no longer depends on where
             the underlying settles, which is the whole point the curve alone cannot make. */}
-        {!live && realisedNet !== null && realisedNet >= yMin && realisedNet <= yMax && (
+        {!live && !perCondor && realisedNet !== null && realisedNet >= yMin && realisedNet <= yMax && (
           <g>
             <line
               x1={pad.l}
@@ -350,6 +359,27 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
                 {w === "auto" ? "auto" : String(Number(w) * symbolScale)}
               </option>
             ))}
+          </select>
+        </label>
+        {(data?.symbols?.length ?? 0) > 1 && scope.symbol === null && (
+          <div className="mode-toggle" role="group" aria-label="forest symbol" title="one symbol per forest: an expiry payoff is drawn on that symbol's own price axis">
+            {(data?.symbols ?? []).map((sym) => (
+              <button
+                key={sym}
+                type="button"
+                className={`mode-btn ${data?.symbol === sym ? "active" : ""}`}
+                onClick={() => setForestSymbol(sym)}
+              >
+                {sym}
+              </button>
+            ))}
+          </div>
+        )}
+        <label className="muted lbl" title="book: each arm's whole book; per condor: each arm's curve divided by its condor count, so arms of very different sizes read on one axis">
+          y scale{" "}
+          <select className="text-input" value={perCondor ? "condor" : "book"} onChange={(e) => setPerCondor(e.target.value === "condor")}>
+            <option value="book">book total</option>
+            <option value="condor">per condor</option>
           </select>
         </label>
         <label className="muted lbl" title="a minimum y range per side; auto fits the visible curves">
