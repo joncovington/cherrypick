@@ -113,7 +113,7 @@ function readTrades(dbPath: string, mode: TradingMode, since: string | null): Ea
         // Epoch floats in this store, not strings — see isoStamp.
         openedAt: isoStamp(r["opened_at"]),
         closedAt: isoStamp(r["closed_at"]),
-        profile: str(r["arm"]),
+        arm: str(r["arm"]),
       })),
   );
 }
