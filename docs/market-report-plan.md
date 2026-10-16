@@ -258,7 +258,7 @@ resolution where the stage shading is legible.
 | Sector inflow / outflow | The rotation state of the name's sector | Buildable |
 | Trend-following signal | The chart layer above | Buildable, approximate |
 | Large put sale / call buy / put buy, $ | Section 7's flow filter, per name | Paid data |
-| Analyst upgrade / downgrade (e.g. a price target +15%) | Firm plus rating or price-target change | Paid data |
+| Analyst upgrade / downgrade (e.g. a price target +15%) | Firm plus rating or price-target change | Free data (Yahoo, unofficial), 32/37 — gap 2 |
 | Strong / weak fundamentals (two checks) | A fundamentals score | Free data, our own definition |
 | Fundamentals leading price / price leading fundamentals | Disagreement between the fundamentals score and relative strength | Falls out of the two above |
 | Sector signal net (Technology +6, …) | Bullish − bearish *names* per sector over the full stacked list | Arithmetic, over data we lack |
@@ -330,10 +330,16 @@ Two known reliability facts shape the plan:
    bought from sold, so put sales and put buys — two of the four categories — are
    indistinguishable. It can feed an "unusual open-interest build" list, not the vendor's filter.
    Feeds section 7 and three multi-signal tags. **Deferred** with the other paid data (Phase 0).
-2. **Analyst revisions — medium, paid.** No free source gives firm and price-target change.
-   Benzinga's ratings through Massive ($99 add-on) carry firm, old and new rating, and old and new
-   target back to 2011 — the report's fields exactly. FMP's $19 Starter has rating changes but no
-   per-firm target change, and needs a separate licence for display. **Deferred** (Phase 0).
+2. **Analyst revisions — closed on free data (2026-10-15).** Yahoo's per-firm history
+   (`upgradeDowngradeHistory`) carries firm, old and new rating, action, and old and new target back
+   to 2012 — the report's fields. It is unofficial and personal-use, so it is fetched by a script
+   (`scripts/fetch_analyst_revisions.py`, append-only so the history stays point-in-time) and read
+   by `packages/technicals` (`revisions.py`). The week-3 deck states the rule (an upgrade or
+   downgrade, a sided initiation, a target move of 5%+), and the saved boards fix the window at the
+   session's own events. Scored on every saved board, 32 of 37 tags agree and 1 of 77 untagged rows
+   is an extra; the five misses are source gaps (Bernstein, Erste and two single notes absent; one
+   target with prior and current swapped). The paid routes stay the fallback: Benzinga through
+   Massive ($99 add-on, back to 2011), or FMP ($19 Starter, no per-firm target change).
 3. **The stock universe and sector map — medium, definitional.** The report's universe is not the
    S&P 500 — the Sept 25 tables include TWLO, OKTA, NET, DDOG, ZS, CLS and a dozen ADRs (TSM, SONY,
    INFY, NMR, MFG, SMFG, ITUB, KB, SHG, TD, BN, DB). Nor is it screened on option volume alone: OCC's
@@ -470,6 +476,8 @@ Each phase ends with something that runs and a test that has been shown to fail.
   compared with one over nine. Phase 6 waits on this decision. If it is revisited: whether a
   vendor's pre-classified flow is acceptable or the buy/sell rule must be ours, and each vendor's
   storage and redistribution terms, are checked before building on it.
+  **Revisited for analyst revisions (2026-10-15):** a free source was found (gap 2), so that method
+  is built on free data and scored per tag like the others; the flow methods remain deferred.
 - **The stock universe: decided 2026-09-27, being built.** Candidates are every ticker the saved
   vendor editions link (454 over Sept 21-25, the breadth table included) and every underlying the
   tastylive follow feed trades (110 from the first harvest; futures dropped). A candidate is kept

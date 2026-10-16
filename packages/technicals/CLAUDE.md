@@ -11,7 +11,8 @@ way the vendor adjusts them.** The store (Phase 2) and the stage, rotation and c
 
 **Credential-free and network-free.** Reads the LOCAL `dolt sql-server` (the `stocks` and `options`
 clones, pulled at 05:30 by `scripts/refresh_dolt_data.py`, outside every package) and, read-only,
-the market-report store the scripts write (universe candidates, vendor chart captures). Writes only
+the market-report store the scripts write (universe candidates, vendor chart captures, analyst
+revision events). Writes only
 `~/.cherrypick/data/technicals/`: `eod.db` and its report/chart files, and the historical study's
 `history.db` and `study/` results.
 
@@ -123,6 +124,14 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   labels (Bullish 3..4, Bearish -3..-4), never "trend = -4"; bullish trend-following is RSI(14)
   40..50; CCI rules run on CCI-5; a dip is yesterday's CCI below -100 with today's back above. Both
   saved lists were used in the refit, so there is no unseen day yet; re-score as lists accrue.
+- **Analyst revisions** (`revisions.py`, `score-revisions`): a tag is an upgrade or downgrade, an
+  initiation on a side, or a target move of 5%+, from **that session's events only** (every matched
+  tag had lag zero). 32 of 37 board tags agree, 1 extra in 77 untagged rows; all five misses are the
+  source's (an event Yahoo lacks, or DOCS's target swapped). Events are Yahoo's per-firm history,
+  fetched by `scripts/fetch_analyst_revisions.py` into `market-report/analysts/revisions.db`
+  (append-only, `first_seen_at`/`last_seen_at`). An edition with no revision tag on any row
+  (2026-10-08) is reported as `method_absent`, never scored. Which firm the tag names is not
+  reproduced.
 - **Out of sample** (2026-09-28): bars 99%+ on 73 of 79 names; the grid places all 375 levels.
 
 ## Unsolved — measured, not approximated
@@ -268,6 +277,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-level-selection` | Where vendor levels sit among grid points, each measure against chance. |
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank (stored whole-market cut-offs) vs the vendor's. |
 | `python -m cherrypick.technicals score-signals` | Our six scan rules vs every saved scan list. |
+| `python -m cherrypick.technicals score-revisions` | The analyst-revision rule vs every saved board: agree, opposite, missed, not in source, extra. |
 | `python -m cherrypick.technicals history land` | Land Dolt's whole daily history (2011 on, every name) into `history.db`. Incremental. |
 | `python -m cherrypick.technicals history fundamentals` | Land Dolt's next-year EPS and sales estimates and quarterly income statements into `history.db` (round 5's inputs). |
 | `python -m cherrypick.technicals history check` | `history.db` against `eod.db` on the overlap, to the cent, and price jumps no split explains. |
