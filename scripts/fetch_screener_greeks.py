@@ -12,8 +12,13 @@ chain greeks (the chart capture's `how`) are the answer key to judge broker delt
 A script, not package code, because it reaches the broker; read-only (no orders, no account
 writes). One DXLink session, options in batches; chain listings a short pause apart.
 
-**One file per list date, never overwritten**: `screener-greeks/<date>.json`. It runs after the
-evening capture; a day without saved lists exits quietly, and an existing file is left as it was.
+**One file per list date, never overwritten**: `screener-greeks/<date>.json`. It records TODAY's
+lists (ET), never merely the newest on disk: the broker's chain is only that day's answer key on
+the day, and on 2026-10-15 the capture landed at 22:46 ET, after the 19:00 run, which found
+10-14 already recorded and exited 0 -- the session was lost without a word. So it runs twice: the
+evening slot exits quietly when today's lists are not saved yet, and the late slot (`--final`)
+records them if they have landed since, or exits 1, so a lost day is a failed job, not a quiet
+success. An existing complete file is left as it was.
 
 **`measure`: the spread in regular hours.** The evening quotes are after the close, so they say
 nothing about a name's real spread. `measure` runs inside the universe builder's window (10:00 ET to
@@ -22,7 +27,7 @@ does not already measure, the at-the-money call and put of the standard monthly 
 the builder's own `_measure`, so the two sets of readings are taken the same way and read together.
 Written to `screener-greeks/measurements/<date>/<HHMM>.json`, the builder's file shape.
 
-    python scripts/fetch_screener_greeks.py [--date YYYY-MM-DD] [--limit N]
+    python scripts/fetch_screener_greeks.py [--date YYYY-MM-DD] [--limit N] [--final]
     python scripts/fetch_screener_greeks.py measure [--force] [--limit N]
 """
 
@@ -244,6 +249,13 @@ def rate_limit_problem(result: dict) -> str | None:
     it would never complete."""
     n = sum(1 for s in result.values() if s.get("error") == RATE_LIMITED)
     return f"broker rate limit (429): {n} symbol(s) not fetched" if n else None
+
+
+def today_et() -> str:
+    """The session date the evening runs record: the calendar date in New York."""
+    from zoneinfo import ZoneInfo
+
+    return datetime.now(ZoneInfo("America/New_York")).date().isoformat()
 
 
 def latest_list_day() -> str | None:
@@ -512,17 +524,29 @@ def cmd_measure(args) -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("mode", nargs="?", choices=("greeks", "measure"), default="greeks")
-    ap.add_argument("--date", help="greeks: the list date to record (default: the latest saved)")
+    ap.add_argument("--date", help="greeks: the list date to record (default: today, ET)")
+    ap.add_argument(
+        "--final",
+        action="store_true",
+        help="greeks: the night's last chance -- today's lists still unsaved is a failure (exit 1)",
+    )
     ap.add_argument("--limit", type=int, help="record at most this many symbols (a trial run)")
     ap.add_argument("--force", action="store_true", help="measure: run outside the measuring window")
     args = ap.parse_args(argv)
     if args.mode == "measure":
         return cmd_measure(args)
 
-    day = args.date or latest_list_day()
-    lists = load_lists(day) if day else {}
+    day = args.date or today_et()
+    lists = load_lists(day)
     if not lists:
-        print(f"no saved screener lists for {day or 'any day'}; nothing to record")
+        if args.final and not args.date:
+            print(
+                f"today's screener lists ({day}) were never saved, so their broker chain cannot be "
+                "recorded: this session has no answer key. Check the evening chart capture.",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"no saved screener lists for {day} yet; nothing to record (the late run tries again)")
         return 0
     out = store_dir() / "screener-greeks" / f"{day}.json"
     if out.exists() and not args.limit:

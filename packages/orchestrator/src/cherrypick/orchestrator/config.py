@@ -525,7 +525,9 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
 
     `screener_greeks` records the broker's chain around every row of the evening's income screener
     lists (scripts/fetch_screener_greeks.py) at `screener_greeks_at`, after the chart capture that
-    saves them. Its own switch, OFF by default: it reads the shared broker credential. The same
+    saves them, and again at `screener_greeks_late_at` for a capture that landed late (that run
+    fails if today's lists never came). Its own switch, OFF by default: it reads the shared broker
+    credential. The same
     switch runs `measure` at `screener_measure_at`: two regular-hours readings of the listed names'
     ATM monthly spreads, half an hour after the universe builder's, so the two never overlap.
     """
@@ -550,6 +552,7 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "universe_watchlist_at": mr.get("universe_watchlist_at", "18:30"),
         "screener_greeks": bool(mr.get("screener_greeks", False)),
         "screener_greeks_at": mr.get("screener_greeks_at", "19:00"),
+        "screener_greeks_late_at": mr.get("screener_greeks_late_at", "23:30"),
         "screener_measure_at": list(mr.get("screener_measure_at", ["11:30", "14:30"])),
     }
 

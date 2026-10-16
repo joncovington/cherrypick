@@ -319,6 +319,7 @@ def test_derive_full_suite_job_table():
         "report-screener-measure-1",
         "report-screener-measure-2",
         "report-screener-greeks",
+        "report-screener-greeks-late",
         "universe-measure-1",
         "universe-measure-2",
         "universe-daily",
@@ -1068,6 +1069,13 @@ def test_screener_greeks_is_its_own_switch_and_runs_after_the_chart_capture():
         assert m.enabled and m.trading_days_only and m.argv[-1] == "measure"
         assert 10 * 60 <= minutes(m.at_et) <= 15 * 60 + 30
         assert m.at_et not in {by_id["universe-measure-1"].at_et, by_id["universe-measure-2"].at_et}
+    # The late slot: after the evening one, with --final, and its catch-up ends before midnight ET,
+    # when the script's 'today' would become tomorrow.
+    late = by_id["report-screener-greeks-late"]
+    assert late.enabled and late.trading_days_only and late.argv[-1] == "--final"
+    assert minutes(late.at_et) > minutes(job.at_et)
+    assert minutes(late.at_et) + late.catchup_minutes < 24 * 60
+    assert "report-screener-greeks-late" not in jobspec.RETRY_ON_FAILURE
 
 
 # --------------------------------------------------------------------------- stock universe (2026-09-27)
