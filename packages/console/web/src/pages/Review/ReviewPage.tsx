@@ -167,6 +167,7 @@ function ModuleCard({ m }: { m: ReviewModule }) {
             By arm
             <span className="muted"> · same underlying, same session — a paired comparison</span>
           </div>
+          <div className="table-scroll">
           <table className="data-table data-table-labelled">
             <thead>
               <tr>
@@ -195,6 +196,7 @@ function ModuleCard({ m }: { m: ReviewModule }) {
               ))}
             </tbody>
           </table>
+          </div>
           {collapsedArms(m).map((c) => (
             <p className="review-caveat" key={c}>
               <span className="dot status-warn" /> {c} — not independent this session. A GEX-centred arm

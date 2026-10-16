@@ -25,6 +25,7 @@ function dayLabel(iso: string): string {
 /** The session's releases (actual against estimate) then the next week's, in the tables' style. */
 export function EventsTable({ events, session }: { events: FlowEvent[]; session: string }) {
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
@@ -58,6 +59,7 @@ export function EventsTable({ events, session }: { events: FlowEvent[]; session:
         })}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -66,6 +68,7 @@ export function EventsTable({ events, session }: { events: FlowEvent[]; session:
 export function SpreadsPostTable({ rows }: { rows: DerivedFlowRow[] }) {
   const max = rows.reduce((m, r) => Math.max(m, Math.abs(r.score ?? 0)), 0) || 1;
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
@@ -113,6 +116,7 @@ export function SpreadsPostTable({ rows }: { rows: DerivedFlowRow[] }) {
         })}
       </tbody>
     </table>
+    </div>
   );
 }
 

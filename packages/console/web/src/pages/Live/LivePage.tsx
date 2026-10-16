@@ -145,7 +145,7 @@ function PerformanceSection({ perf }: { perf: LivePerformance }) {
         </p>
       </section>
 
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(28rem, 1fr))" }}>
+      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(28rem, 100%), 1fr))" }}>
         <DataCard
           title="return on session peak risk · by session"
           headers={["session", "trades", "net P&L", "peak risk", "at", "net / peak risk"]}
@@ -295,7 +295,7 @@ export function LivePage() {
       <Card title={`intraday · ${d?.session ?? ""} · mark is a mid, not a fill`} updatedAt={dataUpdatedAt} isError={isError}>
         {d ? <LiveChart data={d} /> : <p className="muted">loading</p>}
       </Card>
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(28rem, 1fr))" }}>
+      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(28rem, 100%), 1fr))" }}>
         <DataCard
           title="live positions"
           headers={["entered", "structure", "state", "credit", "floor", "mark", "P&L"]}

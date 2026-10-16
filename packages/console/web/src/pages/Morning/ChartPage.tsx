@@ -559,6 +559,7 @@ function VendorCard({ c }: { c: TechnicalsChart }) {
       {v.levels.length === 0 ? (
         <p className="muted">The capture carries no levels.</p>
       ) : (
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -589,6 +590,7 @@ function VendorCard({ c }: { c: TechnicalsChart }) {
               ))}
           </tbody>
         </table>
+        </div>
       )}
       <p className="muted">
         On the chart: solid, a support or resistance our grid places; dotted, a gap level that is an edge of one
@@ -607,6 +609,7 @@ function SignalsCard({ c }: { c: TechnicalsChart }) {
       {recent.length === 0 ? (
         <p className="muted">No rule matched in the sessions drawn.</p>
       ) : (
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -623,6 +626,7 @@ function SignalsCard({ c }: { c: TechnicalsChart }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
       <p className="muted">
         The vendor's scan rules as we reproduce them: a pattern, not a trade idea, so they are listed here and not

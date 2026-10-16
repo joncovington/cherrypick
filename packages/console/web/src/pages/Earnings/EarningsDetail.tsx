@@ -150,7 +150,7 @@ export function EarningsDetailCards({ mode, era }: { mode: TradingMode; era: str
         {isLoading ? (
           <span className="skeleton skeleton-text" style={{ width: "40%" }} />
         ) : (
-          <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(22rem, 1fr))" }}>
+          <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(22rem, 100%), 1fr))" }}>
             {data?.perStrategy.map((s) => (
               <div key={s.strategy}>
                 <h2>
@@ -175,7 +175,7 @@ export function EarningsDetailCards({ mode, era }: { mode: TradingMode; era: str
         <SeriesLegend items={[{ label: "equity", color: "var(--pos)" }, { label: "drawdown from peak", color: "var(--neg)" }]} />
       </Card>
 
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(22rem, 1fr))" }}>
+      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(22rem, 100%), 1fr))" }}>
         <Card title="Regime coverage — where the sample actually lives" updatedAt={dataUpdatedAt}>
           {heat === undefined || heat.cells.length === 0 ? (
             <p className="muted">no tagged trades yet</p>

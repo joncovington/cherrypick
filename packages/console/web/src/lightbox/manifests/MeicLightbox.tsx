@@ -191,7 +191,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
       id: "exits",
       label: MEIC_LABEL.exits,
       render: () => (
-        <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(18rem, 1fr))" }}>
+        <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(18rem, 100%), 1fr))" }}>
           <DataCard
             title="Exit reasons"
             headers={["reason", "count", "%"]}

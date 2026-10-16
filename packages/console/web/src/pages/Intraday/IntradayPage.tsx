@@ -251,7 +251,7 @@ export function IntradayPage() {
           {period} candles
         </h2>
         <span className="chip">chart only</span>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+        <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", gap: 8, minWidth: 0 }}>
           {products.length > 0 && (
             <Toggle value={product} options={products} onChange={(v) => set("product", v)} label="contract" render={(p) => `/${p}`} />
           )}

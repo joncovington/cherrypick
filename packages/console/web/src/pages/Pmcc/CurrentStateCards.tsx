@@ -316,6 +316,7 @@ export function BookComparison({
       {open.length > 0 && (
         <section className="pmcc-compare">
           <h3>open, marked to market</h3>
+          <div className="table-scroll">
           <table className="data-table num-from-2">
             <thead>
               <tr>
@@ -340,6 +341,7 @@ export function BookComparison({
               ))}
             </tbody>
           </table>
+          </div>
           <p className="integrity-note">
             A held-long arm has no closed result until its long is sold, ~10 months after entry; until then this is its
             only number. A cell with an unpriceable position shows a dash rather than a partial sum.
@@ -376,6 +378,7 @@ export function BookComparison({
 
           <section className="pmcc-compare">
             <h3>net by arm</h3>
+            <div className="table-scroll">
             <table className="data-table num-from-1">
               <tbody>
                 {totals.map((t) => (
@@ -391,6 +394,7 @@ export function BookComparison({
                 ))}
               </tbody>
             </table>
+            </div>
             <p className="integrity-note">
               Every figure here is net of the modeled fee and slippage stack — and is still an upper bound while
               early assignment sits unmodelled.

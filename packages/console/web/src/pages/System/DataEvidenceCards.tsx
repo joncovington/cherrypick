@@ -136,6 +136,7 @@ function ImpliedVarCard() {
             strip the cache&apos;s strike window cut, which reads low by construction. Off hours the quotes are stale, so
             expect a refusal.
           </p>
+          <div className="table-scroll">
           <table className="data-table num-from-1">
             <thead>
               <tr>
@@ -175,6 +176,7 @@ function ImpliedVarCard() {
               })}
             </tbody>
           </table>
+          </div>
         </>
       )}
     </Card>

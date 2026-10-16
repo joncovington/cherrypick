@@ -152,7 +152,7 @@ export function MeicDeepCards({
         </section>
       )}
 
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(25rem, 1fr))" }}>
+      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(25rem, 100%), 1fr))" }}>
         <BreakdownCard title="By short-call delta" rows={data?.byDelta} loading={isLoading} />
         <BreakdownCard title="By wing width" rows={data?.byWing} loading={isLoading} />
         <BreakdownCard title="By symbol" rows={data?.bySymbol} loading={isLoading} />

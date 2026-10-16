@@ -8,12 +8,10 @@ import { useFeatures } from "../../lib/useFeatures";
 import { isSlideVisible } from "../../lib/visibility";
 import { ExperimentalChip } from "../ExperimentalChip";
 import { useDirtyCount } from "../../pages/Config/stagedStore";
-import { useBoolPref, writePref } from "../../lib/prefs";
+import { RAIL_PREF, useCloseRailOnNavigate, useRailExpanded } from "./railState";
 import { NavIcon } from "./navIcons";
 
-/** The rail's open/closed state, a console preference so it follows the reader to the desktop
- *  shell. Absent means collapsed: the rail starts folded to the left edge (2026-10-01). */
-export const RAIL_PREF = "navExpanded";
+export { RAIL_PREF };
 
 /** A rail link's tooltip with its keyboard shortcut (`lib/keyboardNav.ts`): `g` then the key for a
  *  suite page, the bare digit for a module. The rail is the only place the hints are shown. */
@@ -51,7 +49,8 @@ export function shortcutTitle(l: NavLinkDef, isModule: boolean): string {
  * rail is a flat list — which is exactly the Overview's old relationship to it.
  */
 export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: string }) {
-  const expanded = useBoolPref(RAIL_PREF);
+  const [expanded, toggleRail] = useRailExpanded();
+  useCloseRailOnNavigate();
   const [params] = useSearchParams();
   const qs = params.toString();
   const withQs = (path: string) => (qs ? `${path}?${qs}` : path);
@@ -190,7 +189,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
         aria-expanded={expanded}
         aria-controls="mf-nav-links"
         title={expanded ? "collapse the navigation" : "expand the navigation"}
-        onClick={() => void writePref(RAIL_PREF, !expanded)}
+        onClick={toggleRail}
       >
         {expanded ? "«" : "»"}
       </button>

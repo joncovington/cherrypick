@@ -3,7 +3,8 @@ import { StatusHeader } from "./StatusHeader";
 import { StatusBar } from "./StatusBar";
 import { PageErrorBoundary } from "./PageErrorBoundary";
 import { ToastStack } from "./ToastStack";
-import { ModuleNav, RAIL_PREF } from "./ModuleNav";
+import { ModuleNav } from "./ModuleNav";
+import { useRailExpanded } from "./railState";
 import { isModuleId, type ModuleId } from "../../lightbox/moduleOrder";
 import { useEffect } from "react";
 import { useBoolPref, usePrefsSync, usePrefsVersion, getPref, prefWritesSettled } from "../../lib/prefs";
@@ -18,7 +19,7 @@ export function Shell() {
   // decides whether the rail opens out that module's tabs.
   const seg = location.pathname.split("/")[1] ?? "";
   const module: ModuleId | null = isModuleId(seg) ? (seg as ModuleId) : null;
-  const railExpanded = useBoolPref(RAIL_PREF);
+  const [railExpanded] = useRailExpanded();
   // Pull the server's copy once, then let every reader work off the synchronous mirror.
   usePrefsSync();
   const dense = useBoolPref("denseTables");

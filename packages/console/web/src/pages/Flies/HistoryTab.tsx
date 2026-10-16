@@ -340,7 +340,7 @@ export function HistoryTab({
         {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <FliesCalendar days={data?.dailyPnl ?? []} onPick={onReplayDay} />}
       </section>
 
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(34rem, 1fr))" }}>
+      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(34rem, 100%), 1fr))" }}>
         <DataCard title="By arm (legged only, settled)" headers={headers} loading={isLoading} rowCount={data?.byArm.length ?? 0}>
           <SummaryRows rows={data?.byArm} label="arm" thinBelow={data?.thinBelowSessions ?? null} />
         </DataCard>

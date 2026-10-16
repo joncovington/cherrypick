@@ -173,7 +173,7 @@ export function MeicPerformanceTab({
               overlay={(data?.periods ?? []).map((p) => ({ x: p.period, y: p.cumulative }))}
             />
             <SeriesLegend items={[{ label: "period net", color: "var(--pos)" }, { label: "cumulative", color: "var(--accent)" }]} />
-            <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(23rem, 1fr))", marginTop: "0.8rem" }}>
+            <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(23rem, 100%), 1fr))", marginTop: "0.8rem" }}>
               <div>
                 <h2>win rate trend</h2>
                 <TimeLineChart
@@ -229,7 +229,7 @@ export function MeicPerformanceTab({
         )}
       </Card>
 
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(23rem, 1fr))" }}>
+      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(23rem, 100%), 1fr))" }}>
         {powerNote(data?.bySession ?? []) !== null ? (
           <section className="card">
             <h2>Win rate by session quality</h2>

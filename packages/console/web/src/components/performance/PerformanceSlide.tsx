@@ -104,6 +104,7 @@ export function PerformanceSlide({ module, mode = "paper" }: { module: Performan
       )}
       {Array.isArray(data.exitReasons) && data.exitReasons.length > 0 && (
         <Card title="exit reasons" collapseKey={`performance-${module}-exits`} defaultCollapsed>
+          <div className="table-scroll">
           <table className="data-table">
             <thead>
               <tr>
@@ -126,6 +127,7 @@ export function PerformanceSlide({ module, mode = "paper" }: { module: Performan
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
       {data.pairs.map((p) => {

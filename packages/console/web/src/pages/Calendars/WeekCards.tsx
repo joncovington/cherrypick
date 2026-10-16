@@ -154,6 +154,7 @@ export function EntryWindowCard({ data, updatedAt }: { data: CalendarsPayload | 
             </p>
           )}
 
+          <div className="table-scroll">
           <table className="data-table num-from-1 cal-attempts">
             <thead>
               <tr>
@@ -205,6 +206,7 @@ export function EntryWindowCard({ data, updatedAt }: { data: CalendarsPayload | 
               )}
             </tbody>
           </table>
+          </div>
           <p className="integrity-note">
             One uncollapsed row per evaluated tick, grouped here by outcome. Entry is retried every tick until
             it fills or the window closes; an exhausted window is a journaled skipped week, and the week does

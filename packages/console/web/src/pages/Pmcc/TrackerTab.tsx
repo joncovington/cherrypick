@@ -205,6 +205,7 @@ function CurrentShortCard({ t }: { t: PmccTracker }) {
       {s === null ? (
         <p className="muted">no short open{t.position.status === "closed" ? " — the position is closed" : " — the next tick sells one"}</p>
       ) : (
+        <div className="table-scroll">
         <table className="data-table num-from-1">
           <tbody>
             <tr><td>strike · expiry</td><td>{fmtStrike(s.strike)} · {s.expiration} ({s.dte} DTE)</td></tr>
@@ -220,6 +221,7 @@ function CurrentShortCard({ t }: { t: PmccTracker }) {
             {s.next.breachAt !== null && <tr><td>rolls down if spot reaches</td><td>{fmtStrike(s.next.breachAt)}</td></tr>}
           </tbody>
         </table>
+        </div>
       )}
     </Card>
   );

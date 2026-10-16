@@ -141,6 +141,7 @@ function asOf(day: OptionsFlowDay): string {
 
 function BirdseyeSummaryTable({ rows }: { rows: FlowBirdseyeRow[] }) {
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
@@ -167,6 +168,7 @@ function BirdseyeSummaryTable({ rows }: { rows: FlowBirdseyeRow[] }) {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -175,6 +177,7 @@ function TradesTable({ rows, limit, showTime }: { rows: FlowTrade[]; limit?: num
   // Scaled to the rows on show: one huge trade below the cut would flatten every bar above it.
   const max = maxOf(shown.map((r) => r.premium));
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
@@ -210,6 +213,7 @@ function TradesTable({ rows, limit, showTime }: { rows: FlowTrade[]; limit?: num
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -223,6 +227,7 @@ function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: numbe
   // An unverified premium is the site's figure, not a checked size: it neither scales nor draws a bar.
   const max = maxOf(shown.map((r) => (r.premiumUnverified ? null : r.premium)));
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
@@ -284,6 +289,7 @@ function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: numbe
         })}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -291,6 +297,7 @@ function VolOiTable({ rows, limit }: { rows: FlowVolOi[]; limit?: number }) {
   const shown = limit === undefined ? rows : rows.slice(0, limit);
   const max = maxOf(shown.map((r) => r.vOi));
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
@@ -317,6 +324,7 @@ function VolOiTable({ rows, limit }: { rows: FlowVolOi[]; limit?: number }) {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -450,6 +458,7 @@ export function DerivedTable({
   const wide = full || post;
   const shown = limit === undefined ? rows : rows.slice(0, limit);
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
@@ -510,6 +519,7 @@ export function DerivedTable({
         })}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -519,6 +529,7 @@ export function NetByName({ names, each }: { names: DerivedFlowName[]; each: num
   const rows = [...bullish, ...bearish];
   const max = maxOf(rows.map((n) => n.net));
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <tbody>
         {rows.map((n) => (
@@ -536,6 +547,7 @@ export function NetByName({ names, each }: { names: DerivedFlowName[]; each: num
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -581,6 +593,7 @@ function ChecksCard({ checks, session }: { checks: DerivedFlowChecks; session: s
         <h2>Checks</h2>
         <span className="card-asof">{session}</span>
       </div>
+      <div className="table-scroll">
       <table className="data-table flow-table">
         <tbody>
           <tr>
@@ -627,6 +640,7 @@ function ChecksCard({ checks, session }: { checks: DerivedFlowChecks; session: s
           </tr>
         </tbody>
       </table>
+      </div>
     </section>
   );
 }
@@ -705,6 +719,7 @@ function NamesCard({ day }: { day: OptionsFlowDay }) {
       {day.names.length === 0 ? (
         <p className="muted">No name is in more than one table.</p>
       ) : (
+        <div className="table-scroll">
         <table className="data-table flow-table">
           <tbody>
             {day.names.map((n) => (
@@ -722,6 +737,7 @@ function NamesCard({ day }: { day: OptionsFlowDay }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </GridCard>
   );

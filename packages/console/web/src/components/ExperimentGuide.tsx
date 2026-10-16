@@ -125,6 +125,7 @@ function EntryCard({ entry, unit }: { entry: ExperimentGuideEntry; unit: string 
               most of its siblings use.
             </p>
           ) : (
+            <div className="table-scroll">
             <table className="data-table arm-diff-table">
               <tbody>
                 {distinguishing.map((o) => (
@@ -138,6 +139,7 @@ function EntryCard({ entry, unit }: { entry: ExperimentGuideEntry; unit: string 
                 ))}
               </tbody>
             </table>
+            </div>
           )}
 
           {common.length > 0 && (
@@ -145,6 +147,7 @@ function EntryCard({ entry, unit }: { entry: ExperimentGuideEntry; unit: string 
               <summary className="muted">
                 also states {common.length} setting{common.length === 1 ? "" : "s"} shared with its siblings
               </summary>
+              <div className="table-scroll">
               <table className="data-table arm-diff-table">
                 <tbody>
                   {common.map((o) => (
@@ -156,6 +159,7 @@ function EntryCard({ entry, unit }: { entry: ExperimentGuideEntry; unit: string 
                   ))}
                 </tbody>
               </table>
+              </div>
             </details>
           )}
         </div>

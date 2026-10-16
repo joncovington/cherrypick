@@ -105,6 +105,7 @@ function Breakdown({ b }: { b: SummaryBreakdown }) {
   const max = Math.max(...b.rows.map((r) => Math.abs(r.net)), 1);
   return (
     <TsCard title={b.title}>
+      <div className="table-scroll">
       <table className="ts-table">
         <thead>
           <tr>
@@ -133,6 +134,7 @@ function Breakdown({ b }: { b: SummaryBreakdown }) {
           ))}
         </tbody>
       </table>
+      </div>
     </TsCard>
   );
 }
@@ -141,6 +143,7 @@ function ByArm({ s }: { s: ModuleSummarySlice }) {
   if (s.arms.length === 0) return <TsEmpty what="by arm" />;
   return (
     <TsCard title="by arm" aside={<span className="ts-muted">every arm in the window</span>}>
+      <div className="table-scroll">
       <table className="ts-table">
         <thead>
           <tr>
@@ -164,6 +167,7 @@ function ByArm({ s }: { s: ModuleSummarySlice }) {
           ))}
         </tbody>
       </table>
+      </div>
     </TsCard>
   );
 }

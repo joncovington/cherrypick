@@ -216,6 +216,7 @@ export function HealthTab() {
             <span className={data.live.halted ? "chip chip-missing" : "chip chip-ok"}>{data.live.halted ? "LIVE HALTED (flag present)" : "halt flag clear"}</span>{" "}
             {data.live.alertDaemon !== null && <span className="chip">alert daemon {data.live.alertDaemon.state}</span>}
           </p>
+          <div className="table-scroll">
           <table className="data-table">
             <thead>
               <tr>
@@ -236,6 +237,7 @@ export function HealthTab() {
               ))}
             </tbody>
           </table>
+          </div>
         </Section>
         <Section title="notifications" note={data.notify.webhookNote}>
           <dl className="system-dl">
@@ -350,6 +352,7 @@ export function SupervisorTab() {
       )}
 
       <Section title="daemons">
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -377,6 +380,7 @@ export function SupervisorTab() {
             ))}
           </tbody>
         </table>
+        </div>
       </Section>
 
       <Section
@@ -513,6 +517,7 @@ export function DataTab() {
   return (
     <div className="system-page">
       <Section title="freshness" note="When each scheduled artifact last landed, and whether its own run said ok.">
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -535,6 +540,7 @@ export function DataTab() {
             ))}
           </tbody>
         </table>
+        </div>
       </Section>
 
       {data.stream !== null && (
@@ -558,6 +564,7 @@ export function DataTab() {
               <span className="system-check-value">{(data.stream.subscribedSymbols ?? 0).toLocaleString()} symbols</span>
             </div>
           </div>
+          <div className="table-scroll">
           <table className="data-table">
             <thead>
               <tr>
@@ -576,6 +583,7 @@ export function DataTab() {
               ))}
             </tbody>
           </table>
+          </div>
         </Section>
       )}
 
@@ -594,6 +602,7 @@ export function DataTab() {
               </span>
             </div>
           )}
+          <div className="table-scroll">
           <table className="data-table">
             <thead>
               <tr>
@@ -612,11 +621,13 @@ export function DataTab() {
               ))}
             </tbody>
           </table>
+          </div>
         </Section>
         <Section title="reader failures" note="Stores whose reads have thrown since the console started. A failing store is served as empty, so this is the only place it shows.">
           {data.readerFailures.length === 0 ? (
             <p className="muted">None since the console started.</p>
           ) : (
+            <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
@@ -637,6 +648,7 @@ export function DataTab() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </Section>
       </div>
@@ -713,6 +725,7 @@ export function EnvironmentTab() {
           )}
         </Section>
         <Section title="python packages">
+          <div className="table-scroll">
           <table className="data-table">
             <tbody>
               {Object.entries(r.python.packages).map(([k, v]) => (
@@ -723,6 +736,7 @@ export function EnvironmentTab() {
               ))}
             </tbody>
           </table>
+          </div>
         </Section>
       </div>
 
@@ -730,6 +744,7 @@ export function EnvironmentTab() {
         title={`processes · ${stale.length === 0 ? "all current" : `${String(stale.length)} running older code`}`}
         note="A process loads its code when it starts, so one whose packages' source changed on disk after that runs the older code until it restarts. Judged by the files, not by commits: committing after a restart changes nothing. The console runs its build, so for it the comparison is with the build it started on."
       >
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -766,6 +781,7 @@ export function EnvironmentTab() {
             ))}
           </tbody>
         </table>
+        </div>
       </Section>
     </div>
   );

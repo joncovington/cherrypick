@@ -381,6 +381,7 @@ function EraCard({ cuts, stale }: { cuts: RegimeCuts; stale: { artifactSession: 
           caveats inside the era: {cuts.era.caveats.map((b) => `${b.breakDate} ${b.kind}${b.reason ? ` — ${b.reason}` : ""}`).join("; ")}
         </p>
       )}
+      <div className="table-scroll">
       <table className="data-table">
         <thead>
           <tr>
@@ -407,6 +408,7 @@ function EraCard({ cuts, stale }: { cuts: RegimeCuts; stale: { artifactSession: 
           ))}
         </tbody>
       </table>
+      </div>
     </Card>
   );
 }
@@ -417,11 +419,13 @@ export function RegimeCutsTab({ module }: { module: RegimeCutsModule }) {
   if (isLoading || data === undefined) {
     return (
       <Card title="regime cuts" updatedAt={dataUpdatedAt} isError={isError}>
+        <div className="table-scroll">
         <table className="data-table">
           <tbody>
             <SkeletonRows n={4} cols={5} />
           </tbody>
         </table>
+        </div>
       </Card>
     );
   }

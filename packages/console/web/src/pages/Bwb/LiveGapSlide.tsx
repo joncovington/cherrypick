@@ -117,6 +117,7 @@ export function BwbLiveGapSlide() {
         {refusals.length === 0 ? (
           <p className="muted">No live entry has been refused.</p>
         ) : (
+          <div className="table-scroll">
           <table className="data-table num-from-2">
             <thead>
               <tr>
@@ -141,6 +142,7 @@ export function BwbLiveGapSlide() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
     </div>

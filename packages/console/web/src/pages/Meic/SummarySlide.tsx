@@ -244,6 +244,7 @@ function EntriesTable({ s, page, onPage }: { s: MeicSummarySlice; page: number; 
         </span>
       }
     >
+      <div className="table-scroll">
       <table className="ts-table">
         <thead>
           <tr><th>time</th><th>arm</th><th>sym</th><th className="num">credit</th><th>structure</th><th className="num">net</th></tr>
@@ -264,6 +265,7 @@ function EntriesTable({ s, page, onPage }: { s: MeicSummarySlice; page: number; 
           ))}
         </tbody>
       </table>
+      </div>
     </TsCard>
   );
 }
@@ -423,6 +425,7 @@ function ByArm({ s }: { s: MeicSummarySlice }) {
   if (s.arms.length === 0) return <TsEmpty what="by arm" />;
   return (
     <TsCard title="by arm" aside={<span className="ts-muted">every arm — the comparison card does not narrow</span>}>
+      <div className="table-scroll">
       <table className="ts-table">
         <thead>
           <tr>
@@ -449,6 +452,7 @@ function ByArm({ s }: { s: MeicSummarySlice }) {
           ))}
         </tbody>
       </table>
+      </div>
     </TsCard>
   );
 }

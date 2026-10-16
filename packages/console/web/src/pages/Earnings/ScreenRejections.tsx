@@ -70,6 +70,7 @@ export function ScreenRejections({ mode, era }: { mode: TradingMode; era: string
             fails five, so a gate that never fires alone is shadowed by another and tuning it changes nothing.
           </p>
 
+          <div className="table-scroll">
           <table className="data-table">
             <thead>
               <tr>
@@ -119,6 +120,7 @@ export function ScreenRejections({ mode, era }: { mode: TradingMode; era: string
               ))}
             </tbody>
           </table>
+          </div>
 
           {(m.excluded ?? []).length > 0 && (
             <p className="muted" style={{ fontSize: 11, margin: "0.5rem 0 0", lineHeight: 1.55 }}>

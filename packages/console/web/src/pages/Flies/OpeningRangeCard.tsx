@@ -36,11 +36,13 @@ export function OpeningRangeCard({ filter }: { filter: { date: string | null } }
   if (isLoading || data === undefined) {
     return (
       <Card title="opening range" updatedAt={dataUpdatedAt} isError={isError}>
+        <div className="table-scroll">
         <table className="data-table">
           <tbody>
             <SkeletonRows n={2} cols={4} />
           </tbody>
         </table>
+        </div>
       </Card>
     );
   }
