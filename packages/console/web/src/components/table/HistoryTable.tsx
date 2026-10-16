@@ -1,5 +1,5 @@
 import { Fragment, type HTMLAttributes, type ReactNode } from "react";
-import { Card, SkeletonRows } from "../DataTable";
+import { Card, SkeletonRows, sortRows, useSort } from "../DataTable";
 import { ColumnsMenu } from "./ColumnsMenu";
 import { DateRangeBar } from "./DateRange";
 import { useColumnLayout, type ColumnDef } from "./columns";
@@ -11,6 +11,12 @@ import { useColumnLayout, type ColumnDef } from "./columns";
  *
  * The columns come from a `ColumnDef` list (columns.ts), so the money block's order and `net` last
  * are enforced by the resolver, not by each table remembering to.
+ *
+ * Sorting (2026-10-16) comes in two modes, and a table chooses one. `clientSort` is for a table
+ * that holds every row: each column with a `sortValue` sorts here. A server-paged table passes
+ * `sort`/`onSort` (`usePage().toggleSort`) and `serverSorts`, the column ids its reader can order
+ * the WHOLE result by -- sorting one fetched page in the browser would say "largest loss" of 100
+ * rows while calling it the history's. With neither, no header sorts.
  */
 export function HistoryTable<R>({
   table,
@@ -33,6 +39,10 @@ export function HistoryTable<R>({
   detailClassName,
   className,
   dateRange = true,
+  sort,
+  onSort,
+  serverSorts,
+  clientSort = false,
 }: {
   /** The prefs key the column layout is kept under: `columns:<table>`. */
   table: string;
@@ -60,9 +70,26 @@ export function HistoryTable<R>({
   /** False for a table that is not a history over dates (one position's own legs): no date bar,
    *  which would filter nothing and read as though it did. */
   dateRange?: boolean;
+  /** The server-side sort in force (`PageState.sort`/`dir`) and the click that cycles it. A column
+   *  is a sort button only with both this and its own `sortKey`. */
+  sort?: { sort?: string; dir?: "asc" | "desc" };
+  onSort?: (key: string) => void;
+  /** The column ids the server sorts by, for a server-paged table. */
+  serverSorts?: readonly string[];
+  /** Every row is in hand: sort in the browser by each column's `sortValue`. */
+  clientSort?: boolean;
 }) {
   const cols = useColumnLayout(table, defs);
   const span = cols.columns.length;
+  const local = useSort();
+  const server = !clientSort && onSort !== undefined;
+  const sortable = (c: ColumnDef<R>): boolean =>
+    clientSort ? c.sortValue !== undefined : server && (serverSorts ?? []).includes(c.id);
+  const active = clientSort ? { sort: local.key ?? undefined, dir: local.dir } : sort;
+  const click = (id: string) => (clientSort ? local.toggle(id) : onSort?.(id));
+  const shown = clientSort
+    ? sortRows(rows, local, Object.fromEntries(defs.flatMap((d) => (d.sortValue ? [[d.id, d.sortValue]] : []))))
+    : rows;
   return (
     <Card title={title} updatedAt={updatedAt} isError={isError} className={className} collapseKey={`history-${table}`}>
       <div className="history-controls">
@@ -74,11 +101,29 @@ export function HistoryTable<R>({
         <table className="data-table">
           <thead>
             <tr>
-              {cols.columns.map((c) => (
-                <th key={c.id} title={c.title} className={cellClass(c)}>
-                  {c.header}
-                </th>
-              ))}
+              {cols.columns.map((c) => {
+                if (!sortable(c)) {
+                  return (
+                    <th key={c.id} title={c.title} className={cellClass(c)}>
+                      {c.header}
+                    </th>
+                  );
+                }
+                const on = active?.sort === c.id;
+                return (
+                  <th
+                    key={c.id}
+                    title={c.title}
+                    className={cellClass(c)}
+                    aria-sort={on ? (active?.dir === "asc" ? "ascending" : "descending") : undefined}
+                  >
+                    <button type="button" className="th-sort" onClick={() => click(c.id)}>
+                      {c.header}
+                      {on ? (active?.dir === "asc" ? " ▴" : " ▾") : ""}
+                    </button>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -91,7 +136,7 @@ export function HistoryTable<R>({
                 </td>
               </tr>
             ) : (
-              rows.map((r) => {
+              shown.map((r) => {
                 const detail = expanded?.(r) ?? null;
                 return (
                   <Fragment key={rowKey(r)}>

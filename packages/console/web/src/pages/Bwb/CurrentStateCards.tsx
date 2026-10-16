@@ -1,5 +1,5 @@
 import type { BwbArmCell, BwbFireCount, BwbOpenPosition, BwbPayload } from "@console/shared";
-import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
+import { Card, DataCard, PnlCell, SortTh, fmtMoney, fmtNum, fmtPct, sortRows, useSort } from "../../components/DataTable";
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
@@ -98,6 +98,7 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
 export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefined; updatedAt?: number }) {
   // The arm filter: every arm with an open trade, retired ones behind the shared toggle.
   const [arm, setArm] = useState<string | null>(null);
+  const sort = useSort();
   if (data === undefined) return null;
   const empty = data.openPositions.length === 0;
   const headers = ["symbol", "arm", "opened", "expiry", "near/body x2/far", "qty", "price", "entry", "add-on $", "mark (net of costs to date)", "spot", "peak |delta|", "below flip", "add-on (short/long)"];
@@ -124,7 +125,7 @@ export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefin
   // Newest entry first: the ladder adds one BWB per arm per session, so the top of this table is
   // what today put on. Symbol and arm only break ties within a session.
   const arms = [...new Set(data.openPositions.map((p) => p.arm))].sort();
-  const rows = [...data.openPositions]
+  const ordered = [...data.openPositions]
     .filter((p) => arm === null || p.arm === arm)
     .sort(
       (a, b) =>
@@ -132,6 +133,34 @@ export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefin
         a.symbol.localeCompare(b.symbol) ||
         a.arm.localeCompare(b.arm),
     );
+  // A header click re-orders the whole filtered set; the third click is back to newest first. The
+  // strikes, the flip flag and the trigger cell are composite, so they stay fixed headers.
+  const rows = sortRows(ordered, sort, {
+    symbol: (p) => p.symbol,
+    arm: (p) => p.arm,
+    opened: (p) => (p.entrySession === "" ? null : p.entrySession),
+    expiry: (p) => p.expiration,
+    qty: (p) => p.quantity,
+    price: (p) => p.entryCredit,
+    entry: (p) => p.entryCash,
+    addon: (p) => p.addOnCash,
+    mark: (p) => p.unrealisedNet,
+    spot: (p) => p.currentSpot ?? p.entrySpot,
+    delta: (p) => p.peakAbsDelta,
+  });
+  const sortKeys: Record<string, string> = {
+    symbol: "symbol",
+    arm: "arm",
+    opened: "opened",
+    expiry: "expiry",
+    qty: "qty",
+    price: "price",
+    entry: "entry",
+    "add-on $": "addon",
+    "mark (net of costs to date)": "mark",
+    spot: "spot",
+    "peak |delta|": "delta",
+  };
   return (
     <Card
       title={arm === null ? "open trades" : `open trades · ${arm} (${rows.length})`}
@@ -143,9 +172,10 @@ export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefin
         <table className="data-table num-from-5">
           <thead>
             <tr>
-              {headers.map((h) => (
-                <th key={h}>{h}</th>
-              ))}
+              {headers.map((h) => {
+                const k = sortKeys[h];
+                return k === undefined ? <th key={h}>{h}</th> : <SortTh key={h} label={h} k={k} sort={sort} />;
+              })}
             </tr>
           </thead>
           <tbody>

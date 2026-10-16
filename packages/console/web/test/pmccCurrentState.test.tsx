@@ -90,6 +90,18 @@ describe("PMCC open trades", () => {
     const weekly = text(<OpenTradesCard data={payload([control])} />);
     expect(weekly).toContain("→ $0.05");
   });
+
+  it("makes every rankable column a sort button, and leaves the assignment cell fixed", () => {
+    const sortButtons = (html: string) => [...html.matchAll(/<button type="button" class="th-sort">([^<]*)/g)].map((m) => m[1]);
+    expect(sortButtons(text(<OpenTradesCard data={payload([position({})])} />))).toEqual([
+      "symbol", "arm", "opened", "qty", "price", "entry", "mark (net of costs to date)", "long", "short", "time value", "spot", "entry spread",
+    ]);
+    // Control's two columns sort where they are drawn.
+    const weekly = sortButtons(text(<OpenTradesCard data={payload([control])} />));
+    expect(weekly).toContain("weekly yield");
+    expect(weekly).toContain("protection");
+    expect(weekly).not.toContain("assignment");
+  });
 });
 
 describe("PMCC arm comparison", () => {

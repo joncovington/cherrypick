@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
+import { Card, DataCard, PnlCell, SortTh, fmtMoney, fmtNum, fmtPct, sortRows, useSort } from "../../components/DataTable";
 import { SeriesLegend, SERIES_COLORS } from "../../components/Charts";
 import { TimeLineChart } from "../../components/chart/TimeLineChart";
 import { TimeBarChart } from "../../components/chart/TimeBarChart";
@@ -60,6 +60,21 @@ interface Performance {
 
 const GRANULARITIES = ["daily", "weekly", "monthly"] as const;
 
+type ArmRow = Performance["arms"][number];
+
+const ARM_SORTS = {
+  arm: (p: ArmRow) => p.arm,
+  trades: (p: ArmRow) => p.trades,
+  sessions: (p: ArmRow) => p.sessions,
+  gross: (p: ArmRow) => p.grossPnl,
+  fees: (p: ArmRow) => p.fees,
+  net: (p: ArmRow) => p.netPnl,
+  win: (p: ArmRow) => p.winRatePct,
+  expectancy: (p: ArmRow) => p.expectancy,
+  pf: (p: ArmRow) => p.profitFactor,
+  dd: (p: ArmRow) => p.maxDrawdown,
+};
+
 export function MeicPerformanceTab({
   mode,
   symbol,
@@ -86,6 +101,8 @@ export function MeicPerformanceTab({
     refetchInterval: 60_000,
   });
 
+  // The server ranks the arms by net; a header click re-ranks, and a third click returns to that.
+  const armSort = useSort();
   const risk = data?.risk;
   const equity = data?.equity ?? [];
 
@@ -100,8 +117,16 @@ export function MeicPerformanceTab({
           <table className="data-table num-from-1">
             <thead>
               <tr>
-                <th>arm</th><th>trades</th><th>sessions</th><th>gross</th><th>fees</th><th>net</th>
-                <th>win %</th><th>expectancy</th><th>PF</th><th>max DD</th>
+                <SortTh label="arm" k="arm" sort={armSort} />
+                <SortTh label="trades" k="trades" sort={armSort} />
+                <SortTh label="sessions" k="sessions" sort={armSort} />
+                <SortTh label="gross" k="gross" sort={armSort} />
+                <SortTh label="fees" k="fees" sort={armSort} />
+                <SortTh label="net" k="net" sort={armSort} />
+                <SortTh label="win %" k="win" sort={armSort} />
+                <SortTh label="expectancy" k="expectancy" sort={armSort} />
+                <SortTh label="PF" k="pf" sort={armSort} />
+                <SortTh label="max DD" k="dd" sort={armSort} title="sorts by the drawdown's size: deepest first" />
               </tr>
             </thead>
             <tbody>
@@ -110,7 +135,7 @@ export function MeicPerformanceTab({
               ) : data?.arms.length === 0 ? (
                 <tr><td colSpan={10} className="muted">no arm-tagged trades (this ledger has no arm column)</td></tr>
               ) : (
-                data?.arms.map((p) => (
+                sortRows(data?.arms ?? [], armSort, ARM_SORTS).map((p) => (
                   <tr key={p.arm}>
                     <td>{p.arm}</td>
                     <td>{p.trades}</td>

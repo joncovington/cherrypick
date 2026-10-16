@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ScreenRejections } from "./ScreenRejections";
 import type { TradingMode } from "@console/shared";
-import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
+import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct, sortRows, useSort, type SortHeader } from "../../components/DataTable";
 import { LineChart, SeriesLegend } from "../../components/Charts";
 import { TimeLineChart } from "../../components/chart/TimeLineChart";
 import { TabStrip } from "../../components/ScopeBar";
@@ -55,8 +55,35 @@ function SampleBar({ s }: { s: StrategyDetail }) {
   );
 }
 
+/** The sample bar stays unsorted: it is a progress drawing, and `trades` already ranks the same thing. */
+const STRATEGY_HEADERS: Array<string | SortHeader> = [
+  { label: "strategy", k: "strategy" },
+  { label: "trades", k: "trades" },
+  { label: "win %", k: "win" },
+  { label: "PF", k: "pf" },
+  { label: "expectancy", k: "expectancy" },
+  { label: "net", k: "net" },
+  { label: "Sharpe (trade)", k: "sharpe" },
+  { label: "max DD", k: "dd", title: "sorts by the drawdown's size: deepest first" },
+  { label: "IV crush", k: "crush" },
+  "sample",
+];
+
+const STRATEGY_SORTS = {
+  strategy: (s: StrategyDetail) => s.strategy,
+  trades: (s: StrategyDetail) => s.trades,
+  win: (s: StrategyDetail) => s.winRatePct,
+  pf: (s: StrategyDetail) => s.profitFactor,
+  expectancy: (s: StrategyDetail) => s.expectancy,
+  net: (s: StrategyDetail) => s.net,
+  sharpe: (s: StrategyDetail) => s.sharpe,
+  dd: (s: StrategyDetail) => s.maxDrawdown,
+  crush: (s: StrategyDetail) => s.avgIvCrushPts,
+};
+
 export function EarningsDetailCards({ mode, era }: { mode: TradingMode; era: string | null }) {
   const [window, setWindow] = useState<(typeof WINDOWS)[number]>("cumulative");
+  const strategySort = useSort();
   const { data, isLoading, dataUpdatedAt } = useQuery<Detail>({
     queryKey: ["earnings-detail", mode, era],
     queryFn: async () => {
@@ -117,13 +144,14 @@ export function EarningsDetailCards({ mode, era }: { mode: TradingMode; era: str
 
       <DataCard
         title="Per-strategy detail"
-        headers={["strategy", "trades", "win %", "PF", "expectancy", "net", "Sharpe (trade)", "max DD", "IV crush", "sample"]}
+        headers={STRATEGY_HEADERS}
+        sort={strategySort}
         numFrom={1}
         loading={isLoading}
         rowCount={data?.perStrategy.length ?? 0}
         updatedAt={dataUpdatedAt}
       >
-        {data?.perStrategy.map((s) => (
+        {sortRows(data?.perStrategy ?? [], strategySort, STRATEGY_SORTS).map((s) => (
           <tr key={s.strategy}>
             <td>{s.strategy}</td>
             <td>{s.trades}</td>

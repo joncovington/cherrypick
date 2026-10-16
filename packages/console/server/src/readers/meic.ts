@@ -7,7 +7,7 @@ import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
 import { readOnlyDb, withReadOnlyDb, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
-import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
+import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest, type SortAccessors } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
 import { summaryWindow } from "./summary/common.js";
 import { cachedQuote } from "./streamcache.js";
@@ -325,6 +325,31 @@ export function meicTradeCash(r: Record<string, unknown>): Pick<
   };
 }
 
+/**
+ * The trade log's sortable columns, by the web tables' column ids (`MEIC_TRADE_SORTS` beside
+ * `HISTORY_COLUMNS` in pages/Meic/MeicTables.tsx, which a test holds to this list). Both views of
+ * the log share them. Each reads the served field its cell renders -- `net` is the derived
+ * gross − fees, not the ledger's pnl -- and `date` breaks ties on the entry stamp so a session's
+ * condors keep their clock order; `time` is the clock time alone, for ranking entry slots.
+ */
+export const MEIC_TRADE_SORTS: SortAccessors<MeicTradeRow> = {
+  date: (r) => `${r.tradeDate} ${r.entryTime ?? ""}`,
+  time: (r) => (r.entryTime !== null && r.entryTime.length >= 16 ? r.entryTime.slice(11, 16) : null),
+  sym: (r) => r.symbol,
+  put: (r) => r.putStrike,
+  call: (r) => r.callStrike,
+  wing: (r) => r.wingWidth,
+  qty: (r) => r.quantity,
+  price: (r) => r.netCredit,
+  entry: (r) => r.entryCash,
+  exit: (r) => r.exitCash,
+  gross: (r) => r.gross,
+  fees: (r) => r.fees,
+  settle: (r) => r.settlementFees,
+  slip: (r) => r.slippage,
+  net: (r) => r.net,
+};
+
 export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTradeQuery = NO_TRADE_QUERY): MeicPayload {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
@@ -362,6 +387,7 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
         exitReason: str(r["exit_reason"]),
         ivRankAtEntry: num(r["iv_rank_at_entry"]),
       }),
+      MEIC_TRADE_SORTS,
     );
   });
 

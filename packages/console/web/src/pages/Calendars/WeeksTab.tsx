@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { CalendarsPayload, CalendarsWeekRow } from "@console/shared";
 import { useCalendarsWeek, useCalendarsWeeks } from "../../lib/api";
-import { DataCard, fmtNum, fmtPct } from "../../components/DataTable";
+import { DataCard, fmtNum, fmtPct, sortRows, useSort } from "../../components/DataTable";
 import { TradeTotalsChip, tradeMoneyColumns } from "../../components/TradeMoney";
 import { HistoryTable } from "../../components/table/HistoryTable";
 import { useUrlDateRange } from "../../components/table/DateRange";
@@ -77,14 +77,22 @@ function WeekDetail({ week }: { week: string }) {
 const MONEY = tradeMoneyColumns<CalendarsWeekRow>("the week's call and put calendar debits together, per share");
 
 const COLUMNS: ColumnDef<CalendarsWeekRow>[] = [
-  { id: "week", header: "week", kind: "describe", className: "mono", render: (r) => r.weekOf },
-  { id: "structure", header: "structure", kind: "describe", className: "mono", render: (r) => r.structure },
-  { id: "arm", header: "arm", kind: "describe", className: "mono", render: (r) => r.arm },
+  { id: "week", header: "week", kind: "describe", className: "mono", render: (r) => r.weekOf, sortValue: (r) => r.weekOf },
+  {
+    id: "structure",
+    header: "structure",
+    kind: "describe",
+    className: "mono",
+    render: (r) => r.structure,
+    sortValue: (r) => r.structure,
+  },
+  { id: "arm", header: "arm", kind: "describe", className: "mono", render: (r) => r.arm, sortValue: (r) => r.arm },
   {
     id: "positions",
     header: "positions",
     kind: "describe",
     numeric: true,
+    sortValue: (r) => r.positions,
     render: (r) => (
       <>
         {r.closed}/{r.positions}
@@ -96,8 +104,22 @@ const COLUMNS: ColumnDef<CalendarsWeekRow>[] = [
       </>
     ),
   },
-  { id: "spot", header: "entry spot", kind: "describe", numeric: true, render: (r) => fmtNum(r.entrySpot, 2) },
-  { id: "settled", header: "settled", kind: "describe", numeric: true, render: (r) => fmtNum(r.settlementSpot, 2) },
+  {
+    id: "spot",
+    header: "entry spot",
+    kind: "describe",
+    numeric: true,
+    render: (r) => fmtNum(r.entrySpot, 2),
+    sortValue: (r) => r.entrySpot,
+  },
+  {
+    id: "settled",
+    header: "settled",
+    kind: "describe",
+    numeric: true,
+    render: (r) => fmtNum(r.settlementSpot, 2),
+    sortValue: (r) => r.settlementSpot,
+  },
   ...MONEY.describe,
   ...MONEY.money,
 ];
@@ -106,7 +128,14 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
   const { from, to } = useUrlDateRange();
   const { data: weeks, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useCalendarsWeeks({ from, to });
   const [open, setOpen] = useState<string | null>(null);
-  const em = data?.emVsRealized ?? [];
+  const emSort = useSort();
+  const em = sortRows(data?.emVsRealized ?? [], emSort, {
+    week: (r) => r.weekOf,
+    structure: (r) => r.structure,
+    expected: (r) => r.expectedMove,
+    realised: (r) => r.realizedMove,
+    ratio: (r) => r.ratio,
+  });
   const keyOf = (r: CalendarsWeekRow) => `${r.weekOf}-${r.arm}`;
 
   return (
@@ -116,6 +145,7 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
         title="weeks"
         className="view-fade"
         defs={COLUMNS}
+        clientSort
         rows={weeks?.rows ?? []}
         rowKey={keyOf}
         loading={isLoading}
@@ -141,7 +171,14 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
 
       <DataCard
         title="expected move vs realized"
-        headers={["week", "structure", "expected move", "realized", "ratio"]}
+        sort={emSort}
+        headers={[
+          { label: "week", k: "week" },
+          { label: "structure", k: "structure" },
+          { label: "expected move", k: "expected" },
+          { label: "realized", k: "realised" },
+          { label: "ratio", k: "ratio" },
+        ]}
         loading={data === undefined}
         rowCount={em.length}
         numFrom={2}

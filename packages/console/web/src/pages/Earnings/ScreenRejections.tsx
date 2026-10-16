@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { Card } from "../../components/DataTable";
+import { Card, SortTh, sortRows, useSort } from "../../components/DataTable";
 
 /**
  * Why the screen rejected what it rejected — and, more usefully, which threshold is worth moving.
@@ -52,7 +52,12 @@ function useScreenMetrics(mode: TradingMode, era: string | null) {
 export function ScreenRejections({ mode, era }: { mode: TradingMode; era: string | null }) {
   const { data, isLoading, isError, dataUpdatedAt } = useScreenMetrics(mode, era);
   const m = data?.metrics ?? null;
-  const reasons = m?.reasons ?? [];
+  const sort = useSort();
+  const reasons = sortRows(m?.reasons ?? [], sort, {
+    reason: (r) => r.reason,
+    total: (r) => r.total,
+    sole: (r) => r.sole,
+  });
   const max = Math.max(...reasons.map((r) => r.total), 1);
 
   return (
@@ -71,13 +76,13 @@ export function ScreenRejections({ mode, era }: { mode: TradingMode; era: string
           </p>
 
           <div className="table-scroll">
-          <table className="data-table">
+          <table className="data-table num-from-2">
             <thead>
               <tr>
-                <th>reason</th>
+                <SortTh label="reason" k="reason" sort={sort} />
                 <th style={{ width: "40%" }} />
-                <th style={{ textAlign: "right" }}>total</th>
-                <th style={{ textAlign: "right" }}>sole</th>
+                <SortTh label="total" k="total" sort={sort} />
+                <SortTh label="sole" k="sole" sort={sort} title="the only column a threshold change can act on" />
               </tr>
             </thead>
             <tbody>

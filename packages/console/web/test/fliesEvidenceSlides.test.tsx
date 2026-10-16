@@ -118,6 +118,12 @@ describe("the gates slide", () => {
     expect(html).toContain("-$30.00");
     expect(html).toContain("partial");
   });
+
+  it("sorts the summary by its single-figure columns, and leaves the ahead / behind pair plain", () => {
+    const html = render("flies-gates", { ok: true, data: gates, error: null }, <GatesSlide />);
+    const sortable = [...html.replace(/<!-- -->/g, "").matchAll(/<button type="button" class="th-sort">([^<]*)/g)].map((m) => m[1]);
+    expect(sortable).toEqual(["arm", "window", "acted", "arm net", "control net", "diff", "quiet", "quiet diff"]);
+  });
 });
 
 const selector: FliesSelectorSessions = {

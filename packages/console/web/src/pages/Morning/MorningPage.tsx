@@ -17,6 +17,7 @@ import { AXIS_FONT, SERIES_COLORS, LevelStrip } from "../../components/Charts";
 import { TechnicalsCards } from "./TechnicalsCards";
 import { useFeatures } from "../../lib/useFeatures";
 import { isFeatureOn } from "../../lib/visibility";
+import { SortTh, sortRows, useSort } from "../../components/DataTable";
 
 /**
  * The morning report. Renders the fact pack and computes nothing.
@@ -427,6 +428,15 @@ function VolRegimeCard({ pack }: { pack: MorningPack }) {
 function CalendarCard({ pack }: { pack: MorningPack }) {
   const c = pack.calendar;
   const yesNo = (v: boolean | null) => (v === null ? "—" : v ? "yes" : "no");
+  // Implied move sorts by its percentage, the figure that compares across symbols.
+  const earnSort = useSort();
+  const earnings = sortRows(c?.earnings?.rows ?? [], earnSort, {
+    date: (r) => r.date,
+    symbol: (r) => r.symbol,
+    move: (r) => r.expectedMovePct,
+    expiration: (r) => r.expiration,
+    spot: (r) => r.spot,
+  });
   return (
     <section className="card">
       <div className="card-head">
@@ -508,16 +518,16 @@ function CalendarCard({ pack }: { pack: MorningPack }) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Date</th>
+                  <SortTh label="Date" k="date" sort={earnSort} />
                   <th>When</th>
-                  <th>Symbol</th>
-                  <th>Implied move</th>
-                  <th>Expiration</th>
-                  <th>Spot</th>
+                  <SortTh label="Symbol" k="symbol" sort={earnSort} />
+                  <SortTh label="Implied move" k="move" sort={earnSort} title="sorts by the move as a percentage of spot" />
+                  <SortTh label="Expiration" k="expiration" sort={earnSort} />
+                  <SortTh label="Spot" k="spot" sort={earnSort} />
                 </tr>
               </thead>
               <tbody>
-                {c.earnings.rows.map((r) => (
+                {earnings.map((r) => (
                   <tr key={`${r.date}-${r.symbol}`}>
                     <td>{r.date}</td>
                     <td className="muted">
@@ -753,6 +763,18 @@ function HotRows({
   rows: MorningHotOptionsRow[];
   flow?: MorningHotOptions["flow"] | undefined;
 }) {
+  // The # is the pack's stored rank, so it travels with its row and sorting by it restores the ranking.
+  const sort = useSort();
+  const sorted = sortRows(rows, sort, {
+    rank: (r) => r.rank,
+    symbol: (r) => r.symbol,
+    contracts: (r) => r.contracts,
+    calls: (r) => r.calls,
+    puts: (r) => r.puts,
+    pc: (r) => r.putCall,
+    rel: (r) => r.relativeVolume,
+    customer: (r) => r.customerSidePct,
+  });
   return (
     <>
       <h3>{title}</h3>
@@ -760,18 +782,18 @@ function HotRows({
       <table className="data-table">
         <thead>
           <tr>
-            <th>#</th>
-            <th>Underlying</th>
-            <th>Contracts</th>
-            <th>Calls</th>
-            <th>Puts</th>
-            <th>P/C</th>
-            <th>vs avg</th>
-            <th>Customer sides</th>
+            <SortTh label="#" k="rank" sort={sort} />
+            <SortTh label="Underlying" k="symbol" sort={sort} />
+            <SortTh label="Contracts" k="contracts" sort={sort} />
+            <SortTh label="Calls" k="calls" sort={sort} />
+            <SortTh label="Puts" k="puts" sort={sort} />
+            <SortTh label="P/C" k="pc" sort={sort} />
+            <SortTh label="vs avg" k="rel" sort={sort} />
+            <SortTh label="Customer sides" k="customer" sort={sort} />
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {sorted.map((r) => (
             <tr key={r.symbol}>
               <td className="muted">{count(r.rank)}</td>
               <td>

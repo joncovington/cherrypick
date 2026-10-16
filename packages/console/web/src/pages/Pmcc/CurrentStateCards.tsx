@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import type { PmccArmCell, PmccOpenPosition, PmccPayload } from "@console/shared";
-import { Card, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
+import { Card, PnlCell, SortTh, fmtMoney, fmtNum, fmtPct, sortRows, useSort } from "../../components/DataTable";
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
 import { dteOf, fmtStrike } from "../../lib/optionFormat";
@@ -208,6 +208,25 @@ function OpenTable({
   params: PmccPayload["params"];
   heldLong: boolean;
 }) {
+  // Each lifecycle's table sorts on its own. The legs sort by strike; the assignment cell mixes a
+  // share with a settlement-style exemption, so it stays a fixed header.
+  const sort = useSort();
+  const shown = sortRows(rows, sort, {
+    symbol: (p) => p.symbol,
+    arm: (p) => p.arm,
+    opened: (p) => (p.entrySession === "" ? null : p.entrySession),
+    qty: (p) => p.quantity,
+    price: (p) => (p.netDebit === null ? null : -p.netDebit),
+    entry: (p) => p.entryCash,
+    mark: (p) => p.unrealisedNet,
+    long: (p) => p.longStrike,
+    short: (p) => p.shortStrike,
+    tv: (p) => p.currentShortTv,
+    spot: (p) => p.currentSpot ?? p.entrySpot,
+    yield: (p) => p.entryWeeklyYieldPct,
+    spread: (p) => p.entryMaxSpreadPct,
+    protection: (p) => p.downsideProtectionPct,
+  });
   return (
     <section className="pmcc-compare">
       <h3>{title}</h3>
@@ -215,25 +234,25 @@ function OpenTable({
         <table className="data-table num-from-4">
           <thead>
             <tr>
-              <th>symbol</th>
-              <th>arm</th>
-              <th>opened</th>
-              <th>qty</th>
-              <th>price</th>
-              <th>entry</th>
-              <th>mark (net of costs to date)</th>
-              <th>long</th>
-              <th>short</th>
-              <th>time value</th>
-              <th>spot</th>
-              {!heldLong && <th>weekly yield</th>}
-              <th>entry spread</th>
-              {!heldLong && <th>protection</th>}
+              <SortTh label="symbol" k="symbol" sort={sort} />
+              <SortTh label="arm" k="arm" sort={sort} />
+              <SortTh label="opened" k="opened" sort={sort} />
+              <SortTh label="qty" k="qty" sort={sort} />
+              <SortTh label="price" k="price" sort={sort} />
+              <SortTh label="entry" k="entry" sort={sort} />
+              <SortTh label="mark (net of costs to date)" k="mark" sort={sort} />
+              <SortTh label="long" k="long" sort={sort} title="sorts by strike" />
+              <SortTh label="short" k="short" sort={sort} title="sorts by strike" />
+              <SortTh label="time value" k="tv" sort={sort} />
+              <SortTh label="spot" k="spot" sort={sort} />
+              {!heldLong && <SortTh label="weekly yield" k="yield" sort={sort} />}
+              <SortTh label="entry spread" k="spread" sort={sort} />
+              {!heldLong && <SortTh label="protection" k="protection" sort={sort} />}
               <th>assignment</th>
             </tr>
           </thead>
           <tbody>
-            <PositionRows rows={rows} params={params} heldLong={heldLong} />
+            <PositionRows rows={shown} params={params} heldLong={heldLong} />
           </tbody>
         </table>
       </div>

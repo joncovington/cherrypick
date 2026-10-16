@@ -9,6 +9,7 @@ import type {
   OptionsFlowDay,
 } from "@console/shared";
 import { GridCard, StatTile } from "../../components/grid/GridCard";
+import { SortTh, sortRows, useSort, type SortState } from "../../components/DataTable";
 import { fmtCount, fmtDollarsShort, fmtNum, fmtPct } from "../../lib/format";
 
 /**
@@ -172,8 +173,28 @@ function BirdseyeSummaryTable({ rows }: { rows: FlowBirdseyeRow[] }) {
   );
 }
 
+/**
+ * A flow-table header: sortable when the table is shown in full, a plain cell when it is a `limit`
+ * preview. A preview is the top of the site's own ranking, cut to N rows; re-sorting those N would
+ * read as a ranking the capture never made, so a preview keeps its order and its headers stay still.
+ */
+function FlowTh({ label, k, sort, className }: { label: string; k: string; sort: SortState | null; className?: string }) {
+  return sort === null ? <th className={className}>{label}</th> : <SortTh label={label} k={k} sort={sort} className={className} />;
+}
+
 function TradesTable({ rows, limit, showTime }: { rows: FlowTrade[]; limit?: number; showTime: boolean }) {
-  const shown = limit === undefined ? rows : rows.slice(0, limit);
+  const sortState = useSort();
+  const sort = limit === undefined ? sortState : null;
+  const shown =
+    sort === null
+      ? rows.slice(0, limit)
+      : sortRows(rows, sort, {
+          symbol: (r) => r.symbol,
+          time: (r) => r.timeEt,
+          size: (r) => r.size,
+          price: (r) => r.price,
+          premium: (r) => r.premium,
+        });
   // Scaled to the rows on show: one huge trade below the cut would flatten every bar above it.
   const max = maxOf(shown.map((r) => r.premium));
   return (
@@ -181,12 +202,12 @@ function TradesTable({ rows, limit, showTime }: { rows: FlowTrade[]; limit?: num
     <table className="data-table flow-table">
       <thead>
         <tr>
-          <th>Symbol</th>
-          {showTime && <th>Time ET</th>}
+          <FlowTh label="Symbol" k="symbol" sort={sort} />
+          {showTime && <FlowTh label="Time ET" k="time" sort={sort} />}
           <th>Contract</th>
-          <th className="num">Size</th>
-          <th className="num">Price</th>
-          <th className="num">Premium</th>
+          <FlowTh label="Size" k="size" sort={sort} className="num" />
+          <FlowTh label="Price" k="price" sort={sort} className="num" />
+          <FlowTh label="Premium" k="premium" sort={sort} className="num" />
           <th />
           <th>Side</th>
         </tr>
@@ -222,7 +243,24 @@ function directionTone(d: FlowSpread["direction"]): string {
 }
 
 function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: number; full: boolean }) {
-  const shown = limit === undefined ? rows : rows.slice(0, limit);
+  const sortState = useSort();
+  const sort = limit === undefined ? sortState : null;
+  // Linked (⛓) prints sit next to each other in the capture's order; a sort can pull them apart.
+  // The mark stays on each row, so the pair is still findable, and clearing the sort restores it.
+  const shown =
+    sort === null
+      ? rows.slice(0, limit)
+      : sortRows(rows, sort, {
+          symbol: (r) => r.symbol,
+          time: (r) => r.timeEt,
+          size: (r) => r.size,
+          direction: (r) => r.direction,
+          price: (r) => (r.price === null ? null : Math.abs(r.price)),
+          delta: (r) => r.delta,
+          premium: (r) => r.premium,
+          underlying: (r) => r.underlying?.last ?? null,
+          exch: (r) => r.exchange,
+        });
   // Scaled to the rows on show: one huge trade below the cut would flatten every bar above it.
   // An unverified premium is the site's figure, not a checked size: it neither scales nor draws a bar.
   const max = maxOf(shown.map((r) => (r.premiumUnverified ? null : r.premium)));
@@ -231,17 +269,17 @@ function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: numbe
     <table className="data-table flow-table">
       <thead>
         <tr>
-          <th>Symbol</th>
-          <th>Time ET</th>
+          <FlowTh label="Symbol" k="symbol" sort={sort} />
+          <FlowTh label="Time ET" k="time" sort={sort} />
           <th>Spread</th>
-          <th className="num">Size</th>
-          <th>Direction</th>
-          <th className="num">Price</th>
-          {full && <th className="num">Delta</th>}
-          <th className="num">Premium</th>
+          <FlowTh label="Size" k="size" sort={sort} className="num" />
+          <FlowTh label="Direction" k="direction" sort={sort} />
+          <FlowTh label="Price" k="price" sort={sort} className="num" />
+          {full && <FlowTh label="Delta" k="delta" sort={sort} className="num" />}
+          <FlowTh label="Premium" k="premium" sort={sort} className="num" />
           <th />
-          {full && <th className="num">Underlying</th>}
-          {full && <th>Exch</th>}
+          {full && <FlowTh label="Underlying" k="underlying" sort={sort} className="num" />}
+          {full && <FlowTh label="Exch" k="exch" sort={sort} />}
         </tr>
       </thead>
       <tbody>
@@ -294,18 +332,28 @@ function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: numbe
 }
 
 function VolOiTable({ rows, limit }: { rows: FlowVolOi[]; limit?: number }) {
-  const shown = limit === undefined ? rows : rows.slice(0, limit);
+  const sortState = useSort();
+  const sort = limit === undefined ? sortState : null;
+  const shown =
+    sort === null
+      ? rows.slice(0, limit)
+      : sortRows(rows, sort, {
+          symbol: (r) => r.symbol,
+          volume: (r) => r.volume,
+          oi: (r) => r.oi,
+          voi: (r) => r.vOi,
+        });
   const max = maxOf(shown.map((r) => r.vOi));
   return (
     <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
-          <th>Symbol</th>
+          <FlowTh label="Symbol" k="symbol" sort={sort} />
           <th>Contract</th>
-          <th className="num">Volume</th>
-          <th className="num">OI</th>
-          <th className="num">V/OI</th>
+          <FlowTh label="Volume" k="volume" sort={sort} className="num" />
+          <FlowTh label="OI" k="oi" sort={sort} className="num" />
+          <FlowTh label="V/OI" k="voi" sort={sort} className="num" />
           <th />
         </tr>
       </thead>

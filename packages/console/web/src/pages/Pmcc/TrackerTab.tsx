@@ -6,7 +6,7 @@ import type {
   PmccTrackerWeek,
 } from "@console/shared";
 import { usePmccTracker, usePmccTrackerIndex } from "../../lib/api";
-import { Card, DataCard, PnlCell } from "../../components/DataTable";
+import { Card, DataCard, PnlCell, sortRows, useSort } from "../../components/DataTable";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { Tile } from "../../components/performance/Tile";
 import { HistoryTable } from "../../components/table/HistoryTable";
@@ -69,17 +69,36 @@ export function TrackerIndex({
   loading: boolean;
   error: string | null;
 }) {
+  const sort = useSort();
+  const shown = sortRows(rows, sort, {
+    position: (r) => `${r.symbol} ${r.arm}`,
+    lifecycle: (r) => r.lifecycle,
+    status: (r) => r.status,
+    opened: (r) => r.entrySession,
+    closed: (r) => r.closedSession,
+    shorts: (r) => r.shorts,
+    net: (r) => r.net,
+  });
   return (
     <DataCard
       title="positions"
-      headers={["position", "lifecycle", "status", "opened", "closed", "shorts", "net"]}
+      sort={sort}
+      headers={[
+        { label: "position", k: "position", title: "sorts by symbol, then arm" },
+        { label: "lifecycle", k: "lifecycle" },
+        { label: "status", k: "status" },
+        { label: "opened", k: "opened" },
+        { label: "closed", k: "closed" },
+        { label: "shorts", k: "shorts" },
+        { label: "net", k: "net" },
+      ]}
       loading={loading}
       isError={error !== null}
       rowCount={rows.length}
       numFrom={5}
       empty={error ?? "no position on file yet"}
     >
-      {rows.map((r) => (
+      {shown.map((r) => (
         <tr key={r.positionId}>
           <td>
             <Link to={positionLink(r.positionId)}>
@@ -181,6 +200,7 @@ export function TrackerView({ t, updatedAt }: { t: PmccTracker; updatedAt?: numb
         table="pmcc-tracker-shorts"
         title="short-call log"
         defs={SHORT_COLUMNS}
+        clientSort
         rows={t.shorts}
         rowKey={(r) => r.legRole}
         loading={false}
@@ -296,10 +316,10 @@ function WeeksCard({ weeks }: { weeks: PmccTrackerWeek[] }) {
 }
 
 const SHORT_COLUMNS: ColumnDef<PmccTrackerShort>[] = [
-  { id: "n", header: "#", kind: "describe", numeric: true, render: (r) => r.n },
-  { id: "opened", header: "opened", kind: "describe", render: (r) => r.opened ?? "—" },
-  { id: "closed", header: "closed", kind: "describe", render: (r) => r.closed ?? "—" },
-  { id: "days", header: "days", kind: "describe", numeric: true, render: (r) => r.daysHeld ?? "—" },
+  { id: "n", header: "#", kind: "describe", numeric: true, render: (r) => r.n, sortValue: (r) => r.n },
+  { id: "opened", header: "opened", kind: "describe", render: (r) => r.opened ?? "—", sortValue: (r) => r.opened },
+  { id: "closed", header: "closed", kind: "describe", render: (r) => r.closed ?? "—", sortValue: (r) => r.closed },
+  { id: "days", header: "days", kind: "describe", numeric: true, render: (r) => r.daysHeld ?? "—", sortValue: (r) => r.daysHeld },
   {
     id: "stock",
     header: "stock",
@@ -308,9 +328,17 @@ const SHORT_COLUMNS: ColumnDef<PmccTrackerShort>[] = [
     numeric: true,
     render: (r) => `${fmtNum(r.spotOpen, 2)} → ${fmtNum(r.spotClose, 2)}`,
   },
-  { id: "strike", header: "strike", kind: "describe", numeric: true, render: (r) => fmtStrike(r.strike) },
-  { id: "expiry", header: "expiry", kind: "describe", render: (r) => r.expiration },
-  { id: "sold", header: "sold", title: "per-share premium received", kind: "describe", numeric: true, render: (r) => fmtPrice(r.sold) },
+  { id: "strike", header: "strike", kind: "describe", numeric: true, render: (r) => fmtStrike(r.strike), sortValue: (r) => r.strike },
+  { id: "expiry", header: "expiry", kind: "describe", render: (r) => r.expiration, sortValue: (r) => r.expiration },
+  {
+    id: "sold",
+    header: "sold",
+    title: "per-share premium received",
+    kind: "describe",
+    numeric: true,
+    render: (r) => fmtPrice(r.sold),
+    sortValue: (r) => r.sold,
+  },
   {
     id: "bought",
     header: "bought",
@@ -318,6 +346,7 @@ const SHORT_COLUMNS: ColumnDef<PmccTrackerShort>[] = [
     kind: "describe",
     numeric: true,
     render: (r) => fmtPrice(r.bought === null ? null : -r.bought),
+    sortValue: (r) => (r.bought === null ? null : -r.bought),
   },
   {
     id: "extrinsic",
@@ -326,19 +355,51 @@ const SHORT_COLUMNS: ColumnDef<PmccTrackerShort>[] = [
     kind: "describe",
     numeric: true,
     render: (r) => fmtCash(r.extrinsicCaptured),
+    sortValue: (r) => r.extrinsicCaptured,
   },
   { id: "how", header: "how", kind: "describe", render: (r) => r.how ?? "—" },
   { id: "why", header: "why", kind: "describe", className: "mono", render: (r) => r.why ?? "—" },
-  { id: "entry", header: "entry", title: "premium received, a credit", kind: "money", render: (r) => fmtCash(r.entry) },
-  { id: "exit", header: "exit", title: "buyback paid, a debit (an open short's mark)", kind: "money", render: (r) => fmtCash(r.exit) },
-  { id: "gross", header: "gross", title: "entry + exit", kind: "money", render: (r) => fmtCash(r.gross) },
-  { id: "fees", header: "fees", title: "commissions and exchange fees on this short's own tickets", kind: "money", render: (r) => (r.fees === null ? "n/r" : fmtMoney(-r.fees)) },
+  {
+    id: "entry",
+    header: "entry",
+    title: "premium received, a credit",
+    kind: "money",
+    render: (r) => fmtCash(r.entry),
+    sortValue: (r) => r.entry,
+  },
+  {
+    id: "exit",
+    header: "exit",
+    title: "buyback paid, a debit (an open short's mark)",
+    kind: "money",
+    render: (r) => fmtCash(r.exit),
+    sortValue: (r) => r.exit,
+  },
+  { id: "gross", header: "gross", title: "entry + exit", kind: "money", render: (r) => fmtCash(r.gross), sortValue: (r) => r.gross },
+  // The costs are shown as money out, and sort as shown.
+  {
+    id: "fees",
+    header: "fees",
+    title: "commissions and exchange fees on this short's own tickets",
+    kind: "money",
+    render: (r) => (r.fees === null ? "n/r" : fmtMoney(-r.fees)),
+    sortValue: (r) => (r.fees === null ? null : -r.fees),
+  },
   {
     id: "slip",
     header: "slip",
     title: "slippage: charged as a cost in this module, and subtracted",
     kind: "money",
     render: (r) => (r.slippage === null ? "n/r" : fmtMoney(-r.slippage)),
+    sortValue: (r) => (r.slippage === null ? null : -r.slippage),
   },
-  { id: "net", header: "net", title: "gross - fees - slip", kind: "money", pinned: true, render: (r) => <PnlCell v={r.net} /> },
+  {
+    id: "net",
+    header: "net",
+    title: "gross - fees - slip",
+    kind: "money",
+    pinned: true,
+    render: (r) => <PnlCell v={r.net} />,
+    sortValue: (r) => r.net,
+  },
 ];

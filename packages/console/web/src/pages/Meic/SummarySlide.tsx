@@ -34,6 +34,7 @@ import { useMeicSummary } from "../../lib/api";
 import type { MeicSummarySlice } from "@console/shared";
 import type { TradingMode } from "@console/shared";
 import type { MeicScope } from "./MeicTables";
+import { SortTh, sortRows, useSort } from "../../components/DataTable";
 import { RANGES, type Range, fmtUsd, sessionLabel, TsCard, TsEmpty, Gauge, WinRateArcs as KitWinRateArcs } from "../../components/summary/kit";
 
 export interface MeicSummaryProps {
@@ -422,23 +423,31 @@ function SignalBreakdown({
  * ------------------------------------------------------------------------- */
 
 function ByArm({ s }: { s: MeicSummarySlice }) {
+  const sort = useSort();
   if (s.arms.length === 0) return <TsEmpty what="by arm" />;
+  const arms = sortRows(s.arms, sort, {
+    arm: (a) => a.arm,
+    sym: (a) => a.symbol,
+    eval: (a) => a.evaluated,
+    filled: (a) => a.filled,
+    net: (a) => a.net,
+  });
   return (
     <TsCard title="by arm" aside={<span className="ts-muted">every arm — the comparison card does not narrow</span>}>
       <div className="table-scroll">
       <table className="ts-table">
         <thead>
           <tr>
-            <th>arm</th>
-            <th>sym</th>
-            <th className="num">eval</th>
-            <th className="num">filled</th>
+            <SortTh label="arm" k="arm" sort={sort} />
+            <SortTh label="sym" k="sym" sort={sort} />
+            <SortTh label="eval" k="eval" sort={sort} className="num" />
+            <SortTh label="filled" k="filled" sort={sort} className="num" />
             <th>dominant refusal</th>
-            <th className="num">net</th>
+            <SortTh label="net" k="net" sort={sort} className="num" />
           </tr>
         </thead>
         <tbody>
-          {s.arms.map((a) => (
+          {arms.map((a) => (
             <tr key={`${a.arm}|${a.symbol}`}>
               <td>{a.arm}</td>
               <td>{a.symbol}</td>

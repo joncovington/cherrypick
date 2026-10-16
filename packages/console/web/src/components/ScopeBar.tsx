@@ -126,6 +126,13 @@ export function TabStrip<T extends string>({
   );
 }
 
+/** The sort after a click on `key`: desc, then asc, then none -- the cycle `useSort` uses. */
+export function nextSort(cur: { sort?: string; dir?: "asc" | "desc" }, key: string): { sort?: string; dir?: "asc" | "desc" } {
+  if (cur.sort !== key) return { sort: key, dir: "desc" };
+  if (cur.dir !== "asc") return { sort: key, dir: "asc" };
+  return {};
+}
+
 /**
  * One table's page state, with the reset every filter change needs: an offset
  * into a result set that no longer exists points nowhere.
@@ -134,6 +141,9 @@ export function usePage(resetKeys: unknown[] = [], initialLimit: number = FIRST_
   page: PageState;
   setOffset: (v: number) => void;
   setLimit: (v: number) => void;
+  /** Cycle a column's sort: largest first, then smallest first, then the table's own order. Back
+   *  to the first page, since the old offset points into a different ordering. */
+  toggleSort: (key: string) => void;
 } {
   const [page, setPage] = useState<PageState>({ ...FIRST_PAGE, limit: initialLimit });
   const key = JSON.stringify(resetKeys);
@@ -145,7 +155,8 @@ export function usePage(resetKeys: unknown[] = [], initialLimit: number = FIRST_
   return {
     page,
     setOffset: (offset: number) => setPage((p) => ({ ...p, offset })),
-    setLimit: (limit: number) => setPage((p) => ({ limit, offset: Math.floor(p.offset / limit) * limit })),
+    setLimit: (limit: number) => setPage((p) => ({ ...p, limit, offset: Math.floor(p.offset / limit) * limit })),
+    toggleSort: (key: string) => setPage((p) => ({ limit: p.limit, offset: 0, ...nextSort(p, key) })),
   };
 }
 

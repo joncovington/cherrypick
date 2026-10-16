@@ -30,6 +30,10 @@ export interface ColumnDef<R> {
   /** A describe column holding numbers (strikes, qty, price): right-aligned. Money always is. */
   numeric?: boolean;
   className?: string;
+  /** The value this column sorts by -- the figure the cell shows, not a ledger column that only
+   *  resembles it. Used by a `clientSort` HistoryTable. A server-paged table sorts on the server
+   *  instead, by the column's `id`, and only for the ids its reader names (`serverSorts`). */
+  sortValue?: (row: R) => number | string | null;
   render: (row: R) => ReactNode;
 }
 

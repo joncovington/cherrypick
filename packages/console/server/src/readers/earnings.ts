@@ -4,7 +4,7 @@ import path from "node:path";
 import type { EarningsPayload, EarningsTradeRow, EarningsTradeTotals, EntryReviewRow, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { suiteEra, withReadOnlyDb, num, str, armColumnOf, hasColumn, type DatabaseHandle } from "./db.js";
-import { pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
+import { pageArray, FIRST_PAGE, type PageRequest, type SortAccessors } from "./paging.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { isoStamp, sessionDate } from "../services/report.js";
 
@@ -571,6 +571,28 @@ export interface EarningsPageRequest {
 export const EARNINGS_FIRST_PAGE: EarningsPageRequest = { trades: FIRST_PAGE, reviews: FIRST_PAGE };
 
 /**
+ * The history's sortable columns, by the web table's column ids (`HISTORY_SORTS` in
+ * pages/Earnings/EarningsHistory.tsx, which a test holds to this list). The date cells show the
+ * day; the sort reads the whole stamp, which orders the same days and keeps a day's trades in
+ * their clock order.
+ */
+export const EARNINGS_HISTORY_SORTS: SortAccessors<EarningsTradeRow> = {
+  opened: (r) => r.openedAt,
+  closed: (r) => r.closedAt,
+  sym: (r) => r.symbol,
+  strategy: (r) => r.strategy,
+  qty: (r) => r.quantity,
+  price: (r) => r.entryCredit,
+  entry: (r) => r.entryCash,
+  exit: (r) => r.exitCash,
+  gross: (r) => r.gross,
+  fees: (r) => r.fees,
+  settle: (r) => r.settlementFees,
+  slip: (r) => r.slippage,
+  net: (r) => r.net,
+};
+
+/**
  * Earnings browses both books at once — every row carries the mode of its
  * source DB. Because the list spans two stores, neither can page it: a LIMIT in
  * either one would cut rows the merged ordering has not placed yet. So both are
@@ -636,7 +658,7 @@ export function readEarnings(
     { trades: 0, gross: 0, fees: 0, settlementFees: 0, slippage: 0, net: 0 },
   );
   return {
-    trades: pageArray(closed, page.trades),
+    trades: pageArray(closed, page.trades, EARNINGS_HISTORY_SORTS),
     totals,
     reviews: pageArray(reviews, page.reviews),
     integrity,

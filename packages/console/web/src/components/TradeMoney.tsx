@@ -21,9 +21,24 @@ export function tradeMoneyColumns<R extends TradeMoney>(priceTitle: string): {
 } {
   return {
     describe: [
-      { id: "qty", header: "qty", kind: "describe", numeric: true, render: (r) => r.quantity ?? "—" },
-      { id: "price", header: "price", title: priceTitle, kind: "describe", numeric: true, render: (r) => fmtPrice(r.price) },
-      { id: "how", header: "how", kind: "describe", className: "muted", render: (r) => r.exitKind ?? "—" },
+      { id: "qty", header: "qty", kind: "describe", numeric: true, render: (r) => r.quantity ?? "—", sortValue: (r) => r.quantity },
+      {
+        id: "price",
+        header: "price",
+        title: priceTitle,
+        kind: "describe",
+        numeric: true,
+        render: (r) => fmtPrice(r.price),
+        sortValue: (r) => r.price,
+      },
+      {
+        id: "how",
+        header: "how",
+        kind: "describe",
+        className: "muted",
+        render: (r) => r.exitKind ?? "—",
+        sortValue: (r) => r.exitKind,
+      },
     ],
     money: [
       {
@@ -32,6 +47,7 @@ export function tradeMoneyColumns<R extends TradeMoney>(priceTitle: string): {
         title: "opening cash flow, whole position: + received, − paid",
         kind: "money",
         render: (r) => fmtCash(r.entryCash),
+        sortValue: (r) => r.entryCash,
       },
       {
         id: "exit",
@@ -39,8 +55,16 @@ export function tradeMoneyColumns<R extends TradeMoney>(priceTitle: string): {
         title: "every later cash flow — closes, rolls, share disposals, settlement — whole position",
         kind: "money",
         render: (r) => fmtCash(r.exitCash),
+        sortValue: (r) => r.exitCash,
       },
-      { id: "gross", header: "gross", title: "entry + exit, before any cost", kind: "money", render: (r) => fmtMoney(r.grossPnl) },
+      {
+        id: "gross",
+        header: "gross",
+        title: "entry + exit, before any cost",
+        kind: "money",
+        render: (r) => fmtMoney(r.grossPnl),
+        sortValue: (r) => r.grossPnl,
+      },
       {
         id: "fees",
         header: "fees",
@@ -52,6 +76,7 @@ export function tradeMoneyColumns<R extends TradeMoney>(priceTitle: string): {
             {fmtMoney(r.fees)}
           </span>
         ),
+        sortValue: (r) => r.fees,
       },
       {
         id: "settle",
@@ -60,6 +85,7 @@ export function tradeMoneyColumns<R extends TradeMoney>(priceTitle: string): {
         kind: "money",
         className: "muted",
         render: (r) => (r.settlementFees === null ? (r.exitKind === null ? "—" : "n/r") : fmtMoney(r.settlementFees)),
+        sortValue: (r) => r.settlementFees,
       },
       {
         id: "slip",
@@ -68,6 +94,7 @@ export function tradeMoneyColumns<R extends TradeMoney>(priceTitle: string): {
         kind: "money",
         className: "muted",
         render: (r) => fmtMoney(r.slippage),
+        sortValue: (r) => r.slippage,
       },
       {
         id: "net",
@@ -76,6 +103,7 @@ export function tradeMoneyColumns<R extends TradeMoney>(priceTitle: string): {
         kind: "money",
         pinned: true,
         render: (r) => <PnlCell v={r.netPnl} />,
+        sortValue: (r) => r.netPnl,
       },
     ],
   };

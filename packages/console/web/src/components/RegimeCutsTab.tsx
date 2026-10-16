@@ -10,7 +10,7 @@ import type {
   RegimePair,
 } from "@console/shared";
 import { useRegimeCuts } from "../lib/api";
-import { Card, PnlCell, SkeletonRows, fmtMoney } from "./DataTable";
+import { Card, PnlCell, SkeletonRows, SortTh, fmtMoney, sortRows, useSort } from "./DataTable";
 
 /**
  * The regime-cuts slide (2026-09-19): the module's own nightly artifact, one table per regime
@@ -209,8 +209,16 @@ export function CrossTabGrid({ tab, thinBelowSessions }: { tab: RegimeCrossTab; 
 function PairedTable({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
   const rows: Array<{ arm: string; p: RegimePair }> = [];
   for (const b of cuts.arms) for (const p of b.dimensions[dim]?.paired ?? []) rows.push({ arm: b.arm, p });
+  const sort = useSort();
   if (rows.length === 0) return null;
   const alpha = cuts.multiplicity?.pairedAlpha ?? null;
+  // W–L sorts by the margin (a's days less b's), the number the cell is read for.
+  const sorted = sortRows(rows, sort, {
+    arm: (r) => r.arm,
+    wl: (r) => r.p.aBetterSessions - r.p.bBetterSessions,
+    diff: (r) => r.p.meanDiffPerTrade,
+    p: (r) => r.p.signTestP,
+  });
   return (
     <>
       <h3 style={{ fontSize: 12, margin: "0.9rem 0 0.3rem" }}>same-day comparisons</h3>
@@ -218,17 +226,25 @@ function PairedTable({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
         <table className="data-table">
           <thead>
             <tr>
-              <th></th>
+              <SortTh label="arm" k="arm" sort={sort} />
               <th>a vs b</th>
-              <th title="Sessions a beat b per trade – sessions b beat a, of the sessions both traded">W–L of days</th>
-              <th title="Mean per-trade net difference, a minus b, over the shared sessions (hover a value for the median)">
-                per trade
-              </th>
-              <th title="Exact two-sided sign test">p</th>
+              <SortTh
+                label="W–L of days"
+                k="wl"
+                sort={sort}
+                title="Sessions a beat b per trade – sessions b beat a, of the sessions both traded (sorts by the margin)"
+              />
+              <SortTh
+                label="per trade"
+                k="diff"
+                sort={sort}
+                title="Mean per-trade net difference, a minus b, over the shared sessions (hover a value for the median)"
+              />
+              <SortTh label="p" k="p" sort={sort} title="Exact two-sided sign test" />
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ arm, p }) => {
+            {sorted.map(({ arm, p }) => {
               const weak = alpha !== null && (p.signTestP === null || p.signTestP >= alpha);
               return (
                 <tr key={`${arm}-${p.a}-${p.b}`} style={weak ? { opacity: 0.55 } : undefined}>
@@ -347,8 +363,17 @@ function MultiplicityLine({ m }: { m: RegimeMultiplicity }) {
   );
 }
 
-function EraCard({ cuts, stale }: { cuts: RegimeCuts; stale: { artifactSession: string; latestSession: string } | null }) {
+export function EraCard({ cuts, stale }: { cuts: RegimeCuts; stale: { artifactSession: string; latestSession: string } | null }) {
   const own = cuts.arms.filter((b) => b.eraStart !== null && b.eraStart !== cuts.era.start);
+  const sort = useSort();
+  const arms = sortRows(cuts.arms, sort, {
+    arm: (b) => b.arm,
+    from: (b) => b.eraStart,
+    sessions: (b) => b.sessions,
+    trades: (b) => b.trades,
+    rate: (b) => b.completionRate ?? b.winRate,
+    net: (b) => b.netPnl,
+  });
   return (
     <Card title="era" collapseKey={`regime-${cuts.module}-era`}>
       <p style={{ marginTop: 0 }}>
@@ -385,16 +410,16 @@ function EraCard({ cuts, stale }: { cuts: RegimeCuts; stale: { artifactSession: 
       <table className="data-table">
         <thead>
           <tr>
-            <th></th>
-            <th>from</th>
-            <th>sessions</th>
-            <th>trades</th>
-            <th>{cuts.arms.some((b) => b.completionRate !== null) ? "completion" : "win"}</th>
-            <th>net</th>
+            <SortTh label="arm" k="arm" sort={sort} />
+            <SortTh label="from" k="from" sort={sort} />
+            <SortTh label="sessions" k="sessions" sort={sort} />
+            <SortTh label="trades" k="trades" sort={sort} />
+            <SortTh label={cuts.arms.some((b) => b.completionRate !== null) ? "completion" : "win"} k="rate" sort={sort} />
+            <SortTh label="net" k="net" sort={sort} />
           </tr>
         </thead>
         <tbody>
-          {cuts.arms.map((b) => (
+          {arms.map((b) => (
             <tr key={b.arm} style={b.thin === true ? { opacity: 0.55 } : undefined}>
               <td>{b.arm}</td>
               <td>{b.eraStart ?? "—"}</td>

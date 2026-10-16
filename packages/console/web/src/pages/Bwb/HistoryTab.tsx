@@ -133,12 +133,19 @@ const COLUMNS: ColumnDef<BwbCycleRow>[] = [
   { id: "net", header: "net", title: "gross − fees − settlement − slippage", kind: "money", pinned: true, render: (r) => <PnlCell v={r.netPnl} /> },
 ];
 
+/**
+ * The columns the server orders the whole history by -- `BWB_HISTORY_SORTS` in
+ * server/src/readers/bwb.ts, which must name the same ids (a server test reads both). Strikes and
+ * the add-on's state are composite cells, and the exit reason is prose, so they stay unsorted.
+ */
+const BWB_HISTORY_SORTS = ["dates", "symbol", "arm", "qty", "price", "entry", "addon", "exit", "gross", "fees", "settle", "slip", "net"];
+
 export function HistoryTab({ mode = "paper" }: { mode?: TradingMode }) {
   const [arm, setBook] = useState<string | null>(null);
   const [symbol, setSymbol] = useState<string | null>(null);
   const { from, to } = useUrlDateRange();
   const meta = useBwbMeta(mode);
-  const { page, setOffset, setLimit } = usePage([arm, symbol, from, to, mode]);
+  const { page, setOffset, setLimit, toggleSort } = usePage([arm, symbol, from, to, mode]);
   const { data, isLoading, isError, isPlaceholderData } = useBwbHistory({ arm, symbol, from, to }, page, mode);
   // Null when nothing matched: an empty book has no totals, so no chip rather than a row of zeros.
   const t = data?.totals ?? null;
@@ -150,6 +157,9 @@ export function HistoryTab({ mode = "paper" }: { mode?: TradingMode }) {
         title="completed positions"
         className="view-fade"
         defs={COLUMNS}
+        sort={page}
+        onSort={toggleSort}
+        serverSorts={BWB_HISTORY_SORTS}
         rows={data?.rows ?? []}
         rowKey={(r) => r.positionId}
         loading={isLoading}

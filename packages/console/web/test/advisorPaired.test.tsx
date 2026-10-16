@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { AdvisorPair, AdvisorPaired } from "@console/shared";
+import type { AdvisorExperiment, AdvisorPair, AdvisorPaired } from "@console/shared";
 
-import { PairTable } from "../src/pages/Advisor/AdvisorPage";
+import { ExperimentRollup, PairTable } from "../src/pages/Advisor/AdvisorPage";
 import { PairedRead } from "../src/components/advisor/PairedRead";
 
 const text = (node: React.ReactElement) => renderToString(node).replace(/<!--\s*-->/g, "");
@@ -72,5 +72,30 @@ describe("the verdict's paired read", () => {
     expect(text(<PairedRead paired={paired({ sessions: 1, ci: null, sign_test_p: 1, sessions_to_decision: null })} />)).toContain(
       "(one session: no interval)",
     );
+  });
+});
+
+describe("the at-a-glance roll-up", () => {
+  const exp = (id: string, module: string, net: number | null): AdvisorExperiment =>
+    ({
+      id,
+      module,
+      name: id,
+      status: "active",
+      sessionsRun: 3,
+      expiresAfter: 10,
+      journal: [],
+      verdict: net === null ? null : { pairs: [{ ...pair(paired()), delta: { net_pnl: net } }] },
+    }) as unknown as AdvisorExperiment;
+
+  it("sorts on module, name, status, progress and net delta, and starts in the advisor's order", () => {
+    const html = text(<ExperimentRollup experiments={[exp("zeta", "flies", 10), exp("alpha", "bwb", null)]} />);
+    for (const label of ["Module", "Experiment", "Status", "Progress", "Net delta"]) {
+      expect(html).toContain(`<button type="button" class="th-sort">${label}</button>`);
+    }
+    // Last session and the gate are composite cells: plain headers.
+    expect(html).toContain("<th>Last session</th>");
+    expect(html).toContain("<th>Gate</th>");
+    expect(html.indexOf(">zeta<")).toBeLessThan(html.indexOf(">alpha<"));
   });
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { RegimeCrossCell, RegimeCrossTab } from "@console/shared";
-import { CrossTabGrid } from "../src/components/RegimeCutsTab";
+import type { RegimeArm, RegimeCrossCell, RegimeCrossTab, RegimeCuts } from "@console/shared";
+import { CrossTabGrid, EraCard } from "../src/components/RegimeCutsTab";
 
 const text = (node: React.ReactElement) => renderToString(node).replace(/<!--\s*-->/g, "");
 
@@ -110,5 +110,38 @@ describe("CrossTabGrid", () => {
     );
     expect(html).not.toContain("var(--warn)");
     expect(html).not.toContain("changed sign");
+  });
+});
+
+describe("EraCard", () => {
+  const arm = (name: string, netPnl: number): RegimeArm => ({
+    arm: name,
+    eraStart: "2026-09-01",
+    eraBreak: null,
+    sessions: 10,
+    trades: 30,
+    netPnl,
+    winRate: 0.5,
+    completed: null,
+    completionRate: null,
+    thin: false,
+    dimensions: {},
+  });
+  // Only the fields the era card reads; the rest of the artifact is not on show here.
+  const cuts = {
+    module: "flies",
+    session: "2026-10-15",
+    symbol: null,
+    entryModes: null,
+    era: { start: "2026-09-01", boundingBreak: null, key: null, ignoredFuture: [], caveats: [] },
+    arms: [arm("control", -50), arm("range-high", 200)],
+  } as unknown as RegimeCuts;
+
+  it("offers every column as a sort button and keeps the writer's arm order until one is chosen", () => {
+    const html = text(<EraCard cuts={cuts} stale={null} />);
+    for (const label of ["arm", "from", "sessions", "trades", "win", "net"]) {
+      expect(html).toContain(`<button type="button" class="th-sort">${label}</button>`);
+    }
+    expect(html.indexOf(">control<")).toBeLessThan(html.indexOf(">range-high<"));
   });
 });

@@ -78,20 +78,40 @@ export function sortRows<T>(
   });
 }
 
-/** Clickable header cell wired to a useSort state; shows ▲/▼ on the active column. */
-export function SortTh({ label, k, sort }: { label: ReactNode; k: string; sort: SortState }) {
+/**
+ * A header cell wired to a useSort state. The label is a button, so the sort is reachable from the
+ * keyboard; ▴/▾ marks the active column. For a table whose rows are all in hand -- a server-paged
+ * table sorts on the server instead (`usePage().toggleSort`, `HistoryTable`'s `sortKey`).
+ */
+export function SortTh({
+  label,
+  k,
+  sort,
+  className,
+  title,
+}: {
+  label: ReactNode;
+  k: string;
+  sort: SortState;
+  className?: string;
+  title?: string;
+}) {
   const active = sort.key === k;
   return (
-    <th
-      onClick={() => sort.toggle(k)}
-      style={{ cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}
-      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
-      title="sort"
-    >
-      {label}
-      {active ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
+    <th className={className} title={title} aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}>
+      <button type="button" className="th-sort" onClick={() => sort.toggle(k)}>
+        {label}
+        {active ? (sort.dir === "asc" ? " ▴" : " ▾") : ""}
+      </button>
     </th>
   );
+}
+
+/** A DataCard header that sorts: its label and the accessor key it sorts by. */
+export interface SortHeader {
+  label: string;
+  k: string;
+  title?: string;
 }
 
 const COLLAPSE_KEY = "cherrypick-console-collapsed-v1";
@@ -185,7 +205,10 @@ export function Card({ title, collapseKey, updatedAt, isError = false, controls,
 
 interface DataCardProps {
   title: string;
-  headers: string[];
+  /** A plain string is a fixed header; a `SortHeader` sorts by its key, given `sort`. */
+  headers: Array<string | SortHeader>;
+  /** The sort state for the `SortHeader`s; the caller orders its rows with `sortRows`. */
+  sort?: SortState;
   loading: boolean;
   isError?: boolean;
   empty?: string;
@@ -225,6 +248,7 @@ export function DataCard({
   updatedAt,
   controls,
   className,
+  sort,
   children,
 }: DataCardProps) {
   return (
@@ -235,9 +259,15 @@ export function DataCard({
         >
           <thead>
             <tr>
-              {headers.map((h, i) => (
-                <th key={`${h}-${i}`}>{h}</th>
-              ))}
+              {headers.map((h, i) =>
+                typeof h === "string" || sort === undefined ? (
+                  <th key={`${typeof h === "string" ? h : h.label}-${i}`} title={typeof h === "string" ? undefined : h.title}>
+                    {typeof h === "string" ? h : h.label}
+                  </th>
+                ) : (
+                  <SortTh key={`${h.k}-${i}`} label={h.label} k={h.k} sort={sort} title={h.title} />
+                ),
+              )}
             </tr>
           </thead>
           <tbody>

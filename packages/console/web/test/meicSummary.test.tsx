@@ -183,6 +183,13 @@ describe("MeicSummary (trade summary, the one-read slide)", () => {
     expect(page).toContain("the comparison card does not narrow");
   });
 
+  it("by arm sorts by its identity, counts and net; the refusal label stays plain", () => {
+    const page = render("/", <MeicSummary {...PROPS} />);
+    const sortable = [...page.matchAll(/<button type="button" class="th-sort">([^<]*)/g)].map((m) => m[1]);
+    expect(sortable).toEqual(expect.arrayContaining(["arm", "sym", "eval", "filled", "net"]));
+    expect(sortable).not.toContain("dominant refusal");
+  });
+
   it("a missing payload says so for the whole slide — never a wall of zeros", () => {
     useMeicSummaryMock.mockReturnValue({ data: null, isLoading: false, isError: false, error: null });
     const page = render("/", <MeicSummary {...PROPS} />);

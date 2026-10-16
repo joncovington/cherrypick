@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { MeicTradeRow, TradingMode } from "@console/shared";
 import { useMeic } from "../../lib/api";
-import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
+import { DataCard, PnlCell, fmtMoney, fmtNum, type SortHeader, type SortState } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
 import { fmtCash, fmtIvr, fmtPrice } from "../../lib/format";
 import { HistoryTable } from "../../components/table/HistoryTable";
@@ -37,8 +37,38 @@ function sessionLabel(day: string | null): string {
   return day !== null ? ` on ${day}` : " on the latest session";
 }
 
+/** The entry's clock time, the figure the `time` cells show. */
+function clockOf(entryTime: string | null): string | null {
+  return entryTime !== null && entryTime.length >= 16 ? entryTime.slice(11, 16) : null;
+}
+
+/**
+ * The column ids the server can order the WHOLE trade log by (`MEIC_TRADE_SORTS` in
+ * server/src/readers/meic.ts; a server test holds the two lists together). Both paged tables here
+ * sort through it; the unpaged live history sorts in the browser by each column's `sortValue`.
+ */
+export const MEIC_TRADE_SORTS = [
+  "date", "time", "sym", "put", "call", "wing", "qty", "price", "entry", "exit", "gross", "fees", "settle", "slip", "net",
+] as const;
+
+const POSITION_HEADERS: Array<string | SortHeader> = [
+  { label: "time", k: "time" },
+  { label: "sym", k: "sym" },
+  { label: "put", k: "put" },
+  { label: "call", k: "call" },
+  { label: "wing", k: "wing" },
+  { label: "qty", k: "qty" },
+  { label: "price", k: "price" },
+  { label: "entry", k: "entry" },
+  "IVR",
+  "status",
+];
+
 export function MeicPositionsTable({ mode, scope }: { mode: TradingMode; scope: MeicScope }) {
-  const { page, setOffset, setLimit } = usePage([mode, scope.day, scope.symbol, scope.profile, scope.era]);
+  const { page, setOffset, setLimit, toggleSort } = usePage([mode, scope.day, scope.symbol, scope.profile, scope.era]);
+  // The positions are server-paged too, so their headers drive the server's sort: the DataCard's
+  // sort state is the page's, not a browser sort of the fetched rows.
+  const sort: SortState = { key: page.sort ?? null, dir: page.dir ?? "desc", toggle: toggleSort };
   const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useMeic(mode, {
     ...scope,
     view: "positions",
@@ -52,7 +82,8 @@ export function MeicPositionsTable({ mode, scope }: { mode: TradingMode; scope: 
   return (
     <DataCard
       title={`Positions — ${total.toLocaleString()}${sessionLabel(scope.day)}`}
-      headers={["time", "sym", "put", "call", "wing", "qty", "price", "entry", "IVR", "status"]}
+      headers={POSITION_HEADERS}
+      sort={sort}
       numFrom={2}
       loading={isLoading}
       isError={isError}
@@ -96,15 +127,16 @@ export function MeicPositionsTable({ mode, scope }: { mode: TradingMode; scope: 
  * modelled fill prices, so `slip` is a measure beside the costs and nothing subtracts it.
  */
 export const HISTORY_COLUMNS: ColumnDef<MeicTradeRow>[] = [
-  { id: "date", header: "date", kind: "describe", render: (r) => r.tradeDate },
-  { id: "time", header: "time", kind: "describe", className: "muted", render: (r) => r.entryTime?.slice(11, 16) ?? "—" },
-  { id: "sym", header: "sym", kind: "describe", render: (r) => r.symbol },
-  { id: "put", header: "put", kind: "describe", numeric: true, render: (r) => fmtNum(r.putStrike, 0) },
-  { id: "call", header: "call", kind: "describe", numeric: true, render: (r) => fmtNum(r.callStrike, 0) },
-  { id: "wing", header: "wing", kind: "describe", numeric: true, render: (r) => fmtNum(r.wingWidth, 0) },
-  { id: "qty", header: "qty", kind: "describe", numeric: true, render: (r) => fmtNum(r.quantity, 0) },
+  { id: "date", header: "date", kind: "describe", sortValue: (r) => `${r.tradeDate} ${r.entryTime ?? ""}`, render: (r) => r.tradeDate },
+  { id: "time", header: "time", kind: "describe", className: "muted", sortValue: (r) => clockOf(r.entryTime), render: (r) => r.entryTime?.slice(11, 16) ?? "—" },
+  { id: "sym", header: "sym", kind: "describe", sortValue: (r) => r.symbol, render: (r) => r.symbol },
+  { id: "put", header: "put", kind: "describe", numeric: true, sortValue: (r) => r.putStrike, render: (r) => fmtNum(r.putStrike, 0) },
+  { id: "call", header: "call", kind: "describe", numeric: true, sortValue: (r) => r.callStrike, render: (r) => fmtNum(r.callStrike, 0) },
+  { id: "wing", header: "wing", kind: "describe", numeric: true, sortValue: (r) => r.wingWidth, render: (r) => fmtNum(r.wingWidth, 0) },
+  { id: "qty", header: "qty", kind: "describe", numeric: true, sortValue: (r) => r.quantity, render: (r) => fmtNum(r.quantity, 0) },
   {
     id: "price",
+    sortValue: (r) => r.netCredit,
     header: "price",
     title: "net entry credit per share",
     kind: "describe",
@@ -115,6 +147,7 @@ export const HISTORY_COLUMNS: ColumnDef<MeicTradeRow>[] = [
   { id: "reason", header: "exit reason", kind: "describe", className: "muted", render: (r) => r.exitReason ?? "—" },
   {
     id: "entry",
+    sortValue: (r) => r.entryCash,
     header: "entry",
     title: "entry cash flow for the whole position: + received, − paid",
     kind: "money",
@@ -122,14 +155,16 @@ export const HISTORY_COLUMNS: ColumnDef<MeicTradeRow>[] = [
   },
   {
     id: "exit",
+    sortValue: (r) => r.exitCash,
     header: "exit",
     title: "the close, the stop, or the settlement at the bell",
     kind: "money",
     render: (r) => fmtCash(r.exitCash),
   },
-  { id: "gross", header: "gross", title: "entry + exit, before any cost", kind: "money", render: (r) => fmtMoney(r.gross) },
+  { id: "gross", header: "gross", title: "entry + exit, before any cost", kind: "money", sortValue: (r) => r.gross, render: (r) => fmtMoney(r.gross) },
   {
     id: "fees",
+    sortValue: (r) => r.fees,
     header: "fees",
     title: "trading fees: commissions and exchange fees",
     kind: "money",
@@ -142,6 +177,7 @@ export const HISTORY_COLUMNS: ColumnDef<MeicTradeRow>[] = [
   },
   {
     id: "settle",
+    sortValue: (r) => r.settlementFees,
     header: "settle",
     title: "exercise / assignment fees at settlement",
     kind: "money",
@@ -150,13 +186,14 @@ export const HISTORY_COLUMNS: ColumnDef<MeicTradeRow>[] = [
   },
   {
     id: "slip",
+    sortValue: (r) => r.slippage,
     header: "slip",
     title: "what the modelled fills gave up against mid — already inside gross, never subtracted again",
     kind: "money",
     className: "muted",
     render: (r) => fmtMoney(r.slippage),
   },
-  { id: "net", header: "net", title: "gross − fees − settlement", kind: "money", pinned: true, render: (r) => <PnlCell v={r.net} /> },
+  { id: "net", header: "net", title: "gross − fees − settlement", kind: "money", pinned: true, sortValue: (r) => r.net, render: (r) => <PnlCell v={r.net} /> },
 ];
 
 export function MeicHistoryTable({
@@ -180,7 +217,7 @@ export function MeicHistoryTable({
   // "across these days" is a question the one-session scope cannot answer.
   const { from, to } = useUrlDateRange();
   const ranged = from !== null || to !== null;
-  const { page, setOffset, setLimit } = usePage([
+  const { page, setOffset, setLimit, toggleSort } = usePage([
     mode, scope.day, scope.symbol, scope.profile, scope.era, outcome, reason, debounced, from, to,
   ]);
   const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useMeic(mode, {
@@ -201,6 +238,9 @@ export function MeicHistoryTable({
       table="meic-history"
       title={`History — ${total.toLocaleString()} closed${where}`}
       defs={HISTORY_COLUMNS}
+      sort={page}
+      onSort={toggleSort}
+      serverSorts={MEIC_TRADE_SORTS}
       rows={data?.trades.rows ?? []}
       rowKey={(r) => `${r.mode}-${r.id}`}
       loading={isLoading}

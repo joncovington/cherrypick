@@ -745,6 +745,22 @@ h2 {
   background: var(--surface-sunken);
   white-space: nowrap;
 }
+/* A sortable header (2026-10-16): a button, so the sort is reachable from the keyboard, dressed as
+   the header text it replaces. */
+.th-sort {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.th-sort:hover,
+.th-sort:focus-visible {
+  color: var(--text);
+}
 
 .data-table td {
   padding: 0.28rem 0.55rem;

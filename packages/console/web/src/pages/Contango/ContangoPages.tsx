@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ContangoHistoryRow, ContangoMetrics, ContangoPayload, ContangoSessionRow, DatedValue } from "@console/shared";
-import { Card, DataCard, PnlCell, fmtNum } from "../../components/DataTable";
+import { Card, DataCard, PnlCell, fmtNum, sortRows, useSort } from "../../components/DataTable";
 import { ArmSelect } from "../../components/ArmSelect";
 import { TradeTotalsChip, tradeMoneyColumns } from "../../components/TradeMoney";
 import { HistoryTable } from "../../components/table/HistoryTable";
@@ -328,6 +328,29 @@ export function ContangoPerformance({ data, metrics }: { data: ContangoPayload |
 
 export function ContangoCosts({ data }: { data: ContangoPayload | undefined }) {
   const fills = data?.fills ?? [];
+  const fillSort = useSort();
+  const distSort = useSort();
+  // Costs are shown as money out, and sort as shown.
+  const sortedFills = sortRows(fills, fillSort, {
+    session: (f) => f.session,
+    arm: (f) => f.arm,
+    side: (f) => f.side,
+    symbol: (f) => f.symbol,
+    shares: (f) => f.shares,
+    value: (f) => f.value,
+    slippage: (f) => (f.slippage === null ? null : -f.slippage),
+    bps: (f) => f.slippageBps,
+    fees: (f) => (f.fees === null ? null : -f.fees),
+  });
+  const distributions = sortRows(data?.distributions ?? [], distSort, {
+    exDate: (d) => d.exDate,
+    arm: (d) => d.arm,
+    symbol: (d) => d.symbol,
+    perShare: (d) => d.perShare,
+    shares: (d) => d.shares,
+    amount: (d) => d.amount,
+    credited: (d) => d.creditedSession,
+  });
   const floor = data?.params.slippageFloorBps ?? 2;
   const withBps = fills.filter((f) => f.slippageBps !== null);
   const withFees = fills.filter((f) => f.fees !== null);
@@ -348,13 +371,24 @@ export function ContangoCosts({ data }: { data: ContangoPayload | undefined }) {
       </div>
       <DataCard
         title="every fill"
-        headers={["session", "arm", "side", "symbol", "shares", "value", "slippage", "bps", "fees"]}
+        sort={fillSort}
+        headers={[
+          { label: "session", k: "session" },
+          { label: "arm", k: "arm" },
+          { label: "side", k: "side" },
+          { label: "symbol", k: "symbol" },
+          { label: "shares", k: "shares" },
+          { label: "value", k: "value" },
+          { label: "slippage", k: "slippage" },
+          { label: "bps", k: "bps" },
+          { label: "fees", k: "fees" },
+        ]}
         loading={data === undefined}
         rowCount={fills.length}
         numFrom={4}
         empty="no fill yet"
       >
-        {fills.map((f, i) => (
+        {sortedFills.map((f, i) => (
           <tr key={`${f.session}-${f.arm}-${f.side}-${String(i)}`}>
             <td>{f.session}</td>
             <td>{f.arm}</td>
@@ -388,13 +422,22 @@ export function ContangoCosts({ data }: { data: ContangoPayload | undefined }) {
       </DataCard>
       <DataCard
         title="distributions credited"
-        headers={["ex-date", "arm", "symbol", "per share", "shares", "amount", "credited"]}
+        sort={distSort}
+        headers={[
+          { label: "ex-date", k: "exDate" },
+          { label: "arm", k: "arm" },
+          { label: "symbol", k: "symbol" },
+          { label: "per share", k: "perShare" },
+          { label: "shares", k: "shares" },
+          { label: "amount", k: "amount" },
+          { label: "credited", k: "credited" },
+        ]}
         loading={data === undefined}
-        rowCount={data?.distributions.length ?? 0}
+        rowCount={distributions.length}
         numFrom={3}
         empty="none yet -- SHV pays monthly, credited when the technicals store carries the row"
       >
-        {(data?.distributions ?? []).map((d) => (
+        {distributions.map((d) => (
           <tr key={`${d.arm}-${d.exDate}-${d.symbol}`}>
             <td>{d.exDate}</td>
             <td>{d.arm}</td>
@@ -457,9 +500,10 @@ const HISTORY_COLUMNS: ColumnDef<ContangoHistoryRow>[] = [
         <span className="muted"> → {r.exitSession ?? "—"}</span>
       </>
     ),
+    sortValue: (r) => r.entrySession,
   },
-  { id: "arm", header: "arm", kind: "describe", render: (r) => r.arm },
-  { id: "symbol", header: "symbol", kind: "describe", render: (r) => r.symbol },
+  { id: "arm", header: "arm", kind: "describe", render: (r) => r.arm, sortValue: (r) => r.arm },
+  { id: "symbol", header: "symbol", kind: "describe", render: (r) => r.symbol, sortValue: (r) => r.symbol },
   ...MONEY.describe,
   { id: "reason", header: "why it ended", kind: "describe", className: "muted", render: (r) => r.exitReason ?? "—" },
   ...MONEY.money.flatMap((c): ColumnDef<ContangoHistoryRow>[] => {
@@ -474,6 +518,7 @@ const HISTORY_COLUMNS: ColumnDef<ContangoHistoryRow>[] = [
         title: "the fund's distributions credited while it was held",
         kind: "money",
         render: (r) => fmtCash(r.distributions),
+        sortValue: (r) => r.distributions,
       },
     ];
   }),
@@ -489,6 +534,7 @@ function ContangoStintHistory({ data }: { data: ContangoPayload | undefined }) {
       title="closed holding stints"
       className="view-fade"
       defs={HISTORY_COLUMNS}
+      clientSort
       rows={history.data?.rows ?? []}
       rowKey={(r) => r.positionId}
       loading={history.isLoading}

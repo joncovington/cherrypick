@@ -1,5 +1,5 @@
 import type { FliesSelectorSessions, SelectorCell } from "@console/shared";
-import { Card, PnlCell } from "../../components/DataTable";
+import { Card, PnlCell, SortTh, sortRows, useSort } from "../../components/DataTable";
 import { fmtMoney } from "../../lib/format";
 import { useBridged } from "../../lib/bridged";
 
@@ -26,23 +26,33 @@ function clearLabel(c: SelectorCell): string {
 }
 
 function CellsTable({ cells }: { cells: SelectorCell[] }) {
+  const sort = useSort();
   if (cells.length === 0) return <p className="muted">no cells in this model</p>;
+  // The interval and the reading stay unsorted: a pair of bounds is no one number, and the reading
+  // is a label derived from it.
+  const rows = sortRows(cells, sort, {
+    cell: (c) => c.cell,
+    source: (c) => c.source,
+    sessions: (c) => c.sessions,
+    entries: (c) => c.entries,
+    net: (c) => c.net_per_entry,
+  });
   return (
     <div className="table-scroll">
       <table className="data-table num-from-2">
         <thead>
           <tr>
-            <th title="vol bucket | trend bucket">cell</th>
-            <th>source</th>
-            <th>sessions</th>
-            <th>entries</th>
-            <th>net / entry</th>
+            <SortTh label="cell" k="cell" sort={sort} title="vol bucket | trend bucket" />
+            <SortTh label="source" k="source" sort={sort} />
+            <SortTh label="sessions" k="sessions" sort={sort} />
+            <SortTh label="entries" k="entries" sort={sort} />
+            <SortTh label="net / entry" k="net" sort={sort} />
             <th title="90% seeded-bootstrap interval on the cell's total net (core.regimecuts.robustness)">interval</th>
             <th title="v2 acts only on a cell whose interval is wholly clear of zero; below min_sessions a cell is never evidence">reading</th>
           </tr>
         </thead>
         <tbody>
-          {cells.map((c) => (
+          {rows.map((c) => (
             <tr key={`${c.cell}-${c.source}`}>
               <td>{c.cell}</td>
               <td>{c.source}</td>

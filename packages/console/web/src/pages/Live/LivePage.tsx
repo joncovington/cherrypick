@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { LiveFliesPayload, LiveOnRisk, LivePerformance, LivePeriod, LivePosition } from "@console/shared";
-import { Card, DataCard } from "../../components/DataTable";
+import { Card, DataCard, sortRows, useSort } from "../../components/DataTable";
 import { EquityUnderwater } from "../../components/EquityUnderwater";
 import { MetricTiles } from "../../components/performance/MetricTiles";
 import { TileGrid } from "../../components/performance/TileGrid";
@@ -222,6 +222,15 @@ export function LivePage() {
   // The feed is the whole day's journal, already in hand, so it pages client-side. Back to the
   // first page when the session changes -- an offset into yesterday's feed points nowhere today.
   const activity = usePage([d?.session], ACTIVITY_PAGE_SIZES[0]);
+  // The activity feed is a journal and stays in time order; the day's positions sort.
+  const posSort = useSort();
+  const positions = sortRows(d?.positions ?? [], posSort, {
+    entered: (p) => p.entryTime,
+    credit: (p) => p.netCredit,
+    floor: (p) => p.floorDollars,
+    mark: (p) => p.mark?.markPnl ?? null,
+    pnl: (p) => p.pnl,
+  });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
@@ -298,7 +307,16 @@ export function LivePage() {
       <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(28rem, 100%), 1fr))" }}>
         <DataCard
           title="live positions"
-          headers={["entered", "structure", "state", "credit", "floor", "mark", "P&L"]}
+          headers={[
+            { label: "entered", k: "entered" },
+            "structure",
+            "state",
+            { label: "credit", k: "credit" },
+            { label: "floor", k: "floor" },
+            { label: "mark", k: "mark" },
+            { label: "P&L", k: "pnl" },
+          ]}
+          sort={posSort}
           loading={isLoading}
           isError={isError}
           empty="nothing entered today"
@@ -306,7 +324,7 @@ export function LivePage() {
           numFrom={3}
           updatedAt={dataUpdatedAt}
         >
-          {d?.positions.map((p) => (
+          {positions.map((p) => (
             <tr key={p.positionId}>
               <td>{hhmmOf(p.entryTime)}</td>
               <td>{structure(p)}</td>
