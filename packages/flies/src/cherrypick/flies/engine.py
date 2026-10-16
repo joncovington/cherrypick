@@ -157,6 +157,10 @@ ARMS = (
     # eras, on 33 entries; this arm's book is empty at 13:00 where control's is not, so it also
     # measures what the hour pays without the morning's positions occupying its centres.
     "window-1300",
+    # control with its entries starting at 12:30 instead of 10:00, ending with control's at 14:30
+    # (declared 2026-10-16, from 2026-10-19). One variable vs control: the window. The live-start
+    # replay put 12:30 ahead of 10:15 in 3 of 4 tick phases on 37 sessions, but not significantly.
+    "window-1230",
 )
 
 # The live loop's completion cutoff when its block names none (`live_loop.DEFAULT_CUTOFF`).

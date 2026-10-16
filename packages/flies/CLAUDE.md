@@ -425,6 +425,11 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   2026-10-14). One variable: the window. Its book is empty at 13:00 where control's is not, so it
   measures the hour without the morning's positions occupying its centres. Pinned by
   `tests/test_range_centre.py`; judging rule in the experiment log (2026-10-14).
+- `window-1230` — `control` with its entries starting at 12:30 instead of 10:00, ending with
+  control's at 14:30, **from 2026-10-19** (declared 2026-10-16). One variable: the window. From the
+  live-start replay's half-hour grid, ahead of 10:15 in 3 of 4 tick phases but not significantly, so
+  a forward test. Pinned by `tests/test_window_1230.py`; judging rule in the experiment log
+  (2026-10-16).
 
 ### Regime tagging
 

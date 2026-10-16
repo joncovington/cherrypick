@@ -1596,3 +1596,51 @@ The reopen condition ("15 sessions, and the replay shows the gate paying") is no
 missing one or two trend days, and on this sample that cannot be told from luck. Live stays as it is.
 Re-run at 30 sessions. A 30-minute paper arm is the cheap way to gather evidence meanwhile, and it
 would land at a declared boundary.
+
+## 2026-10-16 — entry start times on a half-hour grid; `window-1230` declared for 10-19
+
+The question was whether `control`'s day should start later than 10:00. The run used
+`scripts/flies_live_start_replay.py` over paper control's recorded ticks, 08-21..10-15, 37 sessions,
+with every entry still ending at 14:30. Figures are the mean of 4 tick phases, compared against
+live's 10:15 start. Nothing before 10:00 can be replayed, because paper records no ticks before then.
+
+| Start | Structures | Net, $1,000 cap | Net, uncapped | Losing days | vs 10:15 (cap) |
+|---|---|---|---|---|---|
+| 10:00 | 236 | −$1,508 | −$2,261 | 16 | 0 of 4 phases, p 1.0 |
+| 10:15 | 227 | +$509 | +$571 | 17 | — |
+| 10:30 | 227 | −$1,222 | −$1,582 | 18 | 1 of 4, p 0.31 |
+| 11:00 | 206 | −$2,256 | −$1,886 | 20 | 0 of 4, p 0.09 |
+| 11:30 | 191 | +$203 | −$314 | 16 | 1 of 4, p 0.62 |
+| 12:00 | 163 | −$1,447 | −$784 | 20 | 0 of 4, p 0.02 |
+| 12:30 | 147 | +$2,668 | +$2,442 | 15 | 3 of 4, p 0.74 |
+| 13:00 | 126 | +$864 | +$315 | 18 | 2 of 4, p 0.19 |
+| 13:30 | 105 | +$58 | +$106 | 18 | 2 of 4, p 0.74 |
+| 14:00 | 84 | +$369 | +$296 | 18 | 1 of 4, p 0.19 |
+
+- **The tick phase moves the result more than the start does.** At 10:15 the phases run from
+  −$1,322 to +$2,006. The ranking also alternates from one half hour to the next, which a real
+  time-of-day effect would not do.
+- **12:30 is the steadiest of the starts.** It is ahead in 3 of 4 phases, its worst day is −$474
+  against 10:15's −$845, and it has the fewest losing days. It is ahead on only 17 days and behind
+  on 20, so the gain comes from a few large days.
+- **10:15's own margin has shrunk.** It was +$4,758 on 25 sessions when live moved to it on 09-28.
+  With twelve more sessions it is +$509.
+- **The model's day-level money is loose.** `--validate` at 10:15 over live's 12 sessions since
+  09-29 passes on counts (80.5 structures against 76), but it reproduces only 31 of live's 76
+  structures. Individual days miss by hundreds of dollars; 10-09 was +$307 on live and −$339 in the
+  replay.
+
+Live stays at 10:15.
+
+**Declared, from 2026-10-19:** `window-1230`, which is `control` with `entry_windows`
+`[["12:30", "14:30"]]` and nothing else changed (`tests/test_window_1230.py`). Its book is empty at
+12:30, where control's is not. It therefore measures the afternoon without the morning's positions
+occupying its centres, which is also what the replay modelled. `window-1300` (from 10-15) sits
+inside its window. Read the two against control separately, never against each other: they share
+the hour 13:00–13:59 and nothing else.
+
+**The judging rule, declared now** (the same rule as `window-1300`'s). Read it against `control` at
+15 settled sessions, about 2026-11-06, using `run.py gate-sessions`. Keep it running if it is ahead
+on net and ahead on at least as many sessions as it is behind. Retire it at the next boundary if it
+is behind on net. Otherwise run it to 20 sessions and decide then. Re-run the replay grid at that
+read too; live's start is a separate decision and moves only on both.
