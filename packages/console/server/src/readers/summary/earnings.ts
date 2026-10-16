@@ -109,7 +109,7 @@ export function readEarningsSummary(config: ConsoleConfig, q: SummaryQuery): Mod
       return [
         {
           session,
-          arm: r.profile ?? "default",
+          arm: r.arm ?? "default",
           gross: r.gross!,
           fees: r.fees,
           settlement: r.settlementFees,
