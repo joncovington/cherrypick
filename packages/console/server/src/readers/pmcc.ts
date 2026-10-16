@@ -20,7 +20,7 @@ import { hasColumn, memoOnStore, num, obj, readJson, str, type DatabaseHandle, w
 import { unrealisedByPosition, NO_UNREALISED } from "./unrealised.js";
 import { armMoney, entryOutcomes } from "./armCosts.js";
 import type { ArmCostsPayload } from "@console/shared";
-import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
+import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest, type SortAccessors } from "./paging.js";
 
 /**
  * PMCC's read layer.
@@ -622,6 +622,28 @@ export interface PmccHistoryFilter {
 }
 
 /**
+ * The history table's sortable columns, keyed by the web table's column ids (its
+ * `PMCC_HISTORY_SORTS` must name the same ones; a test reads both). Each reads the served row:
+ * the yield and spread as the cells show them, the money from `positionCash`.
+ */
+export const PMCC_HISTORY_SORTS: SortAccessors<PmccCycleRow> = {
+  dates: (r) => r.entrySession,
+  symbol: (r) => r.symbol,
+  arm: (r) => r.arm,
+  yield: (r) => r.entryWeeklyYieldPct,
+  spread: (r) => r.entryMaxSpreadPct,
+  qty: (r) => r.quantity,
+  price: (r) => r.price,
+  entry: (r) => r.entryCash,
+  exit: (r) => r.exitCash,
+  gross: (r) => r.grossPnl,
+  fees: (r) => r.fees,
+  settle: (r) => r.settlementFees,
+  slip: (r) => r.slippage,
+  net: (r) => r.netPnl,
+};
+
+/**
  * Completed cycles, newest first.
  *
  * `short_settled` rows are included deliberately. That status means the short expired ITM and its
@@ -665,6 +687,9 @@ export function readPmccHistory(
         .all(...params)
         .map((r) => positionCash(r, entryOf(r))),
     );
+    // The entry spread is joined in per page below. Sorting by it has to see every cycle's, so for
+    // that one sort the whole legs table is read up front and the mapped rows carry it.
+    const sortSpreads = page.sort === "spread" ? entrySpreadByPosition(db, null) : null;
     const rows = pagedQuery<PmccCycleRow>(
       db,
       {
@@ -699,13 +724,14 @@ export function readPmccHistory(
           exitCost: num(r["exit_cost"]),
           entrySlippage: num(r["entry_slippage"]),
           exitSlippage: num(r["exit_slippage"]),
-          entryMaxSpreadPct: null,
+          entryMaxSpreadPct: sortSpreads?.get(str(r["position_id"]) ?? "")?.pct ?? null,
           entryMaxSpreadAbs: null,
           shorts: [],
           rolls: [],
           assignments: [],
         };
       },
+      PMCC_HISTORY_SORTS,
     );
 
     // Detail for THIS PAGE's positions only — three small queries beat one join fanning three ways.

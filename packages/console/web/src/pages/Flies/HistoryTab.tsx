@@ -5,7 +5,7 @@ import { useFliesTradeLog, fliesQuery, type FliesFilter, type FliesTradeLogRow }
 import { useColumnLayout, type ColumnDef } from "../../components/table/columns";
 import { ColumnsMenu } from "../../components/table/ColumnsMenu";
 import { DateRangeBar, useUrlDateRange } from "../../components/table/DateRange";
-import { DataCard, PnlCell, SkeletonRows, fmtMoney, fmtNum } from "../../components/DataTable";
+import { DataCard, PnlCell, SkeletonRows, fmtMoney, fmtNum, sortRows, useSort, type SortHeader } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
 import { clockTime, structureLabel, wingWidth } from "./structure";
 import { fmtCash, fmtPrice } from "../../lib/format";
@@ -110,6 +110,46 @@ function SummaryRows<T extends Summary>({
     </>
   );
 }
+
+/** The ranked summaries' headers. The entry-hour card keeps plain ones: its order is the clock. */
+const SUMMARY_HEADERS: Array<string | SortHeader> = [
+  "",
+  { label: "trades", k: "trades" },
+  { label: "sessions", k: "sessions" },
+  { label: "net", k: "net" },
+  { label: "win %", k: "win" },
+  { label: "avg", k: "avg" },
+  { label: "PF", k: "pf" },
+];
+
+const SUMMARY_SORTS = {
+  trades: (r: Summary) => r.trades,
+  sessions: (r: Summary) => r.sessions,
+  net: (r: Summary) => r.netPnl,
+  win: (r: Summary) => r.winRatePct,
+  avg: (r: Summary) => r.avgPnl,
+  pf: (r: Summary) => r.profitFactor,
+};
+
+const FEE_DRAG_HEADERS: SortHeader[] = [
+  { label: "arm", k: "arm" },
+  { label: "premium", k: "premium" },
+  { label: "gross", k: "gross" },
+  { label: "fees", k: "fees" },
+  { label: "settle", k: "settle" },
+  { label: "net", k: "net" },
+  { label: "fee drag", k: "drag" },
+];
+
+const FEE_DRAG_SORTS = {
+  arm: (r: { arm: string } & Summary) => r.arm,
+  premium: (r: Summary) => r.premium,
+  gross: (r: Summary) => r.grossPnl,
+  fees: (r: Summary) => r.fees,
+  settle: (r: Summary) => r.settlementFees,
+  net: (r: Summary) => r.netPnl,
+  drag: (r: Summary) => r.feeDragPct,
+};
 
 /** Daily P&L calendar, Monday at the top of each week column; click a day to replay it. */
 export function FliesCalendar({
@@ -260,6 +300,16 @@ const TRADE_LOG_COLUMNS: ColumnDef<FliesTradeLogRow>[] = [
   { id: "net", header: "net", title: "gross − fees − settlement", kind: "money", pinned: true, render: (r) => <PnlCell v={r.pnl} /> },
 ];
 
+/**
+ * The column ids the server can order the WHOLE trade log by (`TRADE_LOG_SORTS` in
+ * server/src/readers/flies.ts; a server test holds the two lists together). The log is paged on
+ * the server, so a sort of the fetched page alone would rank one page and call it the history.
+ */
+const TRADE_LOG_SORTS: readonly string[] = [
+  "date", "time", "sym", "arm", "mode", "centre", "qty", "price", "latency",
+  "entry", "exit", "gross", "fees", "settle", "slip", "net",
+];
+
 export function HistoryTab({
   mode,
   filter,
@@ -294,9 +344,12 @@ export function HistoryTab({
   const range = { from, to };
   const cols = useColumnLayout("flies-history", TRADE_LOG_COLUMNS);
 
-  const { page, setOffset, setLimit } = usePage([
+  const { page, setOffset, setLimit, toggleSort } = usePage([
     mode, outcome, debouncedSearch, from, to, filter.arm, filter.era,
   ]);
+  const armSort = useSort();
+  const modeSort = useSort();
+  const feeSort = useSort();
   // `filter.arm` and `filter.era` are the PAGE-level scope, the same one every other card on this
   // tab already honours. The log took era and ignored arm, so narrowing to one arm left it
   // answering for all of them beside tables that did not.
@@ -341,22 +394,23 @@ export function HistoryTab({
       </section>
 
       <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(34rem, 100%), 1fr))" }}>
-        <DataCard title="By arm (legged only, settled)" headers={headers} loading={isLoading} rowCount={data?.byArm.length ?? 0}>
-          <SummaryRows rows={data?.byArm} label="arm" thinBelow={data?.thinBelowSessions ?? null} />
+        <DataCard title="By arm (legged only, settled)" headers={SUMMARY_HEADERS} sort={armSort} loading={isLoading} rowCount={data?.byArm.length ?? 0}>
+          <SummaryRows rows={sortRows(data?.byArm ?? [], armSort, SUMMARY_SORTS)} label="arm" thinBelow={data?.thinBelowSessions ?? null} />
         </DataCard>
-        <DataCard title="By entry mode" headers={headers} loading={isLoading} rowCount={data?.byEntryMode.length ?? 0}>
-          <SummaryRows rows={data?.byEntryMode} label="entryMode" thinBelow={data?.thinBelowSessions ?? null} />
+        <DataCard title="By entry mode" headers={SUMMARY_HEADERS} sort={modeSort} loading={isLoading} rowCount={data?.byEntryMode.length ?? 0}>
+          <SummaryRows rows={sortRows(data?.byEntryMode ?? [], modeSort, SUMMARY_SORTS)} label="entryMode" thinBelow={data?.thinBelowSessions ?? null} />
         </DataCard>
         <DataCard title="By entry hour (deliberately unranked)" headers={headers} loading={isLoading} rowCount={data?.byEntryHour.length ?? 0}>
           <SummaryRows rows={data?.byEntryHour} label="hour" thinBelow={data?.thinBelowSessions ?? null} />
         </DataCard>
         <DataCard
           title="Fee drag by arm"
-          headers={["arm", "premium", "gross", "fees", "settle", "net", "fee drag"]}
+          headers={FEE_DRAG_HEADERS}
+          sort={feeSort}
           loading={isLoading}
           rowCount={data?.feeDrag.length ?? 0}
         >
-          {data?.feeDrag.map((r) => (
+          {sortRows(data?.feeDrag ?? [], feeSort, FEE_DRAG_SORTS).map((r) => (
             <tr key={r.arm}>
               <td>{r.arm}</td>
               <td title="premium collected: each credit fly's entry credit, whole position">{fmtMoney(r.premium)}</td>
@@ -476,11 +530,29 @@ export function HistoryTab({
           <table className="data-table">
             <thead>
               <tr>
-                {cols.columns.map((c) => (
-                  <th key={c.id} title={c.title}>
-                    {c.header}
-                  </th>
-                ))}
+                {cols.columns.map((c) => {
+                  if (!TRADE_LOG_SORTS.includes(c.id)) {
+                    return (
+                      <th key={c.id} title={c.title}>
+                        {c.header}
+                      </th>
+                    );
+                  }
+                  // Sorted on the server, over every matching row; a click goes back to page one.
+                  const on = page.sort === c.id;
+                  return (
+                    <th
+                      key={c.id}
+                      title={c.title}
+                      aria-sort={on ? (page.dir === "asc" ? "ascending" : "descending") : undefined}
+                    >
+                      <button type="button" className="th-sort" onClick={() => toggleSort(c.id)}>
+                        {c.header}
+                        {on ? (page.dir === "asc" ? " ▴" : " ▾") : ""}
+                      </button>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>

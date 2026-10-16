@@ -14,6 +14,7 @@ import { useFeatures } from "../../lib/useFeatures";
 import { isModuleVisible } from "../../lib/visibility";
 import { otherFields, paramRows, scalar } from "./proposalPayload";
 import { TabStrip } from "../../components/ScopeBar";
+import { SortTh, sortRows, useSort } from "../../components/DataTable";
 import { pushToast } from "../../lib/toast";
 import { gateDistance, lastCounted, readingSessions } from "../../components/advisor/experimentStats";
 import { PairedRead } from "../../components/advisor/PairedRead";
@@ -748,6 +749,15 @@ export function ExperimentCard({
  * "advisor" page carries the full picture; this is the cross-module roll-up.
  */
 export function ExperimentRollup({ experiments }: { experiments: AdvisorExperiment[] }) {
+  const sort = useSort();
+  // Progress sorts by the share of the run done, the same fraction the bar draws.
+  const rows = sortRows(experiments, sort, {
+    module: (e) => e.module,
+    name: (e) => e.name ?? e.id,
+    status: (e) => e.status,
+    progress: (e) => (e.expiresAfter > 0 ? e.sessionsRun / e.expiresAfter : null),
+    delta: (e) => e.verdict?.pairs[0]?.delta["net_pnl"] ?? null,
+  });
   return (
     <section className="card">
       <h2>At a glance</h2>
@@ -755,17 +765,17 @@ export function ExperimentRollup({ experiments }: { experiments: AdvisorExperime
         <table className="data-table data-table-labelled advisor-rollup">
           <thead>
             <tr>
-              <th>Module</th>
-              <th>Experiment</th>
-              <th>Status</th>
-              <th>Progress</th>
+              <SortTh label="Module" k="module" sort={sort} />
+              <SortTh label="Experiment" k="name" sort={sort} />
+              <SortTh label="Status" k="status" sort={sort} />
+              <SortTh label="Progress" k="progress" sort={sort} />
               <th>Last session</th>
-              <th>Net delta</th>
+              <SortTh label="Net delta" k="delta" sort={sort} />
               <th>Gate</th>
             </tr>
           </thead>
           <tbody>
-            {experiments.map((e) => {
+            {rows.map((e) => {
               const last = lastCounted(e);
               const delta = e.verdict?.pairs[0]?.delta["net_pnl"] ?? null;
               const pctDone = e.expiresAfter > 0 ? Math.min(100, (100 * e.sessionsRun) / e.expiresAfter) : 0;

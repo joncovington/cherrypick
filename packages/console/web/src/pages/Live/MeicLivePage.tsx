@@ -200,6 +200,7 @@ export function MeicLivePage() {
         table="meic-live-history"
         title={`History — ${d?.history.length ?? 0} resolved live`}
         defs={LIVE_HISTORY_COLUMNS}
+        clientSort
         rows={d?.history ?? []}
         rowKey={(r) => `live-${r.id}`}
         loading={isLoading}

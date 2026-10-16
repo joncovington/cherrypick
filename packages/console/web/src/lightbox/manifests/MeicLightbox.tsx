@@ -6,7 +6,7 @@ import { useMeic } from "../../lib/api";
 import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
-import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
+import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct, sortRows, useSort } from "../../components/DataTable";
 import { ScopeSelect, EraSelect, LoopPill } from "../../components/ScopeBar";
 import { ArmSelect } from "../../components/ArmSelect";
 import { ModuleIntegrityStrip } from "../../components/ModuleIntegrityStrip";
@@ -144,6 +144,18 @@ export function MeicLightbox({ slide }: { slide: string }) {
   // attempts transport spells the arm `arm` (MEIC's own scope calls it `profile`).
   const attemptsScope = { arm: profile, symbol, era: resolvedEra };
   const reasons = (a?.exitReasons ?? []).map((r) => r.reason);
+  // The daily summaries are the newest 20 the reader returns; a sort ranks those 20, and the
+  // card's title says so.
+  const summarySort = useSort();
+  const summaries = sortRows(data?.summaries ?? [], summarySort, {
+    date: (s) => s.summaryDate,
+    sym: (s) => s.symbol,
+    entries: (s) => s.totalEntries,
+    filled: (s) => s.entriesFilled,
+    stopped: (s) => s.entriesStopped,
+    win: (s) => s.winRatePct,
+    net: (s) => s.netPnl,
+  });
 
   const slides: Array<SlideDef & { id: MeicSlideId }> = [
     { id: "session", label: MEIC_LABEL.session, render: () => <MeicSession mode={mode} scope={scopeArgs} /> },
@@ -276,15 +288,24 @@ export function MeicLightbox({ slide }: { slide: string }) {
           </Card>
           <MeicDeepCards mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />
           <DataCard
-            title="Daily summaries"
-            headers={["date", "sym", "entries", "filled", "stopped", "win %", "net P&L"]}
+            title="Daily summaries (the newest 20)"
+            headers={[
+              { label: "date", k: "date" },
+              { label: "sym", k: "sym" },
+              { label: "entries", k: "entries" },
+              { label: "filled", k: "filled" },
+              { label: "stopped", k: "stopped" },
+              { label: "win %", k: "win" },
+              { label: "net P&L", k: "net" },
+            ]}
+            sort={summarySort}
             numFrom={2}
             loading={isLoading}
             isError={isError}
             rowCount={data?.summaries.length ?? 0}
             updatedAt={dataUpdatedAt}
           >
-            {data?.summaries.map((s) => (
+            {summaries.map((s) => (
               <tr key={`${s.summaryDate}-${s.symbol}`}>
                 <td>{s.summaryDate}</td>
                 <td>{s.symbol ?? "—"}</td>

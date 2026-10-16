@@ -66,6 +66,15 @@ const COLUMNS: ColumnDef<EarningsTradeRow>[] = [
   { id: "net", header: "net", title: "gross − fees − settlement − slippage", kind: "money", pinned: true, render: (r) => <PnlCell v={r.net} /> },
 ];
 
+/**
+ * The column ids the server orders the WHOLE closed list by (`EARNINGS_HISTORY_SORTS` in
+ * server/src/readers/earnings.ts; a server test holds the two lists together). The history is
+ * paged on the server, so a browser sort of one page would rank that page and call it the history.
+ */
+export const HISTORY_SORTS: readonly string[] = [
+  "opened", "closed", "sym", "strategy", "qty", "price", "entry", "exit", "gross", "fees", "settle", "slip", "net",
+];
+
 export function EarningsHistory({
   data,
   loading,
@@ -80,7 +89,16 @@ export function EarningsHistory({
   busy: boolean;
   /** A date range is set, so an empty table means "nothing closed then", not "nothing yet". */
   ranged: boolean;
-  page: { offset: number; limit: number; setOffset: (n: number) => void; setLimit: (n: number) => void };
+  page: {
+    offset: number;
+    limit: number;
+    sort?: string;
+    dir?: "asc" | "desc";
+    setOffset: (n: number) => void;
+    setLimit: (n: number) => void;
+    /** `usePage().toggleSort`; without it no header sorts. */
+    toggleSort?: (key: string) => void;
+  };
 }) {
   const t = data?.totals;
   const total = data?.trades.total ?? 0;
@@ -89,6 +107,9 @@ export function EarningsHistory({
       table="earnings-history"
       title={`History — ${total.toLocaleString()} closed across both books`}
       defs={COLUMNS}
+      sort={page}
+      onSort={page.toggleSort}
+      serverSorts={HISTORY_SORTS}
       rows={data?.trades.rows ?? []}
       rowKey={(r) => `${r.mode}-${r.orderId}`}
       loading={loading}

@@ -14,7 +14,7 @@ import {
   type EquityPoint,
   type RiskSummary,
 } from "../analytics/riskMetrics.js";
-import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
+import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest, type SortAccessors } from "./paging.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { voidedDates } from "./voidedSession.js";
 import { readRegimeCuts } from "./regimeCuts.js";
@@ -1180,6 +1180,31 @@ export const NO_TRADE_LOG_QUERY: FliesTradeLogQuery = {
  */
 export type FliesTradeLog = Paged<FliesTradeLogRow> & { totals: FliesTradeLogTotals };
 
+/**
+ * The trade log's sortable columns, by the web table's column ids (`TRADE_LOG_SORTS` in
+ * pages/Flies/HistoryTab.tsx, which a test holds to this list). Each reads the served field its
+ * cell renders: `date` breaks ties on the entry stamp so a session's trades keep their clock order,
+ * and `time` is the clock time alone, for ranking entry slots across days.
+ */
+export const TRADE_LOG_SORTS: SortAccessors<FliesTradeLogRow> = {
+  date: (r) => `${r.tradeDate} ${r.entryTime ?? ""}`,
+  time: (r) => (r.entryTime !== null && r.entryTime.length >= 16 ? r.entryTime.slice(11, 16) : null),
+  sym: (r) => r.symbol,
+  arm: (r) => r.arm,
+  mode: (r) => r.entryMode,
+  centre: (r) => r.center,
+  qty: (r) => r.quantity,
+  price: (r) => r.price,
+  latency: (r) => r.latencyMin,
+  entry: (r) => r.entryCash,
+  exit: (r) => r.exitCash,
+  gross: (r) => r.gross,
+  fees: (r) => r.fees,
+  settle: (r) => r.settlementFees,
+  slip: (r) => r.slippage,
+  net: (r) => r.pnl,
+};
+
 const EMPTY_TOTALS: FliesTradeLogTotals = {
   trades: 0,
   sessions: 0,
@@ -1298,6 +1323,7 @@ export function readFliesTradeLog(
         latencyMin: num(r["completion_latency_min"]),
         pinned: r["pinned"] === 1,
       }),
+      TRADE_LOG_SORTS,
     );
     return { ...paged, totals };
   });

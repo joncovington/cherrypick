@@ -1,5 +1,5 @@
 import type { FliesGateSessions, GateArm, GateBlock } from "@console/shared";
-import { Card, PnlCell } from "../../components/DataTable";
+import { Card, PnlCell, SortTh, sortRows, useSort } from "../../components/DataTable";
 import { fmtMoney } from "../../lib/format";
 import { useBridged } from "../../lib/bridged";
 import { gateDescription } from "./gateGlossary";
@@ -94,9 +94,23 @@ function ArmCard({ a, updatedAt }: { a: GateArm; updatedAt: number }) {
   );
 }
 
+/** The summary's sorts. `acted` ranks by every session the gate acted on, scored or still open;
+ *  ahead / behind is a pair of counts and stays unsorted. The per-arm cards below keep date order. */
+const GATE_SORTS = {
+  arm: (a: GateArm) => a.arm,
+  window: (a: GateArm) => a.window_start,
+  acted: (a: GateArm) => a.acted.sessions,
+  armNet: (a: GateArm) => a.acted.arm_net,
+  controlNet: (a: GateArm) => a.acted.control_net,
+  diff: (a: GateArm) => a.acted.diff,
+  quiet: (a: GateArm) => a.quiet.sessions,
+  quietDiff: (a: GateArm) => a.quiet.diff,
+};
+
 export function GatesSlide() {
   const { data, isLoading, dataUpdatedAt } = useBridged<FliesGateSessions>(["flies-gates"], "/api/flies/gates");
   const d = data?.data ?? null;
+  const sort = useSort();
 
   if (isLoading) {
     return (
@@ -140,19 +154,19 @@ export function GatesSlide() {
           <table className="data-table num-from-2">
             <thead>
               <tr>
-                <th>arm</th>
-                <th>window</th>
-                <th title="sessions where the gate acted (scored of total when some are still open)">acted</th>
-                <th>arm net</th>
-                <th>control net</th>
-                <th>diff</th>
+                <SortTh label="arm" k="arm" sort={sort} />
+                <SortTh label="window" k="window" sort={sort} />
+                <SortTh label="acted" k="acted" sort={sort} title="sessions where the gate acted (scored of total when some are still open)" />
+                <SortTh label="arm net" k="armNet" sort={sort} />
+                <SortTh label="control net" k="controlNet" sort={sort} />
+                <SortTh label="diff" k="diff" sort={sort} />
                 <th title="sessions the arm finished ahead / behind control">ahead / behind</th>
-                <th title="sessions where it never acted">quiet</th>
-                <th>quiet diff</th>
+                <SortTh label="quiet" k="quiet" sort={sort} title="sessions where it never acted" />
+                <SortTh label="quiet diff" k="quietDiff" sort={sort} />
               </tr>
             </thead>
             <tbody>
-              {d.arms.map((a) => (
+              {sortRows(d.arms, sort, GATE_SORTS).map((a) => (
                 <tr key={a.arm}>
                   <td>{a.arm}</td>
                   <td className="muted">{a.window_start ?? "—"}</td>

@@ -1,6 +1,7 @@
 import type { TechnicalsMover, TechnicalsReport, TechnicalsStageMember } from "@console/shared";
 import { Link } from "react-router-dom";
 import { BarChart, SignedBar } from "../../components/Charts";
+import { SortTh, sortRows, useSort } from "../../components/DataTable";
 
 /**
  * The technicals report on the Morning tab: breadth, stages by sector, rotation, the relative-
@@ -171,6 +172,14 @@ function RotationCard({ t }: { t: TechnicalsReport }) {
 }
 
 function LeadersCard({ t }: { t: TechnicalsReport }) {
+  const sort = useSort();
+  const leaders = sortRows(t.leaders, sort, {
+    symbol: (l) => l.symbol,
+    sector: (l) => l.sector,
+    ret: (l) => l.return6mPct,
+    rank: (l) => l.rank,
+    stage: (l) => l.stage,
+  });
   return (
     <section className="card">
       <Head title="Relative-strength leaders" t={t} />
@@ -181,16 +190,16 @@ function LeadersCard({ t }: { t: TechnicalsReport }) {
         <table className="data-table">
           <thead>
             <tr>
-              <th>Symbol</th>
-              <th>Sector</th>
-              <th>6-month return</th>
-              <th>Rank</th>
+              <SortTh label="Symbol" k="symbol" sort={sort} />
+              <SortTh label="Sector" k="sector" sort={sort} />
+              <SortTh label="6-month return" k="ret" sort={sort} />
+              <SortTh label="Rank" k="rank" sort={sort} />
               <th>Trend short / long</th>
-              <th>Stage</th>
+              <SortTh label="Stage" k="stage" sort={sort} />
             </tr>
           </thead>
           <tbody>
-            {t.leaders.map((l) => (
+            {leaders.map((l) => (
               <tr key={l.symbol}>
                 <td>
                   <Link to={`/charts/technicals?symbol=${encodeURIComponent(l.symbol)}`}>{l.symbol}</Link>

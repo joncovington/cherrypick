@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { PmccTracker, PmccWeeklyRow } from "@console/shared";
-import { TrackerView } from "../src/pages/Pmcc/TrackerTab";
+import { TrackerIndex, TrackerView } from "../src/pages/Pmcc/TrackerTab";
 import { WeeklyByArm } from "../src/pages/Pmcc/WeeklyByArmCard";
 
 const text = (node: React.ReactElement) =>
@@ -149,6 +149,40 @@ describe("the PMCC position tracker", () => {
     const html = text(<TrackerView t={blank} />);
     expect(html).not.toContain("+$0.00");
     expect(html).toContain("—");
+  });
+});
+
+describe("the tracker's sortable tables", () => {
+  const sortButtons = (html: string) => [...html.matchAll(/<button type="button" class="th-sort">([^<]*)/g)].map((m) => m[1]);
+
+  it("sorts the short-call log by its figures, never by how/why or the spot pair", () => {
+    const html = text(<TrackerView t={T} />);
+    const log = html.slice(html.indexOf("short-call log"), html.indexOf("week by week"));
+    const buttons = sortButtons(log);
+    expect(buttons).toEqual(expect.arrayContaining(["#", "opened", "days", "strike", "sold", "extrinsic captured", "net"]));
+    expect(buttons).not.toContain("how");
+    expect(buttons).not.toContain("why");
+    expect(buttons).not.toContain("stock");
+    // The week-by-week table is a time series and stays in its own order.
+    expect(sortButtons(html.slice(html.indexOf("week by week")))).toEqual([]);
+  });
+
+  it("sorts the positions index by every column", () => {
+    const row = {
+      positionId: "TQQQ:shield:2026-08-24",
+      symbol: "TQQQ",
+      arm: "shield",
+      era: "shield",
+      lifecycle: "held_long",
+      status: "open",
+      entrySession: "2026-08-24",
+      closedSession: null,
+      shorts: 2,
+      net: 159.61,
+    };
+    expect(sortButtons(text(<TrackerIndex rows={[row]} loading={false} error={null} />))).toEqual([
+      "position", "lifecycle", "status", "opened", "closed", "shorts", "net",
+    ]);
   });
 });
 

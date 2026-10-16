@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { MeicDivergence, TradingMode } from "@console/shared";
-import { DataCard, fmtPct } from "../../components/DataTable";
+import { DataCard, fmtPct, sortRows, useSort } from "../../components/DataTable";
 import { sessionQuery } from "../../components/Attempts";
 
 /**
@@ -36,11 +36,18 @@ export function MeicDivergenceCard({
     refetchInterval: 60_000,
   });
 
+  const sort = useSort();
   const allAgree = data?.allAgreeRatePct ?? null;
+  const pairs = sortRows(data?.pairs ?? [], sort, {
+    pair: (p) => p.arms,
+    ticks: (p) => p.ticks,
+    agreed: (p) => p.agreementRatePct,
+  });
   return (
     <DataCard
       title={`Profile divergence${data?.date != null ? ` (${data.date})` : ""}`}
-      headers={["pair", "ticks", "agreed %", ""]}
+      headers={[{ label: "pair", k: "pair" }, { label: "ticks", k: "ticks" }, { label: "agreed %", k: "agreed" }, ""]}
+      sort={sort}
       numFrom={1}
       loading={isLoading}
       rowCount={data?.pairs.length ?? 0}
@@ -67,7 +74,7 @@ export function MeicDivergenceCard({
         </p>
       }
     >
-      {data?.pairs.map((p) => {
+      {pairs.map((p) => {
         const rate = p.agreementRatePct;
         const tooHigh = rate !== null && rate >= 80;
         return (

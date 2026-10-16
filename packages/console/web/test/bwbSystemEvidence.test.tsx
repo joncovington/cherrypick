@@ -78,6 +78,9 @@ describe("the bwb entry vol slide", () => {
     expect(html).toContain("VIX9D:stale");
     expect(html).toContain("$12.50");
     expect(html).toContain("bwb evidence unavailable");
+    // The entry-context table sorts by every reading; the reason is prose and stays a fixed header.
+    const sortButtons = [...html.replace(/<!-- -->/g, "").matchAll(/<button type="button" class="th-sort">([^<]*)/g)].map((m) => m[1]);
+    expect(sortButtons).toEqual(["session", "arm", "status", "VIX9D", "VIX", "VIX3M", "9D / VIX", "VIX / 3M", "gate", "implied vol", "net"]);
   });
 });
 

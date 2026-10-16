@@ -278,7 +278,7 @@ export function EarningsLightbox({ slide }: { slide: string }) {
           isError={isError}
           busy={isPlaceholderData}
           ranged={range.from !== null || range.to !== null}
-          page={{ ...tradesPage.page, setOffset: tradesPage.setOffset, setLimit: tradesPage.setLimit }}
+          page={{ ...tradesPage.page, setOffset: tradesPage.setOffset, setLimit: tradesPage.setLimit, toggleSort: tradesPage.toggleSort }}
         />
       ),
     },

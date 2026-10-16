@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ManageAccount, ManageLevel, ManagePayload, ManageTrade } from "@console/shared";
-import { Card, DataCard } from "../../components/DataTable";
+import { Card, DataCard, sortRows, useSort, type SortHeader } from "../../components/DataTable";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { fmtMoney } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
@@ -55,6 +55,12 @@ function pct(v: number | null): string {
 /** A net price as the suite writes it: `1.25 cr` / `0.40 db`. */
 function net(price: number | null, side: "cr" | "db" | null): string {
   return price === null || side === null ? "—" : `${price.toFixed(2)} ${side}`;
+}
+
+/** A level's net price signed the suite's way (credit +, debit −), so a column of them sorts as cash. */
+function signedLevel(l: ManageLevel | null): number | null {
+  if (l === null || l.netPrice === null || l.netSide === null) return null;
+  return l.netSide === "cr" ? l.netPrice : -l.netPrice;
 }
 
 function levelText(l: ManageLevel | null): string {
@@ -230,16 +236,42 @@ function TradesCard({
   variant: "act" | "hold";
 }) {
   const [open, setOpen] = useState<string | null>(null);
-  const tail = variant === "act" ? ["reason"] : ["take profit", "stop", "time exit"];
+  const sort = useSort();
+  const tail: Array<string | SortHeader> =
+    variant === "act" ? ["reason"] : [{ label: "take profit", k: "tp" }, { label: "stop", k: "stop" }, "time exit"];
+  // Each trade's detail row is rendered inside its own Fragment, so it follows its trade through a sort.
+  const rows = sortRows(trades, sort, {
+    trade: (t) => t.tradeId,
+    action: (t) => ACTION_LABEL[t.action] ?? t.action,
+    conf: (t) => t.confidence,
+    kind: (t) => t.kind,
+    pnl: (t) => t.pnlGross,
+    capture: (t) => t.capture,
+    dte: (t) => t.nearestShortDte,
+    earnings: (t) => t.earnings?.days ?? null,
+    tp: (t) => signedLevel(t.takeProfit),
+    stop: (t) => signedLevel(t.stop),
+  });
   return (
     <DataCard
       title={title}
-      headers={["trade", "action", "conf.", "kind", "mark P&L (gross)", "capture / return", "short dte", "earnings", ...tail]}
+      headers={[
+        { label: "trade", k: "trade" },
+        { label: "action", k: "action" },
+        { label: "conf.", k: "conf" },
+        { label: "kind", k: "kind" },
+        { label: "mark P&L (gross)", k: "pnl" },
+        { label: "capture / return", k: "capture" },
+        { label: "short dte", k: "dte" },
+        { label: "earnings", k: "earnings", title: "sorts by days to the announcement" },
+        ...tail,
+      ]}
+      sort={sort}
       loading={loading}
       rowCount={trades.length}
       empty={empty}
     >
-      {trades.map((t) => (
+      {rows.map((t) => (
         <Fragment key={t.tradeId}>
           <tr>
             <td>

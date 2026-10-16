@@ -10,6 +10,7 @@ import {
   useSystemSupervisor,
 } from "../../lib/api";
 import { ModuleCellLink } from "../../components/ModuleLink";
+import { SortTh, sortRows, useSort } from "../../components/DataTable";
 
 /**
  * The System page's tabs. Every figure is the server's reading of a file the suite wrote, and every
@@ -79,6 +80,10 @@ const LEVEL_CHIP: Record<SystemLevel, string> = {
   critical: "chip chip-missing",
   unknown: "chip",
 };
+
+/** A level as a sort key: worst first on the first click, so a state column ranks by severity, not
+ *  alphabetically. Unknown sits above ok — a job the server could not read is not a healthy one. */
+const LEVEL_RANK: Record<SystemLevel, number> = { critical: 3, warn: 2, unknown: 1, ok: 0 };
 
 function statusLevel(status: string | null | undefined): SystemLevel {
   if (status === "OK") return "ok";
@@ -287,9 +292,23 @@ export function SupervisorTab() {
   const { data, isError } = useSystemSupervisor();
   const problems = data?.jobs.filter((j) => jobMatches(j, "problems")).length ?? 0;
   const [filter, setFilter] = useState<(typeof JOB_FILTERS)[number]>("all");
+  const jobSort = useSort();
   if (data === undefined) return <Loading isError={isError} />;
   const hb = data.heartbeat;
-  const jobs = data.jobs.filter((j) => jobMatches(j, filter));
+  // State ranks by the level its chip is coloured with; next sorts only an enabled job's real next run.
+  const jobs = sortRows(
+    data.jobs.filter((j) => jobMatches(j, filter)),
+    jobSort,
+    {
+      job: (j) => j.id,
+      state: (j) => LEVEL_RANK[j.level],
+      pid: (j) => j.runningPid,
+      start: (j) => j.lastStart,
+      exit: (j) => j.lastExitAt,
+      fails: (j) => j.consecutiveFailures,
+      next: (j) => (j.enabled ? j.nextRun : null),
+    },
+  );
   const deriveErrors = Object.entries(data.registry.deriveErrors);
 
   return (
@@ -392,14 +411,14 @@ export function SupervisorTab() {
           <table className="data-table system-jobs">
             <thead>
               <tr>
-                <th>job</th>
-                <th>state</th>
+                <SortTh label="job" k="job" sort={jobSort} />
+                <SortTh label="state" k="state" sort={jobSort} title="sorts by severity" />
                 <th>schedule</th>
-                <th>pid</th>
-                <th>last start</th>
-                <th>last exit</th>
-                <th>fails</th>
-                <th>next</th>
+                <SortTh label="pid" k="pid" sort={jobSort} />
+                <SortTh label="last start" k="start" sort={jobSort} />
+                <SortTh label="last exit" k="exit" sort={jobSort} />
+                <SortTh label="fails" k="fails" sort={jobSort} />
+                <SortTh label="next" k="next" sort={jobSort} />
                 <th>last error</th>
               </tr>
             </thead>
@@ -512,8 +531,33 @@ export function ModulesTab() {
 
 export function DataTab() {
   const { data, isError } = useSystemData();
+  const artifactSort = useSort();
+  const streamSort = useSort();
+  const storeSort = useSort();
+  const failureSort = useSort();
   if (data === undefined) return <Loading isError={isError} />;
   const totalStores = data.stores.reduce((s, x) => s + (x.sizeBytes ?? 0), 0);
+  // Landed sorts by age (stalest first on the first click); a failed run ranks above an ok one.
+  const artifacts = sortRows(data.artifacts, artifactSort, {
+    artifact: (a) => a.label,
+    landed: (a) => a.ageSeconds,
+    result: (a) => (a.ok === null ? null : a.ok ? 0 : 1),
+  });
+  const streamTables = sortRows(data.stream?.tables ?? [], streamSort, {
+    table: (t) => t.table,
+    rows: (t) => t.rows,
+    newest: (t) => t.newestAgeSeconds,
+  });
+  // Share is size over the total, so both headers sort by size.
+  const stores = sortRows(data.stores, storeSort, {
+    store: (s) => s.label,
+    size: (s) => s.sizeBytes,
+  });
+  const failures = sortRows(data.readerFailures, failureSort, {
+    store: (f) => f.path,
+    count: (f) => f.count,
+    last: (f) => f.lastAt,
+  });
   return (
     <div className="system-page">
       <Section title="freshness" note="When each scheduled artifact last landed, and whether its own run said ok.">
@@ -521,14 +565,14 @@ export function DataTab() {
         <table className="data-table">
           <thead>
             <tr>
-              <th>artifact</th>
-              <th>landed</th>
-              <th>result</th>
+              <SortTh label="artifact" k="artifact" sort={artifactSort} />
+              <SortTh label="landed" k="landed" sort={artifactSort} title="sorts by age" />
+              <SortTh label="result" k="result" sort={artifactSort} />
               <th>detail</th>
             </tr>
           </thead>
           <tbody>
-            {data.artifacts.map((a) => (
+            {artifacts.map((a) => (
               <tr key={a.key}>
                 <td>{a.label}</td>
                 <td className="muted" title={et(a.at)}>
@@ -568,13 +612,13 @@ export function DataTab() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>table</th>
-                <th>rows</th>
-                <th>newest write</th>
+                <SortTh label="table" k="table" sort={streamSort} />
+                <SortTh label="rows" k="rows" sort={streamSort} />
+                <SortTh label="newest write" k="newest" sort={streamSort} title="sorts by age" />
               </tr>
             </thead>
             <tbody>
-              {data.stream.tables.map((t) => (
+              {streamTables.map((t) => (
                 <tr key={t.table}>
                   <td>{t.table}</td>
                   <td>{t.rows.toLocaleString()}</td>
@@ -606,13 +650,13 @@ export function DataTab() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>store</th>
-                <th>size</th>
-                <th>share</th>
+                <SortTh label="store" k="store" sort={storeSort} />
+                <SortTh label="size" k="size" sort={storeSort} />
+                <SortTh label="share" k="size" sort={storeSort} />
               </tr>
             </thead>
             <tbody>
-              {data.stores.map((s) => (
+              {stores.map((s) => (
                 <tr key={s.label}>
                   <td>{s.label}</td>
                   <td>{bytes(s.sizeBytes)}</td>
@@ -631,14 +675,14 @@ export function DataTab() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>store</th>
+                  <SortTh label="store" k="store" sort={failureSort} />
                   <th>error</th>
-                  <th>count</th>
-                  <th>last</th>
+                  <SortTh label="count" k="count" sort={failureSort} />
+                  <SortTh label="last" k="last" sort={failureSort} />
                 </tr>
               </thead>
               <tbody>
-                {data.readerFailures.map((f) => (
+                {failures.map((f) => (
                   <tr key={f.path}>
                     <td className="system-wrap">{f.path}</td>
                     <td className="pnl-neg system-wrap">{f.error}</td>

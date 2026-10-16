@@ -1,12 +1,51 @@
-import { Card } from "../DataTable";
+import { Card, SortTh, sortRows, useSort } from "../DataTable";
 import { fmtMoney } from "../../lib/format";
-import type { TradingMode } from "@console/shared";
+import type { ExitReasonRow, TradingMode } from "@console/shared";
 import { useModulePerformance, type PerformanceModuleId } from "../../lib/api";
 import { MetricTiles } from "./MetricTiles";
 import { ExcursionsCard } from "./ExcursionsCard";
 import { CumulativeCard } from "./CumulativeCard";
 import { PairedABCard } from "./PairedABCard";
 import { TradeNetHistogram } from "./TradeNetHistogram";
+
+/** The exit-reason tally, sortable once the reader's rows are known to be rows (not `unavailable`). */
+function ExitReasonsCard({ module, rows }: { module: PerformanceModuleId; rows: ExitReasonRow[] }) {
+  const sort = useSort();
+  const sorted = sortRows(rows, sort, {
+    tag: (r) => r.tag,
+    reason: (r) => r.reason,
+    n: (r) => r.n,
+    net: (r) => r.net,
+  });
+  return (
+    <Card title="exit reasons" collapseKey={`performance-${module}-exits`} defaultCollapsed>
+      <div className="table-scroll">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <SortTh label="tag" k="tag" sort={sort} />
+            <SortTh label="reason" k="reason" sort={sort} />
+            <SortTh label="n" k="n" sort={sort} />
+            <SortTh label="net" k="net" sort={sort} />
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((r) => (
+            <tr key={`${r.tag}-${r.reason}`}>
+              <td>{r.tag}</td>
+              <td>{r.reason}</td>
+              <td>{r.n}</td>
+              <td className={r.net === null ? "muted" : r.net >= 0 ? "pnl-pos" : "pnl-neg"}>
+                {fmtMoney(r.net)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
+    </Card>
+  );
+}
 
 /**
  * The suite-wide performance slide: one calibration reading per arm, via
@@ -103,32 +142,7 @@ export function PerformanceSlide({ module, mode = "paper" }: { module: Performan
         </>
       )}
       {Array.isArray(data.exitReasons) && data.exitReasons.length > 0 && (
-        <Card title="exit reasons" collapseKey={`performance-${module}-exits`} defaultCollapsed>
-          <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>tag</th>
-                <th>reason</th>
-                <th>n</th>
-                <th>net</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.exitReasons.map((r, i) => (
-                <tr key={i}>
-                  <td>{r.tag}</td>
-                  <td>{r.reason}</td>
-                  <td>{r.n}</td>
-                  <td className={r.net === null ? "muted" : r.net >= 0 ? "pnl-pos" : "pnl-neg"}>
-                    {fmtMoney(r.net)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-        </Card>
+        <ExitReasonsCard module={module} rows={data.exitReasons} />
       )}
       {data.pairs.map((p) => {
         const advisedGroup = groupByTag.get(p.advised);

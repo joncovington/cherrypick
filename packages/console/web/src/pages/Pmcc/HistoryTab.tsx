@@ -255,13 +255,20 @@ const COLUMNS: ColumnDef<PmccCycleRow>[] = [
   ...MONEY.money,
 ];
 
+/**
+ * The columns the server orders the whole history by -- `PMCC_HISTORY_SORTS` in
+ * server/src/readers/pmcc.ts, which must name the same ids (a server test reads both). The long,
+ * the short chain, how and the exit reason are composite or prose, so they stay unsorted.
+ */
+const PMCC_HISTORY_SORTS = ["dates", "symbol", "arm", "yield", "spread", "qty", "price", "entry", "exit", "gross", "fees", "settle", "slip", "net"];
+
 export function HistoryTab() {
   const [arm, setBook] = useState<string | null>(null);
   const [symbol, setSymbol] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const { from, to } = useUrlDateRange();
   const meta = usePmccMeta();
-  const { page, setOffset, setLimit } = usePage([arm, symbol, from, to]);
+  const { page, setOffset, setLimit, toggleSort } = usePage([arm, symbol, from, to]);
   const { data, isLoading, isError, isPlaceholderData } = usePmccHistory({ arm, symbol, from, to }, page);
   const assignments = usePmccAssignments();
   const outstanding = assignments.data?.rows ?? [];
@@ -273,6 +280,9 @@ export function HistoryTab() {
         title="completed cycles"
         className="view-fade"
         defs={COLUMNS}
+        sort={page}
+        onSort={toggleSort}
+        serverSorts={PMCC_HISTORY_SORTS}
         rows={data?.rows ?? []}
         rowKey={(r) => r.positionId}
         loading={isLoading}

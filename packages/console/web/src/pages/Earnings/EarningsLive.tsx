@@ -1,5 +1,5 @@
 import { useEarningsLive, type EarningsEvent, type EarningsOpenPosition } from "../../lib/api";
-import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
+import { DataCard, PnlCell, fmtMoney, fmtNum, sortRows, useSort, type SortHeader } from "../../components/DataTable";
 import { fmtPrice } from "../../lib/format";
 
 /**
@@ -53,20 +53,31 @@ function waitingOn(position: EarningsOpenPosition): string {
   return event.reason;
 }
 
-const POSITION_HEADERS = [
-  "Symbol",
-  "Strategy",
-  "Opened",
-  "Price",
-  "Mark (per share)",
-  "Unrealized (gross)",
+const POSITION_HEADERS: Array<string | SortHeader> = [
+  { label: "Symbol", k: "symbol" },
+  { label: "Strategy", k: "strategy" },
+  { label: "Opened", k: "opened" },
+  { label: "Price", k: "price" },
+  { label: "Mark (per share)", k: "mark" },
+  { label: "Unrealized (gross)", k: "unrealised" },
   "Best / worst",
   "Waiting on",
 ];
 
+const POSITION_SORTS = {
+  symbol: (p: EarningsOpenPosition) => p.symbol,
+  strategy: (p: EarningsOpenPosition) => p.strategy,
+  opened: (p: EarningsOpenPosition) => p.openedAt,
+  price: (p: EarningsOpenPosition) => p.entryCredit,
+  // An unpriced mark is not a valuation, so it sinks with the nulls rather than ranking as a number.
+  mark: (p: EarningsOpenPosition) => p.mark?.exitDebit ?? null,
+  unrealised: (p: EarningsOpenPosition) => p.mark?.unrealizedPnl ?? null,
+};
+
 export function EarningsLiveCard() {
   const { data, isLoading, isError } = useEarningsLive();
-  const positions = data?.positions ?? [];
+  const sort = useSort();
+  const positions = sortRows(data?.positions ?? [], sort, POSITION_SORTS);
 
   return (
     <DataCard
@@ -76,6 +87,7 @@ export function EarningsLiveCard() {
           : "Open positions"
       }
       headers={POSITION_HEADERS}
+      sort={sort}
       loading={isLoading}
       isError={isError}
       rowCount={positions.length}

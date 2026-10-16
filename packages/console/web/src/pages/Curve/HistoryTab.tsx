@@ -56,13 +56,20 @@ const COLUMNS: ColumnDef<CurveCycleRow>[] = [
   ...MONEY.money,
 ];
 
+/**
+ * The columns the server orders the whole history by -- `CURVE_HISTORY_SORTS` in
+ * server/src/readers/curve.ts, which must name the same ids (a server test reads both). The regime
+ * column sorts by its ratio; strikes, how and the exit reason stay unsorted.
+ */
+const CURVE_HISTORY_SORTS = ["dates", "symbol", "arm", "regime", "qty", "price", "entry", "exit", "gross", "fees", "settle", "slip", "net"];
+
 /** Completed cycles in the suite's standard trade layout (root CLAUDE.md). */
 export function HistoryTab() {
   const [arm, setArm] = useState<string | null>(null);
   const [symbol, setSymbol] = useState<string | null>(null);
   const { from, to } = useUrlDateRange();
   const meta = useCurveMeta();
-  const { page, setOffset, setLimit } = usePage([arm, symbol, from, to]);
+  const { page, setOffset, setLimit, toggleSort } = usePage([arm, symbol, from, to]);
   const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useCurveHistory({ arm, symbol, from, to }, page);
 
   return (
@@ -72,6 +79,9 @@ export function HistoryTab() {
         title="completed cycles"
         className="view-fade"
         defs={COLUMNS}
+        sort={page}
+        onSort={toggleSort}
+        serverSorts={CURVE_HISTORY_SORTS}
         rows={data?.rows ?? []}
         rowKey={(r) => r.positionId}
         loading={isLoading}

@@ -15,7 +15,7 @@ import type {
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { hasTable, num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
-import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
+import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest, type SortAccessors } from "./paging.js";
 import { NO_UNREALISED, unrealisedByPosition } from "./unrealised.js";
 import { armMoney, entryOutcomes } from "./armCosts.js";
 
@@ -490,6 +490,27 @@ export interface CurveHistoryFilter {
   range?: DateRange;
 }
 
+/**
+ * The history table's sortable columns, keyed by the web table's column ids (its
+ * `CURVE_HISTORY_SORTS` must name the same ones; a test reads both). Each reads the served row --
+ * the money from `positionCash`, the same figures the cells show.
+ */
+export const CURVE_HISTORY_SORTS: SortAccessors<CurveCycleRow> = {
+  dates: (r) => r.entrySession,
+  symbol: (r) => r.symbol,
+  arm: (r) => r.arm,
+  regime: (r) => r.entryRatio,
+  qty: (r) => r.quantity,
+  price: (r) => r.price,
+  entry: (r) => r.entryCash,
+  exit: (r) => r.exitCash,
+  gross: (r) => r.grossPnl,
+  fees: (r) => r.fees,
+  settle: (r) => r.settlementFees,
+  slip: (r) => r.slippage,
+  net: (r) => r.netPnl,
+};
+
 /** Completed cycles, newest first. */
 export function readCurveHistory(
   config: ConsoleConfig,
@@ -556,6 +577,7 @@ export function readCurveHistory(
           ...positionCash(r, num(r["entry_credit"])),
         };
       },
+      CURVE_HISTORY_SORTS,
     );
     return { ...paged, totals };
   });

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import type { ModuleSummarySlice, SummaryBreakdown, SummaryTile, SummaryUnit, TradingMode } from "@console/shared";
+import { SortTh, sortRows, useSort } from "../DataTable";
 import { Gauge, RangeToolbar, TsCard, TsEmpty, WinRateArcs, fmtUsd, fmtUsdPlain, sessionLabel, useSummaryRange } from "./kit";
 
 /**
@@ -140,21 +141,28 @@ function Breakdown({ b }: { b: SummaryBreakdown }) {
 }
 
 function ByArm({ s }: { s: ModuleSummarySlice }) {
+  const sort = useSort();
   if (s.arms.length === 0) return <TsEmpty what="by arm" />;
+  const arms = sortRows(s.arms, sort, {
+    arm: (a) => a.arm,
+    n: (a) => a.trades,
+    win: (a) => a.winPct,
+    net: (a) => a.net,
+  });
   return (
     <TsCard title="by arm" aside={<span className="ts-muted">every arm in the window</span>}>
       <div className="table-scroll">
       <table className="ts-table">
         <thead>
           <tr>
-            <th>arm</th>
-            <th className="num">n</th>
-            <th className="num">win</th>
-            <th className="num">net</th>
+            <SortTh label="arm" k="arm" sort={sort} />
+            <SortTh label="n" k="n" sort={sort} className="num" />
+            <SortTh label="win" k="win" sort={sort} className="num" />
+            <SortTh label="net" k="net" sort={sort} className="num" />
           </tr>
         </thead>
         <tbody>
-          {s.arms.map((a) => (
+          {arms.map((a) => (
             <tr key={a.arm} className={a.retired ? "ts-muted" : undefined}>
               <td>
                 {a.arm}

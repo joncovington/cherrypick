@@ -16,7 +16,7 @@ import type {
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { hasColumn, num, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
-import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
+import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest, type SortAccessors } from "./paging.js";
 
 /**
  * bwb's read layer.
@@ -503,6 +503,27 @@ function bwbTradeCash(r: Record<string, unknown>): Pick<
 const EMPTY_BWB_TOTALS: BwbHistoryTotals = { positions: 0, gross: 0, fees: 0, settlementFees: 0, slippage: 0, net: 0 };
 
 /**
+ * The history table's sortable columns, keyed by the web table's column ids (its `BWB_HISTORY_SORTS`
+ * must name the same ones; a test reads both). Each reads the served row, so fees sorts as the
+ * fee column shows it -- the total with settlement and slippage taken out -- not the stored total.
+ */
+export const BWB_HISTORY_SORTS: SortAccessors<BwbCycleRow> = {
+  dates: (r) => r.entrySession,
+  symbol: (r) => r.symbol,
+  arm: (r) => r.arm,
+  qty: (r) => r.quantity,
+  price: (r) => r.entryCredit,
+  entry: (r) => r.entryCash,
+  addon: (r) => r.addOnCash,
+  exit: (r) => r.exitCash,
+  gross: (r) => r.grossPnl,
+  fees: (r) => r.fees,
+  settle: (r) => r.settlementFees,
+  slip: (r) => r.slippage,
+  net: (r) => r.netPnl,
+};
+
+/**
  * Completed positions in `mode`'s book. `totals` is null when nothing matched: an empty book (the
  * live one before its first fill) has no net, and a summed zero would read as a flat result.
  */
@@ -587,6 +608,7 @@ export function readBwbHistory(
           ...bwbTradeCash(r),
         };
       },
+      BWB_HISTORY_SORTS,
     );
     return { ...paged, mode, totals: totals.positions === 0 ? null : totals };
   });

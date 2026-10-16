@@ -207,4 +207,13 @@ describe("the Options flow page", () => {
     expect(contractLabel("2027-01-15", 16, "call")).toBe("15 Jan 27 16C");
     expect(contractLabel(null, 157.5, "put")).toBe("— 157.5P");
   });
+
+  it("a full table sorts; a Today preview keeps the site's ranking with still headers", () => {
+    const full = render(<FlowSpreads day={DAY} />);
+    for (const label of ["Symbol", "Time ET", "Size", "Premium", "Delta", "Underlying"]) {
+      expect(full).toContain(`<button type="button" class="th-sort">${label}</button>`);
+    }
+    expect(full).toContain("<th>Spread</th>");
+    expect(render(<FlowToday day={DAY} />)).not.toContain("th-sort");
+  });
 });

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { BwbEntryContextRow, BwbIvStats, BwbRegimeSplitCell, BwbVolEvidence } from "@console/shared";
 import { useQuery } from "@tanstack/react-query";
-import { Card, PnlCell } from "../../components/DataTable";
+import { Card, PnlCell, SortTh, sortRows, useSort } from "../../components/DataTable";
 import { fmtMoney, fmtNum } from "../../lib/format";
 
 /**
@@ -73,6 +73,7 @@ export function BwbVolSlide() {
     refetchInterval: 120_000,
   });
   const [limit, setLimit] = useState(PAGE);
+  const sort = useSort();
 
   if (isLoading || data === undefined) {
     return (
@@ -87,7 +88,21 @@ export function BwbVolSlide() {
   const split = data.regimeSplit;
   const iv = data.ivPremium;
   const ctx = data.entryContext;
-  const rows = ctx.data?.positions ?? [];
+  // Sorted before the "show more" slice, so the first page of a sort is the top of every position.
+  // A print sorts by its value, not its age; the reason is prose and stays unsorted.
+  const rows = sortRows(ctx.data?.positions ?? [], sort, {
+    session: (r) => r.entry_session,
+    arm: (r) => r.arm,
+    status: (r) => r.status,
+    vix9d: (r) => r.entry_vix9d,
+    vix: (r) => r.entry_vix,
+    vix3m: (r) => r.entry_vix3m,
+    ratio9d: (r) => r.vix9d_vix,
+    ratio3m: (r) => r.vix_vix3m,
+    gate: (r) => r.gate_state,
+    iv: (r) => r.entry_iv_vol,
+    net: (r) => r.net_pnl,
+  });
   return (
     <div className="cards cards-wide">
       <Card title={`regime split${split.data?.gate !== undefined ? ` — ${split.data.gate}` : ""}`} isError={!split.ok} updatedAt={dataUpdatedAt}>
@@ -174,18 +189,23 @@ export function BwbVolSlide() {
               <table className="data-table num-from-4">
                 <thead>
                   <tr>
-                    <th>session</th>
-                    <th>arm</th>
-                    <th>status</th>
-                    <th title="the print and its age at entry">VIX9D</th>
-                    <th>VIX</th>
-                    <th>VIX3M</th>
-                    <th>9D / VIX</th>
-                    <th>VIX / 3M</th>
-                    <th title="open / shut / unmeasured — the module's gate_state at VIX9D/VIX < 1">gate</th>
-                    <th title="the expiration's model-free implied vol at entry; ≥ marks a lower bound (strip cut off)">implied vol</th>
+                    <SortTh label="session" k="session" sort={sort} />
+                    <SortTh label="arm" k="arm" sort={sort} />
+                    <SortTh label="status" k="status" sort={sort} />
+                    <SortTh label="VIX9D" k="vix9d" sort={sort} title="the print and its age at entry" />
+                    <SortTh label="VIX" k="vix" sort={sort} />
+                    <SortTh label="VIX3M" k="vix3m" sort={sort} />
+                    <SortTh label="9D / VIX" k="ratio9d" sort={sort} />
+                    <SortTh label="VIX / 3M" k="ratio3m" sort={sort} />
+                    <SortTh label="gate" k="gate" sort={sort} title="open / shut / unmeasured — the module's gate_state at VIX9D/VIX < 1" />
+                    <SortTh
+                      label="implied vol"
+                      k="iv"
+                      sort={sort}
+                      title="the expiration's model-free implied vol at entry; ≥ marks a lower bound (strip cut off)"
+                    />
                     <th title="why a print was not taken">reason</th>
-                    <th>net</th>
+                    <SortTh label="net" k="net" sort={sort} />
                   </tr>
                 </thead>
                 <tbody>

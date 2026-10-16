@@ -1,6 +1,7 @@
 import { Fragment } from "react";
+import type { CalendarsPolicyRow } from "@console/shared";
 import { useCalendarsPolicies } from "../../lib/api";
-import { Card, DataCard, fmtMoney, fmtPct, PnlCell } from "../../components/DataTable";
+import { Card, DataCard, fmtMoney, fmtPct, PnlCell, sortRows, useSort } from "../../components/DataTable";
 
 /**
  * The exit-policy comparison table — the thing the module exists to produce.
@@ -101,64 +102,113 @@ export function PoliciesTab() {
       </Card>
 
       {structures.map((structure) => (
-        <DataCard
+        <PolicyTable
           key={structure}
-          title={`exit policies · ${structure}`}
-          headers={["policy", "weeks", "derivable", "total net", "avg net", "win rate", "worst week"]}
+          structure={structure}
+          policies={data?.policies ?? []}
           loading={isLoading}
           isError={isError}
-          rowCount={(data?.policies ?? []).filter((p) => p.buckets.some((b) => b.structure === structure)).length}
-          numFrom={1}
-          empty="nothing derived for this structure"
           updatedAt={dataUpdatedAt}
-          footer={
-            <p className="integrity-note">
-              <strong>derivable</strong> counts the weeks whose recorded path could answer this policy. A hole
-              in the path is excluded and counted as excluded — silently pricing a missing tick would let a
-              feed outage flatter whichever policy it happened to favour.
-            </p>
-          }
-        >
-          {(data?.policies ?? []).map((p) => {
-            const b = p.buckets.find((x) => x.structure === structure);
-            if (b === undefined) return null;
-            const excluded = b.weeks - b.derivable;
-            return (
-              <tr key={p.policy}>
-                <td>
-                  <span className="mono">{p.policy}</span>
-                  {POLICIES[p.policy] !== undefined && (
-                    <span className="cal-help" title={POLICIES[p.policy]}>
-                      ?
-                    </span>
-                  )}
-                </td>
-                <td>{b.weeks}</td>
-                <td className={excluded > 0 ? "integrity-warn" : ""}>
-                  {b.derivable}
-                  {excluded > 0 && <span className="muted"> ({excluded} excluded)</span>}
-                </td>
-                <td>
-                  <PnlCell v={b.totalNet} />
-                </td>
-                <td>
-                  <PnlCell v={b.avgNet} />
-                </td>
-                <td>{fmtPct(b.winRate === null ? null : b.winRate * 100, 0)}</td>
-                <td>
-                  {b.worst === null ? (
-                    <span className="muted">—</span>
-                  ) : (
-                    <>
-                      {fmtMoney(b.worst.netPnl)} <span className="muted mono">{b.worst.weekOf}</span>
-                    </>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </DataCard>
+        />
       ))}
     </div>
+  );
+}
+
+/**
+ * One structure's policies. Its own component so each structure keeps its own sort; every value
+ * is read through that structure's bucket, never another tag's.
+ */
+function PolicyTable({
+  structure,
+  policies,
+  loading,
+  isError,
+  updatedAt,
+}: {
+  structure: string;
+  policies: CalendarsPolicyRow[];
+  loading: boolean;
+  isError: boolean;
+  updatedAt: number;
+}) {
+  const sort = useSort();
+  const rows = policies.flatMap((p) => {
+    const b = p.buckets.find((x) => x.structure === structure);
+    return b === undefined ? [] : [{ p, b }];
+  });
+  const shown = sortRows(rows, sort, {
+    policy: (r) => r.p.policy,
+    weeks: (r) => r.b.weeks,
+    derivable: (r) => r.b.derivable,
+    total: (r) => r.b.totalNet,
+    avg: (r) => r.b.avgNet,
+    winRate: (r) => r.b.winRate,
+    worst: (r) => r.b.worst?.netPnl ?? null,
+  });
+  return (
+    <DataCard
+      title={`exit policies · ${structure}`}
+      sort={sort}
+      headers={[
+        { label: "policy", k: "policy" },
+        { label: "weeks", k: "weeks" },
+        { label: "derivable", k: "derivable" },
+        { label: "total net", k: "total" },
+        { label: "avg net", k: "avg" },
+        { label: "win rate", k: "winRate" },
+        { label: "worst week", k: "worst", title: "sorts by the worst week's net" },
+      ]}
+      loading={loading}
+      isError={isError}
+      rowCount={rows.length}
+      numFrom={1}
+      empty="nothing derived for this structure"
+      updatedAt={updatedAt}
+      footer={
+        <p className="integrity-note">
+          <strong>derivable</strong> counts the weeks whose recorded path could answer this policy. A hole
+          in the path is excluded and counted as excluded — silently pricing a missing tick would let a
+          feed outage flatter whichever policy it happened to favour.
+        </p>
+      }
+    >
+      {shown.map(({ p, b }) => {
+        const excluded = b.weeks - b.derivable;
+        return (
+          <tr key={p.policy}>
+            <td>
+              <span className="mono">{p.policy}</span>
+              {POLICIES[p.policy] !== undefined && (
+                <span className="cal-help" title={POLICIES[p.policy]}>
+                  ?
+                </span>
+              )}
+            </td>
+            <td>{b.weeks}</td>
+            <td className={excluded > 0 ? "integrity-warn" : ""}>
+              {b.derivable}
+              {excluded > 0 && <span className="muted"> ({excluded} excluded)</span>}
+            </td>
+            <td>
+              <PnlCell v={b.totalNet} />
+            </td>
+            <td>
+              <PnlCell v={b.avgNet} />
+            </td>
+            <td>{fmtPct(b.winRate === null ? null : b.winRate * 100, 0)}</td>
+            <td>
+              {b.worst === null ? (
+                <span className="muted">—</span>
+              ) : (
+                <>
+                  {fmtMoney(b.worst.netPnl)} <span className="muted mono">{b.worst.weekOf}</span>
+                </>
+              )}
+            </td>
+          </tr>
+        );
+      })}
+    </DataCard>
   );
 }

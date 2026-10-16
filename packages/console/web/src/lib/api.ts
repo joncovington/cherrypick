@@ -274,6 +274,9 @@ export interface MeicTradeQuery extends DateRangeQuery {
   search: string;
   limit: number;
   offset: number;
+  /** A server-sorted column, as on PageState: the reader orders every match before paging. */
+  sort?: string;
+  dir?: "asc" | "desc";
 }
 
 export function useMeic(mode: TradingMode, q: MeicTradeQuery) {
@@ -290,9 +293,16 @@ export function useMeic(mode: TradingMode, q: MeicTradeQuery) {
   if (q.profile !== null) params.set("profile", q.profile);
   if (q.era !== null) params.set("era", q.era);
   if (q.reason !== null) params.set("reason", q.reason);
+  if (q.sort !== undefined) {
+    params.set("sort", q.sort);
+    params.set("dir", q.dir ?? "desc");
+  }
   rangeParams(params, q);
   return useQuery<MeicPayload>({
-    queryKey: ["meic", mode, q.view, q.day, q.from, q.to, q.symbol, q.profile, q.era, q.outcome, q.reason, q.search, q.limit, q.offset],
+    queryKey: [
+      "meic", mode, q.view, q.day, q.from, q.to, q.symbol, q.profile, q.era, q.outcome, q.reason, q.search, q.limit, q.offset,
+      q.sort, q.dir,
+    ],
     queryFn: () => getJson<MeicPayload>(`/api/meic?${params.toString()}`),
     refetchInterval: 15_000,
     // A page that briefly empties while the next one loads reads as "no
@@ -369,6 +379,11 @@ function rangeParams(params: URLSearchParams, r: DateRangeQuery): void {
 export interface PageState {
   limit: number;
   offset: number;
+  /** A server-sorted column (2026-10-16): the server orders the WHOLE result before paging it, so
+   *  a sorted page is a slice of the sorted set, not one page re-ordered. Absent: the reader's own
+   *  order. */
+  sort?: string;
+  dir?: "asc" | "desc";
 }
 
 export const FIRST_PAGE: PageState = { limit: 100, offset: 0 };
@@ -380,6 +395,10 @@ function pageParams(params: URLSearchParams, prefix: string, page: PageState): v
   const key = (k: string): string => (prefix === "" ? k : `${prefix}${k[0]!.toUpperCase()}${k.slice(1)}`);
   params.set(key("limit"), String(page.limit));
   params.set(key("offset"), String(page.offset));
+  if (page.sort !== undefined) {
+    params.set(key("sort"), page.sort);
+    params.set(key("dir"), page.dir ?? "desc");
+  }
 }
 
 export function useFlies(mode: TradingMode, filter: FliesFilter, books: PageState, positions: PageState) {

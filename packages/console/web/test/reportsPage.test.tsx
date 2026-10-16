@@ -294,4 +294,12 @@ describe("the hot-options card marks the names the Options flow also holds", () 
     expect(html).toContain("NVDA");
     expect(html).not.toContain("flow-mark");
   });
+
+  it("every column sorts, and the rows start in the pack's ranking with its stored rank as the #", () => {
+    const html = setHot(null).replace(/<!-- -->/g, "");
+    for (const label of ["#", "Underlying", "Contracts", "Calls", "Puts", "P/C", "vs avg", "Customer sides"]) {
+      expect(html).toContain(`<button type="button" class="th-sort">${label}</button>`);
+    }
+    expect(html.indexOf("NVDA")).toBeLessThan(html.indexOf(">F<"));
+  });
 });

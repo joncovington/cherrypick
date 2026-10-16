@@ -1,5 +1,5 @@
 import type { CalendarsPayload, CalendarsPosition } from "@console/shared";
-import { Card, DataCard, fmtMoney, fmtNum, fmtPct, PnlCell } from "../../components/DataTable";
+import { Card, DataCard, fmtMoney, fmtNum, fmtPct, PnlCell, sortRows, useSort } from "../../components/DataTable";
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { fmtCash, fmtPrice } from "../../lib/format";
 
@@ -243,10 +243,46 @@ export function PositionsCard({
   loading?: boolean;
 }) {
   const arms = [...new Set(positions.map((p) => p.arm))];
+  const sort = useSort();
+  // The net column shows the realised figure once a week settles and the mark before then, so it
+  // sorts by whichever of the two the cell is showing.
+  const rows = sortRows(positions, sort, {
+    symbol: (p) => p.symbol,
+    arm: (p) => p.arm,
+    opened: (p) => (p.entrySession === "" ? null : p.entrySession),
+    expiry: (p) => p.frontExpiration,
+    qty: (p) => p.quantity,
+    price: (p) => (p.entryDebit === null ? null : -p.entryDebit),
+    entry: (p) => p.entryCash,
+    spot: (p) => p.entrySpot,
+    em: (p) => p.entryEm,
+    frontIv: (p) => p.entryFrontIv,
+    backIv: (p) => p.entryBackIv,
+    term: (p) => p.entryTermStructure,
+    status: (p) => p.status,
+    net: (p) => p.netPnl ?? p.unrealisedNet,
+  });
   return (
     <DataCard
       title={title}
-      headers={["symbol", "arm", "opened", "expiry (front/back)", "side", "qty", "price", "entry", "spot at entry", "EM", "front IV", "back IV", "term", "status", "net"]}
+      sort={sort}
+      headers={[
+        { label: "symbol", k: "symbol" },
+        { label: "arm", k: "arm" },
+        { label: "opened", k: "opened" },
+        { label: "expiry (front/back)", k: "expiry", title: "sorts by the front expiry" },
+        "side",
+        { label: "qty", k: "qty" },
+        { label: "price", k: "price" },
+        { label: "entry", k: "entry" },
+        { label: "spot at entry", k: "spot" },
+        { label: "EM", k: "em" },
+        { label: "front IV", k: "frontIv" },
+        { label: "back IV", k: "backIv" },
+        { label: "term", k: "term" },
+        { label: "status", k: "status" },
+        { label: "net", k: "net" },
+      ]}
       loading={loading}
       rowCount={positions.length}
       numFrom={5}
@@ -267,7 +303,7 @@ export function PositionsCard({
         )
       }
     >
-      {positions.map((p) => (
+      {rows.map((p) => (
         <tr key={p.positionId}>
           <td>{p.symbol}</td>
           <td>
@@ -322,11 +358,36 @@ export function PositionsCard({
 
 /** Per-arm, per-structure results over closed positions — the module's headline. */
 export function BookComparison({ data, updatedAt }: { data: CalendarsPayload | undefined; updatedAt?: number }) {
-  const arms = data?.arms ?? [];
+  const sort = useSort();
+  // Costs are shown negated (money out), and sort as shown.
+  const arms = sortRows(data?.arms ?? [], sort, {
+    arm: (b) => b.arm,
+    structure: (b) => b.structure,
+    weeks: (b) => b.weeks,
+    positions: (b) => b.positions,
+    gross: (b) => b.grossPnl,
+    fees: (b) => (b.fees === null ? null : -b.fees),
+    settle: (b) => (b.settlementFees === null ? null : -b.settlementFees),
+    slip: (b) => (b.slippage === null ? null : -b.slippage),
+    net: (b) => b.netPnl,
+    winRate: (b) => b.winRate,
+  });
   return (
     <DataCard
       title="results by arm"
-      headers={["arm", "structure", "weeks", "positions", "gross", "fees", "settle", "slip", "net", "win rate"]}
+      sort={sort}
+      headers={[
+        { label: "arm", k: "arm" },
+        { label: "structure", k: "structure" },
+        { label: "weeks", k: "weeks" },
+        { label: "positions", k: "positions" },
+        { label: "gross", k: "gross" },
+        { label: "fees", k: "fees" },
+        { label: "settle", k: "settle" },
+        { label: "slip", k: "slip" },
+        { label: "net", k: "net" },
+        { label: "win rate", k: "winRate" },
+      ]}
       loading={data === undefined}
       rowCount={arms.length}
       numFrom={2}

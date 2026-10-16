@@ -106,6 +106,9 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const reason = text("reason", 60);
     const date = text("date", 10);
     const range = parseDateRange(query);
+    // The column sort rides the shared parser, so it is read exactly as every other paged table's
+    // is; the reader honours only the ids it names.
+    const { sort, dir } = parsePage(query);
     return {
       ...range,
       ...parseMeicScope(query),
@@ -116,6 +119,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       search: text("search", 60),
       limit: int("limit", 100),
       offset: int("offset", 0),
+      ...(sort !== undefined ? { sort, dir } : {}),
     };
   };
   // The screening metrics, classified by the module that owns them rather than re-derived here.
