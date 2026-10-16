@@ -172,7 +172,7 @@ export function TrackerView({ t, updatedAt }: { t: PmccTracker; updatedAt?: numb
         )}
       </Card>
 
-      <div className="cards-pairs">
+      <div className="cards cards-pairs">
         <CurrentShortCard t={t} />
         <LongLotsCard t={t} />
       </div>
