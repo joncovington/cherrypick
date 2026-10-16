@@ -173,7 +173,8 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   // `date` is not part of MeicScopeFilter, so it stays on parseFliesFilter's own read.
   app.get("/api/meic/forest", async (req) => {
     const f = parseFliesFilter(req.query);
-    return readMeicForest(config, parseMode(req.query), f.date, parseMeicScope(req.query));
+    const fsym = (req.query as Record<string, unknown>)["fsym"];
+    return readMeicForest(config, parseMode(req.query), f.date, parseMeicScope(req.query), typeof fsym === "string" && fsym !== "" ? fsym : null);
   });
   // Both take meic's resolved session when no date is asked for, not their own one-table
   // MAX(trade_date): on a no-trade day the attempts table and the trade log name different days

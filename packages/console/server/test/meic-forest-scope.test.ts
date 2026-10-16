@@ -86,10 +86,12 @@ describe("the forest honours the page scope", () => {
     expect(armsOf(f)).toEqual(["armA", "armB"]);
   });
 
-  it("narrows to the selected arm", () => {
+  it("narrows to the selected arm, one symbol at a time (2026-10-15: a forest is one price axis)", () => {
     const f = readMeicForest(config, "paper", null, { ...NO_SCOPE, profile: "armA" });
     expect(armsOf(f)).toEqual(["armA"]);
-    expect(f.tradesToday).toBe(2);
+    // armA traded NDX and SPX that day: one is drawn, both are offered.
+    expect(f.symbols).toEqual(["NDX", "SPX"]);
+    expect(f.tradesToday).toBe(1);
   });
 
   it("narrows to the selected symbol", () => {

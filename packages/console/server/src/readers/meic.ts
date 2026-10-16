@@ -1285,7 +1285,9 @@ export interface MeicForestArm {
 export interface MeicForest {
   mode: TradingMode;
   tradeDate: string | null;
+  /** The ONE symbol this forest draws (see readMeicForest), and every symbol the day traded. */
   symbol: string | null;
+  symbols: string[];
   /** How many trades this day holds, and how many are still open. A MEIC book resolves entirely at
    *  settlement, so after 16:00 every trade is stopped or expired and an expiry-payoff curve has
    *  nothing left to describe — the card must say that rather than render an empty chart. */
@@ -1370,14 +1372,24 @@ function icLegs(row: {
 }
 
 /** The price grid the forest is drawn on: every strike in play plus a margin either side. */
-function forestGrid(strikes: number[]): number[] {
+export function forestGrid(strikes: number[]): number[] {
   if (strikes.length === 0) return [];
   const lo = Math.min(...strikes);
   const hi = Math.max(...strikes);
+  // Priced at the strikes' own step (the smallest gap between distinct strikes: 5 on SPX, 1 on
+  // XSP), so every kink of every condor lands on a grid point. 121 points spread over the whole
+  // span drew a 5-wide SPX condor as a spike, and across two symbols the span was thousands wide.
+  const distinct = [...new Set(strikes.map((k) => Math.round(k * 100) / 100))].sort((a, b) => a - b);
+  let step = Infinity;
+  for (let i = 1; i < distinct.length; i++) step = Math.min(step, distinct[i]! - distinct[i - 1]!);
+  if (!Number.isFinite(step) || step <= 0) step = Math.max(hi * 0.001, 0.5);
   const pad = Math.max((hi - lo) * 0.35, hi * 0.01);
-  const start = lo - pad;
-  const step = (hi + pad - start) / 120;
-  return Array.from({ length: 121 }, (_, i) => Math.round((start + i * step) * 100) / 100);
+  const start = Math.floor((lo - pad) / step) * step;
+  const end = Math.ceil((hi + pad) / step) * step;
+  // A wide book on a fine step: coarsen by whole multiples so the payload stays bounded.
+  while ((end - start) / step > 1500) step *= 2;
+  const n = Math.floor((end - start) / step) + 1;
+  return Array.from({ length: n }, (_, i) => Math.round((start + i * step) * 100) / 100);
 }
 
 /**
@@ -1396,6 +1408,8 @@ export function readMeicForest(
   mode: TradingMode,
   day: string | null,
   scope: MeicScopeFilter = NO_SCOPE,
+  /** The card's own symbol pick, used only when the page scope names none. */
+  forestSymbol: string | null = null,
 ): MeicForest {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
@@ -1403,6 +1417,7 @@ export function readMeicForest(
     mode,
     tradeDate: null,
     symbol: null,
+    symbols: [],
     tradesToday: 0,
     openPositions: 0,
     asEntered: [],
@@ -1416,7 +1431,7 @@ export function readMeicForest(
     const tradeDate = day ?? latestMeicSessionIn(db, scope.era);
     if (tradeDate === null) return empty;
 
-    const rows = db
+    const allRows = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT ic_order_id, ${armColumnOf(db, "ic_trades")} AS arm, symbol, put_strike, call_strike, wing_width,
                 net_credit, quantity, status, underlying_price_entry,
@@ -1426,6 +1441,20 @@ export function readMeicForest(
           WHERE trade_date = ?${and}`,
       )
       .all(tradeDate, ...scopeParams);
+
+    // ONE symbol per forest: an expiry payoff is drawn on that symbol's price axis, and SPX (~7700)
+    // and XSP (~770) on one axis stretched it from ~600 to ~8400 and priced every XSP condor at SPX
+    // prices. The page's symbol if it names one, else the card's own pick, else the symbol with the
+    // most condors that day; the day's symbols ride out so the card can offer the switch.
+    const counts = new Map<string, number>();
+    for (const r of allRows) {
+      const s = str(r["symbol"]);
+      if (s !== null && str(r["status"]) !== "cancelled") counts.set(s, (counts.get(s) ?? 0) + 1);
+    }
+    const symbols = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([s]) => s);
+    const chosen =
+      scope.symbol ?? (forestSymbol !== null && counts.has(forestSymbol) ? forestSymbol : (symbols[0] ?? null));
+    const rows = chosen === null ? allRows : allRows.filter((r) => str(r["symbol"]) === chosen);
 
     // Open positions build the live curves; the whole day builds the as-entered view.
     const open = rows.filter((r) => str(r["status"]) === "open");
@@ -1517,12 +1546,13 @@ export function readMeicForest(
       }
     }
 
-    const symbol = str(open[0]?.["symbol"] ?? rows[0]?.["symbol"]) ?? null;
+    const symbol = chosen ?? str(open[0]?.["symbol"] ?? rows[0]?.["symbol"]) ?? null;
     const lastSpot = forestSpot(config, tradeDate, symbol, rows);
     return {
       mode,
       tradeDate,
       symbol,
+      symbols,
       tradesToday: rows.length,
       openPositions: open.length,
       asEntered,
