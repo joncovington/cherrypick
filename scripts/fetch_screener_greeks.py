@@ -290,14 +290,24 @@ def measure_names(lists: dict[str, dict], universe_candidates: set[str]) -> list
 #
 # The user's rule: recommend the vendor's strike only when THAT option is liquid -- a tight bid/ask,
 # decent open interest and volume -- and otherwise the standard monthly on the user's cycle, 45-60
-# days out where one is listed, else 30-60. Weeklies usually quote wider and trade thinner. The bars
-# are not chosen yet (they wait on complete readings, like the tradable spread bar), so until LEG_BARS
-# is set every row records both legs' readings and no recommendation.
+# days out where one is listed, else 30-60. Weeklies usually quote wider and trade thinner.
+#
+# The bars (chosen 2026-10-16 from six sessions of 11:30 and 14:30 readings, ~5,700 legs a side):
+# the vendor's weekly options are mostly not tradable -- median open interest 7, volume 3 by 14:30,
+# spread 22% of mid -- against the cycle monthly's 877, 40 and 10%. Ten percent of mid (or a nickel),
+# 100 open and 10 traded: stricter bars barely move who wins, looser ones admit weeklies with a
+# single-digit open interest. Under them about 85% of rows go to the monthly. The monthly is not
+# always liquid either (far out-of-the-money calls are cheap, so wide in percent: ~1 in 5 covered-call
+# monthlies pass), so each row also says whether its monthly passes, never implying it.
 
 CYCLE_PREFERRED = (45, 60)
 CYCLE_ALLOWED = (30, 60)
-# {"max_spread_pct", "max_spread_abs", "min_open_interest", "min_volume"} once chosen.
-LEG_BARS: dict | None = None
+LEG_BARS: dict | None = {
+    "max_spread_pct": 0.10,
+    "max_spread_abs": 0.05,
+    "min_open_interest": 100,
+    "min_volume": 10,
+}
 EPS = 1e-9
 
 
@@ -363,6 +373,13 @@ def recommend(vendor: list[dict], monthly: list[dict] | None, bars: dict | None)
     if vendor and all(leg_passes(q, bars) for q in vendor):
         return "vendor"
     return "monthly" if monthly else "none"
+
+
+def monthly_passes(monthly: list[dict] | None, bars: dict | None) -> bool | None:
+    """Whether the cycle monthly's own legs pass the bars; None with no monthly or no bars."""
+    if bars is None or not monthly:
+        return None
+    return all(leg_passes(q, bars) for q in monthly)
 
 
 async def _quote_legs(session, ub, rows: list[dict]) -> None:
@@ -499,6 +516,7 @@ def cmd_measure(args) -> int:
         vendor_q = [leg.get("quote") or {} for leg in r["vendor"]]
         monthly_q = [leg.get("quote") or {} for leg in r["monthly"]] if r["monthly"] else None
         r["recommendation"] = recommend(vendor_q, monthly_q, LEG_BARS)
+        r["monthly_passes"] = monthly_passes(monthly_q, LEG_BARS)
     legs_out = root / "legs" / today.isoformat() / f"{started.astimezone(et):%H%M}.json"
     ub._write_json(
         legs_out, {"measured_at": started.isoformat(), "list_date": day, "bars": LEG_BARS, "rows": legs}
