@@ -62,5 +62,11 @@ def index_bars() -> Path:
     return market_report_dir() / "index" / "bars.db"
 
 
+def analyst_revisions() -> Path:
+    """Per-firm rating and price-target events, written by scripts/fetch_analyst_revisions.py.
+    Read-only here."""
+    return market_report_dir() / "analysts" / "revisions.db"
+
+
 def universe_candidates() -> Path:
     return market_report_dir() / "universe" / "candidates.json"

@@ -10,7 +10,9 @@ An edition dated D describes the close of the trading day before D.
 
 from __future__ import annotations
 
+import html
 import re
+from dataclasses import dataclass
 from datetime import date
 
 from cherrypick.core import calendar as _calendar
@@ -96,4 +98,61 @@ def load_rotation() -> dict[str, dict[str, str]]:
         states = decode_rotation(path.read_text(encoding="utf-8"))
         if states:
             out[session_of(path.stem)] = states
+    return out
+
+
+@dataclass(frozen=True)
+class BoardRow:
+    side: str  # "bullish" or "bearish": the list the row sits in
+    tags: tuple[str, ...]  # every tag, in the vendor's words, detail stripped
+    revision: int  # +1 Analyst Bullish Revision, -1 Bearish, 0 none
+    revision_detail: str  # the event the tag names ("KeyBanc upgrade"), or ""
+
+
+_ROW = re.compile(r"<tr>(.*?)</tr>", re.S)
+_ROW_SYMBOL = re.compile(r'[?&]symbol=([A-Z][A-Z.]*)"')
+_CHIP = re.compile(r"border-radius: 10px[^>]*>([^<]*)(?:<span[^>]*>([^<]*)</span>)?")
+
+
+def decode_board(page_html: str) -> dict[str, BoardRow]:
+    """{symbol: BoardRow} from an edition's Stacked Signals section (between its heading and Sector
+    Rotation's). A row is a table row with a ticker link and at least one tag chip."""
+    a = page_html.find("Stacked Signals")
+    b = page_html.find("Sector Rotation", a)
+    if a < 0 or b < 0:
+        return {}
+    seg = page_html[a:b]
+    # The list headings: ">Bearish<" alone is also a D-Edge badge in the older editions, so the
+    # bearish heading is the first one after the bullish heading.
+    bull_at = seg.find(">Bullish<")
+    bear_at = seg.find(">Bearish<", max(bull_at, 0))
+    out = {}
+    for m in _ROW.finditer(seg):
+        sym = _ROW_SYMBOL.search(m.group(1))
+        chips = _CHIP.findall(m.group(1))
+        if not sym or not chips:
+            continue
+        tags, revision, detail = [], 0, ""
+        for name, extra in chips:
+            name = html.unescape(name).strip()
+            tags.append(name)
+            if name.startswith("Analyst Bullish Revision"):
+                revision = 1
+            elif name.startswith("Analyst Bearish Revision"):
+                revision = -1
+            else:
+                continue
+            detail = html.unescape(extra).replace("Â", "").strip(" ·")
+        side = "bearish" if 0 <= bear_at < m.start() else "bullish"
+        out[sym.group(1)] = BoardRow(side, tuple(tags), revision, detail)
+    return out
+
+
+def load_boards() -> dict[str, dict[str, BoardRow]]:
+    """{session described: {symbol: BoardRow}} for every saved edition with a board."""
+    out = {}
+    for path in sorted((paths.market_report_dir() / "vendor-editions").glob("????-??-??.html")):
+        rows = decode_board(path.read_text(encoding="utf-8", errors="replace"))
+        if rows:
+            out[session_of(path.stem)] = rows
     return out

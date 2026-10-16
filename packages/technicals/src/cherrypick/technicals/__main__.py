@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 from cherrypick.core import home as _home
@@ -131,6 +132,19 @@ def cmd_score_rotation(_args) -> int:
     from . import stage_score
 
     print(json.dumps(stage_score.score_rotation(), indent=1))
+    return 0
+
+
+def cmd_score_revisions(_args) -> int:
+    from . import editions, revisions
+
+    boards = editions.load_boards()
+    since = min((date.fromisoformat(s) for s in boards), default=None)
+    events = revisions.load(since=since - timedelta(days=7) if since else None)
+    if not events:
+        print(json.dumps({"ok": False, "reason": "no events; run scripts/fetch_analyst_revisions.py"}))
+        return 1
+    print(json.dumps(revisions.score_boards(events, boards), indent=1))
     return 0
 
 
@@ -456,6 +470,9 @@ def main(argv: list[str] | None = None) -> int:
     ro = sub.add_parser("rotation", help="every rotation fund's state on a session")
     ro.add_argument("--session", help="ISO date (default: the latest session stored)")
     ro.set_defaults(fn=cmd_rotation)
+    sub.add_parser(
+        "score-revisions", help="score the analyst-revision rule against every saved edition's board"
+    ).set_defaults(fn=cmd_score_revisions)
     sr = sub.add_parser("score-rotation", help="score the rotation rule against every saved edition")
     sr.set_defaults(fn=cmd_score_rotation)
     br = sub.add_parser("breadth", help="daily leaders/laggards/net/bullish share over recent sessions")
