@@ -27,6 +27,7 @@ export const MODULE_FRAMES: Record<ModuleId, ComponentType<{ slide: string }>> =
   flow: lazy(() => import("./manifests/FlowLightbox").then((m) => ({ default: m.FlowLightbox }))),
   live: lazy(() => import("./manifests/LiveLightbox").then((m) => ({ default: m.LiveLightbox }))),
   charts: lazy(() => import("./manifests/ChartsLightbox").then((m) => ({ default: m.ChartsLightbox }))),
+  screeners: lazy(() => import("./manifests/ScreenersLightbox").then((m) => ({ default: m.ScreenersLightbox }))),
   reports: lazy(() => import("./manifests/ReportsLightbox").then((m) => ({ default: m.ReportsLightbox }))),
   compare: lazy(() => import("./manifests/CompareLightbox").then((m) => ({ default: m.CompareLightbox }))),
   advisor: lazy(() => import("./manifests/AdvisorLightbox").then((m) => ({ default: m.AdvisorLightbox }))),

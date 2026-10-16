@@ -45,6 +45,10 @@ export interface ConsoleConfig {
         Options flow page shows. Optional so a config built elsewhere (tests) need not name it; the
         reader falls back to `<cherrypick>/data/quikoptions`. */
     quikoptionsDir?: string;
+    /** `data/market-report/` -- the screener lists, their broker readings, the liquidity verdicts
+        and the IV-rank file the Screeners page reads. Optional like `quikoptionsDir`; the reader
+        falls back to the directory beside `technicalsDir`. */
+    marketReportDir?: string;
     /** `state/advice/` — the artifacts the advisor issues and every module's loop reads. */
     adviceDir: string;
     /** MEIC's arm registry -- profiles.<tag>.enabled is the literal switch paper.py's
@@ -103,6 +107,7 @@ export function loadConfig(): ConsoleConfig {
       advisorDir: path.join(data, "advisor"),
       technicalsDir: path.join(data, "technicals"),
       quikoptionsDir: path.join(data, "quikoptions"),
+      marketReportDir: path.join(data, "market-report"),
       adviceDir: path.join(CHERRYPICK, "state", "advice"),
       ...meicRiskPaths(),
       fliesConfig: path.join(CHERRYPICK, "config", "flies.json"),

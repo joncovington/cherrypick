@@ -193,6 +193,9 @@ def score_day(root: Path, day: str) -> dict | None:
     for name, rule in (("short-puts", SHORT_PUT), ("covered-calls", COVERED_CALL)):
         s = {"rows": len(lists[name]), "strike": {"monthly": _tally(), "weekly": _tally()}}
         s["expiry"], s["returns"], s["misses"] = _tally(), _tally(), []
+        # The rule's own strike for every row it could judge, so a reader (the console's screener
+        # page) shows our pick beside the vendor's without re-implementing the rule.
+        s["picks"] = {}
         for row in lists[name]:
             sym = row["symbol"]
             exp = _mdy(row["expiry"])
@@ -217,6 +220,7 @@ def score_day(root: Path, day: str) -> dict | None:
                 ivs, rule.side, g.get("spot") or row["stockPrice"], row["daysToExpiry"], rule.delta
             )
             hit = pick == float(row["strikePrice"])
+            s["picks"][sym] = pick
             _add(s["strike"]["monthly" if _monthly(exp) else "weekly"], hit)
             if not hit:
                 s["misses"].append(
@@ -232,6 +236,7 @@ def score_day(root: Path, day: str) -> dict | None:
         _tally(),
         [],
     )
+    cs["picks"] = {}
     for row in lists["credit-spreads"]:
         sym = row["symbol"]
         exp = _mdy(row["expiry"])
@@ -256,6 +261,7 @@ def score_day(root: Path, day: str) -> dict | None:
             dte = (exp - today).days
             long = nearest_delta_strike(ivs, side, g.get("spot") or row["price"], dte, SPREAD_LONG_DELTA)
             _add(cs["long"], long == buy)
+        cs["picks"][sym] = [short, long]
         if short != sell or (ivs and long != buy):
             cs["misses"].append({"symbol": sym, "vendor": [sell, buy], "ours": [short, long]})
     out["credit-spreads"] = cs

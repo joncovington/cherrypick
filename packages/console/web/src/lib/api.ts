@@ -25,6 +25,9 @@ import type {
   OptionsFlowPayload,
   TechnicalsChartPayload,
   TechnicalsWatchlist,
+  ScreenerFidelityPayload,
+  ScreenerList,
+  ScreenerPayload,
   PmccPayload,
   PmccCycleRow,
   PmccHistory,
@@ -227,6 +230,24 @@ export function useTechnicalsChart(symbol?: string) {
       ),
     // Written once a session by the report job.
     refetchInterval: 300_000,
+  });
+}
+
+/** One income screener list, joined with our rule's picks, the leg readings and earnings. */
+export function useScreener(list: ScreenerList, day: string | null) {
+  return useQuery<ScreenerPayload>({
+    queryKey: ["screener", list, day ?? "latest"],
+    queryFn: () => getJson<ScreenerPayload>(`/api/screeners/${list}${day ? `?day=${day}` : ""}`),
+    // A list is saved once an evening; its readings land twice the next session.
+    refetchInterval: 300_000,
+  });
+}
+
+export function useScreenerFidelity() {
+  return useQuery<ScreenerFidelityPayload>({
+    queryKey: ["screener-fidelity"],
+    queryFn: () => getJson<ScreenerFidelityPayload>("/api/screeners/fidelity"),
+    refetchInterval: 600_000,
   });
 }
 

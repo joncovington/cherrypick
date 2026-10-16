@@ -625,6 +625,13 @@ IV-rank fetch now keeps the broker's expected report date (confirmed or
 estimated) and ex-dividend date, which reach past the local Dolt calendar's ~5 weeks, for the
 "no earnings within the trade cycle" filter the screener view will carry.
 
+**The read-side view exists (2026-10-16): the console's Screeners page.** It was to wait for two
+weeks of lists and the name-selection rule; the user asked for it on 2026-10-16 with the row rules
+reproduced and selection still open, so it shows both layers and says which is which: the listed
+trade with our rule's strike beside it, and the user's trade (the listed option when liquid, else
+the cycle monthly, marked thin when that fails too), cut by default to tradable names with no
+earnings inside the cycle.
+
 **This settles the adjustment question outright.** The vendor's MSFT bars put the 52-week low at
 348.54 on 2026-06-25 and the high at 549.20 on 2025-10-28 — exactly the support and resistance
 prices, against the header's raw 349.20 and 553.72. The bars are dividend-adjusted, and the

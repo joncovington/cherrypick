@@ -315,6 +315,14 @@ export const CHARTS_SLIDES = [
   { id: "setups", label: "setups" },
 ] as const satisfies readonly NavSlide[];
 
+/** The income screener lists (2026-10-16): one tab per list, then how well our rules match them. */
+export const SCREENERS_SLIDES = [
+  { id: "short-puts", label: "short puts" },
+  { id: "covered-calls", label: "covered calls" },
+  { id: "credit-spreads", label: "credit spreads" },
+  { id: "fidelity", label: "fidelity" },
+] as const satisfies readonly NavSlide[];
+
 /**
  * Options flow (2026-10-03): QuikOptions' Hot Options Report, one capture a session
  * (`docs/quikoptions-plan.md`). `today` is the page at a glance and links into the four tables,
@@ -474,6 +482,8 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   live: { slides: LIVE_SLIDES },
   charts: { slides: CHARTS_SLIDES },
+  // The fidelity tab is the reproduction's own check: a developer surface, so detail view only.
+  screeners: { slides: SCREENERS_SLIDES, simple: ["short-puts", "covered-calls", "credit-spreads"] },
   reports: { slides: REPORTS_SLIDES },
   compare: { slides: COMPARE_SLIDES },
   advisor: { slides: ADVISOR_SLIDES },

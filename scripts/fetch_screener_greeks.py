@@ -29,6 +29,7 @@ Written to `screener-greeks/measurements/<date>/<HHMM>.json`, the builder's file
 
     python scripts/fetch_screener_greeks.py [--date YYYY-MM-DD] [--limit N] [--final]
     python scripts/fetch_screener_greeks.py measure [--force] [--limit N]
+    python scripts/fetch_screener_greeks.py rebar     # re-apply the leg bars to saved readings
 """
 
 from __future__ import annotations
@@ -382,6 +383,37 @@ def monthly_passes(monthly: list[dict] | None, bars: dict | None) -> bool | None
     return all(leg_passes(q, bars) for q in monthly)
 
 
+def apply_bars(rows: list[dict], bars: dict | None) -> None:
+    """Judge every row's legs against `bars`, in place: each quoted leg's `passes`, the row's
+    `recommendation` and whether its monthly passes. The one place the bars are applied, so a
+    reader (the console's screener page) shows the verdict rather than re-deriving it."""
+    for r in rows:
+        for leg in [*r["vendor"], *(r["monthly"] or [])]:
+            q = leg.get("quote")
+            leg["passes"] = None if bars is None or not q else leg_passes(q, bars)
+        vendor_q = [leg.get("quote") or {} for leg in r["vendor"]]
+        monthly_q = [leg.get("quote") or {} for leg in r["monthly"]] if r["monthly"] else None
+        r["recommendation"] = recommend(vendor_q, monthly_q, bars)
+        r["monthly_passes"] = monthly_passes(monthly_q, bars)
+
+
+def cmd_rebar(_args) -> int:
+    """Re-apply the current bars to every saved leg reading (local files only, no broker). The
+    readings taken before the bars were chosen (2026-10-07 to 10-16) carry no verdict; this gives
+    them one, and does the same again whenever the bars change."""
+    from cherrypick.core.jsonio import write_json_atomic
+
+    changed = 0
+    for path in sorted((store_dir() / "screener-greeks" / "legs").glob("*/*.json")):
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        apply_bars(doc.get("rows") or [], LEG_BARS)
+        doc["bars"] = LEG_BARS
+        write_json_atomic(path, doc, indent=None, default=None)
+        changed += 1
+    print(json.dumps({"ok": True, "files": changed, "bars": LEG_BARS}))
+    return 0
+
+
 async def _quote_legs(session, ub, rows: list[dict]) -> None:
     """Fill each leg's broker quote in place: bid, ask, volume, open interest. REST snapshots in the
     builder's batches and pacing."""
@@ -512,11 +544,7 @@ def cmd_measure(args) -> int:
     if legs_error:
         print(json.dumps({"ok": False, "path": str(out), "legs_error": legs_error}))
         return 1
-    for r in legs:
-        vendor_q = [leg.get("quote") or {} for leg in r["vendor"]]
-        monthly_q = [leg.get("quote") or {} for leg in r["monthly"]] if r["monthly"] else None
-        r["recommendation"] = recommend(vendor_q, monthly_q, LEG_BARS)
-        r["monthly_passes"] = monthly_passes(monthly_q, LEG_BARS)
+    apply_bars(legs, LEG_BARS)
     legs_out = root / "legs" / today.isoformat() / f"{started.astimezone(et):%H%M}.json"
     ub._write_json(
         legs_out, {"measured_at": started.isoformat(), "list_date": day, "bars": LEG_BARS, "rows": legs}
@@ -541,7 +569,7 @@ def cmd_measure(args) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("mode", nargs="?", choices=("greeks", "measure"), default="greeks")
+    ap.add_argument("mode", nargs="?", choices=("greeks", "measure", "rebar"), default="greeks")
     ap.add_argument("--date", help="greeks: the list date to record (default: today, ET)")
     ap.add_argument(
         "--final",
@@ -551,6 +579,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--limit", type=int, help="record at most this many symbols (a trial run)")
     ap.add_argument("--force", action="store_true", help="measure: run outside the measuring window")
     args = ap.parse_args(argv)
+    if args.mode == "rebar":
+        return cmd_rebar(args)
     if args.mode == "measure":
         return cmd_measure(args)
 

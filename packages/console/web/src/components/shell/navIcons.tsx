@@ -146,6 +146,15 @@ function ChartsIcon() {
   );
 }
 
+/* A funnel over rows — the income screener lists. */
+function ScreenersIcon() {
+  return (
+    <Svg>
+      <path d="M4 5h16l-6 7v5l-4 2v-7z" />
+    </Svg>
+  );
+}
+
 /* Flowing tape — the options-flow feed. */
 function FlowIcon() {
   return (
@@ -225,6 +234,7 @@ function CompareIcon() {
 /** By route, not by label — the label is prose and can change; the route is the identity. */
 const ICONS: Record<string, (p: NavIconProps) => ReactNode> = {
   "/charts": ChartsIcon,
+  "/screeners": ScreenersIcon,
   "/flow": FlowIcon,
   "/reports": ReportsIcon,
   "/compare": CompareIcon,
