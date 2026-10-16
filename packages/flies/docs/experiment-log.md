@@ -1644,3 +1644,25 @@ the hour 13:00–13:59 and nothing else.
 on net and ahead on at least as many sessions as it is behind. Retire it at the next boundary if it
 is behind on net. Otherwise run it to 20 sessions and decide then. Re-run the replay grid at that
 read too; live's start is a separate decision and moves only on both.
+
+**Why the window still ends at 14:30.** All settled paper legged 5-wide SPX entries since 08-01,
+pooled across arms and grouped by the half hour they were entered in:
+
+| Entered | Entries | Completed | Net | Per entry | Median minutes to complete |
+|---|---|---|---|---|---|
+| 12:30 | 77 | 62% | −$2,004 | −$26 | 51 |
+| 13:00 | 78 | 79% | +$4,205 | +$54 | 41 |
+| 13:30 | 47 | 85% | +$3,007 | +$64 | 20 |
+| 14:00 | 36 | 67% | −$466 | −$13 | 60 |
+| 14:30 | 20 | 50% | −$1,388 | −$69 | 56 |
+| 15:00 and later | 3 | 0% | −$457 | — | — |
+
+- **Late entries run out of day.** A completion takes about an hour, and an entry that never
+  completes settles as a short vertical. After 14:30 the completion rate is at or below 50%,
+  against the roughly 70–75% the strategy needs to break even.
+- **The late sample is small.** It is 23 entries, mostly from the retired `time_window` arm and the
+  intraday arms. It supports keeping 14:30 but does not settle the question.
+- **This arm's first half hour was negative on these rows.** The 12:30–13:00 entries made −$26 each,
+  and the gain sits in the 13:00 hour, which `window-1300` already covers. These rows were taken
+  with control's morning positions already holding the centres; the replay that favoured a 12:30
+  start is a different model. The arm will show which of the two is right.
