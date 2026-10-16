@@ -591,11 +591,25 @@ and open interest for the four strikes either side of the vendor's. That is the 
 re-created rule must reproduce each row from. The answer key comes free with the chart pages: each
 loads the symbol's whole option chain with the vendor's own greeks, now kept as the capture's
 `how` (about 35 screener names a night), so where the two disagree it is clear whether the rule or
-the broker's greeks are at fault. First findings, short puts on Oct 7: raw return is mid ÷ share
-price, annualized is raw × 365 ÷ DTE, and the expiry is the listed one nearest 30 days. The strike
-is the first listed one below spot in 157 of 193 rows tested, and exactly one strike lower in the
-rest — not explained by the build-time price, the prior close, a Dolt delta cap, open interest or
-the spread, so it waits on the vendor's own deltas.
+the broker's greeks are at fault.
+
+**The row construction is reproduced (2026-10-16, six sessions; `packages/technicals`
+`screeners.py`, scored every morning by `score-screeners`).** The expiry is the listed one nearest
+30 days for short puts and 45 for covered calls and credit spreads, 100% wherever a listing was
+recorded. The strike is a Black-Scholes delta target on each strike's own broker IV at 4%: the put
+nearest |0.40| (91% of monthly rows, 77% of weekly), the call nearest 0.165 (72% / 51%). A spread
+sells the first strike out of the money (183 of 184) and buys the one nearest 0.25 delta (66%),
+with the credit at least a third of the width — so the "~25 delta" the vendor's teaching names is
+the long leg, not the short. The vendor's own chain greeks put the median delta of its chosen
+puts at 0.400 and calls at 0.157, and the misses fall one strike either side, so what is left is
+the IV input and timing (the lists are built at 15:49 ET, our chain is taken at 19:00), not the
+rule. Raw return is mid ÷ share price and annualised is × 365 ÷ days, simple; about 2% of covered
+calls divide by the price less the mid instead, for a reason not yet found. The October 7
+puzzle (the first strike below spot, or one lower) was this delta rule all along.
+
+**Which names make each list is the open part.** Short puts and covered calls take the vendor's
+liquidity rank 1-2 and a bullish read; our stand-in for that rank does not yet match it, and the
+credit-spread list's selection is unexplained (it is not the day's scan list).
 
 **Two layers, two expiries (decided 2026-10-07).** Reproducing the vendor's screen reads its own
 expiry and strike, weeklies included. Trading is the user's: the standard monthly 45-60 days out

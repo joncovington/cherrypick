@@ -85,6 +85,8 @@ CATCHUP_MINUTES = {
     # which the file keys correctly but is not the day that was missed.
     "technicals-iv-rank": 600,
     "technicals-liquidity": 120,
+    # Local files only and idempotent (an already-scored session is skipped), so any time that day.
+    "technicals-screeners": 12 * 60,
     # Ahead of the 06:15 landing; a late fetch is the same fetch, and the landing after it picks it up.
     "technicals-index-bars": 12 * 60,
     "market-files": 600,
@@ -1185,6 +1187,22 @@ def derive_jobs(
             kind=KIND_DAILY,
             at_et=tc["liquidity_at"],
             catchup_minutes=CATCHUP_MINUTES["technicals-liquidity"],
+            trading_days_only=True,
+            enabled=tc_on,
+            enabled_reason="" if tc_on else "disabled in config (technicals), or no dolt sql-server to read",
+        ),
+    )
+    add(
+        "technicals-screeners",
+        lambda: JobSpec(
+            id="technicals-screeners",
+            # A package command: scores the income screens' expiry and strike rules against every
+            # saved list that has its broker chain, from local files alone. In the morning, after
+            # the previous evening's late greeks run; a session already scored is left alone.
+            argv=(pythonw, "-m", "cherrypick.technicals", "score-screeners"),
+            kind=KIND_DAILY,
+            at_et=tc["screeners_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-screeners"],
             trading_days_only=True,
             enabled=tc_on,
             enabled_reason="" if tc_on else "disabled in config (technicals), or no dolt sql-server to read",

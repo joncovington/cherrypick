@@ -331,6 +331,7 @@ def test_derive_full_suite_job_table():
         "technicals-index-bars",
         "technicals-iv-rank",
         "technicals-liquidity",
+        "technicals-screeners",
         "technicals-report",
         "earnings-moves",
         "fetch-headlines",
