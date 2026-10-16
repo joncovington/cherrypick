@@ -118,8 +118,8 @@ describe("the module frame", () => {
     expect(html).toMatch(/<div id="mf-nav-links" hidden="">/);
   });
 
-  it("the rail is on the shell: the Overview has it too, and the top bar has no menu", () => {
-    const html = render("/");
+  it("the rail is on the shell: a page that is no module has it too, and the top bar has no menu", () => {
+    const html = render("/no-such-page");
     expect(html).toContain('aria-label="modules"');
     // The hamburger menu is gone — the brand lives in the RAIL's head now (its right border
     // passes it without a notch, which a top-bar cell could never promise). Not a dropdown.
@@ -365,5 +365,14 @@ describe("the old report routes", () => {
   it("/reports/chart, the technicals chart's old home, is still routed", () => {
     // Morning-pack links and bookmarks carry `?symbol=`; the redirect keeps it (`MovedTo`).
     expect(render("/reports/chart?symbol=MSFT")).not.toContain("Page not found");
+  });
+
+  it("/ is no page of its own since the Overview went (2026-10-16): it redirects to /live", () => {
+    // The redirect itself never runs in one server pass (above); what shows here is that `/` is
+    // routed, and that what it routes to renders no page -- a Navigate, not a home page.
+    const html = render("/");
+    expect(html).not.toContain("Page not found");
+    expect(html).not.toContain('class="page');
+    expect(html).not.toContain("Overview");
   });
 });

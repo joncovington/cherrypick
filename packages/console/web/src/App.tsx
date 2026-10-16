@@ -1,6 +1,5 @@
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { Shell } from "./components/shell/Shell";
-import { OverviewPage } from "./pages/Overview/OverviewPage";
 import { ModuleRoute } from "./pages/ModuleRoute";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { FlowPostPage } from "./pages/Flow/FlowPostPage";
@@ -17,7 +16,9 @@ export default function App() {
       {/* The Discord series' capture page: outside the shell (no header, no rail) and in no nav. */}
       <Route path="post/flow" element={<FlowPostPage />} />
       <Route element={<Shell />}>
-        <Route index element={<OverviewPage />} />
+        {/* Home is the Live page (2026-10-16): the Overview page was removed, and `/` goes where
+            the real account's day is read. `replace`, so Back does not bounce off `/`. */}
+        <Route index element={<Navigate to="/live" replace />} />
         {/* Pre-2026-09 routes that appear in the suite's own docs — redirect rather than 404, and
             `replace` so Back does not bounce off the old URL. `/reports?tab=eod` is now the `eod`
             page, matching every other page's page-in-the-URL convention. */}

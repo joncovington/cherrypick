@@ -21,11 +21,11 @@ function press(
 }
 
 describe("the g chord", () => {
-  it("g then o goes to the overview", () => {
+  it("g then l goes to the live page", () => {
     const first = press(IDLE, "g");
     expect(first.action).toBeNull();
     expect(first.state.pendingG).toBe(1000);
-    expect(press(first.state, "o", { now: 1200 }).action).toEqual({ kind: "navigate", to: "/" });
+    expect(press(first.state, "l", { now: 1200 }).action).toEqual({ kind: "navigate", to: "/live" });
   });
 
   it("forgets a stale g rather than acting on it much later", () => {

@@ -31,7 +31,7 @@ export function isFeatureOn(name: string, f: Features): boolean {
  * - gex: the `gex-recorder` service
  * - advisor: the `advisor` feature
  * - flow: the `options_flow` feature (`quikoptions.enabled`)
- * - anything else (Overview, Live, Reports, System, Config, the streamer): always.
+ * - anything else (Live, Reports, System, Config, the streamer): always.
  */
 export function isModuleVisible(id: string, f: Features): boolean {
   if (!known(f)) return true;

@@ -219,7 +219,7 @@ halves (ticker, session chip, the simple/detail view switch, clock), the rail an
 head's underline is the same grid track as the top bar's — one rule across the window in both
 rail widths — and the rail's vertical is the brand head's right border continued by the nav's,
 unbroken from the top of the window to the status bar. **The rail is the one nav** (mounted in
-the shell since 2026-10-11, Overview included; collapsed to a 64px icon strip by default, its own
+the shell since 2026-10-11, on every page; collapsed to a 64px icon strip by default, its own
 toggle at its foot — the top bar holds no menu and never opens one). Below 1000px the rail's
 column stays the icon strip and an expanded rail opens over the content. There is no command palette: the keyboard hints
 (`g` + key for suite pages, a bare digit for modules, `j`/`k` for tabs) are in the rail's link
@@ -248,7 +248,7 @@ failure (`spawnModuleCli`'s `okStatuses`).
 technicals cards or a narrative is on comes **only** from the orchestrator's `configcli` op
 `features` (`services/featuresBridge.ts`, memoised 15 s and dropped on every config save or halt
 toggle; `GET /api/features`), never from reading the config here — `enabled` already folds in
-capabilities like Dolt and Claude Code. Every web rule is in `lib/visibility.ts`; the Overview's desk
+capabilities like Dolt and Claude Code. Every web rule is in `lib/visibility.ts`; the desk
 rows and the default log sources are filtered on the server with the same answer. **Fail open:**
 loading, `{ok: false}` or an id the reply does not name all show the thing, with a status-bar chip on
 failure. A direct URL to an off page renders `ModuleOffCard` (why, and a link to Config), never a 404
@@ -410,8 +410,8 @@ net per period, the intraday series and the broker account. Rules, stated on the
   `resolveLiveSession`), and says so. "Opened" is evidence, not a calendar — the rule
   `sessionPeakWorst` holds by: a `fly_snapshots` row at or past 09:30 ET in either ledger, or a live
   position dated today.
-- **The flies order-alert daemon's health** is a chip on the Overview title row beside the live
-  chip (`services/alertDaemon.ts`, on `/api/system`), read off the daemon's own pid and status
+- **The flies order-alert daemon's health** is a chip in the Live page's header, on every tab
+  (`components/AlertDaemonChip.tsx`, `services/alertDaemon.ts`, on `/api/system`), read off the daemon's own pid and status
   files: ok, stale (alive but no heartbeat for three 30 s slices — the silent-websocket case), down
   (dead on an armed day) or off. Amber at worst, never red: a dead daemon costs fill latency only.
 - **Return on session peak risk** is settled net over the session's peak open worst case — the
@@ -452,11 +452,10 @@ submissions, a tripped breaker, overdue settlement, failing broker contact, an u
 the worst case and the mark are each loop's own measure, shown per loop, never added. `/live/today`
 is this tab now, not an alias for flies. Pinned by `server/test/live-today.test.ts`.
 
-**The Overview's live panel** (`pages/Overview/LivePanel.tsx`, 2026-10-12) lists every module with a
-live book (`readers/liveBooks.ts`, `GET /api/live/books`: flies and bwb, each module's own
-settled-net rule mirrored) and draws only those with live activity — flies through its own
-`LiveFliesPanel`, bwb as three tiles linking to its live-vs-paper tab. The quiet ones are named in one
-line; an absent ledger and a failed read say which they are.
+**There is no Overview page** (removed 2026-10-16): `/` redirects to `/live`, whose `today` tab is
+the every-loop summary. Its live panel's reader (`readers/liveBooks.ts`, `GET /api/live/books`) and
+`GET /api/desk/live` are still served but no page reads them; the morning phase chip moved to the
+status bar and the alert-daemon chip to the Live header.
 
 **Flies intraday agent tab** (`/flies/agent`, `pages/Flies/AgentSlide.tsx` over
 `GET /api/flies/agent[?session=]` → `readers/fliesAgent.ts`). It has no live view: a live read is

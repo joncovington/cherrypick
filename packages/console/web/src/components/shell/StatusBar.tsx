@@ -1,5 +1,5 @@
 import { useWsState } from "../../lib/useQuote";
-import { useOverview, useStatus } from "../../lib/api";
+import { useMorningReport, useOverview, useStatus } from "../../lib/api";
 import { LivenessChips } from "./LivenessChips";
 import { useFeaturesFailure } from "../../lib/useFeatures";
 
@@ -13,16 +13,38 @@ const DXLINK_LABEL: Record<string, string> = {
 /**
  * The status bar along the bottom of every page: the suite's health (the console's DXLink session,
  * a read-only credential, each producer's liveness against its own cadence) and the watchdog's
- * verdict. The session chip (market open / trading day, closed) sits in the top bar beside the
- * clock, and the morning phase on the Overview's title row. (The SPX/XSP/QQQ/IWM quotes, the
+ * verdict, and the morning pack's phase. The session chip (market open / trading day, closed) sits
+ * in the top bar beside the clock. (The SPX/XSP/QQQ/IWM quotes, the
  * module/service counts and the logs drawer went on 2026-10-01: the futures ticker carries the
  * market, and the System page the logs.)
  *
  * It began as the Overview's own bar in the no-scroll redesign (2026-09); since 2026-10-01 it is
  * the shell's, on every page, and the health chips moved down into it from the header so the top
- * bar could carry the menu and the futures ticker. The halt flag is not here: it sits on the
- * Overview beside the LIVE chip, the two facts about live trading read together.
+ * bar could carry the menu and the futures ticker. The halt flag is not here: it is on the Live
+ * page's header with what is armed, the two facts about live trading read together. The morning
+ * phase moved here from the Overview's title row when that page was removed (2026-10-16).
  */
+function phaseChipClass(phase: string): string {
+  if (phase === "green") return "chip-ok";
+  if (phase === "yellow") return "chip-warn";
+  if (phase === "red") return "chip-missing";
+  return "chip";
+}
+
+/** The morning pack's phase: the day's first verdict on the market. */
+function MorningChip() {
+  const phase = useMorningReport().data?.current?.phase ?? null;
+  if (phase === null) return null;
+  return (
+    <span className={`chip ${phaseChipClass(phase.phase)}`}>
+      morning {phase.phase.toUpperCase()}
+      {phase.gatesMeasured !== null &&
+        phase.gatesTotal !== null &&
+        ` · ${String(phase.gatesMet ?? 0)} of ${String(phase.gatesTotal)} measured gates met`}
+    </span>
+  );
+}
+
 export function StatusBar() {
   const ws = useWsState();
   const { data: status, isError: statusError } = useStatus();
@@ -73,6 +95,7 @@ export function StatusBar() {
             {wd.ageSeconds !== null && ` · ${Math.round(wd.ageSeconds / 60)}m`}
           </span>
         )}
+        <MorningChip />
       </div>
     </div>
   );

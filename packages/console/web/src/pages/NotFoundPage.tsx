@@ -25,7 +25,7 @@ export function NotFoundPage() {
         <p className="muted">
           If you followed a link that used to work, this tab may be running an older build than the
           one on disk — reload the page and try again. Otherwise, head back to the{" "}
-          <Link to="/">overview</Link> or the <Link to="/reports">reports</Link>.
+          <Link to="/live">live page</Link> or the <Link to="/reports">reports</Link>.
         </p>
       </section>
     </div>
