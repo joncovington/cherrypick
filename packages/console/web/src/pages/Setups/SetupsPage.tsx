@@ -24,7 +24,7 @@ import { useSetupsWatchlist } from "../../lib/api";
 type View = "signals" | "open";
 type Event = "both" | "entry" | "exit";
 type SideFilter = "both" | "long" | "short";
-type Sort = "recent" | "rs" | "move" | "spy" | "dvol";
+type Sort = "symbol" | "recent" | "price" | "last" | "move" | "t1m" | "t6m" | "rs" | "spy" | "dvol" | "support" | "resistance";
 type Dir = "asc" | "desc";
 
 /**
@@ -139,21 +139,55 @@ function Flag({ on, onChange, children, title }: { on: boolean; onChange: (on: b
   );
 }
 
-/** Each sortable column's value. */
+/** Each sortable column's value; Symbol sorts by name, below. */
 const SORT_VALUE: Record<Sort, (l: Line) => number | null> = {
+  symbol: () => null,
   recent: (l) => l.ago,
+  // The line's own close: the entry's, or the exit's on an exit line.
+  price: (l) => l.price,
+  last: (l) => l.row.lastClose,
   rs: (l) => l.row.rs,
   move: (l) => l.row.movePct,
   spy: (l) => l.row.vsSpy1m,
   dvol: (l) => l.row.dollarVolume,
+  t1m: (l) => l.row.trend1m,
+  t6m: (l) => l.row.trend6m,
+  // A level sorts by its distance from the last close, whichever side of it the level is.
+  support: (l) => distance(l.row.support?.pct ?? null),
+  resistance: (l) => distance(l.row.resistance?.pct ?? null),
 };
 
-/** The direction a column sorts on its first click: newest first for Ago, largest first for the rest. */
-const FIRST_DIR: Record<Sort, Dir> = { recent: "asc", rs: "desc", move: "desc", spy: "desc", dvol: "desc" };
+function distance(pct: number | null): number | null {
+  return pct === null ? null : Math.abs(pct);
+}
+
+/** The direction a column sorts on its first click: A-Z for Symbol, newest first for Ago, nearest first
+ *  for a level, largest first for the rest. */
+const FIRST_DIR: Record<Sort, Dir> = {
+  symbol: "asc",
+  recent: "asc",
+  price: "desc",
+  last: "desc",
+  move: "desc",
+  t1m: "desc",
+  t6m: "desc",
+  rs: "desc",
+  spy: "desc",
+  dvol: "desc",
+  support: "asc",
+  resistance: "asc",
+};
+
 
 /** Either direction keeps a missing value at the bottom; ties go by symbol. */
 function compare(sort: Sort, dir: Dir) {
   const pick = SORT_VALUE[sort];
+  if (sort === "symbol") {
+    // Same-name lines (an entry and its exit) keep the newest first.
+    return (a: Line, b: Line) =>
+      (dir === "asc" ? a.row.symbol.localeCompare(b.row.symbol) : b.row.symbol.localeCompare(a.row.symbol)) ||
+      (a.ago ?? Infinity) - (b.ago ?? Infinity);
+  }
   return (a: Line, b: Line) => {
     const x = pick(a);
     const y = pick(b);
@@ -188,8 +222,7 @@ export function SetupsPage() {
   const tradableOnly = labelDay !== null && params.get("names") !== "all";
   const q = (params.get("q") ?? "").trim().toUpperCase();
   const sortParam = params.get("sort");
-  const sort: Sort =
-    sortParam === "rs" || sortParam === "move" || sortParam === "spy" || sortParam === "dvol" ? sortParam : "recent";
+  const sort: Sort = sortParam !== null && sortParam in SORT_VALUE ? (sortParam as Sort) : "recent";
   const dirParam = params.get("dir");
   const dir: Dir = dirParam === "asc" || dirParam === "desc" ? dirParam : FIRST_DIR[sort];
 
@@ -233,8 +266,8 @@ export function SetupsPage() {
   const names = new Set(lines.map((l) => l.row.symbol)).size;
 
   // A header is a button, so the sort is reachable from the keyboard as well as the mouse.
-  const sortHead = (key: Sort, text: string, title: string) => (
-    <th className="num" title={title} aria-sort={sort === key ? (dir === "asc" ? "ascending" : "descending") : undefined}>
+  const sortHead = (key: Sort, text: string, title?: string, num = true) => (
+    <th className={num ? "num" : undefined} title={title} aria-sort={sort === key ? (dir === "asc" ? "ascending" : "descending") : undefined}>
       <button
         type="button"
         style={{ background: "none", border: 0, padding: 0, color: "inherit", font: "inherit", cursor: "pointer" }}
@@ -356,16 +389,14 @@ export function SetupsPage() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Symbol</th>
+                {sortHead("symbol", "Symbol", undefined, false)}
                 <th>Setup</th>
                 <th>Side</th>
                 <th>{view === "open" ? "Status" : "Event"}</th>
                 <th>{view === "open" ? "Entered" : "Date"}</th>
                 {sortHead("recent", "Ago", "Sessions since the event")}
-                <th className="num" title={view === "open" ? "The entry close" : "The close that fired it"}>
-                  {view === "open" ? "Entry" : "Price"}
-                </th>
-                <th className="num">Last</th>
+                {sortHead("price", view === "open" ? "Entry" : "Price", view === "open" ? "The entry close" : "The close that fired it")}
+                {sortHead("last", "Last", "The last close")}
                 {sortHead(
                   "move",
                   "Move",
@@ -378,17 +409,13 @@ export function SetupsPage() {
                 ) : (
                   <th>Status</th>
                 )}
-                <th title="Our 1-month trend score and label">1M</th>
-                <th title="Our 6-month trend score and label">6M</th>
+                {sortHead("t1m", "1M", "Our 1-month trend score and label", false)}
+                {sortHead("t6m", "6M", "Our 6-month trend score and label", false)}
                 {sortHead("rs", "RS", "Relative strength 1-10: a decile across the whole US market of half the 1-month return plus the 6-month return. Not a comparison with SPY.")}
                 {sortHead("spy", "1M vs SPY", "The 21-session return less SPY's over the same sessions, in points")}
                 {sortHead("dvol", "$ Vol", "The 50-session median of close × volume, to the session before the entry")}
-                <th className="num" title="The nearest of our own support levels (swing lows in our bars) below the last close">
-                  Support
-                </th>
-                <th className="num" title="The nearest of our own resistance levels (swing highs in our bars) above the last close">
-                  Resistance
-                </th>
+                {sortHead("support", "Support", "The nearest of our own support levels (swing lows in our bars) below the last close; sorts nearest first")}
+                {sortHead("resistance", "Resistance", "The nearest of our own resistance levels (swing highs in our bars) above the last close; sorts nearest first")}
               </tr>
             </thead>
             <tbody>

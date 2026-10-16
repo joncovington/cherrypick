@@ -176,6 +176,46 @@ describe("the setups watchlist page", () => {
     expect(symbols(render("/charts/setups?view=open&sort=dvol&dir=asc"))).toEqual(["AAA:trend", "BBB:trend", "CCC:trend"]);
   });
 
+  it("sorts by the line's price and by the last close, highest first", () => {
+    const rows = [
+      row({ symbol: "AAA", entryPrice: 10, lastClose: 50 }),
+      row({ symbol: "BBB", entryPrice: 30, lastClose: 20 }),
+      row({ symbol: "CCC", entryPrice: 20, lastClose: null }),
+    ];
+    payload = { session: "2026-10-02", generatedAt: null, window: 20, optionsLabelDay: null, rows };
+    expect(symbols(render("/charts/setups?view=open&sort=price"))).toEqual(["BBB:trend", "CCC:trend", "AAA:trend"]);
+    expect(symbols(render("/charts/setups?view=open&sort=price&dir=asc"))).toEqual(["AAA:trend", "CCC:trend", "BBB:trend"]);
+    // A missing last close stays at the bottom either way.
+    expect(symbols(render("/charts/setups?view=open&sort=last"))).toEqual(["AAA:trend", "BBB:trend", "CCC:trend"]);
+    expect(symbols(render("/charts/setups?view=open&sort=last&dir=asc"))).toEqual(["BBB:trend", "AAA:trend", "CCC:trend"]);
+    // An exit line sorts by its exit close, not the entry's.
+    payload = { ...payload, rows: [row({ symbol: "AAA", entryPrice: 10, exitDate: "2026-10-02", exitPrice: 99, exitAgo: 0, entryAgo: 30, status: "closed" }), row({ symbol: "BBB", entryPrice: 50 })] };
+    expect(symbols(render("/charts/setups?sort=price"))).toEqual(["AAA:trend", "BBB:trend"]);
+    // Price and Last are column-header buttons.
+    const html = render("/charts/setups?view=open");
+    expect(html).toMatch(/<button[^>]*>Entry<\/button>/);
+    expect(html).toMatch(/<button[^>]*>Last<\/button>/);
+  });
+
+  it("sorts by symbol, by trend score, and by a level's distance from the close, nearest first", () => {
+    const rows = [
+      row({ symbol: "BBB", trend1m: 1, trend6m: 4, support: { value: 9, pct: -10 }, resistance: { value: 11, pct: 1 } }),
+      row({ symbol: "AAA", trend1m: 3, trend6m: -2, support: { value: 9.8, pct: -2 }, resistance: null }),
+      row({ symbol: "CCC", trend1m: null, trend6m: 0, support: null, resistance: { value: 15, pct: 5 } }),
+    ];
+    payload = { session: "2026-10-02", generatedAt: null, window: 20, optionsLabelDay: null, rows };
+    expect(symbols(render("/charts/setups?view=open&sort=symbol"))).toEqual(["AAA:trend", "BBB:trend", "CCC:trend"]);
+    expect(symbols(render("/charts/setups?view=open&sort=symbol&dir=desc"))).toEqual(["CCC:trend", "BBB:trend", "AAA:trend"]);
+    expect(symbols(render("/charts/setups?view=open&sort=t1m"))).toEqual(["AAA:trend", "BBB:trend", "CCC:trend"]);
+    expect(symbols(render("/charts/setups?view=open&sort=t6m"))).toEqual(["BBB:trend", "CCC:trend", "AAA:trend"]);
+    // Support is below the close (a negative pct): nearest first means smallest distance.
+    expect(symbols(render("/charts/setups?view=open&sort=support"))).toEqual(["AAA:trend", "BBB:trend", "CCC:trend"]);
+    expect(symbols(render("/charts/setups?view=open&sort=support&dir=desc"))).toEqual(["BBB:trend", "AAA:trend", "CCC:trend"]);
+    expect(symbols(render("/charts/setups?view=open&sort=resistance"))).toEqual(["BBB:trend", "CCC:trend", "AAA:trend"]);
+    // An unknown sort is the default, not a crash.
+    expect(symbols(render("/charts/setups?view=open&sort=bogus"))).toHaveLength(3);
+  });
+
   it("an empty file says the report job writes it", () => {
     payload = { session: null, generatedAt: null, window: null, optionsLabelDay: null, rows: [] };
     expect(render("/charts/setups")).toContain("No watchlist yet");
