@@ -20,6 +20,10 @@ evening slot exits quietly when today's lists are not saved yet, and the late sl
 records them if they have landed since, or exits 1, so a lost day is a failed job, not a quiet
 success. An existing complete file is left as it was.
 
+**Credit-spread candidates** go beside it, in `screener-greeks/candidates/<date>.json`: every name
+with liquidity rank 1 on the day's security list, on its ~45-day expiry, the strikes a spread's legs
+would come from (see CAND_DTE), so the spread list's selection can be tested on names that missed it.
+
 **`measure`: the spread in regular hours.** The evening quotes are after the close, so they say
 nothing about a name's real spread. `measure` runs inside the universe builder's window (10:00 ET to
 half an hour before the close) and records, for every name on the latest lists that the universe
@@ -48,6 +52,22 @@ LISTS = (
     ("credit-spreads", "creditSpreads"),
 )
 WINDOW = 4  # strikes recorded either side of each anchor (the vendor's strike)
+
+# Credit-spread CANDIDATES (2026-10-16): which names make the spread list is unsolved, and two of its
+# likely filters -- the credit at least a third of the width at the list's own structure (short the
+# first strike out of the money, long nearest 0.25 delta, ~45 days) and the direction read -- can only
+# be tested on names that did NOT make it too. So every name the day's security list gives liquidity
+# rank 1 and options is recorded on the expiry nearest 45 days: the first strike out of the money and
+# the strikes beyond it out to CAND_REACH of the price, thinned to CAND_STRIKES (the first few kept
+# consecutive, where the short leg and its neighbours sit). One side per name, by its direction read;
+# both sides when the read is neutral or missing. Written beside the day's file, never into it, so the
+# list rows' windows -- and every score computed from them -- are unchanged.
+CAND_DTE = 45
+CAND_REACH = 0.20
+CAND_STRIKES = 16
+CAND_NEAR = 4
+BULL_READS = {"sb", "bn", "bp", "bi"}  # strong bull, bull, pullback, improving: a put spread
+BEAR_READS = {"sbe", "brn", "br", "bd"}  # strong bear, bear, rally, weakening: a call spread
 # The broker publishes no hard numbers, but it limits both paths: REST answers 429, and DXLink kills
 # the socket on too fast a subscription rate. The first full run of this script (2026-10-07,
 # unpaced: three event types subscribed and unsubscribed per 100-option batch, batches back to
@@ -106,6 +126,53 @@ def strike_window(listed: list[float], chosen: set[float], width: int = WINDOW) 
     return sorted(keep)
 
 
+def candidate_plan(day: str) -> dict[str, dict]:
+    """{symbol: {edge, rights}} from the latest security list on or before `day`: every name with
+    options and liquidity rank 1, the side(s) its direction read implies. Empty with no list."""
+    root = store_dir() / "vendor-securities"
+    files = sorted(f for f in root.glob("????-??-??.json") if f.stem <= day) if root.is_dir() else []
+    if not files:
+        return {}
+    plan: dict[str, dict] = {}
+    for r in json.loads(files[-1].read_text(encoding="utf-8")).get("rows") or []:
+        sym = r.get("symbol")
+        if not isinstance(sym, str) or not r.get("hasOptions") or r.get("liquidityRank") != 1:
+            continue
+        edge = r.get("directionalEdge")
+        rights = ["P"] if edge in BULL_READS else ["C"] if edge in BEAR_READS else ["P", "C"]
+        plan[sym] = {"edge": edge, "rights": rights, "securities": files[-1].stem}
+    return plan
+
+
+def nearest_dte(expirations: list[tuple[str, int]], target: int) -> tuple[str, int] | None:
+    """The (expiry, days) nearest `target` days out; a tie takes the earlier. Expired ones never."""
+    live = [e for e in expirations if e[1] > 0]
+    return min(live, key=lambda e: (abs(e[1] - target), e[1])) if live else None
+
+
+def candidate_strikes(
+    listed: list[float],
+    spot: float,
+    right: str,
+    reach: float = CAND_REACH,
+    most: int = CAND_STRIKES,
+    near: int = CAND_NEAR,
+) -> list[float]:
+    """The first strike out of the money and those beyond it out to `reach` of the price: all of the
+    nearest `near`, then evenly thinned so at most `most` are kept, the farthest always among them."""
+    if right == "P":
+        otm = sorted((k for k in listed if spot * (1 - reach) <= k <= spot), reverse=True)
+    else:
+        otm = sorted(k for k in listed if spot <= k <= spot * (1 + reach))
+    if len(otm) <= most:
+        return sorted(otm)
+    head, tail = otm[:near], otm[near:]
+    room = most - near
+    step = (len(tail) - 1) / (room - 1)
+    picked = {tail[round(i * step)] for i in range(room)}
+    return sorted(set(head) | picked)
+
+
 def load_lists(day: str) -> dict[str, dict]:
     root = store_dir() / "vendor-screeners" / day
     out = {}
@@ -120,14 +187,19 @@ def _broker(sym: str) -> str:
     return sym.replace(".", "/")
 
 
-async def collect(session, wanted: dict, limit: int | None) -> dict:
+async def collect(session, wanted: dict, limit: int | None, plans: dict | None = None) -> tuple:
+    """(result, candidates, problem). `result` holds the list rows' windows, exactly as before;
+    `candidates` the credit-spread candidates `plans` names, from the same paced session."""
     from tastytrade import DXLinkStreamer
     from tastytrade.dxfeed import Greeks, Quote, Summary
     from tastytrade.instruments import NestedOptionChain
     from tastytrade.market_data import get_market_data_by_type
 
-    symbols = sorted({s for s, _, _ in wanted})[:limit]
+    plans = plans or {}
+    symbols = sorted({s for s, _, _ in wanted} | set(plans))[:limit]
     result: dict[str, dict] = {s: {"spot": None, "expiries": {}} for s in symbols}
+    cand: dict[str, dict] = {}
+    cand_of: dict[str, tuple[str, float, str]] = {}  # streamer symbol -> (sym, strike, right)
 
     for i in range(0, len(symbols), 100):
         for q in await get_market_data_by_type(session, equities=[_broker(s) for s in symbols[i : i + 100]]):
@@ -153,6 +225,21 @@ async def collect(session, wanted: dict, limit: int | None) -> dict:
         chains = chains if isinstance(chains, list) else [chains]
         chain = next((c for c in chains if c.root_symbol == _broker(sym)), chains[0] if chains else None)
         by_exp = {e.expiration_date.isoformat(): e for e in (chain.expirations if chain else [])}
+        if sym in plans:
+            pick = nearest_dte([(x, e.days_to_expiration) for x, e in by_exp.items()], CAND_DTE)
+            spot = result[sym]["spot"]
+            c = cand.setdefault(sym, {**plans[sym], "spot": spot, "expiry": None, "dte": None, "strikes": {}})
+            if pick is None or not spot:
+                c["error"] = "no expiry listed" if pick is None else "no spot"
+            else:
+                e = by_exp[pick[0]]
+                listed = {float(k.strike_price): k for k in e.strikes}
+                c.update(expiry=pick[0], dte=pick[1], listed_strikes=sorted(listed))
+                for right in plans[sym]["rights"]:
+                    for k in candidate_strikes(list(listed), spot, right):
+                        ss = listed[k].put_streamer_symbol if right == "P" else listed[k].call_streamer_symbol
+                        cand_of[ss] = (sym, k, right)
+                        c["strikes"].setdefault(f"{k:g}", {})[right] = {"streamer_symbol": ss}
         for (s, exp, right), chosen in wanted.items():
             if s != sym:
                 continue
@@ -170,7 +257,7 @@ async def collect(session, wanted: dict, limit: int | None) -> dict:
                 rec["strikes"].setdefault(f"{k:g}", {})[right] = {"streamer_symbol": ss}
 
     events: dict[str, dict] = {}
-    names = sorted(streamer_of)
+    names = sorted(set(streamer_of) | set(cand_of))
     kinds = ((Greeks, "Greeks"), (Quote, "Quote"), (Summary, "Summary"))
     batches = [names[i : i + BATCH] for i in range(0, len(names), BATCH)]
     done = 0
@@ -202,9 +289,21 @@ async def collect(session, wanted: dict, limit: int | None) -> dict:
 
     for ss, (sym, exp, k, right) in streamer_of.items():
         result[sym]["expiries"][exp]["strikes"][f"{k:g}"][right].update(events.get(ss, {}))
+    for ss, (sym, k, right) in cand_of.items():
+        cand[sym]["strikes"][f"{k:g}"][right].update(events.get(ss, {}))
+    # A candidate-only name never enters the list rows' file; its chain error moves with it.
+    listed_syms = {s for s, _, _ in wanted}
+    for sym in [s for s in result if s not in listed_syms]:
+        gone = result.pop(sym)
+        if sym in plans:
+            c = cand.setdefault(
+                sym, {**plans[sym], "spot": gone["spot"], "expiry": None, "dte": None, "strikes": {}}
+            )
+            if gone.get("error"):
+                c["error"] = gone["error"]
     if problem:
         problem = f"options feed stopped after {done}/{len(batches)} batches: {problem}"
-    return result, problem
+    return result, cand, problem
 
 
 def _innermost(exc: BaseException) -> str:
@@ -250,6 +349,14 @@ def rate_limit_problem(result: dict) -> str | None:
     it would never complete."""
     n = sum(1 for s in result.values() if s.get("error") == RATE_LIMITED)
     return f"broker rate limit (429): {n} symbol(s) not fetched" if n else None
+
+
+def _complete(path: Path) -> bool:
+    """A recorded file that says it is complete (an unreadable one is not)."""
+    try:
+        return bool(json.loads(path.read_text(encoding="utf-8")).get("complete", True))
+    except (OSError, ValueError):
+        return False
 
 
 def today_et() -> str:
@@ -597,15 +704,19 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no saved screener lists for {day} yet; nothing to record (the late run tries again)")
         return 0
     out = store_dir() / "screener-greeks" / f"{day}.json"
+    cand_path = store_dir() / "screener-greeks" / "candidates" / f"{day}.json"
+    # The list rows already recorded, the candidates not (a day recorded before they were, or a run
+    # that died between the two): record the candidates alone, leaving the rows' file as it is.
+    rows_done = False
     if out.exists() and not args.limit:
-        try:
-            complete = json.loads(out.read_text(encoding="utf-8")).get("complete", True)
-        except (OSError, ValueError):
-            complete = False
-        if complete:
-            print(f"{out.name} already exists; not overwritten")
-            return 0
-        print(f"{out.name} is incomplete; recording again")
+        if _complete(out):
+            if _complete(cand_path) or not candidate_plan(day):
+                print(f"{out.name} already exists; not overwritten")
+                return 0
+            rows_done = True
+            print(f"{out.name} already exists; recording the spread candidates alone")
+        else:
+            print(f"{out.name} is incomplete; recording again")
 
     from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 
@@ -616,10 +727,13 @@ def main(argv: list[str] | None = None) -> int:
     # The vendor's strike rule is studied on names worth trading: rows of names held illiquid are
     # skipped (decided 2026-10-07), except on a sweep day.
     skip = liquidity.skip()
-    wanted = {k: v for k, v in anchors(lists).items() if k[0].replace("/", ".") not in skip}
+    wanted = (
+        {} if rows_done else {k: v for k, v in anchors(lists).items() if k[0].replace("/", ".") not in skip}
+    )
+    plans = {s: p for s, p in candidate_plan(day).items() if s.replace("/", ".") not in skip}
     started = time.monotonic()
-    result, problem = asyncio.run(collect(session, wanted, args.limit))
-    problem = problem or rate_limit_problem(result)
+    result, cand, problem = asyncio.run(collect(session, wanted, args.limit, plans))
+    problem = problem or rate_limit_problem(result) or rate_limit_problem(cand)
     doc = {
         "list_date": day,
         "fetched_at": datetime.now(UTC).isoformat(),
@@ -634,7 +748,22 @@ def main(argv: list[str] | None = None) -> int:
         out = out.with_name(f"{day}.trial.json")
     from cherrypick.core.jsonio import write_json_atomic
 
-    write_json_atomic(out, doc, indent=None, default=None)
+    if not rows_done:
+        write_json_atomic(out, doc, indent=None, default=None)
+    cand_out = store_dir() / "screener-greeks" / "candidates" / out.name
+    write_json_atomic(
+        cand_out,
+        {
+            "list_date": day,
+            "fetched_at": doc["fetched_at"],
+            "rule": {"dte": CAND_DTE, "reach": CAND_REACH, "strikes": CAND_STRIKES, "near": CAND_NEAR},
+            "complete": problem is None,
+            "problem": problem,
+            "symbols": cand,
+        },
+        indent=None,
+        default=None,
+    )
     strikes = [
         leg
         for s in result.values()
@@ -654,6 +783,8 @@ def main(argv: list[str] | None = None) -> int:
                 "chain_errors": errors,
                 "options": len(strikes),
                 "with_delta": with_delta,
+                "candidates": len(cand),
+                "candidate_options": sum(len(legs) for c in cand.values() for legs in c["strikes"].values()),
                 "seconds": round(time.monotonic() - started),
                 "file": str(out),
             },
