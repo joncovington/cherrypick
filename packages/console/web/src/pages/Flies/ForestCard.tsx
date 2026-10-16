@@ -12,6 +12,7 @@ import { useHoverX } from "../../components/chart/useHoverX";
 import { useMeasure } from "../../lib/useMeasure";
 import { GridCard, type CardHeight, type CardSpan } from "../../components/grid/GridCard";
 import { CHART_GRID, CHART_GRID_STRONG } from "../../components/Charts";
+import { extendFlat, visibleYRange } from "../../components/chart/payoffWindow";
 
 interface StructureCurve {
   kind: string;
@@ -68,38 +69,6 @@ function useForest(mode: TradingMode, filter: FliesFilter) {
     },
     refetchInterval: 30_000,
   });
-}
-
-/** A payoff is genuinely flat beyond its own scanned range — carry the floor to the window edges. */
-function extendFlat(xs: number[], ys: number[], xMin: number, xMax: number): { xs: number[]; ys: number[] } {
-  const ex = [...xs];
-  const ey = [...ys];
-  if (ex[0]! > xMin) {
-    ex.unshift(xMin);
-    ey.unshift(ey[0]!);
-  }
-  if (ex[ex.length - 1]! < xMax) {
-    ex.push(xMax);
-    ey.push(ey[ey.length - 1]!);
-  }
-  return { xs: ex, ys: ey };
-}
-
-/** Min/max payoff actually VISIBLE within the x-window; flat boundary value when outside it. */
-function visibleYRange(xs: number[], ys: number[], xMin: number, xMax: number): { min: number; max: number } {
-  let mn = Infinity;
-  let mx = -Infinity;
-  xs.forEach((x, i) => {
-    if (x >= xMin && x <= xMax) {
-      mn = Math.min(mn, ys[i]!);
-      mx = Math.max(mx, ys[i]!);
-    }
-  });
-  if (mn === Infinity) {
-    const ext = extendFlat(xs, ys, xMin, xMax);
-    mn = mx = ext.ys[0]!;
-  }
-  return { min: mn, max: mx };
 }
 
 /** Nearest grid index to a price. */
