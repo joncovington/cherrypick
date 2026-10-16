@@ -138,6 +138,17 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   `market-report/vendor-securities/`. On the 2026-10-07 list, 90.3% on held-out symbols (strong bull
   95%, strong bear 99%). The label names other than strong bull and bear are ours, inferred.
   `score-bearing` fits on earlier lists and scores the latest; it needs two lists.
+- **Income screens' expiry and strike** (`screeners.py`, `score-screeners`, 2026-10-16, six sessions):
+  expiry nearest 30 days (short puts) / 45 (covered calls, credit spreads) — 100% wherever a chain
+  listing was recorded. Strike by Black-Scholes |delta| on each strike's own broker IV at 4%: short
+  put nearest 0.40 (91% monthly, 77% weekly), covered call nearest 0.165 (72% / 51%); spread short
+  = first strike out of the money (183/184), long nearest 0.25 (66%), credit ≥ 33.1% of the width.
+  The misses are one strike either side: the vendor's own chain deltas at its picks centre on 0.400
+  and 0.157, so the rule is right and the residual is the IV input and the list's 15:49 ET build
+  time against our 19:00 chain. Tried and worse: the broker's own delta, one IV per expiry, the IV
+  index, a delta cap or floor, a one-SD move. Returns: mid ÷ share price, × 365 ÷ days (100% of
+  short puts; ~98% of covered calls — the rest divide by price less mid, condition unknown).
+  **Which names make each list is not here**; the spread list's selection is open.
 - **Out of sample** (2026-09-28): bars 99%+ on 73 of 79 names; the grid places all 375 levels.
 
 ## Unsolved — measured, not approximated
@@ -257,7 +268,9 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
 
 `technicals-land` (06:15 ET daily, after the 05:30 Dolt pull; config block `technicals`), enabled
 only while the earnings module is, since that job keeps the dolt sql-server alive.
-`technicals-iv-rank` runs after the close on trading days.
+`technicals-iv-rank` runs after the close on trading days. `technicals-screeners` (06:40 ET,
+`screeners_at`) scores every saved screener session with its broker chain, after the previous
+evening's late greeks run; a scored session is skipped.
 
 ---
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
@@ -285,6 +298,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-signals` | Our six scan rules vs every saved scan list. |
 | `python -m cherrypick.technicals score-revisions` | The analyst-revision rule vs every saved board: agree, opposite, missed, not in source, extra. |
 | `python -m cherrypick.technicals score-bearing` | The bearing lookup fitted on earlier security lists, scored on the latest. |
+| `python -m cherrypick.technicals score-screeners [--rescore]` | The income screens' expiry, strike and return rules vs every saved list with its broker chain; one file per session in `screeners/`, totals printed. |
 | `python -m cherrypick.technicals study round7 [--workers N] [--count]` | Round 7: entering a bearing (frozen `bearing_table.py`) against random entry; `--count` gives frequencies only. |
 | `python -m cherrypick.technicals study round6 [--workers N] [--count]` | Round 6: a revision inside the strong bearing, against the same bearing without one; `--count` gives frequencies only. |
 | `python -m cherrypick.technicals history land` | Land Dolt's whole daily history (2011 on, every name) into `history.db`. Incremental. |

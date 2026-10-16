@@ -156,6 +156,13 @@ def cmd_score_bearing(_args) -> int:
     return 0 if result.get("ok") else 1
 
 
+def cmd_score_screeners(args) -> int:
+    from . import screeners
+
+    print(json.dumps(screeners.score_all(rescore=args.rescore), indent=1))
+    return 0
+
+
 def cmd_rotation(args) -> int:
     from . import rotation, symbols
 
@@ -518,6 +525,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser(
         "score-bearing", help="the bearing lookup fitted on earlier security lists, scored on the latest"
     ).set_defaults(fn=cmd_score_bearing)
+    ss = sub.add_parser(
+        "score-screeners", help="the income screens' expiry and strike rules, scored on every saved list"
+    )
+    ss.add_argument("--rescore", action="store_true", help="score sessions already scored again")
+    ss.set_defaults(fn=cmd_score_screeners)
     sr = sub.add_parser("score-rotation", help="score the rotation rule against every saved edition")
     sr.set_defaults(fn=cmd_score_rotation)
     br = sub.add_parser("breadth", help="daily leaders/laggards/net/bullish share over recent sessions")

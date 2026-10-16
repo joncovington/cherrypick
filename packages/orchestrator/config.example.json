@@ -664,7 +664,9 @@
     "iv_rank": true,
     "iv_rank_at": "18:50",
     "_comment_liquidity_at": "The nightly liquidity verdict (python -m cherrypick.technicals liquidity, local data only): a name failing the options-tradable test (weekly options, $100M a day) is held illiquid until the monthly sweep on the first trading day of the month. Broker-spending scripts skip it and listed views hide it; its bars and every count keep it. After iv_rank_at, before the 19:00 screener greeks run. Trading days, ET.",
-    "liquidity_at": "18:57"
+    "liquidity_at": "18:57",
+    "_comment_screeners_at": "Score the income screens' expiry and strike rules (python -m cherrypick.technicals score-screeners, local files only) against every saved screener list that has its broker chain; a session already scored is skipped. In the morning, after the previous evening's late greeks run. Trading days, ET.",
+    "screeners_at": "06:40"
   },
   "live_positions": {
     "_comment": "run.py live-positions, every interval_seconds from start to end ET on trading days: each designated live account's broker positions (read-only get_positions) against what the flies/bwb/meic live ledgers say is filled and open, on the underlyings those modules trade. Asks the broker only while a live module is armed or holds a ledger leg. A difference seen on two checks running is a CRITICAL watchdog finding (live_positions); contracts already expired are left out, since the broker lists them until its overnight processing. Safeguard 2(c), 2026-10-08.",

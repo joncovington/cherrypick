@@ -492,6 +492,10 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # local data only). After the IV-rank fetch it judges from, before the 19:00 screener greeks
         # run that reads it; every broker-spending job skips the names it holds illiquid.
         "liquidity_at": tc.get("liquidity_at", "18:57"),
+        # `screeners_at`: score the income screens' rules on every saved list with its broker chain
+        # (`python -m cherrypick.technicals score-screeners`, local files only). Morning, so the
+        # previous evening's late greeks run (23:30) has landed.
+        "screeners_at": tc.get("screeners_at", "06:40"),
         # `index_bars_at`: scripts/fetch_index_bars.py, the cash indexes' daily bars (SPX) from the
         # broker's candles, which Dolt does not carry. Ahead of `land_at`, so the previous session's
         # candle is final and lands the same morning.
