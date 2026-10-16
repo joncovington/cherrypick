@@ -169,6 +169,17 @@ BARS = {"max_spread_pct": 0.10, "max_spread_abs": 0.05, "min_open_interest": 100
 GOOD = {"bid": 1.00, "ask": 1.05, "open_interest": 500, "volume": 50}
 
 
+def test_the_chosen_bars_are_the_ones_the_readings_picked():
+    # Changing them changes what every recommendation means: do it with the readings, not by feel.
+    assert fsg.LEG_BARS == BARS
+
+
+def test_a_row_says_whether_its_monthly_passes_too():
+    assert fsg.monthly_passes([GOOD], BARS) is True
+    assert fsg.monthly_passes([GOOD, {**GOOD, "open_interest": 5}], BARS) is False
+    assert fsg.monthly_passes(None, BARS) is None and fsg.monthly_passes([GOOD], None) is None
+
+
 def test_no_recommendation_until_the_bars_are_chosen():
     assert fsg.recommend([GOOD], [GOOD], None) is None
 
