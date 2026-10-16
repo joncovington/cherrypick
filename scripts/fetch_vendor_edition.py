@@ -1272,12 +1272,26 @@ def _save_screeners(lists: dict[str, dict]) -> list[tuple[str, list[str]]]:
         )
         if problems and not problems[0].endswith("not overwritten"):
             failed.append((name, problems))
+    if "securities" not in lists:
+        failed.append(("securities", ["the security list never arrived"]))
+        print("securities: not captured")
+    else:
+        ok, problems = save_securities(lists["securities"], securities_dir())
+        n = len(lists["securities"]) if isinstance(lists["securities"], list) else 0
+        print(
+            f"securities: {'saved' if ok else 'not saved'} ({n} rows)"
+            + "".join(f"\n  - {p}" for p in problems)
+        )
+        if problems and not problems[0].endswith("not overwritten"):
+            failed.append(("securities", problems))
     return failed
 
 
 def _listen_for_screeners(page, lists: dict[str, dict]) -> None:
     def on_response(resp):
         name = screener_of(resp.url)
+        if not name and is_securities(resp.url):
+            name = "securities"
         if name and resp.status == 200 and "json" in resp.headers.get("content-type", ""):
             try:
                 lists[name] = json.loads(resp.text())
@@ -1285,6 +1299,79 @@ def _listen_for_screeners(page, lists: dict[str, dict]) -> None:
                 pass
 
     page.on("response", on_response)
+
+
+# ------------------------------------------------------------------------------------------------
+# The security list: every symbol's direction read, as the dashboard loads it.
+# ------------------------------------------------------------------------------------------------
+
+# The dashboard loads the whole security list (~12,500 rows) on every visit, each row carrying the
+# vendor's D-Edge (`directionalEdge`) beside the inputs it is read from: the 1M and 6M trend scores
+# (`sentiment1M`, `sentiment6M`) and the 1-10 score (`technicalRank`). One 2026-10-07 probe of it
+# fitted D-Edge as a lookup on 1M x 6M x score tier at 90% on held-out symbols (Strong Bull 95%,
+# Strong Bear 99%); one a session, kept, is how that fit is checked across days. Only the fields
+# below are kept. Nothing here makes a request: the page's own load is what is read.
+SECURITIES_PATH = "/api/v1/securities"
+SECURITIES_FIELDS = (
+    "symbol", "type", "directionalEdge", "sentiment1M", "sentiment6M", "technicalRank",
+    "ivRank", "liquidityRank", "hasOptions",
+)  # fmt: skip
+SECURITIES_MIN_ROWS = 5000
+
+
+def is_securities(url: str) -> bool:
+    """The list itself, not /securities/markets or /securities/quotes."""
+    return url.split("?", 1)[0].rstrip("/").endswith(SECURITIES_PATH)
+
+
+def securities_dir() -> Path:
+    return store_dir() / "vendor-securities"
+
+
+def securities_session(fetched: datetime) -> str:
+    """The session a list describes: the fetch's New York date once that day's close is past,
+    otherwise the trading day before (a pre-open visit still shows the last close)."""
+    from cherrypick.core import calendar as _calendar
+    from cherrypick.core.clock import ET
+
+    local = fetched.astimezone(ET)
+    day = local.date()
+    if _calendar.is_trading_day(day) and (local.hour, local.minute) >= (16, 15):
+        return day.isoformat()
+    return _calendar.previous_trading_day(day).isoformat()
+
+
+def validate_securities(rows) -> list[str]:
+    if not isinstance(rows, list) or len(rows) < SECURITIES_MIN_ROWS:
+        return [f"{len(rows) if isinstance(rows, list) else 0} rows, fewer than {SECURITIES_MIN_ROWS}"]
+    labelled = sum(1 for r in rows if isinstance(r, dict) and r.get("directionalEdge"))
+    if labelled < len(rows) // 2:
+        return [f"only {labelled} of {len(rows)} rows carry a directionalEdge"]
+    return []
+
+
+def save_securities(rows, out_root: Path, fetched: datetime | None = None) -> tuple[bool, list[str]]:
+    """Write `<session>.json` with the kept fields; never over an existing day; a list that fails
+    `validate_securities` goes to `<session>.rejected.json`. Returns (saved, problems)."""
+    fetched = fetched or datetime.now(UTC)
+    session = securities_session(fetched)
+    target = out_root / f"{session}.json"
+    if target.exists():
+        return False, [f"{target.name} already exists; not overwritten"]
+    problems = validate_securities(rows)
+    kept = (
+        [{f: r.get(f) for f in SECURITIES_FIELDS} for r in rows if isinstance(r, dict)]
+        if not problems
+        else rows
+    )
+    out_root.mkdir(parents=True, exist_ok=True)
+    dest = out_root / f"{session}.rejected.json" if problems else target
+    from cherrypick.core.jsonio import write_json_atomic
+
+    write_json_atomic(
+        dest, {"session": session, "fetched_at": fetched.isoformat(), "rows": kept}, indent=None, default=None
+    )
+    return not problems, problems
 
 
 def cmd_screeners(args) -> int:

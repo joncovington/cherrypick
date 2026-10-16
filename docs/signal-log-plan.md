@@ -843,6 +843,106 @@ market, raw closes, at least $100k a day, and names with a split inside the wind
 - **The whole-universe view agrees:** on the trend trigger a low score is worse (−0.198 R, t −2.9).
 - The results and what they say are in `packages/technicals/docs/setups.md`, "Round 5".
 
+## Round 6: an analyst revision inside the direction, declared before it was run (2026-10-15)
+
+The vendor's week-3 session says analyst calls are weighed, never traded alone: the direction comes
+first, and a revision is one more agreeing tag on the board. Round 6 asks whether it earns that
+weight. When a name is already in a strong direction, does a revision that session improve the
+next 21 sessions over the same direction without one? And is a revision against the direction a
+warning?
+
+**What was looked at before declaring (2026-10-15):**
+- **The revision rule and its source.** Yahoo's per-firm history, fetched by
+  `scripts/fetch_analyst_revisions.py`, holds the event behind 33 of the 37 tags on the saved
+  boards. Scored by `score-revisions`, 32 of 37 tags agree, with 1 extra in 77 untagged rows.
+- **The direction, fitted on labels only.** About 111 board rows carry the vendor's D-Edge. The rule
+  below matches Strong Bull on 28 of 28 rows with 1 false call, and Strong Bear on 12 of 13 with
+  none. On the deck's 18 Navigator names, which were not used in the fit, it matches only 7-8.
+  So **this is "trend+RS agree", not the vendor's D-Edge.** D-Edge labels are being captured to
+  fit it properly, and this round re-runs on that fit.
+- **Frequencies only** (`study round6 --count`, which scores nothing):
+
+  | Test | Entries | Sessions | Median pool (same date / same name) |
+  |---|---|---|---|
+  | `agree-bull` | 24,139 | 3,433 | 135 / 895 |
+  | `agree-bear` | 8,241 | 2,547 | 51 / 296 |
+  | `against-bull` | 3,037 | 1,818 | 127 / 893 |
+  | `against-bear` | 1,751 | 1,167 | 52 / 288 |
+
+  The rating and target-only split was also counted. No return of any kind has been computed.
+
+**The direction** (`round6.direction`):
+- **Bullish:** the 1M trend score (`trend.SHORT_TERM`) and the 6M trend score (`trend.LONG_TERM`)
+  are both +3 or more, and the 1-10 score is 8 or more.
+- **Bearish:** both are −3 or less, and the score is 3 or less.
+- **The 1-10 score** is round 5's whole-market decile, built as `land.land_rank_cutoffs` builds it
+  live.
+
+**The revision** is `revisions.by_session` on that session: an upgrade or downgrade, a sided
+initiation, or a target move of 5% or more. A rating change decides the direction before a target
+move does, and among target moves the largest decides.
+
+**Four tests, Holm across the four at a family-wise α of 0.05:**
+
+| Id | Entry | Against |
+|---|---|---|
+| `agree-bull` | bullish direction + bullish revision, long | bullish-direction sessions with no revision |
+| `agree-bear` | bearish direction + bearish revision, short | bearish-direction sessions with no revision |
+| `against-bull` | bullish direction + bearish revision, long | bullish-direction sessions with no revision; passes if the entries do **worse** |
+| `against-bear` | bearish direction + bullish revision, short | bearish-direction sessions with no revision; passes if the entries do worse |
+
+- **The pool:** 40 same-date draws (other covered names in the same direction that day, untagged)
+  and 40 same-name draws (other untagged days the name was in that direction). They are seeded
+  from the entry's identity, held 21 sessions and scored like the entry.
+- **Every tagged session is an entry.** Positions may overlap; the calendar-time test weighs a day
+  once.
+- **An agree test passes** with a Holm-significant positive edge AND a positive net R.
+- **A warning test passes** with a Holm-significant shortfall alone. It is a veto, not a trade.
+- **Too small a sample:** fewer than 780 effective entries reads "not yet judged".
+
+**Views, never tests:**
+- the rating against target-only split (the deck's "downgrades carry more weight"; "price target
+  changes on their own" count less);
+- 2011–18 and 2019–26;
+- halves A and B.
+
+The deck's "before the report against the wave after" claim waits on the earnings calendar being
+landed into `history.db`, and will be a view when it is.
+
+**Known biases, stated now:**
+- **The source covers today's 599 names.** A name that was downgraded and then delisted is missing.
+  The pool draws from the same names, so both sides carry the same survivorship, but the agree-bear
+  and warning entries may still be flattered.
+- **Coverage grows over time,** from about 3,000 tagged sessions a year in 2012 to about 10,000 in
+  2025.
+- **Yahoo's history is unofficial** and may have been revised after the fact. It is append-only from
+  2026-10-15, so a later re-run can tell.
+- **An event's session is its New York date.** A weekend or holiday rolls to the next session. The
+  entry fills at the next open, so a pre-open note's first-day move is never captured.
+- **The direction is ours, not the vendor's** (above).
+
+**Everything else is plan v2's:**
+- the universe as of each day;
+- the corporate-action exclusions;
+- next-open fills and the 21-session hold;
+- R net of the declared costs (borrow on the shorts);
+- the calendar-time one-sided test.
+
+**Outcome (run once, after this declaration; `round6-20261016-053221.json`):**
+- **Nothing passed.**
+  - `agree-bull`: +0.244 R net against +0.264 R, edge +0.037 R (t 1.2).
+  - `agree-bear`: −0.828 R net, edge +0.219 R (t 5.1). It is significant, but the short loses
+    money, so it fails the rule. Per entry the edge is only +0.03 R; downgrades carry +0.12 R
+    (t 2.2), and target-only cuts are flat.
+  - `against-bull`: edge −0.028 R (t −0.4).
+  - `against-bear`: edge −0.006 R (t −0.1).
+- **Renamed after the run, with no change to the rule:** the direction is now called our *bearing*,
+  and `round6.direction` is `round6.bearing`.
+- **The vendor's own direction read was fitted after the run.** It comes from the dashboard's
+  security list (`compass.py`): a lookup on 1M × 6M × score tier, 90% on held-out symbols. The
+  bearing tested here is a stricter subset of its strong states.
+- The results and what they say are in `packages/technicals/docs/setups.md`, "Round 6".
+
 ## Later phases: uses the study and log are shaped for, none committed
 
 History makes most of these **runnable now, not someday**.

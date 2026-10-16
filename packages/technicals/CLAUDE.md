@@ -132,6 +132,12 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   (append-only, `first_seen_at`/`last_seen_at`). An edition with no revision tag on any row
   (2026-10-08) is reported as `method_absent`, never scored. Which firm the tag names is not
   reproduced.
+- **Bearing** (`compass.py`, `score-bearing`): our name for the vendor's direction read. It is a
+  lookup on (1M trend, 6M trend, score tier 1-4 / 5-6 / 7-10) fitted on the dashboard's security
+  list, which `scripts/fetch_vendor_edition.py` keeps once a session in
+  `market-report/vendor-securities/`. On the 2026-10-07 list, 90.3% on held-out symbols (strong bull
+  95%, strong bear 99%). The label names other than strong bull and bear are ours, inferred.
+  `score-bearing` fits on earlier lists and scores the latest; it needs two lists.
 - **Out of sample** (2026-09-28): bars 99%+ on 73 of 79 names; the grid places all 375 levels.
 
 ## Unsolved — measured, not approximated
@@ -278,6 +284,8 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank (stored whole-market cut-offs) vs the vendor's. |
 | `python -m cherrypick.technicals score-signals` | Our six scan rules vs every saved scan list. |
 | `python -m cherrypick.technicals score-revisions` | The analyst-revision rule vs every saved board: agree, opposite, missed, not in source, extra. |
+| `python -m cherrypick.technicals score-bearing` | The bearing lookup fitted on earlier security lists, scored on the latest. |
+| `python -m cherrypick.technicals study round6 [--workers N] [--count]` | Round 6: a revision inside the strong bearing, against the same bearing without one; `--count` gives frequencies only. |
 | `python -m cherrypick.technicals history land` | Land Dolt's whole daily history (2011 on, every name) into `history.db`. Incremental. |
 | `python -m cherrypick.technicals history fundamentals` | Land Dolt's next-year EPS and sales estimates and quarterly income statements into `history.db` (round 5's inputs). |
 | `python -m cherrypick.technicals history check` | `history.db` against `eod.db` on the overlap, to the cent, and price jumps no split explains. |

@@ -255,6 +255,23 @@ STUDIED = (
         "rs-fund",
         "short",
     ),
+    # round 6: an analyst revision inside the trend+RS direction; rules in round6.py
+    Setup(
+        "rev-dir",
+        "Revision inside the bullish direction",
+        "Long on a session the 1M and 6M trends are both +3 or more and the 1-10 score is 8 or more, "
+        "scored with or without that session's analyst revision; exit on the close 21 sessions after.",
+        (),
+    ),
+    Setup(
+        "rev-dir-short",
+        "Revision inside the bearish direction (short)",
+        "Short on a session the 1M and 6M trends are both -3 or less and the 1-10 score is 3 or less, "
+        "scored with or without that session's analyst revision; cover on the close 21 sessions after.",
+        (),
+        "rev-dir",
+        "short",
+    ),
 )
 
 
