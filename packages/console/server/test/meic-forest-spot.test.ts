@@ -18,6 +18,11 @@ let config: ConsoleConfig;
 const TODAY = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 const PAST = "2026-08-13";
 
+function secondsSinceEtMidnight(): number {
+  const et = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  return et.getHours() * 3600 + et.getMinutes() * 60 + et.getSeconds();
+}
+
 function writeCache(lastSpx: number | null, ageS: number) {
   const p = path.join(tmp, "stream_cache.db");
   fs.rmSync(p, { force: true });
@@ -55,6 +60,25 @@ beforeAll(() => {
   ins.run("p1", PAST, "expired", 7700, 7712.5);
   db.close();
 
+  // The live ledger: today's book already SETTLED on the official print.
+  const live = new Database(path.join(dir, "meic_trades.db"));
+  live.exec(`
+    CREATE TABLE ic_trades (
+      id INTEGER PRIMARY KEY, ic_order_id TEXT, trade_date TEXT, risk_profile TEXT, symbol TEXT,
+      put_strike REAL, call_strike REAL, wing_width REAL, net_credit REAL, quantity INTEGER,
+      status TEXT, underlying_price_entry REAL, settle_underlying REAL, pnl REAL, fees REAL
+    );
+  `);
+  live
+    .prepare(
+      `INSERT INTO ic_trades (ic_order_id, trade_date, risk_profile, symbol, put_strike, call_strike,
+                              wing_width, net_credit, quantity, status, underlying_price_entry,
+                              settle_underlying, pnl, fees)
+       VALUES ('l1', ?, 'live', 'SPX', 7700, 7800, 5, 1.0, 1, 'expired', 7752.98, 7744.06, 100, 2)`,
+    )
+    .run(TODAY);
+  live.close();
+
   config = {
     port: 0,
     paths: {
@@ -87,11 +111,25 @@ describe("the MEIC forest's spot marker", () => {
     expect(readMeicForest(config, "paper", TODAY).lastSpot).toBe(7795.5);
   });
 
-  it("does not draw a stale cached spot as now; it falls back to the last entry", () => {
-    writeCache(7791.25, 3600);
+  it("after the close keeps today's last cached price, not the last entry's spot", () => {
+    // 2026-10-15: past 15 minutes the marker fell back to the last ENTRY (7752.98 against a
+    // 7744.06 close). Needs at least ~17 minutes of the ET day behind us to stage "stale but today".
+    const since = secondsSinceEtMidnight();
+    if (since < 1000) return;
+    writeCache(7744.06, Math.min(3600, since - 60));
+    expect(readMeicForest(config, "paper", TODAY).lastSpot).toBe(7744.06);
+  });
+
+  it("never draws a cached price from before today's session; it falls back to the last entry", () => {
+    writeCache(7791.25, secondsSinceEtMidnight() + 3600);
     expect(readMeicForest(config, "paper", TODAY).lastSpot).toBe(7780);
     writeCache(null, 0);
     expect(readMeicForest(config, "paper", TODAY).lastSpot).toBe(7780);
+  });
+
+  it("shows today's settlement print once the book has settled", () => {
+    writeCache(7791.25, secondsSinceEtMidnight() + 3600);
+    expect(readMeicForest(config, "live", TODAY).lastSpot).toBe(7744.06);
   });
 
   it("shows a past session's settlement print, whatever the cache holds", () => {
