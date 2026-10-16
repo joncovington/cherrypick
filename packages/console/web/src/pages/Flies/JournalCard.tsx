@@ -6,6 +6,7 @@ import { timeTicks } from "../../components/chart/scales";
 import { minuteOf, hhmm } from "../../components/chart/time";
 import { HoverReadout } from "../../components/chart/Tooltip";
 import { gateDescription } from "./gateGlossary";
+import { CHART_GRID, AXIS_MUTED } from "../../components/Charts";
 
 interface JournalRow {
   arm: string;
@@ -95,8 +96,8 @@ export function JournalCard({ mode, filter }: { mode: TradingMode; filter: Flies
       >
         {timeTicks(tMin, tMax, 8).map((m) => (
           <g key={m}>
-            <line x1={X(m)} y1={pad.t} x2={X(m)} y2={height - pad.b} stroke="#15181e" />
-            <text x={X(m)} y={height - 5} fontSize={9} fill="#82878f" textAnchor="middle" fontFamily="Consolas, monospace">
+            <line x1={X(m)} y1={pad.t} x2={X(m)} y2={height - pad.b} stroke={CHART_GRID} />
+            <text x={X(m)} y={height - 5} fontSize={9} fill={AXIS_MUTED} textAnchor="middle" fontFamily="Consolas, monospace">
               {hhmm(m)}
             </text>
           </g>
@@ -104,7 +105,7 @@ export function JournalCard({ mode, filter }: { mode: TradingMode; filter: Flies
         {lanes.map((lane, li) => {
           const [arm, dmode] = lane.split("|");
           return (
-            <text key={lane} x={4} y={pad.t + li * laneH + laneH / 2 + 3} fontSize={10} fill="#82878f">
+            <text key={lane} x={4} y={pad.t + li * laneH + laneH / 2 + 3} fontSize={10} fill={AXIS_MUTED}>
               {arm} · {dmode}
             </text>
           );
@@ -116,7 +117,7 @@ export function JournalCard({ mode, filter }: { mode: TradingMode; filter: Flies
             y={b.cy - 6}
             width={b.bw}
             height={12}
-            fill={b.r.accepted ? "#43b57a" : "rgba(217, 92, 74, 0.5)"}
+            fill={b.r.accepted ? "var(--pos)" : "color-mix(in srgb, var(--neg) 50%, transparent)"}
             onMouseEnter={() => setHover(b.i)}
           />
         ))}
@@ -129,7 +130,7 @@ export function JournalCard({ mode, filter }: { mode: TradingMode; filter: Flies
             `${r.firstSeen!.slice(11, 16)}–${r.lastSeen!.slice(11, 16)} · ${r.occurrences}× seen`,
             ...(description ? wrapLine(description, 60) : []),
           ];
-          return <HoverReadout x={hovered.x0} width={width} lines={lines} lineColor={() => "#eceff3"} boxTop={4} />;
+          return <HoverReadout x={hovered.x0} width={width} lines={lines} lineColor={() => "var(--text)"} boxTop={4} />;
         })()}
       </svg>
     );
@@ -146,8 +147,8 @@ export function JournalCard({ mode, filter }: { mode: TradingMode; filter: Flies
         <>
           {gantt}
           <div className="forest-legend">
-            <span><i style={{ background: "#43b57a" }} /> entry taken</span>
-            <span><i style={{ background: "rgba(217, 92, 74, 0.6)" }} /> refused (bar spans how long)</span>
+            <span><i style={{ background: "var(--pos)" }} /> entry taken</span>
+            <span><i style={{ background: "color-mix(in srgb, var(--neg) 60%, transparent)" }} /> refused (bar spans how long)</span>
           </div>
           <div className="table-scroll" style={{ marginTop: "0.6rem", maxHeight: "18rem", overflowY: "auto" }}>
             <table className="data-table">

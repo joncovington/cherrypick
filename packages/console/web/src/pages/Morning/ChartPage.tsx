@@ -21,6 +21,9 @@ import type { TechnicalsChart, TechnicalsSetup, TechnicalsVendorLevel } from "@c
 import { useTechnicalsChart } from "../../lib/api";
 import { SERIES_COLORS } from "../../components/Charts";
 import { fmtIvr } from "../../lib/format";
+import { canvasPalette as _pal, hexOf } from "../../components/chart/cssvars";
+
+const PAL = _pal();
 
 /**
  * One name's chart: our bars, our level grid, RSI and the trend scores, with the vendor's levels
@@ -43,15 +46,15 @@ import { fmtIvr } from "../../lib/format";
  * only places what the file says. The scan-rule matches are listed below the chart, not drawn on it.
  */
 
-const UP = "#43b57a";
-const DOWN = "#d95c4a";
-const GRID_INK = "#8a93a3";
+const UP = hexOf("--pos", "#3af3a0");
+const DOWN = hexOf("--neg", "#ee6760");
+const GRID_INK = hexOf("--text-muted", "#9ca3af");
 const OURS = SERIES_COLORS[0]!;
 const VENDOR = SERIES_COLORS[2]!;
 /** Both arrows are amber: an arrow marks an event, and green or red would read as a gain or a loss. */
 const ARROW = SERIES_COLORS[2]!;
 /** A short's arrows: pale, so a short entry (down) is never read as a long's exit (also down). */
-const SHORT_ARROW = "#e3e6ec";
+const SHORT_ARROW = hexOf("--text", "#ffffff");
 /** Twice the library's default: at 1 an entry arrow, which carries no label, was lost among the candles. */
 const ARROW_SIZE = 2;
 type Side = "long" | "short" | "both";
@@ -229,10 +232,10 @@ function PriceChart({ c, shown, levels }: { c: TechnicalsChart; shown: Technical
     if (el === null || c.bars.length < 2) return;
     const chart: IChartApi = createChart(el, {
       autoSize: true,
-      layout: { background: { color: "transparent" }, textColor: "#a6adb8", panes: { separatorColor: "#23262d" } },
-      grid: { vertLines: { color: "#1a1d23" }, horzLines: { color: "#1a1d23" } },
-      rightPriceScale: { borderColor: "#23262d" },
-      timeScale: { borderColor: "#23262d" },
+      layout: { background: { color: "transparent" }, textColor: PAL.textMuted, panes: { separatorColor: PAL.gridMid } },
+      grid: { vertLines: { color: PAL.grid }, horzLines: { color: PAL.grid } },
+      rightPriceScale: { borderColor: PAL.gridMid },
+      timeScale: { borderColor: PAL.gridMid },
     });
     const dates = c.bars.map((b) => b.date);
 
@@ -556,6 +559,7 @@ function VendorCard({ c }: { c: TechnicalsChart }) {
       {v.levels.length === 0 ? (
         <p className="muted">The capture carries no levels.</p>
       ) : (
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -586,6 +590,7 @@ function VendorCard({ c }: { c: TechnicalsChart }) {
               ))}
           </tbody>
         </table>
+        </div>
       )}
       <p className="muted">
         On the chart: solid, a support or resistance our grid places; dotted, a gap level that is an edge of one
@@ -604,6 +609,7 @@ function SignalsCard({ c }: { c: TechnicalsChart }) {
       {recent.length === 0 ? (
         <p className="muted">No rule matched in the sessions drawn.</p>
       ) : (
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -620,6 +626,7 @@ function SignalsCard({ c }: { c: TechnicalsChart }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
       <p className="muted">
         The vendor's scan rules as we reproduce them: a pattern, not a trade idea, so they are listed here and not

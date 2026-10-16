@@ -142,9 +142,9 @@ export function FliesCalendar({
           {[0, 1, 2, 3, 4].map((wd) => {
             const cell = cells.find((c) => c.weekday === wd);
             if (cell === undefined)
-              return <div key={wd} style={{ width: 18, height: 18, background: "var(--row-line)", borderRadius: 3 }} />;
+              return <div key={wd} style={{ width: 18, height: 18, background: "var(--track)", borderRadius: 3 }} />;
             const alpha = 0.2 + 0.8 * (Math.abs(cell.netPnl) / maxAbs);
-            const color = cell.netPnl >= 0 ? `rgba(67, 181, 122, ${alpha})` : `rgba(217, 92, 74, ${alpha})`;
+            const color = `color-mix(in srgb, var(${cell.netPnl >= 0 ? "--pos" : "--neg"}) ${Math.round(alpha * 100)}%, transparent)`;
             return (
               <div
                 key={wd}
@@ -340,7 +340,7 @@ export function HistoryTab({
         {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <FliesCalendar days={data?.dailyPnl ?? []} onPick={onReplayDay} />}
       </section>
 
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(34rem, 1fr))" }}>
+      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(34rem, 100%), 1fr))" }}>
         <DataCard title="By arm (legged only, settled)" headers={headers} loading={isLoading} rowCount={data?.byArm.length ?? 0}>
           <SummaryRows rows={data?.byArm} label="arm" thinBelow={data?.thinBelowSessions ?? null} />
         </DataCard>

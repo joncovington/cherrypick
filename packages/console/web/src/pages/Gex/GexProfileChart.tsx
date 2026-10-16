@@ -105,30 +105,30 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
   const overlays: Overlay[] = [];
   const spotY = strikeY(spot);
   if (spotY !== null)
-    overlays.push({ y: spotY, color: "#7aa2ff", label: `$${spot.toFixed(2)}`, side: "right", filled: false });
+    overlays.push({ y: spotY, color: "var(--accent)", label: `$${spot.toFixed(2)}`, side: "right", filled: false });
   if (zeroGamma !== null) {
     const y = strikeY(zeroGamma);
     if (y !== null)
-      overlays.push({ y, color: "#d9a13b", dash: "3 3", label: `Zero Γ: $${zeroGamma.toFixed(2)}`, side: "right", filled: false });
+      overlays.push({ y, color: "var(--amber-line)", dash: "3 3", label: `Zero Γ: $${zeroGamma.toFixed(2)}`, side: "right", filled: false });
   }
   if (callWall !== null) {
     const y = strikeY(callWall);
     if (y !== null)
-      overlays.push({ y, color: "#43b57a", dash: "6 4", label: callWall.toFixed(2), side: "left", filled: true });
+      overlays.push({ y, color: "var(--pos)", dash: "6 4", label: callWall.toFixed(2), side: "left", filled: true });
   }
   if (putWall !== null) {
     const y = strikeY(putWall);
     if (y !== null)
-      overlays.push({ y, color: "#d95c4a", dash: "3 3", label: putWall.toFixed(2), side: "left", filled: true });
+      overlays.push({ y, color: "var(--neg)", dash: "3 3", label: putWall.toFixed(2), side: "left", filled: true });
   }
 
   const seriesMeta = (j: number): { label: string; color: string } => {
-    if (view === "abs") return { label: "Abs GEX", color: "#7aa2ff" };
-    if (view === "net") return { label: "Net GEX", color: "#43b57a" };
-    return j === 0 ? { label: "Net GEX (OI)", color: "#43b57a" } : { label: "Net GEX (Volume)", color: "#7fd4a8" };
+    if (view === "abs") return { label: "Abs GEX", color: "var(--accent)" };
+    if (view === "net") return { label: "Net GEX", color: "var(--pos)" };
+    return j === 0 ? { label: "Net GEX (OI)", color: "var(--pos)" } : { label: "Net GEX (Volume)", color: "color-mix(in srgb, var(--pos) 55%, var(--surface))" };
   };
   const barColor = (v: number, j: number): string =>
-    view === "abs" ? "#7aa2ff" : v >= 0 ? (j === 0 ? "#43b57a" : "#7fd4a8") : j === 0 ? "#d95c4a" : "#e89386";
+    view === "abs" ? "var(--accent)" : v >= 0 ? (j === 0 ? "var(--pos)" : "color-mix(in srgb, var(--pos) 55%, var(--surface))") : j === 0 ? "var(--neg)" : "color-mix(in srgb, var(--neg) 55%, var(--surface))";
 
   const hovered = hover !== null ? rows[hover.index] : undefined;
 
@@ -144,9 +144,9 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
     >
       {/* faint vertical gridlines, chart.js-style */}
       {[0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875].map((f) => (
-        <line key={f} x1={m.l + f * plotW} y1={m.t} x2={m.l + f * plotW} y2={height - m.b} stroke="#15181e" />
+        <line key={f} x1={m.l + f * plotW} y1={m.t} x2={m.l + f * plotW} y2={height - m.b} stroke="var(--chart-grid)" />
       ))}
-      <line x1={zeroX} y1={m.t} x2={zeroX} y2={height - m.b} stroke="#23262d" />
+      <line x1={zeroX} y1={m.t} x2={zeroX} y2={height - m.b} stroke="var(--chart-grid-mid)" />
       <text
         x={10}
         y={m.t + (height - m.t - m.b) / 2}
@@ -229,7 +229,7 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
         return (
           <>
             {pts.length > 1 && (
-              <polyline points={pts.join(" ")} fill="none" stroke="#7aa2ff" strokeWidth={1} opacity={0.45} />
+              <polyline points={pts.join(" ")} fill="none" stroke="var(--accent)" strokeWidth={1} opacity={0.45} />
             )}
             {hours.map(([label, frac]) => {
               const x = m.l + frac * plotW;
@@ -249,7 +249,7 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
                 </g>
               );
             })}
-            <text x={m.l} y={m.t + 9} fontSize={9} fill="#7aa2ff" opacity={0.8}>
+            <text x={m.l} y={m.t + 9} fontSize={9} fill="var(--accent)" opacity={0.8}>
               spot trail — {spotSession!.date} ET
             </text>
           </>
@@ -269,7 +269,7 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
               width={tagW}
               height={tagH}
               rx={3}
-              fill={o.filled ? o.color : "#101216"}
+              fill={o.filled ? o.color : "var(--surface-sunken)"}
               stroke={o.color}
               strokeWidth={1}
             />
@@ -279,7 +279,7 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
               textAnchor="middle"
               fontSize={9}
               fontWeight={700}
-              fill={o.filled ? "#0b0c0f" : o.color}
+              fill={o.filled ? "var(--canvas)" : o.color}
               fontFamily="Consolas, monospace"
             >
               {o.label}
@@ -294,8 +294,8 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
           position: "absolute",
           left: Math.min(hover.px + 14, 900),
           top: hover.py + 10,
-          background: "#1b1f28f2",
-          border: "1px solid #2a2f3a",
+          background: "var(--surface-sunken)",
+          border: "1px solid var(--border)",
           borderRadius: 6,
           padding: "6px 10px",
           pointerEvents: "none",
@@ -354,7 +354,7 @@ export function StrikeBarsChart({
   const spotIdx = rows.findIndex((r, i) => i < rows.length - 1 && spot <= r.strike && spot >= rows[i + 1]!.strike);
   return (
     <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="by strike" style={{ width: "100%", height: "auto", display: "block" }}>
-      <line x1={zeroX} y1={m.t} x2={zeroX} y2={height - m.b} stroke="#23262d" />
+      <line x1={zeroX} y1={m.t} x2={zeroX} y2={height - m.b} stroke="var(--chart-grid-mid)" />
       {bars.map((b, i) => (
         <text key={b.label} x={m.l + i * 92} y={10} fontSize={10} fill={b.color}>
           {b.label}
@@ -384,7 +384,7 @@ export function StrikeBarsChart({
         );
       })}
       {spotIdx >= 0 && (
-        <line x1={m.l} y1={m.t + (spotIdx + 1) * rowH} x2={width - m.r} y2={m.t + (spotIdx + 1) * rowH} stroke="#7aa2ff" strokeWidth={1.2} />
+        <line x1={m.l} y1={m.t + (spotIdx + 1) * rowH} x2={width - m.r} y2={m.t + (spotIdx + 1) * rowH} stroke="var(--accent)" strokeWidth={1.2} />
       )}
     </svg>
   );
@@ -412,14 +412,14 @@ export function IvSkewChart({ series, spot, height = 240 }: { series: GexStrikeR
   return (
     <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="IV skew" style={{ width: "100%", height: "auto", display: "block" }}>
       {spot >= x0 && spot <= x1 && (
-        <line x1={sx(spot)} y1={m.t} x2={sx(spot)} y2={height - m.b} stroke="#d9a13b" strokeDasharray="4 4" />
+        <line x1={sx(spot)} y1={m.t} x2={sx(spot)} y2={height - m.b} stroke="var(--amber-line)" strokeDasharray="4 4" />
       )}
-      <polyline points={line("call_iv")} fill="none" stroke="#43b57a" strokeWidth={1.6} />
-      <polyline points={line("put_iv")} fill="none" stroke="#d95c4a" strokeWidth={1.6} />
+      <polyline points={line("call_iv")} fill="none" stroke="var(--pos)" strokeWidth={1.6} />
+      <polyline points={line("put_iv")} fill="none" stroke="var(--neg)" strokeWidth={1.6} />
       <text x={m.l} y={height - 6} fontSize={10} fill={AXIS_MUTED}>{x0}</text>
       <text x={width - m.r} y={height - 6} textAnchor="end" fontSize={10} fill={AXIS_MUTED}>{x1}</text>
-      <text x={m.l} y={m.t + 8} fontSize={10} fill="#43b57a">call IV%</text>
-      <text x={m.l + 60} y={m.t + 8} fontSize={10} fill="#d95c4a">put IV%</text>
+      <text x={m.l} y={m.t + 8} fontSize={10} fill="var(--pos)">call IV%</text>
+      <text x={m.l + 60} y={m.t + 8} fontSize={10} fill="var(--neg)">put IV%</text>
     </svg>
   );
 }

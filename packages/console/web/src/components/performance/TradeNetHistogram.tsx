@@ -68,7 +68,7 @@ export function TradeNetHistogram({ nets }: { nets: number[] }) {
       <svg width="100%" height={HEIGHT} viewBox={`0 0 ${String(width)} ${String(HEIGHT)}`} role="img" aria-label="per-trade net histogram">
         {bins.map((b, i) => {
           const h = maxN === 0 ? 0 : (b.n / maxN) * plotH;
-          const cls = b.lo >= 0 ? "var(--ok)" : "var(--err)";
+          const cls = b.lo >= 0 ? "var(--pos)" : "var(--neg)";
           return (
             <rect
               key={b.lo}

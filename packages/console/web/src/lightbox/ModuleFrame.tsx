@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { MODULE_LABEL, type ModuleId } from "./moduleOrder";
-import { navSlideIds, resolveSlide } from "./navGroups";
+import { navSlideIds, resolveSlide, viewSlides } from "./navGroups";
+import { useViewMode } from "../lib/viewMode";
 import type { SlideDef } from "./types";
 import { ExperimentalChip } from "../components/ExperimentalChip";
 import { useFeatures } from "../lib/useFeatures";
@@ -94,7 +95,10 @@ export function ModuleFrame({
   const features = useFeatures();
   const slides = allSlides.filter((s) => isSlideVisible(module, s.id, features));
 
-  const activeId = resolveSlide(module, slide, slides);
+  // A bare module URL lands on the reader's VIEW's first tab (MEIC's summary in simple view); a
+  // named tab outside the view still renders, since a deep link is a request, not a mistake.
+  const view = useViewMode();
+  const activeId = resolveSlide(module, slide, slides, viewSlides(module, slides, view));
   const active = slides.find((s) => s.id === activeId);
 
   const withQs = (path: string) => {

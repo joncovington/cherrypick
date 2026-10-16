@@ -110,6 +110,7 @@ function StagesCard({ t }: { t: TechnicalsReport }) {
       {t.stages.length === 0 ? (
         <p className="muted">No stages in this report.</p>
       ) : (
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -134,6 +135,7 @@ function StagesCard({ t }: { t: TechnicalsReport }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </section>
   );
@@ -175,6 +177,7 @@ function LeadersCard({ t }: { t: TechnicalsReport }) {
       {t.leaders.length === 0 ? (
         <p className="muted">No leaders in this report.</p>
       ) : (
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -205,6 +208,7 @@ function LeadersCard({ t }: { t: TechnicalsReport }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
       <p className="muted">Ranked by 125-session return; rank is that return's decile across the universe (10 = top).</p>
     </section>
@@ -239,6 +243,7 @@ function MoversCard({ t }: { t: TechnicalsReport }) {
   return (
     <section className="card">
       <Head title="Session movers" t={t} />
+      <div className="table-scroll">
       <table className="data-table">
         <thead>
           <tr>
@@ -254,6 +259,7 @@ function MoversCard({ t }: { t: TechnicalsReport }) {
           <MoverRows rows={losers} />
         </tbody>
       </table>
+      </div>
       <p className="muted">The largest one-session moves in the universe. Why they moved is the narrative's to say.</p>
     </section>
   );
@@ -267,6 +273,7 @@ function SignalsCard({ t }: { t: TechnicalsReport }) {
       {rules.length === 0 ? (
         <p className="muted">No scan rules in this report.</p>
       ) : (
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -287,6 +294,7 @@ function SignalsCard({ t }: { t: TechnicalsReport }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
       <p className="muted">A match is a pattern on the chart, not a trade idea.</p>
     </section>

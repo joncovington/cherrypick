@@ -11,6 +11,7 @@ import { SpotMarker, HoverReadout } from "../../components/chart/Tooltip";
 import { useHoverX } from "../../components/chart/useHoverX";
 import { useMeasure } from "../../lib/useMeasure";
 import { GridCard, type CardHeight, type CardSpan } from "../../components/grid/GridCard";
+import { CHART_GRID, CHART_GRID_STRONG } from "../../components/Charts";
 
 interface StructureCurve {
   kind: string;
@@ -170,9 +171,9 @@ export function floorSentence(c: PayoffCurve): string {
 const X_WIDTHS = ["auto", "50", "100", "500", "1000"] as const;
 const Y_WIDTHS = ["auto", "250", "500", "1000", "5000"] as const;
 
-const TENT_COLOR = "#43b57a";
+const TENT_COLOR = "var(--pos)";
 /** Orange, not red: red already means "the book loses here" in the fill. */
-const STRANDED_COLOR = "#f0883e";
+const STRANDED_COLOR = "var(--chart-orange)";
 
 function structureLabel(s: StructureCurve): string {
   const shape = s.stranded ? `stranded ${s.side} vertical` : s.kind === "fly" ? `${s.side} fly` : s.kind.replace("_", " ");
@@ -335,7 +336,7 @@ export function ForestCard({
         {/* grid + ticks */}
         {niceTicks(yMin, yMax, 5).map((v) => (
           <g key={`y${v}`}>
-            <line x1={pad.l} y1={Y(v)} x2={width - pad.r} y2={Y(v)} stroke={Math.abs(v) < 1e-9 ? "#3d4653" : "#15181e"} />
+            <line x1={pad.l} y1={Y(v)} x2={width - pad.r} y2={Y(v)} stroke={Math.abs(v) < 1e-9 ? CHART_GRID_STRONG : CHART_GRID} />
             <text x={4} y={Y(v) + 3} fontSize={9} fill={AXIS_MUTED} fontFamily="Consolas, monospace">
               {fmtMoney(v)}
             </text>
@@ -343,7 +344,7 @@ export function ForestCard({
         ))}
         {niceTicks(xMin, xMax, 6).map((v) => (
           <g key={`x${v}`}>
-            <line x1={X(v)} y1={pad.t} x2={X(v)} y2={height - pad.b} stroke="#15181e" />
+            <line x1={X(v)} y1={pad.t} x2={X(v)} y2={height - pad.b} stroke={CHART_GRID} />
             {/* a tick label under the axis title would collide with it — the gridline still shows */}
             {X(v) < width - pad.r - 64 && (
               <text x={X(v)} y={height - 8} fontSize={9} fill={AXIS_MUTED} textAnchor="middle" fontFamily="Consolas, monospace">
@@ -381,8 +382,8 @@ export function ForestCard({
             };
             return (
               <>
-                {poly(1, "rgba(67, 181, 122, 0.28)")}
-                {poly(-1, "rgba(217, 92, 74, 0.24)")}
+                {poly(1, "color-mix(in srgb, var(--pos) 28%, transparent)")}
+                {poly(-1, "color-mix(in srgb, var(--neg) 24%, transparent)")}
               </>
             );
           })()}
@@ -451,7 +452,7 @@ export function ForestCard({
         {/* hover crosshair + readout */}
         {hoverX !== null && hoverPrice !== null && (
           <>
-            <line x1={hoverX} y1={pad.t} x2={hoverX} y2={height - pad.b} stroke="#3d4653" />
+            <line x1={hoverX} y1={pad.t} x2={hoverX} y2={height - pad.b} stroke={CHART_GRID_STRONG} />
             <HoverReadout
               x={hoverX}
               width={width}
@@ -461,7 +462,7 @@ export function ForestCard({
                 ...parts.map((s) => `  ${structureLabel(s)}  ${fmtMoney(s.pnl[nearestIndex(shown[0]!.curve.prices, hoverPrice)]!)}`),
               ]}
               lineColor={(i) => {
-                if (i === 0) return "#eceff3";
+                if (i === 0) return "var(--text)";
                 if (i <= shown.length) return colorOf(shown[i - 1]!.arm);
                 return parts[i - 1 - shown.length]!.stranded ? STRANDED_COLOR : TENT_COLOR;
               }}

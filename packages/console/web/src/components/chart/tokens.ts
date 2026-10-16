@@ -11,10 +11,10 @@
  * an 8th or 9th profile gets its own colour instead of wrapping back to the first.
  */
 export const ARM_COLORS = [
-  "#7aa2ff",
-  "#43b57a",
-  "#d9a13b",
-  "#a06bd9",
+  "var(--accent)",
+  "var(--pos)",
+  "var(--amber-line)",
+  "var(--chart-special)",
   "#4fc3d9",
   "#e88a5c",
   "#8a9c4a",
@@ -23,7 +23,7 @@ export const ARM_COLORS = [
 ];
 
 /** The spot/underlying-price line and its label, wherever a chart draws one. */
-export const SPOT_COLOR = "#d9a13b";
+export const SPOT_COLOR = "var(--amber-line)";
 
 /**
  * The attempt-outcome vocabulary, in the order a refusal is most worth knowing about --
@@ -34,18 +34,18 @@ export const SPOT_COLOR = "#d9a13b";
  * a gate refusal would make the gates look stricter than they are.
  */
 export const OUTCOMES = [
-  { key: "filled", label: "filled", color: "#43b57a" },
-  { key: "cadence_blocked", label: "cadence", color: "#7aa2ff" },
-  { key: "sign_rule_blocked", label: "sign rule", color: "#a06bd9" },
+  { key: "filled", label: "filled", color: "var(--pos)" },
+  { key: "cadence_blocked", label: "cadence", color: "var(--accent)" },
+  { key: "sign_rule_blocked", label: "sign rule", color: "var(--chart-special)" },
   { key: "duplicate_blocked", label: "duplicate", color: "#c9628a" },
   { key: "gate_blocked", label: "gate", color: "#e88a5c" },
   { key: "window_blocked", label: "window", color: "#8a9c4a" },
   { key: "no_candidate", label: "no candidate", color: "#6c7480" },
-  { key: "no_fill", label: "no fill", color: "#d9a13b" },
+  { key: "no_fill", label: "no fill", color: "var(--amber-line)" },
 ] as const;
 
 export const OUTCOME_COLOR_OF: Record<string, string> = Object.fromEntries(OUTCOMES.map((o) => [o.key, o.color]));
 export const OUTCOME_LABEL_OF: Record<string, string> = Object.fromEntries(OUTCOMES.map((o) => [o.key, o.label]));
 
-export const AXIS_MUTED_HEX = "#82878f";
+export const AXIS_MUTED_HEX = "var(--text-muted)";
 export const AXIS_FONT_FAMILY = "Consolas, monospace";

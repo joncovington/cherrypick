@@ -16,6 +16,7 @@ import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { ModuleFrame } from "../ModuleFrame";
 import { BWB_SLIDES, type BwbSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
+import { ModuleSummary } from "../../components/summary/ModuleSummary";
 
 const BWB_LABEL = Object.fromEntries(BWB_SLIDES.map((s) => [s.id, s.label])) as Record<BwbSlideId, string>;
 
@@ -33,6 +34,7 @@ export function BwbLightbox({ slide }: { slide: string }) {
     data?.today.lastIteration == null ? "no-data" : data.today.lastIteration.ageSeconds < 900 ? "live" : "idle";
 
   const slides: Array<SlideDef & { id: BwbSlideId }> = [
+    { id: "summary", label: BWB_LABEL.summary, render: () => <ModuleSummary module="bwb" mode={mode} /> },
     { id: "session", label: BWB_LABEL.session, render: () => <BwbSession data={data} loading={isLoading} mode={mode} /> },
     {
       id: "decisions",

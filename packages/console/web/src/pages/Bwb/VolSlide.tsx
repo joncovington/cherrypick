@@ -101,6 +101,7 @@ export function BwbVolSlide() {
               it. A row recorded before 2026-10-09, or with a missing or stale print, is <em>unmeasured</em> and never
               given a side.
             </p>
+            <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
@@ -121,6 +122,7 @@ export function BwbVolSlide() {
                 ))}
               </tbody>
             </table>
+            </div>
           </>
         )}
       </Card>
@@ -139,6 +141,7 @@ export function BwbVolSlide() {
               . Vol points, annualised; premium = implied − realised. A cut-off strip is a lower bound on implied, so the
               complete-only row is stated beside it. Implied is recorded from 2026-10-09.
             </p>
+            <div className="table-scroll">
             <table className="data-table num-from-1">
               <thead>
                 <tr>
@@ -156,6 +159,7 @@ export function BwbVolSlide() {
                 {ivStats("complete strip only", iv.data.summary.with_complete_implied)}
               </tbody>
             </table>
+            </div>
           </>
         )}
       </Card>

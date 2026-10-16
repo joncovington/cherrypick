@@ -67,9 +67,25 @@ export function usePrefsVersion(): number {
   return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
+const inFlight = new Set<Promise<void>>();
+
+/** Resolves once every server write started so far has finished, ok or not. Anything that reloads
+ *  the page on a pref change waits on this first: a reload aborts the POST, and the next load's
+ *  sync would then pull the OLD value back and undo the change (the theme toggle did exactly that). */
+export function prefWritesSettled(): Promise<void> {
+  return Promise.allSettled([...inFlight]).then(() => undefined);
+}
+
 /** Write through: the local mirror updates immediately, the server copy follows. */
-export async function writePref(key: string, value: unknown): Promise<void> {
+export function writePref(key: string, value: unknown): Promise<void> {
   publish({ ...cache, [key]: value });
+  const write = postPref(key, value);
+  inFlight.add(write);
+  void write.finally(() => inFlight.delete(write));
+  return write;
+}
+
+async function postPref(key: string, value: unknown): Promise<void> {
   try {
     const res = await fetch("/api/config/prefs", {
       method: "POST",

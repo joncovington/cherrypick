@@ -259,10 +259,10 @@ export function GexLightbox({ slide }: { slide: string }) {
                 series={p.series}
                 spot={p.spot}
                 bars={[
-                  { label: "call OI", color: "#43b57a", value: (r) => r.call_oi },
-                  { label: "put OI", color: "#d95c4a", value: (r) => -r.put_oi },
-                  { label: "call vol", color: "#7fd4a8", value: (r) => r.call_vol },
-                  { label: "put vol", color: "#e89386", value: (r) => -r.put_vol },
+                  { label: "call OI", color: "var(--pos)", value: (r) => r.call_oi },
+                  { label: "put OI", color: "var(--neg)", value: (r) => -r.put_oi },
+                  { label: "call vol", color: "color-mix(in srgb, var(--pos) 55%, var(--surface))", value: (r) => r.call_vol },
+                  { label: "put vol", color: "color-mix(in srgb, var(--neg) 55%, var(--surface))", value: (r) => -r.put_vol },
                 ]}
               />
             ) : (
@@ -284,8 +284,8 @@ export function GexLightbox({ slide }: { slide: string }) {
                 series={p.series}
                 spot={p.spot}
                 bars={[
-                  { label: "call vol", color: "#43b57a", value: (r) => r.call_vol },
-                  { label: "put vol", color: "#d95c4a", value: (r) => -r.put_vol },
+                  { label: "call vol", color: "var(--pos)", value: (r) => r.call_vol },
+                  { label: "put vol", color: "var(--neg)", value: (r) => -r.put_vol },
                 ]}
               />
             ) : (

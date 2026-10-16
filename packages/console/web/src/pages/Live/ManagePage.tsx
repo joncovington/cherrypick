@@ -153,6 +153,7 @@ function TradeDetail({ t }: { t: ManageTrade }) {
           </ul>
         )}
       </div>
+      <div className="table-scroll">
       <table className="data-table num-from-2">
         <thead>
           <tr>
@@ -179,6 +180,7 @@ function TradeDetail({ t }: { t: ManageTrade }) {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

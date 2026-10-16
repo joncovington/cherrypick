@@ -124,9 +124,9 @@ function PnlBars({ series, cumulative }: { series: Performance["series"]; cumula
   const bw = (width - m.l - m.r) / series.length;
   return (
     <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="P&L over time" style={{ width: "100%", height: "auto", display: "block" }}>
-      <line x1={m.l} y1={Y(0)} x2={width - m.r} y2={Y(0)} stroke="#3d4653" />
+      <line x1={m.l} y1={Y(0)} x2={width - m.r} y2={Y(0)} stroke="var(--chart-grid-strong)" />
       {[yMax, 0, yMin].map((v, i) => (
-        <text key={i} x={4} y={Y(v) + 3} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">{fmtMoney(v)}</text>
+        <text key={i} x={4} y={Y(v) + 3} fontSize={9} fill="var(--text-muted)" fontFamily="Consolas, monospace">{fmtMoney(v)}</text>
       ))}
       {series.map((s, i) => (
         <rect
@@ -135,7 +135,7 @@ function PnlBars({ series, cumulative }: { series: Performance["series"]; cumula
           y={Math.min(Y(0), Y(s.netPnl))}
           width={Math.max(bw * 0.7, 1)}
           height={Math.max(Math.abs(Y(s.netPnl) - Y(0)), 1)}
-          fill={s.netPnl >= 0 ? "#43b57a" : "#d95c4a"}
+          fill={s.netPnl >= 0 ? "var(--pos)" : "var(--neg)"}
         >
           <title>{`${s.bucket}: ${fmtMoney(s.netPnl)} (cum ${fmtMoney(s.cumulative)})`}</title>
         </rect>
@@ -144,14 +144,14 @@ function PnlBars({ series, cumulative }: { series: Performance["series"]; cumula
         <polyline
           points={series.map((s, i) => `${(m.l + (i + 0.5) * bw).toFixed(1)},${Y(s.cumulative).toFixed(1)}`).join(" ")}
           fill="none"
-          stroke="#7aa2ff"
+          stroke="var(--accent)"
           strokeWidth={1.6}
         />
       )}
       {series.length > 0 && (
         <>
-          <text x={m.l} y={height - 6} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">{series[0]!.bucket}</text>
-          <text x={width - m.r} y={height - 6} fontSize={9} fill="#82878f" textAnchor="end" fontFamily="Consolas, monospace">
+          <text x={m.l} y={height - 6} fontSize={9} fill="var(--text-muted)" fontFamily="Consolas, monospace">{series[0]!.bucket}</text>
+          <text x={width - m.r} y={height - 6} fontSize={9} fill="var(--text-muted)" textAnchor="end" fontFamily="Consolas, monospace">
             {series[series.length - 1]!.bucket}
           </text>
         </>
@@ -172,25 +172,25 @@ export function CompletionTrend({ trend }: { trend: Performance["completionTrend
     <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="completion trend" style={{ width: "100%", height: "auto", display: "block" }}>
       {[0, 50, 100].map((p) => (
         <g key={p}>
-          <line x1={m.l} y1={Y(p)} x2={width - m.r} y2={Y(p)} stroke="#15181e" />
-          <text x={4} y={Y(p) + 3} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">{p}%</text>
+          <line x1={m.l} y1={Y(p)} x2={width - m.r} y2={Y(p)} stroke="var(--chart-grid)" />
+          <text x={4} y={Y(p) + 3} fontSize={9} fill="var(--text-muted)" fontFamily="Consolas, monospace">{p}%</text>
         </g>
       ))}
       <polyline
         points={trend.filter((t) => t.ratePct !== null).map((t, i) => `${X(i).toFixed(1)},${Y(t.ratePct!).toFixed(1)}`).join(" ")}
         fill="none"
-        stroke="#43b57a"
+        stroke="var(--pos)"
         strokeWidth={1.6}
       />
       {trend.map((t, i) =>
         t.ratePct !== null ? (
-          <circle key={t.day} cx={X(i)} cy={Y(t.ratePct)} r={2.5} fill="#43b57a">
+          <circle key={t.day} cx={X(i)} cy={Y(t.ratePct)} r={2.5} fill="var(--pos)">
             <title>{`${t.day}: ${t.completed}/${t.legged} (${t.ratePct.toFixed(0)}%)`}</title>
           </circle>
         ) : null,
       )}
-      <text x={m.l} y={height - 4} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">{trend[0]!.day}</text>
-      <text x={width - m.r} y={height - 4} fontSize={9} fill="#82878f" textAnchor="end" fontFamily="Consolas, monospace">{trend[trend.length - 1]!.day}</text>
+      <text x={m.l} y={height - 4} fontSize={9} fill="var(--text-muted)" fontFamily="Consolas, monospace">{trend[0]!.day}</text>
+      <text x={width - m.r} y={height - 4} fontSize={9} fill="var(--text-muted)" textAnchor="end" fontFamily="Consolas, monospace">{trend[trend.length - 1]!.day}</text>
     </svg>
   );
 }
@@ -203,6 +203,7 @@ export function CompletionCard({ c }: { c: Performance["completion"] | undefined
       <h2>Completion (legged — the number that decides if this is real)</h2>
       {c !== undefined && (
         <>
+          <div className="table-scroll">
           <table className="data-table">
             <tbody>
               <tr><td className="muted">legged entries</td><td>{c.leggedEntries}</td></tr>
@@ -216,9 +217,11 @@ export function CompletionCard({ c }: { c: Performance["completion"] | undefined
               <tr><td className="muted">median spot move to complete</td><td>{c.medianSpotMove !== null ? c.medianSpotMove.toFixed(2) : "—"}</td></tr>
             </tbody>
           </table>
+          </div>
           {/* The misses are the shortfall above (legged − completed), so they sit in this card rather
               than a short one beside it that left half a row blank. */}
           <h3 className="card-subhead">Why misses missed (opposite remedies — do not lump)</h3>
+          <div className="table-scroll">
           <table className="data-table">
             <tbody>
               <tr>
@@ -236,6 +239,7 @@ export function CompletionCard({ c }: { c: Performance["completion"] | undefined
               <tr><td className="muted">never priced</td><td>{c.unknown}</td></tr>
             </tbody>
           </table>
+          </div>
         </>
       )}
     </section>
@@ -261,6 +265,7 @@ export function LiveVsPaperCard({ lvp }: { lvp: NonNullable<Performance["liveVsP
           <span className="chain-badge">{lvp.live.entries}/{lvp.abort.minLiveEntries} entries to arm abort rule</span>
         )}
       </h2>
+      <div className="table-scroll">
       <table className="data-table">
         <thead>
           <tr><th></th><th>live</th><th>paper (same sessions)</th></tr>
@@ -291,6 +296,7 @@ export function LiveVsPaperCard({ lvp }: { lvp: NonNullable<Performance["liveVsP
           </tr>
         </tbody>
       </table>
+      </div>
       {paper === null && (
         <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
           No paper figures to compare against ({lvp.degraded?.reason ?? "paper ledger unreadable"}), so the gap and the
@@ -391,6 +397,7 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
         {roll !== null && (
           <section className="card">
             <h2>Roll (bwb — the same question, a different trade)</h2>
+            <div className="table-scroll">
             <table className="data-table">
               <tbody>
                 <tr><td className="muted">bwb entries</td><td>{roll.leggedEntries}</td></tr>
@@ -404,6 +411,7 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
                 <tr><td className="muted">median spot move to roll</td><td>{roll.medianSpotMove !== null ? roll.medianSpotMove.toFixed(2) : "—"}</td></tr>
               </tbody>
             </table>
+            </div>
             <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
               Until it rolls, a bwb carries real negative tail risk of{" "}
               <strong>wing − far wing</strong> — unlike an uncompleted legged entry, whose worst case
@@ -415,6 +423,7 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
               </p>
             )}
             <h3 className="card-subhead">Why rolls missed</h3>
+            <div className="table-scroll">
             <table className="data-table">
               <tbody>
                 <tr><td className="muted">never cheap enough</td><td>{roll.neverOffered}</td></tr>
@@ -423,6 +432,7 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
                 <tr><td className="muted">unknown</td><td>{roll.unknown}</td></tr>
               </tbody>
             </table>
+            </div>
             <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
               Read against <code>best_roll_debit</code>: "the market never made the roll cheap enough"
               and "our own gate refused a roll that was offered" are identical in the P&amp;L and call
@@ -438,6 +448,7 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
         {lot !== null && (
           <section className="card">
             <h2>Left on table (debit-first — waiting past the first qualifying tick)</h2>
+            <div className="table-scroll">
             <table className="data-table">
               <tbody>
                 <tr><td className="muted">completions tracked</td><td>{lot.overall.n}</td></tr>
@@ -447,7 +458,9 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
                 <tr><td className="muted">untracked (pre-2026-08-03, or iron/bwb)</td><td className="muted">{lot.untracked}</td></tr>
               </tbody>
             </table>
+            </div>
             {Object.keys(lot.byGexBucket).length > 0 && (
+              <div className="table-scroll">
               <table className="data-table data-table-labelled" style={{ marginTop: "0.6rem" }}>
                 <thead><tr><th>gex bucket at completion</th><th>n</th><th>improved</th><th>median</th><th>total</th></tr></thead>
                 <tbody>
@@ -462,6 +475,7 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
             <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
               Improvement is floored at 0 per position — the completion tick itself seeds the tracker,

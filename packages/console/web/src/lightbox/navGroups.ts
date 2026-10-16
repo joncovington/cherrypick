@@ -34,6 +34,9 @@ export interface ModuleNavDecl {
   groups?: readonly NavGroup[];
   /** Ids that used to name a tab, mapped to the tab that replaced them. */
   legacy?: Readonly<Record<string, string>>;
+  /** The tabs the SIMPLE view shows, in the module's own vocabulary; the detail view shows every
+   *  tab. Absent means the module has not chosen, and both views show everything. */
+  simple?: readonly string[];
 }
 
 /**
@@ -63,6 +66,7 @@ export interface ModuleNavDecl {
  */
 export const FLIES_SLIDES = [
   { id: "session", label: "session" },
+  { id: "summary", label: "summary" },
   { id: "forest", label: "forest" },
   { id: "timeline", label: "timeline" },
   { id: "openingrange", label: "opening range" },
@@ -100,6 +104,10 @@ export type FliesSlideId = (typeof FLIES_SLIDES)[number]["id"];
  */
 export const MEIC_SLIDES = [
   { id: "session", label: "session" },
+  // The gauge-led day summary (2026-10): the slide whose adopted visual language became the
+  // suite's theme, and the pattern for every module's own summary — one per module, each in its
+  // own KPI vocabulary; no central summary page.
+  { id: "summary", label: "summary" },
   { id: "forest", label: "forest" },
   { id: "attempts", label: "attempts" },
   { id: "exits", label: "exits" },
@@ -128,6 +136,7 @@ export type MeicSlideId = (typeof MEIC_SLIDES)[number]["id"];
  */
 export const BWB_SLIDES = [
   { id: "session", label: "session" },
+  { id: "summary", label: "summary" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
   { id: "vol", label: "entry vol" },
@@ -151,6 +160,7 @@ export type BwbSlideId = (typeof BWB_SLIDES)[number]["id"];
  */
 export const EARNINGS_SLIDES = [
   { id: "session", label: "session" },
+  { id: "summary", label: "summary" },
   { id: "decisions", label: "decisions" },
   { id: "strategies", label: "strategies" },
   { id: "screening", label: "screening" },
@@ -171,6 +181,7 @@ export type EarningsSlideId = (typeof EARNINGS_SLIDES)[number]["id"];
  */
 export const CURVE_SLIDES = [
   { id: "session", label: "session" },
+  { id: "summary", label: "summary" },
   { id: "regime", label: "regime" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
@@ -192,6 +203,7 @@ export type CurveSlideId = (typeof CURVE_SLIDES)[number]["id"];
  */
 export const CONTANGO_SLIDES = [
   { id: "session", label: "session" },
+  { id: "summary", label: "summary" },
   { id: "regime", label: "regime" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
@@ -212,6 +224,7 @@ export type ContangoSlideId = (typeof CONTANGO_SLIDES)[number]["id"];
  */
 export const PMCC_SLIDES = [
   { id: "session", label: "session" },
+  { id: "summary", label: "summary" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
   { id: "performance", label: "performance" },
@@ -233,6 +246,7 @@ export type PmccSlideId = (typeof PMCC_SLIDES)[number]["id"];
  */
 export const CALENDARS_SLIDES = [
   { id: "session", label: "session" },
+  { id: "summary", label: "summary" },
   { id: "plan", label: "plan" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
@@ -345,8 +359,9 @@ export const CONFIG_SLIDES: readonly NavSlide[] = [
 export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   flies: {
     slides: FLIES_SLIDES,
+    simple: ["summary", "session", "forest", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "forest", "timeline"] },
+      { label: "today", ids: ["session", "summary", "forest", "timeline"] },
       {
         label: "evidence",
         ids: ["attempts", "decisions", "gates", "livegap", "selector", "openingrange", "regime", "agent"],
@@ -367,8 +382,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   meic: {
     slides: MEIC_SLIDES,
+    simple: ["summary", "forest", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "forest", "attempts"] },
+      { label: "today", ids: ["session", "summary", "forest", "attempts"] },
       { label: "evidence", ids: ["exits", "regime"] },
       { label: "study", ids: ["calibration", "performance", "costs", "advisor"] },
       { label: "tables", ids: ["positions", "history", "sessions"] },
@@ -378,8 +394,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   bwb: {
     slides: BWB_SLIDES,
+    simple: ["summary", "session", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session"] },
+      { label: "today", ids: ["session", "summary"] },
       { label: "evidence", ids: ["decisions", "arms", "vol", "livegap"] },
       { label: "study", ids: ["performance", "advisor"] },
       { label: "tables", ids: ["positions", "history"] },
@@ -389,8 +406,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   earnings: {
     slides: EARNINGS_SLIDES,
+    simple: ["summary", "session", "upcoming", "performance", "positions"],
     groups: [
-      { label: "today", ids: ["session", "upcoming"] },
+      { label: "today", ids: ["session", "summary", "upcoming"] },
       { label: "evidence", ids: ["decisions", "screening", "strategies"] },
       { label: "study", ids: ["performance", "advisor"] },
       { label: "tables", ids: ["positions", "history"] },
@@ -399,8 +417,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   curve: {
     slides: CURVE_SLIDES,
+    simple: ["summary", "session", "regime", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "regime"] },
+      { label: "today", ids: ["session", "summary", "regime"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "costs", "advisor"] },
       { label: "tables", ids: ["positions", "history"] },
@@ -410,8 +429,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   contango: {
     slides: CONTANGO_SLIDES,
+    simple: ["summary", "session", "regime", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "regime"] },
+      { label: "today", ids: ["session", "summary", "regime"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "costs"] },
       { label: "tables", ids: ["positions", "history"] },
@@ -421,8 +441,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   calendars: {
     slides: CALENDARS_SLIDES,
+    simple: ["summary", "session", "plan", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "plan"] },
+      { label: "today", ids: ["session", "summary", "plan"] },
       { label: "evidence", ids: ["decisions", "arms", "policies"] },
       { label: "study", ids: ["performance", "advisor"] },
       { label: "tables", ids: ["positions", "history"] },
@@ -432,8 +453,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   pmcc: {
     slides: PMCC_SLIDES,
+    simple: ["summary", "session", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session"] },
+      { label: "today", ids: ["session", "summary"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "costs", "advisor"] },
       { label: "tables", ids: ["positions", "tracker", "history"] },
@@ -444,6 +466,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   gex: { slides: GEX_SLIDES },
   flow: {
     slides: FLOW_SLIDES,
+    simple: ["today"],
     groups: [
       { label: "today", ids: ["today", "derived"] },
       { label: "tables", ids: ["birdseye", "trades", "spreads", "voloi"] },
@@ -470,11 +493,35 @@ export function navSlideIds(module: ModuleId): string[] {
  * module's first tab. `/flies/exits` landing on `session` would look like a working link and
  * silently show the wrong page, which is worse than a 404.
  */
-export function resolveSlide(module: ModuleId, slide: string, slides: readonly NavSlide[]): string {
+export function resolveSlide(
+  module: ModuleId,
+  slide: string,
+  slides: readonly { id: string }[],
+  preferred: readonly { id: string }[] = slides,
+): string {
   if (slides.some((s) => s.id === slide)) return slide;
   const alias = NAV_DECL[module]?.legacy?.[slide];
   if (alias !== undefined && slides.some((s) => s.id === alias)) return alias;
-  return slides[0]?.id ?? slide;
+  // No tab named (or an unknown one): the view's first tab, so the simple view lands on its own.
+  return preferred[0]?.id ?? slides[0]?.id ?? slide;
+}
+
+export type ViewMode = "simple" | "detail";
+
+/**
+ * The tabs a view lists. Detail is every tab; simple is the module's own `simple` list, in the
+ * module's tab order. A tab the reader is ON stays listed even when the view leaves it out, so a
+ * deep link into a detail tab is never a page the rail cannot place.
+ */
+export function viewSlides<T extends { id: string }>(
+  module: ModuleId,
+  slides: readonly T[],
+  view: ViewMode,
+  current: string | null = null,
+): T[] {
+  const simple = NAV_DECL[module]?.simple;
+  if (view === "detail" || simple === undefined) return [...slides];
+  return slides.filter((s) => simple.includes(s.id) || s.id === current);
 }
 
 export interface NavGrouping {

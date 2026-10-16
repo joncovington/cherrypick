@@ -145,14 +145,16 @@ interface CalendarsParams {
  * fatal — the values degrade to null and the cards that need them say so rather than the page
  * failing whole.
  */
-function loadParams(config: ConsoleConfig): CalendarsParams {
+export function loadParams(config: ConsoleConfig): CalendarsParams {
   let doc: Record<string, unknown> | null = null;
   for (const candidate of config.paths.calendarsConfigCandidates) {
     doc = readJson(candidate);
     if (doc !== null) break;
   }
   const defaults = obj(doc?.["defaults"]);
-  const booksBlock = obj(doc?.["arms"]);
+  // The registry under either spelling (`cherrypick.core.config` resolves `arms` and `books` for
+  // good): a config that still says `books` read as an empty arm list here until 2026-10-15.
+  const booksBlock = obj(doc?.["arms"] ?? doc?.["books"]);
   const dividendsBlock = obj(doc?.["dividends"]);
 
   const dividends: CalendarsParams["dividends"] = {};

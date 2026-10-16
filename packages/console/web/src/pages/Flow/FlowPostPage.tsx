@@ -25,6 +25,7 @@ function dayLabel(iso: string): string {
 /** The session's releases (actual against estimate) then the next week's, in the tables' style. */
 export function EventsTable({ events, session }: { events: FlowEvent[]; session: string }) {
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
@@ -58,6 +59,7 @@ export function EventsTable({ events, session }: { events: FlowEvent[]; session:
         })}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -66,6 +68,7 @@ export function EventsTable({ events, session }: { events: FlowEvent[]; session:
 export function SpreadsPostTable({ rows }: { rows: DerivedFlowRow[] }) {
   const max = rows.reduce((m, r) => Math.max(m, Math.abs(r.score ?? 0)), 0) || 1;
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
@@ -101,8 +104,8 @@ export function SpreadsPostTable({ rows }: { rows: DerivedFlowRow[] }) {
               <td className={`num ${tone}`}>{s === null ? "—" : `${s > 0 ? "+" : ""}${fmtNum(s, 0)}`}</td>
               <td>
                 <svg width={56} height={8} aria-hidden="true">
-                  <rect width={56} height={8} fill="var(--row-line)" />
-                  <rect x={s !== null && s < 0 ? 28 - w : 28} width={w} height={8} fill={s === null ? "none" : s >= 0 ? "var(--ok)" : "var(--err)"} />
+                  <rect width={56} height={8} fill="var(--track)" />
+                  <rect x={s !== null && s < 0 ? 28 - w : 28} width={w} height={8} fill={s === null ? "none" : s >= 0 ? "var(--pos)" : "var(--neg)"} />
                 </svg>
               </td>
               <td>
@@ -113,6 +116,7 @@ export function SpreadsPostTable({ rows }: { rows: DerivedFlowRow[] }) {
         })}
       </tbody>
     </table>
+    </div>
   );
 }
 

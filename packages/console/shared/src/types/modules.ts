@@ -1539,3 +1539,102 @@ export interface MeicDivergence {
   /** The outcomes seen, most common first — what the arms were agreeing or disagreeing ABOUT. */
   outcomes: Array<{ outcome: string; count: number }>;
 }
+
+// ---- MEIC summary slide (the one-read payload) ----
+// Declared in @console/shared so the server reader and the slide cannot drift apart: the server
+// builds it, the slide renders it, and this file is the contract between them. Money follows the
+// suite's one layout (net = gross − fees, settlement its own column, signed cash flow).
+
+/** A signal breakdown row — the module's own bucket and measures (`readMeicDeepAnalytics`). */
+export interface MeicSummaryBreakdown {
+  bucket: string;
+  trades: number;
+  winPct: number | null;
+  avgNet: number | null;
+}
+
+export interface MeicSummarySlice {
+  mode: TradingMode;
+  /** The window the numbers answer for: ISO bounds, null = open, with the label the toolbar shows. */
+  window: { from: string | null; to: string | null; label: string };
+  /** The era bound in force — null means "ALL". */
+  era: string | null;
+  hero: {
+    trades: number;
+    sessions: number;
+    gross: number;
+    /** Trading fees; the fee TOTAL when `settlement` is n/r (the split was never recorded). */
+    fees: number;
+    /** Null (n/r) when any settled row in the window never recorded its settlement split. */
+    settlement: number | null;
+    slippage: number;
+    net: number;
+    credit: number;
+    /** The window's settled trades, fee-adjusted — the one rate covering everything realised. */
+    winPct: number | null;
+    wins: number;
+    /** Sessions whose net was positive / negative over the window — the rings' session arc. */
+    daysWon: number;
+    daysLost: number;
+    openTrades: number;
+    /** Capital at risk over open rows: the module's own formula, mirrored (readMeicOpenExposure). */
+    openRisk: number;
+  };
+  /** Net kept of premium sold, clamped −50..+50 for the gauge needle; `captureRawPct` unclamped
+   *  for the label. Null when no premium was collected. */
+  capturePct: number | null;
+  captureRawPct: number | null;
+  /** Return on risk — the review fact set's `on_max_risk`, mirrored: net ÷ the window's capital
+   *  at risk, capital = (wing width − credit) × multiplier × quantity summed over the same settled
+   *  rows the hero's money sums (core.ledgers._meic_closed._capital). `rorPct` clamped
+   *  −100..+100 for the gauge needle — a defined-risk trade's return lives inside those bounds
+   *  up to fee drag — `rorRawPct` unclamped for the label. Null when the window's settled rows
+   *  carry no usable capital. `coverage` says how many settled rows could support the
+   *  computation ("10/10"), so a partial denominator is never read as a whole one. */
+  returnOnRisk: { capitalAtRisk: number | null; rorPct: number | null; rorRawPct: number | null; coverage: string | null };
+  /** Leg outcomes per wing: credit SOLD (per-side net is not a ledger fact), leg state counts, and
+   *  `stopCost`, the DEBIT paid to close the stopped sides in whole-position dollars (the exit price
+   *  × multiplier × quantity; not the stop's net). `other` holds states a newer ledger may add. */
+  legs: Array<{ side: "put" | "call"; credit: number; expired: number; stopped: number; settled: number; other: number; stopCost: number }>;
+  /** The leg-pair identity the module's margin read is built on: clean = both expired, double-stop
+   *  = both stopped, fee bar = avg fee over avg credit sold. Nulls when no legs are recorded. */
+  pairs: { trades: number; clean: number; cleanPct: number | null; doubleStopPct: number | null; breakevenBarPct: number | null };
+  /** Entry-hour bands (ET), the deep-analytics bucket verbatim, over the window. `net` is the
+   *  window's total over the bucket; `avg` the net per trade (the bar the card draws —
+   *  opportunity and edge are different questions); `winPct` over the bucket's SETTLED trades,
+   *  a number, never a tint — colour carries sign, never a verdict. */
+  entryTime: Array<{
+    hour: string;
+    label: string;
+    offSession: boolean;
+    net: number;
+    count: number;
+    avg: number | null;
+    winPct: number | null;
+  }>;
+  /** The gate's ledger: one row per outcome, dominant block_detail beside it, and the
+   *  market-at-refusal sketch aggregated from exactly the refused rows the outcomes count. */
+  evaluations: {
+    evaluated: number;
+    filled: number;
+    refused: number;
+    outcomes: Array<{ outcome: string; n: number; dominantDetail: string | null }>;
+    market: { gexNegPct: number | null; medianIvRank: number | null; quality: string | null };
+  };
+  /** By arm over the window: the hero's money per arm plus the arm's own slice of the gate. */
+  arms: Array<{ arm: string; symbol: string; evaluated: number; filled: number; refused: number; dominant: string | null; net: number }>;
+  /** Era-window signal breakdowns — the module's own buckets and measures. */
+  delta: MeicSummaryBreakdown[];
+  wing: MeicSummaryBreakdown[];
+  weekday: MeicSummaryBreakdown[];
+  /** The window's entries, newest first, one settled page of 40 (`?page=` names the page;
+   *  `page` is the reader's clamp onto 1..pages). The window at a glance; the session and history
+   *  tables keep the full log. `provisional` marks an unsettled row (a mark, not a print) — none
+   *  are listed, and `total` counts the same settled rows the money figures count. */
+  entries: {
+    rows: Array<{ time: string | null; arm: string; symbol: string; credit: number; structure: string; net: number; provisional: boolean }>;
+    total: number;
+    pages: number;
+    page: number;
+  };
+}

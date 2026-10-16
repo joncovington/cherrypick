@@ -4,6 +4,8 @@ import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
 import { fmtCash, fmtPrice } from "../../lib/format";
+import { useState } from "react";
+import { ArmSelect } from "../../components/ArmSelect";
 
 const CORE_BOOKS = ["control", "delta", "bounce", "flip"];
 
@@ -94,6 +96,8 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
 
 /** Every open BWB, one row each — symbol and expiry identify the trade, arm identifies the arm. */
 export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefined; updatedAt?: number }) {
+  // The arm filter: every arm with an open trade, retired ones behind the shared toggle.
+  const [arm, setArm] = useState<string | null>(null);
   if (data === undefined) return null;
   const empty = data.openPositions.length === 0;
   const headers = ["symbol", "arm", "opened", "expiry", "near/body x2/far", "qty", "price", "entry", "add-on $", "mark (net of costs to date)", "spot", "peak |delta|", "below flip", "add-on (short/long)"];
@@ -119,14 +123,22 @@ export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefin
   // moved onto the row instead, where they identify the trade rather than the container.
   // Newest entry first: the ladder adds one BWB per arm per session, so the top of this table is
   // what today put on. Symbol and arm only break ties within a session.
-  const rows = [...data.openPositions].sort(
-    (a, b) =>
-      b.entrySession.localeCompare(a.entrySession) ||
-      a.symbol.localeCompare(b.symbol) ||
-      a.arm.localeCompare(b.arm),
-  );
+  const arms = [...new Set(data.openPositions.map((p) => p.arm))].sort();
+  const rows = [...data.openPositions]
+    .filter((p) => arm === null || p.arm === arm)
+    .sort(
+      (a, b) =>
+        b.entrySession.localeCompare(a.entrySession) ||
+        a.symbol.localeCompare(b.symbol) ||
+        a.arm.localeCompare(b.arm),
+    );
   return (
-    <Card title="open trades" collapseKey="bwb-open-trades" updatedAt={updatedAt}>
+    <Card
+      title={arm === null ? "open trades" : `open trades · ${arm} (${rows.length})`}
+      collapseKey="bwb-open-trades"
+      updatedAt={updatedAt}
+      controls={<ArmSelect module="bwb" value={arm} options={arms} onChange={setArm} />}
+    >
       <div className="table-scroll">
         <table className="data-table num-from-5">
           <thead>
@@ -223,6 +235,7 @@ export function BookComparison({ data, updatedAt }: { data: BwbPayload | undefin
           )}
         </p>
       ) : (
+        <div className="table-scroll">
         <table className="data-table num-from-1">
           <tbody>
             {totals.map((t) => (
@@ -238,6 +251,7 @@ export function BookComparison({ data, updatedAt }: { data: BwbPayload | undefin
             ))}
           </tbody>
         </table>
+        </div>
       )}
       <p className="integrity-note">
         Until an arm's add-on actually fires, its positions are byte-identical to control's -- an expected

@@ -6,12 +6,29 @@ import { niceTicks } from "./chart/scales";
     scattered across charts for what was meant to be one semantic role). */
 export const AXIS_MUTED = "var(--text-muted)";
 
+/** The chart gridlines, from the stylesheet's tokens -- the canvas repaint, not the stylesheet,
+    is what repaints these; SVG presents no inherited custom property to read. */
+export const CHART_GRID = "var(--chart-grid)";
+export const CHART_GRID_STRONG = "var(--chart-grid-strong)";
+export const CHART_GRID_MID = "var(--chart-grid-mid)";
+
 /** House chart typography: 9px mono, muted, matching the flies/GEX SVGs. */
 export const AXIS_FONT = { fontSize: 9, fill: AXIS_MUTED, fontFamily: "Consolas, monospace" } as const;
 // No brand accent (#d23f57) in a general-purpose categorical palette -- that color is reserved
 // for brand/live/alert moments elsewhere in the app, and a rotating series palette would spend it
-// on "just the first series," shown constantly and neutrally.
-export const SERIES_COLORS = ["#7aa2ff", "#43b57a", "#d9a13b", "#a06bd9", "#4fc3d9", "#e88a5c", "#8a9c4a"];
+// on "just the first series," shown constantly and neutrally. The first four are the theme's own
+// tokens (they were the old palette's blue/green/amber/purple, which never followed the light
+// theme); the tail stays literal, a categorical spread both themes share, like ARM_COLORS's.
+// Every consumer resolves var() (SVG natively, canvas through `resolveColor`).
+export const SERIES_COLORS = [
+  "var(--accent)",
+  "var(--pos)",
+  "var(--amber-line)",
+  "var(--chart-special)",
+  "#4fc3d9",
+  "#e88a5c",
+  "#8a9c4a",
+];
 
 // Re-exported for the ~existing call sites that import niceTicks from here -- the one
 // implementation now lives in components/chart/scales.ts, alongside the rest of the kit.
@@ -58,7 +75,7 @@ export function LineChart({
     <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="chart" style={{ width: "100%", height: "auto", display: "block" }}>
       {niceTicks(lo, hi, 4).map((v) => (
         <g key={v}>
-          <line x1={m.l} y1={Y(v)} x2={width - m.r} y2={Y(v)} stroke={Math.abs(v) < 1e-9 ? "#3d4653" : "#15181e"} />
+          <line x1={m.l} y1={Y(v)} x2={width - m.r} y2={Y(v)} stroke={Math.abs(v) < 1e-9 ? CHART_GRID_STRONG : CHART_GRID} />
           <text x={4} y={Y(v) + 3} {...AXIS_FONT}>
             {yFormat(v)}
           </text>
@@ -114,7 +131,7 @@ export function BarChart({
     <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="chart" style={{ width: "100%", height: "auto", display: "block" }}>
       {niceTicks(lo, hi, 4).map((v) => (
         <g key={v}>
-          <line x1={m.l} y1={Y(v)} x2={width - m.r} y2={Y(v)} stroke={Math.abs(v) < 1e-9 ? "#3d4653" : "#15181e"} />
+          <line x1={m.l} y1={Y(v)} x2={width - m.r} y2={Y(v)} stroke={Math.abs(v) < 1e-9 ? CHART_GRID_STRONG : CHART_GRID} />
           <text x={4} y={Y(v) + 3} {...AXIS_FONT}>
             {yFormat(v)}
           </text>
@@ -127,7 +144,7 @@ export function BarChart({
           y={Math.min(Y(0), Y(b.y))}
           width={Math.max(bw * 0.7, 1)}
           height={Math.max(Math.abs(Y(b.y) - Y(0)), 1)}
-          fill={b.y >= 0 ? "#43b57a" : "#d95c4a"}
+          fill={b.y >= 0 ? "var(--pos)" : "var(--neg)"}
         >
           <title>{`${b.x}: ${yFormat(b.y)}`}</title>
         </rect>
@@ -136,7 +153,7 @@ export function BarChart({
         <polyline
           points={overlay.map((o, i) => `${(m.l + (i + 0.5) * bw).toFixed(1)},${Y(o.y).toFixed(1)}`).join(" ")}
           fill="none"
-          stroke="#7aa2ff"
+          stroke="var(--accent)"
           strokeWidth={1.6}
         />
       )}
@@ -228,7 +245,7 @@ export function Sparkline({
       )}
       <polyline
         fill="none"
-        stroke={up ? "#43b57a" : "#d95c4a"}
+        stroke={up ? "var(--pos)" : "var(--neg)"}
         strokeWidth={1.3}
         points={cum.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ")}
       />
@@ -299,9 +316,9 @@ export function LevelStrip({
         <g opacity={marker.muted === true ? 0.55 : 1}>
           <polygon
             points={`${X(markerValue)},${axisY - 3} ${X(markerValue) - 5},${axisY - 13} ${X(markerValue) + 5},${axisY - 13}`}
-            fill="#d9a13b"
+            fill="var(--amber-line)"
           />
-          <text x={X(markerValue)} y={axisY - 17} textAnchor="middle" {...AXIS_FONT} fill="#d9a13b">
+          <text x={X(markerValue)} y={axisY - 17} textAnchor="middle" {...AXIS_FONT} fill="var(--amber-line)">
             {marker.label} {Math.round(markerValue).toLocaleString()}
           </text>
         </g>

@@ -31,6 +31,7 @@ function WeekDetail({ week }: { week: string }) {
               {p.exitReason !== null && ` (${p.exitReason})`}
             </span>
           </h4>
+          <div className="table-scroll">
           <table className="data-table num-from-2">
             <thead>
               <tr>
@@ -59,6 +60,7 @@ function WeekDetail({ week }: { week: string }) {
               ))}
             </tbody>
           </table>
+          </div>
           <p className="integrity-note">
             entry debit {fmtNum(p.entryDebit, 2)} · spot {fmtNum(p.entrySpot, 2)} · EM {fmtNum(p.entryEm, 2)}
             {p.settlementSpot !== null && ` · settled ${fmtNum(p.settlementSpot, 2)}`}

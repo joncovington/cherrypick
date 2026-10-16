@@ -7,6 +7,7 @@ import { niceTicks } from "../../components/chart/scales";
 import { minuteOf, hhmm } from "../../components/chart/time";
 import { HoverReadout } from "../../components/chart/Tooltip";
 import { useHoverX } from "../../components/chart/useHoverX";
+import { CHART_GRID, CHART_GRID_STRONG, AXIS_MUTED } from "../../components/Charts";
 
 interface Tick {
   ts: string;
@@ -244,23 +245,23 @@ export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter:
         {/* grids */}
         {niceTicks(pMin, pMax, 4).map((v) => (
           <g key={`p${v}`}>
-            <line x1={pad.l} y1={PY(v)} x2={width - pad.r} y2={PY(v)} stroke="#15181e" />
-            <text x={4} y={PY(v) + 3} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">{v.toFixed(0)}</text>
+            <line x1={pad.l} y1={PY(v)} x2={width - pad.r} y2={PY(v)} stroke={CHART_GRID} />
+            <text x={4} y={PY(v) + 3} fontSize={9} fill={AXIS_MUTED} fontFamily="Consolas, monospace">{v.toFixed(0)}</text>
           </g>
         ))}
         {niceTicks(vMin, vMax, 3).map((v) => (
           <g key={`v${v}`}>
-            <line x1={pad.l} y1={VY(v)} x2={width - pad.r} y2={VY(v)} stroke={Math.abs(v) < 1e-9 ? "#3d4653" : "#15181e"} />
-            <text x={4} y={VY(v) + 3} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">{fmtMoney(v)}</text>
+            <line x1={pad.l} y1={VY(v)} x2={width - pad.r} y2={VY(v)} stroke={Math.abs(v) < 1e-9 ? CHART_GRID_STRONG : CHART_GRID} />
+            <text x={4} y={VY(v) + 3} fontSize={9} fill={AXIS_MUTED} fontFamily="Consolas, monospace">{fmtMoney(v)}</text>
           </g>
         ))}
         {niceTicks(tMin, tMax, 7).map((m) => (
           <g key={`t${m}`}>
-            <line x1={X(m)} y1={pad.t} x2={X(m)} y2={height - pad.b} stroke="#15181e" />
-            <text x={X(m)} y={height - 7} fontSize={9} fill="#82878f" textAnchor="middle" fontFamily="Consolas, monospace">{hhmm(m)}</text>
+            <line x1={X(m)} y1={pad.t} x2={X(m)} y2={height - pad.b} stroke={CHART_GRID} />
+            <text x={X(m)} y={height - 7} fontSize={9} fill={AXIS_MUTED} textAnchor="middle" fontFamily="Consolas, monospace">{hhmm(m)}</text>
           </g>
         ))}
-        <text x={pad.l + 4} y={pnlTop - 7} fontSize={9} fill="#82878f">settled if the day ended here</text>
+        <text x={pad.l + 4} y={pnlTop - 7} fontSize={9} fill={AXIS_MUTED}>settled if the day ended here</text>
 
         {/* gap shading with reasons */}
         {ticks.map((t, i) => {
@@ -270,10 +271,10 @@ export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter:
           const lines = [`no data · ${Math.round(mins[i]! - mins[i - 1]!)}m`, gapReason(mins[i - 1]!, mins[i]!)];
           return (
             <g key={`gap${i}`}>
-              <rect x={x0} y={pad.t} width={x1 - x0} height={height - pad.b - pad.t} fill="rgba(217, 161, 59, 0.07)" />
+              <rect x={x0} y={pad.t} width={x1 - x0} height={height - pad.b - pad.t} fill="color-mix(in srgb, var(--amber-line) 7%, transparent)" />
               {lines.map((s, k) =>
                 x1 - x0 > s.length * 5.5 + 6 ? (
-                  <text key={k} x={(x0 + x1) / 2} y={pad.t + 11 + k * 12} fontSize={9} fill="rgba(217, 161, 59, 0.8)" textAnchor="middle">
+                  <text key={k} x={(x0 + x1) / 2} y={pad.t + 11 + k * 12} fontSize={9} fill="color-mix(in srgb, var(--amber-line) 80%, transparent)" textAnchor="middle">
                     {s}
                   </text>
                 ) : null,
@@ -338,7 +339,7 @@ export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter:
 
         {/* the replayed book */}
         {pnlFills.map((f, k) => (
-          <polygon key={`fill${k}`} points={f.pts} fill={f.pos ? "rgba(67, 181, 122, 0.22)" : "rgba(217, 92, 74, 0.2)"} />
+          <polygon key={`fill${k}`} points={f.pts} fill={f.pos ? "color-mix(in srgb, var(--pos) 22%, transparent)" : "color-mix(in srgb, var(--neg) 20%, transparent)"} />
         ))}
         {pnlLines.map((l) =>
           l.segs.map((seg, k) => (
@@ -359,8 +360,8 @@ export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter:
           ];
           return (
             <>
-              <line x1={x} y1={pad.t} x2={x} y2={height - pad.b} stroke="#3d4653" />
-              <HoverReadout x={x} width={width} lines={lines} lineColor={(i) => (i === 0 ? "#eceff3" : colorOf(shown[i - 1]!))} />
+              <line x1={x} y1={pad.t} x2={x} y2={height - pad.b} stroke={CHART_GRID_STRONG} />
+              <HoverReadout x={x} width={width} lines={lines} lineColor={(i) => (i === 0 ? "var(--text)" : colorOf(shown[i - 1]!))} />
             </>
           );
         })()}

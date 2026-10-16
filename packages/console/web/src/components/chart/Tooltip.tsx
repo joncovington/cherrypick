@@ -36,7 +36,7 @@ export function SpotMarker({
   return (
     <>
       <line x1={x} y1={top} x2={x} y2={bottom} stroke={SPOT_COLOR} strokeWidth={2} opacity={0.9} />
-      <rect x={lx} y={1} width={lw} height={15} rx={4} fill="#101216" stroke={SPOT_COLOR} strokeWidth={1} />
+      <rect x={lx} y={1} width={lw} height={15} rx={4} fill="var(--surface-sunken)" stroke={SPOT_COLOR} strokeWidth={1} />
       <text x={lx + lw / 2} y={12} fontSize={9.5} fontWeight={700} fill={SPOT_COLOR} textAnchor="middle" fontFamily="Consolas, monospace">
         {label}
       </text>
@@ -63,7 +63,7 @@ export function HoverReadout({
   const textY0 = boxTop + 12;
   return (
     <>
-      <rect x={bx} y={boxTop} width={bw} height={bh} rx={5} fill="#101216f0" stroke="#2a2f3a" />
+      <rect x={bx} y={boxTop} width={bw} height={bh} rx={5} fill="var(--surface-sunken)" stroke="var(--border)" />
       {lines.map((l, i) => (
         <text key={i} x={bx + 6} y={textY0 + i * 12} fontSize={9.5} fill={lineColor(i)} fontFamily="Consolas, monospace">
           {l}

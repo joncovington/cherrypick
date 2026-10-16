@@ -129,6 +129,7 @@ function ParamRows({ params }: { params: Record<string, unknown> }) {
   const entries = Object.entries(params);
   if (entries.length === 0) return <span className="muted">no overlay</span>;
   return (
+    <div className="table-scroll">
     <table className="data-table data-table-labelled">
       <thead>
         <tr>
@@ -145,6 +146,7 @@ function ParamRows({ params }: { params: Record<string, unknown> }) {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 

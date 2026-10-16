@@ -213,6 +213,7 @@ function DeploymentCard({ pack }: { pack: MorningPack }) {
       )}
 
       {d.signals.length > 0 && (
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -231,6 +232,7 @@ function DeploymentCard({ pack }: { pack: MorningPack }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       <p className="muted">
@@ -464,6 +466,7 @@ function CalendarCard({ pack }: { pack: MorningPack }) {
           {c.releases.length === 0 ? (
             <p className="muted">None on file.</p>
           ) : (
+            <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
@@ -488,6 +491,7 @@ function CalendarCard({ pack }: { pack: MorningPack }) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </>
       )}
@@ -500,6 +504,7 @@ function CalendarCard({ pack }: { pack: MorningPack }) {
           ) : c.earnings.rows.length === 0 ? (
             <p className="muted">No announcements among the covered stocks.</p>
           ) : (
+            <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
@@ -532,6 +537,7 @@ function CalendarCard({ pack }: { pack: MorningPack }) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
           <p className="muted">
             Implied move = 0.85 × the at-the-money straddle on the first expiration after the print, priced at the
@@ -575,6 +581,7 @@ function PremarketCard({ pack }: { pack: MorningPack }) {
           </span>
         )}
       </div>
+      <div className="table-scroll">
       <table className="data-table">
         <thead>
           <tr>
@@ -619,6 +626,7 @@ function PremarketCard({ pack }: { pack: MorningPack }) {
           ))}
         </tbody>
       </table>
+      </div>
     </section>
   );
 }
@@ -678,6 +686,7 @@ function MovesYieldsCard({ pack }: { pack: MorningPack }) {
           <p className="muted">No Treasury curve ({y.reason}).</p>
         ) : (
           <>
+            <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
@@ -704,6 +713,7 @@ function MovesYieldsCard({ pack }: { pack: MorningPack }) {
                 </tr>
               </tbody>
             </table>
+            </div>
             <p className="muted">
               2s10s {bp(y.spread2s10sBp)} · 3m10y {bp(y.spread3m10yBp)} — Treasury par curve, the prior session.
             </p>
@@ -746,6 +756,7 @@ function HotRows({
   return (
     <>
       <h3>{title}</h3>
+      <div className="table-scroll">
       <table className="data-table">
         <thead>
           <tr>
@@ -779,6 +790,7 @@ function HotRows({
           ))}
         </tbody>
       </table>
+      </div>
     </>
   );
 }
@@ -910,9 +922,9 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
                       The tiles stay beneath for the exact figures and their basis labels. */}
                   <LevelStrip
                     levels={[
-                      { label: "put wall", value: levels.putWall, color: "#d95c4a" },
-                      { label: "flip", value: levels.zeroGamma, color: "#7aa2ff" },
-                      { label: "call wall", value: levels.callWall, color: "#43b57a" },
+                      { label: "put wall", value: levels.putWall, color: "var(--neg)" },
+                      { label: "flip", value: levels.zeroGamma, color: "var(--accent)" },
+                      { label: "call wall", value: levels.callWall, color: "var(--pos)" },
                     ]}
                     marker={{
                       label: "spot",
@@ -957,6 +969,7 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
               {current.gates.length === 0 ? (
                 <p className="muted">No gates in this pack.</p>
               ) : (
+                <div className="table-scroll">
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -971,6 +984,7 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </section>
           </div>
@@ -991,6 +1005,7 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
             {sectors === null || sectors.board.length === 0 ? (
               <p className="muted">No sector board in this pack.</p>
             ) : (
+              <div className="table-scroll">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -1011,6 +1026,7 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </section>
 

@@ -3,7 +3,7 @@ import { LockHero } from "../../pages/Config/LockHero";
 import { ConfigSection } from "../../pages/Config/ConfigSection";
 import { SECTIONS } from "../../pages/Config/fieldMeta";
 import { useConfigModel, useLockStatus } from "../../pages/Config/useConfigModel";
-import { useBoolPref, writePref } from "../../lib/prefs";
+import { useBoolPref, usePrefsVersion, getPref, writePref } from "../../lib/prefs";
 import { clearAllStaged, useDirtyCount } from "../../pages/Config/stagedStore";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
@@ -26,6 +26,33 @@ const PREFS: Array<{ key: string; label: string; help: string }> = [
     help: "Open module pages on live rather than paper. A ?mode= in the URL always wins over this.",
   },
 ];
+
+/** The theme is a string pref, not a boolean: `dark` is the house default, `light` the
+ *  prototype's original palette. The boot script in index.html reads the same mirror before
+ *  first paint, so a saved choice never flashes dark on its way to light. */
+function ThemePref() {
+  usePrefsVersion();
+  const theme = getPref("theme") === "light" ? "light" : "dark";
+  return (
+    <div className="cfg-row">
+      <div className="cfg-row-label">
+        <label>Theme</label>
+        <p className="cfg-help">Dark is the house palette; light is the summary slide's original one. A change
+        reloads the page so the canvas charts re-read it.</p>
+      </div>
+      <div className="cfg-row-control">
+        <div className="mode-toggle" role="group" aria-label="Theme">
+          <button type="button" className={`mode-btn ${theme === "dark" ? "active" : ""}`} onClick={() => void writePref("theme", "dark")}>
+            dark
+          </button>
+          <button type="button" className={`mode-btn ${theme === "light" ? "active" : ""}`} onClick={() => void writePref("theme", "light")}>
+            light
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function PrefToggle({ pref }: { pref: { key: string; label: string; help: string } }) {
   const on = useBoolPref(pref.key);
@@ -77,6 +104,7 @@ export function ConfigLightbox({ slide }: { slide: string }) {
               nothing here reaches another package.
             </p>
             <div className="cfg-fields">
+              <ThemePref />
               {PREFS.map((p) => (
                 <PrefToggle key={p.key} pref={p} />
               ))}

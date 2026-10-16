@@ -2,12 +2,11 @@ import type { SuiteFeatures } from "@console/shared";
 import { visibleNavLinks } from "../components/shell/navLinks";
 
 /**
- * The keyboard shortcuts the header menu has been advertising.
+ * The keyboard shortcuts the rail advertises in its link tooltips (`ModuleNav.shortcutTitle`).
  *
- * `HeaderMenu` has rendered `g o`, `g r` and `1`–`8` next to its links since it replaced the side
- * nav, and nothing has ever implemented them: the only keydown listeners in the package were the
- * menu's own Escape and the lightbox's arrows. A hint for a shortcut that does not exist is worse
- * than no hint, so either the hints go or the shortcuts arrive. These arrive.
+ * The header menu that first printed `g o`, `g r` and `1`–`8` is gone (the rail is the one nav);
+ * the hints moved to the rail's titles. A hint for a shortcut that does not exist is worse than no
+ * hint, so both are driven from `navLinks.ts`.
  *
  * Pure on purpose. The decision — is this key an action, and which — is the part worth testing,
  * and it is testable as a function in a package with no DOM. The hook around it does nothing but

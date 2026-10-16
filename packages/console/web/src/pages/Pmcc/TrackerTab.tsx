@@ -14,6 +14,7 @@ import type { ColumnDef } from "../../components/table/columns";
 import { TimeLineChart } from "../../components/chart/TimeLineChart";
 import { fmtCash, fmtMoney, fmtNum, fmtPct, fmtPctSigned, fmtPrice } from "../../lib/format";
 import { dteOf, fmtStrike } from "../../lib/optionFormat";
+import { tokenAlpha } from "../../components/chart/cssvars";
 
 /**
  * One PMCC position, week by week -- the spreadsheet a covered-call trader keeps (Tom King's layout,
@@ -204,6 +205,7 @@ function CurrentShortCard({ t }: { t: PmccTracker }) {
       {s === null ? (
         <p className="muted">no short open{t.position.status === "closed" ? " — the position is closed" : " — the next tick sells one"}</p>
       ) : (
+        <div className="table-scroll">
         <table className="data-table num-from-1">
           <tbody>
             <tr><td>strike · expiry</td><td>{fmtStrike(s.strike)} · {s.expiration} ({s.dte} DTE)</td></tr>
@@ -219,6 +221,7 @@ function CurrentShortCard({ t }: { t: PmccTracker }) {
             {s.next.breachAt !== null && <tr><td>rolls down if spot reaches</td><td>{fmtStrike(s.next.breachAt)}</td></tr>}
           </tbody>
         </table>
+        </div>
       )}
     </Card>
   );
@@ -266,7 +269,7 @@ function WeeksCard({ weeks }: { weeks: PmccTrackerWeek[] }) {
       empty="no week yet"
       footer={
         points.length >= 2 ? (
-          <TimeLineChart series={[{ label: "net to date", points, fill: "rgba(80,160,255,0.12)" }]} height={180} />
+          <TimeLineChart series={[{ label: "net to date", points, fill: tokenAlpha("--accent", 0.12) }]} height={180} />
         ) : (
           <span className="muted">Each week is valued at its own close; the last row is now, and is the header above.</span>
         )

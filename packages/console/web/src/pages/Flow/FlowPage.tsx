@@ -42,8 +42,8 @@ const BAND_LABEL: Record<string, string> = { "1": "1 lot", "2-10": "2–10", "11
 // 2026-10-02) and a fourth shade of red vanished beside the third. Every band that has trades also
 // gets MIN_BAND pixels, so the block trades are always visible.
 const BAND_FILL: Record<string, string> = {
-  "1": "#5b616b",
-  "2-10": "rgba(210, 63, 87, 0.5)",
+  "1": "var(--text-dim)",
+  "2-10": "color-mix(in srgb, var(--neg) 50%, transparent)",
   "11-99": "var(--accent)",
   "100+": "var(--warn)",
 };
@@ -95,10 +95,10 @@ function SideCell({ trade }: { trade: FlowTrade }) {
 /** A magnitude bar: width in proportion to the largest value shown in the column, toned by side. */
 function Bar({ value, max, tone, width = 72 }: { value: number | null; max: number; tone?: string; width?: number }) {
   const w = value === null || max <= 0 ? 0 : Math.max(1, (Math.abs(value) / max) * width);
-  const fill = tone === "pnl-pos" ? "var(--ok)" : tone === "pnl-neg" ? "var(--err)" : "var(--text-muted)";
+  const fill = tone === "pnl-pos" ? "var(--pos)" : tone === "pnl-neg" ? "var(--neg)" : "var(--text-muted)";
   return (
     <svg width={width} height={8} role="img" aria-label="relative size" className="flow-bar">
-      <rect x={0} y={0} width={width} height={8} fill="var(--row-line)" />
+      <rect x={0} y={0} width={width} height={8} fill="var(--track)" />
       <rect x={0} y={0} width={w} height={8} fill={fill} />
     </svg>
   );
@@ -141,6 +141,7 @@ function asOf(day: OptionsFlowDay): string {
 
 function BirdseyeSummaryTable({ rows }: { rows: FlowBirdseyeRow[] }) {
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
@@ -167,6 +168,7 @@ function BirdseyeSummaryTable({ rows }: { rows: FlowBirdseyeRow[] }) {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -175,6 +177,7 @@ function TradesTable({ rows, limit, showTime }: { rows: FlowTrade[]; limit?: num
   // Scaled to the rows on show: one huge trade below the cut would flatten every bar above it.
   const max = maxOf(shown.map((r) => r.premium));
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
@@ -210,6 +213,7 @@ function TradesTable({ rows, limit, showTime }: { rows: FlowTrade[]; limit?: num
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -223,6 +227,7 @@ function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: numbe
   // An unverified premium is the site's figure, not a checked size: it neither scales nor draws a bar.
   const max = maxOf(shown.map((r) => (r.premiumUnverified ? null : r.premium)));
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
@@ -284,6 +289,7 @@ function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: numbe
         })}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -291,6 +297,7 @@ function VolOiTable({ rows, limit }: { rows: FlowVolOi[]; limit?: number }) {
   const shown = limit === undefined ? rows : rows.slice(0, limit);
   const max = maxOf(shown.map((r) => r.vOi));
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
@@ -317,6 +324,7 @@ function VolOiTable({ rows, limit }: { rows: FlowVolOi[]; limit?: number }) {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -420,10 +428,10 @@ function ScoreBar({ score, width = 80 }: { score: number | null; width?: number 
   const half = width / 2;
   const w = score === null ? 0 : (Math.min(Math.abs(score), 100) / 100) * half;
   const x = score !== null && score < 0 ? half - w : half;
-  const fill = score === null ? "var(--text-muted)" : score >= 0 ? "var(--ok)" : "var(--err)";
+  const fill = score === null ? "var(--text-muted)" : score >= 0 ? "var(--pos)" : "var(--neg)";
   return (
     <svg width={width} height={8} role="img" aria-label="score" className="flow-bar">
-      <rect x={0} y={0} width={width} height={8} fill="var(--row-line)" />
+      <rect x={0} y={0} width={width} height={8} fill="var(--track)" />
       <rect x={half - 0.5} y={0} width={1} height={8} fill="var(--text-muted)" />
       <rect x={x} y={0} width={w} height={8} fill={fill} />
     </svg>
@@ -450,6 +458,7 @@ export function DerivedTable({
   const wide = full || post;
   const shown = limit === undefined ? rows : rows.slice(0, limit);
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <thead>
         <tr>
@@ -510,6 +519,7 @@ export function DerivedTable({
         })}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -519,6 +529,7 @@ export function NetByName({ names, each }: { names: DerivedFlowName[]; each: num
   const rows = [...bullish, ...bearish];
   const max = maxOf(rows.map((n) => n.net));
   return (
+    <div className="table-scroll">
     <table className="data-table flow-table">
       <tbody>
         {rows.map((n) => (
@@ -536,6 +547,7 @@ export function NetByName({ names, each }: { names: DerivedFlowName[]; each: num
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -581,6 +593,7 @@ function ChecksCard({ checks, session }: { checks: DerivedFlowChecks; session: s
         <h2>Checks</h2>
         <span className="card-asof">{session}</span>
       </div>
+      <div className="table-scroll">
       <table className="data-table flow-table">
         <tbody>
           <tr>
@@ -627,6 +640,7 @@ function ChecksCard({ checks, session }: { checks: DerivedFlowChecks; session: s
           </tr>
         </tbody>
       </table>
+      </div>
     </section>
   );
 }
@@ -705,6 +719,7 @@ function NamesCard({ day }: { day: OptionsFlowDay }) {
       {day.names.length === 0 ? (
         <p className="muted">No name is in more than one table.</p>
       ) : (
+        <div className="table-scroll">
         <table className="data-table flow-table">
           <tbody>
             {day.names.map((n) => (
@@ -713,7 +728,7 @@ function NamesCard({ day }: { day: OptionsFlowDay }) {
                 <td>
                   <svg width={6 * 9} height={8} role="img" aria-label={`${String(n.tables.length)} of 6 tables`}>
                     {Object.keys(TABLE_LABEL).map((t, i) => (
-                      <rect key={t} x={i * 9} y={0} width={7} height={8} fill={n.tables.includes(t) ? "var(--accent)" : "var(--row-line)"} />
+                      <rect key={t} x={i * 9} y={0} width={7} height={8} fill={n.tables.includes(t) ? "var(--accent)" : "var(--track)"} />
                     ))}
                   </svg>
                 </td>
@@ -722,6 +737,7 @@ function NamesCard({ day }: { day: OptionsFlowDay }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </GridCard>
   );
@@ -862,7 +878,7 @@ export function FlowBirdseye({ day }: { day: OptionsFlowDay }) {
                     const v = r.buckets[k] ?? null;
                     const a = v === null || m <= 0 ? 0 : 0.08 + 0.5 * (v / m);
                     return (
-                      <td key={k} className="num" style={{ background: `rgba(210, 63, 87, ${a.toFixed(3)})` }}>
+                      <td key={k} className="num" style={{ background: `color-mix(in srgb, var(--neg) ${Math.round(a * 100)}%, transparent)` }}>
                         {r.shown[k] ?? fmtCount(v)}
                       </td>
                     );

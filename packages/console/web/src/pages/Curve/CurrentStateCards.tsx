@@ -374,6 +374,7 @@ export function ArmComparison({
 
           <section className="pmcc-compare">
             <h3>net by arm</h3>
+            <div className="table-scroll">
             <table className="data-table num-from-1">
               <tbody>
                 {arms.map((c) => (
@@ -389,6 +390,7 @@ export function ArmComparison({
                 ))}
               </tbody>
             </table>
+            </div>
           </section>
         </>
       )}

@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { isModuleId } from "../lightbox/moduleOrder";
-import { navSlideIds, resolveSlide } from "../lightbox/navGroups";
-import { NAV_DECL } from "../lightbox/navGroups";
+import { NAV_DECL, resolveSlide, viewSlides } from "../lightbox/navGroups";
+import { readViewMode } from "./viewMode";
 import { reduceKey, type KeyState } from "./keyboardNav";
 import { useFeatures } from "./useFeatures";
 import { isSlideVisible } from "./visibility";
@@ -35,12 +35,15 @@ export function useKeyboardNav() {
     const onKey = (e: KeyboardEvent) => {
       const seg = location.pathname.split("/")[1] ?? "";
       const module = isModuleId(seg) ? seg : null;
-      const slides = module === null ? [] : navSlideIds(module).filter((id) => isSlideVisible(module, id, features));
       const rawSlide = location.pathname.split("/")[2] ?? "";
+      const visible = module === null ? [] : (NAV_DECL[module]?.slides ?? []).filter((s) => isSlideVisible(module, s.id, features));
+      const view = readViewMode();
       const slide =
-        module === null || slides.length === 0
+        module === null || visible.length === 0
           ? null
-          : resolveSlide(module, rawSlide, NAV_DECL[module]?.slides ?? []);
+          : resolveSlide(module, rawSlide, visible, viewSlides(module, visible, view));
+      // j/k step through the tabs the rail lists in this view, the current one always included.
+      const slides = module === null ? [] : viewSlides(module, visible, view, slide).map((s) => s.id);
 
       const { state, action } = reduceKey(stateRef.current, {
         key: e.key,

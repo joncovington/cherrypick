@@ -8,6 +8,7 @@ import { TimeBarChart } from "../../components/chart/TimeBarChart";
 import { TabStrip } from "../../components/ScopeBar";
 import { powerNote, WithheldNote } from "../../lib/power";
 import { DailyRiskTiles } from "../../components/performance/DailyRiskTiles";
+import { tokenAlpha } from "../../components/chart/cssvars";
 
 interface BreakdownRow {
   bucket: string;
@@ -140,20 +141,20 @@ export function MeicPerformanceTab({
         ) : (
           <>
             <TimeLineChart
-              series={[{ label: "equity", color: "#43b57a", points: equity.map((e) => ({ x: e.date, y: e.equity })) }]}
+              series={[{ label: "equity", color: "var(--pos)", points: equity.map((e) => ({ x: e.date, y: e.equity })) }]}
             />
             <TimeLineChart
               height={120}
               series={[
                 {
                   label: "drawdown",
-                  color: "#d95c4a",
-                  fill: "rgba(217, 92, 74, 0.2)",
+                  color: "var(--neg)",
+                  fill: tokenAlpha("--neg", 0.2),
                   points: equity.map((e) => ({ x: e.date, y: -e.drawdown })),
                 },
               ]}
             />
-            <SeriesLegend items={[{ label: "equity", color: "#43b57a" }, { label: "underwater", color: "#d95c4a" }]} />
+            <SeriesLegend items={[{ label: "equity", color: "var(--pos)" }, { label: "underwater", color: "var(--neg)" }]} />
           </>
         )}
       </Card>
@@ -171,21 +172,21 @@ export function MeicPerformanceTab({
               bars={(data?.periods ?? []).map((p) => ({ x: p.period, y: p.netPnl }))}
               overlay={(data?.periods ?? []).map((p) => ({ x: p.period, y: p.cumulative }))}
             />
-            <SeriesLegend items={[{ label: "period net", color: "#43b57a" }, { label: "cumulative", color: "#7aa2ff" }]} />
-            <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(23rem, 1fr))", marginTop: "0.8rem" }}>
+            <SeriesLegend items={[{ label: "period net", color: "var(--pos)" }, { label: "cumulative", color: "var(--accent)" }]} />
+            <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(23rem, 100%), 1fr))", marginTop: "0.8rem" }}>
               <div>
                 <h2>win rate trend</h2>
                 <TimeLineChart
                   height={130}
                   yFormat={(v) => `${v.toFixed(0)}%`}
-                  series={[{ label: "win %", color: "#43b57a", points: (data?.periods ?? []).filter((p) => p.winRatePct !== null).map((p) => ({ x: p.period, y: p.winRatePct! })) }]}
+                  series={[{ label: "win %", color: "var(--pos)", points: (data?.periods ?? []).filter((p) => p.winRatePct !== null).map((p) => ({ x: p.period, y: p.winRatePct! })) }]}
                 />
               </div>
               <div>
                 <h2>expectancy per trade</h2>
                 <TimeLineChart
                   height={130}
-                  series={[{ label: "expectancy", color: "#d9a13b", points: (data?.periods ?? []).filter((p) => p.expectancy !== null).map((p) => ({ x: p.period, y: p.expectancy! })) }]}
+                  series={[{ label: "expectancy", color: "var(--amber-line)", points: (data?.periods ?? []).filter((p) => p.expectancy !== null).map((p) => ({ x: p.period, y: p.expectancy! })) }]}
                 />
               </div>
               <div>
@@ -193,8 +194,8 @@ export function MeicPerformanceTab({
                 <TimeLineChart
                   height={130}
                   series={[
-                    { label: "avg win", color: "#43b57a", points: (data?.periods ?? []).filter((p) => p.avgWin !== null).map((p) => ({ x: p.period, y: p.avgWin! })) },
-                    { label: "avg loss", color: "#d95c4a", points: (data?.periods ?? []).filter((p) => p.avgLoss !== null).map((p) => ({ x: p.period, y: p.avgLoss! })) },
+                    { label: "avg win", color: "var(--pos)", points: (data?.periods ?? []).filter((p) => p.avgWin !== null).map((p) => ({ x: p.period, y: p.avgWin! })) },
+                    { label: "avg loss", color: "var(--neg)", points: (data?.periods ?? []).filter((p) => p.avgLoss !== null).map((p) => ({ x: p.period, y: p.avgLoss! })) },
                   ]}
                 />
               </div>
@@ -228,7 +229,7 @@ export function MeicPerformanceTab({
         )}
       </Card>
 
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(23rem, 1fr))" }}>
+      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(23rem, 100%), 1fr))" }}>
         {powerNote(data?.bySession ?? []) !== null ? (
           <section className="card">
             <h2>Win rate by session quality</h2>

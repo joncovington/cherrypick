@@ -10,6 +10,7 @@ import type {
   OverviewPayload,
   StatusPayload,
   MeicPayload,
+  MeicSummarySlice,
   FliesPayload,
   EarningsPayload,
   GexPayload,
@@ -306,6 +307,37 @@ export function useMeic(mode: TradingMode, q: MeicTradeQuery) {
     refetchInterval: 15_000,
     // A page that briefly empties while the next one loads reads as "no
     // trades"; holding the previous page keeps paging visually continuous.
+    placeholderData: (prev) => prev,
+  });
+}
+
+export interface MeicSummaryQuery {
+  mode: TradingMode;
+  /** The page's symbol/arm/era scope (MeicScope), and the page's day for "day" range. */
+  symbol: string | null;
+  profile: string | null;
+  era: string | null;
+  day: string | null;
+  /** The toolbar's range — the reader anchors each label the same way the analytics read does. */
+  range: "day" | "week" | "month" | "year" | "all";
+  /** The entries page (?page=), first when unstated — the reader clamps onto the window's pages. */
+  page: number;
+}
+
+/** The summary slide's one read — one payload, one fetch, so the slide's cards cannot disagree. */
+export function useMeicSummary(q: MeicSummaryQuery) {
+  const params = new URLSearchParams({ mode: q.mode, range: q.range });
+  if (q.symbol !== null) params.set("symbol", q.symbol);
+  if (q.profile !== null) params.set("profile", q.profile);
+  if (q.era !== null) params.set("era", q.era);
+  if (q.day !== null) params.set("date", q.day);
+  if (q.page > 1) params.set("page", String(q.page));
+  return useQuery<MeicSummarySlice>({
+    queryKey: ["meic-summary", q.mode, q.symbol, q.profile, q.era, q.day, q.range, q.page],
+    queryFn: () => getJson<MeicSummarySlice>(`/api/meic/summary?${params.toString()}`),
+    refetchInterval: 30_000,
+    // Same rule as the trade log above: a window that briefly empties mid-refetch must not read
+    // as "no trades in this range".
     placeholderData: (prev) => prev,
   });
 }
