@@ -253,6 +253,14 @@ a.chip:hover {
   grid-row: 2;
 }
 
+/* The page's vertical rhythm. A `.page` stacks heterogeneous blocks -- the title row, cards, a
+   `.cards` grid, a prose note -- that share no grid, so nothing spaced them and the cards touched
+   (0px between sections, measured 2026-10-15). Margins collapse with each block's own, so the
+   title row's 0.5rem and the review note's 0.6/0.9rem settle to this 0.75rem (the `.cards` gap). */
+.page > * + * {
+  margin-top: 0.75rem;
+}
+
 .page-title-row {
   display: flex;
   align-items: center;
