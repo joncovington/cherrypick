@@ -21,6 +21,44 @@ export interface GexStrikeRow {
 
 export type GexView = "net" | "oivol" | "abs";
 
+/** The strike-range control: "auto", or a band of ± that percent of spot (symbol-agnostic, so
+ *  XSP and an ETF get the same reach SPX does; the old fixed ±120 points was ±1.5% of SPX). */
+export const GEX_RANGES = ["auto", "0.5", "1", "1.5", "3"] as const;
+export type GexRange = (typeof GEX_RANGES)[number];
+
+/** A strike carries "meaningful" GEX at or above this share of the chart's largest bar. */
+const MEANINGFUL_SHARE = 0.02;
+
+/**
+ * Which strikes the chart draws. "auto" fits the strikes whose GEX is at least 2% of the largest
+ * bar (a 0DTE chain has tiny non-zero GEX far out, so "non-zero" alone is nearly the whole chain),
+ * spot, and today's spot trail, padded by three strikes each side. A band keeps strikes within
+ * ±pct of spot. Exported so the rule is pinned without a DOM.
+ */
+export function gexStrikeWindow(
+  series: GexStrikeRow[],
+  spot: number,
+  range: GexRange,
+  magnitude: (r: GexStrikeRow) => number,
+  trail: number[] = [],
+): GexStrikeRow[] {
+  const sorted = [...series].sort((a, b) => a.strike - b.strike);
+  if (range !== "auto") {
+    const band = (Number(range) / 100) * spot;
+    return sorted.filter((r) => Math.abs(r.strike - spot) <= band).sort((a, b) => b.strike - a.strike);
+  }
+  const max = Math.max(...sorted.map(magnitude), 0);
+  const meaningful = sorted.filter((r) => max > 0 && magnitude(r) >= max * MEANINGFUL_SHARE).map((r) => r.strike);
+  const anchors = [...meaningful, spot, ...trail];
+  const lo = Math.min(...anchors);
+  const hi = Math.max(...anchors);
+  let first = sorted.findIndex((r) => r.strike >= lo);
+  let last = sorted.length - 1 - [...sorted].reverse().findIndex((r) => r.strike <= hi);
+  if (first < 0) first = 0;
+  if (last >= sorted.length) last = sorted.length - 1;
+  return sorted.slice(Math.max(0, first - 3), Math.min(sorted.length, last + 4)).sort((a, b) => b.strike - a.strike);
+}
+
 export function fmtGexDollars(v: number): string {
   const abs = Math.abs(v);
   const sign = v < 0 ? "-" : "";
@@ -51,20 +89,35 @@ interface Props {
  * axis title, and a hover tooltip with per-basis values.
  */
 export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWall, spotHistory, spotSession }: Props) {
-  const [hover, setHover] = useState<{ index: number; px: number; py: number } | null>(null);
+  const [hover, setHover] = useState<{ index: number; px: number; py: number; w: number; h: number } | null>(null);
+  const [range, setRange] = useState<GexRange>("auto");
 
-  // Trim to the non-zero span padded by 3 strikes, then the ±120 dollar band.
-  const nonZero = series
-    .map((s, i) => ({ s, i }))
-    .filter(({ s }) => s.abs_gex !== 0 || s.net_gex_vol !== 0 || s.total_vol !== 0);
+  const nonZero = series.filter((s) => s.abs_gex !== 0 || s.net_gex_vol !== 0 || s.total_vol !== 0);
   if (nonZero.length === 0) return <p className="muted">no strikes with GEX data</p>;
-  const first = Math.max(0, nonZero[0]!.i - 3);
-  const last = Math.min(series.length - 1, nonZero[nonZero.length - 1]!.i + 3);
-  const rows = series
-    .slice(first, last + 1)
-    .filter((s) => Math.abs(s.strike - spot) <= 120)
-    .sort((a, b) => b.strike - a.strike);
-  if (rows.length === 0) return <p className="muted">no strikes with GEX data</p>;
+  const magnitude = (r: GexStrikeRow): number =>
+    Math.max(Math.abs(r.net_gex), Math.abs(r.abs_gex), Math.abs(r.net_gex_vol));
+  const rows = gexStrikeWindow(nonZero, spot, range, magnitude, (spotHistory ?? []).map((h) => h.spot));
+  const rangeControl = (
+    <div className="gex-range-row">
+      <label className="muted lbl" title="auto fits the strikes carrying GEX, spot and today's spot trail; a band is ± that share of spot">
+        strike range{" "}
+        <select className="text-input" value={range} onChange={(e) => setRange(e.target.value as GexRange)}>
+          {GEX_RANGES.map((r) => (
+            <option key={r} value={r}>
+              {r === "auto" ? "auto" : `±${r}%`}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+  if (rows.length === 0)
+    return (
+      <>
+        {rangeControl}
+        <p className="muted">no strikes in this range</p>
+      </>
+    );
 
   // Wide viewBox so the SVG renders near 1:1 in the card — stretched-up
   // viewBoxes are what made the fonts look oversized.
@@ -133,6 +186,8 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
   const hovered = hover !== null ? rows[hover.index] : undefined;
 
   return (
+    <>
+    {rangeControl}
     <div className="gex-chart-fit" style={{ position: "relative" }}>
     <svg
       viewBox={`0 0 ${width} ${height}`}
@@ -192,7 +247,7 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
                 const host = (e.currentTarget.ownerSVGElement?.parentElement ?? null) as HTMLElement | null;
                 const rect = host?.getBoundingClientRect();
                 if (rect !== undefined) {
-                  setHover({ index: i, px: e.clientX - rect.left, py: e.clientY - rect.top });
+                  setHover({ index: i, px: e.clientX - rect.left, py: e.clientY - rect.top, w: rect.width, h: rect.height });
                 }
               }}
             />
@@ -292,8 +347,11 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
       <div
         style={{
           position: "absolute",
-          left: Math.min(hover.px + 14, 900),
-          top: hover.py + 10,
+          // Kept inside the chart: above the cursor in its lower half, left of it in its right
+          // part. Hanging below the cursor at the bottom strikes overflowed the card and gave the
+          // page a vertical scrollbar.
+          ...(hover.py > hover.h / 2 ? { bottom: hover.h - hover.py + 10 } : { top: hover.py + 10 }),
+          ...(hover.px > hover.w * 0.6 ? { right: hover.w - hover.px + 14 } : { left: hover.px + 14 }),
           background: "var(--surface-sunken)",
           border: "1px solid var(--border)",
           borderRadius: 6,
@@ -320,6 +378,7 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
       </div>
     )}
     </div>
+    </>
   );
 }
 
