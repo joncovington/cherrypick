@@ -609,7 +609,15 @@ puzzle (the first strike below spot, or one lower) was this delta rule all along
 
 **Which names make each list is the open part.** Short puts and covered calls take the vendor's
 liquidity rank 1-2 and a bullish read; our stand-in for that rank does not yet match it, and the
-credit-spread list's selection is unexplained (it is not the day's scan list).
+credit-spread list's selection is unexplained (it is not the day's scan list). On 10-07 and 10-16
+every spread name had liquidity rank 1 and 59-76% matched a strong direction read, but those two
+leave ~155 names for 29-45 slots. Two filters are next to test. "A fresh signal today" may be the
+direction read changing, which needs consecutive security lists (nightly since 10-16). The third-of-
+the-width floor may cut most names at the list's structure, which needs greeks for names that did
+not make the list: since 2026-10-16 `fetch_screener_greeks.py` records every rank-1 name with options
+on its ~45-day expiry, the first strike out of the money and those beyond it to 20% of the price, on
+the side its direction read implies (`screener-greeks/candidates/<date>.json`, ~5,000 options a
+night, a third more than the list rows).
 
 **Two layers, two expiries (decided 2026-10-07).** Reproducing the vendor's screen reads its own
 expiry and strike, weeklies included. Trading is the user's: the standard monthly 45-60 days out

@@ -264,3 +264,74 @@ def test_the_final_run_leaves_a_recorded_day_alone(tmp_path, monkeypatch, capsys
     _store(tmp_path, monkeypatch, "2026-10-15", saved=["2026-10-15"], recorded=["2026-10-15"])
     assert fsg.main(["--final"]) == 0
     assert "already exists" in capsys.readouterr().out
+
+
+def test_a_recorded_day_without_its_candidates_records_them_alone(tmp_path, monkeypatch, capsys):
+    """The rows' file is left as it is; only the missing candidates are fetched (no broker here, so
+    the attempt stops at the credential -- what matters is that it was attempted, not skipped)."""
+    _store(tmp_path, monkeypatch, "2026-10-15", saved=["2026-10-15"], recorded=["2026-10-15"])
+    monkeypatch.setattr(fsg, "candidate_plan", lambda day: {"AAA": {"edge": "sb", "rights": ["P"]}})
+    before = (tmp_path / "screener-greeks" / "2026-10-15.json").read_text(encoding="utf-8")
+
+    class Stop(Exception):
+        pass
+
+    import cherrypick.core.auth as auth
+
+    def refuse(*a, **k):
+        raise Stop()
+
+    monkeypatch.setattr(auth, "CredentialStore", refuse)
+    try:
+        fsg.main(["--final"])
+    except Stop:
+        pass
+    assert "recording the spread candidates alone" in capsys.readouterr().out
+    assert (tmp_path / "screener-greeks" / "2026-10-15.json").read_text(encoding="utf-8") == before
+    # With the candidates recorded too, the day is done.
+    c = tmp_path / "screener-greeks" / "candidates"
+    c.mkdir()
+    (c / "2026-10-15.json").write_text('{"complete": true}', encoding="utf-8")
+    assert fsg.main(["--final"]) == 0
+    assert "already exists; not overwritten" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- spread candidates
+def test_candidates_are_every_rank_1_name_with_options_on_the_side_its_read_implies(tmp_path, monkeypatch):
+    import json
+
+    d = tmp_path / "vendor-securities"
+    d.mkdir()
+    rows = [
+        {"symbol": "BULL", "hasOptions": True, "liquidityRank": 1, "directionalEdge": "bp"},
+        {"symbol": "BEAR", "hasOptions": True, "liquidityRank": 1, "directionalEdge": "sbe"},
+        {"symbol": "FLAT", "hasOptions": True, "liquidityRank": 1, "directionalEdge": "mx"},
+        {"symbol": "THIN", "hasOptions": True, "liquidityRank": 2, "directionalEdge": "sb"},
+        {"symbol": "NOOP", "hasOptions": False, "liquidityRank": 1, "directionalEdge": "sb"},
+    ]
+    (d / "2026-10-16.json").write_text(json.dumps({"rows": rows}), encoding="utf-8")
+    (d / "2026-10-20.json").write_text(json.dumps({"rows": []}), encoding="utf-8")  # after the day: unused
+    monkeypatch.setattr(fsg, "store_dir", lambda: tmp_path)
+    plan = fsg.candidate_plan("2026-10-19")
+    assert {s: p["rights"] for s, p in plan.items()} == {"BULL": ["P"], "BEAR": ["C"], "FLAT": ["P", "C"]}
+    assert plan["BULL"]["securities"] == "2026-10-16"
+    assert fsg.candidate_plan("2026-10-01") == {}
+
+
+def test_the_candidate_expiry_is_the_nearest_45_days_and_never_an_expired_one():
+    exps = [("2026-10-16", 0), ("2026-11-20", 35), ("2026-11-27", 42), ("2026-12-18", 63)]
+    assert fsg.nearest_dte(exps, 45) == ("2026-11-27", 42)
+    assert fsg.nearest_dte([("2026-11-25", 40), ("2026-12-05", 50)], 45) == ("2026-11-25", 40)
+    assert fsg.nearest_dte([("2026-10-16", 0)], 45) is None
+
+
+def test_candidate_strikes_run_from_the_money_outward_and_thin_past_the_first_few():
+    listed = [float(k) for k in range(60, 141)]  # $1 strikes, 60-140
+    puts = fsg.candidate_strikes(listed, 100.0, "P")
+    calls = fsg.candidate_strikes(listed, 100.0, "C")
+    # The short leg's strike and its nearest neighbours, consecutive; at most 16; out to 20%.
+    assert puts[-4:] == [97.0, 98.0, 99.0, 100.0] and len(puts) == 16 and min(puts) == 80.0
+    assert calls[:4] == [100.0, 101.0, 102.0, 103.0] and len(calls) == 16 and max(calls) == 120.0
+    # Few strikes in reach: all of them, none past 20%.
+    assert fsg.candidate_strikes([90.0, 95.0, 100.0, 105.0, 125.0], 101.0, "C") == [105.0]
+    assert fsg.candidate_strikes([70.0, 85.0, 95.0, 100.0], 101.0, "P") == [85.0, 95.0, 100.0]
