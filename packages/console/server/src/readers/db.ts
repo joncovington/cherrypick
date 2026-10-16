@@ -157,6 +157,20 @@ export function withReadOnlyDb<T>(path: string, fallback: T, fn: (db: Database.D
   return outcome.status === "ok" ? outcome.value : fallback;
 }
 
+/**
+ * `withReadOnlyDb`, with every statement in `fn` reading ONE snapshot of the store.
+ *
+ * Each statement otherwise runs in its own implicit transaction, so a reader that builds a total in
+ * one query and its breakdown in another can straddle a module's write and serve a total that is
+ * not the sum of its own rows -- the MEIC summary did, mid-session (2026-10-16). Wrapping `fn` in a
+ * deferred transaction pins the snapshot at its first read. It ends when `fn` returns, which is a
+ * few milliseconds of synchronous reads, so the checkpointer is held back no longer than one request
+ * (the reason the pool above never holds one open).
+ */
+export function withReadSnapshot<T>(path: string, fallback: T, fn: (db: Database.Database) => T): T {
+  return withReadOnlyDb(path, fallback, (db) => db.transaction(() => fn(db))());
+}
+
 /** Close every pooled handle. For tests and shutdown; a reopen is transparent to callers. */
 export function closePooledDbs(): void {
   for (const [p] of handlePool) evict(p);

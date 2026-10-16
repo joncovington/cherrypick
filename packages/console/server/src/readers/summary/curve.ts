@@ -2,7 +2,7 @@ import path from "node:path";
 import type { ModuleSummarySlice, SummaryGauge, SummaryTile } from "@console/shared";
 import type { ConsoleConfig } from "../../config.js";
 import { readRetiredArms } from "../armStatus.js";
-import { hasTable, num, str, withReadOnlyDb, type DatabaseHandle } from "../db.js";
+import { hasTable, num, str, withReadSnapshot, type DatabaseHandle } from "../db.js";
 import { positionCash, positionCashColumns } from "../positionCash.js";
 import {
   WEEKDAYS,
@@ -178,11 +178,11 @@ export function readCurveSummary(config: ConsoleConfig, q: SummaryQuery): Module
     return s;
   };
 
-  const sessions = withReadOnlyDb<string[] | null>(file, null, (db) => settledSessions(db));
+  const sessions = withReadSnapshot<string[] | null>(file, null, (db) => settledSessions(db));
   if (sessions === null) return missing();
   const session = sessionNeighbours(sessions, q.day);
   const window = summaryWindow(q.range, session.day);
-  const read = withReadOnlyDb<LedgerRead | null>(file, null, (db) => readLedger(db, window));
+  const read = withReadSnapshot<LedgerRead | null>(file, null, (db) => readLedger(db, window));
   if (read === null) return missing();
 
   const { trades } = read;

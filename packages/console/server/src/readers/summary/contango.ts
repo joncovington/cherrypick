@@ -4,7 +4,7 @@ import type { ConsoleConfig } from "../../config.js";
 import { readRetiredArms } from "../armStatus.js";
 import { readContangoHistory } from "../contango.js";
 import { NO_RANGE } from "../dateRange.js";
-import { hasTable, str, withReadOnlyDb } from "../db.js";
+import { hasTable, str, withReadSnapshot } from "../db.js";
 import {
   armsOf,
   breakdownOf,
@@ -99,7 +99,7 @@ interface LedgerFacts {
 
 export function readContangoSummary(config: ConsoleConfig, q: SummaryQuery): ModuleSummarySlice {
   const dbFile = path.join(config.paths.contangoDir, DB_FILE);
-  const facts = withReadOnlyDb<LedgerFacts | null>(dbFile, null, (db) => {
+  const facts = withReadSnapshot<LedgerFacts | null>(dbFile, null, (db) => {
     if (!hasTable(db, "contango_positions")) return null;
     const openEntries = db
       .prepare<[], { s: string | null }>("SELECT entry_session AS s FROM contango_positions WHERE status = 'open'")

@@ -61,13 +61,6 @@ export interface DeskEodRow {
   netPerTrade: number | null;
 }
 
-/** One book's exposure and entries: the Overview's cards rotate between paper and live. */
-export interface DeskBookPayload {
-  mode: TradingMode;
-  exposure: DeskExposureRow[];
-  entries: DeskEntriesRow[];
-}
-
 export interface DeskPayload {
   mode: TradingMode;
   liveness: DeskLiveness[];
