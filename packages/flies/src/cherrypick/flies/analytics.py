@@ -3251,6 +3251,8 @@ GATE_ARMS: dict[str, dict] = {
     "range-centre": {"refusals": ("range_position_high", "center_above_spot")},
     # Its one variable is the window, so it "acts" on every session, refusing outside 13:00-13:59.
     "window-1300": {"refusals": ("outside_entry_window",)},
+    # Likewise, refusing before 12:30.
+    "window-1230": {"refusals": ("outside_entry_window",)},
     "wall-clear": {"refusals": ("call_wall_not_cleared", "put_wall_not_cleared")},
     "restack": {"restack": True},
     "trend-rule": {"refusals": ("completion_against_drift",), "close_tags": True},

@@ -521,6 +521,7 @@ def _note_live_shadow_arm(conn, config: dict) -> None:
 
 RANGE_CENTRE_ARM_FROM = "2026-10-15"
 WINDOW_1300_ARM_FROM = "2026-10-15"
+WINDOW_1230_ARM_FROM = "2026-10-19"
 
 
 def _note_range_centre_arm(conn, config: dict) -> None:
@@ -568,6 +569,28 @@ def _note_window_1300_arm(conn, config: dict) -> None:
         )
     except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
         _log(f"window-1300 arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
+def _note_window_1230_arm(conn, config: dict) -> None:
+    """Journal the `window-1230` arm's entry to the roster (an `arm_added` break dated its declared
+    first session, 2026-10-19), once a machine's config enables it. Idempotent and best-effort."""
+    try:
+        arm = (config.get("arms") or {}).get("window-1230")
+        if not isinstance(arm, dict) or not arm.get("enabled", True):
+            return
+        dbmod.record_measurement_break(
+            conn,
+            break_date=WINDOW_1230_ARM_FROM,
+            scope="window-1230",
+            kind="arm_added",
+            reason=(
+                "window-1230 arm enters the roster: control with its entries confined to "
+                f"{arm.get('entry_windows')}"
+            ),
+            detail="docs/experiment-log.md 2026-10-16",
+        )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"window-1230 arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
 def _entry_cadence_state_path() -> str:
@@ -1137,6 +1160,7 @@ def main(argv=None) -> int:
             _note_live_shadow_arm(conn, config)
             _note_range_centre_arm(conn, config)
             _note_window_1300_arm(conn, config)
+            _note_window_1230_arm(conn, config)
             # Stale-checkout guard (2026-08-05). The loop imports from the working tree, so a session
             # run from an older branch writes NULL to any regime column that branch predates --
             # silently, all day, with no backfill path afterwards. Logged rather than enforced: a
