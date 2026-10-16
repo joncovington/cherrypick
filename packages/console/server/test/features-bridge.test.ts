@@ -9,7 +9,7 @@ import { registerSecurity, CSRF_TOKEN } from "../src/security.js";
 import { registerConfigRoutes, RESUME_CONFIRMATION } from "../src/routes/configOps.js";
 import { setBridgeCaller, type BridgeRequest, type BridgeResult } from "../src/services/configBridge.js";
 import { getFeatures, invalidateFeatures, moduleOn, parseFeatures, TTL_MS } from "../src/services/featuresBridge.js";
-import { readDesk, readDeskLive } from "../src/readers/desk.js";
+import { readDesk } from "../src/readers/desk.js";
 import { readLogTail } from "../src/readers/logs.js";
 
 /**
@@ -194,7 +194,7 @@ function configFor(tmp: string): ConsoleConfig {
   } as ConsoleConfig;
 }
 
-describe("the Overview's desk leaves off modules out on the server", () => {
+describe("the desk leaves off modules out on the server", () => {
   const features: SuiteFeatures = parseFeatures(REPLY);
 
   function writeFactSet(dir: string, session: string): void {
@@ -224,20 +224,12 @@ describe("the Overview's desk leaves off modules out on the server", () => {
     expect(desk.eod.rows.map((r) => r.module)).toEqual(["meic"]);
   });
 
-  it("live: exposure and entries drop the same modules", () => {
-    const config = configFor(fs.mkdtempSync(path.join(os.tmpdir(), "console-features-live-")));
-    const live = readDeskLive(config, features);
-    expect(live.exposure.map((r) => r.module)).toEqual(["meic", "flies", "calendars", "curve", "bwb"]);
-    expect(live.entries.map((r) => r.module)).toEqual(["meic", "flies", "calendars", "curve", "bwb"]);
-  });
-
   it("an unknown answer keeps every row (fail open)", () => {
     const config = configFor(fs.mkdtempSync(path.join(os.tmpdir(), "console-features-open-")));
     for (const f of [undefined, { ok: false as const, error: "bridge down" }]) {
       const desk = readDesk(config, f);
       expect(desk.exposure).toHaveLength(7);
       expect(desk.liveness.map((r) => r.id)).toContain("gex");
-      expect(readDeskLive(config, f).exposure).toHaveLength(7);
     }
   });
 });

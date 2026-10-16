@@ -3,7 +3,7 @@ import path from "node:path";
 import type { CalendarsWeekRow, ModuleSummarySlice, SummaryGauge, SummaryTile } from "@console/shared";
 import type { ConsoleConfig } from "../../config.js";
 import { readCalendarsWeeks } from "../calendars.js";
-import { obj, readJson, str, withReadOnlyDb } from "../db.js";
+import { obj, readJson, str, withReadSnapshot } from "../db.js";
 import {
   armsOf,
   breakdownOf,
@@ -132,7 +132,7 @@ export function readCalendarsSummary(config: ConsoleConfig, q: SummaryQuery): Mo
 
   // Two facts the history row does not carry, in one pass: each (week, arm)'s underlying, and the
   // weeks the entry plan was attempted. Read-only, degrading to empty on an older ledger.
-  const extra = withReadOnlyDb(
+  const extra = withReadSnapshot(
     dbFile,
     { symbols: new Map<string, string>(), attempts: [] as Array<{ weekOf: string; outcome: string }> },
     (db) => {

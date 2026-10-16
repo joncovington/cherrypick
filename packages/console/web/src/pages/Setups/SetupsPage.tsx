@@ -270,7 +270,7 @@ export function SetupsPage() {
     <th className={num ? "num" : undefined} title={title} aria-sort={sort === key ? (dir === "asc" ? "ascending" : "descending") : undefined}>
       <button
         type="button"
-        style={{ background: "none", border: 0, padding: 0, color: "inherit", font: "inherit", cursor: "pointer" }}
+        className="th-sort"
         onClick={() => {
           // A second click on the column in use reverses it; another column starts its own way.
           const next = new URLSearchParams(params);

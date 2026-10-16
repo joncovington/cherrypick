@@ -1,7 +1,7 @@
 import type { ModuleSummarySlice, SummaryGauge, SummaryTile } from "@console/shared";
 import type { ConsoleConfig } from "../../config.js";
 import { readRetiredArms } from "../armStatus.js";
-import { num, str, withReadOnlyDb, type DatabaseHandle } from "../db.js";
+import { num, str, withReadSnapshot, type DatabaseHandle } from "../db.js";
 import { pmccDbPath } from "../pmcc.js";
 import { positionCash, positionCashColumns, positionCol } from "../positionCash.js";
 import { unrealisedByPosition } from "../unrealised.js";
@@ -185,7 +185,7 @@ function readActivity(db: DatabaseHandle, w: Window): Activity {
 }
 
 export function readPmccSummary(config: ConsoleConfig, q: SummaryQuery): ModuleSummarySlice {
-  const read = withReadOnlyDb(pmccDbPath(config), null, (db) => {
+  const read = withReadSnapshot(pmccDbPath(config), null, (db) => {
     const closed = readClosed(db);
     const session = sessionNeighbours(
       closed.trades.map((t) => t.session),

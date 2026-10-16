@@ -70,7 +70,9 @@ if (!available) {
 const consoleProfiles = () =>
   readMeicPerformance(loadConfig(), "paper", "session", null, null, "ALL").arms;
 
-describe.skipIf(!available)("the console's MEIC mirror agrees with the module itself", () => {
+// Real-ledger reads plus a Python subprocess per test: under the suite's parallel load they outrun
+// vitest's 5 s default (seen 2026-10-16), the same allowance meic-summary-reconcile takes.
+describe.skipIf(!available)("the console's MEIC mirror agrees with the module itself", { timeout: 30_000 }, () => {
   it("reports the same set of arms", () => {
     const theirs = moduleHeadline()!.headline.arms;
     const mine = consoleProfiles();

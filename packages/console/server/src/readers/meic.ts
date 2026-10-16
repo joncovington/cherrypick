@@ -5,7 +5,7 @@ import path from "node:path";
 import type { MeicDivergence, MeicPayload, MeicTradeRow, MeicTradeTotals, MeicSummaryRow, MeicSummarySlice, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
-import { readOnlyDb, withReadOnlyDb, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
+import { readOnlyDb, withReadOnlyDb, withReadSnapshot, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest, type SortAccessors } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
@@ -1791,7 +1791,8 @@ export function readMeicSummary(
   // session). The window bounds are computed from the RESOLVED day, so "day" means the session
   // the rest of the page names.
   const resolvedDay = day ?? resolveMeicSession(config, mode, scope.era);
-  return withReadOnlyDb<MeicSummarySlice>(dbPath, empty, (db) => {
+  // One snapshot: the hero and the arm rows are separate queries, and must sum over the same ledger.
+  return withReadSnapshot<MeicSummarySlice>(dbPath, empty, (db) => {
     const win = summaryWindow(range, resolvedDay);
     const era = scope.era ?? CURRENT_ERA;
     const eraBound = era !== "ALL";

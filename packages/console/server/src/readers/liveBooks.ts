@@ -5,8 +5,10 @@ import type { ConsoleConfig } from "../config.js";
 import { readOnlyDb } from "./db.js";
 
 /**
- * Every module with a live book, and whether it has any live activity -- what the Overview's live
- * panel lists (2026-10-12; it had been the flies pilot alone).
+ * Every module with a live book, and whether it has any live activity. Built for the Overview's live
+ * panel (2026-10-12); since the Overview went (2026-10-16) no route serves `readLiveBooks`, but the
+ * Live page's `today` tab reads bwb's ledger status through `LIVE_BOOKS` (`liveToday.ts`), and
+ * `readLiveBooks` is how `live-books.test.ts` holds each spec to its module's rule.
  *
  * A mirror of each module's own settled-net query, named per module, never a derivation:
  * - **flies** `live_trades.db`: `fly_positions`, net = `gross_pnl - fees` over `status = 'settled'`

@@ -3,7 +3,7 @@ import { feeDragPct, type ModuleSummarySlice, type SummaryGauge, type SummaryTil
 import type { ConsoleConfig } from "../../config.js";
 import { readRetiredArms } from "../armStatus.js";
 import { rangeClauses } from "../dateRange.js";
-import { hasColumn, num, str, withReadOnlyDb, type DatabaseHandle } from "../db.js";
+import { hasColumn, num, str, withReadSnapshot, type DatabaseHandle } from "../db.js";
 import { CURRENT_ERA, eraClause } from "../flies.js";
 import {
   WEEKDAYS,
@@ -82,7 +82,7 @@ export function readFliesSummary(config: ConsoleConfig, q: SummaryQuery): Module
   const missing = emptySlice(MODULE, q.mode, UNIT, summaryWindow(q.range, q.day));
   missing.notes.push(`No ${q.mode} flies ledger could be read, so there is nothing to summarise.`);
 
-  return withReadOnlyDb<ModuleSummarySlice>(dbPath, missing, (db) => {
+  return withReadSnapshot<ModuleSummarySlice>(dbPath, missing, (db) => {
     const era = eraClause(null);
     const eraAnd = era.sql !== null ? ` AND ${era.sql}` : "";
 

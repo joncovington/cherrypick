@@ -76,6 +76,10 @@ alone):
   Handles are pooled per path and recycled on the file's stamp (`readers/db.ts`), so a module's write
   (a migration included) is seen on the next request; idle handles hold an open file, never an open
   read transaction, so they cannot starve WAL checkpointing.
+- **A reader that states a total and its breakdown reads one snapshot** (`withReadSnapshot`). Each
+  statement is otherwise its own transaction, so a total from one query and rows from another can
+  straddle a module's write: the MEIC summary's hero stopped equalling the sum of its arms
+  mid-session (2026-10-16). The snapshot lasts one synchronous read; the summary readers use it.
 - **⚠️ `withReadOnlyDb` swallows EVERY throw into its fallback and the request still returns 200.**
   Deliberate (a store may be absent because the module never ran here), but **a broken reader is
   indistinguishable from an empty one**, and a green `vitest` run is not evidence a reader change
@@ -453,9 +457,9 @@ the worst case and the mark are each loop's own measure, shown per loop, never a
 is this tab now, not an alias for flies. Pinned by `server/test/live-today.test.ts`.
 
 **There is no Overview page** (removed 2026-10-16): `/` redirects to `/live`, whose `today` tab is
-the every-loop summary. Its live panel's reader (`readers/liveBooks.ts`, `GET /api/live/books`) and
-`GET /api/desk/live` are still served but no page reads them; the morning phase chip moved to the
-status bar and the alert-daemon chip to the Live header.
+the every-loop summary. The morning phase chip moved to the status bar and the alert-daemon chip to
+the Live header. Its two endpoints went with it; `readers/liveBooks.ts` stays, because `liveToday`
+reads bwb's ledger status through its `LIVE_BOOKS` specs and `live-books.test.ts` covers them.
 
 **Flies intraday agent tab** (`/flies/agent`, `pages/Flies/AgentSlide.tsx` over
 `GET /api/flies/agent[?session=]` → `readers/fliesAgent.ts`). It has no live view: a live read is
@@ -574,6 +578,28 @@ definition tooltip, cell, kind); the controls come from that list.
   too, so a narrowed tab never sets one table beside cards answering for the era. MEIC's history is one
   session by default; a range replaces the header's day, and the no-range button reads `session`.
   Earnings' range bounds its history and totals only.
+
+## Sorting a table
+
+Sort where ranking is a useful read: money, counts, rates, dates, symbol, arm, prices, sizes. A click
+cycles largest first, smallest first, the table's own order; nulls sink either way; the header is a
+button (`.th-sort`). **Where the rows live decides how** (2026-10-16):
+
+- **A server-paged table sorts on the server, never in the browser.** Sorting one fetched page would
+  rank 100 rows and call it the history. `usePage().toggleSort` sends `sort`/`dir` with the page;
+  the reader passes its `SortAccessors` to `pagedQuery`/`pageArray`, which order the WHOLE result
+  before slicing. Each accessor reads the MAPPED row, the figure the cell shows, so a net derived in
+  the reader sorts as that net; an id the reader does not name keeps the default order. The web
+  table's `serverSorts` list is held to the reader's by a test (`history-sort*.test.ts`).
+- **A `HistoryTable` holding every row** sorts in the browser from each `ColumnDef`'s `sortValue`,
+  and only when it passes `clientSort`. With neither mode a `HistoryTable` sorts nothing, so shared
+  defs (MEIC's, paged and live) cannot switch on a client sort of a server page by accident.
+- **Hand-built and `DataCard` tables** use `useSort` / `sortRows` / `SortTh` (`DataCard` takes
+  `{label, k}` headers and `sort`). A client-sliced table ("show more") sorts before the slice.
+
+Leave the order alone where it is the meaning: time series and journals, pivots and heatmaps,
+key/value lists, fixed category orders, legs of one position, grouped rows, a `#` that is the row's
+position, top-N previews of a server ranking (Flow's today cards), and capture layouts.
 
 ## Package guardrails
 
