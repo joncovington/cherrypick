@@ -180,6 +180,19 @@ def test_a_row_says_whether_its_monthly_passes_too():
     assert fsg.monthly_passes(None, BARS) is None and fsg.monthly_passes([GOOD], None) is None
 
 
+def test_apply_bars_judges_each_leg_and_the_row():
+    rows = [
+        {"vendor": [{"quote": {**GOOD, "open_interest": 3}}], "monthly": [{"quote": GOOD}]},
+        {"vendor": [{"quote": GOOD}], "monthly": None},
+        {"vendor": [{}], "monthly": None},
+    ]
+    fsg.apply_bars(rows, BARS)
+    assert [r["recommendation"] for r in rows] == ["monthly", "vendor", "none"]
+    assert rows[0]["vendor"][0]["passes"] is False and rows[0]["monthly"][0]["passes"] is True
+    assert rows[0]["monthly_passes"] is True and rows[1]["monthly_passes"] is None
+    assert rows[2]["vendor"][0]["passes"] is None  # unquoted: no verdict, not a failure
+
+
 def test_no_recommendation_until_the_bars_are_chosen():
     assert fsg.recommend([GOOD], [GOOD], None) is None
 

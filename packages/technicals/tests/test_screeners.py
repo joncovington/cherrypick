@@ -82,6 +82,8 @@ def test_a_session_scores_hits_and_names_its_misses(tmp_path):
     assert s["strike"]["weekly"] == {"hit": 1, "n": 2}  # 11/13 is not a third Friday
     assert s["misses"] == [{"symbol": "BBB", "expiry": "2026-11-13", "vendor": 94.0, "ours": 98.0}]
     assert s["returns"] == {"hit": 2, "n": 2}
+    # Every judged row's own pick, hit or miss, for the console to show beside the vendor's.
+    assert s["picks"] == {"AAA": 98.0, "BBB": 98.0}
 
 
 def test_a_session_without_its_greeks_is_not_scored(tmp_path):

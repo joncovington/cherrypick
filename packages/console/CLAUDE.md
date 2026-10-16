@@ -338,6 +338,17 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
     the setup lines. Vendor levels are drawn from their own date, as the vendor draws them, and kept out
     of the autoscale. Entry and exit arrows are both amber: an arrow marks an event, and green or
     red would read as a gain or a loss.
+- `/screeners` (2026-10-16; `pages/Screeners/ScreenersPage.tsx`, `readers/screeners.ts`,
+  `GET /api/screeners/:list[?day=]` and `/api/screeners/fidelity`) shows the income screener lists:
+  short puts, covered calls, credit spreads, one row a name, and a fidelity tab (detail view only).
+  The reader JOINS other packages' files and re-derives no rule: our strike is `score-screeners`'
+  `picks`, each leg's verdict and the listed-or-cycle recommendation are `fetch_screener_greeks.py`'s
+  (`rebar` re-applies the bars to saved readings), the tradable verdict is `technicals liquidity`'s
+  (spelled `tradable`/`illiquid`). It works out only the user's calendar: the cycle monthly (45-60
+  days, else 30-60) and whether an announcement falls in it -- a date that does not reach it is
+  `unknown`, never clear. A reading is matched by the list DAY it read (`list_date`), not the date it
+  was taken. Defaults: tradable names, no earnings in cycle, each with its escape. The source is never
+  named, and which names make each list is not reproduced; the page says so.
 - `/charts/setups` is the setups watchlist (`pages/Setups/SetupsPage.tsx`, `GET /api/technicals/setups`
   over `charts/setups-index.json`): recent entries and exits, or open positions, long and short,
   each symbol linking to its chart with the setup and side selected; nothing on it is vendor data. Gated with the technicals tab. The page filters and sorts
