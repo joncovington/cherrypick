@@ -9,6 +9,7 @@ import { SpotMarker, HoverReadout } from "../../components/chart/Tooltip";
 import { useHoverX } from "../../components/chart/useHoverX";
 import type { MeicScope } from "./MeicTables";
 import { CHART_GRID, CHART_GRID_STRONG } from "../../components/Charts";
+import { extendFlat, visibleYRange } from "../../components/chart/payoffWindow";
 
 /**
  * MEIC's profit forest: expiry payoff for each arm's open book.
@@ -87,13 +88,24 @@ function useMeicForest(mode: TradingMode, scope: MeicScope) {
 /** Condor lines the hover readout lists before it says "+N more": a paper day can stack dozens. */
 const HOVER_CONDOR_CAP = 10;
 
-function path(prices: number[], pnl: number[], X: (v: number) => number, Y: (v: number) => number): string {
-  return prices.map((p, i) => `${i === 0 ? "M" : "L"}${X(p).toFixed(1)},${Y(pnl[i] ?? 0).toFixed(1)}`).join(" ");
+/** A payoff path over the window: extended flat to its edges (an IC is flat beyond its wings);
+ *  the plot's clip trims whatever a narrower window leaves outside. */
+function path(prices: number[], pnl: number[], X: (v: number) => number, Y: (v: number) => number, xMin: number, xMax: number): string {
+  const { xs, ys } = extendFlat(prices, pnl, xMin, xMax);
+  return xs.map((p, i) => `${i === 0 ? "M" : "L"}${X(p).toFixed(1)},${Y(ys[i] ?? 0).toFixed(1)}`).join(" ");
 }
+
+/** Fixed x widths, in SPX points; scaled by the symbol (XSP is a tenth of SPX). */
+const X_WIDTHS = ["auto", "50", "100", "200", "500"] as const;
+const Y_WIDTHS = ["auto", "250", "500", "1000", "5000"] as const;
 
 export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: MeicScope }) {
   const { data, isLoading } = useMeicForest(mode, scope);
   const [showNested, setShowNested] = useState(true);
+  const [xwidth, setXwidth] = useState<(typeof X_WIDTHS)[number]>("auto");
+  const [ywidth, setYwidth] = useState<(typeof Y_WIDTHS)[number]>("auto");
+  // XSP is a tenth of SPX, so a fixed width and the buffer floor scale with it.
+  const symbolScale = data?.symbol === "XSP" ? 0.1 : 1;
   // A MEIC book resolves ENTIRELY at settlement — every trade ends stopped or expired — so after
   // 16:00 there is no open book and an expiry-payoff curve has nothing left to describe. The card
   // was simply blank every evening. Falling back to the day's book AS ENTERED keeps the session's
@@ -118,15 +130,45 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
   let hoverPrice: number | null = null;
   if (shown.length > 0) {
     const prices = shown[0]!.prices;
-    const xMin = Math.min(...shown.map((a) => a.prices[0] ?? 0));
-    const xMax = Math.max(...shown.map((a) => a.prices[a.prices.length - 1] ?? 0));
+    // X: "auto" fits the condors actually drawn (every long wing) plus spot, with a buffer of a
+    // wing or 8% of the span; a fixed width is a MINIMUM, centred the same way, so a narrow book
+    // can be seen in context but nothing drawn is ever cut off. The flies forest's rule.
+    let cMin = Infinity;
+    let cMax = -Infinity;
+    let maxWing = 0;
+    for (const a of shown) {
+      for (const p of a.positions) {
+        cMin = Math.min(cMin, p.putStrike - p.wingWidth);
+        cMax = Math.max(cMax, p.callStrike + p.wingWidth);
+        maxWing = Math.max(maxWing, p.wingWidth);
+      }
+    }
+    const spot = data?.lastSpot ?? null;
+    if (spot !== null) {
+      cMin = Math.min(cMin, spot);
+      cMax = Math.max(cMax, spot);
+    }
+    const buffer = Math.max(maxWing, (cMax - cMin) * 0.08, symbolScale * 3);
+    const mid = (cMin + cMax) / 2;
+    const naturalHalf = (cMax - cMin) / 2 + buffer;
+    const half = xwidth === "auto" ? naturalHalf : Math.max((Number(xwidth) * symbolScale) / 2, naturalHalf);
+    const xMin = mid - half;
+    const xMax = mid + half;
+    // Y fits what is VISIBLE inside the window; a fixed tier is a per-side minimum.
     let yLo = 0;
     let yHi = 0;
+    const fit = (pnl: number[]) => {
+      const r = visibleYRange(prices, pnl, xMin, xMax);
+      yLo = Math.min(yLo, r.min);
+      yHi = Math.max(yHi, r.max);
+    };
     for (const a of shown) {
-      for (const v of a.pnl) {
-        yLo = Math.min(yLo, v);
-        yHi = Math.max(yHi, v);
-      }
+      fit(a.pnl);
+      if (showNested) for (const p of a.perPosition) fit(p.pnl);
+    }
+    if (ywidth !== "auto") {
+      yLo = Math.min(yLo, -Number(ywidth));
+      yHi = Math.max(yHi, Number(ywidth));
     }
     const span = yHi - yLo || 1;
     const yMin = yLo - span * 0.1;
@@ -186,13 +228,21 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
           </text>
         ))}
 
+        {/* The curves are clipped to the plot: a fixed width narrower than the book's own span
+            leaves the outer wings outside the window rather than over the axis labels. */}
+        <defs>
+          <clipPath id="meic-forest-plot">
+            <rect x={pad.l} y={pad.t} width={width - pad.l - pad.r} height={height - pad.t - pad.b} />
+          </clipPath>
+        </defs>
+        <g clipPath="url(#meic-forest-plot)">
         {/* Each IC's own curve, faint, behind the aggregate — the nesting made visible. */}
         {showNested &&
           shown.flatMap((a) =>
             a.perPosition.map((p) => (
               <path
                 key={`${a.arm}-${p.icOrderId}`}
-                d={path(a.prices, p.pnl, X, Y)}
+                d={path(a.prices, p.pnl, X, Y, xMin, xMax)}
                 fill="none"
                 stroke={colorOf(a.arm)}
                 strokeWidth={1}
@@ -202,12 +252,13 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
           )}
 
         {shown.map((a) => (
-          <path key={a.arm} d={path(a.prices, a.pnl, X, Y)} fill="none" stroke={colorOf(a.arm)} strokeWidth={2} />
+          <path key={a.arm} d={path(a.prices, a.pnl, X, Y, xMin, xMax)} fill="none" stroke={colorOf(a.arm)} strokeWidth={2} />
         ))}
+        </g>
 
         {/* Strikes a stop has released: they no longer constrain a new entry, and
             the occupancy map must agree with this chart about that. */}
-        {(data?.releasedStrikes ?? []).map((r, i) => (
+        {(data?.releasedStrikes ?? []).filter((r) => r.strike >= xMin && r.strike <= xMax).map((r, i) => (
           <line
             key={`rel-${i}`}
             x1={X(r.strike)}
@@ -291,6 +342,26 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
             </span>
           )}
         </h2>
+        <label className="muted lbl" title={`a minimum window in ${data?.symbol === "XSP" ? "XSP" : "SPX"} points; auto fits the condors drawn and spot`}>
+          x width{" "}
+          <select className="text-input" value={xwidth} onChange={(e) => setXwidth(e.target.value as (typeof X_WIDTHS)[number])}>
+            {X_WIDTHS.map((w) => (
+              <option key={w} value={w}>
+                {w === "auto" ? "auto" : String(Number(w) * symbolScale)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="muted lbl" title="a minimum y range per side; auto fits the visible curves">
+          y range{" "}
+          <select className="text-input" value={ywidth} onChange={(e) => setYwidth(e.target.value as (typeof Y_WIDTHS)[number])}>
+            {Y_WIDTHS.map((w) => (
+              <option key={w} value={w}>
+                {w === "auto" ? "auto" : `$${Number(w) >= 1000 ? `${Number(w) / 1000}k` : w}`}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="muted lbl">
           <input type="checkbox" checked={showNested} onChange={(e) => setShowNested(e.target.checked)} /> show each
           condor
