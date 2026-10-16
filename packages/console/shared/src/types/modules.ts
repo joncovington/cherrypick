@@ -210,7 +210,9 @@ export interface EarningsTradeRow {
   net: number | null;
   openedAt: string | null;
   closedAt: string | null;
-  profile: string | null;
+  /** The book the row belongs to (`strat_test:<strategy>` or an advised twin); the ledger column is
+   *  `arm`, once `profile`, resolved per file by `armColumnOf`. */
+  arm: string | null;
 }
 
 /** Totals over every closed trade the history holds — never the rendered page. */
