@@ -1317,15 +1317,29 @@ function forestSpot(
   symbol: string | null,
   rows: Array<Record<string, unknown>>,
 ): number | null {
+  const nowEt = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-  if (tradeDate === today && symbol) {
-    const q = cachedQuote(config, symbol, FOREST_SPOT_MAX_AGE_S);
+  const cached = (maxAgeS: number): number | undefined => {
+    if (!symbol) return undefined;
+    const q = cachedQuote(config, symbol, maxAgeS);
     const mid = q?.bid !== undefined && q?.ask !== undefined ? (q.bid + q.ask) / 2 : undefined;
-    const live = q?.last ?? mid;
+    return q?.last ?? mid;
+  };
+  const settled = rows.map((r) => num(r["settle_underlying"])).find((v) => v !== null);
+  if (tradeDate === today) {
+    // During the session: the fresh cached price.
+    const live = cached(FOREST_SPOT_MAX_AGE_S);
     if (live !== undefined) return live;
-  } else {
-    const settled = rows.map((r) => num(r["settle_underlying"])).find((v) => v !== null);
+    // After the close the cache stops moving, so "fresh" fails every evening and the marker fell
+    // back to the last ENTRY's spot (2026-10-15: SPX 7752.98 drawn against a 7744.06 close). The
+    // day's settlement print once the book settles; else the cache's last price, provided it is
+    // from TODAY's session (age bounded by the ET midnight), never yesterday's.
     if (settled !== undefined && settled !== null) return settled;
+    const sinceMidnightS = nowEt.getHours() * 3600 + nowEt.getMinutes() * 60 + nowEt.getSeconds();
+    const lastToday = cached(sinceMidnightS);
+    if (lastToday !== undefined) return lastToday;
+  } else if (settled !== undefined && settled !== null) {
+    return settled;
   }
   return num(rows[rows.length - 1]?.["underlying_price_entry"]);
 }
