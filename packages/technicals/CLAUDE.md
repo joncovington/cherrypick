@@ -285,6 +285,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-signals` | Our six scan rules vs every saved scan list. |
 | `python -m cherrypick.technicals score-revisions` | The analyst-revision rule vs every saved board: agree, opposite, missed, not in source, extra. |
 | `python -m cherrypick.technicals score-bearing` | The bearing lookup fitted on earlier security lists, scored on the latest. |
+| `python -m cherrypick.technicals study round7 [--workers N] [--count]` | Round 7: entering a bearing (frozen `bearing_table.py`) against random entry; `--count` gives frequencies only. |
 | `python -m cherrypick.technicals study round6 [--workers N] [--count]` | Round 6: a revision inside the strong bearing, against the same bearing without one; `--count` gives frequencies only. |
 | `python -m cherrypick.technicals history land` | Land Dolt's whole daily history (2011 on, every name) into `history.db`. Incremental. |
 | `python -m cherrypick.technicals history fundamentals` | Land Dolt's next-year EPS and sales estimates and quarterly income statements into `history.db` (round 5's inputs). |

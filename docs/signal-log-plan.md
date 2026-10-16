@@ -943,6 +943,91 @@ landed into `history.db`, and will be a view when it is.
   bearing tested here is a stricter subset of its strong states.
 - The results and what they say are in `packages/technicals/docs/setups.md`, "Round 6".
 
+## Round 7: the bearing itself, declared before it was run (2026-10-16)
+
+The vendor's stacked method rests on its direction read, which we call the *bearing*. The earnings
+list trades only strong bull and strong bear names, and the board is read against it. Round 6 asked
+what a revision adds on top of a strong bearing. Round 7 asks the prior question: does entering a
+bearing beat random entry at all?
+
+**What was looked at before declaring (2026-10-15/16):**
+- **The bearing's fit.** The dashboard's security list carries the vendor's label beside its inputs.
+  A lookup on (1M trend, 6M trend, score tier 1-4 / 5-6 / 7-10), fitted on the 2026-10-07 list,
+  names the label of held-out symbols 90.3% of the time (strong bull 95%, strong bear 99%).
+- **Our inputs against theirs on that list (595 names).** Our bearing, computed on our own inputs,
+  matches their label on 78%. The ceiling, their inputs through the same lookup, is 89%. Strong bull
+  matches 172 of 188 and strong bear 199 of 228. The best match takes the trends from 2026-10-06 and
+  the rank from 2026-10-07: the list's inputs appear to mix ages, so no single close of ours can
+  match all of it.
+- **Frequencies only** (`study round7 --count`, which scores nothing). The universe holds 4,633 names
+  and the median same-date pool is about 1,780.
+
+  | Test | Entries | Sessions | Names | First |
+  |---|---|---|---|---|
+  | `strong-bull` | 53,977 | 3,740 | 3,612 | 2011-10-14 |
+  | `strong-bear` | 46,609 | 3,705 | 3,532 | 2011-10-14 |
+  | `pullback` | 55,754 | 3,679 | 3,753 | 2011-10-14 |
+  | `rally` | 40,658 | 3,649 | 3,178 | 2011-10-14 |
+
+- **Round 6's direction** was a stricter version of strong bull and strong bear, and its long side
+  was profitable as a group (+0.24 R). It was never compared with random entry, so the question here
+  is open. No return by bearing has been computed.
+
+**The bearing** (`round7.bearings`) is `bearing_table.TABLE`, the 2026-10-07 lookup frozen into the
+package (142 cells). Its inputs are our own, on the session's close:
+- the 1M trend score (`trend.SHORT_TERM`);
+- the 6M trend score (`trend.LONG_TERM`);
+- the tier of the 1-10 score (round 5's whole-market decile).
+
+A missing input, or a cell the list never showed, is no bearing.
+
+**Four tests, Holm across the four at a family-wise α of 0.05:**
+
+| Id | Entry | Side |
+|---|---|---|
+| `strong-bull` | the name's bearing becomes strong bull, after none of the 10 sessions before | long |
+| `strong-bear` | becomes strong bear, likewise | short |
+| `pullback` | becomes pullback (a falling 1M inside a rising 6M) | long |
+| `rally` | becomes rally (a rising 1M inside a falling 6M) | short |
+
+- **Against random entry:** 40 same-date draws from the study universe that day, and 40 same-name
+  draws from other days the name was in it. They are seeded from the entry's identity, held 21
+  sessions and scored like the entry.
+- **Every entry counts.** Positions may overlap; the calendar-time test weighs a day once.
+- **A test passes** with a Holm-significant positive edge AND a positive net R.
+- **Too small a sample:** fewer than 780 effective entries reads "not yet judged".
+
+**Views, never tests:** 2011–18 and 2019–26, and halves A and B.
+
+**Known biases, stated now:**
+- **The lookup was fitted on one day's list** (2026-10-07), in one market, and is applied across
+  fifteen years. The cells are the vendor's whole-universe mapping, so a regime with few names in
+  some cells still has them labelled.
+- **Our inputs match theirs imperfectly** (78% on labels). This tests *our* bearing, which the
+  report can compute daily, and not the vendor's exact daily labels.
+- **The list's own cells with few names are noisy;** the frozen table keeps each cell's support
+  count beside it.
+
+**Outcome (run once, after this declaration; `round7-20261016-154042.json`):**
+- **Nothing passed.** Entering a bearing does not beat random entry.
+  - `strong-bull`: +0.185 R net against +0.170 R random, edge +0.024 R (t 0.9). It was +0.08 R
+    (t 2.1) in 2011-18 and −0.03 R in 2019-26.
+  - `strong-bear`: −0.553 R against −0.608 R, edge +0.058 R (t 2.2, p 0.015). It misses Holm's
+    0.0125 and loses money.
+  - `pullback`: +0.264 R against +0.194 R, but the calendar-time edge is +0.003 R (t 0.1). It was
+    +0.24 R per entry in 2011-18 and negative in 2019-26 (t −2.2).
+  - `rally`: −0.533 R against −0.590 R, edge +0.062 R (t 1.6).
+- **The bearish side is the one consistent read.** Strong bear and rally names lag random by
+  0.05-0.07 R in every view, more in 2019-26. Shorting them still loses in a rising market.
+- The results and what they say are in `packages/technicals/docs/setups.md`, "Round 7".
+
+**Everything else is plan v2's:**
+- the universe as of each day, delisted names included;
+- the corporate-action exclusions;
+- next-open fills and the 21-session hold;
+- R net of the declared costs (borrow on the shorts);
+- the calendar-time one-sided test.
+
 ## Later phases: uses the study and log are shaped for, none committed
 
 History makes most of these **runnable now, not someday**.

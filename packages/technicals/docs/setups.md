@@ -596,3 +596,49 @@ Nothing passes. The full results are in `round6-20261016-053221.json` in the stu
 - **Coverage grows over time**, from about 3,000 tagged sessions a year in 2012 to about 10,000 in
   2025.
 - **Fixed 21-session holds**, next-open fills: a pre-open note's first-day move is never captured.
+
+## Round 7: entering a bearing does not beat random entry (2026-10-16)
+
+The vendor's stacked method rests on its direction read, our *bearing*. The earnings list trades
+only strong bull and strong bear names, and the board is read against it. Round 7 asks whether
+entering a bearing beats random entry at all. It was declared before running
+(`docs/signal-log-plan.md`, "Round 7"; `compass.py`, `bearing_table.py`, `round7.py`,
+`study round7`).
+
+**The setup:**
+- **The bearing:** the 2026-10-07 lookup (1M trend × 6M trend × score tier), frozen as
+  `bearing_table.py`, on our own inputs at each close. It matches the vendor's labels on 78% of
+  names (strong bull 91%, strong bear 87%).
+- **The entries:** a name entering strong bull, pullback (long), strong bear or rally (short), after
+  none of the 10 sessions before.
+- **The comparison:** 40 same-date and 40 same-name random draws from the whole study universe,
+  delisted names included (4,633 names, 2011-10 to 2026-10). Every position is held 21 sessions.
+
+| Test | Entries (effective) | Net R | Random R | Edge R (t) | Verdict |
+|---|---|---|---|---|---|
+| Entering strong bull, long | 53,553 (17,666) | +0.185 | +0.170 | +0.024 (+0.9) | no edge |
+| Entering strong bear, short | 46,018 (14,082) | −0.553 | −0.608 | +0.058 (+2.2) | misses Holm; loses money |
+| Entering pullback, long | 54,979 (7,765) | +0.264 | +0.194 | +0.003 (+0.1) | no edge |
+| Entering rally, short | 40,440 (7,405) | −0.533 | −0.590 | +0.062 (+1.6) | no edge; loses money |
+
+Nothing passes. The full results are in `round7-20261016-154042.json` in the study folder.
+
+**What round 7 says:**
+- **A bullish bearing is not an edge on its own.** Strong bull earned +0.08 R over random in
+  2011-18 (t 2.1) and −0.03 R in 2019-26. The halves disagree.
+- **Buying the pullback used to work and stopped.** It earned +0.24 R per entry over random in
+  2011-18 and lost to random in 2019-26 (t −2.2). The calendar-time edge over the whole period is
+  nil.
+- **The bearish states are the one consistent read.** Strong bear and rally names lag random by
+  0.05-0.07 R a position, with the same sign in every period and half, and more in 2019-26. That is
+  too small to short profitably in a rising market (−0.55 R), but it is a reason not to be long
+  them.
+- **For the stacked method,** the bearing is a weak filter, not a signal: it says little about which
+  longs win, and a bearish bearing marks names that lag slightly.
+
+**Limits:**
+- **The lookup was fitted on one day's list** and applied across fifteen years.
+- **This is our bearing, not the vendor's exact daily label** (78% agreement). Their list's inputs
+  mix ages, so no close of ours matches it exactly.
+- **Fixed 21-session holds** on shares, where the vendor's earnings list trades option spreads into
+  a report.
