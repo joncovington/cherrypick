@@ -1008,6 +1008,19 @@ A missing input, or a cell the list never showed, is no bearing.
 - **The list's own cells with few names are noisy;** the frozen table keeps each cell's support
   count beside it.
 
+**Outcome (run once, after this declaration; `round7-20261016-154042.json`):**
+- **Nothing passed.** Entering a bearing does not beat random entry.
+  - `strong-bull`: +0.185 R net against +0.170 R random, edge +0.024 R (t 0.9). It was +0.08 R
+    (t 2.1) in 2011-18 and −0.03 R in 2019-26.
+  - `strong-bear`: −0.553 R against −0.608 R, edge +0.058 R (t 2.2, p 0.015). It misses Holm's
+    0.0125 and loses money.
+  - `pullback`: +0.264 R against +0.194 R, but the calendar-time edge is +0.003 R (t 0.1). It was
+    +0.24 R per entry in 2011-18 and negative in 2019-26 (t −2.2).
+  - `rally`: −0.533 R against −0.590 R, edge +0.062 R (t 1.6).
+- **The bearish side is the one consistent read.** Strong bear and rally names lag random by
+  0.05-0.07 R in every view, more in 2019-26. Shorting them still loses in a rising market.
+- The results and what they say are in `packages/technicals/docs/setups.md`, "Round 7".
+
 **Everything else is plan v2's:**
 - the universe as of each day, delisted names included;
 - the corporate-action exclusions;
