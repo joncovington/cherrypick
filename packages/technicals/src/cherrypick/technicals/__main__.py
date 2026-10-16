@@ -148,6 +148,14 @@ def cmd_score_revisions(_args) -> int:
     return 0
 
 
+def cmd_score_bearing(_args) -> int:
+    from . import compass
+
+    result = compass.score_across_days(compass.load_snapshots())
+    print(json.dumps(result, indent=1))
+    return 0 if result.get("ok") else 1
+
+
 def cmd_rotation(args) -> int:
     from . import rotation, symbols
 
@@ -490,6 +498,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser(
         "score-revisions", help="score the analyst-revision rule against every saved edition's board"
     ).set_defaults(fn=cmd_score_revisions)
+    sub.add_parser(
+        "score-bearing", help="the bearing lookup fitted on earlier security lists, scored on the latest"
+    ).set_defaults(fn=cmd_score_bearing)
     sr = sub.add_parser("score-rotation", help="score the rotation rule against every saved edition")
     sr.set_defaults(fn=cmd_score_rotation)
     br = sub.add_parser("breadth", help="daily leaders/laggards/net/bullish share over recent sessions")

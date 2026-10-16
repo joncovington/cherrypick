@@ -928,6 +928,21 @@ landed into `history.db`, and will be a view when it is.
 - R net of the declared costs (borrow on the shorts);
 - the calendar-time one-sided test.
 
+**Outcome (run once, after this declaration; `round6-20261016-053221.json`):**
+- **Nothing passed.**
+  - `agree-bull`: +0.244 R net against +0.264 R, edge +0.037 R (t 1.2).
+  - `agree-bear`: −0.828 R net, edge +0.219 R (t 5.1). It is significant, but the short loses
+    money, so it fails the rule. Per entry the edge is only +0.03 R; downgrades carry +0.12 R
+    (t 2.2), and target-only cuts are flat.
+  - `against-bull`: edge −0.028 R (t −0.4).
+  - `against-bear`: edge −0.006 R (t −0.1).
+- **Renamed after the run, with no change to the rule:** the direction is now called our *bearing*,
+  and `round6.direction` is `round6.bearing`.
+- **The vendor's own direction read was fitted after the run.** It comes from the dashboard's
+  security list (`compass.py`): a lookup on 1M × 6M × score tier, 90% on held-out symbols. The
+  bearing tested here is a stricter subset of its strong states.
+- The results and what they say are in `packages/technicals/docs/setups.md`, "Round 6".
+
 ## Later phases: uses the study and log are shaped for, none committed
 
 History makes most of these **runnable now, not someday**.

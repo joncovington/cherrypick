@@ -544,3 +544,55 @@ when entries cluster (the Bearish-trend row).
 - **Nine years**, from the first estimate snapshots (2017-10).
 - **The stage test is too small to judge** (633 effective entries against 780).
 - **Fixed 21-session holds**, where the vendor manages option positions.
+
+## Round 6: an analyst revision adds no weight to the bearing (2026-10-15)
+
+The vendor's board counts an analyst revision as one more agreeing tag once its direction read is
+set. Round 6 asks whether a revision that session improves a name already in a strong bearing,
+compared with the same bearing without one. It also asks whether a revision against the bearing is
+a warning. It was declared before running (`docs/signal-log-plan.md`, "Round 6"; `revisions.py`,
+`round6.py`, `study round6`).
+
+**The setup:**
+- **The bearing:** the strong core only. The 1M and 6M trend scores are both +3 or more and the
+  1-10 score is 8 or more (strong bull), or the mirror at −3 and 3 or less (strong bear). The
+  vendor's own strong states, fitted later (`compass.py`), also admit a score of 7 or 4 and some
+  milder trend pairs, so this is a stricter subset.
+- **The revision:** an upgrade or downgrade, a sided initiation, or a target move of 5% or more,
+  from Yahoo's per-firm history (2012-2026, today's 599 covered names).
+- **The comparison:** the same bearing on sessions without a revision, 40 same-date and 40
+  same-name draws per entry. Every position is held 21 sessions.
+
+| Test | Entries (effective) | Net R (net %) | Same bearing, no revision | Edge R (t) | Verdict |
+|---|---|---|---|---|---|
+| Strong bull + bullish revision, long | 23,963 (11,402) | +0.244 (+0.94%) | +0.264 | +0.037 (+1.2) | adds nothing |
+| Strong bear + bearish revision, short | 8,090 (4,257) | −0.828 (−4.02%) | −0.857 | +0.219 (+5.1) | significant, but the short loses money |
+| Strong bull + bearish revision, long (warning) | 3,026 (2,529) | +0.322 (+1.06%) | +0.290 | −0.028 (−0.4) | not a warning |
+| Strong bear + bullish revision, short (warning) | 1,718 (1,297) | −0.849 (−3.61%) | −0.862 | −0.006 (−0.1) | not a warning |
+
+Nothing passes. The full results are in `round6-20261016-053221.json` in the study folder.
+
+**What round 6 says:**
+- **In a strong bull bearing, a revision adds no weight.** Per entry the difference is −0.02 R, and
+  +0.003 R in each half. Rating changes lean slightly positive (+0.04 R, t 0.9) where target-only
+  moves do not. That is the deck's "ratings count more", but far from significant.
+- **In a strong bear bearing, only a downgrade carries anything.**
+  - Rating changes add +0.12 R per entry (t 2.2), most of it in 2011-18 (+0.16 R).
+  - Target-only cuts are flat per entry (−0.01 R). Their calendar-time edge (+0.21 R) comes from
+    weighting thin days like busy ones, not from the entries.
+- **Shorting a strong bear bearing loses money with or without a downgrade** (−0.83 R, about −4% in
+  21 sessions). Part of that is the universe: today's survivors are names that recovered, which hurts
+  shorts most.
+- **A revision against the bearing is not a warning,** on either side, in any view.
+- **For the stacked count,** a revision tag earns no weight on the bullish side, and only a
+  downgrade earns a little on the bearish side.
+
+**Limits:**
+- **Survivorship:** the revision history covers only today's 599 names. The comparison draws from
+  the same names, but the short side is still likely flattered less than it is hurt.
+- **The bearing tested is the strict core,** not the vendor's full strong states. The re-run on
+  `compass.py`'s fitted lookup waits on the nightly security lists (two or more days) to check it
+  across days.
+- **Coverage grows over time**, from about 3,000 tagged sessions a year in 2012 to about 10,000 in
+  2025.
+- **Fixed 21-session holds**, next-open fills: a pre-open note's first-day move is never captured.

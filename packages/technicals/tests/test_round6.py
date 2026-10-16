@@ -9,12 +9,12 @@ from cherrypick.technicals.revisions import Event
 
 
 def test_the_direction_needs_both_trends_and_the_score_to_agree():
-    assert round6.direction(3, 4, 8) == 1
-    assert round6.direction(-3, -3, 3) == -1
-    assert round6.direction(2, 4, 10) == 0, "a 1M of +2 is not strong"
-    assert round6.direction(4, 4, 7) == 0, "a score of 7 is not strong"
-    assert round6.direction(-4, -4, 4) == 0, "KHC and BMY on the board: Bear, not Strong Bear"
-    assert round6.direction(None, 4, 9) == 0
+    assert round6.bearing(3, 4, 8) == 1
+    assert round6.bearing(-3, -3, 3) == -1
+    assert round6.bearing(2, 4, 10) == 0, "a 1M of +2 is not strong"
+    assert round6.bearing(4, 4, 7) == 0, "a score of 7 is not strong"
+    assert round6.bearing(-4, -4, 4) == 0, "KHC and BMY on the board: Bear, not Strong Bear"
+    assert round6.bearing(None, 4, 9) == 0
 
 
 def test_tagged_sessions_are_entries_and_untagged_ones_are_the_pool():

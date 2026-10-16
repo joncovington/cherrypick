@@ -3,11 +3,13 @@
 The declaration, its reasons and the decision rule are in docs/signal-log-plan.md ("Round 6"),
 committed before this module first ran with scoring on. In brief:
 
-- **The direction** is "trend+RS agree": bullish when the 1M and 6M trend scores (`trend.SHORT_TERM`,
-  `trend.LONG_TERM`) are both +STRONG or more and the 1-10 score (round 5's whole-market decile) is
-  RS_HIGH or more; bearish when both are -STRONG or less and the score is RS_LOW or less. It is the
-  rule that fitted the board's D-Edge labels, NOT the vendor's D-Edge, which failed its out-of-sample
-  check (7-8 of 18) and is being captured to fit properly.
+- **The direction** is the strong core of our *bearing* (`bearing`; declared as "trend+RS agree"):
+  bullish when the 1M and 6M trend scores (`trend.SHORT_TERM`, `trend.LONG_TERM`) are both +STRONG
+  or more and the 1-10 score (round 5's whole-market decile) is RS_HIGH or more; bearish when both
+  are -STRONG or less and the score is RS_LOW or less. It is the rule that fitted the board's labels,
+  NOT the vendor's own direction read, which failed its out-of-sample check (7-8 of 18). That read
+  was later found to be a lookup on 1M x 6M x score tier (score 7+ for strong bull, 4- for strong
+  bear), so this rule is a stricter subset of its strong states.
 - **The revision** is `revisions.by_session`'s tag: that session's qualifying events, its direction
   decided by a rating change before a target move, the largest move first.
 - **Four tests**, each a session in the direction with a revision that session, against the same
@@ -48,7 +50,7 @@ TESTS = ("agree-bull", "agree-bear", "against-bull", "against-bear")
 WARNINGS = frozenset({"against-bull", "against-bear"})
 
 
-def direction(s1: int | None, s6: int | None, decile: int | None) -> int:
+def bearing(s1: int | None, s6: int | None, decile: int | None) -> int:
     """+1 / -1 when the 1M trend, the 6M trend and the 1-10 score all agree; 0 otherwise."""
     if s1 is None or s6 is None or decile is None:
         return 0
@@ -103,7 +105,7 @@ def _states(job: tuple[list[str], dict, dict]) -> list[tuple]:
             if k is None:
                 continue
             dec = round5.decile(round5._score_on(raw, splits, dates, k), cutoffs.get(k))
-            state = direction(s1[i], s6[i], dec)
+            state = bearing(s1[i], s6[i], dec)
             if not state or not study.counted(nm, setup_of(state), i):
                 continue
             tag_dir, kind = mine.get(d, (0, ""))
