@@ -37,6 +37,16 @@ describe("which strikes the GEX chart draws", () => {
     expect(Math.max(...xsp)).toBeLessThanOrEqual(774.4 + 7.744);
   });
 
+  it("keeps the ladder contiguous: zero-GEX strikes inside the window are rows, not a gap", () => {
+    const sparse = Array.from({ length: 101 }, (_, i) => 7500 + i * 5).map((k) =>
+      row(k, k >= 7740 && k <= 7760 ? 1e9 : k <= 7515 ? 1e6 : 0),
+    );
+    const s = strikes(gexStrikeWindow(sparse, 7744, "auto", mag, [7675]));
+    const steps = s.slice(1).map((k, i) => s[i]! - k);
+    expect(new Set(steps)).toEqual(new Set([5]));
+    expect(Math.min(...s)).toBe(7660);
+  });
+
   it("returns strikes high to low, the chart's top-down order", () => {
     const s = strikes(gexStrikeWindow(chain, 7744, "auto", mag));
     expect(s).toEqual([...s].sort((a, b) => b - a));
