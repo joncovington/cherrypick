@@ -103,6 +103,13 @@ body {
   grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100vh;
   overflow: hidden;
+  /* The rail's icon column (2026-10, icon-first rail), declared on the shell so the brand head
+     — a sibling of the nav, not a child — shares it. `--nav-ic-col` centres a 20px glyph at 32px,
+     where the collapsed strip centres it (a 20px glyph in the 40px `.mf-nav-ic-wrap` of the 64px
+     rail); `--nav-label` is where label text begins. Folding the rail hides labels without moving
+     a glyph. */
+  --nav-ic-col: 1.375rem;
+  --nav-label: calc(var(--nav-ic-col) + 20px + 0.55rem);
 }
 .shell.shell-rail-collapsed {
   grid-template-columns: 64px minmax(0, 1fr);
@@ -130,7 +137,9 @@ body {
   align-items: center;
   gap: 0.55rem;
   min-width: 0;
-  padding: 0.55rem 0.9rem;
+  /* Left padding on the icon column so the cherry sits over the nav glyphs, and the wordmark
+     over the labels — one clean vertical, constant when the rail folds. */
+  padding: 0.55rem 0.9rem 0.55rem var(--nav-ic-col);
   border-bottom: 1px solid var(--border);
   /* The rail's vertical, top segment: the brand head is the rail's row-1 half, so IT carries
      the right border here — the nav's own border continues it from row 2 down. Without this
@@ -143,6 +152,10 @@ body {
 }
 .brand-mark {
   flex-shrink: 0;
+  /* Occupies the nav's icon column so its centre lands on the glyph line (collapsed overrides
+     below, growing it to fill the strip). */
+  width: 20px;
+  height: 20px;
 }
 /* Collapsed: the wordmark folds away and the cherry grows to fill the 64px strip. */
 .shell-rail-collapsed .brand-block {
@@ -251,6 +264,16 @@ a.chip:hover {
   min-height: 0;
   grid-column: 2;
   grid-row: 2;
+}
+
+/* The vertical rhythm for a page-like block that stacks heterogeneous children -- the title row,
+   cards, a `.cards` grid, a prose note, an arm-guide section head -- that share no grid. Without it
+   they touch (0px between sections, measured 2026-10-15 on the reports and again on the arm guide).
+   Margins collapse with each child's own, so the title row's 0.5rem, the review note's 0.6/0.9rem
+   and an `.arm-section-head`'s 1.5rem settle to the larger side rather than stacking. */
+.page > * + *,
+.arm-help > * + * {
+  margin-top: 0.75rem;
 }
 
 .page-title-row {
@@ -3179,7 +3202,7 @@ td > .desk-refusal-reason {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  padding: 0.3rem 0.9rem;
+  padding: 0.3rem 0.9rem 0.3rem var(--nav-ic-col);
   font-size: 13px;
   color: var(--text-muted);
   text-decoration: none;
@@ -3188,6 +3211,10 @@ td > .desk-refusal-reason {
 .mf-nav-ic {
   display: inline-flex;
   flex-shrink: 0;
+  /* A fixed-width column, glyph centred in it: keeps every label on the same x regardless of
+     glyph, and keeps the glyph on top of the collapsed strip's. */
+  width: 20px;
+  justify-content: center;
 }
 
 /* The collapsed strip (2026-10, the icon rail): one Link per page, navigable with the rail
@@ -3266,18 +3293,18 @@ td > .desk-refusal-reason {
   letter-spacing: 0.11em;
   text-transform: uppercase;
   color: var(--text-dim);
-  padding: 0.7rem 0.9rem 0.25rem;
+  padding: 0.7rem 0.9rem 0.25rem var(--nav-ic-col);
 }
 .mf-nav-group {
   font-size: 9px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-dim);
-  padding: 0.45rem 0.9rem 0.15rem 1.6rem;
+  padding: 0.45rem 0.9rem 0.15rem var(--nav-label);
 }
 .mf-nav-slide {
   display: block;
-  padding: 0.25rem 0.9rem 0.25rem 2rem;
+  padding: 0.25rem 0.9rem 0.25rem calc(var(--nav-label) + 0.5rem);
   font-size: 12.5px;
   color: var(--text-muted);
   text-decoration: none;

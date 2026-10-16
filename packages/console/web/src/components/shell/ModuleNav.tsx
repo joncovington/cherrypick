@@ -75,11 +75,16 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
   // is on the frame like a module since 2026-09-25, and its tabs belong under its own name.
   const link = (l: NavLinkDef, extra?: ReactNode) => {
     const title = shortcutTitle(l, modules.includes(l));
-    extra = (
+    // Icon FIRST, in a fixed column (`.mf-nav-ic`): its glyph centre matches the collapsed
+    // strip's, so folding the rail hides the label without the icon moving. Was trailing the
+    // variable-width label, which left the glyphs a ragged column and made them jump on collapse.
+    const icon = (
+      <span className="mf-nav-ic" aria-hidden="true">
+        <NavIcon to={l.to} />
+      </span>
+    );
+    const trailing = (
       <>
-        <span className="mf-nav-ic" aria-hidden="true">
-          <NavIcon to={l.to} />
-        </span>
         <ExperimentalChip id={l.to.slice(1)} />
         {extra}
       </>
@@ -93,8 +98,9 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
           title={title}
           className={({ isActive }) => (isActive ? "mf-nav-link active" : "mf-nav-link")}
         >
+          {icon}
           {l.label}
-          {extra}
+          {trailing}
         </NavLink>
       );
     }
@@ -103,8 +109,9 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
         {/* The current page is a heading, not a link — every tab under it already is one, and a
             link to where you are is a wasted tab stop. */}
         <div className="mf-nav-link mf-nav-current">
+          {icon}
           {l.label}
-          {extra}
+          {trailing}
         </div>
         {grouping.groups.map(
           (g) =>

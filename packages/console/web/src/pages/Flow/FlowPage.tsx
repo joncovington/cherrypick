@@ -681,7 +681,7 @@ export function FlowDerived({ day }: { day: OptionsFlowDay }) {
         <FlagKey rows={d.flows} />
       </section>
       <ChecksCard checks={d.checks} session={day.session} />
-      <div className="cards-pairs">
+      <div className="cards cards-pairs">
         <section className="card view-fade">
           <div className="card-head">
             <h2>Net by name</h2>
@@ -898,7 +898,7 @@ export function FlowBirdseye({ day }: { day: OptionsFlowDay }) {
 
 export function FlowTrades({ day }: { day: OptionsFlowDay }) {
   return (
-    <div className="cards-pairs">
+    <div className="cards cards-pairs">
       <section className="card view-fade">
         <div className="card-head">
           <h2>Largest by contracts</h2>
@@ -942,7 +942,7 @@ export function FlowSpreads({ day }: { day: OptionsFlowDay }) {
 
 export function FlowVolOi({ day }: { day: OptionsFlowDay }) {
   return (
-    <div className="cards-pairs">
+    <div className="cards cards-pairs">
       <section className="card view-fade">
         <div className="card-head">
           <h2>Vol / OI — open interest over 100</h2>
