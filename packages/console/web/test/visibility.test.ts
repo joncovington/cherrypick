@@ -80,7 +80,7 @@ describe("gex, the advisor and the reports", () => {
     expect(isFeatureOn("morning_narrative", off)).toBe(true);
   });
 
-  it("Config, System, Live, Charts, Reports and the Overview are never hidden", () => {
+  it("Config, System, Live, Charts, Reports and the root path are never hidden", () => {
     const everythingOff = withOff({ modules: {}, services: { "gex-recorder": false }, features: { advisor: false, technicals: false } });
     for (const id of ["config", "system", "live", "charts", "reports", ""]) expect(isModuleVisible(id, everythingOff)).toBe(true);
   });

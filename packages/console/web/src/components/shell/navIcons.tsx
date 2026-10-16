@@ -136,15 +136,6 @@ function GexIcon() {
   );
 }
 
-/* The pulse — the pre-open overview's fact pack and its phase gates. */
-function OverviewIcon() {
-  return (
-    <Svg>
-      <path d="M3 12h4l2.5-6 4 12 2.5-6H21" />
-    </Svg>
-  );
-}
-
 /* Candles on axes — the charts page. */
 function ChartsIcon() {
   return (
@@ -233,7 +224,6 @@ function CompareIcon() {
 
 /** By route, not by label — the label is prose and can change; the route is the identity. */
 const ICONS: Record<string, (p: NavIconProps) => ReactNode> = {
-  "/": OverviewIcon,
   "/charts": ChartsIcon,
   "/flow": FlowIcon,
   "/reports": ReportsIcon,

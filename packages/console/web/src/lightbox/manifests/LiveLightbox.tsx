@@ -3,6 +3,7 @@ import { ManagePage } from "../../pages/Live/ManagePage";
 import { MeicLivePage, useLiveMeic } from "../../pages/Live/MeicLivePage";
 import { LiveTodayPage, suiteBadgeText, useLiveToday } from "../../pages/Live/LiveTodayPage";
 import { LoopPill } from "../../components/ScopeBar";
+import { AlertDaemonChip } from "../../components/AlertDaemonChip";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
@@ -18,6 +19,9 @@ import type { SlideDef } from "../types";
  * the only live loop, beside `meic`. The same day `today` became the all-loops summary, first: one row
  * per live loop (flies, meic, bwb), the attention list and the suite totals, with a suite badge in
  * the header ("2 armed · HALTED") rather than one loop's.
+ *
+ * The flies order-alert daemon's chip sits in the header on every tab (2026-10-16), moved here
+ * when the Overview page that carried it was removed and `/` began redirecting to this page.
  */
 const slides: SlideDef[] = [
   // Every live loop on one page: what is armed, open and settled, and what needs a person.
@@ -95,6 +99,7 @@ export function LiveLightbox({ slide }: { slide: string }) {
       session={null}
       badge={today ? <SuiteBadge /> : meic ? <MeicArmBadge /> : <ArmBadge />}
       loopPill={meic || today ? undefined : <LivePill />}
+      headerControls={<AlertDaemonChip />}
     />
   );
 }

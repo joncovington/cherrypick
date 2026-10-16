@@ -17,13 +17,12 @@ import { isModuleVisible } from "../../lib/visibility";
 export interface NavLinkDef {
   to: string;
   label: string;
-  /** Exact-match route, for `/` which otherwise prefixes everything. */
+  /** Exact-match route, for a path that would otherwise prefix others. */
   end?: boolean;
   key?: string;
 }
 
 export const SUITE_LINKS: readonly NavLinkDef[] = [
-  { to: "/", label: "Overview", end: true, key: "o" },
   { to: "/charts", label: "Charts", key: "c" },
   { to: "/flow", label: "Options flow", key: "f" },
   { to: "/reports", label: "Reports", key: "r" },
