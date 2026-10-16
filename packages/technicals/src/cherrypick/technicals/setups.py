@@ -272,6 +272,23 @@ STUDIED = (
         "rev-dir",
         "short",
     ),
+    # round 7: the bearing itself; rules in round7.py
+    Setup(
+        "bearing",
+        "Entering a bullish bearing",
+        "Long when the name's bearing (compass, frozen 2026-10-07 table) becomes strong bull or "
+        "pullback after none of the 10 sessions before; exit on the close 21 sessions after entry.",
+        (),
+    ),
+    Setup(
+        "bearing-short",
+        "Entering a bearish bearing (short)",
+        "Short when the name's bearing becomes strong bear or rally after none of the 10 sessions "
+        "before; cover on the close 21 sessions after entry.",
+        (),
+        "bearing",
+        "short",
+    ),
 )
 
 
