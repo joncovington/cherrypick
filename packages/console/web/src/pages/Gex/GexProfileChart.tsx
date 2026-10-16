@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AXIS_MUTED } from "../../components/Charts";
+import { useMeasure } from "../../lib/useMeasure";
 
 export interface GexStrikeRow {
   strike: number;
@@ -20,6 +21,55 @@ export interface GexStrikeRow {
 }
 
 export type GexView = "net" | "oivol" | "abs";
+
+/** The window's inner height, re-read on resize (the chart's row height follows it). */
+function useWindowHeight(): number {
+  const [h, setH] = useState(() => (typeof window === "undefined" ? 1060 : window.innerHeight));
+  useEffect(() => {
+    const onResize = () => setH(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return h;
+}
+
+/** The strike-range control: "auto", or a band of ± that percent of spot (symbol-agnostic, so
+ *  XSP and an ETF get the same reach SPX does; the old fixed ±120 points was ±1.5% of SPX). */
+export const GEX_RANGES = ["auto", "0.5", "1", "1.5", "3"] as const;
+export type GexRange = (typeof GEX_RANGES)[number];
+
+/** A strike carries "meaningful" GEX at or above this share of the chart's largest bar. */
+const MEANINGFUL_SHARE = 0.02;
+
+/**
+ * Which strikes the chart draws. "auto" fits the strikes whose GEX is at least 2% of the largest
+ * bar (a 0DTE chain has tiny non-zero GEX far out, so "non-zero" alone is nearly the whole chain),
+ * spot, and today's spot trail, padded by three strikes each side. A band keeps strikes within
+ * ±pct of spot. Exported so the rule is pinned without a DOM.
+ */
+export function gexStrikeWindow(
+  series: GexStrikeRow[],
+  spot: number,
+  range: GexRange,
+  magnitude: (r: GexStrikeRow) => number,
+  trail: number[] = [],
+): GexStrikeRow[] {
+  const sorted = [...series].sort((a, b) => a.strike - b.strike);
+  if (range !== "auto") {
+    const band = (Number(range) / 100) * spot;
+    return sorted.filter((r) => Math.abs(r.strike - spot) <= band).sort((a, b) => b.strike - a.strike);
+  }
+  const max = Math.max(...sorted.map(magnitude), 0);
+  const meaningful = sorted.filter((r) => max > 0 && magnitude(r) >= max * MEANINGFUL_SHARE).map((r) => r.strike);
+  const anchors = [...meaningful, spot, ...trail];
+  const lo = Math.min(...anchors);
+  const hi = Math.max(...anchors);
+  let first = sorted.findIndex((r) => r.strike >= lo);
+  let last = sorted.length - 1 - [...sorted].reverse().findIndex((r) => r.strike <= hi);
+  if (first < 0) first = 0;
+  if (last >= sorted.length) last = sorted.length - 1;
+  return sorted.slice(Math.max(0, first - 3), Math.min(sorted.length, last + 4)).sort((a, b) => b.strike - a.strike);
+}
 
 export function fmtGexDollars(v: number): string {
   const abs = Math.abs(v);
@@ -51,27 +101,51 @@ interface Props {
  * axis title, and a hover tooltip with per-basis values.
  */
 export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWall, spotHistory, spotSession }: Props) {
-  const [hover, setHover] = useState<{ index: number; px: number; py: number } | null>(null);
+  const [hover, setHover] = useState<{ index: number; px: number; py: number; w: number; h: number } | null>(null);
+  const [range, setRange] = useState<GexRange>("auto");
+  // Drawn 1:1 at the container's real width: a fixed 1150-wide viewBox scaled into a height-capped
+  // box shrank everything, type included, to ~7px whenever the strike count was high.
+  const [hostRef, measuredW] = useMeasure<HTMLDivElement>(1150);
+  const windowH = useWindowHeight();
 
-  // Trim to the non-zero span padded by 3 strikes, then the ±120 dollar band.
-  const nonZero = series
-    .map((s, i) => ({ s, i }))
-    .filter(({ s }) => s.abs_gex !== 0 || s.net_gex_vol !== 0 || s.total_vol !== 0);
+  const nonZero = series.filter((s) => s.abs_gex !== 0 || s.net_gex_vol !== 0 || s.total_vol !== 0);
   if (nonZero.length === 0) return <p className="muted">no strikes with GEX data</p>;
-  const first = Math.max(0, nonZero[0]!.i - 3);
-  const last = Math.min(series.length - 1, nonZero[nonZero.length - 1]!.i + 3);
-  const rows = series
-    .slice(first, last + 1)
-    .filter((s) => Math.abs(s.strike - spot) <= 120)
-    .sort((a, b) => b.strike - a.strike);
-  if (rows.length === 0) return <p className="muted">no strikes with GEX data</p>;
+  const magnitude = (r: GexStrikeRow): number =>
+    Math.max(Math.abs(r.net_gex), Math.abs(r.abs_gex), Math.abs(r.net_gex_vol));
+  // Windowed on the FULL ladder: windowing the non-zero strikes alone skipped every zero-GEX strike
+  // in between, so the ladder jumped (7715 straight to 7515) and the spot trail was stretched
+  // across the gap.
+  const rows = gexStrikeWindow(series, spot, range, magnitude, (spotHistory ?? []).map((h) => h.spot));
+  const rangeControl = (
+    <div className="gex-range-row">
+      <label className="muted lbl" title="auto fits the strikes carrying GEX, spot and today's spot trail; a band is ± that share of spot">
+        strike range{" "}
+        <select className="text-input" value={range} onChange={(e) => setRange(e.target.value as GexRange)}>
+          {GEX_RANGES.map((r) => (
+            <option key={r} value={r}>
+              {r === "auto" ? "auto" : `±${r}%`}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+  if (rows.length === 0)
+    return (
+      <>
+        {rangeControl}
+        <p className="muted">no strikes in this range</p>
+      </>
+    );
 
-  // Wide viewBox so the SVG renders near 1:1 in the card — stretched-up
-  // viewBoxes are what made the fonts look oversized.
-  const width = 1150;
+  const width = measuredW;
   const hasTimeAxis = spotSession != null && spotHistory !== undefined && spotHistory.length > 1;
-  const rowH = 13;
-  const m = { l: 64, r: 16, t: 8, b: hasTimeAxis ? 22 : 8 };
+  const m = { l: 76, r: 18, t: 10, b: hasTimeAxis ? 28 : 10 };
+  // Row height fills the window's height left after the page chrome and the OI/volume strip
+  // (~420px), between a readable floor and a ceiling that keeps a short ladder from turning into
+  // fat stripes. Width and height both follow the window as it is resized.
+  const availH = Math.max(280, windowH - 440);
+  const rowH = Math.max(13, Math.min(26, Math.floor((availH - m.t - m.b) / rows.length)));
   const height = m.t + m.b + rows.length * rowH;
   const plotW = width - m.l - m.r;
   const values = (r: GexStrikeRow): number[] =>
@@ -133,13 +207,16 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
   const hovered = hover !== null ? rows[hover.index] : undefined;
 
   return (
-    <div className="gex-chart-fit" style={{ position: "relative" }}>
+    <>
+    {rangeControl}
+    <div className="gex-chart-fit" ref={hostRef} style={{ position: "relative" }}>
     <svg
       viewBox={`0 0 ${width} ${height}`}
       role="img"
       aria-label="GEX by strike"
-      preserveAspectRatio="xMidYMid meet"
-      style={{ width: "100%", height: "100%", display: "block" }}
+      width={width}
+      height={height}
+      style={{ display: "block", maxWidth: "100%" }}
       onMouseLeave={() => setHover(null)}
     >
       {/* faint vertical gridlines, chart.js-style */}
@@ -148,12 +225,12 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
       ))}
       <line x1={zeroX} y1={m.t} x2={zeroX} y2={height - m.b} stroke="var(--chart-grid-mid)" />
       <text
-        x={10}
+        x={12}
         y={m.t + (height - m.t - m.b) / 2}
-        fontSize={9}
+        fontSize={11}
         fill={AXIS_MUTED}
         textAnchor="middle"
-        transform={`rotate(-90 10 ${m.t + (height - m.t - m.b) / 2})`}
+        transform={`rotate(-90 12 ${m.t + (height - m.t - m.b) / 2})`}
       >
         Strike Price
       </text>
@@ -162,11 +239,11 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
         const vals = values(r);
         return (
           <g key={r.strike}>
-            <text x={m.l - 6} y={yMid + 2.5} textAnchor="end" fontSize={8.5} fill={AXIS_MUTED} fontFamily="Consolas, monospace">
+            <text x={m.l - 8} y={yMid + 4} textAnchor="end" fontSize={rowH >= 18 ? 12.5 : 11.5} fill={AXIS_MUTED} fontFamily="Consolas, monospace">
               {r.strike}
             </text>
             {vals.map((v, j) => {
-              const barH = 3;
+              const barH = vals.length > 1 ? Math.max(4, Math.round(rowH * 0.3)) : Math.max(5, Math.round(rowH * 0.45));
               const gap = vals.length > 1 ? 1 : 0;
               const total = vals.length * barH + (vals.length - 1) * gap;
               const y = yMid - total / 2 + j * (barH + gap);
@@ -192,7 +269,7 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
                 const host = (e.currentTarget.ownerSVGElement?.parentElement ?? null) as HTMLElement | null;
                 const rect = host?.getBoundingClientRect();
                 if (rect !== undefined) {
-                  setHover({ index: i, px: e.clientX - rect.left, py: e.clientY - rect.top });
+                  setHover({ index: i, px: e.clientX - rect.left, py: e.clientY - rect.top, w: rect.width, h: rect.height });
                 }
               }}
             />
@@ -238,9 +315,9 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
                   <line x1={x} y1={height - m.b} x2={x} y2={height - m.b + 4} stroke={AXIS_MUTED} />
                   <text
                     x={x}
-                    y={height - m.b + 14}
+                    y={height - m.b + 18}
                     textAnchor={frac === 0 ? "start" : frac === 1 ? "end" : "middle"}
-                    fontSize={9}
+                    fontSize={11.5}
                     fill={AXIS_MUTED}
                     fontFamily="Consolas, monospace"
                   >
@@ -249,15 +326,15 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
                 </g>
               );
             })}
-            <text x={m.l} y={m.t + 9} fontSize={9} fill="var(--accent)" opacity={0.8}>
+            <text x={m.l + 4} y={m.t + 12} fontSize={11.5} fill="var(--accent)" opacity={0.8}>
               spot trail — {spotSession!.date} ET
             </text>
           </>
         );
       })()}
       {overlays.map((o, i) => {
-        const tagH = 13;
-        const tagW = o.label.length * 5.6 + 10;
+        const tagH = 17;
+        const tagW = o.label.length * 7 + 12;
         const tagX = o.side === "left" ? m.l - 4 : width - m.r - tagW;
         const tagY = o.y - tagH / 2;
         return (
@@ -275,9 +352,9 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
             />
             <text
               x={tagX + tagW / 2}
-              y={o.y + 3}
+              y={o.y + 4}
               textAnchor="middle"
-              fontSize={9}
+              fontSize={11.5}
               fontWeight={700}
               fill={o.filled ? "var(--canvas)" : o.color}
               fontFamily="Consolas, monospace"
@@ -292,14 +369,17 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
       <div
         style={{
           position: "absolute",
-          left: Math.min(hover.px + 14, 900),
-          top: hover.py + 10,
+          // Kept inside the chart: above the cursor in its lower half, left of it in its right
+          // part. Hanging below the cursor at the bottom strikes overflowed the card and gave the
+          // page a vertical scrollbar.
+          ...(hover.py > hover.h / 2 ? { bottom: hover.h - hover.py + 10 } : { top: hover.py + 10 }),
+          ...(hover.px > hover.w * 0.6 ? { right: hover.w - hover.px + 14 } : { left: hover.px + 14 }),
           background: "var(--surface-sunken)",
           border: "1px solid var(--border)",
           borderRadius: 6,
           padding: "6px 10px",
           pointerEvents: "none",
-          fontSize: 12,
+          fontSize: 13,
           fontFamily: "Consolas, monospace",
           whiteSpace: "nowrap",
           zIndex: 5,
@@ -320,6 +400,7 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
       </div>
     )}
     </div>
+    </>
   );
 }
 
