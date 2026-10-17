@@ -63,6 +63,12 @@ def earnings_times_dir() -> Path:
     return market_report_dir() / "earnings" / "times"
 
 
+def yahoo_sectors() -> Path:
+    """Yahoo's sector per name, relabelled to the vendor's sector names, for the earnings calendar
+    names the vendor's sector map lacks. Written by scripts/fetch_sectors.py. Read-only here."""
+    return market_report_dir() / "universe" / "sectors.yahoo.json"
+
+
 def expiry_iv_dir() -> Path:
     """Tastytrade's implied vol per listed expiration, one file a session (`<day>.json`), written
     by scripts/fetch_iv_rank.py alongside the rank. The earnings calendar's expected move reads it.

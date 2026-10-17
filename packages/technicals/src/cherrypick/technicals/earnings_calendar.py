@@ -16,7 +16,8 @@ locally -- never the broker, so this stays credential-free:
   strength are kept on the row (`vendor_edge`, `vendor_strength`), never shown or used.
 - **who:** the security list the collector saves nightly (`vendor-securities/<day>.json`) for the
   liquidity rank, optionable and type; Dolt's `stocks.symbol` for the company name; the market
-  report's sector map where it has the name.
+  report's sector map where it has the name, else Yahoo's (`scripts/fetch_sectors.py`), with
+  `sector_source` saying which.
 - **IV rank:** the BROKER's (`iv/tastytrade.json`, the nightly IV-rank fetch), shown and used to
   choose the suggested spread's side (chosen 2026-10-17); the vendor's is kept as `vendor_iv_rank`,
   never shown or used. A name the broker gives no rank gets no suggestion.
@@ -441,7 +442,8 @@ def build(
                 "vendor_iv_rank": r.get("ivRank"),  # kept for reference; never shown or used
                 "liquidity_rank": r.get("liquidityRank"),
                 "optionable": r.get("hasOptions"),
-                "sector": sectors.get(sym),
+                "sector": (sectors.get(sym) or (None, None))[0],
+                "sector_source": (sectors.get(sym) or (None, None))[1],  # "vendor" | "yahoo"
                 "price": price,
                 "event_expiry": ev[0] if ev else None,
                 "event_iv": ev[1] if ev else None,
@@ -470,10 +472,18 @@ def build(
     }
 
 
-def _sector_map() -> dict[str, str]:
+def _sector_map() -> dict[str, tuple[str, str]]:
+    """{symbol: (sector, source)}: the vendor's map (`fundamentals.sector_map`) where it has the
+    name, else Yahoo's (`scripts/fetch_sectors.py`, relabelled to the vendor's sector names; it
+    agreed with the vendor's on all 120 names sampled, 2026-10-17)."""
     from . import fundamentals
 
-    return fundamentals.sector_map()
+    yahoo = (_read(paths.yahoo_sectors()).get("names")) or {}
+    out = {
+        s: (row["sector"], "yahoo") for s, row in yahoo.items() if isinstance(row, dict) and row.get("sector")
+    }
+    out.update({s: (v, "vendor") for s, v in fundamentals.sector_map().items()})
+    return out
 
 
 def out_dir() -> Path:

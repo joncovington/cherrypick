@@ -86,6 +86,8 @@ CATCHUP_MINUTES = {
     "technicals-iv-rank": 600,
     # The month's times as the evening sees them; the late calendar pass still reads a late fetch.
     "technicals-earnings-times": 240,
+    # The file accumulates and a sector rarely changes, so any time that evening is the same fetch.
+    "technicals-sectors": 240,
     "technicals-liquidity": 120,
     # A rerun replaces the session's file, so a late one is the same calendar; the late pass covers
     # the rest of the evening.
@@ -1200,6 +1202,22 @@ def derive_jobs(
             trading_days_only=True,
             enabled=times_on,
             enabled_reason="" if times_on else "disabled in config (technicals.earnings_times)",
+        ),
+    )
+    sectors_on = tc["enabled"] and tc["sectors"]
+    add(
+        "technicals-sectors",
+        lambda: JobSpec(
+            id="technicals-sectors",
+            # A script, not package code: it reads Yahoo's public search (no credential, one request
+            # per name, paced) for the sector of the earnings calendar names the vendor's map lacks.
+            argv=(pythonw, _suite_script(launcher, "fetch_sectors.py")),
+            kind=KIND_DAILY,
+            at_et=tc["sectors_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-sectors"],
+            trading_days_only=True,
+            enabled=sectors_on,
+            enabled_reason="" if sectors_on else "disabled in config (technicals.sectors)",
         ),
     )
     add(
