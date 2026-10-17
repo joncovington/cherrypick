@@ -374,6 +374,8 @@ sentiment halves conviction; neutral takes a quarter off.
 
 **Not yet:** a paid tape (one month of ThetaData, every print against
 the quote) to measure the read at scale is deferred until a few weeks of confirmations exist.
+(2026-10-17: ThetaData Options Standard is now subscribed for `packages/backtest`, which makes the
+tape reachable; its licence forbids redistribution, so any measurement from it stays out of this repo.)
 
 ## Guards, each shown to fail
 

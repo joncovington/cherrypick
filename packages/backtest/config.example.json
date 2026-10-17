@@ -1,0 +1,28 @@
+{
+  "_comment": "Backtests over licensed vendor history (packages/backtest). Copy to ~/.cherrypick/config/backtest.json to use it. OFF until 'enabled' is true. Unknown keys are refused, not ignored. The API key is never written here: it lives in the OS keyring under vendor.credential (python -m cherrypick.backtest key set). The vendor's data and every result derived from it stay under the cherrypick home; the licence forbids redistribution and requires the data to be purged within vendor.license.purge_within_days of vendor.license.terminated_on.",
+  "enabled": false,
+  "vendor": {
+    "_comment": "subscription declares what the account can reach (checked against the vendor's own refusals); transport 'python' talks to the vendor directly through its library, 'terminal' through a local Theta Terminal at terminal.host:terminal.port. max_concurrent_requests is the account-wide cap for the tier (Standard: 4).",
+    "name": "thetadata",
+    "subscription": "standard",
+    "transport": "python",
+    "credential": {"keyring_service": "cherrypick-thetadata", "key": "api_key"},
+    "terminal": {"host": "127.0.0.1", "port": 25503, "install_dir": null},
+    "max_concurrent_requests": 4,
+    "license": {"terminated_on": null, "purge_within_days": 30}
+  },
+  "store": {
+    "_comment": "dir null = ~/.cherrypick/data/backtest/vendor/<vendor>. cadence_seconds and strikes_each_side match the gex recorder, so a vendor session replays through the same code as a recorded one.",
+    "dir": null,
+    "cadence_seconds": 15,
+    "strikes_each_side": 20
+  },
+  "datasets": [
+    {"symbol": "SPX", "root": "SPXW", "dte": 0, "from": "2022-05-16"}
+  ],
+  "windows": {
+    "_comment": "Declared once and journaled; never tuned and never chosen by the advisor. The holdout is invisible to every search and is spent once per spec. Sessions from 2026-10-13 are the recorder era, used to validate the vendor data against our own recording.",
+    "design": ["2022-05-16", "2025-06-30"],
+    "holdout": ["2025-07-01", "2026-10-12"]
+  }
+}

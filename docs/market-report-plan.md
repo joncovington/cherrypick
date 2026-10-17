@@ -466,7 +466,10 @@ Each phase ends with something that runs and a test that has been shown to fail.
 
 ### Phase 0 — decisions, before code
 
-- **Paid data: deferred (decided 2026-09-27).** Flow (ThetaData, $80/month) and analyst revisions
+- **Paid data: deferred (decided 2026-09-27; options history superseded 2026-10-17).** ThetaData
+  Options Standard was bought on 2026-10-17 for backtesting (`packages/backtest`); whether its
+  `trade_quote` feeds the flow section is still open, and its licence keeps every derived number out
+  of this repo. The original decision follows. Flow (ThetaData, $80/month) and analyst revisions
   (Benzinga via Massive, $99) are not bought for now, so the first build runs on free inputs only.
   What that rules out: the flow section (section 7) entirely, and four of the nine multi-signal
   methods — call buying, put selling, put buying and analyst revisions. What stays comparable

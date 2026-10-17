@@ -63,6 +63,36 @@ def test_it_holds_the_ledgers_beside_a_dolt_store_and_nothing_regenerable_or_sec
     assert skipped["dolt_store"] == 2
 
 
+def test_licensed_vendor_data_is_never_backed_up_but_results_beside_it_are(home):
+    """The backtest store's vendor data must be purgeable within the licence window; a backup copy
+    would outlive the purge. Its derived results are ours and are kept."""
+    vendor = home / "data" / "backtest" / "vendor" / "thetadata"
+    vendor.mkdir(parents=True)
+    (vendor / backup.LICENSED_MARKER).write_text("licensed", encoding="utf-8")
+    _ledger(vendor / "SPX-2026-10.db", rows=1)
+    _ledger(home / "data" / "backtest" / "results" / "backtest.db", rows=1)
+    files, skipped = backup.collect(home)
+    rel = {f.relative_to(home).as_posix() for f in files}
+    assert not any(r.startswith("data/backtest/vendor/thetadata") for r in rel)
+    assert "data/backtest/results/backtest.db" in rel
+    assert skipped["licensed_vendor"] == 1
+    # The same directory without its marker is ordinary data: the skip is the marker, nothing else.
+    (vendor / backup.LICENSED_MARKER).unlink()
+    files, _ = backup.collect(home)
+    assert "data/backtest/vendor/thetadata/SPX-2026-10.db" in {f.relative_to(home).as_posix() for f in files}
+
+
+def test_the_marker_is_the_one_packages_backtest_writes():
+    """The two packages never import each other, so the marker's name is spelt in both. Each side
+    carries this check, so a change to either one runs it in CI (only changed packages' jobs run)."""
+    import re
+
+    paths_py = Path(__file__).resolve().parents[2] / "backtest" / "src" / "cherrypick" / "backtest" / "paths.py"
+    found = re.search(r'^LICENSED_MARKER = "([^"]+)"', paths_py.read_text(encoding="utf-8"), re.M)
+    assert found, "packages/backtest/paths.py no longer declares LICENSED_MARKER"
+    assert found.group(1) == backup.LICENSED_MARKER
+
+
 def test_a_night_copies_a_live_wal_ledger_consistently_and_verifies(home):
     # A write still in the WAL (not checkpointed) must be in the copy: the backup API reads it.
     con = sqlite3.connect(home / "data" / "earnings" / "paper_trades.db")
