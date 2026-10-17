@@ -104,6 +104,36 @@ def test_tags_on_reads_each_engine_on_the_day(monkeypatch):
     assert "CCC" not in out
 
 
+def test_the_scan_counts_trend_following_on_the_session_or_the_one_before(monkeypatch):
+    from cherrypick.technicals import signals
+
+    monkeypatch.setattr(stage, "stages_on", lambda day, closes, bench: {})
+    monkeypatch.setattr(rotation, "states_on", lambda day, closes, funds: {})
+    # The last close of the bars read stands in for the session's readings; each fires one rule.
+    fired = {
+        "PREV": {1.0: "BullishTrendFollowing"},  # the session before: counts
+        "OLD": {0.5: "BearishTrendFollowing"},  # two sessions back: outside the window
+        "CCI": {2.0: "CciDipInBullishTrend"},  # a CCI dip on the day: not a trend-following rule
+        "BOTH": {1.0: "BullishTrendFollowing", 2.0: "BearishTrendFollowing"},  # sides disagree: none
+    }
+    monkeypatch.setattr(signals, "readings", lambda highs, lows, closes: closes[-1])
+    current = {}
+    monkeypatch.setattr(signals, "matches", lambda r: [current["rules"][r]] if r in current["rules"] else [])
+    days = ["2026-10-14", "2026-10-15", "2026-10-16"]
+    out = {}
+    for sym, rules in fired.items():
+        current["rules"] = rules
+        bars = {
+            sym: [
+                SimpleNamespace(date=d, high=1.0, low=1.0, close=c)
+                for d, c in zip(days, (0.5, 1.0, 2.0), strict=True)
+            ]
+        }
+        out.update(board.tags_on("2026-10-16", bars, {}, {}, {}, {}))
+    assert [(t.side, t.detail) for t in out["PREV"]] == [(1, "BullishTrendFollowing 2026-10-15")]
+    assert "OLD" not in out and "CCI" not in out and "BOTH" not in out
+
+
 def test_fundamentals_tags_the_market_tails_only(monkeypatch):
     monkeypatch.setattr(stage, "stages_on", lambda day, closes, bench: {})
     monkeypatch.setattr(rotation, "states_on", lambda day, closes, funds: {})

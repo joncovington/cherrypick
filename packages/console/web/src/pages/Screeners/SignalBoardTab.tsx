@@ -175,9 +175,10 @@ export function SignalBoardTab() {
         A name's count is its methods agreeing on one side, and only that side's signals are listed, as the board it reproduces
         lists them. Counted: {counted.join(", ") || "—"}. Not counted yet: {data?.notCounted.join(", ") || "—"}, so counts run
         lower than the original board's and no three-signal floor is applied. Scored on the 15 saved boards (2026-09-23 to
-        10-14), our stage tag found 69 of 73, analyst revisions 33 of 38, rotation 89 of 96, fundamentals 59 of 95 (compelling 43 of 55, weak
-        16 of 40), the scan 5 of 16. History found
-        no edge in the direction read or in revisions on their own: this is the board's view, not a tested signal.
+        10-14), our stage tag found 69 of 73, analyst revisions 33 of 38, rotation 89 of 96, fundamentals 59 of 95
+        (compelling 43 of 55, weak 16 of 40), the scan 9 of 16. Fundamentals vs price reproduced under half its tags, so it
+        is not counted. History found no edge in the direction read or in revisions on their own: this is the board's view,
+        not a tested signal.
       </p>
     </section>
   );

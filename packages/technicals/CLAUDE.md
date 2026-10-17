@@ -152,9 +152,11 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   across every name with estimates, a sector and a price on the newest weekly snapshot; compelling
   is the top fifth, weak the bottom fifth (fit 2026-10-17; flat from the top quarter to the top
   fifth on the boards). On the boards: stage 69/73 found (11 extra in 130 rows), revision 33/38,
-  rotation 89/96, fundamentals 59/95 (compelling 43/55 with 2 extra, weak 16/40) and scan 5/16 --
+  rotation 89/96, fundamentals 59/95 (compelling 43/55 with 2 extra, weak 16/40) and scan 9/16 (the
+  two trend-following rules over the session and the one before, read off the saved scan lists) --
   fundamentals and the scan are marked approximate; 110 of 130 rows land on the board's side. Not
-  counted: fundamentals vs price, the three flow tags. A tie has no side. The history store is topped
+  counted: the three flow tags, and fundamentals vs price (tried as quadrants and as the difference
+  of our fundamentals percentile and 1-10 rank: about 23/50, under half). A tie has no side. The history store is topped
   up each morning for it (`history land` 06:20, `history fundamentals` 06:25 ET); the board is
   written at 06:45 ET to `data/technicals/board/<session>.json`; record-only.
 - **Bearing** (`compass.py`, `score-bearing`): our name for the vendor's direction read. It is a
