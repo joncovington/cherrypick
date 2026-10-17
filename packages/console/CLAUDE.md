@@ -574,8 +574,10 @@ the bridge passes `--module`, never the file). Bridged, never mirrored.
   shared by every card). It is a different window from the rest of the card (the arm's own era, as
   of the cut's session) and says so every time it draws; it shows single buckets only, passes the
   writer's thin/fragile stamps through without tone, and links to the full regime tab. It is passed
-  into `ArmCard` as a prop, so the card holds no data hook. Other modules get a regime dimension
-  from `core.regime.regime_at` once their records carry entry times.
+  into `ArmCard` as a prop, so the card holds no data hook. Every other module gets two regime
+  breakdowns instead (`vix`, `term`: VIX and VIX/VIX3M at entry, joined by core). They are optional
+  on `Breakdowns` and absent for flies and MEIC, so one table list serves both. An entry the
+  recorder did not cover reads "unmeasured".
 - "Worse fills" is core's slippage ladder: the net at 1/1.5/2/3× the slippage the module modelled,
   over the trades that record slippage. Where that is not all of them (flies from 2026-09-24) it
   says so and starts from those trades' own net, never the arm's. An undeclared allocation reads "none declared" with dashes, never zero;

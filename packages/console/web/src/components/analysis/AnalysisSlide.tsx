@@ -214,6 +214,8 @@ const DIMENSION_LABELS: Array<[keyof Omit<Breakdowns, "min_sessions">, string, s
   ["hour", "hour of entry", "hour"],
   ["event", "scheduled releases that day", "release"],
   ["month", "month", "month"],
+  ["vix", "VIX at entry", "VIX"],
+  ["term", "VIX/VIX3M at entry (contango under 0.97, backwardation from 1.0)", "term"],
 ];
 
 function BucketRows({ t, head, minSessions }: { t: BucketTable; head: string; minSessions: number }) {
@@ -269,6 +271,7 @@ export function BreakdownTables({ b }: { b: Breakdowns }) {
     <>
       {DIMENSION_LABELS.map(([key, title, head]) => {
         const t = b[key];
+        if (t === undefined) return null; // a regime dimension, absent where the module cuts its own
         if (t.rows.length === 0) {
           return (
             <p key={key} className="muted" style={{ fontSize: 11 }}>
@@ -289,7 +292,8 @@ export function BreakdownTables({ b }: { b: Breakdowns }) {
       })}
       <p className="muted" style={{ fontSize: 11 }}>
         historical associations over this window's trades, not predictions. A release day the calendar cannot
-        vouch for reads "unknown", never "none".
+        vouch for reads "unknown", never "none"; an entry the regime recorder did not cover (before 2026-08-24, or
+        an outage) reads "unmeasured", never a calm day.
       </p>
     </>
   );

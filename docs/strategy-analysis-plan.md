@@ -139,8 +139,11 @@ best, worst), over any value known at entry:
   this first named `core.marketregime`, a daily SPX trend labeller whose artifact is not written on
   this machine, and missed that the regime was already recorded. Flies and MEIC cut their P&L by it
   nightly (`core.regimecuts`); the analysis page shows that cut per arm, in its own window, and
-  links to the regime tab rather than re-deriving it. The other modules get a regime dimension from
-  `regime_at` once their ledger records carry an entry time. ADX from
+  links to the regime tab rather than re-deriving it. *Done 2026-10-17:* every other module's
+  breakdowns carry VIX and VIX/VIX3M at entry (`core.regime.markets_at`, bands in
+  `core.analysis.buckets`), with entries before the recorder or in an outage shown as `unmeasured`.
+  The recorded window has been in contango throughout, so the term table has one bucket so far.
+  ADX from
   `technicals.indicators.adx` is not wired to anything yet;
 - reward/risk and expected move at entry;
 - direction before entry and the underlying's move during the trade, the latter sized against the

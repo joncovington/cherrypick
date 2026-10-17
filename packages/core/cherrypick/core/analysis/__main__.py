@@ -7,13 +7,15 @@ so the two never disagree about which records make up an arm.
 Command:
     read --db PATH --schema SCHEMA [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--era ERA]
 
-    [--module NAME] [--allocations PATH]
+    [--module NAME] [--allocations PATH] [--history-db PATH]
 
 `--era` keeps only records stamped with that era, as in the metrics CLI. `--module` names whose
-declared allocations (`capital.load_allocations`) apply; without it none do.
+declared allocations (`capital.load_allocations`) apply; without it none do. `--history-db` is the
+regime history the entries are joined to (`core.regime`), for every schema but flies' and MEIC's.
 
 Output: {"ok": true, "schema": ..., "version": N, "n_records": N,
-         "allocations": {"module", "path", "error"}, "groups": {tag: <arm_reading>}}
+         "allocations": {"module", "path", "error"}, "regime": {"joined", "history_db", "reason"},
+         "groups": {tag: <arm_reading>}}
 where `tag` is the arm, or `<arm>@<experiment_id>` for an advised row stamped with its experiment.
 An unknown schema or an unreadable db returns {"ok": false, "error": ...}, never a traceback.
 """
@@ -26,10 +28,13 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from cherrypick.core import ledgers
+from cherrypick.core import ledgers, regime
 from cherrypick.core.profiles import group_by_tag
 
-from . import VERSION, arm_reading, capital, windows
+from . import VERSION, arm_reading, buckets, capital, windows
+
+#: Schemas whose module cuts its P&L by the recorded regime itself (core.regimecuts).
+OWN_REGIME_CUTS = frozenset({"fly_book", "meic_ic"})
 
 
 def cmd_read(args) -> dict:
@@ -74,6 +79,16 @@ def cmd_read(args) -> dict:
         for r in records
         if arm_window[r["arm"]]["start"] is None or (r.get("session") or "") >= arm_window[r["arm"]]["start"]
     ]
+    # The market each trade was entered into, for the regime breakdowns (buckets.py) -- except where
+    # the module cuts its own regime nightly, which the analysis page shows instead.
+    schema = ledgers.canonical_schema(args.schema)
+    history_db = getattr(args, "history_db", None)
+    if schema in OWN_REGIME_CUTS:
+        regime_join = {"joined": 0, "history_db": None, "reason": "the module writes its own regime cuts"}
+    else:
+        joined = buckets.attach_regime(records, lambda ts: regime.markets_at(ts, history_db=history_db))
+        path = str(history_db or regime.default_history_db())
+        regime_join = {"joined": joined, "history_db": path, "reason": None}
     # Grouped as core.metrics' CLI groups them (see its cmd_read): one group per experiment on an
     # advised arm, so the two bridges always describe the same set of records.
     for r in records:
@@ -106,6 +121,7 @@ def cmd_read(args) -> dict:
         "n_records": n,
         "window": {"mode": mode, "as_of": as_of, "breaks": break_schema, "floor": args.start},
         "allocations": allocations,
+        "regime": regime_join,
         "groups": groups,
     }
 
@@ -123,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     rd.add_argument("--era", default=None, help="one stamped era (ERA_SCHEMAS only), or ALL")
     rd.add_argument("--module", default=None, help="whose declared allocations apply (arm_capital.json)")
     rd.add_argument("--allocations", default=None, help="the allocation file, if not the default")
+    rd.add_argument("--history-db", default=None, help="the gex recorder's history db, if not the default")
     rd.add_argument(
         "--window",
         choices=("arm", "suite"),
