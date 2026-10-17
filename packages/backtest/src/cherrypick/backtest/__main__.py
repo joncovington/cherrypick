@@ -4,6 +4,8 @@ python -m cherrypick.backtest status              # config, key presence, store,
 python -m cherrypick.backtest key status          # whether the vendor key is in the keyring
 python -m cherrypick.backtest key set             # store it (hidden prompt; blank keeps the current one)
 python -m cherrypick.backtest key import-env      # copy the vendor's env var into the keyring once
+python -m cherrypick.backtest fetch --from 2026-10-13 --to 2026-10-16 [--dataset SPX] [--refetch]
+python -m cherrypick.backtest coverage [--dataset SPX]
 python -m cherrypick.backtest purge [--derived] [--apply]   # expunge the vendor's data (dry run by default)
 """
 
@@ -71,6 +73,59 @@ def cmd_key(args) -> int:
     return 0 if res["ok"] else 1
 
 
+def _fetch_refusal(s: dict) -> str | None:
+    """Why a fetch may not run now, or None. Off is off; a lapsed licence forbids new data."""
+    if not s["enabled"]:
+        return "the backtest config is disabled (set enabled: true in ~/.cherrypick/config/backtest.json)"
+    lic = licensing.status(s)
+    if not lic["active"]:
+        return f"the vendor licence ended on {lic['terminated_on']}; purge by {lic['purge_by']}"
+    return None
+
+
+def cmd_fetch(args) -> int:
+    from . import fetch
+    from .vendor import VendorRefusal, client_for
+
+    s = settings.load(args.config)
+    refusal = _fetch_refusal(s)
+    if refusal:
+        print(f"fetch refused: {refusal}", file=sys.stderr)
+        return 2
+    try:
+        client = client_for(s)
+    except VendorRefusal as exc:
+        print(f"fetch refused: {exc}", file=sys.stderr)
+        return 2
+    report = fetch.fetch(
+        s,
+        client,
+        args.dataset,
+        args.start,
+        args.end,
+        refetch=args.refetch,
+        log=lambda m: print(m, file=sys.stderr),
+    )
+    _emit(report)
+    return 0
+
+
+def cmd_coverage(args) -> int:
+    from . import store
+
+    s = settings.load(args.config)
+    path = store.db_path(s, args.dataset)
+    if not path.exists():
+        _emit({"symbol": args.dataset.upper(), "complete": 0, "span": None, "refused": [], "store": None})
+        return 0
+    conn = store.connect(s, args.dataset)
+    try:
+        _emit({**store.coverage(conn, args.dataset), "store": str(path)})
+    finally:
+        conn.close()
+    return 0
+
+
 def cmd_purge(args) -> int:
     s = settings.load(args.config)
     if args.apply:
@@ -92,6 +147,15 @@ def main(argv: list[str] | None = None) -> int:
     k = sub.add_parser("key")
     k.add_argument("action", choices=("status", "set", "import-env"))
     k.set_defaults(fn=cmd_key)
+    f = sub.add_parser("fetch", help="fetch vendor sessions into the store (the only network verb)")
+    f.add_argument("--dataset", default="SPX")
+    f.add_argument("--from", dest="start", required=True)
+    f.add_argument("--to", dest="end", required=True)
+    f.add_argument("--refetch", action="store_true", help="re-fetch sessions already complete")
+    f.set_defaults(fn=cmd_fetch)
+    cv = sub.add_parser("coverage", help="sessions in the store, complete and refused")
+    cv.add_argument("--dataset", default="SPX")
+    cv.set_defaults(fn=cmd_coverage)
     pg = sub.add_parser("purge")
     pg.add_argument("--derived", action="store_true", help="also remove results derived from the data")
     pg.add_argument("--apply", action="store_true", help="actually delete (default is a dry run)")

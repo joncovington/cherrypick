@@ -51,9 +51,39 @@ defaults, so a setting cannot exist that the example does not show.
 **`windows` are declared once and never tuned.** The holdout is invisible to every search and spent
 once per spec. They are never chosen by the advisor, which already knows how those years went.
 
+## The store is the recorder's schema
+
+`store.py` writes vendor sessions into **the gex recorder's own tables** (`gex_quote_samples`,
+`gex_quotes`, `gex_spot_history`, `gex_profile_history`, `daily_closes`), one SQLite file per dataset
+(`vendor/thetadata/SPX.db`). Everything that reads a recorded session takes a `history_db` path, so a
+vendor session replays through the same readers as a recorded one, with no second reader to drift.
+This package may not import gex, so it spells the DDL; `tests/test_store.py` (reading gex's source)
+and `packages/gex/tests/test_backtest_schema_mirror.py` (reading this one's) hold the two equal, one
+from each side, because CI runs only changed packages' tests.
+
+One file per dataset, not per month: the replay's trailing-range input reads earlier sessions from the
+same file, and a month boundary would leave each month's first sessions without one.
+
+How each field is rebuilt from the vendor is declared in `fetch.py`'s docstring. The two that differ
+from a recording in kind, and that validation must measure rather than assume:
+
+- **`age_s` is NULL.** An interval row is the quote standing at that instant; its age is not
+  reported, and the replay treats NULL as fresh.
+- **Gamma is computed** (`greeks.bs_gamma`) from the vendor's IV, because gamma is a Professional
+  field. The recorder's gamma came from the live feed.
+
+A session is written whole or not at all; a refusal is a `vendor_sessions` row with its reason, never
+an empty session. `fetch` is resumable (a complete session is skipped) and `--refetch` clears a
+session before rewriting it.
+
+The vendor library is an **extra** (`pip install -e "packages/backtest[thetadata]"`), not a
+dependency: it pins its own pandas/polars/grpc, and nothing but a fetch needs it. It imports
+python-dotenv without declaring it, so the extra lists both.
+
 ## State
 
-Built: the config, the key verbs, the licence clock, purge, the backup skip and the fence.
-Not yet: the fetch, the store (the gex recorder's schema, one SQLite file a month), validation against
-the recorder, the flies runner and its statistics, the console page (hidden unless config, key,
-data and an active licence are all present), and the advisor's fenced proposals.
+Built: the config, the key verbs, the licence clock, purge, the backup skip, the fence, the store and
+the fetch (SPXW 0DTE).
+Not yet: validation against the recorder, the flies runner and its statistics, the console page
+(hidden unless config, key, data and an active licence are all present), and the advisor's fenced
+proposals.

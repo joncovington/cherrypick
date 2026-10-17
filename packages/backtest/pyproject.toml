@@ -15,6 +15,11 @@ dependencies = ["cherrypick-core", "keyring"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff==0.16.10"]
+# The vendor client, for `fetch` only (pip install -e "packages/backtest[thetadata]"). An extra, not a
+# dependency: it pins its own pandas/polars/grpc, which should not land in the suite's shared
+# environment on every install, and nothing but a fetch needs it. thetadata imports python-dotenv
+# without declaring it (1.0.15), hence the second entry.
+thetadata = ["thetadata==1.0.15", "python-dotenv"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
