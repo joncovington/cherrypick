@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { SuiteFeatures, SuiteFeaturesOk } from "@console/shared";
-import { isFeatureOn, isModuleVisible, isSlideVisible, offReason } from "../src/lib/visibility";
+import { isFeatureOn, isHiddenAsUnknown, isModuleVisible, isSlideVisible, offReason } from "../src/lib/visibility";
 import { visibleNavLinks } from "../src/components/shell/navLinks";
 
 /**
@@ -140,5 +140,53 @@ describe("the nav lists", () => {
     const off = withOff({ features: { advisor: false } });
     expect(visibleNavLinks(off).suite.map((l) => l.to)).not.toContain("/advisor");
     expect(visibleNavLinks(ALL_ON).suite.map((l) => l.to)).toContain("/advisor");
+  });
+});
+
+/**
+ * The one page that FAILS CLOSED: Backtest shows results computed from licensed vendor history the
+ * licence forbids redistributing, so every unknown hides it. Shown to fail: with the rule flipped to
+ * the fail-open form every other page uses (`!known(f) || f.features.backtest !== false`), the
+ * undefined, failed and missing-key cases below all came back visible.
+ */
+describe("backtest fails closed", () => {
+  const failed: SuiteFeatures = { ok: false, error: "config bridge unavailable" };
+  const missing = withOff({ features: { ...ALL_ON.features } });
+  const off = withOff({ features: { ...ALL_ON.features, backtest: false } });
+  const on = withOff({ features: { ...ALL_ON.features, backtest: true } });
+  const hidden: Array<[string, SuiteFeatures | undefined]> = [
+    ["still loading", undefined],
+    ["the bridge failed", failed],
+    ["the reply does not name it", missing],
+    ["the suite says false", off],
+  ];
+
+  for (const [why, f] of hidden) {
+    it(`is hidden when ${why}`, () => {
+      expect(isModuleVisible("backtest", f)).toBe(false);
+      expect(isHiddenAsUnknown("backtest", f)).toBe(true);
+      // No off card and no reason: nothing on screen may say the page exists.
+      expect(offReason("backtest", f)).toBeNull();
+      // Its tabs go with it, so neither the rail nor j/k can name one.
+      for (const slide of ["data", "validation", "runs"]) expect(isSlideVisible("backtest", slide, f)).toBe(false);
+      expect(visibleNavLinks(f).suite.map((l) => l.to)).not.toContain("/backtest");
+    });
+  }
+
+  it("is shown only for an explicit true", () => {
+    expect(isModuleVisible("backtest", on)).toBe(true);
+    expect(isHiddenAsUnknown("backtest", on)).toBe(false);
+    expect(offReason("backtest", on)).toBeNull();
+    expect(isSlideVisible("backtest", "runs", on)).toBe(true);
+    expect(visibleNavLinks(on).suite.map((l) => l.to)).toContain("/backtest");
+  });
+
+  it("leaves every other page's fail-open rule alone", () => {
+    for (const f of [undefined, failed]) {
+      for (const id of ["earnings", "gex", "advisor", "flow", "system"]) {
+        expect(isModuleVisible(id, f)).toBe(true);
+        expect(isHiddenAsUnknown(id, f)).toBe(false);
+      }
+    }
   });
 });

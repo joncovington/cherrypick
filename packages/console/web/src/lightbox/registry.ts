@@ -31,6 +31,7 @@ export const MODULE_FRAMES: Record<ModuleId, ComponentType<{ slide: string }>> =
   reports: lazy(() => import("./manifests/ReportsLightbox").then((m) => ({ default: m.ReportsLightbox }))),
   compare: lazy(() => import("./manifests/CompareLightbox").then((m) => ({ default: m.CompareLightbox }))),
   advisor: lazy(() => import("./manifests/AdvisorLightbox").then((m) => ({ default: m.AdvisorLightbox }))),
+  backtest: lazy(() => import("./manifests/BacktestLightbox").then((m) => ({ default: m.BacktestLightbox }))),
   system: lazy(() => import("./manifests/SystemLightbox").then((m) => ({ default: m.SystemLightbox }))),
   config: lazy(() => import("./manifests/ConfigLightbox").then((m) => ({ default: m.ConfigLightbox }))),
 };

@@ -28,6 +28,7 @@ export const SUITE_LINKS: readonly NavLinkDef[] = [
   { to: "/flow", label: "Options flow", key: "f" },
   { to: "/reports", label: "Reports", key: "r" },
   { to: "/compare", label: "Compare", key: "m" },
+  { to: "/backtest", label: "Backtest", key: "b" },
   { to: "/advisor", label: "Advisor", key: "a" },
   { to: "/live", label: "Live", key: "l" },
   { to: "/system", label: "System", key: "s" },
@@ -50,10 +51,10 @@ export const MODULE_LINKS: readonly NavLinkDef[] = [
 
 export const CONFIG_LINK: NavLinkDef = { to: "/config", label: "Config" };
 
-/** Suite pages the SIMPLE view leaves off the rail: the experiment comparison, the advisor and the
- *  suite's own health are developer surfaces. Still reachable by URL and shortcut, and listed while
- *  you are on one, the same rule as a module's detail tabs. */
-export const SIMPLE_HIDDEN_PAGES: readonly string[] = ["/compare", "/advisor", "/system"];
+/** Suite pages the SIMPLE view leaves off the rail: the experiment comparison, the backtest, the
+ *  advisor and the suite's own health are developer surfaces. Still reachable by URL and shortcut,
+ *  and listed while you are on one, the same rule as a module's detail tabs. */
+export const SIMPLE_HIDDEN_PAGES: readonly string[] = ["/compare", "/backtest", "/advisor", "/system"];
 
 /** The suite links a view lists; `current` is the page the reader is on (always kept). */
 export function suiteLinksFor<T extends NavLinkDef>(links: readonly T[], view: "simple" | "detail", current: string | null): T[] {
@@ -67,7 +68,8 @@ export const ALL_NAV_LINKS: readonly NavLinkDef[] = [...SUITE_LINKS, ...MODULE_L
  * The links a reader can actually use right now: an off module (or the advisor, or GEX with its
  * recorder off) is left out of every nav, and the digit shortcuts are renumbered over what is left,
  * so `1`–`n` always name the modules the menu shows in the order it shows them. Unknown features
- * keep every link (`visibility.ts`: unknown is visible).
+ * keep every link (`visibility.ts`: unknown is visible) -- except Backtest, which fails closed and is
+ * listed only once the suite says `backtest: true`.
  */
 export function visibleNavLinks(features: SuiteFeatures | undefined): {
   suite: NavLinkDef[];

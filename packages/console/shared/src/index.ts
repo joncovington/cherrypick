@@ -39,3 +39,4 @@ export * from "./types/armStatus.js";
 export * from "./types/summary.js";
 export * from "./types/screeners.js";
 export * from "./types/earningsCalendar.js";
+export * from "./types/backtest.js";

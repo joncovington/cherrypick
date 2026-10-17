@@ -80,3 +80,15 @@ export function moduleOn(features: SuiteFeatures | undefined, id: string): boole
   if (id === "gex") return features.services["gex-recorder"] !== false;
   return features.modules[id]?.enabled !== false;
 }
+
+/**
+ * The backtest page's gate, and the one rule here that FAILS CLOSED: true only when the reply was
+ * read and names `features.backtest` as exactly `true`. Loading, a failed bridge, an absent key and
+ * `false` all refuse. The page shows results computed from licensed vendor history the licence
+ * forbids redistributing, so a broken bridge must cost the page, never expose it. The orchestrator
+ * folds the config switch, an active licence, a keyring key and a vendor session into that one
+ * value (`capabilities.gated_features`); nothing here re-derives it.
+ */
+export function backtestOn(features: SuiteFeatures | undefined): boolean {
+  return features !== undefined && features.ok && features.features["backtest"] === true;
+}

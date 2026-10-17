@@ -135,5 +135,8 @@ backfilled; and the vendor store carries no volume, so the regime rows' flow col
 Built: the config, the key verbs, the licence clock, purge, the backup skip, the fence, the store, the
 fetch (SPXW 0DTE, any cadence the profile cadence divides), regime rows, validation and the flies
 runner with its statistics.
-Not yet: the console page (hidden unless config, key, data and an active licence are all present),
-and the advisor's fenced proposals.
+The console's Backtest page reads `python -m cherrypick.backtest read overview|run` (`readout.py`)
+and is **fail-closed**: shown only when the orchestrator's `features.backtest` is true
+(`orchestrator/backtestgate.py`: the operator's config enabled, the licence active, the key in the
+keyring, a complete session in the store), with its server routes refusing on their own.
+Not yet: the advisor's fenced proposals.

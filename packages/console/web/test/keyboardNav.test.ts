@@ -76,6 +76,14 @@ describe("the module digits", () => {
     expect(press(first.state, "a", { now: 1100 }).action).toEqual({ kind: "navigate", to: "/advisor" });
   });
 
+  it("g b reaches the backtest only once the suite says it is on (it fails closed)", () => {
+    const on = { ok: true as const, capabilities: {}, modules: {}, services: {}, features: { backtest: true } };
+    const first = press(IDLE, "g");
+    expect(press(first.state, "b", { now: 1100 }).action).toBeNull();
+    expect(press(first.state, "b", { now: 1100, features: { ok: false, error: "bridge down" } }).action).toBeNull();
+    expect(press(first.state, "b", { now: 1100, features: on }).action).toEqual({ kind: "navigate", to: "/backtest" });
+  });
+
   it("show every module when the bridge failed", () => {
     expect(press(IDLE, "3", { features: { ok: false, error: "bridge down" } }).action).toEqual({ kind: "navigate", to: "/pmcc" });
   });

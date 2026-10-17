@@ -261,6 +261,15 @@ failure. A direct URL to an off page renders `ModuleOffCard` (why, and a link to
 and never the module. Config always lists every toggle. Calendars, pmcc and curve carry an
 `experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`.
 
+- **The one exception fails closed: Backtest** (`FAIL_CLOSED_PAGES` in `visibility.ts`). Its results
+  come from licensed vendor history whose licence forbids redistribution, so it is shown only when
+  the reply was read and says `features.backtest === true` — hidden while loading, on `{ok: false}`,
+  when the key is absent and when false. Hidden, it has no off reason, its tabs and rail link go, and
+  a direct URL is the 404 page (`ModuleRoute`), not the off card. The server refuses its routes on its
+  own (`featuresBridge.backtestOn`), so the browser hiding it is never what keeps the data in. Each
+  guard was shown to fail flipped to the fail-open form (`visibility.test.ts`, `routes.test.tsx`,
+  `backtest-routes.test.ts`).
+
 **Module frame.** Every page renders a left rail and a content pane inside the shell. The rail
 starts collapsed to its toggle; open or shut is the `navExpanded` console preference.
 `registry.ts`'s `MODULE_FRAMES` and `navGroups.ts`'s `NAV_DECL` are full `Record`s over `ModuleId`, so
@@ -451,6 +460,21 @@ the intervals, paired differences, t bounds, sign tests and projections are `cor
   `per_entry` / `per_100_risk` paired blocks, keyed and windowed as the dollar pair. A ledger with no
   recorded capital (flies) shows a dash there, never zero, and a partial record says how many trades
   carry one.
+
+**Backtest** (`/backtest`, 2026-10-17, `lightbox/manifests/BacktestLightbox.tsx`,
+`pages/Backtest/BacktestPage.tsx`) — `packages/backtest`'s replays over licensed vendor history, the
+ONLY place those results appear, and fail closed (above). `GET /api/backtest/overview` and
+`/api/backtest/runs/:id` (`routes/backtest.ts` → `services/backtestBridge.ts` → `python -m
+cherrypick.backtest read overview|run --id`, async, memoised 30 s) each 404 with the unknown-API body
+unless the features answer says `backtest: true`; a run id is checked against the runner's shape
+(`BACKTEST_RUN_ID` in `@console/shared`) and anything else is a 400 that spawns nothing. A bridge,
+not a mirror: the unlock verdict, every check, the paired interval and `no_exposure` are the module's.
+Tabs: `data` (licence clock, stores with refusals), `validation` (per cadence: the unlock verdict, the
+vendor-against-recorder checks, per-session quote and profile agreement), `runs` (the list; `?run=`
+reads one report: each arm's summary, the pairing with control, trials, fill model, code commit, data
+fingerprint, refused sessions). Every tab opens with the licensed-data note. Run money is net of fees,
+signed, whole-position dollars; fees are shown as a cost, already out of net, never subtracted again.
+Detail view only (`SIMPLE_HIDDEN_PAGES`); shortcut `g b`.
 
 **The arm picker** (flies, MEIC; the header's `ArmSelect`) narrows what a tab already read; it never
 changes a read. A tab whose content is one block per arm follows it: session, forest, timeline,
