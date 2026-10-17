@@ -169,6 +169,38 @@ The credit bound is the reader noise measured on 2026-10-17 against live flies' 
 contract: median $0.05, p90 $0.30 on verticals), set from that measurement and not from any replay.
 A session that fails is listed with its cases, never averaged away.
 
+**First read, 2026-10-17: the four recorded sessions** (`flies.replay_check`, CLI `replay-check`).
+These are fewer than the 10 the test needs, so this is not a verdict.
+
+| Measure | Result | Declared | Check |
+|---|---|---|---|
+| Paper entries matched | 47 / 50 (94%) | ≥ 90% | pass |
+| Replay-only entry episodes | 2 / 50 (4%) | ≤ 10% | pass |
+| Matched credits, absolute difference | median $0.10, p90 $0.26 | median ≤ $0.10, p90 ≤ $0.30 | pass |
+| Paper completions matched within 30 s | 21 / 35 (60%) | ≥ 85% | **fail** |
+| Replay completions with no paper twin within 30 s | 12 / 35 (34%) | ≤ 10% | **fail** |
+
+- **The three missed entries.** One is 10-13's first entry, the at-the-money side coin flip. The
+  other two are refused as duplicates in the same second paper completed one position and entered
+  another, which is ordering inside one tick, finer than the timestamps.
+- **Completions miss on timing.** A completion is a touch, and the two quote readers catch touches
+  minutes apart in both directions: late by 0.5 to 56 minutes, and early on 10-14 and 10-16.
+  - Under paper's live-limit rule the debit paid is the position's own limit, so the minute barely
+    moves P&L. Whether a position completes at all does.
+  - On that measure the replay agrees on 49 of 50 positions: it completes 34 of paper's 35
+    completions at some point in the session, and none of paper's 15 strands.
+  - That measure was found after reading these sessions, so here it is a report, not a pass.
+
+**Declared 2026-10-17, for sessions from 2026-10-19 on (none recorded yet):** the completion test
+is the outcome. A position paper completed must also be completed by the replay that session; one
+paper stranded must also be stranded.
+- **Agreement:** ≥ 95% of positions over at least 10 sessions from 10-19.
+- **Timing:** the 30 s measures stay in the report as timing, no longer pass/fail.
+- **Everything else stays as declared above.**
+
+Stage 3 (the live-rules variant: the cap, the 10:15 start, resting completion orders, the fill model)
+is built on this one only after it passes.
+
 **Shape.** Rebuild each recorded tick as the snapshot the paper loop would have built, and feed it
 to flies' own code: `book.process_snapshot` against a scratch ledger per arm. There is no second copy
 of the rules. Fields beyond quotes are enriched from what is already recorded:
