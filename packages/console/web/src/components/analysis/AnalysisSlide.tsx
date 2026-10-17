@@ -1,6 +1,6 @@
-import type { ArmAnalysis, AnalysisStreaks, DrawdownEpisode, TradingMode } from "@console/shared";
+import type { ArmAnalysis, AnalysisStreaks, CapitalReading, DrawdownEpisode, TradingMode } from "@console/shared";
 import { Card } from "../DataTable";
-import { fmtMoney } from "../../lib/format";
+import { fmtMoney, fmtNum, fmtPct } from "../../lib/format";
 import { useModuleAnalysis, type PerformanceModuleId } from "../../lib/api";
 import { Tile } from "../performance/Tile";
 import { TileGrid } from "../performance/TileGrid";
@@ -36,6 +36,92 @@ function run(s: AnalysisStreaks): string {
 function span(sessions: number | null, days: number | null): string {
   if (sessions === null) return "—";
   return `${String(sessions)} ses${days === null ? "" : ` · ${String(days)}d`}`;
+}
+
+/** A fraction from core (0.31) as a percent (31.0%). */
+function pct(v: number | null): string {
+  return fmtPct(v === null ? null : v * 100, 1);
+}
+
+/**
+ * Capital, two ways (core.analysis.capital): the risk the arm was observed to carry at once, and the
+ * allocation a person declared for it. Six tiles, so the row never comes out ragged.
+ */
+export function CapitalTiles({ c }: { c: CapitalReading }) {
+  const p = c.peak_risk;
+  const a = c.allocation;
+  const peakTitle =
+    p.withheld !== null
+      ? p.withheld
+      : `on ${p.session ?? "—"}${p.at !== null ? ` at ${p.at.slice(11, 16)}` : ""}; ` +
+        (p.basis === "intraday"
+          ? "summed where positions' entry and exit times overlap"
+          : p.basis === "mixed"
+            ? "positions open across sessions, plus same-session positions where their times overlap"
+            : "positions summed over every session they were open") +
+        (p.untimed > 0 ? `; ${String(p.untimed)} without times counted as open all session` : "");
+  const declared = a.current !== null;
+  return (
+    <>
+      <TileGrid count={6}>
+        <Tile
+          label="peak risk"
+          value={fmtMoney(p.peak)}
+          tone="dim"
+          n={p.capital_known}
+          title={peakTitle}
+        />
+        <Tile label="return on peak risk" value={pct(c.return_on_peak_risk)} tone={tone(c.return_on_peak_risk)} afterFees />
+        <Tile
+          label="max drawdown / peak risk"
+          value={pct(c.max_drawdown_over_peak_risk)}
+          tone={lossTone(c.max_drawdown_over_peak_risk)}
+          title="the session max drawdown as a share of the most the arm had at risk at once"
+        />
+        <Tile
+          label="allocation"
+          value={declared ? fmtMoney(a.current) : "none declared"}
+          tone="dim"
+          title={
+            declared
+              ? a.declared.map((d) => `${fmtMoney(d.capital)} from ${d.from}${d.note ? ` (${d.note})` : ""}`).join("; ")
+              : "no allocation is declared for this arm in arm_capital.json"
+          }
+        />
+        <Tile
+          label="return on allocation"
+          value={pct(a.return)}
+          tone={tone(a.return)}
+          n={declared ? a.covered : null}
+          nUnit="sessions"
+          afterFees={declared}
+        />
+        <Tile
+          label="allocation / max drawdown"
+          value={a.capital_over_max_drawdown === null ? "—" : `${fmtNum(a.capital_over_max_drawdown, 1)}×`}
+          tone="dim"
+          title="the latest declared allocation over the dollar max drawdown of the sessions it covers"
+        />
+      </TileGrid>
+      {p.withheld !== null && (
+        <p className="muted" style={{ fontSize: 11 }}>
+          peak risk unknown — {p.withheld}
+        </p>
+      )}
+      {p.withheld === null && p.capital_known < p.trades && (
+        <p className="muted" style={{ fontSize: 11 }}>
+          capital recorded on {String(p.capital_known)} of {String(p.trades)} trades: the peak is over those, and the
+          ratios beside it are withheld
+        </p>
+      )}
+      {declared && a.uncovered > 0 && (
+        <p className="muted" style={{ fontSize: 11 }}>
+          {String(a.uncovered)} of {String(a.sessions)} sessions come before the first declared allocation and join
+          neither allocation figure
+        </p>
+      )}
+    </>
+  );
 }
 
 function EpisodesTable({ episodes }: { episodes: DrawdownEpisode[] }) {
@@ -160,6 +246,13 @@ export function ArmCard({ module, tag, a, updatedAt }: { module: PerformanceModu
         </p>
       )}
 
+      {a.capital !== undefined && (
+        <>
+          <div className="card-subhead">capital</div>
+          <CapitalTiles c={a.capital} />
+        </>
+      )}
+
       <div className="card-subhead">without the biggest winners</div>
       <DurabilityTable d={a.durability} />
       <p className="muted" style={{ fontSize: 11 }}>
@@ -226,6 +319,14 @@ export function AnalysisSlide({ module, mode = "paper" }: { module: PerformanceM
               {" "}· and to this module's own <strong>{data.era.moduleEra}</strong> era
             </>
           )}
+        </p>
+      )}
+      {data.allocations.error !== null && (
+        <p className="muted" style={{ fontSize: 12 }}>
+          <span className="chip chip-warn" style={{ marginRight: 6 }}>
+            allocations not applied
+          </span>
+          {data.allocations.error}
         </p>
       )}
       {data.groups.length === 0 ? (

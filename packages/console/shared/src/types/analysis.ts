@@ -56,6 +56,45 @@ export interface StressReading {
   withheld: string | null;
 }
 
+/** `core.analysis.capital.peak_risk`: the most the arm had at risk at once. */
+export interface PeakRiskReading {
+  peak: number | null;
+  session: string | null;
+  at: string | null;
+  trades: number;
+  capital_known: number;
+  untimed: number;
+  basis: "session" | "intraday" | "mixed" | null;
+  withheld: string | null;
+}
+
+export interface AllocationDeclaration {
+  from: string;
+  capital: number;
+  note: string | null;
+}
+
+/** `core.analysis.capital.allocation_reading`: return and drawdown against the declared allocation
+ *  in force each session. `return`/`max_drawdown` are fractions; null with no declaration. */
+export interface AllocationReading {
+  declared: AllocationDeclaration[];
+  sessions: number;
+  covered: number;
+  uncovered: number;
+  return: number | null;
+  max_drawdown: number | null;
+  max_drawdown_dollars: number | null;
+  current: number | null;
+  capital_over_max_drawdown: number | null;
+}
+
+export interface CapitalReading {
+  peak_risk: PeakRiskReading;
+  return_on_peak_risk: number | null;
+  max_drawdown_over_peak_risk: number | null;
+  allocation: AllocationReading;
+}
+
 export interface TradeRef {
   net: number;
   session: string | null;
@@ -77,6 +116,8 @@ export interface ArmAnalysis {
   };
   durability: { net: number; trades: number; without_top: DurabilityRow[] };
   stress: StressReading;
+  /** Optional only so a reply from before the capital block renders without it. */
+  capital?: CapitalReading;
   coverage: { trades: number; entry_time: number; exit_time: number; entry_spot: number; exit_spot: number };
 }
 
@@ -94,6 +135,8 @@ export interface ModuleAnalysisResult {
    * era where it has one. */
   era: { key: "current" | "ALL"; from: string | null; note: string | null; moduleEra: string | null };
   nRecords: number;
+  /** The declared-allocation file the read used, and why it applied nothing if it was refused. */
+  allocations: { path: string | null; error: string | null };
   groups: ModuleAnalysisGroup[];
   error: string | null;
 }
