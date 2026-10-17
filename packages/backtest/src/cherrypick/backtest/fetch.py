@@ -13,7 +13,8 @@ How each recorder field is rebuilt from the vendor (the declared rules; validati
   separate (and, on this account, end-of-day only).
 - **Profile** (`gex_profile_history`), every `PROFILE_SECONDS` from the open: open interest from the
   vendor's daily OI, gamma computed from the vendor's IV (`greeks.bs_gamma`; gamma is not in the
-  Standard tier), IV as reported. Volume is not fetched and stays NULL.
+  Standard tier), and IV in percent, the recorder's unit (the vendor reports a fraction). Volume is
+  not fetched and stays NULL.
 - **Daily closes**: the index's end-of-day close, source `thetadata:index_eod`.
 
 A session is written whole or not at all: its rows and its `vendor_sessions` row commit together, and a
@@ -97,7 +98,9 @@ def build_session(rows: list[dict], oi: dict, *, day: str, each_side: int) -> di
                 side = "call" if r["right"] == "CALL" else "put"
                 iv = r["iv"] if r["iv"] and r["iv"] > 0 else None
                 row = per_strike.setdefault(r["strike"], {})
-                row[f"{side}_iv"] = iv
+                # The recorder stores IV in percent to two places (core.gex.compute_gex_profile);
+                # the vendor reports a fraction. Gamma is computed from the fraction.
+                row[f"{side}_iv"] = round(iv * 100.0, 2) if iv is not None else None
                 row[f"{side}_gamma"] = greeks.bs_gamma(spot, r["strike"], iv, t_years)
                 row[f"{side}_oi"] = oi.get((r["right"], r["strike"]))
             profiles.append((ts, per_strike))

@@ -103,7 +103,8 @@ def test_a_crossed_quote_is_dropped_and_gamma_needs_an_iv():
     sample = dict(built["samples"])[_ts(DAY, 9, 30) + 5 * 15]
     assert (store.SIDES["CALL"], 6000.0) not in {(q[0], q[1]) for q in sample}
     _, profile = built["profiles"][0]
-    assert profile[6000.0]["call_gamma"] > 0 and profile[6000.0]["call_iv"] == 0.2
+    assert profile[6000.0]["call_gamma"] > 0
+    assert profile[6000.0]["call_iv"] == 20.0, "IV is stored in percent, the recorder's unit"
 
 
 def test_an_early_close_ends_the_session_at_one():

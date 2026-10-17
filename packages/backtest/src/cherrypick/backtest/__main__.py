@@ -6,6 +6,7 @@ python -m cherrypick.backtest key set             # store it (hidden prompt; bla
 python -m cherrypick.backtest key import-env      # copy the vendor's env var into the keyring once
 python -m cherrypick.backtest fetch --from 2026-10-13 --to 2026-10-16 [--dataset SPX] [--refetch]
 python -m cherrypick.backtest coverage [--dataset SPX]
+python -m cherrypick.backtest validate [--dates a,b,...]   # against the recorder; results stay local
 python -m cherrypick.backtest purge [--derived] [--apply]   # expunge the vendor's data (dry run by default)
 """
 
@@ -126,6 +127,27 @@ def cmd_coverage(args) -> int:
     return 0
 
 
+def cmd_validate(args) -> int:
+    from . import store, validate
+
+    s = settings.load(args.config)
+    recorder = args.recorder_db
+    if args.dates:
+        dates = [d.strip() for d in args.dates.split(",") if d.strip()]
+    else:
+        from cherrypick.core import quotehistory
+
+        dates = validate.recorded_days(
+            recorder or quotehistory.default_history_db(), store.db_path(s, args.dataset), args.dataset
+        )
+    if not dates:
+        print("validate: no session is in both the recorder's history and the vendor store", file=sys.stderr)
+        return 1
+    report = validate.run(s, args.dataset, dates, recorder_db=recorder)
+    _emit(report)
+    return 0
+
+
 def cmd_purge(args) -> int:
     s = settings.load(args.config)
     if args.apply:
@@ -156,6 +178,13 @@ def main(argv: list[str] | None = None) -> int:
     cv = sub.add_parser("coverage", help="sessions in the store, complete and refused")
     cv.add_argument("--dataset", default="SPX")
     cv.set_defaults(fn=cmd_coverage)
+    va = sub.add_parser("validate", help="vendor sessions against the recorder's on the days both exist")
+    va.add_argument("--dataset", default="SPX")
+    va.add_argument("--dates", default=None, help="comma-separated; default: every session in both")
+    va.add_argument(
+        "--recorder-db", dest="recorder_db", default=None, help="default: the gex recorder's history"
+    )
+    va.set_defaults(fn=cmd_validate)
     pg = sub.add_parser("purge")
     pg.add_argument("--derived", action="store_true", help="also remove results derived from the data")
     pg.add_argument("--apply", action="store_true", help="actually delete (default is a dry run)")

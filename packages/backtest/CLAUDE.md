@@ -80,10 +80,24 @@ The vendor library is an **extra** (`pip install -e "packages/backtest[thetadata
 dependency: it pins its own pandas/polars/grpc, and nothing but a fetch needs it. It imports
 python-dotenv without declaring it, so the extra lists both.
 
+## Validation comes before history
+
+`validate` runs on the days both the recorder and the vendor store hold, in three layers (quotes,
+the rebuilt GEX surface, and flies' own `replay-check` run once per source, by subprocess). **History
+runs stay locked until it unlocks** (`validate.UNLOCK_SESSIONS` sessions, and the vendor-sourced
+replay at least as good as the recorder-sourced one on every declared check). The bar compares the
+vendor with our own recording, not with perfection: the recorder-sourced replay itself fails flies'
+completion-timing check. Its reports are derived results and are written only under
+`results/validation/`.
+
+What the first read already showed (described here, never quantified): the recorder's own profile
+can be the thinner one (on a monthly-expiry session it carried visibly fewer strikes, which moves
+walls and the flip), so a profile disagreement is read against each side's strike count, which the
+report carries.
+
 ## State
 
-Built: the config, the key verbs, the licence clock, purge, the backup skip, the fence, the store and
-the fetch (SPXW 0DTE).
-Not yet: validation against the recorder, the flies runner and its statistics, the console page
-(hidden unless config, key, data and an active licence are all present), and the advisor's fenced
-proposals.
+Built: the config, the key verbs, the licence clock, purge, the backup skip, the fence, the store,
+the fetch (SPXW 0DTE) and validation.
+Not yet: the flies runner and its statistics, the console page (hidden unless config, key, data and
+an active licence are all present), and the advisor's fenced proposals.
