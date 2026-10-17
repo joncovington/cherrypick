@@ -7,8 +7,19 @@
 import type { PerformanceModuleId } from "./performance.js";
 import type { TradingMode } from "./status.js";
 
-/** The `core.analysis.VERSION` this console renders. Any other is refused, never half-drawn. */
-export const ANALYSIS_VERSION = 1;
+/** The `core.analysis.VERSION` this console renders. Any other is refused, never half-drawn.
+ *  2 (2026-10-17): each arm is read over its own era where the module's breaks name arms. */
+export const ANALYSIS_VERSION = 2;
+
+/** `core.analysis.windows`: where an arm's reading starts, and why. `arm_era` is the arm's own era
+ *  (its latest break, else the module's latest book-wide one); `suite` is the suite window, either
+ *  because nothing has broken since it opened or because the module's breaks name no arm. */
+export interface ArmWindow {
+  scope: "arm_era" | "suite";
+  start: string | null;
+  break: { break_date: string | null; scope: string | null; kind: string | null; reason: string | null } | null;
+  reason: string;
+}
 
 export interface AnalysisStreaks {
   longest_win: number;
@@ -164,6 +175,8 @@ export interface ArmAnalysis {
   execution?: ExecutionReading;
   /** Optional for the same reason: replies from before the breakdowns. */
   buckets?: Breakdowns;
+  /** The window this arm was read over (version 2). */
+  window?: ArmWindow;
   coverage: { trades: number; entry_time: number; exit_time: number; entry_spot: number; exit_spot: number };
 }
 

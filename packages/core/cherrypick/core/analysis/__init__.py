@@ -38,7 +38,7 @@ from cherrypick.core.metrics import _scored, calibration_reading, max_drawdown, 
 
 #: The fact set's version. Bump it when a field changes meaning, so a stored reading is never
 #: compared with a newer one as though they were the same measurement.
-VERSION = 1
+VERSION = 2  # 2 (2026-10-17): each arm is read over its own era, where the breaks name arms
 
 #: Shares of the trade count whose largest winners `durability` removes.
 DURABILITY_FRACTIONS = (0.01, 0.05, 0.10)

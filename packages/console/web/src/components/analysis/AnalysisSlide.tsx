@@ -1,6 +1,7 @@
 import type {
   ArmAnalysis,
   AnalysisStreaks,
+  ArmWindow,
   BucketTable,
   Breakdowns,
   CapitalReading,
@@ -48,6 +49,18 @@ function run(s: AnalysisStreaks): string {
 function span(sessions: number | null, days: number | null): string {
   if (sessions === null) return "—";
   return `${String(sessions)} ses${days === null ? "" : ` · ${String(days)}d`}`;
+}
+
+/** Which window this arm was read over, and why (core.analysis.windows). */
+export function WindowLine({ w }: { w: ArmWindow }) {
+  const b = w.break;
+  const what = b === null ? null : [b.kind, b.scope !== null && b.scope !== "*" ? b.scope : null].filter(Boolean).join(" · ");
+  return (
+    <p className="muted" style={{ fontSize: 11, marginTop: 0 }} title={b?.reason ?? undefined}>
+      read from <strong>{w.start ?? "the first trade"}</strong>
+      {w.scope === "arm_era" ? ` — its era: ${w.reason}${what ? ` (${what})` : ""}` : ` — the suite window: ${w.reason}`}
+    </p>
+  );
 }
 
 /** A fraction from core (0.31) as a percent (31.0%). */
@@ -381,6 +394,7 @@ export function ArmCard({
       : `the ${String(Math.round(s.quantile * 100))}th percentile of ${String(s.resamples)} reorderings of the same ${String(s.sessions)} sessions`;
   return (
     <Card title={tag} collapseKey={`analysis-${module}-${tag}`} updatedAt={updatedAt}>
+      {a.window !== undefined && <WindowLine w={a.window} />}
       {/* Twelve tiles: runs and extremes, then drawdowns and the stress test. */}
       <TileGrid count={12}>
         <Tile label="longest up run" value={String(a.session_streaks.longest_win)} tone="dim" nUnit="sessions" n={s.sessions} />
@@ -543,12 +557,15 @@ export function AnalysisSlide({
       )}
       {data.era.note !== null && (
         <p className="muted" style={{ fontSize: 12 }}>
-          scoped to the suite's current evidence window ({data.era.from ?? "all time"}) — {data.era.note}
+          each arm is read over its own era where this module's measurement breaks name arms (its latest break,
+          else the module's latest book-wide one), and otherwise over the suite's evidence window (
+          {data.era.from ?? "all time"}) — {data.era.note}
           {data.era.moduleEra !== null && (
             <>
               {" "}· and to this module's own <strong>{data.era.moduleEra}</strong> era
             </>
           )}
+          . Every card says which. The performance tab reads the suite window, so the two can differ.
         </p>
       )}
       {data.allocations.error !== null && (
