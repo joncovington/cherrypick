@@ -11,6 +11,7 @@ import {
   emptySlice,
   heroOf,
   inWindow,
+  scopeTrades,
   sessionNeighbours,
   summaryWindow,
   weekdayOf,
@@ -185,7 +186,7 @@ export function readCurveSummary(config: ConsoleConfig, q: SummaryQuery): Module
   const read = withReadSnapshot<LedgerRead | null>(file, null, (db) => readLedger(db, window));
   if (read === null) return missing();
 
-  const { trades } = read;
+  const trades = scopeTrades(read.trades, q);
   const hero = heroOf(trades, true, read.open);
   const premiumRows = trades.filter((t) => t.premium !== null);
   const premium = round2(premiumRows.reduce((s, t) => s + (t.premium ?? 0), 0));

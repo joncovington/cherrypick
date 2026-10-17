@@ -16,15 +16,67 @@ export interface SummaryQuery {
   range: string | undefined;
   /** The page's session; null = the module's latest session with settled rows. */
   day: string | null;
+  /** The page header's scope, absent/null = every arm. Applied post-fetch, so a reader whose
+   *  trades carry an `arm` narrows the same way whichever module it is. */
+  arm?: string | null;
+  /** The header's symbol, absent/null = every symbol. Only a reader whose trades carry a `symbol`
+   *  can honour it; a single-symbol book ignores it rather than filtering itself to nothing. */
+  symbol?: string | null;
+  /** The header's era, absent/null = the module's own default era. Only the readers with an era
+   *  model (flies today) read it. */
+  era?: string | null;
 }
 
 export type SummaryReader = (config: ConsoleConfig, q: SummaryQuery) => ModuleSummarySlice;
+
+/**
+ * The page scope applied to a reader's settled trades: the header's arm and symbol, once, in one
+ * place, so every module's summary narrows the same way and no reader re-implements it. A module
+ * whose trades carry no `symbol` (curve's VXX, bwb's SPX) is not filtered on one it never had.
+ */
+export function scopeTrades<T extends SummaryTrade>(trades: readonly T[], q: SummaryQuery): T[] {
+  const arm = q.arm ?? null;
+  const symbol = q.symbol ?? null;
+  if (arm === null && symbol === null) return [...trades];
+  return trades.filter(
+    (t) => (arm === null || t.arm === arm) && (symbol === null || t.symbol == null || t.symbol === symbol),
+  );
+}
+
+/**
+ * The same scope as SQL, for the counts a reader takes straight from the ledger instead of rolling
+ * them up from `SummaryTrade[]` — the open count, the session list behind the day arrows, and the
+ * activity tiles. Without this the page would show two scopes at once: a narrowed hero above
+ * unscoped counters, which the money layout does not allow.
+ *
+ * `cols.symbol` is null for a single-symbol book, matching `scopeTrades`: it is not filtered on a
+ * symbol it never had. `conditions` is the bare `col = ?` list for a caller that has to embed them
+ * in its own subquery.
+ */
+export function scopeClauses(
+  q: SummaryQuery,
+  cols: { arm: string; symbol: string | null },
+): { sql: string; params: string[]; conditions: string[] } {
+  const conditions: string[] = [];
+  const params: string[] = [];
+  if (q.arm != null && q.arm !== "") {
+    conditions.push(`${cols.arm} = ?`);
+    params.push(q.arm);
+  }
+  if (q.symbol != null && q.symbol !== "" && cols.symbol !== null) {
+    conditions.push(`${cols.symbol} = ?`);
+    params.push(q.symbol);
+  }
+  return { sql: conditions.length > 0 ? ` AND ${conditions.join(" AND ")}` : "", params, conditions };
+}
 
 /** One settled trade, in the module's own money layout (per-row TradeMoney). */
 export interface SummaryTrade {
   /** The ET session the trade is booked to (its close/settle session). */
   session: string;
   arm: string;
+  /** The underlying, where the module's own rows carry one. Absent = a single-symbol book. */
+  symbol?: string | null;
   gross: number;
   /** Trading fees, settlement folded in where the split was never recorded. Null = n/r. */
   fees: number | null;

@@ -132,7 +132,22 @@ export function FliesLightbox({ slide }: { slide: string }) {
   };
 
   const slides: Array<SlideDef & { id: FliesSlideId }> = [
-    { id: "summary", label: FLIES_LABEL.summary, render: () => <ModuleSummary module="flies" mode={mode} /> },
+    {
+      id: "summary",
+      label: FLIES_LABEL.summary,
+      // The page header owns the scope: its arm/symbol/era narrow the summary, and its date select
+      // and the summary's day arrows step the same session. Before this the summary ignored all
+      // four and read its own ?day=, so the header looked dead on this tab.
+      render: () => (
+        <ModuleSummary
+          module="flies"
+          mode={mode}
+          scope={{ arm, symbol, era }}
+          day={date}
+          onDay={(d) => setDate(d)}
+        />
+      ),
+    },
     {
       id: "session",
       label: FLIES_LABEL.session,

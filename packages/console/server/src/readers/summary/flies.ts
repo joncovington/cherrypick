@@ -11,6 +11,8 @@ import {
   breakdownOf,
   emptySlice,
   heroOf,
+  scopeClauses,
+  scopeTrades,
   sessionNeighbours,
   summaryWindow,
   weekdayOf,
@@ -83,16 +85,18 @@ export function readFliesSummary(config: ConsoleConfig, q: SummaryQuery): Module
   missing.notes.push(`No ${q.mode} flies ledger could be read, so there is nothing to summarise.`);
 
   return withReadSnapshot<ModuleSummarySlice>(dbPath, missing, (db) => {
-    const era = eraClause(null);
+    const era = eraClause(q.era ?? null);
     const eraAnd = era.sql !== null ? ` AND ${era.sql}` : "";
+    const sc = scopeClauses(q, { arm: "arm", symbol: "symbol" });
 
-    // Sessions with settled rows in the era: the day arrows, and the latest one when no day is named.
+    // Sessions with settled rows in the era AND the scope: the day arrows, and the latest one when
+    // no day is named. The scope belongs here, or picking an arm would step onto days it never traded.
     const sessions = db
       .prepare<string[], { d: string }>(
         `SELECT DISTINCT trade_date AS d FROM fly_positions
-          WHERE ${SETTLED}${eraAnd} AND trade_date IS NOT NULL ORDER BY d`,
+          WHERE ${SETTLED}${eraAnd}${sc.sql} AND trade_date IS NOT NULL ORDER BY d`,
       )
-      .all(...era.params)
+      .all(...era.params, ...sc.params)
       .map((r) => r.d);
     const session = sessionNeighbours(sessions, q.day);
     const win = summaryWindow(q.range, session.day);
@@ -102,14 +106,14 @@ export function readFliesSummary(config: ConsoleConfig, q: SummaryQuery): Module
 
     const rows = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT trade_date, entry_time, arm, entry_mode, kind, quantity, net, gross_pnl, fees,
+        `SELECT trade_date, entry_time, arm, symbol, entry_mode, kind, quantity, net, gross_pnl, fees,
                 ${col(db, "settlement_fees")} AS settlement_fees,
                 ${col(db, "floor_dollars")} AS floor_dollars, pnl
            FROM fly_positions WHERE ${SETTLED}${eraAnd}${winAnd}`,
       )
       .all(...params);
 
-    const trades: FlyTrade[] = rows.map((r) => {
+    const trades: FlyTrade[] = scopeTrades(rows.map((r): FlyTrade => {
       const total = num(r["fees"]);
       const settlement = num(r["settlement_fees"]);
       const entryMode = str(r["entry_mode"]);
@@ -118,6 +122,7 @@ export function readFliesSummary(config: ConsoleConfig, q: SummaryQuery): Module
       return {
         session: String(r["trade_date"]),
         arm: str(r["arm"]) ?? "unknown",
+        symbol: str(r["symbol"]),
         gross: num(r["gross_pnl"]) ?? 0,
         // tradeCash's rule: settlement out of the total once; the total stays when never split.
         fees: total !== null && settlement !== null ? round2(total - settlement) : total,
@@ -133,15 +138,15 @@ export function readFliesSummary(config: ConsoleConfig, q: SummaryQuery): Module
         premium: Math.max(price ?? 0, 0) * 100 * (num(r["quantity"]) ?? 1),
         floor: kind === "fly" ? num(r["floor_dollars"]) : null,
       };
-    });
+    }), q);
 
     const open = Number(
       db
         .prepare<string[], { n: number }>(
           `SELECT COUNT(*) AS n FROM fly_positions
-            WHERE COALESCE(status, '') NOT IN ('settled', 'cancelled') AND void_reason IS NULL${eraAnd}${winAnd}`,
+            WHERE COALESCE(status, '') NOT IN ('settled', 'cancelled') AND void_reason IS NULL${eraAnd}${sc.sql}${winAnd}`,
         )
-        .get(...params)?.n ?? 0,
+        .get(...era.params, ...sc.params, ...rc.params)?.n ?? 0,
     );
 
     const hero = heroOf(trades, false, open);

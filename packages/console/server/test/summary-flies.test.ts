@@ -110,8 +110,8 @@ beforeAll(() => {
   emptyConfig = cfg(fs.mkdtempSync(path.join(os.tmpdir(), "console-summary-flies-empty-")));
 });
 
-const summary = (range: string | undefined, day: string | null, mode: "paper" | "live" = "paper") =>
-  readFliesSummary(config, { mode, range, day });
+const summary = (range: string | undefined, day: string | null, mode: "paper" | "live" = "paper", scope: { arm?: string | null; symbol?: string | null; era?: string | null } = {}) =>
+  readFliesSummary(config, { mode, range, day, ...scope });
 const log = (from: string, to: string) => readFliesTradeLog(config, "paper", { ...NO_TRADE_LOG_QUERY, from, to }).totals;
 const cost = (s: ReturnType<typeof summary>, label: string) => s.hero.costs.find((c) => c.label === label)?.amount;
 
@@ -225,6 +225,36 @@ describe("the flies summary's KPIs", () => {
     const spans = (s: ReturnType<typeof summary>) => s.notes.some((n) => n.includes("2026-10-05"));
     expect(spans(summary("month", DAY))).toBe(true);
     expect(spans(summary("week", DAY))).toBe(false);
+  });
+});
+
+describe("the flies summary's scope", () => {
+  it("narrows the hero and the by-arm table to the header's arm", () => {
+    const all = summary("week", DAY);
+    const scoped = summary("week", DAY, "paper", { arm: "control" });
+    expect(all.hero.trades).toBe(4);
+    expect(scoped.hero.trades).toBe(3);
+    expect(scoped.hero.net).toBeCloseTo(3.11 - 263.44 + 90, 2);
+    expect(scoped.arms.map((a) => a.arm)).toEqual(["control"]);
+  });
+
+  it("filters by symbol only where the header names one", () => {
+    expect(summary("all", null, "paper", { symbol: "SPX" }).hero.trades).toBe(5);
+    expect(summary("all", null, "paper", { era: "ALL", symbol: "XSP" }).hero.trades).toBe(1);
+  });
+
+  it("pools every era only when the header widens to ALL", () => {
+    expect(summary("all", null).hero.trades).toBe(5);
+    expect(summary("all", null, "paper", { era: "ALL" }).hero.trades).toBe(6);
+  });
+
+  it("scopes the open count and the day arrows, not just the settled roll-up", () => {
+    const all = summary("all", null);
+    expect(all.hero.open).toBe(1); // p5: still open, under control
+    expect(all.session.day).toBe(DAY);
+    const old = summary("all", null, "paper", { arm: "old" });
+    expect(old.hero.open).toBe(0); // the retired arm has no open position
+    expect(old.session.day).toBe(PREV); // the arrows step through the arm's own settled sessions
   });
 });
 

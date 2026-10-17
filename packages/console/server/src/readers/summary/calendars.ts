@@ -10,6 +10,7 @@ import {
   emptySlice,
   heroOf,
   inWindow,
+  scopeTrades,
   sessionNeighbours,
   summaryWindow,
   type SummaryQuery,
@@ -168,9 +169,9 @@ export function readCalendarsSummary(config: ConsoleConfig, q: SummaryQuery): Mo
   const window = summaryWindow(q.range, resolvedDay);
   const session = sessionNeighbours(allSessions, resolvedDay);
 
-  const trades: CalendarsTrade[] = settledAll
+  const trades: CalendarsTrade[] = scopeTrades(settledAll
     .filter((r) => inWindow(r.weekOf, window))
-    .map((r) => ({
+    .map((r): CalendarsTrade => ({
       session: r.weekOf,
       arm: r.arm,
       gross: r.grossPnl ?? 0,
@@ -182,7 +183,7 @@ export function readCalendarsSummary(config: ConsoleConfig, q: SummaryQuery): Mo
       exitKind: r.exitKind,
       debitPaid: r.entryCash === null ? null : round2(-r.entryCash),
       symbol: extra.symbols.get(rowKey(r.weekOf, r.arm)) ?? null,
-    }));
+    })), q);
   const inScope = all.filter((r) => inWindow(r.weekOf, window));
   const open = inScope.filter((r) => !finished(r)).length;
 

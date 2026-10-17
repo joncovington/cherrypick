@@ -161,7 +161,9 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     return readMeicSummary(config, parseMode(req.query), parseMeicScope(req.query), typeof q["range"] === "string" ? q["range"] : undefined, day, entryPage);
   });
   // Every other module's simplified-view summary: one mechanism, each module's own reader and
-  // KPIs (readers/summary/). An unknown module is a 404, never an empty summary.
+  // KPIs (readers/summary/). An unknown module is a 404, never an empty summary. The page header's
+  // arm/symbol/era ride the query (the same transport keys the module pages send) so the summary
+  // narrows the way the page beside it does -- MEIC's slide has always, the generic one until now.
   app.get("/api/summary/:module", async (req, reply) => {
     const { module } = req.params as { module: string };
     const reader = Object.prototype.hasOwnProperty.call(SUMMARY_READERS, module) ? SUMMARY_READERS[module] : undefined;
@@ -169,7 +171,18 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const q = (req.query ?? {}) as Record<string, unknown>;
     const rawDay = q["date"];
     const day = typeof rawDay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawDay) ? rawDay : null;
-    return reader(config, { mode: parseMode(req.query), range: typeof q["range"] === "string" ? q["range"] : undefined, day });
+    const pick = (key: string): string | null => {
+      const v = q[key];
+      return typeof v === "string" && v !== "" ? v : null;
+    };
+    return reader(config, {
+      mode: parseMode(req.query),
+      range: typeof q["range"] === "string" ? q["range"] : undefined,
+      day,
+      arm: pick("arm"),
+      symbol: pick("symbol"),
+      era: pick("era"),
+    });
   });
   app.get("/api/meic/scope", async (req) => readMeicScope(config, parseMode(req.query), parseMeicScope(req.query).era));
   // Scope (era x symbol x profile) reaches the forest, so the header's arm/symbol/era controls

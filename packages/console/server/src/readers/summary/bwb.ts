@@ -10,6 +10,7 @@ import {
   breakdownOf,
   emptySlice,
   heroOf,
+  scopeTrades,
   sessionNeighbours,
   summaryWindow,
   weekdayOf,
@@ -152,7 +153,7 @@ export function readBwbSummary(config: ConsoleConfig, q: SummaryQuery): ModuleSu
     if (page.rows.length < MAX_PAGE || rows.length >= page.total) break;
   }
 
-  const trades: BwbSummaryTrade[] = rows.map((r) => ({
+  const trades: BwbSummaryTrade[] = scopeTrades(rows.map((r): BwbSummaryTrade => ({
     session: (r.closedSession ?? r.entrySession).slice(0, 10),
     arm: r.arm,
     gross: r.grossPnl ?? 0,
@@ -162,7 +163,7 @@ export function readBwbSummary(config: ConsoleConfig, q: SummaryQuery): ModuleSu
     net: r.netPnl ?? 0,
     row: r,
     extra: extras.get(r.positionId),
-  }));
+  })), q);
 
   const live = mode === "live";
   const hero = heroOf(trades, !live, open);

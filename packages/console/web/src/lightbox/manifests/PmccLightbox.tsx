@@ -34,7 +34,7 @@ export function PmccLightbox({ slide }: { slide: string }) {
     data?.today.lastIteration == null ? "no-data" : data.today.lastIteration.ageSeconds < 900 ? "live" : "idle";
 
   const slides: Array<SlideDef & { id: PmccSlideId }> = [
-    { id: "summary", label: PMCC_LABEL.summary, render: () => <ModuleSummary module="pmcc" mode={"paper"} /> },
+    { id: "summary", label: PMCC_LABEL.summary, render: () => <ModuleSummary module="pmcc" mode={"paper"} scope={{ symbol }} /> },
     { id: "session", label: PMCC_LABEL.session, render: () => <PmccSession data={data} loading={isLoading} symbol={symbol} /> },
     {
       id: "decisions",
