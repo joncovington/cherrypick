@@ -22,6 +22,7 @@ import { LiveGapSlide } from "../../pages/Flies/LiveGapSlide";
 import { SelectorSlide } from "../../pages/Flies/SelectorSlide";
 import { PerformanceTab } from "../../pages/Flies/PerformanceTab";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
+import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { ExperimentGuideView } from "../../components/ExperimentGuide";
 import { clockTime, structureLabel, wingWidth } from "../../pages/Flies/structure";
@@ -176,6 +177,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
     { id: "completion", label: FLIES_LABEL.completion, render: () => <PerformanceTab mode={mode} filter={multiDayFilter} /> },
     { id: "advisor", label: FLIES_LABEL.advisor, render: () => <AdvisorSlide module="flies" /> },
     { id: "performance", label: FLIES_LABEL.performance, render: () => <PerformanceSlide module="flies" mode={mode} /> },
+    { id: "analysis", label: FLIES_LABEL.analysis, render: () => <AnalysisSlide module="flies" mode={mode} /> },
     { id: "costs", label: FLIES_LABEL.costs, render: () => <ModuleCosts module="flies" mode={mode} era={era} /> },
     { id: "regime", label: FLIES_LABEL.regime, render: () => <RegimeCutsTab module="flies" /> },
     { id: "agent", label: FLIES_LABEL.agent, render: () => <AgentSlide mode={mode} date={date} /> },
