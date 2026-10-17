@@ -19,6 +19,23 @@ historical **trade with quote** endpoint returns every option print with the bid
 when it printed, its size, its exchange and its trade conditions, at tick level, per name and day.
 The whole-market daily file needs the Professional tier and is not used.
 
+**The broker carries the nightly feed, so the method outlives the ThetaData subscription.** The
+broker's DXLink feed serves the same prints as TimeAndSale events (price, size, the bid and ask at
+the print, an aggressor side, a spread-leg flag and the sale conditions), and it answers a
+subscription with a start time with the trades since then. Checked 2026-10-17 on one contract pair:
+the broker's prints for a session matched ThetaData's one for one, first and last timestamps
+included. But its history reaches back about one week only. So:
+
+- **ThetaData** is for history: the declared test below, run while the subscription lasts. Its data
+  and the numbers computed from it fall under its licence and the backtest package's purge.
+- **The broker** is for every session from the build on: the nightly fetch reads it, and open
+  interest comes from the broker too. A missed night is caught up from its week of history. It is
+  read over its own DXLink session, never through the streamer, whose cache has one writer.
+- **The two run side by side** while both exist, and the broker's orders must match ThetaData's
+  name by name and session by session before the broker is relied on alone. A difference in the
+  grouping or the side read between two sources would otherwise move the tags without anyone
+  noticing.
+
 Rejected, and why:
 
 - **QuikOptions flow** (`scripts/quikoptions_flow.py`) lists the day's top trades only, and its names
@@ -30,10 +47,11 @@ Rejected, and why:
 - **Retail flow services** screen by rules they do not publish, so a tag built on them could not be
   reproduced or audited.
 
-**The licence outranks the build.** Everything fetched, and everything computed from it, lives in the
-backtest package's licensed store and results, and never enters this repo, a PR, an issue or a
-published page. This document holds the method only. A flow tag on the board is a derived work
-too, so the board reads it locally and the console shows it locally, and it is never published.
+**The licence outranks the build.** Everything fetched from ThetaData, and everything computed from
+it, lives in the backtest package's licensed store and results, and never enters this repo, a PR, an
+issue or a published page. This document holds the method only. The board's nightly tags come from
+the broker's feed, which is market data for the account holder's own use: they stay local too, read
+by the board and shown by the console, never published.
 
 ## The method, declared
 
@@ -97,7 +115,7 @@ each part of the name is one measurement:
 
 On the board a flow tag reads as its own method ("Large options orders"), listed beside the others
 with its detail: the contract, the premium, the edge it was read from and the open-interest change
-that confirmed it. It is marked derived from licensed data and is local only. Where it is scored
+that confirmed it, and the source it came from. It is local only. Where it is scored
 against the vendor's board, ours and theirs are paired by the table above, in the scoring only;
 the board never prints the vendor's words for our tags.
 
@@ -144,10 +162,14 @@ bar). Not today's tradable list, which would test 2022 on 2026's survivors.
    read, never by which ones looked interesting.
 2. **The test** (`packages/backtest`): the declared test above, results under the package's
    results store only.
-3. **The board method** (`packages/technicals`), only for the tags that passed: the nightly fetch
-   for the latest session, and the method reading it, marked as derived from licensed data.
+3. **The nightly broker fetch** (a script: it reaches the broker): each tradable name's contracts,
+   that session's prints and the next morning's open interest, grouped and classified by the same
+   code as the ThetaData fetch, so the two cannot drift. Compared with ThetaData's for every
+   session both hold.
+4. **The board method** (`packages/technicals`), only for the tags that passed, reading the broker's
+   nightly orders.
 
-Until 3, the board counts five methods and says flow is not counted, as it does now.
+Until 4, the board counts its other methods and says flow is not counted, as it does now.
 
 ## Open questions
 
