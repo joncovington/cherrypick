@@ -2,6 +2,7 @@ import type { RegimeArm, RegimeCutsModule, RegimeCutsPayload } from "@console/sh
 import { Link, useLocation } from "react-router-dom";
 import { fmtMoney, fmtPct } from "../../lib/format";
 import { useRegimeCuts } from "../../lib/api";
+import { armOfTag } from "../../lib/armTag";
 
 /**
  * One arm's regime rows on the analysis page, from the module's NIGHTLY regime-cuts artifact
@@ -15,12 +16,6 @@ import { useRegimeCuts } from "../../lib/api";
  * stamps pass through unchanged; a thin or fragile cell carries no tone.
  */
 
-/** A group tag back to its arm: advised books are `<arm>@<experiment>`; the cut keys the arm. */
-function armOf(tag: string): string {
-  const at = tag.indexOf("@");
-  return at < 0 ? tag : tag.slice(0, at);
-}
-
 export function RegimeSummary({ payload, tag }: { payload: RegimeCutsPayload; tag: string }) {
   if (payload.status === "absent") {
     return <p className="muted" style={{ fontSize: 11 }}>no nightly regime cut on this machine yet</p>;
@@ -33,7 +28,8 @@ export function RegimeSummary({ payload, tag }: { payload: RegimeCutsPayload; ta
     );
   }
   const { cuts, stale } = payload;
-  const arm: RegimeArm | undefined = cuts.arms.find((a) => a.arm === armOf(tag));
+  // An advised book is `<arm>@<experiment>`; the cut keys the arm.
+  const arm: RegimeArm | undefined = cuts.arms.find((a) => a.arm === armOfTag(tag));
   if (arm === undefined) {
     return (
       <p className="muted" style={{ fontSize: 11 }}>

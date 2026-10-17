@@ -1,5 +1,6 @@
 import type { TradingMode } from "@console/shared";
 import { useModuleCosts } from "../../lib/api";
+import { matchesArm } from "../../lib/armTag";
 import { CostsView } from "./CostsView";
 
 const NOTES = {
@@ -17,17 +18,31 @@ const NOTES = {
 
 /** The costs page for a 0DTE module whose modelled fill already concedes slippage (meic, flies),
  *  on the page's own paper/live mode and era. */
-export function ModuleCosts({ module, mode, era }: { module: "meic" | "flies"; mode: TradingMode; era: string | null }) {
+export function ModuleCosts({
+  module,
+  mode,
+  era,
+  arm = null,
+}: {
+  module: "meic" | "flies";
+  mode: TradingMode;
+  era: string | null;
+  /** The page's arm picker: narrows every row to that arm; null is every arm. */
+  arm?: string | null;
+}) {
   const costs = useModuleCosts(module, mode, era);
+  // The page's arm picker, applied to what was read: the totals CostsView sums are that arm's.
+  const picked = <T extends { arm: string }>(rows: T[] | undefined): T[] =>
+    (rows ?? []).filter((r) => matchesArm(r.arm, arm));
   return (
     <div className="cards cards-wide">
       <CostsView
-        arms={costs.data?.arms ?? []}
+        arms={picked(costs.data?.arms)}
         slippageInGross={costs.data?.slippageInGross ?? true}
         since={costs.data?.since ?? null}
         sinceLabel="the era's start"
-        sinceRows={costs.data?.entryOutcomes ?? []}
-        allRows={costs.data?.entryOutcomesAll ?? []}
+        sinceRows={picked(costs.data?.entryOutcomes)}
+        allRows={picked(costs.data?.entryOutcomesAll)}
         loading={costs.isLoading}
         premiumNote={NOTES[module].premium}
         gateNote={NOTES[module].gates}

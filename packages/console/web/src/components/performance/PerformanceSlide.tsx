@@ -2,6 +2,7 @@ import { Card, SortTh, sortRows, useSort } from "../DataTable";
 import { fmtMoney } from "../../lib/format";
 import type { ExitReasonRow, TradingMode } from "@console/shared";
 import { useModulePerformance, type PerformanceModuleId } from "../../lib/api";
+import { matchesArm } from "../../lib/armTag";
 import { MetricTiles } from "./MetricTiles";
 import { ExcursionsCard } from "./ExcursionsCard";
 import { CumulativeCard } from "./CumulativeCard";
@@ -60,7 +61,17 @@ function ExitReasonsCard({ module, rows }: { module: PerformanceModuleId; rows: 
  * own book), so the base's chip says "every paired experiment" only when all of them are below
  * the gate.
  */
-export function PerformanceSlide({ module, mode = "paper" }: { module: PerformanceModuleId; mode?: TradingMode }) {
+export function PerformanceSlide({
+  module,
+  mode = "paper",
+  arm = null,
+}: {
+  module: PerformanceModuleId;
+  mode?: TradingMode;
+  /** The page's arm picker (flies, MEIC): narrows the arm cards, pairs and exit reasons to that arm.
+   *  The cumulative chart keeps `control` beside it as the reference. null is every arm. */
+  arm?: string | null;
+}) {
   const { data, isLoading, dataUpdatedAt } = useModulePerformance(module, "current", mode);
 
   if (isLoading || data === undefined) {
@@ -90,6 +101,11 @@ export function PerformanceSlide({ module, mode = "paper" }: { module: Performan
     underpoweredByBase.set(p.base, (underpoweredByBase.get(p.base) ?? true) && p.underpowered);
   }
   const groupByTag = new Map(data.groups.map((g) => [g.tag, g]));
+  // The arm picker, applied to what was read. Control stays on the cumulative chart as the line the
+  // picked arm is read against; it is drawn there only, not given a card of its own.
+  const shown = data.groups.filter((g) => matchesArm(g.tag, arm));
+  const control = arm !== null && arm !== "control" ? groupByTag.get("control") : undefined;
+  const charted = control !== undefined ? [...shown, control] : shown;
 
   return (
     <div className="cards cards-wide">
@@ -110,19 +126,25 @@ export function PerformanceSlide({ module, mode = "paper" }: { module: Performan
           )}
         </p>
       )}
-      {data.groups.length === 0 ? (
+      {arm !== null && (
+        <p className="muted" style={{ fontSize: 12 }}>
+          showing <strong>{arm}</strong>, picked in the header
+          {control !== undefined && "; control is drawn on the cumulative chart as the reference"}
+        </p>
+      )}
+      {shown.length === 0 ? (
         <Card title="performance" updatedAt={dataUpdatedAt}>
           <p className="muted">
-            no closed trades in this window yet
+            {arm !== null && data.groups.length > 0 ? `no closed trades for ${arm} in this window` : "no closed trades in this window yet"}
             {data.era.moduleEra !== null && <> (the {data.era.moduleEra} era)</>}
           </p>
         </Card>
       ) : (
         <>
           <Card title="cumulative net P&L" collapseKey={`performance-${module}-cumulative`} updatedAt={dataUpdatedAt}>
-            <CumulativeCard groups={data.groups} breaks={data.breaks} />
+            <CumulativeCard groups={charted} breaks={data.breaks} />
           </Card>
-          {data.groups.map((g) => (
+          {shown.map((g) => (
             <Card
               key={g.tag}
               title={g.tag}
@@ -141,10 +163,11 @@ export function PerformanceSlide({ module, mode = "paper" }: { module: Performan
           ))}
         </>
       )}
-      {Array.isArray(data.exitReasons) && data.exitReasons.length > 0 && (
-        <ExitReasonsCard module={module} rows={data.exitReasons} />
-      )}
-      {data.pairs.map((p) => {
+      {Array.isArray(data.exitReasons) &&
+        data.exitReasons.some((r) => matchesArm(r.tag, arm)) && (
+          <ExitReasonsCard module={module} rows={data.exitReasons.filter((r) => matchesArm(r.tag, arm))} />
+        )}
+      {data.pairs.filter((p) => matchesArm(p.base, arm) || matchesArm(p.advised, arm)).map((p) => {
         const advisedGroup = groupByTag.get(p.advised);
         const baseGroup = groupByTag.get(p.base);
         // Both sides must actually be present as performance groups in THIS window -- a pair the
