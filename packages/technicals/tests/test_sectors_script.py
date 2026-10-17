@@ -49,7 +49,7 @@ def test_only_the_quote_that_is_the_name_counts_and_yahoos_labels_become_the_ven
     assert fs.parse({}, "AGNC") == {"sector": None, "industry": None}
 
 
-def test_a_name_is_asked_for_only_when_the_vendor_lacks_it_and_its_reading_is_old():
+def test_a_name_is_asked_for_only_when_its_reading_is_old():
     today = date(2026, 10, 17)
     have = {
         "FRESH": {"sector": "Energy", "fetched_on": "2026-09-01"},
@@ -57,8 +57,29 @@ def test_a_name_is_asked_for_only_when_the_vendor_lacks_it_and_its_reading_is_ol
         "NONE_NEW": {"sector": None, "fetched_on": "2026-10-10"},
         "NONE_OLD": {"sector": None, "fetched_on": "2026-09-01"},
     }
+    # A name in the vendor's map is asked too, for its industry (its sector stays the vendor's).
     names = ["VENDOR", "FRESH", "STALE", "NONE_NEW", "NONE_OLD", "NEW"]
-    assert fs.due(names, have, {"VENDOR"}, today) == ["STALE", "NONE_OLD", "NEW"]
+    assert fs.due(names, have, today) == ["VENDOR", "STALE", "NONE_OLD", "NEW"]
+
+
+def test_peers_are_the_industry_falling_back_to_the_sector_for_a_small_one():
+    from cherrypick.technicals import fundamentals
+
+    def entry(sector, industry):
+        return {"sector": sector, "industry": industry, "fetched_on": "2026-10-17"}
+
+    names_ = {f"B{i}": entry("Financials", "Banks—Diversified") for i in range(5)}
+    names_["LONE"] = entry("Financials", "Mortgage Finance")
+    names_["NOIND"] = entry("Energy", None)
+    yahoo = {"names": names_}
+    paths.yahoo_sectors().parent.mkdir(parents=True, exist_ok=True)
+    paths.yahoo_sectors().write_text(json.dumps(yahoo), encoding="utf-8")
+    names = [*(f"B{i}" for i in range(5)), "LONE", "NOIND", "NOSECTOR"]
+    groups = fundamentals.peer_groups(names)
+    assert groups["B0"] == "Banks—Diversified", "five names make an industry group"
+    assert groups["LONE"] == "sector:Financials", "a lone industry falls back to its sector"
+    assert groups["NOIND"] == "sector:Energy"
+    assert "NOSECTOR" not in groups, "no sector and no industry is no group, so no score"
 
 
 def test_the_calendar_takes_the_vendors_sector_first_and_yahoos_otherwise():

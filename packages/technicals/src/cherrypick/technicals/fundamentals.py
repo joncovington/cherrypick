@@ -233,11 +233,15 @@ def snapshot_on(conn, day: str) -> str | None:
     return snaps[k] if k >= 0 else None
 
 
-def market_percentiles(conn, snapshot: str, group_of: dict[str, str]) -> dict[str, float]:
+def market_percentiles(
+    conn, snapshot: str, group_of: dict[str, str], by_industry: bool = False
+) -> dict[str, float]:
     """Every scored name's place on `snapshot`, 0..1 across the whole market (1 the best): the
     `scores` (measures ranked within the name's group) of every name with estimates, a group and a
     price that day, then ranked against each other. `conn` is the history store (estimates, quarters
-    and every listed name's raw bars). The signal board labels its tails (`board.py`)."""
+    and every listed name's raw bars). With `by_industry`, the group is the name's industry among the
+    names measured (`peer_groups`), `group_of` (the sectors) the fallback. The signal board labels its
+    tails (`board.py`)."""
     est: dict[str, dict[str, tuple]] = {}
     for sym, kind, c, y in conn.execute(
         "SELECT symbol, kind, consensus, year_ago FROM estimates WHERE date = ?", (snapshot,)
@@ -261,8 +265,48 @@ def market_percentiles(conn, snapshot: str, group_of: dict[str, str]) -> dict[st
         m = measures(px[0] if px else None, r.get("eps"), r.get("sales"), shares, margin)
         if m is not None:
             ms[sym] = m
+    if by_industry:
+        complete = [
+            s
+            for s, m in ms.items()
+            if valuation_key(m) is not None and None not in (m.eps_growth, m.revenue_growth, m.margin)
+        ]
+        group_of = peer_groups(complete, group_of)
     sc = scores(ms, group_of)
     return _percentiles(sc) if sc else {}
+
+
+def industries() -> dict[str, str]:
+    """{symbol: Yahoo's industry} (`scripts/fetch_sectors.py`), where it gave one."""
+    import json
+
+    try:
+        yahoo = json.loads(paths.yahoo_sectors().read_text(encoding="utf-8")).get("names") or {}
+    except (OSError, ValueError):
+        return {}
+    return {s: r["industry"] for s, r in yahoo.items() if isinstance(r, dict) and r.get("industry")}
+
+
+def peer_groups(names: list[str], sector_of: dict[str, str] | None = None) -> dict[str, str]:
+    """{symbol: the peers it is ranked against}: its industry where `MIN_GROUP` or more of `names`
+    share it, else "sector:<its sector>". A name with neither is left out, so it is not scored.
+
+    Chosen 2026-10-17: the user's thesis is a company against its competitors, and Yahoo's 144
+    industries (median 11 names) are those, where the 11 sectors (median 163) put banks, insurers and
+    brokers in one group. On the saved boards it reproduces more of the fundamentals tags too."""
+    sector_of = sector_of if sector_of is not None else {s: v[0] for s, v in sector_sources().items()}
+    ind = industries()
+    size: dict[str, int] = {}
+    for s in names:
+        if s in ind:
+            size[ind[s]] = size.get(ind[s], 0) + 1
+    out = {}
+    for s in names:
+        if s in ind and size[ind[s]] >= MIN_GROUP:
+            out[s] = ind[s]
+        elif s in sector_of:
+            out[s] = f"sector:{sector_of[s]}"
+    return out
 
 
 def sector_map() -> dict[str, str]:

@@ -1,4 +1,5 @@
-"""Record Yahoo's sector for every earnings calendar name the vendor's sector map lacks.
+"""Record Yahoo's sector and industry for every earnings calendar name and every name in the vendor's
+sector map.
 
 **Why.** The earnings calendar (docs/earnings-screener-plan.md) took its sector only from the market
 report's map (`universe/sectors.json`), the vendor's own sectors read from its report editions. That
@@ -8,11 +9,13 @@ to the vendor's (`RELABEL`); Nasdaq's stock screener agreed on about three in fo
 
 **What.** Yahoo's public search endpoint (`query1.finance.yahoo.com/v1/finance/search`), one request
 per name, paced, keeping only the quote whose symbol is the name itself (BRK.B is asked as BRK-B).
-The names are the newest earnings calendar's (`technicals earnings-calendar`) that the vendor's map
-does not carry and this file has not read in `REFRESH_DAYS` (`RETRY_DAYS` for a name Yahoo gave no
-sector). The file accumulates: `market-report/universe/sectors.yahoo.json`, as
+The names are the newest earnings calendar's (`technicals earnings-calendar`) and the vendor map's,
+less those this file has read in `REFRESH_DAYS` (`RETRY_DAYS` for a name Yahoo gave no sector).
+The vendor-map names are asked for their INDUSTRY (2026-10-17): the fundamentals score ranks a name
+against its industry peers (`fundamentals.peer_groups`); their sector stays the vendor's. The file
+accumulates: `market-report/universe/sectors.yahoo.json`, as
 `{fetched_at, names: {symbol: {sector, industry, fetched_on}}, failed}`. A 403 or 429 stops the run;
-what was read is still written. The vendor's map always wins where it has the name.
+what was read is still written. The vendor's map always wins for the sector where it has the name.
 
 A script, not package code: it reaches the network. `packages/technicals` reads the file.
 
@@ -62,12 +65,10 @@ def parse(body: dict, symbol: str) -> dict[str, str | None]:
     return {"sector": None, "industry": None}
 
 
-def due(names: list[str], have: dict, vendor: set[str], today: date) -> list[str]:
-    """The names to ask for: not in the vendor's map, and not read recently enough."""
+def due(names: list[str], have: dict, today: date) -> list[str]:
+    """The names to ask for: those not read recently enough."""
     out = []
     for s in names:
-        if s in vendor:
-            continue
         row = have.get(s)
         if row:
             age = (today - date.fromisoformat(row["fetched_on"])).days
@@ -102,7 +103,8 @@ def main(argv=None) -> int:
         doc = {}
     have = doc.get("names") or {}
     today = datetime.now(UTC).date()
-    todo = due(calendar_names(), have, set(fundamentals.sector_map()), today)[: args.limit]
+    names = sorted({*calendar_names(), *fundamentals.sector_map()})
+    todo = due(names, have, today)[: args.limit]
     failed: list[str] = []
     started = time.monotonic()
     for k, sym in enumerate(todo):
