@@ -91,7 +91,8 @@ The trade fields (added 2026-10-16, for `core.analysis` and docs/strategy-analys
 
 A schema whose reader does not yet supply them simply has no such keys; a reader that supplies
 them reports None for a row that never recorded the value. A consumer reads them with `.get` and
-says which records lacked them, never treats an absent spot as no move. So far: fly_book.
+says which records lacked them, never treats an absent spot as no move. So far: fly_book (all
+four), meic_ic (the two times).
 
 `None` never means zero anywhere in here. A row written before an instrumentation column existed
 reports `slippage: None` and `capital: None`, because "not recorded" and "was zero" are different
@@ -284,7 +285,8 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
     arm = core_db.arm_column(conn, "ic_trades")  # `risk_profile` until meic's column moves
     rows = conn.execute(
         f"SELECT symbol, {arm} AS arm, pnl, fees, exit_time{slip_col}{cap_cols}{mult_col}{exp_col}"
-        f"{_opt(cols, 'settlement_fees')} FROM ic_trades WHERE exit_time IS NOT NULL{where}",
+        f"{_opt(cols, 'settlement_fees')}{_opt(cols, 'entry_time')}"
+        f" FROM ic_trades WHERE exit_time IS NOT NULL{where}",
         params,
     ).fetchall()
 
@@ -332,6 +334,10 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
             "max_profit": _max_profit(r),
             # Session date for calibration (distinct-days count); ISO date prefix of exit_time.
             "session": (r["exit_time"] or "")[:10],
+            # The trade fields (module docstring). MEIC enters many condors a session, so their
+            # times are what tell overlapping positions from sequential ones. No spot here yet.
+            "entry_time": _get(r, "entry_time"),
+            "exit_time": r["exit_time"],
         }
         for r in rows
     ]
