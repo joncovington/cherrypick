@@ -638,7 +638,10 @@ weeks of lists and the name-selection rule; the user asked for it on 2026-10-16 
 reproduced and selection still open, so it shows both layers and says which is which: the listed
 trade with our rule's strike beside it, and the user's trade (the listed option when liquid, else
 the cycle monthly, marked thin when that fails too), cut by default to tradable names with no
-earnings inside the cycle.
+earnings inside the cycle. Since 2026-10-16 the default also hides a name with no liquid trade
+(the listed option and the cycle monthly both thin), and earnings are judged against the trade's
+own expiry — the later of the listed and the monthly until a reading says which — after BURL's
+11/27 weekly spanned an 11/24 report and still read clear against the 11/20 monthly.
 
 **This settles the adjustment question outright.** The vendor's MSFT bars put the 52-week low at
 348.54 on 2026-06-25 and the high at 549.20 on 2025-10-28 — exactly the support and resistance

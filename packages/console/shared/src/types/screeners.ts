@@ -9,7 +9,7 @@
 
 export type ScreenerList = "short-puts" | "covered-calls" | "credit-spreads";
 
-/** Whether an announcement falls between the list day and the cycle expiry, inclusive. A date that
+/** Whether an announcement falls between the list day and the trade's expiry, inclusive. A date that
  *  does not reach that far is `unknown`, never `clear`; `none` is a fund, which never announces. */
 export type EarningsInCycle = "in-cycle" | "clear" | "unknown" | "none";
 
@@ -61,6 +61,9 @@ export interface ScreenerRow {
   earningsEstimated: boolean | null;
   /** The standard monthly the user trades: 45-60 days out, else 30-60. */
   cycleExpiry: string | null;
+  /** The expiry earnings are judged against: the listed one when it is the trade, the cycle monthly
+   *  when that is, else (unread, or no liquid trade) the later of the two. */
+  earningsExpiry: string | null;
   earnings: EarningsInCycle;
   /** When the liquidity readings were taken (regular hours, the next session); null when none. */
   readingAt: string | null;

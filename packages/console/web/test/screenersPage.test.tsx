@@ -34,6 +34,7 @@ function row(over: Partial<ScreenerRow>): ScreenerRow {
     earningsSource: "broker",
     earningsEstimated: false,
     cycleExpiry: "2026-11-20",
+    earningsExpiry: "2026-11-13",
     earnings: "clear",
     readingAt: "2026-10-15T18:30:00Z",
     listedLegs: [{ role: "short", right: "P", expiry: "2026-11-13", strike: 98, bid: 1.9, ask: 2.1, openInterest: 500, volume: 50, passes: true }],
@@ -94,27 +95,46 @@ function render(url: string): string {
 const symbols = (html: string) => [...html.matchAll(/symbol=([A-Z]+)"/g)].map((m) => m[1]);
 
 describe("the screener page", () => {
-  it("shows tradable names with no earnings in the cycle by default, and says what it hid", () => {
+  it("shows tradable names with no earnings in the cycle and a liquid trade by default, and says what it hid", () => {
     const html = render("/screeners/short-puts");
-    expect(symbols(html)).toEqual(["AAA", "BBB", "EEE"]);
-    expect(html).toContain("3 of 5 names · 1 not tradable hidden · 1 with earnings in cycle hidden");
+    expect(symbols(html)).toEqual(["AAA", "EEE"]);
+    expect(html).toContain(
+      "2 of 5 names · 1 not tradable hidden · 1 with earnings in cycle hidden · 1 with no liquid trade hidden · 1 not yet read for liquidity",
+    );
   });
 
   it("each cut has its escape", () => {
-    expect(symbols(render("/screeners/short-puts?names=all"))).toEqual(["AAA", "BBB", "CCC", "EEE"]);
-    expect(symbols(render("/screeners/short-puts?earnings=all"))).toEqual(["AAA", "BBB", "DDD", "EEE"]);
+    expect(symbols(render("/screeners/short-puts?names=all"))).toEqual(["AAA", "CCC", "EEE"]);
+    expect(symbols(render("/screeners/short-puts?earnings=all"))).toEqual(["AAA", "DDD", "EEE"]);
+    expect(symbols(render("/screeners/short-puts?trade=all"))).toEqual(["AAA", "BBB", "EEE"]);
     expect(render("/screeners/short-puts?names=all")).toContain("· no opts");
   });
 
+  it("no liquid trade means the listed option and the cycle monthly both fail, or no monthly is listed", () => {
+    const saved = payload;
+    payload = {
+      ...payload,
+      rows: [
+        row({ symbol: "LST" }),
+        row({ symbol: "CYC", recommendation: "cycle", cyclePasses: true }),
+        row({ symbol: "THN", recommendation: "cycle", cyclePasses: false }),
+        row({ symbol: "NON", recommendation: "none", cyclePasses: null, cycleLegs: null }),
+        row({ symbol: "UNR", recommendation: null, cyclePasses: null }),
+      ],
+    };
+    expect(symbols(render("/screeners/short-puts"))).toEqual(["LST", "CYC", "UNR"]);
+    payload = saved;
+  });
+
   it("the trade cell names the listed option, the cycle monthly (thin when it fails too), or no reading", () => {
-    const html = render("/screeners/short-puts");
+    const html = render("/screeners/short-puts?trade=all");
     expect(html).toMatch(/title="The listed option is liquid enough to trade\.[^"]*">listed</);
     expect(html).toMatch(/Nov 20 98P <span class="chip chip-warn"[^>]*>thin</);
     expect(html).toContain(">no reading<");
   });
 
   it("our pick is a tick when it is the list's, our strike when not, a dash when unjudged", () => {
-    const html = render("/screeners/short-puts");
+    const html = render("/screeners/short-puts?trade=all");
     expect(html).toMatch(/Our reproduced rule picks the same strike\(s\)">✓</);
     expect(html).toMatch(/where they differ from the list's">97</);
     expect(html).toMatch(/broker chain was not recorded for this name">—</);

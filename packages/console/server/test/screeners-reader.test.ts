@@ -115,6 +115,36 @@ describe("readScreener", () => {
     expect(rows["AAA"]!.listedLegs[0]).toMatchObject({ strike: 98, openInterest: 3, passes: false });
   });
 
+  it("judges earnings against the trade's expiry: the later of listed and cycle until a reading says which", () => {
+    // The list's 11/27 weekly spans an 11/24 report that the 11/20 cycle monthly ends before.
+    write("market-report/vendor-screeners/2026-10-16/credit-spreads.json", {
+      body: {
+        creditSpreads: [
+          { symbol: "UNR", type: "Put", price: 262, strike: { sell: 260, buy: 240 }, expiry: "11/27/2026", earningsDate: "11/24/2026 (39) AM" },
+          { symbol: "MON", type: "Put", price: 262, strike: { sell: 260, buy: 240 }, expiry: "11/27/2026", earningsDate: "11/24/2026 (39) AM" },
+          { symbol: "LST", type: "Put", price: 262, strike: { sell: 260, buy: 240 }, expiry: "11/27/2026", earningsDate: "11/24/2026 (39) AM" },
+        ],
+      },
+    });
+    const legs = (sym: string, recommendation: string) => ({
+      list: "credit-spreads",
+      symbol: sym,
+      vendor: [],
+      monthly: [{ role: "short", right: "P", expiry: "2026-11-20", strike: 260, quote: {}, passes: true }],
+      recommendation,
+      monthly_passes: true,
+    });
+    write("market-report/screener-greeks/legs/2026-10-19/1130.json", {
+      list_date: "2026-10-16",
+      measured_at: "2026-10-19T15:30:00Z",
+      rows: [legs("MON", "monthly"), legs("LST", "vendor")],
+    });
+    const rows = Object.fromEntries(readScreener(config, "credit-spreads", "2026-10-16").rows.map((r) => [r.symbol, r]));
+    expect(rows["UNR"]).toMatchObject({ cycleExpiry: "2026-11-20", earningsExpiry: "2026-11-27", earnings: "in-cycle" });
+    expect(rows["MON"]).toMatchObject({ earningsExpiry: "2026-11-20", earnings: "clear" });
+    expect(rows["LST"]).toMatchObject({ earningsExpiry: "2026-11-27", earnings: "in-cycle" });
+  });
+
   it("an empty home is an empty list, not an error", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
     expect(readScreener(config, "credit-spreads")).toMatchObject({ day: null, days: [], rows: [] });

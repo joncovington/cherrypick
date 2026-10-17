@@ -15,11 +15,12 @@ import { useScreener, useScreenerFidelity } from "../../lib/api";
  * (often a weekly), with our rule's strike beside it; that is the reproduction. The TRADE column is
  * the user's: the listed option where it is liquid (10% of mid or a nickel, 100 open, 10 traded),
  * otherwise the same strike on the standard monthly 45-60 days out (else 30-60), with a "thin" mark
- * when that monthly fails the same bars. Earnings are judged against that cycle monthly, not the
- * listed expiry, and a date that does not reach it is "unknown", never clear.
+ * when that monthly fails the same bars. Earnings are judged against the expiry of that trade (the
+ * later of the two until a reading says which), and a date that does not reach it is "unknown",
+ * never clear.
  *
- * Defaults cut to what the user would trade: options-tradable names, no earnings inside the cycle.
- * Each has its escape. Which names make each list is NOT reproduced; the page says so.
+ * Defaults cut to what the user would trade: options-tradable names, no earnings inside the cycle,
+ * and a liquid trade (the listed option or the cycle monthly passes the bars). Each has its escape. Which names make each list is NOT reproduced; the page says so.
  */
 
 const LIST_TITLE: Record<ScreenerList, string> = {
@@ -84,6 +85,12 @@ function OursCell({ r }: { r: ScreenerRow }) {
   );
 }
 
+function earningsBasis(r: ScreenerRow): string {
+  if (r.recommendation === "listed") return "the listed expiry, the trade";
+  if (r.recommendation === "cycle") return "the cycle monthly, the trade";
+  return "the later of the listed expiry and the cycle monthly, until a liquidity reading says which is the trade";
+}
+
 function EarningsCell({ r }: { r: ScreenerRow }) {
   if (r.earnings === "none") {
     return (
@@ -97,7 +104,7 @@ function EarningsCell({ r }: { r: ScreenerRow }) {
   const title =
     `Next announcement ${r.earningsDate ?? "unknown"}` +
     (r.earningsSource ? ` (${r.earningsSource === "broker" ? "broker" : "the list"}${r.earningsEstimated ? ", estimated" : ""})` : "") +
-    `; cycle monthly ${r.cycleExpiry ?? "none listed"}. A date that does not reach the cycle expiry is unknown, never clear.`;
+    `; judged against ${r.earningsExpiry ?? "no expiry"} (${earningsBasis(r)}). A date that does not reach that expiry is unknown, never clear.`;
   return (
     <td title={title}>
       {r.earningsDate ? shortDate(r.earningsDate) : ""} <span className={cls}>{label}</span>
@@ -143,6 +150,12 @@ function TradeCell({ r }: { r: ScreenerRow }) {
       )}
     </td>
   );
+}
+
+/** No liquid trade: the listed option is thin and the cycle monthly fails the same bars (or none is
+ *  listed). A row with no reading yet is not thin -- it is unread. */
+function isThin(r: ScreenerRow): boolean {
+  return r.recommendation === "none" || (r.recommendation === "cycle" && r.cyclePasses === false);
 }
 
 function ExpiryCell({ r }: { r: ScreenerRow }) {
@@ -199,14 +212,18 @@ export function ScreenerTab({ list }: { list: ScreenerList }) {
     setParams(next, { replace: true });
   };
 
+  const allTrades = params.get("trade") === "all";
   const all = data?.rows ?? [];
-  const shown = all.filter(
-    (r) => (allNames || r.liquid !== false) && (allEarnings || r.earnings !== "in-cycle") && (q === "" || r.symbol.includes(q)),
-  );
+  const nameOk = (r: ScreenerRow) => allNames || r.liquid !== false;
+  const earningsOk = (r: ScreenerRow) => allEarnings || r.earnings !== "in-cycle";
+  const tradeOk = (r: ScreenerRow) => allTrades || !isThin(r);
+  const shown = all.filter((r) => nameOk(r) && earningsOk(r) && tradeOk(r) && (q === "" || r.symbol.includes(q)));
   const heldOut = all.filter((r) => r.liquid === false).length;
-  const inCycle = all.filter((r) => r.earnings === "in-cycle" && (allNames || r.liquid !== false)).length;
+  const inCycle = all.filter((r) => r.earnings === "in-cycle" && nameOk(r)).length;
+  const thin = all.filter((r) => isThin(r) && nameOk(r) && earningsOk(r)).length;
+  const unread = shown.filter((r) => r.recommendation === null).length;
   const sorted = sortRows(shown, sort, SORTS);
-  const { page, setOffset, setLimit } = usePage([list, data?.day, allNames, allEarnings, q, sort.key, sort.dir], 100);
+  const { page, setOffset, setLimit } = usePage([list, data?.day, allNames, allEarnings, allTrades, q, sort.key, sort.dir], 100);
   const rows = sorted.slice(page.offset, page.offset + page.limit);
   const spread = list === "credit-spreads";
   const latest = data?.days[0] ?? null;
@@ -249,9 +266,16 @@ export function ScreenerTab({ list }: { list: ScreenerList }) {
         <Flag
           on={!allEarnings}
           onChange={(on) => set("earnings", on ? null : "all")}
-          title="Hide names with an announcement between today and the cycle monthly (45-60 days out, else 30-60). An unknown date stays shown, marked unknown."
+          title="Hide names with an announcement between today and the trade's expiry: the listed one when it is the trade, the cycle monthly (45-60 days out, else 30-60) when that is, the later of the two until a liquidity reading says which. An unknown date stays shown, marked unknown."
         >
           No earnings in cycle
+        </Flag>
+        <Flag
+          on={!allTrades}
+          onChange={(on) => set("trade", on ? null : "all")}
+          title="Hide names with no liquid trade: the listed option is thin and so is the same strike on the cycle monthly (10% of mid or a nickel, 100 open, 10 traded, every leg). A name not yet read stays shown, marked no reading."
+        >
+          Liquid trade
         </Flag>
         <input
           className="chip review-session-select"
@@ -264,6 +288,8 @@ export function ScreenerTab({ list }: { list: ScreenerList }) {
           {shown.length} of {all.length} names
           {!allNames && heldOut > 0 ? ` · ${heldOut} not tradable hidden` : ""}
           {!allEarnings && inCycle > 0 ? ` · ${inCycle} with earnings in cycle hidden` : ""}
+          {!allTrades && thin > 0 ? ` · ${thin} with no liquid trade hidden` : ""}
+          {unread > 0 ? ` · ${unread} not yet read for liquidity` : ""}
         </span>
       </div>
 
@@ -302,7 +328,7 @@ export function ScreenerTab({ list }: { list: ScreenerList }) {
                     <SortTh label="Distance" k="dist" sort={sort} className="num" title="Strike against the share price" />
                   </>
                 )}
-                <SortTh label="Earnings" k="earnings" sort={sort} title="The next announcement, judged against the cycle monthly" />
+                <SortTh label="Earnings" k="earnings" sort={sort} title="The next announcement, judged against the trade's expiry" />
                 <th title="The listed option when it is liquid, else the same strike on the cycle monthly; 'thin' when that monthly fails the same bars">
                   Trade
                 </th>

@@ -345,10 +345,14 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   `picks`, each leg's verdict and the listed-or-cycle recommendation are `fetch_screener_greeks.py`'s
   (`rebar` re-applies the bars to saved readings), the tradable verdict is `technicals liquidity`'s
   (spelled `tradable`/`illiquid`). It works out only the user's calendar: the cycle monthly (45-60
-  days, else 30-60) and whether an announcement falls in it -- a date that does not reach it is
-  `unknown`, never clear. A reading is matched by the list DAY it read (`list_date`), not the date it
-  was taken. Defaults: tradable names, no earnings in cycle, each with its escape. The source is never
-  named, and which names make each list is not reproduced; the page says so.
+  days, else 30-60) and whether an announcement falls before the TRADE's expiry -- the listed one when
+  it is the trade, the cycle monthly when that is, the later of the two until a reading says which
+  (a listed weekly spanning a report is never "clear" because the monthly ends first). A date that
+  does not reach it is `unknown`, never clear. A reading is matched by the list DAY it read
+  (`list_date`), not the date it was taken. Defaults: tradable names, no earnings in the trade, a
+  liquid trade (the listed option or the cycle monthly passes every leg's bars; an unread row stays
+  shown, marked), each with its escape. The source is never named, and which names make each list is
+  not reproduced; the page says so.
 - `/charts/setups` is the setups watchlist (`pages/Setups/SetupsPage.tsx`, `GET /api/technicals/setups`
   over `charts/setups-index.json`): recent entries and exits, or open positions, long and short,
   each symbol linking to its chart with the setup and side selected; nothing on it is vendor data. Gated with the technicals tab. The page filters and sorts
