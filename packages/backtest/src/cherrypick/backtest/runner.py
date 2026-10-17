@@ -173,15 +173,22 @@ def run(
     spend_holdout: bool = False,
     workers: int = 4,
     extra_arms: dict[str, dict] | None = None,
+    provisional: bool = False,
     replay=_replay,
     read_rows=_ledger_rows,
     log=print,
 ) -> dict:
     """`extra_arms` adds config-defined arms (`advised:<name>`: a base arm's params with an
     overlay) for this run only; every run replays from its own snapshot of the flies config, kept
-    beside its ledgers, so what ran is on disk exactly."""
+    beside its ledgers, so what ran is on disk exactly.
+
+    `provisional` (design window only) runs while history is still locked, to look early. It is
+    no evidence and is kept apart from evidence: it records no trial, cannot take advised arms or
+    the holdout, and its run and report are marked provisional, which every reader shows."""
     if window not in WINDOWS:
         raise RunRefused(f"window must be one of {WINDOWS}")
+    if provisional and (window != "design" or extra_arms):
+        raise RunRefused("a provisional run is the design window only, and never the advisor's specs")
     cadence = store.cadence_of(settings, cadence)
     arms = list(dict.fromkeys(["control", *arms]))  # control always runs: every result is paired with it
     text, config_path = _flies_config_text()
@@ -195,7 +202,7 @@ def run(
     hashes = {a: spec_hash(s) for a, s in specs.items()}
     w_lo, w_hi = _window(settings, window)
     lo, hi = max(w_lo, start or w_lo), min(w_hi, end or w_hi)
-    if window != "validation" and not unlocked(settings, symbol, cadence):
+    if window != "validation" and not provisional and not unlocked(settings, symbol, cadence):
         raise RunRefused(
             f"history is locked for {symbol} at {cadence}s: validation has not unlocked it "
             "(python -m cherrypick.backtest validate)"
@@ -251,12 +258,13 @@ def run(
                     "trades": len(mine),
                 }
             log(f"{day} ok")
-    report = _summarise(rconn, run_id, arms, specs, hashes, per_arm, window)
+    report = _summarise(rconn, run_id, arms, specs, hashes, per_arm, window, provisional=provisional)
     report.update(
         {
             "run_id": run_id,
             "module": MODULE,
             "window": window,
+            "provisional": provisional,
             "span": [lo, hi],
             "cadence": cadence,
             "fill_model": FILL_MODEL,
@@ -274,7 +282,8 @@ def run(
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             run_id, time.time(), MODULE, json.dumps(arms), window, lo, hi, cadence,
-            report["code_commit"], fingerprint, FILL_MODEL, "done", len(per_arm["control"]),
+            report["code_commit"], fingerprint, FILL_MODEL, "provisional" if provisional else "done",
+            len(per_arm["control"]),
             json.dumps(refused), json.dumps(report, default=str),
         ),
     )  # fmt: skip
@@ -295,9 +304,11 @@ def run(
     return report
 
 
-def _summarise(rconn, run_id, arms, specs, hashes, per_arm, window) -> dict:
-    """Per arm: the statistics at the module's trial count, and the pairing with control."""
-    if window == "design":
+def _summarise(rconn, run_id, arms, specs, hashes, per_arm, window, *, provisional=False) -> dict:
+    """Per arm: the statistics at the module's trial count, and the pairing with control. A
+    provisional run records no trial (it is a look, not an evaluation), but its own statistics
+    are still deflated by the trials already on record."""
+    if window == "design" and not provisional:
         for arm in arms:
             values = [v["net"] for _, v in sorted(per_arm[arm].items())]
             m = stats.moments(values)
@@ -309,6 +320,11 @@ def _summarise(rconn, run_id, arms, specs, hashes, per_arm, window) -> dict:
     sharpes = results.trial_sharpes(rconn, MODULE)
     control = [{"session": d, "net_pnl": v["net"]} for d, v in per_arm["control"].items()]
     out = {"trials_for_module": trials, "arms": {}}
+    if provisional:
+        out["provisional_note"] = (
+            "PROVISIONAL: history is not yet unlocked by validation. Not a trial, not evidence, "
+            "and never shown to the advisor."
+        )
     for arm in arms:
         values = [v["net"] for _, v in sorted(per_arm[arm].items())]
         entry = {

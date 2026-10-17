@@ -99,6 +99,9 @@ CATCHUP_MINUTES = {
     "technicals-screeners": 12 * 60,
     # Ahead of the 06:15 landing; a late fetch is the same fetch, and the landing after it picks it up.
     "technicals-index-bars": 12 * 60,
+    # The vendor's sessions for the last few trading days; idempotent (complete sessions are
+    # skipped), so a late run is the same fetch and the next night's covers a missed one anyway.
+    "backtest-fetch": 12 * 60,
     "market-files": 600,
     "market-files-retry": 40,
     # Priced at the close for the next morning's pack; a late run still prices that close.
@@ -232,6 +235,7 @@ RETRY_ON_FAILURE = {
     "earnings-moves": 2,
     "futures-contracts": 2,
     "report-screener-greeks": 1,
+    "backtest-fetch": 1,
 }
 
 
@@ -1092,6 +1096,32 @@ def derive_jobs(
                 "" if (rv["enabled"] and rv["narrative"]) else "disabled in config (review.narrative)"
             ),
             tags=("ai",),
+        ),
+    )
+    bt = cfgmod.backtest_settings(cfg)
+    add(
+        "backtest-fetch",
+        lambda: JobSpec(
+            id="backtest-fetch",
+            # packages/backtest's one network verb: the vendor's sessions for the last few trading
+            # days, into the store the backtests read. Never touches a loop. While it runs it holds
+            # the vendor account's ONE session, so nothing else may log in with the key then.
+            argv=(
+                pythonw,
+                "-m",
+                "cherrypick.backtest",
+                "fetch",
+                "--cadence",
+                str(bt["fetch_cadence"]),
+                "--recent",
+                str(bt["fetch_recent_sessions"]),
+            ),
+            kind=KIND_DAILY,
+            at_et=bt["fetch_at"],
+            catchup_minutes=CATCHUP_MINUTES["backtest-fetch"],
+            trading_days_only=True,
+            enabled=bt["fetch"],
+            enabled_reason="" if bt["fetch"] else "disabled in config (backtest.fetch)",
         ),
     )
     tc = cfgmod.technicals_settings(cfg)
