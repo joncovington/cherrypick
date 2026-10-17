@@ -18,7 +18,14 @@ Dimensions, each a function from a record to a bucket name or None (not bucketab
 
 These are historical associations over the trades the window holds, not predictions, and a
 breakdown of a short sample is mostly noise: the `thin` mark is the reader's guard against it.
-Market-regime buckets (`core.marketregime`) join once its artifact is written on the machine.
+
+Regime is not a dimension here, and that is deliberate. The regime is already recorded: the gex
+recorder's `market_regime_history` (VIX term structure, VVIX, breadth, credit, sector dispersion,
+GEX; every minute since 2026-08-24), joined to any moment by `core.regime.regime_at`. Flies and
+MEIC cut their own P&L by it nightly (`core.regimecuts`), era-scoped and stamped thin, fragile and
+paired, which this engine would only weaken; the analysis page shows those cuts beside these
+tables and links to them. A regime dimension for the other modules reads `regime_at` at entry, once
+their ledger records carry an entry time.
 """
 
 from __future__ import annotations

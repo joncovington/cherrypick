@@ -133,9 +133,15 @@ best, worst), over any value known at entry:
 - market events from **`core.events`**, which already reads FOMC, CPI, jobs, PCE, PPI and the rest
   from local files, adds rule events (monthly expiry, triple witching), and reports a day it cannot
   vouch for as `unknown`, never `none`; unknown days get their own bucket;
-- VIX level and change;
-- trend regime from `core.marketregime`, and ADX from `technicals.indicators.adx` (not yet wired to
-  any regime artifact);
+- VIX level and change, and the rest of the recorded regime: the gex recorder's
+  `market_regime_history` (VIX term structure, VVIX, breadth, credit, sector dispersion, GEX; every
+  minute since 2026-08-24), joined to an entry by `core.regime.regime_at`. *Corrected 2026-10-17:*
+  this first named `core.marketregime`, a daily SPX trend labeller whose artifact is not written on
+  this machine, and missed that the regime was already recorded. Flies and MEIC cut their P&L by it
+  nightly (`core.regimecuts`); the analysis page shows that cut per arm, in its own window, and
+  links to the regime tab rather than re-deriving it. The other modules get a regime dimension from
+  `regime_at` once their ledger records carry an entry time. ADX from
+  `technicals.indicators.adx` is not wired to anything yet;
 - reward/risk and expected move at entry;
 - direction before entry and the underlying's move during the trade, the latter sized against the
   entry's expected move so a bucket means the same across symbols.
