@@ -510,6 +510,132 @@ def backfill_events(conn, *, write: bool, root=None, restamp: bool = False) -> d
     return counts
 
 
+def backfill_peak_risk(conn, *, write: bool, restamp: bool = False) -> dict:
+    """Record each settled book's session peak risk (`analytics.session_peak_risk`) on books settled
+    before settlement recorded it. Only books with no peak yet, or every settled book with `restamp`
+    (the replay is re-derivable exactly, so correcting it is a re-run, not a measurement break).
+
+    Where the live loop recorded its own peak (`fly_live_marks.open_margin`), the replay is checked
+    against it AT THE SAME TICK. The loop counts what its rows held at that moment, and two things it
+    held are not positions the replay can price (both found on the live ledger, 2026-10-16):
+
+    - an entry still at its limit price, the broker having filled it better and the row not yet
+      reconciled (2026-09-25: sent at 2.15, filled 2.20, $5 more risk recorded than carried);
+    - an entry order working at that tick that never filled (2026-10-08 10:21:30: $268.44 for an
+      order later cancelled).
+
+    A gap equal to some combination of those is `explained`, with its parts; any other is listed as
+    `unexplained`, which means the replay is wrong somewhere -- the loop's figure is what it read.
+    Dry run unless `write`."""
+    from cherrypick.flies import analytics, fly
+
+    def has_table(name: str) -> bool:
+        q = "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?"
+        return conn.execute(q, (name,)).fetchone() is not None
+
+    books = conn.execute(
+        "SELECT book_id, trade_date FROM fly_books WHERE status = 'settled'"
+        + ("" if restamp else " AND peak_risk IS NULL")
+        + " ORDER BY trade_date"
+    ).fetchall()
+    out: dict = {
+        "books": len(books),
+        "recorded": 0,
+        "nothing_held": 0,
+        "no_instants": 0,
+        "checked": 0,
+        "matched": 0,
+        "explained": [],
+        "unexplained": [],
+    }
+    for b in books:
+        rows = dbmod.book_positions(conn, b["book_id"])
+        peak = analytics.session_peak_risk(rows)
+        if peak["peak"] is None:
+            out["no_instants"] += 1
+            continue
+        if peak["peak"] == 0.0 and not any(analytics._held(rows)):
+            out["nothing_held"] += 1
+        out["recorded"] += 1
+        if write:
+            dbmod.save_book(
+                conn, {"book_id": b["book_id"], "peak_risk": peak["peak"], "peak_risk_at": peak["at"]}
+            )
+
+    if not has_table("fly_live_marks"):
+        return out
+    # The loop's whole live book per day (the pilot runs one arm a session), at its peak tick.
+    marks = conn.execute(
+        "SELECT trade_date, iteration_ts, MAX(open_margin) AS peak FROM fly_live_marks GROUP BY trade_date"
+    ).fetchall()
+    fills: dict = {}
+    if has_table("fly_live_orders"):
+        for o in conn.execute(
+            "SELECT position_id, limit_price, broker_fill_price FROM fly_live_orders "
+            "WHERE leg = 'entry' AND broker_fill_price IS NOT NULL AND limit_price IS NOT NULL"
+        ):
+            fills[o["position_id"]] = (o["limit_price"], o["broker_fill_price"])
+    for m in marks:
+        if m["peak"] is None or m["peak"] <= 0:
+            continue
+        rows = [
+            dict(r)
+            for r in conn.execute("SELECT * FROM fly_positions WHERE trade_date = ?", (m["trade_date"],))
+        ]
+        t = m["iteration_ts"]
+        replay = analytics.exposure_at(rows, t)
+        out["checked"] += 1
+        gap = m["peak"] - replay
+        if abs(gap) <= 0.01:
+            out["matched"] += 1
+            continue
+        # What the loop's rows could have held at t that the replay does not price.
+        parts: list[tuple[str, float]] = []
+        for r in rows:
+            if analytics._state_at(r, t) is None:
+                continue
+            if (r.get("status") or "") == "cancelled":
+                # Working at t, never filled: the loop counted it at its limit.
+                state = analytics._state_at({**r, "completed_at": None}, t)
+                parts.append((f"unfilled {r['position_id'][-6:]}", max(0.0, -fly.position_floor(state))))
+                continue
+            if r.get("completed_at") and t >= r["completed_at"]:
+                continue
+            if r["position_id"] in fills:
+                limit, fill = fills[r["position_id"]]
+                per = (fill - limit) if r.get("entry_mode") == "legged" else (limit - fill)
+                if abs(per) > 1e-9:
+                    dollars = per * fly.CONTRACT_MULTIPLIER * (r.get("quantity") or 1)
+                    parts.append((f"improved {r['position_id'][-6:]}", dollars))
+        entry = {"session": m["trade_date"], "at": t, "recorded": m["peak"], "replayed": round(replay, 2)}
+        found = _subset_matching(parts, gap)
+        if found is not None:
+            out["explained"].append({**entry, "by": [{"what": w, "dollars": round(d, 2)} for w, d in found]})
+        else:
+            out["unexplained"].append(entry)
+    return out
+
+
+def _subset_matching(parts: list[tuple[str, float]], target: float, tol: float = 0.02) -> list | None:
+    """The smallest combination of `parts` whose dollars sum to `target` within `tol`, or None. A
+    book holds a handful of positions, so every combination is tried (capped at 16 parts)."""
+    from itertools import combinations
+
+    parts = parts[:16]
+    for size in range(1, len(parts) + 1):
+        for combo in combinations(parts, size):
+            if abs(sum(d for _, d in combo) - target) <= tol:
+                return list(combo)
+    return None
+
+
+def cmd_backfill_peak_risk(args) -> int:
+    conn = dbmod.connect(args.db)
+    out = backfill_peak_risk(conn, write=args.write, restamp=args.restamp)
+    print(json.dumps({"ok": True, "write": args.write, **out}, indent=2))
+    return 0
+
+
 def cmd_backfill_events(args) -> int:
     conn = dbmod.connect(args.db)
     out = backfill_events(conn, write=args.write, restamp=args.restamp)
@@ -760,6 +886,16 @@ def main(argv=None) -> int:
     p_events.add_argument("--write", action="store_true", help="write (default: dry run)")
     p_events.add_argument("--restamp", action="store_true", help="re-stamp every row, not only untagged ones")
     p_events.set_defaults(func=cmd_backfill_events)
+
+    p_peak = sub.add_parser(
+        "backfill-peak-risk",
+        help="record each settled book's session peak risk on books settled before it was",
+    )
+    p_peak.add_argument("--write", action="store_true", help="write (default: dry run)")
+    p_peak.add_argument(
+        "--restamp", action="store_true", help="re-derive every settled book, not only unrecorded ones"
+    )
+    p_peak.set_defaults(func=cmd_backfill_peak_risk)
 
     p_fill = sub.add_parser(
         "fill-model",

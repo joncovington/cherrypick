@@ -73,7 +73,12 @@ def peak_risk(records: Sequence[Mapping]) -> dict:
       only overstate the peak, never hide it.
 
     `basis` says which of those applied. Records without capital are left out and counted
-    (`capital_known` of `trades`); with none at all the peak is None, with the reason."""
+    (`capital_known` of `trades`); with none at all the peak is None, with the reason.
+
+    A ledger whose trades carry no capital of their own but whose BOOKS record their session peak
+    (flies: `book_peak_risk`, from `fly_books.peak_risk`) is read from those instead, `basis`
+    "book": each session's books are summed and the largest session is the peak. Two books on one
+    session are two symbols traded side by side, so summing them can only overstate."""
     trades = [r for r in records if r.get("net_pnl") is not None]
     known = [r for r in trades if r.get("capital")]
     out = {
@@ -86,8 +91,21 @@ def peak_risk(records: Sequence[Mapping]) -> dict:
         "basis": None,
         "withheld": None,
     }
+    booked = [r for r in trades if r.get("book_peak_risk") is not None and r.get("book_id")]
+    if not known and booked:
+        per_book = {(r.get("session") or "", r["book_id"]): r["book_peak_risk"] for r in booked}
+        per_session: dict[str, float] = {}
+        for (session, _), peak in per_book.items():
+            per_session[session] = per_session.get(session, 0.0) + peak
+        session, peak = max(per_session.items(), key=lambda kv: kv[1])
+        out.update(peak=round(peak, 2), session=session, capital_known=len(booked), basis="book")
+        return out
     if not known:
-        out["withheld"] = "no trade in this window records its capital at risk"
+        out["withheld"] = (
+            "no trade in this window records its capital at risk, and no book records its peak"
+            if any("book_peak_risk" in r for r in trades)
+            else "no trade in this window records its capital at risk"
+        )
         return out
 
     spanning = [r for r in known if r.get("entry_session")]

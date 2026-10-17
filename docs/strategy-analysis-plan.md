@@ -195,8 +195,8 @@ last, or runs first on replays for an early read.
   is in `core.analysis.capital`. A **declared allocation** is dated, kept in one suite-level file
   (`<home>/config/arm_capital.json`) rather than the module configs no loop would read it from, and
   a session before the first declaration is counted as uncovered, never filled. Flies records no
-  per-trade capital, so its peak waits for flies to record each session's peak on its books (with a
-  backfill), which core then reads.
+  per-trade capital, so flies now records each book's session peak at settlement
+  (`fly_books.peak_risk`, with `run.py backfill-peak-risk`), and core reads it.
 - No composite score and no optimizer.
 
 ## Open before Phase 0

@@ -734,6 +734,11 @@ _ADDED_BOOK_COLUMNS = {
     "modeled_fees": "REAL",
     "broker_reconciled_at": "TEXT",
     "broker_reconciliation_status": "TEXT",
+    # The book's peak open worst case over its session (`analytics.session_peak_risk`), recorded at
+    # settlement and backfilled by `run.py backfill-peak-risk`. The capital core.analysis reads for
+    # flies, whose positions carry no per-trade capital (a legged book's risk depends on completion).
+    "peak_risk": "REAL",
+    "peak_risk_at": "TEXT",
 }
 
 

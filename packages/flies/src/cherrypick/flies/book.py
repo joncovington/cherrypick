@@ -11,6 +11,7 @@ import json
 from datetime import datetime
 
 from cherrypick.flies import (
+    analytics,  # noqa: E402
     clock,  # noqa: E402
     engine,  # noqa: E402
     fill_model,  # noqa: E402
@@ -1510,6 +1511,15 @@ def _settle_book(conn, trade_date, arm, symbol, settlement_price, config, settle
     for p in final:
         p["status"] = "settled"
     summary = _save_book(conn, book_id, trade_date, arm, symbol, final, params, settlement_price)
+
+    # The session's peak risk, recorded on the book (analytics.session_peak_risk). A measurement
+    # only: it changes no position and no figure above. Telemetry, so it never breaks settlement; a
+    # book it fails on keeps a NULL peak, which `run.py backfill-peak-risk` can fill later.
+    try:
+        peak = analytics.session_peak_risk(dbmod.book_positions(conn, book_id))
+        dbmod.save_book(conn, {"book_id": book_id, "peak_risk": peak["peak"], "peak_risk_at": peak["at"]})
+    except Exception:  # noqa: BLE001 - telemetry must never break settlement
+        pass
     return {
         "book_id": book_id,
         "settled": len(settled),
