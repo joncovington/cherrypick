@@ -12,6 +12,7 @@ import { HelpTab } from "../../pages/Bwb/HelpTab";
 import { BwbLiveGapSlide } from "../../pages/Bwb/LiveGapSlide";
 import { BwbVolSlide } from "../../pages/Bwb/VolSlide";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
+import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { ModuleFrame } from "../ModuleFrame";
 import { BWB_SLIDES, type BwbSlideId } from "../navGroups";
@@ -64,6 +65,7 @@ export function BwbLightbox({ slide }: { slide: string }) {
     { id: "vol", label: BWB_LABEL.vol, render: () => <BwbVolSlide /> },
     { id: "livegap", label: BWB_LABEL.livegap, render: () => <BwbLiveGapSlide /> },
     { id: "performance", label: BWB_LABEL.performance, render: () => <PerformanceSlide module="bwb" mode={mode} /> },
+    { id: "analysis", label: BWB_LABEL.analysis, render: () => <AnalysisSlide module="bwb" mode={mode} /> },
     { id: "advisor", label: BWB_LABEL.advisor, render: () => <AdvisorSlide module="bwb" /> },
     {
       id: "positions",

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { ArmAnalysis, DrawdownEpisode } from "@console/shared";
-import { ArmCard } from "../src/components/analysis/AnalysisSlide";
+import type { ArmAnalysis, CapitalReading, DrawdownEpisode } from "@console/shared";
+import { ArmCard, CapitalTiles } from "../src/components/analysis/AnalysisSlide";
 
 const text = (node: React.ReactElement) => renderToString(node).replace(/<!--\s*-->/g, "");
 
@@ -85,5 +85,77 @@ describe("ArmCard", () => {
       <ArmCard module="flies" tag="control" a={arm({ drawdowns: { count: 1, open, deepest: [open], longest_closed: null } })} updatedAt={0} />,
     );
     expect(html).toContain("not yet");
+  });
+});
+
+function cap(over: Partial<CapitalReading> = {}): CapitalReading {
+  return {
+    peak_risk: {
+      peak: 5525,
+      session: "2026-09-04",
+      at: null,
+      trades: 37,
+      capital_known: 37,
+      untimed: 0,
+      basis: "session",
+      withheld: null,
+    },
+    return_on_peak_risk: -0.0348,
+    max_drawdown_over_peak_risk: 0.3397,
+    allocation: {
+      declared: [],
+      sessions: 30,
+      covered: 0,
+      uncovered: 0,
+      return: null,
+      max_drawdown: null,
+      max_drawdown_dollars: null,
+      current: null,
+      capital_over_max_drawdown: null,
+    },
+    ...over,
+  };
+}
+
+describe("CapitalTiles", () => {
+  it("shows the observed peak and its ratios, and says when no allocation is declared", () => {
+    const html = text(<CapitalTiles c={cap()} />);
+    expect(html).toContain("$5525.00");
+    expect(html).toContain("-3.5%");
+    expect(html).toContain("34.0%");
+    expect(html).toContain("none declared");
+  });
+
+  it("names a withheld peak and draws it as a dash, never zero", () => {
+    const html = text(
+      <CapitalTiles
+        c={cap({
+          peak_risk: { ...cap().peak_risk, peak: null, capital_known: 0, withheld: "no trade in this window records its capital at risk" },
+          return_on_peak_risk: null,
+          max_drawdown_over_peak_risk: null,
+        })}
+      />,
+    );
+    expect(html).toContain("peak risk unknown");
+    expect(html).not.toContain("$0.00");
+  });
+
+  it("reads a declared allocation and counts the sessions before it", () => {
+    const allocation = {
+      ...cap().allocation,
+      declared: [{ from: "2026-09-01", capital: 25000, note: null }],
+      covered: 20,
+      uncovered: 10,
+      return: 0.012,
+      max_drawdown: 0.08,
+      max_drawdown_dollars: 2000,
+      current: 25000,
+      capital_over_max_drawdown: 12.5,
+    };
+    const html = text(<CapitalTiles c={cap({ allocation })} />);
+    expect(html).toContain("$25000.00");
+    expect(html).toContain("1.2%");
+    expect(html).toContain("12.5×");
+    expect(html).toContain("10 of 30 sessions come before the first declared allocation");
   });
 });

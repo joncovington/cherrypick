@@ -17,6 +17,8 @@ import { spawnModuleCli } from "./moduleCli.js";
 export interface ModuleAnalysis {
   schema: string;
   n_records: number;
+  /** The declared-allocation file read for `--module`, and the reason it applied nothing, if so. */
+  allocations: { path: string | null; error: string | null };
   groups: Record<string, ArmAnalysis>;
 }
 
@@ -24,6 +26,15 @@ export interface ModuleAnalysisBridgeResult {
   ok: boolean;
   analysis: ModuleAnalysis | null;
   error: string | null;
+}
+
+function allocationsOf(raw: unknown): ModuleAnalysis["allocations"] {
+  if (typeof raw !== "object" || raw === null) return { path: null, error: null };
+  const o = raw as Record<string, unknown>;
+  return {
+    path: typeof o["path"] === "string" ? o["path"] : null,
+    error: typeof o["error"] === "string" ? o["error"] : null,
+  };
 }
 
 const UNAVAILABLE =
@@ -35,11 +46,14 @@ function spawnCaller(
   start: string | null,
   end: string | null,
   era: string | null = null,
+  module: string | null = null,
 ): ModuleAnalysisBridgeResult {
   const argv = ["-m", "cherrypick.core.analysis", "read", "--db", dbPath, "--schema", schema];
   if (start !== null) argv.push("--start", start);
   if (end !== null) argv.push("--end", end);
   if (era !== null) argv.push("--era", era);
+  // Whose declared allocations apply (`<home>/config/arm_capital.json`); core reads the file.
+  if (module !== null) argv.push("--module", module);
   const res = spawnModuleCli(argv, UNAVAILABLE);
   if (!res.ok || res.json === null) return { ok: false, analysis: null, error: res.error };
   if (res.json["ok"] !== true) {
@@ -59,6 +73,7 @@ function spawnCaller(
     analysis: {
       schema: typeof res.json["schema"] === "string" ? (res.json["schema"] as string) : schema,
       n_records: typeof res.json["n_records"] === "number" ? (res.json["n_records"] as number) : 0,
+      allocations: allocationsOf(res.json["allocations"]),
       groups: (res.json["groups"] ?? {}) as Record<string, ArmAnalysis>,
     },
     error: null,
@@ -83,12 +98,13 @@ export function readAnalysis(
   start: string | null,
   end: string | null,
   era: string | null = null,
+  module: string | null = null,
   now = Date.now(),
 ): ModuleAnalysisBridgeResult {
-  const key = `${dbPath}|${schema}|${start ?? ""}|${end ?? ""}|${era ?? ""}`;
+  const key = `${dbPath}|${schema}|${start ?? ""}|${end ?? ""}|${era ?? ""}|${module ?? ""}`;
   const hit = cache.get(key);
   if (hit !== undefined && now - hit.at < TTL_MS) return hit.value;
-  const value = caller(dbPath, schema, start, end, era);
+  const value = caller(dbPath, schema, start, end, era, module);
   cache.set(key, { at: now, value });
   return value;
 }

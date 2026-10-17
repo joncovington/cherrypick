@@ -143,6 +143,7 @@ export const BWB_SLIDES = [
   { id: "vol", label: "entry vol" },
   { id: "livegap", label: "live vs paper" },
   { id: "performance", label: "performance" },
+  { id: "analysis", label: "analysis" },
   { id: "advisor", label: "advisor" },
   { id: "positions", label: "positions" },
   { id: "history", label: "history" },
@@ -407,7 +408,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     groups: [
       { label: "today", ids: ["session", "summary"] },
       { label: "evidence", ids: ["decisions", "arms", "vol", "livegap"] },
-      { label: "study", ids: ["performance", "advisor"] },
+      { label: "study", ids: ["performance", "analysis", "advisor"] },
       { label: "tables", ids: ["positions", "history"] },
       { label: "help", ids: ["guide"] },
     ],

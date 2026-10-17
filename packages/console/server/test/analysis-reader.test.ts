@@ -54,7 +54,11 @@ function fakeConfig(dataEpochDate: string | null): ConsoleConfig {
 }
 
 const ARM = { version: ANALYSIS_VERSION, reading: { sample: 2 } } as unknown as ArmAnalysis;
-const OK = { ok: true, error: null, analysis: { schema: "fly_book", n_records: 2, groups: { control: ARM } } };
+const OK = {
+  ok: true,
+  error: null,
+  analysis: { schema: "fly_book", n_records: 2, allocations: { path: "arm_capital.json", error: null }, groups: { control: ARM } },
+};
 
 afterEach(() => {
   setAnalysisCaller();
@@ -98,6 +102,17 @@ describe("readModuleAnalysis", () => {
     expect(seen[2]?.[2]).not.toBeNull();
   });
 
+  it("names the module to the bridge, so its declared allocations apply, and passes their status on", () => {
+    const modules: Array<string | null> = [];
+    setAnalysisCaller((_db, _schema, _start, _end, _era, module) => {
+      modules.push(module ?? null);
+      return { ...OK, analysis: { ...OK.analysis, allocations: { path: "arm_capital.json", error: "bad date" } } };
+    });
+    const out = readModuleAnalysis(fakeConfig(null), "bwb");
+    expect(modules).toEqual(["bwb"]);
+    expect(out.allocations).toEqual({ path: "arm_capital.json", error: "bad date" });
+  });
+
   it("refuses a live read for a module with no live ledger, without spawning", () => {
     let spawned = false;
     setAnalysisCaller(() => {
@@ -126,9 +141,11 @@ describe("analysisBridge", () => {
       calls += 1;
       return OK;
     });
-    readAnalysis("a.db", "fly_book", null, null, null, 1_000);
-    readAnalysis("a.db", "fly_book", null, null, null, 2_000);
-    readAnalysis("a.db", "fly_book", "2026-08-21", null, null, 2_000);
-    expect(calls).toBe(2);
+    readAnalysis("a.db", "fly_book", null, null, null, "flies", 1_000);
+    readAnalysis("a.db", "fly_book", null, null, null, "flies", 2_000);
+    readAnalysis("a.db", "fly_book", "2026-08-21", null, null, "flies", 2_000);
+    // A different module is a different set of declared allocations: never served from cache.
+    readAnalysis("a.db", "fly_book", null, null, null, "bwb", 2_000);
+    expect(calls).toBe(3);
   });
 });
