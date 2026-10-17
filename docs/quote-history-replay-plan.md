@@ -141,6 +141,34 @@ and the selector and agent arms are refused. CLI: `replay --date --out`.
 measured. Entries within one tick and credits within $0.05 cannot hold path for path on every
 session, so stage 2 has to say how a diverged session is judged before the comparison is run.
 
+**Stage 2, declared 2026-10-17 before any decision-level number was read: validate decisions, not
+paths.** At every recorded sample, the replay is handed paper's own book as it stood at that instant
+(positions entered before it; one completed later still an open vertical) and runs one tick. Its
+decision is compared with what paper did:
+- **Entries:** each paper entry is matched if the replay entered on the same side and centre in the
+  30 s before it.
+- **Completions:** each paper completion is matched if the replay completed that position in the
+  30 s before it.
+- **Episodes:** replay entries or completions paper never made are counted once per run of
+  consecutive samples.
+- **Divergence report:** the path replay's per-session report (where a session first diverges, and
+  why) is kept beside the check, as a report and not a pass/fail.
+
+Pass, per arm, over at least 10 sessions (the decision-level counts were not seen when these were
+set):
+
+| Measure | Threshold |
+|---|---|
+| Paper entries matched | ≥ 90% |
+| Replay-only entry episodes | ≤ 10% of paper's entries |
+| Paper completions matched | ≥ 85% |
+| Replay-early completion episodes | ≤ 10% of paper's completions |
+| Matched credits, absolute difference | median ≤ $0.10 and p90 ≤ $0.30 |
+
+The credit bound is the reader noise measured on 2026-10-17 against live flies' own marks (per
+contract: median $0.05, p90 $0.30 on verticals), set from that measurement and not from any replay.
+A session that fails is listed with its cases, never averaged away.
+
 **Shape.** Rebuild each recorded tick as the snapshot the paper loop would have built, and feed it
 to flies' own code: `book.process_snapshot` against a scratch ledger per arm. There is no second copy
 of the rules. Fields beyond quotes are enriched from what is already recorded:
