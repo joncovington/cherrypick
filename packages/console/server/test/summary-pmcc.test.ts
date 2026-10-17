@@ -91,8 +91,12 @@ beforeAll(() => {
   missing = { paths: { ...paths, pmccDir: path.join(tmp, "nowhere") } } as unknown as ConsoleConfig;
 });
 
-const summary = (range: string | undefined, day: string | null, mode: "paper" | "live" = "paper") =>
-  readPmccSummary(config, { mode, range, day });
+const summary = (
+  range: string | undefined,
+  day: string | null,
+  mode: "paper" | "live" = "paper",
+  scope: { arm?: string | null; symbol?: string | null; era?: string | null } = {},
+) => readPmccSummary(config, { mode, range, day, ...scope });
 
 describe("pmcc summary money", () => {
   it("equals the history reader's totals for the same window", () => {
@@ -203,5 +207,28 @@ describe("pmcc summary with no ledger", () => {
     expect(s.hero.trades).toBe(0);
     expect(s.arms).toEqual([]);
     expect(s.notes.join(" ")).toContain("could not be read");
+  });
+});
+
+describe("the pmcc summary's scope", () => {
+  it("narrows the hero and the by-symbol table to the header's symbol", () => {
+    const all = summary("week", DAY);
+    expect(all.hero.trades).toBe(3);
+    expect(all.hero.open).toBe(2); // p5 GLD and p6 IWM are the open book
+    const xsp = summary("week", DAY, "paper", { symbol: "XSP" });
+    expect(xsp.hero.trades).toBe(1);
+    expect(xsp.hero.net).toBe(280);
+    expect(
+      xsp.breakdowns.find((b) => b.title === "by symbol")?.rows.map((r) => [r.bucket, r.trades]),
+    ).toEqual([["XSP", 1]]);
+  });
+
+  it("scopes the open book and the activity tiles to the header's symbol", () => {
+    const xsp = summary("week", DAY, "paper", { symbol: "XSP" });
+    expect(xsp.hero.open).toBe(0); // no XSP position is open
+    const mtm = xsp.tiles.find((t) => t.label === "open now, marked to market");
+    expect(mtm?.value).toBeNull();
+    const sold = xsp.tiles.find((t) => t.label === "short calls sold");
+    expect(sold?.value).toBe(0); // p5's shorts are GLD's
   });
 });

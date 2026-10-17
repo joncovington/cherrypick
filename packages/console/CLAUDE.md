@@ -517,6 +517,30 @@ them to their common denominator or growing a registry of per-module exceptions.
 What is module-local is the content, not the mechanism: the simple/detail view is shared, and
 each module decides what its simple view lists.
 
+**A summary follows its page header.** MEIC's slide always took the page's scope and session; the
+generic `/api/summary/:module` summaries did not until 2026-10-16, so on flies the header's arm /
+symbol / era / date controls looked dead on the summary tab. Now the manifest passes `scope`
+(`{arm, symbol, era}`) and `day`/`onDay` into `ModuleSummary`, the route forwards `arm`/`symbol`/
+`era` beside `date`/`range`/`mode`, and `SummaryQuery` carries them. Each reader applies them
+through one shared `scopeTrades` post-fetch filter over its own `SummaryTrade[]` (so every module
+narrows the same way); a single-symbol book with no `symbol` on its rows is not filtered on one it
+never had. Era is read only by a reader with an era model (flies, via `eraClause`); a module whose
+header has no scope control passes none and keeps its own `?day=` arrows. Scope narrows the whole
+summary, the by-arm card included — deliberately unlike MEIC's comparison card, whose by-arm table
+never narrows.
+
+**The scope is SQL too, not only the settled roll-up.** `scopeTrades` narrows the rows a reader
+sums, but a reader also counts things straight from the ledger — an open-position count, the
+session list behind the day arrows, pmcc's shorts/rolls/exposure activity. Those go through the
+shared `scopeClauses` (or a subquery built from its `conditions`), or the page shows two scopes at
+once and `ModuleSummary`'s `trades === 0 && open === 0` empty state stops firing, drawing a hero of
+zeros. The day arrows step through the sessions the scoped trades actually have, so an arm-scoped
+summary never lands on a day that arm did not trade. Two things to know reading a scoped flies
+summary: the header's own date list comes from days that have any position, while the summary's
+latest day is the latest that **settled**, so with no date picked the tab can sit a session off the
+others; and the header's symbol filter only bites once the era is widened to ALL, because the
+default SPX era already pins one symbol (the pmcc and bwb symbols are their own book, not a filter).
+
 **Module advisor slides.** `readers/advisor.ts`'s `readAdvisorModule` serves
 `/api/advisor/module/:module`: active experiments with progress against length and stall budget, the
 session strip from the advisor's `enactment` table (read, never re-derived), the paired comparison as

@@ -11,6 +11,8 @@ import {
   emptySlice,
   heroOf,
   inWindow,
+  scopeClauses,
+  scopeTrades,
   sessionNeighbours,
   summaryWindow,
   type SummaryQuery,
@@ -124,10 +126,18 @@ function readClosed(db: DatabaseHandle): { trades: PmccTrade[]; unpriced: number
 }
 
 /** What moved in the window besides closes -- shorts sold, rolls, exposure flags -- and the open book now. */
-function readActivity(db: DatabaseHandle, w: Window): Activity {
+function readActivity(db: DatabaseHandle, w: Window, q: SummaryQuery): Activity {
+  const sc = scopeClauses(q, { arm: "arm", symbol: "symbol" });
+  // The legs, events and marks tables carry no scope of their own; bound them to the scoped positions.
+  const subScope =
+    sc.conditions.length > 0
+      ? ` AND position_id IN (SELECT position_id FROM pmcc_positions WHERE ${sc.conditions.join(" AND ")})`
+      : "";
   const openRows = db
-    .prepare<[], { position_id: string }>("SELECT position_id FROM pmcc_positions WHERE status != 'closed'")
-    .all();
+    .prepare<string[], { position_id: string }>(
+      `SELECT position_id FROM pmcc_positions WHERE status != 'closed'${sc.sql}`,
+    )
+    .all(...sc.params);
   const mtm = unrealisedByPosition(db, {
     positionsTable: "pmcc_positions",
     legsTable: "pmcc_legs",
@@ -146,30 +156,30 @@ function readActivity(db: DatabaseHandle, w: Window): Activity {
   const legW = windowSql("opened_session", w);
   const legs = db
     .prepare<string[], { n: number | null }>(
-      `SELECT COUNT(*) AS n FROM pmcc_legs WHERE leg_role LIKE 'short_call%' AND opened_session IS NOT NULL${legW.sql}`,
+      `SELECT COUNT(*) AS n FROM pmcc_legs WHERE leg_role LIKE 'short_call%' AND opened_session IS NOT NULL${legW.sql}${subScope}`,
     )
-    .get(...legW.params);
+    .get(...legW.params, ...sc.params);
   const undated = db
-    .prepare<[], { n: number | null }>(
-      "SELECT COUNT(*) AS n FROM pmcc_legs WHERE leg_role LIKE 'short_call%' AND opened_session IS NULL",
+    .prepare<string[], { n: number | null }>(
+      `SELECT COUNT(*) AS n FROM pmcc_legs WHERE leg_role LIKE 'short_call%' AND opened_session IS NULL${subScope}`,
     )
-    .get();
+    .get(...sc.params);
 
   const evW = windowSql("session_date", w);
   const rolls = db
     .prepare<string[], { n: number | null }>(
-      `SELECT COUNT(*) AS n FROM pmcc_management_events WHERE action = 'roll_short' AND executed = 1${evW.sql}`,
+      `SELECT COUNT(*) AS n FROM pmcc_management_events WHERE action = 'roll_short' AND executed = 1${evW.sql}${subScope}`,
     )
-    .get(...evW.params);
+    .get(...evW.params, ...sc.params);
 
   // analytics.exposure()'s population: usable marks that carry a short time value.
   const exp = db
     .prepare<string[], { exposed: number | null; marked: number | null; positions: number | null }>(
       `SELECT SUM(CASE WHEN assignment_exposed = 1 THEN 1 ELSE 0 END) AS exposed, COUNT(*) AS marked,
               COUNT(DISTINCT CASE WHEN assignment_exposed = 1 THEN position_id END) AS positions
-         FROM pmcc_marks WHERE short_tv IS NOT NULL AND usable = 1${evW.sql}`,
+         FROM pmcc_marks WHERE short_tv IS NOT NULL AND usable = 1${evW.sql}${subScope}`,
     )
-    .get(...evW.params);
+    .get(...evW.params, ...sc.params);
 
   return {
     open: openRows.length,
@@ -187,12 +197,13 @@ function readActivity(db: DatabaseHandle, w: Window): Activity {
 export function readPmccSummary(config: ConsoleConfig, q: SummaryQuery): ModuleSummarySlice {
   const read = withReadSnapshot(pmccDbPath(config), null, (db) => {
     const closed = readClosed(db);
+    // The day arrows and the latest-session default follow the scoped closes, not the whole book.
     const session = sessionNeighbours(
-      closed.trades.map((t) => t.session),
+      scopeTrades(closed.trades, q).map((t) => t.session),
       q.day,
     );
     const window = summaryWindow(q.range, session.day);
-    return { ...closed, session, window, activity: readActivity(db, window) };
+    return { ...closed, session, window, activity: readActivity(db, window, q) };
   });
   if (read === null) {
     const slice = emptySlice("pmcc", "paper", UNIT, summaryWindow(q.range, q.day));
@@ -201,7 +212,7 @@ export function readPmccSummary(config: ConsoleConfig, q: SummaryQuery): ModuleS
   }
 
   const { session, window, activity, unpriced } = read;
-  const trades = read.trades.filter((t) => inWindow(t.session, window));
+  const trades = scopeTrades(read.trades.filter((t) => inWindow(t.session, window)), q);
 
   const hero = heroOf(trades, true, activity.open);
   const costed = trades.filter((t) => t.longCost !== null);

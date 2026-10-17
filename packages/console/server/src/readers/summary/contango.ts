@@ -11,6 +11,7 @@ import {
   emptySlice,
   heroOf,
   inWindow,
+  scopeTrades,
   sessionNeighbours,
   summaryWindow,
   type SummaryQuery,
@@ -132,7 +133,7 @@ export function readContangoSummary(config: ConsoleConfig, q: SummaryQuery): Mod
     q.day,
   );
   const window = summaryWindow(q.range, session.day);
-  const trades = all.map(toTrade).filter((t) => inWindow(t.session, window));
+  const trades = scopeTrades(all.map(toTrade).filter((t) => inWindow(t.session, window)), q);
 
   const open = facts.openEntries.filter((s) => window.to === null || s <= window.to).length;
   const hero = heroOf(trades, true, open);
