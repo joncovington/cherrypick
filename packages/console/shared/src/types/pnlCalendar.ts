@@ -62,7 +62,7 @@ export interface PnlExcursion {
   error?: string | null;
   recorded?: boolean;
   reason?: string;
-  basis?: "gross_at_mid" | "gross_as_recorded" | "net_of_fees_as_recorded";
+  basis?: "gross_at_mid" | "gross_as_recorded" | "net_of_fees_as_recorded" | "gross_at_mid_from_quote_history";
   ticks?: number;
   refused_ticks?: number;
   best?: { pnl: number; at: string } | null;

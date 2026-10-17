@@ -170,6 +170,11 @@ describe("ExcursionView", () => {
     expect(html).toContain("does not reconcile with the recorded gross $80.00");
   });
 
+  it("names a quote-history path as such, so it is not read as the module's own marks", () => {
+    const html = text(<ExcursionView x={excursion({ basis: "gross_at_mid_from_quote_history" })} />);
+    expect(html).toContain("priced from the recorded SPX quote history");
+  });
+
   it("says why a module keeps no path, and draws nothing in its place", () => {
     const html = text(<ExcursionView x={{ ok: true, recorded: false, reason: "MEIC records each side's worst spot" }} />);
     expect(html).toContain("no excursion — MEIC records each side");
