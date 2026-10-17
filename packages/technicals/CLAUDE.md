@@ -68,8 +68,10 @@ table. Read in **month-wide date windows with no symbol filter**, keep wanted sy
 
 **What it lands** (`symbols.all_symbols()`): every universe **candidate** (not only members — the
 stage engine is scored against the vendor's whole table), the 35 rotation ETFs (every fund the
-vendor's rotation placed across Sept 21-25, plus XLK, XLV, XLC), and the benchmarks (SPY, AOR, AGG,
-RSP, QQQ, DIA, IWM). Dolt carries no SPX; SPY stands in for it in every engine.
+vendor's rotation placed across Sept 21-25, plus XLK, XLV, XLC), the benchmarks (SPY, AOR, AGG,
+RSP, QQQ, DIA, IWM), and the newest earnings calendar's optionable names rated liquidity 1 or 2
+(`earnings_names`, 2026-10-17: the calendar's read is ours, so it needs their bars). Dolt carries
+no SPX; SPY stands in for it in every engine.
 
 **The cash indexes (`symbols.INDEXES`, SPX) are charted, never measured.** Their bars come from the
 broker's daily candles, which `scripts/fetch_index_bars.py` writes to `market-report/index/bars.db`

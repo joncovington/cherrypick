@@ -1,9 +1,10 @@
 """Which symbols the store holds.
 
-Four sets, unioned: every universe CANDIDATE (not only the members -- the stage engine is scored
+Five sets, unioned: every universe CANDIDATE (not only the members -- the stage engine is scored
 against the vendor's own table, whose names are mostly not liquid enough to be members), the
-rotation ETFs, the benchmarks the engines measure against, and every name the vendor collector has
-captured (the chart engines' answer key).
+rotation ETFs, the benchmarks the engines measure against, every name the vendor collector has
+captured (the chart engines' answer key), and the earnings calendar's liquid names (our read on
+them needs their bars).
 """
 
 from __future__ import annotations
@@ -60,5 +61,25 @@ def captured() -> list[str]:
     return sorted(names)
 
 
+def earnings_names() -> list[str]:
+    """The optionable names rated very or somewhat liquid on the newest earnings calendar
+    (`earnings_calendar.py`). Its direction and strength are ours, read from these bars, so a name
+    the store does not hold has no read and leaves the strong-read view (2026-10-17: 252 of 590 such
+    rows). The calendar runs 30 days ahead, so a name entering it lands weeks before it reports."""
+    root = paths.data_dir() / "earnings-calendar"
+    files = sorted(root.glob("????-??-??.json"))
+    if not files:
+        return []
+    try:
+        rows = json.loads(files[-1].read_text(encoding="utf-8")).get("rows") or []
+    except (OSError, ValueError):
+        return []
+    return sorted(
+        r["symbol"]
+        for r in rows
+        if isinstance(r.get("symbol"), str) and r.get("liquidity_rank") in (1, 2) and r.get("optionable")
+    )
+
+
 def all_symbols() -> list[str]:
-    return sorted({*candidates(), *ROTATION_ETFS, *BENCHMARKS, *captured()})
+    return sorted({*candidates(), *ROTATION_ETFS, *BENCHMARKS, *captured(), *earnings_names()})

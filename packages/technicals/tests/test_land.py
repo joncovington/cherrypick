@@ -186,6 +186,30 @@ def test_every_captured_name_is_landed_so_its_capture_can_be_scored():
     assert {"LOGC", "SGOV"} <= set(symbols.all_symbols())
 
 
+def test_the_earnings_calendars_liquid_names_are_landed_so_we_can_read_them():
+    import json
+
+    from cherrypick.technicals import paths, symbols
+
+    assert symbols.earnings_names() == []  # no calendar yet
+    folder = paths.data_dir() / "earnings-calendar"
+    folder.mkdir(parents=True)
+    old = {"rows": [{"symbol": "GONE", "liquidity_rank": 1, "optionable": True}]}
+    (folder / "2026-10-15.json").write_text(json.dumps(old), encoding="utf-8")
+    rows = [
+        {"symbol": "VERY", "liquidity_rank": 1, "optionable": True},
+        {"symbol": "SOME", "liquidity_rank": 2, "optionable": True},
+        {"symbol": "THIN", "liquidity_rank": 3, "optionable": True},
+        {"symbol": "NOOPT", "liquidity_rank": 1, "optionable": False},
+        {"symbol": "UNRATED", "liquidity_rank": None, "optionable": True},
+    ]
+    (folder / "2026-10-16.json").write_text(json.dumps({"rows": rows}), encoding="utf-8")
+    # The newest calendar only, and only the names the tab can show by default or one escape away.
+    assert symbols.earnings_names() == ["SOME", "VERY"]
+    assert {"SOME", "VERY"} <= set(symbols.all_symbols())
+    assert not {"GONE", "THIN", "NOOPT", "UNRATED"} & set(symbols.all_symbols())
+
+
 def test_the_landing_stores_the_whole_markets_rank_cutoffs_for_recent_sessions(dolt):
     """The rank is a decile across every name Dolt carries, not just the wanted ones: 200 unwanted
     names with rising scores set the cut-offs; a split inside the window and a name trading under
