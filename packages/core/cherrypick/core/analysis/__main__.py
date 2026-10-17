@@ -5,7 +5,9 @@ import Python -- the same pattern, arguments and grouping as `python -m cherrypi
 so the two never disagree about which records make up an arm.
 
 Command:
-    read --db PATH --schema SCHEMA [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+    read --db PATH --schema SCHEMA [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--era ERA]
+
+`--era` keeps only records stamped with that era, as in the metrics CLI.
 
 Output: {"ok": true, "schema": ..., "version": N, "n_records": N, "groups": {tag: <arm_reading>}}
 where `tag` is the arm, or `<arm>@<experiment_id>` for an advised row stamped with its experiment.
@@ -37,6 +39,16 @@ def cmd_read(args) -> dict:
             conn.close()
     except sqlite3.OperationalError as exc:
         return {"ok": False, "error": f"cannot read {args.db!r}: {exc}"}
+    # The module's own stamped era, refused for a schema whose records carry none -- the metrics
+    # CLI's rule, so a console slide scoped by era reads the same rows through either bridge.
+    era = getattr(args, "era", None)
+    if era and era != "ALL":
+        if ledgers.canonical_schema(args.schema) not in ledgers.ERA_SCHEMAS:
+            return {
+                "ok": False,
+                "error": f"schema {args.schema!r} records carry no era; --era cannot scope it",
+            }
+        records = [r for r in records if r.get("era") == era]
     # Grouped as core.metrics' CLI groups them (see its cmd_read): one group per experiment on an
     # advised arm, so the two bridges always describe the same set of records.
     for r in records:
@@ -57,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     rd.add_argument("--start", default=None)
     rd.add_argument("--end", default=None)
+    rd.add_argument("--era", default=None, help="one stamped era (ERA_SCHEMAS only), or ALL")
     args = ap.parse_args(argv)
     result = cmd_read(args)
     print(json.dumps(result))

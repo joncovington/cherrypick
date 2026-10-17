@@ -27,7 +27,7 @@ import { CURRENT_ERA as PMCC_CURRENT_ERA } from "./pmcc.js";
  * so a date bound would both admit earlier eras' rows and disagree with the module's own headline.
  * Scoped by the stamp, through `core.metrics read --era` (`ledgers.ERA_SCHEMAS`).
  */
-const MODULE_ERA: Partial<Record<PerformanceModuleId, string>> = { pmcc: PMCC_CURRENT_ERA };
+export const MODULE_ERA: Partial<Record<PerformanceModuleId, string>> = { pmcc: PMCC_CURRENT_ERA };
 
 /**
  * The shared performance read: one module's calibration reading, per profile, via
@@ -84,6 +84,13 @@ function hasLiveLedger(module: PerformanceModuleId): module is keyof typeof LIVE
 export function ledgerFile(module: PerformanceModuleId, mode: TradingMode): string | null {
   if (mode === "paper") return "paper_trades.db";
   return hasLiveLedger(module) ? LIVE_LEDGER[module] : null;
+}
+
+/** The full path of `module`'s ledger for `mode`, or null when the module has no live book. Shared
+ *  with `readers/analysis.ts`, so the two slides can never read different files. */
+export function moduleLedgerPath(config: ConsoleConfig, module: PerformanceModuleId, mode: TradingMode): string | null {
+  const file = ledgerFile(module, mode);
+  return file === null ? null : path.join(config.paths[MODULE_DIR_KEY[module]], file);
 }
 
 /** A calibration group's tag back to its rows: `core.metrics` names a group `<arm>@<experiment id>`

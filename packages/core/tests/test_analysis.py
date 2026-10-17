@@ -205,6 +205,15 @@ def test_cli_reads_a_flies_ledger(tmp_path):
     assert control["coverage"]["entry_spot"] == 1
 
 
+def test_cli_refuses_an_era_on_a_schema_without_one(tmp_path):
+    _flies_db(tmp_path / "f.db").close()
+    args = argparse.Namespace(db=str(tmp_path / "f.db"), schema="fly_book", start=None, end=None, era="v2")
+    out = cli.cmd_read(args)
+    assert out["ok"] is False and "carry no era" in out["error"]
+    args.era = "ALL"
+    assert cli.cmd_read(args)["ok"] is True
+
+
 def test_cli_refuses_an_unknown_schema(tmp_path):
     out = cli.cmd_read(argparse.Namespace(db=str(tmp_path / "x.db"), schema="nope", start=None, end=None))
     assert out == {"ok": False, "error": "unknown schema 'nope'"}

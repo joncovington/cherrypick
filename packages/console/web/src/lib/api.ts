@@ -939,7 +939,23 @@ export type {
   ModulePerformanceResult,
 } from "@console/shared";
 import type { ModulePerformanceResult, PerformanceModuleId } from "@console/shared";
+import type { ModuleAnalysisResult } from "@console/shared";
 import type { OpeningRangePayload, RegimeCutsModule, RegimeCutsPayload } from "@console/shared";
+
+/** One module's strategy analysis per arm (`GET /api/analysis/:module`), over the same ledger and
+ * window as `useModulePerformance`. Polled slower: it moves only when a trade closes. */
+export function useModuleAnalysis(
+  module: PerformanceModuleId,
+  era: "current" | "ALL" = "current",
+  mode: TradingMode = "paper",
+) {
+  return useQuery<ModuleAnalysisResult>({
+    queryKey: ["analysis", module, era, mode],
+    queryFn: () => getJson<ModuleAnalysisResult>(`/api/analysis/${module}?era=${era}&mode=${mode}`),
+    refetchInterval: 120_000,
+    placeholderData: (prev) => prev,
+  });
+}
 
 /** One module's calibration reading, exit reasons, advised pairs and measurement breaks in one
  * request (`GET /api/performance/:module`). `era="current"` (the default) bounds to the suite's own
