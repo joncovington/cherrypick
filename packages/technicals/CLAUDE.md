@@ -160,8 +160,9 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
     estimate (`usual_timing`; right 97% of the time on Dolt 2022-26). It never sets the entry
     session or the reaction day.
   - **Direction, strength, IV rank:** the security list's values, one session old.
-  - **Expected move:** one SD, the broker's IV for the first expiry after the reaction day × price ×
-    √(days/365).
+  - **Expected move:** the broker's earnings rule, 0.85 × the at-the-money straddle on the first
+    expiry after the reaction day (chosen 2026-10-17), the straddle read off that expiry's IV. One SD
+    (price × IV × √(days/365), the vendor's figure) is kept beside it.
   - **Spread:** the navigator spread, as target strikes.
   - **Checked against the vendor's page** for Oct 20-21: its 12 names, same date, direction and
     strength; moves within 0.42 points on average. History found no edge in the spread.
@@ -315,7 +316,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-revisions` | The analyst-revision rule vs every saved board: agree, opposite, missed, not in source, extra. |
 | `python -m cherrypick.technicals score-bearing` | The bearing lookup fitted on earlier security lists, scored on the latest. |
 | `python -m cherrypick.technicals score-screeners [--rescore]` | The income screens' expiry, strike and return rules vs every saved list with its broker chain; one file per session in `screeners/`, totals printed. |
-| `python -m cherrypick.technicals earnings-record [--today D] [--dry-run]` | The earnings calendar's forward record: each past announcement's move against the one-SD move the calendar showed the session before, whether a strong read called it, and the suggested spread's money on its marks; `earnings-calendar/record.json`, rebuilt whole. Reads the local Dolt. |
+| `python -m cherrypick.technicals earnings-record [--today D] [--dry-run]` | The earnings calendar's forward record: each past announcement's move against the expected move (0.85 × straddle) the calendar showed the session before, whether a strong read called it, and the suggested spread's money on its marks; `earnings-calendar/record.json`, rebuilt whole. Reads the local Dolt. |
 | `python -m cherrypick.technicals earnings-calendar [--day D] [--dry-run]` | The next 30 days' announcements for the console's earnings tab; one file per session in `earnings-calendar/`, a rerun replacing it. Reads the local Dolt. |
 | `python -m cherrypick.technicals study round7 [--workers N] [--count]` | Round 7: entering a bearing (frozen `bearing_table.py`) against random entry; `--count` gives frequencies only. |
 | `python -m cherrypick.technicals study round6 [--workers N] [--count]` | Round 6: a revision inside the strong bearing, against the same bearing without one; `--count` gives frequencies only. |

@@ -3,7 +3,7 @@
  *
  * `python -m cherrypick.technicals earnings-record` rebuilds `technicals/earnings-calendar/record.json`
  * each morning: every past announcement, what the calendar showed the session before, the move it
- * made against the one-SD move, whether a strong read called it, and the suggested spread's money on
+ * made against the expected move (0.85 x the straddle), whether a strong read called it, and the suggested spread's money on
  * its marks. This renames the fields and decides nothing.
  */
 
@@ -82,9 +82,9 @@ function row(v: unknown): EarningsRecordRow | null {
     liquidityRank: num(r["liquidity_rank"]),
     region: region === "US" || region === "intl" ? region : null,
     movePct: num(r["move_pct"]),
-    sdMovePct: num(r["sd_move_pct"]),
-    moveOverSd: num(r["move_over_sd"]),
-    insideSd: bool(r["inside_sd"]),
+    emMovePct: num(r["em_move_pct"]),
+    moveOverEm: num(r["move_over_em"]),
+    insideEm: bool(r["inside_em"]),
     directionRight: bool(r["direction_right"]),
     spread: spread(r["spread"]),
   };
@@ -108,8 +108,8 @@ export function readEarningsRecord(config: ConsoleConfig): EarningsRecordPayload
     summary: {
       announcements: num(s["announcements"]) ?? 0,
       measured: num(s["measured"]) ?? 0,
-      insideSd: num(s["inside_sd"]),
-      medianMoveOverSd: num(s["median_move_over_sd"]),
+      insideEm: num(s["inside_em"]),
+      medianMoveOverEm: num(s["median_move_over_em"]),
       strongReads: num(s["strong_reads"]) ?? 0,
       directionRight: num(s["direction_right"]),
       react: totals(s["spreads_react"]),

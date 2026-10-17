@@ -386,7 +386,7 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   **The earnings record tab** (`EarningsRecordTab.tsx`, `readers/earningsRecord.ts`,
   `GET /api/screeners/earnings-record`) is the calendar's forward record. It reads
   `technicals earnings-record`'s `record.json` and decides nothing.
-  - **Per announcement:** the move against the one-SD move shown the session before, and whether a
+  - **Per announcement:** the move against the expected move shown the session before, and whether a
     strong read called it.
   - **The spread's money**, in the suite's layout: signed entry and exit at mid, gross, fees and
     slippage as their own columns, and net, with net at day 2 beside it.

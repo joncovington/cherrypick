@@ -110,8 +110,12 @@ export function EarningsRecordTab() {
       )}
       {s && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-          <span className="chip" title="Announcements whose reaction is measured, and the share that stayed inside the one-SD move">
-            {s.measured} of {s.announcements} measured · inside ±1 SD {pct(s.insideSd)} · median |move| {s.medianMoveOverSd?.toFixed(2) ?? "—"} SD
+          <span
+            className="chip"
+            title="Announcements whose reaction is measured, and the share that stayed inside the expected move the calendar showed (0.85 × the at-the-money straddle)"
+          >
+            {s.measured} of {s.announcements} measured · inside the expected move {pct(s.insideEm)} · median |move|{" "}
+            {s.medianMoveOverEm?.toFixed(2) ?? "—"}× it
           </span>
           <span className="chip" title="Strong reads whose reaction went their way (history: 48-49%)">
             direction called {pct(s.directionRight)} of {s.strongReads} strong reads
@@ -128,13 +132,15 @@ export function EarningsRecordTab() {
                 <th>Symbol</th>
                 <th>Report</th>
                 <th>Direction</th>
-                <th className="num" title="The one-SD move the calendar showed the session before">
-                  ±1 SD
+                <th className="num" title="The expected move the calendar showed the session before: 0.85 × the at-the-money straddle">
+                  Exp. move
                 </th>
                 <th className="num" title="The reaction-day close against the session before's">
                   Move
                 </th>
-                <th className="num">|Move| / SD</th>
+                <th className="num" title="The move's size over the expected move: above 1 is outside it">
+                  |Move| / exp.
+                </th>
                 <th title="Strong reads only: did the reaction go the read's way">Called</th>
                 <th>Spread</th>
                 <th className="num" title="Opening at mid: a credit received +, a debit paid −">
@@ -166,13 +172,13 @@ export function EarningsRecordTab() {
                     {shortDate(r.date)} <span className="muted">{r.timing ? r.timing.toUpperCase() : "time unknown"}</span>
                   </td>
                   <td>{r.edgeLabel ?? "—"}</td>
-                  <td className="num">{r.sdMovePct === null ? "—" : `±${r.sdMovePct.toFixed(1)}%`}</td>
+                  <td className="num">{r.emMovePct === null ? "—" : `${r.emMovePct.toFixed(1)}%`}</td>
                   <td className={`num ${r.movePct === null ? "muted" : r.movePct >= 0 ? "pnl-pos" : "pnl-neg"}`}>
                     {r.movePct === null ? "—" : `${r.movePct > 0 ? "+" : r.movePct < 0 ? "−" : ""}${Math.abs(r.movePct).toFixed(1)}%`}
                   </td>
                   <td className="num">
-                    {r.moveOverSd === null ? "—" : r.moveOverSd.toFixed(2)}
-                    {r.insideSd === false && <span className="muted"> outside</span>}
+                    {r.moveOverEm === null ? "—" : r.moveOverEm.toFixed(2)}
+                    {r.insideEm === false && <span className="muted"> outside</span>}
                   </td>
                   <td className={r.directionRight === null ? "muted" : r.directionRight ? "pnl-pos" : "pnl-neg"}>
                     {r.directionRight === null ? "—" : r.directionRight ? "yes" : "no"}

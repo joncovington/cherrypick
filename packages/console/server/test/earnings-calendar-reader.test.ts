@@ -47,6 +47,7 @@ const NFLX = {
   sd_move: 8.36,
   sd_move_pct: 11.85,
   em_move: 5.67,
+  em_move_pct: 8.04,
   suggestion: { kind: "credit", right: "C", short: 70.53, long: 76.1984, expiry: "2026-11-20" },
 };
 
@@ -102,6 +103,7 @@ describe("readEarningsCalendar", () => {
       liquidityRank: 1,
       region: "US",
       sdMovePct: 11.85,
+      emMovePct: 8.04,
       eventExpiry: "2026-10-23",
       suggestion: { kind: "credit", right: "C", short: 70.53, long: 76.1984, expiry: "2026-11-20" },
     });

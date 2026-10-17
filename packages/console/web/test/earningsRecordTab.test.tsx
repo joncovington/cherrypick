@@ -15,8 +15,8 @@ let payload: EarningsRecordPayload = {
   summary: {
     announcements: 2,
     measured: 2,
-    insideSd: 0.5,
-    medianMoveOverSd: 0.875,
+    insideEm: 0.5,
+    medianMoveOverEm: 0.875,
     strongReads: 2,
     directionRight: 0.5,
     react: { n: 1, net: 130.3, won: 1, returnOnRisk: 0.4311 },
@@ -35,9 +35,9 @@ let payload: EarningsRecordPayload = {
       liquidityRank: 1,
       region: "US",
       movePct: -10,
-      sdMovePct: 11,
-      moveOverSd: 0.875,
-      insideSd: true,
+      emMovePct: 11,
+      moveOverEm: 0.875,
+      insideEm: true,
       directionRight: true,
       spread: {
         state: "entered",
@@ -76,7 +76,7 @@ function render(): string {
 describe("the earnings record tab", () => {
   it("shows the running summary", () => {
     const html = render();
-    expect(html).toContain("2 of 2 measured · inside ±1 SD 50%");
+    expect(html).toContain("2 of 2 measured · inside the expected move 50%");
     expect(html).toContain("direction called 50% of 2 strong reads");
     expect(html).toMatch(/reaction day: 1 spreads · net <span class="pnl-pos">\+\$130\.30<\/span> · won 100% · RoR 43\.1%/);
   });

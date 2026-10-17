@@ -17,11 +17,13 @@ locally -- never the broker, so this stays credential-free:
   company name; the market report's sector map where it has the name.
 - **price:** Dolt's latest daily close (`stocks.ohlcv`), which covers every listed name, where the
   technicals store holds only ~1,000.
-- **expected move:** one standard deviation to the first expiration on or after the reaction day,
-  price x that expiration's implied vol x the root of its calendar days over 365 -- the broker's
-  per-expiration IV from `iv/expiry-iv/<day>.json`. It matched the vendor's figures to about a third
-  of a point (plan). The suite's own expected move, 0.85 x the ATM straddle, is about 0.68 of that
-  (`EM_TO_SD`) and is what the suggested credit spread's long leg is placed by.
+- **expected move:** the broker's own rule for an earnings move, 0.85 x the ATM straddle on the
+  first expiration on or after the reaction day (`em_move`, shown on the tab since 2026-10-17), with
+  the straddle read off that expiration's implied vol (`iv/expiry-iv/<day>.json`): an ATM straddle
+  is ~0.8 x one standard deviation, so the move is ~0.68 SD (`EM_TO_SD`). One standard deviation --
+  price x that IV x the root of its calendar days over 365, which matched the vendor's figures to
+  about a third of a point -- is kept beside it (`sd_move`). The suggested spread's legs are placed
+  by `em_move`.
 - **the suggested spread,** for strong reads only: the earnings-navigator rule. IV rank under the cut
   buys a debit spread in the direction (long at the money, short at the suite's expected move);
   otherwise sells a credit spread on the other side (short at the money, long just outside the
@@ -364,7 +366,10 @@ def build(day: str, cfg: dict | None = None, settings: dict | None = None, dolt:
                 "event_iv": ev[1] if ev else None,
                 "sd_move": round(sd, 4) if sd is not None else None,
                 "sd_move_pct": round(100 * sd / price, 2) if (sd is not None and price) else None,
+                # The expected move the tab shows (chosen 2026-10-17): the broker's own rule for an
+                # earnings move, 0.85 x the ATM straddle, the straddle read off the event expiry's IV.
                 "em_move": round(em, 4) if em is not None else None,
+                "em_move_pct": round(100 * em / price, 2) if (em is not None and price) else None,
                 "suggestion": sug,
             }
         )

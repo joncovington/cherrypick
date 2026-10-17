@@ -28,8 +28,8 @@ beforeEach(() => {
       summary: {
         announcements: 2,
         measured: 2,
-        inside_sd: 0.5,
-        median_move_over_sd: 0.875,
+        inside_em: 0.5,
+        median_move_over_em: 0.875,
         strong_reads: 2,
         direction_right: 0.5,
         spreads_react: { n: 1, net: 130.3, won: 1.0, return_on_risk: 0.4311 },
@@ -45,9 +45,9 @@ beforeEach(() => {
           edge: "sbe",
           edge_label: "strong bear",
           move_pct: -10.0,
-          sd_move_pct: 11.0,
-          move_over_sd: 0.875,
-          inside_sd: true,
+          em_move_pct: 11.0,
+          move_over_em: 0.875,
+          inside_em: true,
           direction_right: true,
           spread: {
             state: "entered",
@@ -69,8 +69,8 @@ beforeEach(() => {
           reaction_day: "2026-10-22",
           edge: "sb",
           move_pct: -8.0,
-          move_over_sd: 1.2,
-          inside_sd: false,
+          move_over_em: 1.2,
+          inside_em: false,
           direction_right: false,
           spread: { state: "not read on the entry session" },
         },
@@ -83,7 +83,7 @@ describe("readEarningsRecord", () => {
   it("carries the summary and the rows, newest first", () => {
     const p = readEarningsRecord(config);
     expect(p.asOf).toBe("2026-10-23");
-    expect(p.summary).toMatchObject({ measured: 2, insideSd: 0.5, directionRight: 0.5, react: { n: 1, net: 130.3, won: 1, returnOnRisk: 0.4311 } });
+    expect(p.summary).toMatchObject({ measured: 2, insideEm: 0.5, directionRight: 0.5, react: { n: 1, net: 130.3, won: 1, returnOnRisk: 0.4311 } });
     expect(p.rows.map((r) => r.symbol)).toEqual(["META", "NFLX"]);
   });
 
@@ -91,7 +91,7 @@ describe("readEarningsRecord", () => {
     const rows = Object.fromEntries(readEarningsRecord(config).rows.map((r) => [r.symbol, r]));
     expect(rows["NFLX"]!.spread).toMatchObject({ state: "entered", kind: "credit", strikes: [75, 70], react: TRADE, day2: null });
     expect(rows["META"]!.spread).toMatchObject({ state: "not read on the entry session", kind: null, react: null });
-    expect(rows["META"]).toMatchObject({ insideSd: false, directionRight: false });
+    expect(rows["META"]).toMatchObject({ insideEm: false, directionRight: false });
   });
 
   it("no file is no record, not an error", () => {

@@ -197,6 +197,7 @@ function row(v: unknown): EarningsCalendarRow | null {
     sdMove: num(r["sd_move"]),
     sdMovePct: num(r["sd_move_pct"]),
     emMove: num(r["em_move"]),
+    emMovePct: num(r["em_move_pct"]),
     suggestion: suggestion(r["suggestion"]),
     trade: null,
     listed: null,
