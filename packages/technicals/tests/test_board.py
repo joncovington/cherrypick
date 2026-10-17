@@ -42,8 +42,11 @@ def test_the_vendors_tag_words_map_to_our_four_methods_and_nothing_else():
         "Money rotating out of the sector", "Bearish Trade Scan", "Analyst Bearish Revision",
         "Weak fundamentals", "Price action ahead of the fundamentals", "Institutional Put Buying",
     )  # fmt: skip
-    assert board.vendor_methods(tags) == {"stage", "rotation", "scan", "revision"}
-    assert board.vendor_methods(("Compelling fundamentals", "Institutional Call Buying")) == set()
+    assert board.vendor_methods(tags) == {"stage", "rotation", "scan", "revision", "fundamentals"}
+    # Fundamentals-vs-price is its own method, not counted; flow is paid data.
+    assert (
+        board.vendor_methods(("Fundamentals ahead of the price action", "Institutional Call Buying")) == set()
+    )
 
 
 def test_scoring_counts_only_our_tags_on_the_rows_side():
@@ -99,3 +102,42 @@ def test_tags_on_reads_each_engine_on_the_day(monkeypatch):
     assert [(t.method, t.side) for t in out["BBB"]] == [("rotation", -1), ("revision", -1)]
     # Improving is not the vendor's "into"; no other method fired, so no row at all.
     assert "CCC" not in out
+
+
+def test_fundamentals_tags_the_market_tails_only(monkeypatch):
+    monkeypatch.setattr(stage, "stages_on", lambda day, closes, bench: {})
+    monkeypatch.setattr(rotation, "states_on", lambda day, closes, funds: {})
+    bar = SimpleNamespace(date="2026-10-15", high=1.0, low=1.0, close=1.0)
+    bars = {s: [bar] for s in ("TOP", "EDGE", "MID", "LOW", "NONE")}
+    pct = {"TOP": 0.93, "EDGE": board.WEAK_AT, "MID": 0.5, "LOW": 0.05}
+    out = board.tags_on("2026-10-16", bars, {}, {}, {}, {}, pct)
+    assert [(t.label, t.detail) for t in out["TOP"]] == [
+        ("Compelling fundamentals", "score at the 93rd percentile")
+    ]
+    assert [t.side for t in out["EDGE"]] == [-1], "the cut-off itself is in the tail"
+    assert [t.label for t in out["LOW"]] == ["Weak fundamentals"]
+    assert "MID" not in out and "NONE" not in out
+
+
+def test_market_percentiles_rank_every_scored_name_across_the_market(tmp_path):
+    from cherrypick.technicals import fundamentals
+
+    conn = fundamentals.connect(tmp_path / "history.db")
+    snap = "2026-10-11"
+    # Six names in one sector, each better than the last on every measure: cheaper, faster growing,
+    # higher margin. A seventh has no price and is not scored.
+    for i, sym in enumerate(["A", "B", "C", "D", "E", "F", "G"]):
+        conn.execute("INSERT INTO estimates VALUES (?, ?, 'eps', NULL, ?, ?)", (sym, snap, 2.0 + i, 1.0))
+        conn.execute(
+            "INSERT INTO estimates VALUES (?, ?, 'sales', NULL, ?, ?)", (sym, snap, 100.0 + 10 * i, 90.0)
+        )
+        for q in ("2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31"):
+            conn.execute("INSERT INTO quarters VALUES (?, ?, 25.0, ?, 10.0)", (sym, q, 1.0 + i))
+        if sym != "G":
+            conn.execute("INSERT INTO bars VALUES (?, '2026-10-09', 50, 50, 50, 50, 1)", (sym,))
+    conn.commit()
+    pct = fundamentals.market_percentiles(conn, snap, {s: "Technology" for s in "ABCDEFG"})
+    assert sorted(pct, key=pct.get) == ["A", "B", "C", "D", "E", "F"]
+    assert (pct["A"], pct["F"]) == (0.0, 1.0)
+    assert fundamentals.snapshot_on(conn, "2026-10-16") == snap
+    assert fundamentals.snapshot_on(conn, "2026-10-10") is None

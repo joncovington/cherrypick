@@ -81,6 +81,9 @@ CATCHUP_MINUTES = {
     "technicals-report": 12 * 60,
     # A rerun rebuilds the same close's lists from the same store.
     "technicals-stage-lists": 6 * 60,
+    # Incremental top-ups from the local Dolt clones: a late one is the same landing.
+    "technicals-history": 12 * 60,
+    "technicals-fundamentals": 12 * 60,
     # A rerun rebuilds the same session's board from the same store.
     "technicals-board": 12 * 60,
     # Dividend histories change weekly at most; a late fetch is the same fetch.
@@ -1193,6 +1196,28 @@ def derive_jobs(
             else "disabled with technicals-land (it reads what the landing writes)",
         ),
     )
+    hist_on = tc_on and tc["history"]
+    for job, verb, at in (
+        ("technicals-history", "land", tc["history_at"]),
+        ("technicals-fundamentals", "fundamentals", tc["fundamentals_at"]),
+    ):
+        add(
+            job,
+            lambda job=job, verb=verb, at=at: JobSpec(
+                id=job,
+                # The history store's daily top-up from the local Dolt clones (read-only against them),
+                # incremental from its newest row; the board's fundamentals score reads it.
+                argv=(pythonw, "-m", "cherrypick.technicals", "history", verb),
+                kind=KIND_DAILY,
+                at_et=at,
+                catchup_minutes=CATCHUP_MINUTES[job],
+                trading_days_only=False,
+                enabled=hist_on,
+                enabled_reason=""
+                if hist_on
+                else "disabled in config (technicals.history) or with technicals-land",
+            ),
+        )
     board_on = tc_on and tc["board"]
     add(
         "technicals-board",

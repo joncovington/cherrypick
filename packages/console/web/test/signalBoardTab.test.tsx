@@ -23,6 +23,7 @@ const payload: SignalBoardPayload = {
   },
   notCounted: ["fundamentals", "put buying"],
   revisionsThrough: "2026-10-17T22:11:24+00:00",
+  fundamentalsSnapshot: "2026-10-11",
   rows: [
     row({
       symbol: "CAH",

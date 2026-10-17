@@ -485,6 +485,12 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # `stage_lists_at`: our six stage lists on the close the landing just added, options-tradable
         # names only (`python -m cherrypick.technicals stage-lists`), scored against the vendor's.
         "stage_lists_at": tc.get("stage_lists_at", "06:35"),
+        # `history_at` / `fundamentals_at`: the history store's daily top-up from the local Dolt clones
+        # (`history land`, every listed name's bars, ~20 s; `history fundamentals`, the weekly estimate
+        # snapshots and quarterly statements, ~10 s), which the board's fundamentals score reads.
+        "history": bool(tc.get("history", True)),
+        "history_at": tc.get("history_at", "06:20"),
+        "fundamentals_at": tc.get("fundamentals_at", "06:25"),
         # `board_at`: the signal board (`python -m cherrypick.technicals board`), each name's count of
         # agreeing methods, from the same landing and the previous evening's analyst revisions.
         "board": bool(tc.get("board", True)),

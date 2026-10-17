@@ -6,19 +6,23 @@ revision, institutional flow. Read off the 15 saved boards (2026-09-23 to 10-14,
 tags), the rule is plain: **a row's score is its count of tags, every tag is on the row's side** (not
 one of the 430 points the other way), and every listed row has at least three.
 
-**What it holds.** Four methods, each from an engine this package already has, read on one session:
+**What it holds.** Five methods, each from an engine this package already has, read on one session:
 
 | method | engine | tag | found on the boards (2026-10-17) |
 |---|---|---|---|
 | stage | `stage.py` | early breakout ... confirmed underperformer | 69 of 73 |
 | revision | `revisions.py` | an upgrade, downgrade, sided initiation, target move of 5%+ | 33 of 38 |
 | rotation | `rotation.py` on the name's sector fund | into: leading; out: lagging or weakening | 89 of 96 |
+| fundamentals | `fundamentals.market_percentiles` | compelling: top fifth; weak: bottom | 43/55; 16/40 |
 | scan | `signals.py` trend rules | bullish / bearish trend following | 5 of 16 |
 
-Rotation is the daily quadrant (refit 2026-10-17; the banded rule before it found 61 of 96). The
-scan was fitted to a different list and is marked approximate in the file. Not counted at all:
-fundamentals and fundamentals-vs-price (labels not yet fitted) and the three flow tags (paid data),
-so our counts run lower than the vendor's, and no three-tag floor is applied.
+Rotation is the daily quadrant (refit 2026-10-17; the banded rule before it found 61 of 96).
+Fundamentals is our score (four measures ranked within the sector, margin twice) placed across the
+whole market on the newest weekly estimate snapshot: its compelling side reproduces well (2 extra),
+its weak side poorly, so it is marked approximate, as is the scan, which was fitted to a different
+list. The fit on the boards is flat from the top quarter to the top fifth; a fifth is the tail.
+Not counted at all: fundamentals-vs-price (not reproduced) and the three flow tags (paid data), so
+our counts run lower than the vendor's, and no three-tag floor is applied.
 
 **A name's side** is the side with more tags; a tie has no side and is kept in the file unlisted.
 Only that side's tags are listed, as the vendor lists them; the other side's count is kept.
@@ -68,15 +72,19 @@ STAGE_LABEL = {
     (-1, "confirmed"): "Confirmed underperformer",
 }
 
+# The fundamentals tails, on the market percentile (fit 2026-10-17 on the saved boards' 95 tags).
+COMPELLING_AT = 0.80
+WEAK_AT = 0.20
+
 # How each method stands against the saved boards, for the page to say. Re-score with `score-board`.
 METHODS = {
     "stage": {"label": "RS stage", "approximate": False},
     "rotation": {"label": "Sector rotation", "approximate": False},
+    "fundamentals": {"label": "Fundamentals", "approximate": True},
     "scan": {"label": "Trade scan", "approximate": True},
     "revision": {"label": "Analyst revision", "approximate": False},
 }
 NOT_COUNTED = (
-    "fundamentals",
     "fundamentals vs price",
     "institutional call buying",
     "put selling",
@@ -109,9 +117,12 @@ def tags_on(
     fund_closes: dict[str, dict[str, float]],
     sector_of: dict[str, str],
     rev_tags: dict[str, revisions.Tag],
+    fund_pct: dict[str, float] | None = None,
 ) -> dict[str, list[Tag]]:
     """Every name's tags on `day`, both sides. `bars` are each name's adjusted bars (any extent past
-    `day` is cut here); a name without a bar on `day` gets no stage or scan."""
+    `day` is cut here); a name without a bar on `day` gets no stage or scan. `fund_pct` is each
+    name's fundamentals place across the market (`fundamentals.market_percentiles`)."""
+    fund_pct = fund_pct or {}
     closes = {s: {b.date: b.close for b in bs if b.date <= day} for s, bs in bars.items()}
     stages = stage.stages_on(day, closes, bench)
     states = rotation.states_on(day, fund_closes, symbols.ASSET_ETFS)
@@ -127,6 +138,12 @@ def tags_on(
         if rside:
             label = "Money rotating into the sector" if rside > 0 else "Money rotating out of the sector"
             tags.append(Tag("rotation", rside, label, f"{fund} {states.get(fund)}"))
+        p = fund_pct.get(sym)
+        if p is not None and (p >= COMPELLING_AT or p <= WEAK_AT):
+            good = p >= COMPELLING_AT
+            label = "Compelling fundamentals" if good else "Weak fundamentals"
+            detail = f"score at the {_ordinal(round(100 * p))} percentile"
+            tags.append(Tag("fundamentals", 1 if good else -1, label, detail))
         upto = [b for b in bs if b.date <= day]
         if upto and upto[-1].date == day:
             r = signals.readings([b.high for b in upto], [b.low for b in upto], [b.close for b in upto])
@@ -145,6 +162,31 @@ def tags_on(
         if tags:
             out[sym] = tags
     return out
+
+
+def _ordinal(n: int) -> str:
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def fundamentals_on(
+    day: str, sector_of: dict[str, str], cache: dict | None = None
+) -> tuple[str | None, dict]:
+    """(snapshot, {symbol: market percentile}) for `day`, from the history store's newest estimate
+    snapshot on or before it; (None, {}) when the store holds none. `cache` keeps one per snapshot."""
+    conn = fundamentals.connect()
+    try:
+        snap = fundamentals.snapshot_on(conn, day)
+        if snap is None:
+            return None, {}
+        if cache is not None and snap in cache:
+            return snap, cache[snap]
+        pct = fundamentals.market_percentiles(conn, snap, sector_of)
+    finally:
+        conn.close()
+    if cache is not None:
+        cache[snap] = pct
+    return snap, pct
 
 
 def row(sym: str, tags: list[Tag], sector: str | None) -> dict[str, Any]:
@@ -189,7 +231,8 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
             conn.close()
     sector_of = {s: v[0] for s, v in fundamentals.sector_sources().items()}
     rev = revisions.tags(revisions.load(), day)
-    by_name = tags_on(day, bars, bench, fund_closes, sector_of, rev)
+    snap, pct = fundamentals_on(day, sector_of)
+    by_name = tags_on(day, bars, bench, fund_closes, sector_of, rev, pct)
     rows = [row(s, t, sector_of.get(s)) for s, t in sorted(by_name.items())]
     rows.sort(key=lambda r: (-r["count"], r["symbol"]))
     return {
@@ -201,6 +244,7 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
         "methods": METHODS,
         "not_counted": list(NOT_COUNTED),
         "revisions_through": _revisions_through(),
+        "fundamentals_snapshot": snap,
         "rows": rows,
         "record_only": True,
     }
@@ -264,11 +308,13 @@ def score_boards(ours: dict[str, dict[str, list[Tag]]], boards: dict) -> dict[st
 
 
 def vendor_methods(tags: tuple[str, ...]) -> set[str]:
-    """Which of our four methods a board row's tags name."""
+    """Which of our methods a board row's tags name."""
     out = set()
     for t in tags:
         if t.startswith(("Early Break", "Building ", "Confirmed ")):
             out.add("stage")
+        elif t in ("Compelling fundamentals", "Weak fundamentals"):
+            out.add("fundamentals")
         elif t.startswith("Money rotating"):
             out.add("rotation")
         elif t.endswith("Trade Scan"):
@@ -301,7 +347,9 @@ def score(conn=None) -> dict[str, Any]:
     sector_of = {s: v[0] for s, v in fundamentals.sector_sources().items()}
     events = revisions.load()
     ours = {}
+    snapshots: dict[str, dict] = {}
     for day in boards:
         fc = {f: {d: c for d, c in s.items() if d <= day} for f, s in fund_closes.items()}
-        ours[day] = tags_on(day, bars, bench, fc, sector_of, revisions.tags(events, day))
+        _, pct = fundamentals_on(day, sector_of, snapshots)
+        ours[day] = tags_on(day, bars, bench, fc, sector_of, revisions.tags(events, day), pct)
     return {"ok": True, **score_boards(ours, boards)}

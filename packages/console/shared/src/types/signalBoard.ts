@@ -4,7 +4,7 @@
  * The console reads the file and re-derives nothing.
  */
 
-export type SignalMethod = "stage" | "rotation" | "scan" | "revision";
+export type SignalMethod = "stage" | "rotation" | "fundamentals" | "scan" | "revision";
 
 export interface SignalTag {
   method: SignalMethod;
@@ -45,5 +45,7 @@ export interface SignalBoardPayload {
   notCounted: string[];
   /** When the analyst revisions were last fetched (UTC ISO); null when never. */
   revisionsThrough: string | null;
+  /** The weekly estimate snapshot the fundamentals score is read on; null when none is held. */
+  fundamentalsSnapshot: string | null;
   rows: SignalBoardRow[];
 }
