@@ -205,6 +205,7 @@ def _get(r, name: str):
 #: unknown, never the entry spot or a guess. contango holds the fund itself, so its "spot" is the
 #: fund's own mid. flies, MEIC and earnings set theirs in their own readers.
 _SETTLED_SPOT_COLUMNS = {
+    "position_id": "position_id",
     "entry_time": "entry_time",
     "exit_time": "closed_at",
     "entry_spot": "entry_spot",
@@ -216,6 +217,7 @@ _TRADE_COLUMNS = {
     "curve_vx": _SETTLED_SPOT_COLUMNS,
     "bwb_132": _SETTLED_SPOT_COLUMNS,
     "contango_etf": {
+        "position_id": "position_id",
         "entry_time": "entry_time",
         "exit_time": "exit_time",
         "entry_spot": "entry_mid",
@@ -403,7 +405,7 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
     arm = core_db.arm_column(conn, "trades")  # `profile` until earnings' column moves
     rows = conn.execute(
         f"SELECT symbol, {arm} AS arm, strategy, pnl, entry_cost, exit_cost, closed_at"
-        f"{slip_cols}{cap_col}{exp_col}{open_col}{_opt(cols, 'settlement_fees')} "
+        f"{slip_cols}{cap_col}{exp_col}{open_col}{_opt(cols, 'settlement_fees')}{_opt(cols, 'order_id')} "
         "FROM trades WHERE closed_at IS NOT NULL"
     ).fetchall()
 
@@ -447,6 +449,7 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
             "exit_time": _iso_from_epoch(r["closed_at"]),
             "entry_spot": None,
             "exit_spot": None,
+            "position_id": _get(r, "order_id"),
         }
         for r in rows
         if _in_bounds(session_from_epoch(r["closed_at"]), start, end)
@@ -547,6 +550,7 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
             "exit_time": _get(r, "exit_time"),
             "entry_spot": _get(r, "underlying_at_entry"),
             "exit_spot": _get(r, "settlement_price"),
+            "position_id": _get(r, "position_id"),
             # The position's book and that book's recorded session peak risk (above).
             "book_id": _get(r, "book_id"),
             "book_peak_risk": peaks.get(_get(r, "book_id")),
@@ -556,7 +560,7 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
 
 
 #: fly_positions columns behind the trade fields, each selected only where the ledger has it.
-_FLIES_TRADE_COLUMNS = ("entry_time", "exit_time", "underlying_at_entry", "settlement_price")
+_FLIES_TRADE_COLUMNS = ("position_id", "entry_time", "exit_time", "underlying_at_entry", "settlement_price")
 
 
 CALENDARS_UNTAGGED = "unassigned"

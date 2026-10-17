@@ -37,12 +37,12 @@ def _position(
 def _mark(conn, position_id, marked_at, front_mid, back_mid, usable=1):
     conn.execute(
         "INSERT INTO dc_marks (position_id, leg_role, marked_at, session_date, mid, usable) "
-        "VALUES (?, 'front', ?, '2026-08-17', ?, ?)",
+        "VALUES (?, 'front_put', ?, '2026-08-17', ?, ?)",
         (position_id, marked_at, front_mid, usable),
     )
     conn.execute(
         "INSERT INTO dc_marks (position_id, leg_role, marked_at, session_date, mid, usable) "
-        "VALUES (?, 'back', ?, '2026-08-17', ?, ?)",
+        "VALUES (?, 'back_put', ?, '2026-08-17', ?, ?)",
         (position_id, marked_at, back_mid, usable),
     )
 
@@ -73,7 +73,7 @@ def test_excursions_skips_ticks_missing_either_leg():
     # A tick with only the front leg usable -- must not be paired with a stale back value.
     conn.execute(
         "INSERT INTO dc_marks (position_id, leg_role, marked_at, session_date, mid, usable) "
-        "VALUES ('p1', 'front', 2, '2026-08-17', 9.0, 1)"
+        "VALUES ('p1', 'front_put', 2, '2026-08-17', 9.0, 1)"
     )
     conn.commit()
 

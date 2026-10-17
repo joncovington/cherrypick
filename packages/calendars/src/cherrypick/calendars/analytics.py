@@ -100,14 +100,20 @@ def excursions(conn) -> dict:
     ):
         if p["entry_debit"] is None:
             continue
+        # The legs are `front_<side>` / `back_<side>` (db.py, one side per position). Until
+        # 2026-10-17 this matched bare 'front'/'back', which no ledger has ever written, so every
+        # position was skipped and the console's MAE/MFE card for calendars read empty.
+        front, back = f"front_{p['side']}", f"back_{p['side']}"
         legs: dict[float, dict] = {}
         for row in conn.execute(
             "SELECT leg_role, marked_at, mid FROM dc_marks WHERE position_id = ? "
-            "AND leg_role IN ('front', 'back') AND usable = 1 AND mid IS NOT NULL "
+            "AND leg_role IN (?, ?) AND usable = 1 AND mid IS NOT NULL "
             "ORDER BY marked_at",
-            (p["position_id"],),
+            (p["position_id"], front, back),
         ):
-            legs.setdefault(row["marked_at"], {})[row["leg_role"]] = row["mid"]
+            legs.setdefault(row["marked_at"], {})["front" if row["leg_role"] == front else "back"] = row[
+                "mid"
+            ]
         mult = 100 * (p["quantity"] or 1)
         pnl_series = [
             round((tick["back"] - tick["front"] - p["entry_debit"]) * mult, 2)

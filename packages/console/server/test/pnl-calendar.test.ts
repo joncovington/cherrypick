@@ -2,7 +2,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import { readPnlCalendar, readPnlTrades } from "../src/readers/pnlCalendar.js";
+import { readPnlCalendar, readPnlExcursion, readPnlTrades } from "../src/readers/pnlCalendar.js";
+import { setExcursionCaller } from "../src/services/excursionBridge.js";
 import { MODULE_ERA } from "../src/readers/performance.js";
 import { setMetricsCaller, setTradesCaller, resetMetricsCache } from "../src/services/metricsBridge.js";
 import type { ConsoleConfig } from "../src/config.js";
@@ -35,6 +36,7 @@ const reading = (nets: Array<[string, number]>) => ({
 afterEach(() => {
   setMetricsCaller();
   setTradesCaller();
+  setExcursionCaller();
   resetMetricsCache();
 });
 
@@ -79,6 +81,19 @@ describe("readPnlCalendar", () => {
     const out = await readPnlTrades(fakeConfig(null), "curve", "2026-10-13", "control", "live");
     expect(out.ok).toBe(false);
     expect(spawned).toBe(false);
+  });
+
+  it("reads a position's excursion from the same ledger and schema as its trades", async () => {
+    const calls: unknown[][] = [];
+    setExcursionCaller((...args) => {
+      calls.push(args);
+      return Promise.resolve({ ok: true, recorded: true, basis: "gross_at_mid" });
+    });
+    const out = await readPnlExcursion(fakeConfig(null), "bwb", "SPX:control:2026-10-15", "live");
+    expect(out).toMatchObject({ ok: true, basis: "gross_at_mid" });
+    const [db, schema, position] = calls[0] as [string, string, string];
+    expect(db).toContain(`${path.sep}bwb${path.sep}live_trades.db`);
+    expect([schema, position]).toEqual(["bwb_132", "SPX:control:2026-10-15"]);
   });
 
   it("reads only the modules with a live ledger in live mode", async () => {

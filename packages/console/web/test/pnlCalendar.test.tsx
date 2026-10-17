@@ -1,8 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import type { PnlCalendarResult, PnlDay, PnlTrade } from "@console/shared";
-import { CalendarView, DayDetail, MonthGrid, TradesTable, stamp, totalsBySession } from "../src/pages/Compare/CalendarTab";
+import type { PnlCalendarResult, PnlDay, PnlExcursion, PnlTrade } from "@console/shared";
+import {
+  CalendarView,
+  DayDetail,
+  ExcursionView,
+  MonthGrid,
+  TradesTable,
+  stamp,
+  totalsBySession,
+} from "../src/pages/Compare/CalendarTab";
 
 const text = (node: React.ReactElement) => renderToString(<MemoryRouter>{node}</MemoryRouter>).replace(/<!--\s*-->/g, "");
 
@@ -75,6 +83,7 @@ describe("CalendarView", () => {
 
 const trade = (over: Partial<PnlTrade>): PnlTrade => ({
   tag: "control",
+  position_id: "SPX:control:2026-10-15",
   symbol: "SPX",
   strategy: "bwb_132",
   session: "2026-10-16",
@@ -117,5 +126,53 @@ describe("TradesTable", () => {
     const html = text(<TradesTable trades={[trade({})]} cellNet={100} />);
     expect(html).toContain("does not reconcile");
     expect(html).toContain("the cell says $100.00");
+  });
+
+  it("offers a trade's excursion only where it knows the module and the trade has a position id", () => {
+    expect(text(<TradesTable trades={[trade({})]} cellNet={93.42} module="bwb" />)).toContain("▸");
+    expect(text(<TradesTable trades={[trade({})]} cellNet={93.42} />)).not.toContain("▸");
+    expect(text(<TradesTable trades={[trade({ position_id: null })]} cellNet={93.42} module="meic" />)).not.toContain("▸");
+  });
+});
+
+const excursion = (over: Partial<PnlExcursion>): PnlExcursion => ({
+  ok: true,
+  recorded: true,
+  basis: "gross_at_mid",
+  ticks: 1200,
+  refused_ticks: 4,
+  best: { pnl: 90, at: "2026-08-28T10:20:11-04:00" },
+  worst: { pnl: -135, at: "2026-08-24T12:02:55-04:00" },
+  path: [
+    ["2026-08-24T10:00:00-04:00", 0],
+    ["2026-08-24T12:02:55-04:00", -135],
+    ["2026-08-28T10:20:11-04:00", 90],
+    ["2026-08-28T16:20:00-04:00", 85],
+  ],
+  endpoint: 85,
+  gross: 85,
+  reconciles: true,
+  ...over,
+});
+
+describe("ExcursionView", () => {
+  it("shows the best and worst with when, the exit, and the basis it is in", () => {
+    const html = text(<ExcursionView x={excursion({})} />);
+    for (const s of ["$90.00", "08-28 10:20", "-$135.00", "08-24 12:02", "exit $85.00", "equals the recorded gross"]) {
+      expect(html).toContain(s);
+    }
+    expect(html).toContain("gross at mid");
+    expect(html).toContain("4 refused");
+  });
+
+  it("flags an endpoint that does not reconcile with the recorded gross", () => {
+    const html = text(<ExcursionView x={excursion({ reconciles: false, gross: 80 })} />);
+    expect(html).toContain("does not reconcile with the recorded gross $80.00");
+  });
+
+  it("says why a module keeps no path, and draws nothing in its place", () => {
+    const html = text(<ExcursionView x={{ ok: true, recorded: false, reason: "MEIC records each side's worst spot" }} />);
+    expect(html).toContain("no excursion — MEIC records each side");
+    expect(html).not.toContain("<svg");
   });
 });
