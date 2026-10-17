@@ -226,6 +226,45 @@ def cutoff_for(snapshot: str) -> str:
     return (date.fromisoformat(snapshot) - timedelta(days=PUBLICATION_LAG)).isoformat()
 
 
+def snapshot_on(conn, day: str) -> str | None:
+    """The newest estimate snapshot on or before `day`."""
+    snaps = snapshot_dates(conn)
+    k = bisect_right(snaps, day) - 1
+    return snaps[k] if k >= 0 else None
+
+
+def market_percentiles(conn, snapshot: str, group_of: dict[str, str]) -> dict[str, float]:
+    """Every scored name's place on `snapshot`, 0..1 across the whole market (1 the best): the
+    `scores` (measures ranked within the name's group) of every name with estimates, a group and a
+    price that day, then ranked against each other. `conn` is the history store (estimates, quarters
+    and every listed name's raw bars). The signal board labels its tails (`board.py`)."""
+    est: dict[str, dict[str, tuple]] = {}
+    for sym, kind, c, y in conn.execute(
+        "SELECT symbol, kind, consensus, year_ago FROM estimates WHERE date = ?", (snapshot,)
+    ):
+        if sym in group_of:
+            est.setdefault(sym, {})[kind] = (c, y)
+    cutoff = cutoff_for(snapshot)
+    ms: dict[str, Measures] = {}
+    for sym, r in est.items():
+        qs = conn.execute(
+            "SELECT period_end, sales, net_income, shares FROM quarters WHERE symbol = ? ORDER BY period_end",
+            (sym,),
+        ).fetchall()
+        px = conn.execute(
+            "SELECT close FROM bars WHERE symbol = ? AND date <= ? ORDER BY date DESC LIMIT 1",
+            (sym, snapshot),
+        ).fetchone()
+        published = [q for q in qs if q[0] <= cutoff]
+        shares = published[-1][3] if published else None
+        margin = trailing_margin([(q[0], q[1], q[2]) for q in qs], snapshot)
+        m = measures(px[0] if px else None, r.get("eps"), r.get("sales"), shares, margin)
+        if m is not None:
+            ms[sym] = m
+    sc = scores(ms, group_of)
+    return _percentiles(sc) if sc else {}
+
+
 def sector_map() -> dict[str, str]:
     """The market report's sector map (`universe/sectors.json`): today's names only."""
     import json

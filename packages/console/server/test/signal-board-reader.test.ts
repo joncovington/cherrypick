@@ -38,6 +38,7 @@ describe("readSignalBoard", () => {
       methods: { stage: { label: "RS stage", approximate: false }, rotation: { label: "Sector rotation", approximate: true } },
       not_counted: ["fundamentals", "put buying"],
       revisions_through: "2026-10-17T22:11:24+00:00",
+      fundamentals_snapshot: "2026-10-11",
       rows: [
         {
           symbol: "CAH",
@@ -59,7 +60,12 @@ describe("readSignalBoard", () => {
     const p = readSignalBoard(config);
     expect(p.day).toBe("2026-10-16");
     expect(p.days).toEqual(["2026-10-16", "2026-10-15"]);
-    expect(p).toMatchObject({ names: 382, notCounted: ["fundamentals", "put buying"], revisionsThrough: "2026-10-17T22:11:24+00:00" });
+    expect(p).toMatchObject({
+      names: 382,
+      notCounted: ["fundamentals", "put buying"],
+      revisionsThrough: "2026-10-17T22:11:24+00:00",
+      fundamentalsSnapshot: "2026-10-11",
+    });
     expect(p.methods.rotation).toEqual({ label: "Sector rotation", approximate: true });
     expect(p.rows.map((r) => r.symbol)).toEqual(["CAH", "TIE"]);
     expect(p.rows[0]!.tags.map((t) => t.method)).toEqual(["stage", "rotation"]);

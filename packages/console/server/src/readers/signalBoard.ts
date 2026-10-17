@@ -14,7 +14,7 @@ import type { ConsoleConfig } from "../config.js";
 import { num, str } from "./db.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const METHODS = new Set<SignalMethod>(["stage", "rotation", "scan", "revision"]);
+const METHODS = new Set<SignalMethod>(["stage", "rotation", "fundamentals", "scan", "revision"]);
 
 function rec(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -63,7 +63,16 @@ function row(v: unknown): SignalBoardRow | null {
 export function readSignalBoard(config: ConsoleConfig, wanted?: string | null): SignalBoardPayload {
   const days = signalBoardDays(config);
   const day = wanted && days.includes(wanted) ? wanted : (days[0] ?? null);
-  const empty: SignalBoardPayload = { day, days, names: 0, methods: {}, notCounted: [], revisionsThrough: null, rows: [] };
+  const empty: SignalBoardPayload = {
+    day,
+    days,
+    names: 0,
+    methods: {},
+    notCounted: [],
+    revisionsThrough: null,
+    fundamentalsSnapshot: null,
+    rows: [],
+  };
   if (day === null) return empty;
   let doc: Record<string, unknown>;
   try {
@@ -83,6 +92,7 @@ export function readSignalBoard(config: ConsoleConfig, wanted?: string | null): 
     methods,
     notCounted: Array.isArray(doc["not_counted"]) ? doc["not_counted"].map((x) => str(x)).filter((x): x is string => x !== null) : [],
     revisionsThrough: str(doc["revisions_through"]),
+    fundamentalsSnapshot: str(doc["fundamentals_snapshot"]),
     rows: Array.isArray(doc["rows"]) ? doc["rows"].map(row).filter((r): r is SignalBoardRow => r !== null) : [],
   };
 }
