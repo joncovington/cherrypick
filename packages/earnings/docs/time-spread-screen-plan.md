@@ -2,9 +2,11 @@
 
 A screen for every earnings time spread (single calendar, straddle calendar, double calendar and
 diagonal), built on one quantity, the **modelled endurable gap**, with a combined side/direction read
-that picks the structure. Status: **discussion only, 2026-10-17. Nothing is built or run.** We revisit
-this once backtesting data is available; every threshold below is a placeholder until a history
-study sets it.
+that picks the structure. Status: **the engine is built, nothing else (2026-10-17).**
+`cherrypick/earnings/time_spread.py` holds the event split, the endurable gap, coverage, the scores
+and the side ladder as pure functions. `tests/test_time_spread.py` pins them to this doc's worked
+example. No strategy, scan or replay reads them yet. We revisit this once backtesting data is
+available; every threshold below is a placeholder until a history study sets it.
 
 ## Why it needs a screen at all
 
@@ -105,10 +107,11 @@ straddle) is about ±4.5%. The next morning, at the stock's new price:
 | 120 (+20%) | ~20.0 | ~20.1 | ~0.1 | ≈ −$310, near the whole debit |
 
 The front lost 3.49 on an unchanged stock and the back lost 1.60. That gap between the two crushes is
-the profit. The move is symmetric, so a fall works the same way.
+the profit. In this normal model the move is symmetric, so a fall works the same way.
 
 - **The endurable gap** is where the P&L crosses zero: about ±4.6% gross, and about ±4.1% after an
-  assumed $25 round trip in costs. **That is inside the ±4.5% expected move.** The trade can lose on
+  assumed $25 round trip in costs. The engine prices with Black-Scholes, which makes it a little
+  lopsided: −4.4% / +4.8% gross, −3.9% / +4.4% after costs. **That is inside the ±4.5% expected move.** The trade can lose on
   a move the market considered ordinary, which is why coverage is measured against the endurable gap
   and not the implied move.
 - **The back-leg risk:** if base vol falls from 30% to 27% after the report, the unchanged-stock
