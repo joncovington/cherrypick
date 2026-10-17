@@ -109,6 +109,57 @@ describe("readEarningsCalendar", () => {
     expect(rows["META"]).toMatchObject({ timing: null, usualTiming: "amc", entrySession: null, suggestion: null });
   });
 
+  it("joins the latest reading taken OF this calendar to its suggested spreads", () => {
+    const legsFile = (taken: string, hhmm: string, calendarDay: string, mid: number) => {
+      const p = path.join(tmp, "market-report", "screener-greeks", "earnings-legs", taken, `${hhmm}.json`);
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(
+        p,
+        JSON.stringify({
+          measured_at: `${taken}T${hhmm.slice(0, 2)}:${hhmm.slice(2)}:00Z`,
+          calendar_day: calendarDay,
+          rows: [
+            {
+              symbol: "NFLX",
+              kind: "credit",
+              right: "C",
+              expiry: "2026-11-20",
+              width: 5,
+              legs: [
+                { role: "long", strike: 75, quote: { bid: 1, ask: 1.1, open_interest: 900, volume: 40 }, passes: true },
+                { role: "short", strike: 70, quote: { bid: 3, ask: 3.1, open_interest: 50, volume: 2 }, passes: false },
+              ],
+              mid,
+              natural: 1.9,
+              share_of_width: 0.4,
+              max_loss: 300,
+              passes: false,
+            },
+            { symbol: "META", legs: null },
+          ],
+        }),
+      );
+    };
+    legsFile("2026-10-19", "1130", "2026-10-16", 2.0);
+    legsFile("2026-10-19", "1430", "2026-10-16", 2.05);
+    legsFile("2026-10-20", "1130", "2026-10-19", 9.99); // a later calendar's reading: not this one's
+    const rows = Object.fromEntries(readEarningsCalendar(config).rows.map((r) => [r.symbol, r]));
+    expect(rows["NFLX"]!.trade).toMatchObject({
+      readingAt: "2026-10-19T14:30:00Z",
+      kind: "credit",
+      right: "C",
+      mid: 2.05,
+      maxLoss: 300,
+      passes: false,
+      legs: [
+        { role: "long", strike: 75, openInterest: 900, passes: true },
+        { role: "short", strike: 70, openInterest: 50, passes: false },
+      ],
+    });
+    // META's suggestion was not listed on the chain, and a row without one is never joined.
+    expect(rows["META"]!.trade).toBeNull();
+  });
+
   it("an absent folder is no calendar, not an error", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
     expect(readEarningsCalendar(config)).toMatchObject({ day: null, days: [], rows: [] });

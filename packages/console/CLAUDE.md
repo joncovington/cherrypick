@@ -376,6 +376,12 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   - **Grouped rows keep their order**, so the table does not sort.
   - **A standing note** says the suggested spread has no edge in history. It is never removed while
     the column shows.
+  - **The spread as read:** the reader joins the latest `screener-greeks/earnings-legs/` reading
+    taken OF the calendar shown (`calendar_day`, as the income tabs match `list_date`).
+    `fetch_screener_greeks.py measure` snaps the targets to listed strikes, quotes them at 11:30 and
+    14:30 ET, and judges them by the income tabs' leg bars. The cell then shows the listed strikes,
+    the price, its share of the width, the max loss, and liquid or thin. A "Liquid trade" filter
+    (default on) hides a thin spread; an unread one stays, with its targets.
 - `/charts/setups` is the setups watchlist (`pages/Setups/SetupsPage.tsx`, `GET /api/technicals/setups`
   over `charts/setups-index.json`): recent entries and exits, or open positions, long and short,
   each symbol linking to its chart with the setup and side selected; nothing on it is vendor data. Gated with the technicals tab. The page filters and sorts

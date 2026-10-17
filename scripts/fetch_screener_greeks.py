@@ -31,6 +31,12 @@ does not already measure, the at-the-money call and put of the standard monthly 
 the builder's own `_measure`, so the two sets of readings are taken the same way and read together.
 Written to `screener-greeks/measurements/<date>/<HHMM>.json`, the builder's file shape.
 
+**The earnings calendar's suggested spreads** ride the same run (2026-10-17; docs/earnings-screener-
+plan.md, step 3): for each strong read reporting in the next week on the latest calendar, the
+target strikes are snapped to the listed ones on the spread's expiry, both legs quoted and judged
+against the same leg bars, and the spread priced at mid and at the natural fill. Written to
+`screener-greeks/earnings-legs/<date>/<HHMM>.json`; a failure there keeps the list readings.
+
     python scripts/fetch_screener_greeks.py [--date YYYY-MM-DD] [--limit N] [--final]
     python scripts/fetch_screener_greeks.py measure [--force] [--limit N]
     python scripts/fetch_screener_greeks.py rebar     # re-apply the leg bars to saved readings
@@ -517,6 +523,13 @@ def cmd_rebar(_args) -> int:
         doc["bars"] = LEG_BARS
         write_json_atomic(path, doc, indent=None, default=None)
         changed += 1
+    # The earnings calendar's spreads (2026-10-17), judged by the same bars.
+    for path in sorted((store_dir() / "screener-greeks" / "earnings-legs").glob("*/*.json")):
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        judge_earnings_legs(doc.get("rows") or [], LEG_BARS)
+        doc["bars"] = LEG_BARS
+        write_json_atomic(path, doc, indent=None, default=None)
+        changed += 1
     print(json.dumps({"ok": True, "files": changed, "bars": LEG_BARS}))
     return 0
 
@@ -578,19 +591,191 @@ def plan_legs(lists: dict[str, dict], chains: dict[str, list], skip: set[str], i
     return out
 
 
-async def _measure_then_legs(session, ub, names, chain_cache, lists, today, skip, limit):
+# ------------------------------------------------------------------------------------------------
+# The earnings calendar's suggested spreads (2026-10-17). The calendar (`technicals earnings-calendar`)
+# writes target strikes; these are the listed ones and what they trade at in regular hours.
+
+EARNINGS_DAYS = 7  # the calendar's default window: the names a reader is about to act on
+
+
+def earnings_rows(day) -> tuple[str | None, list[dict]]:
+    """(the calendar's session, its rows to price): strong reads with a suggested spread on a known
+    expiry, reporting from `day` through EARNINGS_DAYS on, rated very or somewhat liquid, optionable,
+    US -- the tab's default view widened to somewhat liquid."""
+    from datetime import timedelta
+
+    from cherrypick.technicals import earnings_calendar
+
+    files = sorted(earnings_calendar.out_dir().glob("????-??-??.json"))
+    files = [p for p in files if p.stem <= day.isoformat()]
+    if not files:
+        return None, []
+    doc = json.loads(files[-1].read_text(encoding="utf-8"))
+    last = (day + timedelta(days=EARNINGS_DAYS)).isoformat()
+    rows = [
+        r
+        for r in doc.get("rows") or []
+        if (r.get("suggestion") or {}).get("expiry")
+        and day.isoformat() <= r["date"] <= last
+        and r.get("liquidity_rank") in (1, 2)
+        and r.get("optionable")
+        and r.get("region") == "US"
+    ]
+    return files[-1].stem, rows
+
+
+def snap_spread(sug: dict, strikes: list[list]) -> tuple[list[float], list[str]] | None:
+    """The suggested spread on listed strikes: ([long, short] strikes, [long, short] option symbols),
+    or None when the chain cannot hold it. The calendar's rules, on listed strikes: the at-the-money
+    leg is the nearest strike; a debit's short is the nearest strike to its target, at least one
+    strike beyond the long; a credit's long is the first strike at or beyond its target (below it
+    for puts) -- "just outside the expected move" -- and never the short's own strike."""
+    ks = sorted({float(s[0]) for s in strikes})
+    by_k = {float(s[0]): s for s in strikes}  # a chain entry: [strike, call symbol, put symbol]
+    if not ks:
+        return None
+    put = sug["right"] == "P"
+    col = 2 if put else 1
+
+    def nearest(t: float) -> float:
+        return min(ks, key=lambda k: (abs(k - t), k))
+
+    if sug["kind"] == "debit":
+        long_ = nearest(sug["long"])
+        out = [k for k in ks if (k < long_ if put else k > long_)]
+        if not out:
+            return None
+        short = min(out, key=lambda k: (abs(k - sug["short"]), k))
+    else:
+        short = nearest(sug["short"])
+        beyond = [k for k in ks if (k <= sug["long"] if put else k >= sug["long"]) and k != short]
+        beyond = [k for k in beyond if (k < short if put else k > short)]
+        if not beyond:
+            return None
+        long_ = max(beyond) if put else min(beyond)
+    return [long_, short], [by_k[long_][col], by_k[short][col]]
+
+
+def price_spread(kind: str, long_q: dict, short_q: dict, width: float) -> dict:
+    """At mid and at the natural fill (pay the ask, sell at the bid), per share, with the width's share
+    and the max loss for one spread in dollars. A leg without a two-sided quote prices nothing."""
+
+    def mid(q):
+        b, a = q.get("bid"), q.get("ask")
+        return (b + a) / 2 if b is not None and a is not None and a >= b >= 0 else None
+
+    ml, ms = mid(long_q), mid(short_q)
+    if ml is None or ms is None:
+        return {"mid": None, "natural": None, "share_of_width": None, "max_loss": None}
+    if kind == "debit":
+        at_mid, natural = ml - ms, long_q["ask"] - short_q["bid"]
+        loss = at_mid * 100
+    else:
+        at_mid, natural = ms - ml, short_q["bid"] - long_q["ask"]
+        loss = (width - at_mid) * 100
+    return {
+        "mid": round(at_mid, 4),
+        "natural": round(natural, 4),
+        "share_of_width": round(at_mid / width, 4) if width else None,
+        "max_loss": round(loss, 2),
+    }
+
+
+def plan_earnings_legs(rows: list[dict], chains: dict[str, list]) -> list[dict]:
+    """One entry per calendar row whose spread the chain can hold on its expiry."""
+    out = []
+    for r in rows:
+        sug = r["suggestion"]
+        exp = next((e for e in chains.get(r["symbol"]) or [] if e["expiration"] == sug["expiry"]), None)
+        snapped = snap_spread(sug, exp["strikes"]) if exp else None
+        if snapped is None:
+            out.append(
+                {
+                    "symbol": r["symbol"],
+                    "date": r["date"],
+                    "suggestion": sug,
+                    "legs": None,
+                    "why": "no listed spread",
+                }
+            )
+            continue
+        (k_long, k_short), (o_long, o_short) = snapped
+        out.append(
+            {
+                "symbol": r["symbol"],
+                "date": r["date"],
+                "suggestion": sug,
+                "kind": sug["kind"],
+                "right": sug["right"],
+                "expiry": sug["expiry"],
+                "width": abs(k_short - k_long),
+                "legs": [
+                    {"role": "long", "strike": k_long, "option": o_long},
+                    {"role": "short", "strike": k_short, "option": o_short},
+                ],
+            }
+        )
+    return out
+
+
+def judge_earnings_legs(rows: list[dict], bars: dict | None) -> None:
+    """Each quoted leg against the bars and each spread's price, in place."""
+    for r in rows:
+        if not r.get("legs"):
+            continue
+        for leg in r["legs"]:
+            q = leg.get("quote")
+            leg["passes"] = None if bars is None or not q else leg_passes(q, bars)
+        r["passes"] = (
+            None
+            if any(leg.get("passes") is None for leg in r["legs"])
+            else all(leg["passes"] for leg in r["legs"])
+        )
+        long_q, short_q = (r["legs"][0].get("quote") or {}), (r["legs"][1].get("quote") or {})
+        r.update(price_spread(r["kind"], long_q, short_q, r["width"]))
+
+
+async def _quote_options(session, ub, legs: list[dict]) -> None:
+    """Fill each leg's broker quote in place, by its `option` symbol, in the builder's batches."""
+    from tastytrade.market_data import get_market_data_by_type
+
+    wanted: dict[str, list[dict]] = {}
+    for leg in legs:
+        wanted.setdefault(leg["option"], []).append(leg)
+    for batch in ub._batches(list(wanted), ub.TT_QUOTE_BATCH):
+        for q in await get_market_data_by_type(session, options=batch):
+            for leg in wanted.get(q.symbol, []):
+                leg["quote"] = {
+                    "bid": _f(q.bid),
+                    "ask": _f(q.ask),
+                    "volume": _f(q.volume),
+                    "open_interest": _f(q.open_interest),
+                    "updated_at": ub._iso(q.updated_at),
+                    "fetched_at": datetime.now(UTC).isoformat(),
+                }
+        await asyncio.sleep(ub.TT_PAUSE_S)
+
+
+async def _measure_then_legs(session, ub, names, chain_cache, lists, today, skip, limit, earnings=()):
     """The spread readings, then the legs, in one event loop. The legs: every row of a name not held
     illiquid, the vendor's option against the monthly on the user's cycle, with chains from this
     run's cache and the universe builder's (it measured the candidates half an hour earlier); a name
-    in neither gets its vendor legs only. A failure in the legs keeps the spread readings."""
+    in neither gets its vendor legs only. Then the earnings calendar's suggested spreads (`earnings`,
+    its rows), whose names were measured with the rest so their chains are cached. A failure in the
+    legs keeps the spread readings; a failure in the earnings spreads keeps both."""
     measured = await ub._measure(session, names, chain_cache, None)
     chains = {**ub._read_json(ub.store_dir() / "chains" / f"{today.isoformat()}.json", {}), **chain_cache}
     legs = plan_legs(lists, chains, skip, ub.is_monthly)[:limit]
     try:
         await _quote_legs(session, ub, legs)
     except Exception as exc:  # noqa: BLE001 -- reported by the caller, after the readings are saved
-        return measured, legs, f"{type(exc).__name__}: {exc}"[:300]
-    return measured, legs, None
+        return measured, legs, f"{type(exc).__name__}: {exc}"[:300], [], None
+    spreads = plan_earnings_legs(list(earnings), chains)
+    try:
+        await _quote_options(session, ub, [leg for r in spreads for leg in r["legs"] or []])
+    except Exception as exc:  # noqa: BLE001 -- the list readings stand; the earnings run is reported
+        return measured, legs, None, spreads, f"{type(exc).__name__}: {exc}"[:300]
+    return measured, legs, None, spreads, None
 
 
 def cmd_measure(args) -> int:
@@ -623,6 +808,10 @@ def cmd_measure(args) -> int:
 
     # Names held illiquid are not measured between sweeps (technicals `liquidity.skip`).
     names = measure_names(lists, cands | liquidity.skip(today))[: args.limit]
+    # The earnings calendar's suggested spreads need their names' chains: measured with the rest
+    # (a name the universe already measures has its chain in the builder's file).
+    calendar_day, earnings = earnings_rows(today)
+    names = sorted({*names, *(r["symbol"] for r in earnings if r["symbol"] not in cands)})
     store = CredentialStore(SHARED_SERVICE)
     if store.missing_secrets():
         print(json.dumps({"ok": False, "reason": "credentials_missing"}))
@@ -635,9 +824,9 @@ def cmd_measure(args) -> int:
         session = SessionManager(store).get_session()
         # One event loop for both steps: the broker session's connection belongs to the loop it was
         # first used in, and a second asyncio.run fails with "Event loop is closed".
-        measured, legs, legs_error = asyncio.run(
+        measured, legs, legs_error, spreads, spreads_error = asyncio.run(
             _measure_then_legs(
-                session, ub, names, chain_cache, lists, today, liquidity.skip(today), args.limit
+                session, ub, names, chain_cache, lists, today, liquidity.skip(today), args.limit, earnings
             )
         )
     except Exception as exc:  # noqa: BLE001 -- keep the chains gathered so far for the next run
@@ -656,6 +845,20 @@ def cmd_measure(args) -> int:
     ub._write_json(
         legs_out, {"measured_at": started.isoformat(), "list_date": day, "bars": LEG_BARS, "rows": legs}
     )
+    spreads_out = None
+    if spreads:
+        judge_earnings_legs(spreads, LEG_BARS)
+        spreads_out = root / "earnings-legs" / today.isoformat() / f"{started.astimezone(et):%H%M}.json"
+        ub._write_json(
+            spreads_out,
+            {
+                "measured_at": started.isoformat(),
+                "calendar_day": calendar_day,
+                "bars": LEG_BARS,
+                "error": spreads_error,
+                "rows": spreads,
+            },
+        )
     print(
         json.dumps(
             {
@@ -667,6 +870,11 @@ def cmd_measure(args) -> int:
                 "rows": len(legs),
                 "with_monthly": sum(1 for r in legs if r["monthly"]),
                 "quoted_vendor_legs": sum(1 for r in legs for leg in r["vendor"] if leg.get("quote")),
+                "earnings_path": str(spreads_out) if spreads_out else None,
+                "earnings_spreads": len(spreads),
+                "earnings_listed": sum(1 for r in spreads if r.get("legs")),
+                "earnings_passing": sum(1 for r in spreads if r.get("passes")),
+                "earnings_error": spreads_error,
             },
             indent=1,
         )
