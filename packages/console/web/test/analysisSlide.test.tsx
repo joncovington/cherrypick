@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ArmAnalysis, Breakdowns, CapitalReading, DrawdownEpisode, ExecutionReading } from "@console/shared";
-import { ArmCard, BreakdownTables, CapitalTiles, ExecutionTable } from "../src/components/analysis/AnalysisSlide";
+import { ArmCard, BreakdownTables, CapitalTiles, ExecutionTable, WindowLine } from "../src/components/analysis/AnalysisSlide";
 
 const text = (node: React.ReactElement) => renderToString(node).replace(/<!--\s*-->/g, "");
 
@@ -240,5 +240,31 @@ describe("BreakdownTables", () => {
   it("says when a dimension has nothing to break down, and why", () => {
     const html = text(<BreakdownTables b={breakdowns()} />);
     expect(html).toContain("hour of entry: nothing to break down (40 trades record no entry time)");
+  });
+});
+
+describe("WindowLine", () => {
+  it("names an arm's own era and the break that opened it", () => {
+    const html = text(
+      <WindowLine
+        w={{
+          scope: "arm_era",
+          start: "2026-10-12",
+          break: { break_date: "2026-10-12", scope: "range-high", kind: "arm_added", reason: "enters the roster" },
+          reason: "its own break",
+        }}
+      />,
+    );
+    expect(html).toContain("2026-10-12");
+    expect(html).toContain("its era: its own break (arm_added · range-high)");
+  });
+
+  it("names the suite window and why the arm is read over it", () => {
+    const html = text(
+      <WindowLine
+        w={{ scope: "suite", start: "2026-08-21", break: null, reason: "this module journals module-wide changes with no arm named" }}
+      />,
+    );
+    expect(html).toContain("the suite window: this module journals module-wide changes");
   });
 });

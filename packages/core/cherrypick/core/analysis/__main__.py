@@ -29,7 +29,7 @@ from pathlib import Path
 from cherrypick.core import ledgers
 from cherrypick.core.profiles import group_by_tag
 
-from . import VERSION, arm_reading, capital
+from . import VERSION, arm_reading, capital, windows
 
 
 def cmd_read(args) -> dict:
@@ -40,6 +40,7 @@ def cmd_read(args) -> dict:
         conn = ledgers.connect_ro(args.db)
         try:
             records = reader(conn, args.start, args.end)
+            breaks, break_schema = windows.read_breaks(conn)
         finally:
             conn.close()
     except sqlite3.OperationalError as exc:
@@ -54,6 +55,25 @@ def cmd_read(args) -> dict:
                 "error": f"schema {args.schema!r} records carry no era; --era cannot scope it",
             }
         records = [r for r in records if r.get("era") == era]
+    # Each arm's window (windows.py): its own era where the ledger's breaks name arms, else the
+    # suite's. Evaluated as of the latest session read, so the same rows always give the same
+    # windows. `--window suite` reads every arm over the suite window alone.
+    mode = getattr(args, "window", None) or "arm"
+    sessions = [r["session"] for r in records if r.get("session")]
+    as_of = args.end or (max(sessions) if sessions else None)
+    arms = sorted({r["arm"] for r in records})
+    if mode == "arm":
+        arm_window = windows.arm_windows(breaks, break_schema, arms, as_of, args.start)
+    else:
+        why = "every arm read over the suite window (--window suite)"
+        arm_window = {
+            a: {"scope": windows.SCOPE_SUITE, "start": args.start, "break": None, "reason": why} for a in arms
+        }
+    records = [
+        r
+        for r in records
+        if arm_window[r["arm"]]["start"] is None or (r.get("session") or "") >= arm_window[r["arm"]]["start"]
+    ]
     # Grouped as core.metrics' CLI groups them (see its cmd_read): one group per experiment on an
     # advised arm, so the two bridges always describe the same set of records.
     for r in records:
@@ -72,8 +92,10 @@ def cmd_read(args) -> dict:
             allocations["error"] = str(exc)
 
     def summarize(group: list) -> dict:
-        # Every record in a group shares its arm; an experiment's book reads its base arm's line.
-        return arm_reading(group, declared.get(group[0]["arm"]))
+        # Every record in a group shares its arm; an experiment's book reads its base arm's line,
+        # and its arm's window.
+        arm = group[0]["arm"]
+        return {**arm_reading(group, declared.get(arm)), "window": arm_window[arm]}
 
     groups = group_by_tag(records, tag_key="group_tag", summarize=summarize)
     n = len(records)
@@ -82,6 +104,7 @@ def cmd_read(args) -> dict:
         "schema": args.schema,
         "version": VERSION,
         "n_records": n,
+        "window": {"mode": mode, "as_of": as_of, "breaks": break_schema, "floor": args.start},
         "allocations": allocations,
         "groups": groups,
     }
@@ -100,6 +123,12 @@ def main(argv: list[str] | None = None) -> int:
     rd.add_argument("--era", default=None, help="one stamped era (ERA_SCHEMAS only), or ALL")
     rd.add_argument("--module", default=None, help="whose declared allocations apply (arm_capital.json)")
     rd.add_argument("--allocations", default=None, help="the allocation file, if not the default")
+    rd.add_argument(
+        "--window",
+        choices=("arm", "suite"),
+        default="arm",
+        help="each arm's own era where the breaks name arms (default), or the suite window for every arm",
+    )
     args = ap.parse_args(argv)
     result = cmd_read(args)
     print(json.dumps(result))

@@ -557,9 +557,16 @@ the bridge passes `--module`, never the file). Bridged, never mirrored.
   says so and starts from those trades' own net, never the arm's. An undeclared allocation reads "none declared" with dashes, never zero;
   a refused allocation file is a page-level chip with core's reason, and the rest still renders.
 
-- It reads exactly what the performance slide reads: the same ledger per mode
-  (`performance.ts::moduleLedgerPath`), suite epoch and stamped module era, and the bridge groups arms
-  as `core.metrics`' does. A reply whose `version` is not `ANALYSIS_VERSION` is refused, not drawn.
+- It reads the performance slide's ledger per mode (`performance.ts::moduleLedgerPath`), suite epoch
+  and stamped module era, and the bridge groups arms as `core.metrics`' does. A reply whose `version`
+  is not `ANALYSIS_VERSION` is refused, not drawn.
+- **Each arm is read over its own era** (version 2, 2026-10-17; `core.analysis.windows`): where the
+  module's `measurement_breaks` name arms (flies, MEIC), its latest break, else the module's latest
+  book-wide one, by `core.regimecuts`' own rule, so this and the regime cuts agree. Modules whose
+  breaks name no arm read the suite window, and say why. The suite epoch is always the floor. Every
+  arm card states its window (`WindowLine`). The performance slide still reads the suite window, so
+  the two can differ, and the page says so: flies control read +$1,546 over the suite window and
+  -$2,891 over its era since the 10-05 completion-rule break.
 - A withheld stress test (under 20 sessions) says why and shows dashes. A drawdown is shown as the
   loss it is; its tone comes from that sign. The reordered percentile can sit BELOW the recorded
   drawdown: that is a reading (the real order was among the worst), not a defect.

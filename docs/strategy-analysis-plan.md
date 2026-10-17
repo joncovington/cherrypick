@@ -204,6 +204,11 @@ last, or runs first on replays for an early read.
   per-trade capital, so flies now records each book's session peak at settlement
   (`fly_books.peak_risk`, with `run.py backfill-peak-risk`), and core reads it.
 - No composite score and no optimizer.
+- *2026-10-17:* each arm's analysis is read over its own era (`core.analysis.windows`, analysis
+  version 2), where the module's measurement breaks name arms (flies, MEIC), by the regime cuts' own
+  rule; elsewhere the suite window, stated. The suite epoch stays the floor. This changed readings
+  materially: flies control was +$1,546 over the suite window and -$2,891 over its era since the
+  2026-10-05 completion-rule break.
 
 ## Open before Phase 0
 
