@@ -176,10 +176,10 @@ export function FliesLightbox({ slide }: { slide: string }) {
     { id: "selector", label: FLIES_LABEL.selector, render: () => <SelectorSlide /> },
     { id: "completion", label: FLIES_LABEL.completion, render: () => <PerformanceTab mode={mode} filter={multiDayFilter} /> },
     { id: "advisor", label: FLIES_LABEL.advisor, render: () => <AdvisorSlide module="flies" /> },
-    { id: "performance", label: FLIES_LABEL.performance, render: () => <PerformanceSlide module="flies" mode={mode} /> },
-    { id: "analysis", label: FLIES_LABEL.analysis, render: () => <AnalysisSlide module="flies" mode={mode} /> },
-    { id: "costs", label: FLIES_LABEL.costs, render: () => <ModuleCosts module="flies" mode={mode} era={era} /> },
-    { id: "regime", label: FLIES_LABEL.regime, render: () => <RegimeCutsTab module="flies" /> },
+    { id: "performance", label: FLIES_LABEL.performance, render: () => <PerformanceSlide module="flies" mode={mode} arm={arm} /> },
+    { id: "analysis", label: FLIES_LABEL.analysis, render: () => <AnalysisSlide module="flies" mode={mode} arm={arm} /> },
+    { id: "costs", label: FLIES_LABEL.costs, render: () => <ModuleCosts module="flies" mode={mode} era={era} arm={arm} /> },
+    { id: "regime", label: FLIES_LABEL.regime, render: () => <RegimeCutsTab module="flies" arm={arm} /> },
     { id: "agent", label: FLIES_LABEL.agent, render: () => <AgentSlide mode={mode} date={date} /> },
     // The three dense tables (2026-09-24: pages in the rail's `tables` group, where they had been
     // overlay sheets). Same markup, pagers and queries as before -- they moved rather than changed.

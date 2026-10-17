@@ -385,6 +385,16 @@ the intervals, paired differences, t bounds, sign tests and projections are `cor
   recorded capital (flies) shows a dash there, never zero, and a partial record says how many trades
   carry one.
 
+**The arm picker** (flies, MEIC; the header's `ArmSelect`) narrows what a tab already read; it never
+changes a read. A tab whose content is one block per arm follows it: session, forest, timeline,
+attempts, decisions, positions, history, and (2026-10-17) performance, analysis, costs and regime
+cuts. Advised books stay with their arm (`lib/armTag.ts`: `<arm>@<experiment>` is that arm). On
+performance the cumulative chart keeps `control` beside the picked arm as its reference; on regime
+cuts the document-level chance baseline still counts the whole cut, and says so. A tab whose point
+is a comparison across arms (gates vs control, live vs paper, selector) or a module-wide view
+(summary, advisor, agent) deliberately ignores it. The picked arm is page state, kept across tabs
+because the frame stays mounted; it is not in the URL.
+
 **A summary slide is a module's own.** MEIC's summary slide is the pattern — one-read payload
 computed server-side to the cent, presentation arithmetic only in the component, money in the
 suite's one layout, tone from a number's sign — and each module's summary carries its own KPIs in

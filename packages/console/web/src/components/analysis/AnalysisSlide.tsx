@@ -13,6 +13,7 @@ import { Card } from "../DataTable";
 import { ArmRegime } from "./ArmRegime";
 import { fmtMoney, fmtNum, fmtPct } from "../../lib/format";
 import { useModuleAnalysis, type PerformanceModuleId } from "../../lib/api";
+import { matchesArm } from "../../lib/armTag";
 import { Tile } from "../performance/Tile";
 import { TileGrid } from "../performance/TileGrid";
 
@@ -470,7 +471,47 @@ export function ArmCard({
   );
 }
 
-export function AnalysisSlide({ module, mode = "paper" }: { module: PerformanceModuleId; mode?: TradingMode }) {
+/** The anchor id of an arm's card, for the index's jump links. */
+function cardId(module: string, tag: string): string {
+  return `analysis-${module}-${tag}`.replace(/[^A-Za-z0-9_-]/g, "_");
+}
+
+/**
+ * Every arm on one line, with its net and sessions, for a page that would otherwise be forty long
+ * cards: each name scrolls to its card. Shown only when no arm is picked in the header.
+ */
+export function ArmIndex({ module, groups }: { module: string; groups: Array<{ tag: string; analysis: ArmAnalysis }> }) {
+  return (
+    <div className="muted" style={{ fontSize: 12, display: "flex", flexWrap: "wrap", gap: "0.25rem 0.9rem" }}>
+      {groups.map((g) => {
+        const net = typeof g.analysis.reading["net_pnl"] === "number" ? (g.analysis.reading["net_pnl"] as number) : null;
+        return (
+          <button
+            key={g.tag}
+            type="button"
+            className="btn btn-quiet"
+            style={{ padding: 0, fontSize: 12 }}
+            onClick={() => document.getElementById(cardId(module, g.tag))?.scrollIntoView({ behavior: "smooth" })}
+            title={`${String(g.analysis.stress.sessions)} sessions`}
+          >
+            {g.tag} <span className={net === null ? "" : net >= 0 ? "pnl-pos" : "pnl-neg"}>{fmtMoney(net)}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function AnalysisSlide({
+  module,
+  mode = "paper",
+  arm = null,
+}: {
+  module: PerformanceModuleId;
+  mode?: TradingMode;
+  /** The page's arm picker (flies, MEIC): one arm's card, or every arm's with an index above. */
+  arm?: string | null;
+}) {
   const { data, isLoading, dataUpdatedAt } = useModuleAnalysis(module, "current", mode);
 
   if (isLoading || data === undefined) {
@@ -491,6 +532,8 @@ export function AnalysisSlide({ module, mode = "paper" }: { module: PerformanceM
       </div>
     );
   }
+  // The arm picker, applied to what was read; an advised book stays with its arm.
+  const shown = data.groups.filter((g) => matchesArm(g.tag, arm));
   return (
     <div className="cards cards-wide">
       {data.mode === "live" && (
@@ -516,22 +559,31 @@ export function AnalysisSlide({ module, mode = "paper" }: { module: PerformanceM
           {data.allocations.error}
         </p>
       )}
-      {data.groups.length === 0 ? (
+      {arm === null && data.groups.length > 1 && <ArmIndex module={module} groups={data.groups} />}
+      {arm !== null && (
+        <p className="muted" style={{ fontSize: 12 }}>
+          showing <strong>{arm}</strong>, picked in the header
+        </p>
+      )}
+      {shown.length === 0 ? (
         <Card title="analysis" updatedAt={dataUpdatedAt}>
-          <p className="muted">no closed trades in this window yet</p>
+          <p className="muted">
+            {arm !== null && data.groups.length > 0 ? `no closed trades for ${arm} in this window` : "no closed trades in this window yet"}
+          </p>
         </Card>
       ) : (
-        data.groups.map((g) => (
-          <ArmCard
-            key={g.tag}
-            module={module}
-            tag={g.tag}
-            a={g.analysis}
-            updatedAt={dataUpdatedAt}
-            // Only flies and MEIC write regime cuts; every other module's regime waits for entry
-            // timestamps on its ledger records (core.regime.regime_at needs a moment to read).
-            regime={module === "flies" || module === "meic" ? <ArmRegime module={module} tag={g.tag} /> : undefined}
-          />
+        shown.map((g) => (
+          <div key={g.tag} id={cardId(module, g.tag)}>
+            <ArmCard
+              module={module}
+              tag={g.tag}
+              a={g.analysis}
+              updatedAt={dataUpdatedAt}
+              // Only flies and MEIC write regime cuts; every other module's regime waits for entry
+              // timestamps on its ledger records (core.regime.regime_at needs a moment to read).
+              regime={module === "flies" || module === "meic" ? <ArmRegime module={module} tag={g.tag} /> : undefined}
+            />
+          </div>
         ))
       )}
     </div>

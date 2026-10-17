@@ -252,14 +252,14 @@ export function MeicLightbox({ slide }: { slide: string }) {
         </div>
       ),
     },
-    { id: "regime", label: MEIC_LABEL.regime, render: () => <RegimeCutsTab module="meic" /> },
+    { id: "regime", label: MEIC_LABEL.regime, render: () => <RegimeCutsTab module="meic" arm={profile} /> },
     {
       id: "calibration",
       label: MEIC_LABEL.calibration,
       render: () => <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />,
     },
-    { id: "performance", label: MEIC_LABEL.performance, render: () => <PerformanceSlide module="meic" mode={mode} /> },
-    { id: "costs", label: MEIC_LABEL.costs, render: () => <ModuleCosts module="meic" mode={mode} era={era} /> },
+    { id: "performance", label: MEIC_LABEL.performance, render: () => <PerformanceSlide module="meic" mode={mode} arm={profile} /> },
+    { id: "costs", label: MEIC_LABEL.costs, render: () => <ModuleCosts module="meic" mode={mode} era={era} arm={profile} /> },
     { id: "advisor", label: MEIC_LABEL.advisor, render: () => <AdvisorSlide module="meic" /> },
     { id: "positions", label: MEIC_LABEL.positions, render: () => <MeicPositionsTable mode={mode} scope={scopeArgs} /> },
     {

@@ -438,7 +438,21 @@ export function EraCard({ cuts, stale }: { cuts: RegimeCuts; stale: { artifactSe
   );
 }
 
-export function RegimeCutsTab({ module }: { module: RegimeCutsModule }) {
+/**
+ * The cut narrowed to one arm, for the page's arm picker: its row in every table, its cells in every
+ * cross-tab. The document-level stamps (era, multiplicity) are the writer's for the whole cut and
+ * are left as they are; the tab says so when an arm is picked.
+ */
+export function cutsForArm(cuts: RegimeCuts, arm: string | null): RegimeCuts {
+  if (arm === null) return cuts;
+  return {
+    ...cuts,
+    arms: cuts.arms.filter((a) => a.arm === arm),
+    crossTabs: cuts.crossTabs.map((t) => ({ ...t, arms: t.arms.filter((a) => a.arm === arm) })),
+  };
+}
+
+export function RegimeCutsTab({ module, arm = null }: { module: RegimeCutsModule; arm?: string | null }) {
   const [session, setSession] = useState<string | null>(null);
   const { data, isLoading, isError, dataUpdatedAt } = useRegimeCuts(module, session);
   if (isLoading || data === undefined) {
@@ -488,16 +502,32 @@ export function RegimeCutsTab({ module }: { module: RegimeCutsModule }) {
       </Card>
     );
   }
-  const { cuts, stale } = data;
+  const { stale } = data;
+  const cuts = cutsForArm(data.cuts, arm);
   return (
     <div className="cards cards-wide view-fade">
       <Card title="regime cuts" updatedAt={dataUpdatedAt} controls={picker} collapseKey={`regime-${module}-head`}>
         <p className="muted" style={{ margin: 0 }}>
-          Every arm, cut by the regime each entry was tagged with, as the module wrote it (generated {cuts.generatedAt ?? "?"}).
-          The console renders this artifact and computes nothing from it: thin cells, coverage, era and every number
-          are the writer's. Sessions are the unit of independence; read them before the net.
+          {arm === null ? "Every arm" : <strong>{arm}</strong>}, cut by the regime each entry was tagged with, as the
+          module wrote it (generated {cuts.generatedAt ?? "?"}). The console renders this artifact and computes nothing
+          from it: thin cells, coverage, era and every number are the writer's. Sessions are the unit of independence;
+          read them before the net.
         </p>
-        {cuts.multiplicity !== null && <MultiplicityLine m={cuts.multiplicity} />}
+        {arm !== null && cuts.arms.length === 0 && (
+          <p className="muted" style={{ marginBottom: 0 }}>
+            {arm} is not in this cut. Pick another arm, or all arms, in the header.
+          </p>
+        )}
+        {cuts.multiplicity !== null && (
+          <>
+            {arm !== null && (
+              <p className="muted" style={{ fontSize: 11, marginBottom: 0 }}>
+                the chance baseline below counts the whole cut, every arm, not only {arm}
+              </p>
+            )}
+            <MultiplicityLine m={cuts.multiplicity} />
+          </>
+        )}
       </Card>
       <EraCard cuts={cuts} stale={stale} />
       {cuts.dimensions.map((dim) => (
