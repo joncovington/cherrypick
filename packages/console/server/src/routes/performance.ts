@@ -3,6 +3,7 @@ import type { ConsoleConfig } from "../config.js";
 import { MODULE_SCHEMA, readModulePerformance, type PerformanceModuleId } from "../readers/performance.js";
 import { readArmsRisk, readModuleAnalysis } from "../readers/analysis.js";
 import { readPnlCalendar, readPnlExcursion, readPnlTrace, readPnlTrades } from "../readers/pnlCalendar.js";
+import { readPortfolio } from "../readers/portfolio.js";
 
 function isPerformanceModule(v: string): v is PerformanceModuleId {
   return Object.prototype.hasOwnProperty.call(MODULE_SCHEMA, v);
@@ -79,6 +80,20 @@ export function registerPerformanceRoutes(app: FastifyInstance, config: ConsoleC
       }
       const mode = req.query.mode === "live" ? "live" : "paper";
       return readPnlTrace(config, module, position, mode);
+    },
+  );
+
+  // The chosen arms held together (core.portfolio): Compare's portfolio tab.
+  app.get<{ Querystring: { arms?: string; period?: string; weights?: string; mode?: string } }>(
+    "/api/portfolio",
+    async (req) => {
+      const arms = (req.query.arms ?? "").split(",").map((a) => a.trim()).filter((a) => a !== "");
+      return readPortfolio(config, {
+        arms,
+        period: req.query.period === "week" ? "week" : "day",
+        weights: req.query.weights === "booked" ? "booked" : "equal_risk",
+        mode: req.query.mode === "live" ? "live" : "paper",
+      });
     },
   );
 

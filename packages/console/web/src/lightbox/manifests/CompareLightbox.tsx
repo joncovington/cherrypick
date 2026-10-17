@@ -1,6 +1,7 @@
 import { ComparePage } from "../../pages/Compare/ComparePage";
 import { RiskTab } from "../../pages/Compare/RiskTab";
 import { CalendarTab } from "../../pages/Compare/CalendarTab";
+import { PortfolioTab } from "../../pages/Compare/PortfolioTab";
 import { ModuleFrame } from "../ModuleFrame";
 import { ModeToggle } from "../../components/ModeToggle";
 import { useMode } from "../../lib/useMode";
@@ -15,13 +16,14 @@ const slides: SlideDef[] = [
   { id: "arms", label: "arms", render: () => <ComparePage /> },
   { id: "risk", label: "risk", render: () => <RiskTab /> },
   { id: "calendar", label: "calendar", render: () => <CalendarTab /> },
+  { id: "portfolio", label: "portfolio", render: () => <PortfolioTab /> },
 ];
 
 export function CompareLightbox({ slide }: { slide: string }) {
   const [mode, setMode] = useMode();
   // Risk and calendar read paper or live ledgers (meic, flies, earnings and bwb keep a live one);
   // the arms tab compares paper arms only, so it shows no toggle.
-  const moded = slide === "risk" || slide === "calendar";
+  const moded = slide === "risk" || slide === "calendar" || slide === "portfolio";
   return (
     <ModuleFrame
       module="compare"
@@ -34,7 +36,7 @@ export function CompareLightbox({ slide }: { slide: string }) {
             className="chip"
             title="arms: python -m cherrypick.core.compare (core.ledgers rows, core.stats figures); risk: python -m cherrypick.core.analysis"
           >
-            {slide === "risk" ? "source: core.analysis" : slide === "calendar" ? "source: core.metrics" : "source: core.compare"}
+            {slide === "risk" ? "source: core.analysis" : slide === "calendar" ? "source: core.metrics" : slide === "portfolio" ? "source: core.portfolio" : "source: core.compare"}
           </span>
           {moded && <ModeToggle mode={mode} onChange={setMode} />}
         </>
