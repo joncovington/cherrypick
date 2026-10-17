@@ -14,15 +14,21 @@ one of the 430 points the other way), and every listed row has at least three.
 | revision | `revisions.py` | an upgrade, downgrade, sided initiation, target move of 5%+ | 33 of 38 |
 | rotation | `rotation.py` on the name's sector fund | into: leading; out: lagging or weakening | 89 of 96 |
 | fundamentals | `fundamentals.market_percentiles` | compelling: top fifth; weak: bottom | 43/55; 16/40 |
-| scan | `signals.py` trend rules | bullish / bearish trend following | 5 of 16 |
+| scan | `signals.py` trend-following rules, the session or the one before | trend following | 9 of 16 |
 
 Rotation is the daily quadrant (refit 2026-10-17; the banded rule before it found 61 of 96).
 Fundamentals is our score (four measures ranked within the sector, margin twice) placed across the
 whole market on the newest weekly estimate snapshot: its compelling side reproduces well (2 extra),
-its weak side poorly, so it is marked approximate, as is the scan, which was fitted to a different
-list. The fit on the boards is flat from the top quarter to the top fifth; a fifth is the tail.
-Not counted at all: fundamentals-vs-price (not reproduced) and the three flow tags (paid data), so
-our counts run lower than the vendor's, and no three-tag floor is applied.
+its weak side poorly, so it is marked approximate. The fit on the boards is flat from the top
+quarter to the top fifth; a fifth is the tail. The scan is the two trend-following rules only, over
+two sessions (the saved scan lists put every tagged row's signal there; 5 of 16 on the day alone,
+10 of 16 at 14 extras with the CCI rules); still approximate.
+
+Not counted at all: fundamentals vs price and the three flow tags (paid data), so our counts run
+lower than the vendor's, and no three-tag floor is applied. Fundamentals vs price was tried
+2026-10-17 as our fundamentals percentile against our 1-10 rank, both as quadrants and as their
+difference: about 23 of 50 tags at 7-10 extras, 8 of 22 on the last five boards -- under half, so
+not counted (it rests on the fundamentals score, whose weak side is itself poor).
 
 **A name's side** is the side with more tags; a tie has no side and is kept in the file unlisted.
 Only that side's tags are listed, as the vendor lists them; the other side's count is kept.
@@ -55,13 +61,15 @@ SECTOR_FUND = {
 # "out" lagging (38 of 38) or weakening (8 of 12). Read here on our own states.
 ROTATION_SIDE = {"leading": 1, "lagging": -1, "weakening": -1}
 
-# Trend rules only: the counter-trend rules never count ("don't chase").
+# The trend-following rules only, on the session or the one before (`SCAN_SESSIONS`): read off the
+# saved scan lists against the boards (2026-10-17), every tagged row's entry was a trend-following
+# signal dated the session or the one before, and on-side CCI dips (DOCS, MU, PLTR) went untagged,
+# as did NVDA's trend signal two sessions back. The counter-trend rules never count ("don't chase").
 SCAN_SIDE = {
     "BullishTrendFollowing": 1,
-    "CciDipInBullishTrend": 1,
     "BearishTrendFollowing": -1,
-    "CciRallyInBearishTrend": -1,
 }
+SCAN_SESSIONS = 2
 
 STAGE_LABEL = {
     (1, "early"): "Early breakout",
@@ -146,15 +154,21 @@ def tags_on(
             tags.append(Tag("fundamentals", 1 if good else -1, label, detail))
         upto = [b for b in bs if b.date <= day]
         if upto and upto[-1].date == day:
-            r = signals.readings([b.high for b in upto], [b.low for b in upto], [b.close for b in upto])
-            hits = [m for m in signals.matches(r)] if r is not None else []
-            sides = {SCAN_SIDE[m] for m in hits if m in SCAN_SIDE}
+            hits = []  # (session, rule), newest last
+            for k in range(SCAN_SESSIONS, 0, -1):
+                part = upto[: len(upto) - k + 1]
+                r = signals.readings([b.high for b in part], [b.low for b in part], [b.close for b in part])
+                hits += [
+                    (part[-1].date, m)
+                    for m in (signals.matches(r) if r is not None else [])
+                    if m in SCAN_SIDE
+                ]
+            sides = {SCAN_SIDE[m] for _, m in hits}
             if len(sides) == 1:
                 side = sides.pop()
-                tags.append(
-                    Tag("scan", side, "Bullish trade scan" if side > 0 else "Bearish trade scan",
-                        ", ".join(m for m in hits if m in SCAN_SIDE))
-                )  # fmt: skip
+                when, rule = hits[-1]
+                label = "Bullish trade scan" if side > 0 else "Bearish trade scan"
+                tags.append(Tag("scan", side, label, f"{rule} {when}"))
         rt = rev_tags.get(sym)
         if rt is not None and rt.direction:
             label = "Analyst bullish revision" if rt.direction > 0 else "Analyst bearish revision"

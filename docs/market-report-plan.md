@@ -275,9 +275,11 @@ and every row has at least three. The board counts five methods from our own eng
 them with `score-board`: stage 69 of 73 tags found, analyst revision 33 of 38, sector rotation 89 of
 96 (the vendor's "into" is its leading quadrant, "out" lagging or weakening; refit to the daily
 quadrant the same day, up from 61 under the banded rule), fundamentals 59 of 95 (our score's top and
-bottom fifths across the market: compelling 43 of 55, weak only 16 of 40) and the scan 5 of 16; 110
-of 130 rows land on the board's side. Next: fundamentals vs price and the scan, if the boards
-support a fit. The flow tags stay paid data.
+bottom fifths across the market: compelling 43 of 55, weak only 16 of 40) and the scan 9 of 16 (the
+two trend-following rules over the session and the one before, as the saved scan lists show it);
+110 of 130 rows land on the board's side. Fundamentals vs price was tried against our 1-10 rank and
+reproduces under half its tags (about 23 of 50), so it is not counted; a better fundamentals score
+is the way to it. The flow tags stay paid data.
 
 **The flow tags are most likely per-name sums for the session**, not a longer window. Section 7
 ranks single trades; the tags total every qualifying trade in the name. That explains AMD's $18M
