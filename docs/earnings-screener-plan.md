@@ -194,10 +194,23 @@ Checked 2026-10-17 against Dolt (`nav_gap_checks`, a one-off): 458 tradable name
 3. **The long leg sits further out than the expected move.** The first listed strike past the move
    lands a median 20-30% of an EM beyond it, because trade-expiry strikes are coarse. So the rule's
    long leg is effectively at ~1.25× EM. That is a property of the rule, live as well as in history.
-4. **The direction read isn't proven on history.** Bearing names the strong states 95% / 99% when fed
-   the vendor's own inputs. Our bars rebuild those inputs (trends 99.7%, score 52 of 62), but the
-   full chain from bars to label is unmeasured. Measure it against the captured security lists
-   before step 1 leans on it.
+4. **The direction read on history: measured 2026-10-17, good enough.**
+   - Method: fit Bearing on one captured list and name the other list's labels from inputs built
+     from our own bars. Both ways round, 10-07 and 10-16.
+   - **The security list is a session old.** Both lists were captured after the close (17:16 and
+     19:56 ET), yet their trend readings match the PREVIOUS session's close. Our trend inputs read
+     one session back agree on 92-98% (1M) and 95-97% (6M) of very-liquid stocks; read on the same
+     session, 62-84%.
+   - The 1-10 score is the remaining error: exact on about two thirds, tier right on about 90%.
+   - End to end, one session back, very-liquid stocks:
+     - strong bull: recall 88-96%, precision 80-88%;
+     - strong bear: recall 77-88%, precision 97-98%.
+   - Misses fall on a neighbouring state (pullback, bear), not the opposite direction.
+   - So step 1 reads Bearing one session before the entry close, as the live list does, and says
+     the direction is ~85-95% faithful.
+   - What it means for the live list: the direction read is always at least a session behind the
+     entry close. Show the list's read and the session it describes; never silently swap in a
+     fresher one of ours.
 
 **The live list**
 5. **Timing is unknown for about half the announcements.** Dolt's before/after-the-open field is about
@@ -218,6 +231,9 @@ Checked 2026-10-17 against Dolt (`nav_gap_checks`, a one-off): 458 tradable name
     it.
 11. **There is no answer key.** Declined 2026-10-16, so we measure whether the rule works, not how
     faithfully we reproduce it.
+
+**Note (2026-10-17):** better backtesting may become available in the future. If it does, re-run
+step 1 on it, and treat this study's result as the first read, not the last.
 
 ## Not in this plan
 
