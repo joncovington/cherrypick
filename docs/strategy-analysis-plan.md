@@ -137,6 +137,25 @@ didn't with the reason, the P&L gap, and a reason category (fill, gate disagreem
 This is the vendor's hand-built spreadsheet as a standing view. It is the question flies live keeps
 asking, and every gate threshold carries the same precision risk that cost them.
 
+*Paper and live done 2026-10-17, on flies' existing `live_paper_gap` (the console's live-vs-paper
+tab).*
+- **Unmatched entries:** each carries the other book's own reason, with a category (live limit,
+  timing, gate, data, fill, or other with the raw reason).
+  - Live's reason is its refusal run covering that minute, or its unfilled order on the same
+    structure.
+  - Paper's reason is its attempt outcome at that minute.
+- **Matched pairs:** each carries its largest gap.
+- **Eras:** each era sums what every kind of live refusal cost or saved.
+- **Coverage:** every reason on the real ledgers is named.
+
+The first read:
+- Live's 10:15 start skipped 40 paper entries that netted −$662.
+- Its margin cap refused 15 that made +$835 after 10-05.
+- The gate rows are mostly path dependence, since the books' positions diverge, rather than
+  threshold precision.
+
+The replay column waits on the quote-history replay (`docs/quote-history-replay-plan.md`).
+
 ### Phase 3 — the bucket engine
 
 One engine, one column set (P&L, n, win rate, average return on risk, average P&L, average risk,

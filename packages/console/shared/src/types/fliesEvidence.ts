@@ -24,6 +24,8 @@ export interface LiveGapPair {
   center: number;
   wing_width: number;
   gap_min: number;
+  live_entry_time?: string | null;
+  paper_entry_time?: string | null;
   live_credit: number | null;
   paper_credit: number | null;
   credit_gap: number | null;
@@ -39,6 +41,9 @@ export interface LiveGapPair {
   live_net: number | null;
   paper_net: number | null;
   net_gap: number | null;
+  /** The largest dollar component of the gap: entry fill, completion fill, fees; `completion` when
+   *  only one side completed; null while either side is unsettled. */
+  category?: "entry fill" | "completion fill" | "fees" | "completion" | "none" | null;
 }
 
 export interface LiveGapSession {
@@ -59,6 +64,34 @@ export interface LiveGapSession {
   matched_net_gap: number | null;
   broker_fees: number;
   pairs?: LiveGapPair[];
+  /** Entries one book took and the other did not, each with the other side's reason. */
+  unmatched?: LiveGapUnmatched[];
+}
+
+/**
+ * One entry only one book took (`analytics._unmatched_row`). `other_side_reason` is the other book's
+ * own reason -- live's refusal run covering that minute (or `entry_unfilled`: live's order on the
+ * same structure never filled), paper's attempt outcome then -- and `category` its group: live
+ * limit, timing, gate, data, fill, or other (the raw reason always beside it).
+ */
+export interface LiveGapUnmatched {
+  which: "live only" | "paper only";
+  position: string;
+  entry_time: string | null;
+  side: string;
+  center: number;
+  completed: boolean;
+  net: number | null;
+  other_side_reason: string;
+  other_side_at: string | null;
+  category: string;
+}
+
+/** Over an era: unmatched entries by "<which>: <category>" (with the net of the side that traded --
+ *  for `paper only`, what each kind of live refusal cost or saved) and pairs by gap category. */
+export interface LiveGapWhy {
+  unmatched: Record<string, { entries: number; net: number | null; reasons: Record<string, number> }>;
+  pairs: Record<string, { pairs: number; net_gap: number | null }>;
 }
 
 export interface LiveGapEra {
@@ -72,6 +105,7 @@ export interface LiveGapEra {
   matched_net_gap: number | null;
   live_completion_rate: number | null;
   paper_completion_rate: number | null;
+  why?: LiveGapWhy;
 }
 
 export interface FliesLiveGap {
