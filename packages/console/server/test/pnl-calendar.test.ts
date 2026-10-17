@@ -2,8 +2,9 @@ import { describe, it, expect, afterEach } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import { readPnlCalendar } from "../src/readers/pnlCalendar.js";
-import { setMetricsCaller, resetMetricsCache } from "../src/services/metricsBridge.js";
+import { readPnlCalendar, readPnlTrades } from "../src/readers/pnlCalendar.js";
+import { MODULE_ERA } from "../src/readers/performance.js";
+import { setMetricsCaller, setTradesCaller, resetMetricsCache } from "../src/services/metricsBridge.js";
 import type { ConsoleConfig } from "../src/config.js";
 
 /** Compare's calendar reads every module's per-session nets (core.metrics) over the suite window. */
@@ -33,6 +34,7 @@ const reading = (nets: Array<[string, number]>) => ({
 
 afterEach(() => {
   setMetricsCaller();
+  setTradesCaller();
   resetMetricsCache();
 });
 
@@ -51,6 +53,32 @@ describe("readPnlCalendar", () => {
     expect(out.days.filter((d) => d.module === "flies")).toEqual([
       { module: "flies", tag: "control", session: "2026-10-13", net: 120 },
     ]);
+  });
+
+  it("drills to one arm's trades over the calendar's own ledger, schema and era", async () => {
+    const calls: unknown[][] = [];
+    setTradesCaller((...args) => {
+      calls.push(args);
+      return Promise.resolve({ ok: true, trades: [], error: null });
+    });
+    const config = fakeConfig(null);
+    const out = await readPnlTrades(config, "pmcc", "2026-10-13", "shield", "paper");
+    expect(out).toMatchObject({ ok: true, module: "pmcc", session: "2026-10-13", tag: "shield", mode: "paper" });
+    expect(calls).toHaveLength(1);
+    const [db, schema, session, tag, era] = calls[0] as [string, string, string, string, string | null];
+    expect(db).toContain(`${path.sep}pmcc${path.sep}`);
+    expect([schema, session, tag, era]).toEqual(["pmcc", "2026-10-13", "shield", MODULE_ERA.pmcc]);
+  });
+
+  it("refuses a live drill on a module that keeps no live ledger, without spawning", async () => {
+    let spawned = false;
+    setTradesCaller(() => {
+      spawned = true;
+      return Promise.resolve({ ok: true, trades: [], error: null });
+    });
+    const out = await readPnlTrades(fakeConfig(null), "curve", "2026-10-13", "control", "live");
+    expect(out.ok).toBe(false);
+    expect(spawned).toBe(false);
   });
 
   it("reads only the modules with a live ledger in live mode", async () => {

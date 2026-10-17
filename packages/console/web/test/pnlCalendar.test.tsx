@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import type { PnlCalendarResult, PnlDay } from "@console/shared";
-import { CalendarView, DayDetail, MonthGrid, totalsBySession } from "../src/pages/Compare/CalendarTab";
+import type { PnlCalendarResult, PnlDay, PnlTrade } from "@console/shared";
+import { CalendarView, DayDetail, MonthGrid, TradesTable, stamp, totalsBySession } from "../src/pages/Compare/CalendarTab";
 
 const text = (node: React.ReactElement) => renderToString(<MemoryRouter>{node}</MemoryRouter>).replace(/<!--\s*-->/g, "");
 
@@ -51,7 +51,7 @@ describe("a week that straddles two months", () => {
 describe("DayDetail", () => {
   it("lists the arms that traded, largest move first", () => {
     const t = totalsBySession(rows).get("2026-10-13");
-    const html = text(<DayDetail session="2026-10-13" total={t!} />);
+    const html = text(<DayDetail session="2026-10-13" total={t!} mode="paper" />);
     expect(html.indexOf("$500.00")).toBeLessThan(html.indexOf("-$300.00"));
   });
 });
@@ -70,5 +70,52 @@ describe("CalendarView", () => {
     // Without meic the 10-13 session is flies' -300 alone.
     expect(html).toContain("-$300.00");
     expect(html).not.toContain("could not be read");
+  });
+});
+
+const trade = (over: Partial<PnlTrade>): PnlTrade => ({
+  tag: "control",
+  symbol: "SPX",
+  strategy: "bwb_132",
+  session: "2026-10-16",
+  entry_time: "2026-10-15T10:00:30-04:00",
+  exit_time: "2026-10-16T16:20:03-04:00",
+  entry_spot: null,
+  exit_spot: null,
+  gross_pnl: 115,
+  fees: 10.33,
+  settlement: 0,
+  slippage: 11.25,
+  slippage_basis: "cost",
+  net_pnl: 93.42,
+  ...over,
+});
+
+describe("stamp", () => {
+  it("shows the time, with the date in front when it is not the session's day", () => {
+    expect(stamp("2026-10-16T16:20:03-04:00", "2026-10-16")).toBe("16:20");
+    expect(stamp("2026-10-15T10:00:30-04:00", "2026-10-16")).toBe("10-15 10:00");
+    expect(stamp("2026-10-16 15:29:37.556772-04:00", "2026-10-16")).toBe("15:29");
+    expect(stamp(null, "2026-10-16")).toBe("—");
+  });
+});
+
+describe("TradesTable", () => {
+  it("lays money out gross, each cost, net, and names the slippage model", () => {
+    const html = text(<TradesTable trades={[trade({})]} cellNet={93.42} />);
+    for (const s of ["$115.00", "$10.33", "$11.25", "cost", "$93.42", "10-15 10:00", "16:20"]) expect(html).toContain(s);
+    expect(html).not.toContain("does not reconcile");
+  });
+
+  it("reads an unrecorded cost as n/r, never $0.00", () => {
+    const html = text(<TradesTable trades={[trade({ settlement: null, slippage: null })]} cellNet={93.42} />);
+    expect(html).toContain("n/r");
+    expect(html).not.toContain("$0.00");
+  });
+
+  it("says so when the trades do not sum to the cell", () => {
+    const html = text(<TradesTable trades={[trade({})]} cellNet={100} />);
+    expect(html).toContain("does not reconcile");
+    expect(html).toContain("the cell says $100.00");
   });
 });

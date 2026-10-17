@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { ConsoleConfig } from "../config.js";
 import { MODULE_SCHEMA, readModulePerformance, type PerformanceModuleId } from "../readers/performance.js";
 import { readArmsRisk, readModuleAnalysis } from "../readers/analysis.js";
-import { readPnlCalendar } from "../readers/pnlCalendar.js";
+import { readPnlCalendar, readPnlTrades } from "../readers/pnlCalendar.js";
 
 function isPerformanceModule(v: string): v is PerformanceModuleId {
   return Object.prototype.hasOwnProperty.call(MODULE_SCHEMA, v);
@@ -27,6 +27,24 @@ export function registerPerformanceRoutes(app: FastifyInstance, config: ConsoleC
     const mode = req.query.mode === "live" ? "live" : "paper";
     return readPnlCalendar(config, mode);
   });
+
+  // One arm's trades on one session: the calendar's day drill.
+  app.get<{ Querystring: { module?: string; session?: string; tag?: string; mode?: string } }>(
+    "/api/calendar/trades",
+    async (req, reply) => {
+      const { module, session, tag } = req.query;
+      if (module === undefined || !isPerformanceModule(module)) {
+        reply.code(404);
+        return { ok: false, error: `unknown module ${JSON.stringify(module)}` };
+      }
+      if (session === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(session) || !tag) {
+        reply.code(400);
+        return { ok: false, error: "session (YYYY-MM-DD) and tag are required" };
+      }
+      const mode = req.query.mode === "live" ? "live" : "paper";
+      return readPnlTrades(config, module, session, tag, mode);
+    },
+  );
 
   // Every arm of every module, for the Compare page's risk tab: picked from each module's analysis.
   app.get<{ Querystring: { mode?: string } }>("/api/analysis", async (req) => {

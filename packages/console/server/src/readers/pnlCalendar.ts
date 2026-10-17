@@ -1,8 +1,8 @@
-import type { PerformanceModuleId, PnlCalendarResult, PnlDay, TradingMode } from "@console/shared";
+import type { PerformanceModuleId, PnlCalendarResult, PnlDay, PnlTradesResult, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { suiteEra } from "./db.js";
 import { LIVE_LEDGER, MODULE_ERA, MODULE_SCHEMA, moduleLedgerPath } from "./performance.js";
-import { readModuleMetricsAsync } from "../services/metricsBridge.js";
+import { readModuleMetricsAsync, readModuleTradesAsync } from "../services/metricsBridge.js";
 
 /**
  * Every arm's net per session, for Compare's calendar tab (`GET /api/calendar`).
@@ -41,4 +41,22 @@ export async function readPnlCalendar(config: ConsoleConfig, mode: TradingMode =
     }
   });
   return { mode, from: suite.from, note: suite.note, days, failures };
+}
+
+/**
+ * One arm's trades on one session, for the calendar's day drill (`GET /api/calendar/trades`): the
+ * same ledger, schema and era the calendar read, so the rows sum to the cell clicked.
+ */
+export async function readPnlTrades(
+  config: ConsoleConfig,
+  module: PerformanceModuleId,
+  session: string,
+  tag: string,
+  mode: TradingMode = "paper",
+): Promise<PnlTradesResult> {
+  const base = { module, session, tag, mode };
+  const dbPath = moduleLedgerPath(config, module, mode);
+  if (dbPath === null) return { ...base, ok: false, trades: [], error: `${module} keeps no ${mode} ledger` };
+  const res = await readModuleTradesAsync(dbPath, MODULE_SCHEMA[module], session, tag, MODULE_ERA[module] ?? null);
+  return { ...base, ...res };
 }

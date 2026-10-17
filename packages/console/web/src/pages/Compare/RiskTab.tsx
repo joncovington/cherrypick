@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Card, SortTh, sortRows, useSort } from "../../components/DataTable";
 import { fmtMoney, fmtNum, fmtPct } from "../../lib/format";
 import { useArmsRisk } from "../../lib/api";
+import { useMode } from "../../lib/useMode";
 import { useFeatures } from "../../lib/useFeatures";
 import { isModuleVisible } from "../../lib/visibility";
 
@@ -127,7 +128,8 @@ export function RiskTable({ data, visible }: { data: ArmsRiskResult; visible: (m
 }
 
 export function RiskTab() {
-  const { data, isLoading, isError, dataUpdatedAt } = useArmsRisk("paper");
+  const [mode] = useMode();
+  const { data, isLoading, isError, dataUpdatedAt } = useArmsRisk(mode);
   const features = useFeatures();
   const visible = (module: string) => (features === undefined ? true : isModuleVisible(module, features));
   return (
