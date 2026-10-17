@@ -32,7 +32,7 @@ DEFAULTS: dict[str, Any] = {
         "max_concurrent_requests": 4,
         "license": {"terminated_on": None, "purge_within_days": 30},
     },
-    "store": {"dir": None, "cadence_seconds": 15, "strikes_each_side": 20},
+    "store": {"dir": None, "cadence_seconds": 15, "strikes_each_side": 20, "request_strike_range": 50},
     "datasets": [{"symbol": "SPX", "root": "SPXW", "dte": 0, "from": "2022-05-16"}],
     "windows": {"design": ["2022-05-16", "2025-06-30"], "holdout": ["2025-07-01", "2026-10-12"]},
 }

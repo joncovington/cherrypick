@@ -20,6 +20,18 @@ the vendor's licence decides where data and results may go.
    `"enabled": true`. Unknown keys are refused, so a typo fails loudly.
 4. **Check it:** `python -m cherrypick.backtest status` shows the config, whether the key is present
    (never the key), the store and the licence clock.
+5. **Install the vendor library** (only the fetch needs it): `pip install -e "packages/backtest[thetadata]"`.
+
+## Fetching
+
+```
+python -m cherrypick.backtest fetch --from 2026-10-13 --to 2026-10-16    # SPXW 0DTE sessions
+python -m cherrypick.backtest coverage                                     # complete and refused sessions
+```
+
+The fetch is the package's only network path. It skips sessions already complete (`--refetch` to
+redo one), records every refusal with its reason, and asks for two requests per session, two
+sessions at a time (the Standard tier allows four in flight). Expect about a minute a session.
 
 ## Connection
 

@@ -12,10 +12,11 @@
     "license": {"terminated_on": null, "purge_within_days": 30}
   },
   "store": {
-    "_comment": "dir null = ~/.cherrypick/data/backtest/vendor/<vendor>. cadence_seconds and strikes_each_side match the gex recorder, so a vendor session replays through the same code as a recorded one.",
+    "_comment": "dir null = ~/.cherrypick/data/backtest/vendor/<vendor>. cadence_seconds and strikes_each_side match the gex recorder, so a vendor session replays through the same code as a recorded one. request_strike_range is how many strikes each side of the vendor's reference price are FETCHED (wider than kept, so a trend day's moving spot stays inside what was fetched); each sample then keeps the strikes_each_side nearest its own spot, as the recorder does.",
     "dir": null,
     "cadence_seconds": 15,
-    "strikes_each_side": 20
+    "strikes_each_side": 20,
+    "request_strike_range": 50
   },
   "datasets": [
     {"symbol": "SPX", "root": "SPXW", "dte": 0, "from": "2022-05-16"}
