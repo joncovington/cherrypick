@@ -496,6 +496,13 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # (`python -m cherrypick.technicals score-screeners`, local files only). Morning, so the
         # previous evening's late greeks run (23:30) has landed.
         "screeners_at": tc.get("screeners_at", "06:40"),
+        # `earnings_calendar_at` / `_late_at`: the earnings calendar (`python -m cherrypick.technicals
+        # earnings-calendar`, local data and the local Dolt only). After the IV-rank fetch whose
+        # per-expiration IVs make its expected move and the 17:15 chart run that saves the security
+        # list; the late pass catches a list that landed after it (10-07's came at 19:56). A rerun
+        # the same session replaces that session's file.
+        "earnings_calendar_at": tc.get("earnings_calendar_at", "19:10"),
+        "earnings_calendar_late_at": tc.get("earnings_calendar_late_at", "23:40"),
         # `index_bars_at`: scripts/fetch_index_bars.py, the cash indexes' daily bars (SPX) from the
         # broker's candles, which Dolt does not carry. Ahead of `land_at`, so the previous session's
         # candle is final and lands the same morning.

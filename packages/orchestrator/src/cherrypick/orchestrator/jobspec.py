@@ -85,6 +85,10 @@ CATCHUP_MINUTES = {
     # which the file keys correctly but is not the day that was missed.
     "technicals-iv-rank": 600,
     "technicals-liquidity": 120,
+    # A rerun replaces the session's file, so a late one is the same calendar; the late pass covers
+    # the rest of the evening.
+    "technicals-earnings-calendar": 240,
+    "technicals-earnings-calendar-late": 120,
     # Local files only and idempotent (an already-scored session is skipped), so any time that day.
     "technicals-screeners": 12 * 60,
     # Ahead of the 06:15 landing; a late fetch is the same fetch, and the landing after it picks it up.
@@ -1192,6 +1196,28 @@ def derive_jobs(
             enabled_reason="" if tc_on else "disabled in config (technicals), or no dolt sql-server to read",
         ),
     )
+    for job_id, at_key in (
+        ("technicals-earnings-calendar", "earnings_calendar_at"),
+        ("technicals-earnings-calendar-late", "earnings_calendar_late_at"),
+    ):
+        add(
+            job_id,
+            lambda job_id=job_id, at_key=at_key: JobSpec(
+                id=job_id,
+                # A package command: every announcement in the next 30 days, joined from local data
+                # and the local Dolt (docs/earnings-screener-plan.md), for the console's earnings tab.
+                # The late pass catches a security list saved after the first.
+                argv=(pythonw, "-m", "cherrypick.technicals", "earnings-calendar"),
+                kind=KIND_DAILY,
+                at_et=tc[at_key],
+                catchup_minutes=CATCHUP_MINUTES[job_id],
+                trading_days_only=True,
+                enabled=tc_on,
+                enabled_reason=""
+                if tc_on
+                else "disabled in config (technicals), or no dolt sql-server to read",
+            ),
+        )
     add(
         "technicals-screeners",
         lambda: JobSpec(

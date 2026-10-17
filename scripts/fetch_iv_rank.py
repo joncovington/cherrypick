@@ -15,6 +15,12 @@ network-free and reads the file this writes. Read-only against the broker.
 adding one. Ranks are stored 0-100. Batches of 50 symbols, a second apart; a failed batch keeps the
 file as it was for those symbols.
 
+**The implied vol of every listed expiration** in the next ten weeks arrives in the same response and
+is kept too, one small file a session (`iv/expiry-iv/<day>.json`), for the earnings calendar's
+expected move (docs/earnings-screener-plan.md). The calendar's names -- optionable stocks the
+security list rates very or somewhat liquid -- are fetched alongside the store's, even where our own
+verdict holds them illiquid.
+
     python scripts/fetch_iv_rank.py [--limit N]
 """
 
@@ -104,6 +110,69 @@ def calendar_fields(raw: dict) -> dict:
     }
 
 
+EXPIRY_IV_DAYS = 70  # far enough for the first expiry after any report in the calendar's 30 days
+
+
+def expiry_ivs(raw: dict, on) -> dict[str, float]:
+    """{expiration: implied vol} from one RAW market-metrics item, for the expirations after `on` and
+    within EXPIRY_IV_DAYS. The earnings calendar's expected move is price x the event expiry's IV x
+    the root of its calendar time (docs/earnings-screener-plan.md). An expiration on the session
+    date itself is dropped: the broker still lists it after the close, with a meaningless IV (CB's
+    read 3,745% on 2026-10-16)."""
+    out = {}
+    for e in raw.get("option-expiration-implied-volatilities") or []:
+        exp = str(e.get("expiration-date") or "")[:10]
+        try:
+            iv = float(e.get("implied-volatility"))
+            days = (datetime.fromisoformat(exp).date() - on).days
+        except (TypeError, ValueError):
+            continue
+        if 0 < days <= EXPIRY_IV_DAYS and 0 < iv < 5:
+            out[exp] = round(iv, 6)
+    return out
+
+
+def calendar_names(rows: list[dict]) -> list[str]:
+    """The earnings calendar's names from the latest security list: optionable stocks and depository
+    receipts rated very or somewhat liquid -- the calendar's liquidity filter, both settings. Read
+    even where our own verdict holds a name illiquid, so its expected move is there."""
+    keep = {"Stock", "Depository Receipt"}
+    return sorted(
+        r["symbol"]
+        for r in rows
+        if r.get("symbol")
+        and r.get("type") in keep
+        and r.get("hasOptions")
+        and r.get("liquidityRank") in (1, 2)
+    )
+
+
+def latest_security_list() -> list[dict]:
+    """The rows of the newest saved security list, or none."""
+    files = sorted((paths.market_report_dir() / "vendor-securities").glob("????-??-??.json"))
+    if not files:
+        return []
+    try:
+        return json.loads(files[-1].read_text(encoding="utf-8")).get("rows") or []
+    except (OSError, ValueError):
+        return []
+
+
+def save_expiry_ivs(day: str, names: dict[str, dict]) -> None:
+    """Merge one session's per-expiration IVs into `iv/expiry-iv/<day>.json` (a rerun adds names)."""
+    path = paths.expiry_iv_dir() / f"{day}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        doc = {"session": day, "names": {}}
+    doc["names"].update(names)
+    doc["updated_at"] = datetime.now(UTC).isoformat()
+    tmp = path.with_name(f"{path.name}.tmp")
+    tmp.write_text(json.dumps(doc, separators=(",", ":")), encoding="utf-8")
+    tmp.replace(path)
+
+
 def _real_date(value) -> str | None:
     """An ISO date, or None for a missing one. The broker sends 1970-01-01 for "none" (a name that
     pays no dividend), which read as a date would sit in every past span."""
@@ -132,11 +201,18 @@ async def fetch(session, todo: list[str], doc: dict) -> dict:
             if "429" in str(exc):
                 break
             continue
+        per_day: dict[str, dict] = {}
         for m, raw in rows:
             day, fields = reading(m)
             fields.update(calendar_fields(raw))
-            doc["days"].setdefault(day, {})[m.symbol.replace("/", ".")] = fields
+            sym = m.symbol.replace("/", ".")
+            doc["days"].setdefault(day, {})[sym] = fields
+            ivs = expiry_ivs(raw, datetime.fromisoformat(day).date())
+            if ivs:
+                per_day.setdefault(day, {})[sym] = ivs
             report["fetched"] += 1
+        for day, names in per_day.items():
+            save_expiry_ivs(day, names)
     return report
 
 
@@ -160,6 +236,8 @@ def main(argv=None) -> int:
     # less the names held illiquid: between sweeps their expiry count is not re-read (2026-10-07).
     skip = liquidity.skip()
     todo = [s for s in sorted({*symbols.all_symbols(), *liquidity.screener_names()}) if s not in skip]
+    # The earnings calendar's names, skip or not: its expected move needs every one (2026-10-17).
+    todo = list(dict.fromkeys([*todo, *calendar_names(latest_security_list())]))
     if args.symbols_file:
         from pathlib import Path
 

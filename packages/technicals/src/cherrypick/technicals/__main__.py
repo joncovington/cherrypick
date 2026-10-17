@@ -163,6 +163,33 @@ def cmd_score_screeners(args) -> int:
     return 0
 
 
+def cmd_earnings_calendar(args) -> int:
+    """The earnings calendar for a session (earnings_calendar.py): local data and the local Dolt only."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.core import calendar as cal
+
+    from . import earnings_calendar
+
+    if args.day:
+        day = args.day
+    else:
+        today = datetime.now(ZoneInfo("America/New_York")).date()
+        day = (today if cal.is_trading_day(today) else cal.previous_trading_day(today)).isoformat()
+    cfg = _config()
+    try:
+        result = earnings_calendar.build(day, cfg.get("dolt") or {}, cfg.get("earnings_calendar") or {})
+    except Exception as exc:  # noqa: BLE001 -- no Dolt is a failed run, reported, not a traceback
+        print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"}))
+        return 1
+    report = {"ok": True, **earnings_calendar.summary(result)}
+    if not args.dry_run:
+        report["written"] = str(earnings_calendar.write(result))
+    print(json.dumps(report, indent=1))
+    return 0
+
+
 def cmd_rotation(args) -> int:
     from . import rotation, symbols
 
@@ -530,6 +557,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     ss.add_argument("--rescore", action="store_true", help="score sessions already scored again")
     ss.set_defaults(fn=cmd_score_screeners)
+    ec = sub.add_parser(
+        "earnings-calendar", help="the next 30 days' announcements, as the earnings tab shows them"
+    )
+    ec.add_argument("--day", help="the session (YYYY-MM-DD); default today's, or the last one")
+    ec.add_argument("--dry-run", action="store_true", help="build and summarise, write nothing")
+    ec.set_defaults(fn=cmd_earnings_calendar)
     sr = sub.add_parser("score-rotation", help="score the rotation rule against every saved edition")
     sr.set_defaults(fn=cmd_score_rotation)
     br = sub.add_parser("breadth", help="daily leaders/laggards/net/bullish share over recent sessions")

@@ -45,6 +45,40 @@ def test_the_brokers_1970_placeholder_is_no_date():
     assert fir.calendar_fields({"dividend-ex-date": "1970-01-01"})["ex_dividend_date"] is None
 
 
+def test_expiry_ivs_keep_the_coming_ten_weeks_and_drop_the_expired_one():
+    """CB on 2026-10-16, as sent: the expiry dated that day still listed, at 3,745%."""
+    from datetime import date
+
+    raw = {
+        "option-expiration-implied-volatilities": [
+            {"expiration-date": "2026-10-16", "implied-volatility": "37.456593605"},
+            {"expiration-date": "2026-11-20", "implied-volatility": "0.228214815"},
+            {"expiration-date": "2026-12-18", "implied-volatility": "0.214303128"},
+            {"expiration-date": "2027-01-15", "implied-volatility": "0.22"},
+            {"expiration-date": "2026-11-27", "implied-volatility": None},
+        ]
+    }
+    assert fir.expiry_ivs(raw, date(2026, 10, 16)) == {"2026-11-20": 0.228215, "2026-12-18": 0.214303}
+
+
+def test_expiry_ivs_of_a_row_without_the_list_is_empty():
+    from datetime import date
+
+    assert fir.expiry_ivs({}, date(2026, 10, 16)) == {}
+
+
+def test_calendar_names_are_optionable_stocks_rated_very_or_somewhat_liquid():
+    rows = [
+        {"symbol": "CB", "type": "Stock", "hasOptions": True, "liquidityRank": 1},
+        {"symbol": "TSM", "type": "Depository Receipt", "hasOptions": True, "liquidityRank": 2},
+        {"symbol": "THIN", "type": "Stock", "hasOptions": True, "liquidityRank": 3},
+        {"symbol": "NOOPT", "type": "Stock", "hasOptions": False, "liquidityRank": 1},
+        {"symbol": "SPY", "type": "Exchange Traded Fund", "hasOptions": True, "liquidityRank": 1},
+        {"symbol": "UNRATED", "type": "Stock", "hasOptions": True, "liquidityRank": None},
+    ]
+    assert fir.calendar_names(rows) == ["CB", "TSM"]
+
+
 def test_a_name_with_no_earnings_block_records_nothing_rather_than_a_guess():
     assert fir.calendar_fields({}) == {
         "earnings_date": None,

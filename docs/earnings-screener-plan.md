@@ -1,7 +1,14 @@
 # Earnings screener plan
 
 Status: plan, 2026-10-16. Step 1 (history) done 2026-10-17: no edge after costs (below). Shipping
-anyway as an earnings calendar laid out like the vendor's (decided 2026-10-17). Steps 2-5 not built.
+anyway as an earnings calendar laid out like the vendor's (decided 2026-10-17).
+
+| Step | State (2026-10-17) |
+|---|---|
+| 2, the calendar builder (`technicals earnings-calendar`) | built, with its two nightly jobs |
+| 3, pricing | the expected move's per-expiration IVs built (the IV fetch keeps them); snapping and reading the suggested legs not yet |
+| 4, the console tab | built |
+| 5, the forward record | not yet |
 
 A nightly earnings calendar: every upcoming announcement, with the vendor's direction read,
 strength, IV rank and expected move. Strong reads also get the directional spread the vendor's
