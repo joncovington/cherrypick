@@ -126,6 +126,13 @@ describe("CapitalTiles", () => {
     expect(html).toContain("none declared");
   });
 
+  it("never names its net-over-largest-peak the performance slide's return on peak risk", () => {
+    // Two different ratios: Σ net / Σ session peaks there, whole net / largest peak here.
+    const html = text(<CapitalTiles c={cap()} />);
+    expect(html).toContain("net / largest peak");
+    expect(html.toLowerCase()).not.toContain(">return on peak risk<");
+  });
+
   it("names a withheld peak and draws it as a dash, never zero", () => {
     const html = text(
       <CapitalTiles

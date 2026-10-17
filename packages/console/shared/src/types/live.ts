@@ -37,7 +37,10 @@ export interface LiveRiskSession {
   /** Null when the book never carried risk (only risk-free structures) -- never a zero denominator. */
   peakRisk: number | null;
   peakAt: string | null;
-  peakSource: "recorded" | "replayed" | null;
+  /** `booked`: flies' own figure, recorded on the settled book (`fly_books.peak_risk`, actual fills).
+   *  `recorded`: the live loop's tick record (`fly_live_marks.open_margin`), for a session not yet
+   *  settled. `replayed`: this console's replay of the positions, where neither exists. */
+  peakSource: "booked" | "recorded" | "replayed" | null;
   /** net / peakRisk, only once nothing is left open (a running day's settled net is not its result). */
   onRisk: number | null;
   /** Nothing open or working: the day's settled net is final. */

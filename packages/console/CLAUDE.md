@@ -437,12 +437,18 @@ net per period, the intraday series and the broker account. Rules, stated on the
   gate's own figure, so a day that recycles its budget can exceed 100%. Never call it "max risk":
   that reads as the buying-power cap, which is a limit, not a use. One implementation,
   `readers/fliesPeakRisk.ts`, serves the Live page, the flies session tile ("daily peak risk") and
-  the flies performance slide (in place of return on capital, which flies cannot carry). The peak
-  is the live loop's recorded `fly_live_marks.open_margin` where one exists, else replayed from the
-  positions (`analytics/fliesPeakRisk.ts`) — equal to the recorded peak to the cent on all eight
-  live sessions that have both. A replay prices a position in its final state at its recorded
-  `floor_dollars`, never off its `fees`, which by then include settlement. Only finished sessions
-  that carried risk count, with the numerator matched to them.
+  the flies performance slide (in place of return on capital, which flies cannot carry). The peak,
+  in order (`peakSource`): `booked`, flies' own figure on the settled book (`fly_books.peak_risk`,
+  actual fills, the one `core.analysis` reads, so this and the analysis slide agree); `recorded`,
+  the live loop's `fly_live_marks.open_margin`, for a session not yet settled; `replayed` from the
+  positions (`analytics/fliesPeakRisk.ts`) where neither exists. The tick record is not the settled
+  figure: it can hold an entry's limit price before a better fill is reconciled, and an order
+  working at that tick that never filled, so it sat above the booked peak on 7 of 21 live sessions
+  (flies' `run.py backfill-peak-risk` names each). A replay prices a position in its final state
+  at its recorded `floor_dollars`, never off its `fees`, which by then include settlement. Only
+  finished sessions that carried risk count, with the numerator matched to them.
+- `hasColumn` memoises by file name, so a test ledger is a temp file, never `:memory:` (every
+  in-memory database shares one name, and a second would be answered with the first's schema).
 - The performance block carries both flies study tabs for the configured `live.arm`, never
   recomputed: the **completion** slide (`readFliesPerformance` in live mode, rendered through
   `PerformanceTab.tsx`'s own exported cards) and the **performance** slide's calibration reading
@@ -517,12 +523,14 @@ only the union of dimension keys for layout. Every number, the era and `thin` co
 over `GET /api/analysis/:module` (`routes/performance.ts` → `readers/analysis.ts` →
 `services/analysisBridge.ts` → `python -m cherrypick.core.analysis read`). Per arm: session and trade
 runs, drawdown episodes (high, low, new high; falling and recovering apart), the net without the top
-1/5/10% of winners, the reshuffle stress test, and capital: observed peak risk with return on it and
-max drawdown over it, and the declared allocation (`<home>/config/arm_capital.json`, read by core:
+1/5/10% of winners, the reshuffle stress test, and capital: observed peak risk with the net over it
+("net / largest peak") and max drawdown over it, and the declared allocation (`<home>/config/arm_capital.json`, read by core:
 the bridge passes `--module`, never the file). Bridged, never mirrored.
 
-- Flies records no per-trade capital, so its peak reads "unknown" with core's reason until flies
-  records its session peak. An undeclared allocation reads "none declared" with dashes, never zero;
+- "net / largest peak" is the whole net over the single largest peak. It is never labelled "return on
+  peak risk": that is the performance slide's Σ net / Σ session peaks, a per-day figure (live flies
+  control, 2026-10-16: -6.2% there, -96% here). A test keeps the two names apart.
+- Flies records each book's session peak at settlement (`fly_books.peak_risk`), which core reads. An undeclared allocation reads "none declared" with dashes, never zero;
   a refused allocation file is a page-level chip with core's reason, and the rest still renders.
 
 - It reads exactly what the performance slide reads: the same ledger per mode

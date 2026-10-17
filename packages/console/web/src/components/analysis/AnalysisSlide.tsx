@@ -71,7 +71,16 @@ export function CapitalTiles({ c }: { c: CapitalReading }) {
           n={p.capital_known}
           title={peakTitle}
         />
-        <Tile label="return on peak risk" value={pct(c.return_on_peak_risk)} tone={tone(c.return_on_peak_risk)} afterFees />
+        <Tile
+          label="net / largest peak"
+          value={pct(c.return_on_peak_risk)}
+          tone={tone(c.return_on_peak_risk)}
+          afterFees
+          title={
+            "the arm's whole net over the most it ever had at risk at once. Not the performance slide's " +
+            "\"return on peak risk\", which divides by every session's peak summed and so reads per day of risk"
+          }
+        />
         <Tile
           label="max drawdown / peak risk"
           value={pct(c.max_drawdown_over_peak_risk)}
