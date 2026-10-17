@@ -1,4 +1,12 @@
-import type { PerformanceModuleId, PnlCalendarResult, PnlDay, PnlTradesResult, TradingMode } from "@console/shared";
+import type {
+  PerformanceModuleId,
+  PnlCalendarResult,
+  PnlDay,
+  PnlExcursion,
+  PnlTradesResult,
+  TradingMode,
+} from "@console/shared";
+import { readExcursionAsync } from "../services/excursionBridge.js";
 import type { ConsoleConfig } from "../config.js";
 import { suiteEra } from "./db.js";
 import { LIVE_LEDGER, MODULE_ERA, MODULE_SCHEMA, moduleLedgerPath } from "./performance.js";
@@ -59,4 +67,17 @@ export async function readPnlTrades(
   if (dbPath === null) return { ...base, ok: false, trades: [], error: `${module} keeps no ${mode} ledger` };
   const res = await readModuleTradesAsync(dbPath, MODULE_SCHEMA[module], session, tag, MODULE_ERA[module] ?? null);
   return { ...base, ...res };
+}
+
+/** One position's excursion, from the ledger the calendar's trades came from
+ *  (`GET /api/calendar/excursion`). */
+export async function readPnlExcursion(
+  config: ConsoleConfig,
+  module: PerformanceModuleId,
+  positionId: string,
+  mode: TradingMode = "paper",
+): Promise<PnlExcursion> {
+  const dbPath = moduleLedgerPath(config, module, mode);
+  if (dbPath === null) return { ok: false, error: `${module} keeps no ${mode} ledger` };
+  return readExcursionAsync(dbPath, MODULE_SCHEMA[module], positionId);
 }

@@ -391,7 +391,12 @@ An arm in a day's detail opens to its trades (`GET /api/calendar/trades` → `re
 record read in core, so the rows sum to the cell. The table says "does not reconcile" if they ever
 do not, and that has never been seen (every arm-session of the last five sessions, paper and live,
 checked on 2026-10-17). The calendar and risk tabs follow the page's paper/live toggle; the arms
-tab is paper only and shows none.
+tab is paper only and shows none. A trade with a position id opens to its excursion
+(`GET /api/calendar/excursion` → `services/excursionBridge.ts` → `python -m cherrypick.core.excursions
+read`), a bridge: best and worst with their times, the exit, the basis named (a gross path and a net
+one are not the same line), and a "does not reconcile" chip if the leg-built endpoint ever misses
+the recorded gross. The older Performance MAE/MFE card still reads each module's own `excursions`
+verb (`services/excursionsBridge.ts`); the two agree wherever both price a tick.
 
 **Compare** (`/compare`, `lightbox/manifests/CompareLightbox.tsx`, `pages/Compare/`) — every arm of
 every module beside its control, over `GET /api/compare?scope=era|all` (`routes/compare.ts` →

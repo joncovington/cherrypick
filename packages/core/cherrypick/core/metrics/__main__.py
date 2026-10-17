@@ -98,6 +98,7 @@ def cmd_read(args) -> dict:
 
 #: What a `trades` row carries: the record's own fields, renamed nowhere.
 TRADE_KEYS = (
+    "position_id",
     "symbol",
     "strategy",
     "session",

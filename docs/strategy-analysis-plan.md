@@ -85,6 +85,16 @@ Plain code changes that land immediately.
   and `capital` is empty for flies and for older rows. Each module's config declares it per arm. Where
   it is missing, a stated fallback is used and every figure computed from it says so.
 - **Best and worst excursion per position**, with the time each happened, from the marks tables.
+  *Done 2026-10-17 as `core.excursions`:* a path per closed position on its module's own basis.
+  - bwb, calendars, pmcc and curve are built from legs, gross at mid, with an endpoint that equals the
+    recorded gross on all 292 closed positions.
+  - Earnings uses its recorded marks; its max and min equal its own stored ones on 259 of 259.
+  - Flies live uses its live marks, net of fees.
+  - MEIC, contango and flies paper keep no path, and say so.
+  - Where the modules' own `excursions` verbs price the same ticks, they agree with it exactly (pmcc
+    29/29, curve 4/4, calendars 54/54). Checking this found calendars' verb had never matched a leg,
+    so its MAE/MFE card had always been empty; fixed in the same PR. Folding those verbs onto
+    `core.excursions` is left for later.
 - **One blocked-entry vocabulary.** Each module's reject reasons map to shared categories (calendar
   gate, regime gate, credit or price floor, quote quality, capacity, data missing), keeping the
   module's own reason as the detail. bwb joins the console's attempts reader. Calendars' attempts gain
@@ -171,7 +181,8 @@ Cheap once Phases 0–3 exist.
   its exit rules and its attempt and decision trace. *Landed 2026-10-17 as Compare's calendar tab
   (`/compare/calendar`):* module and arm filters, over the suite window; a day drills to the arms
   that traded it, and (same day, later) an arm to its single trades in the money layout, and the
-  tab follows paper/live. Excursions and the attempt/decision trace are not there yet.
+  tab follows paper/live. A trade opens to its excursion (`core.excursions`). The attempt and
+  decision trace is not there yet.
   Building it found that the earnings ledger reader ignored start and end, so every console view of
   earnings had read its whole history; fixed in the same PR.
 - **Breakdown bars** by module, arm, symbol, weekday and hour.

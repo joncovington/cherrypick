@@ -33,6 +33,8 @@ export interface PnlCalendarResult {
  */
 export interface PnlTrade {
   tag: string;
+  /** The module's own position key (earnings' order id); null where the schema keys none (MEIC). */
+  position_id: string | null;
   symbol: string | null;
   strategy: string | null;
   session: string;
@@ -46,6 +48,30 @@ export interface PnlTrade {
   slippage: number | null;
   slippage_basis: string | null;
   net_pnl: number | null;
+}
+
+/**
+ * One position's excursion (`python -m cherrypick.core.excursions read`): its mark path from entry
+ * to exit and the best and worst point on it, in the `basis` its module records:
+ * `gross_at_mid` (built from legs; `reconciles` says whether the endpoint equals the recorded
+ * gross), `gross_as_recorded` (earnings) or `net_of_fees_as_recorded` (flies live, marks before
+ * settlement). `recorded: false` carries the reason a module keeps no path; never a guess.
+ */
+export interface PnlExcursion {
+  ok: boolean;
+  error?: string | null;
+  recorded?: boolean;
+  reason?: string;
+  basis?: "gross_at_mid" | "gross_as_recorded" | "net_of_fees_as_recorded";
+  ticks?: number;
+  refused_ticks?: number;
+  best?: { pnl: number; at: string } | null;
+  worst?: { pnl: number; at: string } | null;
+  /** [ISO time, pnl], thinned to a few hundred points with the ends and extremes kept. */
+  path?: Array<[string, number]>;
+  endpoint?: number | null;
+  gross?: number | null;
+  reconciles?: boolean | null;
 }
 
 /** `GET /api/calendar/trades`: one arm's trades on one session. */

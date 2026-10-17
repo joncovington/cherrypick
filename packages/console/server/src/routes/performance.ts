@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { ConsoleConfig } from "../config.js";
 import { MODULE_SCHEMA, readModulePerformance, type PerformanceModuleId } from "../readers/performance.js";
 import { readArmsRisk, readModuleAnalysis } from "../readers/analysis.js";
-import { readPnlCalendar, readPnlTrades } from "../readers/pnlCalendar.js";
+import { readPnlCalendar, readPnlExcursion, readPnlTrades } from "../readers/pnlCalendar.js";
 
 function isPerformanceModule(v: string): v is PerformanceModuleId {
   return Object.prototype.hasOwnProperty.call(MODULE_SCHEMA, v);
@@ -43,6 +43,24 @@ export function registerPerformanceRoutes(app: FastifyInstance, config: ConsoleC
       }
       const mode = req.query.mode === "live" ? "live" : "paper";
       return readPnlTrades(config, module, session, tag, mode);
+    },
+  );
+
+  // One closed position's excursion: a trade row in the calendar's drill.
+  app.get<{ Querystring: { module?: string; position?: string; mode?: string } }>(
+    "/api/calendar/excursion",
+    async (req, reply) => {
+      const { module, position } = req.query;
+      if (module === undefined || !isPerformanceModule(module)) {
+        reply.code(404);
+        return { ok: false, error: `unknown module ${JSON.stringify(module)}` };
+      }
+      if (!position) {
+        reply.code(400);
+        return { ok: false, error: "position is required" };
+      }
+      const mode = req.query.mode === "live" ? "live" : "paper";
+      return readPnlExcursion(config, module, position, mode);
     },
   );
 

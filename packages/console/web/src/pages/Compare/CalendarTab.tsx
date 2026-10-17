@@ -1,9 +1,10 @@
 import { Fragment, useState } from "react";
-import type { PnlCalendarResult, PnlDay, PnlTrade, TradingMode } from "@console/shared";
+import type { PnlCalendarResult, PnlDay, PnlExcursion, PnlTrade, TradingMode } from "@console/shared";
 import { Link } from "react-router-dom";
 import { Card } from "../../components/DataTable";
 import { fmtMoney } from "../../lib/format";
-import { usePnlCalendar, usePnlTrades } from "../../lib/api";
+import { usePnlCalendar, usePnlExcursion, usePnlTrades } from "../../lib/api";
+import { Spark } from "../../components/chart/Spark";
 import { useMode } from "../../lib/useMode";
 import { armOfTag } from "../../lib/armTag";
 import { useFeatures } from "../../lib/useFeatures";
@@ -148,6 +149,82 @@ export function stamp(t: string | null, session: string): string {
 
 const SLIPPAGE_MODEL: Record<string, string> = { in_gross: "in gross", cost: "cost" };
 
+const EXCURSION_BASIS: Record<string, string> = {
+  gross_at_mid: "gross at mid, built from the legs' marks",
+  gross_as_recorded: "gross, as the module records its marks",
+  net_of_fees_as_recorded: "net of fees as the live marks record it, before settlement; the exit is the trade's net",
+};
+
+/** `MM-DD HH:MM` of an ISO stamp. */
+function at(t: string | undefined): string {
+  return t === undefined ? "—" : `${t.slice(5, 10)} ${t.slice(11, 16)}`;
+}
+
+/**
+ * One position's excursion (core.excursions): the best and worst it stood between entry and exit,
+ * and when, on the basis its module records -- named, because a gross path and a net one are not
+ * the same line. A module that keeps no path says why; nothing is drawn in its place.
+ */
+export function ExcursionView({ x }: { x: PnlExcursion }) {
+  if (!x.ok) {
+    return (
+      <p className="muted" style={{ fontSize: 11 }}>
+        excursion could not be read — {x.error ?? "unknown"}
+      </p>
+    );
+  }
+  if (x.recorded !== true) {
+    return (
+      <p className="muted" style={{ fontSize: 11 }}>
+        no excursion — {x.reason ?? "not recorded"}
+      </p>
+    );
+  }
+  const values = (x.path ?? []).map(([, v]) => v);
+  const domain: [number, number] = [Math.min(0, ...values), Math.max(0, ...values)];
+  return (
+    <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap", fontSize: 11, padding: "0.3rem 0" }}>
+      <span>
+        best <span className="pnl-pos">{fmtMoney(x.best?.pnl ?? null)}</span> <span className="muted">{at(x.best?.at)}</span>
+      </span>
+      <span>
+        worst <span className="pnl-neg">{fmtMoney(x.worst?.pnl ?? null)}</span> <span className="muted">{at(x.worst?.at)}</span>
+      </span>
+      {x.endpoint !== undefined && x.endpoint !== null && (
+        <span>
+          exit {fmtMoney(x.endpoint)}
+          {x.reconciles === true && <span className="muted"> · equals the recorded gross</span>}
+          {x.reconciles === false && (
+            <span className="chip chip-warn" style={{ marginLeft: 6 }}>
+              does not reconcile with the recorded gross {fmtMoney(x.gross ?? null)}
+            </span>
+          )}
+        </span>
+      )}
+      <span style={{ width: 160, height: 26, display: "inline-block" }}>
+        <Spark values={values} domain={domain} title="mark P&L from entry to exit" />
+      </span>
+      <span className="muted">
+        {EXCURSION_BASIS[x.basis ?? ""] ?? x.basis} · {String(x.ticks ?? 0)} ticks
+        {(x.refused_ticks ?? 0) > 0 ? `, ${String(x.refused_ticks)} refused (a leg or shares unpriced)` : ""}
+      </span>
+    </div>
+  );
+}
+
+function TradeExcursion({ module, position, mode }: { module: string; position: string; mode: TradingMode }) {
+  const { data, isLoading, isError } = usePnlExcursion(module, position, mode);
+  if (isLoading) return <span className="skeleton skeleton-text" style={{ width: "40%" }} />;
+  if (isError || data === undefined) {
+    return (
+      <p className="muted" style={{ fontSize: 11 }}>
+        excursion could not be read
+      </p>
+    );
+  }
+  return <ExcursionView x={data} />;
+}
+
 /**
  * One arm's trades on one session, in the suite's money layout: gross, then each cost in its own
  * column, then net. Slippage names its model: `in gross` is already conceded in the fill and is shown
@@ -155,7 +232,19 @@ const SLIPPAGE_MODEL: Record<string, string> = { in_gross: "in gross", cost: "co
  * The rows come from the read behind the cell, so their nets sum to it; if they ever do not, the
  * table says so rather than showing two figures that cannot be reconciled.
  */
-export function TradesTable({ trades, cellNet }: { trades: PnlTrade[]; cellNet: number }) {
+export function TradesTable({
+  trades,
+  cellNet,
+  module,
+  mode = "paper",
+}: {
+  trades: PnlTrade[];
+  cellNet: number;
+  /** Where the trades came from; with it, a trade that carries a position id opens to its excursion. */
+  module?: string;
+  mode?: TradingMode;
+}) {
+  const [open, setOpen] = useState<number | null>(null);
   const nr = (v: number | null) => (v === null ? "n/r" : fmtMoney(v));
   const sum = trades.reduce((a, t) => a + (t.net_pnl ?? 0), 0);
   const reconciles = Math.abs(sum - cellNet) < 0.01;
@@ -178,8 +267,24 @@ export function TradesTable({ trades, cellNet }: { trades: PnlTrade[]; cellNet: 
           </thead>
           <tbody>
             {trades.map((t, i) => (
-              <tr key={`${t.entry_time ?? ""}-${String(i)}`}>
-                <td className="mono">{stamp(t.entry_time, t.session)}</td>
+              <Fragment key={`${t.entry_time ?? ""}-${String(i)}`}>
+                <tr>
+                  <td className="mono">
+                    {module !== undefined && t.position_id !== null ? (
+                      <button
+                        type="button"
+                        className="btn btn-quiet mono"
+                        style={{ padding: 0 }}
+                        aria-expanded={open === i}
+                        onClick={() => setOpen(open === i ? null : i)}
+                        title="how far this trade went for and against before it ended"
+                      >
+                        {open === i ? "▾" : "▸"} {stamp(t.entry_time, t.session)}
+                      </button>
+                    ) : (
+                      stamp(t.entry_time, t.session)
+                    )}
+                  </td>
                 <td className="mono">{stamp(t.exit_time, t.session)}</td>
                 <td>{t.symbol ?? "—"}</td>
                 <td>{t.strategy ?? "—"}</td>
@@ -195,7 +300,15 @@ export function TradesTable({ trades, cellNet }: { trades: PnlTrade[]; cellNet: 
                   )}
                 </td>
                 <td className={t.net_pnl === null ? undefined : tone(t.net_pnl)}>{nr(t.net_pnl)}</td>
-              </tr>
+                </tr>
+                {open === i && module !== undefined && t.position_id !== null && (
+                  <tr>
+                    <td colSpan={9}>
+                      <TradeExcursion module={module} position={t.position_id} mode={mode} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -222,7 +335,7 @@ function ArmTrades({ row, session, mode }: { row: PnlDay; session: string; mode:
       </p>
     );
   }
-  return <TradesTable trades={data.trades} cellNet={row.net} />;
+  return <TradesTable trades={data.trades} cellNet={row.net} module={row.module} mode={mode} />;
 }
 
 /** The arms that traded one session, largest move first; an arm opens to its trades. */

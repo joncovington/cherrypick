@@ -939,7 +939,13 @@ export type {
   ModulePerformanceResult,
 } from "@console/shared";
 import type { ModulePerformanceResult, PerformanceModuleId } from "@console/shared";
-import type { ArmsRiskResult, ModuleAnalysisResult, PnlCalendarResult, PnlTradesResult } from "@console/shared";
+import type {
+  ArmsRiskResult,
+  ModuleAnalysisResult,
+  PnlCalendarResult,
+  PnlExcursion,
+  PnlTradesResult,
+} from "@console/shared";
 
 /** Every arm's net per session, for the Compare page's calendar tab (`GET /api/calendar`). */
 export function usePnlCalendar(mode: TradingMode = "paper") {
@@ -960,6 +966,17 @@ export function usePnlTrades(module: string, session: string, tag: string, mode:
     queryFn: () => getJson<PnlTradesResult>(`/api/calendar/trades?${q.toString()}`),
     enabled,
     staleTime: 300_000,
+  });
+}
+
+/** One closed position's excursion (`GET /api/calendar/excursion`), fetched when its row is opened.
+ *  A closed position never changes, so it is never refetched. */
+export function usePnlExcursion(module: string, position: string, mode: TradingMode) {
+  const q = new URLSearchParams({ module, position, mode });
+  return useQuery<PnlExcursion>({
+    queryKey: ["pnl-excursion", module, position, mode],
+    queryFn: () => getJson<PnlExcursion>(`/api/calendar/excursion?${q.toString()}`),
+    staleTime: Infinity,
   });
 }
 
