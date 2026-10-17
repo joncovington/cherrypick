@@ -91,6 +91,8 @@ CATCHUP_MINUTES = {
     # Append-only: a late fetch still lands every event, only with a later first-seen time.
     "technicals-revisions": 12 * 60,
     "technicals-liquidity": 120,
+    # A rerun rebuilds the same session's list from the same files; its readers run at 18:50-19:10.
+    "technicals-securities": 120,
     # A rerun replaces the session's file, so a late one is the same calendar; the late pass covers
     # the rest of the evening.
     "technicals-earnings-calendar": 240,
@@ -1266,6 +1268,23 @@ def derive_jobs(
             trading_days_only=True,
             enabled=revisions_on,
             enabled_reason="" if revisions_on else "disabled in config (technicals.revisions)",
+        ),
+    )
+    add(
+        "technicals-securities",
+        lambda: JobSpec(
+            id="technicals-securities",
+            # A package command: the public security list from local files (Nasdaq Trader's directory
+            # and OCC's volume, both landed by market-files; dollar volume from the local Dolt), and
+            # the pointer naming which list -- it or the vendor's -- the evening's readers use. Runs
+            # whatever the vendor switch says: the public list is the fallback while the vendor is on.
+            argv=(pythonw, "-m", "cherrypick.technicals", "securities"),
+            kind=KIND_DAILY,
+            at_et=tc["securities_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-securities"],
+            trading_days_only=True,
+            enabled=tc_on,
+            enabled_reason="" if tc_on else "disabled in config (technicals), or no dolt sql-server to read",
         ),
     )
     add(

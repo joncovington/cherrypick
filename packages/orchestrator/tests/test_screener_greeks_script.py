@@ -318,6 +318,24 @@ def test_candidates_are_every_rank_1_name_with_options_on_the_side_its_read_impl
     assert fsg.candidate_plan("2026-10-01") == {}
 
 
+def test_candidates_follow_the_pointer_to_the_public_list_planned_on_both_sides(tmp_path, monkeypatch):
+    """With the vendor off, `technicals securities` names the public list current; it carries no
+    direction read, so a rank-1 name is planned on both sides."""
+    import json
+
+    for folder, sym in (("vendor-securities", "VEND"), ("securities", "PUBL")):
+        (tmp_path / folder).mkdir()
+        row = {"symbol": sym, "hasOptions": True, "liquidityRank": 1}
+        (tmp_path / folder / "2026-10-16.json").write_text(json.dumps({"rows": [row]}), encoding="utf-8")
+    pointer = {"source": "public", "day": "2026-10-16"}
+    (tmp_path / "securities" / "current.json").write_text(json.dumps(pointer), encoding="utf-8")
+    monkeypatch.setattr(fsg, "store_dir", lambda: tmp_path)
+    plan = fsg.candidate_plan("2026-10-16")
+    assert plan == {
+        "PUBL": {"edge": None, "rights": ["P", "C"], "securities": "2026-10-16", "source": "public"}
+    }
+
+
 def test_the_candidate_expiry_is_the_nearest_45_days_and_never_an_expired_one():
     exps = [("2026-10-16", 0), ("2026-11-20", 35), ("2026-11-27", 42), ("2026-12-18", 63)]
     assert fsg.nearest_dte(exps, 45) == ("2026-11-27", 42)

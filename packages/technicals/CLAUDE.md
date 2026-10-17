@@ -157,6 +157,16 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   index, a delta cap or floor, a one-SD move. Returns: mid ÷ share price, × 365 ÷ days (100% of
   short puts; ~98% of covered calls — the rest divide by price less mid, condition unknown).
   **Which names make each list is not here**; the spread list's selection is open.
+- **The security list** (`securities.py`, `securities`, 2026-10-17): every listed symbol's type
+  (Nasdaq Trader's directory), options (any OCC volume in 20 sessions) and a liquidity rank that is
+  **ours**: 2 at 200 contracts and $100M of stock a day, 1 at 2,000 and $300M. Against the
+  vendor's 2026-10-16 list: types 98.2%, options 96.7%, its rank-1-or-2 set at 78% precision and
+  78% recall — the vendor's rank is not volume alone, and these inputs get no closer. **Which list
+  readers get is `cherrypick.core.vendor`'s switch (`market_report.collector`)**: the vendor's while
+  it is on and at most four days old, else this one; `securities/current.json` names the choice
+  for the console, and `securities.latest` is every Python reader's door. Never read a security
+  list from its folder directly. The public list carries no direction read, so the screener greeks
+  plan covers both sides of its names.
 - **The earnings calendar** (`earnings_calendar.py`, `earnings-calendar`, 2026-10-17;
   docs/earnings-screener-plan.md): every announcement in the next 30 days, joined from local data
   and the local Dolt.
@@ -333,6 +343,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank (stored whole-market cut-offs) vs the vendor's. |
 | `python -m cherrypick.technicals score-signals` | Our six scan rules vs every saved scan list. |
 | `python -m cherrypick.technicals score-revisions` | The analyst-revision rule vs every saved board: agree, opposite, missed, not in source, extra. |
+| `python -m cherrypick.technicals securities [--session D]` | The public security list from local files, `securities/current.json` naming the list readers use, and the public list scored against the vendor's of that day where one is saved. |
 | `python -m cherrypick.technicals score-bearing` | The bearing lookup fitted on earlier security lists, scored on the latest. |
 | `python -m cherrypick.technicals score-screeners [--rescore]` | The income screens' expiry, strike and return rules vs every saved list with its broker chain; one file per session in `screeners/`, totals printed. |
 | `python -m cherrypick.technicals earnings-record [--today D] [--dry-run]` | The earnings calendar's forward record: each past announcement's move against the expected move (0.85 × straddle) the calendar showed the session before, whether a strong read called it, and the suggested spread's money on its marks; `earnings-calendar/record.json`, rebuilt whole. Reads the local Dolt. |

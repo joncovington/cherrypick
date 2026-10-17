@@ -14,8 +14,10 @@ locally -- never the broker, so this stays credential-free:
 - **direction and strength:** OURS (chosen 2026-10-17): Bearing and our 1-10 score from the store's
   bars (`our_reads`), shown, filtered on and used to pick the suggestion. The vendor's read and
   strength are kept on the row (`vendor_edge`, `vendor_strength`), never shown or used.
-- **who:** the security list the collector saves nightly (`vendor-securities/<day>.json`) for the
-  liquidity rank, optionable and type; Dolt's `stocks.symbol` for the company name; the market
+- **who:** the current security list (`securities.latest`: the vendor's while the collector is on
+  and its list is fresh, else the public one built from Nasdaq Trader and OCC, whose liquidity rank
+  is ours) for the liquidity rank, optionable and type, `inputs.security_source` saying which;
+  Dolt's `stocks.symbol` for the company name; the market
   report's sector map where it has the name, else Yahoo's (`scripts/fetch_sectors.py`), with
   `sector_source` saying which.
 - **IV rank:** the BROKER's (`iv/tastytrade.json`, the nightly IV-rank fetch), shown and used to
@@ -51,7 +53,7 @@ from pathlib import Path
 
 from cherrypick.core import calendar as cal
 
-from . import compass, paths
+from . import compass, paths, securities
 from . import land as _land
 
 WINDOW_DAYS = 30
@@ -369,10 +371,8 @@ def build(
     s = {**DEFAULTS, **(settings or {})}
     session = date.fromisoformat(day)
     end = session + timedelta(days=int(s["window_days"]))
-    root = paths.market_report_dir()
-    sec_path = _latest_file(root / "vendor-securities", day)
-    sec_doc = _read(sec_path)
-    sec = {r["symbol"]: r for r in sec_doc.get("rows") or [] if r.get("symbol")}
+    sec_rows, sec_pick = securities.latest(day)
+    sec = {r["symbol"]: r for r in sec_rows if r.get("symbol")}
     iv_path = _latest_file(paths.expiry_iv_dir(), day)
     iv_doc = _read(iv_path)
     expiry_ivs = iv_doc.get("names") or {}
@@ -462,7 +462,8 @@ def build(
         "window_days": int(s["window_days"]),
         "settings": s,
         "inputs": {
-            "security_list": sec_path.stem if sec_path else None,
+            "security_list": sec_pick["day"],
+            "security_source": sec_pick["source"],
             "expiry_iv": iv_path.stem if iv_path else None,
             "broker_dates": broker_at,
             "nasdaq_times": times_at,

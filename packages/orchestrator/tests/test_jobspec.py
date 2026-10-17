@@ -336,6 +336,7 @@ def test_derive_full_suite_job_table():
         "technicals-sectors",
         "technicals-revisions",
         "technicals-liquidity",
+        "technicals-securities",
         "technicals-earnings-calendar",
         "technicals-earnings-calendar-late",
         "technicals-earnings-record",
@@ -1030,6 +1031,22 @@ def test_the_collector_never_runs_without_its_generic_vendor_keys():
         for job_id in ("report-edition", "report-edition-retry", "report-charts"):
             assert by_id[job_id].enabled is False, job_id
             assert missing in by_id[job_id].enabled_reason
+
+
+def test_the_security_list_runs_after_its_files_and_before_its_first_reader():
+    """It reads the symbol directory the market-files run lands; the IV-rank fetch, the screener
+    greeks plan and the earnings calendar read the list it names current."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+
+    def minutes(at):
+        h, m = (int(x) for x in at.split(":"))
+        return h * 60 + m
+
+    job = by_id["technicals-securities"]
+    assert job.argv[-1] == "securities" and job.trading_days_only
+    assert minutes(job.at_et) > minutes(by_id["market-files"].at_et)
+    for reader in ("technicals-iv-rank", "report-screener-greeks", "technicals-earnings-calendar"):
+        assert minutes(job.at_et) < minutes(by_id[reader].at_et), reader
 
 
 def test_the_liquidity_verdict_runs_after_its_inputs_and_before_its_readers():
