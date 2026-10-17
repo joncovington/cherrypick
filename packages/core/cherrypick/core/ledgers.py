@@ -91,8 +91,10 @@ The trade fields (added 2026-10-16, for `core.analysis` and docs/strategy-analys
 
 A schema whose reader does not yet supply them simply has no such keys; a reader that supplies
 them reports None for a row that never recorded the value. A consumer reads them with `.get` and
-says which records lacked them, never treats an absent spot as no move. So far: fly_book (all
-four), meic_ic (the two times).
+says which records lacked them, never treats an absent spot as no move. Every schema now supplies
+them (2026-10-17): fly_book all four; meic_ic and earnings the two times (neither records an
+underlying price); dc_week, pmcc, curve_vx and bwb_132 all four, exit spot only for a position that
+settled at expiry; contango_etf all four, its "spot" being the held fund's own mid.
 
 `None` never means zero anywhere in here. A row written before an instrumentation column existed
 reports `slippage: None` and `capital: None`, because "not recorded" and "was zero" are different
@@ -117,9 +119,12 @@ and say how much is not (`capital_unknown`).
 from __future__ import annotations
 
 import sqlite3
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from cherrypick.core import db as core_db
+
+_ET = ZoneInfo("America/New_York")
 
 # Read-only connection, shared suite-wide. core.db.connect_ro percent-escapes the path, so
 # '?'/'#'/'%' in a directory name cannot silently change the URI's meaning.
@@ -192,6 +197,43 @@ def _opt(cols: set, name: str) -> str:
 def _get(r, name: str):
     """A row's column, or None when the reader did not select it (an older ledger)."""
     return r[name] if name in r.keys() else None
+
+
+#: The columns behind the trade fields (`entry_time`, `exit_time`, `entry_spot`, `exit_spot`; see
+#: the module docstring) for the multi-day schemas, which share one shape. `settlement_spot` is
+#: written only when a position settles at expiry, so an early close reads exit_spot None --
+#: unknown, never the entry spot or a guess. contango holds the fund itself, so its "spot" is the
+#: fund's own mid. flies, MEIC and earnings set theirs in their own readers.
+_SETTLED_SPOT_COLUMNS = {
+    "entry_time": "entry_time",
+    "exit_time": "closed_at",
+    "entry_spot": "entry_spot",
+    "exit_spot": "settlement_spot",
+}
+_TRADE_COLUMNS = {
+    "dc_week": _SETTLED_SPOT_COLUMNS,
+    "pmcc": _SETTLED_SPOT_COLUMNS,
+    "curve_vx": _SETTLED_SPOT_COLUMNS,
+    "bwb_132": _SETTLED_SPOT_COLUMNS,
+    "contango_etf": {
+        "entry_time": "entry_time",
+        "exit_time": "exit_time",
+        "entry_spot": "entry_mid",
+        "exit_spot": "exit_mid",
+    },
+}
+
+
+def _trade_select(conn, table: str, schema: str) -> str:
+    """The SELECT fragment for `schema`'s trade-field columns that `table` has (an older ledger
+    may lack some), aliased so they never collide with a column the reader already selects."""
+    cols = _table_cols(conn, table)
+    return "".join(f", {col} AS _tf_{field}" for field, col in _TRADE_COLUMNS[schema].items() if col in cols)
+
+
+def _trade_fields(r, schema: str) -> dict:
+    """The record's trade fields from a row selected with `_trade_select`; None where absent."""
+    return {field: _get(r, f"_tf_{field}") for field in _TRADE_COLUMNS[schema]}
 
 
 # --------------------------------------------------------------------------- per-schema readers
@@ -399,10 +441,25 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
             "max_profit": None,
             "session": session_from_epoch(r["closed_at"]),
             "entry_session": (session_from_epoch(r["opened_at"]) or None) if has_open else None,
+            # The trade fields: earnings stamps epoch seconds, read here as local ISO time (the
+            # same local day `session` is). It records no underlying price, so both spots are None.
+            "entry_time": _iso_from_epoch(r["opened_at"]) if has_open else None,
+            "exit_time": _iso_from_epoch(r["closed_at"]),
+            "entry_spot": None,
+            "exit_spot": None,
         }
         for r in rows
         if _in_bounds(session_from_epoch(r["closed_at"]), start, end)
     ]
+
+
+def _iso_from_epoch(value) -> str | None:
+    """Epoch seconds as an ET ISO timestamp with its offset, or None if absent or unreadable. ET,
+    not the machine's zone, because every other module stamps ET and the hour buckets read it so."""
+    try:
+        return datetime.fromtimestamp(float(value), _ET).isoformat(timespec="seconds")
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
 
 
 def _in_bounds(session: str, start: str | None, end: str | None) -> bool:
@@ -516,7 +573,8 @@ def _calendars_closed(conn, start: str | None = None, end: str | None = None) ->
     settle_col = _opt(_table_cols(conn, "dc_positions"), "settlement_fees")
     rows = conn.execute(
         f"SELECT symbol, arm, structure, gross_pnl, fees, entry_slippage, exit_slippage, "
-        f"entry_debit, quantity, closed_session{exp_col}{ent_col}{settle_col} FROM dc_positions "
+        f"entry_debit, quantity, closed_session{exp_col}{ent_col}{settle_col}"
+        f"{_trade_select(conn, 'dc_positions', 'dc_week')} FROM dc_positions "
         f"WHERE status = 'closed'{where}",
         params,
     ).fetchall()
@@ -554,6 +612,7 @@ def _calendars_closed(conn, start: str | None = None, end: str | None = None) ->
             "max_profit": None,
             "session": r["closed_session"] or "",
             "entry_session": r["entry_session"] if has_ent else None,
+            **_trade_fields(r, "dc_week"),
         }
         for r in rows
     ]
@@ -582,7 +641,8 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
     extra = "".join(_opt(cols, c) for c in ("settlement_fees", "entry_session", "entry_weekly_yield_pct"))
     rows = conn.execute(
         f"SELECT symbol, arm, gross_pnl, fees, entry_slippage, exit_slippage, "
-        f"net_debit, quantity, closed_session{exp_col}{era_col}{extra} "
+        f"net_debit, quantity, closed_session{exp_col}{era_col}{extra}"
+        f"{_trade_select(conn, 'pmcc_positions', 'pmcc')} "
         f"FROM pmcc_positions WHERE status = 'closed'{where}",
         params,
     ).fetchall()
@@ -619,6 +679,7 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
             "max_profit": None,
             "session": r["closed_session"] or "",
             "era": r["era"] if has_era else None,
+            **_trade_fields(r, "pmcc"),
         }
         for r in rows
     ]
@@ -658,7 +719,8 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
     settle_col = _opt(_table_cols(conn, "curve_positions"), "settlement_fees")
     rows = conn.execute(
         f"SELECT symbol, arm, gross_pnl, fees, entry_slippage, exit_slippage, "
-        f"entry_max_loss, entry_credit, quantity, closed_session{exp_col}{ent_col}{settle_col} "
+        f"entry_max_loss, entry_credit, quantity, closed_session{exp_col}{ent_col}{settle_col}"
+        f"{_trade_select(conn, 'curve_positions', 'curve_vx')} "
         f"FROM curve_positions "
         f"WHERE status = 'closed'{where}",
         params,
@@ -705,6 +767,7 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
             "max_profit": _max_profit(r),
             "session": r["closed_session"] or "",
             "entry_session": r["entry_session"] if has_ent else None,
+            **_trade_fields(r, "curve_vx"),
         }
         for r in rows
     ]
@@ -742,7 +805,8 @@ def _contango_closed(conn, start: str | None = None, end: str | None = None) -> 
     where, params = _session_where("exit_session", start, end)
     ent_col, has_ent = _entry_select(conn, "contango_positions")
     rows = conn.execute(
-        f"SELECT arm, symbol, shares, entry_mid, gross_pnl, fees, slippage, net_pnl, exit_session{ent_col} "
+        f"SELECT arm, symbol, shares, entry_mid, gross_pnl, fees, slippage, net_pnl, exit_session{ent_col}"
+        f"{_trade_select(conn, 'contango_positions', 'contango_etf')} "
         f"FROM contango_positions WHERE status = 'closed'{where}",
         params,
     ).fetchall()
@@ -766,6 +830,7 @@ def _contango_closed(conn, start: str | None = None, end: str | None = None) -> 
             "max_profit": None,
             "session": r["exit_session"] or "",
             "entry_session": r["entry_session"] if has_ent else None,
+            **_trade_fields(r, "contango_etf"),
         }
         for r in rows
     ]
@@ -811,7 +876,8 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
     extra = _opt(cols, "settlement_fees") + _opt(cols, "entry_credit")
     rows = conn.execute(
         f"SELECT symbol, arm, gross_pnl, fees, entry_max_loss, quantity, closed_session{exp_col}"
-        f"{ent_col}{slip_cols}{src_col}{extra} FROM bwb_positions WHERE status = 'closed'{where}",
+        f"{ent_col}{slip_cols}{src_col}{extra}{_trade_select(conn, 'bwb_positions', 'bwb_132')} "
+        f"FROM bwb_positions WHERE status = 'closed'{where}",
         params,
     ).fetchall()
 
@@ -860,6 +926,7 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
             "max_profit": None,
             "session": r["closed_session"] or "",
             "entry_session": r["entry_session"] if has_ent else None,
+            **_trade_fields(r, "bwb_132"),
         }
         for r in rows
     ]
