@@ -134,7 +134,7 @@ backfilled; and the vendor store carries no volume, so the regime rows' flow col
 
 Built: the config, the key verbs, the licence clock, purge, the backup skip, the fence, the store, the
 fetch (SPXW 0DTE, any cadence the profile cadence divides), regime rows, validation and the flies
-runner with its statistics.
+runner with its statistics, and the flow fetch (below); its test is not built yet.
 The console's Backtest page reads `python -m cherrypick.backtest read overview|run` (`readout.py`)
 and is **fail-closed**: shown only when the orchestrator's `features.backtest` is true
 (`orchestrator/backtestgate.py`: the operator's config enabled, the licence active, the key in the
@@ -146,3 +146,17 @@ queue by subprocess, turns each into a config-defined arm `advised:<name>-<id>` 
 with the overlay, the rule flies' paper loop uses, which flies' replay accepts), runs them over the
 DESIGN window only, and writes each result back. Each is a trial. Every run replays from its own
 snapshot of the flies config, kept beside its ledgers (`flies-config.json`).
+
+**The flow fetch** (`fetch-flow`, `flowfetch.py`; `docs/flow-signal-plan.md` step 1): each stock's
+day of option prints with the quote at each, grouped into orders by `flow.py` (pure, and the same
+rules the broker's nightly feed will import), every order of `flow.KEEP_PREMIUM` or more kept with
+its contract's open interest either side, and every order's premium in a per-day histogram for the
+top-share rule. Its own store, `flow.db`, in the marked licensed directory. A day waits as
+`awaiting_oi` until the next session's open interest is reported, and is fetched again whole.
+
+- **The rules are declared in the plan and never tuned here**: the condition sets, `ORDER_GAP_S`,
+  `READ_EDGE`, `CUTS`, `TOP_SHARE`, `OPEN_SHARE`. Changing one is changing the declared test.
+- **Most of a day's cost is not the vendor's network**: the library converts the reply row by row
+  in Python, and a liquid name's day is hundreds of thousands of prints, so the vendor's reply time
+  also varies widely between requests. The full design window across the universe does not fit in
+  nights; how it is thinned is decided before any outcome is read (the plan).

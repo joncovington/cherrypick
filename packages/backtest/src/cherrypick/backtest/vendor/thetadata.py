@@ -179,6 +179,44 @@ class ThetaDataClient:
             (str(r.right).upper(), float(r.strike)): int(r.open_interest) for r in df.itertuples(index=False)
         }
 
+    def open_interest_all(self, root: str, day: str) -> dict:
+        """Every expiry's open interest as the vendor reports it on `day`'s morning (the previous
+        session's closing figure): {(expiration, right, strike): contracts}."""
+        df = self._call(
+            "option_history_open_interest", symbol=root, expiration="*", date=date.fromisoformat(day)
+        )
+        return {
+            (str(r.expiration)[:10], str(r.right).upper(), float(r.strike)): int(r.open_interest)
+            for r in df.itertuples(index=False)
+        }
+
+    def trades(self, root: str, day: str) -> list[dict]:
+        """Every option print of `root` on `day`, every expiry, regular hours, each with the quote
+        standing when it printed: {expiration, strike, right, ts_ms, size, price, bid, ask,
+        condition}. A whole liquid name's day is one request of seconds (2026-10-17)."""
+        df = self._call(
+            "option_history_trade_quote",
+            symbol=root,
+            expiration="*",
+            date=date.fromisoformat(day),
+            start_time="09:30:00",
+            end_time="16:00:00",
+        )
+        return [
+            {
+                "expiration": str(r.expiration)[:10],
+                "strike": float(r.strike),
+                "right": str(r.right).upper(),
+                "ts_ms": int(r.trade_timestamp.timestamp() * 1000),
+                "size": int(r.size),
+                "price": _num(r.price),
+                "bid": _num(r.bid),
+                "ask": _num(r.ask),
+                "condition": int(r.condition),
+            }
+            for r in df.itertuples(index=False)
+        ]
+
     def index_closes(self, symbol: str, start: str, end: str) -> dict:
         """Closes in [start, end], asked for in windows under the vendor's 365-day limit. A window
         the account's index tier refuses is skipped, not fatal: the caller falls back per session."""
