@@ -47,6 +47,15 @@ def cmd_liquidity(_args) -> int:
     return 0
 
 
+def cmd_securities(args) -> int:
+    """The public security list and the pointer naming the current one (securities.py)."""
+    from . import securities
+
+    report = securities.build(_config().get("dolt") or {}, args.session)
+    print(json.dumps(report, indent=1))
+    return 0 if report.get("ok") else 1
+
+
 def cmd_status(_args) -> int:
     conn = store.connect()
     row = conn.execute(
@@ -551,6 +560,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser(
         "liquidity", help="judge every name liquid or not (local data); the illiquid are skipped and hidden"
     ).set_defaults(fn=cmd_liquidity)
+    se = sub.add_parser(
+        "securities",
+        help="the public security list (local files), and which list -- it or the vendor's -- is current",
+    )
+    se.add_argument("--session", help="the session to build for (default today)")
+    se.set_defaults(fn=cmd_securities)
     ba = sub.add_parser("bars")
     ba.add_argument("symbol")
     ba.add_argument("--raw", action="store_true")

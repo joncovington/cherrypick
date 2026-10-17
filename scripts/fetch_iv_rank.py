@@ -155,14 +155,11 @@ def calendar_names(rows: list[dict]) -> list[str]:
 
 
 def latest_security_list() -> list[dict]:
-    """The rows of the newest saved security list, or none."""
-    files = sorted((paths.market_report_dir() / "vendor-securities").glob("????-??-??.json"))
-    if not files:
-        return []
-    try:
-        return json.loads(files[-1].read_text(encoding="utf-8")).get("rows") or []
-    except (OSError, ValueError):
-        return []
+    """The rows of the current security list (the vendor's while it is on, else the public one;
+    `technicals.securities`), or none."""
+    from cherrypick.technicals import securities
+
+    return securities.latest()[0]
 
 
 def save_expiry_ivs(day: str, names: dict[str, dict]) -> None:

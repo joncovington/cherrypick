@@ -10,8 +10,9 @@
  *   regular hours the session after the list -- the bars are applied there, not here;
  * - our options-tradable verdict (`market-report/liquidity/verdicts.json`);
  * - the broker's expected report date (`market-report/iv/tastytrade.json`), else the list's own;
- * - each symbol's security type (`market-report/vendor-securities/<day>.json`), so a fund -- which
- *   never announces -- reads `none` rather than an unknown date.
+ * - each symbol's security type from the current security list (`market-report/securities/current.json`
+ *   names it: the vendor's or the public one), so a fund -- which never announces -- reads `none`
+ *   rather than an unknown date.
  *
  * Two things ARE worked out here, both the user's calendar rather than a measurement: the cycle
  * expiry (the standard monthly 45-60 days out, else 30-60, as `fetch_screener_greeks.cycle_expiry`
@@ -197,16 +198,27 @@ function brokerEarnings(root: string, day: string): Map<string, { date: string |
 /** Types that never hold an earnings announcement. Stocks and depository receipts do. */
 const FUND_TYPES = new Set(["Exchange Traded Fund", "Exchange Traded Commodity", "Fund", "Index"]);
 
-/** Each symbol's security type from the latest security list on or before `day` (else the earliest). */
+function listDays(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir).filter((n) => /^\d{4}-\d{2}-\d{2}\.json$/.test(n)).sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Each symbol's security type from the latest security list on or before `day` (else the earliest).
+ * Which list -- the vendor's or the public one -- is `technicals securities`' decision, named in
+ * `securities/current.json`; this follows it and never re-decides. No pointer, or nothing in the
+ * list it names, reads the other.
+ */
 function securityTypes(root: string, day: string): Map<string, string> {
   const out = new Map<string, string>();
-  const dir = path.join(root, "vendor-securities");
-  let names: string[] = [];
-  try {
-    names = fs.readdirSync(dir).filter((n) => /^\d{4}-\d{2}-\d{2}\.json$/.test(n)).sort();
-  } catch {
-    return out;
-  }
+  const source = str(rec(readJson(path.join(root, "securities", "current.json")))["source"]);
+  const order = source === "public" ? ["securities", "vendor-securities"] : ["vendor-securities", "securities"];
+  const found = order.map((d) => ({ dir: path.join(root, d), names: listDays(path.join(root, d)) })).find((x) => x.names.length > 0);
+  if (found === undefined) return out;
+  const { dir, names } = found;
   const pick = names.filter((n) => n.slice(0, 10) <= day).pop() ?? names[0];
   if (pick === undefined) return out;
   for (const raw of list(readJson(path.join(dir, pick))?.["rows"])) {

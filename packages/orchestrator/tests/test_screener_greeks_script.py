@@ -300,8 +300,15 @@ def test_a_recorded_day_without_its_candidates_records_them_alone(tmp_path, monk
 def test_candidates_are_every_rank_1_name_with_options_on_the_side_its_read_implies(tmp_path, monkeypatch):
     import json
 
-    d = tmp_path / "vendor-securities"
-    d.mkdir()
+    home = tmp_path / "home"
+    monkeypatch.setenv("CHERRYPICK_HOME", str(home))
+    home.mkdir()
+    vendor_on = {
+        "market_report": {"collector": True, "vendor_dashboard_url": "x", "vendor_edition_title": "y"}
+    }
+    (home / "config.json").write_text(json.dumps(vendor_on), encoding="utf-8")
+    d = home / "data" / "market-report" / "vendor-securities"
+    d.mkdir(parents=True)
     rows = [
         {"symbol": "BULL", "hasOptions": True, "liquidityRank": 1, "directionalEdge": "bp"},
         {"symbol": "BEAR", "hasOptions": True, "liquidityRank": 1, "directionalEdge": "sbe"},
@@ -311,7 +318,6 @@ def test_candidates_are_every_rank_1_name_with_options_on_the_side_its_read_impl
     ]
     (d / "2026-10-16.json").write_text(json.dumps({"rows": rows}), encoding="utf-8")
     (d / "2026-10-20.json").write_text(json.dumps({"rows": []}), encoding="utf-8")  # after the day: unused
-    monkeypatch.setattr(fsg, "store_dir", lambda: tmp_path)
     plan = fsg.candidate_plan("2026-10-19")
     assert {s: p["rights"] for s, p in plan.items()} == {"BULL": ["P"], "BEAR": ["C"], "FLAT": ["P", "C"]}
     assert plan["BULL"]["securities"] == "2026-10-16"

@@ -134,20 +134,21 @@ def strike_window(listed: list[float], chosen: set[float], width: int = WINDOW) 
 
 
 def candidate_plan(day: str) -> dict[str, dict]:
-    """{symbol: {edge, rights}} from the latest security list on or before `day`: every name with
-    options and liquidity rank 1, the side(s) its direction read implies. Empty with no list."""
-    root = store_dir() / "vendor-securities"
-    files = sorted(f for f in root.glob("????-??-??.json") if f.stem <= day) if root.is_dir() else []
-    if not files:
-        return {}
+    """{symbol: {edge, rights}} from the current security list for `day` (`technicals.securities`):
+    every name with options and liquidity rank 1, the side(s) its direction read implies. The
+    public list carries no direction read, so its names are planned on both sides. Empty with no
+    list."""
+    from cherrypick.technicals import securities
+
+    rows, pick = securities.latest(day)
     plan: dict[str, dict] = {}
-    for r in json.loads(files[-1].read_text(encoding="utf-8")).get("rows") or []:
+    for r in rows:
         sym = r.get("symbol")
         if not isinstance(sym, str) or not r.get("hasOptions") or r.get("liquidityRank") != 1:
             continue
         edge = r.get("directionalEdge")
         rights = ["P"] if edge in BULL_READS else ["C"] if edge in BEAR_READS else ["P", "C"]
-        plan[sym] = {"edge": edge, "rights": rights, "securities": files[-1].stem}
+        plan[sym] = {"edge": edge, "rights": rights, "securities": pick["day"], "source": pick["source"]}
     return plan
 
 

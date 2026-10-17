@@ -18,6 +18,17 @@ from cherrypick.technicals import paths
 BMO, AMC = ec.BMO, ec.AMC
 
 
+@pytest.fixture(autouse=True)
+def vendor_on():
+    """These cases were met on the vendor's list, so the vendor is switched on for them: the suite
+    config the collector reads, in the test's own home."""
+    from cherrypick.core import home
+
+    cfg = {"market_report": {"collector": True, "vendor_dashboard_url": "x", "vendor_edition_title": "y"}}
+    home.config_path().parent.mkdir(parents=True, exist_ok=True)
+    home.config_path().write_text(json.dumps(cfg), encoding="utf-8")
+
+
 def test_company_names_lose_the_share_class_boilerplate():
     assert ec.company("Netflix, Inc. - Common Stock") == "Netflix, Inc."
     assert ec.company("Chubb Limited  Common Stock") == "Chubb Limited"
@@ -297,3 +308,4 @@ def test_build_joins_the_sources_into_one_row_per_announcement():
     assert rows["SAP"]["region"] == "intl" and rows["SAP"]["sd_move"] is None  # no IVs held for it
     assert rows["SAP"]["edge"] is None  # we hold no bars for it, so it has no read
     assert out["inputs"]["security_list"] == "2026-10-16" and out["inputs"]["expiry_iv"] == "2026-10-16"
+    assert out["inputs"]["security_source"] == "vendor"

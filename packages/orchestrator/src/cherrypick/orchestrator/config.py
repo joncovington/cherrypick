@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import home as _home
+from cherrypick.core import vendor as _vendor
 
 from .util import read_json
 
@@ -502,6 +503,10 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # local data only). After the IV-rank fetch it judges from, before the 19:00 screener greeks
         # run that reads it; every broker-spending job skips the names it holds illiquid.
         "liquidity_at": tc.get("liquidity_at", "18:57"),
+        # `securities_at`: the public security list and the current-list pointer (`python -m
+        # cherrypick.technicals securities`, local files only). After the 18:45 market-files run
+        # lands the symbol directory, before the 18:50 IV-rank fetch, its first reader.
+        "securities_at": tc.get("securities_at", "18:48"),
         # `screeners_at`: score the income screens' rules on every saved list with its broker chain
         # (`python -m cherrypick.technicals score-screeners`, local files only). Morning, so the
         # previous evening's late greeks run (23:30) has landed.
@@ -525,8 +530,9 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# The generic keys the vendor-edition collector cannot run without (market_report_settings).
-VENDOR_COLLECTOR_KEYS = ("vendor_dashboard_url", "vendor_edition_title")
+# The generic keys the vendor-edition collector cannot run without (market_report_settings). The
+# rule is `cherrypick.core.vendor`'s, shared with every reader that prefers a vendor file.
+VENDOR_COLLECTOR_KEYS = _vendor.VENDOR_COLLECTOR_KEYS
 
 
 def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -561,9 +567,9 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     # address and its report's title are generic keys a person sets. Switched on without both, the
     # collector is still off -- `collector_missing` names what is absent.
     vendor = {key: mr.get(key) for key in VENDOR_COLLECTOR_KEYS}
-    missing = [key for key, value in vendor.items() if not (isinstance(value, str) and value.strip())]
+    missing = _vendor.collector_missing(mr)
     return {
-        "collector": bool(mr.get("collector", False)) and not missing,
+        "collector": _vendor.collector_on(cfg),
         "collector_switch": bool(mr.get("collector", False)),
         "collector_missing": missing,
         **vendor,

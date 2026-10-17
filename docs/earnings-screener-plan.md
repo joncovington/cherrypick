@@ -60,7 +60,9 @@ This is neither of the vendor's versions:
 History still prices the vendor's two as comparisons (step 1).
 
 Direction read and liquidity rank come from the security list the collector already saves nightly
-(`vendor-securities/<day>.json`: `directionalEdge` `sb`/`sbe`, `liquidityRank`, `ivRank`). Bearing
+(`vendor-securities/<day>.json`: `directionalEdge` `sb`/`sbe`, `liquidityRank`, `ivRank`). Since
+2026-10-17 the calendar reads whichever list `technicals securities` names current: the vendor's
+while the collector is on, else a public one whose liquidity rank is ours (see packages/technicals). Bearing
 (`packages/technicals` `compass.py`) names the strong states 95% / 99% of the time from the list's
 own inputs. Those inputs rebuild from our bars, so history needn't depend on the captured lists,
 but the full chain from bars to label still has to be measured (gap 4).

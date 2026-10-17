@@ -40,6 +40,23 @@ def market_report_dir() -> Path:
     return _home.data_dir("market-report")
 
 
+def market_files_dir() -> Path:
+    """The morning pack's daily files (scripts/fetch_market_files.py): OCC's option volume and
+    Nasdaq Trader's symbol directory among them. Read-only here."""
+    return _home.data_dir("market-files")
+
+
+def securities_dir() -> Path:
+    """The public security list this package builds (`securities.py`), and the pointer naming which
+    list -- public or the vendor's -- is current."""
+    return market_report_dir() / "securities"
+
+
+def vendor_securities_dir() -> Path:
+    """The vendor's nightly security list, saved by the collector. Read-only here."""
+    return market_report_dir() / "vendor-securities"
+
+
 def tastytrade_dividends() -> Path:
     """Tastytrade's dividend history, written by scripts/fetch_dividends.py. Read-only here."""
     return market_report_dir() / "dividends" / "tastytrade.json"

@@ -115,6 +115,16 @@ describe("readScreener", () => {
     expect(rows["AAA"]!.listedLegs[0]).toMatchObject({ strike: 98, openInterest: 3, passes: false });
   });
 
+  it("reads fund types from the list the pointer names current, the public one once the vendor is off", () => {
+    // The public list says ETF is a stock; with the pointer naming it, ETF loses its `none`.
+    write("market-report/securities/2026-10-14.json", { rows: [{ symbol: "ETF", type: "Stock" }] });
+    write("market-report/securities/current.json", { source: "vendor", day: "2026-10-07" });
+    const fund = (): string => Object.fromEntries(readScreener(config, "short-puts").rows.map((r) => [r.symbol, r]))["ETF"]!.earnings;
+    expect(fund()).toBe("none");
+    write("market-report/securities/current.json", { source: "public", day: "2026-10-14" });
+    expect(fund()).not.toBe("none");
+  });
+
   it("judges earnings against the trade's expiry: the later of listed and cycle until a reading says which", () => {
     // The list's 11/27 weekly spans an 11/24 report that the 11/20 cycle monthly ends before.
     write("market-report/vendor-screeners/2026-10-16/credit-spreads.json", {
