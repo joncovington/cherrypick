@@ -244,6 +244,18 @@ a.chip:hover {
   border-color: color-mix(in srgb, var(--neg) 40%, transparent);
 }
 
+/* A spread's kind, debit or credit: two categories that are neither good nor bad, so not .chip-ok's
+   green or .chip-bad's red. The palette's special pair -- "emphasis, never a verdict", told apart. */
+.chip-credit {
+  color: var(--chart-special);
+  border-color: color-mix(in srgb, var(--chart-special) 45%, transparent);
+}
+
+.chip-debit {
+  color: var(--chart-special-2);
+  border-color: color-mix(in srgb, var(--chart-special-2) 45%, transparent);
+}
+
 .chip-warn {
   color: var(--warn);
   border-color: color-mix(in srgb, var(--warn) 40%, transparent);

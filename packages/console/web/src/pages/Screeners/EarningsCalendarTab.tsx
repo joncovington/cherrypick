@@ -137,8 +137,10 @@ function StrengthCell({ v }: { v: number | null }) {
   );
 }
 
+/** The broker's own rule for an earnings move: 0.85 × the at-the-money straddle on the first expiry
+ *  after the reaction, shown as "6.5% (±$23.40)". One standard deviation is in the tooltip. */
 function MoveCell({ r }: { r: EarningsCalendarRow }) {
-  if (r.sdMovePct === null) {
+  if (r.emMovePct === null || r.emMove === null) {
     return (
       <td className="muted num" title="No implied vol held for this name's event expiry">
         —
@@ -146,11 +148,12 @@ function MoveCell({ r }: { r: EarningsCalendarRow }) {
     );
   }
   const title =
-    `One standard deviation to ${r.eventExpiry} (IV ${r.eventIv === null ? "—" : (100 * r.eventIv).toFixed(1)}%): ±$${money(r.sdMove)}. ` +
-    `The suite's expected move (0.85 × the straddle, about two thirds of that): ±$${money(r.emMove)}.`;
+    `Expected move to ${r.eventExpiry}: 0.85 × the at-the-money straddle (the broker's rule for an earnings move), ` +
+    `the straddle read off that expiry's IV of ${r.eventIv === null ? "—" : (100 * r.eventIv).toFixed(1)}%. ` +
+    `One standard deviation is ±$${money(r.sdMove)} (${r.sdMovePct === null ? "—" : r.sdMovePct.toFixed(1)}%), about 1.5 times this.`;
   return (
     <td className="num" title={title}>
-      ±{r.sdMovePct.toFixed(1)}%
+      {r.emMovePct.toFixed(1)}% <span className="muted">(±${money(r.emMove)})</span>
     </td>
   );
 }
@@ -183,7 +186,7 @@ function TradeCell({ t }: { t: EarningsTrade }) {
       </span>{" "}
       <span className="muted">{shortDate(t.expiry)}</span> <span className="num">{price}</span>
       <br />
-      <span className={t.kind === "credit" ? "chip" : "chip chip-ok"}>
+      <span className={t.kind === "credit" ? "chip chip-credit" : "chip chip-debit"}>
         {t.kind} {right}
       </span>
       {t.shareOfWidth !== null && <span className="muted"> {(100 * t.shareOfWidth).toFixed(0)}% of width</span>}
@@ -224,7 +227,7 @@ function SpreadCell({
   if (t !== null) return <TradeCell t={t} />;
   const right = s.right === "C" ? "call" : "put";
   const kindChip = (
-    <span className={s.kind === "credit" ? "chip" : "chip chip-ok"}>
+    <span className={s.kind === "credit" ? "chip chip-credit" : "chip chip-debit"}>
       {s.kind} {right}
     </span>
   );
@@ -442,8 +445,8 @@ export function EarningsCalendarTab() {
                 <th>Strength</th>
                 <th className="num">IV rank</th>
                 <th className="num">Last price</th>
-                <th className="num" title="One standard deviation to the first expiry after the reaction">
-                  Exp. move (±1 SD)
+                <th className="num" title="0.85 × the at-the-money straddle on the first expiry after the reaction: the broker's rule for an earnings move">
+                  Exp. move
                 </th>
                 <th>Sector</th>
                 <th title="The earnings-navigator spread for strong reads: debit under the IV-rank cut, credit over it">Spread</th>

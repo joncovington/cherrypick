@@ -85,8 +85,10 @@ export interface EarningsCalendarRow {
   /** One standard deviation to the event expiry, in dollars and as a share of the price (%). */
   sdMove: number | null;
   sdMovePct: number | null;
-  /** The suite's expected move (0.85 x the straddle, ~0.68 SD), in dollars. */
+  /** The expected move the tab shows: the broker's earnings rule, 0.85 x the ATM straddle (~0.68
+   *  SD), in dollars and as a share of the price (%). */
   emMove: number | null;
+  emMovePct: number | null;
   suggestion: EarningsSuggestion | null;
   /** The suggestion on listed strikes and its regular-hours reading; null until one is taken. */
   trade: EarningsTrade | null;
@@ -132,9 +134,9 @@ export interface EarningsRecordRow {
   liquidityRank: number | null;
   region: "US" | "intl" | null;
   movePct: number | null;
-  sdMovePct: number | null;
-  moveOverSd: number | null;
-  insideSd: boolean | null;
+  emMovePct: number | null;
+  moveOverEm: number | null;
+  insideEm: boolean | null;
   directionRight: boolean | null;
   spread: EarningsRecordSpread | null;
 }
@@ -152,8 +154,8 @@ export interface EarningsRecordPayload {
   summary: {
     announcements: number;
     measured: number;
-    insideSd: number | null;
-    medianMoveOverSd: number | null;
+    insideEm: number | null;
+    medianMoveOverEm: number | null;
     strongReads: number;
     directionRight: number | null;
     react: EarningsRecordTotals;

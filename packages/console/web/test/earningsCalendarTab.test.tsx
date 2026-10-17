@@ -39,6 +39,7 @@ function row(over: Partial<EarningsCalendarRow>): EarningsCalendarRow {
     sdMove: 7,
     sdMovePct: 7,
     emMove: 4.75,
+    emMovePct: 4.75,
     suggestion: { kind: "credit", right: "P", short: 100, long: 95.25, expiry: "2026-11-20" },
     trade: null,
     listed: null,
@@ -106,12 +107,12 @@ describe("the earnings tab", () => {
     expect(html).toMatch(/Wednesday, Oct 21<\/strong> <span class="chip">2</);
   });
 
-  it("an unknown time is a dash, an estimated time and date say so, the move is one SD", () => {
+  it("an unknown time is a dash, an estimated time and date say so, the move is the broker's", () => {
     const html = render("/screeners/earnings?day=2026-10-15");
     expect(html).toContain("No source gives the time of day");
     expect(html).toMatch(/title="Not confirmed: no source gives this date's time[^"]*">BMO est\.</);
     expect(html).toContain(">est.<");
-    expect(html).toContain("±7.0%");
+    expect(html).toContain("4.8% <span class=\"muted\">(±$4.75)</span>");
   });
 
   it("a spread read as thin is hidden by default, one read as liquid shows its listed strikes and price", () => {

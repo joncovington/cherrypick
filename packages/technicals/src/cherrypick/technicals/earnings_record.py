@@ -5,9 +5,10 @@ this is the record that would show if that changes, built from what the calendar
 and what happened after -- local data only:
 
 - **what was shown:** the calendar built the session BEFORE the report (`earnings-calendar/<day>.json`,
-  the newest with a session earlier than the report date): direction, time of day, the one-SD move.
+  the newest with a session earlier than the report date): direction, time of day, the expected
+  move (the broker's 0.85 x straddle; one SD beside it).
 - **the move:** the reaction-day close against the previous session's close, from the local Dolt
-  clone's daily bars; its size over the one-SD move, and whether it stayed inside it. A row whose
+  clone's daily bars; its size over the expected move, and whether it stayed inside it. A row whose
   time of day was unknown is measured on the later reaction day (after the close) and says so.
 - **the direction:** for a strong read, whether the reaction went its way.
 - **the spread:** priced in `fetch_screener_greeks.py measure`'s last reading on the entry session
@@ -160,7 +161,9 @@ def build(today: date, cfg: dict | None = None, closes_fn=None) -> dict:
         before = cal.previous_trading_day(react).isoformat()
         c0, c1 = px.get((sym, before)), px.get((sym, react.isoformat()))
         move = round(c1 - c0, 4) if c0 is not None and c1 is not None else None
-        sd = r.get("sd_move")
+        # Judged against the expected move the calendar showed: the broker's earnings rule, 0.85 x
+        # the ATM straddle (`em_move`). One SD is kept beside it.
+        em = r.get("em_move")
         out = {
             "symbol": sym,
             "company": r.get("company"),
@@ -177,10 +180,12 @@ def build(today: date, cfg: dict | None = None, closes_fn=None) -> dict:
             "close_after": c1,
             "move": move,
             "move_pct": round(100 * move / c0, 2) if move is not None and c0 else None,
-            "sd_move": sd,
+            "em_move": em,
+            "em_move_pct": r.get("em_move_pct"),
+            "sd_move": r.get("sd_move"),
             "sd_move_pct": r.get("sd_move_pct"),
-            "move_over_sd": round(abs(move) / sd, 3) if move is not None and sd else None,
-            "inside_sd": (abs(move) <= sd) if move is not None and sd else None,
+            "move_over_em": round(abs(move) / em, 3) if move is not None and em else None,
+            "inside_em": (abs(move) <= em) if move is not None and em else None,
             "direction_right": None,
             "spread": None,
         }
@@ -242,13 +247,13 @@ def _spread(greeks: Path, sym: str, report: str, r: dict) -> dict | None:
 
 
 def summary(rows: list[dict]) -> dict:
-    moved = [r for r in rows if r["move_over_sd"] is not None]
+    moved = [r for r in rows if r["move_over_em"] is not None]
     strong = [r for r in rows if r["direction_right"] is not None]
     out = {
         "announcements": len(rows),
         "measured": len(moved),
-        "inside_sd": round(sum(1 for r in moved if r["inside_sd"]) / len(moved), 3) if moved else None,
-        "median_move_over_sd": sorted(r["move_over_sd"] for r in moved)[len(moved) // 2] if moved else None,
+        "inside_em": round(sum(1 for r in moved if r["inside_em"]) / len(moved), 3) if moved else None,
+        "median_move_over_em": sorted(r["move_over_em"] for r in moved)[len(moved) // 2] if moved else None,
         "strong_reads": len(strong),
         "direction_right": round(sum(1 for r in strong if r["direction_right"]) / len(strong), 3)
         if strong

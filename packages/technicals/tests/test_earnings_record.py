@@ -34,6 +34,8 @@ ROW = {
     "region": "US",
     "sd_move": 8.0,
     "sd_move_pct": 11.0,
+    "em_move": 5.6,
+    "em_move_pct": 8.0,
     "suggestion": {"kind": "credit", "right": "C", "short": 70.5, "long": 76.2, "expiry": "2026-11-20"},
 }
 
@@ -56,7 +58,7 @@ def test_the_record_scores_the_move_the_direction_and_the_spread():
     # The 10-19 calendar speaks for NFLX (the session before its 10-20 report); the 10-20 one,
     # with a different move, does not.
     _write(cal_dir / "2026-10-19.json", {"rows": [ROW]})
-    _write(cal_dir / "2026-10-20.json", {"rows": [dict(ROW, sd_move=99.0)]})
+    _write(cal_dir / "2026-10-20.json", {"rows": [dict(ROW, em_move=99.0)]})
     greeks = paths.market_report_dir() / "screener-greeks"
     legs = [
         {"role": "long", "strike": 75.0, "option": "L", "quote": _q(1.0, 1.1)},
@@ -90,12 +92,10 @@ def test_the_record_scores_the_move_the_direction_and_the_spread():
     closes = {("NFLX", "2026-10-20"): 70.0, ("NFLX", "2026-10-21"): 63.0}
     out = earnings_record.build(date(2026, 10, 23), closes_fn=lambda wanted: closes)
     [r] = out["rows"]
-    assert (r["calendar_day"], r["sd_move"], r["move"], r["move_pct"]) == ("2026-10-19", 8.0, -7.0, -10.0)
-    assert (r["move_over_sd"], r["inside_sd"], r["direction_right"]) == (
-        0.875,
-        True,
-        True,
-    )  # a bear, and it fell
+    assert (r["calendar_day"], r["em_move"], r["move"], r["move_pct"]) == ("2026-10-19", 5.6, -7.0, -10.0)
+    # A 7.00 fall against the 5.60 expected move (0.85 x straddle): 1.25 of it, outside; the one-SD
+    # move (8.00) is kept beside it. A bear, and it fell.
+    assert (r["move_over_em"], r["inside_em"], r["direction_right"], r["sd_move"]) == (1.25, False, True, 8.0)
     s = r["spread"]
     assert (s["state"], s["entry_reading"], s["entry_mid"]) == ("entered", "2026-10-20/1430.json", 2.0)
     t = s["react"]
