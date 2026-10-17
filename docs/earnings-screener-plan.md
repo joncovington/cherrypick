@@ -1,11 +1,13 @@
 # Earnings screener plan
 
-Status: plan, 2026-10-16. Nothing built yet.
+Status: plan, 2026-10-16. Step 1 (history) done 2026-10-17: no edge after costs (below). Shipping
+anyway as an earnings calendar laid out like the vendor's (decided 2026-10-17). Steps 2-5 not built.
 
-A nightly list of upcoming earnings announcements, each with a directional spread built by the
-vendor's earnings-navigator rule, priced on our own chains and cut to trades that are actually
-liquid. It is a read surface, a fourth tab on the console's Screeners page beside the three income
-lists. It places no order and opens no paper position.
+A nightly earnings calendar: every upcoming announcement, with the vendor's direction read,
+strength, IV rank and expected move. Strong reads also get the directional spread the vendor's
+earnings-navigator rule builds, priced on our own chains and cut to liquid trades. It is a read
+surface, a fourth tab on the console's Screeners page beside the three income lists. It places no
+order and opens no paper position.
 
 The user chose (2026-10-16) to build it from the stated rule only. We do NOT capture the vendor's
 own navigator list, so there is no answer key: fidelity can't be scored as it is for the income
@@ -110,49 +112,107 @@ results section in this doc. This step decides the defaults below. If no variant
 costs, the list still ships as a read surface, but the page says so, as the EM-fly result is
 recorded.
 
-### 2. The rule as a pure function (packages/technicals)
+**Decided 2026-10-17, after step 1:** ship anyway, laid out like the vendor's earnings calendar
+(the user shared its page). It is a calendar first: every upcoming announcement, grouped by day,
+with the vendor's columns and filters. The navigator's spread is a column on it, under a page note
+that history shows no edge.
 
-`earnings_screen.py`: from files already on disk, never the network, so it is credential-free like
-the rest of the package. For each announcement in the window it:
-- joins broker date (preferred), Dolt date and timing, the security list's direction, liquidity
-  rank and IV rank, the tradable verdict, and the type (stocks only);
-- works out the entry session from the timing. Unknown timing is shown as unknown, never assumed
-  after the close. If the two date sources disagree by more than a day, the row is flagged;
-- picks the structure and the target legs (deltas or expected-move edge) from a declared config
-  block, with defaults from step 1.
+**The vendor's calendar, and our source for each column.** Checked against its page for Oct 20-21:
+all ten names it showed under the default filters are on our list too. CB and ELV were missing only
+because the broker's report dates don't cover them, and Dolt does.
 
-Output `technicals/screeners/earnings/<day>.json`, kept per day, never overwritten in place.
-CLI `score-earnings` (name open). Job at 06:45 ET, after `technicals-screeners`.
+| Vendor column / filter | Our source |
+|---|---|
+| Date, grouped by day; Today / Next 7 days / Next 30 days | Dolt calendar ∪ the broker's dates (confirmed flag), deduplicated; a disagreement over a day flagged |
+| Time (before / after the open) | Dolt's `when`; blank shown as unknown, never assumed |
+| Company | Dolt `stocks.symbol.security_name`, with the share-class boilerplate trimmed |
+| D-Edge, Strength n/10, IV Rank, liquidity (very / somewhat), optionable | The nightly security list: `directionalEdge`, `technicalRank`, `ivRank`, `liquidityRank`, `hasOptions`. These are the vendor's own values (CB 9/10 at 67%, ELV 10/10 at 43%, NFLX 2/10 at 74%, as on its page), one session old |
+| Last price | Our bars' last close |
+| Exp. move | A chain per name, nightly (below) |
+| Sector | `universe/sectors.json` where it has the name. That is partial and coarser than the vendor's taxonomy; blank otherwise |
+| Region, industry | Not carried (US names only; no industry source) |
 
-### 3. Pricing and liquidity (scripts/fetch_screener_greeks.py)
+**The expected move shown is one standard deviation**, chosen 2026-10-17 to match the vendor's.
 
-An `earnings` plan beside the list rows and candidates:
-- **Evening (19:00):** price the planned legs and the straddle for the expected move, for
-  announcements in the window.
-- **11:30 and 14:30 on the entry day:** regular-hours leg readings under the same leg bars (10% of
-  mid or a nickel, 100 open, 10 traded). Those are the readings that matter, taken hours before the
-  entry close.
+**How the expected move is calculated** (researched 2026-10-17):
+- **The straddle prices the expected absolute move.** Under a normal distribution that is √(2/π) ≈
+  0.8 of one standard deviation, so ATM straddle ≈ 0.8 × price × IV × √t.
+- **The broker's own content gives two rules:**
+  - for a binary event, 0.85 × the front-month ATM straddle. This is the suite's
+    `STRADDLE_TO_EM_FACTOR`, about two thirds of an SD;
+  - otherwise price × IV × √(days / 365), described as the one-SD, 68% range.
+- **The broker's market-metrics API has no expected-move field.** It does return implied volatility
+  for every listed expiration. Its earnings date carries no time of day.
+- **A weighted 60/30/10 straddle-and-strangles version is quoted by third parties** as the broker
+  platform's figure. Nothing from the broker confirms it.
+- **The vendor's figures are one SD.** On nine names for Oct 20-21, they sit 1.16-1.29× the raw
+  straddle. The two one-SD formulas both match them about equally well:
+  - the broker's IV for the event expiry × price × √(calendar days / 365): mean miss 0.32 points;
+  - the straddle ÷ 0.8: mean miss 0.27 points.
 
-A row whose legs fail is marked thin and hidden by default, exactly as on the income tabs.
-This adds to the existing paced feed session; it is not a new collector.
+  The raw straddle misses by about 1.6 points and 0.85 × straddle by about 2.9. NFLX is the largest
+  miss on both (vendor 11.0, ours ~11.9); the vendor's unstated week adjustment may explain it.
+
+**So the column is the broker's IV for the first expiry on or after the reaction day × price ×
+√(calendar days / 365)**, labelled "±1 SD":
+- It needs no chain request. The nightly market-metrics call already returns every expiration's IV,
+  batched, for ~490 names. Widening its universe to the calendar's names, and keeping the event
+  expiry's IV, covers the whole calendar.
+- The straddle-based figures (÷ 0.8, and the suite's 0.85) are in the tooltip where a chain was
+  priced.
+
+**The user's credit long leg stays on the suite's 0.85 definition**, which step 1 priced.
+
+### 2. The calendar as a pure function (packages/technicals)
+
+`earnings_calendar.py`, from local data only (files and the local Dolt clone, as `land` reads it),
+never the broker, so it stays credential-free. Each night it writes every announcement in the next
+30 days: one row with the columns above, plus:
+- the entry session, worked out from the timing (unknown timing: unknown);
+- the navigator's structure for strong reads: debit under the IV-rank cut, credit over it, with
+  target legs (debit: long ATM, short at the 0.85 EM edge; credit: the user's legs). The cut and
+  the trade expiry come from a declared config block, defaulting to 50 and the cycle monthly.
+
+Output `technicals/earnings-calendar/<day>.json`, kept per day, never overwritten in place. CLI
+`earnings-calendar`. Job after the evening security-list capture, so a row's direction and rank are
+the freshest the list has.
+
+### 3. Pricing (scripts)
+
+Two broker reads, both paced, both in jobs that already run:
+- **The expected move for every stock in the calendar's 30 days:** the event expiry's IV from
+  market-metrics (`scripts/fetch_iv_rank.py`, 18:50). That needs two changes:
+  - widen the job's universe to the calendar's names (it misses CB and ELV today);
+  - keep each name's per-expiration IVs, or just the event expiry's.
+
+  No chain is needed.
+- **The suggested spread's legs**, for strong reads only, evening and again at 11:30 / 14:30 on the
+  entry day under the leg bars (10% of mid or a nickel, 100 open, 10 traded). This is an `earnings`
+  plan in `fetch_screener_greeks.py`. A row whose legs fail is marked thin.
 
 ### 4. The console tab
 
-A new reader and route (`/api/screeners/earnings`) with its own payload type; the income lists'
-row shape is vendor-specific and is not stretched to fit.
+A fourth Screeners tab, "Earnings", with its own reader and route (`/api/screeners/earnings`) and
+payload type; the income lists' row shape is not stretched to fit.
 
-Columns:
-- symbol;
-- report date and before/after the open (or unknown, and whether the date is confirmed);
-- entry session;
-- direction, IV rank and the expected move ±%;
-- the spread: legs, expiry, debit or credit, and its share of the width;
-- leg liquidity.
-
-Defaults: tradable names, a liquid trade, confirmed dates. Each has its escape, as on the other tabs.
-
-The expected move shown is the suite's definition (0.85 × straddle). The vendor shows the raw
-straddle, so its figure reads about 18% wider; the column says which.
+- **Layout:** rows grouped by report day, the vendor's columns in its order, then ours: the
+  suggested spread (debit or credit, legs, expiry, its share of the width, max loss), and its
+  liquidity once read.
+- **Filters:**
+  - window (Today / 7 days / 30 days);
+  - before / after the open;
+  - direction (multi-select);
+  - IV-rank range;
+  - liquidity (very / somewhat);
+  - optionable;
+  - sector;
+  - symbol.
+- **Defaults:** the vendor's view (strong bull + strong bear, very liquid, optionable, 7 days),
+  plus a liquid suggested trade. Each has its escape.
+- **A standing note:** the 2020-26 replay of this spread lost 4.3% on risk, and the direction read
+  called the reaction on 48-49% of events. Linked to this doc.
+- **On each row:** the session the direction read describes, and whether the report date is
+  confirmed.
 
 ### 5. Record and score forward
 
@@ -164,6 +224,55 @@ After each report, record:
 These go into the same per-day file, under a `results` block. A fidelity-style tab then shows the
 rule's running result on our own prices. This is the forward check step 1 can't give, since the
 history is end-of-day chains.
+
+## Step 1 result (2026-10-17): no edge after costs
+
+Run: `scripts/earnings_navigator_history.py`, 2020-01 to 2026-10-02. Output in
+`~/.cherrypick/data/research/earnings-navigator/run-2026-10-17.json`; re-analyse it with
+`--from-json`.
+
+- **Sample.** 14,364 events from 1,049 names passed the price and volume screen. 3,587 were priced:
+  1,939 strong bull, 1,040 strong bear, 608 in the tier below.
+- **The direction read doesn't call earnings reactions.**
+  - A strong bull moved up on 48.8% of reactions; a strong bear moved down on 48.4%; the tier below
+    did no better.
+  - That is a coin flip, leaning contrarian like the EM-fly study's trend signals.
+- **The default rule loses.** Cut 50 on entry-day IV rank, cycle monthly, the user's credit legs,
+  out at the reaction close:
+  - 750 trades with entry and exit on the right days;
+  - -4.3% return on risk, 42% won, -$47 a trade;
+  - the same trades in the opposite direction: -5.0%.
+- **Every setting loses** (return on risk, exact trades):
+
+  | Setting | Return on risk | Note |
+  |---|---|---|
+  | IV-rank cut 33 / 45 / 50 | about -4% each | barely differ |
+  | Always credit | -3.6% | |
+  | Always debit | -8.3% | |
+  | Cut read five weeks before the report | -6.2% | |
+  | Event expiry | -1.4% | +5.2% before 2025, -3.7% since |
+  | d30 / d45 / cycle | -2.4% / -5.1% / -4.3% | |
+  | Credit legs (user, user_raw, v2025, v2026) | -4.3%, -3.5%, -3.4%, -6.4% | |
+  | Exit day 2 | -3.7% | |
+  | Exit at expiry | -6.8% | |
+  | Strong plus the tier below | -3.8% | |
+
+  The best of the 480 grid cells, +1.2% (cut on IV rank five weeks earlier, at 45; event expiry;
+  credit beyond the raw straddle; held to expiry), is selection noise. Its neighbours lose, and its
+  opposite-direction twin is -4.4%.
+- **The check run agrees.** `strict` (both legs quoted) is worse, as its bias predicts: about -10%
+  across the board.
+- **Limits.**
+  - The liquidity screen stands in for liquidity rank 1.
+  - The direction read is 85-95% faithful.
+  - Dolt's IV rank may not be the vendor's.
+  - Two thirds of the exact trades are from 2025-26.
+  - None of these is the size of the loss, and the direction coin-flip doesn't depend on pricing at
+    all.
+
+What this means for the plan: the list can still ship as a read surface, as the plan said it would,
+but the page must say that history shows no edge. And step 5's forward record is what would show a
+change.
 
 ## Gaps
 
@@ -194,10 +303,23 @@ Checked 2026-10-17 against Dolt (`nav_gap_checks`, a one-off): 458 tradable name
 3. **The long leg sits further out than the expected move.** The first listed strike past the move
    lands a median 20-30% of an EM beyond it, because trade-expiry strikes are coarse. So the rule's
    long leg is effectively at ~1.25× EM. That is a property of the rule, live as well as in history.
-4. **The direction read isn't proven on history.** Bearing names the strong states 95% / 99% when fed
-   the vendor's own inputs. Our bars rebuild those inputs (trends 99.7%, score 52 of 62), but the
-   full chain from bars to label is unmeasured. Measure it against the captured security lists
-   before step 1 leans on it.
+4. **The direction read on history: measured 2026-10-17, good enough.**
+   - Method: fit Bearing on one captured list and name the other list's labels from inputs built
+     from our own bars. Both ways round, 10-07 and 10-16.
+   - **The security list is a session old.** Both lists were captured after the close (17:16 and
+     19:56 ET), yet their trend readings match the PREVIOUS session's close. Our trend inputs read
+     one session back agree on 92-98% (1M) and 95-97% (6M) of very-liquid stocks; read on the same
+     session, 62-84%.
+   - The 1-10 score is the remaining error: exact on about two thirds, tier right on about 90%.
+   - End to end, one session back, very-liquid stocks:
+     - strong bull: recall 88-96%, precision 80-88%;
+     - strong bear: recall 77-88%, precision 97-98%.
+   - Misses fall on a neighbouring state (pullback, bear), not the opposite direction.
+   - So step 1 reads Bearing one session before the entry close, as the live list does, and says
+     the direction is ~85-95% faithful.
+   - What it means for the live list: the direction read is always at least a session behind the
+     entry close. Show the list's read and the session it describes; never silently swap in a
+     fresher one of ours.
 
 **The live list**
 5. **Timing is unknown for about half the announcements.** Dolt's before/after-the-open field is about
@@ -219,6 +341,9 @@ Checked 2026-10-17 against Dolt (`nav_gap_checks`, a one-off): 458 tradable name
 11. **There is no answer key.** Declined 2026-10-16, so we measure whether the rule works, not how
     faithfully we reproduce it.
 
+**Note (2026-10-17):** better backtesting may become available in the future. If it does, re-run
+step 1 on it, and treat this study's result as the first read, not the last.
+
 ## Not in this plan
 
 - **A paper arm.** The earnings module already has seven strategies and its own entry scan. Paper
@@ -229,7 +354,9 @@ Checked 2026-10-17 against Dolt (`nav_gap_checks`, a one-off): 458 tradable name
 
 ## Open questions for the user
 
-1. **IV-rank cut:** 50 (the newest deck) or what history picks?
-2. **Expiry:** the rule's short expiries, or your standard monthly 30-60 DTE (the income tabs show
-   both: the listed trade and yours)?
-3. **Window:** the vendor's couple of days, or a week so the list is visible ahead of entry day?
+1. **IV-rank cut:** history barely separates 33 / 45 / 50 (all about -4%), so the default is 50,
+   the newest deck's.
+2. **Trade expiry:** the default is your cycle monthly. History's least-bad was the event expiry
+   (-1.4%), but that is positive only before 2025.
+3. **Window:** settled by the calendar layout: Today / 7 / 30 days, defaulting to 7, as the vendor
+   does.
