@@ -175,3 +175,46 @@ def test_era_on_a_pmcc_ledger_from_before_the_column_matches_nothing(tmp_path):
 def test_era_on_a_schema_without_one_is_refused_not_ignored(meic_db):
     out = cli.cmd_read(_args(db=meic_db, schema="meic_ic", era="current"))
     assert out["ok"] is False and "no era" in out["error"]
+
+
+def test_trades_sum_to_reads_session_nets_for_every_tag_and_session(meic_db, tmp_path):
+    """The calendar drill's guarantee: a session's trades under one tag add up to the net `read`
+    gives that tag for that session, because both come from one read."""
+    stamped = tmp_path / "stamped.db"
+    conn = sqlite3.connect(stamped)
+    conn.execute(
+        "CREATE TABLE ic_trades (symbol TEXT, risk_profile TEXT, pnl REAL, fees REAL, exit_time TEXT, "
+        "experiment_id TEXT)"
+    )
+    conn.executemany(
+        "INSERT INTO ic_trades VALUES ('SPX', 'advised:control', ?, 1.0, '2026-09-10T15:45:00', ?)",
+        [(20.0, None), (30.0, "exp-1"), (-5.0, "exp-2")],
+    )
+    conn.commit()
+    conn.close()
+    for db, schema in ((meic_db, "meic_ic"), (_pmcc_db(tmp_path), "pmcc"), (str(stamped), "meic_ic")):
+        read = cli.cmd_read(_args(db=db, schema=schema))
+        trades = cli.cmd_trades(_args(db=db, schema=schema))["trades"]
+        for tag, group in read["groups"].items():
+            for session, net in group["session_nets"]:
+                rows = [t for t in trades if t["tag"] == tag and t["session"] == session]
+                assert rows and round(sum(t["net_pnl"] for t in rows), 2) == net, (schema, tag, session)
+
+
+def test_trades_scope_to_one_tag_and_one_session(meic_db):
+    out = cli.cmd_trades(
+        _args(db=meic_db, schema="meic_ic", start="2026-08-20", end="2026-08-20", tag="control")
+    )
+    assert out["ok"] and [(t["tag"], t["session"], t["net_pnl"]) for t in out["trades"]] == [
+        ("control", "2026-08-20", 115.0)
+    ]
+
+
+def test_trades_carry_an_unrecorded_field_as_none_never_zero(meic_db):
+    [t] = cli.cmd_trades(_args(db=meic_db, schema="meic_ic", tag="unassigned"))["trades"]
+    assert t["slippage"] is None and t["fees"] == 1.0
+
+
+def test_trades_refuse_what_read_refuses(meic_db):
+    out = cli.cmd_trades(_args(db=meic_db, schema="meic_ic", era="current"))
+    assert out["ok"] is False and "no era" in out["error"]

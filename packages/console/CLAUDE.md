@@ -386,6 +386,12 @@ async through `readModuleMetricsAsync`, every module at once), over the SUITE wi
 what happened each day, not what an arm's evidence says, so it is not era-scoped and says so. The
 component only adds days and weeks up. A week that straddles two months draws the neighbouring
 month's days dimmed, so every row adds up to its total; a month's own total counts only its days.
+An arm in a day's detail opens to its trades (`GET /api/calendar/trades` → `readPnlTrades` →
+`python -m cherrypick.core.metrics trades`), fetched on click. That command shares `read`'s one
+record read in core, so the rows sum to the cell. The table says "does not reconcile" if they ever
+do not, and that has never been seen (every arm-session of the last five sessions, paper and live,
+checked on 2026-10-17). The calendar and risk tabs follow the page's paper/live toggle; the arms
+tab is paper only and shows none.
 
 **Compare** (`/compare`, `lightbox/manifests/CompareLightbox.tsx`, `pages/Compare/`) — every arm of
 every module beside its control, over `GET /api/compare?scope=era|all` (`routes/compare.ts` →

@@ -1,9 +1,10 @@
-import { useState } from "react";
-import type { PnlCalendarResult, PnlDay, TradingMode } from "@console/shared";
+import { Fragment, useState } from "react";
+import type { PnlCalendarResult, PnlDay, PnlTrade, TradingMode } from "@console/shared";
 import { Link } from "react-router-dom";
 import { Card } from "../../components/DataTable";
 import { fmtMoney } from "../../lib/format";
-import { usePnlCalendar } from "../../lib/api";
+import { usePnlCalendar, usePnlTrades } from "../../lib/api";
+import { useMode } from "../../lib/useMode";
 import { armOfTag } from "../../lib/armTag";
 import { useFeatures } from "../../lib/useFeatures";
 import { isModuleVisible } from "../../lib/visibility";
@@ -13,8 +14,9 @@ import { isModuleVisible } from "../../lib/visibility";
  * (docs/strategy-analysis-plan.md Phase 4). The nets are core.metrics' own per-session series, the
  * one each performance tab reads, over the suite window; this file only adds them up for display.
  *
- * A day drills to the arms that traded it, each linking to its module. Tone comes from a number's
- * sign; a day nothing traded is blank, never $0.00.
+ * A day drills to the arms that traded it, and an arm to its trades (`core.metrics trades`, the same
+ * read as the nets). Paper or live follows the page's mode. Tone comes from a number's sign; a day
+ * nothing traded is blank, never $0.00.
  */
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"] as const;
@@ -137,8 +139,95 @@ export function MonthGrid({
   );
 }
 
-/** The arms that traded one session, largest move first, each linking to its module. */
-export function DayDetail({ session, total }: { session: string; total: DayTotal }) {
+/** `HH:MM` of an ISO stamp, with the date in front when it is not the session's own day. */
+export function stamp(t: string | null, session: string): string {
+  if (t === null || t.length < 16) return "—";
+  const day = t.slice(0, 10);
+  return day === session ? t.slice(11, 16) : `${day.slice(5)} ${t.slice(11, 16)}`;
+}
+
+const SLIPPAGE_MODEL: Record<string, string> = { in_gross: "in gross", cost: "cost" };
+
+/**
+ * One arm's trades on one session, in the suite's money layout: gross, then each cost in its own
+ * column, then net. Slippage names its model: `in gross` is already conceded in the fill and is shown
+ * as a measure; `cost` is charged and is subtracted once. An unrecorded field reads n/r, never $0.00.
+ * The rows come from the read behind the cell, so their nets sum to it; if they ever do not, the
+ * table says so rather than showing two figures that cannot be reconciled.
+ */
+export function TradesTable({ trades, cellNet }: { trades: PnlTrade[]; cellNet: number }) {
+  const nr = (v: number | null) => (v === null ? "n/r" : fmtMoney(v));
+  const sum = trades.reduce((a, t) => a + (t.net_pnl ?? 0), 0);
+  const reconciles = Math.abs(sum - cellNet) < 0.01;
+  return (
+    <>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>entry</th>
+              <th>exit</th>
+              <th>symbol</th>
+              <th>structure</th>
+              <th>gross</th>
+              <th>fees</th>
+              <th>settlement</th>
+              <th title="in gross: conceded in the modelled fill, a measure; cost: charged, subtracted once">slippage</th>
+              <th>net</th>
+            </tr>
+          </thead>
+          <tbody>
+            {trades.map((t, i) => (
+              <tr key={`${t.entry_time ?? ""}-${String(i)}`}>
+                <td className="mono">{stamp(t.entry_time, t.session)}</td>
+                <td className="mono">{stamp(t.exit_time, t.session)}</td>
+                <td>{t.symbol ?? "—"}</td>
+                <td>{t.strategy ?? "—"}</td>
+                <td>{nr(t.gross_pnl)}</td>
+                <td>{nr(t.fees)}</td>
+                <td>{nr(t.settlement)}</td>
+                <td>
+                  {nr(t.slippage)}
+                  {t.slippage !== null && t.slippage_basis !== null && (
+                    <span className="muted" style={{ fontSize: 10, marginLeft: 4 }}>
+                      {SLIPPAGE_MODEL[t.slippage_basis] ?? t.slippage_basis}
+                    </span>
+                  )}
+                </td>
+                <td className={t.net_pnl === null ? undefined : tone(t.net_pnl)}>{nr(t.net_pnl)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!reconciles && (
+        <p style={{ fontSize: 11 }}>
+          <span className="chip chip-warn" style={{ marginRight: 6 }}>
+            does not reconcile
+          </span>
+          these trades sum to {fmtMoney(sum)}, the cell says {fmtMoney(cellNet)}
+        </p>
+      )}
+    </>
+  );
+}
+
+function ArmTrades({ row, session, mode }: { row: PnlDay; session: string; mode: TradingMode }) {
+  const { data, isLoading, isError } = usePnlTrades(row.module, session, row.tag, mode, true);
+  if (isLoading) return <span className="skeleton skeleton-text" style={{ width: "40%" }} />;
+  if (isError || data === undefined || !data.ok) {
+    return (
+      <p className="muted" style={{ fontSize: 11 }}>
+        trades could not be read{data?.error ? ` — ${data.error}` : ""}
+      </p>
+    );
+  }
+  return <TradesTable trades={data.trades} cellNet={row.net} />;
+}
+
+/** The arms that traded one session, largest move first; an arm opens to its trades. */
+export function DayDetail({ session, total, mode }: { session: string; total: DayTotal; mode: TradingMode }) {
+  const [open, setOpen] = useState<string | null>(null);
   const arms = [...total.arms].sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
   return (
     <div style={{ marginTop: "0.6rem" }}>
@@ -155,15 +244,38 @@ export function DayDetail({ session, total }: { session: string; total: DayTotal
             </tr>
           </thead>
           <tbody>
-            {arms.map((r) => (
-              <tr key={`${r.module}-${r.tag}`}>
-                <td>
-                  <Link to={`/${r.module}/history`}>{r.module}</Link>
-                </td>
-                <td className="mono">{r.tag}</td>
-                <td className={tone(r.net)}>{fmtMoney(r.net)}</td>
-              </tr>
-            ))}
+            {arms.map((r) => {
+              const key = `${r.module}-${r.tag}`;
+              return (
+                <Fragment key={key}>
+                  <tr>
+                    <td>
+                      <Link to={`/${r.module}/history${mode === "live" ? "?mode=live" : ""}`}>{r.module}</Link>
+                    </td>
+                    <td className="mono">
+                      <button
+                        type="button"
+                        className="btn btn-quiet"
+                        style={{ padding: 0 }}
+                        aria-expanded={open === key}
+                        onClick={() => setOpen(open === key ? null : key)}
+                        title="this arm's trades on the day"
+                      >
+                        {open === key ? "▾" : "▸"} {r.tag}
+                      </button>
+                    </td>
+                    <td className={tone(r.net)}>{fmtMoney(r.net)}</td>
+                  </tr>
+                  {open === key && (
+                    <tr>
+                      <td colSpan={3}>
+                        <ArmTrades row={r} session={session} mode={mode} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -171,7 +283,13 @@ export function DayDetail({ session, total }: { session: string; total: DayTotal
   );
 }
 
-export function CalendarView({ data, visible }: { data: PnlCalendarResult; visible: (module: string) => boolean }) {
+export function CalendarView({
+  data,
+  visible,
+}: {
+  data: PnlCalendarResult;
+  visible: (module: string) => boolean;
+}) {
   const [module, setModule] = useState<string | null>(null);
   const [arm, setArm] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
@@ -211,7 +329,8 @@ export function CalendarView({ data, visible }: { data: PnlCalendarResult; visib
           </select>
         )}
         <span className="muted" style={{ fontSize: 11 }}>
-          settled net per session, from {data.from ?? "the first session"} — the suite window, not each arm's era
+          {data.mode} · settled net per session, from {data.from ?? "the first session"} — the suite window, not
+          each arm's era
         </span>
       </div>
       {failures.map((f) => (
@@ -227,12 +346,15 @@ export function CalendarView({ data, visible }: { data: PnlCalendarResult; visib
       ) : (
         months.map((m) => <MonthGrid key={m} month={m} totals={totals} picked={picked} onPick={setPicked} />)
       )}
-      {picked !== null && pickedTotal !== undefined && <DayDetail session={picked} total={pickedTotal} />}
+      {picked !== null && pickedTotal !== undefined && (
+        <DayDetail key={picked} session={picked} total={pickedTotal} mode={data.mode} />
+      )}
     </>
   );
 }
 
-export function CalendarTab({ mode = "paper" }: { mode?: TradingMode }) {
+export function CalendarTab() {
+  const [mode] = useMode();
   const { data, isLoading, isError, dataUpdatedAt } = usePnlCalendar(mode);
   const features = useFeatures();
   const visible = (module: string) => (features === undefined ? true : isModuleVisible(module, features));

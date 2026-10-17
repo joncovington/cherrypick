@@ -939,7 +939,7 @@ export type {
   ModulePerformanceResult,
 } from "@console/shared";
 import type { ModulePerformanceResult, PerformanceModuleId } from "@console/shared";
-import type { ArmsRiskResult, ModuleAnalysisResult, PnlCalendarResult } from "@console/shared";
+import type { ArmsRiskResult, ModuleAnalysisResult, PnlCalendarResult, PnlTradesResult } from "@console/shared";
 
 /** Every arm's net per session, for the Compare page's calendar tab (`GET /api/calendar`). */
 export function usePnlCalendar(mode: TradingMode = "paper") {
@@ -948,6 +948,18 @@ export function usePnlCalendar(mode: TradingMode = "paper") {
     queryFn: () => getJson<PnlCalendarResult>(`/api/calendar?mode=${mode}`),
     refetchInterval: 120_000,
     placeholderData: (prev) => prev,
+  });
+}
+
+/** One arm's trades on one session, for the calendar's day drill (`GET /api/calendar/trades`). Fetched
+ *  only once a row is opened; a closed day never moves, so it is not polled. */
+export function usePnlTrades(module: string, session: string, tag: string, mode: TradingMode, enabled: boolean) {
+  const q = new URLSearchParams({ module, session, tag, mode });
+  return useQuery<PnlTradesResult>({
+    queryKey: ["pnl-trades", module, session, tag, mode],
+    queryFn: () => getJson<PnlTradesResult>(`/api/calendar/trades?${q.toString()}`),
+    enabled,
+    staleTime: 300_000,
   });
 }
 

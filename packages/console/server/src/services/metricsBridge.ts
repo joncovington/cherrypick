@@ -1,3 +1,4 @@
+import type { PnlTrade } from "@console/shared";
 import { spawnModuleCli, spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
@@ -146,6 +147,49 @@ export function readModuleMetricsAsync(
   inflight.set(key, read);
   void read.finally(() => inflight.delete(key));
   return read;
+}
+
+// ------------------------------------------------------------------ one arm's trades on one session
+/**
+ * `python -m cherrypick.core.metrics trades`: the records behind one group's `session_nets` entry,
+ * read by the same `_records` in core, so the rows always sum to the calendar cell they drill from.
+ * Not memoised: it runs on a click, over one session.
+ */
+export interface ModuleTradesResult {
+  ok: boolean;
+  trades: PnlTrade[];
+  error: string | null;
+}
+
+function spawnTrades(dbPath: string, schema: string, session: string, tag: string, era: string | null) {
+  const argv = ["-m", "cherrypick.core.metrics", "trades", "--db", dbPath, "--schema", schema];
+  argv.push("--start", session, "--end", session, "--tag", tag);
+  if (era !== null) argv.push("--era", era);
+  return spawnModuleCliAsync(argv, UNAVAILABLE).then((res): ModuleTradesResult => {
+    if (!res.ok || res.json === null) return { ok: false, trades: [], error: res.error };
+    if (res.json["ok"] !== true) {
+      const err = res.json["error"];
+      return { ok: false, trades: [], error: typeof err === "string" ? err : `${UNAVAILABLE} — refused` };
+    }
+    return { ok: true, trades: (res.json["trades"] ?? []) as PnlTrade[], error: null };
+  });
+}
+
+let tradesCaller = spawnTrades;
+
+/** Swap the subprocess out in tests. Pass nothing to restore the real one. */
+export function setTradesCaller(fn?: typeof spawnTrades): void {
+  tradesCaller = fn ?? spawnTrades;
+}
+
+export function readModuleTradesAsync(
+  dbPath: string,
+  schema: string,
+  session: string,
+  tag: string,
+  era: string | null = null,
+): Promise<ModuleTradesResult> {
+  return tradesCaller(dbPath, schema, session, tag, era);
 }
 
 /** Drop the memoised readings. Tests only. */
