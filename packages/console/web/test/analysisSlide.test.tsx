@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { ArmAnalysis, CapitalReading, DrawdownEpisode, ExecutionReading } from "@console/shared";
-import { ArmCard, CapitalTiles, ExecutionTable } from "../src/components/analysis/AnalysisSlide";
+import type { ArmAnalysis, Breakdowns, CapitalReading, DrawdownEpisode, ExecutionReading } from "@console/shared";
+import { ArmCard, BreakdownTables, CapitalTiles, ExecutionTable } from "../src/components/analysis/AnalysisSlide";
 
 const text = (node: React.ReactElement) => renderToString(node).replace(/<!--\s*-->/g, "");
 
@@ -204,5 +204,41 @@ describe("ExecutionTable", () => {
     const html = text(<ExecutionTable e={ladder({ rows: [], withheld: "no trade in this window records its slippage" })} />);
     expect(html).toContain("not computed");
     expect(html).not.toContain("<table");
+  });
+});
+
+function breakdowns(): Breakdowns {
+  const row = (bucket: string, sessions: number, net: number) => ({
+    bucket, trades: sessions * 7, sessions, net, win_rate: 0.75, avg_net: net / (sessions * 7), best: 120, worst: -90,
+    thin: sessions < 5,
+  });  // fmt: skip
+  return {
+    min_sessions: 5,
+    weekday: { rows: [row("Mon", 7, 300.35), row("Fri", 9, -1202.66)], skipped: 0 },
+    hour: { rows: [], skipped: 40 },
+    month: { rows: [row("2026-10", 12, -500)], skipped: 0 },
+    event: { rows: [row("none", 25, 1482), row("CPI", 2, -585.21)], skipped: 0 },
+  };
+}
+
+describe("BreakdownTables", () => {
+  it("draws one column set for every dimension", () => {
+    const html = text(<BreakdownTables b={breakdowns()} />);
+    expect(html).toContain("day of week");
+    expect(html).toContain("-$1202.66");
+    expect(html).toContain("scheduled releases that day");
+  });
+
+  it("marks a thin row and gives it no tone", () => {
+    const html = text(<BreakdownTables b={breakdowns()} />);
+    expect(html).toContain(">thin<");
+    // The thin CPI row's net is drawn, but never in the loss colour a finding would get.
+    expect(html).toMatch(/<td>-\$585\.21<\/td>/);
+    expect(html).toMatch(/class="pnl-neg">-\$1202\.66/);
+  });
+
+  it("says when a dimension has nothing to break down, and why", () => {
+    const html = text(<BreakdownTables b={breakdowns()} />);
+    expect(html).toContain("hour of entry: nothing to break down (40 trades record no entry time)");
   });
 });

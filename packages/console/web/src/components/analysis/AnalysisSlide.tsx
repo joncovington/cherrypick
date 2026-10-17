@@ -1,6 +1,8 @@
 import type {
   ArmAnalysis,
   AnalysisStreaks,
+  BucketTable,
+  Breakdowns,
   CapitalReading,
   DrawdownEpisode,
   ExecutionReading,
@@ -191,6 +193,92 @@ export function ExecutionTable({ e }: { e: ExecutionReading }) {
   );
 }
 
+const DIMENSION_LABELS: Array<[keyof Omit<Breakdowns, "min_sessions">, string, string]> = [
+  ["weekday", "day of week", "day"],
+  ["hour", "hour of entry", "hour"],
+  ["event", "scheduled releases that day", "release"],
+  ["month", "month", "month"],
+];
+
+function BucketRows({ t, head, minSessions }: { t: BucketTable; head: string; minSessions: number }) {
+  return (
+    <div className="table-scroll">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>{head}</th>
+            <th>trades</th>
+            <th title={`a row with fewer than ${String(minSessions)} sessions is thin: shown, never a finding`}>
+              sessions
+            </th>
+            <th>net</th>
+            <th>win rate</th>
+            <th>avg net</th>
+            <th>best</th>
+            <th>worst</th>
+          </tr>
+        </thead>
+        <tbody>
+          {t.rows.map((r) => (
+            <tr key={r.bucket} className={r.thin ? "muted" : undefined}>
+              <td>
+                {r.bucket}
+                {r.thin && (
+                  <span className="chip" style={{ marginLeft: 6, fontSize: 9 }} title="too few sessions to read">
+                    thin
+                  </span>
+                )}
+              </td>
+              <td>{String(r.trades)}</td>
+              <td>{String(r.sessions)}</td>
+              <td className={r.thin ? undefined : `pnl-${r.net >= 0 ? "pos" : "neg"}`}>{fmtMoney(r.net)}</td>
+              <td>{pct(r.win_rate)}</td>
+              <td>{fmtMoney(r.avg_net)}</td>
+              <td>{fmtMoney(r.best)}</td>
+              <td>{fmtMoney(r.worst)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * P&L by something known at entry (core.analysis.buckets), one column set for every dimension.
+ * A thin row is dimmed and carries no tone: a colour would read as a finding it cannot support.
+ */
+export function BreakdownTables({ b }: { b: Breakdowns }) {
+  return (
+    <>
+      {DIMENSION_LABELS.map(([key, title, head]) => {
+        const t = b[key];
+        if (t.rows.length === 0) {
+          return (
+            <p key={key} className="muted" style={{ fontSize: 11 }}>
+              {title}: nothing to break down
+              {t.skipped > 0 ? ` (${String(t.skipped)} trades record no entry time)` : ""}
+            </p>
+          );
+        }
+        return (
+          <div key={key} style={{ marginBottom: "0.6rem" }}>
+            <div className="muted" style={{ fontSize: 11, margin: "0.3rem 0" }}>
+              {title}
+              {t.skipped > 0 && ` · ${String(t.skipped)} trades not bucketed`}
+            </div>
+            <BucketRows t={t} head={head} minSessions={b.min_sessions} />
+          </div>
+        );
+      })}
+      <p className="muted" style={{ fontSize: 11 }}>
+        historical associations over this window's trades, not predictions. A release day the calendar cannot
+        vouch for reads "unknown", never "none".
+      </p>
+    </>
+  );
+}
+
 function EpisodesTable({ episodes }: { episodes: DrawdownEpisode[] }) {
   return (
     <div className="table-scroll">
@@ -324,6 +412,13 @@ export function ArmCard({ module, tag, a, updatedAt }: { module: PerformanceModu
         <>
           <div className="card-subhead">worse fills</div>
           <ExecutionTable e={a.execution} />
+        </>
+      )}
+
+      {a.buckets !== undefined && (
+        <>
+          <div className="card-subhead">breakdowns</div>
+          <BreakdownTables b={a.buckets} />
         </>
       )}
 
