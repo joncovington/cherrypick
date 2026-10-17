@@ -346,9 +346,10 @@ Two known reliability facts shape the plan:
    volume file shows NMR, SHG and KB trading 16, 6 and 2 contracts on Sept 25. **Its sectors are
    Yahoo's (Morningstar's):** ADP, UBER and PAYX come back Technology / Software - Application and
    GRMN Technology there, with "Basic Materials" as a sector, while the Nasdaq screener puts UBER in
-   Consumer Discretionary and PAYX and GRMN in Industrials. The only scripted route to Yahoo's
-   sectors is unofficial and personal-use only, so a hand-kept, versioned sector file seeded once is
-   the likely answer. The Sept 25 table below is the test.
+   Consumer Discretionary and PAYX and GRMN in Industrials. The route to Yahoo's sectors is
+   unofficial; the suite is personal use and the data public, so it is scripted (decided
+   2026-10-17): `scripts/fetch_sectors.py` fills the earnings calendar's names the vendor's map lacks,
+   and agreed with that map on all 120 names sampled. The Sept 25 table below is the test.
 4. **Fundamentals score — medium, definitional.** SEC EDGAR's company facts are free (at most 10
    requests a second, with a User-Agent naming a person and an email; none gets a 403). The ADRs are
    covered through the `ifrs-full` taxonomy — TSM, SONY, INFY, TD and BN checked — but in local

@@ -88,6 +88,8 @@ CATCHUP_MINUTES = {
     "technicals-earnings-times": 240,
     # The file accumulates and a sector rarely changes, so any time that evening is the same fetch.
     "technicals-sectors": 240,
+    # Append-only: a late fetch still lands every event, only with a later first-seen time.
+    "technicals-revisions": 12 * 60,
     "technicals-liquidity": 120,
     # A rerun replaces the session's file, so a late one is the same calendar; the late pass covers
     # the rest of the evening.
@@ -1248,6 +1250,22 @@ def derive_jobs(
             trading_days_only=True,
             enabled=sectors_on,
             enabled_reason="" if sectors_on else "disabled in config (technicals.sectors)",
+        ),
+    )
+    revisions_on = tc["enabled"] and tc["revisions"]
+    add(
+        "technicals-revisions",
+        lambda: JobSpec(
+            id="technicals-revisions",
+            # A script, not package code: it reads Yahoo's per-firm analyst history (no credential,
+            # one request per name, paced) into the append-only table `revisions.py` reads.
+            argv=(pythonw, _suite_script(launcher, "fetch_analyst_revisions.py")),
+            kind=KIND_DAILY,
+            at_et=tc["revisions_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-revisions"],
+            trading_days_only=True,
+            enabled=revisions_on,
+            enabled_reason="" if revisions_on else "disabled in config (technicals.revisions)",
         ),
     )
     add(

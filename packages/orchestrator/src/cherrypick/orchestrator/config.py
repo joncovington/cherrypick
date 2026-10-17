@@ -498,6 +498,11 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # per name not read in six months, paced, so a few a night after the first run.
         "sectors": bool(tc.get("sectors", True)),
         "sectors_at": tc.get("sectors_at", "18:40"),
+        # `revisions_at`: scripts/fetch_analyst_revisions.py, Yahoo's per-firm rating and target
+        # history for every stored and screener name, appended so it stays point-in-time. After the
+        # session's notes are out. Network, no credential; one request per name, paced (~35 min).
+        "revisions": bool(tc.get("revisions", True)),
+        "revisions_at": tc.get("revisions_at", "20:15"),
         # `liquidity_at`: the nightly liquidity verdict (`python -m cherrypick.technicals liquidity`,
         # local data only). After the IV-rank fetch it judges from, before the 19:00 screener greeks
         # run that reads it; every broker-spending job skips the names it holds illiquid.
