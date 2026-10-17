@@ -80,6 +80,11 @@ consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/ro
   a bounded, expiring paper advice artifact (`cherrypick.core.advice`) applied to a synthetic
   `advised:<experiment name>` book. Off by default twice over: the suite must schedule it and each
   module must declare its own `advice` bounds.
+- **packages/backtest** — the suite's own rules replayed over **licensed vendor history** (ThetaData).
+  **The licence outranks everything:** vendor data and every result derived from it stay under
+  `~/.cherrypick` and never enter this public repo, a PR, an issue or a published artifact; the data
+  must stay purgeable (a marked directory the backup skips). The network is reached by the fetch only,
+  the key lives in the keyring only, and a run is a pure function of the local store. No AI, no broker.
 - **packages/desk** — ⚠️ **EXPERIMENTAL.** The suite's only *discretionary* live-order path (meic,
   earnings, flies and bwb each have a live loop behind their own `enable_live_trading` gate). A
   foreground, human-initiated CLI, authorized entirely on its own (own config, own PIN, per-order

@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cherrypick-backtest"
+version = "0.1.0"
+description = "Backtests of the suite's own rules over licensed vendor history, kept apart from every loop"
+requires-python = ">=3.11"
+license = "MIT"
+# cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this
+# one. Not on PyPI -- packages/core must be installed first, or resolution fails.
+# keyring holds the vendor API key (never a file or an env var; see credential.py).
+dependencies = ["cherrypick-core", "keyring"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff==0.16.10"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests", "src"]
+
+[tool.ruff]
+extend = "../../ruff.toml"
+target-version = "py311"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src/cherrypick"]
+sources = ["src"]

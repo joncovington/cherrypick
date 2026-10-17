@@ -8,9 +8,11 @@ the technicals store) and every JSON/CSV/Markdown artifact beside them.
 **What is not, and why.** The Dolt stores (`.dolt/` under `data/earnings`, ~14 GB) are copies of
 public DoltHub databases and are re-pulled by `refresh_dolt_data.py`; the stream caches are rebuilt by
 the streamer on its next session; the vendor collector's browser profile holds a login and is a
-secret, not data; `logs/` has its own monthly archive; and backups, archives and retired folders are
-already copies. `data/earnings` is BOTH a Dolt server root and the earnings module's home, so only the
-`.dolt/`/`.doltcfg/` directories themselves are skipped -- skipping a directory that merely contains
+secret, not data; `logs/` has its own monthly archive; backups, archives and retired folders are
+already copies; and a vendor's licensed data (a directory carrying `LICENSED_MARKER`) must be
+purgeable within the licence window, which a copy here would defeat. `data/earnings` is BOTH a Dolt
+server root and the earnings module's home, so only the `.dolt/`/`.doltcfg/` directories themselves
+are skipped -- skipping a directory that merely contains
 one dropped the earnings trade ledgers from the first draft of this.
 
 **How a live ledger is copied.** Through SQLite's online backup API, never a file copy: a paper loop
@@ -76,6 +78,11 @@ _SKIP_FILE_RE = re.compile(
 )
 # Rebuilt by the streamer on its next session; never the only copy of anything.
 _REGENERABLE_RE = re.compile(r"^stream_cache.*\.db$", re.I)
+# A directory holding this file is a vendor's licensed data (packages/backtest, `paths.LICENSED_MARKER`;
+# change both or neither). It is re-fetchable while the subscription runs, and the licence requires it
+# expunged within 30 days of termination -- a copy in the backup would outlive the purge. Found by the
+# marker, not by a path, because the store's location is configurable.
+LICENSED_MARKER = ".licensed-vendor-data"
 
 
 def settings(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -89,7 +96,13 @@ def latest_path(cfg: dict[str, Any]) -> Path:
 
 def collect(root: Path) -> tuple[list[Path], dict[str, int]]:
     """Every file to back up under `root`, and a count of what was skipped by reason."""
-    skipped = {"dolt_store": 0, "excluded_dir": 0, "copy_or_scratch": 0, "regenerable": 0}
+    skipped = {
+        "dolt_store": 0,
+        "excluded_dir": 0,
+        "copy_or_scratch": 0,
+        "regenerable": 0,
+        "licensed_vendor": 0,
+    }
     out: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
         d = Path(dirpath)
@@ -100,6 +113,8 @@ def collect(root: Path) -> tuple[list[Path], dict[str, int]]:
                 skipped["excluded_dir"] += 1
             elif name in _DOLT_DIRS:
                 skipped["dolt_store"] += 1
+            elif (d / name / LICENSED_MARKER).exists():
+                skipped["licensed_vendor"] += 1
             else:
                 keep.append(name)
         dirnames[:] = keep
