@@ -43,7 +43,7 @@ function row(over: Partial<EarningsCalendarRow>): EarningsCalendarRow {
     suggestion: { kind: "credit", right: "P", short: 100, long: 95.25, expiry: "2026-11-20" },
     trade: null,
     listed: null,
-    ours: null,
+    readSession: "2026-10-15",
     ...over,
   };
 }
@@ -163,16 +163,14 @@ describe("the earnings tab", () => {
     payload.rows = saved;
   });
 
-  it("shows our reads beside the vendor's where they differ, and counts the direction disagreements", () => {
+  it("shows one read, ours, one IV rank, the broker's, and says when we hold no bars", () => {
     const saved = payload.rows;
-    const ours = (edge: "sb" | "brn", label: string, strength: number) => ({ edge, edgeLabel: label, strength, ivRank: 61.5, session: "2026-10-15" });
-    payload.rows = [row({ symbol: "SAME", ours: ours("sb", "strong bull", 9) }), row({ symbol: "DIFF", ours: ours("brn", "bear", 3) }), row({ symbol: "NONE" })];
-    const html = render("/screeners/earnings?day=2026-10-15");
-    expect(html).toContain("ours: bear");
-    expect(html).not.toContain("ours: strong bull"); // agreeing reads add no line
-    expect(html).toContain("ours 3/10"); // a strength that differs
-    expect(html).toContain("broker 62%");
-    expect(html).toContain("ours differs on 1 of 2 we read");
+    payload.rows = [row({ symbol: "READ" }), row({ symbol: "NONE", edge: null, edgeLabel: null, strength: null, readSession: null })];
+    const html = render("/screeners/earnings?day=2026-10-15&dir=all");
+    expect(html).toContain("Ours (Bearing), from our bars as of the Oct 15 close.");
+    expect(html).toContain("We hold no bars for this name, so no read.");
+    expect(html).toContain("The broker's IV rank");
+    expect(html).not.toMatch(/ours differs|broker \d+%|ours: /);
     payload.rows = saved;
   });
 

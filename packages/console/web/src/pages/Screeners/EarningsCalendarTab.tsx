@@ -8,10 +8,10 @@ import { useEarningsCalendar } from "../../lib/api";
  * next 30 days, laid out like the vendor's own calendar, grouped by day. Read-only, and it decides
  * nothing: `python -m cherrypick.technicals earnings-calendar` joins every figure each evening.
  *
- * The direction read, strength and IV rank are the vendor's own values from its security list,
- * which describe the PREVIOUS session's close. The expected move is one standard deviation to the
- * first expiry after the reaction (the broker's IV for that expiry x price x the root of its time),
- * which matched the vendor's figures to under half a point. Strong reads also carry the
+ * The direction read and strength are OURS (Bearing, from our bars, the PREVIOUS session's close);
+ * the vendor's are kept in the file and never shown or filtered on. IV rank is the broker's, and it
+ * picks the spread's side. The expected move is the broker's earnings rule, 0.85 x the ATM straddle
+ * on the first expiry after the reaction. Strong reads also carry the
  * earnings-navigator spread as target strikes -- and the page says, every time, that the 2020-26
  * replay of that spread lost money and found the direction read no better than a coin on the
  * reaction.
@@ -112,70 +112,51 @@ function DateFlags({ r }: { r: EarningsCalendarRow }) {
   return flags.length ? <> {flags}</> : null;
 }
 
-/** Where our read differs from the vendor's direction: a strong read on one side and not the other. */
-export function directionDiffers(r: EarningsCalendarRow): boolean {
-  return r.ours?.edge != null && r.edge !== null && r.ours.edge !== r.edge;
-}
-
-const oursNote = (r: EarningsCalendarRow) =>
-  r.ours?.session ? `Ours: from our bars, as of the ${shortDate(r.ours.session)} close.` : "We hold no bars for this name.";
+const readNote = (r: EarningsCalendarRow) =>
+  r.readSession ? `Ours (Bearing), from our bars as of the ${shortDate(r.readSession)} close.` : "We hold no bars for this name, so no read.";
 
 function EdgeCell({ r }: { r: EarningsCalendarRow }) {
-  if (r.edgeLabel === null) return <td className="muted">—</td>;
+  if (r.edgeLabel === null) {
+    return (
+      <td className="muted" title={readNote(r)}>
+        —
+      </td>
+    );
+  }
   const cls = r.edge === STRONG_BULL ? "chip chip-ok" : r.edge === STRONG_BEAR ? "chip chip-bad" : "chip";
-  const title =
-    `The vendor's direction read, from its security list (the previous session's close): ${r.edgeLabel}. ` +
-    `Ours (Bearing): ${r.ours?.edgeLabel ?? "—"}. ${oursNote(r)}`;
   return (
-    <td title={title}>
+    <td title={`${r.edgeLabel}. ${readNote(r)}`}>
       <span className={cls}>{r.edgeLabel}</span>
-      {directionDiffers(r) && (
-        <>
-          <br />
-          <span className="muted">ours: {r.ours?.edgeLabel}</span>
-        </>
-      )}
     </td>
   );
 }
 
 function StrengthCell({ r }: { r: EarningsCalendarRow }) {
   const v = r.strength;
-  if (v === null) return <td className="muted">—</td>;
+  if (v === null) {
+    return (
+      <td className="muted" title={readNote(r)}>
+        —
+      </td>
+    );
+  }
   const colour = v >= 7 ? "var(--pos)" : v <= 4 ? "var(--neg)" : "var(--amber-line)";
-  const mine = r.ours?.strength ?? null;
   return (
-    <td title={`Strength ${v}/10 (the vendor's rank). Ours: ${mine ?? "—"}/10. ${oursNote(r)}`} style={{ whiteSpace: "nowrap" }}>
+    <td title={`Strength ${v}/10. ${readNote(r)}`} style={{ whiteSpace: "nowrap" }}>
       <span aria-hidden style={{ display: "inline-flex", gap: 1, verticalAlign: "middle" }}>
         {Array.from({ length: 10 }, (_, i) => (
           <span key={i} style={{ width: 5, height: 10, background: i < v ? colour : "var(--chart-grid-mid)" }} />
         ))}
       </span>{" "}
       <span className="muted">{v}/10</span>
-      {mine !== null && mine !== v && (
-        <>
-          <br />
-          <span className="muted">ours {mine}/10</span>
-        </>
-      )}
     </td>
   );
 }
 
 function IvRankCell({ r }: { r: EarningsCalendarRow }) {
-  const mine = r.ours?.ivRank ?? null;
   return (
-    <td
-      className="num"
-      title={`The vendor's IV rank${r.ivRank === null ? ": —" : ` ${Math.round(r.ivRank)}%`}. The broker's: ${mine === null ? "—" : `${Math.round(mine)}%`} (a different definition).`}
-    >
+    <td className="num" title="The broker's IV rank: it picks the spread's side, debit under the cut and credit at or over it.">
       {r.ivRank === null ? "—" : `${Math.round(r.ivRank)}%`}
-      {mine !== null && (
-        <>
-          <br />
-          <span className="muted">broker {Math.round(mine)}%</span>
-        </>
-      )}
     </td>
   );
 }
@@ -373,7 +354,7 @@ export function EarningsCalendarTab() {
         <span className="chip">read-only</span>
         {data?.day && (
           <span className="card-asof">
-            built {data.day} · direction, strength and IV rank of {data.inputs.securityList ?? "—"} · moves from the {data.inputs.expiryIv ?? "—"} IVs
+            built {data.day} · our reads as of the {data.inputs.closeDate ?? "—"} close · moves from the {data.inputs.expiryIv ?? "—"} IVs
           </span>
         )}
       </div>
@@ -470,12 +451,6 @@ export function EarningsCalendarTab() {
         <span className="chip">
           {shown.length} of {all.length} announcements
         </span>
-        <span
-          className="chip"
-          title="Rows shown where our direction read (Bearing, from our bars) is not the vendor's. Watched for a couple of weeks before deciding which the tab leads with."
-        >
-          ours differs on {shown.filter(directionDiffers).length} of {shown.filter((r) => r.ours?.edge != null).length} we read
-        </span>
       </div>
 
       {isError && <p className="muted">Could not read the earnings calendar.</p>}
@@ -538,8 +513,9 @@ export function EarningsCalendarTab() {
       <p className="muted" style={{ marginTop: 8 }}>
         <strong>The suggested spread has no edge in history.</strong> Replayed over 2020-26 (3,587 priced announcements), it lost 4.3% on
         risk on the defaults and in every variant tried, and the direction read called the reaction 48-49% of the time — a coin. It is
-        shown because the screen shows it, not as advice (docs/earnings-screener-plan.md). Direction, strength and IV rank are the
-        vendor's values as of the previous session's close; the IV-rank cut is {data?.ivRankCut ?? 50}. A spread shows
+        shown because the screen shows it, not as advice (docs/earnings-screener-plan.md). Direction and strength are ours (Bearing,
+        from our bars as of the previous session's close; a name we hold no bars for has none); IV rank is the broker's, and the
+        IV-rank cut is {data?.ivRankCut ?? 50}. A spread shows
         listed strikes once the evening's chain listing has matched them and its price once a regular-hours reading has; until
         then it shows the target prices, marked "target".
       </p>

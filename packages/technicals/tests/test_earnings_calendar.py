@@ -94,6 +94,52 @@ def test_the_times_file_is_the_newest_fetched_before_the_next_session():
     assert at == "2026-10-17" and times["PM"] == [(date(2026, 10, 21), "bmo")]
 
 
+def test_the_side_and_the_read_are_ours_and_the_brokers_never_the_vendors():
+    """Every name reads strong bull at rank 40 on the vendor's list; none of that is used.
+
+    BRK: our strong bull, broker rank 62 -> a credit put spread (the vendor's 40 would buy a debit).
+    WEAK: the vendor's strong bull but our plain bear -> no suggestion.
+    NOR: our strong bull but no broker rank -> no suggestion, never the vendor's rank as a stand-in.
+    NONE: no bars of ours -> no direction at all, though the vendor has one."""
+    names = ("BRK", "WEAK", "NOR", "NONE")
+    _write(
+        paths.market_report_dir() / "vendor-securities" / "2026-10-16.json",
+        {
+            "rows": [
+                {
+                    "symbol": s,
+                    "type": "Stock",
+                    "directionalEdge": "sb",
+                    "technicalRank": 9,
+                    "ivRank": 40,
+                    "liquidityRank": 1,
+                    "hasOptions": True,
+                }
+                for s in names
+            ]
+        },
+    )
+    _write(paths.expiry_iv_dir() / "2026-10-16.json", {"names": {s: {"2026-11-20": 0.4} for s in names}})
+    ranks = {"BRK": {"iv_rank": 62.0}, "WEAK": {"iv_rank": 62.0}, "NONE": {"iv_rank": 62.0}}
+    _write(paths.tastytrade_iv_rank(), {"days": {"2026-10-16": ranks}})
+    dolt = {
+        "events": {s: (date(2026, 10, 20), AMC) for s in names},
+        "names": {},
+        "closes": {s: 100.0 for s in names},
+        "close_date": "2026-10-16",
+    }
+    read = {"edge": "sb", "edge_label": "strong bull", "strength": 8, "session": "2026-10-16"}
+    ours = {"BRK": read, "NOR": read, "WEAK": dict(read, edge="brn", edge_label="bear", strength=5)}
+    rows = {r["symbol"]: r for r in ec.build("2026-10-16", dolt=dolt, ours=ours)["rows"]}
+    b = rows["BRK"]
+    assert (b["edge"], b["strength"], b["iv_rank"]) == ("sb", 8, 62.0)
+    assert (b["vendor_edge"], b["vendor_strength"], b["vendor_iv_rank"]) == ("sb", 9, 40)  # kept, unused
+    assert b["suggestion"]["kind"] == "credit" and b["suggestion"]["right"] == "P"
+    assert rows["WEAK"]["edge"] == "brn" and rows["WEAK"]["suggestion"] is None
+    assert rows["NOR"]["iv_rank"] is None and rows["NOR"]["suggestion"] is None
+    assert rows["NONE"]["edge"] is None and rows["NONE"]["suggestion"] is None
+
+
 def test_our_reads_need_a_lookup_and_a_held_name():
     """No saved security list to fit Bearing on, or a name the store does not hold: no read."""
     assert ec.our_reads("2026-10-16", ["NFLX"]) == {}  # the test home holds no lists
@@ -213,7 +259,7 @@ def test_build_joins_the_sources_into_one_row_per_announcement():
         "closes": {"NFLX": 70.53, "SAP": 250.0, "EST": 50.0},
         "close_date": "2026-10-16",
     }
-    ours = {"NFLX": {"edge": "brn", "edge_label": "bear", "strength": 3, "session": "2026-10-16"}}
+    ours = {"NFLX": {"edge": "sbe", "edge_label": "strong bear", "strength": 3, "session": "2026-10-16"}}
     out = ec.build("2026-10-16", dolt=dolt, ours=ours)
     est = {r["symbol"]: r for r in out["rows"]}["EST"]
     # No source times it: unknown, with last quarter's time beside it as an estimate that sets nothing.
@@ -236,17 +282,18 @@ def test_build_joins_the_sources_into_one_row_per_announcement():
         "2026-10-23",
     )
     assert n["sd_move_pct"] == 11.85  # the vendor's page: 11.0
-    assert (n["edge_label"], n["strength"], n["iv_rank"], n["region"]) == ("strong bear", 2, 74, "US")
+    # Direction and strength are ours (3/10), IV rank the broker's (70.38); the vendor's (2/10, 74)
+    # are kept aside, unused.
+    assert (n["edge_label"], n["strength"], n["read_session"], n["iv_rank"], n["region"]) == (
+        "strong bear",
+        3,
+        "2026-10-16",
+        70.38,
+        "US",
+    )
+    assert (n["vendor_edge"], n["vendor_strength"], n["vendor_iv_rank"]) == ("sbe", 2, 74)
     assert n["suggestion"]["kind"] == "credit" and n["suggestion"]["right"] == "C"
     assert n["suggestion"]["expiry"] == "2026-11-20"
     assert rows["SAP"]["region"] == "intl" and rows["SAP"]["sd_move"] is None  # no IVs held for it
-    # Ours beside the vendor's: our read and strength, and the broker's IV rank; none where we hold nothing.
-    assert n["ours"] == {
-        "edge": "brn",
-        "edge_label": "bear",
-        "strength": 3,
-        "session": "2026-10-16",
-        "iv_rank": 70.38,
-    }
-    assert rows["SAP"]["ours"] is None
+    assert rows["SAP"]["edge"] is None  # we hold no bars for it, so it has no read
     assert out["inputs"]["security_list"] == "2026-10-16" and out["inputs"]["expiry_iv"] == "2026-10-16"

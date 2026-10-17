@@ -374,12 +374,9 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   - **Windows:** they count from today (New York) on the newest calendar, and from the calendar's own
     session on an older one.
   - **Grouped rows keep their order**, so the table does not sort.
-  - **Ours beside theirs:**
-    - direction and strength get a muted "ours …" line where ours differs;
-    - IV rank shows the broker's beneath;
-    - a chip counts the direction disagreements.
-
-    The vendor's value leads until the user decides otherwise.
+  - **One read, ours:** direction and strength are ours (Bearing), the tooltip naming the close they
+    are as of; IV rank is the broker's. The vendor's values stay in the file and the reader never
+    reads them, so nothing here shows or filters on them (the user's choice, 2026-10-17).
   - **A standing note** says the suggested spread has no edge in history. It is never removed while
     the column shows.
   - **The spread as read:** the reader joins the latest `screener-greeks/earnings-legs/` reading

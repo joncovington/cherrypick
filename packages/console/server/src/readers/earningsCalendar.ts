@@ -3,8 +3,9 @@
  * docs/earnings-screener-plan.md).
  *
  * `python -m cherrypick.technicals earnings-calendar` writes one file a session to
- * `technicals/earnings-calendar/<day>.json`, already joined: dates and times, the security list's
- * direction, strength and IV rank, the one-SD expected move, and the navigator's suggested spread.
+ * `technicals/earnings-calendar/<day>.json`, already joined: dates and times, our direction and
+ * strength, the broker's IV rank, the expected move, and the navigator's suggested spread. The
+ * vendor's reads ride along in the file as `vendor_*` and are not read here.
  * This reads that file and renames its fields; it decides nothing, so a broken join shows here as
  * the same rows the file holds.
  *
@@ -187,6 +188,7 @@ function row(v: unknown): EarningsCalendarRow | null {
     edge: edge !== null && EDGES.has(edge as EarningsEdge) ? (edge as EarningsEdge) : null,
     edgeLabel: str(r["edge_label"]),
     strength: num(r["strength"]),
+    readSession: str(r["read_session"]),
     ivRank: num(r["iv_rank"]),
     liquidityRank: num(r["liquidity_rank"]),
     optionable: bool(r["optionable"]),
@@ -201,21 +203,6 @@ function row(v: unknown): EarningsCalendarRow | null {
     suggestion: suggestion(r["suggestion"]),
     trade: null,
     listed: null,
-    ours: ours(r["ours"]),
-  };
-}
-
-/** Our own reads beside the vendor's, as the builder wrote them; null when it wrote none. */
-function ours(v: unknown): EarningsCalendarRow["ours"] {
-  if (v === null || v === undefined) return null;
-  const o = rec(v);
-  const edge = str(o["edge"]);
-  return {
-    edge: edge !== null && EDGES.has(edge as EarningsEdge) ? (edge as EarningsEdge) : null,
-    edgeLabel: str(o["edge_label"]),
-    strength: num(o["strength"]),
-    ivRank: num(o["iv_rank"]),
-    session: str(o["session"]),
   };
 }
 

@@ -70,10 +70,14 @@ export interface EarningsCalendarRow {
   type: string | null;
   /** The vendor's region filter: depository receipts are not US. */
   region: "US" | "intl" | null;
+  /** OUR direction read (Bearing, from our bars) -- the vendor's is not shown or used (2026-10-17). */
   edge: EarningsEdge | null;
   edgeLabel: string | null;
-  /** The 1-10 strength (the security list's technical rank). */
+  /** OUR 1-10 strength, from the same bars. */
   strength: number | null;
+  /** The close our read and strength are as of (the store's last bar). */
+  readSession: string | null;
+  /** The BROKER's IV rank, 0-100 (it can read above 100): shown, and what picks the spread's side. */
   ivRank: number | null;
   /** 1 very liquid, 2 somewhat, 3 not. */
   liquidityRank: number | null;
@@ -95,15 +99,6 @@ export interface EarningsCalendarRow {
   /** The suggestion on listed strikes from the evening's chain listing, no quotes yet: [long,
    *  short]. Null where no listing was read; a regular-hours reading (`trade`) supersedes it. */
   listed: { expiry: string; strikes: number[] } | null;
-  /** Ours beside the vendor's (2026-10-17): our direction read (Bearing) and 1-10 strength from our
-   *  bars, as of `session`'s close, and the broker's IV rank. Null for a name we hold nothing on. */
-  ours: {
-    edge: EarningsEdge | null;
-    edgeLabel: string | null;
-    strength: number | null;
-    ivRank: number | null;
-    session: string | null;
-  } | null;
 }
 
 /** One spread's money on one mark, in the suite's layout: signed whole-position cash, costs apart. */
