@@ -84,3 +84,31 @@ harness if they were losing. Through 10-12 `atm_calendar` ran 56 trades at 21% w
   verdict by `advisor kill` on the weekend of 10-17 (`scripts/boundary_2026_10_19.py`); its open UNH
   twin keeps its frozen params to the close.
 - `strat_test_strategies` break 2026-10-19 in the paper ledger, written by the same script.
+
+## Positions closed on their entry tick (2026-09-16..10-15, fixed 2026-10-17)
+
+The 15:35 entry scan opens positions inside the 09:40–15:40 act window. When it finished early, the
+next tick evaluated the new positions as if the report had passed:
+
+- **The calendars:** the front-DTE stop fired at once (the weekly is under five days out at entry).
+- **The overnight structures:** that tick was their first check of the day, and a position that has
+  just paid the spread marks at or below zero, so the PEAD gate closed it as a loser.
+
+**23 rows**, 1 second to 3 minutes after opening, about −$821 net, by strategy:
+
+| Strategy | Rows | Exit reason |
+|---|---|---|
+| `iron_fly` | 9 | `pead_loser` |
+| `atm_calendar` | 7 | `time_exit` |
+| `double_calendar` | 3 | `time_exit` |
+| `iron_condor` | 2 | `pead_loser` |
+
+They saw no event and measured only the round-trip spread. Found while scoring the retired calendars
+for the time-spread plan (docs/time-spread-screen-plan.md, step 0), which excludes them.
+
+- **The fix:** `management.evaluate` holds every position on its entry session (`entry_session`),
+  behind only the expiry close and the pin guard.
+- **Why it lands at once:** it is a recording fix, not a measurement change, since the rows were
+  wrong.
+- **The rows stay in the ledger.** A reader should drop `closed_at − opened_at < 600` when reading
+  these strategies across that window.

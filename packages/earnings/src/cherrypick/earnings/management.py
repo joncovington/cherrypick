@@ -305,6 +305,15 @@ def evaluate(
     if _pin_risk(trade, legs, snapshot.get("spot"), policy, now):
         return Decision("close_all", "pin_risk", {"spot": snapshot.get("spot")})
 
+    # Nothing has happened yet. Every position is opened to be held over a report that falls after
+    # its entry session closes, but a tick between the 15:35 entry scan and 15:40 used to evaluate it
+    # anyway, and the rules read the bare spread as a verdict: the calendars' front-DTE stop (the
+    # weekly is under five days out at entry) and the PEAD gate (a fresh position marks at or below
+    # zero) closed 23 positions minutes after they opened, 2026-09-16..10-15. Only the two rules
+    # above, which are about expiry rather than the trade, outrank this.
+    if sessions_held == 0:
+        return Decision("hold", "entry_session", {})
+
     verdict = _strategy_verdict(
         trade,
         quotes,

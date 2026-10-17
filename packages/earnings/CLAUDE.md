@@ -46,7 +46,9 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
   Best-effort: a session that cannot write its log still trades.
 - **Positions are MANAGED, not force-closed next morning** (2026-08-12, a journaled break — never
   pool across it). A winner short of target is carried up to three *trading* sessions; a loser
-  closes on the first morning (post-earnings drift continues). Quotes come from the stream cache
+  closes on the first morning (post-earnings drift continues). **Nothing but the expiry close and
+  the pin guard acts on the entry session** (`sessions_held == 0`): the report has not happened, and
+  a fresh mark is just the spread (docs/operating-history.md). Quotes come from the stream cache
   first, the broker only for unsubscribed legs and to confirm a close.
 - **Expired positions are SETTLED, not traded out** (2026-08-31, its own break). An expired leg is
   refused as a mark (`provider`) and resolved at intrinsic against the expiration day's close from
