@@ -944,6 +944,7 @@ import type {
   ModuleAnalysisResult,
   PnlCalendarResult,
   PnlExcursion,
+  PnlTrace,
   PnlTradesResult,
 } from "@console/shared";
 
@@ -976,6 +977,17 @@ export function usePnlExcursion(module: string, position: string, mode: TradingM
   return useQuery<PnlExcursion>({
     queryKey: ["pnl-excursion", module, position, mode],
     queryFn: () => getJson<PnlExcursion>(`/api/calendar/excursion?${q.toString()}`),
+    staleTime: Infinity,
+  });
+}
+
+/** One closed position's entry and management trace (`GET /api/calendar/trace`), fetched when its row
+ *  is opened, and never refetched. */
+export function usePnlTrace(module: string, position: string, mode: TradingMode) {
+  const q = new URLSearchParams({ module, position, mode });
+  return useQuery<PnlTrace>({
+    queryKey: ["pnl-trace", module, position, mode],
+    queryFn: () => getJson<PnlTrace>(`/api/calendar/trace?${q.toString()}`),
     staleTime: Infinity,
   });
 }

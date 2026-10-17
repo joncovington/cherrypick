@@ -181,8 +181,14 @@ Cheap once Phases 0–3 exist.
   its exit rules and its attempt and decision trace. *Landed 2026-10-17 as Compare's calendar tab
   (`/compare/calendar`):* module and arm filters, over the suite window; a day drills to the arms
   that traded it, and (same day, later) an arm to its single trades in the money layout, and the
-  tab follows paper/live. A trade opens to its excursion (`core.excursions`). The attempt and
-  decision trace is not there yet.
+  tab follows paper/live. A trade opens to its excursion (`core.excursions`) and its trace
+  (`core.trace`):
+  - **Entry attempts** since the arm's previous fill, folded into runs: linked for flies and MEIC;
+    matched by session, arm and symbol elsewhere. Every matched fill carries its position's
+    strikes (292/292).
+  - **Earnings:** its screening review.
+  - **Flies live:** its order trail.
+  - **Management events,** folded into runs, with an executed event always standing alone.
   Building it found that the earnings ledger reader ignored start and end, so every console view of
   earnings had read its whole history; fixed in the same PR.
 - **Breakdown bars** by module, arm, symbol, weekday and hour.

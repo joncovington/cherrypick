@@ -396,7 +396,14 @@ tab is paper only and shows none. A trade with a position id opens to its excurs
 read`), a bridge: best and worst with their times, the exit, the basis named (a gross path and a net
 one are not the same line), and a "does not reconcile" chip if the leg-built endpoint ever misses
 the recorded gross. The older Performance MAE/MFE card still reads each module's own `excursions`
-verb (`services/excursionsBridge.ts`); the two agree wherever both price a tick.
+verb (`services/excursionsBridge.ts`); the two agree wherever both price a tick. Beneath the
+excursion sits the position's trace (`pages/Compare/TradeTrace.tsx`, `GET /api/calendar/trace` →
+`services/traceBridge.ts` → `python -m cherrypick.core.trace read`), also a bridge:
+- **Entry attempts,** with how the fill was found (`linked` / `matched` / `review`).
+- **Flies live:** its order trail.
+- **Management runs,** each marked as done or considered and naming the gate that held it.
+
+A part a module does not record says why. It is never an empty table.
 
 **Compare** (`/compare`, `lightbox/manifests/CompareLightbox.tsx`, `pages/Compare/`) — every arm of
 every module beside its control, over `GET /api/compare?scope=era|all` (`routes/compare.ts` →

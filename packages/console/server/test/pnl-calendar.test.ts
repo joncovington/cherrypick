@@ -2,7 +2,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import { readPnlCalendar, readPnlExcursion, readPnlTrades } from "../src/readers/pnlCalendar.js";
+import { readPnlCalendar, readPnlExcursion, readPnlTrace, readPnlTrades } from "../src/readers/pnlCalendar.js";
+import { setTraceCaller } from "../src/services/traceBridge.js";
 import { setExcursionCaller } from "../src/services/excursionBridge.js";
 import { MODULE_ERA } from "../src/readers/performance.js";
 import { setMetricsCaller, setTradesCaller, resetMetricsCache } from "../src/services/metricsBridge.js";
@@ -37,6 +38,7 @@ afterEach(() => {
   setMetricsCaller();
   setTradesCaller();
   setExcursionCaller();
+  setTraceCaller();
   resetMetricsCache();
 });
 
@@ -94,6 +96,22 @@ describe("readPnlCalendar", () => {
     const [db, schema, position] = calls[0] as [string, string, string];
     expect(db).toContain(`${path.sep}bwb${path.sep}live_trades.db`);
     expect([schema, position]).toEqual(["bwb_132", "SPX:control:2026-10-15"]);
+  });
+
+  it("reads a position's trace from the same ledger and schema, and refuses a ledger the module lacks", async () => {
+    const calls: unknown[][] = [];
+    setTraceCaller((...args) => {
+      calls.push(args);
+      return Promise.resolve({ ok: true, found: true });
+    });
+    const out = await readPnlTrace(fakeConfig(null), "flies", "live-control-7705", "live");
+    expect(out).toMatchObject({ ok: true, found: true });
+    const [db, schema, position] = calls[0] as [string, string, string];
+    expect(db).toContain(`${path.sep}flies${path.sep}live_trades.db`);
+    expect([schema, position]).toEqual(["fly_book", "live-control-7705"]);
+    const curveLive = await readPnlTrace(fakeConfig(null), "curve", "x", "live");
+    expect(curveLive.ok).toBe(false);
+    expect(calls).toHaveLength(1);
   });
 
   it("reads only the modules with a live ledger in live mode", async () => {

@@ -5,6 +5,7 @@ import { Card } from "../../components/DataTable";
 import { fmtMoney } from "../../lib/format";
 import { usePnlCalendar, usePnlExcursion, usePnlTrades } from "../../lib/api";
 import { Spark } from "../../components/chart/Spark";
+import { TradeTrace } from "./TradeTrace";
 import { useMode } from "../../lib/useMode";
 import { armOfTag } from "../../lib/armTag";
 import { useFeatures } from "../../lib/useFeatures";
@@ -277,7 +278,7 @@ export function TradesTable({
                         style={{ padding: 0 }}
                         aria-expanded={open === i}
                         onClick={() => setOpen(open === i ? null : i)}
-                        title="how far this trade went for and against before it ended"
+                        title="how far this trade went for and against, how it got in, and what was decided while it was held"
                       >
                         {open === i ? "▾" : "▸"} {stamp(t.entry_time, t.session)}
                       </button>
@@ -305,6 +306,7 @@ export function TradesTable({
                   <tr>
                     <td colSpan={9}>
                       <TradeExcursion module={module} position={t.position_id} mode={mode} />
+                      <TradeTrace module={module} position={t.position_id} mode={mode} />
                     </td>
                   </tr>
                 )}
