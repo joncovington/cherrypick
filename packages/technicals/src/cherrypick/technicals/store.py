@@ -135,15 +135,20 @@ def tastytrade_dividends(symbol: str) -> list[_adjust.Dividend]:
     return [_adjust.Dividend(d, float(a)) for d, a in rows]
 
 
-def dividends(conn, symbol: str) -> tuple[list[_adjust.Dividend], list[dict]]:
-    """The dividends adjusted bars use: Dolt's reconciled with tastytrade's (`dividends.reconcile`)."""
+def dividends(
+    conn, symbol: str, splits_: list[_adjust.Split] | None = None
+) -> tuple[list[_adjust.Dividend], list[dict]]:
+    """The dividends adjusted bars use: Dolt's reconciled with tastytrade's (`dividends.reconcile`).
+    `splits_` is the symbol's deduplicated splits, all of them; read here when not given."""
     from .dividends import reconcile
 
     dolt = [
         _adjust.Dividend(r["ex_date"], r["amount"])
         for r in conn.execute("SELECT * FROM dividends WHERE symbol = ?", (symbol,))
     ]
-    return reconcile(dolt, tastytrade_dividends(symbol))
+    if splits_ is None:
+        splits_ = _adjust.dedupe_splits(raw_bars(conn, symbol), splits(conn, symbol))
+    return reconcile(dolt, tastytrade_dividends(symbol), splits_)
 
 
 _PUBLIC_SPLITS: dict = {"mtime": None, "symbols": {}}
@@ -191,9 +196,10 @@ def adjusted_bars(conn, symbol: str, as_of: str | None = None) -> list[_adjust.A
     its prices as of its own last session, so it is compared with `as_of` set to that session; a
     dividend paid after the capture would otherwise move every earlier bar off the vendor's by its
     ratio (CSCO, ex 2026-10-02 against a 2026-09-25 capture: 0 of 3,012 prices agreed)."""
-    splits_ = splits(conn, symbol)
     raw = raw_bars(conn, symbol)
-    divs = dividends(conn, symbol)[0]
+    splits_ = splits(conn, symbol)
+    # Before the as_of cut: tastytrade's amounts are on TODAY's basis, so every split restates them.
+    divs = dividends(conn, symbol, _adjust.dedupe_splits(raw, splits_))[0]
     if as_of is not None:
         raw = [b for b in raw if b.date <= as_of]
         splits_ = [s for s in splits_ if s.ex_date <= as_of]
