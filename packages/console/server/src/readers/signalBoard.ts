@@ -14,7 +14,7 @@ import type { ConsoleConfig } from "../config.js";
 import { num, str } from "./db.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const METHODS = new Set<SignalMethod>(["stage", "rotation", "fundamentals", "scan", "revision"]);
+const METHODS = new Set<SignalMethod>(["stage", "rotation", "fundamentals", "fvp", "scan", "revision"]);
 
 function rec(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};

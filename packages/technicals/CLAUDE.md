@@ -146,19 +146,25 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
 - **The signal board** (`board.py`, `board`, `score-board`, 2026-10-17): each listed stock's count of
   methods agreeing on one side, the board's rule read off the 15 saved boards (every row's tags are
   on its own side, 0 of ~430 against; every row has 3+). Counted: stage, sector rotation (into =
-  leading, out = lagging or weakening, on the name's sector fund), fundamentals, the trend scan
-  (counter-trend never counts) and the session's revisions. Fundamentals is our score
-  (`fundamentals.market_percentiles`: four measures ranked within the sector, margin twice) placed
-  across every name with estimates, a sector and a price on the newest weekly snapshot; compelling
-  is the top fifth, weak the bottom fifth (fit 2026-10-17; flat from the top quarter to the top
-  fifth on the boards). On the boards: stage 69/73 found (11 extra in 130 rows), revision 33/38,
-  rotation 89/96, fundamentals 59/95 (compelling 43/55 with 2 extra, weak 16/40) and scan 9/16 (the
-  two trend-following rules over the session and the one before, read off the saved scan lists) --
-  fundamentals and the scan are marked approximate; 110 of 130 rows land on the board's side. Not
-  counted: the three flow tags, and fundamentals vs price (tried as quadrants and as the difference
-  of our fundamentals percentile and 1-10 rank: about 23/50, under half). A tie has no side. The history store is topped
-  up each morning for it (`history land` 06:20, `history fundamentals` 06:25 ET); the board is
-  written at 06:45 ET to `data/technicals/board/<session>.json`; record-only.
+  leading, out = lagging or weakening, on the name's sector fund), fundamentals, fundamentals vs
+  price, the trend scan (counter-trend never counts) and the session's revisions.
+  - **Fundamentals** is our score (`fundamentals.market_percentiles(..., by_industry=True)`: four
+    measures ranked against the name's industry peers, `peer_groups` -- Yahoo's industry, its sector
+    where fewer than five -- margin twice) placed across every name with estimates and a price on
+    the newest weekly snapshot; compelling is the top quarter, weak the bottom 35%. **Industry peers
+    are the user's choice (2026-10-17): a company against its competitors, not an exact match of
+    the vendor** -- by sector, banks, insurers and brokers were one group. A bank-specific variant
+    (price-to-book and ROE) reproduced no better and was left out.
+  - **Fundamentals vs price**: that place against our 1-10 rank -- fundamentals ahead at the median
+    or better with rank 6 or less, price ahead at the median or worse with rank 7 or more.
+  - On the boards: stage 69/73 found (11 extra in 130 rows), revision 33/38, rotation 89/96,
+    fundamentals 74/95 (13 extra; 59/95 at 8 by sector), fundamentals vs price 29/50 (7 extra; under
+    half by sector) and scan 9/16 (the two trend-following rules over the session and the one
+    before, read off the saved scan lists). Fundamentals, fundamentals vs price and the scan are
+    marked approximate; 114 of 130 rows land on the board's side. Not counted: the three flow tags.
+  - A tie has no side. The history store is topped up each morning for it (`history land` 06:20,
+    `history fundamentals` 06:25 ET); the board is written at 06:45 ET to
+    `data/technicals/board/<session>.json`; record-only.
 - **Bearing** (`compass.py`, `score-bearing`): our name for the vendor's direction read. It is a
   lookup on (1M trend, 6M trend, score tier 1-4 / 5-6 / 7-10) fitted on the dashboard's security
   list, which `scripts/fetch_vendor_edition.py` keeps once a session in

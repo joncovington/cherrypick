@@ -36,17 +36,43 @@ def test_the_revision_detail_names_the_deciding_event():
     assert board.revision_detail(target) == "Citigroup target +13%"
 
 
-def test_the_vendors_tag_words_map_to_our_four_methods_and_nothing_else():
+def test_the_vendors_tag_words_map_to_our_methods_and_nothing_else():
     tags = (
         "Early Breakdown", "Building Outperformance", "Confirmed Underperformers",
         "Money rotating out of the sector", "Bearish Trade Scan", "Analyst Bearish Revision",
         "Weak fundamentals", "Price action ahead of the fundamentals", "Institutional Put Buying",
     )  # fmt: skip
-    assert board.vendor_methods(tags) == {"stage", "rotation", "scan", "revision", "fundamentals"}
-    # Fundamentals-vs-price is its own method, not counted; flow is paid data.
-    assert (
-        board.vendor_methods(("Fundamentals ahead of the price action", "Institutional Call Buying")) == set()
-    )
+    assert board.vendor_methods(tags) == {"stage", "rotation", "scan", "revision", "fundamentals", "fvp"}
+    # "Fundamentals ahead" is fundamentals vs price, not fundamentals; flow is paid data.
+    assert board.vendor_methods(("Fundamentals ahead of the price action", "Institutional Call Buying")) == {
+        "fvp"
+    }
+
+
+def test_fundamentals_vs_price_compares_the_fundamentals_place_with_the_price_rank(monkeypatch):
+    from cherrypick.technicals import levels
+
+    monkeypatch.setattr(stage, "stages_on", lambda day, closes, bench: {})
+    monkeypatch.setattr(rotation, "states_on", lambda day, closes, funds: {})
+    # The last close stands in for the rank score; the rank is read from it.
+    monkeypatch.setattr(levels, "rank_score", lambda closes: closes[-1])
+    monkeypatch.setattr(levels, "rank_from_cutoffs", lambda score, cutoffs: int(score))
+    names = {"CHEAP": (0.6, 4), "RICH": (0.4, 9), "BOTH": (0.9, 10), "NEITHER": (0.3, 2), "EDGE": (0.5, 6)}
+    bars = {
+        s: [SimpleNamespace(date="2026-10-16", high=1.0, low=1.0, close=float(r))]
+        for s, (_, r) in names.items()
+    }
+    pct = {s: p for s, (p, _) in names.items()}
+    out = board.tags_on("2026-10-16", bars, {}, {}, {}, {}, pct, [0.0] * 9)
+    fvp = {s: [(t.side, t.label) for t in ts if t.method == "fvp"] for s, ts in out.items()}
+    assert fvp["CHEAP"] == [(1, "Fundamentals ahead of the price action")]
+    assert fvp["RICH"] == [(-1, "Price action ahead of the fundamentals")]
+    assert fvp["EDGE"] == [(1, "Fundamentals ahead of the price action")], "the median and rank 6 are inside"
+    # Strong on both or weak on both is neither: they agree.
+    assert fvp.get("BOTH", []) == [] and fvp.get("NEITHER", []) == []
+    # No cut-offs for the session, no fundamentals-vs-price tag.
+    out = board.tags_on("2026-10-16", bars, {}, {}, {}, {}, pct, None)
+    assert not any(t.method == "fvp" for ts in out.values() for t in ts)
 
 
 def test_scoring_counts_only_our_tags_on_the_rows_side():

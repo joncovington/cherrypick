@@ -4,7 +4,7 @@
  * The console reads the file and re-derives nothing.
  */
 
-export type SignalMethod = "stage" | "rotation" | "fundamentals" | "scan" | "revision";
+export type SignalMethod = "stage" | "rotation" | "fundamentals" | "fvp" | "scan" | "revision";
 
 export interface SignalTag {
   method: SignalMethod;

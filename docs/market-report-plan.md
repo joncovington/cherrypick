@@ -271,15 +271,15 @@ bullish names printed. The full list's qualifying threshold is not stated.
 
 **Our board (2026-10-17, `packages/technicals/board.py`).** Across the 15 saved boards (Sept 23 to
 Oct 14, 130 rows, ~430 tags) every tag sits on its row's own side -- none points the other way --
-and every row has at least three. The board counts five methods from our own engines and scores
+and every row has at least three. The board counts six methods from our own engines and scores
 them with `score-board`: stage 69 of 73 tags found, analyst revision 33 of 38, sector rotation 89 of
 96 (the vendor's "into" is its leading quadrant, "out" lagging or weakening; refit to the daily
-quadrant the same day, up from 61 under the banded rule), fundamentals 59 of 95 (our score's top and
-bottom fifths across the market: compelling 43 of 55, weak only 16 of 40) and the scan 9 of 16 (the
-two trend-following rules over the session and the one before, as the saved scan lists show it);
-110 of 130 rows land on the board's side. Fundamentals vs price was tried against our 1-10 rank and
-reproduces under half its tags (about 23 of 50), so it is not counted; a better fundamentals score
-is the way to it. The flow tags stay paid data.
+quadrant the same day, up from 61 under the banded rule), fundamentals 74 of 95, fundamentals vs
+price 29 of 50 and the scan 9 of 16 (the two trend-following rules over the session and the one
+before, as the saved scan lists show it); 114 of 130 rows land on the board's side. Fundamentals
+ranks each company against its industry peers, the user's choice (2026-10-17) over an exact match:
+the vendor states industry medians too, but its taxonomy is not Yahoo's. The flow tags stay paid
+data.
 
 **The flow tags are most likely per-name sums for the session**, not a longer window. Section 7
 ranks single trades; the tags total every qualifying trade in the name. That explains AMD's $18M
