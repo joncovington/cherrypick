@@ -174,6 +174,22 @@ describe("the earnings tab", () => {
     payload.rows = saved;
   });
 
+  it("gives the spread's kind its own column, ahead of the strikes", () => {
+    const saved = payload.rows;
+    payload.rows = [
+      row({ symbol: "CR", listed: { expiry: "2026-11-20", strikes: [95, 100] } }),
+      row({ symbol: "DB", suggestion: { kind: "debit", right: "C", long: 100, short: 105, expiry: "2026-11-20" } }),
+      row({ symbol: "NOS", suggestion: null }),
+    ];
+    const html = render("/screeners/earnings?day=2026-10-15&dir=all");
+    expect(html).toContain(">Kind</th><th>Spread</th>");
+    expect(html).toMatch(/<td style="white-space:nowrap"><span class="chip chip-credit">credit put<\/span><\/td><td[^>]*>/);
+    expect(html).toMatch(/<td style="white-space:nowrap"><span class="chip chip-debit">debit call<\/span><\/td>/);
+    // The chip is no longer inside the spread cell.
+    expect(html).not.toMatch(/100\/95 P[^<]*<\/span>[^]*?<br\/><span class="chip chip-credit">/);
+    payload.rows = saved;
+  });
+
   it("puts the symbol and its company in one cell", () => {
     const html = render("/screeners/earnings?day=2026-10-15");
     expect(html).toMatch(/symbol=AAA"[^>]*>AAA<\/a>(<span[^]*?<\/span>)?<br\/><span class="muted">Alpha Inc\.<\/span>/);

@@ -204,16 +204,13 @@ function TradeCell({ t }: { t: EarningsTrade }) {
     "\nHistory: no edge (the note below the table).";
   // The strikes lead: the column is the table's last, and whatever comes first is what shows.
   return (
-    <td title={title}>
+    <td title={title} style={{ whiteSpace: "nowrap" }}>
       <span className="num">
         {first?.strike}/{second?.strike} {t.right}
       </span>{" "}
       <span className="muted">{shortDate(t.expiry)}</span> <span className="num">{price}</span>
       <br />
-      <span className={t.kind === "credit" ? "chip chip-credit" : "chip chip-debit"}>
-        {t.kind} {right}
-      </span>
-      {t.shareOfWidth !== null && <span className="muted"> {(100 * t.shareOfWidth).toFixed(0)}% of width</span>}
+      {t.shareOfWidth !== null && <span className="muted">{(100 * t.shareOfWidth).toFixed(0)}% of width</span>}
       {t.maxLoss !== null && <span className="muted"> · max loss ${money(t.maxLoss)}</span>}
       {t.passes === false && (
         <>
@@ -235,6 +232,20 @@ function TradeCell({ t }: { t: EarningsTrade }) {
   );
 }
 
+/** The spread's kind, in its own column: credit and debit each a neutral chip of their own. The
+ *  reading's kind where one was taken, the suggestion's otherwise (they are the same spread). */
+function KindCell({ s, t }: { s: EarningsSuggestion | null; t: EarningsTrade | null }) {
+  const k = t ?? s;
+  if (k === null) return <td className="muted">—</td>;
+  return (
+    <td style={{ whiteSpace: "nowrap" }}>
+      <span className={k.kind === "credit" ? "chip chip-credit" : "chip chip-debit"}>
+        {k.kind} {k.right === "C" ? "call" : "put"}
+      </span>
+    </td>
+  );
+}
+
 /** Three states, each labelled so a target price is never read as a strike: read in regular hours
  *  (listed strikes and a price), listed (strikes from the evening's chain listing, not priced yet),
  *  or targets (prices the rule aims at, not strikes). */
@@ -250,11 +261,6 @@ function SpreadCell({
   if (s === null) return <td className="muted">—</td>;
   if (t !== null) return <TradeCell t={t} />;
   const right = s.right === "C" ? "call" : "put";
-  const kindChip = (
-    <span className={s.kind === "credit" ? "chip chip-credit" : "chip chip-debit"}>
-      {s.kind} {right}
-    </span>
-  );
   if (listed !== null) {
     // [long, short]; a credit spread reads short first, a debit long first.
     const [long, short] = listed.strikes;
@@ -263,14 +269,13 @@ function SpreadCell({
       s.kind === "credit" ? `sell the ${short} ${right}, buy the ${long} ${right}` : `buy the ${long} ${right}, sell the ${short} ${right}`;
     return (
       <td
+        style={{ whiteSpace: "nowrap" }}
         title={`Listed strikes on ${listed.expiry}, from the evening's chain listing: ${legs}. The price and liquidity show once read, at 11:30 and 14:30 ET. History: no edge (the note below the table).`}
       >
         <span className="num">
           {shown} {s.right}
         </span>{" "}
         <span className="muted">{shortDate(listed.expiry)}</span>
-        <br />
-        {kindChip}
       </td>
     );
   }
@@ -283,12 +288,10 @@ function SpreadCell({
     "They are matched to listed strikes the evening the calendar is built, for strong reads reporting within the week. " +
     "History: no edge (the note below the table).";
   return (
-    <td title={title}>
+    <td title={title} style={{ whiteSpace: "nowrap" }}>
       <span className="muted num">
         ≈{money(s.kind === "credit" ? s.short : s.long)} / ≈{money(s.kind === "credit" ? s.long : s.short)}
-      </span>
-      <br />
-      {kindChip}{" "}
+      </span>{" "}
       <span className="chip" title="Target prices, not listed strikes">
         target
       </span>
@@ -472,13 +475,14 @@ export function EarningsCalendarTab() {
                   Exp. move
                 </th>
                 <th>Sector</th>
-                <th title="The earnings-navigator spread for strong reads: debit under the IV-rank cut, credit over it">Spread</th>
+                <th title="The earnings-navigator spread for strong reads: debit under the IV-rank cut, credit over it">Kind</th>
+                <th>Spread</th>
               </tr>
             </thead>
             <tbody>
               {[...groups.entries()].map(([day, rows]) => [
                 <tr key={`h-${day}`} className="group-row">
-                  <td colSpan={9}>
+                  <td colSpan={10}>
                     <strong>{dayHeading(day)}</strong> <span className="chip">{rows.length}</span>
                   </td>
                 </tr>,
@@ -499,7 +503,8 @@ export function EarningsCalendarTab() {
                     <IvRankCell r={r} />
                     <td className="num">{r.price === null ? "—" : `$${money(r.price)}`}</td>
                     <MoveCell r={r} />
-                    <td>{r.sector ?? "—"}</td>
+                    <td style={{ maxWidth: 160 }}>{r.sector ?? "—"}</td>
+                    <KindCell s={r.suggestion} t={r.trade} />
                     <SpreadCell s={r.suggestion} t={r.trade} listed={r.listed} />
                   </tr>
                 )),
