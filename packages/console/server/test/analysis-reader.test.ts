@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import { ANALYSIS_VERSION, type ArmAnalysis } from "@console/shared";
 import { readArmsRisk, readModuleAnalysis, riskRow } from "../src/readers/analysis.js";
-import { setAnalysisCaller, resetAnalysisCache, readAnalysis } from "../src/services/analysisBridge.js";
+import { setAnalysisCaller, resetAnalysisCache, readAnalysis, readAnalysisAsync } from "../src/services/analysisBridge.js";
 import type { ConsoleConfig } from "../src/config.js";
 
 /**
@@ -66,68 +66,68 @@ afterEach(() => {
 });
 
 describe("readModuleAnalysis", () => {
-  it("reads flies' paper ledger by default and its live ledger in live mode", () => {
+  it("reads flies' paper ledger by default and its live ledger in live mode", async () => {
     const seen: string[] = [];
     setAnalysisCaller((db) => {
       seen.push(db);
       return OK;
     });
     const config = fakeConfig(null);
-    readModuleAnalysis(config, "flies", "current", "paper");
-    readModuleAnalysis(config, "flies", "current", "live");
+    await readModuleAnalysis(config, "flies", "current", "paper");
+    await readModuleAnalysis(config, "flies", "current", "live");
     expect(seen).toEqual([path.join(config.paths.fliesDir, "paper_trades.db"), path.join(config.paths.fliesDir, "live_trades.db")]);
   });
 
-  it("passes the arms through by tag", () => {
+  it("passes the arms through by tag", async () => {
     setAnalysisCaller(() => OK);
-    const out = readModuleAnalysis(fakeConfig(null), "flies", "ALL");
+    const out = await readModuleAnalysis(fakeConfig(null), "flies", "ALL");
     expect(out.ok).toBe(true);
     expect(out.nRecords).toBe(2);
     expect(out.groups).toEqual([{ tag: "control", analysis: ARM }]);
   });
 
-  it("bounds era='current' to the suite epoch and pmcc to its stamped era, as performance does", () => {
+  it("bounds era='current' to the suite epoch and pmcc to its stamped era, as performance does", async () => {
     const seen: Array<[string, string | null, string | null]> = [];
     setAnalysisCaller((_db, schema, start, _end, era) => {
       seen.push([schema, start, era ?? null]);
       return OK;
     });
     const config = fakeConfig("2026-08-21");
-    readModuleAnalysis(config, "flies", "current");
-    readModuleAnalysis(config, "flies", "ALL");
-    readModuleAnalysis(config, "pmcc", "current");
+    await readModuleAnalysis(config, "flies", "current");
+    await readModuleAnalysis(config, "flies", "ALL");
+    await readModuleAnalysis(config, "pmcc", "current");
     expect(seen[0]).toEqual(["fly_book", "2026-08-21", null]);
     expect(seen[1]).toEqual(["fly_book", null, null]);
     expect(seen[2]?.[0]).toBe("pmcc");
     expect(seen[2]?.[2]).not.toBeNull();
   });
 
-  it("names the module to the bridge, so its declared allocations apply, and passes their status on", () => {
+  it("names the module to the bridge, so its declared allocations apply, and passes their status on", async () => {
     const modules: Array<string | null> = [];
     setAnalysisCaller((_db, _schema, _start, _end, _era, module) => {
       modules.push(module ?? null);
       return { ...OK, analysis: { ...OK.analysis, allocations: { path: "arm_capital.json", error: "bad date" } } };
     });
-    const out = readModuleAnalysis(fakeConfig(null), "bwb");
+    const out = await readModuleAnalysis(fakeConfig(null), "bwb");
     expect(modules).toEqual(["bwb"]);
     expect(out.allocations).toEqual({ path: "arm_capital.json", error: "bad date" });
   });
 
-  it("refuses a live read for a module with no live ledger, without spawning", () => {
+  it("refuses a live read for a module with no live ledger, without spawning", async () => {
     let spawned = false;
     setAnalysisCaller(() => {
       spawned = true;
       return OK;
     });
-    const out = readModuleAnalysis(fakeConfig(null), "curve", "current", "live");
+    const out = await readModuleAnalysis(fakeConfig(null), "curve", "current", "live");
     expect(out.ok).toBe(false);
     expect(out.error).toContain("no live ledger");
     expect(spawned).toBe(false);
   });
 
-  it("reports a refused read as an error, not as no arms", () => {
+  it("reports a refused read as an error, not as no arms", async () => {
     setAnalysisCaller(() => ({ ok: false, analysis: null, error: "cannot read" }));
-    const out = readModuleAnalysis(fakeConfig(null), "flies");
+    const out = await readModuleAnalysis(fakeConfig(null), "flies");
     expect(out.ok).toBe(false);
     expect(out.error).toBe("cannot read");
     expect(out.groups).toEqual([]);
@@ -135,7 +135,7 @@ describe("readModuleAnalysis", () => {
 });
 
 describe("analysisBridge", () => {
-  it("memoises a reading for the same ledger and window", () => {
+  it("memoises a reading for the same ledger and window", async () => {
     let calls = 0;
     setAnalysisCaller(() => {
       calls += 1;
@@ -167,8 +167,27 @@ const FULL = {
   window: { scope: "arm_era", start: "2026-10-05", break: null, reason: "the module's latest book-wide break" },
 } as unknown as ArmAnalysis;
 
+describe("analysisBridge async", () => {
+  it("serves two simultaneous reads of one ledger from one subprocess", async () => {
+    let calls = 0;
+    setAnalysisCaller(() => {
+      calls += 1;
+      return OK;
+    });
+    const [a, b] = await Promise.all([
+      readAnalysisAsync("a.db", "fly_book", null, null, null, "flies"),
+      readAnalysisAsync("a.db", "fly_book", null, null, null, "flies"),
+    ]);
+    expect(calls).toBe(1);
+    expect(a).toBe(b);
+    // And the answer is then cached for the next read.
+    await readAnalysisAsync("a.db", "fly_book", null, null, null, "flies");
+    expect(calls).toBe(1);
+  });
+});
+
 describe("the Compare risk tab's rows", () => {
-  it("picks each field from the arm's reading and computes nothing", () => {
+  it("picks each field from the arm's reading and computes nothing", async () => {
     const row = riskRow("flies", "control", FULL);
     expect(row).toMatchObject({
       module: "flies",
@@ -189,13 +208,13 @@ describe("the Compare risk tab's rows", () => {
     expect(row.currentRun).toEqual({ kind: "loss", length: 3 });
   });
 
-  it("names a module whose read failed, and skips one with no live ledger in live mode", () => {
+  it("names a module whose read failed, and skips one with no live ledger in live mode", async () => {
     const full = { ...OK, analysis: { ...OK.analysis, groups: { control: FULL } } };
     setAnalysisCaller((db) => (db.includes("meic") ? { ok: false, analysis: null, error: "cannot read" } : full));
-    const paper = readArmsRisk(fakeConfig(null), "paper");
+    const paper = await readArmsRisk(fakeConfig(null), "paper");
     expect(paper.failures).toEqual([{ module: "meic", error: "cannot read" }]);
     expect(paper.rows.filter((r) => r.module === "flies")).toHaveLength(1);
-    const live = readArmsRisk(fakeConfig(null), "live");
+    const live = await readArmsRisk(fakeConfig(null), "live");
     expect(new Set(live.rows.map((r) => r.module))).toEqual(new Set(["flies", "earnings", "bwb"]));
   });
 });

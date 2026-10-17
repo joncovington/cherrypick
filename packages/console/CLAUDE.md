@@ -370,7 +370,12 @@ largest peak, max drawdown and drawdown over peak, the block-reordered 95th perc
 the top 10%, the current session run and the slippage breakeven. Fields are PICKED from each module's
 `core.analysis` reading (`riskRow`), never computed; each module read is the one its analysis tab
 memoises. A module that fails is named, never an empty section; off modules are hidden with their
-failures. This is the plan's "arms overview": it lives here, beside the paired comparison, rather
+failures. The analysis reads are ASYNC (`services/moduleCli.ts::spawnModuleCliAsync`, the same parse
+as the sync spawner) and the risk tab runs all eight at once: a cold read costs the slowest module
+(~3 s, MEIC), not their sum, and never holds the event loop (a health request answered in 0.08 s
+during one). A second request for a ledger being read waits on the same subprocess. Every other
+bridge still spawns synchronously, holding the whole server for its subprocess; a slow one should
+move to the async spawner too. This is the plan's "arms overview": it lives here, beside the paired comparison, rather
 than as a second page that would repeat Compare's arm list.
 
 **Compare** (`/compare`, `lightbox/manifests/CompareLightbox.tsx`, `pages/Compare/`) — every arm of

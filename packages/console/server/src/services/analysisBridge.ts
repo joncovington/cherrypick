@@ -1,5 +1,5 @@
 import { ANALYSIS_VERSION, type ArmAnalysis } from "@console/shared";
-import { spawnModuleCli } from "./moduleCli.js";
+import { spawnModuleCli, spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
  * The per-arm strategy analysis, read from the module that owns the math.
@@ -40,6 +40,23 @@ function allocationsOf(raw: unknown): ModuleAnalysis["allocations"] {
 const UNAVAILABLE =
   "strategy analysis unavailable — cherrypick-core must be installed (pip install -e packages/core)";
 
+function argvFor(
+  dbPath: string,
+  schema: string,
+  start: string | null,
+  end: string | null,
+  era: string | null,
+  module: string | null,
+): string[] {
+  const argv = ["-m", "cherrypick.core.analysis", "read", "--db", dbPath, "--schema", schema];
+  if (start !== null) argv.push("--start", start);
+  if (end !== null) argv.push("--end", end);
+  if (era !== null) argv.push("--era", era);
+  // Whose declared allocations apply (`<home>/config/arm_capital.json`); core reads the file.
+  if (module !== null) argv.push("--module", module);
+  return argv;
+}
+
 function spawnCaller(
   dbPath: string,
   schema: string,
@@ -48,13 +65,23 @@ function spawnCaller(
   era: string | null = null,
   module: string | null = null,
 ): ModuleAnalysisBridgeResult {
-  const argv = ["-m", "cherrypick.core.analysis", "read", "--db", dbPath, "--schema", schema];
-  if (start !== null) argv.push("--start", start);
-  if (end !== null) argv.push("--end", end);
-  if (era !== null) argv.push("--era", era);
-  // Whose declared allocations apply (`<home>/config/arm_capital.json`); core reads the file.
-  if (module !== null) argv.push("--module", module);
-  const res = spawnModuleCli(argv, UNAVAILABLE);
+  return shape(spawnModuleCli(argvFor(dbPath, schema, start, end, era, module), UNAVAILABLE), schema);
+}
+
+/** The same read without blocking the event loop (`spawnModuleCliAsync`), shaped by the same code. */
+async function spawnCallerAsync(
+  dbPath: string,
+  schema: string,
+  start: string | null,
+  end: string | null,
+  era: string | null = null,
+  module: string | null = null,
+): Promise<ModuleAnalysisBridgeResult> {
+  return shape(await spawnModuleCliAsync(argvFor(dbPath, schema, start, end, era, module), UNAVAILABLE), schema);
+}
+
+/** The CLI's reply as a typed result: a refusal named, a version this console does not read refused. */
+function shape(res: SpawnedJson, schema: string): ModuleAnalysisBridgeResult {
   if (!res.ok || res.json === null) return { ok: false, analysis: null, error: res.error };
   if (res.json["ok"] !== true) {
     const err = res.json["error"];
@@ -81,10 +108,12 @@ function spawnCaller(
 }
 
 let caller = spawnCaller;
+let asyncCaller = spawnCallerAsync;
 
-/** Swap the subprocess out in tests. Pass nothing to restore the real one. */
+/** Swap the subprocess out in tests (both paths). Pass nothing to restore the real ones. */
 export function setAnalysisCaller(fn?: typeof spawnCaller): void {
   caller = fn ?? spawnCaller;
+  asyncCaller = fn === undefined ? spawnCallerAsync : (...args) => Promise.resolve(fn(...args));
 }
 
 // The stress test reshuffles every arm's sessions 2,000 times; the answer moves only when a trade
@@ -109,7 +138,37 @@ export function readAnalysis(
   return value;
 }
 
+// Reads in flight, by the same key: a second request for a ledger being read waits on the first
+// subprocess rather than starting its own (two tabs opened together, or Compare's risk tab racing a
+// module's analysis tab).
+const inflight = new Map<string, Promise<ModuleAnalysisBridgeResult>>();
+
+/** `readAnalysis` without blocking the server: the same cache, one subprocess per key at a time. */
+export function readAnalysisAsync(
+  dbPath: string,
+  schema: string,
+  start: string | null,
+  end: string | null,
+  era: string | null = null,
+  module: string | null = null,
+  now = Date.now(),
+): Promise<ModuleAnalysisBridgeResult> {
+  const key = `${dbPath}|${schema}|${start ?? ""}|${end ?? ""}|${era ?? ""}|${module ?? ""}`;
+  const hit = cache.get(key);
+  if (hit !== undefined && now - hit.at < TTL_MS) return Promise.resolve(hit.value);
+  const pending = inflight.get(key);
+  if (pending !== undefined) return pending;
+  const read = asyncCaller(dbPath, schema, start, end, era, module).then((value) => {
+    cache.set(key, { at: Date.now(), value });
+    return value;
+  });
+  inflight.set(key, read);
+  void read.finally(() => inflight.delete(key));
+  return read;
+}
+
 /** Drop the memoised analyses. Tests only. */
 export function resetAnalysisCache(): void {
   cache.clear();
+  inflight.clear();
 }
