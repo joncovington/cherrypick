@@ -1,6 +1,6 @@
 # Earnings screener plan
 
-Status: plan, 2026-10-16. Nothing built yet.
+Status: plan, 2026-10-16. Step 1 (history) done 2026-10-17: no edge after costs (below). Steps 2-5 not built.
 
 A nightly list of upcoming earnings announcements, each with a directional spread built by the
 vendor's earnings-navigator rule, priced on our own chains and cut to trades that are actually
@@ -164,6 +164,55 @@ After each report, record:
 These go into the same per-day file, under a `results` block. A fidelity-style tab then shows the
 rule's running result on our own prices. This is the forward check step 1 can't give, since the
 history is end-of-day chains.
+
+## Step 1 result (2026-10-17): no edge after costs
+
+Run: `scripts/earnings_navigator_history.py`, 2020-01 to 2026-10-02. Output in
+`~/.cherrypick/data/research/earnings-navigator/run-2026-10-17.json`; re-analyse it with
+`--from-json`.
+
+- **Sample.** 14,364 events from 1,049 names passed the price and volume screen. 3,587 were priced:
+  1,939 strong bull, 1,040 strong bear, 608 in the tier below.
+- **The direction read doesn't call earnings reactions.**
+  - A strong bull moved up on 48.8% of reactions; a strong bear moved down on 48.4%; the tier below
+    did no better.
+  - That is a coin flip, leaning contrarian like the EM-fly study's trend signals.
+- **The default rule loses.** Cut 50 on entry-day IV rank, cycle monthly, the user's credit legs,
+  out at the reaction close:
+  - 750 trades with entry and exit on the right days;
+  - -4.3% return on risk, 42% won, -$47 a trade;
+  - the same trades in the opposite direction: -5.0%.
+- **Every setting loses** (return on risk, exact trades):
+
+  | Setting | Return on risk | Note |
+  |---|---|---|
+  | IV-rank cut 33 / 45 / 50 | about -4% each | barely differ |
+  | Always credit | -3.6% | |
+  | Always debit | -8.3% | |
+  | Cut read five weeks before the report | -6.2% | |
+  | Event expiry | -1.4% | +5.2% before 2025, -3.7% since |
+  | d30 / d45 / cycle | -2.4% / -5.1% / -4.3% | |
+  | Credit legs (user, user_raw, v2025, v2026) | -4.3%, -3.5%, -3.4%, -6.4% | |
+  | Exit day 2 | -3.7% | |
+  | Exit at expiry | -6.8% | |
+  | Strong plus the tier below | -3.8% | |
+
+  The best of the 480 grid cells, +1.2% (cut on IV rank five weeks earlier, at 45; event expiry;
+  credit beyond the raw straddle; held to expiry), is selection noise. Its neighbours lose, and its
+  opposite-direction twin is -4.4%.
+- **The check run agrees.** `strict` (both legs quoted) is worse, as its bias predicts: about -10%
+  across the board.
+- **Limits.**
+  - The liquidity screen stands in for liquidity rank 1.
+  - The direction read is 85-95% faithful.
+  - Dolt's IV rank may not be the vendor's.
+  - Two thirds of the exact trades are from 2025-26.
+  - None of these is the size of the loss, and the direction coin-flip doesn't depend on pricing at
+    all.
+
+What this means for the plan: the list can still ship as a read surface, as the plan said it would,
+but the page must say that history shows no edge. And step 5's forward record is what would show a
+change.
 
 ## Gaps
 
