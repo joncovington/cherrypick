@@ -9,7 +9,7 @@ import type {
 import type { ConsoleConfig } from "../config.js";
 import { suiteEra } from "./db.js";
 import { LIVE_LEDGER, MODULE_ERA, MODULE_SCHEMA, moduleLedgerPath } from "./performance.js";
-import { readAnalysis } from "../services/analysisBridge.js";
+import { readAnalysisAsync } from "../services/analysisBridge.js";
 
 /**
  * One module's strategy analysis, per arm, via `services/analysisBridge.ts`
@@ -17,14 +17,14 @@ import { readAnalysis } from "../services/analysisBridge.js";
  * ledger file for the mode, the same suite epoch, the same stamped module era -- so a figure here
  * and the reading beside it always describe the same trades. The module's id goes to the bridge
  * so its declared allocations apply; the file is read by core, never here. Nothing is computed in
- * this file.
+ * this file. Async (`readAnalysisAsync`): a subprocess never holds the server's event loop.
  */
-export function readModuleAnalysis(
+export async function readModuleAnalysis(
   config: ConsoleConfig,
   module: PerformanceModuleId,
   era: "current" | "ALL" = "current",
   mode: TradingMode = "paper",
-): ModuleAnalysisResult {
+): Promise<ModuleAnalysisResult> {
   const schema = MODULE_SCHEMA[module];
   const suite = suiteEra(config.paths.orchestratorConfig);
   const start = era === "current" ? suite.from : null;
@@ -36,7 +36,7 @@ export function readModuleAnalysis(
     const error = `${module} has no live ledger — its analysis is paper only`;
     return { ok: false, module, mode, schema, era: eraOut, nRecords: 0, allocations: none, groups: [], error };
   }
-  const res = readAnalysis(dbPath, schema, start, null, moduleEra, module);
+  const res = await readAnalysisAsync(dbPath, schema, start, null, moduleEra, module);
   if (!res.ok || res.analysis === null) {
     return { ok: false, module, mode, schema, era: eraOut, nRecords: 0, allocations: none, groups: [], error: res.error };
   }
@@ -85,17 +85,22 @@ export function riskRow(module: PerformanceModuleId, tag: string, a: ArmAnalysis
  * analysis tab has not already paid. A module whose read fails is named in `failures`, never shown
  * as an empty section; in live mode a module with no live ledger is simply not part of the answer.
  */
-export function readArmsRisk(config: ConsoleConfig, mode: TradingMode = "paper"): ArmsRiskResult {
+export async function readArmsRisk(config: ConsoleConfig, mode: TradingMode = "paper"): Promise<ArmsRiskResult> {
+  const modules = (Object.keys(MODULE_SCHEMA) as PerformanceModuleId[]).filter(
+    (module) => mode === "paper" || module in LIVE_LEDGER,
+  );
+  // Every module at once: eight subprocesses side by side, so a cold read costs the slowest module
+  // (MEIC, ~3 s), not their sum. Results are folded back in the registry's order.
+  const results = await Promise.all(modules.map((module) => readModuleAnalysis(config, module, "current", mode)));
   const rows: ArmRiskRow[] = [];
   const failures: ArmsRiskResult["failures"] = [];
-  for (const module of Object.keys(MODULE_SCHEMA) as PerformanceModuleId[]) {
-    if (mode === "live" && !(module in LIVE_LEDGER)) continue;
-    const res = readModuleAnalysis(config, module, "current", mode);
+  results.forEach((res, i) => {
+    const module = modules[i] as PerformanceModuleId;
     if (!res.ok) {
       failures.push({ module, error: res.error ?? "analysis unavailable" });
-      continue;
+      return;
     }
     for (const g of res.groups) rows.push(riskRow(module, g.tag, g.analysis));
-  }
+  });
   return { mode, rows, failures };
 }

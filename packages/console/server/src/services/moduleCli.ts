@@ -1,5 +1,5 @@
 import { suitePython } from "@console/shared";
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 
 /**
  * The subprocess mechanics every module-CLI bridge in this package shares.
@@ -53,16 +53,62 @@ export function spawnModuleCli(argv: string[], unavailableMessage: string, okSta
   if (out.error !== undefined) {
     return { ok: false, json: null, error: `${unavailableMessage} (${out.error.message})` };
   }
-  if (out.status === null || !okStatuses.includes(out.status)) {
+  return parseOutcome(out.status, out.stdout, out.stderr, unavailableMessage, okStatuses);
+}
+
+/** The shared reading of a finished CLI run: exit status, stdout and stderr into `SpawnedJson`. One
+ *  implementation, so the sync and async spawners can never disagree about what failed. */
+function parseOutcome(
+  status: number | null,
+  stdout: string | null | undefined,
+  stderr: string | null | undefined,
+  unavailableMessage: string,
+  okStatuses: readonly number[],
+): SpawnedJson {
+  if (status === null || !okStatuses.includes(status)) {
     // A CLI that reports its own failure as `{"ok": false, "error": ...}` on stdout and exits 1
     // (core.compare does) leaves stderr empty, so its reason is only in stdout; without this the
     // page would say "exit 1" where the module had said what broke.
-    const detail = stdoutError(out.stdout) ?? ((out.stderr ?? "").trim().split(/\r?\n/).pop() || `exit ${String(out.status)}`);
+    const detail = stdoutError(stdout) ?? ((stderr ?? "").trim().split(/\r?\n/).pop() || `exit ${String(status)}`);
     return { ok: false, json: null, error: `${unavailableMessage} — ${detail}` };
   }
   try {
-    return { ok: true, json: JSON.parse(out.stdout.trim()) as Record<string, unknown>, error: null };
+    return { ok: true, json: JSON.parse((stdout ?? "").trim()) as Record<string, unknown>, error: null };
   } catch {
     return { ok: false, json: null, error: `${unavailableMessage} — unparseable response` };
   }
+}
+
+/**
+ * `spawnModuleCli` without blocking the event loop: the same argv, timeout and failure shapes, as a
+ * promise. A synchronous spawn holds the whole server -- every request and the heartbeat -- for as
+ * long as the subprocess runs, which is fine for a one-off read and not for a page that reads every
+ * module (Compare's risk tab, eight analyses: ~6 s cold, serial). Never rejects: every failure is a
+ * `{ok: false}` answer, as the sync spawner's are.
+ */
+export function spawnModuleCliAsync(
+  argv: string[],
+  unavailableMessage: string,
+  okStatuses: readonly number[] = [0],
+): Promise<SpawnedJson> {
+  return new Promise((resolve) => {
+    try {
+      execFile(
+        suitePython(),
+        argv,
+        { encoding: "utf-8", timeout: 30_000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 },
+        (err, stdout, stderr) => {
+          // execFile reports a nonzero exit as `err` with `code`; a spawn failure has no numeric code.
+          const code = err === null ? 0 : typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : null;
+          if (err !== null && code === null) {
+            resolve({ ok: false, json: null, error: `${unavailableMessage} (${err.message})` });
+            return;
+          }
+          resolve(parseOutcome(code, stdout, stderr, unavailableMessage, okStatuses));
+        },
+      );
+    } catch (err) {
+      resolve({ ok: false, json: null, error: `${unavailableMessage} (${(err as Error).message})` });
+    }
+  });
 }
