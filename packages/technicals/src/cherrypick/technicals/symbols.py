@@ -15,20 +15,20 @@ from . import paths
 
 # The rotation ETFs: the union of every fund the vendor's rotation section placed in a state across
 # the saved Sept 21-25 editions (32), plus the three sector funds it listed in no state that week
-# (XLK, XLV, XLC) -- 35, the plan's "~35".
+# (XLK, XLV, XLC) -- 35, the plan's "~35" -- and the ten more it placed by Oct 14 (45).
 ROTATION_ETFS = (
     # sectors
     "XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY",
     # industries
     "COPX", "FDN", "GDX", "HACK", "IGV", "ITA", "IYT", "JETS", "KRE", "KWEB", "PAVE", "TAN", "XHB",
-    "XOP", "XRT",
+    "XOP", "XRT", "IAI", "IHI", "OIH", "SMH", "URA", "XBI",
     # asset classes
-    "EFA", "IWM", "LQD", "PDBC", "SPY", "TIP", "TLT", "UUP", "VNQ",
+    "EFA", "IWM", "LQD", "PDBC", "SPY", "TIP", "TLT", "UUP", "VNQ", "AGG", "EEM", "HYG", "IBIT",
 )  # fmt: skip
 
-# The rotation funds the vendor types "Asset" (every edition, Sept 21-25). They are measured against
-# the stock-and-bond benchmark (AOR); the sector and industry funds against the S&P 500 (SPY).
-ASSET_ETFS = ("EFA", "IWM", "LQD", "PDBC", "SPY", "TIP", "TLT", "UUP", "VNQ")
+# The rotation funds the vendor types "Asset" (every edition, Sept 21 to Oct 14). They are measured
+# against the stock-and-bond benchmark (AOR); the sector and industry funds against the S&P 500 (SPY).
+ASSET_ETFS = ("EFA", "IWM", "LQD", "PDBC", "SPY", "TIP", "TLT", "UUP", "VNQ", "AGG", "EEM", "HYG", "IBIT")
 
 # What the engines measure against. AOR is the asset-class benchmark (decided 2026-09-27); AGG with
 # SPY gives a US-only 60/40 should that ever be wanted. SPY also stands in for SPX in the engines:

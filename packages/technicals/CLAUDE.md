@@ -95,9 +95,12 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   the same side (97%), same stage on 82%. Fitted on five days, so the declared `StageRule` is
   re-scored as editions accumulate, not tuned further. About 30% extra listings are structural (the
   vendor's universe varies by day), so counts are compared **as rates, never totals**.
-- **Rotation** (`rotation.py`, `score-rotation`): the quadrant from slow (63) and fast (10) relative
-  trends against SPY, or AOR for the nine funds the vendor types "Asset"; inside either neutral band
-  (3% slow, 1% fast) no state. 91 of 119 placements exact (76%), 26 placed where the vendor had none.
+- **Rotation** (`rotation.py`, `score-rotation`): the daily quadrant (refit 2026-10-17). Relative
+  strength against SPY, or AOR for the 13 funds the vendor types "Asset"; its level is relative
+  strength over its own 63-session average, its momentum that level against itself 10 sessions back,
+  each read against 1, and every fund is placed (the vendor's daily view has no neutral band). 411 of
+  496 placements exact on 18 editions (83%); out of sample, 80% of 163 and 93% of the sector funds.
+  The banded rule before it (`BANDED_RULE`, 3%/1% bands) scored 55% and ran weeks late.
   `editions.decode_rotation` finds headings **by markup, never by phrase** (the paragraph above
   uses the same words).
 - **Breadth** rebuilds the daily chart from prices: over sixteen sessions (Sept 2-24, eleven unused
@@ -145,7 +148,8 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   on its own side, 0 of ~430 against; every row has 3+). Counted: stage, sector rotation (into =
   leading, out = lagging or weakening, on the name's sector fund), the trend scan (counter-trend
   never counts) and the session's revisions. On the boards: stage 69/73 found (11 extra in 130 rows),
-  revision 33/38, rotation 61/96 and scan 5/16 -- those two are marked approximate. Not counted:
+  revision 33/38, rotation 89/96 and scan 5/16 -- the scan is marked approximate; 103 of 130 rows
+  land on the board's side. Not counted:
   fundamentals, fundamentals vs price, the three flow tags. A tie has no side. Written each morning
   at 06:45 ET to `data/technicals/board/<session>.json`; record-only.
 - **Bearing** (`compass.py`, `score-bearing`): our name for the vendor's direction read. It is a
