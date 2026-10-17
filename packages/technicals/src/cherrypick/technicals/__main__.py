@@ -153,6 +153,39 @@ def cmd_score_rotation(_args) -> int:
     return 0
 
 
+def cmd_board(args) -> int:
+    from . import board
+
+    doc = board.build(args.session)
+    if not doc.get("ok"):
+        print(json.dumps(doc))
+        return 1
+    path = board.write(doc)
+    listed = [r for r in doc["rows"] if r["side"]]
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "path": path,
+                "session": doc["session"],
+                "names": doc["names"],
+                "bullish": sum(r["side"] == "bullish" for r in listed),
+                "bearish": sum(r["side"] == "bearish" for r in listed),
+                "revisions_through": doc["revisions_through"],
+            },
+            indent=1,
+        )
+    )
+    return 0
+
+
+def cmd_score_board(_args) -> int:
+    from . import board
+
+    print(json.dumps(board.score(), indent=1))
+    return 0
+
+
 def cmd_score_revisions(_args) -> int:
     from . import editions, revisions
 
@@ -679,6 +712,14 @@ def main(argv: list[str] | None = None) -> int:
     rp = sub.add_parser("report", help="write one session's market-report readings for the console")
     rp.add_argument("--session", help="ISO date (default: the latest session stored)")
     rp.set_defaults(fn=cmd_report)
+    bp = sub.add_parser(
+        "board", help="write one session's signal board: each name's count of agreeing methods"
+    )
+    bp.add_argument("--session", help="ISO date (default: the latest session stored)")
+    bp.set_defaults(fn=cmd_board)
+    sub.add_parser(
+        "score-board", help="the signal board's methods against every saved edition's board"
+    ).set_defaults(fn=cmd_score_board)
     args = ap.parse_args(argv)
     return args.fn(args)
 

@@ -343,6 +343,7 @@ def test_derive_full_suite_job_table():
         "technicals-screeners",
         "technicals-report",
         "technicals-stage-lists",
+        "technicals-board",
         "earnings-moves",
         "fetch-headlines",
         "review-provisional",

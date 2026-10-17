@@ -79,8 +79,13 @@ CATCHUP_MINUTES = {
     # stage and rotation engines read it after the close, so it catches up well into the day.
     "technicals-land": 12 * 60,
     "technicals-report": 12 * 60,
+<<<<<<< HEAD
     # A rerun rebuilds the same close's lists from the same store.
     "technicals-stage-lists": 6 * 60,
+=======
+    # A rerun rebuilds the same session's board from the same store.
+    "technicals-board": 12 * 60,
+>>>>>>> origin/main
     # Dividend histories change weekly at most; a late fetch is the same fetch.
     "technicals-dividends": 12 * 60,
     # A reading of the day's close: a run after the next open would record the next session instead,
@@ -1189,6 +1194,24 @@ def derive_jobs(
             enabled_reason=""
             if tc_on
             else "disabled with technicals-land (it reads what the landing writes)",
+        ),
+    )
+    board_on = tc_on and tc["board"]
+    add(
+        "technicals-board",
+        lambda: JobSpec(
+            id="technicals-board",
+            # Reads only the technicals store, the sector maps and the revisions table; writes
+            # board/<session>.json.
+            argv=(pythonw, "-m", "cherrypick.technicals", "board"),
+            kind=KIND_DAILY,
+            at_et=tc["board_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-board"],
+            trading_days_only=False,
+            enabled=board_on,
+            enabled_reason=""
+            if board_on
+            else "disabled in config (technicals.board) or with technicals-land",
         ),
     )
     div_on = tc["enabled"] and tc["dividends"]
