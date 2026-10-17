@@ -137,7 +137,7 @@ because the broker's report dates don't cover them, and Dolt does.
 | D-Edge, Strength n/10, IV Rank, liquidity (very / somewhat), optionable | The nightly security list: `directionalEdge`, `technicalRank`, `ivRank`, `liquidityRank`, `hasOptions`. These are the vendor's own values (CB 9/10 at 67%, ELV 10/10 at 43%, NFLX 2/10 at 74%, as on its page), one session old |
 | Last price | Our bars' last close |
 | Exp. move | A chain per name, nightly (below) |
-| Sector | `universe/sectors.json` where it has the name. That is partial and coarser than the vendor's taxonomy; blank otherwise |
+| Sector | `universe/sectors.json` (the vendor's) where it has the name, else Yahoo's (`scripts/fetch_sectors.py`, 18:40 ET, relabelled to the vendor's names; it agreed on all 120 names sampled, 2026-10-17). The row's `sector_source` says which |
 | Region, industry | Not carried (US names only; no industry source) |
 
 **The expected move shown is one standard deviation**, chosen 2026-10-17 to match the vendor's.

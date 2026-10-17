@@ -332,6 +332,7 @@ def test_derive_full_suite_job_table():
         "technicals-index-bars",
         "technicals-iv-rank",
         "technicals-earnings-times",
+        "technicals-sectors",
         "technicals-liquidity",
         "technicals-earnings-calendar",
         "technicals-earnings-calendar-late",
