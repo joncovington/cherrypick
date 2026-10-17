@@ -53,8 +53,13 @@ shows a fake split-sized crash.
 amounts). `scripts/fetch_dividends.py` fetches tastytrade's per-symbol history (paced, a week
 between refreshes); `dividends.reconcile` merges: same event within three days, gaps filled from
 either side, tastytrade's amount when within 3x, and a gross outlier on either side losing to the
-name's usual payout. 36 of 40 then match at 99%+. The four foreign issuers that do not (BAP, ALC,
-CCJ, AU) are left out of fits that need exact cents.
+name's usual payout (the median within two years, never all history). 36 of 40 then match at 99%+.
+**Tastytrade states some names' pre-split history on today's share basis** (AAPL, BKNG, AVGO, WMT,
+not the sector funds), so an amount is restated by its later splits only where Dolt confirms it;
+exact repeats inside one source are one event. On 2026-10-17 that took 207 of 218 captured names to
+99%+. What still fails is not reconcilable from these two sources: CAD/CHF amounts (SU, ENB, CCJ,
+ALC), spin-offs neither models (APTV, LEN, ILMN), and the vendor's own misses (AU, MU). Those names
+are left out of fits that need exact cents.
 
 ## Reading Dolt: the query shape is the whole cost
 
