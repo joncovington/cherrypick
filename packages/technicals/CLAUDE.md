@@ -159,18 +159,20 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   - **The usual time:** where none gives one, the company's last timed report is kept as a marked
     estimate (`usual_timing`; right 97% of the time on Dolt 2022-26). It never sets the entry
     session or the reaction day.
-  - **Direction, strength, IV rank:** the security list's values, one session old.
+  - **Direction and strength: OURS** (`our_reads`, the user's choice 2026-10-17): Bearing and our
+    1-10 score from the store's bars, read on its last bar, which at 19:10 is the PREVIOUS close (the
+    same one the vendor's list describes). A name with no bars has no read, so it drops out of the
+    strong-read view. The vendor's values are kept as `vendor_edge`/`vendor_strength` and never shown
+    or filtered on.
+  - **IV rank: the BROKER's**, and it picks the spread's side against the cut. It can read above 100.
+    The vendor's is kept as `vendor_iv_rank`, unused; a name with no broker rank gets no suggestion.
   - **Expected move:** the broker's earnings rule, 0.85 × the at-the-money straddle on the first
     expiry after the reaction day (chosen 2026-10-17), the straddle read off that expiry's IV. One SD
     (price × IV × √(days/365), the vendor's figure) is kept beside it.
   - **Spread:** the navigator spread, as target strikes.
-  - **Ours beside theirs** (`our_reads`, 2026-10-17, the user's choice: watch how often they
-    differ, then decide which leads): Bearing and our 1-10 score from the store's bars. They are read
-    on its last bar, which at 19:10 is the PREVIOUS close, the same one the vendor's list describes.
-    The broker's IV rank sits beside them. On the first calendar, Bearing disagreed on 3 of the 19
-    default-view names it could read.
-  - **Checked against the vendor's page** for Oct 20-21: its 12 names, same date, direction and
-    strength; moves within 0.42 points on average. History found no edge in the spread.
+  - **Checked against the vendor's page** for Oct 20-21, while its reads still led: its 12 names,
+    same date, direction and strength; moves within 0.42 points on average. History found no edge in
+    the spread.
 - **Out of sample** (2026-09-28): bars 99%+ on 73 of 79 names; the grid places all 375 levels.
 
 ## Unsolved — measured, not approximated

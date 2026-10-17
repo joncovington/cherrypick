@@ -11,10 +11,15 @@ locally -- never the broker, so this stays credential-free:
   (`scripts/fetch_earnings_times.py`), else Dolt's, each for a date within a day of it
   (`pick_date`); none saying is `null`, never assumed. The name's usual time -- its last timed
   report's -- is kept beside it as a marked estimate (`usual_time`) that sets nothing.
+- **direction and strength:** OURS (chosen 2026-10-17): Bearing and our 1-10 score from the store's
+  bars (`our_reads`), shown, filtered on and used to pick the suggestion. The vendor's read and
+  strength are kept on the row (`vendor_edge`, `vendor_strength`), never shown or used.
 - **who:** the security list the collector saves nightly (`vendor-securities/<day>.json`) for the
-  direction read, strength (1-10), IV rank, liquidity rank, optionable and type -- the vendor's own
-  values, which describe the PREVIOUS session's close (plan, gap 4); Dolt's `stocks.symbol` for the
-  company name; the market report's sector map where it has the name.
+  liquidity rank, optionable and type; Dolt's `stocks.symbol` for the company name; the market
+  report's sector map where it has the name.
+- **IV rank:** the BROKER's (`iv/tastytrade.json`, the nightly IV-rank fetch), shown and used to
+  choose the suggested spread's side (chosen 2026-10-17); the vendor's is kept as `vendor_iv_rank`,
+  never shown or used. A name the broker gives no rank gets no suggestion.
 - **price:** Dolt's latest daily close (`stocks.ohlcv`), which covers every listed name, where the
   technicals store holds only ~1,000.
 - **expected move:** the broker's own rule for an earnings move, 0.85 x the ATM straddle on the
@@ -237,8 +242,8 @@ OURS_STALE_DAYS = 5  # a store bar older than this is not "the same close" as th
 
 
 def our_reads(day: str, symbols: list[str], conn=None, lookup=None) -> dict[str, dict]:
-    """Our own direction read and 1-10 strength, beside the vendor's (chosen 2026-10-17: show both,
-    see how often they differ, then decide which the tab leads with).
+    """Our own direction read and 1-10 strength: the calendar's only ones (the user's choice,
+    2026-10-17; the vendor's ride along on the row, unused).
 
     Direction is Bearing (`compass.py`): the lookup fitted on every saved security list, applied to
     our trend scores and our 1-10 score. Read from our bars, it names the vendor's strong states
@@ -371,13 +376,20 @@ def build(
     iv_doc = _read(iv_path)
     expiry_ivs = iv_doc.get("names") or {}
     broker_at, broker = broker_dates(day)
+    _, broker_all = broker_rows(day)  # the broker's IV rank: what the tab shows and the side is chosen by
     times_at, nasdaq = times_on_file(day)
     sectors = _sector_map()
     in_window = {k for k, v in broker.items() if session <= v[0] <= end}
     dolt = dolt if dolt is not None else dolt_inputs(cfg or {}, session, end, tuple(sorted(in_window)))
 
+    # Direction and strength are OURS (chosen 2026-10-17): Bearing and our 1-10 score from our bars,
+    # shown, filtered on and used for the suggestion. The vendor's are kept on the row
+    # (`vendor_edge`, `vendor_strength`), never shown or used. A name we hold no bars for has none.
+    candidates = sorted(set(dolt["events"]) | in_window)
+    ours = ours if ours is not None else our_reads(day, candidates)
+
     rows = []
-    for sym in sorted(set(dolt["events"]) | in_window):
+    for sym in candidates:
         de = dolt["events"].get(sym)
         be = broker.get(sym)
         be = be if be and session <= be[0] <= end else None
@@ -394,7 +406,9 @@ def build(
         ev = event_expiry(expiry_ivs.get(sym) or {}, react)
         sd = sd_move(price, ev[1], session, ev[0]) if (ev and price) else None
         em = sd * EM_TO_SD if sd is not None else None
-        sug = suggestion(r.get("directionalEdge"), r.get("ivRank"), price, em, float(s["iv_rank_cut"]))
+        ivr = (broker_all.get(sym) or {}).get("iv_rank")
+        mine = ours.get(sym) or {}
+        sug = suggestion(mine.get("edge"), ivr, price, em, float(s["iv_rank_cut"]))
         if sug is not None:
             sug["expiry"] = trade_expiry(
                 expiry_ivs.get(sym) or {}, session, s["trade_expiry"], ev[0] if ev else None
@@ -417,10 +431,14 @@ def build(
                 "type": r.get("type"),
                 # The vendor's region filter (US / CA) leaves depository receipts out (SAP).
                 "region": "intl" if r.get("type") == "Depository Receipt" else ("US" if r else None),
-                "edge": r.get("directionalEdge"),
-                "edge_label": compass.LABELS.get(r.get("directionalEdge") or ""),
-                "strength": r.get("technicalRank"),
-                "iv_rank": r.get("ivRank"),
+                "edge": mine.get("edge"),  # ours
+                "edge_label": mine.get("edge_label"),
+                "strength": mine.get("strength"),
+                "read_session": mine.get("session"),  # the close our read is as of
+                "vendor_edge": r.get("directionalEdge"),  # kept for reference; never shown or used
+                "vendor_strength": r.get("technicalRank"),
+                "iv_rank": round(ivr, 2) if ivr is not None else None,  # the broker's
+                "vendor_iv_rank": r.get("ivRank"),  # kept for reference; never shown or used
                 "liquidity_rank": r.get("liquidityRank"),
                 "optionable": r.get("hasOptions"),
                 "sector": sectors.get(sym),
@@ -437,13 +455,6 @@ def build(
             }
         )
     rows.sort(key=lambda x: (x["date"], x["symbol"]))
-    # Ours beside the vendor's: our direction and strength from our bars, and the broker's IV rank.
-    ours = ours if ours is not None else our_reads(day, [r["symbol"] for r in rows])
-    _, broker_all = broker_rows(day)
-    for r in rows:
-        mine = ours.get(r["symbol"])
-        ivr = (broker_all.get(r["symbol"]) or {}).get("iv_rank")
-        r["ours"] = None if mine is None and ivr is None else {**(mine or {}), "iv_rank": ivr}
     return {
         "session": day,
         "window_days": int(s["window_days"]),

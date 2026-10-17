@@ -10,8 +10,9 @@ anyway as an earnings calendar laid out like the vendor's (decided 2026-10-17).
 | 4, the console tab | built |
 | 5, the forward record | built: marks on the reaction day and the next at 11:30 / 14:30 ET (`earnings-marks/`), the record rebuilt each morning at 06:50 (`technicals earnings-record`), and an "earnings record" tab |
 
-A nightly earnings calendar: every upcoming announcement, with the vendor's direction read,
-strength, IV rank and expected move. Strong reads also get the directional spread the vendor's
+A nightly earnings calendar: every upcoming announcement, with a direction read, strength, IV rank
+and expected move. Since 2026-10-17 the direction and strength are ours (Bearing) and the IV rank
+the broker's, which picks the spread's side; the vendor's are kept in the file, never shown or used. Strong reads also get the directional spread the vendor's
 earnings-navigator rule builds, priced on our own chains and cut to liquid trades. It is a read
 surface, a fourth tab on the console's Screeners page beside the three income lists. It places no
 order and opens no paper position.
