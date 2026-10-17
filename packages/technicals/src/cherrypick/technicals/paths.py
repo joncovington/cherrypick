@@ -56,6 +56,13 @@ def tastytrade_iv_rank() -> Path:
     return market_report_dir() / "iv" / "tastytrade.json"
 
 
+def earnings_times_dir() -> Path:
+    """Nasdaq's public earnings calendar's time of day per report date, one file a session
+    (`<day>.json`), written by scripts/fetch_earnings_times.py. The earnings calendar reads it.
+    Read-only here."""
+    return market_report_dir() / "earnings" / "times"
+
+
 def expiry_iv_dir() -> Path:
     """Tastytrade's implied vol per listed expiration, one file a session (`<day>.json`), written
     by scripts/fetch_iv_rank.py alongside the rank. The earnings calendar's expected move reads it.

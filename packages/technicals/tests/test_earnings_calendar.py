@@ -30,14 +30,27 @@ def test_company_names_lose_the_share_class_boilerplate():
 
 def test_a_confirmed_broker_date_wins_and_keeps_dolts_time_a_day_off():
     """PM: Dolt had Oct 20 before the open; the broker's confirmed Oct 21 is right, and so is the time."""
-    d, timing, src, confirmed, gap = ec.pick_date((date(2026, 10, 20), BMO), (date(2026, 10, 21), False))
-    assert (d, timing, src, confirmed, gap) == (date(2026, 10, 21), "bmo", "broker", True, 1)
+    got = ec.pick_date((date(2026, 10, 20), BMO), (date(2026, 10, 21), False))
+    assert got == (date(2026, 10, 21), "bmo", "broker", True, 1, "dolt")
 
 
-def test_a_dolt_date_far_from_the_confirmed_one_gives_no_time():
-    """META: Dolt's Nov 4 is another announcement; Oct 21 is confirmed, its time unknown."""
-    d, timing, _, _, gap = ec.pick_date((date(2026, 11, 4), AMC), (date(2026, 10, 21), False))
-    assert (d, timing, gap) == (date(2026, 10, 21), None, 14)
+def test_a_dolt_date_far_from_the_confirmed_one_gives_no_time_of_its_own():
+    """META: Dolt's Nov 4 is another announcement; without the broker's time, Oct 21's is unknown."""
+    d, timing, _, _, gap, tsrc = ec.pick_date((date(2026, 11, 4), AMC), (date(2026, 10, 21), False))
+    assert (d, timing, gap, tsrc) == (date(2026, 10, 21), None, 14, None)
+
+
+def test_the_brokers_time_belongs_to_its_own_date():
+    """META on 2026-10-16: the broker sent AMC with its confirmed Oct 21, which is what the vendor shows."""
+    got = ec.pick_date((date(2026, 11, 4), None), (date(2026, 10, 21), False, "AMC"))
+    assert got[1] == "amc" and got[5] == "broker"
+    assert ec.pick_date(None, (date(2026, 10, 21), False, "BTO"))[1] == "bmo"
+    # Dolt's date shown (the broker's only an estimate two days off): the broker's time is not carried
+    # onto it, and Dolt's own blank stays unknown.
+    got = ec.pick_date((date(2026, 11, 3), None), (date(2026, 11, 5), True, "AMC"))
+    assert (got[0], got[1], got[5]) == (date(2026, 11, 3), None, None)
+    # An unrecognised value is no time.
+    assert ec.pick_date(None, (date(2026, 10, 21), False, "DMH"))[1] is None
 
 
 def test_dolt_beats_an_estimated_broker_date_and_an_estimate_alone_says_so():
@@ -49,6 +62,36 @@ def test_dolt_beats_an_estimated_broker_date_and_an_estimate_alone_says_so():
     )
     assert ec.pick_date(None, (date(2026, 11, 5), True))[:4] == (date(2026, 11, 5), None, "broker", False)
     assert ec.pick_date(None, None) is None
+
+
+def test_nasdaq_times_come_after_the_brokers_and_before_dolts():
+    oct21 = date(2026, 10, 21)
+    # The broker's own time wins over Nasdaq's.
+    got = ec.pick_date(None, (oct21, False, "AMC"), [(oct21, "bmo")])
+    assert (got[1], got[5]) == ("amc", "broker")
+    # No broker time: Nasdaq's, for its date within a day of the one shown, over Dolt's.
+    got = ec.pick_date((oct21, AMC), (oct21, False), [(date(2026, 10, 22), "bmo")])
+    assert (got[1], got[5]) == ("bmo", "nasdaq")
+    # Nasdaq listing the name without a time, or for a date further off, leaves it to Dolt.
+    assert ec.pick_date((oct21, AMC), (oct21, False), [(oct21, None)])[5] == "dolt"
+    assert ec.pick_date((oct21, AMC), (oct21, False), [(date(2026, 10, 28), "bmo")])[5] == "dolt"
+
+
+def test_the_usual_time_is_the_last_timed_report_within_400_days():
+    hist = [(date(2026, 4, 20), AMC), (date(2026, 7, 21), BMO), (date(2025, 1, 2), AMC)]
+    assert ec.usual_time(hist, date(2026, 10, 20)) == "bmo"
+    assert ec.usual_time([(date(2025, 1, 2), AMC)], date(2026, 10, 20)) is None  # too old
+    assert ec.usual_time([], date(2026, 10, 20)) is None
+    assert ec.usual_time([(date(2026, 10, 25), AMC)], date(2026, 10, 20)) is None  # not before
+
+
+def test_the_times_file_is_the_newest_fetched_before_the_next_session():
+    """The calendar of Friday 10-16 reads Saturday's fetch, not the following Monday evening's."""
+    folder = paths.earnings_times_dir()
+    for day, t in (("2026-10-15", "amc"), ("2026-10-17", "bmo"), ("2026-10-20", "amc")):
+        _write(folder / f"{day}.json", {"dates": {"2026-10-21": {"PM": t}}})
+    at, times = ec.times_on_file("2026-10-16")
+    assert at == "2026-10-17" and times["PM"] == [(date(2026, 10, 21), "bmo")]
 
 
 def test_reaction_day_and_entry_session_follow_the_time_of_day():
@@ -152,13 +195,24 @@ def test_build_joins_the_sources_into_one_row_per_announcement():
             }
         },
     )
+    _write(paths.earnings_times_dir() / "2026-10-17.json", {"dates": {"2026-10-20": {"NFLX": "amc"}}})
     dolt = {
-        "events": {"NFLX": (date(2026, 10, 20), AMC), "SAP": (date(2026, 10, 21), BMO)},
+        "events": {
+            "NFLX": (date(2026, 10, 20), AMC),
+            "SAP": (date(2026, 10, 21), BMO),
+            "EST": (date(2026, 10, 22), None),
+        },
+        "history": {"EST": [(date(2026, 7, 23), AMC)]},
         "names": {"NFLX": "Netflix, Inc.", "SAP": "SAP SE"},
-        "closes": {"NFLX": 70.53, "SAP": 250.0},
+        "closes": {"NFLX": 70.53, "SAP": 250.0, "EST": 50.0},
         "close_date": "2026-10-16",
     }
     out = ec.build("2026-10-16", dolt=dolt)
+    est = {r["symbol"]: r for r in out["rows"]}["EST"]
+    # No source times it: unknown, with last quarter's time beside it as an estimate that sets nothing.
+    assert (est["timing"], est["usual_timing"], est["entry_session"]) == (None, "amc", None)
+    assert out["inputs"]["nasdaq_times"] == "2026-10-17"
+    out["rows"] = [r for r in out["rows"] if r["symbol"] != "EST"]
     rows = {r["symbol"]: r for r in out["rows"]}
     assert sorted(rows) == ["NFLX", "SAP"]  # LATE reports outside the 30 days
     n = rows["NFLX"]
@@ -168,6 +222,7 @@ def test_build_joins_the_sources_into_one_row_per_announcement():
         "broker",
         True,
     )
+    assert n["timing_source"] == "nasdaq"  # the broker sent no time for it; Nasdaq comes before Dolt
     assert (n["entry_session"], n["reaction_day"], n["event_expiry"]) == (
         "2026-10-20",
         "2026-10-21",

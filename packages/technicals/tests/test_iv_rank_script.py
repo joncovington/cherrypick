@@ -31,8 +31,19 @@ def test_a_confirmed_report_date_and_ex_date_are_kept():
     assert fir.calendar_fields(raw) == {
         "earnings_date": "2026-10-29",
         "earnings_estimated": False,
+        "earnings_time": None,
         "ex_dividend_date": "2026-08-10",
     }
+
+
+def test_the_time_of_day_is_kept_as_sent():
+    """META on 2026-10-16: the block carried it; CB's, the same day, did not."""
+    meta = {"earnings": {"expected-report-date": "2026-10-21", "estimated": False, "time-of-day": "AMC"}}
+    pm = {"earnings": {"expected-report-date": "2026-10-21", "estimated": False, "time-of-day": "BTO"}}
+    cb = {"earnings": {"expected-report-date": "2026-10-20", "estimated": False}}
+    assert fir.calendar_fields(meta)["earnings_time"] == "AMC"
+    assert fir.calendar_fields(pm)["earnings_time"] == "BTO"
+    assert fir.calendar_fields(cb)["earnings_time"] is None
 
 
 def test_an_estimated_date_says_so():
@@ -83,5 +94,6 @@ def test_a_name_with_no_earnings_block_records_nothing_rather_than_a_guess():
     assert fir.calendar_fields({}) == {
         "earnings_date": None,
         "earnings_estimated": None,
+        "earnings_time": None,
         "ex_dividend_date": None,
     }

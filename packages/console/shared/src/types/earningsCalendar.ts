@@ -23,6 +23,12 @@ export interface EarningsCalendarRow {
   date: string;
   /** Before or after the open; null when no source says, never assumed. */
   timing: "bmo" | "amc" | null;
+  /** Which source gave the time: the broker (with its own date), Nasdaq's calendar or Dolt (each
+   *  for a date within a day). */
+  timingSource: "broker" | "nasdaq" | "dolt" | null;
+  /** Where no source gives the time: the name's last timed report's, an ESTIMATE (right 97% of the
+   *  time historically). It sets neither the entry session nor the reaction day. */
+  usualTiming: "bmo" | "amc" | null;
   dateSource: "broker" | "dolt";
   /** The broker confirmed the date (true), marks it estimated (false), or Dolt's date is shown (null). */
   dateConfirmed: boolean | null;
@@ -60,7 +66,13 @@ export interface EarningsCalendarPayload {
   /** Every saved session, newest first. */
   days: string[];
   /** What the calendar was built from: the security list's, the IVs', the broker dates' and the close's session. */
-  inputs: { securityList: string | null; expiryIv: string | null; brokerDates: string | null; closeDate: string | null };
+  inputs: {
+    securityList: string | null;
+    expiryIv: string | null;
+    brokerDates: string | null;
+    nasdaqTimes: string | null;
+    closeDate: string | null;
+  };
   ivRankCut: number | null;
   rows: EarningsCalendarRow[];
 }

@@ -26,6 +26,7 @@ const NFLX = {
   company: "Netflix, Inc.",
   date: "2026-10-20",
   timing: "amc",
+  timing_source: "dolt",
   date_source: "broker",
   date_confirmed: true,
   date_gap_days: 0,
@@ -55,10 +56,19 @@ beforeEach(() => {
   write("2026-10-16", {
     session: "2026-10-16",
     settings: { iv_rank_cut: 50 },
-    inputs: { security_list: "2026-10-16", expiry_iv: "2026-10-16", broker_dates: "2026-10-16", close_date: "2026-10-16" },
+    inputs: { security_list: "2026-10-16", expiry_iv: "2026-10-16", broker_dates: "2026-10-16", nasdaq_times: "2026-10-16", close_date: "2026-10-16" },
     rows: [
       NFLX,
-      { ...NFLX, symbol: "META", timing: null, entry_session: null, edge: "sb", suggestion: { kind: "credit" } },
+      {
+        ...NFLX,
+        symbol: "META",
+        timing: null,
+        timing_source: null,
+        usual_timing: "amc",
+        entry_session: null,
+        edge: "sb",
+        suggestion: { kind: "credit" },
+      },
       { symbol: "BROKEN" },
     ],
   });
@@ -71,7 +81,7 @@ describe("readEarningsCalendar", () => {
     expect(p.day).toBe("2026-10-16");
     expect(p.days).toEqual(["2026-10-16", "2026-10-15"]);
     expect(p.ivRankCut).toBe(50);
-    expect(p.inputs).toEqual({ securityList: "2026-10-16", expiryIv: "2026-10-16", brokerDates: "2026-10-16", closeDate: "2026-10-16" });
+    expect(p.inputs).toEqual({ securityList: "2026-10-16", expiryIv: "2026-10-16", brokerDates: "2026-10-16", nasdaqTimes: "2026-10-16", closeDate: "2026-10-16" });
     expect(readEarningsCalendar(config, "2026-10-15").rows.map((r) => r.symbol)).toEqual(["OLD"]);
   });
 
@@ -81,6 +91,7 @@ describe("readEarningsCalendar", () => {
     expect(rows["NFLX"]).toMatchObject({
       company: "Netflix, Inc.",
       timing: "amc",
+      timingSource: "dolt",
       dateSource: "broker",
       dateConfirmed: true,
       entrySession: "2026-10-20",
@@ -95,7 +106,7 @@ describe("readEarningsCalendar", () => {
       suggestion: { kind: "credit", right: "C", short: 70.53, long: 76.1984, expiry: "2026-11-20" },
     });
     // No time of day is null, never a guess; a half-written suggestion is none.
-    expect(rows["META"]).toMatchObject({ timing: null, entrySession: null, suggestion: null });
+    expect(rows["META"]).toMatchObject({ timing: null, usualTiming: "amc", entrySession: null, suggestion: null });
   });
 
   it("an absent folder is no calendar, not an error", () => {

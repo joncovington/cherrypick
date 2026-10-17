@@ -488,6 +488,11 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # day's IV has posted.
         "iv_rank": bool(tc.get("iv_rank", True)),
         "iv_rank_at": tc.get("iv_rank_at", "18:50"),
+        # `earnings_times_at`: scripts/fetch_earnings_times.py, the time of day of the next month's
+        # announcements from Nasdaq's public calendar -- the earnings calendar's third timing source,
+        # read before the 19:10 build. Network, no credential; one request per date, paced.
+        "earnings_times": bool(tc.get("earnings_times", True)),
+        "earnings_times_at": tc.get("earnings_times_at", "18:45"),
         # `liquidity_at`: the nightly liquidity verdict (`python -m cherrypick.technicals liquidity`,
         # local data only). After the IV-rank fetch it judges from, before the 19:00 screener greeks
         # run that reads it; every broker-spending job skips the names it holds illiquid.

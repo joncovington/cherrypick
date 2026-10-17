@@ -64,16 +64,30 @@ function Flag({ on, onChange, children, title }: { on: boolean; onChange: (on: b
 }
 
 function TimeCell({ r }: { r: EarningsCalendarRow }) {
+  if (r.timing === null && r.usualTiming !== null) {
+    return (
+      <td
+        className="muted"
+        title={`Not confirmed: no source gives this date's time. ${r.usualTiming === "bmo" ? "Before the open" : "After the close"} is when the company reported last quarter, which held 97% of the time historically. No entry session is worked out from it.`}
+      >
+        {r.usualTiming.toUpperCase()} est.
+      </td>
+    );
+  }
   if (r.timing === null) {
     return (
-      <td className="muted" title="No source gives the time of day for this date; never assumed">
+      <td className="muted" title="No source gives the time of day for this date, and no earlier report to estimate it from; never assumed">
         —
       </td>
     );
   }
   const entry = r.entrySession ? `enter by the ${shortDate(r.entrySession)} close` : "";
+  const source =
+    r.timingSource === "broker" ? "the broker's" : r.timingSource === "nasdaq" ? "Nasdaq's" : r.timingSource === "dolt" ? "Dolt's" : "unknown";
   return (
-    <td title={`${r.timing === "bmo" ? "Before the open" : "After the close"}; ${entry}; the market reacts ${shortDate(r.reactionDay)}`}>
+    <td
+      title={`${r.timing === "bmo" ? "Before the open" : "After the close"} (${source} time of day); ${entry}; the market reacts ${shortDate(r.reactionDay)}`}
+    >
       <span className="chip">{r.timing.toUpperCase()}</span>
     </td>
   );
@@ -199,7 +213,7 @@ export function EarningsCalendarTab() {
     (sector === null || r.sector === sector) &&
     (q === "" || r.symbol.includes(q));
   const filtered = all.filter(passes);
-  const shown = filtered.filter((r) => inWindow(r, win) && (time === null || r.timing === time));
+  const shown = filtered.filter((r) => inWindow(r, win) && (time === null || (r.timing ?? r.usualTiming) === time));
   const groups = new Map<string, EarningsCalendarRow[]>();
   for (const r of shown) groups.set(r.date, [...(groups.get(r.date) ?? []), r]);
   const sectors = [...new Set(all.map((r) => r.sector).filter((s): s is string => s !== null))].sort();
@@ -260,7 +274,7 @@ export function EarningsCalendarTab() {
               onClick={() => set("time", time === t ? null : t)}
               title={t === "bmo" ? "Before the open" : "After the close"}
             >
-              {t === "bmo" ? "Before market" : "After market"} ({filtered.filter((r) => inWindow(r, win) && r.timing === t).length})
+              {t === "bmo" ? "Before market" : "After market"} ({filtered.filter((r) => inWindow(r, win) && (r.timing ?? r.usualTiming) === t).length})
             </button>
           ))}
         </div>

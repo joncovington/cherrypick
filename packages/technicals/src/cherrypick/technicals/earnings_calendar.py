@@ -6,8 +6,11 @@ locally -- never the broker, so this stays credential-free:
 - **when:** the local Dolt calendar (`earnings.earnings_calendar`, date and before/after the open)
   and the broker's expected report date with its confirmed/estimated flag (`iv/tastytrade.json`,
   written by `scripts/fetch_iv_rank.py`). A confirmed broker date wins; otherwise Dolt's; otherwise
-  an estimated broker date. Two dates more than a day apart are flagged. The time of day comes only
-  from Dolt, and only when Dolt's date is the one shown: a blank is `null`, never assumed.
+  an estimated broker date. Two dates more than a day apart are flagged. The time of day is the
+  broker's when its date is the one shown, else Nasdaq's public calendar's
+  (`scripts/fetch_earnings_times.py`), else Dolt's, each for a date within a day of it
+  (`pick_date`); none saying is `null`, never assumed. The name's usual time -- its last timed
+  report's -- is kept beside it as a marked estimate (`usual_time`) that sets nothing.
 - **who:** the security list the collector saves nightly (`vendor-securities/<day>.json`) for the
   direction read, strength (1-10), IV rank, liquidity rank, optionable and type -- the vendor's own
   values, which describe the PREVIOUS session's close (plan, gap 4); Dolt's `stocks.symbol` for the
@@ -69,14 +72,28 @@ def company(security_name: str | None) -> str | None:
     return NAME_TAIL.sub("", " ".join(security_name.split())).strip() or None
 
 
-def pick_date(dolt: tuple[date, str | None] | None, broker: tuple[date, bool | None] | None):
-    """(date, time of day, source, confirmed, disagreement in days) for one name, or None.
+BROKER_TIMES = {"BTO": "bmo", "BMO": "bmo", "AMC": "amc"}
 
-    A confirmed broker date wins, then Dolt's, then an estimated broker date. The time of day is
-    Dolt's, kept when Dolt's date is within a day of the one shown: Dolt can sit a day off a
-    confirmed date with the right time (PM, 2026-10-21 before the open, which Dolt had on the 20th),
-    and the disagreement is flagged on the row either way. Further apart, Dolt is describing another
-    announcement (META: Dolt's Nov 4 against a confirmed Oct 21), and the time is unknown."""
+
+def pick_date(
+    dolt: tuple[date, str | None] | None,
+    broker: tuple | None,
+    nasdaq: list[tuple[date, str | None]] | None = None,
+):
+    """(date, time of day, date source, confirmed, disagreement in days, time source) for one name.
+
+    `broker` is (date, estimated[, time of day as sent]); `nasdaq` the (date, 'bmo'|'amc'|None) rows
+    Nasdaq's calendar lists for the name. A confirmed broker date wins, then Dolt's, then an
+    estimated broker date. The time of day, in order:
+    - the broker's, when its date is the one shown -- it belongs to that date (on 2026-08-12 it was
+      stale against a date already past); on 2026-10-16 it agreed with Dolt on all 179 upcoming
+      names where both gave one;
+    - Nasdaq's, for a date within a day of the one shown -- it agreed with the broker and Dolt on all
+      378 names they timed on 2026-10-17, and timed 64 of the 206 they did not;
+    - Dolt's, for a date within a day of the one shown: Dolt can sit a day off a confirmed date with
+      the right time (PM, 2026-10-21 before the open, which Dolt had on the 20th). Further apart,
+      Dolt is describing another announcement (META: its Nov 4 against a confirmed Oct 21).
+    None when none says; the usual time (`usual_time`) is kept apart, as an estimate."""
     if dolt is None and broker is None:
         return None
     gap = abs((dolt[0] - broker[0]).days) if dolt and broker else None
@@ -86,9 +103,27 @@ def pick_date(dolt: tuple[date, str | None] | None, broker: tuple[date, bool | N
         d, src, confirmed = dolt[0], "dolt", None
     else:
         d, src, confirmed = broker[0], "broker", False
+    broker_time = BROKER_TIMES.get(str(broker[2] or "").upper()) if broker and len(broker) > 2 else None
+    if broker_time and broker[0] == d:
+        return d, broker_time, src, confirmed, gap, "broker"
+    for nd, nt in sorted(nasdaq or [], key=lambda x: abs((x[0] - d).days)):
+        if nt in ("bmo", "amc") and abs((nd - d).days) <= 1:
+            return d, nt, src, confirmed, gap, "nasdaq"
     when = dolt[1] if dolt and abs((dolt[0] - d).days) <= 1 else None
     timing = "bmo" if when == BMO else "amc" if when == AMC else None
-    return d, timing, src, confirmed, gap
+    return d, timing, src, confirmed, gap, ("dolt" if timing else None)
+
+
+def usual_time(history: list[tuple[date, str]], before: date) -> str | None:
+    """The time of day of the name's last timed report before `before` ('bmo' | 'amc'), within 400
+    days: an ESTIMATE. A name reports at the same time as last quarter 97.3% of the time (our
+    tradable names, Dolt 2022-26; 97.9% after two quarters alike), so it is shown, marked, where no
+    source gives the time -- and never sets the entry session or the reaction day."""
+    past = [(d, w) for d, w in history if d < before and (before - d).days <= 400]
+    if not past:
+        return None
+    w = max(past)[1]
+    return "bmo" if w == BMO else "amc" if w == AMC else None
 
 
 def reaction_day(d: date, timing: str | None) -> date:
@@ -176,22 +211,39 @@ def _read(path: Path | None) -> dict:
         return {}
 
 
-def broker_dates(day: str) -> tuple[str | None, dict[str, tuple[date, bool | None]]]:
-    """The latest IV-rank reading on or before `day`: (its session, {symbol: (date, estimated)})."""
+def broker_dates(day: str) -> tuple[str | None, dict[str, tuple[date, bool | None, str | None]]]:
+    """The latest IV-rank reading on or before `day`: (its session, {symbol: (date, estimated, time
+    of day as sent)})."""
     days = _read(paths.tastytrade_iv_rank()).get("days") or {}
     at = max((d for d in days if d <= day), default=None)
     out = {}
     for sym, row in (days.get(at) or {}).items():
         d = (row or {}).get("earnings_date")
         if d:
-            out[sym] = (date.fromisoformat(d), row.get("earnings_estimated"))
+            out[sym] = (date.fromisoformat(d), row.get("earnings_estimated"), row.get("earnings_time"))
     return at, out
 
 
-def dolt_inputs(cfg: dict, start: date, end: date) -> dict:
-    """The calendar, names and latest closes from the local Dolt clone, one connection each."""
+def times_on_file(day: str) -> tuple[str | None, dict[str, list[tuple[date, str | None]]]]:
+    """Nasdaq's times (scripts/fetch_earnings_times.py) from the newest file fetched before the next
+    session -- the evening's own fetch, or a weekend's: (its day, {symbol: [(date, time)]})."""
+    nxt = cal.next_trading_day(date.fromisoformat(day)).isoformat()
+    path = _latest_file(paths.earnings_times_dir(), nxt)
+    out: dict[str, list] = {}
+    for d, rows in (_read(path).get("dates") or {}).items():
+        for sym, t in (rows or {}).items():
+            out.setdefault(sym, []).append((date.fromisoformat(d), t))
+    return (path.stem if path else None), out
+
+
+HISTORY_DAYS = 400
+
+
+def dolt_inputs(cfg: dict, start: date, end: date, extra: tuple[str, ...] = ()) -> dict:
+    """The calendar, each name's earlier timed reports, names and latest closes from the local Dolt
+    clone. `extra` adds names Dolt's calendar does not list in the window (the broker's)."""
     cfg = {**_land.DEFAULTS, "earnings_db": "earnings", **(cfg or {})}
-    out: dict = {"events": {}, "names": {}, "closes": {}, "close_date": None}
+    out: dict = {"events": {}, "history": {}, "names": {}, "closes": {}, "close_date": None}
     conn = _land._connect(cfg, cfg["earnings_db"])
     try:
         cur = conn.cursor()
@@ -203,9 +255,17 @@ def dolt_inputs(cfg: dict, start: date, end: date) -> dict:
             prev = out["events"].get(sym)
             if prev is None or d < prev[0]:  # the nearest announcement, if Dolt lists two
                 out["events"][sym] = (d, when)
+        # The usual time's history: `date` leads the key, so the window is the cheap filter.
+        cur.execute(
+            "SELECT act_symbol, date, `when` FROM earnings_calendar WHERE date >= %s AND date < %s "
+            "AND `when` IN (%s, %s)",
+            (start - timedelta(days=HISTORY_DAYS), start, BMO, AMC),
+        )
+        for sym, d, when in cur.fetchall():
+            out["history"].setdefault(sym, []).append((d, when))
     finally:
         conn.close()
-    syms = sorted(out["events"])
+    syms = sorted(set(out["events"]) | set(extra))
     if not syms:
         return out
     conn = _land._connect(cfg, cfg["stocks_db"])
@@ -246,20 +306,23 @@ def build(day: str, cfg: dict | None = None, settings: dict | None = None, dolt:
     iv_doc = _read(iv_path)
     expiry_ivs = iv_doc.get("names") or {}
     broker_at, broker = broker_dates(day)
+    times_at, nasdaq = times_on_file(day)
     sectors = _sector_map()
-    dolt = dolt if dolt is not None else dolt_inputs(cfg or {}, session, end)
+    in_window = {k for k, v in broker.items() if session <= v[0] <= end}
+    dolt = dolt if dolt is not None else dolt_inputs(cfg or {}, session, end, tuple(sorted(in_window)))
 
     rows = []
-    for sym in sorted(set(dolt["events"]) | {k for k, v in broker.items() if session <= v[0] <= end}):
+    for sym in sorted(set(dolt["events"]) | in_window):
         de = dolt["events"].get(sym)
         be = broker.get(sym)
         be = be if be and session <= be[0] <= end else None
-        picked = pick_date(de, be)
+        picked = pick_date(de, be, nasdaq.get(sym))
         if picked is None:
             continue
-        d, timing, src, confirmed, gap = picked
+        d, timing, src, confirmed, gap, timing_src = picked
         if not session <= d <= end:
             continue
+        usual = None if timing else usual_time((dolt.get("history") or {}).get(sym, []), d)
         r = sec.get(sym) or {}
         price = dolt["closes"].get(sym)
         react = reaction_day(d, timing)
@@ -278,6 +341,9 @@ def build(day: str, cfg: dict | None = None, settings: dict | None = None, dolt:
                 "company": dolt["names"].get(sym),
                 "date": d.isoformat(),
                 "timing": timing,
+                "timing_source": timing_src,
+                # An estimate, shown marked where no source gives the time; it sets nothing.
+                "usual_timing": usual,
                 "date_source": src,
                 "date_confirmed": confirmed,
                 "date_gap_days": gap,
@@ -311,6 +377,7 @@ def build(day: str, cfg: dict | None = None, settings: dict | None = None, dolt:
             "security_list": sec_path.stem if sec_path else None,
             "expiry_iv": iv_path.stem if iv_path else None,
             "broker_dates": broker_at,
+            "nasdaq_times": times_at,
             "close_date": dolt.get("close_date"),
         },
         "rows": rows,
@@ -345,6 +412,7 @@ def summary(result: dict) -> dict:
         "rows": len(rows),
         "with_move": sum(1 for r in rows if r["sd_move"] is not None),
         "timing_unknown": sum(1 for r in rows if r["timing"] is None),
+        "timing_estimated": sum(1 for r in rows if r["timing"] is None and r["usual_timing"]),
         "strong": len(strong),
         "suggested": sum(1 for r in rows if r["suggestion"]),
         "inputs": result["inputs"],
