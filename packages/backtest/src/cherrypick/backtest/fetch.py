@@ -28,6 +28,8 @@ re-fetch clears the session first. A refusal writes only the `vendor_sessions` r
 
 from __future__ import annotations
 
+import math
+import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
@@ -63,6 +65,10 @@ def session_days(expirations: list[str], start: str, end: str) -> list[str]:
     return out
 
 
+def _finite(v) -> bool:
+    return v is not None and math.isfinite(v)
+
+
 def _at(day: str, hh: int, mm: int) -> float:
     return datetime.fromisoformat(day).replace(hour=hh, minute=mm, tzinfo=ET).timestamp()
 
@@ -86,6 +92,9 @@ def build_session(rows: list[dict], oi: dict, *, day: str, each_side: int) -> di
         quotes = []
         for r in group:
             if r["strike"] not in keep or r["right"] not in store.SIDES:
+                continue
+            # NaN passes every comparison usable_quote makes; a non-finite side is no quote.
+            if not (_finite(r["bid"]) and _finite(r["ask"])):
                 continue
             q = usable_quote(
                 {"bid": r["bid"], "ask": r["ask"], "updated_at": ts, "mid": None}, ts, float("inf")
@@ -209,12 +218,19 @@ def fetch(
     *,
     refetch: bool = False,
     cadence: float | None = None,
+    workers: int = 1,
     log=print,
 ) -> dict:
     """Fetch every 0DTE session of `symbol`'s dataset in [start, end] not already complete, at
-    `cadence` (default the store's). Requests run `max_concurrent_requests` at a time; writes happen
-    here, one session per transaction. A fatal refusal (`vendor.FATAL`) stops the fetch rather than
-    recording every remaining session as refused."""
+    `cadence` (default the store's). `workers` sessions are pulled at a time (two requests each, so
+    never more than half `max_concurrent_requests`); writes happen here, one session per transaction.
+    A fatal refusal (`vendor.FATAL`) stops the fetch rather than recording every remaining session
+    as refused.
+
+    One worker by default; two is measured to work. What first looked like the vendor stalling under
+    concurrency (2026-10-17) was this loop: a session that failed to write ended it, and the pool
+    then pulled every queued day on its way out and wrote none of them. The loop now records such a
+    session as `build_error` and goes on, and the pool cancels its queue whatever ends the loop."""
     ds = _dataset(settings, symbol)
     if int(ds.get("dte", 0)) != 0:
         raise ValueError("only 0DTE datasets are built so far")
@@ -224,6 +240,8 @@ def fetch(
     if (PROFILE_SECONDS % int(cadence)) != 0:
         raise ValueError(f"cadence {cadence:g}s does not divide the {PROFILE_SECONDS}s profile cadence")
     conn = store.connect(settings, symbol, cadence)
+    if hasattr(client, "on_retry"):
+        client.on_retry = log  # a stalled call and its reconnect show in the fetch's own log
     try:
         days = session_days(client.expirations(root), max(start, ds["from"]), end)
         todo = [d for d in days if refetch or store.session_status(conn, symbol, d) != store.COMPLETE]
@@ -258,8 +276,12 @@ def fetch(
             "refused": 0,
             "skipped": len(days) - len(todo),
         }
-        workers = max(1, int(settings["vendor"]["max_concurrent_requests"]) // 2)  # two requests a session
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        cap = max(1, int(settings["vendor"]["max_concurrent_requests"]) // 2)  # two requests a session
+        pool = ThreadPoolExecutor(max_workers=max(1, min(int(workers), cap)))
+        # Shut down cancelling what is queued, whatever ends the loop. A plain `with` waits for every
+        # queued pull on the way out: an error writing one session once left a fetch pulling the
+        # rest of history and writing none of it, which looked exactly like a stalled vendor.
+        try:
             futures = {pool.submit(pull, d): d for d in todo}
             for fut in as_completed(futures):
                 day = futures[fut]
@@ -286,9 +308,18 @@ def fetch(
                         continue
                     record_refusal(conn, symbol=symbol, day=day, vendor=vendor, root=root, refusal=refusal)
                     res = {"status": store.REFUSED, "reason": refusal.reason}
+                except (ValueError, TypeError, KeyError, sqlite3.Error) as exc:
+                    # A session the vendor answered but that cannot be built or written: recorded
+                    # against that session with what went wrong, and the fetch goes on.
+                    conn.rollback()
+                    bad = VendorRefusal("build_error", f"{type(exc).__name__}: {exc}")
+                    record_refusal(conn, symbol=symbol, day=day, vendor=vendor, root=root, refusal=bad)
+                    res = {"status": store.REFUSED, "reason": bad.reason, "detail": bad.detail}
                 conn.commit()
                 report["fetched" if res["status"] == store.COMPLETE else "refused"] += 1
                 log(f"{day} {res}")
+        finally:
+            pool.shutdown(wait=True, cancel_futures=True)
         report["coverage"] = store.coverage(conn, symbol)
         return report
     finally:

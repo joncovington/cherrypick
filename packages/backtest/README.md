@@ -31,9 +31,11 @@ python -m cherrypick.backtest coverage [--cadence 60]                           
 ```
 
 The fetch is the package's only network path. It skips sessions already complete (`--refetch` to
-redo one), records every refusal with its reason, and asks for two requests per session, two
-sessions at a time (the Standard tier allows four in flight). Each cadence is its own store file.
-The vendor does not serve sub-minute history before 2026, so history is fetched at 1 minute.
+redo one), records every refusal with its reason, and asks for two requests per session, one session
+at a time by default (`--workers 2` uses the Standard tier's four in flight). Each cadence is its
+own store file. The vendor does not serve sub-minute history before 2026, so history is fetched at
+1 minute. Every vendor call carries a deadline; a call that stalls is retried on a fresh channel of
+the same session, and the retry is logged.
 
 **Run one client at a time.** The account has one session; a second login with the same key (a
 probe, the Theta Terminal) ends the fetch's, and the fetch stops rather than recording refusals.
