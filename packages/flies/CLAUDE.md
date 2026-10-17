@@ -84,6 +84,17 @@ what that layer returns — MEIC grew three call sites that disagree about what 
   rows at all* is the loop not running — without it those two silences were identical. Written in
   `paper_loop.run_once` on both the built and the refused path; pure telemetry, no decision reads it.
 
+**A book's session peak risk is recorded at settlement** (`fly_books.peak_risk`/`peak_risk_at`,
+`analytics.session_peak_risk`): the largest open worst case the book carried, `max(0, -floor)` over
+every position, each rewound to its state at that moment (rule 3: an uncompleted vertical at full
+defined risk). It is the capital `core.analysis` reads for flies, whose positions carry none per trade.
+A measurement only; nothing in the loop reads it. `run.py backfill-peak-risk [--write]` fills books
+settled before it existed (dry run by default) and checks the replay against the live loop's own
+`fly_live_marks.open_margin` at the same tick. The two differ for two known reasons, both named in its
+output: an entry still at its limit when the broker filled it better, and an entry order working at
+that tick that never filled. Any other gap is listed as unexplained. On 2026-10-16 the live ledger
+read 14 of 21 sessions matched to the cent and 7 explained, none unexplained.
+
 **Five measurements this strategy needs and generic P&L reporting cannot give:**
 
 - **Completion rate** — how often a leg-in became a fly. Near zero means short verticals wearing a

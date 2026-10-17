@@ -424,12 +424,20 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
     where, params = _session_where("trade_date", start, end)
     exp_col, has_exp = _experiment_select(conn, "fly_positions")
     extra = _opt(cols, "settlement_fees") + _opt(cols, "slippage_dollars")
-    extra += "".join(_opt(cols, c) for c in _FLIES_TRADE_COLUMNS)
+    extra += "".join(_opt(cols, c) for c in _FLIES_TRADE_COLUMNS) + _opt(cols, "book_id")
     rows = conn.execute(
         f"SELECT symbol, arm, entry_mode, gross_pnl, fees, trade_date{reason_col}{exp_col}{extra} "
         f"FROM fly_positions WHERE status = 'settled'{_flies_not_void(conn)}{where}",
         params,
     ).fetchall()
+    # Each book's session peak risk, which flies records at settlement (fly_books.peak_risk). Flies
+    # carries no per-trade capital (a legged book's risk depends on completion), so this is the
+    # capital core.analysis reads for it. None where the book never recorded one.
+    peaks: dict = {}
+    if "book_id" in cols and "peak_risk" in _table_cols(conn, "fly_books"):
+        peaks = {
+            b["book_id"]: b["peak_risk"] for b in conn.execute("SELECT book_id, peak_risk FROM fly_books")
+        }
     return [
         {
             "arm": r["arm"] or FLIES_UNTAGGED,
@@ -469,6 +477,9 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
             "exit_time": _get(r, "exit_time"),
             "entry_spot": _get(r, "underlying_at_entry"),
             "exit_spot": _get(r, "settlement_price"),
+            # The position's book and that book's recorded session peak risk (above).
+            "book_id": _get(r, "book_id"),
+            "book_peak_risk": peaks.get(_get(r, "book_id")),
         }
         for r in rows
     ]

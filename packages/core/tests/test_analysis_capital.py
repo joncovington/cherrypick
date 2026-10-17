@@ -54,6 +54,25 @@ def test_peak_is_withheld_when_no_trade_records_capital():
     assert (p["trades"], p["capital_known"]) == (1, 0)
 
 
+def test_a_ledger_without_trade_capital_reads_its_books_recorded_peaks():
+    # flies: no per-trade capital, but each book records its session peak. Two symbols on one
+    # session are two books, summed; the largest session is the arm's peak.
+    records = [
+        _r(None, "2026-10-01", book_id="b1", book_peak_risk=300.0),
+        _r(None, "2026-10-01", book_id="b1", book_peak_risk=300.0),
+        _r(None, "2026-10-02", book_id="b2", book_peak_risk=500.0),
+        _r(None, "2026-10-02", book_id="b3", book_peak_risk=200.0),
+    ]
+    p = capital.peak_risk(records)
+    assert p["peak"] == 700.0 and p["session"] == "2026-10-02"
+    assert p["basis"] == "book" and p["capital_known"] == 4
+
+
+def test_books_that_never_recorded_a_peak_withhold_it_and_say_so():
+    p = capital.peak_risk([_r(None, "2026-10-01", book_id="b1", book_peak_risk=None)])
+    assert p["peak"] is None and "no book records its peak" in p["withheld"]
+
+
 def test_unscored_records_are_not_trades():
     p = capital.peak_risk([_r(100, "2026-10-16"), _r(900, "2026-10-16", net=None)])
     assert p["trades"] == 1 and p["peak"] == 100
@@ -158,6 +177,41 @@ def test_meic_reader_supplies_entry_and_exit_times():
     )
     [r] = ledgers.READERS["meic_ic"](conn)
     assert r["entry_time"] == "2026-10-16 10:00:00-04:00" and r["exit_time"] == "2026-10-16 11:00:00-04:00"
+
+
+def test_flies_reader_carries_each_positions_book_peak():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        "CREATE TABLE fly_positions (symbol TEXT, arm TEXT, entry_mode TEXT, gross_pnl REAL, fees REAL, "
+        "trade_date TEXT, status TEXT, book_id TEXT)"
+    )
+    conn.execute("CREATE TABLE fly_books (book_id TEXT, peak_risk REAL)")
+    conn.execute(
+        "INSERT INTO fly_positions VALUES ('SPX','control','legged',20.0,6.88,'2026-09-25','settled','b1')"
+    )
+    conn.execute(
+        "INSERT INTO fly_positions VALUES ('SPX','control','legged',20.0,6.88,'2026-09-26','settled','b2')"
+    )
+    conn.execute("INSERT INTO fly_books VALUES ('b1', 293.44), ('b2', NULL)")
+    a, b = sorted(ledgers.READERS["fly_book"](conn), key=lambda r: r["session"])
+    assert (a["book_id"], a["book_peak_risk"]) == ("b1", 293.44)
+    assert b["book_peak_risk"] is None
+
+
+def test_flies_reader_on_a_ledger_whose_books_predate_the_peak():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        "CREATE TABLE fly_positions (symbol TEXT, arm TEXT, entry_mode TEXT, gross_pnl REAL, fees REAL, "
+        "trade_date TEXT, status TEXT, book_id TEXT)"
+    )
+    conn.execute("CREATE TABLE fly_books (book_id TEXT)")
+    conn.execute(
+        "INSERT INTO fly_positions VALUES ('SPX','control','legged',20.0,6.88,'2026-09-25','settled','b1')"
+    )
+    [r] = ledgers.READERS["fly_book"](conn)
+    assert r["book_peak_risk"] is None
 
 
 # --------------------------------------------------------------------------- CLI

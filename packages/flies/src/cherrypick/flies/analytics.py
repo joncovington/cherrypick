@@ -1977,6 +1977,68 @@ def _state_at(row: dict, when: str) -> dict | None:
     return state
 
 
+def session_peak_risk(rows: list[dict]) -> dict:
+    """A book's peak risk: the largest open worst case it carried at any moment of its session.
+
+    The same sum the live loop records each tick as `fly_live_marks.open_margin` and its
+    buying-power cap reads (`live_loop.open_margin_dollars`): `max(0, -position_floor)` over every
+    position on the book. Only the live loop records it, so everywhere else it is replayed. A book's
+    exposure changes only when a position enters, completes or closes, so its peak is the largest
+    sum at one of those instants.
+
+    A position before its completing leg is rewound by `_state_at` and priced by `position_floor`:
+    an uncompleted vertical at full defined risk, as rule 3 requires. In its final state it counts
+    the floor the module recorded for it (`floor_dollars`), not its settled `fees`, which include a
+    settlement charge that had not happened intraday. A position closed before the bell is off the
+    book from its exit. Cancelled and voided rows were never positions.
+
+    {"peak", "at"}. A book that held nothing (every entry cancelled, or none made) carried no risk:
+    0.0, measured. `peak` is None only when positions were held but none records an entry time, so
+    there is no instant to read -- never a zero there, which would claim the book carried no risk.
+
+    The replay prices each position at its ACTUAL fill. The live loop's recorded peak is its view
+    at the tick, which can still hold the limit price before the broker's fill is reconciled: on
+    2026-09-25 an entry sent at 2.15 filled at 2.20, and the loop recorded $5 more risk than the
+    position carried. `run.py backfill-peak-risk` checks every recorded session and names such a
+    difference as price improvement; anything else it lists as unexplained."""
+    held = _held(rows)
+    if not held:
+        return {"peak": 0.0, "at": None}
+    instants = sorted({t for r in held for t in (r.get("entry_time"), r.get("completed_at")) if t})
+    if not instants:
+        return {"peak": None, "at": None}
+    peak, at = 0.0, None
+    for t in instants:
+        total = exposure_at(held, t)
+        if total > peak:
+            peak, at = total, t
+    return {"peak": round(peak, 2), "at": at}
+
+
+def _held(rows: list[dict]) -> list[dict]:
+    """The rows that were positions: not cancelled, not voided."""
+    return [
+        r for r in rows if (r.get("status") or "") not in ("cancelled", "voided") and not r.get("void_reason")
+    ]
+
+
+def exposure_at(rows: list[dict], when: str) -> float:
+    """The book's open worst case at `when`: `max(0, -floor)` summed over every position on the book
+    then, each rewound to its state at that moment (see `session_peak_risk`)."""
+    total = 0.0
+    for r in _held(rows):
+        if r.get("status") == "closed" and r.get("exit_time") and when >= r["exit_time"]:
+            continue
+        state = _state_at(r, when)
+        if state is None:
+            continue
+        rewound = bool(r.get("completed_at")) and when < r["completed_at"]
+        final = r.get("floor_dollars")
+        floor = final if (not rewound and final is not None) else fly.position_floor(state)
+        total += max(0.0, -floor)
+    return total
+
+
 def _entry_structure_label(entry_mode: str, side: str) -> str:
     """What a position's entry event should be labelled as, by construction. Explicit map, not a
     ternary that quietly mislabels any mode it wasn't written for — an unrecognized entry_mode
