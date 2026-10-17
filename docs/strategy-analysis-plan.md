@@ -158,6 +158,11 @@ Cheap once Phases 0–3 exist.
 - **Arms overview, the console landing page.** One row per module × arm, paper or live: net, % of
   capital, open risk, profit factor, max drawdown, return over max drawdown, n, streak, and days
   since the arm's last measurement boundary. Sortable, with a compare overlay of chosen arms.
+  *Landed 2026-10-17 as Compare's risk tab (`/compare/risk`), not a new landing page:* Compare
+  already lists every arm of every module beside its control (paired differences, net per entry and
+  per $100 of risk), so a second arm list would have repeated it. The risk tab adds what
+  `core.analysis` knows and Compare did not: each arm's own window, peak risk, drawdown against it,
+  the reshuffle stress test, net without the top 10%, the current run and the slippage breakeven.
 - **P&L calendar**, suite-wide and filterable by module, arm, symbol and paper/live: daily net with a
   weekly-total column. A day drills into its trades; a trade opens a drawer with its excursion against
   its exit rules and its attempt and decision trace.

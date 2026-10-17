@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { ANALYSIS_VERSION, type ArmAnalysis } from "@console/shared";
-import { readModuleAnalysis } from "../src/readers/analysis.js";
+import { readArmsRisk, readModuleAnalysis, riskRow } from "../src/readers/analysis.js";
 import { setAnalysisCaller, resetAnalysisCache, readAnalysis } from "../src/services/analysisBridge.js";
 import type { ConsoleConfig } from "../src/config.js";
 
@@ -147,5 +147,55 @@ describe("analysisBridge", () => {
     // A different module is a different set of declared allocations: never served from cache.
     readAnalysis("a.db", "fly_book", null, null, null, "bwb", 2_000);
     expect(calls).toBe(3);
+  });
+});
+
+const FULL = {
+  version: ANALYSIS_VERSION,
+  reading: { net_pnl: -2890.62 },
+  coverage: { trades: 83 },
+  stress: { sessions: 9, historical: 3379.47, grouped: null, withheld: "9 sessions, fewer than 20" },
+  durability: {
+    without_top: [
+      { fraction: 0.05, net: -4000, sign_flips: false },
+      { fraction: 0.1, net: -6000, sign_flips: false },
+    ],
+  },
+  session_streaks: { current: { kind: "loss", length: 3 } },
+  capital: { peak_risk: { peak: 2162.85 }, return_on_peak_risk: -1.3365, max_drawdown_over_peak_risk: 1.5625 },
+  execution: { breakeven_multiple: null },
+  window: { scope: "arm_era", start: "2026-10-05", break: null, reason: "the module's latest book-wide break" },
+} as unknown as ArmAnalysis;
+
+describe("the Compare risk tab's rows", () => {
+  it("picks each field from the arm's reading and computes nothing", () => {
+    const row = riskRow("flies", "control", FULL);
+    expect(row).toMatchObject({
+      module: "flies",
+      tag: "control",
+      trades: 83,
+      sessions: 9,
+      net: -2890.62,
+      peakRisk: 2162.85,
+      netOverLargestPeak: -1.3365,
+      maxDrawdown: 3379.47,
+      drawdownOverPeak: 1.5625,
+      stressBlocks: null,
+      stressWithheld: "9 sessions, fewer than 20",
+      withoutTop10: -6000,
+      breakevenMultiple: null,
+    });
+    expect(row.window?.start).toBe("2026-10-05");
+    expect(row.currentRun).toEqual({ kind: "loss", length: 3 });
+  });
+
+  it("names a module whose read failed, and skips one with no live ledger in live mode", () => {
+    const full = { ...OK, analysis: { ...OK.analysis, groups: { control: FULL } } };
+    setAnalysisCaller((db) => (db.includes("meic") ? { ok: false, analysis: null, error: "cannot read" } : full));
+    const paper = readArmsRisk(fakeConfig(null), "paper");
+    expect(paper.failures).toEqual([{ module: "meic", error: "cannot read" }]);
+    expect(paper.rows.filter((r) => r.module === "flies")).toHaveLength(1);
+    const live = readArmsRisk(fakeConfig(null), "live");
+    expect(new Set(live.rows.map((r) => r.module))).toEqual(new Set(["flies", "earnings", "bwb"]));
   });
 });

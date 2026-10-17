@@ -1,4 +1,5 @@
 import { ComparePage } from "../../pages/Compare/ComparePage";
+import { RiskTab } from "../../pages/Compare/RiskTab";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
@@ -7,7 +8,10 @@ import type { SlideDef } from "../types";
  * `core.compare`. One tab; the scope, sort and open arm ride in the query string, which the frame
  * carries across.
  */
-const slides: SlideDef[] = [{ id: "arms", label: "arms", render: () => <ComparePage /> }];
+const slides: SlideDef[] = [
+  { id: "arms", label: "arms", render: () => <ComparePage /> },
+  { id: "risk", label: "risk", render: () => <RiskTab /> },
+];
 
 export function CompareLightbox({ slide }: { slide: string }) {
   return (
@@ -17,8 +21,11 @@ export function CompareLightbox({ slide }: { slide: string }) {
       slides={slides}
       session={null}
       headerControls={
-        <span className="chip" title="python -m cherrypick.core.compare: core.ledgers rows, core.stats figures">
-          source: core.compare
+        <span
+          className="chip"
+          title="arms: python -m cherrypick.core.compare (core.ledgers rows, core.stats figures); risk: python -m cherrypick.core.analysis"
+        >
+          {slide === "risk" ? "source: core.analysis" : "source: core.compare"}
         </span>
       }
     />

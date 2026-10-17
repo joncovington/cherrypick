@@ -311,7 +311,11 @@ export const REPORTS_SLIDES = [
  * Compare (2026-10-12): every arm beside its control, from `core.compare`. One tab; scope, sort and
  * the open arm are query parameters.
  */
-export const COMPARE_SLIDES = [{ id: "arms", label: "arms" }] as const satisfies readonly NavSlide[];
+export const COMPARE_SLIDES = [
+  { id: "arms", label: "arms" },
+  // 2026-10-17: every arm's risk shape over its own window, from core.analysis (docs/strategy-analysis-plan.md).
+  { id: "risk", label: "risk" },
+] as const satisfies readonly NavSlide[];
 
 /**
  * Charts (2026-10-01): the live intraday futures chart and the technicals package's one-name chart.

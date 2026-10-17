@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ConsoleConfig } from "../config.js";
 import { MODULE_SCHEMA, readModulePerformance, type PerformanceModuleId } from "../readers/performance.js";
-import { readModuleAnalysis } from "../readers/analysis.js";
+import { readArmsRisk, readModuleAnalysis } from "../readers/analysis.js";
 
 function isPerformanceModule(v: string): v is PerformanceModuleId {
   return Object.prototype.hasOwnProperty.call(MODULE_SCHEMA, v);
@@ -19,6 +19,12 @@ export function registerPerformanceRoutes(app: FastifyInstance, config: ConsoleC
     const era = req.query.era === "ALL" ? "ALL" : "current";
     const mode = req.query.mode === "live" ? "live" : "paper";
     return readModulePerformance(config, module, era, mode);
+  });
+
+  // Every arm of every module, for the Compare page's risk tab: picked from each module's analysis.
+  app.get<{ Querystring: { mode?: string } }>("/api/analysis", async (req) => {
+    const mode = req.query.mode === "live" ? "live" : "paper";
+    return readArmsRisk(config, mode);
   });
 
   // The per-arm strategy analysis (docs/strategy-analysis-plan.md), over the same modules, window
