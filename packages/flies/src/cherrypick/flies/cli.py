@@ -261,6 +261,28 @@ def cmd_replay(args) -> int:
     return 0 if out.get("ok") else 1
 
 
+def cmd_replay_check(args) -> int:
+    """The replay's decisions against paper's, each from paper's own book, per session, and the
+    declared stage-2 pass test over them (`flies.replay_check`). Read-only."""
+    from cherrypick.flies import replay_check
+
+    paper = _open_ro(args.db or dbmod.default_db_path())
+    if paper is None:
+        print(json.dumps({"ok": False, "error": "no paper ledger"}))
+        return 1
+    config = load_config(args.config)
+    sessions = [
+        replay_check.decision_check(config, day.strip(), paper, arm=args.arm)
+        for day in args.dates.split(",")
+        if day.strip()
+    ]
+    if not args.detail:
+        for s in sessions:
+            s.pop("matched_entries", None)
+    print(json.dumps({"sessions": sessions, "summary": replay_check.summarise(sessions)}, indent=2))
+    return 0
+
+
 def cmd_live_gap(args) -> int:
     """The live arm's sessions paired with paper's same arm: net, fill, fee and completion gaps
     (read-only)."""
@@ -840,6 +862,14 @@ def main(argv=None) -> int:
         "--settle-price", dest="settle_price", type=float, help="default: paper's own settlement"
     )
     p_rp.set_defaults(func=cmd_replay)
+    p_rc = sub.add_parser(
+        "replay-check",
+        help="the replay's decisions against paper's, each from paper's own book; the declared stage-2 test",
+    )
+    p_rc.add_argument("--dates", required=True, help="comma-separated recorded sessions")
+    p_rc.add_argument("--arm", default="control")
+    p_rc.add_argument("--detail", action="store_true", help="every matched entry and its credit difference")
+    p_rc.set_defaults(func=cmd_replay_check)
     p_gs = sub.add_parser(
         "gate-sessions", help="each gate arm per session over its own window: acted?, arm net vs control"
     )
