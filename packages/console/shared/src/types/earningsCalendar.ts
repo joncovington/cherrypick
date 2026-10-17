@@ -17,6 +17,36 @@ export interface EarningsSuggestion {
   expiry: string | null;
 }
 
+/** One leg of the suggested spread on a listed strike, with its regular-hours quote. */
+export interface EarningsTradeLeg {
+  role: "long" | "short";
+  strike: number;
+  bid: number | null;
+  ask: number | null;
+  openInterest: number | null;
+  volume: number | null;
+  /** Against the leg bars (10% of mid or a nickel, 100 open, 10 traded); null when unquoted. */
+  passes: boolean | null;
+}
+
+/** The suggested spread as `fetch_screener_greeks.py measure` read it: snapped, quoted, priced. */
+export interface EarningsTrade {
+  readingAt: string | null;
+  kind: "debit" | "credit";
+  right: "P" | "C";
+  expiry: string;
+  width: number;
+  legs: EarningsTradeLeg[];
+  /** Per share: at mid, and at the natural fill (pay the ask, sell at the bid). */
+  mid: number | null;
+  natural: number | null;
+  shareOfWidth: number | null;
+  /** One spread, dollars. */
+  maxLoss: number | null;
+  /** Every leg passes the bars; null while a leg is unquoted. */
+  passes: boolean | null;
+}
+
 export interface EarningsCalendarRow {
   symbol: string;
   company: string | null;
@@ -58,6 +88,75 @@ export interface EarningsCalendarRow {
   /** The suite's expected move (0.85 x the straddle, ~0.68 SD), in dollars. */
   emMove: number | null;
   suggestion: EarningsSuggestion | null;
+  /** The suggestion on listed strikes and its regular-hours reading; null until one is taken. */
+  trade: EarningsTrade | null;
+}
+
+/** One spread's money on one mark, in the suite's layout: signed whole-position cash, costs apart. */
+export interface EarningsRecordTrade {
+  entry: number;
+  exit: number;
+  gross: number;
+  fees: number;
+  slippage: number;
+  net: number;
+  risk: number;
+}
+
+export interface EarningsRecordSpread {
+  /** "entered", or why not: "not read on the entry session" / "not listed on the entry session". */
+  state: string;
+  kind: "debit" | "credit" | null;
+  right: "P" | "C" | null;
+  expiry: string | null;
+  strikes: number[] | null;
+  entryMid: number | null;
+  liquidAtEntry: boolean | null;
+  react: EarningsRecordTrade | null;
+  day2: EarningsRecordTrade | null;
+}
+
+/** One past announcement: what the calendar showed the session before, and what happened. */
+export interface EarningsRecordRow {
+  symbol: string;
+  company: string | null;
+  date: string;
+  calendarDay: string;
+  timing: "bmo" | "amc" | null;
+  reactionDay: string;
+  edge: EarningsEdge | null;
+  edgeLabel: string | null;
+  liquidityRank: number | null;
+  region: "US" | "intl" | null;
+  movePct: number | null;
+  sdMovePct: number | null;
+  moveOverSd: number | null;
+  insideSd: boolean | null;
+  directionRight: boolean | null;
+  spread: EarningsRecordSpread | null;
+}
+
+export interface EarningsRecordTotals {
+  n: number;
+  net: number;
+  won: number | null;
+  returnOnRisk: number | null;
+}
+
+export interface EarningsRecordPayload {
+  /** Null until `technicals earnings-record` has written one. */
+  asOf: string | null;
+  summary: {
+    announcements: number;
+    measured: number;
+    insideSd: number | null;
+    medianMoveOverSd: number | null;
+    strongReads: number;
+    directionRight: number | null;
+    react: EarningsRecordTotals;
+    day2: EarningsRecordTotals;
+  } | null;
+  rows: EarningsRecordRow[];
 }
 
 export interface EarningsCalendarPayload {

@@ -508,6 +508,10 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # the same session replaces that session's file.
         "earnings_calendar_at": tc.get("earnings_calendar_at", "19:10"),
         "earnings_calendar_late_at": tc.get("earnings_calendar_late_at", "23:40"),
+        # `earnings_record_at`: the calendar's forward record (`python -m cherrypick.technicals
+        # earnings-record`, local files and Dolt): what each past announcement did against what the
+        # calendar showed. Morning, once the 05:30 Dolt pull has landed the reaction day's close.
+        "earnings_record_at": tc.get("earnings_record_at", "06:50"),
         # `index_bars_at`: scripts/fetch_index_bars.py, the cash indexes' daily bars (SPX) from the
         # broker's candles, which Dolt does not carry. Ahead of `land_at`, so the previous session's
         # candle is final and lands the same morning.

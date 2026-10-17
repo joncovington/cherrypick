@@ -335,3 +335,128 @@ def test_candidate_strikes_run_from_the_money_outward_and_thin_past_the_first_fe
     # Few strikes in reach: all of them, none past 20%.
     assert fsg.candidate_strikes([90.0, 95.0, 100.0, 105.0, 125.0], 101.0, "C") == [105.0]
     assert fsg.candidate_strikes([70.0, 85.0, 95.0, 100.0], 101.0, "P") == [85.0, 95.0, 100.0]
+
+
+# ------------------------------------------------------------------------------------------------
+# The earnings calendar's suggested spreads (2026-10-17): target strikes onto listed ones, priced.
+
+CHAIN = [[k, f"C{k:g}", f"P{k:g}"] for k in (90.0, 92.5, 95.0, 97.5, 100.0, 102.5, 105.0, 107.5, 110.0)]
+
+
+def test_a_credit_put_spread_sells_at_the_money_and_buys_just_outside_the_move():
+    """The long is the first listed strike at or below the target, never above it: 95.1 takes 95,
+    94.9 takes 92.5 though 95 is nearer."""
+    sug = {"kind": "credit", "right": "P", "short": 100.3, "long": 95.1}
+    assert fsg.snap_spread(sug, CHAIN) == ([95.0, 100.0], ["P95", "P100"])
+    sug = {"kind": "credit", "right": "P", "short": 100.3, "long": 94.9}
+    assert fsg.snap_spread(sug, CHAIN) == ([92.5, 100.0], ["P92.5", "P100"])
+
+
+def test_a_credit_call_spread_buys_the_first_strike_at_or_above_the_move():
+    sug = {"kind": "credit", "right": "C", "short": 99.0, "long": 105.0}
+    assert fsg.snap_spread(sug, CHAIN) == ([105.0, 100.0], ["C105", "C100"])
+
+
+def test_a_debit_spread_takes_the_nearest_strikes_and_at_least_one_apart():
+    sug = {"kind": "debit", "right": "C", "long": 100.4, "short": 106.0}
+    assert fsg.snap_spread(sug, CHAIN) == ([100.0, 105.0], ["C100", "C105"])
+    # A move smaller than a strike still buys one and sells the next one out.
+    sug = {"kind": "debit", "right": "P", "long": 100.0, "short": 99.9}
+    assert fsg.snap_spread(sug, CHAIN) == ([100.0, 97.5], ["P100", "P97.5"])
+
+
+def test_a_spread_the_chain_cannot_hold_is_none():
+    assert fsg.snap_spread({"kind": "credit", "right": "P", "short": 90.0, "long": 80.0}, CHAIN) is None
+    assert fsg.snap_spread({"kind": "debit", "right": "C", "long": 110.0, "short": 115.0}, CHAIN) is None
+    assert fsg.snap_spread({"kind": "credit", "right": "P", "short": 100.0, "long": 95.0}, []) is None
+
+
+def test_a_spread_is_priced_at_mid_and_at_the_natural_fill():
+    long_q, short_q = {"bid": 1.00, "ask": 1.20}, {"bid": 3.00, "ask": 3.20}
+    credit = fsg.price_spread("credit", long_q, short_q, 7.5)
+    assert credit == {"mid": 2.0, "natural": 1.8, "share_of_width": 0.2667, "max_loss": 550.0}
+    debit = fsg.price_spread("debit", short_q, long_q, 5.0)  # long the dearer leg
+    assert debit == {"mid": 2.0, "natural": 2.2, "share_of_width": 0.4, "max_loss": 200.0}
+    assert fsg.price_spread("credit", {}, short_q, 7.5)["mid"] is None
+
+
+def test_the_legs_are_judged_by_the_same_bars_as_the_lists():
+    good = {"bid": 2.00, "ask": 2.10, "open_interest": 500, "volume": 50}
+    thin = {"bid": 0.50, "ask": 0.90, "open_interest": 3, "volume": 0}
+    rows = [
+        {
+            "kind": "credit",
+            "width": 7.5,
+            "legs": [
+                {"role": "long", "quote": dict(good)},
+                {"role": "short", "quote": dict(good, bid=4.0, ask=4.2)},
+            ],
+        },
+        {
+            "kind": "credit",
+            "width": 7.5,
+            "legs": [{"role": "long", "quote": thin}, {"role": "short", "quote": good}],
+        },
+        {"kind": "credit", "width": 7.5, "legs": [{"role": "long"}, {"role": "short", "quote": good}]},
+        {"legs": None},
+    ]
+    fsg.judge_earnings_legs(rows, fsg.LEG_BARS)
+    assert [r.get("passes") for r in rows] == [True, False, None, None]
+    assert rows[0]["mid"] == 2.05 and rows[1]["legs"][0]["passes"] is False
+
+
+def test_the_calendar_rows_priced_are_the_strong_ones_due_this_week(tmp_path, monkeypatch):
+    import json
+    from datetime import date
+
+    monkeypatch.setenv("TECHNICALS_DATA_DIR", str(tmp_path))
+    sug = {"kind": "credit", "right": "P", "short": 100.0, "long": 95.0, "expiry": "2026-11-20"}
+    base = {"liquidity_rank": 1, "optionable": True, "region": "US", "suggestion": sug}
+    rows = [
+        dict(base, symbol="NOW", date="2026-10-20"),
+        dict(base, symbol="LATER", date="2026-11-05"),  # past the week
+        dict(base, symbol="THIN", date="2026-10-20", liquidity_rank=3),
+        dict(base, symbol="NOEXP", date="2026-10-20", suggestion=dict(sug, expiry=None)),
+        dict(base, symbol="NOSUG", date="2026-10-20", suggestion=None),
+        dict(base, symbol="ADR", date="2026-10-20", region="intl"),
+    ]
+    folder = tmp_path / "earnings-calendar"
+    folder.mkdir()
+    (folder / "2026-10-16.json").write_text(json.dumps({"rows": rows}), encoding="utf-8")
+    (folder / "2026-10-21.json").write_text(json.dumps({"rows": []}), encoding="utf-8")  # a later day
+    day, picked = fsg.earnings_rows(date(2026, 10, 19))
+    assert day == "2026-10-16" and [r["symbol"] for r in picked] == ["NOW"]
+
+
+def test_marks_fall_due_on_the_reaction_day_and_the_session_after(tmp_path):
+    """NFLX reports Tue 10-20 after the close: entered on the 20th's last reading, marked on the 21st
+    (react) and the 22nd (day2). A spread first priced only after its entry session has no record."""
+    import json
+    from datetime import date
+
+    legs = [{"role": "long", "strike": 75.0, "option": "L"}, {"role": "short", "strike": 70.0, "option": "S"}]
+    spread = {"kind": "credit", "right": "C", "expiry": "2026-11-20", "width": 5.0, "legs": legs}
+    nflx = dict(
+        spread, symbol="NFLX", date="2026-10-20", entry_session="2026-10-20", reaction_day="2026-10-21"
+    )
+    late = dict(
+        spread, symbol="LATE", date="2026-10-19", entry_session="2026-10-19", reaction_day="2026-10-20"
+    )
+    unknown = dict(spread, symbol="UNK", date="2026-10-20", entry_session=None, reaction_day="2026-10-21")
+
+    def reading(day, hhmm, rows):
+        p = tmp_path / "earnings-legs" / day / f"{hhmm}.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"calendar_day": "2026-10-19", "rows": rows}), encoding="utf-8")
+
+    reading("2026-10-20", "1130", [dict(nflx, legs=[dict(legs[0], option="EARLY"), legs[1]])])
+    reading("2026-10-20", "1430", [nflx, late, unknown])  # LATE's entry session was the 19th
+    react = fsg.marks_due(tmp_path, date(2026, 10, 21))
+    assert [(m["symbol"], m["which"], m["entry_reading"]) for m in react] == [
+        ("NFLX", "react", "2026-10-20/1430.json")
+    ]
+    assert react[0]["legs"][0]["option"] == "L"  # the session's LAST reading, not its first
+    assert [(m["symbol"], m["which"]) for m in fsg.marks_due(tmp_path, date(2026, 10, 22))] == [
+        ("NFLX", "day2")
+    ]
+    assert fsg.marks_due(tmp_path, date(2026, 10, 23)) == []

@@ -6,9 +6,9 @@ anyway as an earnings calendar laid out like the vendor's (decided 2026-10-17).
 | Step | State (2026-10-17) |
 |---|---|
 | 2, the calendar builder (`technicals earnings-calendar`) | built, with its two nightly jobs |
-| 3, pricing | the expected move's per-expiration IVs built (the IV fetch keeps them); snapping and reading the suggested legs not yet |
+| 3, pricing | built: the expected move's per-expiration IVs (the IV fetch), and the suggested spreads snapped, quoted and judged at 11:30 / 14:30 ET for strong reads reporting within the week (`fetch_screener_greeks.py measure`, `earnings-legs/`) |
 | 4, the console tab | built |
-| 5, the forward record | not yet |
+| 5, the forward record | built: marks on the reaction day and the next at 11:30 / 14:30 ET (`earnings-marks/`), the record rebuilt each morning at 06:50 (`technicals earnings-record`), and an "earnings record" tab |
 
 A nightly earnings calendar: every upcoming announcement, with the vendor's direction read,
 strength, IV rank and expected move. Strong reads also get the directional spread the vendor's

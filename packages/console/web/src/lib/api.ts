@@ -27,6 +27,7 @@ import type {
   TechnicalsWatchlist,
   ScreenerFidelityPayload,
   EarningsCalendarPayload,
+  EarningsRecordPayload,
   ScreenerList,
   ScreenerPayload,
   PmccPayload,
@@ -258,6 +259,15 @@ export function useEarningsCalendar(day: string | null) {
     queryFn: () => getJson<EarningsCalendarPayload>(`/api/screeners/earnings${day ? `?day=${day}` : ""}`),
     // Written twice an evening (19:10 and a late pass); nothing changes in between.
     refetchInterval: 600_000,
+  });
+}
+
+export function useEarningsRecord() {
+  return useQuery<EarningsRecordPayload>({
+    queryKey: ["earnings-record"],
+    queryFn: () => getJson<EarningsRecordPayload>("/api/screeners/earnings-record"),
+    // Rebuilt once a morning.
+    refetchInterval: 900_000,
   });
 }
 

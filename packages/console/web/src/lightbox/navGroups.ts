@@ -338,6 +338,7 @@ export const SCREENERS_SLIDES = [
   { id: "covered-calls", label: "covered calls" },
   { id: "credit-spreads", label: "credit spreads" },
   { id: "earnings", label: "earnings" },
+  { id: "earnings-record", label: "earnings record" },
   { id: "fidelity", label: "fidelity" },
 ] as const satisfies readonly NavSlide[];
 
@@ -512,7 +513,10 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   live: { slides: LIVE_SLIDES },
   charts: { slides: CHARTS_SLIDES },
   // The fidelity tab is the reproduction's own check: a developer surface, so detail view only.
-  screeners: { slides: SCREENERS_SLIDES, simple: ["short-puts", "covered-calls", "credit-spreads", "earnings"] },
+  screeners: {
+    slides: SCREENERS_SLIDES,
+    simple: ["short-puts", "covered-calls", "credit-spreads", "earnings", "earnings-record"],
+  },
   reports: { slides: REPORTS_SLIDES },
   compare: { slides: COMPARE_SLIDES },
   backtest: { slides: BACKTEST_SLIDES },

@@ -672,7 +672,9 @@
     "screeners_at": "06:40",
     "_comment_earnings_calendar_at": "The earnings calendar (python -m cherrypick.technicals earnings-calendar, local data and the local Dolt only): every announcement in the next 30 days with the security list's direction, strength and IV rank and a one-SD expected move from the IV-rank fetch's per-expiration IVs, for the console's earnings tab (docs/earnings-screener-plan.md). After iv_rank_at and the 17:15 chart run; the late pass catches a security list saved after the first. A rerun replaces the session's file. Trading days, ET.",
     "earnings_calendar_at": "19:10",
-    "earnings_calendar_late_at": "23:40"
+    "earnings_calendar_late_at": "23:40",
+    "_comment_earnings_record_at": "The earnings calendar's forward record (python -m cherrypick.technicals earnings-record, local files and the local Dolt): each past announcement's move against the one-SD move the calendar showed the session before, whether a strong read called it, and the suggested spread entered on its entry session's last reading and marked on the reaction day and the next. Rebuilt whole each morning, after the 05:30 Dolt pull. Trading days, ET.",
+    "earnings_record_at": "06:50"
   },
   "live_positions": {
     "_comment": "run.py live-positions, every interval_seconds from start to end ET on trading days: each designated live account's broker positions (read-only get_positions) against what the flies/bwb/meic live ledgers say is filled and open, on the underlyings those modules trade. Asks the broker only while a live module is armed or holds a ledger leg. A difference seen on two checks running is a CRITICAL watchdog finding (live_positions); contracts already expired are left out, since the broker lists them until its overnight processing. Safeguard 2(c), 2026-10-08.",
