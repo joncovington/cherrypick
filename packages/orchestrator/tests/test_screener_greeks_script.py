@@ -300,15 +300,8 @@ def test_a_recorded_day_without_its_candidates_records_them_alone(tmp_path, monk
 def test_candidates_are_every_rank_1_name_with_options_on_the_side_its_read_implies(tmp_path, monkeypatch):
     import json
 
-    home = tmp_path / "home"
-    monkeypatch.setenv("CHERRYPICK_HOME", str(home))
-    home.mkdir()
-    vendor_on = {
-        "market_report": {"collector": True, "vendor_dashboard_url": "x", "vendor_edition_title": "y"}
-    }
-    (home / "config.json").write_text(json.dumps(vendor_on), encoding="utf-8")
-    d = home / "data" / "market-report" / "vendor-securities"
-    d.mkdir(parents=True)
+    d = tmp_path / "vendor-securities"
+    d.mkdir()
     rows = [
         {"symbol": "BULL", "hasOptions": True, "liquidityRank": 1, "directionalEdge": "bp"},
         {"symbol": "BEAR", "hasOptions": True, "liquidityRank": 1, "directionalEdge": "sbe"},
@@ -318,10 +311,29 @@ def test_candidates_are_every_rank_1_name_with_options_on_the_side_its_read_impl
     ]
     (d / "2026-10-16.json").write_text(json.dumps({"rows": rows}), encoding="utf-8")
     (d / "2026-10-20.json").write_text(json.dumps({"rows": []}), encoding="utf-8")  # after the day: unused
+    monkeypatch.setattr(fsg, "store_dir", lambda: tmp_path)
     plan = fsg.candidate_plan("2026-10-19")
     assert {s: p["rights"] for s, p in plan.items()} == {"BULL": ["P"], "BEAR": ["C"], "FLAT": ["P", "C"]}
     assert plan["BULL"]["securities"] == "2026-10-16"
     assert fsg.candidate_plan("2026-10-01") == {}
+
+
+def test_candidates_follow_the_pointer_to_the_public_list_planned_on_both_sides(tmp_path, monkeypatch):
+    """With the vendor off, `technicals securities` names the public list current; it carries no
+    direction read, so a rank-1 name is planned on both sides."""
+    import json
+
+    for folder, sym in (("vendor-securities", "VEND"), ("securities", "PUBL")):
+        (tmp_path / folder).mkdir()
+        row = {"symbol": sym, "hasOptions": True, "liquidityRank": 1}
+        (tmp_path / folder / "2026-10-16.json").write_text(json.dumps({"rows": [row]}), encoding="utf-8")
+    pointer = {"source": "public", "day": "2026-10-16"}
+    (tmp_path / "securities" / "current.json").write_text(json.dumps(pointer), encoding="utf-8")
+    monkeypatch.setattr(fsg, "store_dir", lambda: tmp_path)
+    plan = fsg.candidate_plan("2026-10-16")
+    assert plan == {
+        "PUBL": {"edge": None, "rights": ["P", "C"], "securities": "2026-10-16", "source": "public"}
+    }
 
 
 def test_the_candidate_expiry_is_the_nearest_45_days_and_never_an_expired_one():

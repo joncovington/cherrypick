@@ -133,14 +133,36 @@ def strike_window(listed: list[float], chosen: set[float], width: int = WINDOW) 
     return sorted(keep)
 
 
-def candidate_plan(day: str) -> dict[str, dict]:
-    """{symbol: {edge, rights}} from the current security list for `day` (`technicals.securities`):
-    every name with options and liquidity rank 1, the side(s) its direction read implies. The
-    public list carries no direction read, so its names are planned on both sides. Empty with no
-    list."""
-    from cherrypick.technicals import securities
+def security_list(day: str) -> tuple[str | None, str | None, list[dict]]:
+    """(source, list day, rows) of the security list current for `day`. Which list -- the vendor's
+    or the public one -- is `technicals securities`' decision, named in `securities/current.json`
+    (18:48); this follows it and never re-decides, so it needs no technicals import. The newest list
+    of that source on or before `day`; no pointer, or nothing in the list it names, reads the other."""
+    root = store_dir()
+    try:
+        source = json.loads((root / "securities" / "current.json").read_text(encoding="utf-8")).get("source")
+    except (OSError, ValueError, AttributeError):
+        source = None
+    order = [("public", "securities"), ("vendor", "vendor-securities")]
+    if source != "public":
+        order.reverse()
+    for name, folder in order:
+        d = root / folder
+        files = sorted(f for f in d.glob("????-??-??.json") if f.stem <= day) if d.is_dir() else []
+        if files:
+            try:
+                rows = json.loads(files[-1].read_text(encoding="utf-8")).get("rows") or []
+            except (OSError, ValueError):
+                rows = []
+            return name, files[-1].stem, rows
+    return None, None, []
 
-    rows, pick = securities.latest(day)
+
+def candidate_plan(day: str) -> dict[str, dict]:
+    """{symbol: {edge, rights}} from the current security list for `day` (`security_list`): every
+    name with options and liquidity rank 1, the side(s) its direction read implies. The public list
+    carries no direction read, so its names are planned on both sides. Empty with no list."""
+    source, list_day, rows = security_list(day)
     plan: dict[str, dict] = {}
     for r in rows:
         sym = r.get("symbol")
@@ -148,7 +170,7 @@ def candidate_plan(day: str) -> dict[str, dict]:
             continue
         edge = r.get("directionalEdge")
         rights = ["P"] if edge in BULL_READS else ["C"] if edge in BEAR_READS else ["P", "C"]
-        plan[sym] = {"edge": edge, "rights": rights, "securities": pick["day"], "source": pick["source"]}
+        plan[sym] = {"edge": edge, "rights": rights, "securities": list_day, "source": source}
     return plan
 
 
