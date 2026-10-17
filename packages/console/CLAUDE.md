@@ -539,7 +539,7 @@ summary never lands on a day that arm did not trade. Two things to know reading 
 summary: the header's own date list comes from days that have any position, while the summary's
 latest day is the latest that **settled**, so with no date picked the tab can sit a session off the
 others; and the header's symbol filter only bites once the era is widened to ALL, because the
-default SPX era already pins one symbol (the pmcc and bwb symbols are their own book, not a filter).
+default SPX era already pins one symbol. bwb's rows carry no symbol, so it is never filtered on one.
 
 **Module advisor slides.** `readers/advisor.ts`'s `readAdvisorModule` serves
 `/api/advisor/module/:module`: active experiments with progress against length and stall budget, the
