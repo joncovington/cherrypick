@@ -3,9 +3,47 @@
 from __future__ import annotations
 
 from cherrypick.technicals import editions, rotation
-from cherrypick.technicals.rotation import RotationRule, classify
+from cherrypick.technicals.rotation import RotationRule, classify, quadrant, ratio_readings
 
-RULE = RotationRule(fast=1, slow=2, fast_margin=0.01, slow_margin=0.03)
+# The banded rule (2026-09-27), kept for re-scoring.
+RULE = RotationRule(fast=1, slow=2, fast_margin=0.01, slow_margin=0.03, method="excess")
+
+
+def test_the_default_is_the_daily_quadrant_with_no_band():
+    assert rotation.DEFAULT_RULE.method == "ratio"
+    assert (rotation.DEFAULT_RULE.slow, rotation.DEFAULT_RULE.fast) == (63, 10)
+
+
+def test_every_reading_is_placed_in_a_quadrant():
+    assert quadrant(1.02, 1.01) == "leading"
+    assert quadrant(1.02, 0.99) == "weakening"
+    assert quadrant(0.98, 0.99) == "lagging"
+    assert quadrant(0.98, 1.01) == "improving"
+    # On the line counts as the upper side; only a missing reading has no state.
+    assert quadrant(1.0, 1.0) == "leading"
+    assert quadrant(None, 1.01) is None
+
+
+def test_the_level_is_against_its_own_average_and_the_momentum_against_itself():
+    # Flat, then a rise over the last three sessions: above its 4-session average, and rising.
+    rs = [1.0, 1.0, 1.0, 1.0, 1.0, 1.1, 1.2, 1.3]
+    level, momentum = ratio_readings(rs, slow=4, fast=2)
+    assert abs(level - 1.3 / ((1.0 + 1.1 + 1.2 + 1.3) / 4)) < 1e-12
+    assert abs(momentum - level / (1.1 / ((1.0 + 1.0 + 1.0 + 1.1) / 4))) < 1e-12
+    assert ratio_readings(rs[:5], slow=4, fast=2) is None  # too short for both readings
+
+
+def test_the_daily_quadrant_reads_a_fund_against_its_benchmark():
+    days = [f"d{i:02d}" for i in range(12)]
+    spy = {d: 100.0 for d in days}
+    # A fund that ran ahead of SPY and has since started to fade: still above its average, falling.
+    path = [100, 100, 100, 100, 104, 108, 112, 116, 120, 119, 118, 117]
+    closes = {"SPY": spy, "AOR": spy, "XLK": dict(zip(days, map(float, path), strict=True))}
+    rule = RotationRule(fast=2, slow=6)
+    assert rotation.states_on("d11", closes, (), rule)["XLK"] == "weakening"
+    # No bar on the day is no state, never the last one carried forward.
+    del closes["XLK"]["d11"]
+    assert rotation.states_on("d11", closes, (), rule)["XLK"] is None
 
 
 def test_the_four_quadrants():

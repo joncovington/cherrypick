@@ -272,10 +272,10 @@ bullish names printed. The full list's qualifying threshold is not stated.
 **Our board (2026-10-17, `packages/technicals/board.py`).** Across the 15 saved boards (Sept 23 to
 Oct 14, 130 rows, ~430 tags) every tag sits on its row's own side -- none points the other way --
 and every row has at least three. The board counts four methods from our own engines and scores
-them with `score-board`: stage 69 of 73 tags found, analyst revision 33 of 38, sector rotation 61 of
-96 (the vendor's "into" is its leading quadrant, "out" lagging or weakening; our banded rule runs
-weeks late) and the scan 5 of 16. Next, in order: refit rotation to the daily quadrant, fit the
-fundamentals labels (the vendor's compelling names sit at our 92nd percentile, weak at our 23rd)
+them with `score-board`: stage 69 of 73 tags found, analyst revision 33 of 38, sector rotation 89 of
+96 (the vendor's "into" is its leading quadrant, "out" lagging or weakening; refit to the daily
+quadrant the same day, up from 61 under the banded rule) and the scan 5 of 16. Next, in order: fit
+the fundamentals labels (the vendor's compelling names sit at our 92nd percentile, weak at our 23rd)
 and schedule the weekly fundamentals landing, then fundamentals vs price and the scan. The flow
 tags stay paid data.
 

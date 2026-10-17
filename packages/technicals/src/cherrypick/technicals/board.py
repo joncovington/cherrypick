@@ -12,13 +12,13 @@ one of the 430 points the other way), and every listed row has at least three.
 |---|---|---|---|
 | stage | `stage.py` | early breakout ... confirmed underperformer | 69 of 73 |
 | revision | `revisions.py` | an upgrade, downgrade, sided initiation, target move of 5%+ | 33 of 38 |
-| rotation | `rotation.py` on the name's sector fund | into: leading; out: lagging or weakening | 61 of 96 |
+| rotation | `rotation.py` on the name's sector fund | into: leading; out: lagging or weakening | 89 of 96 |
 | scan | `signals.py` trend rules | bullish / bearish trend following | 5 of 16 |
 
-Rotation is our banded rule, which runs weeks behind the vendor's daily quadrant (its refit is the
-next step); the scan was fitted to a different list. Both are marked approximate in the file. Not
-counted at all: fundamentals and fundamentals-vs-price (labels not yet fitted) and the three flow
-tags (paid data), so our counts run lower than the vendor's, and no three-tag floor is applied.
+Rotation is the daily quadrant (refit 2026-10-17; the banded rule before it found 61 of 96). The
+scan was fitted to a different list and is marked approximate in the file. Not counted at all:
+fundamentals and fundamentals-vs-price (labels not yet fitted) and the three flow tags (paid data),
+so our counts run lower than the vendor's, and no three-tag floor is applied.
 
 **A name's side** is the side with more tags; a tie has no side and is kept in the file unlisted.
 Only that side's tags are listed, as the vendor lists them; the other side's count is kept.
@@ -71,7 +71,7 @@ STAGE_LABEL = {
 # How each method stands against the saved boards, for the page to say. Re-score with `score-board`.
 METHODS = {
     "stage": {"label": "RS stage", "approximate": False},
-    "rotation": {"label": "Sector rotation", "approximate": True},
+    "rotation": {"label": "Sector rotation", "approximate": False},
     "scan": {"label": "Trade scan", "approximate": True},
     "revision": {"label": "Analyst revision", "approximate": False},
 }
