@@ -149,6 +149,17 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   index, a delta cap or floor, a one-SD move. Returns: mid ÷ share price, × 365 ÷ days (100% of
   short puts; ~98% of covered calls — the rest divide by price less mid, condition unknown).
   **Which names make each list is not here**; the spread list's selection is open.
+- **The earnings calendar** (`earnings_calendar.py`, `earnings-calendar`, 2026-10-17;
+  docs/earnings-screener-plan.md): every announcement in the next 30 days, joined from local data
+  and the local Dolt.
+  - **Date and time:** a confirmed broker date wins, then Dolt's, then a broker estimate. The time of
+    day is Dolt's only when its date is within a day of the one shown; otherwise it is unknown.
+  - **Direction, strength, IV rank:** the security list's values, one session old.
+  - **Expected move:** one SD, the broker's IV for the first expiry after the reaction day × price ×
+    √(days/365).
+  - **Spread:** the navigator spread, as target strikes.
+  - **Checked against the vendor's page** for Oct 20-21: its 12 names, same date, direction and
+    strength; moves within 0.42 points on average. History found no edge in the spread.
 - **Out of sample** (2026-09-28): bars 99%+ on 73 of 79 names; the grid places all 375 levels.
 
 ## Unsolved — measured, not approximated
@@ -299,6 +310,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-revisions` | The analyst-revision rule vs every saved board: agree, opposite, missed, not in source, extra. |
 | `python -m cherrypick.technicals score-bearing` | The bearing lookup fitted on earlier security lists, scored on the latest. |
 | `python -m cherrypick.technicals score-screeners [--rescore]` | The income screens' expiry, strike and return rules vs every saved list with its broker chain; one file per session in `screeners/`, totals printed. |
+| `python -m cherrypick.technicals earnings-calendar [--day D] [--dry-run]` | The next 30 days' announcements for the console's earnings tab; one file per session in `earnings-calendar/`, a rerun replacing it. Reads the local Dolt. |
 | `python -m cherrypick.technicals study round7 [--workers N] [--count]` | Round 7: entering a bearing (frozen `bearing_table.py`) against random entry; `--count` gives frequencies only. |
 | `python -m cherrypick.technicals study round6 [--workers N] [--count]` | Round 6: a revision inside the strong bearing, against the same bearing without one; `--count` gives frequencies only. |
 | `python -m cherrypick.technicals history land` | Land Dolt's whole daily history (2011 on, every name) into `history.db`. Incremental. |

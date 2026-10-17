@@ -26,6 +26,7 @@ import type {
   TechnicalsChartPayload,
   TechnicalsWatchlist,
   ScreenerFidelityPayload,
+  EarningsCalendarPayload,
   ScreenerList,
   ScreenerPayload,
   PmccPayload,
@@ -247,6 +248,15 @@ export function useScreenerFidelity() {
   return useQuery<ScreenerFidelityPayload>({
     queryKey: ["screener-fidelity"],
     queryFn: () => getJson<ScreenerFidelityPayload>("/api/screeners/fidelity"),
+    refetchInterval: 600_000,
+  });
+}
+
+export function useEarningsCalendar(day: string | null) {
+  return useQuery<EarningsCalendarPayload>({
+    queryKey: ["earnings-calendar", day ?? "latest"],
+    queryFn: () => getJson<EarningsCalendarPayload>(`/api/screeners/earnings${day ? `?day=${day}` : ""}`),
+    // Written twice an evening (19:10 and a late pass); nothing changes in between.
     refetchInterval: 600_000,
   });
 }

@@ -355,6 +355,18 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   liquid trade (the listed option or the cycle monthly passes every leg's bars; an unread row stays
   shown, marked), each with its escape. The source is never named, and which names make each list is
   not reproduced; the page says so.
+
+  **The earnings tab** (2026-10-17; `pages/Screeners/EarningsCalendarTab.tsx`,
+  `readers/earningsCalendar.ts`, `GET /api/screeners/earnings[?day=]`) is the earnings calendar,
+  laid out like the vendor's: grouped by day, with its columns and filters.
+  - **Data:** the reader renames `technicals earnings-calendar`'s per-session file and decides
+    nothing.
+  - **Defaults:** strong reads, very liquid, optionable, US, the next 7 days, each with its escape.
+  - **Windows:** they count from today (New York) on the newest calendar, and from the calendar's own
+    session on an older one.
+  - **Grouped rows keep their order**, so the table does not sort.
+  - **A standing note** says the suggested spread has no edge in history. It is never removed while
+    the column shows.
 - `/charts/setups` is the setups watchlist (`pages/Setups/SetupsPage.tsx`, `GET /api/technicals/setups`
   over `charts/setups-index.json`): recent entries and exits, or open positions, long and short,
   each symbol linking to its chart with the setup and side selected; nothing on it is vendor data. Gated with the technicals tab. The page filters and sorts

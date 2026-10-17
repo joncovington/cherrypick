@@ -237,6 +237,13 @@ a.chip:hover {
   border-color: color-mix(in srgb, var(--pos) 40%, transparent);
 }
 
+/* The red twin of .chip-ok, for a label that is a direction rather than a fault (a strong bear read):
+   .chip-missing means something is absent. */
+.chip-bad {
+  color: var(--neg);
+  border-color: color-mix(in srgb, var(--neg) 40%, transparent);
+}
+
 .chip-warn {
   color: var(--warn);
   border-color: color-mix(in srgb, var(--warn) 40%, transparent);
