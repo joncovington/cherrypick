@@ -79,13 +79,10 @@ CATCHUP_MINUTES = {
     # stage and rotation engines read it after the close, so it catches up well into the day.
     "technicals-land": 12 * 60,
     "technicals-report": 12 * 60,
-<<<<<<< HEAD
     # A rerun rebuilds the same close's lists from the same store.
     "technicals-stage-lists": 6 * 60,
-=======
     # A rerun rebuilds the same session's board from the same store.
     "technicals-board": 12 * 60,
->>>>>>> origin/main
     # Dividend histories change weekly at most; a late fetch is the same fetch.
     "technicals-dividends": 12 * 60,
     # A reading of the day's close: a run after the next open would record the next session instead,
