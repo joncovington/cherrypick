@@ -83,6 +83,16 @@ closed record carries the parts:
 so `gross_pnl - fees - (settlement or 0) - (slippage if basis is "cost" else 0) == net_pnl` on
 every row. The rules are the console's (`readers/*TradeCash`), which drew the layout first.
 
+The trade fields (added 2026-10-16, for `core.analysis` and docs/strategy-analysis-plan.md):
+
+    entry_time, exit_time   ISO timestamps as the module stamped them
+    entry_spot, exit_spot   the underlying at entry, and at exit (the settlement print for a
+                            settled position)
+
+A schema whose reader does not yet supply them simply has no such keys; a reader that supplies
+them reports None for a row that never recorded the value. A consumer reads them with `.get` and
+says which records lacked them, never treats an absent spot as no move. So far: fly_book.
+
 `None` never means zero anywhere in here. A row written before an instrumentation column existed
 reports `slippage: None` and `capital: None`, because "not recorded" and "was zero" are different
 facts and averaging them together is how a cost model quietly flatters itself. The same holds for
@@ -408,6 +418,7 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
     where, params = _session_where("trade_date", start, end)
     exp_col, has_exp = _experiment_select(conn, "fly_positions")
     extra = _opt(cols, "settlement_fees") + _opt(cols, "slippage_dollars")
+    extra += "".join(_opt(cols, c) for c in _FLIES_TRADE_COLUMNS)
     rows = conn.execute(
         f"SELECT symbol, arm, entry_mode, gross_pnl, fees, trade_date{reason_col}{exp_col}{extra} "
         f"FROM fly_positions WHERE status = 'settled'{_flies_not_void(conn)}{where}",
@@ -446,9 +457,19 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
             # same reasoning as capital above (a legged book's shape depends on completion state).
             "max_profit": None,
             "session": r["trade_date"] or "",
+            # The trade fields (see the module docstring). A fly is entered and cash-settled in one
+            # session, so its exit spot is the settlement print, never a mark.
+            "entry_time": _get(r, "entry_time"),
+            "exit_time": _get(r, "exit_time"),
+            "entry_spot": _get(r, "underlying_at_entry"),
+            "exit_spot": _get(r, "settlement_price"),
         }
         for r in rows
     ]
+
+
+#: fly_positions columns behind the trade fields, each selected only where the ledger has it.
+_FLIES_TRADE_COLUMNS = ("entry_time", "exit_time", "underlying_at_entry", "settlement_price")
 
 
 CALENDARS_UNTAGGED = "unassigned"
