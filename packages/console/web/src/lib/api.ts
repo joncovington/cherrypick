@@ -939,7 +939,17 @@ export type {
   ModulePerformanceResult,
 } from "@console/shared";
 import type { ModulePerformanceResult, PerformanceModuleId } from "@console/shared";
-import type { ArmsRiskResult, ModuleAnalysisResult } from "@console/shared";
+import type { ArmsRiskResult, ModuleAnalysisResult, PnlCalendarResult } from "@console/shared";
+
+/** Every arm's net per session, for the Compare page's calendar tab (`GET /api/calendar`). */
+export function usePnlCalendar(mode: TradingMode = "paper") {
+  return useQuery<PnlCalendarResult>({
+    queryKey: ["pnl-calendar", mode],
+    queryFn: () => getJson<PnlCalendarResult>(`/api/calendar?mode=${mode}`),
+    refetchInterval: 120_000,
+    placeholderData: (prev) => prev,
+  });
+}
 
 /** Every arm of every module's analysis row, for the Compare page's risk tab (`GET /api/analysis`). */
 export function useArmsRisk(mode: TradingMode = "paper") {

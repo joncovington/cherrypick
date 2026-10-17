@@ -378,6 +378,15 @@ bridge still spawns synchronously, holding the whole server for its subprocess; 
 move to the async spawner too. This is the plan's "arms overview": it lives here, beside the paired comparison, rather
 than as a second page that would repeat Compare's arm list.
 
+**Compare's calendar tab** (`/compare/calendar`, 2026-10-17, `pages/Compare/CalendarTab.tsx` over
+`GET /api/calendar` → `readers/pnlCalendar.ts`) — every arm's settled net per session as a Mon–Fri
+month grid with a weekly total, filterable by module and arm, a day drilling to the arms that
+traded it. The nets are `core.metrics`' own `session_nets_dated` (the performance tab's series, read
+async through `readModuleMetricsAsync`, every module at once), over the SUITE window: a calendar says
+what happened each day, not what an arm's evidence says, so it is not era-scoped and says so. The
+component only adds days and weeks up. A week that straddles two months draws the neighbouring
+month's days dimmed, so every row adds up to its total; a month's own total counts only its days.
+
 **Compare** (`/compare`, `lightbox/manifests/CompareLightbox.tsx`, `pages/Compare/`) — every arm of
 every module beside its control, over `GET /api/compare?scope=era|all` (`routes/compare.ts` →
 `services/compareBridge.ts` → `python -m cherrypick.core.compare --json`). A bridge, not a mirror:

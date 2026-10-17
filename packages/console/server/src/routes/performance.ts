@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { ConsoleConfig } from "../config.js";
 import { MODULE_SCHEMA, readModulePerformance, type PerformanceModuleId } from "../readers/performance.js";
 import { readArmsRisk, readModuleAnalysis } from "../readers/analysis.js";
+import { readPnlCalendar } from "../readers/pnlCalendar.js";
 
 function isPerformanceModule(v: string): v is PerformanceModuleId {
   return Object.prototype.hasOwnProperty.call(MODULE_SCHEMA, v);
@@ -19,6 +20,12 @@ export function registerPerformanceRoutes(app: FastifyInstance, config: ConsoleC
     const era = req.query.era === "ALL" ? "ALL" : "current";
     const mode = req.query.mode === "live" ? "live" : "paper";
     return readModulePerformance(config, module, era, mode);
+  });
+
+  // Every arm's net per session, for the Compare page's calendar tab (core.metrics' session nets).
+  app.get<{ Querystring: { mode?: string } }>("/api/calendar", async (req) => {
+    const mode = req.query.mode === "live" ? "live" : "paper";
+    return readPnlCalendar(config, mode);
   });
 
   // Every arm of every module, for the Compare page's risk tab: picked from each module's analysis.

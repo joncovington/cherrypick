@@ -1,4 +1,4 @@
-import { spawnModuleCli } from "./moduleCli.js";
+import { spawnModuleCli, spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
  * The shared calibration-reading bundle, read from the module that owns the math.
@@ -40,6 +40,15 @@ export interface ModuleMetricsResult {
 const UNAVAILABLE =
   "calibration metrics unavailable — cherrypick-core must be installed (pip install -e packages/core)";
 
+function argvFor(dbPath: string, schema: string, start: string | null, end: string | null, era: string | null): string[] {
+  const argv = ["-m", "cherrypick.core.metrics", "read", "--db", dbPath, "--schema", schema];
+  if (start !== null) argv.push("--start", start);
+  if (end !== null) argv.push("--end", end);
+  // The module's own stamped era (`ledgers.ERA_SCHEMAS` only -- the CLI refuses any other schema).
+  if (era !== null) argv.push("--era", era);
+  return argv;
+}
+
 function spawnCaller(
   dbPath: string,
   schema: string,
@@ -47,12 +56,21 @@ function spawnCaller(
   end: string | null,
   era: string | null = null,
 ): ModuleMetricsResult {
-  const argv = ["-m", "cherrypick.core.metrics", "read", "--db", dbPath, "--schema", schema];
-  if (start !== null) argv.push("--start", start);
-  if (end !== null) argv.push("--end", end);
-  // The module's own stamped era (`ledgers.ERA_SCHEMAS` only -- the CLI refuses any other schema).
-  if (era !== null) argv.push("--era", era);
-  const res = spawnModuleCli(argv, UNAVAILABLE);
+  return shape(spawnModuleCli(argvFor(dbPath, schema, start, end, era), UNAVAILABLE), schema);
+}
+
+/** The same read without blocking the event loop (`spawnModuleCliAsync`), shaped by the same code. */
+async function spawnCallerAsync(
+  dbPath: string,
+  schema: string,
+  start: string | null,
+  end: string | null,
+  era: string | null = null,
+): Promise<ModuleMetricsResult> {
+  return shape(await spawnModuleCliAsync(argvFor(dbPath, schema, start, end, era), UNAVAILABLE), schema);
+}
+
+function shape(res: SpawnedJson, schema: string): ModuleMetricsResult {
   if (!res.ok || res.json === null) return { ok: false, metrics: null, error: res.error };
   // The CLI itself reports {"ok": false, "error": ...} for an unknown schema or an unreadable db
   // (never a traceback across the subprocess boundary) -- surface that the same way a spawn
@@ -73,10 +91,12 @@ function spawnCaller(
 }
 
 let caller = spawnCaller;
+let asyncCaller = spawnCallerAsync;
 
-/** Swap the subprocess out in tests. Pass nothing to restore the real one. */
+/** Swap the subprocess out in tests (both paths). Pass nothing to restore the real ones. */
 export function setMetricsCaller(fn?: typeof spawnCaller): void {
   caller = fn ?? spawnCaller;
+  asyncCaller = fn === undefined ? spawnCallerAsync : (...args) => Promise.resolve(fn(...args));
 }
 
 // A calibration reading replays a whole ledger through ~20 metric functions, and the answer moves
@@ -101,7 +121,35 @@ export function readModuleMetrics(
   return value;
 }
 
+// Reads in flight, by the same key: a second request for a ledger being read waits on the first.
+const inflight = new Map<string, Promise<ModuleMetricsResult>>();
+
+/** `readModuleMetrics` without blocking the server: the same cache, one subprocess per key at a time
+ *  (the P&L calendar reads every module's ledger at once through this). */
+export function readModuleMetricsAsync(
+  dbPath: string,
+  schema: string,
+  start: string | null,
+  end: string | null,
+  era: string | null = null,
+  now = Date.now(),
+): Promise<ModuleMetricsResult> {
+  const key = `${dbPath}|${schema}|${start ?? ""}|${end ?? ""}|${era ?? ""}`;
+  const hit = cache.get(key);
+  if (hit !== undefined && now - hit.at < TTL_MS) return Promise.resolve(hit.value);
+  const pending = inflight.get(key);
+  if (pending !== undefined) return pending;
+  const read = asyncCaller(dbPath, schema, start, end, era).then((value) => {
+    cache.set(key, { at: Date.now(), value });
+    return value;
+  });
+  inflight.set(key, read);
+  void read.finally(() => inflight.delete(key));
+  return read;
+}
+
 /** Drop the memoised readings. Tests only. */
 export function resetMetricsCache(): void {
   cache.clear();
+  inflight.clear();
 }
