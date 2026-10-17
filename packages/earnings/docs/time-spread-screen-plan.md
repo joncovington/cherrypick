@@ -352,6 +352,28 @@ Declared before it runs, as the earlier history studies were.
 
 - **Step 0, on rows we already have:** if coverage means anything, the 91 retired paper calendars
   should have lost mainly at low coverage. If the losers had high coverage too, the idea fails here.
+  Declared 2026-10-17, before it ran (`scripts/time_spread_step0.py`):
+  - **Rows.** Every `strat_test:atm_calendar` and `strat_test:double_calendar` row. Rows closed
+    within 10 minutes of opening are excluded: they were closed before the report by the
+    entry-tick bug, and saw no event.
+  - **Inputs, all recorded at entry.** The Dolt chains do not list most of these trades' expiries,
+    so the chain is not re-read.
+    - Front ATM IV is the short legs' live IV (`entry_iv`).
+    - Back ATM IV is front ÷ (1 − `term_structure`), the row's own `entry_context` value.
+    - Spot is the entry tick's mark (`position_marks`).
+    - Strikes and expiries come from `legs_json`.
+    - Leg prices are Black-Scholes at those IVs, with the back legs moved so the net equals the
+      recorded debit.
+    - Costs are the row's own entry and exit costs.
+    - The model's hold is one day.
+  - **Past gaps:** the last 12 reactions before the entry date, signed, pre-report close to
+    reaction close, from the Dolt calendar and bars, as the winrate check takes them.
+  - **Approximations, stated:**
+    - A double calendar's OTM legs take the ATM IVs (a flat smile).
+    - The rows' real exits differ from the model's next-morning hold, so P&L is as recorded.
+  - **Pass:** the high-coverage half has a higher mean net P&L than the low half, and coverage's
+    rank correlation with net P&L is positive. Both, or the idea fails here. With about 90 rows this
+    is a direction, not a significance test.
 - **Grid, kept small:** the structures above, strike offsets of about 0, 0.5 and 1 × EM, two
   back-expiry rules, one or two exits. Each extra cell is another comparison.
 - **Every event priced both ways** (call side and put side), so a signal is scored on what it adds:
