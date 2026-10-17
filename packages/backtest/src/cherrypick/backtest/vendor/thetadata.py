@@ -11,6 +11,7 @@ availability) is retried with backoff before it becomes a refusal.
 
 from __future__ import annotations
 
+import math
 import time
 from datetime import date, timedelta
 
@@ -27,9 +28,10 @@ _TRANSIENT = ("RESOURCE_EXHAUSTED", "UNAVAILABLE", "DEADLINE_EXCEEDED", "429", "
 STREAM_REMOVED = "Stream removed"
 
 
-#: The longest any one vendor call may take. A full day of 15 s greeks takes about two minutes and a
-#: day at one minute seconds, so this only ever ends a call that has stopped.
-CALL_DEADLINE_SECONDS = 300.0
+#: The longest any one vendor call may take. A day of 1-minute greeks takes about ten seconds and a
+#: day at 15 s about two minutes, so this only ever ends a call that has stopped. Some calls do
+#: stop (2026-10-17): the same request, re-sent on a fresh channel, then answers in seconds.
+CALL_DEADLINE_SECONDS = 180.0
 
 
 class _DeadlineStub:
@@ -48,6 +50,15 @@ class _DeadlineStub:
             return method(*args, **kwargs)
 
         return with_deadline
+
+
+def _num(value) -> float | None:
+    """A finite float, or None (NaN, infinity and absent values alike)."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
 
 
 def _classify(exc: Exception) -> tuple[str, str]:
@@ -90,18 +101,35 @@ class ThetaDataClient:
                 "library_missing", f'{exc}; install it with pip install -e "packages/backtest[thetadata]"'
             ) from None
 
+        self._client_class = ThetaClient
         self._client = ThetaClient(api_key=key, dataframe_type="pandas")
         # The library sets no deadline on its calls, and a stalled reply waits forever (2026-10-17:
         # both workers of a history fetch sat on one for over ten minutes). Every call goes out
         # with one, which also cancels the request at the vendor's end.
         self._client.stub = _DeadlineStub(self._client.stub, CALL_DEADLINE_SECONDS)
+        #: Called with a line for every retry, so a stall is visible in the fetch's log.
+        self.on_retry = lambda _line: None
 
-    def _call(self, fn, **kw):
+    def _reconnect(self) -> None:
+        """A fresh channel on the same authenticated session (the library's own
+        `existing_authorized_client`), so no second login ends this one."""
+        fresh = self._client_class(existing_authorized_client=self._client, dataframe_type="pandas")
+        fresh.stub = _DeadlineStub(fresh.stub, CALL_DEADLINE_SECONDS)
+        self._client = fresh
+
+    def _call(self, method: str, **kw):
+        """`method` on the current client (looked up per attempt, so a retry after a reconnect
+        goes out on the fresh channel), retried on transient pushback."""
         for delay in (*RETRY_DELAYS, None):
             try:
-                return fn(**kw)
+                return getattr(self._client, method)(**kw)
             except Exception as exc:  # noqa: BLE001 -- the vendor library raises grpc and its own types
                 if delay is not None and _transient(exc):
+                    stalled = "DEADLINE_EXCEEDED" in str(exc)
+                    why = "stalled; reconnecting" if stalled else "transient"
+                    self.on_retry(f"retry {method} in {delay:g}s ({why})")
+                    if stalled:
+                        self._reconnect()
                     time.sleep(delay)
                     continue
                 reason, detail = _classify(exc)
@@ -109,7 +137,7 @@ class ThetaDataClient:
         raise AssertionError("unreachable")  # pragma: no cover
 
     def expirations(self, root: str) -> list[str]:
-        df = self._call(self._client.option_list_expirations, symbol=root)
+        df = self._call("option_list_expirations", symbol=root)
         return sorted(str(x)[:10] for x in df["expiration"])
 
     def greeks(
@@ -117,7 +145,7 @@ class ThetaDataClient:
     ):
         d = date.fromisoformat(day)
         df = self._call(
-            self._client.option_history_greeks_first_order,
+            "option_history_greeks_first_order",
             symbol=root,
             expiration=d,
             date=d,
@@ -126,26 +154,27 @@ class ThetaDataClient:
             start_time=start_time,
             end_time=end_time,
         )
+        # Missing values arrive as NaN (2022 sessions carry NaN bids), and NaN passes every
+        # comparison a quote check makes; they leave here as None, which every check refuses.
         out = []
         for r in df.itertuples(index=False):
-            under = r.underlying_price
             out.append(
                 {
                     "strike": float(r.strike),
                     "right": str(r.right).upper(),
                     "ts": r.timestamp.timestamp(),
-                    "bid": float(r.bid),
-                    "ask": float(r.ask),
-                    "delta": float(r.delta),
-                    "iv": float(r.implied_vol),
-                    "underlying": None if under != under else float(under),  # NaN check
+                    "bid": _num(r.bid),
+                    "ask": _num(r.ask),
+                    "delta": _num(r.delta),
+                    "iv": _num(r.implied_vol),
+                    "underlying": _num(r.underlying_price),
                 }
             )
         return out
 
     def open_interest(self, root: str, day: str) -> dict:
         d = date.fromisoformat(day)
-        df = self._call(self._client.option_history_open_interest, symbol=root, expiration=d, date=d)
+        df = self._call("option_history_open_interest", symbol=root, expiration=d, date=d)
         return {
             (str(r.right).upper(), float(r.strike)): int(r.open_interest) for r in df.itertuples(index=False)
         }
@@ -158,7 +187,7 @@ class ThetaDataClient:
         while lo <= last:
             hi = min(lo + timedelta(days=MAX_RANGE_DAYS - 1), last)
             try:
-                df = self._call(self._client.index_history_eod, symbol=symbol, start_date=lo, end_date=hi)
+                df = self._call("index_history_eod", symbol=symbol, start_date=lo, end_date=hi)
             except VendorRefusal as refusal:
                 if refusal.reason not in ("permission_denied", "no_data"):
                     raise

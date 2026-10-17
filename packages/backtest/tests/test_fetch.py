@@ -193,6 +193,34 @@ def test_a_minute_cadence_asks_for_the_vendor_s_minute_interval_in_its_own_file(
     assert store.db_path(s, "SPX", 60).exists() and not store.db_path(s, "SPX").exists()
 
 
+def test_a_nan_quote_is_no_quote():
+    """NaN passes every comparison usable_quote makes; 2022 sessions carry NaN bids."""
+    rows = _rows(DAY)
+    for r in rows:
+        if r["strike"] == 6000.0 and r["right"] == "PUT":
+            r["bid"] = float("nan")
+    built = fetch.build_session(rows, {}, day=DAY, each_side=20)
+    assert all((q[0], q[1]) != (store.SIDES["PUT"], 6000.0) for _, qs in built["samples"] for q in qs)
+
+
+def test_a_session_that_cannot_be_written_is_recorded_and_the_fetch_goes_on(monkeypatch):
+    """An error writing one session once left a fetch pulling all of history and writing none."""
+    s = _settings()
+    days = {"2026-10-14": _rows("2026-10-14"), DAY: _rows(DAY)}
+    real = fetch.write_session
+
+    def flaky(conn, built, *, day, **kw):
+        if day == "2026-10-14":
+            raise sqlite3.IntegrityError("NOT NULL constraint failed: gex_quotes.bid")
+        return real(conn, built, day=day, **kw)
+
+    monkeypatch.setattr(fetch, "write_session", flaky)
+    report = fetch.fetch(s, FakeClient(days), "SPX", "2026-10-14", DAY, log=lambda _m: None)
+    assert report["fetched"] == 1 and report["refused"] == 1
+    (refusal,) = report["coverage"]["refused"]
+    assert refusal == {"date": "2026-10-14", "reason": "build_error"}
+
+
 def test_only_days_with_a_same_day_expiration_are_sessions():
     days = fetch.session_days(
         ["2022-05-13", "2022-05-16", "2022-05-18", "2022-05-21"], "2022-05-13", "2022-05-21"

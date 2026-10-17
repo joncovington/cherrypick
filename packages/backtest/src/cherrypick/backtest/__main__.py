@@ -107,6 +107,7 @@ def cmd_fetch(args) -> int:
         args.start,
         args.end,
         refetch=args.refetch,
+        workers=args.workers,
         cadence=args.cadence,
         log=lambda m: print(m, file=sys.stderr),
     )
@@ -244,6 +245,9 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--from", dest="start", required=True)
     f.add_argument("--to", dest="end", required=True)
     f.add_argument("--refetch", action="store_true", help="re-fetch sessions already complete")
+    f.add_argument(
+        "--workers", type=int, default=1, help="sessions pulled at a time (default 1; see fetch.fetch)"
+    )
     f.set_defaults(fn=cmd_fetch)
     cv = sub.add_parser("coverage", help="sessions in the store, complete and refused")
     cv.add_argument("--dataset", default="SPX")
