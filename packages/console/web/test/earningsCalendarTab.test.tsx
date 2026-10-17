@@ -40,6 +40,7 @@ function row(over: Partial<EarningsCalendarRow>): EarningsCalendarRow {
     sdMovePct: 7,
     emMove: 4.75,
     suggestion: { kind: "credit", right: "P", short: 100, long: 95.25, expiry: "2026-11-20" },
+    trade: null,
     ...over,
   };
 }
@@ -110,6 +111,40 @@ describe("the earnings tab", () => {
     expect(html).toMatch(/title="Not confirmed: no source gives this date's time[^"]*">BMO est\.</);
     expect(html).toContain(">est.<");
     expect(html).toContain("±7.0%");
+  });
+
+  it("a spread read as thin is hidden by default, one read as liquid shows its listed strikes and price", () => {
+    const leg = (role: "long" | "short", strike: number, passes: boolean) => ({
+      role,
+      strike,
+      bid: 1,
+      ask: 1.1,
+      openInterest: 500,
+      volume: 50,
+      passes,
+    });
+    const trade = (passes: boolean) => ({
+      readingAt: "2026-10-19T15:30:00Z",
+      kind: "credit" as const,
+      right: "P" as const,
+      expiry: "2026-11-20",
+      width: 5,
+      legs: [leg("long", 95, passes), leg("short", 100, true)],
+      mid: 1.75,
+      natural: 1.6,
+      shareOfWidth: 0.35,
+      maxLoss: 325,
+      passes,
+    });
+    const saved = payload.rows;
+    payload.rows = [row({ symbol: "GOOD", trade: trade(true) }), row({ symbol: "THIN", trade: trade(false) }), row({ symbol: "UNREAD" })];
+    const html = render("/screeners/earnings?day=2026-10-15");
+    expect(symbols(html)).toEqual(["GOOD", "UNREAD"]);
+    expect(html).toContain("100/95");
+    expect(html).toContain("1.75 cr");
+    expect(symbols(render("/screeners/earnings?day=2026-10-15&trade=all"))).toEqual(["GOOD", "THIN", "UNREAD"]);
+    expect(render("/screeners/earnings?day=2026-10-15&trade=all")).toMatch(/>thin</);
+    payload.rows = saved;
   });
 
   it("always says the suggested spread has no edge", () => {

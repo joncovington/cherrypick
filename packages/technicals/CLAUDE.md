@@ -315,6 +315,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-revisions` | The analyst-revision rule vs every saved board: agree, opposite, missed, not in source, extra. |
 | `python -m cherrypick.technicals score-bearing` | The bearing lookup fitted on earlier security lists, scored on the latest. |
 | `python -m cherrypick.technicals score-screeners [--rescore]` | The income screens' expiry, strike and return rules vs every saved list with its broker chain; one file per session in `screeners/`, totals printed. |
+| `python -m cherrypick.technicals earnings-record [--today D] [--dry-run]` | The earnings calendar's forward record: each past announcement's move against the one-SD move the calendar showed the session before, whether a strong read called it, and the suggested spread's money on its marks; `earnings-calendar/record.json`, rebuilt whole. Reads the local Dolt. |
 | `python -m cherrypick.technicals earnings-calendar [--day D] [--dry-run]` | The next 30 days' announcements for the console's earnings tab; one file per session in `earnings-calendar/`, a rerun replacing it. Reads the local Dolt. |
 | `python -m cherrypick.technicals study round7 [--workers N] [--count]` | Round 7: entering a bearing (frozen `bearing_table.py`) against random entry; `--count` gives frequencies only. |
 | `python -m cherrypick.technicals study round6 [--workers N] [--count]` | Round 6: a revision inside the strong bearing, against the same bearing without one; `--count` gives frequencies only. |

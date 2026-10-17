@@ -190,6 +190,28 @@ def cmd_earnings_calendar(args) -> int:
     return 0
 
 
+def cmd_earnings_record(args) -> int:
+    """The earnings calendar's forward record (earnings_record.py): local files and the local Dolt."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from . import earnings_record
+
+    today = (
+        date.fromisoformat(args.today) if args.today else datetime.now(ZoneInfo("America/New_York")).date()
+    )
+    try:
+        result = earnings_record.build(today, _config().get("dolt") or {})
+    except Exception as exc:  # noqa: BLE001 -- no Dolt is a failed run, reported, not a traceback
+        print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"}))
+        return 1
+    report = {"ok": True, "as_of": result["as_of"], **result["summary"]}
+    if not args.dry_run:
+        report["written"] = str(earnings_record.write(result))
+    print(json.dumps(report, indent=1))
+    return 0
+
+
 def cmd_rotation(args) -> int:
     from . import rotation, symbols
 
@@ -563,6 +585,12 @@ def main(argv: list[str] | None = None) -> int:
     ec.add_argument("--day", help="the session (YYYY-MM-DD); default today's, or the last one")
     ec.add_argument("--dry-run", action="store_true", help="build and summarise, write nothing")
     ec.set_defaults(fn=cmd_earnings_calendar)
+    er = sub.add_parser(
+        "earnings-record", help="what each past announcement did against what the calendar said"
+    )
+    er.add_argument("--today", help="as of this date (YYYY-MM-DD); default today, New York")
+    er.add_argument("--dry-run", action="store_true", help="build and summarise, write nothing")
+    er.set_defaults(fn=cmd_earnings_record)
     sr = sub.add_parser("score-rotation", help="score the rotation rule against every saved edition")
     sr.set_defaults(fn=cmd_score_rotation)
     br = sub.add_parser("breadth", help="daily leaders/laggards/net/bullish share over recent sessions")

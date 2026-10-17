@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import type { EarningsCalendarRow, EarningsSuggestion } from "@console/shared";
+import type { EarningsCalendarRow, EarningsSuggestion, EarningsTrade, EarningsTradeLeg } from "@console/shared";
 import { useEarningsCalendar } from "../../lib/api";
 
 /**
@@ -155,16 +155,71 @@ function MoveCell({ r }: { r: EarningsCalendarRow }) {
   );
 }
 
-function SpreadCell({ s }: { s: EarningsSuggestion | null }) {
+function legLine(l: EarningsTradeLeg, right: string): string {
+  return (
+    `${l.role} ${l.strike} ${right}: ${money(l.bid)} × ${money(l.ask)}, OI ${l.openInterest ?? "—"}, volume ${l.volume ?? "—"}` +
+    (l.passes === null ? " — unquoted" : l.passes ? " — passes" : " — fails")
+  );
+}
+
+/** The spread as read in regular hours: listed strikes, price, share of the width, max loss, and
+ *  whether every leg passes the bars. */
+function TradeCell({ t }: { t: EarningsTrade }) {
+  const right = t.right === "C" ? "call" : "put";
+  const [first, second] = t.kind === "credit" ? [t.legs[1], t.legs[0]] : [t.legs[0], t.legs[1]];
+  const price = t.mid === null ? "unpriced" : `${t.mid.toFixed(2)} ${t.kind === "credit" ? "cr" : "db"}`;
+  const title =
+    `${t.kind === "credit" ? "Sell" : "Buy"} the ${first?.strike} ${right}, ${t.kind === "credit" ? "buy" : "sell"} the ` +
+    `${second?.strike} ${right}, ${t.expiry}; read ${t.readingAt ?? "—"}.\n` +
+    `At mid ${money(t.mid)}, at the natural fill ${money(t.natural)}; ${t.shareOfWidth === null ? "—" : `${(100 * t.shareOfWidth).toFixed(0)}%`} ` +
+    `of the ${t.width} width; max loss $${money(t.maxLoss)} a spread.\n` +
+    t.legs.map((l) => legLine(l, right)).join("\n") +
+    "\nHistory: no edge (the note below the table).";
+  return (
+    <td title={title}>
+      <span className={t.kind === "credit" ? "chip" : "chip chip-ok"}>
+        {t.kind} {right}
+      </span>{" "}
+      <span className="num">
+        {first?.strike}/{second?.strike}
+      </span>{" "}
+      <span className="muted">{shortDate(t.expiry)}</span>
+      <br />
+      <span className="num">{price}</span>
+      {t.shareOfWidth !== null && <span className="muted"> · {(100 * t.shareOfWidth).toFixed(0)}% of width</span>}
+      {t.maxLoss !== null && <span className="muted"> · max loss ${money(t.maxLoss)}</span>}
+      {t.passes === false && (
+        <>
+          {" "}
+          <span className="chip chip-warn" title="A leg fails the liquidity bars (10% of mid or a nickel, 100 open, 10 traded)">
+            thin
+          </span>
+        </>
+      )}
+      {t.passes === true && (
+        <>
+          {" "}
+          <span className="chip chip-ok" title="Both legs pass the liquidity bars">
+            liquid
+          </span>
+        </>
+      )}
+    </td>
+  );
+}
+
+function SpreadCell({ s, t }: { s: EarningsSuggestion | null; t: EarningsTrade | null }) {
   if (s === null) return <td className="muted">—</td>;
+  if (t !== null) return <TradeCell t={t} />;
   const right = s.right === "C" ? "call" : "put";
   const legs =
     s.kind === "credit"
       ? `sell the ${money(s.short)} ${right}, buy the ${money(s.long)} ${right}`
       : `buy the ${money(s.long)} ${right}, sell the ${money(s.short)} ${right}`;
   const title =
-    `The earnings-navigator rule's spread: ${legs}, ${s.expiry ?? "no expiry in range"}. Target strikes, not yet snapped ` +
-    "to listed ones or priced. History: no edge (the note below the table).";
+    `The earnings-navigator rule's spread: ${legs}, ${s.expiry ?? "no expiry in range"}. Target strikes, not yet read: ` +
+    "the listed strikes and their liquidity are read at 11:30 and 14:30 ET for names reporting within the week. " +
+    "History: no edge (the note below the table).";
   return (
     <td title={title}>
       <span className={s.kind === "credit" ? "chip" : "chip chip-ok"}>
@@ -196,6 +251,7 @@ export function EarningsCalendarTab() {
   const somewhat = params.get("liq") === "1,2";
   const allOptions = params.get("opt") === "all";
   const allRegions = params.get("region") === "all";
+  const allTrades = params.get("trade") === "all";
   const sector = params.get("sector");
   const q = (params.get("q") ?? "").trim().toUpperCase();
 
@@ -210,6 +266,8 @@ export function EarningsCalendarTab() {
     (allLiquidity || r.liquidityRank === 1 || (somewhat && r.liquidityRank === 2)) &&
     (allOptions || r.optionable === true) &&
     (allRegions || r.region === "US") &&
+    // A spread read as thin is hidden; one not read yet stays, its targets shown.
+    (allTrades || r.trade?.passes !== false) &&
     (sector === null || r.sector === sector) &&
     (q === "" || r.symbol.includes(q));
   const filtered = all.filter(passes);
@@ -305,6 +363,13 @@ export function EarningsCalendarTab() {
         <Flag on={!allRegions} onChange={(on) => set("region", on ? null : "all")} title="US listings only: depository receipts left out, as the vendor's US region filter does">
           US
         </Flag>
+        <Flag
+          on={!allTrades}
+          onChange={(on) => set("trade", on ? null : "all")}
+          title="Hide names whose suggested spread was read in regular hours and a leg failed the liquidity bars (10% of mid or a nickel, 100 open, 10 traded). A spread not read yet stays shown, with its target strikes."
+        >
+          Liquid trade
+        </Flag>
         <select className="chip review-session-select" aria-label="Sector" value={sector ?? ""} onChange={(e) => set("sector", e.target.value || null)}>
           <option value="">all sectors</option>
           {sectors.map((s) => (
@@ -373,7 +438,7 @@ export function EarningsCalendarTab() {
                     <td className="num">{r.price === null ? "—" : `$${money(r.price)}`}</td>
                     <MoveCell r={r} />
                     <td>{r.sector ?? "—"}</td>
-                    <SpreadCell s={r.suggestion} />
+                    <SpreadCell s={r.suggestion} t={r.trade} />
                   </tr>
                 )),
               ])}
