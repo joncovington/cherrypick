@@ -374,6 +374,29 @@ Declared before it runs, as the earlier history studies were.
   - **Pass:** the high-coverage half has a higher mean net P&L than the low half, and coverage's
     rank correlation with net P&L is positive. Both, or the idea fails here. With about 90 rows this
     is a direction, not a significance test.
+  - **Result (2026-10-17): passes as declared, weakly, and still loses money.**
+    - **Sample.** 101 rows; 10 excluded as instant closes; 91 kept.
+      - 70 scored.
+      - 21 refused for missing entry inputs: July rows with no recorded term structure, −$3,080
+        between them.
+    - **The declared test.** The high-coverage half (0.42–0.75) averaged **−$48** a trade and won
+      34%. The low half (0–0.33) averaged **−$154** and won 17%. Spearman +0.23.
+    - **The other scores.** Cushion pointed the same way (+0.14). Richness pointed the *other* way
+      (−0.21): names priced richest against their own past gaps did worst.
+    - **Exploratory, not declared: the stronger separator is whether the model says the entry pays
+      on an unchanged stock after costs.**
+      - **Rows it says lose with no move** (no endurable interval, 28 of 70): −$182 a trade, 7%
+        won. That includes 15 ATM calendars, none of which won.
+      - **The other 42:** −$47 a trade, 38% won.
+      - **Within those 42, coverage separates nothing:** −$49 at or above the median, −$43 below.
+      - So the declared correlation comes mostly from the rows that lose unchanged.
+    - **What it means.** The screen's first gate should be the debit itself, with the model
+      refusing an entry that loses unchanged after costs. That gate is cheap, and here it would
+      have cut the losses by about 70%. But no group in this sample made money, so screening alone
+      does not rescue these two strategies as configured. The history study decides the rest,
+      with that gate declared as a candidate before it runs. The sample is small, the exits mixed
+      (`time_exit` 56, `front_expiry` 14), and August to October improved month on month (−$132,
+      −$89, −$46 a trade) for reasons this cannot separate.
 - **Grid, kept small:** the structures above, strike offsets of about 0, 0.5 and 1 × EM, two
   back-expiry rules, one or two exits. Each extra cell is another comparison.
 - **Every event priced both ways** (call side and put side), so a signal is scored on what it adds:
