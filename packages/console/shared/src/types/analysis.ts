@@ -199,3 +199,36 @@ export interface ModuleAnalysisResult {
   groups: ModuleAnalysisGroup[];
   error: string | null;
 }
+
+/**
+ * One arm of one module on the Compare page's risk tab (`GET /api/analysis`): fields picked from
+ * that arm's `core.analysis` reading, never computed. Every arm over its own window.
+ */
+export interface ArmRiskRow {
+  module: PerformanceModuleId;
+  tag: string;
+  window: ArmWindow | null;
+  trades: number;
+  sessions: number;
+  net: number | null;
+  peakRisk: number | null;
+  /** The arm's whole net over its largest peak -- never "return on peak risk" (the performance
+   *  slide's Σ net / Σ session peaks). */
+  netOverLargestPeak: number | null;
+  maxDrawdown: number | null;
+  drawdownOverPeak: number | null;
+  /** The 95th-percentile drawdown with sessions reordered in blocks; null when withheld. */
+  stressBlocks: number | null;
+  stressWithheld: string | null;
+  withoutTop10: number | null;
+  top10SignFlips: boolean;
+  currentRun: AnalysisStreaks["current"];
+  breakevenMultiple: number | null;
+}
+
+export interface ArmsRiskResult {
+  mode: TradingMode;
+  rows: ArmRiskRow[];
+  /** A module whose read failed: named, never an empty section. */
+  failures: Array<{ module: PerformanceModuleId; error: string }>;
+}

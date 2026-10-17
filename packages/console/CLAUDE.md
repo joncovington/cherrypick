@@ -363,6 +363,16 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   (`names=all` is the way out). With no label it cuts nothing, because an unknown flag would empty
   it.
 
+**Compare's risk tab** (`/compare/risk`, 2026-10-17, `pages/Compare/RiskTab.tsx` over
+`GET /api/analysis` → `readers/analysis.ts::readArmsRisk`) — every arm of every module on one
+sortable table, each over its own window (the analysis tab's rule), with peak risk, net over the
+largest peak, max drawdown and drawdown over peak, the block-reordered 95th percentile, net without
+the top 10%, the current session run and the slippage breakeven. Fields are PICKED from each module's
+`core.analysis` reading (`riskRow`), never computed; each module read is the one its analysis tab
+memoises. A module that fails is named, never an empty section; off modules are hidden with their
+failures. This is the plan's "arms overview": it lives here, beside the paired comparison, rather
+than as a second page that would repeat Compare's arm list.
+
 **Compare** (`/compare`, `lightbox/manifests/CompareLightbox.tsx`, `pages/Compare/`) — every arm of
 every module beside its control, over `GET /api/compare?scope=era|all` (`routes/compare.ts` →
 `services/compareBridge.ts` → `python -m cherrypick.core.compare --json`). A bridge, not a mirror:

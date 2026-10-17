@@ -939,7 +939,17 @@ export type {
   ModulePerformanceResult,
 } from "@console/shared";
 import type { ModulePerformanceResult, PerformanceModuleId } from "@console/shared";
-import type { ModuleAnalysisResult } from "@console/shared";
+import type { ArmsRiskResult, ModuleAnalysisResult } from "@console/shared";
+
+/** Every arm of every module's analysis row, for the Compare page's risk tab (`GET /api/analysis`). */
+export function useArmsRisk(mode: TradingMode = "paper") {
+  return useQuery<ArmsRiskResult>({
+    queryKey: ["arms-risk", mode],
+    queryFn: () => getJson<ArmsRiskResult>(`/api/analysis?mode=${mode}`),
+    refetchInterval: 120_000,
+    placeholderData: (prev) => prev,
+  });
+}
 import type { OpeningRangePayload, RegimeCutsModule, RegimeCutsPayload } from "@console/shared";
 
 /** One module's strategy analysis per arm (`GET /api/analysis/:module`), over the same ledger and
