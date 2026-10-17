@@ -26,6 +26,7 @@ const NFLX = {
   company: "Netflix, Inc.",
   date: "2026-10-20",
   timing: "amc",
+  timing_source: "dolt",
   date_source: "broker",
   date_confirmed: true,
   date_gap_days: 0,
@@ -81,6 +82,7 @@ describe("readEarningsCalendar", () => {
     expect(rows["NFLX"]).toMatchObject({
       company: "Netflix, Inc.",
       timing: "amc",
+      timingSource: "dolt",
       dateSource: "broker",
       dateConfirmed: true,
       entrySession: "2026-10-20",

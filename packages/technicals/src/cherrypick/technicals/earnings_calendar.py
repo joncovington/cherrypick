@@ -6,8 +6,9 @@ locally -- never the broker, so this stays credential-free:
 - **when:** the local Dolt calendar (`earnings.earnings_calendar`, date and before/after the open)
   and the broker's expected report date with its confirmed/estimated flag (`iv/tastytrade.json`,
   written by `scripts/fetch_iv_rank.py`). A confirmed broker date wins; otherwise Dolt's; otherwise
-  an estimated broker date. Two dates more than a day apart are flagged. The time of day comes only
-  from Dolt, and only when Dolt's date is the one shown: a blank is `null`, never assumed.
+  an estimated broker date. Two dates more than a day apart are flagged. The time of day is the
+  broker's when its date is the one shown, else Dolt's when its date is within a day of it
+  (`pick_date`); neither saying is `null`, never assumed.
 - **who:** the security list the collector saves nightly (`vendor-securities/<day>.json`) for the
   direction read, strength (1-10), IV rank, liquidity rank, optionable and type -- the vendor's own
   values, which describe the PREVIOUS session's close (plan, gap 4); Dolt's `stocks.symbol` for the
@@ -69,14 +70,20 @@ def company(security_name: str | None) -> str | None:
     return NAME_TAIL.sub("", " ".join(security_name.split())).strip() or None
 
 
-def pick_date(dolt: tuple[date, str | None] | None, broker: tuple[date, bool | None] | None):
-    """(date, time of day, source, confirmed, disagreement in days) for one name, or None.
+BROKER_TIMES = {"BTO": "bmo", "BMO": "bmo", "AMC": "amc"}
 
-    A confirmed broker date wins, then Dolt's, then an estimated broker date. The time of day is
-    Dolt's, kept when Dolt's date is within a day of the one shown: Dolt can sit a day off a
-    confirmed date with the right time (PM, 2026-10-21 before the open, which Dolt had on the 20th),
-    and the disagreement is flagged on the row either way. Further apart, Dolt is describing another
-    announcement (META: Dolt's Nov 4 against a confirmed Oct 21), and the time is unknown."""
+
+def pick_date(dolt: tuple[date, str | None] | None, broker: tuple | None):
+    """(date, time of day, date source, confirmed, disagreement in days, time source) for one name.
+
+    `broker` is (date, estimated[, time of day as sent]). A confirmed broker date wins, then Dolt's,
+    then an estimated broker date. The time of day is the broker's when its date is the one shown --
+    it belongs to that date (on 2026-08-12 it was stale against a date already past), and on
+    2026-10-16 it agreed with Dolt on all 179 upcoming names where both gave one, and timed 73 Dolt
+    did not. Otherwise Dolt's, kept when Dolt's date is within a day of the one shown: Dolt can sit
+    a day off a confirmed date with the right time (PM, 2026-10-21 before the open, which Dolt had
+    on the 20th). Further apart, Dolt is describing another announcement (META: its Nov 4 against a
+    confirmed Oct 21). None when neither says."""
     if dolt is None and broker is None:
         return None
     gap = abs((dolt[0] - broker[0]).days) if dolt and broker else None
@@ -86,9 +93,12 @@ def pick_date(dolt: tuple[date, str | None] | None, broker: tuple[date, bool | N
         d, src, confirmed = dolt[0], "dolt", None
     else:
         d, src, confirmed = broker[0], "broker", False
+    broker_time = BROKER_TIMES.get(str(broker[2] or "").upper()) if broker and len(broker) > 2 else None
+    if broker_time and broker[0] == d:
+        return d, broker_time, src, confirmed, gap, "broker"
     when = dolt[1] if dolt and abs((dolt[0] - d).days) <= 1 else None
     timing = "bmo" if when == BMO else "amc" if when == AMC else None
-    return d, timing, src, confirmed, gap
+    return d, timing, src, confirmed, gap, ("dolt" if timing else None)
 
 
 def reaction_day(d: date, timing: str | None) -> date:
@@ -176,15 +186,16 @@ def _read(path: Path | None) -> dict:
         return {}
 
 
-def broker_dates(day: str) -> tuple[str | None, dict[str, tuple[date, bool | None]]]:
-    """The latest IV-rank reading on or before `day`: (its session, {symbol: (date, estimated)})."""
+def broker_dates(day: str) -> tuple[str | None, dict[str, tuple[date, bool | None, str | None]]]:
+    """The latest IV-rank reading on or before `day`: (its session, {symbol: (date, estimated, time
+    of day as sent)})."""
     days = _read(paths.tastytrade_iv_rank()).get("days") or {}
     at = max((d for d in days if d <= day), default=None)
     out = {}
     for sym, row in (days.get(at) or {}).items():
         d = (row or {}).get("earnings_date")
         if d:
-            out[sym] = (date.fromisoformat(d), row.get("earnings_estimated"))
+            out[sym] = (date.fromisoformat(d), row.get("earnings_estimated"), row.get("earnings_time"))
     return at, out
 
 
@@ -257,7 +268,7 @@ def build(day: str, cfg: dict | None = None, settings: dict | None = None, dolt:
         picked = pick_date(de, be)
         if picked is None:
             continue
-        d, timing, src, confirmed, gap = picked
+        d, timing, src, confirmed, gap, timing_src = picked
         if not session <= d <= end:
             continue
         r = sec.get(sym) or {}
@@ -278,6 +289,7 @@ def build(day: str, cfg: dict | None = None, settings: dict | None = None, dolt:
                 "company": dolt["names"].get(sym),
                 "date": d.isoformat(),
                 "timing": timing,
+                "timing_source": timing_src,
                 "date_source": src,
                 "date_confirmed": confirmed,
                 "date_gap_days": gap,

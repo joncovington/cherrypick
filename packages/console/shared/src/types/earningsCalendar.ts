@@ -23,6 +23,8 @@ export interface EarningsCalendarRow {
   date: string;
   /** Before or after the open; null when no source says, never assumed. */
   timing: "bmo" | "amc" | null;
+  /** Which source gave the time: the broker (with its own date) or Dolt (its date within a day). */
+  timingSource: "broker" | "dolt" | null;
   dateSource: "broker" | "dolt";
   /** The broker confirmed the date (true), marks it estimated (false), or Dolt's date is shown (null). */
   dateConfirmed: boolean | null;

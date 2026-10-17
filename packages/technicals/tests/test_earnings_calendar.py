@@ -30,14 +30,27 @@ def test_company_names_lose_the_share_class_boilerplate():
 
 def test_a_confirmed_broker_date_wins_and_keeps_dolts_time_a_day_off():
     """PM: Dolt had Oct 20 before the open; the broker's confirmed Oct 21 is right, and so is the time."""
-    d, timing, src, confirmed, gap = ec.pick_date((date(2026, 10, 20), BMO), (date(2026, 10, 21), False))
-    assert (d, timing, src, confirmed, gap) == (date(2026, 10, 21), "bmo", "broker", True, 1)
+    got = ec.pick_date((date(2026, 10, 20), BMO), (date(2026, 10, 21), False))
+    assert got == (date(2026, 10, 21), "bmo", "broker", True, 1, "dolt")
 
 
-def test_a_dolt_date_far_from_the_confirmed_one_gives_no_time():
-    """META: Dolt's Nov 4 is another announcement; Oct 21 is confirmed, its time unknown."""
-    d, timing, _, _, gap = ec.pick_date((date(2026, 11, 4), AMC), (date(2026, 10, 21), False))
-    assert (d, timing, gap) == (date(2026, 10, 21), None, 14)
+def test_a_dolt_date_far_from_the_confirmed_one_gives_no_time_of_its_own():
+    """META: Dolt's Nov 4 is another announcement; without the broker's time, Oct 21's is unknown."""
+    d, timing, _, _, gap, tsrc = ec.pick_date((date(2026, 11, 4), AMC), (date(2026, 10, 21), False))
+    assert (d, timing, gap, tsrc) == (date(2026, 10, 21), None, 14, None)
+
+
+def test_the_brokers_time_belongs_to_its_own_date():
+    """META on 2026-10-16: the broker sent AMC with its confirmed Oct 21, which is what the vendor shows."""
+    got = ec.pick_date((date(2026, 11, 4), None), (date(2026, 10, 21), False, "AMC"))
+    assert got[1] == "amc" and got[5] == "broker"
+    assert ec.pick_date(None, (date(2026, 10, 21), False, "BTO"))[1] == "bmo"
+    # Dolt's date shown (the broker's only an estimate two days off): the broker's time is not carried
+    # onto it, and Dolt's own blank stays unknown.
+    got = ec.pick_date((date(2026, 11, 3), None), (date(2026, 11, 5), True, "AMC"))
+    assert (got[0], got[1], got[5]) == (date(2026, 11, 3), None, None)
+    # An unrecognised value is no time.
+    assert ec.pick_date(None, (date(2026, 10, 21), False, "DMH"))[1] is None
 
 
 def test_dolt_beats_an_estimated_broker_date_and_an_estimate_alone_says_so():

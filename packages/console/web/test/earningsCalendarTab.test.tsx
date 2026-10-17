@@ -17,6 +17,7 @@ function row(over: Partial<EarningsCalendarRow>): EarningsCalendarRow {
     company: "Alpha Inc.",
     date: "2026-10-20",
     timing: "amc",
+    timingSource: "broker",
     dateSource: "broker",
     dateConfirmed: true,
     dateGapDays: 0,

@@ -100,12 +100,19 @@ def calendar_fields(raw: dict) -> dict:
     `earnings.expected-report-date` and its `estimated` flag (tastytrade 13.x keeps only the last
     report), so they are read from the response itself. Recorded from 2026-10-08 for the planned
     "no earnings within the trade cycle" filter: the local Dolt calendar reaches only ~5 weeks,
-    short of a 45-60 day cycle. Same request, no extra call."""
+    short of a 45-60 day cycle. Same request, no extra call.
+
+    `earnings_time` is the block's `time-of-day` as sent (`BTO` before the open, `AMC` after the
+    close; absent for some names), kept from 2026-10-17 for the earnings calendar. It belongs to
+    `earnings_date` and is only read alongside it: on 2026-08-12 it was stale against a report date
+    already past (packages/earnings/docs/screening-criteria.md)."""
     earnings = raw.get("earnings") or {}
     estimated = earnings.get("estimated")
+    tod = earnings.get("time-of-day")
     return {
         "earnings_date": _real_date(earnings.get("expected-report-date")),
         "earnings_estimated": None if estimated is None else bool(estimated),
+        "earnings_time": (str(tod).strip().upper() or None) if tod else None,
         "ex_dividend_date": _real_date(raw.get("dividend-ex-date")),
     }
 

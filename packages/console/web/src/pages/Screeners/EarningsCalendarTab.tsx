@@ -72,8 +72,11 @@ function TimeCell({ r }: { r: EarningsCalendarRow }) {
     );
   }
   const entry = r.entrySession ? `enter by the ${shortDate(r.entrySession)} close` : "";
+  const source = r.timingSource === "broker" ? "the broker's" : r.timingSource === "dolt" ? "Dolt's" : "unknown";
   return (
-    <td title={`${r.timing === "bmo" ? "Before the open" : "After the close"}; ${entry}; the market reacts ${shortDate(r.reactionDay)}`}>
+    <td
+      title={`${r.timing === "bmo" ? "Before the open" : "After the close"} (${source} time of day); ${entry}; the market reacts ${shortDate(r.reactionDay)}`}
+    >
       <span className="chip">{r.timing.toUpperCase()}</span>
     </td>
   );

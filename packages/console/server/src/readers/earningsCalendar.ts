@@ -64,6 +64,7 @@ function row(v: unknown): EarningsCalendarRow | null {
     company: str(r["company"]),
     date,
     timing: r["timing"] === "bmo" || r["timing"] === "amc" ? r["timing"] : null,
+    timingSource: r["timing_source"] === "broker" || r["timing_source"] === "dolt" ? r["timing_source"] : null,
     dateSource: r["date_source"] === "dolt" ? "dolt" : "broker",
     dateConfirmed: bool(r["date_confirmed"]),
     dateGapDays: num(r["date_gap_days"]),
