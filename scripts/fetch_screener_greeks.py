@@ -604,9 +604,12 @@ def earnings_rows(day) -> tuple[str | None, list[dict]]:
     US -- the tab's default view widened to somewhat liquid."""
     from datetime import timedelta
 
-    from cherrypick.technicals import earnings_calendar
+    from cherrypick.core import home as _home
 
-    files = sorted(earnings_calendar.out_dir().glob("????-??-??.json"))
+    # technicals' `earnings_calendar.out_dir()`, resolved through core: this runs (and is tested)
+    # where the technicals package is not installed.
+    folder = _home.data_dir("technicals", env="TECHNICALS_DATA_DIR") / "earnings-calendar"
+    files = sorted(folder.glob("????-??-??.json"))
     files = [p for p in files if p.stem <= day.isoformat()]
     if not files:
         return None, []
