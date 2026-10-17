@@ -90,7 +90,10 @@ Plain code changes that land immediately.
     recorded gross on all 292 closed positions.
   - Earnings uses its recorded marks; its max and min equal its own stored ones on 259 of 259.
   - Flies live uses its live marks, net of fees.
-  - MEIC, contango and flies paper keep no path, and say so.
+  - Flies paper and MEIC, which record no position marks, are priced from the SPX quote history
+    (from 2026-10-13; 557 and 3,226 positions reconcile to their gross). Against live flies' own
+    marks the extremes agree within $30 on ~80% of trades; marks stay the record wherever kept.
+  - Contango and flies' bwb_roll positions keep no path, and say so.
   - Where the modules' own `excursions` verbs price the same ticks, they agree with it exactly (pmcc
     29/29, curve 4/4, calendars 54/54). Checking this found calendars' verb had never matched a leg,
     so its MAE/MFE card had always been empty; fixed in the same PR. Folding those verbs onto

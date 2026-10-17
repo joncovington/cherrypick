@@ -21,10 +21,24 @@ it beside the trade's own figures on that basis only:
   259 on 2026-10-17).
 - `net_of_fees_as_recorded` -- flies LIVE: `fly_live_marks.mark_pnl`, which the live loop writes
   net of entry fees and before settlement, ending at the trade's net (settlement included) at its
-  exit. Flies paper records no position marks.
+  exit.
+- `gross_at_mid_from_quote_history` -- flies paper and MEIC, which record no position marks: priced
+  here from the gex recorder's SPX/XSP 0DTE quote history (`core.quotehistory`, every ~15 s, from
+  2026-10-13), only where the module recorded nothing itself (marks are the record; this fills the
+  gap). Flies is its opening vertical (legged: the short credit spread; debit_first: the debit
+  spread) until `completed_at`, then the fly, at flies' own net timeline; its structure read must
+  reproduce the module's gross at settlement (557 of 557). A MEIC side that has exited counts its
+  recorded P&L from then on, never a later quote; the endpoint is the sum of the sides, which must
+  equal the condor's gross (3,226 of 3,226).
 
-MEIC records only each side's worst spot and cost, and contango only a daily fund mid, so neither has
-a path: they read `recorded: false` with the reason, never a guessed path.
+  It is not the live loop's own view. Against the 28 live flies trades that have both, best and
+  worst agree within $30 on about 80% of trades (median +/-$5), and differ by $100+ on a few: the
+  two readers catch flickering 0DTE quotes at different instants (a tick a leg, even at the same
+  spot), and the history samples ~4x as often, so it sees slightly wider extremes. MEIC's own
+  per-side max cost agrees the same way (median +$0.03 a share, p10/p90 -$0.11/+$0.18).
+
+Contango records only a daily fund mid, and flies' bwb_roll positions change shape in a way not
+priced here: they read `recorded: false` with the reason, never a guessed path.
 
 The entry point (0 at the entry mid, by construction) and the endpoint are part of the path, so a
 trade that only ever lost has a best of 0 at entry. Pure reads, no clock, no network.
@@ -35,7 +49,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
-from cherrypick.core import ledgers
+from cherrypick.core import ledgers, quotehistory
 from cherrypick.core.clock import ET
 
 #: Leg-marked schemas: (positions table, legs table, marks table, assignments table or None).
@@ -47,7 +61,6 @@ LEG_SCHEMAS = {
 }
 
 NOT_RECORDED = {
-    "meic_ic": "MEIC records each side's worst spot and cost, not a position mark path",
     "contango_etf": "contango records one fund mid a day, not a position mark path",
 }
 
@@ -310,8 +323,179 @@ def _flies_path(conn, position_id: str) -> dict:
     return out
 
 
-def excursion(conn, schema: str, position_id: str) -> dict:
-    """The excursion of one position, on the basis its module records (module docstring)."""
+# --------------------------------------------------------------------------- from the quote history
+#: A path priced here from the gex recorder's SPX/XSP 0DTE quote history (`core.quotehistory`,
+#: every ~15 s from 2026-10-13), for a position whose module recorded no marks of its own. Gross at
+#: mid, like the leg-built paths; recorded marks always win where they exist.
+QUOTE_BASIS = "gross_at_mid_from_quote_history"
+QUOTE_HISTORY_FROM = "2026-10-13"
+_NO_QUOTES = "no quote history for the session (SPX/XSP 0DTE, recorded from 2026-10-13)"
+
+
+def _mid(chain: dict, strike: float) -> float | None:
+    q = chain.get(float(strike))
+    return None if q is None or q.get("mid") is None else float(q["mid"])
+
+
+def _fly_value(kind: str, side: str, c: float, w: float, chain: dict) -> float | None:
+    """Per-contract mid value of a flies structure, same side throughout -- flies' own
+    `fly.structure_mid` for a short vertical and a fly, and the debit-first opening vertical."""
+    if kind == "fly":
+        a, b, d = _mid(chain, c - w), _mid(chain, c), _mid(chain, c + w)
+        return None if None in (a, b, d) else a - 2 * b + d
+    if kind == "short_vertical":  # short c, long the wing on the protected side
+        a, b = _mid(chain, c - w if side == "put" else c + w), _mid(chain, c)
+        return None if None in (a, b) else a - b
+    if kind == "long_vertical":  # debit_first: +1 (c-w) call / -1 c call; +1 (c+w) put / -1 c put
+        a, b = _mid(chain, c - w if side == "call" else c + w), _mid(chain, c)
+        return None if None in (a, b) else a - b
+    return None
+
+
+def _fly_payoff(kind: str, side: str, c: float, w: float, s: float) -> float | None:
+    """flies' own expiry payoffs (`fly.fly_payoff`, `short_vertical_payoff`, `debit_vertical_payoff`)."""
+    if kind == "fly":
+        return max(0.0, w - abs(s - c))
+    if kind == "short_vertical":
+        return -max(0.0, min(w, c - s)) if side == "put" else -max(0.0, min(w, s - c))
+    if kind == "long_vertical":
+        return max(0.0, min(w, s - (c - w))) if side == "call" else max(0.0, min(w, (c + w) - s))
+    return None
+
+
+def _window(symbol, trade_date, t0, t1, history_db) -> list[dict]:
+    samples = quotehistory.session(symbol, trade_date, history_db=history_db)
+    return [s for s in samples if t0.timestamp() <= s["ts"] <= t1.timestamp() and s.get("dte") == 0]
+
+
+def _flies_from_quotes(conn, position_id: str, history_db) -> dict:
+    if not _cols(conn, "fly_positions"):
+        return {"recorded": False, "reason": "this ledger keeps no fly positions"}
+    row = conn.execute("SELECT * FROM fly_positions WHERE position_id = ?", (position_id,)).fetchone()
+    if row is None:
+        return {"recorded": False, "reason": f"no position {position_id!r}"}
+    p = dict(row)
+    if p.get("entry_mode") not in ("legged", "debit_first"):
+        return {
+            "recorded": False,
+            "reason": f"a {p.get('entry_mode')} position's legs are not priced from quotes",
+        }
+    t0, t1 = as_et(p.get("entry_time")), as_et(p.get("exit_time"))
+    if t0 is None or t1 is None or str(p.get("trade_date")) < QUOTE_HISTORY_FROM:
+        return {"recorded": False, "reason": _NO_QUOTES}
+    samples = _window(p["symbol"], p["trade_date"], t0, t1, history_db)
+    if not samples:
+        return {"recorded": False, "reason": _NO_QUOTES}
+    legged = p["entry_mode"] == "legged"
+    opening = (
+        ("short_vertical", float(p["credit"] or 0.0))
+        if legged
+        else ("long_vertical", -float(p["debit"] or 0.0))
+    )
+    done_at = as_et(p.get("completed_at"))
+    qty = float(p.get("quantity") or 1)
+    side, c, w = p["side"], float(p["center"]), float(p["wing_width"])
+
+    points = [(iso_et(t0), 0.0)]
+    refused = 0
+    for s in samples:
+        when = as_et(s["ts"])
+        kind, net = ("fly", float(p["net"])) if done_at is not None and done_at <= when else opening
+        v = _fly_value(kind, side, c, w, s["puts" if side == "put" else "calls"])
+        if v is None:
+            refused += 1
+            continue
+        points.append((iso_et(s["ts"]), (net + v) * _MULTIPLIER * qty))
+
+    # The structure as read here must reproduce the module's own gross at settlement: the check that
+    # strikes, side and net are read as flies reads them (585 of 585 settled positions, 2026-10-17).
+    gross = p.get("gross_pnl")
+    reconciles = None
+    final_kind = "fly" if done_at is not None else opening[0]
+    if p.get("settlement_price") is not None and gross is not None and not p.get("closed_before_expiry"):
+        payoff = _fly_payoff(final_kind, side, c, w, float(p["settlement_price"]))
+        reconciles = abs((float(p["net"]) + payoff) * _MULTIPLIER * qty - float(gross)) < 0.01
+    if gross is not None:
+        points.append((iso_et(t1), float(gross)))
+    return _summary(
+        points, QUOTE_BASIS, len(samples), refused, endpoint=gross, gross=gross, reconciles=reconciles
+    )
+
+
+def _meic_from_quotes(conn, position_id: str, history_db) -> dict:
+    if not _cols(conn, "ic_trades") or not _cols(conn, "ic_spread_legs"):
+        return {"recorded": False, "reason": "this ledger keeps no condors"}
+    row = conn.execute("SELECT * FROM ic_trades WHERE ic_order_id = ?", (position_id,)).fetchone()
+    if row is None:
+        return {"recorded": False, "reason": f"no position {position_id!r}"}
+    t = dict(row)
+    t0, t1 = as_et(t.get("entry_time")), as_et(t.get("exit_time"))
+    if t0 is None or t1 is None or str(t.get("trade_date")) < QUOTE_HISTORY_FROM:
+        return {"recorded": False, "reason": _NO_QUOTES}
+    sides = {
+        r["side"]: (as_et(r["exit_time"]), r["pnl"])
+        for r in conn.execute(
+            "SELECT side, exit_time, pnl FROM ic_spread_legs WHERE ic_order_id = ?", (position_id,)
+        )
+    }
+    if set(sides) != {"put", "call"}:
+        return {"recorded": False, "reason": "the condor's per-side exits are not recorded"}
+    samples = _window(t["symbol"], t["trade_date"], t0, t1, history_db)
+    if not samples:
+        return {"recorded": False, "reason": _NO_QUOTES}
+    w = float(t["wing_width"])
+    size = float(t.get("dollar_multiplier") or _MULTIPLIER) * float(t.get("quantity") or 1)
+    spreads = {  # side: (short strike, long strike, credit)
+        "put": (float(t["put_strike"]), float(t["put_strike"]) - w, t.get("put_credit")),
+        "call": (float(t["call_strike"]), float(t["call_strike"]) + w, t.get("call_credit")),
+    }
+
+    def value_at(when, chains) -> float | None:
+        total = 0.0
+        for side, (short, long_, credit) in spreads.items():
+            exited, pnl = sides[side]
+            if exited is not None and exited <= when:
+                if pnl is None:
+                    return None
+                total += float(pnl)
+                continue
+            a, b = _mid(chains[side], short), _mid(chains[side], long_)
+            if None in (a, b) or credit is None:
+                return None
+            total += (float(credit) - (a - b)) * size
+        return total
+
+    points = [(iso_et(t0), 0.0)]
+    refused = 0
+    for s in samples:
+        v = value_at(as_et(s["ts"]), {"put": s["puts"], "call": s["calls"]})
+        if v is None:
+            refused += 1
+        else:
+            points.append((iso_et(s["ts"]), v))
+    # The condor's gross is the sum of its two sides' P&L, which MEIC records per side.
+    side_sum = (
+        None
+        if any(pnl is None for _, pnl in sides.values())
+        else sum(float(pnl) for _, pnl in sides.values())
+    )
+    gross = t.get("pnl")
+    if side_sum is not None:
+        points.append((iso_et(max(e for e, _ in sides.values() if e is not None)), side_sum))
+    return _summary(
+        points,
+        QUOTE_BASIS,
+        len(samples),
+        refused,
+        endpoint=None if side_sum is None else round(side_sum, 2),
+        gross=gross,
+        reconciles=None if (side_sum is None or gross is None) else abs(side_sum - float(gross)) < 0.01,
+    )
+
+
+def excursion(conn, schema: str, position_id: str, *, history_db=None) -> dict:
+    """The excursion of one position, on the basis its module records (module docstring). Flies and
+    MEIC positions with no recorded marks are priced from the quote history instead, and say so."""
     schema = ledgers.canonical_schema(schema)
     if schema in NOT_RECORDED:
         return {"recorded": False, "reason": NOT_RECORDED[schema]}
@@ -320,5 +504,8 @@ def excursion(conn, schema: str, position_id: str) -> dict:
     if schema == "earnings":
         return _earnings_path(conn, position_id)
     if schema == "fly_book":
-        return _flies_path(conn, position_id)
+        recorded = _flies_path(conn, position_id)
+        return recorded if recorded["recorded"] else _flies_from_quotes(conn, position_id, history_db)
+    if schema == "meic_ic":
+        return _meic_from_quotes(conn, position_id, history_db)
     return {"recorded": False, "reason": f"unknown schema {schema!r}"}

@@ -154,6 +154,8 @@ const EXCURSION_BASIS: Record<string, string> = {
   gross_at_mid: "gross at mid, built from the legs' marks",
   gross_as_recorded: "gross, as the module records its marks",
   net_of_fees_as_recorded: "net of fees as the live marks record it, before settlement; the exit is the trade's net",
+  gross_at_mid_from_quote_history:
+    "gross at mid, priced from the recorded SPX quote history (the module keeps no marks); within ~$30 of the live loop's own view on most trades",
 };
 
 /** `MM-DD HH:MM` of an ISO stamp. */
