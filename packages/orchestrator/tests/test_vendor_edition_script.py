@@ -544,3 +544,48 @@ def test_a_429_anywhere_and_a_403_on_a_page_load_still_count():
     assert fve.counts_as_refusal(429, TODAYS_ENTITLEMENT_403S[0], "fetch") is True
     assert fve.counts_as_refusal(403, "https://vendor.example/dashboard", "document") is True
     assert fve.counts_as_refusal(200, "https://vendor.example/api/why/AAPL.US", "fetch") is False
+
+
+def _watchlists_reply():
+    def q(sym, rank, idea=False):
+        info = {"isTradeIdea": idea, "sentiment": None, "ruleMatch": []}
+        return {"symbol": sym, "position": 0, "technicalRank": rank, "price": 10.0, "tradeIdeaInfo": info}
+
+    return {
+        "watchLists": [
+            {"id": 1, "name": "My Watchlist", "type": None, "sentiment": "Neutral",
+             "quotes": [q("SPY.ARCX", 8)]},
+            {"id": 2, "name": "Early Breakdown", "type": "GlobalB2C", "sentiment": "Bearish",
+             "quotes": [q("TSM.XNYS", 10, True), q("BRK.B.XNYS", 6)]},
+            {"id": 3, "name": "Sector SPDRs", "type": "GlobalB2C", "quotes": [q("XLK.ARCX", 9)]},
+            {"id": 4, "name": "Undervalued Stocks", "type": "GlobalB2C", "quotes": [q("CF.XNYS", 7)]},
+            {"id": 5, "name": "Overvalued Stocks", "type": "GlobalB2C", "quotes": [q("WEN.XNAS", 4)]},
+        ]
+    }  # fmt: skip
+
+
+def test_the_watchlists_keep_every_list_but_the_three_skipped_with_the_venue_stripped():
+    rec, what = fve.watchlists_record(_watchlists_reply(), "2026-10-16", "t")
+    assert [w["name"] for w in rec["lists"]] == ["My Watchlist", "Early Breakdown"]
+    brk = rec["lists"][1]["symbols"]
+    assert [s["symbol"] for s in brk] == ["TSM", "BRK.B"]  # the share class's dot survives
+    assert brk[0] == {"symbol": "TSM", "technicalRank": 10, "price": 10.0, "tradeIdea": True}
+    assert (rec["session"], rec["dated_by"]) == ("2026-10-16", "chart session") and what.startswith(
+        "2 watchlists"
+    )
+
+
+def test_watchlists_without_a_chart_session_or_a_reply_are_not_saved():
+    assert fve.watchlists_record(_watchlists_reply(), None, "t")[0] is None
+    assert fve.watchlists_record(None, "2026-10-16", "t") == (None, "no watchlists reply")
+    assert fve.watchlists_record({"watchLists": []}, "2026-10-16", "t")[0] is None
+
+
+def test_a_saved_watchlists_day_is_never_overwritten(tmp_path, monkeypatch):
+    monkeypatch.setattr(fve, "store_dir", lambda: tmp_path)
+    assert "saved" in fve._save_watchlists(_watchlists_reply(), "2026-10-16")
+    first = (tmp_path / "vendor-watchlists" / "2026-10-16.json").read_text(encoding="utf-8")
+    assert "already saved" in fve._save_watchlists(
+        {"watchLists": [{"name": "Other", "quotes": []}]}, "2026-10-16"
+    )
+    assert (tmp_path / "vendor-watchlists" / "2026-10-16.json").read_text(encoding="utf-8") == first

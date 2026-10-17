@@ -56,6 +56,15 @@ def cmd_securities(args) -> int:
     return 0 if report.get("ok") else 1
 
 
+def cmd_stage_lists(args) -> int:
+    """Our six stage lists, tradable names only, scored against the vendor's (stagelists.py)."""
+    from . import stagelists
+
+    report = stagelists.build(args.session)
+    print(json.dumps(report, indent=1))
+    return 0 if report.get("ok") else 1
+
+
 def cmd_status(_args) -> int:
     conn = store.connect()
     row = conn.execute(
@@ -599,6 +608,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     se.add_argument("--session", help="the session to build for (default today)")
     se.set_defaults(fn=cmd_securities)
+    sl = sub.add_parser(
+        "stage-lists",
+        help="our six stage lists on one close, options-tradable names only, scored against the vendor's",
+    )
+    sl.add_argument("--session", help="the close to build for (default the newest the store holds)")
+    sl.set_defaults(fn=cmd_stage_lists)
     ba = sub.add_parser("bars")
     ba.add_argument("symbol")
     ba.add_argument("--raw", action="store_true")

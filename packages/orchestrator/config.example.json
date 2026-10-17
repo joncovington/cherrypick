@@ -657,6 +657,8 @@
     "enabled": true,
     "land_at": "06:15",
     "report_at": "06:30",
+    "_comment_stage_lists_at": "Our six stage lists (python -m cherrypick.technicals stage-lists, local data only): the stage rule on the close the landing just added, options-tradable names only, in technicals/stage-lists/<session>.json, scored against the vendor's saved watchlists while they exist. Mirror them to tastytrade by hand with python scripts/sync_stage_watchlists.py --apply. Trading days, ET.",
+    "stage_lists_at": "06:35",
     "_comment_board_at": "The signal board (python -m cherrypick.technicals board, local data only): each listed stock's count of methods agreeing on one side -- RS stage, its sector's rotation, the trend scan and that session's analyst revisions -- for the console's Screeners signal board. After report_at, from the same landing and the previous evening's revisions fetch. Record-only. ET.",
     "board": true,
     "board_at": "06:45",

@@ -79,6 +79,8 @@ CATCHUP_MINUTES = {
     # stage and rotation engines read it after the close, so it catches up well into the day.
     "technicals-land": 12 * 60,
     "technicals-report": 12 * 60,
+    # A rerun rebuilds the same close's lists from the same store.
+    "technicals-stage-lists": 6 * 60,
     # A rerun rebuilds the same session's board from the same store.
     "technicals-board": 12 * 60,
     # Dividend histories change weekly at most; a late fetch is the same fetch.
@@ -1156,6 +1158,23 @@ def derive_jobs(
                 if not tc["enabled"]
                 else "earnings module disabled (no dolt sql-server to read)"
             ),
+        ),
+    )
+    add(
+        "technicals-stage-lists",
+        lambda: JobSpec(
+            id="technicals-stage-lists",
+            # A package command: our six stage lists on the close the landing just added, tradable
+            # names only, scored against the vendor's saved watchlists while they exist.
+            argv=(pythonw, "-m", "cherrypick.technicals", "stage-lists"),
+            kind=KIND_DAILY,
+            at_et=tc["stage_lists_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-stage-lists"],
+            trading_days_only=True,
+            enabled=tc_on,
+            enabled_reason=""
+            if tc_on
+            else "disabled with technicals-land (it reads what the landing writes)",
         ),
     )
     add(
