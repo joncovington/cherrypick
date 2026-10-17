@@ -136,7 +136,8 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   tag had lag zero). 32 of 37 board tags agree, 1 extra in 77 untagged rows; all five misses are the
   source's (an event Yahoo lacks, or DOCS's target swapped). Events are Yahoo's per-firm history,
   fetched by `scripts/fetch_analyst_revisions.py` into `market-report/analysts/revisions.db`
-  (append-only, `first_seen_at`/`last_seen_at`). An edition with no revision tag on any row
+  (append-only, `first_seen_at`/`last_seen_at`), nightly at 20:15 ET from 2026-10-17 (the
+  orchestrator's `technicals-revisions`) for every stored name and every income screener name. An edition with no revision tag on any row
   (2026-10-08) is reported as `method_absent`, never scored. Which firm the tag names is not
   reproduced.
 - **Bearing** (`compass.py`, `score-bearing`): our name for the vendor's direction read. It is a

@@ -8,7 +8,7 @@ editions on 2026-10-15, it held the event behind 33 of the board's 37 tags; the 
 firms it does not carry (Bernstein, Erste) or single notes it missed.
 
 **Unofficial and personal-use.** The endpoint is undocumented and its terms are personal use only,
-the same footing as the sector lookups the plan already declined to script. This is research input
+the same footing as the sector fetch (`scripts/fetch_sectors.py`). This is research input
 for one person's own report, stored locally and never redistributed.
 
 **Append-only, so it is point-in-time.** Every fetch returns a symbol's whole history. A new event is
@@ -19,7 +19,12 @@ old `last_seen_at` -- the history the backtest reads is what was knowable, plus 
 A script, not package code, because it reaches the network; `packages/technicals` stays
 network-free and reads the table read-only (`revisions.load`).
 
-**Paced.** One symbol every `PAUSE_S` seconds (about 25 minutes for the ~670-symbol universe); a 429
+**Which names** (`default_symbols`): every name the technicals store lands plus every name on the
+latest income screener lists, about 1,020 on 2026-10-17. Each is asked every run, since a fetch is
+the whole history and there is no asking for only what is new. Run nightly by the orchestrator's
+`technicals-revisions` job.
+
+**Paced.** One symbol every `PAUSE_S` seconds (about 35 minutes for the ~1,020 names); a 429
 stops the run with everything fetched so far kept. Funds return no history and cost one call.
 
     python scripts/fetch_analyst_revisions.py [--symbols A B ...] [--limit N] [--dry-run]
@@ -125,6 +130,15 @@ def store(conn: sqlite3.Connection, rows: list[tuple]) -> int:
     return new
 
 
+def default_symbols() -> list[str]:
+    """Every name the store lands (the universe candidates the boards are scored on, the earnings
+    calendar's liquid names, the funds and benchmarks) and every name on the latest income screener
+    lists, which the store does not all hold."""
+    from cherrypick.technicals import liquidity
+
+    return sorted({*symbols.all_symbols(), *liquidity.screener_names()})
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--symbols", nargs="+", help="these tickers instead of the technicals universe")
@@ -132,7 +146,7 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="fetch and count; store nothing")
     args = ap.parse_args(argv)
 
-    todo = [s.strip().upper() for s in args.symbols] if args.symbols else symbols.all_symbols()
+    todo = [s.strip().upper() for s in args.symbols] if args.symbols else default_symbols()
     if args.limit is not None:
         todo = todo[: args.limit]
     conn = None
