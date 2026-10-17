@@ -167,6 +167,13 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   for the console, and `securities.latest` is every Python reader's door. Never read a security
   list from its folder directly. The public list carries no direction read, so the screener greeks
   plan covers both sides of its names.
+- **The stage lists** (`stagelists.py`, `stage-lists`, 2026-10-17): the vendor's six stage
+  watchlists (Early Breakout ... Early Breakdown) rebuilt from the stage rule on one close,
+  **options-tradable names only** (the vendor's are mostly not: 34 of its 98 Early Breakouts on
+  10-16). On the vendor's 10-16 lists, 99% same side and 76% same stage; ours promotes a name to
+  confirmed a step sooner. The vendor's watchlists carry no date, so each session is scored against
+  the vendor's filed under it and the one before, to learn which close its evening lists describe.
+  Mirrored to tastytrade by hand (`scripts/sync_stage_watchlists.py --apply`), never on a schedule.
 - **The earnings calendar** (`earnings_calendar.py`, `earnings-calendar`, 2026-10-17;
   docs/earnings-screener-plan.md): every announcement in the next 30 days, joined from local data
   and the local Dolt.
@@ -343,6 +350,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank (stored whole-market cut-offs) vs the vendor's. |
 | `python -m cherrypick.technicals score-signals` | Our six scan rules vs every saved scan list. |
 | `python -m cherrypick.technicals score-revisions` | The analyst-revision rule vs every saved board: agree, opposite, missed, not in source, extra. |
+| `python -m cherrypick.technicals stage-lists [--session D]` | Our six stage lists on one close, tradable names only, in `stage-lists/<session>.json`, scored against the vendor's watchlists filed under that session and the one before. |
 | `python -m cherrypick.technicals securities [--session D]` | The public security list from local files, `securities/current.json` naming the list readers use, and the public list scored against the vendor's of that day where one is saved. |
 | `python -m cherrypick.technicals score-bearing` | The bearing lookup fitted on earlier security lists, scored on the latest. |
 | `python -m cherrypick.technicals score-screeners [--rescore]` | The income screens' expiry, strike and return rules vs every saved list with its broker chain; one file per session in `screeners/`, totals printed. |

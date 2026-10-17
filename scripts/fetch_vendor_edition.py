@@ -1029,7 +1029,14 @@ def cmd_charts(args) -> int:
                         captured[f"{kind}|{url}"] = json.loads(resp.text())
                     except Exception:  # noqa: BLE001
                         pass
+            if url.split("?", 1)[0].endswith(WATCHLISTS_PATH):
+                try:
+                    watchlists["body"] = json.loads(resp.text())
+                except Exception:  # noqa: BLE001
+                    pass
 
+        watchlists: dict[str, dict] = {}
+        run_session: str | None = None
         page.on("response", on_response)
         lists: dict[str, dict] = {}
         _listen_for_screeners(page, lists)
@@ -1088,6 +1095,7 @@ def cmd_charts(args) -> int:
                     continue
                 problems = validate_chart_capture(why, ticker)
                 session = session_of(why) or datetime.now().date().isoformat()
+                run_session = run_session or session_of(why)
                 out = charts_dir() / session
                 out.mkdir(parents=True, exist_ok=True)
                 target = out / f"{ticker}.json"
@@ -1114,6 +1122,7 @@ def cmd_charts(args) -> int:
                 )
             if hits:
                 raise Throttled("; ".join(hits[:3]))
+            print(_save_watchlists(watchlists.get("body"), run_session))
             clear_session_fetch("charts")
             if not screener_failed:
                 clear_session_fetch("screeners")
@@ -1422,6 +1431,74 @@ def cmd_screeners(args) -> int:
         )
         return 1
     return 0
+
+
+# The chart app's watchlists (2026-10-17): every Global list and the account's own arrive in ONE reply
+# with any chart page, so keeping them costs no visit. The stage lists are scored against our stage
+# rule, the stacked-signal lists against our scan rules, and the personal list is kept so it outlives
+# the subscription. Three are not kept (the user, 2026-10-17): the Sector SPDRs (a fixed list of
+# eleven funds) and the valuation screens.
+WATCHLISTS_PATH = "/api/WatchLists"
+WATCHLISTS_SKIPPED = frozenset({"Sector SPDRs", "Undervalued Stocks", "Overvalued Stocks"})
+
+
+def watchlists_record(body, session: str | None, fetched_at: str) -> tuple[dict | None, str]:
+    """(the record to save, what happened) from the app's watchlists reply: every list but the
+    skipped ones, each {id, name, type, sentiment, symbols: [{symbol, technicalRank, price,
+    tradeIdea}]}. The reply carries no date, so `session` is the chart pages' own session from the
+    same run, and the record says so: whether a list describes that close or the one before is
+    measured against our stages, not assumed."""
+    lists = (body or {}).get("watchLists") if isinstance(body, dict) else None
+    if not isinstance(lists, list) or not lists:
+        return None, "no watchlists reply"
+    if not session:
+        return None, "no chart session to date the watchlists by"
+    out = []
+    for w in lists:
+        if not isinstance(w, dict) or not isinstance(w.get("name"), str) or w["name"] in WATCHLISTS_SKIPPED:
+            continue
+        symbols = []
+        for q in w.get("quotes") or []:
+            if isinstance(q, dict) and isinstance(q.get("symbol"), str):
+                symbols.append(
+                    {
+                        # 'ECL.XNYS': the vendor suffixes the listing venue
+                        "symbol": q["symbol"].rsplit(".", 1)[0],
+                        "technicalRank": q.get("technicalRank"),
+                        "price": q.get("price"),
+                        "tradeIdea": bool((q.get("tradeIdeaInfo") or {}).get("isTradeIdea")),
+                    }
+                )
+        out.append(
+            {
+                "id": w.get("id"),
+                "name": w["name"],
+                "type": w.get("type"),
+                "sentiment": w.get("sentiment"),
+                "symbols": symbols,
+            }
+        )
+    if not out:
+        return None, "the watchlists reply held no list to keep"
+    record = {"session": session, "dated_by": "chart session", "fetched_at": fetched_at, "lists": out}
+    return record, f"{len(out)} watchlists, {sum(len(x['symbols']) for x in out)} names"
+
+
+def watchlists_dir() -> Path:
+    return store_dir() / "vendor-watchlists"
+
+
+def _save_watchlists(body, session: str | None) -> str:
+    """Keep one watchlists record per session; an existing one is never overwritten."""
+    record, what = watchlists_record(body, session, datetime.now(UTC).isoformat())
+    if record is None:
+        return f"watchlists: {what}"
+    target = watchlists_dir() / f"{session}.json"
+    if target.exists():
+        return f"watchlists {session}: already saved"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(record), encoding="utf-8")
+    return f"watchlists {session}: saved {what}"
 
 
 def _save_trade_ideas(body: dict) -> None:

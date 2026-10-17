@@ -482,6 +482,9 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # The market-report readings the console shows (stages by sector, breadth, rotation,
         # signals, leaders), written once from the bars the landing just refreshed.
         "report_at": tc.get("report_at", "06:30"),
+        # `stage_lists_at`: our six stage lists on the close the landing just added, options-tradable
+        # names only (`python -m cherrypick.technicals stage-lists`), scored against the vendor's.
+        "stage_lists_at": tc.get("stage_lists_at", "06:35"),
         "dividends": bool(tc.get("dividends", True)),
         "dividends_at": tc.get("dividends_at", "19:30"),
         # `iv_rank_at`: scripts/fetch_iv_rank.py, tastytrade's IV rank for every stored name -- the
