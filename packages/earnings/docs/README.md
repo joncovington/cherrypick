@@ -79,6 +79,8 @@ remaining files keep the numbers they were written with, so existing links stay 
 - [Strategy Testing Plan](./strategy-testing-plan.md) — Forced-sampling validation program
 - [Control Book Plan](./control-book-plan.md) — Plan (nothing built): widening the control so entry
   screening becomes measurable by read-side replay, since the advisor's twin cannot express it
+- [Time Spread Screen Plan](./time-spread-screen-plan.md) — Plan (nothing built): an endurable-gap
+  screen and a combined side read for every earnings time spread, revisited once backtesting data exists
 
 ### Reference
 - [Glossary](./14-glossary.md) — Terms and definitions
