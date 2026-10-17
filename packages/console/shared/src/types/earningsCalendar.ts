@@ -95,6 +95,15 @@ export interface EarningsCalendarRow {
   /** The suggestion on listed strikes from the evening's chain listing, no quotes yet: [long,
    *  short]. Null where no listing was read; a regular-hours reading (`trade`) supersedes it. */
   listed: { expiry: string; strikes: number[] } | null;
+  /** Ours beside the vendor's (2026-10-17): our direction read (Bearing) and 1-10 strength from our
+   *  bars, as of `session`'s close, and the broker's IV rank. Null for a name we hold nothing on. */
+  ours: {
+    edge: EarningsEdge | null;
+    edgeLabel: string | null;
+    strength: number | null;
+    ivRank: number | null;
+    session: string | null;
+  } | null;
 }
 
 /** One spread's money on one mark, in the suite's layout: signed whole-position cash, costs apart. */

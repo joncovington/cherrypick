@@ -94,6 +94,12 @@ def test_the_times_file_is_the_newest_fetched_before_the_next_session():
     assert at == "2026-10-17" and times["PM"] == [(date(2026, 10, 21), "bmo")]
 
 
+def test_our_reads_need_a_lookup_and_a_held_name():
+    """No saved security list to fit Bearing on, or a name the store does not hold: no read."""
+    assert ec.our_reads("2026-10-16", ["NFLX"]) == {}  # the test home holds no lists
+    assert ec.CODES["strong bull"] == "sb" and ec.CODES["strong bear"] == "sbe"
+
+
 def test_reaction_day_and_entry_session_follow_the_time_of_day():
     tue, wed = date(2026, 10, 20), date(2026, 10, 21)
     assert (ec.reaction_day(tue, "amc"), ec.entry_session(tue, "amc")) == (wed, tue)
@@ -189,7 +195,7 @@ def test_build_joins_the_sources_into_one_row_per_announcement():
         {
             "days": {
                 "2026-10-16": {
-                    "NFLX": {"earnings_date": "2026-10-20", "earnings_estimated": False},
+                    "NFLX": {"earnings_date": "2026-10-20", "earnings_estimated": False, "iv_rank": 70.38},
                     "LATE": {"earnings_date": "2026-12-30", "earnings_estimated": False},
                 }
             }
@@ -207,7 +213,8 @@ def test_build_joins_the_sources_into_one_row_per_announcement():
         "closes": {"NFLX": 70.53, "SAP": 250.0, "EST": 50.0},
         "close_date": "2026-10-16",
     }
-    out = ec.build("2026-10-16", dolt=dolt)
+    ours = {"NFLX": {"edge": "brn", "edge_label": "bear", "strength": 3, "session": "2026-10-16"}}
+    out = ec.build("2026-10-16", dolt=dolt, ours=ours)
     est = {r["symbol"]: r for r in out["rows"]}["EST"]
     # No source times it: unknown, with last quarter's time beside it as an estimate that sets nothing.
     assert (est["timing"], est["usual_timing"], est["entry_session"]) == (None, "amc", None)
@@ -233,4 +240,13 @@ def test_build_joins_the_sources_into_one_row_per_announcement():
     assert n["suggestion"]["kind"] == "credit" and n["suggestion"]["right"] == "C"
     assert n["suggestion"]["expiry"] == "2026-11-20"
     assert rows["SAP"]["region"] == "intl" and rows["SAP"]["sd_move"] is None  # no IVs held for it
+    # Ours beside the vendor's: our read and strength, and the broker's IV rank; none where we hold nothing.
+    assert n["ours"] == {
+        "edge": "brn",
+        "edge_label": "bear",
+        "strength": 3,
+        "session": "2026-10-16",
+        "iv_rank": 70.38,
+    }
+    assert rows["SAP"]["ours"] is None
     assert out["inputs"]["security_list"] == "2026-10-16" and out["inputs"]["expiry_iv"] == "2026-10-16"

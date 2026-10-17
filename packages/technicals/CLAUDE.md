@@ -164,6 +164,11 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
     expiry after the reaction day (chosen 2026-10-17), the straddle read off that expiry's IV. One SD
     (price × IV × √(days/365), the vendor's figure) is kept beside it.
   - **Spread:** the navigator spread, as target strikes.
+  - **Ours beside theirs** (`our_reads`, 2026-10-17, the user's choice: watch how often they
+    differ, then decide which leads): Bearing and our 1-10 score from the store's bars. They are read
+    on its last bar, which at 19:10 is the PREVIOUS close, the same one the vendor's list describes.
+    The broker's IV rank sits beside them. On the first calendar, Bearing disagreed on 3 of the 19
+    default-view names it could read.
   - **Checked against the vendor's page** for Oct 20-21: its 12 names, same date, direction and
     strength; moves within 0.42 points on average. History found no edge in the spread.
 - **Out of sample** (2026-09-28): bars 99%+ on 73 of 79 names; the grid places all 375 levels.

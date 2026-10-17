@@ -213,17 +213,73 @@ def _read(path: Path | None) -> dict:
         return {}
 
 
+def broker_rows(day: str) -> tuple[str | None, dict[str, dict]]:
+    """The latest IV-rank reading on or before `day`: (its session, {symbol: its row})."""
+    days = _read(paths.tastytrade_iv_rank()).get("days") or {}
+    at = max((d for d in days if d <= day), default=None)
+    return at, {s: r or {} for s, r in (days.get(at) or {}).items()}
+
+
 def broker_dates(day: str) -> tuple[str | None, dict[str, tuple[date, bool | None, str | None]]]:
     """The latest IV-rank reading on or before `day`: (its session, {symbol: (date, estimated, time
     of day as sent)})."""
-    days = _read(paths.tastytrade_iv_rank()).get("days") or {}
-    at = max((d for d in days if d <= day), default=None)
+    at, rows = broker_rows(day)
     out = {}
-    for sym, row in (days.get(at) or {}).items():
-        d = (row or {}).get("earnings_date")
+    for sym, row in rows.items():
+        d = row.get("earnings_date")
         if d:
             out[sym] = (date.fromisoformat(d), row.get("earnings_estimated"), row.get("earnings_time"))
     return at, out
+
+
+CODES = {label: code for code, label in compass.LABELS.items()}
+OURS_STALE_DAYS = 5  # a store bar older than this is not "the same close" as the list's
+
+
+def our_reads(day: str, symbols: list[str], conn=None, lookup=None) -> dict[str, dict]:
+    """Our own direction read and 1-10 strength, beside the vendor's (chosen 2026-10-17: show both,
+    see how often they differ, then decide which the tab leads with).
+
+    Direction is Bearing (`compass.py`): the lookup fitted on every saved security list, applied to
+    our trend scores and our 1-10 score. Read from our bars, it names the vendor's strong states
+    85-95% of the time (docs/earnings-screener-plan.md, gap 4). Strength is that 1-10 score itself:
+    `levels.rank_score`'s decile on the whole-market cut-offs the landing stored. Both are read on the
+    store's last bar on or before `day` -- the morning's landing, so the PREVIOUS session's close at
+    the 19:10 build: the same close the vendor's list describes. Names the store does not hold are
+    absent."""
+    from . import levels, store, trend
+
+    if lookup is None:
+        lists = compass.load_snapshots()
+        lookup = compass.fit([r for rows in lists.values() for r in rows]) if lists else None
+    if not lookup:
+        return {}
+    own = conn is None
+    conn = conn or store.connect()
+    out = {}
+    try:
+        held = store.latest_dates(conn)
+        for sym in symbols:
+            if sym not in held:
+                continue
+            bars = [b for b in store.adjusted_bars(conn, sym) if b.date <= day]
+            if (
+                not bars
+                or (date.fromisoformat(day) - date.fromisoformat(bars[-1].date)).days > OURS_STALE_DAYS
+            ):
+                continue
+            at = bars[-1].date
+            closes = [b.close for b in bars]
+            s1, s6 = trend.last_score(closes, trend.SHORT_TERM), trend.last_score(closes, trend.LONG_TERM)
+            cutoffs = store.rank_cutoffs(conn, at)
+            sc = levels.rank_score(closes)
+            score = levels.rank_from_cutoffs(sc, cutoffs) if cutoffs and sc is not None else None
+            label = compass.bearing(lookup, s1, s6, score)
+            out[sym] = {"edge": CODES.get(label or ""), "edge_label": label, "strength": score, "session": at}
+    finally:
+        if own:
+            conn.close()
+    return out
 
 
 def times_on_file(day: str) -> tuple[str | None, dict[str, list[tuple[date, str | None]]]]:
@@ -295,8 +351,15 @@ def dolt_inputs(cfg: dict, start: date, end: date, extra: tuple[str, ...] = ()) 
 # --------------------------------------------------------------------------- the calendar
 
 
-def build(day: str, cfg: dict | None = None, settings: dict | None = None, dolt: dict | None = None) -> dict:
-    """The calendar for the session `day` (YYYY-MM-DD). `dolt` stands in for the Dolt read (tests)."""
+def build(
+    day: str,
+    cfg: dict | None = None,
+    settings: dict | None = None,
+    dolt: dict | None = None,
+    ours: dict | None = None,
+) -> dict:
+    """The calendar for the session `day` (YYYY-MM-DD). `dolt` and `ours` stand in for the Dolt read
+    and our own reads (tests)."""
     s = {**DEFAULTS, **(settings or {})}
     session = date.fromisoformat(day)
     end = session + timedelta(days=int(s["window_days"]))
@@ -374,6 +437,13 @@ def build(day: str, cfg: dict | None = None, settings: dict | None = None, dolt:
             }
         )
     rows.sort(key=lambda x: (x["date"], x["symbol"]))
+    # Ours beside the vendor's: our direction and strength from our bars, and the broker's IV rank.
+    ours = ours if ours is not None else our_reads(day, [r["symbol"] for r in rows])
+    _, broker_all = broker_rows(day)
+    for r in rows:
+        mine = ours.get(r["symbol"])
+        ivr = (broker_all.get(r["symbol"]) or {}).get("iv_rank")
+        r["ours"] = None if mine is None and ivr is None else {**(mine or {}), "iv_rank": ivr}
     return {
         "session": day,
         "window_days": int(s["window_days"]),

@@ -48,6 +48,7 @@ const NFLX = {
   sd_move_pct: 11.85,
   em_move: 5.67,
   em_move_pct: 8.04,
+  ours: { edge: "brn", edge_label: "bear", strength: 3, session: "2026-10-16", iv_rank: 70.38 },
   suggestion: { kind: "credit", right: "C", short: 70.53, long: 76.1984, expiry: "2026-11-20" },
 };
 
@@ -109,6 +110,7 @@ describe("readEarningsCalendar", () => {
     });
     // No time of day is null, never a guess; a half-written suggestion is none.
     expect(rows["META"]).toMatchObject({ timing: null, usualTiming: "amc", entrySession: null, suggestion: null });
+    expect(rows["NFLX"]!.ours).toEqual({ edge: "brn", edgeLabel: "bear", strength: 3, ivRank: 70.38, session: "2026-10-16" });
   });
 
   it("joins the evening's listed strikes, from the file naming this calendar", () => {
