@@ -231,6 +231,16 @@ def _script_module():
     return module
 
 
+def test_the_backtest_kind_is_described_only_when_the_pack_carries_backtests():
+    """Off (no `backtests` in the pack) the prompt is byte-for-byte what it was: the switch, not
+    this script, is the measurement boundary."""
+    m = _script_module()
+    assert m.with_backtest_kind(m.DEEP_PROMPT, json.dumps({"session": "x"})) == m.DEEP_PROMPT
+    on = m.with_backtest_kind(m.DEEP_PROMPT, json.dumps({"backtests": {"requests": []}}))
+    assert on.startswith(m.DEEP_PROMPT) and '"kind": "backtest_spec"' in on
+    assert m.with_backtest_kind(m.DEEP_PROMPT, "not json") == m.DEEP_PROMPT
+
+
 def test_the_model_gets_no_tools_no_mcp_servers_and_no_skills(tmp_path):
     """The prompt says the fact pack is everything the model has. Until 2026-09-12 the invocation
     was a deny-list of seven tools, which left Read/Glob/Grep and every configured MCP server

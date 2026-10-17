@@ -641,4 +641,57 @@ def _apply(
             cfg=cfg,
         )
 
+    if kind == "backtest_spec":
+        return queue_backtest(conn, session=session, proposal=proposal, proposal_id=proposal_id, cfg=cfg)
+
     return {"ok": False, "reason": f"unknown_kind: {kind!r}"}
+
+
+# --------------------------------------------------------------------------- backtest specs
+
+#: The modules packages/backtest can replay (its runner drives flies' own replay).
+BACKTEST_MODULES = ("flies",)
+
+
+def queue_backtest(
+    conn, *, session: str, proposal: dict[str, Any], proposal_id: int | None, cfg: dict | None = None
+) -> dict[str, Any]:
+    """Queue a `backtest_spec` for packages/backtest. Nothing runs here: the advisor holds no path to
+    the vendor data, and a spec only names a base arm and an overlay.
+
+    The same gates as an experiment, in the same order: the switch for this feature, the suite's
+    switch for the module, and the module's own advice bounds through `check_params` (the one
+    validator), so a backtest can only test a change an experiment could also have run."""
+    resolved = _settings.load(cfg)
+    if not resolved.get("backtest_proposals"):
+        return {"ok": False, "reason": "backtest_proposals_off: advisor.backtest_proposals is false"}
+    module = proposal.get("module")
+    if module not in BACKTEST_MODULES:
+        return {
+            "ok": False,
+            "reason": f"no_backtest_for_module: {module!r} (backtests run for {BACKTEST_MODULES})",
+        }
+    if not _settings.module_enabled(module, resolved):
+        return {"ok": False, "reason": f"module_advice_disabled: advisor.modules.{module} is off"}
+    base = proposal.get("base_arm") or None
+    checked = check_params(
+        module,
+        proposal["params"],
+        _clock.next_session(session),
+        rationales=proposal.get("rationales"),
+        base=base,
+    )
+    if not checked["ok"]:
+        return {"ok": False, "reason": checked["reason"], "rejected": checked["rejected"]}
+    params = {p["param"]: p["value"] for p in checked["proposals"]}
+    request_id = _store.add_backtest_request(
+        conn,
+        proposal_id=proposal_id,
+        session=session,
+        module=module,
+        name=str(proposal["name"]),
+        base_arm=base or checked["posture"]["base_profile"],
+        params=params,
+        hypothesis=proposal.get("hypothesis", ""),
+    )
+    return {"ok": True, "action": "queued_backtest", "request_id": request_id}

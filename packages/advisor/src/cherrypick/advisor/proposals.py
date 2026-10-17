@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-KINDS = ("bounded_adjustment", "experiment_spec", "tune", "creative", "verdict")
+KINDS = ("bounded_adjustment", "experiment_spec", "tune", "creative", "verdict", "backtest_spec")
 
 # kind -> the fields that must be present and non-empty for the proposal to be readable at all.
 _REQUIRED: dict[str, tuple[str, ...]] = {
@@ -29,7 +29,12 @@ _REQUIRED: dict[str, tuple[str, ...]] = {
     "tune": ("experiment_id", "params"),
     "creative": ("title",),
     "verdict": ("experiment_id", "recommendation"),
+    "backtest_spec": ("module", "name", "params"),
 }
+
+#: Keys a backtest spec may not carry: what history it is tested on is declared by the backtest
+#: config, never chosen by the model (which already knows how those years went).
+BACKTEST_FORBIDDEN_KEYS = ("window", "windows", "start", "end", "from", "to", "dates", "holdout", "span")
 
 RECOMMENDATIONS = ("keep", "kill", "promote")
 
@@ -199,12 +204,24 @@ def _typed(raw: Any) -> tuple[dict[str, Any], str | None]:
 
     out: dict[str, Any] = {"kind": kind, "module": raw.get("module"), "raw": raw}
 
-    if kind in ("bounded_adjustment", "experiment_spec", "tune"):
+    if kind in ("bounded_adjustment", "experiment_spec", "tune", "backtest_spec"):
         params, reason = _as_params(raw.get("params"))
         if reason:
             return {}, reason
         out["params"] = params
         out["rationales"] = _rationales(raw.get("params"))
+
+    if kind == "backtest_spec":
+        chose = sorted(k for k in BACKTEST_FORBIDDEN_KEYS if k in raw or k in out["params"])
+        if chose:
+            return {}, f"a backtest spec cannot choose its history ({', '.join(chose)}): windows are declared"
+        out.update(
+            {
+                "name": str(raw.get("name")),
+                "base_arm": str(raw.get("base_arm") or ""),
+                "hypothesis": str(raw.get("hypothesis") or ""),
+            }
+        )
 
     if kind == "experiment_spec":
         out.update(

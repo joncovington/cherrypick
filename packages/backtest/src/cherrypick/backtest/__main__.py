@@ -207,6 +207,24 @@ def cmd_run(args) -> int:
     return 0
 
 
+def cmd_run_advised(args) -> int:
+    """The advisor's queued backtest specs over the design window (advised.py)."""
+    from . import advised, runner
+
+    try:
+        out = advised.run(
+            settings.load(args.config),
+            cadence=args.cadence,
+            workers=args.workers,
+            log=lambda m: print(m, file=sys.stderr),
+        )
+    except runner.RunRefused as exc:
+        print(f"run refused: {exc}", file=sys.stderr)
+        return 2
+    _emit(out)
+    return 0
+
+
 def cmd_read(args) -> int:
     """The console's read surface (readout.py): JSON on stdout, read-only."""
     from . import readout
@@ -267,11 +285,14 @@ def main(argv: list[str] | None = None) -> int:
     rn.add_argument("--spend-holdout", dest="spend_holdout", action="store_true")
     rn.add_argument("--workers", type=int, default=4)
     rn.set_defaults(fn=cmd_run)
+    ra = sub.add_parser("run-advised", help="the advisor's queued backtest specs, over the design window")
+    ra.add_argument("--workers", type=int, default=4)
+    ra.set_defaults(fn=cmd_run_advised)
     rd = sub.add_parser("read", help="the console's read surface: JSON, read-only")
     rd.add_argument("what", choices=("overview", "run"))
     rd.add_argument("--id", default=None, help="with `run`: the run id")
     rd.set_defaults(fn=cmd_read)
-    for sp in (f, cv, dr, va, rn):
+    for sp in (f, cv, dr, va, rn, ra):
         sp.add_argument(
             "--cadence",
             type=int,

@@ -132,9 +132,10 @@ def _fingerprint(conn, symbol: str, days: list[str]) -> str:
     return h.hexdigest()[:16]
 
 
-def _replay(day: str, out: Path, arms: list[str], history_db: Path, settle: float) -> dict:
+def _replay(day: str, out: Path, arms: list[str], history_db: Path, settle: float, config: Path) -> dict:
     proc = subprocess.run(
-        [sys.executable, "-m", "cherrypick.flies.cli", "replay", "--date", day, "--out", str(out),
+        [sys.executable, "-m", "cherrypick.flies.cli", "--config", str(config), "replay", "--date", day,
+         "--out", str(out),
          "--arms", ",".join(arms), "--history-db", str(history_db), "--settle-price", repr(settle)],
         capture_output=True, text=True, timeout=3600,
     )  # fmt: skip
@@ -171,16 +172,25 @@ def run(
     end: str | None = None,
     spend_holdout: bool = False,
     workers: int = 4,
+    extra_arms: dict[str, dict] | None = None,
     replay=_replay,
     read_rows=_ledger_rows,
     log=print,
 ) -> dict:
+    """`extra_arms` adds config-defined arms (`advised:<name>`: a base arm's params with an
+    overlay) for this run only; every run replays from its own snapshot of the flies config, kept
+    beside its ledgers, so what ran is on disk exactly."""
     if window not in WINDOWS:
         raise RunRefused(f"window must be one of {WINDOWS}")
     cadence = store.cadence_of(settings, cadence)
     arms = list(dict.fromkeys(["control", *arms]))  # control always runs: every result is paired with it
     text, config_path = _flies_config_text()
     config = json.loads(text)
+    if extra_arms:
+        if window != "design":
+            raise RunRefused("advised arms run over the design window only")
+        config.setdefault("arms", {}).update(extra_arms)
+        arms = [*arms, *extra_arms]
     specs = {a: spec_for(config, a, cadence=cadence) for a in arms}
     hashes = {a: spec_hash(s) for a, s in specs.items()}
     w_lo, w_hi = _window(settings, window)
@@ -207,6 +217,8 @@ def run(
     run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
     ledger_dir = paths.results_dir() / "runs" / run_id
     ledger_dir.mkdir(parents=True, exist_ok=True)
+    snapshot = ledger_dir / "flies-config.json"
+    snapshot.write_text(json.dumps(config, indent=1), encoding="utf-8")
     refused: dict[str, str] = {}
     todo = []
     for day, close in days:
@@ -217,15 +229,19 @@ def run(
 
     def one(item):
         day, close = item
-        return day, replay(day, ledger_dir / f"{day}.db", arms, history_db, close)
+        try:
+            out = replay(day, ledger_dir / f"{day}.db", arms, history_db, close, snapshot)
+            rows = read_rows(ledger_dir / f"{day}.db") if out.get("ok") else None
+        except Exception as exc:  # noqa: BLE001 -- one bad session is that session's refusal, never the run's
+            return day, {"ok": False, "error": f"{type(exc).__name__}: {exc}"}, None
+        return day, out, rows
 
     per_arm: dict[str, dict[str, dict]] = {a: {} for a in arms}
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        for day, out in pool.map(one, todo):
+        for day, out, rows in pool.map(one, todo):
             if not out.get("ok"):
                 refused[day] = str(out.get("error"))[:200]
                 continue
-            rows = read_rows(ledger_dir / f"{day}.db")
             for arm in arms:
                 mine = [r for r in rows if r["arm"] == arm and r["session"] == day]
                 per_arm[arm][day] = {
@@ -245,6 +261,7 @@ def run(
             "cadence": cadence,
             "fill_model": FILL_MODEL,
             "flies_config": str(config_path),
+            "flies_config_snapshot": str(snapshot),
             "code_commit": _code_commit(),
             "data_fingerprint": fingerprint,
             "sessions_requested": len(days),

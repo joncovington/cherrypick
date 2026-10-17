@@ -275,6 +275,31 @@ def cmd_dismiss(args) -> dict[str, Any]:
         conn.close()
 
 
+def cmd_backtest_requests(args) -> dict[str, Any]:
+    """The queued (or all) backtest specs, for packages/backtest's runner to pick up."""
+    conn = _store.connect()
+    try:
+        return {"ok": True, "requests": _store.backtest_requests(conn, args.status)}
+    finally:
+        conn.close()
+
+
+def cmd_backtest_result(args) -> dict[str, Any]:
+    """Record one request's design-window result (written by packages/backtest's runner)."""
+    import pathlib
+
+    result = json.loads(pathlib.Path(args.result_file).read_text(encoding="utf-8"))
+    conn = _store.connect()
+    try:
+        ok = _store.record_backtest_result(
+            conn, int(args.id), status=args.status, run_id=args.run_id, result=result
+        )
+        conn.commit()
+        return {"ok": ok, "id": int(args.id)}
+    finally:
+        conn.close()
+
+
 def cmd_status(args) -> dict[str, Any]:
     conn = _store.connect()
     session = args.session
@@ -386,6 +411,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_dismiss = sub.add_parser("dismiss", help="mark a proposal dismissed by the user")
     p_dismiss.add_argument("proposal_id")
     p_dismiss.set_defaults(func=cmd_dismiss)
+
+    p_btq = sub.add_parser(
+        "backtest-requests", help="backtest specs the model proposed (for packages/backtest)"
+    )
+    p_btq.add_argument("--status", default="queued", help="queued|done|refused (default queued)")
+    p_btq.set_defaults(func=cmd_backtest_requests)
+
+    p_btr = sub.add_parser("backtest-result", help="record a backtest spec's design-window result")
+    p_btr.add_argument("--id", required=True)
+    p_btr.add_argument("--status", choices=("done", "refused"), required=True)
+    p_btr.add_argument("--run-id", dest="run_id", default=None)
+    p_btr.add_argument("--result-file", dest="result_file", required=True)
+    p_btr.set_defaults(func=cmd_backtest_result)
 
     p_status = sub.add_parser("status", help="checkpoints, experiments, and what is queued")
     p_status.add_argument("--session", help="ISO date; defaults to every recent session")

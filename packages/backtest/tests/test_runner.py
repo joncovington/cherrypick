@@ -37,8 +37,12 @@ def world(managed_home):
     return s, managed_home
 
 
-def _replay(day, out, arms, history_db, settle):
+REPLAYED_CONFIGS: list = []
+
+
+def _replay(day, out, arms, history_db, settle, config):
     out.write_bytes(b"")
+    REPLAYED_CONFIGS.append(json.loads(config.read_text(encoding="utf-8")))
     return {"ok": True}
 
 
