@@ -945,6 +945,7 @@ import type {
   PnlCalendarResult,
   PnlExcursion,
   PnlTrace,
+  PortfolioReading,
   PnlTradesResult,
 } from "@console/shared";
 
@@ -989,6 +990,18 @@ export function usePnlTrace(module: string, position: string, mode: TradingMode)
     queryKey: ["pnl-trace", module, position, mode],
     queryFn: () => getJson<PnlTrace>(`/api/calendar/trace?${q.toString()}`),
     staleTime: Infinity,
+  });
+}
+
+/** The chosen arms held together (`GET /api/portfolio`), for the Compare page's portfolio tab. */
+export function usePortfolio(arms: string[], period: "day" | "week", weights: "equal_risk" | "booked", mode: TradingMode) {
+  const q = new URLSearchParams({ arms: arms.join(","), period, weights, mode });
+  return useQuery<PortfolioReading>({
+    queryKey: ["portfolio", arms.join(","), period, weights, mode],
+    queryFn: () => getJson<PortfolioReading>(`/api/portfolio?${q.toString()}`),
+    enabled: arms.length > 0,
+    refetchInterval: 300_000,
+    placeholderData: (prev) => prev,
   });
 }
 

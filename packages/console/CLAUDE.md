@@ -380,6 +380,17 @@ bridge still spawns synchronously, holding the whole server for its subprocess; 
 move to the async spawner too. This is the plan's "arms overview": it lives here, beside the paired comparison, rather
 than as a second page that would repeat Compare's arm list.
 
+**Compare's portfolio tab** (`/compare/portfolio`, 2026-10-17, `pages/Compare/PortfolioTab.tsx` over
+`GET /api/portfolio` → `readers/portfolio.ts` → `python -m cherrypick.core.portfolio read`) — one
+chosen arm per module held together, a bridge.
+- **Resolving arms:** each arm resolves to its module's ledger, schema and era as the calendar's
+  do, so its nets are the calendar's cells. An arm the console cannot resolve is named beside
+  core's own failures.
+- **The picker:** its default (`control`, else a module's first non-advised arm) is a starting point,
+  not a judgement. pmcc's `control` is retired, for one.
+- **Labelling:** every figure shows its periods. Thin rows are dimmed and carry no tone, and
+  equal-risk scale factors are shown per arm.
+
 **Compare's calendar tab** (`/compare/calendar`, 2026-10-17, `pages/Compare/CalendarTab.tsx` over
 `GET /api/calendar` → `readers/pnlCalendar.ts`) — every arm's settled net per session as a Mon–Fri
 month grid with a weekly total, filterable by module and arm, a day drilling to the arms that

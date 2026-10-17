@@ -228,6 +228,25 @@ with how many arms lost, each arm's contribution, and re-runs over a chosen date
 months of overlapping history, and our arms have run together only since early October, so it comes
 last, or runs first on replays for an early read.
 
+*Built 2026-10-17 as `core.portfolio`, on Compare's portfolio tab,* labelled with its periods
+throughout.
+- **The pick:** one arm per module.
+- **What it measures:** correlation both ways, effective arms, the drawdown benefit of combining,
+  worst periods with how many arms lost, and each arm's contribution and net in the worst
+  drawdown. Daily or weekly; weekly mostly removes the multi-day modules' close-date timing.
+- **Weighting:** equal risk by default. MEIC's paper control books about $815k over the window at
+  ~270 condors a session, which would otherwise be the whole portfolio.
+- **Newer arms:** an arm with under `min_periods` since its first close is too new to count in
+  effective arms, and is named.
+
+First daily read over the suite window, with the control arms and earnings' first strategy book
+(`atm_calendar`), all equal-risk:
+- **Effective arms:** 3.07 of 6 over 32 sessions.
+- **Drawdown:** combining saves 44%.
+- **Correlations:** bwb, MEIC, flies and calendars run positively correlated (0.25–0.57 every-day);
+  earnings and curve sit near zero or below.
+- **Date windows:** not yet chosen in the UI (the suite window only).
+
 ## What we leave out
 
 - **Composite 0–100 scores and their labels.** The vendor scored one strategy 97, "strong", beside its

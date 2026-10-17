@@ -317,6 +317,8 @@ export const COMPARE_SLIDES = [
   { id: "risk", label: "risk" },
   // 2026-10-17: every arm's settled net per session as a month grid with weekly totals.
   { id: "calendar", label: "calendar" },
+  // 2026-10-17: one chosen arm per module held together -- correlation, effective arms, drawdown benefit.
+  { id: "portfolio", label: "portfolio" },
 ] as const satisfies readonly NavSlide[];
 
 /**
