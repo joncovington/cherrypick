@@ -28,8 +28,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from . import backtestgate, configedit
 from . import config as cfgmod
-from . import configedit
 from .util import CREATE_NO_WINDOW
 
 DOLT_DATABASES = ("earnings", "options", "stocks")
@@ -138,5 +138,7 @@ def gated_features(cfg: dict[str, Any]) -> dict[str, Any]:
             "technicals": bool(cfgmod.technicals_settings(cfg)["enabled"])
             and "earnings" in cfgmod.enabled_modules(cfg),
             "options_flow": bool(cfgmod.quikoptions_settings(cfg)["enabled"]),
+            # FAIL-CLOSED, unlike the rest: licensed vendor data (backtestgate's docstring).
+            "backtest": backtestgate.backtest_feature()["available"],
         },
     }

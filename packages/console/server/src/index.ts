@@ -23,6 +23,7 @@ import { registerLiveRoutes } from "./routes/live.js";
 import { registerFliesEvidenceRoutes } from "./routes/fliesEvidence.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { registerCompareRoutes } from "./routes/compare.js";
+import { registerBacktestRoutes } from "./routes/backtest.js";
 import { MarketDataService } from "./market/marketData.js";
 import { CandleService } from "./market/candles.js";
 import { registerWsHub } from "./ws/hub.js";
@@ -64,6 +65,7 @@ registerLiveRoutes(app, config);
 registerFliesEvidenceRoutes(app, config);
 registerSystemRoutes(app, config);
 registerCompareRoutes(app, config);
+registerBacktestRoutes(app);
 registerConfigRoutes(app, config);
 registerBwbSystemEvidenceRoutes(app, config);
 // `ok` still means "the server is up", unchanged — a watchdog reading it must not start failing

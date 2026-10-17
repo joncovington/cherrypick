@@ -231,9 +231,21 @@ function CompareIcon() {
   );
 }
 
+/* A clock hand turning back — the backtest's replay of the strategies over history. */
+function BacktestIcon() {
+  return (
+    <Svg>
+      <path d="M4.5 12a7.5 7.5 0 107.5-7.5 7.5 7.5 0 00-5.3 2.2L4.5 9" />
+      <path d="M4.5 4.5V9H9" />
+      <path d="M12 8v4l2.5 2" opacity="0.6" />
+    </Svg>
+  );
+}
+
 /** By route, not by label — the label is prose and can change; the route is the identity. */
 const ICONS: Record<string, (p: NavIconProps) => ReactNode> = {
   "/charts": ChartsIcon,
+  "/backtest": BacktestIcon,
   "/screeners": ScreenersIcon,
   "/flow": FlowIcon,
   "/reports": ReportsIcon,

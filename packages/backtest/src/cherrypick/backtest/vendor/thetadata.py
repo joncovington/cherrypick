@@ -27,6 +27,29 @@ _TRANSIENT = ("RESOURCE_EXHAUSTED", "UNAVAILABLE", "DEADLINE_EXCEEDED", "429", "
 STREAM_REMOVED = "Stream removed"
 
 
+#: The longest any one vendor call may take. A full day of 15 s greeks takes about two minutes and a
+#: day at one minute seconds, so this only ever ends a call that has stopped.
+CALL_DEADLINE_SECONDS = 300.0
+
+
+class _DeadlineStub:
+    """The library's gRPC stub with a deadline on every call (`timeout=` is gRPC's own argument)."""
+
+    def __init__(self, stub, timeout: float):
+        self._stub, self._timeout = stub, timeout
+
+    def __getattr__(self, name):
+        method = getattr(self._stub, name)
+        if not callable(method):
+            return method
+
+        def with_deadline(*args, **kwargs):
+            kwargs.setdefault("timeout", self._timeout)
+            return method(*args, **kwargs)
+
+        return with_deadline
+
+
 def _classify(exc: Exception) -> tuple[str, str]:
     text = str(exc)
     if "UNAUTHENTICATED" in text:
@@ -68,6 +91,10 @@ class ThetaDataClient:
             ) from None
 
         self._client = ThetaClient(api_key=key, dataframe_type="pandas")
+        # The library sets no deadline on its calls, and a stalled reply waits forever (2026-10-17:
+        # both workers of a history fetch sat on one for over ten minutes). Every call goes out
+        # with one, which also cancels the request at the vendor's end.
+        self._client.stub = _DeadlineStub(self._client.stub, CALL_DEADLINE_SECONDS)
 
     def _call(self, fn, **kw):
         for delay in (*RETRY_DELAYS, None):

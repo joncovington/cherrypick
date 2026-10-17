@@ -206,6 +206,18 @@ def cmd_run(args) -> int:
     return 0
 
 
+def cmd_read(args) -> int:
+    """The console's read surface (readout.py): JSON on stdout, read-only."""
+    from . import readout
+
+    if args.what == "overview":
+        _emit(readout.overview(settings.load(args.config)))
+        return 0
+    out = readout.run_report(args.id or "")
+    _emit(out)
+    return 0 if out["ok"] else 1
+
+
 def cmd_purge(args) -> int:
     s = settings.load(args.config)
     if args.apply:
@@ -251,6 +263,10 @@ def main(argv: list[str] | None = None) -> int:
     rn.add_argument("--spend-holdout", dest="spend_holdout", action="store_true")
     rn.add_argument("--workers", type=int, default=4)
     rn.set_defaults(fn=cmd_run)
+    rd = sub.add_parser("read", help="the console's read surface: JSON, read-only")
+    rd.add_argument("what", choices=("overview", "run"))
+    rd.add_argument("--id", default=None, help="with `run`: the run id")
+    rd.set_defaults(fn=cmd_read)
     for sp in (f, cv, dr, va, rn):
         sp.add_argument(
             "--cadence",

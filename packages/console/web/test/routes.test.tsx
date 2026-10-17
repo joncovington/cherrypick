@@ -350,6 +350,33 @@ describe("a page the suite has turned off", () => {
     expect(html).toContain("PMCC / session");
     expect(html).not.toContain("turned off");
   });
+
+  // The one exception (licensed vendor data): Backtest fails closed. Hidden, its URL is the 404
+  // page, never the off card -- the card would say the page exists and why it is off.
+  it("backtest is the 404 page while hidden: loading, failed, absent or false", () => {
+    const hidden: Array<string> = [
+      render("/backtest"),
+      render("/backtest/runs"),
+      renderWith("/backtest", { ok: false, error: "bridge down" }),
+      renderWith("/backtest", base),
+      renderWith("/backtest/validation", { ...base, features: { ...base.features, backtest: false } }),
+    ];
+    for (const html of hidden) {
+      expect(html).toContain("Page not found");
+      expect(text(html)).not.toContain("turned off");
+      expect(text(html)).not.toContain("Backtest /");
+      expect(html).not.toContain('href="/backtest');
+    }
+  });
+
+  it("backtest renders on its own frame, and is on the rail, only when the suite says true", () => {
+    const on = { ...base, features: { ...base.features, backtest: true } };
+    expect(text(renderWith("/backtest", on))).toContain("Backtest / data");
+    expect(text(renderWith("/backtest/runs", on))).toContain("Backtest / runs");
+    expect(renderWith("/backtest", on)).not.toContain("Page not found");
+    expect(renderWith("/flies/session", on)).toContain('href="/backtest"');
+    expect(renderWith("/flies/session", base)).not.toContain('href="/backtest"');
+  });
 });
 
 describe("the old report routes", () => {

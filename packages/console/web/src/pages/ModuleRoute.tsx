@@ -7,7 +7,7 @@ import { isModuleId } from "../lightbox/moduleOrder";
 import { NAV_DECL, resolveSlide, viewSlides } from "../lightbox/navGroups";
 import { useFeatures } from "../lib/useFeatures";
 import { useViewMode } from "../lib/viewMode";
-import { isSlideVisible, offReason } from "../lib/visibility";
+import { isHiddenAsUnknown, isSlideVisible, offReason } from "../lib/visibility";
 import { ModuleOffCard } from "./ModuleOffCard";
 
 /**
@@ -27,6 +27,11 @@ export function ModuleRoute() {
   const features = useFeatures();
   const view = useViewMode();
   if (!isModuleId(module)) return <NotFoundPage />;
+
+  // A fail-closed page that is not shown (Backtest: licensed vendor data) is no page at all: the
+  // 404, not the off card, which would say it exists and why it is off. Checked before anything
+  // else, including while the features answer is still loading.
+  if (isHiddenAsUnknown(module, features)) return <NotFoundPage />;
 
   // A page the suite has turned off is a card saying so, never the module and never a 404.
   const off = offReason(module, features);

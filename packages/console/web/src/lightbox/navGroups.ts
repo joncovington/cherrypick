@@ -360,6 +360,17 @@ export type FlowSlideId = (typeof FLOW_SLIDES)[number]["id"];
 export const ADVISOR_SLIDES = [{ id: "advisor", label: "advisor" }] as const satisfies readonly NavSlide[];
 
 /**
+ * Backtest (2026-10-17): `packages/backtest`'s replays over licensed vendor history. Shown only
+ * while the suite says `backtest: true` (it fails closed, `visibility.ts`). `data` is the licence
+ * clock and the stores, `validation` the vendor against the recorder, `runs` the replays.
+ */
+export const BACKTEST_SLIDES = [
+  { id: "data", label: "data" },
+  { id: "validation", label: "validation" },
+  { id: "runs", label: "runs" },
+] as const satisfies readonly NavSlide[];
+
+/**
  * System (2026-10-01): the suite's own health, read-only. `health` is the verdict at a glance; the
  * rest are the detail behind it, one subsystem a tab.
  */
@@ -504,6 +515,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   screeners: { slides: SCREENERS_SLIDES, simple: ["short-puts", "covered-calls", "credit-spreads", "earnings"] },
   reports: { slides: REPORTS_SLIDES },
   compare: { slides: COMPARE_SLIDES },
+  backtest: { slides: BACKTEST_SLIDES },
   advisor: { slides: ADVISOR_SLIDES },
   system: { slides: SYSTEM_SLIDES },
   config: { slides: CONFIG_SLIDES },
