@@ -56,6 +56,13 @@ def tastytrade_iv_rank() -> Path:
     return market_report_dir() / "iv" / "tastytrade.json"
 
 
+def expiry_iv_dir() -> Path:
+    """Tastytrade's implied vol per listed expiration, one file a session (`<day>.json`), written
+    by scripts/fetch_iv_rank.py alongside the rank. The earnings calendar's expected move reads it.
+    Read-only here."""
+    return market_report_dir() / "iv" / "expiry-iv"
+
+
 def index_bars() -> Path:
     """Daily bars for the cash indexes Dolt does not carry (SPX), from the broker's daily candles,
     written by scripts/fetch_index_bars.py. Read-only here."""
