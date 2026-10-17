@@ -252,7 +252,12 @@ def cmd_replay(args) -> int:
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
     try:
         out = replay.replay_session(
-            load_config(args.config), args.date, args.out, arms=arms, settle_price=price
+            load_config(args.config),
+            args.date,
+            args.out,
+            arms=arms,
+            settle_price=price,
+            history_db=args.history_db,
         )
     except (ValueError, FileExistsError) as exc:
         out = {"ok": False, "error": str(exc)}
@@ -272,14 +277,18 @@ def cmd_replay_check(args) -> int:
         return 1
     config = load_config(args.config)
     sessions = [
-        replay_check.decision_check(config, day.strip(), paper, arm=args.arm)
+        replay_check.decision_check(config, day.strip(), paper, arm=args.arm, history_db=args.history_db)
         for day in args.dates.split(",")
         if day.strip()
     ]
+    # The summary reads every session's matched entries (the credit differences), so it is computed
+    # before the detail is dropped from the reply -- dropping it first raised KeyError on every run
+    # without --detail.
+    summary = replay_check.summarise(sessions)
     if not args.detail:
         for s in sessions:
             s.pop("matched_entries", None)
-    print(json.dumps({"sessions": sessions, "summary": replay_check.summarise(sessions)}, indent=2))
+    print(json.dumps({"sessions": sessions, "summary": summary}, indent=2))
     return 0
 
 
@@ -861,6 +870,13 @@ def main(argv=None) -> int:
     p_rp.add_argument(
         "--settle-price", dest="settle_price", type=float, help="default: paper's own settlement"
     )
+    p_rp.add_argument(
+        "--history-db",
+        dest="history_db",
+        default=None,
+        help="a quote history in the recorder's schema (default: the gex recorder's own; "
+        "packages/backtest writes vendor sessions in the same schema)",
+    )
     p_rp.set_defaults(func=cmd_replay)
     p_rc = sub.add_parser(
         "replay-check",
@@ -869,6 +885,12 @@ def main(argv=None) -> int:
     p_rc.add_argument("--dates", required=True, help="comma-separated recorded sessions")
     p_rc.add_argument("--arm", default="control")
     p_rc.add_argument("--detail", action="store_true", help="every matched entry and its credit difference")
+    p_rc.add_argument(
+        "--history-db",
+        dest="history_db",
+        default=None,
+        help="a quote history in the recorder's schema (default: the gex recorder's own)",
+    )
     p_rc.set_defaults(func=cmd_replay_check)
     p_gs = sub.add_parser(
         "gate-sessions", help="each gate arm per session over its own window: acted?, arm net vs control"
