@@ -1,3 +1,4 @@
+import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { useCalendars, useCalendarsPolicies } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard } from "../../components/DataTable";
@@ -88,6 +89,7 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
     },
     { id: "policies", label: CALENDARS_LABEL.policies, render: () => <PoliciesTab /> },
     { id: "performance", label: CALENDARS_LABEL.performance, render: () => <PerformanceSlide module="calendars" /> },
+    { id: "analysis", label: CALENDARS_LABEL.analysis, render: () => <AnalysisSlide module="calendars" /> },
     { id: "advisor", label: CALENDARS_LABEL.advisor, render: () => <AdvisorSlide module="calendars" /> },
     {
       id: "positions",

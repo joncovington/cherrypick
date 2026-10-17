@@ -1,3 +1,4 @@
+import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { useCurve } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { LoopPill } from "../../components/ScopeBar";
@@ -63,6 +64,7 @@ export function CurveLightbox({ slide }: { slide: string }) {
       ),
     },
     { id: "performance", label: CURVE_LABEL.performance, render: () => <CurvePerformance data={data} /> },
+    { id: "analysis", label: CURVE_LABEL.analysis, render: () => <AnalysisSlide module="curve" /> },
     { id: "costs", label: CURVE_LABEL.costs, render: () => <CurveCosts data={data} updatedAt={dataUpdatedAt} /> },
     { id: "advisor", label: CURVE_LABEL.advisor, render: () => <AdvisorSlide module="curve" /> },
     {
