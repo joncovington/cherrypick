@@ -28,6 +28,7 @@ import type {
   ScreenerFidelityPayload,
   EarningsCalendarPayload,
   EarningsRecordPayload,
+  SignalBoardPayload,
   ScreenerList,
   ScreenerPayload,
   PmccPayload,
@@ -267,6 +268,15 @@ export function useEarningsRecord() {
     queryKey: ["earnings-record"],
     queryFn: () => getJson<EarningsRecordPayload>("/api/screeners/earnings-record"),
     // Rebuilt once a morning.
+    refetchInterval: 900_000,
+  });
+}
+
+export function useSignalBoard(day: string | null) {
+  return useQuery<SignalBoardPayload>({
+    queryKey: ["signal-board", day ?? "latest"],
+    queryFn: () => getJson<SignalBoardPayload>(`/api/screeners/board${day ? `?day=${day}` : ""}`),
+    // Written once a morning.
     refetchInterval: 900_000,
   });
 }

@@ -236,3 +236,21 @@ def sector_map() -> dict[str, str]:
     except (OSError, ValueError):
         return {}
     return {s: row["sector"] for s, row in (doc.get("sectors") or {}).items() if row.get("sector")}
+
+
+def sector_sources() -> dict[str, tuple[str, str]]:
+    """{symbol: (sector, source)}: the vendor's map (`sector_map`) where it has the name, else
+    Yahoo's (`scripts/fetch_sectors.py`, relabelled to the vendor's sector names; it agreed with the
+    vendor's on all 120 names sampled, 2026-10-17). The report's own sector measures keep
+    `sector_map` alone; the earnings calendar and the signal board read this."""
+    import json
+
+    try:
+        yahoo = json.loads(paths.yahoo_sectors().read_text(encoding="utf-8")).get("names") or {}
+    except (OSError, ValueError):
+        yahoo = {}
+    out = {
+        s: (row["sector"], "yahoo") for s, row in yahoo.items() if isinstance(row, dict) and row.get("sector")
+    }
+    out.update({s: (v, "vendor") for s, v in sector_map().items()})
+    return out

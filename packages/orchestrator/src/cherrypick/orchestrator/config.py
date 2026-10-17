@@ -482,6 +482,10 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # The market-report readings the console shows (stages by sector, breadth, rotation,
         # signals, leaders), written once from the bars the landing just refreshed.
         "report_at": tc.get("report_at", "06:30"),
+        # `board_at`: the signal board (`python -m cherrypick.technicals board`), each name's count of
+        # agreeing methods, from the same landing and the previous evening's analyst revisions.
+        "board": bool(tc.get("board", True)),
+        "board_at": tc.get("board_at", "06:45"),
         "dividends": bool(tc.get("dividends", True)),
         "dividends_at": tc.get("dividends_at", "19:30"),
         # `iv_rank_at`: scripts/fetch_iv_rank.py, tastytrade's IV rank for every stored name -- the

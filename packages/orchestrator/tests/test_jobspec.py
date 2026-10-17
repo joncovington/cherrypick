@@ -342,6 +342,7 @@ def test_derive_full_suite_job_table():
         "technicals-earnings-record",
         "technicals-screeners",
         "technicals-report",
+        "technicals-board",
         "earnings-moves",
         "fetch-headlines",
         "review-provisional",

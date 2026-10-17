@@ -140,6 +140,14 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   orchestrator's `technicals-revisions`) for every stored name and every income screener name. An edition with no revision tag on any row
   (2026-10-08) is reported as `method_absent`, never scored. Which firm the tag names is not
   reproduced.
+- **The signal board** (`board.py`, `board`, `score-board`, 2026-10-17): each listed stock's count of
+  methods agreeing on one side, the board's rule read off the 15 saved boards (every row's tags are
+  on its own side, 0 of ~430 against; every row has 3+). Counted: stage, sector rotation (into =
+  leading, out = lagging or weakening, on the name's sector fund), the trend scan (counter-trend
+  never counts) and the session's revisions. On the boards: stage 69/73 found (11 extra in 130 rows),
+  revision 33/38, rotation 61/96 and scan 5/16 -- those two are marked approximate. Not counted:
+  fundamentals, fundamentals vs price, the three flow tags. A tie has no side. Written each morning
+  at 06:45 ET to `data/technicals/board/<session>.json`; record-only.
 - **Bearing** (`compass.py`, `score-bearing`): our name for the vendor's direction read. It is a
   lookup on (1M trend, 6M trend, score tier 1-4 / 5-6 / 7-10) fitted on the dashboard's security
   list, which `scripts/fetch_vendor_edition.py` keeps once a session in
@@ -343,6 +351,8 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank (stored whole-market cut-offs) vs the vendor's. |
 | `python -m cherrypick.technicals score-signals` | Our six scan rules vs every saved scan list. |
 | `python -m cherrypick.technicals score-revisions` | The analyst-revision rule vs every saved board: agree, opposite, missed, not in source, extra. |
+| `python -m cherrypick.technicals board [--session D]` | Write one session's signal board (each stock's count of agreeing methods). |
+| `python -m cherrypick.technicals score-board` | The board's four methods vs every saved board: found, tagged, extra; rows on the board's side. |
 | `python -m cherrypick.technicals securities [--session D]` | The public security list from local files, `securities/current.json` naming the list readers use, and the public list scored against the vendor's of that day where one is saved. |
 | `python -m cherrypick.technicals score-bearing` | The bearing lookup fitted on earlier security lists, scored on the latest. |
 | `python -m cherrypick.technicals score-screeners [--rescore]` | The income screens' expiry, strike and return rules vs every saved list with its broker chain; one file per session in `screeners/`, totals printed. |
