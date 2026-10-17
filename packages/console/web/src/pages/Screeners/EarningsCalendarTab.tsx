@@ -503,7 +503,8 @@ export function EarningsCalendarTab() {
                     <IvRankCell r={r} />
                     <td className="num">{r.price === null ? "—" : `$${money(r.price)}`}</td>
                     <MoveCell r={r} />
-                    <td style={{ maxWidth: 160 }}>{r.sector ?? "—"}</td>
+                    {/* `.data-table td` is nowrap by house rule; a long sector wraps so the spread is not pushed off. */}
+                    <td style={{ whiteSpace: "normal", maxWidth: 120 }}>{r.sector ?? "—"}</td>
                     <KindCell s={r.suggestion} t={r.trade} />
                     <SpreadCell s={r.suggestion} t={r.trade} listed={r.listed} />
                   </tr>
