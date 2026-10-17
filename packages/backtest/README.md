@@ -52,6 +52,25 @@ History (`design`, `holdout`) stays locked until validation unlocks it for that 
 evaluation is recorded as a trial, and the holdout is spent once per spec (`--spend-holdout`).
 Reports go to `~/.cherrypick/data/backtest/results/` and nowhere else.
 
+To look before the unlock, `run flies --arms ... --window design --cadence 60 --provisional` runs the
+design window anyway. A provisional run is marked provisional in its report, the runs table and the
+console, records no trial, and can never be the holdout or the advisor's specs: it is a look, not
+evidence.
+
+## The nightly fetch
+
+The orchestrator's `backtest-fetch` job (off by default) runs `fetch --cadence 60 --recent 5` on
+trading days at 18:45 ET, so each new session reaches the store, and so the validation count grows by
+itself. Turn it on in the suite config:
+
+```
+"backtest": {"fetch": true}
+```
+
+then re-run `install` so the schedule picks it up. The job needs the vendor library in the suite's
+Python (`pip install -e "packages/backtest[thetadata]"`). While it runs it holds the vendor account's
+only session.
+
 ## Connection
 
 | Setting | Default | Meaning |

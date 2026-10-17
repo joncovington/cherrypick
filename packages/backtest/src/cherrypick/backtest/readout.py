@@ -95,6 +95,7 @@ def _runs() -> tuple[list[dict], dict]:
                 "created_at": r["created_at"],
                 "module": r["module"],
                 "window": r["window_name"],
+                "provisional": r["status"] == "provisional",
                 "arms": json.loads(r["arms"]),
                 "span": [r["start"], r["end"]],
                 "cadence": r["cadence"],

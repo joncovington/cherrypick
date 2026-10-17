@@ -708,6 +708,13 @@
     "critical_percent": 20,
     "critical_minutes": 30
   },
+  "backtest": {
+    "_comment": "The nightly vendor fetch for packages/backtest (job backtest-fetch, `python -m cherrypick.backtest fetch --cadence <fetch_cadence> --recent <fetch_recent_sessions>`). OFF by default: it needs a vendor subscription, the key in the keyring (python -m cherrypick.backtest key set) and ~/.cherrypick/config/backtest.json enabled, plus the vendor library (pip install -e \"packages/backtest[thetadata]\"). Trading days only at fetch_at (ET); complete sessions are skipped, so a missed night is picked up by the next. While it runs it holds the vendor account's only session: do not log in with the key elsewhere then.",
+    "fetch": false,
+    "fetch_at": "18:45",
+    "fetch_cadence": 60,
+    "fetch_recent_sessions": 5
+  },
   "quikoptions": {
     "_comment": "QuikOptions' Hot Options Report (scripts/fetch_quikoptions.py; docs/quikoptions-plan.md): one paced load a day after the close in the installed Chrome, on a profile a person signs in to by hand, then the economic calendar through the menu. Kept only when the page's own sums hold, into data/quikoptions/. 'enabled' also shows the console's Options flow page. A 429, or a 403 once signed in, starts a 24-hour cooldown; an expired session notifies and stops. OFF by default: sign in first (`python scripts/fetch_quikoptions.py login`), then set enabled=true. Scheduled, trading days only: the capture at 'at' (plus 0-jitter_minutes), scoring at score_at, and the next morning the open-interest confirmation at confirm_at; each later step waits up to 45 minutes for the one before it. 'headed' runs the capture in a visible browser (off: headless, the default) -- for a session a person is watching for errors. You are responsible for complying with the site's terms. Times are ET.",
     "enabled": false,

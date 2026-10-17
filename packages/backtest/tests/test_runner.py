@@ -104,6 +104,25 @@ def test_history_is_locked_until_validation_unlocks_it(world):
         _run(s, "design")
 
 
+def test_a_provisional_run_looks_early_and_counts_for_nothing(world):
+    """While locked, the design window may be run provisionally: no trial, marked everywhere, and
+    never the holdout or the advisor's specs."""
+    s, _ = world
+    report = _run(s, "design", provisional=True)
+    assert report["provisional"] is True and "PROVISIONAL" in report["provisional_note"]
+    conn = results.connect()
+    assert results.trial_count(conn, "flies") == 0
+    (status,) = conn.execute("SELECT status FROM runs").fetchone()
+    assert status == "provisional"
+    from cherrypick.backtest import readout
+
+    assert readout.overview(s)["runs"][0]["provisional"] is True
+    with pytest.raises(runner.RunRefused, match="provisional"):
+        _run(s, "holdout", provisional=True, spend_holdout=True)
+    with pytest.raises(runner.RunRefused, match="provisional"):
+        _run(s, "design", provisional=True, extra_arms={"advised:x": {}})
+
+
 def test_design_runs_are_trials_counted_once_per_spec(world):
     s, home = world
     _unlock(s)

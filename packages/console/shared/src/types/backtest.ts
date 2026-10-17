@@ -84,6 +84,8 @@ export interface BacktestRunListing {
   created_at: number;
   module: string;
   window: BacktestWindow | string;
+  /** A design-window run made before validation unlocked history: no trial, no evidence. */
+  provisional?: boolean;
   arms: string[];
   span: [string, string];
   cadence: number;
@@ -149,6 +151,8 @@ export interface BacktestArmReport {
 export interface BacktestRunReport {
   run_id: string;
   window: BacktestWindow | string;
+  provisional?: boolean;
+  provisional_note?: string;
   span: [string, string];
   cadence: number;
   fill_model: unknown;

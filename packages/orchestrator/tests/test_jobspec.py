@@ -327,6 +327,7 @@ def test_derive_full_suite_job_table():
         "universe-watchlist",
         "market-files",
         "market-files-retry",
+        "backtest-fetch",
         "technicals-land",
         "technicals-dividends",
         "technicals-index-bars",
@@ -1345,3 +1346,15 @@ def test_each_browser_collector_is_checked_shortly_before_its_first_run():
         ch, cm = (int(x) for x in c.at_et.split(":"))
         rh, rm = (int(x) for x in r.at_et.split(":"))
         assert (rh * 60 + rm) - (ch * 60 + cm) == gap
+
+
+def test_the_backtest_fetch_is_off_by_default_and_fetches_the_recent_sessions_when_on():
+    """packages/backtest's nightly vendor fetch: off until backtest.fetch, trading days only, the
+    store's cadence and the last few sessions (complete ones are skipped by the verb itself)."""
+    off = {j.id: j for j in derive(suite_cfg())[0]}["backtest-fetch"]
+    assert not off.enabled and "backtest.fetch" in off.enabled_reason
+    cfg = suite_cfg()
+    cfg["backtest"] = {"fetch": True, "fetch_recent_sessions": 3}
+    on = {j.id: j for j in derive(cfg)[0]}["backtest-fetch"]
+    assert on.enabled and on.trading_days_only and on.at_et == "18:45"
+    assert on.argv[1:] == ("-m", "cherrypick.backtest", "fetch", "--cadence", "60", "--recent", "3")

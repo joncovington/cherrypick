@@ -649,6 +649,22 @@ def quikoptions_post_problem(q: dict[str, Any]) -> str | None:
     return None
 
 
+def backtest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """The nightly vendor fetch for packages/backtest (`backtest-fetch`). OFF by default: it needs a
+    vendor subscription, its key in the keyring and the package's own config, none of which a fresh
+    install has. Trading days only, after the vendor's end-of-day data has posted; it asks for the
+    last `fetch_recent_sessions` sessions and skips any already complete, so a missed night is
+    picked up by the next. `fetch_cadence` is the store's cadence in seconds (60: the vendor serves
+    no sub-minute history before 2026)."""
+    b = cfg.get("backtest", {}) or {}
+    return {
+        "fetch": bool(b.get("fetch", False)),
+        "fetch_at": b.get("fetch_at", "18:45"),
+        "fetch_cadence": int(b.get("fetch_cadence", 60)),
+        "fetch_recent_sessions": int(b.get("fetch_recent_sessions", 5)),
+    }
+
+
 def quikoptions_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """QuikOptions' Hot Options Report (scripts/fetch_quikoptions.py, docs/quikoptions-plan.md):
     the capture, the console's Options flow page, and the daily Discord series.

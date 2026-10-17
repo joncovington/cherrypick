@@ -86,6 +86,19 @@ def _fetch_refusal(s: dict) -> str | None:
     return None
 
 
+def recent_span(n: int, today=None) -> tuple[str, str]:
+    """The last `n` trading days through today (ET): the nightly job's span. The fetch skips any
+    session already complete, so a span that overlaps last night's costs nothing."""
+    from cherrypick.core import calendar as _cal
+    from cherrypick.core import clock as _clock
+
+    end = today or _clock.now_et().date()
+    start = end if _cal.is_trading_day(end) else _cal.previous_trading_day(end)
+    for _ in range(max(0, int(n) - 1)):
+        start = _cal.previous_trading_day(start)
+    return start.isoformat(), end.isoformat()
+
+
 def cmd_fetch(args) -> int:
     from . import fetch
     from .vendor import VendorRefusal, client_for
@@ -94,6 +107,11 @@ def cmd_fetch(args) -> int:
     refusal = _fetch_refusal(s)
     if refusal:
         print(f"fetch refused: {refusal}", file=sys.stderr)
+        return 2
+    if args.recent:
+        args.start, args.end = recent_span(args.recent)
+    if not (args.start and args.end):
+        print("fetch: give --from and --to, or --recent N", file=sys.stderr)
         return 2
     try:
         client = client_for(s)
@@ -197,6 +215,7 @@ def cmd_run(args) -> int:
             start=args.start,
             end=args.end,
             spend_holdout=args.spend_holdout,
+            provisional=args.provisional,
             workers=args.workers,
             log=lambda m: print(m, file=sys.stderr),
         )
@@ -260,8 +279,11 @@ def main(argv: list[str] | None = None) -> int:
     k.set_defaults(fn=cmd_key)
     f = sub.add_parser("fetch", help="fetch vendor sessions into the store (the only network verb)")
     f.add_argument("--dataset", default="SPX")
-    f.add_argument("--from", dest="start", required=True)
-    f.add_argument("--to", dest="end", required=True)
+    f.add_argument("--from", dest="start", default=None)
+    f.add_argument("--to", dest="end", default=None)
+    f.add_argument(
+        "--recent", type=int, default=None, help="the last N trading days through today (the nightly job)"
+    )
     f.add_argument("--refetch", action="store_true", help="re-fetch sessions already complete")
     f.add_argument(
         "--workers", type=int, default=1, help="sessions pulled at a time (default 1; see fetch.fetch)"
@@ -283,6 +305,11 @@ def main(argv: list[str] | None = None) -> int:
     rn.add_argument("--from", dest="start", default=None, help="a sub-span of the window")
     rn.add_argument("--to", dest="end", default=None)
     rn.add_argument("--spend-holdout", dest="spend_holdout", action="store_true")
+    rn.add_argument(
+        "--provisional",
+        action="store_true",
+        help="design window while history is still locked: no trial, marked provisional everywhere",
+    )
     rn.add_argument("--workers", type=int, default=4)
     rn.set_defaults(fn=cmd_run)
     ra = sub.add_parser("run-advised", help="the advisor's queued backtest specs, over the design window")

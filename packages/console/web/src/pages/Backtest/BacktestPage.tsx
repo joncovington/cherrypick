@@ -557,6 +557,11 @@ function RunReport({ id }: { id: string }) {
         <p className="muted">{data?.error ?? "run unavailable"}</p>
       ) : (
         <>
+          {r.provisional === true && (
+            <p className="muted">
+              <ProvisionalChip /> {r.provisional_note ?? "Provisional: not a trial and not evidence."}
+            </p>
+          )}
           <TileGrid count={6}>
             <Tile label="window" value={r.window} />
             <Tile label="span" value={span(r.span)} />
@@ -660,7 +665,10 @@ export function BacktestRunsTab() {
                         </td>
                         <td className="muted">{etStamp(r.created_at)}</td>
                         <td>{r.module}</td>
-                        <td>{r.window}</td>
+                        <td>
+                          {r.window}
+                          {r.provisional === true && <ProvisionalChip />}
+                        </td>
                         <td>{r.arms.join(", ")}</td>
                         <td>{span(r.span)}</td>
                         <td className="num">{`${String(r.cadence)} s`}</td>
@@ -677,5 +685,18 @@ export function BacktestRunsTab() {
         </div>
       )}
     </WithOverview>
+  );
+}
+
+/** A run made before validation unlocked history: shown as such wherever it appears. */
+function ProvisionalChip() {
+  return (
+    <span
+      className="chip chip-warn"
+      style={{ marginLeft: 6 }}
+      title="made before validation unlocked history: not a trial, not evidence, never shown to the advisor"
+    >
+      provisional
+    </span>
   );
 }
