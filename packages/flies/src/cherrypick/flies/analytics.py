@@ -3198,7 +3198,189 @@ def _pair_detail(lv: dict, pp: dict, gap: float) -> dict:
         "live_net": lv.get("pnl") if both_settled else None,
         "paper_net": pp.get("pnl") if both_settled else None,
         "net_gap": _round((lv["pnl"] or 0.0) - (pp["pnl"] or 0.0)) if both_settled else None,
+        "category": _pair_category(lv, pp, credit_gap, debit_gap, both_settled),
     }
+
+
+# --------------------------------------------------------------------------- why the books differ
+# docs/strategy-analysis-plan.md Phase 2: every gap between live and paper gets a reason category, so
+# a month of them can be read as "mostly fills" or "mostly a gate the two disagree on" -- the vendor
+# found a $1,428 filter-precision mismatch only by building this by hand. Live's reasons are its
+# `fly_decisions` refusals; paper's are its `fly_entry_attempts` outcomes. A reason not named here
+# reads "other", always with its raw reason beside it, never dropped. On 2026-10-17 every reason the
+# real ledgers gave an unmatched entry was named.
+GAP_CATEGORIES: dict[str, str] = {
+    # live refusals
+    "max_open_margin_reached": "live limit",
+    "entries_blocked": "live limit",
+    "entry_cadence_wait": "timing",
+    "before_open_gate": "timing",
+    "outside_entry_window": "timing",
+    "completion_cutoff_reached": "timing",
+    "sign_rule_conflict": "gate",
+    "duplicate_structure": "gate",
+    "center_already_occupied": "gate",
+    "credit_below_floor": "gate",
+    "credit_above_ceiling_mostly_intrinsic": "gate",
+    "incomplete_spread_blocks": "gate",
+    "fresh_quote_diverged": "data",
+    "placement_failed": "fill",
+    "entry_unfilled": "fill",
+    # paper attempt outcomes
+    "window_blocked": "timing",
+    "cadence_blocked": "timing",
+    "gate_blocked": "gate",
+    "sign_rule_blocked": "gate",
+    "duplicate_blocked": "gate",
+    "no_candidate": "data",
+    "entered_other_structure": "gate",
+    "not_recorded": "data",
+}
+
+#: How near an entry a refusal run or attempt must be to explain it, in minutes.
+WHY_WINDOW_MINUTES = 1.0
+
+
+def _category(reason: str) -> str:
+    return GAP_CATEGORIES.get(reason, "other")
+
+
+def _pair_category(lv: dict, pp: dict, credit_gap, debit_gap, both_settled: bool) -> str | None:
+    """The largest dollar component of a matched pair's gap: `completion` when only one side
+    completed (that outweighs any price), else the biggest of entry fill, completion fill and fees.
+    None while either side is unsettled."""
+    if not both_settled:
+        return None
+    if _completed(lv) != _completed(pp):
+        return "completion"
+    qty = float(lv.get("quantity") or 1) * 100.0
+    parts = {
+        "entry fill": abs(credit_gap or 0.0) * qty,
+        "completion fill": abs(debit_gap or 0.0) * qty,
+        "fees": abs((pp.get("fees") or 0.0) - (lv.get("fees") or 0.0)),
+    }
+    name, size = max(parts.items(), key=lambda kv: kv[1])
+    return name if size >= 0.01 else "none"
+
+
+def _at(value) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value)) if value else None
+    except ValueError:
+        return None
+
+
+def _why_live_missed(live_conn, arm: str, day: str, pp: dict) -> tuple[str, str | None]:
+    """(reason, window) live did not take a paper entry. An entry order live placed on the same
+    structure that never filled (`cancelled`) is the fill story and wins; else live's refusal run
+    covering that minute, the same centre first; else `not_recorded`."""
+    t = _at(pp.get("entry_time"))
+    if t is None:
+        return "not_recorded", None
+    near = timedelta(minutes=LIVE_PAPER_MATCH_MINUTES)
+    for r in live_conn.execute(
+        "SELECT entry_time FROM fly_positions WHERE arm = ? AND trade_date = ? AND status = 'cancelled' "
+        "AND side = ? AND center = ? AND wing_width = ?",
+        (arm, day, pp["side"], pp["center"], pp["wing_width"]),
+    ):
+        lt = _at(r["entry_time"])
+        if lt is not None and abs(lt - t) <= near:
+            return "entry_unfilled", lt.isoformat()
+    slack = timedelta(minutes=WHY_WINDOW_MINUTES)
+    runs = []
+    for r in live_conn.execute(
+        "SELECT reason, first_seen, last_seen, center_first, center_last, occurrences FROM fly_decisions "
+        "WHERE arm = ? AND trade_date = ? AND mode = 'entry' AND accepted = 0",
+        (arm, day),
+    ):
+        first, last = _at(r["first_seen"]), _at(r["last_seen"])
+        if first is None or last is None or not (first - slack <= t <= last + slack):
+            continue
+        same_center = pp["center"] in (r["center_first"], r["center_last"])
+        runs.append(
+            (not same_center, -(r["occurrences"] or 0), r["reason"], f"{r['first_seen']} – {r['last_seen']}")
+        )
+    if not runs:
+        return "not_recorded", None
+    _, _, reason, window = min(runs)
+    return reason, window
+
+
+def _why_paper_missed(paper_conn, arm: str, day: str, lv: dict) -> tuple[str, str | None]:
+    """(reason, at) paper did not take a live entry: paper's attempt nearest that minute, the same
+    centre first. Paper having filled a different structure then is `entered_other_structure`."""
+    t = _at(lv.get("entry_time"))
+    if t is None or paper_conn is None:
+        return "not_recorded", None
+    slack = timedelta(minutes=WHY_WINDOW_MINUTES)
+    lo, hi = (t - slack).isoformat(), (t + slack).isoformat()
+    best = None
+    for r in paper_conn.execute(
+        "SELECT ts, outcome, center FROM fly_entry_attempts WHERE arm = ? AND trade_date = ? AND ts >= ? AND ts <= ?",
+        (arm, day, lo, hi),
+    ):
+        at = _at(r["ts"])
+        if at is None:
+            continue
+        key = (r["center"] != lv["center"], abs((at - t).total_seconds()))
+        if best is None or key < best[0]:
+            best = (key, r["outcome"], r["ts"])
+    if best is None:
+        return "not_recorded", None
+    outcome = best[1]
+    return ("entered_other_structure" if outcome == "filled" else outcome), best[2]
+
+
+def _unmatched(live_conn, paper_conn, arm: str, day: str, live_left: list, paper_left: list) -> list[dict]:
+    out = []
+    for lv in live_left:
+        reason, where = _why_paper_missed(paper_conn, arm, day, lv)
+        out.append(_unmatched_row("live only", lv, reason, where))
+    for pp in paper_left:
+        reason, where = _why_live_missed(live_conn, arm, day, pp)
+        out.append(_unmatched_row("paper only", pp, reason, where))
+    return sorted(out, key=lambda u: str(u["entry_time"]))
+
+
+def _unmatched_row(which: str, row: dict, reason: str, where: str | None) -> dict:
+    return {
+        "which": which,
+        "position": row["position_id"],
+        "entry_time": row.get("entry_time"),
+        "side": row["side"],
+        "center": row["center"],
+        "completed": _completed(row),
+        "net": row.get("pnl") if row.get("status") == "settled" else None,
+        "other_side_reason": reason,
+        "other_side_at": where,
+        "category": _category(reason),
+    }
+
+
+def _why_summary(sessions: list[dict]) -> dict:
+    """Over an era: unmatched entries by (which side traded, category), with the net of the side that
+    traded -- for `paper only`, what paper made on the entries live refused, i.e. what each kind of
+    live refusal cost (+) or saved (-) -- and matched pairs by their gap category, with the summed
+    matched net gap."""
+    unmatched: dict = {}
+    for s in sessions:
+        for u in s.get("unmatched", []):
+            key = f"{u['which']}: {u['category']}"
+            slot = unmatched.setdefault(key, {"entries": 0, "net": None, "reasons": {}})
+            slot["entries"] += 1
+            if u["net"] is not None:
+                slot["net"] = _round((slot["net"] or 0.0) + u["net"])
+            slot["reasons"][u["other_side_reason"]] = slot["reasons"].get(u["other_side_reason"], 0) + 1
+    pairs: dict = {}
+    for s in sessions:
+        for p in s.get("pairs", []):
+            if p.get("category") is None:
+                continue
+            slot = pairs.setdefault(p["category"], {"pairs": 0, "net_gap": None})
+            slot["pairs"] += 1
+            if p.get("net_gap") is not None:
+                slot["net_gap"] = _round((slot["net_gap"] or 0.0) + p["net_gap"])
+    return {"unmatched": unmatched, "pairs": pairs}
 
 
 def _sum_or_none(values) -> float | None:
@@ -3247,6 +3429,9 @@ def live_paper_gap(live_conn, paper_conn, arm: str = "control", start=None, end=
         pp = [r for r in paper_rows if r["trade_date"] == day]
         pairs, unmatched = _match_live_to_paper(lv, pp, LIVE_PAPER_MATCH_MINUTES)
         detail = [_pair_detail(a, b, g) for a, b, g in pairs]
+        paired_paper = {b["position_id"] for _, b, _ in pairs}
+        paper_left = [r for r in pp if r["position_id"] not in paired_paper]
+        why = _unmatched(live_conn, paper_conn, arm, day, unmatched, paper_left)
         live_tot, paper_tot = _side_totals(lv), _side_totals(pp)
         sessions.append(
             {
@@ -3270,6 +3455,7 @@ def live_paper_gap(live_conn, paper_conn, arm: str = "control", start=None, end=
                 "matched_net_gap": _sum_or_none(d["net_gap"] for d in detail),
                 "broker_fees": sum(1 for d in detail if d["live_fees_source"] == "broker"),
                 "pairs": detail,
+                "unmatched": why,
             }
         )
 
@@ -3290,6 +3476,7 @@ def live_paper_gap(live_conn, paper_conn, arm: str = "control", start=None, end=
             "paper_completion_rate": _rate(
                 sum(s["paper"]["completed"] for s in rows), sum(s["paper"]["entries"] for s in rows)
             ),
+            "why": _why_summary(rows),
         }
 
     return {

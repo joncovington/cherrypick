@@ -170,7 +170,9 @@ alone):
     against the real books, and a TypeScript copy would be validating the wrong derivation; the
     anchors are NYSE holiday arithmetic whose structure tag keys every result.
   - **Flies evidence** (`services/fliesEvidenceBridge.ts`, memoised 2 min): `run.py live-gap`
-    (live vs paper paired per session, split at the `completion_rule` break), `gate-sessions`
+    (live vs paper paired per session, split at the `completion_rule` break; each unmatched entry
+    carries the other book's reason and category, each pair its largest gap, and a "why the books
+    differ" card sums them per era -- `WhyTable`, `SessionWhy`), `gate-sessions`
     (each gate arm against control over its own window from the ledger's breaks, not `ERAS`) and
     `selector-sessions` (departures and the model's procedure-v2 intervals). The module's JSON is
     passed through in its own snake_case inside a `BridgedResult`; a failed read is an error, never

@@ -1,5 +1,5 @@
-import { Fragment } from "react";
-import type { FliesLiveGap, LiveGapEra, LiveGapSession } from "@console/shared";
+import { Fragment, useState } from "react";
+import type { FliesLiveGap, LiveGapEra, LiveGapSession, LiveGapWhy } from "@console/shared";
 import { Card, PnlCell } from "../../components/DataTable";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { Tile } from "../../components/performance/Tile";
@@ -48,7 +48,95 @@ function EraTiles({ label, era }: { label: string; era: LiveGapEra | undefined }
   );
 }
 
+/**
+ * Why the books differ over an era (`analytics._why_summary`): unmatched entries by which book traded
+ * and the other side's reason category, and matched pairs by their largest gap. For "paper only", the
+ * net is what paper made on entries live refused -- what that kind of refusal cost live (+) or saved
+ * it (−) -- over books whose positions had already diverged, so a gate row is often path, not
+ * precision.
+ */
+export function WhyTable({ label, why }: { label: string; why: LiveGapWhy | undefined }) {
+  if (why === undefined) return null;
+  const unmatched = Object.entries(why.unmatched).sort((a, b) => b[1].entries - a[1].entries);
+  const pairs = Object.entries(why.pairs).sort((a, b) => b[1].pairs - a[1].pairs);
+  if (unmatched.length === 0 && pairs.length === 0) return null;
+  return (
+    <>
+      <div className="card-subhead">{label}</div>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>which book traded · why the other did not</th>
+              <th>entries</th>
+              <th title="the net of the book that traded, on these entries">its net</th>
+              <th>reasons</th>
+            </tr>
+          </thead>
+          <tbody>
+            {unmatched.map(([key, v]) => (
+              <tr key={key}>
+                <td>{key}</td>
+                <td>{String(v.entries)}</td>
+                <td><PnlCell v={v.net} /></td>
+                <td className="muted">
+                  {Object.entries(v.reasons)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([r, n]) => `${r} ×${String(n)}`)
+                    .join(" · ")}
+                </td>
+              </tr>
+            ))}
+            {pairs.map(([cat, v]) => (
+              <tr key={`pair-${cat}`}>
+                <td>both traded · largest gap: {cat}</td>
+                <td>{String(v.pairs)}</td>
+                <td><PnlCell v={v.net_gap} /></td>
+                <td className="muted">matched net gap, live − paper</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+/** One session's entries that only one book took, and its pairs' gap categories. */
+export function SessionWhy({ s }: { s: LiveGapSession }) {
+  const unmatched = s.unmatched ?? [];
+  const pairs = (s.pairs ?? []).filter((p) => p.category !== undefined && p.category !== null);
+  if (unmatched.length === 0 && pairs.length === 0) return <span className="muted">every entry matched; nothing to explain</span>;
+  return (
+    <table className="data-table">
+      <tbody>
+        {unmatched.map((u) => (
+          <tr key={u.position}>
+            <td className="mono">{u.entry_time === null ? "—" : u.entry_time.slice(11, 16)}</td>
+            <td>{u.which}</td>
+            <td className="mono">{`${u.side} ${String(u.center)}`}</td>
+            <td>{u.net === null ? <span className="muted">open</span> : <PnlCell v={u.net} />}</td>
+            <td>
+              {u.category} <span className="muted">— {u.other_side_reason}</span>
+            </td>
+          </tr>
+        ))}
+        {pairs.map((p) => (
+          <tr key={p.live_position}>
+            <td className="mono">{p.live_entry_time === undefined || p.live_entry_time === null ? "—" : p.live_entry_time.slice(11, 16)}</td>
+            <td>both</td>
+            <td className="mono">{`${p.side} ${String(p.center)}`}</td>
+            <td><PnlCell v={p.net_gap} /></td>
+            <td>largest gap: {p.category}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 export function LiveGapSlide() {
+  const [open, setOpen] = useState<string | null>(null);
   const { data, isLoading, dataUpdatedAt } = useBridged<FliesLiveGap>(["flies-live-gap"], "/api/flies/live-gap");
   const d = data?.data ?? null;
 
@@ -103,6 +191,17 @@ export function LiveGapSlide() {
         <EraTiles label={`before ${breakFrom ?? "the break"} — ${RULE_LABEL.modelled_debit}`} era={d.eras.modelled_debit} />
         <EraTiles label={`from ${breakFrom ?? "the break"} — ${RULE_LABEL.pays_limit}`} era={d.eras.pays_limit} />
       </Card>
+      <Card title="why the books differ" updatedAt={dataUpdatedAt}>
+        <p className="muted" style={{ fontSize: 12 }}>
+          Every entry one book took and the other did not, with the other book&apos;s own reason: live&apos;s refusal
+          covering that minute (or its order on the same structure that never filled), paper&apos;s attempt outcome
+          then. Grouped as live limit, timing, gate, data or fill; a reason not yet grouped reads &quot;other&quot; with
+          the reason beside it. Matched pairs are grouped by their largest gap. The books hold different positions
+          once they diverge, so a gate row is often path, not threshold precision.
+        </p>
+        <WhyTable label={`before ${breakFrom ?? "the break"}`} why={d.eras.modelled_debit?.why} />
+        <WhyTable label={`from ${breakFrom ?? "the break"}`} why={d.eras.pays_limit?.why} />
+      </Card>
       <Card title="per session" updatedAt={dataUpdatedAt}>
         <div className="table-scroll">
           <table className="data-table num-from-1">
@@ -136,7 +235,18 @@ export function LiveGapSlide() {
                       </tr>
                     )}
                     <tr>
-                      <td>{s.session}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-quiet"
+                          style={{ padding: 0 }}
+                          aria-expanded={open === s.session}
+                          onClick={() => setOpen(open === s.session ? null : s.session)}
+                          title="why the books differ this session"
+                        >
+                          {open === s.session ? "▾" : "▸"} {s.session}
+                        </button>
+                      </td>
                       <td>{`${String(s.live.entries)} / ${String(s.live.completed)}`}</td>
                       <td>{`${String(s.paper.entries)} / ${String(s.paper.completed)}`}</td>
                       <td className={signTone(s.completion_gap === null ? null : -s.completion_gap)}>
@@ -154,6 +264,13 @@ export function LiveGapSlide() {
                       </td>
                       <td><PnlCell v={s.matched_net_gap} /></td>
                     </tr>
+                    {open === s.session && (
+                      <tr>
+                        <td colSpan={12}>
+                          <SessionWhy s={s} />
+                        </td>
+                      </tr>
+                    )}
                   </Fragment>
                 );
               })}
