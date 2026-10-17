@@ -125,6 +125,10 @@ def _setup_logging() -> None:
     _logs.configure(_logger, log_file())
 
 
+def _silent(message: str) -> None:
+    """A replay's logger: a replayed tick writes nothing but its scratch ledger."""
+
+
 def _log(message: str) -> None:
     _setup_logging()
     _logger.info(message)
@@ -831,7 +835,16 @@ def session_already_settled(conn, day: str) -> bool:
     return total > 0 and total == settled
 
 
-def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = False) -> dict:
+def run_once(
+    config: dict,
+    conn,
+    *,
+    cache_path: str,
+    when=None,
+    force: bool = False,
+    snapshot_fn=None,
+    replay: bool = False,
+) -> dict:
     """One iteration across every configured symbol and every enabled arm.
 
     Also owns end-of-day settlement. The recurring task calls only this, so there is exactly one
@@ -839,13 +852,31 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
 
     A `when` handed in (a test, a replay) also stamps everything the tick writes, so the ledger
     says the time the tick stood for; the scheduled loop passes none and stamps the wall clock.
+
+    `snapshot_fn` replaces `provider.build_snapshot` (same signature): the quote-history replay
+    (`flies.replay`) hands in recorded snapshots so this, the paper loop's own tick, runs the rules.
+    `replay=True` makes the tick touch nothing but `conn`: no heartbeat, no log file, and no advice
+    decision -- `advice_decision` WRITES the session's decision file, and a replayed past session
+    must never overwrite the live loop's. The roster is then the enabled arms alone.
     """
     with clock.pinned(when):
-        return _run_once(config, conn, cache_path=cache_path, when=when, force=force)
+        return _run_once(
+            config,
+            conn,
+            cache_path=cache_path,
+            when=when,
+            force=force,
+            snapshot_fn=snapshot_fn,
+            replay=replay,
+        )
 
 
-def _run_once(config: dict, conn, *, cache_path: str, when, force: bool) -> dict:
-    _beat()  # before every gate below: liveness is "the loop is turning over", not "it did work"
+def _run_once(
+    config: dict, conn, *, cache_path: str, when, force: bool, snapshot_fn=None, replay: bool = False
+) -> dict:
+    log = _silent if replay else _log
+    if not replay:
+        _beat()  # before every gate below: liveness is "the loop is turning over", not "it did work"
     when = when or provider.now_et()
     now_min = provider.minute_of_day(when)
     day = when.date().isoformat()
@@ -864,11 +895,11 @@ def _run_once(config: dict, conn, *, cache_path: str, when, force: bool) -> dict
     past_settle = now_min >= settle_time_min(config)
     settled = session_already_settled(conn, day)
     if past_settle and not settled:
-        _log(f"past settle time ({now_min // 60:02d}:{now_min % 60:02d}) — settling {day}")
+        log(f"past settle time ({now_min // 60:02d}:{now_min % 60:02d}) — settling {day}")
         return {
             "ok": True,
             "settled_session": True,
-            **run_settle(config, conn, cache_path=cache_path, when=when),
+            **run_settle(config, conn, cache_path=cache_path, when=when, replay=replay),
         }
 
     if not force and not in_session(now_min):
@@ -878,13 +909,14 @@ def _run_once(config: dict, conn, *, cache_path: str, when, force: bool) -> dict
         # the off-session --once tick fires ~1/min around the clock (the in-session resident loop
         # never reaches this branch) and a line per tick would bury the session it surrounds.
         if past_settle and settled and now_min % 60 < _TASK_INTERVAL_MIN:
-            _log(f"{day} settled — idle until the next session")
+            log(f"{day} settled — idle until the next session")
         return {"ok": True, "skipped": "outside_rth", "now_min": now_min, "session_settled": settled}
 
-    arms = session_arms(config, conn, day)
+    arms = climod.enabled_arms(config) if replay else session_arms(config, conn, day)
+    build = snapshot_fn or provider.build_snapshot
     results = []
     for symbol in config.get("symbols", ["SPX"]):
-        snapshot = provider.build_snapshot(
+        snapshot = build(
             cache_path,
             symbol,
             when=when,
@@ -895,7 +927,7 @@ def _run_once(config: dict, conn, *, cache_path: str, when, force: bool) -> dict
             # ordinary condition — log it so a barren session is explicable afterwards. Record the
             # refusal to fly_snapshots too: the arm loop below never runs on a refusal, so without
             # this the tick leaves no trace and a feed outage looks identical to a quiet market.
-            _log(f"{symbol}: no snapshot ({snapshot['reason']})")
+            log(f"{symbol}: no snapshot ({snapshot['reason']})")
             dbmod.record_snapshot(
                 conn,
                 trade_date=day,
@@ -907,7 +939,7 @@ def _run_once(config: dict, conn, *, cache_path: str, when, force: bool) -> dict
             continue
 
         stats = snapshot["quote_stats"]
-        _log(
+        log(
             f"{symbol}: spot {snapshot['underlying_price']:.2f} dte {snapshot['dte']} "
             f"quotes {stats['fresh']} fresh / {stats['rejected']} rejected"
         )
@@ -922,7 +954,7 @@ def _run_once(config: dict, conn, *, cache_path: str, when, force: bool) -> dict
         )
         # Each advised arm's OWN experiment, stamped on its rows only (the shared rule resolves
         # the arm's tag against the decision; a control arm stamps None).
-        decision = advice_decision(config, day)
+        decision = {} if replay else advice_decision(config, day)
         now_epoch = time.time() if when is None else when.timestamp()
         for arm in arms:
             arm_config, agent_decision = tick_config(config, arm, day, now_epoch)
@@ -940,7 +972,7 @@ def _run_once(config: dict, conn, *, cache_path: str, when, force: bool) -> dict
             )
             for action in outcome["actions"]:
                 if action["action"] not in ("entry_skipped", "completion_skipped"):
-                    _log(f"  [{arm}] {action}")
+                    log(f"  [{arm}] {action}")
             # After the arm's own tick, so a completion this tick is never tagged as a close.
             source = engine.merged_params(config, arm).get("tag_closes")
             if source in (close_tags.RULE, close_tags.AGENT):
@@ -955,14 +987,16 @@ def _run_once(config: dict, conn, *, cache_path: str, when, force: bool) -> dict
                         now=bookmod._now(),
                     )
                     for t in tagged:
-                        _log(f"  [{arm}] close tagged ({t['source']}): {t}")
+                        log(f"  [{arm}] close tagged ({t['source']}): {t}")
                 except Exception as exc:  # noqa: BLE001 -- a tag is telemetry; never cost the tick
-                    _log(f"  [{arm}] close tagging failed (non-fatal): {type(exc).__name__}: {exc}")
+                    log(f"  [{arm}] close tagging failed (non-fatal): {type(exc).__name__}: {exc}")
             results.append({"symbol": symbol, "arm": arm, "ok": True, **outcome})
     return {"ok": True, "iterations": len(results), "results": results}
 
 
-def run_settle(config: dict, conn, *, cache_path: str, when=None, price: float | None = None) -> dict:
+def run_settle(
+    config: dict, conn, *, cache_path: str, when=None, price: float | None = None, replay: bool = False
+) -> dict:
     """Settle every book for the session at the settlement price.
 
     Caveat worth knowing when reading the results: `price` defaults to the last streamed trade, which
@@ -974,10 +1008,13 @@ def run_settle(config: dict, conn, *, cache_path: str, when=None, price: float |
     A `when` handed in stamps the settlement's writes, as in `run_once`.
     """
     with clock.pinned(when):
-        return _run_settle(config, conn, cache_path=cache_path, when=when, price=price)
+        return _run_settle(config, conn, cache_path=cache_path, when=when, price=price, replay=replay)
 
 
-def _run_settle(config: dict, conn, *, cache_path: str, when, price: float | None) -> dict:
+def _run_settle(
+    config: dict, conn, *, cache_path: str, when, price: float | None, replay: bool = False
+) -> dict:
+    log = _silent if replay else _log
     when = when or provider.now_et()
     trade_date = when.date().isoformat()
     out = []
@@ -992,7 +1029,7 @@ def _run_settle(config: dict, conn, *, cache_path: str, when, price: float | Non
             else provider.read_spot(cache_path, symbol, max_age_seconds=settle_max_age)
         )
         if settlement is None:
-            _log(
+            log(
                 f"{symbol}: cannot settle — no price within {settle_max_age}s "
                 f"(feed stale or down). Re-run with --price once it recovers."
             )
@@ -1001,11 +1038,11 @@ def _run_settle(config: dict, conn, *, cache_path: str, when, price: float | Non
         source = "explicit" if price is not None else "last_trade"
         # The same roster the tick entered on, including any advised arm — settling a narrower list
         # than the one that traded would strand an advised book open with no way to close it.
-        for arm in session_arms(config, conn, trade_date):
+        for arm in climod.enabled_arms(config) if replay else session_arms(config, conn, trade_date):
             result = bookmod.settle_book(
                 conn, trade_date, arm, symbol, settlement, config, settlement_source=source
             )
-            _log(
+            log(
                 f"{symbol} [{arm}] settled at {settlement:.2f} ({source}): "
                 f"P&L {result['pnl']:+.2f}, stats {result['stats']}"
             )
@@ -1018,16 +1055,16 @@ def _run_settle(config: dict, conn, *, cache_path: str, when, price: float | Non
     # reads, so the next tick tries again and the day settles by itself as soon as the feed recovers.
     settled_any = any(r.get("ok") for r in out)
     if not settled_any:
-        _log("nothing settled — not writing EOD reports; will retry on the next tick")
+        log("nothing settled — not writing EOD reports; will retry on the next tick")
         return {"ok": False, "settled": 0, "results": out, "reason": "no_settlement_price"}
 
     # The agent's qualification moves only when a session settles, so it is re-judged here. A file
     # the console and the live selection read; never allowed to cost the settlement.
-    if intraday_advice.agent_config(config)["enabled"]:
+    if not replay and intraday_advice.agent_config(config)["enabled"]:
         try:
             intraday_eval.run(conn, config, write=True)
         except Exception as exc:  # noqa: BLE001
-            _log(f"intraday agent qualification failed (non-fatal): {type(exc).__name__}: {exc}")
+            log(f"intraday agent qualification failed (non-fatal): {type(exc).__name__}: {exc}")
 
     # The per-module EOD reports were retired 2026-08-13: packages/review builds one fact set
     # across every module and renders from that, so a module writing its own prose was a second,

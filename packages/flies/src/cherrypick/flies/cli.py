@@ -234,6 +234,33 @@ def _open_ro(path: str):
     return _core_db.connect_ro(path) if pathlib.Path(path).exists() else None
 
 
+def cmd_replay(args) -> int:
+    """Replay a recorded session through the paper loop's own tick into a fresh scratch ledger
+    (`flies.replay`; docs/quote-history-replay-plan.md Phase 1). Settles at `--settle-price`, or at
+    paper's own recorded settlement for the session when omitted. Writes only `--out`."""
+    from cherrypick.flies import replay
+
+    price = args.settle_price
+    if price is None:
+        paper = _open_ro(args.db or dbmod.default_db_path())
+        if paper is not None:
+            row = paper.execute(
+                "SELECT MAX(settlement_price) FROM fly_positions WHERE trade_date = ? AND settlement_price IS NOT NULL",
+                (args.date,),
+            ).fetchone()
+            price = row[0] if row else None
+    arms = [a.strip() for a in args.arms.split(",") if a.strip()]
+    try:
+        out = replay.replay_session(
+            load_config(args.config), args.date, args.out, arms=arms, settle_price=price
+        )
+    except (ValueError, FileExistsError) as exc:
+        out = {"ok": False, "error": str(exc)}
+    out["settle_price"] = price
+    print(json.dumps(out, indent=2))
+    return 0 if out.get("ok") else 1
+
+
 def cmd_live_gap(args) -> int:
     """The live arm's sessions paired with paper's same arm: net, fill, fee and completion gaps
     (read-only)."""
@@ -800,6 +827,19 @@ def main(argv=None) -> int:
     p_lg.add_argument("--end")
     p_lg.add_argument("--detail", action="store_true", help="every matched pair")
     p_lg.set_defaults(func=cmd_live_gap)
+    p_rp = sub.add_parser(
+        "replay",
+        help="replay a recorded session (quote history, from 2026-10-13) through the paper tick into a scratch ledger",
+    )
+    p_rp.add_argument("--date", required=True)
+    p_rp.add_argument("--out", required=True, help="the scratch ledger to write (must not exist)")
+    p_rp.add_argument(
+        "--arms", default="control", help="comma-separated rule arms (model-driven arms are refused)"
+    )
+    p_rp.add_argument(
+        "--settle-price", dest="settle_price", type=float, help="default: paper's own settlement"
+    )
+    p_rp.set_defaults(func=cmd_replay)
     p_gs = sub.add_parser(
         "gate-sessions", help="each gate arm per session over its own window: acted?, arm net vs control"
     )
