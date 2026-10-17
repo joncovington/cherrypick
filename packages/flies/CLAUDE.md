@@ -48,7 +48,8 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `cherrypick/flies/fly.py` | payoffs, quote pricing, fees, position and book floor math. Pure. |
 | `cherrypick/flies/engine.py` | centre selection, entry gates, the completion gate, settlement. Pure. |
 | `cherrypick/flies/provider.py` | builds snapshots from the shared stream cache, read-only. No decisions. |
-| `cherrypick/flies/paper_loop.py` | session driver: fetch, run every arm, settle at the bell. |
+| `cherrypick/flies/paper_loop.py` | session driver: fetch, run every arm, settle at the bell. `run_once`/`run_settle` take `snapshot_fn` and `replay=True` for the quote-history replay: a replayed tick touches nothing but its ledger (no heartbeat, log file or advice decision, which writes). |
+| `cherrypick/flies/replay.py` | the quote-history replay (docs/quote-history-replay-plan.md Phase 1): rebuilds each recorded sample as paper's snapshot (quotes in paper's window and age, GEX from the recorded profile within 360 s, session bounds from the spot trail up to the instant) and runs `paper_loop.run_once` over it into a scratch ledger. Rule arms only; model-driven arms are refused. CLI `replay --date --out`. |
 | `cherrypick/flies/book.py` | wires engine decisions to the paper DB; one book per (date, arm, symbol). A replay hands `process_snapshot`/`settle_book` the tick's `now` (or `paper_loop.run_once` its `when`) and every stamp — entry_time, completed_at, latencies, the cadence clock, the journals — is that instant (`clock.pinned`); the loops pass none and stamp the wall clock. |
 | `cherrypick/flies/db.py` | `fly_positions` (ledger) and `fly_books` (roll-up with the floor's price band). |
 | `cherrypick/flies/analytics.py` | the one query layer every read surface goes through. Read-only. |

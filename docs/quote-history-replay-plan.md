@@ -113,6 +113,34 @@ session, not after ten paper sessions.
 
 ## Phase 1 — the flies replay
 
+*Progress, 2026-10-17 (stage 1, mechanics).*
+
+**Built.** `flies.replay` rebuilds each recorded sample as paper's snapshot and runs
+`paper_loop.run_once` over it (`snapshot_fn=`, `replay=True`) into a scratch ledger. The rebuild
+follows gap 2's rules (the profile within 360 s, session bounds from the spot trail up to the
+instant). A replayed tick touches no live file: advice is skipped because `advice_decision` writes,
+and the selector and agent arms are refused. CLI: `replay --date --out`.
+
+**First run, control, against paper control on the four recorded sessions:**
+
+| Session | Entries, replay / paper | Net, replay / paper | Agreement |
+|---|---|---|---|
+| 10-15 | 11 / 11 | −$878 / −$843 | every entry on side and centre, times within seconds |
+| 10-16 | 22 / 22 | −$762 / −$879 | as 10-15 |
+| 10-13 | 6 / 4 | | diverge from the first entry of the day |
+| 10-14 | 12 / 13 | | diverge from the first entry of the day |
+
+- **Why 10-13 and 10-14 diverge.** `choose_side` is `put if spot <= centre`, and control centres at
+  the money. On 10-14 paper saw spot 0.36 below the 7760 centre and the recording 0.18 above it,
+  so the first entry took the other side, and alternation carried the difference through the day.
+  The side is a coin flip whenever spot sits on the centre.
+- **Credits** differ by about one to three ticks: the two readers catch 0DTE quotes about a tick
+  apart per leg (measured 2026-10-17, against live flies' own marks).
+
+**What this means for gap 3's tolerances.** They were declared before the reader noise was
+measured. Entries within one tick and credits within $0.05 cannot hold path for path on every
+session, so stage 2 has to say how a diverged session is judged before the comparison is run.
+
 **Shape.** Rebuild each recorded tick as the snapshot the paper loop would have built, and feed it
 to flies' own code: `book.process_snapshot` against a scratch ledger per arm. There is no second copy
 of the rules. Fields beyond quotes are enriched from what is already recorded:
