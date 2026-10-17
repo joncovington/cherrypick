@@ -21,7 +21,7 @@ import type { TechnicalsChart, TechnicalsSetup, TechnicalsVendorLevel } from "@c
 import { useTechnicalsChart } from "../../lib/api";
 import { SERIES_COLORS } from "../../components/Charts";
 import { fmtIvr } from "../../lib/format";
-import { canvasPalette as _pal, hexOf } from "../../components/chart/cssvars";
+import { canvasPalette as _pal, hexOf, resolveColor } from "../../components/chart/cssvars";
 
 const PAL = _pal();
 
@@ -49,10 +49,13 @@ const PAL = _pal();
 const UP = hexOf("--pos", "#3af3a0");
 const DOWN = hexOf("--neg", "#ee6760");
 const GRID_INK = hexOf("--text-muted", "#9ca3af");
-const OURS = SERIES_COLORS[0]!;
-const VENDOR = SERIES_COLORS[2]!;
+/** The series palette holds `var(--…)` tokens a canvas cannot read (it paints them black), and the
+ *  chips' ink is worked out from a hex: resolve each one once, here. */
+const SERIES = SERIES_COLORS.map(resolveColor);
+const OURS = SERIES[0]!;
+const VENDOR = SERIES[2]!;
 /** Both arrows are amber: an arrow marks an event, and green or red would read as a gain or a loss. */
-const ARROW = SERIES_COLORS[2]!;
+const ARROW = SERIES[2]!;
 /** A short's arrows: pale, so a short entry (down) is never read as a long's exit (also down). */
 const SHORT_ARROW = hexOf("--text", "#ffffff");
 /** Twice the library's default: at 1 an entry arrow, which carries no label, was lost among the candles. */
@@ -62,13 +65,13 @@ const SIDES: readonly Side[] = ["long", "short", "both"];
 
 /** How each series a setup reads is drawn, keyed as the chart file's `setup_lines`. */
 const SETUP_LINE: Record<string, { title: string; color: string; style: LineStyle; width: 1 | 2 }> = {
-  ema9: { title: "EMA 9", color: SERIES_COLORS[4]!, style: LineStyle.Solid, width: 1 },
-  ema21: { title: "EMA 21", color: SERIES_COLORS[0]!, style: LineStyle.Solid, width: 2 },
-  ema50: { title: "EMA 50", color: SERIES_COLORS[3]!, style: LineStyle.Solid, width: 2 },
+  ema9: { title: "EMA 9", color: SERIES[4]!, style: LineStyle.Solid, width: 1 },
+  ema21: { title: "EMA 21", color: SERIES[0]!, style: LineStyle.Solid, width: 2 },
+  ema50: { title: "EMA 50", color: SERIES[3]!, style: LineStyle.Solid, width: 2 },
   bb_upper: { title: "BB upper", color: GRID_INK, style: LineStyle.Dotted, width: 1 },
   bb_mid: { title: "BB mid", color: GRID_INK, style: LineStyle.Dashed, width: 1 },
   bb_lower: { title: "BB lower", color: GRID_INK, style: LineStyle.Dotted, width: 1 },
-  supertrend: { title: "Supertrend", color: SERIES_COLORS[5]!, style: LineStyle.Solid, width: 2 },
+  supertrend: { title: "Supertrend", color: SERIES[5]!, style: LineStyle.Solid, width: 2 },
 };
 
 const RULE_LABEL: Record<string, string> = {
