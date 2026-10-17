@@ -426,3 +426,37 @@ def test_the_calendar_rows_priced_are_the_strong_ones_due_this_week(tmp_path, mo
     (folder / "2026-10-21.json").write_text(json.dumps({"rows": []}), encoding="utf-8")  # a later day
     day, picked = fsg.earnings_rows(date(2026, 10, 19))
     assert day == "2026-10-16" and [r["symbol"] for r in picked] == ["NOW"]
+
+
+def test_marks_fall_due_on_the_reaction_day_and_the_session_after(tmp_path):
+    """NFLX reports Tue 10-20 after the close: entered on the 20th's last reading, marked on the 21st
+    (react) and the 22nd (day2). A spread first priced only after its entry session has no record."""
+    import json
+    from datetime import date
+
+    legs = [{"role": "long", "strike": 75.0, "option": "L"}, {"role": "short", "strike": 70.0, "option": "S"}]
+    spread = {"kind": "credit", "right": "C", "expiry": "2026-11-20", "width": 5.0, "legs": legs}
+    nflx = dict(
+        spread, symbol="NFLX", date="2026-10-20", entry_session="2026-10-20", reaction_day="2026-10-21"
+    )
+    late = dict(
+        spread, symbol="LATE", date="2026-10-19", entry_session="2026-10-19", reaction_day="2026-10-20"
+    )
+    unknown = dict(spread, symbol="UNK", date="2026-10-20", entry_session=None, reaction_day="2026-10-21")
+
+    def reading(day, hhmm, rows):
+        p = tmp_path / "earnings-legs" / day / f"{hhmm}.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"calendar_day": "2026-10-19", "rows": rows}), encoding="utf-8")
+
+    reading("2026-10-20", "1130", [dict(nflx, legs=[dict(legs[0], option="EARLY"), legs[1]])])
+    reading("2026-10-20", "1430", [nflx, late, unknown])  # LATE's entry session was the 19th
+    react = fsg.marks_due(tmp_path, date(2026, 10, 21))
+    assert [(m["symbol"], m["which"], m["entry_reading"]) for m in react] == [
+        ("NFLX", "react", "2026-10-20/1430.json")
+    ]
+    assert react[0]["legs"][0]["option"] == "L"  # the session's LAST reading, not its first
+    assert [(m["symbol"], m["which"]) for m in fsg.marks_due(tmp_path, date(2026, 10, 22))] == [
+        ("NFLX", "day2")
+    ]
+    assert fsg.marks_due(tmp_path, date(2026, 10, 23)) == []

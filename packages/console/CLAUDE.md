@@ -382,6 +382,15 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
     14:30 ET, and judges them by the income tabs' leg bars. The cell then shows the listed strikes,
     the price, its share of the width, the max loss, and liquid or thin. A "Liquid trade" filter
     (default on) hides a thin spread; an unread one stays, with its targets.
+
+  **The earnings record tab** (`EarningsRecordTab.tsx`, `readers/earningsRecord.ts`,
+  `GET /api/screeners/earnings-record`) is the calendar's forward record. It reads
+  `technicals earnings-record`'s `record.json` and decides nothing.
+  - **Per announcement:** the move against the one-SD move shown the session before, and whether a
+    strong read called it.
+  - **The spread's money**, in the suite's layout: signed entry and exit at mid, gross, fees and
+    slippage as their own columns, and net, with net at day 2 beside it.
+  - **Order:** a journal, newest first; it does not sort.
 - `/charts/setups` is the setups watchlist (`pages/Setups/SetupsPage.tsx`, `GET /api/technicals/setups`
   over `charts/setups-index.json`): recent entries and exits, or open positions, long and short,
   each symbol linking to its chart with the setup and side selected; nothing on it is vendor data. Gated with the technicals tab. The page filters and sorts

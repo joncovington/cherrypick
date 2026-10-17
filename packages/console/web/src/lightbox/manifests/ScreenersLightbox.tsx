@@ -1,4 +1,5 @@
 import { EarningsCalendarTab } from "../../pages/Screeners/EarningsCalendarTab";
+import { EarningsRecordTab } from "../../pages/Screeners/EarningsRecordTab";
 import { FidelityTab, ScreenerTab } from "../../pages/Screeners/ScreenersPage";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
@@ -13,6 +14,7 @@ const slides: SlideDef[] = [
   { id: "covered-calls", label: "covered calls", render: () => <ScreenerTab list="covered-calls" /> },
   { id: "credit-spreads", label: "credit spreads", render: () => <ScreenerTab list="credit-spreads" /> },
   { id: "earnings", label: "earnings", render: () => <EarningsCalendarTab /> },
+  { id: "earnings-record", label: "earnings record", render: () => <EarningsRecordTab /> },
   { id: "fidelity", label: "fidelity", render: () => <FidelityTab /> },
 ];
 

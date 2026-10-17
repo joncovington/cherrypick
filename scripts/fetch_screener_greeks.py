@@ -682,28 +682,27 @@ def price_spread(kind: str, long_q: dict, short_q: dict, width: float) -> dict:
 
 
 def plan_earnings_legs(rows: list[dict], chains: dict[str, list]) -> list[dict]:
-    """One entry per calendar row whose spread the chain can hold on its expiry."""
+    """One entry per calendar row whose spread the chain can hold on its expiry. Each carries the
+    row's entry session and reaction day, so the forward record can find the reading it entered on
+    and the days it marks out on."""
     out = []
     for r in rows:
         sug = r["suggestion"]
+        when = {
+            "symbol": r["symbol"],
+            "date": r["date"],
+            "entry_session": r.get("entry_session"),
+            "reaction_day": r.get("reaction_day"),
+        }
         exp = next((e for e in chains.get(r["symbol"]) or [] if e["expiration"] == sug["expiry"]), None)
         snapped = snap_spread(sug, exp["strikes"]) if exp else None
         if snapped is None:
-            out.append(
-                {
-                    "symbol": r["symbol"],
-                    "date": r["date"],
-                    "suggestion": sug,
-                    "legs": None,
-                    "why": "no listed spread",
-                }
-            )
+            out.append({**when, "suggestion": sug, "legs": None, "why": "no listed spread"})
             continue
         (k_long, k_short), (o_long, o_short) = snapped
         out.append(
             {
-                "symbol": r["symbol"],
-                "date": r["date"],
+                **when,
                 "suggestion": sug,
                 "kind": sug["kind"],
                 "right": sug["right"],
@@ -715,6 +714,53 @@ def plan_earnings_legs(rows: list[dict], chains: dict[str, list]) -> list[dict]:
                 ],
             }
         )
+    return out
+
+
+MARK_LOOKBACK_DAYS = 12  # entry readings far enough back for a day-2 mark after a long weekend
+
+
+def marks_due(root: Path, today) -> list[dict]:
+    """The forward record's marks due today (step 5): each spread entered on its entry session --
+    priced in that session's LAST reading -- marked again on its reaction day (`react`) and the
+    session after (`day2`), on the same options. A row with no entry session (its time of day
+    unknown) or not priced on it has no record: nothing is assumed."""
+    from datetime import date as _date
+    from datetime import timedelta
+
+    from cherrypick.core import calendar as cal
+
+    folder = root / "earnings-legs"
+    out = []
+    for d in sorted(p for p in folder.glob("????-??-??") if p.is_dir()):
+        taken = _date.fromisoformat(d.name)
+        if not (today - timedelta(days=MARK_LOOKBACK_DAYS)) <= taken < today:
+            continue
+        files = sorted(d.glob("*.json"))
+        if not files:
+            continue
+        doc = json.loads(files[-1].read_text(encoding="utf-8"))
+        for r in doc.get("rows") or []:
+            if not r.get("legs") or r.get("entry_session") != d.name or not r.get("reaction_day"):
+                continue
+            react = _date.fromisoformat(r["reaction_day"])
+            which = "react" if today == react else "day2" if today == cal.next_trading_day(react) else None
+            if which is None:
+                continue
+            out.append(
+                {
+                    "symbol": r["symbol"],
+                    "date": r["date"],
+                    "calendar_day": doc.get("calendar_day"),
+                    "entry_reading": f"{d.name}/{files[-1].name}",
+                    "which": which,
+                    "kind": r["kind"],
+                    "right": r["right"],
+                    "expiry": r["expiry"],
+                    "width": r["width"],
+                    "legs": [{k: leg[k] for k in ("role", "strike", "option")} for leg in r["legs"]],
+                }
+            )
     return out
 
 
@@ -756,7 +802,9 @@ async def _quote_options(session, ub, legs: list[dict]) -> None:
         await asyncio.sleep(ub.TT_PAUSE_S)
 
 
-async def _measure_then_legs(session, ub, names, chain_cache, lists, today, skip, limit, earnings=()):
+async def _measure_then_legs(
+    session, ub, names, chain_cache, lists, today, skip, limit, earnings=(), marks=()
+):
     """The spread readings, then the legs, in one event loop. The legs: every row of a name not held
     illiquid, the vendor's option against the monthly on the user's cycle, with chains from this
     run's cache and the universe builder's (it measured the candidates half an hour earlier); a name
@@ -772,7 +820,7 @@ async def _measure_then_legs(session, ub, names, chain_cache, lists, today, skip
         return measured, legs, f"{type(exc).__name__}: {exc}"[:300], [], None
     spreads = plan_earnings_legs(list(earnings), chains)
     try:
-        await _quote_options(session, ub, [leg for r in spreads for leg in r["legs"] or []])
+        await _quote_options(session, ub, [leg for r in [*spreads, *marks] for leg in r["legs"] or []])
     except Exception as exc:  # noqa: BLE001 -- the list readings stand; the earnings run is reported
         return measured, legs, None, spreads, f"{type(exc).__name__}: {exc}"[:300]
     return measured, legs, None, spreads, None
@@ -817,6 +865,7 @@ def cmd_measure(args) -> int:
         print(json.dumps({"ok": False, "reason": "credentials_missing"}))
         return 1
     root = store_dir() / "screener-greeks"
+    marks = marks_due(root, today)
     chain_path = root / "chains" / f"{today.isoformat()}.json"
     chain_cache = ub._read_json(chain_path, {})
     started = datetime.now(UTC)
@@ -826,7 +875,16 @@ def cmd_measure(args) -> int:
         # first used in, and a second asyncio.run fails with "Event loop is closed".
         measured, legs, legs_error, spreads, spreads_error = asyncio.run(
             _measure_then_legs(
-                session, ub, names, chain_cache, lists, today, liquidity.skip(today), args.limit, earnings
+                session,
+                ub,
+                names,
+                chain_cache,
+                lists,
+                today,
+                liquidity.skip(today),
+                args.limit,
+                earnings,
+                marks,
             )
         )
     except Exception as exc:  # noqa: BLE001 -- keep the chains gathered so far for the next run
@@ -859,6 +917,13 @@ def cmd_measure(args) -> int:
                 "rows": spreads,
             },
         )
+    marks_out = None
+    if marks:
+        for m in marks:
+            long_q, short_q = (m["legs"][0].get("quote") or {}), (m["legs"][1].get("quote") or {})
+            m.update(price_spread(m["kind"], long_q, short_q, m["width"]))
+        marks_out = root / "earnings-marks" / today.isoformat() / f"{started.astimezone(et):%H%M}.json"
+        ub._write_json(marks_out, {"measured_at": started.isoformat(), "error": spreads_error, "rows": marks})
     print(
         json.dumps(
             {
@@ -875,6 +940,8 @@ def cmd_measure(args) -> int:
                 "earnings_listed": sum(1 for r in spreads if r.get("legs")),
                 "earnings_passing": sum(1 for r in spreads if r.get("passes")),
                 "earnings_error": spreads_error,
+                "earnings_marks_path": str(marks_out) if marks_out else None,
+                "earnings_marks": len(marks),
             },
             indent=1,
         )

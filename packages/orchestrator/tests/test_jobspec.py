@@ -334,6 +334,7 @@ def test_derive_full_suite_job_table():
         "technicals-liquidity",
         "technicals-earnings-calendar",
         "technicals-earnings-calendar-late",
+        "technicals-earnings-record",
         "technicals-screeners",
         "technicals-report",
         "earnings-moves",

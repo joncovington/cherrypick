@@ -91,6 +91,8 @@ CATCHUP_MINUTES = {
     # the rest of the evening.
     "technicals-earnings-calendar": 240,
     "technicals-earnings-calendar-late": 120,
+    # Rebuilt whole from its inputs, so any time that day is the same record.
+    "technicals-earnings-record": 12 * 60,
     # Local files only and idempotent (an already-scored session is skipped), so any time that day.
     "technicals-screeners": 12 * 60,
     # Ahead of the 06:15 landing; a late fetch is the same fetch, and the landing after it picks it up.
@@ -1236,6 +1238,22 @@ def derive_jobs(
                 else "disabled in config (technicals), or no dolt sql-server to read",
             ),
         )
+    add(
+        "technicals-earnings-record",
+        lambda: JobSpec(
+            id="technicals-earnings-record",
+            # A package command: the earnings calendar's forward record -- what each past
+            # announcement did against what the calendar showed, and the suggested spread's money --
+            # from local files and the local Dolt, rebuilt whole each morning.
+            argv=(pythonw, "-m", "cherrypick.technicals", "earnings-record"),
+            kind=KIND_DAILY,
+            at_et=tc["earnings_record_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-earnings-record"],
+            trading_days_only=True,
+            enabled=tc_on,
+            enabled_reason="" if tc_on else "disabled in config (technicals), or no dolt sql-server to read",
+        ),
+    )
     add(
         "technicals-screeners",
         lambda: JobSpec(
