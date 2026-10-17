@@ -87,7 +87,8 @@ def test_the_marker_is_the_one_packages_backtest_writes():
     carries this check, so a change to either one runs it in CI (only changed packages' jobs run)."""
     import re
 
-    paths_py = Path(__file__).resolve().parents[2] / "backtest" / "src" / "cherrypick" / "backtest" / "paths.py"
+    src = Path(__file__).resolve().parents[2] / "backtest" / "src"
+    paths_py = src / "cherrypick" / "backtest" / "paths.py"
     found = re.search(r'^LICENSED_MARKER = "([^"]+)"', paths_py.read_text(encoding="utf-8"), re.M)
     assert found, "packages/backtest/paths.py no longer declares LICENSED_MARKER"
     assert found.group(1) == backup.LICENSED_MARKER
