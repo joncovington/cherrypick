@@ -64,7 +64,11 @@ function row(v: unknown): EarningsCalendarRow | null {
     company: str(r["company"]),
     date,
     timing: r["timing"] === "bmo" || r["timing"] === "amc" ? r["timing"] : null,
-    timingSource: r["timing_source"] === "broker" || r["timing_source"] === "dolt" ? r["timing_source"] : null,
+    timingSource:
+      r["timing_source"] === "broker" || r["timing_source"] === "nasdaq" || r["timing_source"] === "dolt"
+        ? r["timing_source"]
+        : null,
+    usualTiming: r["usual_timing"] === "bmo" || r["usual_timing"] === "amc" ? r["usual_timing"] : null,
     dateSource: r["date_source"] === "dolt" ? "dolt" : "broker",
     dateConfirmed: bool(r["date_confirmed"]),
     dateGapDays: num(r["date_gap_days"]),
@@ -95,7 +99,7 @@ export function readEarningsCalendar(config: ConsoleConfig, wanted?: string | nu
   const empty: EarningsCalendarPayload = {
     day,
     days,
-    inputs: { securityList: null, expiryIv: null, brokerDates: null, closeDate: null },
+    inputs: { securityList: null, expiryIv: null, brokerDates: null, nasdaqTimes: null, closeDate: null },
     ivRankCut: null,
     rows: [],
   };
@@ -115,6 +119,7 @@ export function readEarningsCalendar(config: ConsoleConfig, wanted?: string | nu
       securityList: str(inputs["security_list"]),
       expiryIv: str(inputs["expiry_iv"]),
       brokerDates: str(inputs["broker_dates"]),
+      nasdaqTimes: str(inputs["nasdaq_times"]),
       closeDate: str(inputs["close_date"]),
     },
     ivRankCut: num(rec(doc["settings"])["iv_rank_cut"]),

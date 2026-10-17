@@ -64,6 +64,36 @@ def test_dolt_beats_an_estimated_broker_date_and_an_estimate_alone_says_so():
     assert ec.pick_date(None, None) is None
 
 
+def test_nasdaq_times_come_after_the_brokers_and_before_dolts():
+    oct21 = date(2026, 10, 21)
+    # The broker's own time wins over Nasdaq's.
+    got = ec.pick_date(None, (oct21, False, "AMC"), [(oct21, "bmo")])
+    assert (got[1], got[5]) == ("amc", "broker")
+    # No broker time: Nasdaq's, for its date within a day of the one shown, over Dolt's.
+    got = ec.pick_date((oct21, AMC), (oct21, False), [(date(2026, 10, 22), "bmo")])
+    assert (got[1], got[5]) == ("bmo", "nasdaq")
+    # Nasdaq listing the name without a time, or for a date further off, leaves it to Dolt.
+    assert ec.pick_date((oct21, AMC), (oct21, False), [(oct21, None)])[5] == "dolt"
+    assert ec.pick_date((oct21, AMC), (oct21, False), [(date(2026, 10, 28), "bmo")])[5] == "dolt"
+
+
+def test_the_usual_time_is_the_last_timed_report_within_400_days():
+    hist = [(date(2026, 4, 20), AMC), (date(2026, 7, 21), BMO), (date(2025, 1, 2), AMC)]
+    assert ec.usual_time(hist, date(2026, 10, 20)) == "bmo"
+    assert ec.usual_time([(date(2025, 1, 2), AMC)], date(2026, 10, 20)) is None  # too old
+    assert ec.usual_time([], date(2026, 10, 20)) is None
+    assert ec.usual_time([(date(2026, 10, 25), AMC)], date(2026, 10, 20)) is None  # not before
+
+
+def test_the_times_file_is_the_newest_fetched_before_the_next_session():
+    """The calendar of Friday 10-16 reads Saturday's fetch, not the following Monday evening's."""
+    folder = paths.earnings_times_dir()
+    for day, t in (("2026-10-15", "amc"), ("2026-10-17", "bmo"), ("2026-10-20", "amc")):
+        _write(folder / f"{day}.json", {"dates": {"2026-10-21": {"PM": t}}})
+    at, times = ec.times_on_file("2026-10-16")
+    assert at == "2026-10-17" and times["PM"] == [(date(2026, 10, 21), "bmo")]
+
+
 def test_reaction_day_and_entry_session_follow_the_time_of_day():
     tue, wed = date(2026, 10, 20), date(2026, 10, 21)
     assert (ec.reaction_day(tue, "amc"), ec.entry_session(tue, "amc")) == (wed, tue)
@@ -165,13 +195,24 @@ def test_build_joins_the_sources_into_one_row_per_announcement():
             }
         },
     )
+    _write(paths.earnings_times_dir() / "2026-10-17.json", {"dates": {"2026-10-20": {"NFLX": "amc"}}})
     dolt = {
-        "events": {"NFLX": (date(2026, 10, 20), AMC), "SAP": (date(2026, 10, 21), BMO)},
+        "events": {
+            "NFLX": (date(2026, 10, 20), AMC),
+            "SAP": (date(2026, 10, 21), BMO),
+            "EST": (date(2026, 10, 22), None),
+        },
+        "history": {"EST": [(date(2026, 7, 23), AMC)]},
         "names": {"NFLX": "Netflix, Inc.", "SAP": "SAP SE"},
-        "closes": {"NFLX": 70.53, "SAP": 250.0},
+        "closes": {"NFLX": 70.53, "SAP": 250.0, "EST": 50.0},
         "close_date": "2026-10-16",
     }
     out = ec.build("2026-10-16", dolt=dolt)
+    est = {r["symbol"]: r for r in out["rows"]}["EST"]
+    # No source times it: unknown, with last quarter's time beside it as an estimate that sets nothing.
+    assert (est["timing"], est["usual_timing"], est["entry_session"]) == (None, "amc", None)
+    assert out["inputs"]["nasdaq_times"] == "2026-10-17"
+    out["rows"] = [r for r in out["rows"] if r["symbol"] != "EST"]
     rows = {r["symbol"]: r for r in out["rows"]}
     assert sorted(rows) == ["NFLX", "SAP"]  # LATE reports outside the 30 days
     n = rows["NFLX"]
@@ -181,6 +222,7 @@ def test_build_joins_the_sources_into_one_row_per_announcement():
         "broker",
         True,
     )
+    assert n["timing_source"] == "nasdaq"  # the broker sent no time for it; Nasdaq comes before Dolt
     assert (n["entry_session"], n["reaction_day"], n["event_expiry"]) == (
         "2026-10-20",
         "2026-10-21",

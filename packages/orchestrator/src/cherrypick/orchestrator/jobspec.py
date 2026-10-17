@@ -84,6 +84,8 @@ CATCHUP_MINUTES = {
     # A reading of the day's close: a run after the next open would record the next session instead,
     # which the file keys correctly but is not the day that was missed.
     "technicals-iv-rank": 600,
+    # The month's times as the evening sees them; the late calendar pass still reads a late fetch.
+    "technicals-earnings-times": 240,
     "technicals-liquidity": 120,
     # A rerun replaces the session's file, so a late one is the same calendar; the late pass covers
     # the rest of the evening.
@@ -1178,6 +1180,22 @@ def derive_jobs(
             trading_days_only=True,
             enabled=ivr_on,
             enabled_reason="" if ivr_on else "disabled in config (technicals.iv_rank)",
+        ),
+    )
+    times_on = tc["enabled"] and tc["earnings_times"]
+    add(
+        "technicals-earnings-times",
+        lambda: JobSpec(
+            id="technicals-earnings-times",
+            # A script, not package code: it reads Nasdaq's public earnings calendar (no credential,
+            # one request per date, paced) for the earnings calendar's time of day.
+            argv=(pythonw, _suite_script(launcher, "fetch_earnings_times.py")),
+            kind=KIND_DAILY,
+            at_et=tc["earnings_times_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-earnings-times"],
+            trading_days_only=True,
+            enabled=times_on,
+            enabled_reason="" if times_on else "disabled in config (technicals.earnings_times)",
         ),
     )
     add(

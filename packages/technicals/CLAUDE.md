@@ -153,7 +153,12 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   docs/earnings-screener-plan.md): every announcement in the next 30 days, joined from local data
   and the local Dolt.
   - **Date and time:** a confirmed broker date wins, then Dolt's, then a broker estimate. The time of
-    day is Dolt's only when its date is within a day of the one shown; otherwise it is unknown.
+    day comes from the broker (with its own date), then Nasdaq's public calendar
+    (`scripts/fetch_earnings_times.py`), then Dolt; the latter two only for a date within a day. All
+    three agreed on every name two of them timed (2026-10-17).
+  - **The usual time:** where none gives one, the company's last timed report is kept as a marked
+    estimate (`usual_timing`; right 97% of the time on Dolt 2022-26). It never sets the entry
+    session or the reaction day.
   - **Direction, strength, IV rank:** the security list's values, one session old.
   - **Expected move:** one SD, the broker's IV for the first expiry after the reaction day × price ×
     √(days/365).

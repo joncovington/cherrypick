@@ -18,6 +18,7 @@ function row(over: Partial<EarningsCalendarRow>): EarningsCalendarRow {
     date: "2026-10-20",
     timing: "amc",
     timingSource: "broker",
+    usualTiming: null,
     dateSource: "broker",
     dateConfirmed: true,
     dateGapDays: 0,
@@ -51,12 +52,13 @@ const ROWS = [
   row({ symbol: "SAP", region: "intl", type: "Depository Receipt" }),
   row({ symbol: "LATER", date: "2026-11-05" }),
   row({ symbol: "UNK", timing: null, entrySession: null, dateConfirmed: false, dateSource: "broker" }),
+  row({ symbol: "EST", date: "2026-10-21", timing: null, timingSource: null, usualTiming: "bmo", entrySession: null }),
 ];
 
 const payload: EarningsCalendarPayload = {
   day: "2026-10-15",
   days: ["2026-10-16", "2026-10-15"],
-  inputs: { securityList: "2026-10-15", expiryIv: "2026-10-15", brokerDates: "2026-10-15", closeDate: "2026-10-15" },
+  inputs: { securityList: "2026-10-15", expiryIv: "2026-10-15", brokerDates: "2026-10-15", nasdaqTimes: "2026-10-15", closeDate: "2026-10-15" },
   ivRankCut: 50,
   rows: ROWS,
 };
@@ -84,7 +86,7 @@ const symbols = (html: string) => [...html.matchAll(/symbol=([A-Z]+)"/g)].map((m
 
 describe("the earnings tab", () => {
   it("keeps the vendor's default view: strong reads, very liquid, optionable, US, the next week", () => {
-    expect(symbols(render("/screeners/earnings?day=2026-10-15"))).toEqual(["AAA", "UNK", "BBB"]);
+    expect(symbols(render("/screeners/earnings?day=2026-10-15"))).toEqual(["AAA", "UNK", "BBB", "EST"]);
   });
 
   it("each cut has its escape", () => {
@@ -92,18 +94,20 @@ describe("the earnings tab", () => {
     expect(symbols(render("/screeners/earnings?day=2026-10-15&liq=1,2"))).toContain("THIN");
     expect(symbols(render("/screeners/earnings?day=2026-10-15&region=all"))).toContain("SAP");
     expect(symbols(render("/screeners/earnings?day=2026-10-15&win=30"))).toContain("LATER");
-    expect(symbols(render("/screeners/earnings?day=2026-10-15&time=bmo"))).toEqual(["BBB"]);
+    // An estimated time counts under its filter, as the vendor's calendar shows one for every row.
+    expect(symbols(render("/screeners/earnings?day=2026-10-15&time=bmo"))).toEqual(["BBB", "EST"]);
   });
 
   it("groups by day under a heading with its count", () => {
     const html = render("/screeners/earnings?day=2026-10-15");
     expect(html).toMatch(/Tuesday, Oct 20<\/strong> <span class="chip">2</);
-    expect(html).toMatch(/Wednesday, Oct 21<\/strong> <span class="chip">1</);
+    expect(html).toMatch(/Wednesday, Oct 21<\/strong> <span class="chip">2</);
   });
 
-  it("an unknown time is a dash, an estimated date says so, the move is one SD", () => {
+  it("an unknown time is a dash, an estimated time and date say so, the move is one SD", () => {
     const html = render("/screeners/earnings?day=2026-10-15");
     expect(html).toContain("No source gives the time of day");
+    expect(html).toMatch(/title="Not confirmed: no source gives this date's time[^"]*">BMO est\.</);
     expect(html).toContain(">est.<");
     expect(html).toContain("±7.0%");
   });

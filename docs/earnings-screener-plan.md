@@ -329,9 +329,17 @@ Checked 2026-10-17 against Dolt (`nav_gap_checks`, a one-off): 458 tradable name
      fresher one of ours.
 
 **The live list**
-5. **Timing is unknown for about half the announcements.** Dolt's before/after-the-open field is about
-   47% blank right now (only 4% blank across 2020-26 events for these names). The broker gives no
-   time of day. Timing sets the entry session, so the row says unknown rather than assuming.
+5. **Timing: largely closed 2026-10-17.** Dolt's before/after-the-open field was about 47% blank,
+   so two more sources were added:
+   - the broker's market-metrics `time-of-day`, which agreed with Dolt on all 179 names both timed;
+   - Nasdaq's public calendar, which agreed with both on all 378 and timed 64 they did not.
+
+   Where none of the three gives a time, the company's last timed report stands in as a marked
+   estimate (right 97% of the time on Dolt 2022-26). It never sets the entry session.
+
+   Coverage on 10-16, under the vendor's default view: 19 of 20 timed in the next week. Over 30 days,
+   97 of 118 are confirmed, 19 estimated and 2 unknown. Yahoo was looked at and left out: its times
+   look like placeholders, with dates that disagree.
 6. **Broker dates miss some names.** The broker's dates (confirmed flag, ~8 weeks out) cover 141 of
    today's 168 candidates, because the nightly IV-rank fetch has its own universe. The rest fall
    back to Dolt (~5 weeks), which is enough for this window. Adding the candidates to that fetch
