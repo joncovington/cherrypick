@@ -1,3 +1,4 @@
+import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
@@ -237,6 +238,7 @@ export function EarningsLightbox({ slide }: { slide: string }) {
     // Always reads the paper ledger regardless of the page's own mode toggle -- calibrate's own
     // "paper only" rule for promotion evidence, same as every other module's performance slide.
     { id: "performance", label: EARNINGS_LABEL.performance, render: () => <PerformanceSlide module="earnings" mode={mode} /> },
+    { id: "analysis", label: EARNINGS_LABEL.analysis, render: () => <AnalysisSlide module="earnings" mode={mode} /> },
     { id: "advisor", label: EARNINGS_LABEL.advisor, render: () => <AdvisorSlide module="earnings" /> },
     {
       id: "positions",

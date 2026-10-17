@@ -1,3 +1,4 @@
+import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { useContango, useContangoMetrics } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { LoopPill } from "../../components/ScopeBar";
@@ -38,6 +39,7 @@ export function ContangoLightbox({ slide }: { slide: string }) {
     { id: "decisions", label: LABEL.decisions, render: () => <ContangoDecisions /> },
     { id: "arms", label: LABEL.arms, render: () => <ContangoArms data={data} metrics={metrics.data} /> },
     { id: "performance", label: LABEL.performance, render: () => <ContangoPerformance data={data} metrics={metrics.data} /> },
+    { id: "analysis", label: LABEL.analysis, render: () => <AnalysisSlide module="contango" /> },
     { id: "costs", label: LABEL.costs, render: () => <ContangoCosts data={data} /> },
     { id: "positions", label: LABEL.positions, render: () => <ContangoPositions data={data} /> },
     { id: "history", label: LABEL.history, render: () => <ContangoHistory data={data} /> },

@@ -529,7 +529,7 @@ only the union of dimension keys for layout. Every number, the era and `thin` co
 - Verify: after `pnpm --filter @console/shared build && pnpm build` and a restart,
   `MSYS_NO_PATHCONV=1 pnpm ui-check --route /flies/regime --expect "era since"`, and `/meic/regime`.
 
-**Analysis slide** (flies and bwb; docs/strategy-analysis-plan.md) — `components/analysis/AnalysisSlide.tsx`
+**Analysis slide** (every trading module, under study after performance; docs/strategy-analysis-plan.md) — `components/analysis/AnalysisSlide.tsx`
 over `GET /api/analysis/:module` (`routes/performance.ts` → `readers/analysis.ts` →
 `services/analysisBridge.ts` → `python -m cherrypick.core.analysis read`). Per arm: session and trade
 runs, drawdown episodes (high, low, new high; falling and recovering apart), the net without the top
