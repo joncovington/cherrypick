@@ -8,7 +8,9 @@ import type {
   ExecutionReading,
   TradingMode,
 } from "@console/shared";
+import type { ReactNode } from "react";
 import { Card } from "../DataTable";
+import { ArmRegime } from "./ArmRegime";
 import { fmtMoney, fmtNum, fmtPct } from "../../lib/format";
 import { useModuleAnalysis, type PerformanceModuleId } from "../../lib/api";
 import { Tile } from "../performance/Tile";
@@ -353,7 +355,21 @@ function DurabilityTable({ d }: { d: ArmAnalysis["durability"] }) {
   );
 }
 
-export function ArmCard({ module, tag, a, updatedAt }: { module: PerformanceModuleId; tag: string; a: ArmAnalysis; updatedAt: number }) {
+export function ArmCard({
+  module,
+  tag,
+  a,
+  updatedAt,
+  regime,
+}: {
+  module: PerformanceModuleId;
+  tag: string;
+  a: ArmAnalysis;
+  updatedAt: number;
+  /** The arm's nightly regime panel (`ArmRegime`), for a module that writes regime cuts. Passed in
+   *  rather than fetched here, so the card itself holds no data hook. */
+  regime?: ReactNode;
+}) {
   const s = a.stress;
   const dd = a.drawdowns;
   const deepest = dd.deepest[0]?.depth ?? null;
@@ -421,6 +437,8 @@ export function ArmCard({ module, tag, a, updatedAt }: { module: PerformanceModu
           <BreakdownTables b={a.buckets} />
         </>
       )}
+
+      {regime}
 
       <div className="card-subhead">without the biggest winners</div>
       <DurabilityTable d={a.durability} />
@@ -503,7 +521,18 @@ export function AnalysisSlide({ module, mode = "paper" }: { module: PerformanceM
           <p className="muted">no closed trades in this window yet</p>
         </Card>
       ) : (
-        data.groups.map((g) => <ArmCard key={g.tag} module={module} tag={g.tag} a={g.analysis} updatedAt={dataUpdatedAt} />)
+        data.groups.map((g) => (
+          <ArmCard
+            key={g.tag}
+            module={module}
+            tag={g.tag}
+            a={g.analysis}
+            updatedAt={dataUpdatedAt}
+            // Only flies and MEIC write regime cuts; every other module's regime waits for entry
+            // timestamps on its ledger records (core.regime.regime_at needs a moment to read).
+            regime={module === "flies" || module === "meic" ? <ArmRegime module={module} tag={g.tag} /> : undefined}
+          />
+        ))
       )}
     </div>
   );

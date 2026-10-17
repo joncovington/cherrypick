@@ -535,6 +535,13 @@ the bridge passes `--module`, never the file). Bridged, never mirrored.
   release day and month, one column set. A row under core's `min_sessions` is `thin`: dimmed, chip,
   and no tone, since a colour would read as a finding it cannot carry. A release day the calendar
   cannot vouch for is "unknown", never "none".
+- "Regime" (flies and MEIC only) is the module's NIGHTLY regime cut for that arm
+  (`components/analysis/ArmRegime.tsx`, the regime tab's own payload via `useRegimeCuts`, one fetch
+  shared by every card). It is a different window from the rest of the card (the arm's own era, as
+  of the cut's session) and says so every time it draws; it shows single buckets only, passes the
+  writer's thin/fragile stamps through without tone, and links to the full regime tab. It is passed
+  into `ArmCard` as a prop, so the card holds no data hook. Other modules get a regime dimension
+  from `core.regime.regime_at` once their records carry entry times.
 - "Worse fills" is core's slippage ladder: the net at 1/1.5/2/3× the slippage the module modelled,
   over the trades that record slippage. Where that is not all of them (flies from 2026-09-24) it
   says so and starts from those trades' own net, never the arm's. An undeclared allocation reads "none declared" with dashes, never zero;
