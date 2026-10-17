@@ -57,7 +57,7 @@ MAX_POINTS = 400
 _MULTIPLIER = 100.0
 
 
-def _ts(value) -> datetime | None:
+def as_et(value) -> datetime | None:
     """An aware datetime from an ISO stamp or epoch seconds (the marks tables write epoch seconds,
     the legs ISO text); a naive ISO stamp is read as ET, the zone every module stamps in."""
     if value is None or value == "":
@@ -77,8 +77,8 @@ def _ts(value) -> datetime | None:
     return t.replace(tzinfo=ET) if t.tzinfo is None else t
 
 
-def _iso(value) -> str | None:
-    t = _ts(value)
+def iso_et(value) -> str | None:
+    t = as_et(value)
     return None if t is None else t.astimezone(ET).isoformat(timespec="seconds")
 
 
@@ -124,7 +124,7 @@ def thin(points: list[tuple[str, float]], keep=(), limit: int = MAX_POINTS) -> l
         idx = {int(i * step) for i in range(limit)} | {0, len(points) - 1}
         chosen = [points[i] for i in sorted(idx)]
         extra = [p for p in keep if p not in chosen]
-        chosen = sorted(chosen + extra, key=lambda p: _ts(p[0]) or _EPOCH)
+        chosen = sorted(chosen + extra, key=lambda p: as_et(p[0]) or _EPOCH)
     return [[t, round(v, 2)] for t, v in chosen]
 
 
@@ -145,8 +145,8 @@ def _leg_path(conn, schema: str, position_id: str) -> dict:
                 "sign": _sign(leg["action"]),
                 "size": _MULTIPLIER * float(leg.get("quantity") or 1),
                 "entry": leg.get("entry_mid"),
-                "opened": _ts(leg.get(opened_col)),
-                "closed": _ts(leg.get("closed_at")),
+                "opened": as_et(leg.get(opened_col)),
+                "closed": as_et(leg.get("closed_at")),
                 "close_value": leg.get("close_value"),
             }
         )
@@ -163,7 +163,9 @@ def _leg_path(conn, schema: str, position_id: str) -> dict:
             "WHERE position_id = ?",
             (position_id,),
         ):
-            shares.append((_ts(a["assigned_at"]), _ts(a["disposed_at"]), a["share_pnl"], str(a["status"])))
+            shares.append(
+                (as_et(a["assigned_at"]), as_et(a["disposed_at"]), a["share_pnl"], str(a["status"]))
+            )
 
     def value_at(when: datetime, mids: dict) -> float | None:
         # Shares held from an assignment and not yet disposed of are an open position no mark
@@ -196,7 +198,7 @@ def _leg_path(conn, schema: str, position_id: str) -> dict:
     entry_at = pos.get("entry_time") or min(
         (str(leg["opened"]) for leg in legs if leg["opened"]), default=None
     )
-    points: list[tuple[str, float]] = [(_iso(entry_at), 0.0)] if entry_at else []
+    points: list[tuple[str, float]] = [(iso_et(entry_at), 0.0)] if entry_at else []
     ticks = refused = 0
     current, mids = None, {}
 
@@ -205,12 +207,12 @@ def _leg_path(conn, schema: str, position_id: str) -> dict:
         if current is None:
             return
         ticks += 1
-        when = _ts(current)
+        when = as_et(current)
         v = value_at(when, mids) if when is not None else None
         if v is None:
             refused += 1
         else:
-            points.append((_iso(current), v))
+            points.append((iso_et(current), v))
 
     for m in conn.execute(
         f"SELECT leg_role, marked_at, mid, usable FROM {marks_t} WHERE position_id = ? "
@@ -236,7 +238,7 @@ def _leg_path(conn, schema: str, position_id: str) -> dict:
     all_closed = all(leg["closed"] is not None for leg in legs) and all(s[3] == "disposed" for s in shares)
     endpoint = value_at(end_at, {}) if (all_closed and end_at is not None) else None
     if endpoint is not None:
-        points.append((_iso(end_at), endpoint))
+        points.append((iso_et(end_at), endpoint))
     gross = pos.get("gross_pnl")
     return _summary(
         points,
@@ -253,19 +255,19 @@ def _recorded_path(conn, sql: str, position_id, basis: str, entry_at, exit_at, r
     """A module's own recorded mark path, from the entry (0) to the trade's realised figure at its
     exit. The exit is part of the excursion: a fill no mark caught (an expiry, a gap) is still where
     the trade went."""
-    points = [(_iso(entry_at), 0.0)] if entry_at else []
+    points = [(iso_et(entry_at), 0.0)] if entry_at else []
     ticks = 0
     for at, pnl in conn.execute(sql, (position_id,)):
         ticks += 1
         if pnl is not None:
-            points.append((_iso(at), float(pnl)))
+            points.append((iso_et(at), float(pnl)))
     if ticks == 0:
         return {"recorded": False, "reason": "no marks were recorded for this position"}
     refused = ticks - (len(points) - (1 if entry_at else 0))
     endpoint = None
     if exit_at is not None and realised is not None:
         endpoint = round(float(realised), 2)
-        points.append((_iso(exit_at), float(realised)))
+        points.append((iso_et(exit_at), float(realised)))
     return _summary(points, basis, ticks, refused, endpoint=endpoint)
 
 

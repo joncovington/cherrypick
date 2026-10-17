@@ -329,7 +329,7 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
     arm = core_db.arm_column(conn, "ic_trades")  # `risk_profile` until meic's column moves
     rows = conn.execute(
         f"SELECT symbol, {arm} AS arm, pnl, fees, exit_time{slip_col}{cap_cols}{mult_col}{exp_col}"
-        f"{_opt(cols, 'settlement_fees')}{_opt(cols, 'entry_time')}"
+        f"{_opt(cols, 'settlement_fees')}{_opt(cols, 'entry_time')}{_opt(cols, 'ic_order_id')}"
         f" FROM ic_trades WHERE exit_time IS NOT NULL{where}",
         params,
     ).fetchall()
@@ -382,6 +382,8 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
             # times are what tell overlapping positions from sequential ones. No spot here yet.
             "entry_time": _get(r, "entry_time"),
             "exit_time": r["exit_time"],
+            # The condor's order id, which its filled entry attempt carries too (core.trace).
+            "position_id": _get(r, "ic_order_id"),
         }
         for r in rows
     ]

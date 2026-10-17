@@ -3,10 +3,12 @@ import type {
   PnlCalendarResult,
   PnlDay,
   PnlExcursion,
+  PnlTrace,
   PnlTradesResult,
   TradingMode,
 } from "@console/shared";
 import { readExcursionAsync } from "../services/excursionBridge.js";
+import { readTraceAsync } from "../services/traceBridge.js";
 import type { ConsoleConfig } from "../config.js";
 import { suiteEra } from "./db.js";
 import { LIVE_LEDGER, MODULE_ERA, MODULE_SCHEMA, moduleLedgerPath } from "./performance.js";
@@ -80,4 +82,16 @@ export async function readPnlExcursion(
   const dbPath = moduleLedgerPath(config, module, mode);
   if (dbPath === null) return { ok: false, error: `${module} keeps no ${mode} ledger` };
   return readExcursionAsync(dbPath, MODULE_SCHEMA[module], positionId);
+}
+
+/** One position's entry and management trace, from the same ledger (`GET /api/calendar/trace`). */
+export async function readPnlTrace(
+  config: ConsoleConfig,
+  module: PerformanceModuleId,
+  positionId: string,
+  mode: TradingMode = "paper",
+): Promise<PnlTrace> {
+  const dbPath = moduleLedgerPath(config, module, mode);
+  if (dbPath === null) return { ok: false, error: `${module} keeps no ${mode} ledger` };
+  return readTraceAsync(dbPath, MODULE_SCHEMA[module], positionId);
 }

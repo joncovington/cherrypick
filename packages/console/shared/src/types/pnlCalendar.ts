@@ -74,6 +74,56 @@ export interface PnlExcursion {
   reconciles?: boolean | null;
 }
 
+/** One run of identical consecutive rows in a trace: how many, first and last time, the last detail. */
+export interface PnlTraceRun {
+  count: number;
+  first: string | null;
+  last: string | null;
+  outcome?: string | null;
+  block_detail?: string | null;
+  action?: string;
+  reason?: string | null;
+  executed?: boolean;
+  gate?: string | null;
+  detail?: unknown;
+}
+
+/** A part of a trace a module may not record: `recorded: false` carries the reason. */
+interface TracePart {
+  recorded: boolean;
+  reason?: string;
+}
+
+/**
+ * One position's trace (`python -m cherrypick.core.trace read`): how it got in and what was decided
+ * while it was held, read from what the module records. `entry.basis` says how the filled attempt
+ * was found -- `linked` (the module ties it to the position), `matched` (session, arm, symbol and
+ * time; checked to carry the position's strikes) or `review` (earnings' screening review).
+ */
+export interface PnlTrace {
+  ok: boolean;
+  error?: string | null;
+  found?: boolean;
+  reason?: string;
+  entry?: TracePart & {
+    basis?: "linked" | "matched" | "review";
+    session?: string;
+    attempts_before?: number;
+    runs?: PnlTraceRun[];
+    runs_omitted?: number;
+    filled?: { at: string | null; detail: Record<string, unknown> };
+    review?: Record<string, unknown>;
+    criteria?: unknown;
+  };
+  orders?: TracePart & { orders?: Array<Record<string, unknown> & { at: string | null }> };
+  management?: TracePart & {
+    events?: number;
+    runs?: PnlTraceRun[];
+    runs_omitted?: number;
+    executed?: Array<{ at: string | null; action: string; reason: string | null; detail: unknown }>;
+  };
+}
+
 /** `GET /api/calendar/trades`: one arm's trades on one session. */
 export interface PnlTradesResult {
   ok: boolean;
