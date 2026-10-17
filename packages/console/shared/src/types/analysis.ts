@@ -109,6 +109,34 @@ export interface ExecutionReading {
   withheld: string | null;
 }
 
+/** One row of `core.analysis.buckets`: the same columns for every dimension. */
+export interface BucketRow {
+  bucket: string;
+  trades: number;
+  sessions: number;
+  net: number;
+  win_rate: number;
+  avg_net: number;
+  best: number;
+  worst: number;
+  /** Fewer sessions than `min_sessions`: shown, never read as a finding. */
+  thin: boolean;
+}
+
+export interface BucketTable {
+  rows: BucketRow[];
+  /** Records this dimension could not bucket (an entry time the schema does not record). */
+  skipped: number;
+}
+
+export interface Breakdowns {
+  min_sessions: number;
+  weekday: BucketTable;
+  hour: BucketTable;
+  month: BucketTable;
+  event: BucketTable;
+}
+
 export interface TradeRef {
   net: number;
   session: string | null;
@@ -134,6 +162,8 @@ export interface ArmAnalysis {
   capital?: CapitalReading;
   /** Optional for the same reason: replies from before the slippage ladder. */
   execution?: ExecutionReading;
+  /** Optional for the same reason: replies from before the breakdowns. */
+  buckets?: Breakdowns;
   coverage: { trades: number; entry_time: number; exit_time: number; entry_spot: number; exit_spot: number };
 }
 

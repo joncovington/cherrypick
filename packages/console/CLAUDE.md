@@ -531,6 +531,10 @@ the bridge passes `--module`, never the file). Bridged, never mirrored.
   peak risk": that is the performance slide's Σ net / Σ session peaks, a per-day figure (live flies
   control, 2026-10-16: -6.2% there, -96% here). A test keeps the two names apart.
 - Flies records each book's session peak at settlement (`fly_books.peak_risk`), which core reads.
+- "Breakdowns" are core's bucket tables (`core.analysis.buckets`): P&L by weekday, entry hour,
+  release day and month, one column set. A row under core's `min_sessions` is `thin`: dimmed, chip,
+  and no tone, since a colour would read as a finding it cannot carry. A release day the calendar
+  cannot vouch for is "unknown", never "none".
 - "Worse fills" is core's slippage ladder: the net at 1/1.5/2/3× the slippage the module modelled,
   over the trades that record slippage. Where that is not all of them (flies from 2026-09-24) it
   says so and starts from those trades' own net, never the arm's. An undeclared allocation reads "none declared" with dashes, never zero;

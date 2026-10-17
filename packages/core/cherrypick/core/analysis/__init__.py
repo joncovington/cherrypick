@@ -11,6 +11,7 @@ This module answers the questions asked before trusting an arm with money
 - `stress`             how deep the worst drawdown could have been with the same sessions in
                        another order, shuffled one session at a time and in blocks
 - `execution_sensitivity`  the net at multiples of the slippage each module modelled
+- `buckets.breakdowns`     P&L by weekday, entry hour, month and event day, one column set
 
 All of it is a pure function of the normalised records `core.ledgers` yields, so it reads paper,
 live and replay output the same way, and the same records always give the same answer: the
@@ -32,7 +33,7 @@ import random
 from collections.abc import Mapping, Sequence
 from datetime import date
 
-from cherrypick.core.analysis import capital
+from cherrypick.core.analysis import buckets, capital
 from cherrypick.core.metrics import _scored, calibration_reading, max_drawdown, session_nets_dated
 
 #: The fact set's version. Bump it when a field changes meaning, so a stored reading is never
@@ -381,6 +382,7 @@ def arm_reading(records: Sequence[Mapping], allocations: Sequence[Mapping] | Non
         "durability": durability(nets),
         "stress": stress([v for _, v in dated]),
         "execution": execution_sensitivity(ordered),
+        "buckets": buckets.breakdowns(ordered),
         "capital": _capital(ordered, dated, allocations),
         "coverage": {
             "trades": len(ordered),
