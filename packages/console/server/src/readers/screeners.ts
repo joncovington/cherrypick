@@ -16,8 +16,9 @@
  * Two things ARE worked out here, both the user's calendar rather than a measurement: the cycle
  * expiry (the standard monthly 45-60 days out, else 30-60, as `fetch_screener_greeks.cycle_expiry`
  * picks it; the reading's own monthly leg wins where there is one) and whether an announcement falls
- * inside it (the list day through the cycle expiry, inclusive; a date that does not reach that far
- * is `unknown`, never `clear`).
+ * inside the trade (the list day through the expiry of the trade the row stands for, inclusive -- the
+ * listed one or the cycle monthly, the later of the two until a reading says which; a date that does
+ * not reach that far is `unknown`, never `clear`).
  */
 
 import fs from "node:fs";
@@ -266,6 +267,11 @@ export function readScreener(config: ConsoleConfig, which: ScreenerList, wanted?
     const dates = [broker?.date ?? null, listed];
     const nextKnown = dates.filter((d): d is string => d !== null && d >= day).sort()[0] ?? null;
     const rec_ = reading ? reading["recommendation"] : null;
+    // Earnings are judged against the expiry of the trade the row stands for: the listed option
+    // when it is the trade, the cycle monthly when that is; unread or with no liquid trade, the
+    // later of the two, so a listed expiry spanning an announcement is never shown as clear.
+    const later = cycle !== null && cycle > expiry ? cycle : expiry;
+    const judged = rec_ === "vendor" ? expiry : rec_ === "monthly" ? cycle : later;
     return [
       {
         symbol,
@@ -291,7 +297,8 @@ export function readScreener(config: ConsoleConfig, which: ScreenerList, wanted?
         earningsSource: nextKnown === null ? null : nextKnown === broker?.date ? "broker" : "list",
         earningsEstimated: nextKnown !== null && nextKnown === broker?.date ? broker.estimated : null,
         cycleExpiry: cycle,
-        earnings: FUND_TYPES.has(types.get(symbol) ?? "") ? "none" : earningsState(dates, day, cycle),
+        earningsExpiry: judged,
+        earnings: FUND_TYPES.has(types.get(symbol) ?? "") ? "none" : earningsState(dates, day, judged),
         readingAt: reading ? readings.at : null,
         listedLegs: reading ? list(reading["vendor"]).map(leg).filter((l): l is ScreenerLeg => l !== null) : [],
         cycleLegs,
