@@ -2,7 +2,7 @@ import { NO_RANGE, rangeClauses, type DateRange } from "./dateRange.js";
 import { concededArmMoney, entryOutcomes } from "./armCosts.js";
 import { feeDragPct, sumIfAllRecorded, tradingFees, type ArmCostsPayload } from "@console/shared";
 import path from "node:path";
-import type { FliesPayload, FliesBookRow, FliesPositionRow, LiveVsPaper, Paged, TradingMode } from "@console/shared";
+import type { FliesPayload, FliesBookRow, FliesPositionRow, LiveRiskSession, LiveVsPaper, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { hasColumn, memoOnStore, readJson, readOnlyDb, withReadOnlyDb, num, str, type DatabaseHandle } from "./db.js";
 import {
@@ -1913,7 +1913,7 @@ export interface FliesAnalytics {
      * until the next session's first tick moves the page to that session. Zero when nothing
      * entered could lose; null when nothing entered at all.
      */
-    dailyPeakRisk: { peak: number; at: string | null; source: "recorded" | "replayed" | null } | null;
+    dailyPeakRisk: { peak: number; at: string | null; source: LiveRiskSession["peakSource"] } | null;
     /** The print this session's books settled against, where it came from, and when the book was
      *  written — null until a book has settled. The latest if books disagree, which they should not. */
     settlement: { price: number; source: string | null; at: string | null } | null;

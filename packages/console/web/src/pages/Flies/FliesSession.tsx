@@ -39,7 +39,7 @@ export interface SessionAnalytics {
     completed: number;
     maxPossibleLoss: number;
     sessionPeakWorst: { worst: number; at: string } | null;
-    dailyPeakRisk?: { peak: number; at: string | null; source: "recorded" | "replayed" | null } | null;
+    dailyPeakRisk?: { peak: number; at: string | null; source: "booked" | "recorded" | "replayed" | null } | null;
     settlement?: { price: number; source: string | null; at: string | null } | null;
     medianCompletionMin?: number | null;
   };
@@ -201,9 +201,11 @@ export function FliesSession({
         title={
           "the largest worst case the book carried at any moment this session — every open position's own " +
           "worst case net of fees and the worst-case assignment fee, summed — " +
-          (peak?.source === "recorded"
-            ? "recorded by the live loop each tick, the figure its buying-power cap reads"
-            : "replayed from the positions' entries and completions (it equals the live loop's recorded peak to the cent wherever both exist)") +
+          (peak?.source === "booked"
+            ? "flies' own figure, recorded on the settled book at actual fills"
+            : peak?.source === "recorded"
+              ? "the live loop's tick record, the figure its buying-power cap reads; it can hold an entry's limit price before a better fill is reconciled, so it can sit a little above the settled book's figure"
+              : "replayed from the positions' entries and completions") +
           "; it stands after settlement until the next session starts"
         }
         foot={

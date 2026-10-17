@@ -6,13 +6,20 @@ import { PEAK_ROW_COLUMNS, peakRisk, peakRowFrom, type PeakRow } from "../analyt
 /**
  * Return on peak risk, per session, for any flies ledger: settled net (core.ledgers' flies rule,
  * `gross_pnl - fees` over `status = 'settled'`) against the session's peak open worst case. The
- * peak is the live loop's recorded `fly_live_marks.open_margin` where a session has one, and the
- * replay in `analytics/fliesPeakRisk.ts` everywhere else -- every paper session, and a live
- * session from before the marks table. The two agree to the cent wherever both exist.
+ * peak, in order of preference:
  *
- * Recorded marks are the loop's whole book, not one arm's: the live pilot runs one arm a day. A
- * paper ledger has no marks, so each arm is replayed from its own positions alone -- the arms are
- * independent portfolios, and one arm's peak is never another's.
+ * 1. `booked` -- flies' own figure, recorded on each settled book (`fly_books.peak_risk`,
+ *    `analytics.session_peak_risk`, backfilled for earlier books). It prices actual fills, and it
+ *    is the figure `core.analysis` reads, so this slide and the analysis slide agree.
+ * 2. `recorded` -- the live loop's `fly_live_marks.open_margin`, for a session not yet settled
+ *    (today's, until the bell). It is what the buying-power cap reads, but it can hold an entry's
+ *    limit price before a better fill is reconciled, and an order working at that tick that never
+ *    filled: on 7 of 21 live sessions it was above the booked figure (flies' backfill names why).
+ * 3. `replayed` -- the replay in `analytics/fliesPeakRisk.ts`, where neither exists.
+ *
+ * Books and marks are summed per session over the scope's arm (every arm when the scope names
+ * none). Recorded marks are the loop's whole book: the live pilot runs one arm a day. Paper arms
+ * are independent portfolios, and one arm's peak is never another's.
  */
 export interface PeakScope {
   arm: string | null;
@@ -93,10 +100,46 @@ export function peakRiskSessions(db: Database.Database, scope: PeakScope): LiveR
     }
   }
 
+  // Flies' own peak per settled book, summed per session over the scope's arm(s).
+  const booked = new Map<string, { peak: number; at: string | null; largest: number }>();
+  if (hasTable(db, "fly_books") && hasColumn(db, "fly_books", "peak_risk")) {
+    const bookWhere = ["status = 'settled'", "peak_risk IS NOT NULL"];
+    const bookParams: string[] = [];
+    if (scope.arm !== null) {
+      bookWhere.push("arm = ?");
+      bookParams.push(scope.arm);
+    }
+    for (const r of db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT trade_date, peak_risk, peak_risk_at FROM fly_books WHERE ${bookWhere.join(" AND ")}`,
+      )
+      .all(...bookParams)) {
+      const d = String(r["trade_date"] ?? "");
+      const peak = num(r["peak_risk"]) ?? 0;
+      const prev = booked.get(d);
+      // Two books on one session are two symbols side by side: summed, which can only overstate.
+      // `at` is the largest single book's moment.
+      const larger = prev === undefined || peak > prev.largest;
+      booked.set(d, {
+        peak: (prev?.peak ?? 0) + peak,
+        at: larger ? str(r["peak_risk_at"]) : prev.at,
+        largest: larger ? peak : prev.largest,
+      });
+    }
+  }
+
   const out: LiveRiskSession[] = [];
   for (const [d, { s, book }] of days) {
+    const bk = booked.get(d);
     const rec = recorded.get(d);
-    if (rec !== undefined) {
+    if (bk !== undefined) {
+      // A book that carried nothing at risk has no peak to divide by: null, never a zero.
+      if (bk.peak > 0) {
+        s.peakRisk = bk.peak;
+        s.peakAt = bk.at;
+        s.peakSource = "booked";
+      }
+    } else if (rec !== undefined) {
       s.peakRisk = rec.peak;
       s.peakAt = rec.at;
       s.peakSource = "recorded";
@@ -129,5 +172,6 @@ export function onPeakRiskOver(sessions: LiveRiskSession[], bounds: [string, str
     sessions: covered.length,
     of: inScope.length,
     replayed: covered.filter((s) => s.peakSource === "replayed").length,
+    booked: covered.filter((s) => s.peakSource === "booked").length,
   };
 }

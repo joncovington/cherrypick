@@ -41,8 +41,11 @@ export interface OnPeakRisk {
   /** Sessions the ratio covers, out of `of` settled sessions in scope. */
   sessions: number;
   of: number;
-  /** How many of `sessions` had their peak replayed from positions rather than recorded live. */
+  /** How many of `sessions` had their peak replayed from positions by this console. */
   replayed: number;
+  /** How many took flies' own figure off the settled book (`fly_books.peak_risk`); the rest of
+   *  `sessions` beyond `booked + replayed` were the live loop's tick record. */
+  booked: number;
 }
 
 export interface ExitReasonRow {

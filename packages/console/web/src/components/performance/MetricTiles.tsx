@@ -99,7 +99,8 @@ export function MetricTiles({ reading, peakRisk }: { reading: Record<string, unk
             `settled net ${fmtMoney(peakRisk.net)} over the sum of each session's peak worst-case exposure ` +
             `${fmtMoney(peakRisk.peakRisk)}; ${String(peakRisk.sessions)} of ${String(peakRisk.of)} sessions ` +
             `(a session counts once finished and once it carried risk)` +
-            (peakRisk.replayed > 0 ? `; ${String(peakRisk.replayed)} replayed from positions, the rest recorded live` : "; every peak recorded live")
+            `; ${String(peakRisk.booked)} recorded on the settled book, ${String(peakRisk.replayed)} replayed here from positions, ` +
+            `${String(peakRisk.sessions - peakRisk.booked - peakRisk.replayed)} from the live loop's tick record`
           }
         />
       ) : (
