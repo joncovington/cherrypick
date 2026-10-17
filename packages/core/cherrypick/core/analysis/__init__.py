@@ -31,6 +31,7 @@ import random
 from collections.abc import Mapping, Sequence
 from datetime import date
 
+from cherrypick.core.analysis import capital
 from cherrypick.core.metrics import _scored, calibration_reading, max_drawdown, session_nets_dated
 
 #: The fact set's version. Bump it when a field changes meaning, so a stored reading is never
@@ -269,8 +270,28 @@ def stress(
 TRADE_FIELDS = ("entry_time", "exit_time", "entry_spot", "exit_spot")
 
 
-def arm_reading(records: Sequence[Mapping]) -> dict:
-    """The analysis of one arm's closed records: `calibration_reading` plus everything above."""
+def _capital(ordered: Sequence[Mapping], dated, allocations) -> dict:
+    """Observed peak risk and the declared allocation (`capital.py`), with the two figures each
+    makes readable: return on the peak, and the session max drawdown as a share of it."""
+    peak = capital.peak_risk(ordered)
+    net = round(sum(v for _, v in dated), 2)
+    dd = max_drawdown([v for _, v in dated])
+    p = peak["peak"]
+    # Over the trades whose capital is known only when that is every trade: a ratio over part of
+    # the sample, read against the whole sample's net, is the partial-coverage trap metrics avoids.
+    full = peak["capital_known"] == peak["trades"] and p
+    return {
+        "peak_risk": peak,
+        "return_on_peak_risk": round(net / p, 4) if full else None,
+        "max_drawdown_over_peak_risk": round(dd / p, 4) if full else None,
+        "allocation": capital.allocation_reading(dated, allocations),
+    }
+
+
+def arm_reading(records: Sequence[Mapping], allocations: Sequence[Mapping] | None = None) -> dict:
+    """The analysis of one arm's closed records: `calibration_reading` plus everything above.
+
+    `allocations` are the arm's declared allocations (`capital.load_allocations`), or None."""
     ordered = _ordered(records)
     nets = [r["net_pnl"] for r in ordered]
     dated = session_nets_dated(ordered)
@@ -297,6 +318,7 @@ def arm_reading(records: Sequence[Mapping]) -> dict:
         "drawdowns": _episode_summary(episodes),
         "durability": durability(nets),
         "stress": stress([v for _, v in dated]),
+        "capital": _capital(ordered, dated, allocations),
         "coverage": {
             "trades": len(ordered),
             **{f: sum(1 for r in ordered if r.get(f) is not None) for f in TRADE_FIELDS},

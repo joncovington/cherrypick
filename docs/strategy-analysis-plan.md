@@ -189,7 +189,14 @@ last, or runs first on replays for an early read.
 - Flies first, in full, before the broad views.
 - Reconciliation moves up to Phase 2.
 - The event calendar is `core.events`, not a new file.
-- Capital is declared per arm in each module's config, with a labelled fallback.
+- Capital is declared per arm in each module's config, with a labelled fallback. *Revised the same
+  day:* capital is two figures, built in this order. **Observed peak risk** (the most an arm had at
+  risk at once, from each trade's recorded max loss) needs no declaration and covers all history; it
+  is in `core.analysis.capital`. A **declared allocation** is dated, kept in one suite-level file
+  (`<home>/config/arm_capital.json`) rather than the module configs no loop would read it from, and
+  a session before the first declaration is counted as uncovered, never filled. Flies records no
+  per-trade capital, so its peak waits for flies to record each session's peak on its books (with a
+  backfill), which core then reads.
 - No composite score and no optimizer.
 
 ## Open before Phase 0
