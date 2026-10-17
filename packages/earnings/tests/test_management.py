@@ -145,6 +145,36 @@ def test_a_position_exactly_at_breakeven_is_treated_as_a_loser():
     assert decision.action == "close_all" and decision.reason == "pead_loser"
 
 
+# --------------------------------------------------------------------------- the entry session
+def test_a_fresh_loser_is_not_closed_before_its_report():
+    """A position opened at 15:35 marks at or below zero (it has just paid the spread). On the entry
+    session that is not a gap that continues -- the report has not happened."""
+    decision = evaluate(trade(), snapshot(6.00), now=at("15:37"), sessions_held=0, first=True)
+    assert decision.action == "hold" and decision.reason == "entry_session"
+
+
+def test_a_calendar_is_not_stopped_on_front_dte_at_entry():
+    """The weekly front is under five days out the moment it is bought, so the front-DTE stop would
+    fire on the entry tick."""
+    config = {
+        "strategies": {"atm_calendar": {"profit_target_pct": 0.15, "exit_days_before_front_expiration": 5}},
+        "management": {},
+    }
+    t = trade("atm_calendar", credit=-3.0, expiration="2026-08-14")
+    decision = evaluate(t, snapshot(-3.2), now=at("15:37"), sessions_held=0, config=config)
+    assert decision.action == "hold" and decision.reason == "entry_session"
+    # The next session, the same position is the strategy's again.
+    assert evaluate(t, snapshot(-3.2), sessions_held=1, config=config).reason == "time_exit"
+
+
+def test_the_entry_session_does_not_outrank_the_expiry_close():
+    """Physically settled legs are traded out before the bell, whatever else is true."""
+    decision = evaluate(
+        trade(expiration="2026-08-21"), snapshot(4.50), now=at("15:31", "2026-08-21"), sessions_held=0
+    )
+    assert decision.action == "close_all" and decision.reason == "expiry_close"
+
+
 # --------------------------------------------------------------------------- the session cap
 def test_a_winner_closes_at_the_session_cap():
     """Residual crush is spent by roughly the third session; what is left is direction, which this
