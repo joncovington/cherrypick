@@ -11,7 +11,8 @@ This module answers the questions asked before trusting an arm with money
 - `stress`             how deep the worst drawdown could have been with the same sessions in
                        another order, shuffled one session at a time and in blocks
 - `execution_sensitivity`  the net at multiples of the slippage each module modelled
-- `buckets.breakdowns`     P&L by weekday, entry hour, month and event day, one column set
+- `buckets.breakdowns`     P&L by weekday, entry hour, month and event day, one column set; plus
+                           VIX and VIX/VIX3M at entry where the records were joined to the regime
 
 All of it is a pure function of the normalised records `core.ledgers` yields, so it reads paper,
 live and replay output the same way, and the same records always give the same answer: the

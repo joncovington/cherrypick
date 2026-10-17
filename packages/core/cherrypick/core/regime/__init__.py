@@ -226,6 +226,33 @@ def gex_at(
         conn.close()
 
 
+def markets_at(
+    timestamps,
+    *,
+    history_db: Path | str | None = None,
+    max_staleness_seconds: float = DEFAULT_MAX_STALENESS_SECONDS,
+) -> list[dict]:
+    """``regime_at(ts)["market"]`` for each of ``timestamps``, in order, over one connection and
+    under the same rules -- for a reader joining a whole ledger's entries (core.analysis), where a
+    connection and a GEX scan per trade buy nothing. A missing or table-less history database is
+    unmeasured for every timestamp."""
+    stamps = [float(t) for t in timestamps]
+    path = Path(history_db) if history_db is not None else default_history_db()
+    if not path.exists():
+        return [_unmeasured("no_history_db") for _ in stamps]
+    conn = _db.connect_ro(path)
+    try:
+        out = []
+        for ts in stamps:
+            try:
+                out.append(_market_block(conn, ts, float(max_staleness_seconds)))
+            except Exception:  # noqa: BLE001 — an older DB without the table is unmeasured, not an error
+                out.append(_unmeasured("no_market_regime_table"))
+        return out
+    finally:
+        conn.close()
+
+
 def regime_at(
     ts: float,
     *,

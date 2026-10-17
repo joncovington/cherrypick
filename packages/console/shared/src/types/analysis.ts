@@ -146,6 +146,11 @@ export interface Breakdowns {
   hour: BucketTable;
   month: BucketTable;
   event: BucketTable;
+  /** VIX at entry, banded. Only where the records were joined to the recorded regime: every module
+   *  but flies and MEIC, which cut their own (the regime tab). */
+  vix?: BucketTable;
+  /** VIX/VIX3M at entry: contango, flat, backwardation, or unmeasured. Same presence as `vix`. */
+  term?: BucketTable;
 }
 
 export interface TradeRef {
