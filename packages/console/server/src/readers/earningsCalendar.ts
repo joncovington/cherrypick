@@ -201,6 +201,21 @@ function row(v: unknown): EarningsCalendarRow | null {
     suggestion: suggestion(r["suggestion"]),
     trade: null,
     listed: null,
+    ours: ours(r["ours"]),
+  };
+}
+
+/** Our own reads beside the vendor's, as the builder wrote them; null when it wrote none. */
+function ours(v: unknown): EarningsCalendarRow["ours"] {
+  if (v === null || v === undefined) return null;
+  const o = rec(v);
+  const edge = str(o["edge"]);
+  return {
+    edge: edge !== null && EDGES.has(edge as EarningsEdge) ? (edge as EarningsEdge) : null,
+    edgeLabel: str(o["edge_label"]),
+    strength: num(o["strength"]),
+    ivRank: num(o["iv_rank"]),
+    session: str(o["session"]),
   };
 }
 

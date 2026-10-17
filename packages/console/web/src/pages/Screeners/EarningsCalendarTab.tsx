@@ -112,27 +112,70 @@ function DateFlags({ r }: { r: EarningsCalendarRow }) {
   return flags.length ? <> {flags}</> : null;
 }
 
+/** Where our read differs from the vendor's direction: a strong read on one side and not the other. */
+export function directionDiffers(r: EarningsCalendarRow): boolean {
+  return r.ours?.edge != null && r.edge !== null && r.ours.edge !== r.edge;
+}
+
+const oursNote = (r: EarningsCalendarRow) =>
+  r.ours?.session ? `Ours: from our bars, as of the ${shortDate(r.ours.session)} close.` : "We hold no bars for this name.";
+
 function EdgeCell({ r }: { r: EarningsCalendarRow }) {
   if (r.edgeLabel === null) return <td className="muted">—</td>;
   const cls = r.edge === STRONG_BULL ? "chip chip-ok" : r.edge === STRONG_BEAR ? "chip chip-bad" : "chip";
+  const title =
+    `The vendor's direction read, from its security list (the previous session's close): ${r.edgeLabel}. ` +
+    `Ours (Bearing): ${r.ours?.edgeLabel ?? "—"}. ${oursNote(r)}`;
   return (
-    <td title="The vendor's direction read, from its security list: it describes the previous session's close">
+    <td title={title}>
       <span className={cls}>{r.edgeLabel}</span>
+      {directionDiffers(r) && (
+        <>
+          <br />
+          <span className="muted">ours: {r.ours?.edgeLabel}</span>
+        </>
+      )}
     </td>
   );
 }
 
-function StrengthCell({ v }: { v: number | null }) {
+function StrengthCell({ r }: { r: EarningsCalendarRow }) {
+  const v = r.strength;
   if (v === null) return <td className="muted">—</td>;
   const colour = v >= 7 ? "var(--pos)" : v <= 4 ? "var(--neg)" : "var(--amber-line)";
+  const mine = r.ours?.strength ?? null;
   return (
-    <td title={`Strength ${v}/10 (the security list's rank)`} style={{ whiteSpace: "nowrap" }}>
+    <td title={`Strength ${v}/10 (the vendor's rank). Ours: ${mine ?? "—"}/10. ${oursNote(r)}`} style={{ whiteSpace: "nowrap" }}>
       <span aria-hidden style={{ display: "inline-flex", gap: 1, verticalAlign: "middle" }}>
         {Array.from({ length: 10 }, (_, i) => (
           <span key={i} style={{ width: 5, height: 10, background: i < v ? colour : "var(--chart-grid-mid)" }} />
         ))}
       </span>{" "}
       <span className="muted">{v}/10</span>
+      {mine !== null && mine !== v && (
+        <>
+          <br />
+          <span className="muted">ours {mine}/10</span>
+        </>
+      )}
+    </td>
+  );
+}
+
+function IvRankCell({ r }: { r: EarningsCalendarRow }) {
+  const mine = r.ours?.ivRank ?? null;
+  return (
+    <td
+      className="num"
+      title={`The vendor's IV rank${r.ivRank === null ? ": —" : ` ${Math.round(r.ivRank)}%`}. The broker's: ${mine === null ? "—" : `${Math.round(mine)}%`} (a different definition).`}
+    >
+      {r.ivRank === null ? "—" : `${Math.round(r.ivRank)}%`}
+      {mine !== null && (
+        <>
+          <br />
+          <span className="muted">broker {Math.round(mine)}%</span>
+        </>
+      )}
     </td>
   );
 }
@@ -427,6 +470,12 @@ export function EarningsCalendarTab() {
         <span className="chip">
           {shown.length} of {all.length} announcements
         </span>
+        <span
+          className="chip"
+          title="Rows shown where our direction read (Bearing, from our bars) is not the vendor's. Watched for a couple of weeks before deciding which the tab leads with."
+        >
+          ours differs on {shown.filter(directionDiffers).length} of {shown.filter((r) => r.ours?.edge != null).length} we read
+        </span>
       </div>
 
       {isError && <p className="muted">Could not read the earnings calendar.</p>}
@@ -439,7 +488,6 @@ export function EarningsCalendarTab() {
             <thead>
               <tr>
                 <th>Symbol</th>
-                <th>Company</th>
                 <th title="Before the open or after the close; a dash when no source says">Time</th>
                 <th>Direction</th>
                 <th>Strength</th>
@@ -455,25 +503,25 @@ export function EarningsCalendarTab() {
             <tbody>
               {[...groups.entries()].map(([day, rows]) => [
                 <tr key={`h-${day}`} className="group-row">
-                  <td colSpan={10}>
+                  <td colSpan={9}>
                     <strong>{dayHeading(day)}</strong> <span className="chip">{rows.length}</span>
                   </td>
                 </tr>,
                 ...rows.map((r) => (
                   <tr key={`${day}-${r.symbol}`}>
-                    <td>
+                    {/* The symbol and its company in one cell: the name beneath, muted, cut to fit. */}
+                    <td title={r.company ?? undefined} style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>
                       <Link className="module-link" to={`/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`} title={`Open ${r.symbol}'s chart`}>
                         {r.symbol}
                       </Link>
                       <DateFlags r={r} />
-                    </td>
-                    <td title={r.company ?? undefined} style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {r.company ?? "—"}
+                      <br />
+                      <span className="muted">{r.company ?? "—"}</span>
                     </td>
                     <TimeCell r={r} />
                     <EdgeCell r={r} />
-                    <StrengthCell v={r.strength} />
-                    <td className="num">{r.ivRank === null ? "—" : `${Math.round(r.ivRank)}%`}</td>
+                    <StrengthCell r={r} />
+                    <IvRankCell r={r} />
                     <td className="num">{r.price === null ? "—" : `$${money(r.price)}`}</td>
                     <MoveCell r={r} />
                     <td>{r.sector ?? "—"}</td>

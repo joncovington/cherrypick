@@ -43,6 +43,7 @@ function row(over: Partial<EarningsCalendarRow>): EarningsCalendarRow {
     suggestion: { kind: "credit", right: "P", short: 100, long: 95.25, expiry: "2026-11-20" },
     trade: null,
     listed: null,
+    ours: null,
     ...over,
   };
 }
@@ -160,6 +161,25 @@ describe("the earnings tab", () => {
     expect(html).toContain("100/95 P");
     expect(html).not.toContain("not priced");
     payload.rows = saved;
+  });
+
+  it("shows our reads beside the vendor's where they differ, and counts the direction disagreements", () => {
+    const saved = payload.rows;
+    const ours = (edge: "sb" | "brn", label: string, strength: number) => ({ edge, edgeLabel: label, strength, ivRank: 61.5, session: "2026-10-15" });
+    payload.rows = [row({ symbol: "SAME", ours: ours("sb", "strong bull", 9) }), row({ symbol: "DIFF", ours: ours("brn", "bear", 3) }), row({ symbol: "NONE" })];
+    const html = render("/screeners/earnings?day=2026-10-15");
+    expect(html).toContain("ours: bear");
+    expect(html).not.toContain("ours: strong bull"); // agreeing reads add no line
+    expect(html).toContain("ours 3/10"); // a strength that differs
+    expect(html).toContain("broker 62%");
+    expect(html).toContain("ours differs on 1 of 2 we read");
+    payload.rows = saved;
+  });
+
+  it("puts the symbol and its company in one cell", () => {
+    const html = render("/screeners/earnings?day=2026-10-15");
+    expect(html).toMatch(/symbol=AAA"[^>]*>AAA<\/a>(<span[^]*?<\/span>)?<br\/><span class="muted">Alpha Inc\.<\/span>/);
+    expect(html).not.toContain(">Company<");
   });
 
   it("always says the suggested spread has no edge", () => {
