@@ -153,10 +153,11 @@ describe("the earnings tab", () => {
     payload.rows = [row({ symbol: "TGT" }), row({ symbol: "LST", listed: { expiry: "2026-11-20", strikes: [95, 100] } })];
     const html = render("/screeners/earnings?day=2026-10-15");
     // TGT: credit put, target short 100, long 95.25 -- shown approximate, with a "target" label.
-    expect(html).toMatch(/≈100\.00 \/ ≈95\.25<\/span> <span class="chip" title="Target prices, not listed strikes">target</);
-    // LST: listed strikes, short first for a credit, and not priced yet.
-    expect(html).toContain("100/95");
-    expect(html).toContain("not priced yet");
+    expect(html).toMatch(/≈100\.00 \/ ≈95\.25<\/span>/);
+    expect(html).toMatch(/<span class="chip" title="Target prices, not listed strikes">target</);
+    // LST: listed strikes lead the cell, short first for a credit; no price until one is read.
+    expect(html).toContain("100/95 P");
+    expect(html).not.toContain("not priced");
     payload.rows = saved;
   });
 

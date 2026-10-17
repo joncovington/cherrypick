@@ -175,18 +175,18 @@ function TradeCell({ t }: { t: EarningsTrade }) {
     `of the ${t.width} width; max loss $${money(t.maxLoss)} a spread.\n` +
     t.legs.map((l) => legLine(l, right)).join("\n") +
     "\nHistory: no edge (the note below the table).";
+  // The strikes lead: the column is the table's last, and whatever comes first is what shows.
   return (
     <td title={title}>
+      <span className="num">
+        {first?.strike}/{second?.strike} {t.right}
+      </span>{" "}
+      <span className="muted">{shortDate(t.expiry)}</span> <span className="num">{price}</span>
+      <br />
       <span className={t.kind === "credit" ? "chip" : "chip chip-ok"}>
         {t.kind} {right}
-      </span>{" "}
-      <span className="num">
-        {first?.strike}/{second?.strike}
-      </span>{" "}
-      <span className="muted">{shortDate(t.expiry)}</span>
-      <br />
-      <span className="num">{price}</span>
-      {t.shareOfWidth !== null && <span className="muted"> · {(100 * t.shareOfWidth).toFixed(0)}% of width</span>}
+      </span>
+      {t.shareOfWidth !== null && <span className="muted"> {(100 * t.shareOfWidth).toFixed(0)}% of width</span>}
       {t.maxLoss !== null && <span className="muted"> · max loss ${money(t.maxLoss)}</span>}
       {t.passes === false && (
         <>
@@ -236,11 +236,14 @@ function SpreadCell({
       s.kind === "credit" ? `sell the ${short} ${right}, buy the ${long} ${right}` : `buy the ${long} ${right}, sell the ${short} ${right}`;
     return (
       <td
-        title={`Listed strikes on ${listed.expiry}, from the evening's chain listing: ${legs}. Not priced yet: the price and liquidity are read at 11:30 and 14:30 ET. History: no edge (the note below the table).`}
+        title={`Listed strikes on ${listed.expiry}, from the evening's chain listing: ${legs}. The price and liquidity show once read, at 11:30 and 14:30 ET. History: no edge (the note below the table).`}
       >
-        {kindChip} <span className="num">{shown}</span> <span className="muted">{shortDate(listed.expiry)}</span>
+        <span className="num">
+          {shown} {s.right}
+        </span>{" "}
+        <span className="muted">{shortDate(listed.expiry)}</span>
         <br />
-        <span className="muted">not priced yet</span>
+        {kindChip}
       </td>
     );
   }
@@ -254,10 +257,11 @@ function SpreadCell({
     "History: no edge (the note below the table).";
   return (
     <td title={title}>
-      {kindChip}{" "}
       <span className="muted num">
         ≈{money(s.kind === "credit" ? s.short : s.long)} / ≈{money(s.kind === "credit" ? s.long : s.short)}
-      </span>{" "}
+      </span>
+      <br />
+      {kindChip}{" "}
       <span className="chip" title="Target prices, not listed strikes">
         target
       </span>
