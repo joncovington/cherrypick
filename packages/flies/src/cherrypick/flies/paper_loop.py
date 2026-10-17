@@ -794,6 +794,21 @@ def session_arms(config: dict, conn, trade_date: str) -> list[str]:
     return arms + advised
 
 
+def replay_arms(config: dict) -> list[str]:
+    """A replay's roster: the enabled arms, plus any `advised:<name>` arm the replay's own config
+    defines and enables. A replay never reads the advice decision (it WRITES a file), so an advised
+    arm reaches it only as a config entry -- built the way `session_arms` builds one, the base's
+    params with the overlay on top (packages/backtest's runner writes it into a scratch config).
+    Live paper never takes this path."""
+    registry = config.get("arms") or {}
+    advised = [
+        name
+        for name, spec in registry.items()
+        if name.startswith("advised:") and isinstance(spec, dict) and spec.get("enabled", True)
+    ]
+    return climod.enabled_arms(config) + sorted(advised)
+
+
 def _advised_base(decision: dict, tag: str, arm_defs: dict) -> str:
     """The base arm an advised tag shadows: the decision's entry for that tag when there is one
     (rejected entries still name their base), else the legacy `advised:<base>` reading when the
@@ -912,7 +927,7 @@ def _run_once(
             log(f"{day} settled — idle until the next session")
         return {"ok": True, "skipped": "outside_rth", "now_min": now_min, "session_settled": settled}
 
-    arms = climod.enabled_arms(config) if replay else session_arms(config, conn, day)
+    arms = replay_arms(config) if replay else session_arms(config, conn, day)
     build = snapshot_fn or provider.build_snapshot
     results = []
     for symbol in config.get("symbols", ["SPX"]):
@@ -1038,7 +1053,7 @@ def _run_settle(
         source = "explicit" if price is not None else "last_trade"
         # The same roster the tick entered on, including any advised arm — settling a narrower list
         # than the one that traded would strand an advised book open with no way to close it.
-        for arm in climod.enabled_arms(config) if replay else session_arms(config, conn, trade_date):
+        for arm in replay_arms(config) if replay else session_arms(config, conn, trade_date):
             result = bookmod.settle_book(
                 conn, trade_date, arm, symbol, settlement, config, settlement_source=source
             )

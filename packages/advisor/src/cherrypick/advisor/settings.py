@@ -42,6 +42,11 @@ DEFAULTS: dict[str, Any] = {
     # successors starved at zero sessions behind them. Off restores the record-only behaviour,
     # where only `kill` (CLI / console) stops an experiment.
     "kill_on_verdict": True,
+    # Backtest proposals (2026-10-17): a `backtest_spec` reply is queued for packages/backtest to run
+    # over its design window, and design results come back into the pack. OFF by default: switching
+    # it on changes what the model is shown and may propose, a measurement break for the advisor,
+    # so it lands at a declared boundary. Off, a `backtest_spec` is rejected with that reason.
+    "backtest_proposals": False,
     # Derived from `bounds.MODULES`, the one module list (2026-09-12: this was the fourth hand-kept
     # copy, and it was missing bwb and curve -- so with no deployed `advisor.modules` entry, enact
     # silently skipped two modules that declare bounds and read for advice). Every module the

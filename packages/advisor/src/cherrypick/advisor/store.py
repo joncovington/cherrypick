@@ -124,6 +124,26 @@ CREATE TABLE IF NOT EXISTS enactment (
     PRIMARY KEY (session, module, experiment_id)
 );
 
+-- Backtest specs the model proposed (2026-10-17, off until `advisor.backtest_proposals`). The
+-- advisor only queues them: packages/backtest runs each over the DESIGN window, by its own verb, and
+-- writes the design result back. The model never chooses a window, and the holdout never reaches
+-- it. `params` passed the module's own advice bounds at admission, as an experiment's do.
+CREATE TABLE IF NOT EXISTS backtest_requests (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    proposal_id  INTEGER,
+    session      TEXT NOT NULL,
+    module       TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    base_arm     TEXT NOT NULL,
+    params       TEXT NOT NULL,
+    hypothesis   TEXT,
+    status       TEXT NOT NULL,  -- queued|done|refused
+    run_id       TEXT,
+    result       TEXT,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS schema_meta (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -209,6 +229,54 @@ def backfill_tags(conn: sqlite3.Connection) -> int:
     if rows:
         conn.commit()
     return len(rows)
+
+
+def add_backtest_request(
+    conn: sqlite3.Connection,
+    *,
+    proposal_id: int | None,
+    session: str,
+    module: str,
+    name: str,
+    base_arm: str,
+    params: dict[str, Any],
+    hypothesis: str,
+) -> int:
+    """Queue one admitted backtest spec. The same spec queued twice on a session is one request."""
+    params_json = json.dumps(params, sort_keys=True)
+    existing = conn.execute(
+        "SELECT id FROM backtest_requests WHERE session = ? AND module = ? AND base_arm = ? AND params = ?",
+        (session, module, base_arm, params_json),
+    ).fetchone()
+    if existing:
+        return int(existing[0])
+    now = now_iso()
+    cur = conn.execute(
+        "INSERT INTO backtest_requests (proposal_id, session, module, name, base_arm, params, hypothesis, "
+        "status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,'queued',?,?)",
+        (proposal_id, session, module, name, base_arm, params_json, hypothesis, now, now),
+    )
+    return int(cur.lastrowid)
+
+
+def backtest_requests(conn: sqlite3.Connection, status: str | None = None) -> list[dict[str, Any]]:
+    sql = "SELECT * FROM backtest_requests" + (" WHERE status = ?" if status else "") + " ORDER BY id"
+    out = rows(conn, sql, (status,) if status else ())
+    for r in out:
+        r["params"] = read_json_text(r["params"], {})
+        r["result"] = read_json_text(r["result"], None)
+    return out
+
+
+def record_backtest_result(
+    conn: sqlite3.Connection, request_id: int, *, status: str, run_id: str | None, result: Any
+) -> bool:
+    """A request's outcome, written by packages/backtest's runner (design window only)."""
+    cur = conn.execute(
+        "UPDATE backtest_requests SET status = ?, run_id = ?, result = ?, updated_at = ? WHERE id = ?",
+        (status, run_id, json.dumps(result, sort_keys=True), now_iso(), request_id),
+    )
+    return cur.rowcount == 1
 
 
 def now_iso() -> str:

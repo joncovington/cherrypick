@@ -139,4 +139,10 @@ The console's Backtest page reads `python -m cherrypick.backtest read overview|r
 and is **fail-closed**: shown only when the orchestrator's `features.backtest` is true
 (`orchestrator/backtestgate.py`: the operator's config enabled, the licence active, the key in the
 keyring, a complete session in the store), with its server routes refusing on their own.
-Not yet: the advisor's fenced proposals.
+
+**The advisor's specs** (`run-advised`, `advised.py`): the advisor queues `backtest_spec` replies it
+admitted against flies' own advice bounds (off until `advisor.backtest_proposals`); this reads the
+queue by subprocess, turns each into a config-defined arm `advised:<name>-<id>` (the base arm's params
+with the overlay, the rule flies' paper loop uses, which flies' replay accepts), runs them over the
+DESIGN window only, and writes each result back. Each is a trial. Every run replays from its own
+snapshot of the flies config, kept beside its ledgers (`flies-config.json`).

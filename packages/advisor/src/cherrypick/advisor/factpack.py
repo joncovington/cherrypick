@@ -2031,6 +2031,32 @@ def _advice_audit(session: str) -> dict[str, Any]:
 # --------------------------------------------------------------------------- build
 
 
+#: Backtest requests shown in a pack, newest first.
+BACKTESTS_SHOWN = 20
+
+
+def _backtests(conn) -> dict[str, Any]:
+    """The model's backtest specs and their DESIGN-window results, as packages/backtest wrote them
+    back. Only the design window ever reaches this table: the holdout is spent by a deterministic
+    step and never shown to the model, and the model never chose either window."""
+    reqs = _store.backtest_requests(conn)[-BACKTESTS_SHOWN:][::-1]
+    return {
+        "note": "design window only; the holdout is never shown; each spec counts as a trial",
+        "requests": [
+            {
+                "id": r["id"],
+                "module": r["module"],
+                "name": r["name"],
+                "base_arm": r["base_arm"],
+                "params": r["params"],
+                "status": r["status"],
+                "result": r["result"],
+            }
+            for r in reqs
+        ],
+    }
+
+
 def build(session: str, slot: str, modules: tuple[str, ...] | list[str] | None = None) -> dict[str, Any]:
     """Assemble one pack. Reads every other package; writes nothing outside the advisor's own
     store (opening that store creates or migrates `advisor.db`, which is the one write here)."""
@@ -2116,6 +2142,10 @@ def build(session: str, slot: str, modules: tuple[str, ...] | list[str] | None =
             }
             pack["advice_audit"] = _advice_audit(session)
             pack["advisor_journal"] = _advisor_journal(conn, session)
+            # Only while backtest proposals are switched on: absent, the pack is byte-for-byte what
+            # it was, so the switch is the measurement boundary (settings.DEFAULTS).
+            if _settings.load().get("backtest_proposals"):
+                pack["backtests"] = _backtests(conn)
 
         # Every query a tolerant read refused while this pack was built. An empty section above
         # with an entry here is "could not measure", not "measured nothing".

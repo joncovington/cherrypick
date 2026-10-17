@@ -39,11 +39,20 @@ The advisor reads live facts (context a competent observer would want) but canno
 
 ## Experiments
 
-**Paper arms are the dry run.** There is no replay engine and there will not be one. A proposal's
-test is a next-session paper arm beside its control, scored through
-`cherrypick.core.profiles.compare_profiles` and `qualify_readings`. Default length is **15 sessions**
-because the promotion gate needs min 14 days and min sample 20; shorter is structurally
-`underpowered`.
+**Paper arms are the real test.** A proposal's test is a next-session paper arm beside its control,
+scored through `cherrypick.core.profiles.compare_profiles` and `qualify_readings`. Default length is
+**15 sessions** because the promotion gate needs min 14 days and min sample 20; shorter is
+structurally `underpowered`.
+
+**Backtests are a fenced pre-screen (2026-10-17; changes the earlier "there will be no replay
+engine").** With `advisor.backtest_proposals` on (OFF by default; switching it on is a measurement
+break for the advisor, to be declared like any other), a `backtest_spec` reply is admitted through the
+same gates as an experiment (the module's switch, its own advice bounds via `check_params`) and only
+QUEUED (`backtest_requests`). packages/backtest runs it by its own verb (`run-advised`), over the
+declared DESIGN window only, counts it as a trial, and writes the design result back; the deep pack
+then carries it (`backtests`), and the prompt describes the kind only when the pack does. The model
+never chooses dates or data (a spec naming any is rejected), never sees the holdout, and nothing a
+backtest says runs anywhere: a good result is at most a reason to propose the paper experiment.
 
 **An experiment outlives its artifact.** Advice is single-session by contract — never sticky, always
 expiring. The experiment lives in `advisor.db` (base arm, param overlay, expiry, journal), and every

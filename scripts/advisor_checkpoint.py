@@ -157,6 +157,30 @@ If you have nothing worth proposing, return an empty `proposals` list. A quiet d
 described is more useful than a proposal manufactured to fill the slot.
 """
 
+# Appended to the prompt only when the pack carries `backtests` (advisor.backtest_proposals on).
+BACKTEST_KIND = """
+One more proposal kind is open while the pack carries a `backtests` section:
+
+- {"kind": "backtest_spec", "module": "flies", "name": "...", "base_arm": "control",
+   "hypothesis": "...", "params": [{"param": "...", "value": ..., "rationale": "..."}]}
+     Ask for an overlay to be replayed over the suite's DECLARED historical window, by deterministic
+     code, before anything runs as a paper experiment. The same bounds apply as for an experiment.
+     You do not choose the dates, the window or the data, and a spec that names any is rejected.
+     Results come back in `backtests` for the design window only; the holdout is never shown, and
+     every spec counts as a trial, so the bar a result must clear rises with each one. Propose a
+     backtest for an idea you would otherwise run as an experiment, not as a search.
+"""
+
+
+def with_backtest_kind(prompt: str, pack_text: str) -> str:
+    """The prompt, plus the backtest kind when the pack carries a `backtests` section."""
+    try:
+        has = "backtests" in json.loads(pack_text)
+    except ValueError:
+        has = False
+    return prompt + BACKTEST_KIND if has else prompt
+
+
 LIGHT_PROMPT = f"""You are the intraday observer for a personal options-trading suite. You are
 reading one checkpoint's FACT PACK as JSON on stdin. It is everything you have: no database, no
 tools, no way to check anything else.
@@ -396,6 +420,10 @@ def main() -> int:
         error = f"pack unreadable: {type(exc).__name__}: {exc}"
         _warn(session, slot, error)
         return _envelope({**result, "ok": False, "error": error})
+
+    # The backtest kind is described only when the pack carries a `backtests` section, which the
+    # package emits only while `advisor.backtest_proposals` is on: off, the prompt is unchanged.
+    prompt = with_backtest_kind(prompt, payload)
 
     if args.dry_run:
         print(f"--- prompt ({slot}) ---\n{prompt}\n--- pack ({built['bytes']} bytes) ---\n{payload}")

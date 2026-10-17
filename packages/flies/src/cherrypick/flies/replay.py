@@ -254,7 +254,10 @@ MODEL_DRIVEN = ("selector", "trend_gate_source")
 def replay_config(config: dict, arms: list[str]) -> dict:
     """`config` with only `arms` enabled. Refuses an arm the replay cannot run honestly."""
     for arm in arms:
-        if arm not in engine.ARMS:
+        # An advised arm is defined by the config itself (`advised:<name>`: a base's params with an
+        # overlay, as paper builds one), so it is known when the config defines it.
+        advised = arm.startswith("advised:") and isinstance((config.get("arms") or {}).get(arm), dict)
+        if arm not in engine.ARMS and not advised:
             raise ValueError(f"unknown arm {arm!r}")
         params = engine.merged_params(config, arm)
         driven = [k for k in MODEL_DRIVEN if params.get(k)]
