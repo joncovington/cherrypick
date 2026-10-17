@@ -95,6 +95,20 @@ export interface CapitalReading {
   allocation: AllocationReading;
 }
 
+/** `core.analysis.execution_sensitivity`: the net at multiples of the slippage each module modelled,
+ *  over the trades that record slippage (`scope` "covered" when that is not all of them). */
+export interface ExecutionReading {
+  trades: number;
+  covered: number;
+  scope: "all" | "covered";
+  basis: "in_gross" | "cost" | "mixed" | null;
+  net: number | null;
+  slippage: number | null;
+  rows: Array<{ multiple: number; extra: number; net: number; change: number | null }>;
+  breakeven_multiple: number | null;
+  withheld: string | null;
+}
+
 export interface TradeRef {
   net: number;
   session: string | null;
@@ -118,6 +132,8 @@ export interface ArmAnalysis {
   stress: StressReading;
   /** Optional only so a reply from before the capital block renders without it. */
   capital?: CapitalReading;
+  /** Optional for the same reason: replies from before the slippage ladder. */
+  execution?: ExecutionReading;
   coverage: { trades: number; entry_time: number; exit_time: number; entry_spot: number; exit_spot: number };
 }
 

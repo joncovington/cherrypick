@@ -223,3 +223,56 @@ def test_cli_refuses_an_unknown_schema(tmp_path):
 def test_cli_main_rejects_a_schema_it_does_not_know(argv):
     with pytest.raises(SystemExit):
         cli.main(argv)
+
+
+# --------------------------------------------------------------------------- execution sensitivity
+def _s(net, slip, basis="cost", session="2026-10-01"):
+    return {"arm": "control", "net_pnl": net, "slippage": slip, "slippage_basis": basis, "session": session,
+            "capital": None, "max_profit": None}  # fmt: skip
+
+
+def test_the_ladder_takes_k_minus_one_slippages_off_the_net():
+    e = analysis.execution_sensitivity([_s(100.0, 20.0), _s(50.0, 10.0)])
+    assert (e["scope"], e["basis"], e["net"], e["slippage"]) == ("all", "cost", 150.0, 30.0)
+    assert [(r["multiple"], r["net"]) for r in e["rows"]] == [
+        (1.0, 150.0),
+        (1.5, 135.0),
+        (2.0, 120.0),
+        (3.0, 90.0),
+    ]
+    assert e["rows"][2]["change"] == -0.2
+    assert e["breakeven_multiple"] == 6.0  # 150 of net is five more slippages of 30
+
+
+def test_the_two_x_row_agrees_with_core_metrics():
+    from cherrypick.core.metrics import calibration_reading
+
+    records = [_s(100.0, 20.0, session="2026-10-01"), _s(-40.0, 12.0, session="2026-10-02")]
+    e = analysis.execution_sensitivity(records)
+    two = next(r for r in e["rows"] if r["multiple"] == 2.0)
+    assert two["net"] == calibration_reading(records)["net_pnl_2x_slippage"]
+
+
+def test_partial_coverage_reads_the_covered_trades_and_their_own_net():
+    e = analysis.execution_sensitivity([_s(100.0, 20.0), _s(500.0, None)])
+    assert (e["scope"], e["covered"], e["trades"]) == ("covered", 1, 2)
+    assert e["net"] == 100.0, "the covered trades' own net, never the arm's 600"
+
+
+def test_a_losing_net_has_no_breakeven():
+    e = analysis.execution_sensitivity([_s(-100.0, 20.0)])
+    assert e["breakeven_multiple"] is None
+    assert e["rows"][-1]["net"] == -140.0
+
+
+@pytest.mark.parametrize(
+    "records, why",
+    [([_s(10.0, None)], "records its slippage"), ([_s(10.0, 0.0), _s(5.0, 0.0)], "never wired up")],
+)
+def test_the_ladder_is_withheld_with_its_reason(records, why):
+    e = analysis.execution_sensitivity(records)
+    assert e["rows"] == [] and why in e["withheld"]
+
+
+def test_arm_reading_carries_the_ladder():
+    assert analysis.arm_reading([_s(100.0, 20.0)])["execution"]["slippage"] == 20.0
