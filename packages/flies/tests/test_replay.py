@@ -155,6 +155,31 @@ def test_gex_comes_from_a_fresh_profile_or_is_refused(history):
     assert stale["gex"]["ok"] is False and stale["gex_stats"]["refused"] == "profile_stale"
 
 
+def test_the_snapshot_reads_walls_from_the_history_it_replays(history, monkeypatch):
+    """packages/backtest replays vendor sessions written in the recorder's schema; their walls are in
+    their own file, so the snapshot's recorded GEX must come from the history being replayed."""
+    seen = {}
+
+    def fake(symbol, when, history_db=None):
+        seen["history_db"] = history_db
+        return {"status": "unmeasured", "reason": "test"}
+
+    monkeypatch.setattr(replay.provider, "_recorded_gex", fake)
+    replay.RecordedSession("SPX", DAY, history_db=history).snapshot(
+        "", "SPX", when=datetime.fromtimestamp(_ts(11, 0), ET)
+    )
+    assert seen["history_db"] == history
+
+
+def test_the_recording_s_start_guards_only_the_recorder_s_history(tmp_path):
+    before = "2026-10-09"
+    assert "no quote history before" in replay.replay_session({}, before, tmp_path / "a.db")["error"]
+    other = replay.replay_session({}, before, tmp_path / "b.db", history_db=tmp_path / "vendor.db")
+    assert other["ok"] is False and "no recorded samples" in other["error"], (
+        "refused by its samples, not its date"
+    )
+
+
 def test_an_unrecorded_instant_is_refused(history):
     rec = replay.RecordedSession("SPX", DAY, history_db=history)
     assert (

@@ -14,7 +14,14 @@ from cherrypick.gex import regime, service
 BACKTEST_STORE = (
     Path(__file__).resolve().parents[2] / "backtest" / "src" / "cherrypick" / "backtest" / "store.py"
 )
-TABLES = ("gex_spot_history", "gex_profile_history", "gex_quote_samples", "gex_quotes", "daily_closes")
+TABLES = (
+    "gex_spot_history",
+    "gex_profile_history",
+    "gex_quote_samples",
+    "gex_quotes",
+    "daily_closes",
+    "gex_regime_history",
+)
 
 
 def _recorder_ddl_of_backtest() -> tuple[str, ...]:

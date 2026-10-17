@@ -11,7 +11,14 @@ from pathlib import Path
 from cherrypick.backtest import settings, store
 
 GEX = Path(__file__).resolve().parents[2] / "gex" / "src" / "cherrypick" / "gex"
-TABLES = ("gex_spot_history", "gex_profile_history", "gex_quote_samples", "gex_quotes", "daily_closes")
+TABLES = (
+    "gex_spot_history",
+    "gex_profile_history",
+    "gex_quote_samples",
+    "gex_quotes",
+    "daily_closes",
+    "gex_regime_history",
+)
 
 
 def _literal(tree: ast.Module, name: str):
@@ -58,10 +65,14 @@ def _columns(conn, table):
 
 def test_the_tables_match_the_recorder_column_for_column():
     service = GEX / "service.py"
-    profile_columns = _literal(ast.parse(service.read_text(encoding="utf-8")), "PROFILE_COLUMNS")
+    tree = ast.parse(service.read_text(encoding="utf-8"))
+    profile_columns = _literal(tree, "PROFILE_COLUMNS")
     theirs = sqlite3.connect(":memory:")
     for stmt in _ddl_from_source(service, "_ensure_history_table", profile_columns):
         theirs.execute(stmt)
+    # The recorder adds its flow columns to gex_regime_history by ALTER, in FLOW_COLUMNS order.
+    for column in _literal(tree, "FLOW_COLUMNS"):
+        theirs.execute(f"ALTER TABLE gex_regime_history ADD COLUMN {column} REAL")
     for stmt in _ddl_from_source(GEX / "regime.py", "ensure_tables"):
         theirs.execute(stmt)
     ours = store.connect(settings.resolve({}), "SPX")
@@ -76,4 +87,5 @@ def test_the_store_lives_in_a_marked_directory():
     s = settings.resolve({})
     store.connect(s, "SPX").close()
     assert (paths.vendor_dir(s) / paths.LICENSED_MARKER).exists()
-    assert store.db_path(s, "spx").name == "SPX.db"
+    assert store.db_path(s, "spx").name == "SPX-15s.db"
+    assert store.db_path(s, "SPX", 60).name == "SPX-60s.db", "each cadence is its own file"

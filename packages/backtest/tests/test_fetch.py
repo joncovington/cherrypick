@@ -151,6 +151,48 @@ def test_a_complete_session_is_skipped_unless_refetched_and_a_refetch_never_doub
     assert conn.execute("SELECT COUNT(*) FROM gex_quotes").fetchone()[0] == before
 
 
+def test_refused_index_closes_fall_back_to_the_last_underlying_and_never_stop_the_fetch():
+    """The index tier is separate from the options tier; a free one refuses old closes. The fetch
+    carries on, and the session's last underlying price stands in, under its own source label."""
+
+    class NoIndex(FakeClient):
+        def index_closes(self, symbol, start, end):
+            raise VendorRefusal("permission_denied", "index history requiring a STANDARD subscription")
+
+    s = _settings()
+    report = fetch.fetch(s, NoIndex({DAY: _rows(DAY)}), "SPX", DAY, DAY, log=lambda _m: None)
+    assert report["fetched"] == 1
+    conn = sqlite3.connect(store.db_path(s, "SPX"))
+    close, source = conn.execute(
+        "SELECT close, source FROM daily_closes WHERE trade_date = ?", (DAY,)
+    ).fetchone()
+    assert source == "thetadata:last_underlying" and close == pytest.approx(6000.0 + 0.1 * 1559)
+
+
+def test_a_lost_session_stops_the_fetch_instead_of_refusing_every_remaining_day():
+    """One session per account: another login with the same key ends this one, and every later
+    request fails. Those failures say nothing about the sessions asked for, so none is recorded."""
+
+    class Kicked(FakeClient):
+        def greeks(self, root, day, **kw):
+            raise VendorRefusal("unauthenticated", "StatusCode.UNAUTHENTICATED")
+
+    s = _settings()
+    days = {"2026-10-14": _rows("2026-10-14"), DAY: _rows(DAY)}
+    report = fetch.fetch(s, Kicked(days), "SPX", "2026-10-14", DAY, log=lambda _m: None)
+    assert report["aborted"]["reason"] == "unauthenticated"
+    assert report["coverage"]["refused"] == [] and report["refused"] == 0
+
+
+def test_a_minute_cadence_asks_for_the_vendor_s_minute_interval_in_its_own_file():
+    s = _settings()
+    client = FakeClient({DAY: _rows(DAY, cadence=60)})
+    fetch.fetch(s, client, "SPX", DAY, DAY, cadence=60, log=lambda _m: None)
+    ((_day, kw),) = client.calls
+    assert kw["interval"] == "1m"
+    assert store.db_path(s, "SPX", 60).exists() and not store.db_path(s, "SPX").exists()
+
+
 def test_only_days_with_a_same_day_expiration_are_sessions():
     days = fetch.session_days(
         ["2022-05-13", "2022-05-16", "2022-05-18", "2022-05-21"], "2022-05-13", "2022-05-21"

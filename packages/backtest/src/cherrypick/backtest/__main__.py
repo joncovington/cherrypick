@@ -6,7 +6,9 @@ python -m cherrypick.backtest key set             # store it (hidden prompt; bla
 python -m cherrypick.backtest key import-env      # copy the vendor's env var into the keyring once
 python -m cherrypick.backtest fetch --from 2026-10-13 --to 2026-10-16 [--dataset SPX] [--refetch]
 python -m cherrypick.backtest coverage [--dataset SPX]
+python -m cherrypick.backtest derive-regimes [--dataset SPX]   # regime rows from stored profiles
 python -m cherrypick.backtest validate [--dates a,b,...]   # against the recorder; results stay local
+python -m cherrypick.backtest run flies --arms range-high --window validation|design|holdout [--cadence 60]
 python -m cherrypick.backtest purge [--derived] [--apply]   # expunge the vendor's data (dry run by default)
 """
 
@@ -105,23 +107,52 @@ def cmd_fetch(args) -> int:
         args.start,
         args.end,
         refetch=args.refetch,
+        cadence=args.cadence,
         log=lambda m: print(m, file=sys.stderr),
     )
     _emit(report)
-    return 0
+    return 1 if report.get("aborted") else 0
 
 
 def cmd_coverage(args) -> int:
     from . import store
 
     s = settings.load(args.config)
-    path = store.db_path(s, args.dataset)
+    path = store.db_path(s, args.dataset, args.cadence)
     if not path.exists():
         _emit({"symbol": args.dataset.upper(), "complete": 0, "span": None, "refused": [], "store": None})
         return 0
-    conn = store.connect(s, args.dataset)
+    conn = store.connect(s, args.dataset, args.cadence)
     try:
         _emit({**store.coverage(conn, args.dataset), "store": str(path)})
+    finally:
+        conn.close()
+    return 0
+
+
+def cmd_derive_regimes(args) -> int:
+    """Backfill `gex_regime_history` for every complete session from its stored profile (no vendor call)."""
+    from . import regimes, store
+
+    s = settings.load(args.config)
+    if not store.db_path(s, args.dataset, args.cadence).exists():
+        _emit({"sessions": 0, "rows": 0})
+        return 0
+    conn = store.connect(s, args.dataset, args.cadence)
+    conn.execute("PRAGMA busy_timeout = 60000")
+    try:
+        days = [
+            r["trade_date"]
+            for r in conn.execute(
+                "SELECT trade_date FROM vendor_sessions WHERE symbol = ? AND status = ? ORDER BY trade_date",
+                (args.dataset.upper(), store.COMPLETE),
+            )
+        ]
+        rows = 0
+        for day in days:
+            rows += regimes.derive(conn, args.dataset, day)
+            conn.commit()
+        _emit({"sessions": len(days), "rows": rows})
     finally:
         conn.close()
     return 0
@@ -138,12 +169,39 @@ def cmd_validate(args) -> int:
         from cherrypick.core import quotehistory
 
         dates = validate.recorded_days(
-            recorder or quotehistory.default_history_db(), store.db_path(s, args.dataset), args.dataset
+            recorder or quotehistory.default_history_db(),
+            store.db_path(s, args.dataset, args.cadence),
+            args.dataset,
         )
     if not dates:
         print("validate: no session is in both the recorder's history and the vendor store", file=sys.stderr)
         return 1
-    report = validate.run(s, args.dataset, dates, recorder_db=recorder)
+    report = validate.run(s, args.dataset, dates, recorder_db=recorder, cadence=args.cadence)
+    _emit(report)
+    return 0
+
+
+def cmd_run(args) -> int:
+    from . import runner
+
+    s = settings.load(args.config)
+    arms = [a.strip() for a in args.arms.split(",") if a.strip()]
+    try:
+        report = runner.run(
+            s,
+            arms,
+            args.window,
+            symbol=args.dataset,
+            cadence=args.cadence,
+            start=args.start,
+            end=args.end,
+            spend_holdout=args.spend_holdout,
+            workers=args.workers,
+            log=lambda m: print(m, file=sys.stderr),
+        )
+    except runner.RunRefused as exc:
+        print(f"run refused: {exc}", file=sys.stderr)
+        return 2
     _emit(report)
     return 0
 
@@ -178,8 +236,28 @@ def main(argv: list[str] | None = None) -> int:
     cv = sub.add_parser("coverage", help="sessions in the store, complete and refused")
     cv.add_argument("--dataset", default="SPX")
     cv.set_defaults(fn=cmd_coverage)
+    dr = sub.add_parser("derive-regimes", help="backfill regime rows from stored profiles (no vendor call)")
+    dr.add_argument("--dataset", default="SPX")
+    dr.set_defaults(fn=cmd_derive_regimes)
     va = sub.add_parser("validate", help="vendor sessions against the recorder's on the days both exist")
     va.add_argument("--dataset", default="SPX")
+    rn = sub.add_parser("run", help="replay flies' arms over the store's sessions (results stay local)")
+    rn.add_argument("module", choices=("flies",))
+    rn.add_argument("--arms", default="control", help="comma-separated; control always runs beside them")
+    rn.add_argument("--window", required=True, choices=("validation", "design", "holdout"))
+    rn.add_argument("--dataset", default="SPX")
+    rn.add_argument("--from", dest="start", default=None, help="a sub-span of the window")
+    rn.add_argument("--to", dest="end", default=None)
+    rn.add_argument("--spend-holdout", dest="spend_holdout", action="store_true")
+    rn.add_argument("--workers", type=int, default=4)
+    rn.set_defaults(fn=cmd_run)
+    for sp in (f, cv, dr, va, rn):
+        sp.add_argument(
+            "--cadence",
+            type=int,
+            default=None,
+            help="seconds between samples (default store.cadence_seconds); each cadence is its own file",
+        )
     va.add_argument("--dates", default=None, help="comma-separated; default: every session in both")
     va.add_argument(
         "--recorder-db", dest="recorder_db", default=None, help="default: the gex recorder's history"
