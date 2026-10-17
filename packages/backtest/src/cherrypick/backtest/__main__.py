@@ -133,6 +133,61 @@ def cmd_fetch(args) -> int:
     return 1 if report.get("aborted") else 0
 
 
+def cmd_fetch_flow(args) -> int:
+    """The flow fetch (flowfetch.py): a network verb, refused on the same terms as `fetch`."""
+    from . import flowfetch
+    from .vendor import VendorRefusal, client_for
+
+    s = settings.load(args.config)
+    refusal = _fetch_refusal(s)
+    if refusal:
+        print(f"fetch-flow refused: {refusal}", file=sys.stderr)
+        return 2
+    symbols = [x.strip().upper() for x in args.symbols.split(",") if x.strip()]
+    if not symbols:
+        print("fetch-flow: give --symbols A,B,...", file=sys.stderr)
+        return 2
+    try:
+        client = client_for(s)
+    except VendorRefusal as exc:
+        print(f"fetch-flow refused: {exc}", file=sys.stderr)
+        return 2
+    try:
+        report = flowfetch.fetch(
+            s,
+            client,
+            symbols,
+            args.start,
+            args.end,
+            refetch=args.refetch,
+            log=lambda m: print(m, file=sys.stderr),
+        )
+    except VendorRefusal as exc:
+        _emit({"aborted": str(exc)})
+        return 1
+    _emit(report)
+    return 0
+
+
+def cmd_flow_coverage(args) -> int:
+    from . import flowfetch
+
+    s = settings.load(args.config)
+    if not flowfetch.db_path(s).exists():
+        _emit({"store": None, "days": {}})
+        return 0
+    conn = flowfetch.connect(s)
+    try:
+        rows = conn.execute(
+            "SELECT status, COUNT(*) n, COUNT(DISTINCT symbol) names, MIN(session) lo, MAX(session) hi "
+            "FROM flow_days GROUP BY status"
+        ).fetchall()
+        _emit({"store": str(flowfetch.db_path(s)), "days": {r["status"]: dict(r) for r in rows}})
+    finally:
+        conn.close()
+    return 0
+
+
 def cmd_coverage(args) -> int:
     from . import store
 
@@ -289,6 +344,13 @@ def main(argv: list[str] | None = None) -> int:
         "--workers", type=int, default=1, help="sessions pulled at a time (default 1; see fetch.fetch)"
     )
     f.set_defaults(fn=cmd_fetch)
+    ff = sub.add_parser("fetch-flow", help="large options orders per name and session (a network verb)")
+    ff.add_argument("--symbols", required=True, help="comma-separated stock symbols")
+    ff.add_argument("--from", dest="start", required=True)
+    ff.add_argument("--to", dest="end", required=True)
+    ff.add_argument("--refetch", action="store_true", help="re-fetch days already complete")
+    ff.set_defaults(fn=cmd_fetch_flow)
+    sub.add_parser("flow-coverage", help="the flow store's days by status").set_defaults(fn=cmd_flow_coverage)
     cv = sub.add_parser("coverage", help="sessions in the store, complete and refused")
     cv.add_argument("--dataset", default="SPX")
     cv.set_defaults(fn=cmd_coverage)

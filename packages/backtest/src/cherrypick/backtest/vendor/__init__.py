@@ -9,6 +9,9 @@ The interface every client provides (rows are plain dicts, dates ISO strings, `t
   ``strike, right ("CALL"/"PUT"), ts, bid, ask, delta, iv, underlying``
 - ``open_interest(root, day) -> dict[(right, strike), int]``
 - ``index_closes(symbol, start, end) -> dict[day, float]``
+- ``trades(root, day) -> list[dict]`` with keys ``expiration, strike, right, ts_ms, size, price,
+  bid, ask, condition``: every print of every expiry, with the quote standing at it (the flow fetch)
+- ``open_interest_all(root, day) -> dict[(expiration, right, strike), int]``: every expiry
 
 A request the vendor refuses raises `VendorRefusal` with a short, stable reason.
 """
