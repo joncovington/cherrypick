@@ -1,4 +1,11 @@
-import type { ArmAnalysis, AnalysisStreaks, CapitalReading, DrawdownEpisode, TradingMode } from "@console/shared";
+import type {
+  ArmAnalysis,
+  AnalysisStreaks,
+  CapitalReading,
+  DrawdownEpisode,
+  ExecutionReading,
+  TradingMode,
+} from "@console/shared";
 import { Card } from "../DataTable";
 import { fmtMoney, fmtNum, fmtPct } from "../../lib/format";
 import { useModuleAnalysis, type PerformanceModuleId } from "../../lib/api";
@@ -133,6 +140,57 @@ export function CapitalTiles({ c }: { c: CapitalReading }) {
   );
 }
 
+/**
+ * The net at multiples of the slippage the module modelled (core.analysis.execution_sensitivity).
+ * Over a part of the arm's trades it says so, and the net it starts from is those trades' own.
+ */
+export function ExecutionTable({ e }: { e: ExecutionReading }) {
+  if (e.withheld !== null) {
+    return (
+      <p className="muted" style={{ fontSize: 11 }}>
+        not computed — {e.withheld}
+      </p>
+    );
+  }
+  const where = e.basis === "in_gross" ? "already inside gross (the modelled fill concedes it)" : "charged as its own cost";
+  return (
+    <>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th title="multiples of the slippage the module modelled; 1× is what was recorded">slippage</th>
+              <th>extra cost</th>
+              <th>net</th>
+              <th>change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {e.rows.map((r) => (
+              <tr key={r.multiple}>
+                <td>
+                  {fmtNum(r.multiple, 1)}×{r.multiple === 1 && <span className="muted"> (recorded)</span>}
+                </td>
+                <td>{r.extra === 0 ? "—" : fmtMoney(r.extra)}</td>
+                <td className={`pnl-${r.net >= 0 ? "pos" : "neg"}`}>{fmtMoney(r.net)}</td>
+                <td>{r.multiple === 1 ? "—" : pct(r.change)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted" style={{ fontSize: 11 }}>
+        {fmtMoney(e.slippage)} of slippage modelled, {where}.{" "}
+        {e.breakeven_multiple !== null
+          ? `The net reaches zero at ${fmtNum(e.breakeven_multiple, 1)}× it.`
+          : "The net is not positive at the recorded slippage, so there is no breakeven to find."}
+        {e.scope === "covered" &&
+          ` Over the ${String(e.covered)} of ${String(e.trades)} trades that record slippage: their net, not the arm's.`}
+      </p>
+    </>
+  );
+}
+
 function EpisodesTable({ episodes }: { episodes: DrawdownEpisode[] }) {
   return (
     <div className="table-scroll">
@@ -259,6 +317,13 @@ export function ArmCard({ module, tag, a, updatedAt }: { module: PerformanceModu
         <>
           <div className="card-subhead">capital</div>
           <CapitalTiles c={a.capital} />
+        </>
+      )}
+
+      {a.execution !== undefined && (
+        <>
+          <div className="card-subhead">worse fills</div>
+          <ExecutionTable e={a.execution} />
         </>
       )}
 

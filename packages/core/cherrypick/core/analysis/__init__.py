@@ -10,6 +10,7 @@ This module answers the questions asked before trusting an arm with money
 - `durability`         the net once the arm's biggest winners are removed
 - `stress`             how deep the worst drawdown could have been with the same sessions in
                        another order, shuffled one session at a time and in blocks
+- `execution_sensitivity`  the net at multiples of the slippage each module modelled
 
 All of it is a pure function of the normalised records `core.ledgers` yields, so it reads paper,
 live and replay output the same way, and the same records always give the same answer: the
@@ -264,6 +265,67 @@ def stress(
     return out
 
 
+# --------------------------------------------------------------------------- execution sensitivity
+#: Multiples of the slippage each module already models. 1 is what was recorded.
+SLIPPAGE_MULTIPLES = (1.0, 1.5, 2.0, 3.0)
+
+
+def execution_sensitivity(
+    records: Sequence[Mapping], multiples: Sequence[float] = SLIPPAGE_MULTIPLES
+) -> dict:
+    """How the net moves if fills had been worse: the recorded slippage scaled by each multiple.
+
+    Each record's `slippage` is the dollars its module modelled as conceded on the fill, inside
+    gross for flies and MEIC, charged as a cost elsewhere (`slippage_basis`). Either way, k times
+    the slippage takes (k - 1) times it more off the net -- the rule `core.metrics` uses for its one
+    2x figure, so the two agree. A ledger records slippage in dollars, not the legs and fills behind
+    it, so a per-contract ladder ("$0.05 more a fill") would have to invent fill counts; scaling
+    what was modelled does not.
+
+    Run over the trades that record slippage. Where that is not all of them (flies recorded it from
+    2026-09-24), the reading says so and carries the covered trades' own net, never the arm's: a
+    ladder over part of a sample, read against the whole sample's net, would misstate both.
+    `breakeven_multiple` is the multiple at which that net reaches zero (None when it is not
+    positive). Withheld when no trade records slippage, or every one records exactly zero: a real
+    model never nets to zero over more than a few trades, so that reads as never wired up."""
+    scored = [r for r in records if r.get("net_pnl") is not None]
+    covered = [r for r in scored if r.get("slippage") is not None]
+    bases = sorted({r.get("slippage_basis") for r in covered if r.get("slippage_basis")})
+    out = {
+        "trades": len(scored),
+        "covered": len(covered),
+        "scope": "all" if covered and len(covered) == len(scored) else "covered",
+        "basis": bases[0] if len(bases) == 1 else ("mixed" if bases else None),
+        "net": None,
+        "slippage": None,
+        "rows": [],
+        "breakeven_multiple": None,
+        "withheld": None,
+    }
+    if not covered:
+        out["withheld"] = "no trade in this window records its slippage"
+        return out
+    slip = sum(r["slippage"] for r in covered)
+    if abs(slip) < 1e-9:
+        out["withheld"] = "slippage is recorded as exactly zero on every trade, which reads as never wired up"
+        return out
+    net = sum(r["net_pnl"] for r in covered)
+    out.update(net=round(net, 2), slippage=round(slip, 2))
+    for m in multiples:
+        extra = (m - 1.0) * slip
+        out["rows"].append(
+            {
+                "multiple": m,
+                "extra": round(-extra, 2),
+                "net": round(net - extra, 2),
+                "change": round(-extra / abs(net), 4) if abs(net) > 1e-9 else None,
+            }
+        )
+    if net > 0 and slip > 0:
+        out["breakeven_multiple"] = round(1.0 + net / slip, 2)
+    return out
+
+
 # --------------------------------------------------------------------------- one arm
 #: Trade fields `core.ledgers` supplies for some schemas (see its docstring); their coverage is
 #: reported so a reading never implies a field was recorded where it was not.
@@ -318,6 +380,7 @@ def arm_reading(records: Sequence[Mapping], allocations: Sequence[Mapping] | Non
         "drawdowns": _episode_summary(episodes),
         "durability": durability(nets),
         "stress": stress([v for _, v in dated]),
+        "execution": execution_sensitivity(ordered),
         "capital": _capital(ordered, dated, allocations),
         "coverage": {
             "trades": len(ordered),

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { ArmAnalysis, CapitalReading, DrawdownEpisode } from "@console/shared";
-import { ArmCard, CapitalTiles } from "../src/components/analysis/AnalysisSlide";
+import type { ArmAnalysis, CapitalReading, DrawdownEpisode, ExecutionReading } from "@console/shared";
+import { ArmCard, CapitalTiles, ExecutionTable } from "../src/components/analysis/AnalysisSlide";
 
 const text = (node: React.ReactElement) => renderToString(node).replace(/<!--\s*-->/g, "");
 
@@ -164,5 +164,45 @@ describe("CapitalTiles", () => {
     expect(html).toContain("1.2%");
     expect(html).toContain("12.5×");
     expect(html).toContain("10 of 30 sessions come before the first declared allocation");
+  });
+});
+
+function ladder(over: Partial<ExecutionReading> = {}): ExecutionReading {
+  return {
+    trades: 37,
+    covered: 37,
+    scope: "all",
+    basis: "cost",
+    net: 2088.04,
+    slippage: 625,
+    rows: [
+      { multiple: 1, extra: 0, net: 2088.04, change: 0 },
+      { multiple: 2, extra: -625, net: 1463.04, change: -0.2993 },
+    ],
+    breakeven_multiple: 4.34,
+    withheld: null,
+    ...over,
+  };
+}
+
+describe("ExecutionTable", () => {
+  it("shows the net at each multiple and where it reaches zero", () => {
+    const html = text(<ExecutionTable e={ladder()} />);
+    expect(html).toContain("$1463.04");
+    expect(html).toContain("-29.9%");
+    expect(html).toContain("reaches zero at 4.3×");
+    expect(html).toContain("charged as its own cost");
+  });
+
+  it("says when it reads only the trades that record slippage, and that the net is theirs", () => {
+    const html = text(<ExecutionTable e={ladder({ scope: "covered", covered: 137, trades: 301, basis: "in_gross" })} />);
+    expect(html).toContain("137 of 301 trades that record slippage");
+    expect(html).toContain("already inside gross");
+  });
+
+  it("names a withheld ladder and draws no table", () => {
+    const html = text(<ExecutionTable e={ladder({ rows: [], withheld: "no trade in this window records its slippage" })} />);
+    expect(html).toContain("not computed");
+    expect(html).not.toContain("<table");
   });
 });

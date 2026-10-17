@@ -530,7 +530,10 @@ the bridge passes `--module`, never the file). Bridged, never mirrored.
 - "net / largest peak" is the whole net over the single largest peak. It is never labelled "return on
   peak risk": that is the performance slide's Σ net / Σ session peaks, a per-day figure (live flies
   control, 2026-10-16: -6.2% there, -96% here). A test keeps the two names apart.
-- Flies records each book's session peak at settlement (`fly_books.peak_risk`), which core reads. An undeclared allocation reads "none declared" with dashes, never zero;
+- Flies records each book's session peak at settlement (`fly_books.peak_risk`), which core reads.
+- "Worse fills" is core's slippage ladder: the net at 1/1.5/2/3× the slippage the module modelled,
+  over the trades that record slippage. Where that is not all of them (flies from 2026-09-24) it
+  says so and starts from those trades' own net, never the arm's. An undeclared allocation reads "none declared" with dashes, never zero;
   a refused allocation file is a page-level chip with core's reason, and the rest still renders.
 
 - It reads exactly what the performance slide reads: the same ledger per mode
