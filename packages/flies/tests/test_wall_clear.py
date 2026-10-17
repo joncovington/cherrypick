@@ -78,13 +78,21 @@ def test_the_snapshot_carries_the_recorders_walls_and_survives_their_absence(mon
     real = provider._regime.gex_at
     seen = {}
 
-    def fake(ts, symbol, *, max_staleness_seconds):
-        seen.update(ts=ts, symbol=symbol, max_age=max_staleness_seconds)
+    def fake(ts, symbol, *, history_db=None, max_staleness_seconds):
+        seen.update(ts=ts, symbol=symbol, max_age=max_staleness_seconds, history_db=history_db)
         return walls()
 
     monkeypatch.setattr(provider._regime, "gex_at", fake)
     assert provider._recorded_gex("SPX", when) == walls()
-    assert seen == {"ts": when.timestamp(), "symbol": "SPX", "max_age": provider.RECORDED_GEX_MAX_AGE_SECONDS}
+    # Live paper reads the recorder's own history (None = core.regime's default).
+    assert seen == {
+        "ts": when.timestamp(),
+        "symbol": "SPX",
+        "max_age": provider.RECORDED_GEX_MAX_AGE_SECONDS,
+        "history_db": None,
+    }
+    provider._recorded_gex("SPX", when, history_db="vendor.db")
+    assert seen["history_db"] == "vendor.db", "a replay of another history reads that history's walls"
 
     def broken(*a, **k):
         raise OSError("disk")

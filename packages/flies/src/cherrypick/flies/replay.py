@@ -71,6 +71,7 @@ class RecordedSession:
         self.symbol = symbol.strip().upper()
         self.day = day
         path = Path(history_db) if history_db is not None else quotehistory.default_history_db()
+        self.history_db = path
         self.samples = quotehistory.session(self.symbol, day, history_db=path)
         self.by_ts = {s["ts"]: s for s in self.samples}
         self.profiles: list[tuple[float, list[dict]]] = []
@@ -239,7 +240,9 @@ class RecordedSession:
                 "deltas_fresh": sum(1 for b in books.values() for q in b.values() if "delta" in q),
             },
             "gex_stats": gex_stats,
-            "recorded_gex": provider._recorded_gex(symbol, when),
+            # From the history being replayed, not always the recorder's: a vendor session's walls
+            # are in its own store (packages/backtest derives them the recorder's way).
+            "recorded_gex": provider._recorded_gex(symbol, when, history_db=self.history_db),
             "replayed": True,
         }
 
@@ -282,7 +285,9 @@ def replay_session(
 ) -> dict:
     """Replay `day` for `arms` (default control) into a fresh scratch ledger at `ledger_path`, then
     settle at `settle_price` (the official print, or paper's own settlement for a comparison)."""
-    if day < FIRST_SESSION:
+    # The recorder's history starts at FIRST_SESSION; another history in its schema (a vendor's,
+    # packages/backtest) carries its own span, and an absent day is refused below by its samples.
+    if history_db is None and day < FIRST_SESSION:
         return {"ok": False, "error": f"no quote history before {FIRST_SESSION}"}
     arms = arms or ["control"]
     cfg = replay_config(config, arms)

@@ -219,10 +219,16 @@ def decisions_layer(recorder_db: Path, vendor_db: Path, dates: list[str], runner
 
 
 def run(
-    settings: dict, symbol: str, dates: list[str], *, recorder_db: Path | None = None, runner=_flies_cli
+    settings: dict,
+    symbol: str,
+    dates: list[str],
+    *,
+    recorder_db: Path | None = None,
+    cadence: float | None = None,
+    runner=_flies_cli,
 ) -> dict:
     recorder_db = Path(recorder_db) if recorder_db else quotehistory.default_history_db()
-    vendor_db = store.db_path(settings, symbol)
+    vendor_db = store.db_path(settings, symbol, cadence)
     report = {
         "symbol": symbol.upper(),
         "dates": dates,

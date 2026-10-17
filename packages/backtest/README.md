@@ -25,13 +25,30 @@ the vendor's licence decides where data and results may go.
 ## Fetching
 
 ```
-python -m cherrypick.backtest fetch --from 2026-10-13 --to 2026-10-16    # SPXW 0DTE sessions
-python -m cherrypick.backtest coverage                                     # complete and refused sessions
+python -m cherrypick.backtest fetch --from 2026-10-13 --to 2026-10-16              # 15 s, the recorder era
+python -m cherrypick.backtest fetch --cadence 60 --from 2022-05-16 --to 2026-10-16 # history, 1 minute
+python -m cherrypick.backtest coverage [--cadence 60]                              # complete and refused
 ```
 
 The fetch is the package's only network path. It skips sessions already complete (`--refetch` to
 redo one), records every refusal with its reason, and asks for two requests per session, two
-sessions at a time (the Standard tier allows four in flight). Expect about a minute a session.
+sessions at a time (the Standard tier allows four in flight). Each cadence is its own store file.
+The vendor does not serve sub-minute history before 2026, so history is fetched at 1 minute.
+
+**Run one client at a time.** The account has one session; a second login with the same key (a
+probe, the Theta Terminal) ends the fetch's, and the fetch stops rather than recording refusals.
+
+## Validating and running
+
+```
+python -m cherrypick.backtest validate [--cadence 60]          # against the recorder; unlocks history
+python -m cherrypick.backtest run flies --arms range-high --window validation
+python -m cherrypick.backtest run flies --arms range-high --window design --cadence 60
+```
+
+History (`design`, `holdout`) stays locked until validation unlocks it for that cadence. Every design
+evaluation is recorded as a trial, and the holdout is spent once per spec (`--spend-holdout`).
+Reports go to `~/.cherrypick/data/backtest/results/` and nowhere else.
 
 ## Connection
 

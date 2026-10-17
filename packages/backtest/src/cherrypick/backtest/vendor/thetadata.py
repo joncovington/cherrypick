@@ -21,21 +21,33 @@ RETRY_DELAYS = (2.0, 5.0, 15.0)
 #: The vendor refuses an end-of-day range over this many days ("max 365 days allowed").
 MAX_RANGE_DAYS = 365
 _TRANSIENT = ("RESOURCE_EXHAUSTED", "UNAVAILABLE", "DEADLINE_EXCEEDED", "429", "OS_LIMIT", "SERVER_STARTING")
+#: The vendor drops a request it has not answered in 60 s with this, every time, for sub-minute
+#: history before 2026 (measured 2026-10-17: 15 s, 30 s and tick, even ten minutes of two strikes).
+#: Not transient: retrying spends minutes per session for the same answer.
+STREAM_REMOVED = "Stream removed"
 
 
 def _classify(exc: Exception) -> tuple[str, str]:
     text = str(exc)
+    if "UNAUTHENTICATED" in text:
+        # One session per account: another client logging in with the same key ends this one.
+        return "unauthenticated", text[:240]
     if "PERMISSION_DENIED" in text or "requiring a" in text:
         i = text.find("details")
         return "permission_denied", (text[i : i + 240] if i >= 0 else text[:240])
     if "NoData" in type(exc).__name__ or "No data found" in text:
         return "no_data", text[:240]
+    if STREAM_REMOVED in text:
+        return (
+            "stream_removed",
+            "the vendor dropped the request at 60 s (sub-minute history is not served for this date)",
+        )
     return "vendor_error", f"{type(exc).__name__}: {text[:240]}"
 
 
 def _transient(exc: Exception) -> bool:
     text = str(exc)
-    return any(t in text for t in _TRANSIENT)
+    return STREAM_REMOVED not in text and "UNAUTHENTICATED" not in text and any(t in text for t in _TRANSIENT)
 
 
 class ThetaDataClient:
@@ -112,12 +124,19 @@ class ThetaDataClient:
         }
 
     def index_closes(self, symbol: str, start: str, end: str) -> dict:
-        """Closes in [start, end], asked for in windows under the vendor's 365-day limit."""
+        """Closes in [start, end], asked for in windows under the vendor's 365-day limit. A window
+        the account's index tier refuses is skipped, not fatal: the caller falls back per session."""
         out = {}
         lo, last = date.fromisoformat(start), date.fromisoformat(end)
         while lo <= last:
             hi = min(lo + timedelta(days=MAX_RANGE_DAYS - 1), last)
-            df = self._call(self._client.index_history_eod, symbol=symbol, start_date=lo, end_date=hi)
+            try:
+                df = self._call(self._client.index_history_eod, symbol=symbol, start_date=lo, end_date=hi)
+            except VendorRefusal as refusal:
+                if refusal.reason not in ("permission_denied", "no_data"):
+                    raise
+                lo = hi + timedelta(days=1)
+                continue
             for r in df.itertuples(index=False):
                 stamp = getattr(r, "last_trade", None) or getattr(r, "created", None)
                 if stamp is not None and float(r.close) > 0:

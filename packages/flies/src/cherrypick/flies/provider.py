@@ -326,13 +326,19 @@ def build_snapshot(
         conn.close()
 
 
-def _recorded_gex(symbol: str, when: datetime) -> dict:
+def _recorded_gex(symbol: str, when: datetime, history_db=None) -> dict:
     """The gex recorder's latest RTH row for `symbol` at or before `when`, through `core.regime` (the
     suite's one join over that series, with its expired-chain and off-hours refusals). A local file
     read, never the network. Any failure is unmeasured: a recorder outage must cost the gate its
-    signal, never cost a snapshot."""
+    signal, never cost a snapshot. `history_db` is for a replay of another history in the
+    recorder's schema (packages/backtest's vendor sessions); live paper always reads the recorder's."""
     try:
-        return _regime.gex_at(when.timestamp(), symbol, max_staleness_seconds=RECORDED_GEX_MAX_AGE_SECONDS)
+        return _regime.gex_at(
+            when.timestamp(),
+            symbol,
+            history_db=history_db,
+            max_staleness_seconds=RECORDED_GEX_MAX_AGE_SECONDS,
+        )
     except Exception as exc:  # noqa: BLE001
         return {"status": "unmeasured", "reason": f"read_failed: {type(exc).__name__}"}
 

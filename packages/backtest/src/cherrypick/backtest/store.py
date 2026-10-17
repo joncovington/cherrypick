@@ -44,6 +44,16 @@ RECORDER_DDL = (
     "symbol TEXT NOT NULL, trade_date TEXT NOT NULL, close REAL NOT NULL, "
     "recorded_at REAL NOT NULL, source TEXT NOT NULL, "
     "PRIMARY KEY (symbol, trade_date))",
+    # The recorder creates this with its first ten columns and adds the flow columns by ALTER;
+    # the resulting table is spelt here in one statement, in the same column order.
+    "CREATE TABLE IF NOT EXISTS gex_regime_history ("
+    "symbol TEXT NOT NULL, trade_date TEXT NOT NULL, ts REAL NOT NULL, spot REAL, "
+    "net_gex REAL, net_gex_vol REAL, zero_gamma REAL, call_wall REAL, put_wall REAL, "
+    "expiration TEXT, call_volume REAL, put_volume REAL, total_call_gex_vol REAL, total_put_gex_vol REAL, "
+    "call_wall_volume REAL, put_wall_volume REAL, volume_contracts REAL, volume_low_strike REAL, "
+    "volume_high_strike REAL)",
+    "CREATE INDEX IF NOT EXISTS idx_grh_sym_date ON gex_regime_history(symbol, trade_date)",
+    "CREATE INDEX IF NOT EXISTS idx_grh_sym_ts ON gex_regime_history(symbol, ts)",
 )
 
 VENDOR_DDL = (
@@ -61,14 +71,20 @@ COMPLETE = "complete"
 REFUSED = "refused"
 
 
-def db_path(settings: dict, symbol: str) -> Path:
-    return paths.vendor_dir(settings) / f"{symbol.upper()}.db"
+def cadence_of(settings: dict, cadence: float | None = None) -> int:
+    return int(cadence if cadence is not None else settings["store"]["cadence_seconds"])
 
 
-def connect(settings: dict, symbol: str) -> sqlite3.Connection:
+def db_path(settings: dict, symbol: str, cadence: float | None = None) -> Path:
+    """One file per (dataset, cadence). Sessions at different cadences never share a file: the replay
+    ticks once per stored sample, so a mixed file would replay some days at 15 s and some at 60 s."""
+    return paths.vendor_dir(settings) / f"{symbol.upper()}-{cadence_of(settings, cadence)}s.db"
+
+
+def connect(settings: dict, symbol: str, cadence: float | None = None) -> sqlite3.Connection:
     """Open (creating, with its marker directory) the dataset's store for writing."""
     paths.ensure_vendor_dir(settings)
-    conn = sqlite3.connect(db_path(settings, symbol))
+    conn = sqlite3.connect(db_path(settings, symbol, cadence))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     for stmt in RECORDER_DDL + VENDOR_DDL:
@@ -92,7 +108,13 @@ def clear_session(conn: sqlite3.Connection, symbol: str, day: str) -> None:
         "(SELECT id FROM gex_quote_samples WHERE symbol = ? AND trade_date = ?)",
         (sym, day),
     )
-    for table in ("gex_quote_samples", "gex_spot_history", "gex_profile_history", "vendor_sessions"):
+    for table in (
+        "gex_quote_samples",
+        "gex_spot_history",
+        "gex_profile_history",
+        "gex_regime_history",
+        "vendor_sessions",
+    ):
         conn.execute(f"DELETE FROM {table} WHERE symbol = ? AND trade_date = ?", (sym, day))
 
 

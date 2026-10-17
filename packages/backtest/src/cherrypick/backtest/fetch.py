@@ -15,7 +15,12 @@ How each recorder field is rebuilt from the vendor (the declared rules; validati
   vendor's daily OI, gamma computed from the vendor's IV (`greeks.bs_gamma`; gamma is not in the
   Standard tier), and IV in percent, the recorder's unit (the vendor reports a fraction). Volume is
   not fetched and stays NULL.
-- **Daily closes**: the index's end-of-day close, source `thetadata:index_eod`.
+- **Regime rows** (`gex_regime_history`): derived from the stored profile by the recorder's own core
+  functions (`regimes.py`), so flies' `wall-clear` gate reads walls on a vendor session too.
+- **Daily closes**: the index's end-of-day close, source `thetadata:index_eod`, where the account's
+  index tier allows it (a free index tier reaches only recent years). Elsewhere, the session's last
+  underlying price before the close, source `thetadata:last_underlying`: within a fraction of a
+  point of the print, and labelled so a reader can tell which it has.
 
 A session is written whole or not at all: its rows and its `vendor_sessions` row commit together, and a
 re-fetch clears the session first. A refusal writes only the `vendor_sessions` row, with the reason.
@@ -31,8 +36,8 @@ from cherrypick.core import calendar as _cal
 from cherrypick.core.clock import ET
 from cherrypick.core.streamcache import usable_quote
 
-from . import greeks, store
-from .vendor import VendorRefusal
+from . import greeks, regimes, store
+from .vendor import FATAL, VendorRefusal
 
 #: The recorder's profile cadence (~5 minutes).
 PROFILE_SECONDS = 300
@@ -171,6 +176,14 @@ def record_refusal(conn, *, symbol: str, day: str, vendor: str, root: str, refus
     )
 
 
+def _write_closes(conn, symbol: str, closes: dict, source: str) -> None:
+    conn.executemany(
+        "INSERT OR IGNORE INTO daily_closes (symbol, trade_date, close, recorded_at, source) "
+        "VALUES (?,?,?,?,?)",
+        [(symbol.upper(), d, c, time.time(), source) for d, c in sorted(closes.items())],
+    )
+
+
 def _dataset(settings: dict, symbol: str) -> dict:
     for d in settings["datasets"]:
         if d["symbol"].upper() == symbol.upper():
@@ -178,31 +191,52 @@ def _dataset(settings: dict, symbol: str) -> dict:
     raise ValueError(f"no dataset {symbol!r} in the backtest config")
 
 
+#: The vendor's interval names for the cadences the store uses (a minute is "1m", never "60s").
+_INTERVALS = {60: "1m", 300: "5m"}
+
+
+def interval_name(cadence: float) -> str:
+    c = int(cadence)
+    return _INTERVALS.get(c, f"{c}s")
+
+
 def fetch(
-    settings: dict, client, symbol: str, start: str, end: str, *, refetch: bool = False, log=print
+    settings: dict,
+    client,
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    refetch: bool = False,
+    cadence: float | None = None,
+    log=print,
 ) -> dict:
-    """Fetch every 0DTE session of `symbol`'s dataset in [start, end] not already complete. Requests run
-    `max_concurrent_requests` at a time; writes happen here, one session per transaction."""
+    """Fetch every 0DTE session of `symbol`'s dataset in [start, end] not already complete, at
+    `cadence` (default the store's). Requests run `max_concurrent_requests` at a time; writes happen
+    here, one session per transaction. A fatal refusal (`vendor.FATAL`) stops the fetch rather than
+    recording every remaining session as refused."""
     ds = _dataset(settings, symbol)
     if int(ds.get("dte", 0)) != 0:
         raise ValueError("only 0DTE datasets are built so far")
     st = settings["store"]
-    root, cadence, vendor = ds["root"], float(st["cadence_seconds"]), settings["vendor"]["name"]
-    conn = store.connect(settings, symbol)
+    cadence = float(store.cadence_of(settings, cadence))
+    root, vendor = ds["root"], settings["vendor"]["name"]
+    if (PROFILE_SECONDS % int(cadence)) != 0:
+        raise ValueError(f"cadence {cadence:g}s does not divide the {PROFILE_SECONDS}s profile cadence")
+    conn = store.connect(settings, symbol, cadence)
     try:
         days = session_days(client.expirations(root), max(start, ds["from"]), end)
         todo = [d for d in days if refetch or store.session_status(conn, symbol, d) != store.COMPLETE]
+        closes: dict = {}
         if days:
             prior = _cal.previous_trading_day(date.fromisoformat(days[0])).isoformat()
-            closes = client.index_closes(symbol, prior, days[-1])
-            conn.executemany(
-                "INSERT OR IGNORE INTO daily_closes (symbol, trade_date, close, recorded_at, source) "
-                "VALUES (?,?,?,?,?)",
-                [
-                    (symbol.upper(), d, c, time.time(), f"{vendor}:index_eod")
-                    for d, c in sorted(closes.items())
-                ],
-            )
+            try:
+                closes = client.index_closes(symbol, prior, days[-1])
+            except VendorRefusal as refusal:
+                # The index tier is separate from the options tier; closes it refuses fall back to
+                # each session's last underlying price below. A refusal here never stops the fetch.
+                log(f"index closes refused ({refusal.reason}); using each session's last underlying price")
+            _write_closes(conn, symbol, closes, f"{vendor}:index_eod")
             conn.commit()
 
         def pull(day: str):
@@ -210,7 +244,7 @@ def fetch(
             rows = client.greeks(
                 root,
                 day,
-                interval=f"{int(cadence)}s",
+                interval=interval_name(cadence),
                 strike_range=int(st["request_strike_range"]),
                 start_time="09:30:00",
                 end_time=f"{hh}:{mm}:00",
@@ -229,13 +263,27 @@ def fetch(
             futures = {pool.submit(pull, d): d for d in todo}
             for fut in as_completed(futures):
                 day = futures[fut]
+                if report.get("aborted"):
+                    continue
                 try:
                     rows, oi = fut.result()
                     built = build_session(rows, oi, day=day, each_side=int(st["strikes_each_side"]))
                     res = write_session(
                         conn, built, symbol=symbol, day=day, vendor=vendor, root=root, cadence=cadence
                     )
+                    if res["status"] == store.COMPLETE:
+                        res["regimes"] = regimes.derive(conn, symbol, day)
+                    if day not in closes and built["spots"]:
+                        # No index close for the day: the session's last underlying price, under its
+                        # own source label so a reader can tell the two apart.
+                        _write_closes(conn, symbol, {day: built["spots"][-1][1]}, f"{vendor}:last_underlying")
                 except VendorRefusal as refusal:
+                    if refusal.reason in FATAL:
+                        report["aborted"] = {"reason": refusal.reason, "at": day, "detail": refusal.detail}
+                        for other in futures:
+                            other.cancel()
+                        log(f"{day} fatal {refusal.reason}: stopping; nothing further is recorded")
+                        continue
                     record_refusal(conn, symbol=symbol, day=day, vendor=vendor, root=root, refusal=refusal)
                     res = {"status": store.REFUSED, "reason": refusal.reason}
                 conn.commit()

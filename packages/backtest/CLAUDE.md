@@ -55,14 +55,27 @@ once per spec. They are never chosen by the advisor, which already knows how tho
 
 `store.py` writes vendor sessions into **the gex recorder's own tables** (`gex_quote_samples`,
 `gex_quotes`, `gex_spot_history`, `gex_profile_history`, `daily_closes`), one SQLite file per dataset
-(`vendor/thetadata/SPX.db`). Everything that reads a recorded session takes a `history_db` path, so a
+and cadence (`vendor/thetadata/SPX-15s.db`, `SPX-60s.db`). Everything that reads a recorded session takes a `history_db` path, so a
 vendor session replays through the same readers as a recorded one, with no second reader to drift.
 This package may not import gex, so it spells the DDL; `tests/test_store.py` (reading gex's source)
 and `packages/gex/tests/test_backtest_schema_mirror.py` (reading this one's) hold the two equal, one
 from each side, because CI runs only changed packages' tests.
 
 One file per dataset, not per month: the replay's trailing-range input reads earlier sessions from the
-same file, and a month boundary would leave each month's first sessions without one.
+same file, and a month boundary would leave each month's first sessions without one. One file per
+cadence, too: the replay ticks once per stored sample, so a mixed file would replay some days at 15 s
+and some at 60 s.
+
+**History is 1-minute; the recorder era is 15 s (2026-10-17).** The vendor drops every sub-minute
+history request at 60 s before 2026 (15 s, 30 s and tick alike, even ten minutes of two strikes, by
+the library and by the terminal's REST API). That is a vendor behaviour, not a finding from its data.
+So history is fetched at `--cadence 60`, and validation must measure what a minute costs the replay
+(a completion that touches between minutes is missed) by validating 60 s vendor sessions against the
+recorder's 15 s ones, never by assuming it.
+
+**One vendor session per account.** A second login with the same key ends the first, and every later
+request fails `UNAUTHENTICATED`. A fetch stops on that (`vendor.FATAL`) rather than recording every
+remaining session as refused; never run a second client (a probe, the terminal) while a fetch runs.
 
 How each field is rebuilt from the vendor is declared in `fetch.py`'s docstring. The two that differ
 from a recording in kind, and that validation must measure rather than assume:
@@ -95,9 +108,32 @@ can be the thinner one (on a monthly-expiry session it carried visibly fewer str
 walls and the flip), so a profile disagreement is read against each side's strike count, which the
 report carries.
 
+## The runner
+
+`run flies --arms ... --window validation|design|holdout` replays each session through flies itself
+(`flies.cli replay --history-db`, a subprocess; this package imports no strategy module), settles at
+the store's close for the day, and reads the scratch ledgers back through `core.ledgers`, so the net
+is paper's arithmetic. Control always runs beside the named arms; every arm is paired with it
+(`core.compare.pair_with_control`) and flagged `no_exposure` when it matched control to the cent.
+
+- **`validation`** (from 2026-10-13, the recorder era) always runs and is no trial.
+- **`design`** runs only once validation has unlocked this store's cadence. **Every (spec, arm) is a
+  trial** (`results.trials`), keyed by a hash of what decides its trades (flies' `defaults`, the arm's
+  entry, `symbols`, cadence, fill model): re-running a spec adds nothing, changing a parameter adds
+  one. DSR deflates by this count.
+- **`holdout`** needs `--spend-holdout` and is spent once per spec, ever.
+
+Statistics (`stats.py`) are per session, never annualised: PSR, DSR at the trial count, minimum track
+record, and a stationary-bootstrap interval. The fill model is flies paper's own (`FILL_MODEL`).
+
+**Declared gaps:** the suite's events calendar does not reach the history (2022–2024 read unknown on
+BEA, FRED and FOMC; 2025 on FRED), so an event-conditioned arm cannot be backtested until it is
+backfilled; and the vendor store carries no volume, so the regime rows' flow columns are NULL.
+
 ## State
 
-Built: the config, the key verbs, the licence clock, purge, the backup skip, the fence, the store,
-the fetch (SPXW 0DTE) and validation.
-Not yet: the flies runner and its statistics, the console page (hidden unless config, key, data and
-an active licence are all present), and the advisor's fenced proposals.
+Built: the config, the key verbs, the licence clock, purge, the backup skip, the fence, the store, the
+fetch (SPXW 0DTE, any cadence the profile cadence divides), regime rows, validation and the flies
+runner with its statistics.
+Not yet: the console page (hidden unless config, key, data and an active licence are all present),
+and the advisor's fenced proposals.

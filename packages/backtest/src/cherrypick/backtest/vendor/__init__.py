@@ -15,6 +15,11 @@ A request the vendor refuses raises `VendorRefusal` with a short, stable reason.
 
 from __future__ import annotations
 
+#: Refusals that say nothing about the session asked for, only that no further request can succeed
+#: (the account's one session was taken by another login). A fetch stops on these instead of
+#: recording every remaining session as refused.
+FATAL = ("unauthenticated",)
+
 
 class VendorRefusal(Exception):
     """The vendor said no, or there is nothing to ask with. `reason` is stable and short; `detail`
