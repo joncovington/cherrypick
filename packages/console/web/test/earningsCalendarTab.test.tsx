@@ -41,6 +41,7 @@ function row(over: Partial<EarningsCalendarRow>): EarningsCalendarRow {
     emMove: 4.75,
     suggestion: { kind: "credit", right: "P", short: 100, long: 95.25, expiry: "2026-11-20" },
     trade: null,
+    listed: null,
     ...over,
   };
 }
@@ -144,6 +145,18 @@ describe("the earnings tab", () => {
     expect(html).toContain("1.75 cr");
     expect(symbols(render("/screeners/earnings?day=2026-10-15&trade=all"))).toEqual(["GOOD", "THIN", "UNREAD"]);
     expect(render("/screeners/earnings?day=2026-10-15&trade=all")).toMatch(/>thin</);
+    payload.rows = saved;
+  });
+
+  it("a target price never reads as a strike: targets are marked, listed strikes say they are not priced", () => {
+    const saved = payload.rows;
+    payload.rows = [row({ symbol: "TGT" }), row({ symbol: "LST", listed: { expiry: "2026-11-20", strikes: [95, 100] } })];
+    const html = render("/screeners/earnings?day=2026-10-15");
+    // TGT: credit put, target short 100, long 95.25 -- shown approximate, with a "target" label.
+    expect(html).toMatch(/≈100\.00 \/ ≈95\.25<\/span> <span class="chip" title="Target prices, not listed strikes">target</);
+    // LST: listed strikes, short first for a credit, and not priced yet.
+    expect(html).toContain("100/95");
+    expect(html).toContain("not priced yet");
     payload.rows = saved;
   });
 

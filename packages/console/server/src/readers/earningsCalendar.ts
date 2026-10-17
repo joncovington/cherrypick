@@ -128,6 +128,37 @@ export function readTrades(config: ConsoleConfig, day: string): Map<string, Earn
   return new Map();
 }
 
+/** The evening's listed strikes for calendar `day` (`fetch_screener_greeks.py strikes`, written to
+ *  `earnings-strikes/<date>.json`): the newest file naming that calendar, by symbol, [long, short]. */
+export function readListedStrikes(config: ConsoleConfig, day: string): Map<string, { expiry: string; strikes: number[] }> {
+  const dir = path.join(marketReportDir(config), "screener-greeks", "earnings-strikes");
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir).filter((n) => n.endsWith(".json") && DAY.test(n.slice(0, -5)) && n.slice(0, -5) >= day);
+  } catch {
+    return new Map();
+  }
+  for (const name of names.sort().reverse()) {
+    let doc: Record<string, unknown>;
+    try {
+      doc = rec(JSON.parse(fs.readFileSync(path.join(dir, name), "utf-8")));
+    } catch {
+      continue;
+    }
+    if (doc["calendar_day"] !== day) continue;
+    const out = new Map<string, { expiry: string; strikes: number[] }>();
+    for (const raw of Array.isArray(doc["rows"]) ? doc["rows"] : []) {
+      const r = rec(raw);
+      const symbol = str(r["symbol"]);
+      const expiry = str(r["expiry"]);
+      const strikes = Array.isArray(r["legs"]) ? r["legs"].map((l) => num(rec(l)["strike"])).filter((k): k is number => k !== null) : [];
+      if (symbol !== null && expiry !== null && strikes.length === 2) out.set(symbol, { expiry, strikes });
+    }
+    return out;
+  }
+  return new Map();
+}
+
 function row(v: unknown): EarningsCalendarRow | null {
   const r = rec(v);
   const symbol = str(r["symbol"]);
@@ -168,6 +199,7 @@ function row(v: unknown): EarningsCalendarRow | null {
     emMove: num(r["em_move"]),
     suggestion: suggestion(r["suggestion"]),
     trade: null,
+    listed: null,
   };
 }
 
@@ -190,8 +222,9 @@ export function readEarningsCalendar(config: ConsoleConfig, wanted?: string | nu
   }
   const inputs = rec(doc["inputs"]);
   const trades = readTrades(config, day);
+  const listed = readListedStrikes(config, day);
   const rows = (Array.isArray(doc["rows"]) ? doc["rows"].map(row).filter((r): r is EarningsCalendarRow => r !== null) : []).map(
-    (r) => (r.suggestion ? { ...r, trade: trades.get(r.symbol) ?? null } : r),
+    (r) => (r.suggestion ? { ...r, trade: trades.get(r.symbol) ?? null, listed: listed.get(r.symbol) ?? null } : r),
   );
   return {
     day,

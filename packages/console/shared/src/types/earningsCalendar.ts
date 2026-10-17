@@ -90,6 +90,9 @@ export interface EarningsCalendarRow {
   suggestion: EarningsSuggestion | null;
   /** The suggestion on listed strikes and its regular-hours reading; null until one is taken. */
   trade: EarningsTrade | null;
+  /** The suggestion on listed strikes from the evening's chain listing, no quotes yet: [long,
+   *  short]. Null where no listing was read; a regular-hours reading (`trade`) supersedes it. */
+  listed: { expiry: string; strikes: number[] } | null;
 }
 
 /** One spread's money on one mark, in the suite's layout: signed whole-position cash, costs apart. */

@@ -208,27 +208,59 @@ function TradeCell({ t }: { t: EarningsTrade }) {
   );
 }
 
-function SpreadCell({ s, t }: { s: EarningsSuggestion | null; t: EarningsTrade | null }) {
+/** Three states, each labelled so a target price is never read as a strike: read in regular hours
+ *  (listed strikes and a price), listed (strikes from the evening's chain listing, not priced yet),
+ *  or targets (prices the rule aims at, not strikes). */
+function SpreadCell({
+  s,
+  t,
+  listed,
+}: {
+  s: EarningsSuggestion | null;
+  t: EarningsTrade | null;
+  listed: { expiry: string; strikes: number[] } | null;
+}) {
   if (s === null) return <td className="muted">—</td>;
   if (t !== null) return <TradeCell t={t} />;
   const right = s.right === "C" ? "call" : "put";
+  const kindChip = (
+    <span className={s.kind === "credit" ? "chip" : "chip chip-ok"}>
+      {s.kind} {right}
+    </span>
+  );
+  if (listed !== null) {
+    // [long, short]; a credit spread reads short first, a debit long first.
+    const [long, short] = listed.strikes;
+    const shown = s.kind === "credit" ? `${short}/${long}` : `${long}/${short}`;
+    const legs =
+      s.kind === "credit" ? `sell the ${short} ${right}, buy the ${long} ${right}` : `buy the ${long} ${right}, sell the ${short} ${right}`;
+    return (
+      <td
+        title={`Listed strikes on ${listed.expiry}, from the evening's chain listing: ${legs}. Not priced yet: the price and liquidity are read at 11:30 and 14:30 ET. History: no edge (the note below the table).`}
+      >
+        {kindChip} <span className="num">{shown}</span> <span className="muted">{shortDate(listed.expiry)}</span>
+        <br />
+        <span className="muted">not priced yet</span>
+      </td>
+    );
+  }
   const legs =
     s.kind === "credit"
-      ? `sell the ${money(s.short)} ${right}, buy the ${money(s.long)} ${right}`
-      : `buy the ${money(s.long)} ${right}, sell the ${money(s.short)} ${right}`;
+      ? `sell near ${money(s.short)}, buy at or beyond ${money(s.long)}`
+      : `buy near ${money(s.long)}, sell near ${money(s.short)}`;
   const title =
-    `The earnings-navigator rule's spread: ${legs}, ${s.expiry ?? "no expiry in range"}. Target strikes, not yet read: ` +
-    "the listed strikes and their liquidity are read at 11:30 and 14:30 ET for names reporting within the week. " +
+    `TARGET PRICES, not strikes: the rule's ${s.kind} ${right} spread would ${legs}, ${s.expiry ?? "no expiry in range"}. ` +
+    "They are matched to listed strikes the evening the calendar is built, for strong reads reporting within the week. " +
     "History: no edge (the note below the table).";
   return (
     <td title={title}>
-      <span className={s.kind === "credit" ? "chip" : "chip chip-ok"}>
-        {s.kind} {right}
+      {kindChip}{" "}
+      <span className="muted num">
+        ≈{money(s.kind === "credit" ? s.short : s.long)} / ≈{money(s.kind === "credit" ? s.long : s.short)}
       </span>{" "}
-      <span className="num">
-        {money(s.kind === "credit" ? s.short : s.long)}/{money(s.kind === "credit" ? s.long : s.short)}
-      </span>{" "}
-      <span className="muted">{s.expiry ? shortDate(s.expiry) : "—"}</span>
+      <span className="chip" title="Target prices, not listed strikes">
+        target
+      </span>
     </td>
   );
 }
@@ -438,7 +470,7 @@ export function EarningsCalendarTab() {
                     <td className="num">{r.price === null ? "—" : `$${money(r.price)}`}</td>
                     <MoveCell r={r} />
                     <td>{r.sector ?? "—"}</td>
-                    <SpreadCell s={r.suggestion} t={r.trade} />
+                    <SpreadCell s={r.suggestion} t={r.trade} listed={r.listed} />
                   </tr>
                 )),
               ])}
@@ -452,8 +484,9 @@ export function EarningsCalendarTab() {
         <strong>The suggested spread has no edge in history.</strong> Replayed over 2020-26 (3,587 priced announcements), it lost 4.3% on
         risk on the defaults and in every variant tried, and the direction read called the reaction 48-49% of the time — a coin. It is
         shown because the screen shows it, not as advice (docs/earnings-screener-plan.md). Direction, strength and IV rank are the
-        vendor's values as of the previous session's close; the IV-rank cut is {data?.ivRankCut ?? 50}. Strikes are targets until the
-        pricing step snaps and reads them.
+        vendor's values as of the previous session's close; the IV-rank cut is {data?.ivRankCut ?? 50}. A spread shows
+        listed strikes once the evening's chain listing has matched them and its price once a regular-hours reading has; until
+        then it shows the target prices, marked "target".
       </p>
     </section>
   );
