@@ -748,6 +748,8 @@
     "screener_greeks_at": "19:00",
     "_comment_screener_greeks_late_at": "With screener_greeks on: the night's second, last run, for a chart capture that landed after screener_greeks_at. It records today's lists if they have come since, does nothing if the evening run already did, and fails (a failed-job alert) if today's lists were never saved, since the broker chain cannot be recorded for a past day. Before midnight ET, with its catch-up. Times are ET.",
     "screener_greeks_late_at": "23:30",
+    "_comment_earnings_strikes_at": "With screener_greeks on: the earnings calendar's suggested spreads matched to listed strikes (scripts/fetch_screener_greeks.py strikes) -- the chain listing of each strong read reporting within the week, after the 19:10 calendar build, so the earnings tab shows real strikes rather than target prices until the next regular-hours reading prices them. Listings only, read-only, a second a name. Times are ET.",
+    "earnings_strikes_at": "19:20",
     "_comment_screener_measure_at": "With screener_greeks on: two regular-hours readings (fetch_screener_greeks.py measure) of the ATM monthly call and put spread for every listed name the universe builder does not already measure. After-hours quotes say nothing about a name's spread. Half an hour after the universe's own readings, inside the same 10:00-to-30-minutes-before-the-close window. Times are ET.",
     "screener_measure_at": ["11:30", "14:30"]
   },

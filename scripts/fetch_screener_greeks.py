@@ -40,6 +40,7 @@ against the same leg bars, and the spread priced at mid and at the natural fill.
     python scripts/fetch_screener_greeks.py [--date YYYY-MM-DD] [--limit N] [--final]
     python scripts/fetch_screener_greeks.py measure [--force] [--limit N]
     python scripts/fetch_screener_greeks.py rebar     # re-apply the leg bars to saved readings
+    python scripts/fetch_screener_greeks.py strikes   # the earnings spreads' listed strikes, evening
 """
 
 from __future__ import annotations
@@ -720,6 +721,95 @@ def plan_earnings_legs(rows: list[dict], chains: dict[str, list]) -> list[dict]:
     return out
 
 
+async def _chain_listings(session, ub, symbols: list[str], cache: dict) -> None:
+    """Each name's chain listing (expirations in the builder's range, strikes with their call and put
+    symbols) into `cache`, in the universe builder's own format: listings only, no quotes. One call a
+    name, a second apart; a 429 stops the run."""
+    from tastytrade.instruments import NestedOptionChain
+
+    lo, hi = ub.RULE["option_dte_range"]
+    for sym in symbols:
+        if sym in cache:
+            continue
+        try:
+            chains = await NestedOptionChain.get(session, ub.to_tastytrade(sym))
+        except Exception as exc:  # noqa: BLE001 -- a name without a chain is recorded as such
+            if "429" in str(exc):
+                raise
+            cache[sym] = []
+            continue
+        exps = []
+        for chain in chains if isinstance(chains, list) else [chains]:
+            if chain.root_symbol != ub.to_tastytrade(sym):
+                continue  # a non-standard root (an adjusted deliverable) is not the name's chain
+            for e in chain.expirations:
+                if lo <= e.days_to_expiration <= hi:
+                    exps.append(
+                        {
+                            "expiration": e.expiration_date.isoformat(),
+                            "dte": e.days_to_expiration,
+                            "strikes": [[float(s.strike_price), s.call, s.put] for s in e.strikes],
+                        }
+                    )
+        cache[sym] = exps
+        await asyncio.sleep(ub.TT_PAUSE_S)
+
+
+def cmd_strikes(_args) -> int:
+    """The evening's listed strikes for the earnings calendar's suggested spreads (2026-10-17).
+
+    The calendar writes target PRICES (the at-the-money price, the expected move's edge); until a
+    regular-hours reading snapped them, the earnings tab had only those to show, and they read as
+    strikes that do not exist. This runs after the calendar's 19:10 build: the chain listing of each
+    strong read reporting within the week, the targets snapped by `snap_spread` -- the same rule the
+    11:30 reading uses -- and no quotes (an evening quote says nothing about the spread). Written to
+    `screener-greeks/earnings-strikes/<date>.json`; the next regular-hours reading supersedes it."""
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
+
+    ub = _universe_builder()
+    today = datetime.now(ZoneInfo("America/New_York")).date()
+    calendar_day, rows = earnings_rows(today)
+    if not rows:
+        print(json.dumps({"ok": True, "skipped": "no calendar rows to snap", "calendar_day": calendar_day}))
+        return 0
+    store = CredentialStore(SHARED_SERVICE)
+    if store.missing_secrets():
+        print(json.dumps({"ok": False, "reason": "credentials_missing"}))
+        return 1
+    root = store_dir() / "screener-greeks"
+    chain_path = root / "chains" / f"{today.isoformat()}.json"
+    chains = ub._read_json(chain_path, {})
+    try:
+        session = SessionManager(store).get_session()
+        asyncio.run(_chain_listings(session, ub, sorted({r["symbol"] for r in rows}), chains))
+    except Exception as exc:  # noqa: BLE001 -- keep the listings gathered so far for the next run
+        ub._write_json(chain_path, chains)
+        print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:300]}))
+        return 1
+    ub._write_json(chain_path, chains)
+    snapped = plan_earnings_legs(rows, chains)
+    out = root / "earnings-strikes" / f"{today.isoformat()}.json"
+    ub._write_json(
+        out,
+        {"made_at": datetime.now(UTC).isoformat(), "calendar_day": calendar_day, "rows": snapped},
+    )
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "calendar_day": calendar_day,
+                "rows": len(snapped),
+                "listed": sum(1 for r in snapped if r.get("legs")),
+                "path": str(out),
+            },
+            indent=1,
+        )
+    )
+    return 0
+
+
 MARK_LOOKBACK_DAYS = 12  # entry readings far enough back for a day-2 mark after a long weekend
 
 
@@ -954,7 +1044,7 @@ def cmd_measure(args) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("mode", nargs="?", choices=("greeks", "measure", "rebar"), default="greeks")
+    ap.add_argument("mode", nargs="?", choices=("greeks", "measure", "rebar", "strikes"), default="greeks")
     ap.add_argument("--date", help="greeks: the list date to record (default: today, ET)")
     ap.add_argument(
         "--final",
@@ -968,6 +1058,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_rebar(args)
     if args.mode == "measure":
         return cmd_measure(args)
+    if args.mode == "strikes":
+        return cmd_strikes(args)
 
     day = args.date or today_et()
     lists = load_lists(day)

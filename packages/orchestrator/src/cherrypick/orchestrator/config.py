@@ -573,6 +573,9 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "screener_greeks": bool(mr.get("screener_greeks", False)),
         "screener_greeks_at": mr.get("screener_greeks_at", "19:00"),
         "screener_greeks_late_at": mr.get("screener_greeks_late_at", "23:30"),
+        # `earnings_strikes_at`: the earnings calendar's suggested spreads on listed strikes, from the
+        # evening's chain listing (`fetch_screener_greeks.py strikes`), after the 19:10 calendar build.
+        "earnings_strikes_at": mr.get("earnings_strikes_at", "19:20"),
         "screener_measure_at": list(mr.get("screener_measure_at", ["11:30", "14:30"])),
     }
 

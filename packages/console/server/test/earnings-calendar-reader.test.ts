@@ -109,6 +109,32 @@ describe("readEarningsCalendar", () => {
     expect(rows["META"]).toMatchObject({ timing: null, usualTiming: "amc", entrySession: null, suggestion: null });
   });
 
+  it("joins the evening's listed strikes, from the file naming this calendar", () => {
+    const strikesFile = (day: string, calendarDay: string, strikes: number[]) => {
+      const p = path.join(tmp, "market-report", "screener-greeks", "earnings-strikes", `${day}.json`);
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(
+        p,
+        JSON.stringify({
+          calendar_day: calendarDay,
+          rows: [
+            {
+              symbol: "NFLX",
+              expiry: "2026-11-20",
+              legs: strikes.map((k, i) => ({ role: i === 0 ? "long" : "short", strike: k })),
+            },
+            { symbol: "META", legs: null },
+          ],
+        }),
+      );
+    };
+    strikesFile("2026-10-16", "2026-10-16", [76, 70.5]);
+    strikesFile("2026-10-17", "2026-10-17", [99, 98]); // another calendar's: not this one's
+    const rows = Object.fromEntries(readEarningsCalendar(config).rows.map((r) => [r.symbol, r]));
+    expect(rows["NFLX"]!.listed).toEqual({ expiry: "2026-11-20", strikes: [76, 70.5] });
+    expect(rows["META"]!.listed).toBeNull();
+  });
+
   it("joins the latest reading taken OF this calendar to its suggested spreads", () => {
     const legsFile = (taken: string, hhmm: string, calendarDay: string, mid: number) => {
       const p = path.join(tmp, "market-report", "screener-greeks", "earnings-legs", taken, `${hhmm}.json`);

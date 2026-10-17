@@ -132,6 +132,8 @@ CATCHUP_MINUTES = {
     # The late slot is the night's last chance at today's lists, and fails when they never came:
     # its catch-up must end before midnight ET, when 'today' becomes tomorrow.
     "report-screener-greeks-late": 25,
+    # Listings only, keyed by the day it runs; any time that evening is the same strikes.
+    "report-earnings-strikes": 240,
     "report-screener-measure-1": 60,
     "report-screener-measure-2": 60,
     "universe-watchlist": 300,
@@ -1575,6 +1577,22 @@ def derive_jobs(
             kind=KIND_DAILY,
             at_et=mr["screener_greeks_late_at"],
             catchup_minutes=CATCHUP_MINUTES["report-screener-greeks-late"],
+            trading_days_only=True,
+            enabled=mr["screener_greeks"],
+            enabled_reason=sg_reason,
+        ),
+    )
+    add(
+        "report-earnings-strikes",
+        lambda: JobSpec(
+            id="report-earnings-strikes",
+            # The earnings calendar's suggested spreads on listed strikes: the chain listing of each
+            # strong read reporting within the week, after the 19:10 calendar build. Listings only, no
+            # quotes; read-only, a second a name. Without it the tab can show only target prices.
+            argv=(pythonw, _suite_script(launcher, "fetch_screener_greeks.py"), "strikes"),
+            kind=KIND_DAILY,
+            at_et=mr["earnings_strikes_at"],
+            catchup_minutes=CATCHUP_MINUTES["report-earnings-strikes"],
             trading_days_only=True,
             enabled=mr["screener_greeks"],
             enabled_reason=sg_reason,
