@@ -1,5 +1,6 @@
 import { ComparePage } from "../../pages/Compare/ComparePage";
 import { RiskTab } from "../../pages/Compare/RiskTab";
+import { CalendarTab } from "../../pages/Compare/CalendarTab";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
@@ -11,6 +12,7 @@ import type { SlideDef } from "../types";
 const slides: SlideDef[] = [
   { id: "arms", label: "arms", render: () => <ComparePage /> },
   { id: "risk", label: "risk", render: () => <RiskTab /> },
+  { id: "calendar", label: "calendar", render: () => <CalendarTab /> },
 ];
 
 export function CompareLightbox({ slide }: { slide: string }) {
@@ -25,7 +27,7 @@ export function CompareLightbox({ slide }: { slide: string }) {
           className="chip"
           title="arms: python -m cherrypick.core.compare (core.ledgers rows, core.stats figures); risk: python -m cherrypick.core.analysis"
         >
-          {slide === "risk" ? "source: core.analysis" : "source: core.compare"}
+          {slide === "risk" ? "source: core.analysis" : slide === "calendar" ? "source: core.metrics" : "source: core.compare"}
         </span>
       }
     />

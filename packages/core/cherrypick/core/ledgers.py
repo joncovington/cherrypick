@@ -352,7 +352,10 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
     # No SQL pushdown here on purpose: closed_at is epoch seconds and the session date is
     # the LOCAL calendar day (session_from_epoch); SQLite's date(...,'unixepoch') is UTC,
     # so a SQL bound would shift evening closes across the session boundary. The table is
-    # small (one row per position); run() applies the tz-correct Python filter.
+    # small (one row per position), so the bound is applied below, in Python, on the local
+    # session. Until 2026-10-17 it was not applied here at all -- this said run() would, and
+    # only the orchestrator's run() did -- so every other caller (the metrics, analysis and
+    # compare bridges) read earnings' whole history whatever start/end it passed.
     exp_col, has_exp = _experiment_select(conn, "trades")
     open_col, has_open = _entry_select(conn, "trades", "opened_at")
     arm = core_db.arm_column(conn, "trades")  # `profile` until earnings' column moves
@@ -398,7 +401,17 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
             "entry_session": (session_from_epoch(r["opened_at"]) or None) if has_open else None,
         }
         for r in rows
+        if _in_bounds(session_from_epoch(r["closed_at"]), start, end)
     ]
+
+
+def _in_bounds(session: str, start: str | None, end: str | None) -> bool:
+    """`session` within [start, end], either side optional -- the Python twin of `_session_where`,
+    for a reader whose session date cannot be computed in SQL. An unparseable session ('') is kept
+    only when neither bound is set: a bound it cannot be compared against excludes it."""
+    if start and not (session and session >= start):
+        return False
+    return not (end and not (session and session <= end))
 
 
 def _flies_not_void(conn) -> str:

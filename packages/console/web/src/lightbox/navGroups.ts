@@ -315,6 +315,8 @@ export const COMPARE_SLIDES = [
   { id: "arms", label: "arms" },
   // 2026-10-17: every arm's risk shape over its own window, from core.analysis (docs/strategy-analysis-plan.md).
   { id: "risk", label: "risk" },
+  // 2026-10-17: every arm's settled net per session as a month grid with weekly totals.
+  { id: "calendar", label: "calendar" },
 ] as const satisfies readonly NavSlide[];
 
 /**

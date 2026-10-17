@@ -165,7 +165,11 @@ Cheap once Phases 0–3 exist.
   the reshuffle stress test, net without the top 10%, the current run and the slippage breakeven.
 - **P&L calendar**, suite-wide and filterable by module, arm, symbol and paper/live: daily net with a
   weekly-total column. A day drills into its trades; a trade opens a drawer with its excursion against
-  its exit rules and its attempt and decision trace.
+  its exit rules and its attempt and decision trace. *Landed 2026-10-17 as Compare's calendar tab
+  (`/compare/calendar`):* module and arm filters, paper only so far, over the suite window; a day
+  drills to the arms that traded it (module and arm net), not yet to single trades or excursions.
+  Building it found that the earnings ledger reader ignored start and end, so every console view of
+  earnings had read its whole history; fixed in the same PR.
 - **Breakdown bars** by module, arm, symbol, weekday and hour.
 - **Held-to-expiry counterfactual** where settlement is known. For a strategy whose entries depend on
   earlier ones (one position per arm in flies), this re-runs the replay rather than editing rows.
