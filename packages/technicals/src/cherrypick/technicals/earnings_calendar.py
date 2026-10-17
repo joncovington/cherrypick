@@ -474,17 +474,10 @@ def build(
 
 
 def _sector_map() -> dict[str, tuple[str, str]]:
-    """{symbol: (sector, source)}: the vendor's map (`fundamentals.sector_map`) where it has the
-    name, else Yahoo's (`scripts/fetch_sectors.py`, relabelled to the vendor's sector names; it
-    agreed with the vendor's on all 120 names sampled, 2026-10-17)."""
+    """{symbol: (sector, source)}: `fundamentals.sector_sources`, the vendor's map first."""
     from . import fundamentals
 
-    yahoo = (_read(paths.yahoo_sectors()).get("names")) or {}
-    out = {
-        s: (row["sector"], "yahoo") for s, row in yahoo.items() if isinstance(row, dict) and row.get("sector")
-    }
-    out.update({s: (v, "vendor") for s, v in fundamentals.sector_map().items()})
-    return out
+    return fundamentals.sector_sources()
 
 
 def out_dir() -> Path:

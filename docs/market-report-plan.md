@@ -269,6 +269,16 @@ is its count of tags** ("5 of 9": MU's five tags, TSLA's four, AMP's four all co
 bullish Stacked Signals are technology names" against a Technology net of +11, with only five
 bullish names printed. The full list's qualifying threshold is not stated.
 
+**Our board (2026-10-17, `packages/technicals/board.py`).** Across the 15 saved boards (Sept 23 to
+Oct 14, 130 rows, ~430 tags) every tag sits on its row's own side -- none points the other way --
+and every row has at least three. The board counts four methods from our own engines and scores
+them with `score-board`: stage 69 of 73 tags found, analyst revision 33 of 38, sector rotation 61 of
+96 (the vendor's "into" is its leading quadrant, "out" lagging or weakening; our banded rule runs
+weeks late) and the scan 5 of 16. Next, in order: refit rotation to the daily quadrant, fit the
+fundamentals labels (the vendor's compelling names sit at our 92nd percentile, weak at our 23rd)
+and schedule the weekly fundamentals landing, then fundamentals vs price and the scan. The flow
+tags stay paid data.
+
 **The flow tags are most likely per-name sums for the session**, not a longer window. Section 7
 ranks single trades; the tags total every qualifying trade in the name. That explains AMD's $18M
 put sale outranking section 7's second-largest ($14M) and MSFT's $5.6M call buy outranking the

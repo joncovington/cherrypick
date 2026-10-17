@@ -396,6 +396,13 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   - **The spread's money**, in the suite's layout: signed entry and exit at mid, gross, fees and
     slippage as their own columns, and net, with net at day 2 beside it.
   - **Order:** a journal, newest first; it does not sort.
+
+  **The signal board tab** (`SignalBoardTab.tsx`, `readers/signalBoard.ts`,
+  `GET /api/screeners/board[?day=]`) reads `technicals board`'s per-session file and decides nothing:
+  bullish then bearish lists in the file's order (count, then symbol), each name's side tags only, a
+  tie never listed. A minimum count (2 by default; 1 and 3 one click away), sector and symbol
+  filters. Approximate methods carry "≈"; the note names what is not counted and that the board is
+  not a tested signal.
 - `/charts/setups` is the setups watchlist (`pages/Setups/SetupsPage.tsx`, `GET /api/technicals/setups`
   over `charts/setups-index.json`): recent entries and exits, or open positions, long and short,
   each symbol linking to its chart with the setup and side selected; nothing on it is vendor data. Gated with the technicals tab. The page filters and sorts
