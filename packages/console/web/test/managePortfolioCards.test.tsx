@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ReactElement } from "react";
-import type { ManagePortfolio } from "@console/shared";
+import type { ManageCandidate, ManageCandidates, ManagePortfolio } from "@console/shared";
+import { IncomeCard } from "../src/pages/Live/IncomeCard";
 import { BandDial, PortfolioCards } from "../src/pages/Live/PortfolioCards";
 import { BuyingPowerCard, LadderCard, RiskGraphCard, RiskMatrixCard, ScenarioCards } from "../src/pages/Live/ScenarioCards";
 
@@ -77,6 +78,7 @@ function reading(over: Partial<ManagePortfolio> = {}): ManagePortfolio {
       { underlying: "FXI", beta: 0.27, bwd: -0.61, theta: -1.34, vega30: 3.93, bwdShare: 0.011, thetaShare: 0.029, betaDoubt: "opposite signs" },
     ],
     hedges: null,
+    candidates: null,
     ...over,
   };
 }
@@ -226,5 +228,112 @@ describe("ScenarioCards", () => {
     expect(html).not.toContain("risk matrix");
     expect(html).not.toContain("risk graph");
     expect(html).toContain("buying power");
+  });
+});
+
+function candidate(over: Partial<ManageCandidate> = {}): ManageCandidate {
+  return {
+    underlying: "AAPL",
+    kind: "call_spread",
+    alternativeTo: null,
+    expiry: "2026-11-20",
+    dte: 33,
+    legs: [
+      { strike: 345, right: "C", quantity: -1, bid: 3.4, ask: 3.6, delta: 0.45 },
+      { strike: 350, right: "C", quantity: 1, bid: 0.95, ask: 1.1, delta: 0.33 },
+    ],
+    units: 2,
+    binding: "per-trade risk",
+    perUnit: { credit: 2.47, natural: 2.3, cash: 247, maxLoss: 253, buyingPower: 253, stressLoss: 253, theta: 0.93, bwd: 1.5 },
+    thetaPerBp: 0.0037,
+    earningsDate: null,
+    earningsUnknown: true,
+    alternative: null,
+    ...over,
+  };
+}
+
+function income(over: Partial<ManageCandidates> = {}): ManageCandidates {
+  return {
+    sourceSession: "2026-10-19",
+    takenAt: "2026-10-19T18:45:00+00:00",
+    accountBasis: "cash",
+    names: 458,
+    excluded: { "earnings inside the trade": 120 },
+    fits: [candidate()],
+    fitsTotal: 1,
+    tooBig: [],
+    tooBigTotal: 0,
+    error: null,
+    ...over,
+  };
+}
+
+describe("IncomeCard", () => {
+  it("shows each fit's whole position in the suite's money layout, in the package's order", () => {
+    const html = render(<IncomeCard c={income({ fits: [candidate(), candidate({ underlying: "AAL", kind: "short_put" })] })} />);
+    expect(html.indexOf("AAPL")).toBeLessThan(html.indexOf("AAL"));
+    expect(html).toContain("2.47 cr"); // the per-share net price, marked
+    expect(html).toContain("+$494.00"); // cash: 2 contracts x $247 received
+    expect(html).toContain("$506.00"); // risk: 2 x $253
+    expect(html).toContain("per-trade risk");
+    expect(html).toContain("re-quote before sending");
+    expect(html).toContain("120 earnings inside the trade");
+    expect(html).toContain("unknown"); // an earnings date nobody knows is said so, never blank
+  });
+
+  it("names a narrowed trade and what stopped the one that did not fit", () => {
+    const wide = candidate({
+      units: 0,
+      legs: [
+        { strike: 345, right: "C", quantity: -1, bid: 3.4, ask: 3.6, delta: 0.45 },
+        { strike: 365, right: "C", quantity: 1, bid: 0.2, ask: 0.3, delta: 0.12 },
+      ],
+      alternative: candidate({ alternativeTo: "call_spread", units: 1 }),
+    });
+    const fromPut = candidate({ kind: "put_spread", alternativeTo: "short_put" });
+    const html = render(
+      <IncomeCard c={income({ fits: [candidate({ alternativeTo: "call_spread" }), fromPut], tooBig: [wide], tooBigTotal: 1 })} />,
+    );
+    expect(html).toContain("narrowed to fit"); // a spread narrowed from its own wider self
+    expect(html).toContain("narrowed from the short put");
+    expect(html).toContain("stopped by <em>per-trade risk</em>");
+    expect(html).toContain("narrowed to −345C / +350C: fits 1");
+  });
+
+  it("shows a short put's risk as the stress loss its cap was applied to, not its strike", () => {
+    const put = candidate({
+      underlying: "AAL",
+      kind: "short_put",
+      units: 1,
+      legs: [{ strike: 11, right: "P", quantity: -1, bid: 0.31, ask: 0.35, delta: -0.4 }],
+      perUnit: { credit: 0.33, natural: 0.31, cash: 33, maxLoss: 1067, buyingPower: 1067, stressLoss: 251.07, theta: 0.87, bwd: null },
+    });
+    const html = render(<IncomeCard c={income({ fits: [put] })} />);
+    expect(html).toContain("$251.07");
+    expect(html.split("$1067.00").length - 1).toBe(1); // the buying power column only, never as risk
+  });
+
+  it("says nothing fits, or why there is no list, rather than drawing an empty table", () => {
+    expect(render(<IncomeCard c={income({ fits: [], fitsTotal: 0 })} />)).toContain("nothing fits today");
+    expect(render(<IncomeCard c={income({ error: "no income reading yet" })} />)).toContain("no income reading yet");
+    expect(render(<IncomeCard c={null} />)).toBe("");
+  });
+});
+
+describe("risk matrix tone", () => {
+  it("leaves a zero cell untinted: it is neither a gain nor a loss", () => {
+    const flat = reading({
+      scenarios: {
+        moves: [-0.1, 0, 0.1],
+        ivShiftWeighting: "term",
+        matrix: [{ ivShift: 0, pnl: [0, 0.4, -0.3] }],
+        graph: { moves: [-0.1, 0, 0.1], curves: [{ horizonDays: 0, pnl: [0, 0, 0] }] },
+        leftOut: [],
+      },
+    });
+    const html = render(<RiskMatrixCard p={flat} />);
+    expect(html).not.toContain("var(--pos)");
+    expect(html).not.toContain("var(--neg)");
   });
 });

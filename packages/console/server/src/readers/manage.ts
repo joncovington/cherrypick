@@ -12,6 +12,8 @@ import path from "node:path";
 import type {
   ManageAccount,
   ManageBand,
+  ManageCandidate,
+  ManageCandidates,
   ManageChainOrder,
   ManageHedges,
   ManageLadder,
@@ -362,6 +364,68 @@ function portfolio(v: unknown): ManagePortfolio | null {
     vix: num(p["vix"]),
     scenarios: scenarios(p["scenarios"]),
     ladder: ladder(p["ladder"]),
+    candidates: candidates(p["candidates"]),
+  };
+}
+
+function candidate(v: unknown): ManageCandidate {
+  const c = rec(v);
+  const pu = rec(c["per_unit"]);
+  return {
+    underlying: str(c["underlying"]) ?? "?",
+    kind: str(c["kind"]) ?? "?",
+    alternativeTo: str(c["alternative_to"]),
+    expiry: str(c["expiry"]),
+    dte: num(c["dte"]),
+    legs: arr(c["legs"]).map((raw) => {
+      const l = rec(raw);
+      return {
+        strike: num(l["strike"]) ?? 0,
+        right: str(l["right"]) ?? "?",
+        quantity: num(l["quantity"]) ?? 0,
+        bid: num(l["bid"]),
+        ask: num(l["ask"]),
+        delta: num(l["delta"]),
+      };
+    }),
+    units: num(c["units"]) ?? 0,
+    binding: str(c["binding"]),
+    perUnit: {
+      credit: num(pu["credit"]),
+      natural: num(pu["natural"]),
+      cash: num(pu["cash"]),
+      maxLoss: num(pu["max_loss"]),
+      buyingPower: num(pu["buying_power"]),
+      stressLoss: num(pu["stress_loss"]),
+      theta: num(pu["theta"]),
+      bwd: num(pu["bwd"]),
+    },
+    thetaPerBp: num(c["theta_per_bp"]),
+    earningsDate: str(c["earnings_date"]),
+    earningsUnknown: c["earnings_unknown"] === true,
+    alternative: c["alternative"] ? candidate(c["alternative"]) : null,
+  };
+}
+
+function candidates(v: unknown): ManageCandidates | null {
+  if (v === null || v === undefined) return null;
+  const c = rec(v);
+  const excluded: Record<string, number> = {};
+  for (const [k, n] of Object.entries(rec(c["excluded"]))) {
+    const x = num(n);
+    if (x !== null) excluded[k] = x;
+  }
+  return {
+    sourceSession: str(c["source_session"]),
+    takenAt: str(c["taken_at"]),
+    accountBasis: str(c["account_basis"]),
+    names: num(c["names"]),
+    excluded,
+    fits: arr(c["fits"]).map(candidate),
+    fitsTotal: num(c["fits_total"]) ?? 0,
+    tooBig: arr(c["too_big"]).map(candidate),
+    tooBigTotal: num(c["too_big_total"]) ?? 0,
+    error: str(c["error"]),
   };
 }
 

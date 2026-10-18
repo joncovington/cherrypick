@@ -189,7 +189,8 @@ export function RiskMatrixCard({ p }: { p: ManagePortfolio }) {
   const all = s.matrix.flatMap((r) => r.pnl.filter((v): v is number => v !== null));
   const maxAbs = Math.max(1, ...all.map(Math.abs));
   const shade = (v: number | null) => {
-    if (v === null) return undefined;
+    // A zero (rounded to the dollar) has no sign, so no tone: it is neither a gain nor a loss.
+    if (v === null || Math.round(v) === 0) return undefined;
     const alpha = Math.round((0.08 + 0.62 * (Math.abs(v) / maxAbs)) * 100);
     return `color-mix(in srgb, var(${v >= 0 ? "--pos" : "--neg"}) ${alpha}%, transparent)`;
   };
