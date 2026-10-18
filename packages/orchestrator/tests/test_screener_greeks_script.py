@@ -129,6 +129,54 @@ def test_a_weekly_is_never_the_cycle_and_an_empty_range_is_none():
     assert fsg.cycle_expiry([_exp("2026-11-20", 29), _exp("2026-12-18", 64)], _is_monthly) is None
 
 
+def test_income_names_are_the_tradable_verdicts_only():
+    verdicts = {
+        "AA": {"verdict": "tradable"},
+        "A": {"verdict": "illiquid"},
+        "BRK.B": {"verdict": "tradable"},
+        "X": {},
+    }
+    assert fsg.income_names(verdicts) == ["AA", "BRK.B"]
+
+
+def test_the_income_plan_is_the_cycle_monthly_both_sides_out_of_the_money():
+    strikes = [(float(k), f"C{k}", f"P{k}") for k in range(80, 121, 5)]
+    exps = [_exp("2026-11-06", 30, strikes), _exp("2026-12-18", 50, strikes)]
+    plan = fsg.income_plan(exps, 101.0, _is_monthly)
+    assert plan["expiry"] == "2026-12-18" and plan["dte"] == 50  # the monthly, never the nearer weekly
+    puts = [leg["strike"] for leg in plan["legs"] if leg["right"] == "P"]
+    calls = [leg["strike"] for leg in plan["legs"] if leg["right"] == "C"]
+    assert puts and max(puts) <= 101.0 and min(puts) >= 101.0 * 0.8  # out of the money, within reach
+    assert calls and min(calls) >= 101.0 and max(calls) <= 101.0 * 1.2
+    assert {leg["option"] for leg in plan["legs"] if leg["strike"] == 95.0} == {"P95"}
+    # No cycle monthly, or no price to centre on: no plan, never a weekly instead.
+    assert fsg.income_plan([_exp("2026-11-06", 45, strikes)], 101.0, _is_monthly) is None
+    assert fsg.income_plan(exps, None, _is_monthly) is None
+
+
+def test_the_stress_move_is_the_names_bad_tail_over_the_holding_period():
+    # A steady 1% a session up, with one 30% crash: the worst 5-session windows hold the crash.
+    closes = [100.0 * 1.01**i for i in range(400)]
+    closes = closes[:200] + [c * 0.7 for c in closes[200:]]
+    s = fsg.stress_move(closes, 5)
+    assert s["sessions"] == 5 and s["windows"] == 395
+    assert s["p01"] < -0.25 < 0 < s["p99"]
+    # Too little history to read a tail from is no reading, never a mild one.
+    assert fsg.stress_move(closes[:100], 5) is None
+    assert fsg.stress_move(closes, 0) is None
+
+
+def test_a_holding_period_is_counted_in_sessions():
+    assert fsg.holding_sessions(50) == 35 and fsg.holding_sessions(1) == 1
+
+
+def test_the_income_metrics_are_the_recorded_fields_and_absent_ones_are_null():
+    rows = {"AA": {"earnings_date": "2026-10-22", "iv_index": 0.49, "beta": 2.1, "liquidity_rank": 0.03}}
+    m = fsg.income_metrics(rows, "AA")
+    assert m["earnings_date"] == "2026-10-22" and m["beta"] == 2.1 and "liquidity_rank" not in m
+    assert all(v is None for v in fsg.income_metrics(rows, "ZZ").values())
+
+
 def test_the_option_symbol_is_the_brokers_padded_occ():
     assert fsg.option_symbol("VPG", "2026-11-20", "C", 105.0) == "VPG   261120C00105000"
     assert fsg.option_symbol("BRK.B", "2026-11-20", "P", 7.5) == "BRK/B 261120P00007500"

@@ -86,6 +86,10 @@ def reading(m) -> tuple[str, dict]:
         "iv_percentile": _pct(m.implied_volatility_percentile),
         "iv_index": None if m.implied_volatility_index is None else float(m.implied_volatility_index),
         "hv_30": None if m.historical_volatility_30_day is None else float(m.historical_volatility_30_day),
+        # The broker's beta to SPY and three-month correlation, in the same response and discarded
+        # until 2026-10-18: manage weighs a candidate trade's delta by it, as it does the book's.
+        "beta": None if getattr(m, "beta", None) is None else float(m.beta),
+        "corr_spy_3month": None if getattr(m, "corr_spy_3month", None) is None else float(m.corr_spy_3month),
         "liquidity_rating": m.liquidity_rating,
         "liquidity_rank": None if m.liquidity_rank is None else float(m.liquidity_rank),
         # Arrives in the same response and was discarded until 2026-10-04: with the rating, the

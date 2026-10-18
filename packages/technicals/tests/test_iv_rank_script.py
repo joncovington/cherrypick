@@ -90,6 +90,37 @@ def test_calendar_names_are_optionable_stocks_rated_very_or_somewhat_liquid():
     assert fir.calendar_names(rows) == ["CB", "TSM"]
 
 
+def _metrics_row(**over):
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    base = dict(
+        implied_volatility_updated_at=datetime(2026, 10, 16, 19, 50, tzinfo=UTC),
+        updated_at=None,
+        implied_volatility_index_rank=0.12,
+        implied_volatility_index_rank_source="tos",
+        tw_implied_volatility_index_rank=0.1,
+        tos_implied_volatility_index_rank=0.12,
+        implied_volatility_percentile=0.13,
+        implied_volatility_index=0.49,
+        historical_volatility_30_day=30.6,
+        liquidity_rating=3,
+        liquidity_rank=0.04,
+        option_expiration_implied_volatilities=None,
+        beta=1.6,
+        corr_spy_3month=0.3,
+    )
+    return SimpleNamespace(**{**base, **over})
+
+
+def test_the_brokers_beta_and_correlation_are_kept_and_a_missing_one_is_null():
+    day, row = fir.reading(_metrics_row())
+    assert day == "2026-10-16"
+    assert row["beta"] == 1.6 and row["corr_spy_3month"] == 0.3
+    _, bare = fir.reading(_metrics_row(beta=None, corr_spy_3month=None))
+    assert bare["beta"] is None and bare["corr_spy_3month"] is None
+
+
 def test_a_name_with_no_earnings_block_records_nothing_rather_than_a_guess():
     assert fir.calendar_fields({}) == {
         "earnings_date": None,

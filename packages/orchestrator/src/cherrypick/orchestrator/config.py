@@ -578,7 +578,9 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     fails if today's lists never came). Its own switch, OFF by default: it reads the shared broker
     credential. The same
     switch runs `measure` at `screener_measure_at`: two regular-hours readings of the listed names'
-    ATM monthly spreads, half an hour after the universe builder's, so the two never overlap.
+    ATM monthly spreads, half an hour after the universe builder's, so the two never overlap. And
+    `income` at `income_chains_at`: every tradable name's cycle-monthly chain, quoted in regular hours,
+    for manage's sized candidates (needs no vendor list).
     """
     mr = cfg.get("market_report", {}) or {}
     # The collector signs in to a subscription site, so nothing about that site is in the code: its
@@ -606,6 +608,9 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # evening's chain listing (`fetch_screener_greeks.py strikes`), after the 19:10 calendar build.
         "earnings_strikes_at": mr.get("earnings_strikes_at", "19:20"),
         "screener_measure_at": list(mr.get("screener_measure_at", ["11:30", "14:30"])),
+        # After the 14:30 measure (its chain listings are reused), inside the window that closes half
+        # an hour before the bell.
+        "income_chains_at": mr.get("income_chains_at", "14:45"),
     }
 
 

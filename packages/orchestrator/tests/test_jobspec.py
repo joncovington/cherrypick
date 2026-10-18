@@ -321,6 +321,7 @@ def test_derive_full_suite_job_table():
         "report-screener-greeks",
         "report-screener-greeks-late",
         "report-earnings-strikes",
+        "report-income-chains",
         "universe-measure-1",
         "universe-measure-2",
         "universe-daily",
