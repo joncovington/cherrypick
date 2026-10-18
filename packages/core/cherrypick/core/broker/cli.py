@@ -79,10 +79,14 @@ async def account_info(
         account = await get_account(account_number)
         session = get_session()
         balances = await account.get_balances(session)
+        # The account's kind decides what a short option ties up: cash-secured in a cash account or an
+        # IRA, a Reg T requirement on margin. Sizing advice reads it rather than assuming one.
         return {
             "ok": True,
             "account_number": account.account_number,
             "nickname": getattr(account, "nickname", None),
+            "margin_or_cash": getattr(account, "margin_or_cash", None),
+            "account_type_name": getattr(account, "account_type_name", None),
             "balances": serialize(balances),
         }
     except Exception as exc:

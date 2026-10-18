@@ -38,7 +38,7 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 2
+    assert snap["snapshot_version"] == 3
     assert snap["transactions"] == {"GLD": [{"order_id": 1}]}
     assert snap["transactions_error"] is None
     (tx_argv, tx_timeout) = next(c for c in calls if "get_transactions" in c[0])
@@ -58,3 +58,39 @@ def test_a_failed_history_read_is_recorded_not_fatal(monkeypatch):
     assert snap["positions"]["ok"]
     assert snap["transactions"] == {}
     assert "HTTP 503" in snap["transactions_error"]
+
+
+def test_the_benchmark_is_quoted_with_each_beta_but_its_history_is_not_read(monkeypatch):
+    calls = _fake(
+        monkeypatch,
+        {
+            "get_market_overview": {
+                "ok": True,
+                "metrics": [
+                    {"symbol": "GLD", "last": 381.65, "beta": "0.12", "corr_spy_3month": "0.2"},
+                    {"symbol": "SPY", "last": 667.1, "beta": "1.0"},
+                ],
+            },
+            "get_transactions": {"ok": True, "transactions": {}},
+        },
+    )
+    snap = managesnap.build({})
+    assert snap["benchmark"] == "SPY"
+    assert snap["metrics"]["GLD"]["beta"] == "0.12"
+    assert snap["metrics"]["GLD"]["corr_spy_3month"] == "0.2"
+    assert snap["metrics"]["SPY"]["last"] == 667.1
+    (mo_argv, _) = next(c for c in calls if "get_market_overview" in c[0])
+    assert {"GLD", "SPY"} <= set(mo_argv)  # SPY is not held, and is quoted anyway
+    (tx_argv, _) = next(c for c in calls if "get_transactions" in c[0])
+    assert "SPY" not in tx_argv
+
+
+def test_a_missing_beta_is_null_never_zero(monkeypatch):
+    _fake(
+        monkeypatch,
+        {
+            "get_market_overview": {"ok": True, "metrics": [{"symbol": "GLD", "last": 381.65}]},
+            "get_transactions": {"ok": True, "transactions": {}},
+        },
+    )
+    assert managesnap.build({})["metrics"]["GLD"]["beta"] is None

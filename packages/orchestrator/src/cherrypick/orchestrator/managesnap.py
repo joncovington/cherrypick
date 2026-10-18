@@ -15,6 +15,12 @@ taken in $640).
 Metrics and history come from the first enabled module whose broker tool answers (meic's does). A
 failure to get either is recorded in the snapshot, never fatal: the evaluation still runs every rule
 that needs only prices, and says what was unavailable.
+
+Version 3 (2026-10-18) adds what a portfolio reading needs (docs/portfolio-guidance-plan.md): each
+underlying's beta and three-month correlation to SPY as the broker states them -- the beta the broker's
+own beta-weighted delta uses, so the two can agree -- and the benchmark's metrics whether or not it is
+held, since a beta-weighted delta is priced in its units. The account's kind (margin or cash, IRA or
+not) rides on `positions`, from the broker's account record.
 """
 
 from __future__ import annotations
@@ -30,7 +36,10 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 2
+SNAPSHOT_VERSION = 3
+# What a beta-weighted delta is stated in. The broker's betas are against SPY, so this is not a free
+# choice: a different benchmark would need betas the broker does not supply.
+BENCHMARK = "SPY"
 # How far back a chain is rebuilt. A LEAPS-backed position can roll for a year; anything older than
 # this is reported as an incomplete chain rather than guessed.
 HISTORY_DAYS = 400
@@ -45,6 +54,9 @@ def _metric(entry: dict[str, Any]) -> dict[str, Any]:
         "ex_dividend_date": entry.get("dividend_ex_date"),
         "dividend_rate_per_share": entry.get("dividend_rate_per_share"),
         "iv_rank": entry.get("implied_volatility_index_rank"),
+        "beta": entry.get("beta"),
+        "beta_updated_at": entry.get("beta_updated_at"),
+        "corr_spy_3month": entry.get("corr_spy_3month"),
     }
 
 
@@ -106,12 +118,15 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         }
     )
     ok, prefer = positions.get("ok"), positions.get("broker_module")
-    metrics, error = market_metrics(cfg, symbols, prefer) if ok else ({}, None)
+    # The benchmark is quoted whether or not it is held; its history is not wanted unless it is.
+    quoted = sorted({*symbols, BENCHMARK})
+    metrics, error = market_metrics(cfg, quoted, prefer) if ok else ({}, None)
     history, history_error = transactions(cfg, symbols, prefer) if ok else ({}, None)
     return {
         "snapshot_version": SNAPSHOT_VERSION,
         "session": clock.today_iso(),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "benchmark": BENCHMARK,
         "positions": positions,
         "metrics": metrics,
         "metrics_error": error,

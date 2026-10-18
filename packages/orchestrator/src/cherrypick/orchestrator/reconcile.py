@@ -143,7 +143,19 @@ def _account_entry(
         "open_positions": positions,
         "open_count": len(positions),
         "balances": balances,
+        "account_type": _account_type(ai),
         "designated": is_designated,
+    }
+
+
+def _account_type(info: dict[str, Any]) -> dict[str, Any]:
+    """Margin or cash, and the broker's name for the account type ("Roth IRA", "Individual"), from
+    `get_account_info`. Both null when the read failed or the tool predates them: a reader must treat
+    that as unknown, never as margin."""
+    ok = bool(info.get("ok"))
+    return {
+        "margin_or_cash": info.get("margin_or_cash") if ok else None,
+        "type_name": info.get("account_type_name") if ok else None,
     }
 
 
