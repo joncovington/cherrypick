@@ -17,7 +17,7 @@ trade, each position can look roughly neutral while the book leans one way. Two 
 leans:
 
 - **Beta-weighted delta (BWD)**, in SPY shares: Σ quantity × multiplier × delta × (S / S_SPY) × β.
-  "+40" means a 1% SPY fall costs about 40 × 6.6 = $264. One XSP spread can then correct the whole
+  "+40" means a 1% SPY fall costs about 40 × $7.63 = $305 (SPY at $763 on 2026-10-16). One XSP spread can then correct the whole
   book rather than reworking several trades, each paying its own spread.
 - **Theta**, in dollars a day and as a share of net liq: how hard the book is selling premium.
 
@@ -74,6 +74,12 @@ that reads them, each under its own version bump, so no field is recorded before
   against SPY's expected daily move, DTE-weighted vega (√(30/DTE)), buying power used, each
   underlying's share of BWD and of theta, and which beta was used. An unpriced leg makes the figures
   partial and names the leg.
+- A beta cross-check. The first v3 snapshot (2026-10-18) showed the broker's beta and its three-month
+  SPY correlation disagreeing in sign on several names (RTX beta −0.01 at correlation +0.94, FXI +0.27
+  at −0.75, DELL +1.26 at −0.27). Over one window those two cannot have opposite signs, so they come
+  from different windows, and RTX's beta looks wrong. The broker's beta stays the one used, because
+  it is the one on the screen. Beside it goes our own, fitted from the local end-of-day store, and
+  any name where the two differ materially is flagged with both figures and its share of BWD.
 - A stress line: SPY −10% (and +5%) repricing each position at its beta-scaled move, in dollars and %
   of net liq.
 - Rules, each with a default block and a low confidence:
