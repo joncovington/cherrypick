@@ -50,7 +50,6 @@ from pathlib import Path
 
 from cherrypick.core import db as core_db
 from cherrypick.core import quotehistory
-from cherrypick.core.gex import compute_gex
 
 from . import paths, store
 
@@ -154,18 +153,9 @@ def _spots(db: Path, symbol: str, day: str) -> list[tuple[float, float]]:
 
 
 def surface(rows: list[dict], spot: float) -> dict:
-    """The replay's GEX surface from one profile row set (`flies.replay.RecordedSession._gex`'s build)."""
-    entries, greeks, oi = [], {}, {}
-    for r in rows:
-        strike = float(r["strike"])
-        for right, side in (("C", "call"), ("P", "put")):
-            sym = f"{right}{strike}"
-            entries.append({"strike_price": strike, "streamer_symbol": sym, "option_type": right})
-            if r[f"{side}_gamma"] is not None:
-                greeks[sym] = {"gamma": float(r[f"{side}_gamma"])}
-            if r[f"{side}_oi"] is not None:
-                oi[sym] = float(r[f"{side}_oi"])
-    return compute_gex(entries, greeks, oi, spot)
+    """The replay's GEX surface from one profile row set: `core.quotehistory.profile_surface`, the build
+    every replay uses."""
+    return quotehistory.profile_surface(rows, spot)
 
 
 def profile_layer(recorder_db: Path, vendor_db: Path, symbol: str, day: str) -> dict:
