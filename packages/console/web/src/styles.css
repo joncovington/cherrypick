@@ -737,12 +737,8 @@ h2 {
 }
 
 /* A scope select holding something other than its default, so a narrowed or
-   widened view never looks like the plain one. */
-.scope-select-off-default {
-  border-color: var(--warn);
-  color: var(--warn);
-}
-
+   widened view never looks like the plain one. Its rule lives with the control
+   classes (.review-session-select) — defined here it lost the cascade to them. */
 .table-scroll {
   overflow-x: auto;
 }
@@ -980,7 +976,8 @@ h2 {
 }
 
 .btn:focus-visible,
-.text-input:focus-visible {
+.text-input:focus-visible,
+.review-session-select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -1685,6 +1682,18 @@ select.text-input {
   color: var(--text);
   font-family: var(--num-face);
   cursor: pointer;
+  /* Spacing on the pill matches .mode-btn (the day/week/month toggle), not the
+     tighter .chip padding — a capsule's full-round ends eat the padding the eye
+     reads, and a select carries its own arrow inside the box. */
+  padding: 0.25rem 0.9rem;
+}
+
+/* A scope select holding something other than its default, so a narrowed or
+   widened view never looks like the plain one. */
+.review-session-select.scope-select-off-default,
+.text-input.scope-select-off-default {
+  border-color: var(--warn);
+  color: var(--warn);
 }
 
 .review-note-line {

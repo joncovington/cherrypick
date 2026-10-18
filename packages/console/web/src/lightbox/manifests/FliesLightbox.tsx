@@ -338,7 +338,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
         <>
           <ArmSelect module="flies" value={arm} options={meta.data?.arms} onChange={setArm} />
           {(meta.data?.symbols.length ?? 0) > 1 && (
-            <select className="text-input" value={symbol ?? ""} onChange={(e) => setSymbol(e.target.value === "" ? null : e.target.value)} aria-label="symbol filter">
+            <select className="chip review-session-select" value={symbol ?? ""} onChange={(e) => setSymbol(e.target.value === "" ? null : e.target.value)} aria-label="symbol filter">
               <option value="">all symbols</option>
               {meta.data?.symbols.map((sym) => (
                 <option key={sym} value={sym}>{sym}</option>
@@ -353,7 +353,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
             pooledLabel="all eras — pooled"
             title="The XSP books (2026-07-29..07-31) are a different trade — 1-wide structures whose trading fees were 6.9% of premium collected against the SPX book's 3.7% (32% against 11% on the median completed fly). Pooling them distorts every per-arm breakdown."
           />
-          <select className="text-input" value={date ?? ""} onChange={(e) => setDate(e.target.value === "" ? null : e.target.value)} aria-label="date filter">
+          <select className="chip review-session-select" value={date ?? ""} onChange={(e) => setDate(e.target.value === "" ? null : e.target.value)} aria-label="date filter">
             <option value="">latest day</option>
             {meta.data?.dates.map((d) => (
               <option key={d} value={d}>{d}</option>
