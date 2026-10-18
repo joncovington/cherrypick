@@ -217,3 +217,133 @@ def test_the_portfolio_switch_turns_all_guidance_off():
     rules, warnings = _rules.effective({"portfolio": {"enabled": False}})
     assert warnings == []
     assert _read([_trade("SPY", 500.0, [_leg(-1, "P", 500.0, dte=7)])], rules=rules)["guidance"] == []
+
+
+# --------------------------------------------------------------------------- scenarios
+def _cell(r, iv_shift, move):
+    row = next(m for m in r["scenarios"]["matrix"] if m["iv_shift"] == iv_shift)
+    return row["pnl"][r["scenarios"]["moves"].index(move)]
+
+
+def test_the_matrix_moves_each_name_by_its_beta_and_is_zero_at_its_centre():
+    r = _read([_trade("XYZ", 50.0, [_leg(100)])], _metrics(XYZ=(1.5, 0.8)))
+    assert _cell(r, 0.0, 0.0) == 0.0
+    assert _cell(r, 0.0, -0.10) == pytest.approx(100 * 50.0 * -0.15)
+    assert _cell(r, 0.05, 0.02) == pytest.approx(100 * 50.0 * 0.03)  # shares have no vega
+
+
+def test_a_short_option_loses_when_iv_rises_and_gains_when_it_falls():
+    r = _read([_trade("SPY", 500.0, [_leg(-1, "P", 480.0)])])
+    assert _cell(r, 0.05, 0.0) < 0 < _cell(r, -0.05, 0.0)
+
+
+def test_an_iv_shift_never_takes_a_vol_below_its_floor():
+    # 20% IV shifted down 25 points would be negative; it is held at the floor, not priced at zero vol.
+    rules = copy.deepcopy(RULES)
+    rules["portfolio"]["scenarios"]["iv_shifts"] = [-0.25]
+    # At the money, so the floor's price differs from the intrinsic value a zero vol would give.
+    leg = _leg(-1, "P", 500.0)
+    r = _read([_trade("SPY", 500.0, [leg])], rules=rules)
+    floor_value = pricing.price(500.0, 500.0, leg["years"], portfolio.MIN_VOL, "P", 0.04)
+    assert floor_value * 100 - pricing.intrinsic(500.0, 500.0, "P") * 100 > 1.0
+    now = pricing.price(500.0, 500.0, leg["years"], 0.20, "P", 0.04)
+    assert _cell(r, -0.25, 0.0) == pytest.approx(-100 * (floor_value - now), abs=0.01)
+
+
+def test_the_risk_graph_at_expiry_keeps_an_out_of_the_money_shorts_whole_premium():
+    leg = _leg(-1, "P", 450.0, dte=20)
+    r = _read([_trade("SPY", 500.0, [leg])])
+    graph = r["scenarios"]["graph"]
+    now, expiry = graph["curves"]
+    assert now["horizon_days"] == 0 and expiry["horizon_days"] == 20
+    flat = graph["moves"].index(0.0)
+    assert now["pnl"][flat] == 0.0
+    premium = pricing.price(500.0, 450.0, leg["years"], 0.20, "P", 0.04) * 100
+    assert expiry["pnl"][flat] == pytest.approx(premium, abs=0.01)
+    # 15% down at expiry: the put is 25 points in the money.
+    assert expiry["pnl"][0] == pytest.approx(premium - 25.0 * 100, abs=0.01)
+
+
+def test_the_term_weighted_shift_moves_front_months_more_than_leaps():
+    flat = copy.deepcopy(RULES)
+    flat["portfolio"]["scenarios"]["iv_shift_weighting"] = "flat"
+    leaps = [_trade("SPY", 500.0, [_leg(1, "C", 500.0, dte=360)])]
+    front = [_trade("SPY", 500.0, [_leg(1, "C", 500.0, dte=7)])]
+    term_r, flat_r = _read(leaps), _read(leaps, rules=flat)
+    assert (
+        term_r["scenarios"]["iv_shift_weighting"] == "term"
+        and flat_r["scenarios"]["iv_shift_weighting"] == "flat"
+    )
+    assert 0 < _cell(term_r, 0.05, 0.0) < _cell(flat_r, 0.05, 0.0)  # sqrt(30/360): a LEAPS's IV moves less
+    assert (
+        _cell(_read(front), 0.05, 0.0) > _cell(_read(front, rules=flat), 0.05, 0.0) > 0
+    )  # and a 7-day one more
+    # A 30-day leg is the reference: weighted or not, the same.
+    month = [_trade("SPY", 500.0, [_leg(1, "C", 500.0, dte=30)])]
+    assert _cell(_read(month), 0.05, 0.0) == pytest.approx(_cell(_read(month, rules=flat), 0.05, 0.0))
+
+
+def test_a_name_without_beta_is_left_out_of_the_scenarios_and_named():
+    r = _read([_trade("XYZ", 50.0, [_leg(100)]), _trade("ABC", 20.0, [_leg(100)])], _metrics(XYZ=(1.0, 0.9)))
+    assert r["scenarios"]["left_out"] == ["ABC"]
+    assert _cell(r, 0.0, 0.10) == pytest.approx(100 * 50.0 * 0.10)
+
+
+# --------------------------------------------------------------------------- the expiry ladder
+def test_the_ladder_groups_trades_by_their_nearest_short_and_sums_what_they_can_lose():
+    t1 = _trade("AAA", 50.0, [_leg(-1, "P", 49.0, dte=7)])
+    t1.update(trade_id="AAA", nearest_short_expiry="2026-10-23", profile={"downside_from_now": -300.0})
+    t2 = _trade("BBB", 50.0, [_leg(-1, "P", 49.0, dte=7)])
+    t2.update(
+        trade_id="BBB",
+        nearest_short_expiry="2026-10-23",
+        profile=None,
+        earnings={"before_nearest_short_expiry": True},
+    )
+    t3 = _trade("CCC", 50.0, [_leg(-1, "P", 45.0, dte=35)])
+    t3.update(
+        trade_id="CCC",
+        nearest_short_expiry="2026-11-20",
+        profile={"downside_from_now": -500.0},
+        earnings={"before_nearest_short_expiry": False},
+    )
+    for t in (t1, t2, t3):
+        for leg in t["legs"]:
+            leg["expiration"] = t["nearest_short_expiry"]
+    r = _read([t1, t2, t3], _metrics(AAA=(1.0, 0.9), BBB=(1.0, 0.9), CCC=(1.0, 0.9)))
+    first, second = r["ladder"]["expiries"]
+    assert first["expiration"] == "2026-10-23" and first["trades"] == ["AAA", "BBB"]
+    assert first["downside"] == -300.0 and first["downside_unknown"] == 1  # BBB's unknown, never zero
+    assert second["downside"] == -500.0
+    assert first["theta"] > second["theta"] > 0  # the 7-day shorts decay faster
+    earn = r["ladder"]["earnings"]
+    assert earn["trades"] == ["BBB"]
+    assert earn["theta_share"] == pytest.approx(first["theta"] / 2 / r["theta"], rel=1e-2)
+
+
+# --------------------------------------------------------------------------- buying power by VIX
+@pytest.mark.parametrize(
+    ("vix", "cap"), [(12.0, 0.25), (15.0, 0.30), (19.99, 0.30), (25.0, 0.35), (45.0, 0.50)]
+)
+def test_the_buying_power_cap_steps_up_with_vix(vix, cap):
+    assert portfolio.bp_cap(vix, RULES["portfolio"]["buying_power"]["vix_steps"]) == cap
+
+
+def test_buying_power_over_its_vix_cap_fires_and_without_vix_there_is_no_band():
+    trades = [_trade("XYZ", 50.0, [_leg(10)])]
+    over = _read(trades, _metrics(XYZ=(1.0, 0.9)) | {"VIX": {"last": "19.99"}})  # 40% used vs a 30% cap
+    assert over["bands"]["buying_power"] == {
+        "low": 0.0,
+        "high": 0.30,
+        "value": 0.4,
+        "vix": 19.99,
+        "inside": False,
+    }
+    assert "portfolio.buying_power" in _rules_fired(over)
+    calm = _read(trades, _metrics(XYZ=(1.0, 0.9)) | {"VIX": {"last": "45"}})
+    assert calm["bands"]["buying_power"]["inside"] is True and "portfolio.buying_power" not in _rules_fired(
+        calm
+    )
+    blind = _read(trades, _metrics(XYZ=(1.0, 0.9)))
+    assert blind["bands"]["buying_power"]["high"] is None and blind["bands"]["buying_power"]["inside"] is None
+    assert "portfolio.buying_power" not in _rules_fired(blind)

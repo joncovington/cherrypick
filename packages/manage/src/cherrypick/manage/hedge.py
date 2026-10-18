@@ -175,8 +175,12 @@ def _size(
     # A hedge ties up its max loss like any trade, so it never takes the account past the total
     # buying-power cap; one that cannot fit a single unit says so rather than suggesting it anyway.
     net_liq, used = reading.get("net_liq"), reading.get("buying_power_used")
-    if net_liq and used is not None and unit_max_loss > 0:
-        room = float(cfg["max_buying_power_pct"]) * net_liq - used
+    cap = float(cfg["max_buying_power_pct"])
+    # A debit spread is exempt from the cap (the user's call, 2026-10-18): its whole cost is its
+    # worst case, and it only lowers the book's, so refusing it on buying power refuses the safer
+    # trade. It is offered past the cap and says so (`past_cap`).
+    if net_liq and used is not None and unit_max_loss > 0 and kind == "credit":
+        room = cap * net_liq - used
         fits = int(room // unit_max_loss)
         if fits < 1:
             return {
@@ -234,4 +238,6 @@ def _size(
             if used is not None and net_liq
             else None,
         },
+        # Only a debit spread can be offered past the cap; it says so rather than hiding it.
+        "past_cap": bool(net_liq and used is not None and (used + max_loss) / net_liq > cap),
     }

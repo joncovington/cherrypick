@@ -142,7 +142,18 @@ $4,500 and $375.
 
 **5. Console.** A portfolio card on Live → manage, reading the evaluation and computing nothing, with
 a dial for BWD against its band (asked for on 2026-10-18). The band and "inside" come from the
-reading's `bands`, never worked out in the browser.
+reading's `bands`, never worked out in the browser. Built: dials for BWD and theta, the break-even
+meter, the stress tiles, per-name delta and theta, the guidance and the hedge (#394).
+
+**6. More of the book** (chosen 2026-10-18):
+- buying power against a VIX-scaled cap (snapshot v6 quotes VIX), with its own rule;
+- a risk matrix (SPY moves × term-weighted IV shifts) and a risk graph (now and at the nearest
+  expiry);
+- an expiry ladder with the earnings exposure.
+
+Also from that day: a debit hedge is exempt from the buying-power cap. A debit spread only lowers the
+worst case, so the account sitting past its cap (53% used) must not block the safer trade. Each gets
+a console card in the next PR.
 
 ## Checks before it is trusted
 

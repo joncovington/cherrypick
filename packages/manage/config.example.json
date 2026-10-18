@@ -182,8 +182,21 @@
       "_comment": "SPY shocks the book is repriced at, each underlying moved by beta x shock, IV and time held still.",
       "shocks": [-0.1, 0.05]
     },
+    "buying_power": {
+      "_comment": "Buying power used against a ceiling that rises with VIX: [VIX under, cap] pairs, the last bound null for anything above. The common retail table. No VIX, no band.",
+      "enabled": true,
+      "vix_steps": [[15, 0.25], [20, 0.3], [30, 0.35], [40, 0.4], [null, 0.5]],
+      "confidence": 40
+    },
+    "scenarios": {
+      "_comment": "The risk matrix (SPY moves x IV shifts in vol points for a 30-day option, time held still; with iv_shift_weighting \"term\" each leg's shift is scaled by sqrt(30 / DTE) so front months move most, \"flat\" shifts every leg alike) and the risk graph ([from, to, step] of SPY moves, now and at the nearest expiry).",
+      "moves": [-0.1, -0.05, -0.02, -0.01, 0.0, 0.01, 0.02, 0.05, 0.1],
+      "iv_shifts": [-0.05, 0.0, 0.05],
+      "iv_shift_weighting": "term",
+      "graph": [-0.15, 0.15, 0.01]
+    },
     "hedge": {
-      "_comment": "When portfolio.delta fires, size an XSP vertical toward a target `inset` of the band's width inside the breached edge: a credit spread (short at credit_short_delta) and a debit spread (long at debit_long_delta), each `width` points wide, at most max_units, and never past max_buying_power_pct of net liq in buying power used. Priced at mid, with the natural price beside it; nothing is placed.",
+      "_comment": "When portfolio.delta fires, size an XSP vertical toward a target `inset` of the band's width inside the breached edge: a credit spread (short at credit_short_delta) and a debit spread (long at debit_long_delta), each `width` points wide, at most max_units. A credit spread never takes buying power used past max_buying_power_pct of net liq; a debit spread only lowers the worst case, so it is offered past the cap and flagged. Priced at mid, with the natural price beside it; nothing is placed.",
       "enabled": true,
       "inset": 0.25,
       "credit_short_delta": 0.3,
@@ -193,6 +206,6 @@
       "max_buying_power_pct": 0.5
     }
   },
-  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, directional.take_profit, directional.stop, ex_dividend, risk.oversize, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration",
+  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, directional.take_profit, directional.stop, ex_dividend, risk.oversize, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power",
   "positions": {}
 }

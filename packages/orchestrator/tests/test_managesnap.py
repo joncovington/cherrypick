@@ -44,7 +44,7 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 5
+    assert snap["snapshot_version"] == 6
     assert snap["transactions"] == {"GLD": [{"order_id": 1}]}
     assert snap["transactions_error"] is None
     (tx_argv, tx_timeout) = next(c for c in calls if "get_transactions" in c[0])
@@ -197,6 +197,6 @@ def test_the_snapshot_carries_one_quoted_xsp_expiry(monkeypatch):
         (790.0, "C", 6.3),
     ]
     (mo_argv, _) = next(c for c in calls if "get_market_overview" in c[0])
-    assert "XSP" in mo_argv
+    assert "XSP" in mo_argv and "VIX" in mo_argv
     (tx_argv, _) = next(c for c in calls if "get_transactions" in c[0])
     assert "XSP" not in tx_argv
