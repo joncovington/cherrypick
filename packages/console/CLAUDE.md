@@ -797,6 +797,16 @@ definition tooltip, cell, kind); the controls come from that list.
   session by default; a range replaces the header's day, and the no-range button reads `session`.
   Earnings' range bounds its history and totals only.
 
+## Select controls: pill or box
+
+A select that **scopes what a header or page shows** (session, arm, symbol, era, scope, the Compare
+filters) wears the pill, `chip review-session-select`, as `ScopeSelect`/`EraSelect` do, so a header
+row never mixes a pill with a box. A select that **sets an option inside a card** (a chart's width or
+range, the pager's page size, a Config field) stays `text-input`. A scope select narrowed off its
+default adds `scope-select-off-default`, which reads amber on either class. The pill is capped at
+16rem: a select is as wide as its longest option, and uncapped, MEIC's arm list in the number face
+pushed its header onto a third line and off a phone's edge (2026-10-18).
+
 ## Sorting a table
 
 Sort where ranking is a useful read: money, counts, rates, dates, symbol, arm, prices, sizes. A click

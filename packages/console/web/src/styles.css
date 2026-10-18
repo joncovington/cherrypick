@@ -1686,6 +1686,11 @@ select.text-input {
      tighter .chip padding — a capsule's full-round ends eat the padding the eye
      reads, and a select carries its own arrow inside the box. */
   padding: 0.25rem 0.9rem;
+  /* A select is as wide as its longest option, and in the number face a list of arm names runs
+     wide enough to push MEIC's header onto a third line (and off a phone's edge). Capped, a long
+     choice ellipsises instead. */
+  max-width: 16rem;
+  text-overflow: ellipsis;
 }
 
 /* A scope select holding something other than its default, so a narrowed or
