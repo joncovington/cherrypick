@@ -34,10 +34,16 @@ and the window is HEDGE_STRIKES strikes either side of spot, wide enough to reac
 Its metrics are quoted every day with the benchmark's.
 
 Version 6 quotes VIX every day too: the buying-power band rises with it.
+
+Version 7 carries the income reading: the newest `screener-greeks/income/<date>.json` (written by
+`fetch_screener_greeks.py income` the previous afternoon; never a `.trial` file), at most
+INCOME_MAX_AGE_DAYS old, which manage sizes candidate trades from. A file read, not a broker call, so
+the snapshot stays the record of everything an evaluation was judged on.
 """
 
 from __future__ import annotations
 
+import json
 import subprocess
 import time
 from datetime import date, timedelta
@@ -50,7 +56,9 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 6
+SNAPSHOT_VERSION = 7
+# Monday reads Friday's afternoon reading; anything older is a stale book of quotes.
+INCOME_MAX_AGE_DAYS = 4
 # What a beta-weighted delta is stated in. The broker's betas are against SPY, so this is not a free
 # choice: a different benchmark would need betas the broker does not supply.
 BENCHMARK = "SPY"
@@ -220,6 +228,36 @@ def hedge_chain(cfg: dict[str, Any], spot: float | None, session: date, prefer: 
     return out
 
 
+def income_dir():
+    from cherrypick.core import home
+
+    return home.data_dir("market-report") / "screener-greeks" / "income"
+
+
+def income_reading(session: date, folder=None) -> dict[str, Any]:
+    """The newest income reading on or before `session` and at most INCOME_MAX_AGE_DAYS old, with
+    `error` saying why there is none. A `.trial` file is a test run and is never read."""
+    folder = income_dir() if folder is None else folder
+    days = []
+    for f in folder.glob("????-??-??.json") if folder.is_dir() else []:
+        try:
+            d = date.fromisoformat(f.stem)
+        except ValueError:
+            continue
+        if d <= session:
+            days.append((d, f))
+    if not days:
+        return {"error": "no income reading yet (fetch_screener_greeks.py income, 14:45 ET)"}
+    day, path = max(days)
+    if (session - day).days > INCOME_MAX_AGE_DAYS:
+        return {"error": f"the newest income reading is from {day.isoformat()}, too old to size from"}
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {"error": f"{path.name} is unreadable: {exc}"[:200]}
+    return {**doc, "error": None}
+
+
 def build(cfg: dict[str, Any]) -> dict[str, Any]:
     positions = positions_mod.run(cfg)
     symbols = sorted(
@@ -250,4 +288,5 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "transactions": history,
         "transactions_error": history_error,
         "hedge_chain": hedge,
+        "income": income_reading(date.fromisoformat(session)),
     }

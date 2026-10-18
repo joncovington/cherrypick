@@ -196,6 +196,36 @@ mid is not a fill. Nothing is placed.
 
 Every figure is modelled repricing, not a forecast.
 
+**Income trades, sized to the account** (`candidates.py`). The snapshot carries the previous
+afternoon's income reading (`fetch_screener_greeks.py income`). It covers every name the liquidity
+verdict calls tradable, on the cycle monthly, quoted in regular hours, with earnings dates, beta and
+the name's stress move. From it manage builds the screener rules' structures:
+
+- a short put near 0.40 delta;
+- put and call credit spreads, short the first strike out of the money and long near 0.25 delta, at
+  a credit of at least a third of the width;
+- a covered call near 0.165 delta, on shares the account holds.
+
+It drops any structure with an illiquid or unquoted leg, or an earnings report inside the trade. An
+unknown earnings date is flagged, never called clear. Each structure left gets the largest quantity
+that clears every cap, all scaled by net liq:
+
+| Cap | Default |
+|---|---|
+| per-trade risk: a spread's max loss, a short put's stress loss (the name's 1st-percentile move over the holding period, at expiry, less the credit) | 3% of net liq |
+| a short put's notional (strike × 100) per name | 25% of net liq in a cash account or IRA, 50% on margin |
+| buying power used after the trade | the VIX-scaled cap (`bands.buying_power`), else 50% |
+| beta-weighted delta | stays inside its band, or moves toward it |
+| theta | stays under the band's ceiling |
+| one name's theta | under 25% of the theta the account may carry |
+
+Buying power follows the account kind: cash or an IRA secures a put at its strike, Reg T margin takes
+its formula, and portfolio margin is not modelled. The list is ranked by theta per dollar of buying
+power. A trade that does not fit is shown with the cap that stopped it. A short put or spread the rule
+built too wide is offered narrowed: the same short, and the widest long that keeps one unit under the
+per-trade cap and still takes a third of the width. Priced at mid from a day-old reading: re-quote
+before sending.
+
 ## Known limits
 
 - **Marks are mids** and the payoff model is Black-Scholes at today's IV per leg, with no dividends.
