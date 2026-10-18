@@ -353,7 +353,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
         <>
           {(data?.summaries.length ?? 0) > 0 && (
             <select
-              className="text-input"
+              className="chip review-session-select"
               value={day ?? ""}
               onChange={(e) => setDay(e.target.value === "" ? null : e.target.value)}
               aria-label="session"

@@ -865,7 +865,7 @@ export function AdvisorPage() {
         <h1>Advisor</h1>
         <TabStrip tabs={TABS} value={tab} onChange={setTab} ariaLabel="advisor tabs" />
         <select
-          className="text-input"
+          className="chip review-session-select"
           value={session ?? ""}
           onChange={(e) => setSession(e.target.value === "" ? undefined : e.target.value)}
           aria-label="session"
