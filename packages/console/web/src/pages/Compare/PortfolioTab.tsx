@@ -242,7 +242,7 @@ export function PortfolioTab() {
           {[...modules.entries()].map(([m, tags]) => (
             <label key={m} style={{ fontSize: 12 }}>
               {m}{" "}
-              <select style={{ maxWidth: "15rem" }} value={pick(m, tags)} onChange={(e) => setChosen({ ...chosen, [m]: e.target.value })}>
+              <select className="text-input" style={{ maxWidth: "15rem" }} value={pick(m, tags)} onChange={(e) => setChosen({ ...chosen, [m]: e.target.value })}>
                 <option value="">none</option>
                 {tags.map((t) => (
                   <option key={t} value={t}>
@@ -252,11 +252,11 @@ export function PortfolioTab() {
               </select>
             </label>
           ))}
-          <select style={{ width: "auto" }} value={period} onChange={(e) => setPeriod(e.target.value === "week" ? "week" : "day")}>
+          <select className="text-input" value={period} onChange={(e) => setPeriod(e.target.value === "week" ? "week" : "day")}>
             <option value="day">daily</option>
             <option value="week">weekly</option>
           </select>
-          <select style={{ width: "auto" }} value={weights} onChange={(e) => setWeights(e.target.value === "booked" ? "booked" : "equal_risk")}>
+          <select className="text-input" value={weights} onChange={(e) => setWeights(e.target.value === "booked" ? "booked" : "equal_risk")}>
             <option value="equal_risk">equal risk</option>
             <option value="booked">as booked</option>
           </select>
