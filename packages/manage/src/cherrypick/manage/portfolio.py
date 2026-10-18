@@ -90,8 +90,11 @@ def leg_greeks(leg: dict[str, Any], spot: float | None, rate: float) -> dict[str
     }
 
 
-def _leg_value(leg: dict[str, Any], spot: float, rate: float) -> float | None:
-    """Model value of one leg at `spot`, time held still (for the stress line)."""
+def _leg_value(
+    leg: dict[str, Any], spot: float, rate: float, vol_shift: float = 0.0, years_ahead: float = 0.0
+) -> float | None:
+    """Model value of one leg at `spot`, its IV moved by `vol_shift` (absolute, 0.05 = five points)
+    and `years_ahead` of time passed. A leg that has expired by then is worth its intrinsic value."""
     qty = float(leg.get("quantity") or 0.0)
     right = leg.get("right")
     if right not in ("C", "P"):
@@ -99,11 +102,52 @@ def _leg_value(leg: dict[str, Any], spot: float, rate: float) -> float | None:
     strike, dte = _f(leg.get("strike")), leg.get("dte")
     if strike is None or dte is None or dte < 0:
         return None
-    if dte == 0:
+    left = float(leg.get("years") or 0.0) - years_ahead
+    if dte == 0 or left <= 0:
         return qty * MULTIPLIER * pricing.intrinsic(spot, strike, right)
     if not leg.get("iv"):
         return None
-    return qty * MULTIPLIER * pricing.price(spot, strike, float(leg["years"]), leg["iv"], right, rate)
+    vol = max(float(leg["iv"]) + vol_shift, MIN_VOL)
+    return qty * MULTIPLIER * pricing.price(spot, strike, left, vol, right, rate)
+
+
+# An IV shifted down past this is held here: a vol of zero prices every option at intrinsic, which
+# is a statement about the market nobody made.
+MIN_VOL = 0.01
+
+
+def book_pnl(
+    rows: list[dict[str, Any]],
+    bench_spot: float | None,
+    rate: float,
+    move: float,
+    vol_shift: float = 0.0,
+    years_ahead: float = 0.0,
+    term_weighted: bool = False,
+) -> tuple[float, list[str]]:
+    """The book's modelled P&L against today's model value when the benchmark moves by `move` (each
+    name by beta x move), IVs shift by `vol_shift` and `years_ahead` pass; and the names left out
+    for want of a beta. A leg the model cannot price is left out on both sides, never valued at zero.
+
+    `term_weighted` scales each leg's shift by sqrt(30 / DTE), as the 30-day weighted vega does:
+    front-month IV moves more than a LEAPS's, so a flat shift overstates what long-dated legs gain
+    in a vol spike."""
+    total, left_out = 0.0, []
+    for r in rows:
+        if r["beta"] is None or not r["spot"] or not bench_spot:
+            if r["legs"]:
+                left_out.append(r["underlying"])
+            continue
+        moved = r["spot"] * (1.0 + r["beta"] * float(move))
+        for leg in r["legs"]:
+            shift = vol_shift
+            if term_weighted and vol_shift and (leg.get("dte") or 0) > 0:
+                shift = vol_shift * math.sqrt(30.0 / leg["dte"])
+            now = _leg_value(leg, r["spot"], rate)
+            then = _leg_value(leg, moved, rate, shift, years_ahead)
+            if now is not None and then is not None:
+                total += then - now
+    return total, left_out
 
 
 # --------------------------------------------------------------------------- the book
@@ -139,6 +183,8 @@ def reading(
     unmodelled: list[str] = []
     no_beta: list[str] = []
     per: dict[str, dict[str, Any]] = {}
+    leg_thetas: list[tuple[str | None, float]] = []
+    trade_theta: dict[int, float] = {}
     for trade in trades:
         und = trade["underlying"]
         spot = _f(trade.get("spot"))
@@ -170,6 +216,8 @@ def reading(
             for key in ("delta", "gamma", "theta", "vega", "vega_30"):
                 row[key] += g[key]
             row["legs"].append(leg)
+            leg_thetas.append((leg.get("expiration"), g["theta"]))
+            trade_theta[id(trade)] = trade_theta.get(id(trade), 0.0) + g["theta"]
 
     for row in per.values():
         if row["beta"] is not None and row["spot"] and bench_spot:
@@ -243,10 +291,136 @@ def reading(
             if u["beta_doubt"]
         ],
         "underlyings": underlyings,
+        "vix": _f(((metrics or {}).get(VIX) or {}).get("last")),
+        "scenarios": scenarios(rows, bench_spot, rate, cfg["scenarios"], net_liq),
+        "ladder": ladder(trades, leg_thetas, trade_theta, theta),
     }
     out["bands"] = bands(out, cfg)
     out["guidance"] = guidance(out, rules)
     return out
+
+
+VIX = "VIX"
+
+
+def scenarios(
+    rows: list[dict[str, Any]],
+    bench_spot: float | None,
+    rate: float,
+    cfg: dict[str, Any],
+    net_liq: float | None,
+) -> dict[str, Any]:
+    """The book repriced across benchmark moves: a matrix against IV shifts (time held still), and a
+    risk graph at two horizons -- now, and the nearest expiry, when every leg expiring by then is
+    worth its intrinsic value and the rest have that much less time.
+
+    The IV shift is stated for a 30-day option and, with `term_weighted` (the default), scaled to
+    each leg by sqrt(30 / DTE), so front months move more than long-dated legs. Real implied
+    volatility also rises as the market falls (skew, spot-vol correlation), so the down-move/IV-up
+    corner is the one to read; neither is a model of how vol moves, and the reading says which was
+    used. On 2026-10-18 a flat shift showed the book GAINING $425 on +5 points, carried by its
+    long-dated longs, while its front months -- what a vol spike hits -- were short."""
+    moves = [float(m) for m in cfg["moves"]]
+    shifts = [float(s) for s in cfg["iv_shifts"]]
+    weighted = cfg.get("iv_shift_weighting") == "term"
+    matrix = []
+    left_out: list[str] = []
+    for shift in shifts:
+        cells = []
+        for move in moves:
+            pnl, lo = book_pnl(rows, bench_spot, rate, move, shift, 0.0, weighted)
+            left_out = lo
+            cells.append(round(pnl, 2))
+        matrix.append({"iv_shift": shift, "pnl": cells})
+
+    dtes = [
+        leg["dte"]
+        for r in rows
+        for leg in r["legs"]
+        if leg.get("right") in ("C", "P") and (leg.get("dte") or 0) > 0
+    ]
+    horizon = min(dtes) if dtes else None
+    lo_g, hi_g, step = (float(v) for v in cfg["graph"])
+    count = int(round((hi_g - lo_g) / step))
+    grid = [round(lo_g + i * step, 4) for i in range(count + 1)]
+    curves = [{"horizon_days": 0, "pnl": [round(book_pnl(rows, bench_spot, rate, m)[0], 2) for m in grid]}]
+    if horizon:
+        ahead = horizon / 365.0
+        curves.append(
+            {
+                "horizon_days": horizon,
+                "pnl": [round(book_pnl(rows, bench_spot, rate, m, 0.0, ahead)[0], 2) for m in grid],
+            }
+        )
+    return {
+        "moves": moves,
+        "iv_shift_weighting": "term" if weighted else "flat",
+        "matrix": matrix,
+        "graph": {"moves": grid, "curves": curves},
+        "net_liq": net_liq,
+        "left_out": left_out,
+    }
+
+
+def ladder(
+    trades: list[dict[str, Any]],
+    leg_thetas: list[tuple[str | None, float]],
+    trade_theta: dict[int, float],
+    theta: float,
+) -> dict[str, Any]:
+    """What the book has expiring when: per expiry date, the trades whose nearest short (else nearest
+    leg) expires then, what they can still lose (each trade's modelled downside from now), and the
+    theta of the legs expiring then. Then the share of the book's theta and downside in trades with
+    an earnings report before their nearest short expires."""
+    by: dict[str, dict[str, Any]] = {}
+
+    def slot(exp: str) -> dict[str, Any]:
+        return by.setdefault(
+            exp, {"expiration": exp, "trades": [], "downside": 0.0, "downside_unknown": 0, "theta": 0.0}
+        )
+
+    for exp, th in leg_thetas:
+        if exp:
+            slot(exp)["theta"] += th
+    earn = {"trades": [], "theta": 0.0, "downside": 0.0}
+    for t in trades:
+        exp = t.get("nearest_short_expiry") or t.get("nearest_expiry")
+        if not exp:
+            continue
+        s = slot(exp)
+        s["trades"].append(t.get("trade_id") or t["underlying"])
+        down = _f((t.get("profile") or {}).get("downside_from_now"))
+        if down is None:
+            s["downside_unknown"] += 1
+        else:
+            s["downside"] += down
+        er = t.get("earnings") or {}
+        if er.get("before_nearest_short_expiry"):
+            earn["trades"].append(t.get("trade_id") or t["underlying"])
+            if down is not None:
+                earn["downside"] += down
+            earn["theta"] += trade_theta.get(id(t), 0.0)
+    rows = []
+    for exp in sorted(by):
+        s = by[exp]
+        rows.append(
+            {
+                "expiration": exp,
+                "trades": s["trades"],
+                "downside": round(s["downside"], 2),
+                "downside_unknown": s["downside_unknown"],
+                "theta": round(s["theta"], 2),
+            }
+        )
+    return {
+        "expiries": rows,
+        "earnings": {
+            "trades": earn["trades"],
+            "theta": round(earn["theta"], 2),
+            "theta_share": round(earn["theta"] / theta, 3) if theta > 0 else None,
+            "downside": round(earn["downside"], 2),
+        },
+    }
 
 
 def bands(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
@@ -269,6 +443,30 @@ def bands(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
             "value": pct,
             "inside": (lo_pct <= pct <= hi_pct) if pct is not None else None,
         },
+        "buying_power": _bp_band(r, cfg["buying_power"]),
+    }
+
+
+def bp_cap(vix: float | None, steps: list[list[Any]]) -> float | None:
+    """The buying-power ceiling for this VIX: the first step whose VIX bound it is under (a null
+    bound catches the rest). None without a VIX -- a cap guessed for a missing VIX would be a claim."""
+    if vix is None:
+        return None
+    for bound, cap in steps:
+        if bound is None or vix < float(bound):
+            return float(cap)
+    return None
+
+
+def _bp_band(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
+    cap = bp_cap(r.get("vix"), cfg["vix_steps"])
+    used = r.get("buying_power_used_pct")
+    return {
+        "low": 0.0,
+        "high": cap,
+        "value": used,
+        "vix": r.get("vix"),
+        "inside": (used <= cap) if cap is not None and used is not None else None,
     }
 
 
@@ -294,17 +492,7 @@ def _stress(
 ) -> list[dict[str, Any]]:
     out = []
     for shock in shocks:
-        total, left_out = 0.0, []
-        for r in rows:
-            if r["beta"] is None or not r["spot"] or not bench_spot:
-                if r["legs"]:
-                    left_out.append(r["underlying"])
-                continue
-            moved = r["spot"] * (1.0 + r["beta"] * float(shock))
-            for leg in r["legs"]:
-                now, then = _leg_value(leg, r["spot"], rate), _leg_value(leg, moved, rate)
-                if now is not None and then is not None:
-                    total += then - now
+        total, left_out = book_pnl(rows, bench_spot, rate, shock)
         out.append(
             {
                 "shock": shock,
@@ -403,6 +591,17 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
                     f"{expected:.2%} move its implied volatility expects{partial}",
                 )
             )
+
+    bp = (r.get("bands") or {}).get("buying_power") or {}
+    if not off("portfolio.buying_power") and bp.get("inside") is False:
+        fired.append(
+            _fire(
+                "portfolio.buying_power",
+                cfg["buying_power"]["confidence"],
+                f"buying power used is {bp['value']:.0%} of net liq, over the {bp['high']:.0%} the VIX at "
+                f"{bp['vix']:.1f} allows: less room to adjust, and more to lose if the market gaps",
+            )
+        )
 
     cc = cfg["concentration"]
     if not off("portfolio.concentration"):

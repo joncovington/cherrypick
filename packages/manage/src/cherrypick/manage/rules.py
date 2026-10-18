@@ -178,6 +178,22 @@ DEFAULT_RULES: dict[str, Any] = {
         "beta_doubt": {"min_abs_corr": 0.3, "near_zero_beta": 0.1},
         # Benchmark shocks the stress line reprices the book at, each underlying moved by beta x shock.
         "stress": {"shocks": [-0.10, 0.05]},
+        # Buying power used against a ceiling that rises with VIX: [VIX under, cap], the last bound
+        # null for "anything above". The common retail table (more room when premium is rich).
+        "buying_power": {
+            "enabled": True,
+            "vix_steps": [[15, 0.25], [20, 0.30], [30, 0.35], [40, 0.40], [None, 0.50]],
+            "confidence": 40,
+        },
+        # The risk matrix (benchmark moves x IV shifts in vol points, time held still) and the risk
+        # graph (`graph` = [from, to, step] of benchmark moves, now and at the nearest expiry).
+        "scenarios": {
+            "moves": [-0.10, -0.05, -0.02, -0.01, 0.0, 0.01, 0.02, 0.05, 0.10],
+            "iv_shifts": [-0.05, 0.0, 0.05],
+            # "term": each leg's shift scaled by sqrt(30 / DTE), front months moving most; "flat": alike.
+            "iv_shift_weighting": "term",
+            "graph": [-0.15, 0.15, 0.01],
+        },
         # When `portfolio.delta` fires, size an XSP vertical (hedge.py) toward a target `inset` of the
         # band's width inside the breached edge: a credit spread with its short at
         # `credit_short_delta`, and a debit spread with its long at `debit_long_delta`, each `width`
@@ -189,7 +205,8 @@ DEFAULT_RULES: dict[str, Any] = {
             "debit_long_delta": 0.40,
             "width": 5,
             "max_units": 10,
-            # Never past this share of net liq in buying power used, the hedge's max loss included.
+            # A credit spread never takes buying power used past this share of net liq. A debit spread
+            # is exempt: it only lowers the book's worst case, so it is offered past the cap and says so.
             "max_buying_power_pct": 0.50,
         },
     },
@@ -219,6 +236,7 @@ RULE_IDS = (
     "portfolio.delta",
     "portfolio.breakeven",
     "portfolio.concentration",
+    "portfolio.buying_power",
 )
 
 

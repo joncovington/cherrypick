@@ -32,6 +32,8 @@ allowed in an IRA as a defined-risk spread) and a tenth of SPX, so a small accou
 expiry is the standard monthly 30-60 days out, preferring 45-60 -- the suite's premium-selling cycle --
 and the window is HEDGE_STRIKES strikes either side of spot, wide enough to reach a 15-delta strike.
 Its metrics are quoted every day with the benchmark's.
+
+Version 6 quotes VIX every day too: the buying-power band rises with it.
 """
 
 from __future__ import annotations
@@ -48,10 +50,12 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 5
+SNAPSHOT_VERSION = 6
 # What a beta-weighted delta is stated in. The broker's betas are against SPY, so this is not a free
 # choice: a different benchmark would need betas the broker does not supply.
 BENCHMARK = "SPY"
+# What the buying-power band is scaled by.
+VOLATILITY_INDEX = "VIX"
 # The instrument a delta hedge is sized in, and the slice of its chain the snapshot carries.
 HEDGE_ROOT = "XSP"
 HEDGE_DTE = (30, 60)
@@ -227,9 +231,9 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         }
     )
     ok, prefer = positions.get("ok"), positions.get("broker_module")
-    # The benchmark and the hedge root are quoted whether or not they are held; their history is not
+    # The benchmark, the hedge root and VIX are quoted whether or not they are held; their history is not
     # wanted unless they are.
-    quoted = sorted({*symbols, BENCHMARK, HEDGE_ROOT})
+    quoted = sorted({*symbols, BENCHMARK, HEDGE_ROOT, VOLATILITY_INDEX})
     metrics, error = market_metrics(cfg, quoted, prefer) if ok else ({}, None)
     history, history_error = transactions(cfg, symbols, prefer) if ok else ({}, None)
     session = clock.today_iso()

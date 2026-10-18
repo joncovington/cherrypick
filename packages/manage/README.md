@@ -160,6 +160,7 @@ confidence 40. Each fires REVIEW and names what drives it:
 | `portfolio.delta` | BWD from −0.5× to +0.75× theta (SPY shares), leaning long; ±0.5% of net liq per 1% move when theta is not positive | retail options education ("BWD within about half the theta") | None |
 | `portfolio.breakeven` | short gamma, with a break-even move under SPY's implied one-day move | option theory: theta = −½ Γ S² σ² | The identity is exact; whether acting on it pays is untested |
 | `portfolio.concentration` | one name over 25% of gross theta or gross BWD | convention | None |
+| `portfolio.buying_power` | buying power used over a cap set by VIX: 25% under 15, 30% under 20, 35% under 30, 40% under 40, 50% above | retail options education (more room when premium is rich) | None. On 2026-10-18 the account used 53% against a 30% cap at VIX 20 |
 
 Each band is written into the reading with the figure's place in it (`bands`), so the console draws
 the band manage used and never works one out itself.
@@ -176,8 +177,24 @@ points wide, sized toward a point a quarter of the band's width inside the breac
 
 Each shows its legs, the mid and the natural price (sell at the bid, buy at the ask), the cash, the
 max loss, and the book after it: BWD (and whether that is inside the band the book would then have),
-theta, the break-even move and buying power used. A hedge never takes buying power used past 50% of
-net liq, and one that cannot fit a single spread says so. The mid is not a fill. Nothing is placed.
+theta, the break-even move and buying power used. A credit spread never takes buying power used past
+50% of net liq, and one that cannot fit says so. A debit spread is exempt: its cost is its whole
+worst case and it only lowers the book's, so it is offered past the cap and marked `past_cap`. The
+mid is not a fill. Nothing is placed.
+
+**Scenarios and the expiry ladder.** The reading also carries:
+
+- a **risk matrix**: the book's P&L across SPY moves (−10% to +10%) and IV shifts (−5, 0, +5 points),
+  each name moved by its beta, time held still. The shift is stated for a 30-day option and scaled
+  to each leg by √(30 / DTE), so front months move most. A flat shift once showed the book *gaining*
+  $425 on +5 points, carried by long-dated longs, while the front months a vol spike hits were short;
+- a **risk graph**: P&L across SPY −15% to +15%, now and at the nearest expiry (legs expiring by then
+  at intrinsic);
+- an **expiry ladder**: per expiry, the trades whose nearest short expires then, what they can still
+  lose and the theta of the legs expiring then; and the share of theta and downside in trades with
+  earnings before their nearest short expires (72% of theta on 2026-10-18).
+
+Every figure is modelled repricing, not a forecast.
 
 ## Known limits
 

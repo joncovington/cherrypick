@@ -85,20 +85,20 @@ def test_too_long_sells_calls_and_buys_puts_and_lands_in_band():
     assert debit["cash"] < 0 and debit["max_loss"] == pytest.approx(-debit["cash"])
 
 
-def test_a_hedge_never_takes_buying_power_past_its_cap():
+def test_a_credit_hedge_respects_the_cap_and_a_debit_hedge_is_offered_past_it():
     book = _book(60.0)
     book["buying_power_used"] = 7000.0  # 46.7% of 15,000: $500 left under the 50% cap
-    out = hedge.suggest(book, _chain(), METRICS, SESSION, RULES)
-    for s in out["suggestions"]:
-        if s.get("error"):
-            assert "buying-power cap" in s["error"]
-            continue
-        assert s["after"]["buying_power_used_pct"] <= 0.50
-    book["buying_power_used"] = 7600.0  # past the cap already: nothing fits
-    assert all(
-        "buying-power cap" in s["error"]
-        for s in hedge.suggest(book, _chain(), METRICS, SESSION, RULES)["suggestions"]
-    )
+    credit, debit = hedge.suggest(book, _chain(), METRICS, SESSION, RULES)["suggestions"]
+    if not credit.get("error"):
+        assert credit["after"]["buying_power_used_pct"] <= 0.50 and not credit["past_cap"]
+    # Already past the cap: the credit spread cannot be offered...
+    book["buying_power_used"] = 7600.0
+    credit, debit = hedge.suggest(book, _chain(), METRICS, SESSION, RULES)["suggestions"]
+    assert "buying-power cap" in credit["error"]
+    # ...but the debit spread only lowers the worst case, so it is offered, sized to the need, and
+    # says it takes the account past the cap.
+    assert debit.get("error") is None and debit["past_cap"] is True
+    assert debit["after"]["buying_power_used_pct"] > 0.50 and debit["after"]["in_band"]
 
 
 def test_too_short_sells_puts_and_buys_calls():
