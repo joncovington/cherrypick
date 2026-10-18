@@ -78,6 +78,14 @@ def _validation(settings: dict) -> list[dict]:
                 "vendor_at_least_recorder": dec.get("vendor_at_least_recorder") or {},
                 "recorder": {k: (dec.get("recorder") or {}).get(k) for k in ("measures", "checks")},
                 "vendor": {k: (dec.get("vendor") or {}).get(k) for k in ("measures", "checks")},
+                # From the 2026-10-17 amendment: the bar's basis, and the thinned recording when it is.
+                "data_basis": dec.get("data_basis") or "recorder",
+                "recorder_at_vendor_cadence": {
+                    k: (dec.get("recorder_at_vendor_cadence") or {}).get(k) for k in ("measures", "checks")
+                }
+                if dec.get("recorder_at_vendor_cadence")
+                else None,
+                "cadence_cost": dec.get("cadence_cost"),
                 "sessions": doc.get("sessions") or {},
             }
         )

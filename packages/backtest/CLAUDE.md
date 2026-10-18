@@ -108,6 +108,18 @@ vendor with our own recording, not with perfection: the recorder-sourced replay 
 completion-timing check. Its reports are derived results and are written only under
 `results/validation/`.
 
+**Amended 2026-10-17, after the first four sessions: the recording is compared at the vendor's
+cadence.** A 60 s store matched paper's entries well below the 15 s recording, and every miss was the
+replay's one sample in flies' 30 s window landing across a strike boundary (a neighbouring centre, or
+the other side at the same centre), none a quote the vendor got wrong. The recording thinned to the
+vendor's minute marks did no better, so the bar as first written compared a cadence with a cadence and
+no 60 s store could pass it. The bar is now the vendor against the recording thinned to the vendor's
+own instants (`validate.thin_to_vendor_instants`, a temporary copy that lives only for the check);
+what a minute costs is reported beside it (`cadence_cost`: each measure full and thinned, and the
+completion outcome, which is what moves P&L), never a bar and never assumed. Stores of the same cadence
+compare as before. Thresholds, checks and `UNLOCK_SESSIONS` are unchanged. On the first four sessions
+the vendor met the thinned recording on every check; only the session count held it.
+
 What the first read already showed (described here, never quantified): the recorder's own profile
 can be the thinner one (on a monthly-expiry session it carried visibly fewer strikes, which moves
 walls and the flip), so a profile disagreement is read against each side's strike count, which the
