@@ -180,6 +180,56 @@ Both are telemetry from 2026-10-05.
 sessions. **Reopens when** the base book has ten or more losing sessions with stamped hedges. Re-run
 k=2. Nothing intraday is built on it before then.
 
+## An iron-condor start: a 16-delta IC, completed outward, legged entries around it
+
+Proposed 2026-10-17. Open the session with an iron condor near 16 delta a side; as spot moves,
+complete the condor's outside verticals into flies where the price allows, while the book keeps
+taking legged credit spreads near spot. A put spread is refused near the condor's call side, and a
+call spread near its put side.
+
+- **What completion can and cannot do here.** On any one quote the completing spread costs more than
+  the vertical it completes (an option's price is convex in strike), so a vertical completes for a
+  credit only after spot or the clock has carried it away. The side spot leaves becomes completable,
+  a cheap fly far out of the money; the side spot approaches never does, and that is the strand.
+  Completions add a payoff zone on the safe side; they do not take risk off the tested one.
+- **The fee question decides it.** A 16-delta 5-wide vertical opens for little, and completing it
+  pays a second fee stack plus up to three $5 settlement charges, so the net after fees can be zero
+  or negative. That is measured first.
+- **Why the afternoon matters.** MEIC paper, 2026-07-13..10-16: condors opened after 13:00 ET
+  finished inside their short strikes 89% of the time (48 sessions, the same session-weighted),
+  against 81% before 13:00. The condor's opening time is a parameter to test, not a constant.
+- **The near gate, candidates.** The hazard: a put credit spread sold up near the condor's call side
+  loses on a reversal down, which is where the condor's put side is already short, so it stacks the
+  reversal. In order of preference:
+  1. **Expected-move scaled**: refuse a put spread whose short strike is within k x the remaining ATM
+     straddle of the condor's call short strike (mirror for calls). It shrinks through the day as
+     the straddle does, the same ratio idea as `vol-floor`.
+  2. **Position in the condor**: z = (spot - condor midpoint) / (call short - midpoint); no put
+     spread while z > z0, no call spread while z < -z0. Reads facts every row carries, like the
+     range gates.
+  3. **Delta band**: refuse while the new short leg's delta is within d of the condor short's on the
+     other side. Adapts to vol, but needs fresh deltas on every tick and refuses when they are stale.
+  4. **Fixed points**: simplest, but 10 points at 10:00 and at 15:30 are different distances.
+  Thresholds are swept in the study below and fixed before any forward run, never tuned on it.
+- **First (no flies code):** over stored sessions, open a 16-delta condor at 10:00 and at 13:00,
+  and record per side whether it became completable at >= 0.05, 0.10 and 0.25 net after fees, what
+  that fly paid at settlement, and the plain condor's result. Cut every result by net GEX sign at
+  the condor's open: in MEIC paper, afternoon condors finished inside their shorts in 93% of
+  positive-GEX sessions against 87% of negative ones (27 and 26 sessions, the same direction either
+  side of the 10-09 GEX fix, and not monotonic in GEX size), too few sessions to gate on. The vendor
+  store's GEX is rebuilt from the vendor's IV, so its sign is checked against the recorder's on the
+  overlap days before the cut is read.
+- **Reopens when** that study shows outside completion paying after fees. Then it is a new entry
+  mode and its own arm; it differs from `control` in several things at once, so it is read against
+  `control` and against MEIC's afternoon condors, not as a one-variable twin.
+- **Run 2026-10-17, over the backtest's design window (licensed data; reasoning only here):** not
+  met. At both open times, every wing width tried and every completion threshold, completing the
+  outside verticals did worse than holding the plain condor. The side spot leaves completes almost
+  always, but that vertical was going to expire worthless and keep its credit anyway; completing it
+  spends most of that credit, a second fee stack and settlement charges on a far fly that rarely
+  pays. The near gate was not reached. The plain afternoon condor, cut by net GEX sign, is the part
+  worth following, and it belongs to MEIC's question, not to flies.
+
 ## Done -- kept for the record
 
 Finished or reversed items stay here, so a later reader can see what was decided and on what evidence.

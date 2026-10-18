@@ -321,6 +321,11 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   below are kept as the record. `debit-first-atm` stays: its shadow ladder's 10-session read cannot
   be complete by 10-15 (the 10-08 outage voided that session's anchors), so it slips to the next
   boundary.
+- **Retiring at the 2026-10-26 boundary** (experiment log, 2026-10-17): `restack` and
+  `debit-first-atm`, each behind `control` in both halves of a backtest over licensed history. The
+  licence keeps the numbers out of this repo; the log gives the reasoning and the conditions (the
+  retirement waits for validation to unlock history and a re-run with every searched arm counted as
+  a trial).
 - `bwb-atm`, `debit-first-atm` — ATM twins of the two GEX-centred construction arms, restoring the
   one-variable rule: **X-atm vs `control`** isolates construction, **X-atm vs X** isolates centring. ATM
   means the structure straddles spot, deliberately. **No `spot + N strikes` arm**: `center_offset` is
