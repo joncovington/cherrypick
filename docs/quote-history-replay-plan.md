@@ -382,6 +382,43 @@ the quote history's contribution to MEIC; looser stop ratios are not.
 enrichment, the validation harness) are proved there first. Where flies and MEIC would otherwise
 disagree, the shared code moves to `cherrypick.core`, following core's own bar.
 
+**Built and declared (2026-10-18), before any MEIC check number was read.** The replay is
+`python -m cherrypick.meic.replay run` (MEIC's `paper.process_symbol` tick by tick over a recorded
+session, at paper's 60 s cadence) and its check is `... replay check` (`meic.replay_check`). The
+shared day loader moved to `core.quotehistory.RecordedDay` first (flies' replay unchanged, shown
+byte-identical). How each snapshot field is rebuilt, including VIX, VIX1D and IV rank from Cboe's
+daily files, is in `meic/replay.py`'s docstring.
+
+- **The stops check is replaced, and why.** No SPX arm ran a per-side stop in the recorder era:
+  `control` holds to settlement, and so do the `bp-*` arms; the arms that stop trade XSP, which the
+  recorder does not keep. "Every arm that really stopped reproduced to the cent" has nothing to
+  match. In its place: each side's recorded worst cost (`put_max_cost`/`call_max_cost`) on a
+  full-day replay against paper's, paired by arm, strikes and width within a tick of entry. That is
+  the path `stop_policies` derives every threshold from, so it validates what a stop study stands on.
+- **Entries:** tested on paper's own book as of each entry (flies' method), matched on arm, short put,
+  short call and width within 30 s; replay-only entries counted as episodes on the replay's 60 s grid.
+- **The pass test**, over at least 10 recorder-era sessions, a failed session listed with its cases:
+
+| Measure | Bar |
+|---|---|
+| paper entries matched | ≥ 0.90 |
+| replay-only entry episodes per paper entry | ≤ 0.10 |
+| matched credit difference, median / p90 | ≤ 0.10 / ≤ 0.30 |
+| side worst-cost difference, median / p90 | ≤ 0.10 / ≤ 0.30 |
+
+  The share of paper's condors the full-day replay paired is reported beside it, the base the path
+  measures stand on.
+- **Amended the same day: VIX is intraday.** The first rule fixed VIX at the session's Cboe open. Over
+  the four recorder days the check read entries 0.856 and replay-only episodes 0.152, failing both;
+  three days matched 95-97% and 2026-10-16 matched 58%. On 10-16 VIX rose from 15.8 to 22.2 and
+  crossed 18 near 13:00, where paper moved from 0.16- to 0.14-delta shorts, and a fixed VIX cannot
+  follow; in the design window one session in five has a band boundary inside its VIX range. VIX is
+  now read at or before each tick from the history file's own `market_regime_history` (the
+  recorder's readings; the vendor store's minute series from VIX options' underlying price), the
+  session's open the counted fallback. The thresholds are unchanged; the check is re-run on every
+  recorder day under the amended rule. The backtest's history runs for MEIC unlock on the same rule as flies' (the
+  vendor against the recording at the vendor's cadence, PR #383).
+
 ## Operations
 
 - **Reading while the recorder writes.** `gex_history.db` is WAL from 2026-10-12, so a read-only

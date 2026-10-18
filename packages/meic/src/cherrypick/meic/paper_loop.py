@@ -342,6 +342,13 @@ def _build_candidates(symbol, last, widths, delta_targets, default_delta, today)
     for _exp, rows in chain.get("chain", {}).items():
         entries = rows
         break
+    return candidates_from_chain(entries, last, widths, delta_targets, default_delta)
+
+
+def candidates_from_chain(entries, last, widths, delta_targets, default_delta):
+    """The candidate menu and `leg_quotes` from one expiration's chain rows (tt `get_option_chain`'s
+    shape: strike_price, option_type, streamer_symbol, bid, ask, delta). Pure, so the quote-history
+    replay (`meic.replay`) selects strikes with exactly the code the paper loop runs."""
     calls, puts = [], []
     for e in entries:
         strike = e.get("strike_price") or e.get("strike")

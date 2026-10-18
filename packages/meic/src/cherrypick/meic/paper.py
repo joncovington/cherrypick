@@ -21,6 +21,7 @@ import os
 import sqlite3
 import sys
 from datetime import datetime
+from pathlib import Path
 
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET  # noqa: E402
@@ -242,7 +243,12 @@ def load_profiles() -> dict:
 
 
 def load_base_config() -> dict:
-    with open(_paths.config_path()) as f:
+    """The base config `process_symbol` merges every arm over. `$MEIC_CONFIG` names a snapshot of it
+    instead (the quote-history replay and the backtest run from one, beside `$MEIC_RISK_CONFIG`); read
+    here only, so nothing that WRITES the config can be pointed elsewhere by it."""
+    override = os.environ.get("MEIC_CONFIG")
+    path = Path(os.path.expandvars(os.path.expanduser(override))) if override else _paths.config_path()
+    with open(path) as f:
         return json.load(f)
 
 
@@ -1650,7 +1656,7 @@ def _record_entry_attempt(
     """
     gex = snapshot.get("gex") or {}
     try:
-        conn = sqlite3.connect(db_path, timeout=5)
+        conn = _meic_db.tune_scratch(sqlite3.connect(db_path, timeout=5))
         conn.execute(
             "INSERT INTO entry_attempts (ts, trade_date, arm, symbol, expiration, outcome, "
             "block_detail, proposed_legs, put_strike, call_strike, wing_width, underlying_price, "
@@ -1767,7 +1773,7 @@ def _profile_day_stats(profile: str, trade_date: str, db_path: str, symbol: str 
     + spacing inputs, so each portfolio's daily_ic_trade_target is its own budget. Read-only direct
     query (cheap; avoids adding subprocess spawns per profile per iteration once the roster is large)."""
     try:
-        con = sqlite3.connect(db_path)
+        con = _meic_db.tune_scratch(sqlite3.connect(db_path))
         con.row_factory = sqlite3.Row
         q = "SELECT entry_time FROM ic_trades WHERE trade_date=? AND arm=? AND status NOT IN ('cancelled')"
         params = [trade_date, profile]
@@ -2000,7 +2006,7 @@ def _log_arm_divergence(snapshot: dict, results: dict, db_path: str) -> None:
         import sqlite3 as _sq
 
         now = str(_now_et())
-        conn = _sq.connect(db_path)
+        conn = _meic_db.tune_scratch(_sq.connect(db_path))
         for arm, reason in sorted(skipped.items()):
             conn.execute(
                 "INSERT INTO loop_log (loop_time, loop_date, symbol, action, reasoning, created_at) "

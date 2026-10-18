@@ -129,6 +129,28 @@ python run.py gex-gate                       # what the negative-GEX gate refuse
   recomputing. It carries the core robustness stamps (`fragile`, `paired`, `history`, `multiplicity`)
   via `by_regime(..., with_sessions=True)`; per-session totals are **net of fees**, and
   `test_regime_cuts.py` pins that they add up to each cell's net.
+- **Quote-history replay:** `python -m cherrypick.meic.replay run --date D --out LEDGER --arms a,b
+  [--history-db H] [--settle-price P]` (its own entry point because it writes a scratch ledger) runs
+  `paper.process_symbol` tick by tick over a recorded SPX session, the recorder's or any file in its
+  schema (backtest's vendor stores), under `paper.pinned_clock`, at paper's 60 s cadence whatever the
+  history's (`--tick-seconds`): on the recorder's 15 s file control would otherwise enter four times
+  as often as paper can. Strikes come from `paper_loop.candidates_from_chain`, the builder the loop
+  runs after its fetch. What the recorder schema lacks is rebuilt by a declared rule, never guessed
+  (the module docstring): VIX at or before each tick from the history file's own
+  `market_regime_history` (the recorder's readings; the vendor store's from VIX options, `backtest
+  fetch-vix`), with the session's Cboe open as the declared, counted fallback, because paper moves its
+  delta band the moment VIX crosses 18/25/35 and one session in five straddles one; VIX1D from Cboe's
+  daily file at the open; IV rank as the tick's VIX in the prior 252 Cboe closes (`iv_rank_source =
+  "vix_proxy"`); ATR from prior sessions' trails; GEX from the recorded profile. It cannot see XSP (nothing recorded), strikes
+  beyond the recorder's ~20 each side, or `advised:*` arms, and refuses each. A scratch ledger is
+  written under `db.scratch_writes()` (no fsync, no WAL checkpoint), which cut a tick from ~0.34 s
+  to ~0.04 s; the real ledgers never take that path.
+- **`... replay check --dates D1,D2 --arms ...`** validates it against paper on recorded sessions:
+  entries on paper's own book as of each entry (flies' method), replay-only entry episodes, credit
+  differences, and each side's worst cost on a full-day replay. No SPX arm ran a per-side stop in the
+  recorder era, so the worst-cost path stands in for the plan's stops-matched check. The pass test
+  was declared in `docs/quote-history-replay-plan.md` (Phase 2) before any number was read;
+  `packages/backtest`'s validation reads its summary.
 
 ## What the advisor may move (`advice.bounds`)
 
@@ -336,8 +358,9 @@ fired, `*_settle_value` what the side was worth unstopped — **recorded for sto
   cache keeps no quote history; a `0.0` would be misleadingly precise. It needs write-path
   instrumentation, not a read-side fix. **That instrumentation exists from 2026-10-13:** the gex
   recorder keeps SPX's chain quotes every ~15 s (`core.quotehistory`), covering every leg MEIC has
-  traded since 09-01. A MEIC replay on it (gap-through stop fills, MFE and profit-side exits; the
-  stop curve itself is already uncensored, `control` running no per-side stop) is Phase 2 of [quote-history-replay-plan.md](../../docs/quote-history-replay-plan.md).
+  traded since 09-01. The MEIC replay on it (`meic.replay`, above) prices a fired stop at the first
+  recorded cost past its trigger, the gap-through `stop_policies` cannot see; Phase 2 of
+  [quote-history-replay-plan.md](../../docs/quote-history-replay-plan.md).
   Nothing before 10-13 is recoverable.
 
 **A width (or any arm) comparison must be bucketed on whether the reference arm fired that session**
