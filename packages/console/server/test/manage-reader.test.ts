@@ -229,6 +229,19 @@ describe("readManage", () => {
     expect(readManage(config, "2026-10-16").accounts[0]!.portfolio).toBeNull();
   });
 
+  it("passes an earnings trade and the rules waiting for its call through, and an ordinary trade has neither", () => {
+    const doc = evalDoc("2026-10-18");
+    const trades = (doc["accounts"] as Array<Record<string, unknown>>)[0]!["trades"] as Array<Record<string, unknown>>;
+    trades[1]!["earnings_trade"] = { key: "IWM|2026-10-23", report: "2026-10-20", time_of_day: "AMC", lead_days: 4, passed: false };
+    trades[1]!["held_for_earnings"] = [{ rule: "credit.time_exit", action: "CLOSE", confidence: 75, reason: "losing", legs: null }];
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-18.json"), JSON.stringify(doc));
+    const [ko, iwm] = readManage(config).accounts[0]!.trades;
+    expect(iwm!.earningsTrade).toEqual({ report: "2026-10-20", timeOfDay: "AMC", leadDays: 4, passed: false });
+    expect(iwm!.heldForEarnings.map((f) => f.rule)).toEqual(["credit.time_exit"]);
+    expect(ko!.earningsTrade).toBeNull();
+    expect(ko!.heldForEarnings).toEqual([]);
+  });
+
   it("reads an older session when asked", () => {
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-13.json"), JSON.stringify(evalDoc("2026-10-13")));
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-14.json"), "{not json");
