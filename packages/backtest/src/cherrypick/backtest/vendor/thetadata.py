@@ -11,12 +11,85 @@ availability) is retried with backoff before it becomes a refusal.
 
 from __future__ import annotations
 
+import atexit
 import math
+import os
+import sys
 import time
 from datetime import date, timedelta
+from pathlib import Path
+
+from cherrypick.core import home as _home
+from cherrypick.core import looplock
 
 from .. import credential
 from . import VendorRefusal
+
+#: The account allows ONE session: a second login with the key ends the first, and every later call
+#: of the first fails UNAUTHENTICATED (2026-10-17). So a process takes this lock before it logs in
+#: and holds it until it exits; another finds it held and WAITS, asking again every
+#: `SESSION_POLL_SECONDS`, rather than killing a fetch hours into its run (the user, 2026-10-17: a
+#: scheduled fetch that found the account busy should still run tonight, after the other finishes).
+#: The wait ends at `SESSION_WAIT_SECONDS` with `session_in_use`: a holder alive but stuck must not
+#: keep every later client waiting for ever. It is `core.looplock`'s lock: a live holder is never
+#: stolen from, however long it runs; a dead one's, or one whose PID the OS has since handed to
+#: another process, is reclaimed. It guards every client this package builds (fetch, fetch-flow, the
+#: nightly job, any script using `client_for`); the Theta Terminal or the library used by hand does
+#: not take it. The file is `<home>/state/thetadata-session.lock`, holding the holder's PID, outside
+#: the licensed directory so a purge never removes a live session's lock.
+SESSION_LOCK = "thetadata-session.lock"
+SESSION_POLL_SECONDS = 60.0
+SESSION_WAIT_SECONDS = 6 * 3600.0
+
+
+def session_lock_path() -> Path:
+    return _home.state_dir() / SESSION_LOCK
+
+
+def _holder(path: Path) -> int | None:
+    try:
+        return int(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def take_session(
+    path: Path | None = None,
+    *,
+    wait_seconds: float = SESSION_WAIT_SECONDS,
+    poll_seconds: float = SESSION_POLL_SECONDS,
+    log=None,
+) -> Path:
+    """Take the account's one session for this process, waiting for another holder to finish: asked
+    again every `poll_seconds`, each wait logged with the holder's PID, until `wait_seconds` have
+    passed, then `session_in_use`. A process that already holds it may take it again (each process
+    makes its clients one after another). `wait_seconds=0` asks once."""
+    path = path or session_lock_path()
+    if _holder(path) == os.getpid():
+        return path
+    started = time.monotonic()
+    while not looplock.acquire(path, alive=looplock.pid_alive):
+        waited = time.monotonic() - started
+        if waited >= wait_seconds:
+            raise VendorRefusal(
+                "session_in_use",
+                f"another ThetaData client (pid {_holder(path)}) held the account's one session for the "
+                f"{waited / 60:.0f} minutes this one waited; a second login would end it.",
+            )
+        if log is not None:
+            held_by = _holder(path)
+            log(f"waiting for the ThetaData session: pid {held_by} holds it ({waited / 60:.0f} min so far)")
+        time.sleep(min(poll_seconds, max(0.0, wait_seconds - waited)))
+    atexit.register(release_session, path)
+    return path
+
+
+def release_session(path: Path | None = None) -> None:
+    """Release the lock if this process holds it; never another's."""
+    path = path or session_lock_path()
+    if _holder(path) == os.getpid():
+        looplock.release(path)
+
 
 RETRY_DELAYS = (2.0, 5.0, 15.0)
 #: The vendor refuses an end-of-day range over this many days ("max 365 days allowed").
@@ -101,14 +174,24 @@ class ThetaDataClient:
                 "library_missing", f'{exc}; install it with pip install -e "packages/backtest[thetadata]"'
             ) from None
 
+        # Before the login, never after: a refused second client must not have ended the first.
+        self._session_lock = take_session(log=lambda line: print(line, file=sys.stderr, flush=True))
         self._client_class = ThetaClient
-        self._client = ThetaClient(api_key=key, dataframe_type="pandas")
+        try:
+            self._client = ThetaClient(api_key=key, dataframe_type="pandas")
+        except Exception:
+            release_session(self._session_lock)
+            raise
         # The library sets no deadline on its calls, and a stalled reply waits forever (2026-10-17:
         # both workers of a history fetch sat on one for over ten minutes). Every call goes out
         # with one, which also cancels the request at the vendor's end.
         self._client.stub = _DeadlineStub(self._client.stub, CALL_DEADLINE_SECONDS)
         #: Called with a line for every retry, so a stall is visible in the fetch's log.
         self.on_retry = lambda _line: None
+
+    def close(self) -> None:
+        """Give the session up before the process ends (it is released at exit regardless)."""
+        release_session(getattr(self, "_session_lock", None))
 
     def _reconnect(self) -> None:
         """A fresh channel on the same authenticated session (the library's own
