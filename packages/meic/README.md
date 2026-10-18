@@ -264,8 +264,6 @@ cherrypick/
     │                                 # is ~/.cherrypick/config/meic.risk.json (or $MEIC_RISK_CONFIG)
     ├── src/cherrypick/meic/         # the cherrypick.meic namespace package (run as -m cherrypick.meic.<mod>)
     │   ├── tt.py                    # tastytrade CLI — get_quote, get_strategies, execute_trade, etc.
-    │   ├── streamer.py              # Persistent DXLink streaming daemon (rollback-only since the
-    │   │                             # 2026-07-21 producer cutover — see packages/streamer)
     │   ├── stream_request.py        # Declares symbols + open legs to the shared streamer's cache
     │   ├── session.py               # OAuth2 session management
     │   ├── credentials.py           # OS-keyring credential storage

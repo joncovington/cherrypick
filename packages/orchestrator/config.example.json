@@ -77,28 +77,6 @@
         "log": "paper_loop.log",
         "freshness_minutes": 20
       },
-      "streamer": {
-        "_note": "MEIC's own in-module streamer — DISABLED since the 2026-07-21 producer cutover: the standalone streamer (top-level `streamer` block below) is the suite's sole producer, and exactly ONE producer ever runs. Kept only as the rollback path: to revert, set enabled=true here AND streamer.enabled=false below.",
-        "enabled": false,
-        "status_argv": [
-          "-m",
-          "cherrypick.meic.streamer",
-          "--status"
-        ],
-        "start_argv": [
-          "-m",
-          "cherrypick.meic.streamer"
-        ],
-        "_stop_argv_note": "Optional. Used to stop a STALLED streamer before relaunching it — the daemon is single-instance guarded, so relaunching without stopping is a silent no-op. Defaults to the status command with --stop.",
-        "stop_argv": [
-          "-m",
-          "cherrypick.meic.streamer",
-          "--stop"
-        ],
-        "auto_restart": true,
-        "_stale_restart_note": "Restart the streamer when it is CONNECTED but has received no market events for this many seconds during RTH. A process check cannot see this: observed 2026-07-20, the streamer reconnected then went silent for 8 minutes while still reporting running=true and its own stale_warning=false (that flag only trips at 600s), so nothing restarted it — MEIC degraded to REST and the flies module refused every iteration on stale quotes. 240s is well inside the 600s self-report and well outside a normal quiet tick. Restarts are skipped while a connection is younger than this, so a just-restarted streamer is not judged before it has resubscribed.",
-        "stale_restart_seconds": 240
-      },
       "calibration": {
         "_comment": "Optional. `cherrypick calibrate` reads paper P&L per profile and advises whether a qualified challenger should replace the live 'champion' (advisory only; never switches live risk). 'champion' names the currently-live profile -- every other tag observed is a challenger compared against it on return_on_capital (falling back to net_pnl). Omit 'champion' entirely to get per-tag qualification readings with NO champion/challenger comparison (for a module whose tags are parallel experiments rather than a risk sequence -- see flies below). 'deliberate_only' tags are never auto-recommended even if they qualify and beat the champion; 'rule' overrides the default {min_sessions:14 (older configs' min_days is still read), min_win_rate:0.6, min_sample:20} and may add 'margin' (default 0.0 -- any positive edge counts as beating the champion).",
         "_arms_cutover_note": "Updated 2026-08-07 for the arms cutover (config.risk.json's _arms_cutover_note): champion is now `control` (today's deployed policy, formerly `conservative` -- same values, new name). The retired ladder/GEX tags (conservative/moderate/aggressive/very-aggressive/gex-open/gex-blocked) never write a new row again, so they simply stop appearing as challengers going forward; their historical rows stay under their own tag and never blend into `control`'s reading, since the tag NAME itself is what segregates the eras here -- no data_epoch needed (that key is suite-wide and would also truncate flies/earnings' unrelated history). `open` is deliberate_only: it runs with per_side_stop_management OFF (held to settlement/force-close, no per-side stop at all), a materially different risk posture from control's canonical MEIC+ stop, not just a quality-gate relaxation -- qualifying on paper should not auto-promote a no-stop policy without a human decision, the same reasoning very-aggressive's deliberate_only carried.",
@@ -479,7 +457,7 @@
   },
   "streamer_header": "x",
   "streamer": {
-    "_comment": "The suite's standalone market-data producer (packages/streamer) — the single streamer that writes the shared cache ~/.cherrypick/data/marketdata/stream_cache.db, which every module reads. THE sole producer since the 2026-07-21 cutover (modules.meic.streamer is the disabled rollback path; exactly ONE producer runs at a time). Session-gated and silence-restarted by the watchdog. Located by 'path' (relative to this file). Modules declare which symbols they need via ~/.cherrypick/state/stream_requests/<module>.json — every module regenerates its own file on each run — and the streamer streams the union.",
+    "_comment": "The suite's standalone market-data producer (packages/streamer) — the single streamer that writes the shared cache ~/.cherrypick/data/marketdata/stream_cache.db, which every module reads. THE sole producer since the 2026-07-21 cutover, and since 2026-10-18 the only one there is (MEIC's in-module rollback streamer was removed). Session-gated and silence-restarted by the watchdog. Located by 'path' (relative to this file). Modules declare which symbols they need via ~/.cherrypick/state/stream_requests/<module>.json — every module regenerates its own file on each run — and the streamer streams the union.",
     "enabled": true,
     "path": "../streamer",
     "status_argv": [

@@ -23,7 +23,7 @@ orchestrator's jobspec, onboarding and the suite's skills all name those module 
 in would repoint the live loop to buy nothing a reader wanted. This CLI is additive.
 
 Everything opens `?mode=ro`, matching `experiment.py` and `gate_health.py`: a read surface must not
-be able to write the trading ledger. (Note the trade-off `streamer.py` documents for the SHARED
+be able to write the trading ledger. (Note the known trade-off for the SHARED
 cache — a read-only handle can serve an un-checkpointed WAL snapshot. It is the right call here
 anyway: the console reads this ledger read-only too, so the mirror test compares like with like.)
 """

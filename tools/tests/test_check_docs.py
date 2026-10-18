@@ -127,11 +127,11 @@ def test_unclosed_link_rule(line, expect_finding):
             True,
         ),
         # --- shapes that must be left alone ---
-        ("the current -m form", MEIC, ["python -m cherrypick.meic.streamer --status"], False),
+        ("the current -m form", MEIC, ["python -m cherrypick.meic.tt stream_status"], False),
         (
             "the current PowerShell -m form",
             MEIC,
-            [r"Start-Process python -ArgumentList '-m','cherrypick.meic.streamer'"],
+            [r"Start-Process python -ArgumentList '-m','cherrypick.meic.tt'"],
             False,
         ),
         # bare `run.py` means "from packages/orchestrator" only next to the prose saying so; there are

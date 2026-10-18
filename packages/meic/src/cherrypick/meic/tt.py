@@ -1332,7 +1332,7 @@ async def cmd_get_gex(args) -> dict:
 
 def cmd_get_orb_range(args) -> dict:
     """Read the day's ORB (Opening Range Breakout) high/low, captured by the streamer
-    from live Trade events during 9:30-9:35 ET (see streamer.py's _track_orb) rather than
+    from live Trade events during 9:30-9:35 ET (the standalone streamer's orb.py) rather than
     by the AI loop's own iterations, which aren't guaranteed to land inside that window."""
     symbol = args.symbol.strip().upper()
     et_today = datetime.now(_ET).strftime("%Y-%m-%d")
@@ -1451,26 +1451,24 @@ def cmd_get_intraday_range(args) -> dict:
     }
 
 
-def cmd_stream_status(_args) -> dict:
-    # os.kill(pid, 0) is unreliable on Windows (raises SystemError for some
-    # process states) — reuse streamer.py's cross-platform _running_pid(),
-    # which already handles this via psutil/OpenProcess. streamer.py's
-    # top-level imports are all stdlib, so this import is cheap.
-    from cherrypick.meic import streamer as _streamer
+def _producer_pid() -> int | None:
+    """The standalone producer's pid (packages/streamer, the shared cache's only writer), from the PID
+    file it keeps beside that cache (`cherrypick.streamer.config.pid_path`), or None when it is not
+    running. A reader: a stale file is left for the producer to clear."""
+    from cherrypick.core.looplock import pid_alive
 
-    # Since the 2026-07-21 cutover the actual producer of the shared cache is normally the standalone
-    # streamer (packages/streamer), not this module's own (rollback-only) full-streamer mode — but this
-    # command used to check only the latter's PID file, so it reported running=false whenever the
-    # standalone producer was the one actually alive and writing fresh data. Check both; the cache
-    # freshness numbers below already reflect whichever one is really producing.
-    meic_pid = _streamer._running_pid()
-    standalone_pid = _streamer._standalone_producer_pid()
-    if standalone_pid is not None:
-        producer, pid = "standalone", standalone_pid
-    elif meic_pid is not None:
-        producer, pid = "meic", meic_pid
-    else:
-        producer, pid = None, None
+    try:
+        pid = int((_CACHE_DB.parent / "streamer.pid").read_text().strip())
+    except (OSError, ValueError):
+        return None
+    return pid if pid_alive(pid) else None
+
+
+def cmd_stream_status(_args) -> dict:
+    # MEIC's own rollback streamer was removed on 2026-10-18; the standalone producer is the only one,
+    # and the cache freshness numbers below say whether it is really producing.
+    pid = _producer_pid()
+    producer = "standalone" if pid is not None else None
     running = pid is not None
 
     result: dict = {"ok": True, "running": running, "pid": pid, "producer": producer}
@@ -1515,7 +1513,7 @@ def cmd_stream_status(_args) -> dict:
         # Each entry in `ages` is already `now - MAX(updated_at)` for its own
         # table (computed above, per table) -- taking min() here correctly
         # picks the freshest feed's age. (Not the same shape as the bug fixed
-        # earlier in streamer.py's own --status output, which took min/max of
+        # earlier in MEIC's old streamer --status output, which took min/max of
         # raw *timestamps* before converting to age -- this code was already
         # doing it the right way round.)
         stale_age_s = min(ages) if ages else None

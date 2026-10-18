@@ -119,9 +119,7 @@ package) is the suite's single writer of the shared stream cache — run it from
 python ../streamer/run.py
 ```
 
-**Do not run `python -m cherrypick.meic.streamer` alongside it** — two producers means two DXLink
-writers on one cache and one account; MEIC's own streamer module is a disabled rollback path, only
-for a box deliberately configured with `modules.meic.streamer.enabled: true`. Either producer
+It is the only producer (MEIC's own rollback streamer was removed on 2026-10-18), and it
 maintains a persistent DXLink WebSocket so quote/greeks/chain reads are served from cache instead of
 a cold connection each time. `/meic-start` and `/paper-start` both check/start it automatically as
 their first step (see `.claude/commands/meic-start.md`); the console is already running.

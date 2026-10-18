@@ -14,8 +14,8 @@ live trading.
 
 It owns the daemon **lifecycle** (PID guard, `--status`/`--stop`, logging), the subscription registry
 and opening-range capture — and **no trading policy**: no open-position leg subscriptions of its own,
-no account REST poller, no HTTP API. Policy stays in MEIC's wrapper
-(`../meic/src/cherrypick/meic/streamer.py`), layered onto the same engine. Opening-range capture
+no account REST poller, no HTTP API; a module declares its needs in `state/stream_requests/`.
+Opening-range capture
 (`orb.py`) is not an exception: it writes a generic `orb_ranges` table any consumer reads, and it
 belongs to the always-on producer because a consumer's cadence is not guaranteed to land inside
 09:30–09:35.
@@ -88,15 +88,15 @@ Config: copy `config.example.json` → `config.json` (git-ignored, machine-local
   written once (idempotent per day) to `orb_ranges`, a table that already lives in
   `cherrypick.core.streamcache`.
 - **`cli.py` + `run.py`** — flat args (default = run) so the orchestrator drives this with the same
-  start/status/stop argv contract it uses for MEIC's streamer.
+  start/status/stop argv contract it uses for every daemon.
 - **`cherrypick.core`** holds the engine (`core.streamer`), cache schema (`core.streamcache`), auth
   and home resolver.
 
 ## Invariants (do not violate)
 
-- **Exactly one producer writes the cache at a time.** This daemon and MEIC's streamer write the same
-  cache; both running means two writers and two DXLink connections into one account. The PID guard and
-  the orchestrator starting only one producer enforce this — do not add a second writer path.
+- **Exactly one producer writes the cache: this daemon.** MEIC's rollback streamer, the last other
+  writer, was removed on 2026-10-18. A second writer means two DXLink connections into one account;
+  the PID guard and the orchestrator knowing only this producer enforce it — do not add one.
 - **Only the daemon talks to the broker.** `--status`/`--stop` read files and the PID only;
   `--secrets-*` touch only the OS keyring. Each emits a single JSON object. What the producer writes
   must depend only on what the feed sent.

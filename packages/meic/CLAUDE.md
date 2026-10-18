@@ -258,23 +258,15 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
 **Note**: `close_position` cancels a *working order*. To flatten an open position, use `execute_trade
 --live` with closing actions (Buy to Close / Sell to Close).
 
-## DXLink Streamer Daemon
+## Market data
 
-`cherrypick/meic/streamer.py` holds a persistent DXLink WebSocket and writes Quote, Greeks and Trade
-events to the shared cache (path from `paths.py::stream_cache_path()`). Start it with the dashboard at
-session open.
-
-```bash
-python -m cherrypick.meic.streamer            # foreground
-Start-Process python -ArgumentList '-m','cherrypick.meic.streamer' -WindowStyle Hidden   # hidden (Windows)
-python -m cherrypick.meic.streamer --status
-python -m cherrypick.meic.streamer --stop
-```
-
-For **every symbol in `symbols`** it subscribes `Trade` on the underlying, and `Quote`/`Greeks`/
-`Summary` on a re-centring near-the-money window plus every open IC leg (read from the DB every 30s).
-`Summary.open_interest` lands in `stream_oi` and feeds `get_gex --symbol <SYM>`, computed per symbol
-from that symbol's own window.
+MEIC has no streamer of its own. The standalone producer (`packages/streamer`) writes the shared cache
+(path from `paths.py::stream_cache_path()`), and MEIC declares what it needs through
+`stream_request.py`: **every symbol in `symbols`**, with a near-the-money window, plus every open IC
+leg of the paper and live ledgers (re-read by the producer every poll). `Summary.open_interest` lands
+in `stream_oi` and feeds `get_gex --symbol <SYM>`, computed per symbol from that symbol's own window;
+the opening range comes from the producer's `orb.py`. `tt stream_status` reports the producer's health.
+MEIC's in-module rollback streamer was removed on 2026-10-18.
 
 ## Risk profiles and arms
 
@@ -540,9 +532,8 @@ side, own status/exit/P&L), `daily_summary` (key `summary_date`), `loop_log` (ap
 
    **4a. Account-wide (once per iteration):**
    - Confirm the connection.
-   - **Streamer cache health:** `tt stream_status`. `running`/`pid` reflect whichever producer is alive
-     (`producer`: `"standalone"` = `packages/streamer`, `"meic"` = this module's rollback streamer, or
-     `null`); freshness numbers are valid either way. If `stale_warning` (no event in >10 min, or ever),
+   - **Streamer cache health:** `tt stream_status`. `running`/`pid` are the standalone producer's
+     (`producer`: `"standalone"`, or `null` when it is down). If `stale_warning` (no event in >10 min, or ever),
      **distrust cached quotes/greeks/OI for every symbol this iteration**, log `stale_reason`, and use
      REST — a silently dead connection once caused a 34+ hour outage.
    - Fetch buying power, NLV, working orders, open positions (account-wide calls).

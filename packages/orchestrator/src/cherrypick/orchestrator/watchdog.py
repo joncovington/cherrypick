@@ -588,8 +588,8 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
     """Liveness + silence-based restart for a market-data streamer.
 
     The caller session-gates (a streamer is only expected to have fresh events during market hours) and
-    supplies the finding `label`; the contract is identical whether the producer is MEIC's own streamer
-    (`modules.meic.streamer`) or the standalone producer (top-level `streamer`). Restart on SILENCE, not
+    supplies the finding `label` (the standalone producer's, `streamer`; MEIC's own streamer, which
+    once came through here too, was removed on 2026-10-18). Restart on SILENCE, not
     just death — a live socket that has gone quiet still reports running=true. The 2026-07-20 stall: the
     streamer reconnected, then received nothing for 8 minutes while reporting running=true and its own
     stale_warning=false (that flag only trips at 600s). Nothing restarted it; MEIC degraded to REST and
@@ -976,8 +976,7 @@ def _recycle_streamer_if_stale(label: str, root: Path, spec: dict[str, Any], set
     for the same reason it exists on the stall path — a streamer restarted seconds ago has not had
     time to resubscribe, and recycling it again would be the start of a loop.
 
-    Producers are stamped under the finding label, so the standalone producer and a module's own
-    streamer keep separate stamps and cannot recycle each other during a cutover.
+    The producer is stamped under its finding label (`streamer`).
     """
     healthy = Finding(label, OK, "Streamer", "running")
     if settling:
@@ -1046,10 +1045,9 @@ def _check_producer(cfg: dict[str, Any], in_session: bool) -> list[Finding]:
     """Watchdog the standalone market-data streamer (the suite's sole producer) when it is configured as
     a top-level `streamer` block.
 
-    Dormant unless that block exists and is enabled — until the cutover, MEIC still owns the streamer
-    under `modules.meic.streamer` and this returns nothing. Exactly one producer is ever enabled at a
-    time (enabling this + `modules.meic.streamer.enabled=false` is the flip). Session-gated + silence
-    restart, the same contract MEIC's streamer has via `_check_streamer_health`.
+    Dormant unless that block exists and is enabled. It is the only producer the watchdog knows: the
+    module-owned streamer MEIC kept as a rollback path was removed on 2026-10-18. Session-gated +
+    silence restart via `_check_streamer_health`.
 
     Off-session it still emits one informational OK finding (liveness only — `--status` reads files and
     the PID, never the broker) so the log and dashboard always say what the producer is doing; without
@@ -1102,7 +1100,6 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
     the wrong module entirely. Same fault as the SLA heartbeat naming, different function.
     """
     findings: list[Finding] = []
-    root = cfgmod.module_root(mcfg)
     paper = mcfg.get("paper", {})
     label = name.upper() if len(name) <= 4 else name.capitalize()
 
@@ -1194,11 +1191,6 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
             findings.append(Finding(f"{name}.fresh", OK, f"{label} paper fresh", f"{min(ages):.0f} min old"))
     else:
         findings.append(Finding(f"{name}.fresh", OK, f"{label} paper", "off-hours (freshness not checked)"))
-
-    # (c) streamer liveness (session only); benign auto-restart
-    streamer = mcfg.get("streamer", {})
-    if streamer.get("enabled") and in_session:
-        findings += _check_streamer_health(f"{name}.streamer", root, streamer)
     return findings
 
 
@@ -2869,13 +2861,6 @@ def run_streamer_health(cfg: dict[str, Any] | None = None, *, require_enabled: b
         root = cfgmod.module_root(spec, "streamer")
         if root.exists():
             findings += _check_streamer_health("streamer", root, spec)
-    else:
-        for name, mcfg in cfgmod.enabled_modules(cfg).items():
-            streamer = mcfg.get("streamer") or {}
-            if streamer.get("enabled"):
-                root = cfgmod.module_root(mcfg, name)
-                if root.exists():
-                    findings += _check_streamer_health(f"{name}.streamer", root, streamer)
 
     if not findings:
         return {"ok": True, "skipped": "no streamer configured"}
@@ -3044,8 +3029,7 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
             )
         )
 
-    # Watchdog the standalone market-data producer (dormant until the cutover enables the top-level
-    # `streamer` block; today MEIC still owns the streamer under modules.meic.streamer).
+    # Watchdog the standalone market-data producer (the top-level `streamer` block), the only one.
     # The streamer's own start (`streamer.session_start`, 2026-10-15): it may come up before the
     # 09:15 every other session check keys on, so quotes are warm well before the bell.
     streamer_start = timeutil.parse_hhmm((cfg.get("streamer") or {}).get("session_start"), timeutil.NEAR_OPEN)

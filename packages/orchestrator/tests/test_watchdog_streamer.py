@@ -237,8 +237,8 @@ def test_status_unreadable_is_unknown(monkeypatch, calls, tmp_path):
 
 def test_label_is_used(monkeypatch, calls, tmp_path):
     _status(monkeypatch, {"running": True})
-    findings = wd._check_streamer_health("meic.streamer", tmp_path, _spec())
-    assert findings[0].key == "meic.streamer"
+    findings = wd._check_streamer_health("some.label", tmp_path, _spec())
+    assert findings[0].key == "some.label"
 
 
 # --------------------------------------------------------------------------- top-level producer
