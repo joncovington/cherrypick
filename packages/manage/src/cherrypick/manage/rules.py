@@ -152,6 +152,33 @@ DEFAULT_RULES: dict[str, Any] = {
     # managed by that loop and settles in cash at the close, so judging it here only adds noise.
     "exclude": {"zero_dte_underlyings": ["SPX"]},
     "pricing": {"rate": 0.04, "grid_low": 0.01, "grid_high": 3.0, "grid_steps": 600},
+    # The account as one book (portfolio.py, docs/portfolio-guidance-plan.md). Every band is a retail
+    # heuristic with no published out-of-sample evidence, hence the low confidences.
+    "portfolio": {
+        "enabled": True,
+        # Theta per calendar day as a share of net liq. Above the ceiling the book is selling more
+        # gamma than the band allows; the floor only informs (theta is not edge).
+        "theta": {"enabled": True, "min_pct_nlv": 0.001, "max_pct_nlv": 0.003, "confidence": 40},
+        # Beta-weighted delta band in benchmark shares: -short_per_theta x theta to +long_per_theta x
+        # theta (leaning slightly long). With no theta to scale by, +/- the BWD whose 1% move costs
+        # `fallback_pct_nlv_per_1pct` of net liq.
+        "delta": {
+            "enabled": True,
+            "short_per_theta": 0.5,
+            "long_per_theta": 0.75,
+            "fallback_pct_nlv_per_1pct": 0.005,
+            "confidence": 40,
+        },
+        # A short-gamma book whose break-even move is under this multiple of the benchmark's implied
+        # one-day move is losing the race between theta and gamma.
+        "breakeven": {"enabled": True, "min_multiple_of_expected_move": 1.0, "confidence": 40},
+        # One underlying over this share of the book's gross theta or gross beta-weighted delta.
+        "concentration": {"enabled": True, "max_share": 0.25, "confidence": 40},
+        # When the broker's beta and its three-month correlation disagree enough to doubt the beta.
+        "beta_doubt": {"min_abs_corr": 0.3, "near_zero_beta": 0.1},
+        # Benchmark shocks the stress line reprices the book at, each underlying moved by beta x shock.
+        "stress": {"shocks": [-0.10, 0.05]},
+    },
     # Per-underlying overrides: {"SPY": {"intent": "hedge", "disable": ["debit.stop"], "note": "..."}}.
     "positions": {},
 }
@@ -174,6 +201,10 @@ RULE_IDS = (
     "directional.stop",
     "ex_dividend",
     "risk.oversize",
+    "portfolio.theta",
+    "portfolio.delta",
+    "portfolio.breakeven",
+    "portfolio.concentration",
 )
 
 

@@ -38,7 +38,7 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 3
+    assert snap["snapshot_version"] == 4
     assert snap["transactions"] == {"GLD": [{"order_id": 1}]}
     assert snap["transactions_error"] is None
     (tx_argv, tx_timeout) = next(c for c in calls if "get_transactions" in c[0])
@@ -68,7 +68,14 @@ def test_the_benchmark_is_quoted_with_each_beta_but_its_history_is_not_read(monk
                 "ok": True,
                 "metrics": [
                     {"symbol": "GLD", "last": 381.65, "beta": "0.12", "corr_spy_3month": "0.2"},
-                    {"symbol": "SPY", "last": 667.1, "beta": "1.0"},
+                    {
+                        "symbol": "SPY",
+                        "last": 667.1,
+                        "beta": "1.0",
+                        "implied_volatility_index": "0.196",
+                        "implied_volatility_30_day": "19.61",
+                        "historical_volatility_30_day": "10.45",
+                    },
                 ],
             },
             "get_transactions": {"ok": True, "transactions": {}},
@@ -79,6 +86,9 @@ def test_the_benchmark_is_quoted_with_each_beta_but_its_history_is_not_read(monk
     assert snap["metrics"]["GLD"]["beta"] == "0.12"
     assert snap["metrics"]["GLD"]["corr_spy_3month"] == "0.2"
     assert snap["metrics"]["SPY"]["last"] == 667.1
+    # Each kept in the broker's own unit, under a name that says which.
+    assert snap["metrics"]["SPY"]["iv_index"] == "0.196"
+    assert snap["metrics"]["SPY"]["hv_30_day_pct"] == "10.45"
     (mo_argv, _) = next(c for c in calls if "get_market_overview" in c[0])
     assert {"GLD", "SPY"} <= set(mo_argv)  # SPY is not held, and is quoted anyway
     (tx_argv, _) = next(c for c in calls if "get_transactions" in c[0])

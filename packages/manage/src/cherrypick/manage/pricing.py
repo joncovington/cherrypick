@@ -40,6 +40,26 @@ def delta(spot: float, strike: float, years: float, vol: float, right: str, rate
     return _n(d1) if right == "C" else _n(d1) - 1.0
 
 
+def greeks(spot: float, strike: float, years: float, vol: float, right: str, rate: float) -> dict | None:
+    """Per-share delta, gamma (delta per $1 of the underlying), theta ($ per calendar day, as the
+    broker states it) and vega ($ per volatility point). None without time or a vol."""
+    if years <= 0 or vol <= 0 or spot <= 0:
+        return None
+    root_t = math.sqrt(years)
+    d1 = (math.log(spot / strike) + (rate + vol * vol / 2.0) * years) / (vol * root_t)
+    d2 = d1 - vol * root_t
+    pdf = math.exp(-0.5 * d1 * d1) / math.sqrt(2.0 * math.pi)
+    decay = -spot * pdf * vol / (2.0 * root_t)
+    carry = rate * strike * math.exp(-rate * years)
+    theta_year = decay - carry * _n(d2) if right == "C" else decay + carry * _n(-d2)
+    return {
+        "delta": _n(d1) if right == "C" else _n(d1) - 1.0,
+        "gamma": pdf / (spot * vol * root_t),
+        "theta": theta_year / 365.0,
+        "vega": spot * pdf * root_t / 100.0,
+    }
+
+
 def implied_vol(
     spot: float, strike: float, years: float, mid: float, right: str, rate: float
 ) -> float | None:
