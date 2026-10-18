@@ -300,6 +300,28 @@ class ThetaDataClient:
             for r in df.itertuples(index=False)
         ]
 
+    def vix_minutes(self, day: str, expiration: str) -> list[tuple[float, float]]:
+        """The VIX index through `day`, one value a minute, from VIX options' underlying price: the
+        account's tier refuses the index endpoints, and every VIX option expiry reports the same spot
+        index (checked across expiries, and against Cboe's daily figures, 2026-10-18). (epoch, value)."""
+        d = date.fromisoformat(day)
+        df = self._call(
+            "option_history_greeks_first_order",
+            symbol="VIX",
+            expiration=date.fromisoformat(expiration),
+            date=d,
+            interval="1m",
+            strike_range=1,
+            start_time="09:30:00",
+            end_time="16:00:00",
+        )
+        seen: dict[float, float] = {}
+        for r in df.itertuples(index=False):
+            value = _num(r.underlying_price)
+            if value is not None and value > 0:
+                seen.setdefault(r.timestamp.timestamp(), value)
+        return sorted(seen.items())
+
     def index_closes(self, symbol: str, start: str, end: str) -> dict:
         """Closes in [start, end], asked for in windows under the vendor's 365-day limit. A window
         the account's index tier refuses is skipped, not fatal: the caller falls back per session."""

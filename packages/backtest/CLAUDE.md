@@ -94,6 +94,16 @@ A session is written whole or not at all; a refusal is a `vendor_sessions` row w
 an empty session. `fetch` is resumable (a complete session is skipped) and `--refetch` clears a
 session before rewriting it.
 
+**The VIX minute series (`vixfetch`, 2026-10-18).** MEIC's replay reads VIX at each tick, because MEIC
+moves its delta band the moment VIX crosses 18, 25 or 35. The account's tier refuses the index
+endpoints, but every VIX option reports the VIX index as its underlying price, so one narrow request
+a session (nearest expiry after it, one strike each side, one-minute bars) gives the day's series.
+It is written into `market_regime_history`, the recorder's table, in the recorder's own form
+(`reading = 'vix'`, `symbol = 'VIX'`), so `core.regime` reads a vendor session as it reads a recorded
+one; the mirror tests hold that table equal to gex's too. `fetch` fills it for the sessions it
+writes; `fetch-vix --from --to` backfills stored sessions (resumable, `--refetch` replaces, never an
+empty series).
+
 The vendor library is an **extra** (`pip install -e "packages/backtest[thetadata]"`), not a
 dependency: it pins its own pandas/polars/grpc, and nothing but a fetch needs it. It imports
 python-dotenv without declaring it, so the extra lists both.

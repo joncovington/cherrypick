@@ -5,6 +5,7 @@ python -m cherrypick.backtest key status          # whether the vendor key is in
 python -m cherrypick.backtest key set             # store it (hidden prompt; blank keeps the current one)
 python -m cherrypick.backtest key import-env      # copy the vendor's env var into the keyring once
 python -m cherrypick.backtest fetch --from 2026-10-13 --to 2026-10-16 [--dataset SPX] [--refetch]
+python -m cherrypick.backtest fetch-vix --from 2022-05-16 --to 2025-06-30   # VIX minutes, from VIX options
 python -m cherrypick.backtest coverage [--dataset SPX]
 python -m cherrypick.backtest derive-regimes [--dataset SPX]   # regime rows from stored profiles
 python -m cherrypick.backtest validate [--module flies|meic] [--dates a,b,...]   # against the recorder
@@ -130,8 +131,40 @@ def cmd_fetch(args) -> int:
         cadence=args.cadence,
         log=lambda m: print(m, file=sys.stderr),
     )
+    if not report.get("aborted"):
+        # The same sessions' VIX minute series, on the session already held (vixfetch).
+        from . import vixfetch
+
+        report["vix"] = vixfetch.fetch_vix(
+            s, client, args.dataset, args.start, args.end, cadence=args.cadence,
+            log=lambda m: print(m, file=sys.stderr),
+        )  # fmt: skip
     _emit(report)
     return 1 if report.get("aborted") else 0
+
+
+def cmd_fetch_vix(args) -> int:
+    """VIX minute series for sessions already in the store (vixfetch.py): a network verb, refused on
+    the same terms as `fetch`."""
+    from . import vixfetch
+    from .vendor import VendorRefusal, client_for
+
+    s = settings.load(args.config)
+    refusal = _fetch_refusal(s)
+    if refusal:
+        print(f"fetch-vix refused: {refusal}", file=sys.stderr)
+        return 2
+    try:
+        client = client_for(s)
+    except VendorRefusal as exc:
+        print(f"fetch-vix refused: {exc}", file=sys.stderr)
+        return 2
+    report = vixfetch.fetch_vix(
+        s, client, args.dataset, args.start, args.end, cadence=args.cadence, refetch=args.refetch,
+        log=lambda m: print(m, file=sys.stderr),
+    )  # fmt: skip
+    _emit(report)
+    return 0
 
 
 def cmd_fetch_flow(args) -> int:
@@ -349,6 +382,14 @@ def main(argv: list[str] | None = None) -> int:
         "--workers", type=int, default=1, help="sessions pulled at a time (default 1; see fetch.fetch)"
     )
     f.set_defaults(fn=cmd_fetch)
+    fv = sub.add_parser(
+        "fetch-vix", help="the VIX minute series for stored sessions, from VIX options (network)"
+    )
+    fv.add_argument("--dataset", default="SPX")
+    fv.add_argument("--from", dest="start", required=True)
+    fv.add_argument("--to", dest="end", required=True)
+    fv.add_argument("--refetch", action="store_true", help="replace sessions that already hold VIX rows")
+    fv.set_defaults(fn=cmd_fetch_vix)
     ff = sub.add_parser("fetch-flow", help="large options orders per name and session (a network verb)")
     ff.add_argument("--symbols", required=True, help="comma-separated stock symbols")
     ff.add_argument("--from", dest="start", required=True)
@@ -386,7 +427,7 @@ def main(argv: list[str] | None = None) -> int:
     rd.add_argument("what", choices=("overview", "run"))
     rd.add_argument("--id", default=None, help="with `run`: the run id")
     rd.set_defaults(fn=cmd_read)
-    for sp in (f, cv, dr, va, rn, ra):
+    for sp in (f, fv, cv, dr, va, rn, ra):
         sp.add_argument(
             "--cadence",
             type=int,
