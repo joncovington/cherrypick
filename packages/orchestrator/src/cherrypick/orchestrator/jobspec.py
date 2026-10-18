@@ -158,6 +158,9 @@ CATCHUP_MINUTES = {
     # The script refuses outside regular hours, so a late catch-up records nothing rather than an
     # after-hours book; half an hour is all the window leaves.
     "report-income-chains": 30,
+    # The same window rule: a late catch-up quotes nothing rather than an after-hours book.
+    "report-skate-quotes-1": 30,
+    "report-skate-quotes-2": 30,
     "universe-watchlist": 300,
     # Broker-cash reconciliation of a settled live session. Generous, because the whole point is
     # that it must not depend on anyone arming the live loop: a box asleep until mid-afternoon
@@ -1806,6 +1809,27 @@ def derive_jobs(
             enabled_reason=sg_reason,
         ),
     )
+    skate_q_on = mr["screener_greeks"] and skate_on
+    for i, at in enumerate(mr["skate_quotes_at"][:2], 1):
+        add(
+            f"report-skate-quotes-{i}",
+            lambda i=i, at=at: JobSpec(
+                id=f"report-skate-quotes-{i}",
+                # The skate screen's strikes (docs/skate-plan.md): the morning's bands snapped to listed
+                # strikes, quoted in regular hours and scored -- every name-side on its cycle monthly,
+                # every weekly for the widest history-minus-implied gaps. Read-only REST; the script
+                # refuses outside the measuring window.
+                argv=(pythonw, _suite_script(launcher, "fetch_screener_greeks.py"), "skate"),
+                kind=KIND_DAILY,
+                at_et=at,
+                catchup_minutes=CATCHUP_MINUTES[f"report-skate-quotes-{i}"],
+                trading_days_only=True,
+                enabled=skate_q_on,
+                enabled_reason=""
+                if skate_q_on
+                else "disabled in config (market_report.screener_greeks, or technicals-skate is off)",
+            ),
+        )
     uv_reason = "" if mr["universe"] else "disabled in config (market_report.universe)"
     uv_jobs = [
         (f"universe-measure-{i}", at, "measure") for i, at in enumerate(mr["universe_measure_at"][:2], 1)

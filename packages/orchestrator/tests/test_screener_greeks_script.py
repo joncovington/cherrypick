@@ -526,3 +526,17 @@ def test_marks_fall_due_on_the_reaction_day_and_the_session_after(tmp_path):
         ("NFLX", "day2")
     ]
     assert fsg.marks_due(tmp_path, date(2026, 10, 23)) == []
+
+
+def test_the_skate_clock_counts_to_each_expirys_close():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2026, 10, 19, 12, 0, tzinfo=ZoneInfo("America/New_York"))
+    clock = fsg.skate_clock({"2026-10-23", "2026-11-20"}, now)
+    days, years = clock["2026-10-23"]
+    assert days == 4 and abs(years - 100 / (365 * 24)) < 1e-12  # Friday 16:00 is 100 hours away
+    assert clock["2026-11-20"][0] == 32
+    # On the expiry day after the close there is no time left, never a negative one.
+    late = datetime(2026, 10, 23, 16, 30, tzinfo=ZoneInfo("America/New_York"))
+    assert fsg.skate_clock({"2026-10-23"}, late)["2026-10-23"] == (0, 0.0)
