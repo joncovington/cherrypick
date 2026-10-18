@@ -348,7 +348,17 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
 only while the earnings module is, since that job keeps the dolt sql-server alive.
 `technicals-iv-rank` runs after the close on trading days. `technicals-screeners` (06:40 ET,
 `screeners_at`) scores every saved screener session with its broker chain, after the previous
-evening's late greeks run; a scored session is skipped.
+evening's late greeks run; a scored session is skipped. `technicals-skate` (06:45 ET, `skate_at`)
+writes the skate screen's bands from `history.db` (docs/skate-plan.md).
+
+## The skate bands
+
+`skate.py` records history on **split-adjusted, never dividend-adjusted** prices
+(`skate.price_bars`): an option's strike stays put when the price drops on an ex-date, so a
+dividend-adjusted series would show calls breached that were not. Leveraged, inverse and
+volatility funds are dropped by the declared `leveraged_funds.json` (name rule confirmed against
+Yahoo's fund category, each entry's `evidence` saying which); its tests fail when a known fund is
+removed.
 
 ---
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
@@ -381,6 +391,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals securities [--session D]` | The public security list from local files, `securities/current.json` naming the list readers use, and the public list scored against the vendor's of that day where one is saved. |
 | `python -m cherrypick.technicals score-bearing` | The bearing lookup fitted on earlier security lists, scored on the latest. |
 | `python -m cherrypick.technicals score-screeners [--rescore]` | The income screens' expiry, strike and return rules vs every saved list with its broker chain; one file per session in `screeners/`, totals printed. |
+| `python -m cherrypick.technicals skate [--day YYYY-MM-DD]` | The skate screen's fixed and by-expiry range bands for every options-tradable name, side and weekly expiry to 63 days, with each band's skate curve over history; `skate/<day>.json`. |
 | `python -m cherrypick.technicals earnings-record [--today D] [--dry-run]` | The earnings calendar's forward record: each past announcement's move against the expected move (0.85 × straddle) the calendar showed the session before, whether a strong read called it, and the suggested spread's money on its marks; `earnings-calendar/record.json`, rebuilt whole. Reads the local Dolt. |
 | `python -m cherrypick.technicals earnings-calendar [--day D] [--dry-run]` | The next 30 days' announcements for the console's earnings tab; one file per session in `earnings-calendar/`, a rerun replacing it. Reads the local Dolt. |
 | `python -m cherrypick.technicals study round7 [--workers N] [--count]` | Round 7: entering a bearing (frozen `bearing_table.py`) against random entry; `--count` gives frequencies only. |

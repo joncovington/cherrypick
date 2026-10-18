@@ -187,6 +187,18 @@ def nth_trading_day(start: date, n: int) -> date:
     return d
 
 
+def trading_days_between(start: date, end: date) -> int:
+    """Trading days strictly after `start` up to and including `end` -- the inverse of
+    `nth_trading_day`: trading_days_between(s, nth_trading_day(s, n)) == n. Zero when `end` is not
+    after `start`."""
+    n, d = 0, start
+    while True:
+        d = next_trading_day(d)
+        if d > end:
+            return n
+        n += 1
+
+
 # --------------------------------------------------------------------------- expiries
 def triple_witching_dates(year: int) -> list[date]:
     """3rd Friday of March, June, September, December (simultaneous expiry of stock options, index

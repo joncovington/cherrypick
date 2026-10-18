@@ -55,13 +55,7 @@ def sessions_between(start: str, end: str, *, cap: int) -> int:
         last = date.fromisoformat(end)
     except (TypeError, ValueError):
         return 0
-    n = 0
-    while n < cap:
-        cursor = _calendar.next_trading_day(cursor)
-        if cursor > last:
-            break
-        n += 1
-    return n
+    return max(0, min(cap, _calendar.trading_days_between(cursor, last)))
 
 
 def rth_close_hhmm(session: str) -> str:

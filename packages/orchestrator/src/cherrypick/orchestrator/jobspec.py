@@ -108,6 +108,9 @@ CATCHUP_MINUTES = {
     "technicals-earnings-record": 12 * 60,
     # Local files only and idempotent (an already-scored session is skipped), so any time that day.
     "technicals-screeners": 12 * 60,
+    # Rebuilt whole from the history store, so any time that day is the same file; the measure run
+    # that reads it starts at 11:30.
+    "technicals-skate": 12 * 60,
     # Ahead of the 06:15 landing; a late fetch is the same fetch, and the landing after it picks it up.
     "technicals-index-bars": 12 * 60,
     # The vendor's sessions for the last few trading days; idempotent (complete sessions are
@@ -1419,6 +1422,25 @@ def derive_jobs(
             trading_days_only=True,
             enabled=tc_on,
             enabled_reason="" if tc_on else "disabled in config (technicals), or no dolt sql-server to read",
+        ),
+    )
+    skate_on = tc_on and tc["history"] and tc["skate"]
+    add(
+        "technicals-skate",
+        lambda: JobSpec(
+            id="technicals-skate",
+            # A package command: the skate screen's range bands for every options-tradable name and
+            # weekly expiry to 63 days, with how often each band has held since 2015, from the
+            # history store and local files alone. The 11:30 / 14:30 measure run quotes its strikes.
+            argv=(pythonw, "-m", "cherrypick.technicals", "skate"),
+            kind=KIND_DAILY,
+            at_et=tc["skate_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-skate"],
+            trading_days_only=True,
+            enabled=skate_on,
+            enabled_reason=""
+            if skate_on
+            else "disabled in config (technicals.skate or technicals.history), or with technicals-land",
         ),
     )
     mv = cfgmod.morning_settings(cfg)

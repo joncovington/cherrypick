@@ -341,6 +341,7 @@ def test_derive_full_suite_job_table():
         "technicals-earnings-calendar-late",
         "technicals-earnings-record",
         "technicals-screeners",
+        "technicals-skate",
         "technicals-report",
         "technicals-stage-lists",
         "technicals-history",

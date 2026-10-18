@@ -214,6 +214,15 @@ def cmd_score_screeners(args) -> int:
     return 0
 
 
+def cmd_skate(args) -> int:
+    """The skate screen's bands and their history (skate.py): the history store and local files only."""
+    from . import skate
+
+    result = skate.build(day=args.day, cfg=_config().get("skate"))
+    print(json.dumps(result, indent=1))
+    return 0 if result.get("ok") else 1
+
+
 def cmd_earnings_calendar(args) -> int:
     """The earnings calendar for a session (earnings_calendar.py): local data and the local Dolt only."""
     from datetime import datetime
@@ -642,6 +651,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     ss.add_argument("--rescore", action="store_true", help="score sessions already scored again")
     ss.set_defaults(fn=cmd_score_screeners)
+    sk = sub.add_parser(
+        "skate", help="the skate screen's range bands and how often each has held, per name and expiry"
+    )
+    sk.add_argument("--day", help="the session (YYYY-MM-DD); default the history store's newest")
+    sk.set_defaults(fn=cmd_skate)
     ec = sub.add_parser(
         "earnings-calendar", help="the next 30 days' announcements, as the earnings tab shows them"
     )
