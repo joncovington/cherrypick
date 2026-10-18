@@ -17,6 +17,22 @@ flies' declared checks. The question is whether the vendor's data is as good as 
 not whether the replay is perfect: the recorder-sourced replay itself fails flies' completion-timing
 check, and a bar it cannot meet would measure the replay, not the data.
 
+**Amended the same day, after the first four sessions were read: the recording is compared at the
+vendor's cadence.** The 60 s store matched paper's entries far less often than the 15 s recording, and
+every miss was the replay's one sample in flies' 30 s window landing on the other side of a strike
+boundary (a neighbouring centre, or the other side at the same centre), none a quote the vendor got
+wrong; the recording thinned to the vendor's minute marks matched less often still. So the bar as first
+written compared a cadence with a cadence, and no 60 s store could ever pass it. Now:
+
+- **Data (the bar):** the vendor-sourced replay against the recording thinned to the vendor's own
+  sample instants (`thin_to_vendor_instants`), on every declared check, at the same session count.
+  When the two stores share a cadence, nothing is thinned and this is the bar as first written.
+- **Cadence (reported, not a bar):** the thinned recording against the full one, each check's measure
+  side by side, and the completion outcome (did the position complete at all that session), which is
+  what moves P&L where the timing check does not. What a minute costs is measured, never assumed.
+
+The thresholds, the checks and `UNLOCK_SESSIONS` are unchanged.
+
 Results are derived from licensed data: they are written under the home's results directory and
 nowhere else (see CLAUDE.md).
 """
@@ -29,6 +45,7 @@ import sqlite3
 import statistics
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from cherrypick.core import db as core_db
@@ -43,6 +60,8 @@ QUOTE_MATCH_SECONDS = 30.0
 PROFILE_MATCH_SECONDS = 360.0
 #: Sessions needed before history runs unlock: flies' own stage-2 minimum.
 UNLOCK_SESSIONS = 10
+#: A store is coarser than the recording when its median sample gap is this many times the recording's.
+COARSER_RATIO = 1.5
 
 
 def _pct(values: list[float], q: float) -> float | None:
@@ -200,17 +219,116 @@ def _flies_cli(args: list[str]) -> dict:
         return {"ok": False, "error": (proc.stderr or proc.stdout)[-800:], "returncode": proc.returncode}
 
 
-def decisions_layer(recorder_db: Path, vendor_db: Path, dates: list[str], runner=_flies_cli) -> dict:
-    out = {}
-    for label, db in (("recorder", recorder_db), ("vendor", vendor_db)):
-        reply = runner(["replay-check", "--dates", ",".join(dates), "--history-db", str(db)])
-        out[label] = reply.get("summary", reply)
-    rec, ven = out["recorder"], out["vendor"]
-    checks_r, checks_v = rec.get("checks") or {}, ven.get("checks") or {}
+def _sample_instants(db: Path, symbol: str, day: str) -> list[float]:
+    conn = core_db.connect_ro(db)
+    try:
+        return [
+            float(r["ts"])
+            for r in conn.execute(
+                "SELECT ts FROM gex_quote_samples WHERE symbol = ? AND trade_date = ? ORDER BY ts",
+                (symbol.upper(), day),
+            )
+        ]
+    finally:
+        conn.close()
+
+
+def median_gap(db: Path, symbol: str, dates: list[str]) -> float | None:
+    """The store's median seconds between quote samples over `dates`."""
+    gaps = []
+    for day in dates:
+        ts = _sample_instants(db, symbol, day)
+        gaps.extend(b - a for a, b in zip(ts, ts[1:], strict=False))
+    return statistics.median(gaps) if gaps else None
+
+
+def _nearest(rows: list[tuple], instants: list[float]) -> set:
+    """The first element of each row nearest each instant, within QUOTE_MATCH_SECONDS. `rows` are
+    (key, ts), sorted by ts."""
+    ts = [r[1] for r in rows]
+    keep = set()
+    for t in instants:
+        i = bisect.bisect_left(ts, t)
+        best = min((j for j in (i - 1, i) if 0 <= j < len(ts)), key=lambda j: abs(ts[j] - t), default=None)
+        if best is not None and abs(ts[best] - t) <= QUOTE_MATCH_SECONDS:
+            keep.add(rows[best][0])
+    return keep
+
+
+def thin_to_vendor_instants(
+    recorder_db: Path, vendor_db: Path, symbol: str, dates: list[str], out: Path
+) -> Path:
+    """A copy of the recording with each of `dates` cut to the vendor's own sample instants: for every
+    vendor sample, the recorded quote sample and spot row nearest it (within QUOTE_MATCH_SECONDS), the
+    rest dropped. The recording's prices at the vendor's cadence, so a replay over it differs from the
+    vendor's only by the data. Profiles and closes are kept whole: neither is sampled per tick."""
+    src = sqlite3.connect(f"file:{recorder_db}?mode=ro", uri=True)
+    dst = sqlite3.connect(out)
+    try:
+        src.backup(dst)
+        sym = symbol.upper()
+        for day in dates:
+            instants = _sample_instants(vendor_db, symbol, day)
+            samples = dst.execute(
+                "SELECT id, ts FROM gex_quote_samples WHERE symbol = ? AND trade_date = ? ORDER BY ts",
+                (sym, day),
+            ).fetchall()
+            drop = [(i,) for i, _ in samples if i not in _nearest(samples, instants)]
+            dst.executemany("DELETE FROM gex_quotes WHERE sample_id = ?", drop)
+            dst.executemany("DELETE FROM gex_quote_samples WHERE id = ?", drop)
+            spots = dst.execute(
+                "SELECT rowid, ts FROM gex_spot_history WHERE symbol = ? AND trade_date = ? ORDER BY ts",
+                (sym, day),
+            ).fetchall()
+            keep = _nearest(spots, instants)
+            dst.executemany(
+                "DELETE FROM gex_spot_history WHERE rowid = ?", [(r,) for r, _ in spots if r not in keep]
+            )
+        dst.commit()
+    finally:
+        src.close()
+        dst.close()
+    return out
+
+
+def _check(runner, db: Path, dates: list[str]) -> dict:
+    reply = runner(["replay-check", "--dates", ",".join(dates), "--history-db", str(db)])
+    return reply.get("summary", reply)
+
+
+def _sessions(summary: dict) -> int:
+    return (summary.get("measures") or {}).get("sessions") or 0
+
+
+def decisions_layer(
+    recorder_db: Path, vendor_db: Path, dates: list[str], runner=_flies_cli, *, thinned_db: Path | None = None
+) -> dict:
+    """flies' replay-check on the recording, on the vendor's store and, when the vendor's store is
+    coarser, on the recording thinned to the vendor's instants (`thinned_db`). The bar compares the
+    vendor with the recording at the vendor's cadence (module docstring, amended 2026-10-17)."""
+    out = {"recorder": _check(runner, recorder_db, dates), "vendor": _check(runner, vendor_db, dates)}
+    basis = "recorder"
+    if thinned_db is not None:
+        out["recorder_at_vendor_cadence"] = _check(runner, thinned_db, dates)
+        basis = "recorder_at_vendor_cadence"
+        full, thin = out["recorder"], out["recorder_at_vendor_cadence"]
+        out["cadence_cost"] = {
+            "measures": {
+                k: {"full": v, "at_vendor_cadence": (thin.get("measures") or {}).get(k)}
+                for k, v in (full.get("measures") or {}).items()
+                if k != "sessions"
+            },
+            "completion_outcome_agreement": {
+                "full": full.get("completion_outcome_agreement"),
+                "at_vendor_cadence": thin.get("completion_outcome_agreement"),
+                "vendor": out["vendor"].get("completion_outcome_agreement"),
+            },
+        }
+    ref, ven = out[basis], out["vendor"]
+    checks_r, checks_v = ref.get("checks") or {}, ven.get("checks") or {}
+    out["data_basis"] = basis
     out["vendor_at_least_recorder"] = {k: bool(checks_v.get(k)) or not checks_r.get(k) for k in checks_r}
-    sessions = min(
-        (rec.get("measures") or {}).get("sessions") or 0, (ven.get("measures") or {}).get("sessions") or 0
-    )
+    sessions = min(_sessions(out["recorder"]), _sessions(ref), _sessions(ven))
     out["sessions_compared"] = sessions
     out["unlocks_history"] = (
         bool(checks_r) and sessions >= UNLOCK_SESSIONS and all(out["vendor_at_least_recorder"].values())
@@ -241,8 +359,18 @@ def run(
             }
             for day in dates
         },
-        "decisions": decisions_layer(recorder_db, vendor_db, dates, runner=runner),
     }
+    rec_gap, ven_gap = median_gap(recorder_db, symbol, dates), median_gap(vendor_db, symbol, dates)
+    report["sample_gap_seconds"] = {"recorder": rec_gap, "vendor": ven_gap}
+    if rec_gap and ven_gap and ven_gap >= COARSER_RATIO * rec_gap:
+        # The thinned copy is our own recording cut to the vendor's instants; it lives only for the check.
+        with tempfile.TemporaryDirectory() as tmp:
+            thinned = thin_to_vendor_instants(recorder_db, vendor_db, symbol, dates, Path(tmp) / "thinned.db")
+            report["decisions"] = decisions_layer(
+                recorder_db, vendor_db, dates, runner=runner, thinned_db=thinned
+            )
+    else:
+        report["decisions"] = decisions_layer(recorder_db, vendor_db, dates, runner=runner)
     out_dir = paths.results_dir() / "validation"
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{symbol.upper()}-{dates[0]}_{dates[-1]}.json"
