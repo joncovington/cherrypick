@@ -7,8 +7,8 @@ were decided by the user on 2026-10-18 (see "Decisions").
 | Step | State (2026-10-18) |
 |---|---|
 | 1, the range band engine (`technicals skate`) | built: `skate.py`, `leveraged_funds.json`, job `technicals-skate` 06:45 ET, `core.calendar.trading_days_between` |
-| 2, regular-hours quotes (`fetch_screener_greeks.py measure`) | not started |
-| 3, the score and the console's Skate tab | not started |
+| 2, regular-hours quotes (`fetch_screener_greeks.py skate`, jobs `report-skate-quotes-1/2`) | built |
+| 3, the score and the console's Skate tab | the score built (`skate.score`, in the quote file); the tab not started |
 | 4, the forward record | not started |
 | 5, the wheel view (`manage`, Live → manage) | not started |
 | 6, the PMCC view (`manage`, beside the wheel view) | not started |
@@ -128,10 +128,15 @@ tradable name, each side and each Friday expiry out to 63 days:
   built: 487 funds (356 leveraged, 123 inverse, 8 volatility); 458 flagged by both, 6 by name
   alone (new funds Yahoo has not categorized), 23 by Yahoo alone and decided by hand (21 Roundhill
   WeeklyPay funds, about 1.2× single-name, still to confirm; EMTY; PFIX). MEME, WMTI and TAIL are
-  left out pending the user's call;
+  left out pending the user's call. Settled 2026-10-18 from the issuers' pages, the user leaning to
+  caution: the WeeklyPay family is 120% of the calendar-week return through swaps (all 24, NVDW,
+  TSLW and TOPW added), WMTI is 105–150% of WMT daily through options, TAIL (puts plus Treasuries, a
+  decaying hedge) is excluded for caution, and MEME, a plain basket, stays in: 492 funds, each
+  citing its source;
 - drop a name with under a year of history;
 - compute **two bands** and, for each, the skate rate over 11 years and the last 3 **at a grid of
-  strikes 0–5% past the band** (quarter-point steps), so step 3 reads the rate at whatever listed
+  strikes from 2% inside the band to 5% past it** (quarter-point steps; inside, for the strike one
+  closer than the band's), so step 3 reads the rate at whatever listed
   strike it quotes. History is on **split-adjusted, not dividend-adjusted** prices: a strike stays
   put when the price drops on an ex-date, so dividend adjustment would show calls breached that
   were not (it moved MAGS, VOO, EWJ and EWZ by up to 5 points against the study's raw prices):
@@ -152,23 +157,26 @@ will be judged with. Counting sessions to expiry needs a trading-days counter; i
 ### 2. Regular-hours quotes (scripts)
 
 The study's prices were Friday's after-close book, where spreads run wide; the screen needs
-regular-hours quotes. `fetch_screener_greeks.py measure` (11:30 / 14:30 ET) gains a skate pass, two
-stages to keep the broker load near today's:
+regular-hours quotes. **As built** this is its own mode, `fetch_screener_greeks.py skate`, and its
+own jobs (`report-skate-quotes-1/2`, 12:00 and 15:05 ET), not a pass inside `measure`: a failure
+cannot touch the screener legs, as the `income` mode already showed. Its chain listings reach 1–70
+days, wider than the builder's 14–60, so they are cached apart, once a day. Two stages:
 
-1. the band strike on the cycle monthly for every planned name-side (a few hundred legs);
-2. every expiry to 63 days, both bands' strikes and one either side, for the name-sides that pass
-   the filters in stage 1 (about 60, so about 1,000–1,500 options; the two strikes are often the
-   same or adjacent).
+1. every name-side once: its cycle monthly, or, where a report comes first (most stocks in
+   earnings season), its furthest expiry before the report; each band's strike and one either side;
+2. every weekly to 63 days, both bands' strikes and one either side, for the `stage_two` (60)
+   name-sides whose tradable band strike has the widest history-minus-implied gap.
 
-REST quotes carry no IV, so implied volatility is solved from the mid with the IV solver
-`manage.pricing.implied_vol` uses (moved to core), and delta from it at r = 4%, the screeners'
-own rule. The solver carries each name's dividend yield (step 6 shows why). Writes `screener-greeks/skate/<date>/<HHMM>.json`. A failure here keeps the other
-measure outputs, as the earnings pass does.
+REST quotes carry no IV, so implied volatility is solved from the mid by `cherrypick.core.bs`
+(moved from `manage.pricing`, which now imports it), and delta from it at r = 4%. The solver
+carries each name's trailing dividend yield, which the band file now records. Writes
+`screener-greeks/skate/<date>/<HHMM>.json`. A Sunday smoke test on 25 names (Friday's book): 49
+name-sides scored, 5 to stage two, 309 legs, 8 seconds with the chains cached.
 
 ### 3. The score and the console's Skate tab
 
-The measure run scores its own quotes with a pure function from technicals (`skate.score`), so the
-console reads verdicts and never re-derives them:
+The skate run scores its own quotes with pure functions from technicals (`skate.score`,
+`skate.best_expiries`; built with step 2), so the console reads verdicts and never re-derives them:
 
 - skate yield on the bid and on the mid; implied skate = 1 − |delta|; history minus implied;
 - **hard filters** (a row that fails is not shown): open interest ≥ 100, the `LEG_BARS` spread, no

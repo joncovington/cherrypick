@@ -616,6 +616,10 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # After the 14:30 measure (its chain listings are reused), inside the window that closes half
         # an hour before the bell.
         "income_chains_at": mr.get("income_chains_at", "14:45"),
+        # `skate_quotes_at`: the skate screen's strikes quoted and scored in regular hours
+        # (`fetch_screener_greeks.py skate`, docs/skate-plan.md), after each measure and clear of the
+        # income pass. The first run of a day lists the chains (~6 min); the second reuses them.
+        "skate_quotes_at": list(mr.get("skate_quotes_at", ["12:00", "15:05"])),
     }
 
 

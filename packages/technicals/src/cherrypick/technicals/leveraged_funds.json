@@ -1,11 +1,7 @@
 {
  "as_of": "2026-10-18",
  "how": "Optionable ETFs and ETNs in Nasdaq Trader's directory (1,805), flagged by name (a multiple of 1.25x or more, Ultra, Inverse, Short, Bear, Bull, VIX futures) and checked against Yahoo's Morningstar category ('Trading--...'). Agreement is listed as is; a disagreement was decided by hand and says so in `evidence`.",
- "undecided": {
-  "MEME": "Yahoo: Trading--Leveraged Equity, but the name says nothing of leverage",
-  "WMTI": "Yahoo: Trading--Leveraged Equity; an income fund, structure unclear",
-  "TAIL": "Yahoo: Trading--Inverse Equity; a tail-risk fund (Treasuries + puts), not a geared inverse"
- },
+ "undecided": {},
  "funds": {
   "AAOG": {
    "name": "Leverage Shares 2X Long AAOI Daily ETF",
@@ -46,7 +42,7 @@
   "AAPW": {
    "name": "Roundhill AAPL WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "AAPX": {
@@ -112,7 +108,7 @@
   "AMDW": {
    "name": "Roundhill AMD WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "AMZD": {
@@ -136,7 +132,7 @@
   "AMZW": {
    "name": "Roundhill AMZN WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "AMZZ": {
@@ -184,7 +180,7 @@
   "ARMW": {
    "name": "Roundhill ARM WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "ASMG": {
@@ -220,7 +216,7 @@
   "AVGW": {
    "name": "Roundhill AVGO WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "AVGX": {
@@ -262,7 +258,7 @@
   "BABW": {
    "name": "Roundhill BABA WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "BABX": {
@@ -364,7 +360,7 @@
   "BRKW": {
    "name": "Roundhill BRKB WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "BRZU": {
@@ -490,7 +486,7 @@
   "COIW": {
    "name": "Roundhill COIN WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "CONI": {
@@ -520,7 +516,7 @@
   "COSW": {
    "name": "Roundhill COST WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "COZX": {
@@ -898,7 +894,7 @@
   "GDXW": {
    "name": "Roundhill Gold Miners WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "GEMG": {
@@ -934,7 +930,7 @@
   "GLDW": {
    "name": "Roundhill Gold WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "GLGG": {
@@ -970,7 +966,7 @@
   "GOOW": {
    "name": "Roundhill GOOGL WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "GOOX": {
@@ -1030,7 +1026,7 @@
   "HOOW": {
    "name": "Roundhill HOOD WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "HOOX": {
@@ -1252,7 +1248,7 @@
   "METW": {
    "name": "Roundhill META WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "MEXX": {
@@ -1330,7 +1326,7 @@
   "MSFW": {
    "name": "Roundhill MSFT WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "MSFX": {
@@ -1360,7 +1356,7 @@
   "MSTW": {
    "name": "Roundhill MSTR WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "MSTX": {
@@ -1468,7 +1464,7 @@
   "NFLW": {
    "name": "Roundhill NFLX WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "NIOG": {
@@ -1536,6 +1532,12 @@
    "kind": "leveraged",
    "evidence": "name and Yahoo",
    "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NVDW": {
+   "name": "Roundhill NVDA WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": null
   },
   "NVDX": {
    "name": "T-Rex 2X Long NVIDIA Daily Target ETF",
@@ -1678,7 +1680,7 @@
   "PLTW": {
    "name": "Roundhill PLTR WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "PLTZ": {
@@ -2365,6 +2367,12 @@
    "evidence": "name and Yahoo",
    "yahoo_category": "Trading--Miscellaneous"
   },
+  "TAIL": {
+   "name": "Cambria Tail Risk ETF",
+   "kind": "inverse",
+   "evidence": "issuer: OTM S&P 500 puts plus Treasuries, a decaying hedge rather than a geared inverse; excluded for caution (https://www.cambriafunds.com/tail)",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
   "TARK": {
    "name": "Tradr 2X Long Innovation ETF",
    "kind": "leveraged",
@@ -2431,6 +2439,12 @@
    "evidence": "name and Yahoo",
    "yahoo_category": "Trading--Leveraged Equity"
   },
+  "TOPW": {
+   "name": "Roundhill Top WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": null
+  },
   "TPOR": {
    "name": "Direxion Daily Transportation Bull 3X ETF",
    "kind": "leveraged",
@@ -2491,6 +2505,12 @@
    "evidence": "name and Yahoo",
    "yahoo_category": "Trading--Leveraged Equity"
   },
+  "TSLW": {
+   "name": "Roundhill TSLA WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": null
+  },
   "TSLZ": {
    "name": "T-Rex 2X Inverse Tesla Daily Target ETF",
    "kind": "inverse",
@@ -2512,7 +2532,7 @@
   "TSYW": {
    "name": "Roundhill Treasury Bond WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "TTDU": {
@@ -2572,7 +2592,7 @@
   "UBEW": {
    "name": "Roundhill UBER WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "UBOT": {
@@ -2656,7 +2676,7 @@
   "UNHW": {
    "name": "Roundhill UNH WeeklyPay ETF",
    "kind": "leveraged",
-   "evidence": "Yahoo: Trading--Miscellaneous; WeeklyPay funds run ~1.2x single-name exposure (to confirm)",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
    "yahoo_category": "Trading--Miscellaneous"
   },
   "UNX": {
@@ -2851,6 +2871,12 @@
    "evidence": "name and Yahoo",
    "yahoo_category": "Trading--Inverse Equity"
   },
+  "WMTI": {
+   "name": "REX WMT Growth & Income ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 105-150% of WMT's daily return via options, calls written on about half (https://rexshares.com/wmti/)",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
   "WULX": {
    "name": "Tradr 2X Long WULF Daily ETF",
    "kind": "leveraged",
@@ -2929,5 +2955,10 @@
    "evidence": "name and Yahoo",
    "yahoo_category": "Trading--Inverse Commodities"
   }
+ },
+ "not_listed": {
+  "MEME": "Yahoo says Trading--Leveraged Equity, but the issuer's prospectus describes a plain actively managed basket with no swaps (https://www.roundhillinvestments.com/etf/meme/)",
+  "UUP, UDN, USDU": "dollar-index futures funds Yahoo files under Trading--Miscellaneous; not geared",
+  "IWMY, QQQY, WDTE": "option-income funds Yahoo files under Trading--Miscellaneous; not geared"
  }
 }

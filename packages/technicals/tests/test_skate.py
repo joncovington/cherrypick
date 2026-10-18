@@ -228,3 +228,190 @@ def test_the_build_drops_a_listed_fund_and_judges_the_rest(tmp_path):
     assert set(doc["names"]) == {"SPY", "XYZ"}
     assert {r["expiry"] for r in doc["names"]["XYZ"]["rows"]} == {"2026-10-23", "2026-10-30"}
     assert len({r["expiry"] for r in doc["names"]["SPY"]["rows"]}) == 9
+
+
+# ------------------------------------------------------------------------------------------------
+# Planning the quotes and scoring them (steps 2 and 3).
+
+
+def test_the_grid_reaches_inside_the_band_for_the_closer_strike():
+    grid = skate.offsets(CFG)
+    assert grid[0] == -0.02 and 0.0 in grid and grid[-1] == 0.05
+
+
+def test_the_monthly_is_the_third_friday_or_the_day_before_a_holiday():
+    assert skate.is_monthly(date(2026, 11, 20)) and not skate.is_monthly(date(2026, 11, 27))
+    assert skate.is_monthly(date(2025, 4, 17))  # Good Friday 2025 was the third Friday
+
+
+def test_the_cycle_monthly_prefers_45_to_60_days_then_30_to_60():
+    exps = ["2026-10-23", "2026-11-20", "2026-11-27", "2026-12-18"]
+    assert skate.cycle_expiry(exps, date(2026, 10, 19)) == "2026-12-18"  # 60 days
+    assert skate.cycle_expiry(exps, date(2026, 10, 16)) == "2026-11-20"  # 12-18 is 63 days out
+    assert skate.cycle_expiry(["2026-10-23"], date(2026, 10, 16)) is None
+
+
+def test_the_pick_is_the_first_strike_past_the_band_and_its_neighbours_are_named():
+    ks = [95.0, 100.0, 105.0, 110.0]
+    assert skate.snap(101.2, "C", ks) == 105.0 and skate.snap(101.2, "P", ks) == 100.0
+    assert skate.snap(111.0, "C", ks) is None
+    assert skate.around(105.0, "C", ks) == [("closer", 100.0), ("pick", 105.0), ("further", 110.0)]
+    assert skate.around(100.0, "P", ks) == [("closer", 105.0), ("pick", 100.0), ("further", 95.0)]
+
+
+def test_the_rate_at_a_strike_is_read_off_the_curve_and_clamped_outside_it():
+    grid = [0.0, 0.01, 0.02]
+    curve = [0.80, 0.90, 0.95]
+    assert skate.curve_at(curve, grid, 0.005) == (pytest.approx(0.85), False)
+    assert skate.curve_at(curve, grid, 0.03) == (0.95, True)
+    assert skate.curve_at(curve, grid, -0.01) == (0.80, True)
+
+
+def test_the_hard_filter_wants_a_tight_two_sided_quote_with_open_interest():
+    hard = CFG["hard"]
+    assert skate.hard_pass({"bid": 1.00, "ask": 1.08, "open_interest": 500}, hard)
+    assert skate.hard_pass({"bid": 0.20, "ask": 0.25, "open_interest": 500}, hard)  # a nickel wide
+    assert not skate.hard_pass({"bid": 1.00, "ask": 1.30, "open_interest": 500}, hard)
+    assert not skate.hard_pass({"bid": 1.00, "ask": 1.05, "open_interest": 50}, hard)
+    assert not skate.hard_pass({"bid": 0.0, "ask": 0.05, "open_interest": 500}, hard)
+
+
+def _row(side="C", band=105.0):
+    grid = skate.offsets(CFG)
+    curve = [round(0.80 + 0.002 * i, 4) for i in range(len(grid))]
+    b = {"haircut": 0.75, "band": band, "n": 2000, "n_recent": 700, "skate": curve, "skate_recent": curve}
+    return {
+        "side": side,
+        "expiry": "2026-11-20",
+        "days": 35,
+        "sessions": 25,
+        "range": 6.0,
+        "same_band": True,
+        "bands": {"fixed": b, "by_expiry": dict(b)},
+    }
+
+
+def test_a_scored_leg_carries_history_implied_odds_and_yield():
+    g = skate.score_leg(
+        _row(),
+        "fixed",
+        105.0,
+        {"bid": 1.00, "ask": 1.10, "open_interest": 400},
+        100.0,
+        35,
+        35 / 365,
+        0.0,
+        CFG,
+        skate.offsets(CFG),
+    )
+    assert g["offset"] == 0.0 and g["skate"] == pytest.approx(0.816)
+    assert 0 < g["delta"] < 0.5 and g["implied_skate"] == pytest.approx(1 - g["delta"], abs=1e-4)
+    assert g["gap"] == pytest.approx(g["skate"] - g["implied_skate"], abs=1e-4)
+    assert g["yield_bid"] == pytest.approx(1.00 / 100 * 365 / 35, abs=1e-4)  # a call's capital is the shares
+    assert g["per_day_bid"] == pytest.approx(100 / 35, abs=1e-3) and g["hard"]
+    assert g["tested_per_month"] == pytest.approx(1 - 0.816, abs=1e-3)
+
+
+def test_a_put_yields_on_the_strike_it_secures():
+    g = skate.score_leg(
+        _row("P", 95.0),
+        "fixed",
+        95.0,
+        {"bid": 0.80, "ask": 0.85, "open_interest": 400},
+        100.0,
+        35,
+        35 / 365,
+        0.0,
+        CFG,
+        skate.offsets(CFG),
+    )
+    assert g["yield_bid"] == pytest.approx(0.80 / 95 * 365 / 35, abs=1e-4) and g["delta"] < 0
+
+
+def _doc():
+    return {
+        "day": "2026-10-16",
+        "offsets": skate.offsets(CFG),
+        "names": {
+            "XYZ": {
+                "spot": 100.0,
+                "fund": False,
+                "earnings": "2026-12-03",
+                "div_yield": 0.01,
+                "rows": [_row("C"), {**_row("C"), "expiry": "2026-10-30", "days": 14}],
+            }
+        },
+    }
+
+
+CHAINS = {
+    "XYZ": [
+        {
+            "expiration": e,
+            "dte": d,
+            "strikes": [[k, f"XYZ C{e}{k}", f"XYZ P{e}{k}"] for k in (100.0, 105.0, 110.0)],
+        }
+        for e, d in (("2026-10-30", 14), ("2026-11-20", 35))
+    ]
+}
+
+
+def test_stage_one_quotes_each_band_pick_and_its_neighbours_on_the_cycle_monthly():
+    legs = skate.stage_one(_doc(), CHAINS, date(2026, 10, 16))
+    assert {g["expiry"] for g in legs} == {"2026-11-20"}
+    assert {g["strike"]: g["roles"]["fixed"] for g in legs} == {
+        100.0: "closer",
+        105.0: "pick",
+        110.0: "further",
+    }
+    assert all(g["option"].startswith("XYZ C") for g in legs)
+
+
+def test_stage_one_falls_back_to_the_last_expiry_before_a_report():
+    doc = _doc()
+    doc["names"]["XYZ"]["rows"] = [r for r in doc["names"]["XYZ"]["rows"] if r["expiry"] == "2026-10-30"]
+    legs = skate.stage_one(doc, CHAINS, date(2026, 10, 16))
+    assert {g["expiry"] for g in legs} == {"2026-10-30"}
+    assert skate.stage_one_expiry([], date(2026, 10, 16)) is None
+
+
+def test_stage_two_covers_every_expiry_of_the_picked_name_sides():
+    legs = skate.stage_two(_doc(), CHAINS, [("XYZ", "C")])
+    assert {g["expiry"] for g in legs} == {"2026-10-30", "2026-11-20"}
+    assert skate.stage_two(_doc(), CHAINS, []) == []
+
+
+def _scored(quotes):
+    legs = skate.stage_two(_doc(), CHAINS, [("XYZ", "C")])
+    for g in legs:
+        g["quote"] = quotes.get((g["expiry"], g["strike"]))
+    clock = {"2026-10-30": (14, 14 / 365), "2026-11-20": (35, 35 / 365)}
+    return skate.score(_doc(), legs, {"XYZ": 100.0}, clock, CFG)
+
+
+def test_the_best_expiry_is_the_pick_that_pays_most_per_day_among_tradable_ones():
+    q = {
+        ("2026-10-30", 105.0): {"bid": 0.50, "ask": 0.55, "open_interest": 300},
+        ("2026-11-20", 105.0): {"bid": 1.00, "ask": 1.05, "open_interest": 900},
+    }
+    (entry,) = _scored(q)
+    best = skate.best_expiries(entry, "2026-11-20")["fixed"]
+    # 0.50 over 14 days beats 1.00 over 35 days per day: 3.571 vs 2.857 a contract.
+    assert best["expiry"] == "2026-10-30" and best["vs_monthly"] == pytest.approx(1.25, abs=1e-3)
+
+
+def test_an_untradable_short_expiry_never_wins_the_best_expiry():
+    q = {
+        ("2026-10-30", 105.0): {"bid": 0.50, "ask": 0.55, "open_interest": 5},
+        ("2026-11-20", 105.0): {"bid": 1.00, "ask": 1.05, "open_interest": 900},
+    }
+    (entry,) = _scored(q)
+    assert skate.best_expiries(entry, "2026-11-20")["fixed"]["expiry"] == "2026-11-20"
+
+
+def test_stage_two_takes_the_widest_gaps_and_skips_untradable_name_sides():
+    def entry(sym, gap, hard=True):
+        return {"symbol": sym, "side": "C", "legs": [{"role": "pick", "hard": hard, "gap": gap}]}
+
+    scored = [entry("A", 0.02), entry("B", 0.10), entry("C", 0.30, hard=False), entry("D", -0.05)]
+    assert skate.select(scored, 2) == [("B", "C"), ("A", "C")]

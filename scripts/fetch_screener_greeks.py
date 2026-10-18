@@ -42,6 +42,7 @@ against the same leg bars, and the spread priced at mid and at the natural fill.
     python scripts/fetch_screener_greeks.py rebar     # re-apply the leg bars to saved readings
     python scripts/fetch_screener_greeks.py strikes   # the earnings spreads' listed strikes, evening
     python scripts/fetch_screener_greeks.py income [--force] [--limit N]   # our own candidates, in hours
+    python scripts/fetch_screener_greeks.py skate [--force] [--limit N]    # skate strikes, scored
 
 **`income`: our own candidates** (2026-10-18). Every name the liquidity verdict calls tradable, on
 the cycle monthly, the strikes out of the money on both sides, quoted in regular hours with each leg
@@ -56,7 +57,7 @@ import asyncio
 import json
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 LISTS = (
@@ -750,13 +751,15 @@ def plan_earnings_legs(rows: list[dict], chains: dict[str, list]) -> list[dict]:
     return out
 
 
-async def _chain_listings(session, ub, symbols: list[str], cache: dict) -> None:
-    """Each name's chain listing (expirations in the builder's range, strikes with their call and put
-    symbols) into `cache`, in the universe builder's own format: listings only, no quotes. One call a
-    name, a second apart; a 429 stops the run."""
+async def _chain_listings(
+    session, ub, symbols: list[str], cache: dict, dte_range: tuple[int, int] | None = None
+) -> None:
+    """Each name's chain listing (expirations in `dte_range`, the builder's range by default; strikes
+    with their call and put symbols) into `cache`, in the universe builder's own format: listings
+    only, no quotes. One call a name, a second apart; a 429 stops the run."""
     from tastytrade.instruments import NestedOptionChain
 
-    lo, hi = ub.RULE["option_dte_range"]
+    lo, hi = dte_range or ub.RULE["option_dte_range"]
     for sym in symbols:
         if sym in cache:
             continue
@@ -1313,10 +1316,171 @@ def cmd_income(args) -> int:
     return 0 if problem is None else 1
 
 
+# ------------------------------------------------------------------------------------------------
+# The skate screen's quotes (docs/skate-plan.md, steps 2-3). `technicals skate` writes each name's
+# bands at 06:45; here the strikes past them are listed, quoted in regular hours and scored by
+# technicals' own functions. Two stages keep the broker load near the other passes': every name-side
+# on its cycle monthly, then every weekly expiry for the name-sides whose history beats their implied
+# odds by the most. Chain listings reach further than the builder's (3 to 70 days), so they are cached
+# apart, once a day, and the second run reuses the first's.
+
+SKATE_DTE_RANGE = (1, 70)
+ET_CLOSE_HOUR = 16
+
+
+def skate_clock(expiries: set[str], now) -> dict[str, tuple[int, float]]:
+    """Each expiry's (calendar days left, years left to its 16:00 ET close) as of `now` (ET)."""
+    from datetime import time as dtime
+
+    out = {}
+    for e in expiries:
+        d = datetime.fromisoformat(e).date()
+        close = datetime.combine(d, dtime(ET_CLOSE_HOUR), tzinfo=now.tzinfo)
+        out[e] = ((d - now.date()).days, max(0.0, (close - now).total_seconds()) / (365 * 86400))
+    return out
+
+
+async def _skate_quotes(session, ub, doc: dict, cfg: dict, cache: dict, now) -> tuple[list[dict], str | None]:
+    """(the scored name-sides, a problem or None): listings, spots, stage one, stage two."""
+    from cherrypick.technicals import skate
+    from tastytrade.market_data import get_market_data_by_type
+
+    problem = None
+    names = sorted(doc.get("names") or {})
+    try:
+        await _chain_listings(session, ub, names, cache, SKATE_DTE_RANGE)
+    except Exception as exc:  # noqa: BLE001 -- a 429: score what was listed
+        problem = f"chain listings stopped: {type(exc).__name__}: {exc}"[:300]
+    spots: dict[str, float] = {}
+    for batch in ub._batches(names, ub.TT_QUOTE_BATCH):
+        for q in await get_market_data_by_type(session, equities=[ub.to_tastytrade(s) for s in batch]):
+            bid, ask = _f(q.bid), _f(q.ask)
+            mid = (bid + ask) / 2 if bid and ask and ask >= bid else None
+            spot = mid or _f(getattr(q, "mark", None)) or _f(getattr(q, "last", None))
+            if spot:
+                spots[q.symbol.replace("/", ".")] = spot
+        await asyncio.sleep(ub.TT_PAUSE_S)
+    today = now.date()
+    first = skate.stage_one(doc, cache, today)
+    await _quote_options(session, ub, first)
+    clock = skate_clock({leg["expiry"] for leg in first}, now)
+    scored = skate.score(doc, first, spots, clock, cfg)
+    # Stage one's expiry is the cycle monthly where one is free of earnings; otherwise it is the last
+    # expiry before the report, and the best expiry is then compared with no monthly.
+    monthly = {
+        (leg["symbol"], leg["side"]): leg["expiry"]
+        if skate.is_monthly(date.fromisoformat(leg["expiry"]))
+        else None
+        for leg in first
+    }
+    picked = skate.select(scored, cfg["stage_two"])
+    second = skate.stage_two(doc, cache, picked)
+    await _quote_options(session, ub, second)
+    clock.update(skate_clock({leg["expiry"] for leg in second}, now))
+    deep = {(e["symbol"], e["side"]): e for e in skate.score(doc, second, spots, clock, cfg)}
+    rows = []
+    for e in scored:
+        key = (e["symbol"], e["side"])
+        entry = deep.get(key, e)
+        entry["stage"] = 2 if key in deep else 1
+        entry["monthly"] = monthly.get(key)
+        entry["best"] = skate.best_expiries(entry, entry["monthly"])
+        rows.append(entry)
+    return rows, problem
+
+
+def cmd_skate(args) -> int:
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.core import calendar as cal
+    from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
+    from cherrypick.technicals import skate
+
+    ub = _universe_builder()
+    et = ZoneInfo("America/New_York")
+    now = datetime.now(et)
+    today = now.date()
+    if not args.force and not ub.in_window(now, cal.is_trading_day(today), cal.session_close_hhmm(today)):
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "skipped": f"outside the measuring window ({ub.WINDOW_START} ET to 30 min before close)",
+                }
+            )
+        )
+        return 0
+    doc = skate.latest_doc(today.isoformat())
+    if doc is None:
+        print(
+            json.dumps(
+                {"ok": False, "reason": "no skate band file: run `python -m cherrypick.technicals skate`"}
+            )
+        )
+        return 1
+    if args.limit:
+        doc = {**doc, "names": dict(sorted(doc["names"].items())[: args.limit])}
+    cfg = skate.load_settings()
+    store = CredentialStore(SHARED_SERVICE)
+    if store.missing_secrets():
+        print(json.dumps({"ok": False, "reason": "credentials_missing"}))
+        return 1
+    root = store_dir() / "screener-greeks" / "skate"
+    chain_path = root / "chains" / f"{today.isoformat()}.json"
+    cache = ub._read_json(chain_path, {})
+    started = datetime.now(UTC)
+    try:
+        session = SessionManager(store).get_session()
+        rows, problem = asyncio.run(_skate_quotes(session, ub, doc, cfg, cache, now))
+    except Exception as exc:  # noqa: BLE001 -- keep the listings gathered so far for the next run
+        ub._write_json(chain_path, cache)
+        print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:300]}))
+        return 1
+    ub._write_json(chain_path, cache)
+    stamp = f"{started.astimezone(et):%H%M}{'.trial' if args.limit else ''}"
+    out = root / today.isoformat() / f"{stamp}.json"
+    ub._write_json(
+        out,
+        {
+            "measured_at": started.isoformat(),
+            "session": today.isoformat(),
+            "band_day": doc["day"],
+            "complete": problem is None,
+            "problem": problem,
+            "config": {
+                k: cfg[k] for k in ("haircut", "by_expiry", "rate", "hard", "soft", "stage_two", "month_days")
+            },
+            "rows": rows,
+        },
+    )
+    legs = [g for r in rows for g in r["legs"]]
+    print(
+        json.dumps(
+            {
+                "ok": problem is None,
+                "problem": problem,
+                "path": str(out),
+                "band_day": doc["day"],
+                "name_sides": len(rows),
+                "stage_two": sum(1 for r in rows if r["stage"] == 2),
+                "legs": len(legs),
+                "quoted": sum(1 for g in legs if (g.get("quote") or {}).get("bid") is not None),
+                "hard_pass": sum(1 for g in legs if g["hard"]),
+                "seconds": round((datetime.now(UTC) - started).total_seconds()),
+            },
+            indent=1,
+        )
+    )
+    return 0 if problem is None else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument(
-        "mode", nargs="?", choices=("greeks", "measure", "rebar", "strikes", "income"), default="greeks"
+        "mode",
+        nargs="?",
+        choices=("greeks", "measure", "rebar", "strikes", "income", "skate"),
+        default="greeks",
     )
     ap.add_argument("--date", help="greeks: the list date to record (default: today, ET)")
     ap.add_argument(
@@ -1335,6 +1499,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_strikes(args)
     if args.mode == "income":
         return cmd_income(args)
+    if args.mode == "skate":
+        return cmd_skate(args)
 
     day = args.date or today_et()
     lists = load_lists(day)

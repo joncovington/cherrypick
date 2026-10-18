@@ -18,6 +18,13 @@
     "recent_years": 3,
     "min_history": 250,
     "offset_step": 0.0025,
-    "offset_max": 0.05
+    "offset_min": -0.02,
+    "offset_max": 0.05,
+    "_comment_score": "The score of the regular-hours quotes (fetch_screener_greeks.py skate): 'rate' for Black-Scholes; 'hard' filters drop a leg (two-sided, spread within max_spread_pct of mid OR max_spread_abs, open interest); 'soft' thresholds are a pass/fail marker only (skate rate over the whole history and the recent years, skate yield on the bid); 'stage_two' is how many name-sides get every expiry quoted; test odds are stated per 'month_days'. 'offset_min' is how far inside the band history is recorded, for the strike one closer than the band's.",
+    "rate": 0.04,
+    "hard": {"min_open_interest": 100, "max_spread_pct": 0.10, "max_spread_abs": 0.05},
+    "soft": {"skate": 0.84, "skate_recent": 0.80, "yield": 0.06},
+    "stage_two": 60,
+    "month_days": 35
   }
 }

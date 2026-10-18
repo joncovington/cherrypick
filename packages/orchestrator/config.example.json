@@ -778,7 +778,9 @@
     "_comment_earnings_strikes_at": "With screener_greeks on: the earnings calendar's suggested spreads matched to listed strikes (scripts/fetch_screener_greeks.py strikes) -- the chain listing of each strong read reporting within the week, after the 19:10 calendar build, so the earnings tab shows real strikes rather than target prices until the next regular-hours reading prices them. Listings only, read-only, a second a name. Times are ET.",
     "earnings_strikes_at": "19:20",
     "_comment_screener_measure_at": "With screener_greeks on: two regular-hours readings (fetch_screener_greeks.py measure) of the ATM monthly call and put spread for every listed name the universe builder does not already measure. After-hours quotes say nothing about a name's spread. Half an hour after the universe's own readings, inside the same 10:00-to-30-minutes-before-the-close window. Times are ET.",
-    "screener_measure_at": ["11:30", "14:30"]
+    "screener_measure_at": ["11:30", "14:30"],
+    "_comment_skate_quotes_at": "With screener_greeks on and technicals.skate on: two regular-hours passes (fetch_screener_greeks.py skate) quoting the skate screen's strikes past the morning's range bands and scoring them -- every name-side on its cycle monthly, then every weekly to 63 days for the name-sides whose history beats their implied odds by the most (docs/skate-plan.md). The first pass of a day lists the chains, about six minutes; the second reuses them. Read-only. Times are ET.",
+    "skate_quotes_at": ["12:00", "15:05"]
   },
   "data_header": "x",
   "data_epoch": {
