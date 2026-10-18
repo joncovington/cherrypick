@@ -227,11 +227,6 @@ def cmd_install(cfg, force: bool = False) -> None:
         results[f"{name}.checkout"] = chk
         if not chk.get("ok"):
             continue
-        root = cfgmod.module_root(mcfg, name)
-        # per-module streamer (the disabled rollback path) still starts like any daemon
-        streamer = mcfg.get("streamer", {})
-        if streamer.get("enabled"):
-            results[f"{name}.streamer"] = _ensure_daemon(root, streamer, f"{name}.streamer", producer=True)
 
     # The one remaining OS task: a 2-minute keep-alive probe that (re)starts the supervisor.
     # The OS guarantees the probe; the probe guarantees the daemon; the daemon fires everything.
@@ -328,8 +323,8 @@ def _stamp_service_config(
     root: Path, spec: dict, stamp_id: str | None = None, *, producer: bool = False
 ) -> None:
     """Record what config a daemon was launched with. `services[]` entries name themselves with `id`;
-    the streamer blocks carry none, so their caller passes the same label the watchdog stamps under
-    ("streamer", "<module>.streamer") — the two must agree or every tick would see a missing stamp.
+    the streamer block carries none, so its caller passes the same label the watchdog stamps under
+    ("streamer") — the two must agree or every tick would see a missing stamp.
 
     A `producer` also stamps the stream-request union it just bound, for the same reason: install is
     what usually follows the config edit, and a producer started here subscribed exactly today's

@@ -37,8 +37,6 @@ Do this:
      tree, and only if the PID's creation time still matches, so a reused PID is never touched. It
      refuses while the supervisor or its anchor task is still up, which means step 1 did not finish.
      Confirm with `python packages/orchestrator/run.py ps` (nothing running).
-     (Only if this box was rolled back to MEIC-as-producer — `modules.meic.streamer.enabled` true —
-     stop that one too: `python -m cherrypick.meic.streamer --stop`. Exactly one producer ever runs.)
      The settings editor (8804) needs nothing — it is foreground-only and stops when you close it.
    - **Dolt sql-server** (earnings' local market-data DB; its keep-alive task was removed in step 1):
      stop the process serving port **3306**, but only if it really is `dolt` (the same rule the root

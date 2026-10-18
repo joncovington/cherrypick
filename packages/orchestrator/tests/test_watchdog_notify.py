@@ -55,8 +55,8 @@ def test_renotify_after_window(isolated_state, fake_notifier):
 
 def test_status_escalation_notifies(isolated_state, fake_notifier):
     t0 = datetime(2026, 7, 10, 12, 0, tzinfo=timezone.utc)
-    warn = Finding("meic.streamer", watchdog.WARN, "Streamer down", "not running")
-    crit = Finding("meic.streamer", watchdog.CRITICAL, "Streamer down", "still not running")
+    warn = Finding("streamer", watchdog.WARN, "Streamer down", "not running")
+    crit = Finding("streamer", watchdog.CRITICAL, "Streamer down", "still not running")
     _process_notifications([warn], fake_notifier, renotify_minutes=60, now=t0)
     _process_notifications([crit], fake_notifier, renotify_minutes=60, now=t0 + timedelta(minutes=5))
     assert [s["level"] for s in fake_notifier.sent] == [watchdog.WARN, watchdog.CRITICAL]

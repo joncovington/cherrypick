@@ -397,6 +397,24 @@ def service_check(settings: dict[str, Any], state: dict[str, Any]) -> Check | No
     return Check("service", OK, f"'{sid}' running (the supervisor runs with nobody logged on)")
 
 
+def module_streamer_checks(name: str, mcfg: dict[str, Any]) -> list[Check]:
+    """A module's own `streamer` block, which nothing reads any more. Pure.
+
+    MEIC's in-module streamer was the rollback producer until 2026-10-18; install and the watchdog no
+    longer start one. A disabled block is inert and says nothing. An enabled one is someone's
+    rollback that is not happening, so it warns rather than going quiet."""
+    if not (mcfg.get("streamer") or {}).get("enabled"):
+        return []
+    return [
+        Check(
+            f"{name}.streamer",
+            WARN,
+            f"modules.{name}.streamer is enabled, but module-owned streamers were removed and nothing "
+            "starts it; the standalone `streamer` is the only producer. Delete the block.",
+        )
+    ]
+
+
 def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     """Run the readiness checks. `fast=True` skips the broker/keyring check — the only one that makes
     an authenticated broker round-trip (a 35s-timeout subprocess) — so it's safe to poll on a short
@@ -628,21 +646,9 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
                 checks.append(Check("broker/keyring", FAIL, f"connection check error: {exc}"))
                 broker_checked = True
 
-        # streamer liveness (info)
-        streamer = mcfg.get("streamer", {})
-        if streamer.get("enabled"):
-            try:
-                r = _run(root, streamer["status_argv"], timeout=15)
-                running = bool(first_json(r.stdout).get("running")) if r.returncode == 0 else False
-                checks.append(
-                    Check(
-                        f"{name}.streamer",
-                        OK if running else WARN,
-                        "running" if running else "not running (start with: cherrypick install)",
-                    )
-                )
-            except Exception as exc:
-                checks.append(Check(f"{name}.streamer", WARN, f"status error: {exc}"))
+        # A module-owned streamer (MEIC's rollback path) was removed on 2026-10-18 and nothing starts
+        # one any more, so an enabled block left in a kept config is a rollback that silently isn't.
+        checks.extend(module_streamer_checks(name, mcfg))
 
         # dolt — port reachability plus (when declared) that the required databases are actually served
         if paper.get("requires_dolt"):
@@ -738,10 +744,10 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     )
 
     # standalone market-data producer (top-level `streamer`): the suite's single stream-cache writer.
-    # Module-owned streamers are checked in the modules loop above; this covers the standalone producer
-    # (the case where modules.<m>.streamer is disabled), so its health shows on `cherrypick doctor` and
+    # The standalone producer is the only one (module-owned streamers were removed on 2026-10-18),
+    # so its health shows on `cherrypick doctor` and
     # the served dashboard's system card. Reads the streamer's own --status (its cache/state), never the
-    # broker — the same cheap local subprocess the module-streamer check uses.
+    # broker — a cheap local subprocess.
     producer = cfg.get("streamer") or {}
     if producer.get("enabled"):
         root = cfgmod.module_root(producer, "streamer")

@@ -238,19 +238,6 @@ def test_a_settling_streamer_is_left_alone(wired, spy):
     assert spy == {"stop": 0, "start": 0} and finding.status == wd.OK
 
 
-def test_two_producers_keep_separate_stamps(wired, spy):
-    """During a cutover both the standalone producer and a module's own streamer may exist. One
-    stamp between them would have each recycling the other, forever."""
-    digest, source = sc.effective_config(STREAMER, wired)
-    sc.write_stamp("streamer", digest, source)
-
-    # meic.streamer has never been stamped, so it adopts rather than recycling on the other's stamp.
-    finding = wd._recycle_streamer_if_stale("meic.streamer", wired, STREAMER, settling=False)
-    assert spy == {"stop": 0, "start": 0} and finding.status == wd.OK
-    assert sc.read_stamp("meic.streamer")["config_hash"] == digest
-    assert sc.read_stamp("streamer")["config_hash"] == digest  # untouched
-
-
 def test_streamer_recycle_honours_auto_restart(wired, spy):
     svc = {**STREAMER, "auto_restart": False}
     digest, source = sc.effective_config(svc, wired)
