@@ -75,7 +75,12 @@ recorder's 15 s ones, never by assuming it.
 
 **One vendor session per account.** A second login with the same key ends the first, and every later
 request fails `UNAUTHENTICATED`. A fetch stops on that (`vendor.FATAL`) rather than recording every
-remaining session as refused; never run a second client (a probe, the terminal) while a fetch runs.
+remaining session as refused. **So the client takes a lock before it logs in**
+(`<home>/state/thetadata-session.lock`, the holder's PID, `core.looplock`'s never-steal-from-the-
+living semantics): a second client built here WAITS, asking again every minute and logging who holds
+it, and gives up with `session_in_use` after six hours. Every fetch, the nightly job and any script
+using `client_for` take it; the Theta Terminal and the library used by hand do not, so never run
+those while a fetch runs.
 
 How each field is rebuilt from the vendor is declared in `fetch.py`'s docstring. The two that differ
 from a recording in kind, and that validation must measure rather than assume:
