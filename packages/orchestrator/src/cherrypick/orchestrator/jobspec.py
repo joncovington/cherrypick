@@ -152,6 +152,9 @@ CATCHUP_MINUTES = {
     "report-earnings-strikes": 240,
     "report-screener-measure-1": 60,
     "report-screener-measure-2": 60,
+    # The script refuses outside regular hours, so a late catch-up records nothing rather than an
+    # after-hours book; half an hour is all the window leaves.
+    "report-income-chains": 30,
     "universe-watchlist": 300,
     # Broker-cash reconciliation of a settled live session. Generous, because the whole point is
     # that it must not depend on anyone arming the live loop: a box asleep until mid-afternoon
@@ -1764,6 +1767,23 @@ def derive_jobs(
                 enabled_reason=sg_reason,
             ),
         )
+    add(
+        "report-income-chains",
+        lambda: JobSpec(
+            id="report-income-chains",
+            # Our own income candidates (docs/portfolio-guidance-plan.md, piece 4): every tradable name's
+            # cycle-monthly chain, out of the money both sides, quoted in regular hours for manage to
+            # size against the account. Needs no vendor list. Read-only REST; the script refuses
+            # outside the measuring window. After the 14:30 measure, whose chain listings it reuses.
+            argv=(pythonw, _suite_script(launcher, "fetch_screener_greeks.py"), "income"),
+            kind=KIND_DAILY,
+            at_et=mr["income_chains_at"],
+            catchup_minutes=CATCHUP_MINUTES["report-income-chains"],
+            trading_days_only=True,
+            enabled=mr["screener_greeks"],
+            enabled_reason=sg_reason,
+        ),
+    )
     uv_reason = "" if mr["universe"] else "disabled in config (market_report.universe)"
     uv_jobs = [
         (f"universe-measure-{i}", at, "measure") for i, at in enumerate(mr["universe_measure_at"][:2], 1)

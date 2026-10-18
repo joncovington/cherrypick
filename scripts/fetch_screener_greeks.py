@@ -41,6 +41,12 @@ against the same leg bars, and the spread priced at mid and at the natural fill.
     python scripts/fetch_screener_greeks.py measure [--force] [--limit N]
     python scripts/fetch_screener_greeks.py rebar     # re-apply the leg bars to saved readings
     python scripts/fetch_screener_greeks.py strikes   # the earnings spreads' listed strikes, evening
+    python scripts/fetch_screener_greeks.py income [--force] [--limit N]   # our own candidates, in hours
+
+**`income`: our own candidates** (2026-10-18). Every name the liquidity verdict calls tradable, on
+the cycle monthly, the strikes out of the money on both sides, quoted in regular hours with each leg
+judged by the same bars; with each name's earnings dates, IV, HV, beta and stress move. Written to
+`screener-greeks/income/<date>.json` for manage to size against the account. Needs no vendor list.
 """
 
 from __future__ import annotations
@@ -1065,9 +1071,253 @@ def cmd_measure(args) -> int:
     return 0
 
 
+# ------------------------------------------------------------------------------------------------
+# `income`: our own candidates, in regular hours (2026-10-18; docs/portfolio-guidance-plan.md, 4).
+#
+# The vendor's lists stop with its subscription on 2026-10-24, and which names they carry was never
+# reproduced. So the candidates manage sizes for the account come from OUR universe instead: every
+# name the nightly liquidity verdict calls tradable (weeklies and $100M a day). For each, on the
+# standard monthly of the user's cycle (45-60 days, else 30-60), the strikes out of the money on both
+# sides, quoted through REST in regular hours -- the evening quotes say nothing about a real spread,
+# and the leg bars judge spreads. Beside them, from local files only: the name's earnings and
+# ex-dividend dates, IV, HV and the broker's beta (the nightly metrics file), and its stress move over
+# the holding period (the end-of-day store). manage picks the strikes, sizes and ranks; this decides
+# nothing about a trade.
+
+INCOME_REACH = CAND_REACH
+INCOME_STRIKES = CAND_STRIKES
+INCOME_NEAR = CAND_NEAR
+# The history a stress move is read from: five years of sessions, and at least a year of windows.
+STRESS_SESSIONS = 1260
+STRESS_MIN_WINDOWS = 250
+
+
+def income_names(verdicts: dict[str, dict]) -> list[str]:
+    """The tradable names, in the store's spelling (BRK.B)."""
+    return sorted(s for s, v in verdicts.items() if (v or {}).get("verdict") == "tradable")
+
+
+def income_plan(listing: list[dict], spot: float | None, is_monthly) -> dict | None:
+    """The cycle monthly and the out-of-the-money strikes either side of `spot` to quote, or None
+    when the cycle lists no monthly or there is no price to centre on."""
+    cyc = cycle_expiry(listing, is_monthly)
+    if cyc is None or not spot:
+        return None
+    by_strike = {float(k): (call, put) for k, call, put in cyc["strikes"]}
+    legs = []
+    for right in ("P", "C"):
+        for k in candidate_strikes(list(by_strike), spot, right, INCOME_REACH, INCOME_STRIKES, INCOME_NEAR):
+            call, put = by_strike[k]
+            option = put if right == "P" else call
+            if option:
+                legs.append({"strike": k, "right": right, "option": option})
+    return {"expiry": cyc["expiration"], "dte": cyc["dte"], "legs": legs}
+
+
+def stress_move(closes: list[float], days: int) -> dict | None:
+    """The name's 1st and 99th percentile return over `days` sessions, from overlapping windows of
+    its last STRESS_SESSIONS closes: how far it has fallen (and risen) over a holding period like
+    this one, in bad times. None with too little history -- a stress cap guessed for a short history
+    would understate it."""
+    if days < 1:
+        return None
+    series = closes[-(STRESS_SESSIONS + days) :]
+    rets = sorted(series[i + days] / series[i] - 1.0 for i in range(len(series) - days) if series[i] > 0)
+    if len(rets) < STRESS_MIN_WINDOWS:
+        return None
+
+    def q(p: float) -> float:
+        return rets[min(len(rets) - 1, max(0, round(p * (len(rets) - 1))))]
+
+    return {"sessions": days, "p01": round(q(0.01), 4), "p99": round(q(0.99), 4), "windows": len(rets)}
+
+
+def holding_sessions(dte: int) -> int:
+    """Trading sessions in `dte` calendar days."""
+    return max(1, round(dte * 252 / 365))
+
+
+def income_metrics(rows: dict, sym: str) -> dict:
+    """The fields manage needs from the nightly metrics row (`fetch_iv_rank.py`), as recorded."""
+    r = rows.get(sym) or {}
+    keys = (
+        "earnings_date",
+        "earnings_time",
+        "earnings_estimated",
+        "ex_dividend_date",
+        "iv_index",
+        "hv_30",
+        "beta",
+    )
+    return {k: r.get(k) for k in keys}
+
+
+def latest_metrics() -> tuple[str | None, dict]:
+    """(day, rows) of the newest day in the nightly metrics file; (None, {}) without it."""
+    try:
+        days = (
+            json.loads((store_dir() / "iv" / "tastytrade.json").read_text(encoding="utf-8")).get("days") or {}
+        )
+    except (OSError, ValueError):
+        return None, {}
+    if not days:
+        return None, {}
+    day = max(days)
+    return day, days[day] or {}
+
+
+async def _income_quotes(session, ub, names: list[str], cache: dict) -> tuple[dict, dict, str | None]:
+    """(spots, plans, problem): each name's price (mid in hours, else mark, else last), its plan on the
+    cycle monthly, and the options quoted in place. Chain listings go through the day's shared cache,
+    so the 11:30 and 14:30 measures' listings are not asked for again. A 429 ends the listings and is
+    the run's problem: what was listed is quoted and saved, marked incomplete."""
+    from tastytrade.market_data import get_market_data_by_type
+
+    problem = None
+    try:
+        await _chain_listings(session, ub, names, cache)
+    except Exception as exc:  # noqa: BLE001 -- a 429: keep what was listed
+        problem = f"chain listings stopped: {type(exc).__name__}: {exc}"[:300]
+    spots: dict[str, float | None] = {}
+    for batch in ub._batches(names, ub.TT_QUOTE_BATCH):
+        for q in await get_market_data_by_type(session, equities=[ub.to_tastytrade(s) for s in batch]):
+            sym = q.symbol.replace("/", ".")
+            bid, ask = _f(q.bid), _f(q.ask)
+            mid = (bid + ask) / 2 if bid and ask and ask >= bid else None
+            spots[sym] = mid or _f(getattr(q, "mark", None)) or _f(getattr(q, "last", None))
+        await asyncio.sleep(ub.TT_PAUSE_S)
+    plans: dict[str, dict] = {}
+    for sym in names:
+        plan = income_plan(cache.get(sym) or [], spots.get(sym), ub.is_monthly)
+        if plan:
+            plans[sym] = plan
+    await _quote_options(session, ub, [leg for p in plans.values() for leg in p["legs"]])
+    return spots, plans, problem
+
+
+def cmd_income(args) -> int:
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.core import calendar as cal
+    from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
+    from cherrypick.technicals import liquidity
+    from cherrypick.technicals import store as tstore
+
+    ub = _universe_builder()
+    et = ZoneInfo("America/New_York")
+    now = datetime.now(et)
+    today = now.date()
+    if not args.force and not ub.in_window(now, cal.is_trading_day(today), cal.session_close_hhmm(today)):
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "skipped": f"outside the measuring window ({ub.WINDOW_START} ET to 30 min before close)",
+                }
+            )
+        )
+        return 0
+    names = income_names(liquidity.load())[: args.limit]
+    if not names:
+        print(json.dumps({"ok": False, "reason": "no tradable names: the liquidity verdicts are missing"}))
+        return 1
+    store = CredentialStore(SHARED_SERVICE)
+    if store.missing_secrets():
+        print(json.dumps({"ok": False, "reason": "credentials_missing"}))
+        return 1
+    root = store_dir() / "screener-greeks"
+    chain_path = root / "chains" / f"{today.isoformat()}.json"
+    cache = {
+        **ub._read_json(ub.store_dir() / "chains" / f"{today.isoformat()}.json", {}),
+        **ub._read_json(chain_path, {}),
+    }
+    started = datetime.now(UTC)
+    try:
+        session = SessionManager(store).get_session()
+        spots, plans, problem = asyncio.run(_income_quotes(session, ub, names, cache))
+    except Exception as exc:  # noqa: BLE001 -- keep the listings gathered so far for the next run
+        ub._write_json(chain_path, cache)
+        print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:300]}))
+        return 1
+    ub._write_json(chain_path, cache)
+
+    metrics_day, metric_rows = latest_metrics()
+    conn = tstore.connect()
+    symbols: dict[str, dict] = {}
+    for sym in names:
+        plan = plans.get(sym)
+        entry: dict = {"spot": spots.get(sym), **income_metrics(metric_rows, sym)}
+        if plan is None:
+            entry["error"] = "no chain listed" if not cache.get(sym) else "no cycle monthly or no price"
+            symbols[sym] = entry
+            continue
+        closes = [b.close for b in tstore.adjusted_bars(conn, sym)]
+        options = []
+        for leg in plan["legs"]:
+            q = leg.get("quote") or {}
+            options.append(
+                {
+                    "strike": leg["strike"],
+                    "right": leg["right"],
+                    "option": leg["option"],
+                    **{k: q.get(k) for k in ("bid", "ask", "volume", "open_interest", "updated_at")},
+                    "passes": leg_passes(q, LEG_BARS) if q else None,
+                }
+            )
+        entry.update(
+            expiry=plan["expiry"],
+            dte=plan["dte"],
+            stress=stress_move(closes, holding_sessions(plan["dte"])),
+            options=options,
+        )
+        symbols[sym] = entry
+    # A trial (a --limit run) never stands in for the day's file, which manage would read as complete.
+    out = root / "income" / f"{today.isoformat()}{'.trial' if args.limit else ''}.json"
+    ub._write_json(
+        out,
+        {
+            "taken_at": started.isoformat(),
+            "session": today.isoformat(),
+            "complete": problem is None,
+            "problem": problem,
+            "metrics_day": metrics_day,
+            "rule": {
+                "cycle": {"preferred": CYCLE_PREFERRED, "allowed": CYCLE_ALLOWED},
+                "reach": INCOME_REACH,
+                "strikes": INCOME_STRIKES,
+                "stress_sessions": STRESS_SESSIONS,
+            },
+            "bars": LEG_BARS,
+            "symbols": symbols,
+        },
+    )
+    quoted = [o for s in symbols.values() for o in s.get("options") or []]
+    print(
+        json.dumps(
+            {
+                "ok": problem is None,
+                "problem": problem,
+                "path": str(out),
+                "names": len(names),
+                "planned": len(plans),
+                "options": len(quoted),
+                "quoted": sum(1 for o in quoted if o.get("bid") is not None),
+                "passing": sum(1 for o in quoted if o.get("passes")),
+                "with_stress": sum(1 for s in symbols.values() if s.get("stress")),
+                "metrics_day": metrics_day,
+                "seconds": round((datetime.now(UTC) - started).total_seconds()),
+            },
+            indent=1,
+        )
+    )
+    return 0 if problem is None else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("mode", nargs="?", choices=("greeks", "measure", "rebar", "strikes"), default="greeks")
+    ap.add_argument(
+        "mode", nargs="?", choices=("greeks", "measure", "rebar", "strikes", "income"), default="greeks"
+    )
     ap.add_argument("--date", help="greeks: the list date to record (default: today, ET)")
     ap.add_argument(
         "--final",
@@ -1083,6 +1333,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_measure(args)
     if args.mode == "strikes":
         return cmd_strikes(args)
+    if args.mode == "income":
+        return cmd_income(args)
 
     day = args.date or today_et()
     lists = load_lists(day)
