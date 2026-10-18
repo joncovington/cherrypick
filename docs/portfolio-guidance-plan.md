@@ -102,6 +102,10 @@ one evaluation, so it lands on its own.
 band edge, priced at mid. Show both kinds with their effect on BWD, theta, break-even and buying
 power: a credit spread on the opposite side (cuts delta, adds theta) and a debit spread (cuts delta,
 costs theta). XSP is European and cash-settled, so a hedge carries no early-assignment risk.
+As built: the target is a quarter of the band's width inside the breached edge; a hedge is held under
+the 50% total buying-power cap; snapshot v5 carries the XSP expiry; and the reading states each band
+and the figure's place in it (`bands`), for the console to draw without deriving. Building it also
+fixed a snapshot that one timed-out broker read could crash.
 
 **4. Screener candidates, sized to the account.** Short puts, credit spreads, and covered calls on
 shares the account holds. The candidate universe is our own options-tradable list (weeklies, $100M a
@@ -136,7 +140,9 @@ A cash-secured put is limited to strikes of $37.50 by the per-name cap and to ro
 cap. The caps scale: at $50k the spread cap is $1,500 and the per-name strike limit $125; at $150k,
 $4,500 and $375.
 
-**5. Console.** A portfolio card on Live → manage, reading the evaluation and computing nothing.
+**5. Console.** A portfolio card on Live → manage, reading the evaluation and computing nothing, with
+a dial for BWD against its band (asked for on 2026-10-18). The band and "inside" come from the
+reading's `bands`, never worked out in the browser.
 
 ## Checks before it is trusted
 

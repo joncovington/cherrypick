@@ -178,6 +178,20 @@ DEFAULT_RULES: dict[str, Any] = {
         "beta_doubt": {"min_abs_corr": 0.3, "near_zero_beta": 0.1},
         # Benchmark shocks the stress line reprices the book at, each underlying moved by beta x shock.
         "stress": {"shocks": [-0.10, 0.05]},
+        # When `portfolio.delta` fires, size an XSP vertical (hedge.py) toward a target `inset` of the
+        # band's width inside the breached edge: a credit spread with its short at
+        # `credit_short_delta`, and a debit spread with its long at `debit_long_delta`, each `width`
+        # points wide, at most `max_units` of either.
+        "hedge": {
+            "enabled": True,
+            "inset": 0.25,
+            "credit_short_delta": 0.30,
+            "debit_long_delta": 0.40,
+            "width": 5,
+            "max_units": 10,
+            # Never past this share of net liq in buying power used, the hedge's max loss included.
+            "max_buying_power_pct": 0.50,
+        },
     },
     # Per-underlying overrides: {"SPY": {"intent": "hedge", "disable": ["debit.stop"], "note": "..."}}.
     "positions": {},

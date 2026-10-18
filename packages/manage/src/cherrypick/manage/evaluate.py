@@ -26,6 +26,7 @@ from cherrypick.core import calendar as _calendar
 
 from cherrypick.manage import chains as _chains
 from cherrypick.manage import explain as _explain
+from cherrypick.manage import hedge as _hedge
 from cherrypick.manage import portfolio as _portfolio
 from cherrypick.manage import pricing
 from cherrypick.manage import rules as _rules
@@ -1125,6 +1126,10 @@ def evaluate(
         counts: dict[str, int] = {}
         for t in trades:
             counts[t["recommendation"]["action"]] = counts.get(t["recommendation"]["action"], 0) + 1
+        book = _portfolio.reading(
+            trades, metrics, snapshot.get("benchmark"), balances, account.get("account_type"), rules
+        )
+        book["hedges"] = _hedge.suggest(book, snapshot.get("hedge_chain"), metrics, session, rules)
         accounts.append(
             {
                 "account": account.get("account"),
@@ -1136,9 +1141,7 @@ def evaluate(
                 "risk_budget": (float(rules["risk"]["max_risk_pct"]) * net_liq) if net_liq else None,
                 "pnl_gross": sum(t["pnl_gross"] for t in trades if t["pnl_gross"] is not None),
                 "counts": counts,
-                "portfolio": _portfolio.reading(
-                    trades, metrics, snapshot.get("benchmark"), balances, account.get("account_type"), rules
-                ),
+                "portfolio": book,
                 "trades": trades,
                 "excluded": excluded,
             }

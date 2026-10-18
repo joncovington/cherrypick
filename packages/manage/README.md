@@ -161,6 +161,24 @@ confidence 40. Each fires REVIEW and names what drives it:
 | `portfolio.breakeven` | short gamma, with a break-even move under SPY's implied one-day move | option theory: theta = −½ Γ S² σ² | The identity is exact; whether acting on it pays is untested |
 | `portfolio.concentration` | one name over 25% of gross theta or gross BWD | convention | None |
 
+Each band is written into the reading with the figure's place in it (`bands`), so the console draws
+the band manage used and never works one out itself.
+
+**When `portfolio.delta` fires, a hedge is sized** (`hedge.py`) in XSP: European, cash-settled, a
+tenth of SPX, and allowed in an IRA as a defined-risk spread. The snapshot carries one quoted XSP
+expiry: the monthly 30–60 days out, preferring 45–60. Two verticals are offered, each `width` (5)
+points wide, sized toward a point a quarter of the band's width inside the breached edge:
+
+- a **credit spread** on the side the book leans away from, short near 30 delta. It cuts delta and
+  adds theta, and the short gamma that comes with it;
+- a **debit spread** on the side it leans toward, long near 40 delta. It cuts delta and usually costs
+  a little theta.
+
+Each shows its legs, the mid and the natural price (sell at the bid, buy at the ask), the cash, the
+max loss, and the book after it: BWD (and whether that is inside the band the book would then have),
+theta, the break-even move and buying power used. A hedge never takes buying power used past 50% of
+net liq, and one that cannot fit a single spread says so. The mid is not a fill. Nothing is placed.
+
 ## Known limits
 
 - **Marks are mids** and the payoff model is Black-Scholes at today's IV per leg, with no dividends.
