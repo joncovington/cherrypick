@@ -140,6 +140,20 @@ A cash-secured put is limited to strikes of $37.50 by the per-name cap and to ro
 cap. The caps scale: at $50k the spread cap is $1,500 and the per-name strike limit $125; at $150k,
 $4,500 and $375.
 
+As built (2026-10-18):
+
+- **Data (#399).** `fetch_screener_greeks.py income` reads the tradable names' cycle-monthly chains
+  through REST at 14:45 ET, in regular hours, with earnings dates, beta and stress moves. The snapshot
+  (v7) carries the newest reading, at most four days old.
+- **Sizing.** `manage/candidates.py`. Three changes from the plan, each found on the real account's
+  numbers:
+  - The buying-power cap is the VIX-scaled one, not a fixed 50%.
+  - Concentration is a name's theta against the theta the account may *carry* (the ceiling in
+    dollars). Against the book as it is, the first trade in an empty book is 100% of it.
+  - The nearest version that fits keeps the short strike and takes the *widest long under the
+    per-trade cap*. The rule's 0.25-delta long made spreads $10–20 wide, over a $428 cap on the IRA.
+    Spreads get the same treatment as short puts.
+
 **5. Console.** A portfolio card on Live → manage, reading the evaluation and computing nothing, with
 a dial for BWD against its band (asked for on 2026-10-18). The band and "inside" come from the
 reading's `bands`, never worked out in the browser. Built: dials for BWD and theta, the break-even

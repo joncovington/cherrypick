@@ -204,6 +204,21 @@
       "width": 5,
       "max_units": 10,
       "max_buying_power_pct": 0.5
+    },
+    "candidates": {
+      "_comment": "Income trades from our own universe (the evening income reading), sized to the account. Structures: a short put at short_put_delta; a put or call credit spread short the first out-of-the-money strike, long at spread_long_delta, at least spread_min_credit of the width; a covered call at covered_call_delta on held shares only. Each gets the largest quantity that keeps one unit's stress loss (a spread's max loss) under per_trade_risk_pct of net liq, a short put's notional under notional_per_name_pct (by account kind), buying power under the VIX-scaled cap (else max_buying_power_pct), delta in its band, theta under its ceiling and the name under max_name_theta_share of the book's theta; the cap that stops it is named. Ranked by theta per dollar of buying power. Modelled at mid from a day-old reading: re-quote before sending.",
+      "enabled": true,
+      "short_put_delta": 0.4,
+      "spread_long_delta": 0.25,
+      "covered_call_delta": 0.165,
+      "spread_min_credit": 0.331,
+      "per_trade_risk_pct": 0.03,
+      "notional_per_name_pct": {"cash": 0.25, "margin": 0.5},
+      "max_buying_power_pct": 0.5,
+      "max_name_theta_share": 0.25,
+      "max_units": 10,
+      "show": 15,
+      "show_too_big": 10
     }
   },
   "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, directional.take_profit, directional.stop, ex_dividend, risk.oversize, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power",

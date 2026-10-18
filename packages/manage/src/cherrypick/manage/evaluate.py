@@ -24,6 +24,7 @@ from typing import Any
 
 from cherrypick.core import calendar as _calendar
 
+from cherrypick.manage import candidates as _candidates
 from cherrypick.manage import chains as _chains
 from cherrypick.manage import explain as _explain
 from cherrypick.manage import hedge as _hedge
@@ -1130,6 +1131,15 @@ def evaluate(
             trades, metrics, snapshot.get("benchmark"), balances, account.get("account_type"), rules
         )
         book["hedges"] = _hedge.suggest(book, snapshot.get("hedge_chain"), metrics, session, rules)
+        book["candidates"] = _candidates.suggest(
+            snapshot.get("income"),
+            book,
+            trades,
+            session,
+            rules,
+            account.get("account_type"),
+            book.get("benchmark_spot"),
+        )
         accounts.append(
             {
                 "account": account.get("account"),

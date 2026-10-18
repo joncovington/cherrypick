@@ -209,6 +209,23 @@ DEFAULT_RULES: dict[str, Any] = {
             # is exempt: it only lowers the book's worst case, so it is offered past the cap and says so.
             "max_buying_power_pct": 0.50,
         },
+        # Income trades from our own universe, sized to the account (candidates.py). The structures
+        # are the screener rules on the cycle monthly; the caps scale with net liq. Buying power is
+        # held under the VIX-scaled cap the reading states, else `max_buying_power_pct`.
+        "candidates": {
+            "enabled": True,
+            "short_put_delta": 0.40,
+            "spread_long_delta": 0.25,
+            "covered_call_delta": 0.165,
+            "spread_min_credit": 0.331,
+            "per_trade_risk_pct": 0.03,
+            "notional_per_name_pct": {"cash": 0.25, "margin": 0.50},
+            "max_buying_power_pct": 0.50,
+            "max_name_theta_share": 0.25,
+            "max_units": 10,
+            "show": 15,
+            "show_too_big": 10,
+        },
     },
     # Per-underlying overrides: {"SPY": {"intent": "hedge", "disable": ["debit.stop"], "note": "..."}}.
     "positions": {},
