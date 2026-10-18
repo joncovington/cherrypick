@@ -222,6 +222,13 @@ call spread near its put side.
 - **Reopens when** that study shows outside completion paying after fees. Then it is a new entry
   mode and its own arm; it differs from `control` in several things at once, so it is read against
   `control` and against MEIC's afternoon condors, not as a one-variable twin.
+- **Run 2026-10-17, over the backtest's design window (licensed data; reasoning only here):** not
+  met. At both open times, every wing width tried and every completion threshold, completing the
+  outside verticals did worse than holding the plain condor. The side spot leaves completes almost
+  always, but that vertical was going to expire worthless and keep its credit anyway; completing it
+  spends most of that credit, a second fee stack and settlement charges on a far fly that rarely
+  pays. The near gate was not reached. The plain afternoon condor, cut by net GEX sign, is the part
+  worth following, and it belongs to MEIC's question, not to flies.
 
 ## Done -- kept for the record
 

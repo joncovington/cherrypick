@@ -1666,3 +1666,51 @@ pooled across arms and grouped by the half hour they were entered in:
   and the gain sits in the 13:00 hour, which `window-1300` already covers. These rows were taken
   with control's morning positions already holding the centres; the replay that favoured a 12:30
   start is a different model. The arm will show which of the two is right.
+
+## 2026-10-17 — the 2026-10-26 boundary: `restack` and `debit-first-atm` retired on a backtest
+
+**Why no numbers here.** These decisions rest on `packages/backtest`, which replays flies' own rules
+through `flies.cli replay` over licensed vendor history. The licence forbids redistributing that data
+or anything computed from it, and this repo is public, so the results stay under the operator's
+home and this entry gives the reasoning only. The run files, the arm specs and the flies config each
+run used are kept beside the results, so the decision can be re-checked locally by anyone holding
+the same subscription.
+
+**What was run.** Every rule arm the replay accepts, over the backtest's declared design window
+(2022-05 to 2025-06, about three years of sessions), each paired with `control` on the same sessions
+and read in two halves of the window so that a result has to hold in both. Model-driven arms
+(`selector`, `intraday-agent`) cannot be replayed and were not. The holdout window was not touched.
+The runs were provisional: validation had not yet unlocked history (the backtest package's CLAUDE.md
+and PR #383), so none counted as a trial.
+
+**Retired from 2026-10-26** (`enabled` false with a dated note; kept in `ARMS` and in config so
+their books stay readable):
+
+- **`restack`** finished behind `control` in both halves of the window, by the widest margin of any
+  arm. A second contract on a completed centre is a fresh legged entry that has to complete on its
+  own, and the extra entries lost more than they earned. That answers the question the arm was
+  declared for (2026-10-11): re-entries at a completed centre do not pay.
+- **`debit-first-atm`** finished behind `control` in both halves, consistent with the retired
+  delta-placed debit-first pair (2026-10-12): legging order does not rescue the trade. Its shadow
+  ladder read, which kept it running past the 10-15 boundary, is superseded by the backtest.
+
+**Kept, deliberately.** Every other gate arm (`range-high`, `range-centre`, `wall-clear`, `vol-floor`,
+`window-1230`, `window-1300`) finished ahead of `control` per session in the backtest, which is what
+its own declared judging rule asks, so each runs on to its own read. Ahead per session is not the
+same as profitable: in the backtest those arms were ahead because they trade less of a losing trade,
+not because any of them turned the trade positive. Their reads should be taken with that in mind.
+
+**The general finding, in words.** Across every replayable arm, nine completion limits (from paper's
+floor down to completing for a debit), five entry-credit filters, and gates on regime tags, range
+position, entry state, pre-open volatility and scheduled events, no variant or gate turned the ATM
+legged fly positive per trade in either half of the window. Loosening the completion limit raised the
+completion rate steadily and made no money: the strands it rescued were paid for by completing
+flies that would have completed anyway earlier, at worse prices. Completion rate is a symptom of the
+price paid for the structure, not a lever. Rule 6 and "a negative answer is a usable result" both
+apply: this is the result, and it is kept.
+
+**Conditions on the boundary.** Validation should reach its ten sessions about 10-26. If it unlocks
+history, the design window is re-run with every arm searched counted as a trial before the config
+change is applied, and the retirement goes ahead only if both arms are still behind `control` in both
+halves. If validation has not unlocked by then, the boundary waits for it. The config change is
+applied on the boundary's eve, as the 10-19 one was, with a backup and a diff.
