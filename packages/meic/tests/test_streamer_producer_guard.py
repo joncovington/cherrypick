@@ -53,11 +53,13 @@ def test_main_refuses_full_streamer_mode_when_standalone_producer_is_live(monkey
     assert "12345" in out
 
 
-def test_main_sidecar_mode_is_unaffected_by_standalone_producer_guard(monkeypatch):
-    """--sidecar (REST poller + 7699 API only) streams nothing, so it must not be blocked by the
-    one-producer guard, which exists only to stop a second DXLink writer."""
-    monkeypatch.setattr(streamer, "_standalone_producer_pid", lambda: 12345)
-    monkeypatch.setattr(streamer, "_cmd_sidecar_status", lambda: print('{"running": false, "pid": null}'))
+def test_the_sidecar_mode_is_gone(monkeypatch):
+    """The REST/7699 sidecar was removed on 2026-10-18: `--sidecar` is no longer an option, so a
+    service entry still naming it fails loudly rather than starting something half-there."""
+    import pytest
+
     monkeypatch.setattr(sys, "argv", ["streamer.py", "--sidecar", "--status"])
-    # Should return normally (status path), never raising SystemExit(1) from the producer guard.
-    streamer.main()
+    with pytest.raises(SystemExit) as exc_info:
+        streamer.main()
+    assert exc_info.value.code == 2  # argparse: unrecognised argument
+    assert not hasattr(streamer, "_ApiHandler") and not hasattr(streamer, "_rest_poller")

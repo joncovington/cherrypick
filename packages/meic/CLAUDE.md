@@ -544,10 +544,7 @@ side, own status/exit/P&L), `daily_summary` (key `summary_date`), `loop_log` (ap
      (`producer`: `"standalone"` = `packages/streamer`, `"meic"` = this module's rollback streamer, or
      `null`); freshness numbers are valid either way. If `stale_warning` (no event in >10 min, or ever),
      **distrust cached quotes/greeks/OI for every symbol this iteration**, log `stale_reason`, and use
-     REST — a silently dead connection once caused a 34+ hour outage. A `sidecar_http_fallback` field
-     on any `tt.py` response means that call fell back to the cold-start path because the optional
-     sidecar (127.0.0.1:7699, off by default) was unreachable; a *timeout* there is the same failure
-     shape as that outage and is logged to `logs/tt.log`. It says nothing about the producer.
+     REST — a silently dead connection once caused a 34+ hour outage.
    - Fetch buying power, NLV, working orders, open positions (account-wide calls).
    - **Halt entries for every symbol if NLV is down more than 5%** on yesterday.
    - Reconcile broker positions against the DB (read-only; surface mismatches for human review).

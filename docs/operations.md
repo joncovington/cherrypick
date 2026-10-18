@@ -138,8 +138,9 @@ policed by the watchdog:
 | **streamer** (`packages/streamer`, top-level `streamer` config block) | The suite's single producer: writes `~/.cherrypick/data/marketdata/stream_cache.db`, streaming the **union** of every `state/stream_requests/<module>.json` | Session-gated **09:15–16:00 ET**; restarted on *silence*, not just death (`stale_restart_seconds: 240` — the 2026-07-20 stall was a live-but-quiet socket) | `status_argv`/`start_argv`/`stop_argv` = `run.py --status` / `run.py` / `run.py --stop`. **`run.py uninstall` deliberately leaves it running** (`cli.py`); `run.py stop --all` stops it |
 | **services** (top-level `services` block) — `gex-recorder`, on by default | The GEX spot-trail recorder: samples every symbol's spot ~15 s so the trail has no gaps whether or not anyone is looking at it, and records the GEX and market-regime history | Every watchdog tick (not session-gated) | Same argv contract; `status_argv` must print `{"running": bool}`. `uninstall` **stops** services (they are the orchestrator's own daemons) |
 
-`meic-sidecar` (the 127.0.0.1:7699 REST poller) is a declared-but-disabled third; enable only for
-MEIC's live/interactive loop fast-path.
+MEIC's old `meic-sidecar` (a REST poller and HTTP API on 127.0.0.1:7699) was removed on 2026-10-18.
+Quotes come from the shared cache and account calls go straight to the broker. A `services` entry
+that still names it now fails at start, so delete the entry.
 
 **Both are also recycled when their config changes.** A daemon reads config once, at launch, so
 an edit afterwards reaches the file and never the process — and no liveness check can see it, because
@@ -178,7 +179,6 @@ directions).
 |---|---|
 | 5070 | **Console** — the suite's one read surface (`packages/console/server/src/config.ts`, overridable via `config/console.json`). Kept up by the supervisor as an always-on resident job |
 | 8804 | **Settings editor** — `run.py settings` (`settings_serve.py`); the suite's only config-writing surface, foreground-only and never scheduled |
-| 7699 | MEIC REST sidecar (optional, off) |
 | 3306 | Dolt SQL server (earnings data; the `earnings-dolt` supervisor job keeps it alive) |
 
 Two servers, one read and one write. Until 2026-08-12 there were seven: a suite dashboard on 8787,

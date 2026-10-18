@@ -57,9 +57,9 @@ from cherrypick.meic.session import get_session
 
 # ---------------------------------------------------------------------------
 # Logging — each invocation is a short-lived subprocess whose only normal
-# output channel is the JSON printed to stdout, so a failed streamer-HTTP
-# fallback (see _try_streamer_http) would otherwise be invisible across
-# iterations. Append warnings to a file so degraded-mode calls are auditable.
+# output channel is the JSON printed to stdout, so a degraded call would
+# otherwise be invisible across iterations. Append warnings to a file so
+# degraded-mode calls are auditable.
 # ---------------------------------------------------------------------------
 _LOG_FILE = _paths.log_path("tt.log")
 _LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -85,68 +85,6 @@ def _load_config() -> dict:
         with open(path) as f:
             return json.load(f)
     return {}
-
-
-_STREAMER_PORT = 7699
-# The sidecar writes this on start and removes it on a clean stop (streamer.py, `--sidecar`).
-_SIDECAR_PID = _paths.data_path("sidecar.pid")
-
-
-def _sidecar_running() -> bool:
-    """Whether the optional sidecar has been started: its pid file is present. It is OFF by default
-    (the orchestrator's `meic-sidecar` job ships disabled), and until 2026-10-18 every command tried
-    127.0.0.1:7699 anyway and stamped a `sidecar_http_fallback` on its answer -- a refused connection
-    that read like a fault. Now the port is tried only when the sidecar was started; a pid file left
-    by a crash costs one refused attempt, as every call used to."""
-    return _SIDECAR_PID.exists()
-
-
-_last_streamer_http_error: str | None = None
-
-
-def _try_streamer_http(command: str, args_dict: dict) -> dict | None:
-    """POST command to the MEIC sidecar's HTTP API (127.0.0.1:7699 — the optional REST-poller fast-path,
-    `--sidecar` in streamer.py; disabled by default in config, distinct from the DXLink streamer/producer
-    itself). Returns parsed JSON or None on failure.
-
-    Sets module-level `_last_streamer_http_error` so callers falling back to the
-    slow (cold-import asyncio) path can surface *why* in the response JSON —
-    a caller-invisible fallback here previously masked a 34+ hour streamer
-    stall (silently-dead persistent connection) behind an unremarkable
-    per-call latency bump. Named "sidecar", not "streamer", so it can't be misread as a report on the
-    DXLink producer's health — that not being reachable here is the sidecar's normal disabled-by-default
-    state, not a market-data outage; check `stream_status` for the producer.
-    """
-    global _last_streamer_http_error
-    import urllib.error
-    import urllib.request
-
-    body = json.dumps({"command": command, "args": args_dict}).encode()
-    try:
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{_STREAMER_PORT}/api",
-            data=body,
-            method="POST",
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            result = json.loads(resp.read())
-        _last_streamer_http_error = None
-        return result
-    except (ConnectionRefusedError, urllib.error.URLError) as exc:
-        # Sidecar simply isn't running — normal/expected (it's disabled by default), not worth a warning.
-        _last_streamer_http_error = f"sidecar not reachable: {exc}"
-        return None
-    except TimeoutError as exc:
-        # Sidecar is running but didn't respond within 5s — the interesting case:
-        # the same failure shape as the 2026-07-01 session/event-loop stall.
-        _last_streamer_http_error = f"sidecar HTTP timeout: {exc}"
-        logger.warning("sidecar HTTP timeout on command=%s: %s", command, exc)
-        return None
-    except Exception as exc:
-        _last_streamer_http_error = f"sidecar HTTP error: {exc}"
-        logger.warning("sidecar HTTP error on command=%s: %s", command, exc)
-        return None
 
 
 def _live_trading_enabled() -> bool:
@@ -1831,27 +1769,6 @@ def main():
         _out(sync_dispatch[args.command](args))
         return
 
-    # Route through the streamer HTTP API when it's running.
-    # This reuses the streamer's already-initialized OAuth session and cache,
-    # avoiding 1.3s of Python import overhead per call. get_vix1d is excluded:
-    # the daemon doesn't recognize it and replies with a normal (non-None)
-    # {"ok": false, "error": "unknown command"} response rather than failing
-    # the HTTP call outright, so _try_streamer_http can't tell the difference
-    # between "daemon answered" and "daemon doesn't know this command" --
-    # skip the shortcut entirely for commands the daemon was never meant to
-    # own (VIX1D isn't a traded/managed symbol in its subscription window).
-    # get_official_close likewise: a settlement read is never answered by a cache.
-    # And only when the sidecar was started at all (`_sidecar_running`): it is off by default.
-    args_dict = {k: v for k, v in vars(args).items() if k != "command" and v is not None}
-    http_result = (
-        None
-        if args.command in ("get_vix1d", "get_official_close") or not _sidecar_running()
-        else _try_streamer_http(args.command, args_dict)
-    )
-    if http_result is not None:
-        _out(http_result)
-        return
-
     dispatch = {
         "get_connection_status": cmd_get_connection_status,
         "list_accounts": cmd_list_accounts,
@@ -1878,10 +1795,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    result = asyncio.run(fn(args))
-    if isinstance(result, dict) and _last_streamer_http_error is not None:
-        result.setdefault("sidecar_http_fallback", _last_streamer_http_error)
-    _out(result)
+    _out(asyncio.run(fn(args)))
 
 
 if __name__ == "__main__":

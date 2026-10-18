@@ -6,7 +6,7 @@ MEIC's own readers — can price off live quotes without MEIC's streamer being i
 
 This is the generic daemon **lifecycle only** — PID guard, ``--status``/``--stop``, logging — lifted from
 MEIC's streamer wrapper. It carries NONE of MEIC's trading policy: no ORB capture, no open-position leg
-subscriptions, no account REST poller, no ``127.0.0.1:7699`` HTTP API. Those stay in MEIC's wrapper
+subscriptions, no account REST poller, no HTTP API. Policy stays in MEIC's wrapper
 (``packages/meic/src/streamer.py``); a live-trading module layers them onto the same shared engine.
 
 Credentials come from the OS keyring under the ``"meicagent"`` service, with read-only fallbacks to the
