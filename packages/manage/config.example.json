@@ -111,6 +111,14 @@
     "enabled": true,
     "warn_days": 14
   },
+  "earnings_trade": {
+    "_comment": "A trade put on to hold through an earnings report: opened min_days_before..max_days_before days before the call (1-7), its nearest short expiring no more than max_days_expiry_after days after it. Until the call its close, take-profit and roll rules wait (shown as waiting); the day after the report (the report's own day if before the open) it closes. Expiry, ex-dividend, sizing and unpriced-leg rules never wait. Disable per name with positions.<SYM>.disable [\"earnings_trade\"].",
+    "enabled": true,
+    "min_days_before": 1,
+    "max_days_before": 7,
+    "max_days_expiry_after": 14,
+    "confidence": 75
+  },
   "ex_dividend": {
     "enabled": true,
     "warn_days": 10,
@@ -221,6 +229,6 @@
       "show_too_big": 10
     }
   },
-  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, directional.take_profit, directional.stop, ex_dividend, risk.oversize, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power",
+  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power",
   "positions": {}
 }
