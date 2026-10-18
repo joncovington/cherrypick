@@ -170,6 +170,8 @@ export interface ManageHedgeSuggestion {
   maxLoss: number | null;
   bwdChange: number | null;
   thetaChange: number | null;
+  /** A debit hedge offered past the buying-power cap, which it is exempt from. */
+  pastCap: boolean;
   after: {
     bwd: number | null;
     inBand: boolean | null;
@@ -198,6 +200,7 @@ export interface ManagePortfolio {
   unmodelledLegs: string[];
   noBeta: string[];
   accountKind: { marginOrCash: string | null; typeName: string | null };
+  netLiq: number | null;
   bwd: number | null;
   bwdDollarsPer1pct: number | null;
   theta: number | null;
@@ -210,10 +213,33 @@ export interface ManagePortfolio {
   buyingPowerUsed: number | null;
   buyingPowerUsedPct: number | null;
   stress: Array<{ shock: number; pnl: number | null; pctNetLiq: number | null; leftOut: string[] }>;
-  bands: { delta: ManageBand & { basis: string | null }; theta: ManageBand } | null;
+  bands: {
+    delta: ManageBand & { basis: string | null };
+    theta: ManageBand;
+    /** Buying power used against a cap set by VIX; null on an evaluation from before it existed. */
+    buyingPower: (ManageBand & { vix: number | null }) | null;
+  } | null;
   guidance: ManageGuidance[];
   underlyings: ManagePortfolioUnderlying[];
   hedges: ManageHedges | null;
+  vix: number | null;
+  scenarios: ManageScenarios | null;
+  ladder: ManageLadder | null;
+}
+
+/** The book repriced across benchmark moves (packages/manage `portfolio.scenarios`). */
+export interface ManageScenarios {
+  moves: number[];
+  ivShiftWeighting: string | null;
+  /** One row per IV shift (vol points as a fraction, 0.05 = five points), a P&L per move. */
+  matrix: Array<{ ivShift: number; pnl: Array<number | null> }>;
+  graph: { moves: number[]; curves: Array<{ horizonDays: number; pnl: Array<number | null> }> };
+  leftOut: string[];
+}
+
+export interface ManageLadder {
+  expiries: Array<{ expiration: string; trades: string[]; downside: number | null; downsideUnknown: number; theta: number | null }>;
+  earnings: { trades: string[]; theta: number | null; thetaShare: number | null; downside: number | null };
 }
 
 export interface ManageAccount {

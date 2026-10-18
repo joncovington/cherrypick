@@ -146,6 +146,20 @@ describe("readManage", () => {
       bands: {
         delta: { low: -21.84, high: 32.76, basis: "theta", value: 5.85, inside: true },
         theta: { low: 0.001, high: 0.003, value: 0.00306, inside: false },
+        buying_power: { low: 0, high: 0.3, value: 0.534, vix: 19.99, inside: false },
+      },
+      vix: 19.99,
+      net_liq: 14273.72,
+      scenarios: {
+        moves: [-0.1, 0, 0.1],
+        iv_shift_weighting: "term",
+        matrix: [{ iv_shift: 0.05, pnl: [-1437, -48, null] }],
+        graph: { moves: [-0.15, 0, 0.15], curves: [{ horizon_days: 4, pnl: [-2533, 537, -4] }] },
+        left_out: [],
+      },
+      ladder: {
+        expiries: [{ expiration: "2026-11-20", trades: ["META"], downside: -6837, downside_unknown: 1, theta: 77.27 }],
+        earnings: { trades: ["META"], theta: 35, theta_share: 0.724, downside: -4292.5 },
       },
       guidance: [
         { rule: "portfolio.theta", action: "REVIEW", confidence: 40, reason: "above the ceiling", drivers: [{ underlying: "GOOGL", theta: 9.06 }] },
@@ -172,6 +186,13 @@ describe("readManage", () => {
     // Absent stays null, never zero.
     expect(p.realisedMove).toBeNull();
     expect(p.hedges).toBeNull();
+    expect(p.netLiq).toBe(14273.72);
+    expect(p.bands?.buyingPower).toEqual({ low: 0, high: 0.3, value: 0.534, vix: 19.99, inside: false });
+    expect(p.scenarios?.ivShiftWeighting).toBe("term");
+    expect(p.scenarios?.matrix[0]).toEqual({ ivShift: 0.05, pnl: [-1437, -48, null] }); // a missing cell stays null
+    expect(p.scenarios?.graph.curves[0]).toEqual({ horizonDays: 4, pnl: [-2533, 537, -4] });
+    expect(p.ladder?.expiries[0]).toEqual({ expiration: "2026-11-20", trades: ["META"], downside: -6837, downsideUnknown: 1, theta: 77.27 });
+    expect(p.ladder?.earnings.thetaShare).toBe(0.724);
     // An evaluation from before the reading existed has no portfolio, not an empty one.
     expect(readManage(config, "2026-10-16").accounts[0]!.portfolio).toBeNull();
   });
