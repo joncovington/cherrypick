@@ -1,6 +1,7 @@
-"""Fetch the daily market files the morning pack reads: Cboe's index histories (SKEW, VIX, VIX3M,
-VVIX, VXN; VIX3M for `scripts/contango_replay.py`), Cboe's delayed SPX chain (reduced to the 30-day
-25-delta risk reversal), Treasury's par yield curve, the release calendars (BEA always, FRED when a
+"""Fetch the daily market files the morning pack reads: Cboe's index histories (SKEW, VIX, VIX1D,
+VIX3M, VVIX, VXN; VIX3M for `scripts/contango_replay.py`, VIX1D for `cherrypick.meic.replay`), Cboe's
+delayed SPX chain (reduced to the 30-day 25-delta risk reversal), Treasury's par yield curve, the
+release calendars (BEA always, FRED when a
 key is stored), and OCC's option volume by underlying with Nasdaq Trader's symbol directory (the
 pack's `hot_options` ranking).
 

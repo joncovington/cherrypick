@@ -1,6 +1,7 @@
 """SQLite CLI helper for MEICAgent. All commands print JSON to stdout."""
 
 import argparse
+import contextlib
 import json
 import os
 import sqlite3
@@ -34,10 +35,39 @@ _DEFAULT_DB_PATH = str(_paths.live_db_path())  # ~/.cherrypick/data/meic/meic_tr
 _DB_PATH = os.environ.get("MEIC_DB_PATH") or _DEFAULT_DB_PATH
 
 
+#: Every connection's pragmas. `scratch_writes()` swaps them while a replay writes its scratch ledger.
+_LEDGER_PRAGMAS = ("journal_mode=WAL", "foreign_keys=ON")
+#: A scratch ledger is rebuilt from scratch if a run dies, so it skips the fsync on every commit and
+#: the WAL checkpoint on every close, which were ~3/4 of a replayed tick's time. Never for a real one.
+_SCRATCH_PRAGMAS = ("journal_mode=MEMORY", "synchronous=OFF", "foreign_keys=ON")
+_PRAGMAS = _LEDGER_PRAGMAS
+
+
+@contextlib.contextmanager
+def scratch_writes():
+    """Open every connection inside the block with the scratch pragmas (the quote-history replay's
+    throwaway ledger). In-process only, and restored on exit."""
+    global _PRAGMAS
+    prev, _PRAGMAS = _PRAGMAS, _SCRATCH_PRAGMAS
+    try:
+        yield
+    finally:
+        _PRAGMAS = prev
+
+
+def tune_scratch(conn):
+    """Give a connection opened outside `_connect` (paper.py's best-effort writers) the scratch
+    pragmas while `scratch_writes()` is on; nothing otherwise. Returns `conn`."""
+    if _PRAGMAS is _SCRATCH_PRAGMAS:
+        for pragma in _SCRATCH_PRAGMAS[:2]:
+            conn.execute(f"PRAGMA {pragma}")
+    return conn
+
+
 def _connect():
     # cherrypick.core.db handles mkdir + row_factory=Row + pragmas. MEIC's additive/index/drop
     # migrations in cmd_init_db stay module-local (they're not the plain additive-only form).
-    return _db.connect(_DB_PATH, pragmas=("journal_mode=WAL", "foreign_keys=ON"))
+    return _db.connect(_DB_PATH, pragmas=_PRAGMAS)
 
 
 def _out(data):
