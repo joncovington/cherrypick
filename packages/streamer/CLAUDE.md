@@ -14,7 +14,7 @@ live trading.
 
 It owns the daemon **lifecycle** (PID guard, `--status`/`--stop`, logging), the subscription registry
 and opening-range capture — and **no trading policy**: no open-position leg subscriptions of its own,
-no account REST poller, no `127.0.0.1:7699` HTTP API. Those stay in MEIC's wrapper
+no account REST poller, no HTTP API. Policy stays in MEIC's wrapper
 (`../meic/src/cherrypick/meic/streamer.py`), layered onto the same engine. Opening-range capture
 (`orb.py`) is not an exception: it writes a generic `orb_ranges` table any consumer reads, and it
 belongs to the always-on producer because a consumer's cadence is not guaranteed to land inside

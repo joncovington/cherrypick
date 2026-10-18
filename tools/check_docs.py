@@ -228,7 +228,6 @@ _PORT_DECLS: tuple[tuple[str, str], ...] = (
 #: Ports the table documents that no source declares, each with the reason it cannot. Every entry
 #: carries a reason on purpose -- an allowlist without them is where drift hides.
 _PORT_DOC_ONLY = {
-    "7699": "MEIC's optional REST sidecar -- off by default, no module-level constant",
     "3306": "Dolt's own default -- an external service the suite only keeps alive",
 }
 #: A port cell in the runbook table: `| 8787 | Suite dashboard ... |`.

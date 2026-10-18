@@ -6,7 +6,7 @@ deliberately has **no** ``__init__.py`` — it is a PEP 420 native namespace, wh
 separately-installed distributions share the root. This file, one level down, is an ordinary package
 marker and is required.
 
-Note ``cherrypick.meic.streamer`` is MEIC's own wrapper (REST sidecar + the 7699 API), distinct from
+Note ``cherrypick.meic.streamer`` is MEIC's own rollback wrapper (the sidecar it once ran is gone), distinct from
 both ``cherrypick.core.streamer`` (the shared engine) and ``cherrypick.streamer`` (the standalone
 daemon that is the suite's sole market-data producer).
 """

@@ -45,9 +45,6 @@ Do this:
      uninstall scripts follow; anything else on the port is left alone):
      `Get-NetTCPConnection -LocalPort 3306 -State Listen -EA SilentlyContinue | ForEach-Object { Get-Process -Id $_.OwningProcess } | Where-Object ProcessName -eq 'dolt' | Stop-Process -Force`
      (This is the shared Dolt server — skip it if you use Dolt outside cherrypick and want it running.)
-   - **MEIC sidecar** (optional, off by default — if `meic-sidecar` was enabled in `services` it was
-     already stopped in step 1; a manually-started one stops with
-     `python -m cherrypick.meic.streamer --sidecar --stop`).
 
 3. **Verify a clean stop:**
    - No cherrypick tasks: `Get-ScheduledTask | Where-Object { $_.TaskName -like 'cherrypick*' }`
@@ -56,7 +53,7 @@ Do this:
      running); `python packages/orchestrator/run.py status` shows the legacy empty-tasks view.
    - Streamer down: `python packages/streamer/run.py --status` reports `"running": false`.
    - gex recorder down: `python packages/gex/run.py record --status` reports `"running": false`.
-   - Nothing listening on ports **3306**, **5070**, or **7699**.
+   - Nothing listening on ports **3306** or **5070**.
 
 4. **Report** clearly: the suite is fully stopped and unscheduled, which daemons were stopped (vs.
    already down), and that all data/credentials are intact and `/install` restores everything. The full
