@@ -127,9 +127,29 @@ def _hold(t: dict[str, Any]) -> str:
     return head + tail + _earnings(t)
 
 
+def _earnings_hold(t: dict[str, Any]) -> str:
+    """An earnings trade before its call: why nothing is done today, and what is waiting."""
+    et = t.get("earnings_trade") or {}
+    when = f" {et['time_of_day']}" if et.get("time_of_day") else ""
+    lead = et.get("lead_days")
+    put_on = f", put on {lead} day{'s' if lead != 1 else ''} before it" if lead is not None else ""
+    head = (
+        f"This is an earnings trade: it is here for the report on {_day(et.get('report'))}{when}{put_on}. "
+        f"{opened(t)}, {_pnl(t)}. Hold it through the report and close it after the call."
+    )
+    held = t.get("held_for_earnings") or []
+    if not held:
+        return head
+    plain = {**PLAIN, "credit.time_exit": "21-day exit", "debit.time_exit": "time exit"}
+    names = ", ".join(plain.get(f["rule"], f["rule"]) for f in held)
+    return head + f" The {names} would act today; for an earnings trade it waits for the call."
+
+
 def explain(t: dict[str, Any]) -> str:
     rec = t.get("recommendation") or {}
     action, rule = rec.get("action"), rec.get("rule")
+    if action == "HOLD" and rule == "earnings_trade":
+        return _earnings_hold(t)
     if action == "HOLD":
         return _hold(t)
     if rule == "data":
@@ -252,6 +272,12 @@ def explain(t: dict[str, Any]) -> str:
         )
     elif rule == "credit.close_before_earnings":
         why = "Earnings fall inside the short legs' life, and the rule closes credit trades before a report."
+    elif rule == "earnings_trade":
+        et = t.get("earnings_trade") or {}
+        why = (
+            f"This is an earnings trade, put on for the report on {_day(et.get('report'))}. The report is "
+            "out, and an earnings trade is closed after the call rather than held for what is left. Close it."
+        )
     else:
         why = rec.get("reason") or ""
 
@@ -322,6 +348,7 @@ PLAIN = {
     "roll.diagonal_short": "diagonal short roll",
     "ex_dividend": "ex-dividend check",
     "risk.oversize": "risk budget check",
+    "earnings_trade": "earnings-trade rule",
     "directional.take_profit": "directional take-profit",
     "directional.stop": "directional stop",
 }

@@ -188,9 +188,11 @@ def evaluate_trade(
     net_liq: float | None,
     rules: dict[str, Any],
     chain: dict[str, Any] | None = None,
+    seen: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """`chain`, when the broker history reconciled one, sets the basis: the chain's net cash across its
-    opening order and every roll, not the open legs' average prices."""
+    opening order and every roll, not the open legs' average prices. `seen` is the earnings trades the
+    previous evaluation found (`earnings_trade`)."""
     metrics = metrics or {}
     spot = _f(metrics.get("last"))
     pr = rules["pricing"]
@@ -368,6 +370,7 @@ def evaluate_trade(
     xd = _date(metrics.get("ex_dividend_date"))
     if xd and xd > session:
         trade["ex_dividend"] = {"date": xd.isoformat(), "days": (xd - session).days}
+    trade["earnings_trade"] = earnings_trade(trade, metrics, session, rules, seen)
 
     # ---- trades judged on their risk, not their premium
     if directional:
@@ -728,8 +731,83 @@ def evaluate_trade(
                 )
             )
 
+    # ---- an earnings trade holds through the report and closes after the call
+    et = trade["earnings_trade"]
+    if et and not off("earnings_trade"):
+        if not et["passed"]:
+            held = [f for f in fired if f["rule"].split(".")[0] in HELD_FOR_EARNINGS]
+            fired = [f for f in fired if f not in held]
+            trade["held_for_earnings"] = held
+            if held:
+                trade["roll"] = None
+        else:
+            fired.append(
+                _fire(
+                    "earnings_trade",
+                    CLOSE,
+                    rules["earnings_trade"]["confidence"],
+                    f"the {et['report']} report is out: an earnings trade is closed after the call",
+                )
+            )
+
     trade["fired"] = fired
     return _decide(trade, rules, legs)
+
+
+# The rule families an earnings trade's report outranks: closing, taking profit and rolling wait for
+# the call. Safety (expiry and assignment, ex-dividend), sizing and unpriced legs never wait.
+HELD_FOR_EARNINGS = {"credit", "debit", "directional", "legs", "roll"}
+
+
+def earnings_trade(
+    trade: dict[str, Any],
+    metrics: dict[str, Any],
+    session: date,
+    rules: dict[str, Any],
+    seen: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """The trade as an EARNINGS TRADE -- one put on to hold through an announcement -- or None.
+
+    The user's practice (2026-10-18): earnings trades are put on 1 to 7 days before the call, on a
+    short that expires soon after it. So a trade is one when its opening order (the order chain's
+    first) came `min_days_before`..`max_days_before` days before the report, and its nearest short
+    expires on or after the report and no more than `max_days_expiry_after` days later. A trade
+    without an order chain has no opening date to judge and is not classified.
+
+    The report date comes from yesterday's record of the trade (`seen`, keyed by underlying and short
+    expiry, carried forward by the evaluate command) before the broker's metrics: the day after a
+    report the broker may already show next quarter's date, and the trade would forget it ever was
+    one. `passed` is the call having happened: a day after the report, or the report's own day when
+    it came before the open (BTO)."""
+    cfg = rules["earnings_trade"]
+    if cfg.get("enabled") is False:
+        return None
+    expiry = _date(trade.get("nearest_short_expiry") or trade.get("nearest_expiry"))
+    if expiry is None:
+        return None
+    key = f"{trade['underlying']}|{expiry.isoformat()}"
+    prior = (seen or {}).get(key) or {}
+    report = _date(prior.get("report")) or _date(metrics.get("earnings_date"))
+    time_of_day = prior.get("time") if prior.get("report") else metrics.get("earnings_time")
+    orders = (trade.get("chain") or {}).get("orders") or []
+    opened = _date(orders[0].get("date")) if orders else _date(prior.get("opened"))
+    if report is None or report > expiry or (expiry - report).days > int(cfg["max_days_expiry_after"]):
+        return None
+    if not prior:
+        if opened is None:
+            return None
+        lead = (report - opened).days
+        if not int(cfg["min_days_before"]) <= lead <= int(cfg["max_days_before"]):
+            return None
+    passed = session > report or (session == report and str(time_of_day or "").upper() == "BTO")
+    return {
+        "key": key,
+        "report": report.isoformat(),
+        "time_of_day": time_of_day,
+        "opened": opened.isoformat() if opened else None,
+        "lead_days": (report - opened).days if opened else None,
+        "passed": passed,
+    }
 
 
 def long_breakeven(longs: list[dict[str, Any]], basis: float) -> dict[str, float]:
@@ -912,13 +990,25 @@ def _recommend(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str
         hold = rules["hold"]
         confidence = int(hold["confidence"])
         reason = "no rule fired; hold with the exit levels resting"
-        if trade.get("earnings") and trade["earnings"]["before_nearest_short_expiry"]:
+        rule = "hold"
+        et = trade.get("earnings_trade")
+        if et and not et["passed"] and not _rules.disabled(rules, trade["underlying"], "earnings_trade"):
+            # Held FOR the report, not in spite of it: the report is the trade, so no earnings penalty.
+            rule = "earnings_trade"
+            confidence = int(rules["earnings_trade"]["confidence"])
+            reason = f"an earnings trade: hold through the {et['report']} report and close after the call"
+            held = trade.get("held_for_earnings") or []
+            if held:
+                reason += "; waiting for the call: " + ", ".join(
+                    f"{f['rule']} ({f['action'].lower()})" for f in held
+                )
+        elif trade.get("earnings") and trade["earnings"]["before_nearest_short_expiry"]:
             confidence -= int(hold["earnings_penalty"])
             reason += f"; earnings {trade['earnings']['date']} fall inside the trade"
         trade["recommendation"] = {
             "action": HOLD,
             "confidence": max(0, confidence),
-            "rule": "hold",
+            "rule": rule,
             "reason": reason,
             "agreeing": [],
             "conflicts": [],
@@ -1119,7 +1209,14 @@ def evaluate(
             groups = group_trades(legs, rules.get("trade_grouping"), history.get(u["underlying"]), history_ok)
             for i, (group, chain) in enumerate(groups):
                 trade = evaluate_trade(
-                    u["underlying"], group, metrics.get(u["underlying"]), session, net_liq, rules, chain
+                    u["underlying"],
+                    group,
+                    metrics.get(u["underlying"]),
+                    session,
+                    net_liq,
+                    rules,
+                    chain,
+                    snapshot.get("earnings_trades_seen"),
                 )
                 trade["trade_id"] = u["underlying"] if len(groups) == 1 else f"{u['underlying']}#{i + 1}"
                 trades.append(trade)

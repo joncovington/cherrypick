@@ -48,8 +48,37 @@ def _run(snapshot: dict, rules_path: str | None) -> dict:
     }
 
 
+def earnings_trades_seen(session: str, folder: Path | None = None) -> dict:
+    """The earnings trades the newest stored evaluation BEFORE `session` found, keyed as
+    `evaluate.earnings_trade` keys them (underlying and short expiry), with their report. Carried
+    into the snapshot so a trade is still known as one the day after its report, when the broker may
+    already show next quarter's date; a trade whose short has expired is dropped. Stored in the
+    snapshot, so `reevaluate` reads the same record and gives the same answer twice."""
+    folder = _paths.data_dir() if folder is None else folder
+    earlier = sorted(p for p in folder.glob("eval-*.json") if p.stem[5:] < session)
+    if not earlier:
+        return {}
+    try:
+        doc = json.loads(earlier[-1].read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    seen = {}
+    for account in doc.get("accounts") or []:
+        for t in account.get("trades") or []:
+            et = t.get("earnings_trade")
+            if et and et.get("key") and et["key"].split("|", 1)[1] >= session:
+                seen[et["key"]] = {
+                    "report": et.get("report"),
+                    "time": et.get("time_of_day"),
+                    "opened": et.get("opened"),
+                }
+    return seen
+
+
 def cmd_evaluate(args) -> dict:
     snapshot = json.loads(Path(args.snapshot).read_text(encoding="utf-8"))
+    if "earnings_trades_seen" not in snapshot and snapshot.get("session"):
+        snapshot["earnings_trades_seen"] = earnings_trades_seen(snapshot["session"])
     return _run(snapshot, args.rules)
 
 

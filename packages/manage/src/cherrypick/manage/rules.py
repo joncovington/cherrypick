@@ -132,6 +132,17 @@ DEFAULT_RULES: dict[str, Any] = {
         "confidence": 90,
     },
     "earnings": {"enabled": True, "warn_days": 14},
+    # A trade put on to hold through an earnings report: opened `min_days_before`..`max_days_before`
+    # days before the call (the user's practice, 2026-10-18: 1 to 7), its nearest short expiring no
+    # more than `max_days_expiry_after` days after it. Before the call its close, take-profit and roll
+    # rules wait; after it, close. Safety rules never wait.
+    "earnings_trade": {
+        "enabled": True,
+        "min_days_before": 1,
+        "max_days_before": 7,
+        "max_days_expiry_after": 14,
+        "confidence": 75,
+    },
     "ex_dividend": {"enabled": True, "warn_days": 10, "confidence": 80},
     # A trade whose net premium is under `max_premium_share` of its modelled max loss (a super bear or
     # bull, a risk reversal) earns from direction, not premium, so the credit and debit rules -- each a
@@ -249,6 +260,7 @@ RULE_IDS = (
     "directional.stop",
     "ex_dividend",
     "risk.oversize",
+    "earnings_trade",
     "portfolio.theta",
     "portfolio.delta",
     "portfolio.breakeven",
