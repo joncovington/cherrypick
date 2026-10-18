@@ -183,6 +183,18 @@ def test_delta_inside_its_band_is_quiet():
     lo, hi = portfolio.delta_band(r, RULES["portfolio"]["delta"])
     assert lo <= r["bwd"] <= hi
     assert "portfolio.delta" not in _rules_fired(r)
+    assert r["bands"]["delta"]["inside"] is True
+    assert (r["bands"]["delta"]["low"], r["bands"]["delta"]["high"]) == (round(lo, 2), round(hi, 2))
+
+
+def test_the_stated_bands_agree_with_the_guidance():
+    # A surface draws the band from `bands` and never re-derives it, so the two must not disagree.
+    out = _read([_trade("XYZ", 50.0, [_leg(300)])], _metrics(XYZ=(1.0, 0.9)))
+    assert out["bands"]["delta"]["inside"] is False and "portfolio.delta" in _rules_fired(out)
+    assert out["bands"]["delta"]["basis"] == "net_liq"  # no theta to scale by
+    heavy = _read([_trade("SPY", 500.0, [_leg(-1, "P", 500.0, dte=7)])])
+    assert heavy["bands"]["theta"]["inside"] is False and "portfolio.theta" in _rules_fired(heavy)
+    assert heavy["bands"]["delta"]["basis"] == "theta"
 
 
 def test_breakeven_under_the_expected_move_fires():

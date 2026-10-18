@@ -244,8 +244,32 @@ def reading(
         ],
         "underlyings": underlyings,
     }
+    out["bands"] = bands(out, cfg)
     out["guidance"] = guidance(out, rules)
     return out
+
+
+def bands(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
+    """Each band with the reading's place in it, stated here so no surface re-derives a band or
+    decides "inside" on its own. `inside` is None where there is no figure to place."""
+    delta = delta_band(r, cfg["delta"])
+    lo_pct, hi_pct = float(cfg["theta"]["min_pct_nlv"]), float(cfg["theta"]["max_pct_nlv"])
+    pct, bwd = r["theta_pct_net_liq"], r["bwd"]
+    return {
+        "delta": {
+            "low": _round(delta[0]) if delta else None,
+            "high": _round(delta[1]) if delta else None,
+            "basis": "theta" if r["theta"] is not None and r["theta"] > 0 else "net_liq",
+            "value": bwd,
+            "inside": (delta[0] <= bwd <= delta[1]) if delta and bwd is not None else None,
+        },
+        "theta": {
+            "low": lo_pct,
+            "high": hi_pct,
+            "value": pct,
+            "inside": (lo_pct <= pct <= hi_pct) if pct is not None else None,
+        },
+    }
 
 
 def _breakeven(theta: float, gamma: float | None, bench_spot: float | None) -> dict[str, Any] | None:

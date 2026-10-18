@@ -25,10 +25,18 @@ not) rides on `positions`, from the broker's account record.
 Version 4 adds each underlying's implied volatility index and 30-day historical volatility, kept in
 the broker's own units and named for them (`iv_index` is a decimal, 0.196; `hv_30_day_pct` a
 percentage, 10.45). SPY's are what a day's expected move is read against.
+
+Version 5 adds the hedge chain: one expiry of XSP, quoted, for manage to size a beta-weighted-delta
+hedge from. XSP because it is European and cash-settled (no early assignment, no shares delivered,
+allowed in an IRA as a defined-risk spread) and a tenth of SPX, so a small account can size it. The
+expiry is the standard monthly 30-60 days out, preferring 45-60 -- the suite's premium-selling cycle --
+and the window is HEDGE_STRIKES strikes either side of spot, wide enough to reach a 15-delta strike.
+Its metrics are quoted every day with the benchmark's.
 """
 
 from __future__ import annotations
 
+import subprocess
 import time
 from datetime import date, timedelta
 from typing import Any
@@ -40,10 +48,16 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 4
+SNAPSHOT_VERSION = 5
 # What a beta-weighted delta is stated in. The broker's betas are against SPY, so this is not a free
 # choice: a different benchmark would need betas the broker does not supply.
 BENCHMARK = "SPY"
+# The instrument a delta hedge is sized in, and the slice of its chain the snapshot carries.
+HEDGE_ROOT = "XSP"
+HEDGE_DTE = (30, 60)
+HEDGE_PREFER_MIN_DTE = 45
+# XSP lists 1-point strikes near the money; 60 a side reaches past the 15-delta strike at 45 days.
+HEDGE_STRIKES = 60
 # How far back a chain is rebuilt. A LEAPS-backed position can roll for a year; anything older than
 # this is reported as an incomplete chain rather than guessed.
 HISTORY_DAYS = 400
@@ -75,9 +89,15 @@ def _first_answer(
     last_error = "no enabled module with a broker tool"
     for name in dict.fromkeys(order):
         mcfg = modules[name]
-        run = doctor._run(
-            cfgmod.module_root(mcfg, name), [*cfgmod.broker_tool(mcfg, name), *argv], timeout=timeout
-        )
+        try:
+            run = doctor._run(
+                cfgmod.module_root(mcfg, name), [*cfgmod.broker_tool(mcfg, name), *argv], timeout=timeout
+            )
+        except subprocess.TimeoutExpired:
+            # A slow broker read is a missing piece of the snapshot, never the end of it: until
+            # 2026-10-18 one timed-out metrics call took the whole evaluation down with it.
+            last_error = f"{name}: {argv[0]} timed out after {timeout}s"
+            continue
         payload = first_json(run.stdout)
         if payload.get("ok"):
             return payload, None
@@ -113,6 +133,89 @@ def transactions(
     return payload.get("transactions") or {}, error
 
 
+def pick_hedge_expiry(listing: dict[str, list[dict]], session: date) -> str | None:
+    """The standard monthly 30-60 days out, preferring 45-60 and then the nearest to 45; a weekly
+    only when no monthly falls in the window."""
+    lo, hi = HEDGE_DTE
+    found = []
+    for exp, rows in listing.items():
+        try:
+            dte = (date.fromisoformat(exp) - session).days
+        except ValueError:
+            continue
+        if lo <= dte <= hi:
+            monthly = any(
+                str(r.get("expiration_type")) in ("Regular", "ExpirationType.REGULAR") for r in rows
+            )
+            found.append((not monthly, dte < HEDGE_PREFER_MIN_DTE, abs(dte - HEDGE_PREFER_MIN_DTE), exp))
+    return min(found)[-1] if found else None
+
+
+def _option_row(row: dict[str, Any]) -> dict[str, Any] | None:
+    right = str(row.get("option_type") or "")
+    right = (
+        "C" if right.endswith(("C", "CALL", "Call")) else "P" if right.endswith(("P", "PUT", "Put")) else None
+    )
+    if right is None or row.get("strike_price") is None:
+        return None
+    return {
+        "symbol": row.get("symbol"),
+        "strike": float(row["strike_price"]),
+        "right": right,
+        "bid": row.get("bid"),
+        "ask": row.get("ask"),
+        "mid": row.get("mid"),
+        # The broker's own greeks, kept for comparison; manage prices from the mid.
+        "broker_delta": row.get("delta"),
+        "broker_iv": row.get("iv"),
+    }
+
+
+def hedge_chain(cfg: dict[str, Any], spot: float | None, session: date, prefer: str | None) -> dict[str, Any]:
+    """One quoted expiry of HEDGE_ROOT around `spot`, or a record of why there is none. Two reads:
+    the expiry listing, then the slice with quotes and greeks."""
+    out: dict[str, Any] = {"root": HEDGE_ROOT, "expiration": None, "options": [], "error": None}
+    if not spot:
+        out["error"] = f"no {HEDGE_ROOT} price to centre the chain on"
+        return out
+    listing, error = _first_answer(
+        cfg, prefer, ["get_option_chain", "--symbol", HEDGE_ROOT, "--strike_count", "0"]
+    )
+    expiry = pick_hedge_expiry(listing.get("chain") or {}, session)
+    if expiry is None:
+        out["error"] = error or f"no {HEDGE_ROOT} expiry {HEDGE_DTE[0]}-{HEDGE_DTE[1]} days out"
+        return out
+    argv = [
+        "get_option_chain",
+        "--symbol",
+        HEDGE_ROOT,
+        "--expiration",
+        expiry,
+        "--include_quotes",
+        "--include_greeks",
+        "--strike_count",
+        str(HEDGE_STRIKES),
+        "--around_price",
+        str(spot),
+    ]
+    payload, error = _first_answer(cfg, prefer, argv, timeout=60)
+    rows = (payload.get("chain") or {}).get(expiry) or []
+    first = rows[0] if rows else {}
+    out.update(
+        {
+            "expiration": expiry,
+            "dte": (date.fromisoformat(expiry) - session).days,
+            "spot": spot,
+            "settlement_type": first.get("settlement_type"),
+            "exercise_style": first.get("exercise_style"),
+            "quotes_complete": payload.get("quotes_complete"),
+            "options": [o for o in (_option_row(r) for r in rows) if o is not None],
+            "error": error,
+        }
+    )
+    return out
+
+
 def build(cfg: dict[str, Any]) -> dict[str, Any]:
     positions = positions_mod.run(cfg)
     symbols = sorted(
@@ -124,13 +227,17 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         }
     )
     ok, prefer = positions.get("ok"), positions.get("broker_module")
-    # The benchmark is quoted whether or not it is held; its history is not wanted unless it is.
-    quoted = sorted({*symbols, BENCHMARK})
+    # The benchmark and the hedge root are quoted whether or not they are held; their history is not
+    # wanted unless they are.
+    quoted = sorted({*symbols, BENCHMARK, HEDGE_ROOT})
     metrics, error = market_metrics(cfg, quoted, prefer) if ok else ({}, None)
     history, history_error = transactions(cfg, symbols, prefer) if ok else ({}, None)
+    session = clock.today_iso()
+    hedge_spot = (metrics.get(HEDGE_ROOT) or {}).get("last")
+    hedge = hedge_chain(cfg, hedge_spot, date.fromisoformat(session), prefer) if ok else None
     return {
         "snapshot_version": SNAPSHOT_VERSION,
-        "session": clock.today_iso(),
+        "session": session,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "benchmark": BENCHMARK,
         "positions": positions,
@@ -138,4 +245,5 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "metrics_error": error,
         "transactions": history,
         "transactions_error": history_error,
+        "hedge_chain": hedge,
     }
