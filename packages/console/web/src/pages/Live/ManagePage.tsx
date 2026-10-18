@@ -5,6 +5,7 @@ import { Card, DataCard, sortRows, useSort, type SortHeader } from "../../compon
 import { TileGrid } from "../../components/performance/TileGrid";
 import { fmtMoney } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
+import { PortfolioCards } from "./PortfolioCards";
 
 /**
  * The daily position evaluation (packages/manage), read-only. Every trade in the live account judged
@@ -212,6 +213,7 @@ function AccountView({ a, loading }: { a: ManageAccount; loading: boolean }) {
           not evaluated: {a.excluded.map((e) => `${e.underlying} (${e.legs} leg${e.legs === 1 ? "" : "s"}, ${e.reason})`).join("; ")}
         </p>
       )}
+      <PortfolioCards p={a.portfolio} />
       <TradesCard title="action needed" trades={acting} loading={loading} empty="nothing to do today" variant="act" />
       <TradesCard title="holding" trades={holding} loading={loading} empty="no trades on hold" variant="hold" />
     </>

@@ -4111,6 +4111,62 @@ select.text-input {
   font-weight: 700;
 }
 
+/* manage's portfolio cards (pages/Live/PortfolioCards.tsx). The only tone that is not a sign is
+   in-band against outside, and that is a flag manage set; outside reads amber, a warning, not red,
+   which would read as a loss. */
+.pf-dial svg {
+  display: block;
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
+}
+.pf-dial-band {
+  stroke: color-mix(in srgb, var(--pos) 38%, var(--track));
+}
+.pf-dial-zero {
+  stroke: var(--chart-grid-strong);
+}
+.pf-needle-out {
+  stroke: var(--warn);
+  fill: var(--warn);
+}
+.pf-out-text {
+  color: var(--warn);
+}
+.chip.pf-out {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+.pf-unit {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.pf-hero {
+  font-family: var(--num-face);
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0.25rem 0 0.75rem;
+}
+.pf-caption {
+  margin: 0.6rem 0 0;
+  font-size: 12px;
+  white-space: normal;
+}
+.pf-guidance {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.4rem;
+}
+.pf-hedge {
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border);
+}
+.pf-hedge ul {
+  margin: 0.25rem 0 0.25rem 1rem;
+}
+
 /* win-rate rings */
 .ts-rings {
   position: relative;

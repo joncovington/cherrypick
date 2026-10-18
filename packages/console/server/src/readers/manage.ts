@@ -11,7 +11,11 @@ import fs from "node:fs";
 import path from "node:path";
 import type {
   ManageAccount,
+  ManageBand,
   ManageChainOrder,
+  ManageHedges,
+  ManageHedgeSuggestion,
+  ManagePortfolio,
   ManageAction,
   ManageFired,
   ManageLeg,
@@ -222,6 +226,132 @@ function trade(v: unknown): ManageTrade {
   };
 }
 
+function band(v: unknown): ManageBand {
+  const b = rec(v);
+  return {
+    low: num(b["low"]),
+    high: num(b["high"]),
+    value: num(b["value"]),
+    inside: typeof b["inside"] === "boolean" ? b["inside"] : null,
+  };
+}
+
+function hedges(v: unknown): ManageHedges | null {
+  if (v === null || v === undefined) return null;
+  const h = rec(v);
+  return {
+    target: num(h["target"]),
+    need: num(h["need"]),
+    root: str(h["root"]),
+    expiration: str(h["expiration"]),
+    dte: num(h["dte"]),
+    error: str(h["error"]),
+    suggestions: arr(h["suggestions"]).map((raw): ManageHedgeSuggestion => {
+      const s = rec(raw);
+      const after = rec(s["after"]);
+      const be = rec(after["breakeven"]);
+      return {
+        kind: str(s["kind"]) ?? "?",
+        structure: str(s["structure"]),
+        error: str(s["error"]),
+        units: num(s["units"]),
+        legs: arr(s["legs"]).map((l) => {
+          const leg = rec(l);
+          return {
+            label: str(leg["label"]) ?? "?",
+            quantity: num(leg["quantity"]) ?? 0,
+            bid: num(leg["bid"]),
+            ask: num(leg["ask"]),
+            mid: num(leg["mid"]),
+            delta: num(leg["delta"]),
+          };
+        }),
+        priceLabel: str(s["price_label"]),
+        natural: num(s["natural"]),
+        cash: num(s["cash"]),
+        maxLoss: num(s["max_loss"]),
+        bwdChange: num(s["bwd_change"]),
+        thetaChange: num(s["theta_change"]),
+        after: Object.keys(after).length
+          ? {
+              bwd: num(after["bwd"]),
+              inBand: typeof after["in_band"] === "boolean" ? after["in_band"] : null,
+              theta: num(after["theta"]),
+              thetaPctNetLiq: num(after["theta_pct_net_liq"]),
+              breakevenPct: num(be["pct"]),
+              buyingPowerUsedPct: num(after["buying_power_used_pct"]),
+            }
+          : null,
+      };
+    }),
+  };
+}
+
+/** The portfolio reading, passed through. Absent on an evaluation written before it existed. */
+function portfolio(v: unknown): ManagePortfolio | null {
+  const p = rec(v);
+  if (Object.keys(p).length === 0) return null;
+  const kind = rec(p["account_type"]);
+  const be = rec(p["breakeven"]);
+  const bands = rec(p["bands"]);
+  return {
+    benchmark: str(p["benchmark"]),
+    benchmarkSpot: num(p["benchmark_spot"]),
+    complete: p["complete"] === true,
+    unmodelledLegs: strs(p["unmodelled_legs"]),
+    noBeta: strs(p["no_beta"]),
+    accountKind: { marginOrCash: str(kind["margin_or_cash"]), typeName: str(kind["type_name"]) },
+    bwd: num(p["bwd"]),
+    bwdDollarsPer1pct: num(p["bwd_dollars_per_1pct"]),
+    theta: num(p["theta"]),
+    thetaPctNetLiq: num(p["theta_pct_net_liq"]),
+    vega30: num(p["vega_30"]),
+    breakeven:
+      be["kind"] === "short_gamma" || be["kind"] === "long_gamma"
+        ? { kind: be["kind"], points: num(be["points"]), pct: num(be["pct"]) }
+        : null,
+    expectedMovePct: num(p["expected_move_pct"]),
+    expectedMove: num(p["expected_move"]),
+    realisedMove: num(p["realised_move"]),
+    buyingPowerUsed: num(p["buying_power_used"]),
+    buyingPowerUsedPct: num(p["buying_power_used_pct"]),
+    stress: arr(p["stress"]).map((raw) => {
+      const s = rec(raw);
+      return { shock: num(s["shock"]) ?? 0, pnl: num(s["pnl"]), pctNetLiq: num(s["pct_net_liq"]), leftOut: strs(s["left_out"]) };
+    }),
+    bands: Object.keys(bands).length
+      ? { delta: { ...band(bands["delta"]), basis: str(rec(bands["delta"])["basis"]) }, theta: band(bands["theta"]) }
+      : null,
+    guidance: arr(p["guidance"]).map((raw) => {
+      const g = rec(raw);
+      return {
+        rule: str(g["rule"]) ?? "?",
+        confidence: num(g["confidence"]),
+        reason: str(g["reason"]) ?? "",
+        drivers: arr(g["drivers"]).map((d) => {
+          const row = rec(d);
+          const figure = Object.entries(row).find(([k]) => k !== "underlying");
+          return { underlying: str(row["underlying"]) ?? "?", value: figure ? num(figure[1]) : null };
+        }),
+      };
+    }),
+    underlyings: arr(p["underlyings"]).map((raw) => {
+      const u = rec(raw);
+      return {
+        underlying: str(u["underlying"]) ?? "?",
+        beta: num(u["beta"]),
+        bwd: num(u["bwd"]),
+        theta: num(u["theta"]),
+        vega30: num(u["vega_30"]),
+        bwdShare: num(u["bwd_share"]),
+        thetaShare: num(u["theta_share"]),
+        betaDoubt: str(u["beta_doubt"]),
+      };
+    }),
+    hedges: hedges(p["hedges"]),
+  };
+}
+
 function account(v: unknown): ManageAccount {
   const a = rec(v);
   const counts: Partial<Record<ManageAction, number>> = {};
@@ -242,6 +372,7 @@ function account(v: unknown): ManageAccount {
       const e = rec(raw);
       return { underlying: str(e["underlying"]) ?? "?", legs: num(e["legs"]) ?? 0, reason: str(e["reason"]) ?? "" };
     }),
+    portfolio: portfolio(a["portfolio"]),
   };
 }
 
