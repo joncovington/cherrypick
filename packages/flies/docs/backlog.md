@@ -213,7 +213,12 @@ call spread near its put side.
   Thresholds are swept in the study below and fixed before any forward run, never tuned on it.
 - **First (no flies code):** over stored sessions, open a 16-delta condor at 10:00 and at 13:00,
   and record per side whether it became completable at >= 0.05, 0.10 and 0.25 net after fees, what
-  that fly paid at settlement, and the plain condor's result.
+  that fly paid at settlement, and the plain condor's result. Cut every result by net GEX sign at
+  the condor's open: in MEIC paper, afternoon condors finished inside their shorts in 93% of
+  positive-GEX sessions against 87% of negative ones (27 and 26 sessions, the same direction either
+  side of the 10-09 GEX fix, and not monotonic in GEX size), too few sessions to gate on. The vendor
+  store's GEX is rebuilt from the vendor's IV, so its sign is checked against the recorder's on the
+  overlap days before the cut is read.
 - **Reopens when** that study shows outside completion paying after fees. Then it is a new entry
   mode and its own arm; it differs from `control` in several things at once, so it is read against
   `control` and against MEIC's afternoon condors, not as a one-variable twin.
