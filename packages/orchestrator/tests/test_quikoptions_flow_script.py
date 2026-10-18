@@ -319,10 +319,10 @@ def test_every_flow_reads_date_strike_then_kind():
     assert qf.describe("spread", legs, "261016 23/261030 23 CSCAL", "CSCAL")[1] == "call calendar"
     legs = qf.spread_legs("261030 28/261218 25 PSCAL", "PSCAL")  # CMG, 2026-10-05
     assert qf.describe("spread", legs, "261030 28/261218 25 PSCAL", "PSCAL")[1] == "put diagonal"
-    assert qf.describe("spread", [], "261016 23/25/27 BFLY", "BFLY") == (
+    assert qf.describe("spread", [], "261016 23/25/27 BFLY", "BFLY", "call") == (
         "261016 23/25/27 BFLY",
-        "bfly",
-    )  # never guessed
+        "call structure (BFLY)",
+    )  # never guessed: the code kept, with the side the capture states
 
 
 def test_confirmation_waits_until_the_overnight_open_interest_is_out():
@@ -382,3 +382,70 @@ def test_a_mixed_spread_premium_is_carried_but_never_sizes_a_flow():
     flow = next(f for f in doc["flows"] + doc["unread"] if f["symbol"] == "RUN")
     assert flow["premium"] is None and flow["site_premium"] == 1_130
     assert flow["legs"] == []  # a structure that cannot be named is never guessed at
+    # Named, sided, and unread with its reason: the site's delta does not say which leg was bought.
+    assert flow["kind_label"] == "risk reversal" and flow["cp"] == "mixed"
+    assert flow["direction"] is None and flow["lean"] is None and "which was bought" in flow["unread_why"]
+    assert flow in doc["unread"] and flow["score"] is None
+
+
+def test_every_spread_code_says_put_or_call_and_none_is_guessed():
+    assert qf.spread_kind("CS", "call") == "call spread"
+    assert qf.spread_kind("PSCAL", "put") == "put calendar"
+    assert qf.spread_kind("STR", "mixed") == "strangle"
+    assert qf.spread_kind("CS1x2", "call") == "call spread 1x2"
+    assert qf.spread_kind("CSCAL1x2", "call") == "call calendar 1x2"
+    assert qf.spread_kind("CC", "call") == "call structure (CC)"  # a code the site never defines
+    assert qf.spread_kind("PL", "put") == "put structure (PL)"
+    assert qf.spread_kind("XX", "mixed") == "call and put structure (XX)"
+
+
+def _spread_row(**over):
+    row = {
+        "symbol": "NU",
+        "name": "Nu",
+        "time_et": "10:00:00.000",
+        "size": 6645,
+        "expires": "2027-01-15",
+        "type": "STR",
+        "cp": "mixed",
+        "spread": "270115 14/18 STR",
+        "price": 1.34,
+        "delta": 0.11,
+        "premium": 132_900,
+        "premium_unverified": True,
+        "underlying": {"last": 15.2},
+        "group": None,
+    }
+    return {**row, **over}
+
+
+def test_a_straddle_or_strangle_leans_on_volatility_but_is_never_ranked():
+    doc = _flows(_capture(spreads=[_spread_row(), _spread_row(symbol="SOUN", type="S", price=-2.0)]))
+    by = {f["symbol"]: f for f in doc["flows"] + doc["unread"]}
+    assert by["NU"]["lean"] == "long volatility" and by["SOUN"]["lean"] == "short volatility"
+    assert all(f in doc["unread"] and f["score"] is None and f["view"] is None for f in by.values())
+
+
+def test_relabelling_a_scored_day_touches_display_fields_only():
+    cs = _spread_row(
+        symbol="UAL",
+        type="CS",
+        cp="call",
+        spread="261016 120/135 CS",
+        price=-0.77,
+        delta=-0.16,
+        premium=-2_418_108,
+        premium_unverified=False,
+        size=31404,
+    )
+    capture = _capture(spreads=[cs])
+    doc = _flows(capture)
+    flow = next(f for f in doc["flows"] if f["symbol"] == "UAL")
+    before = {k: flow[k] for k in ("direction", "view", "score", "factors")}
+    for k in ("cp", "lean", "unread_why"):
+        flow.pop(k)
+    flow["kind_label"] = "cs"
+    assert qf.relabel(doc, capture) == 1
+    assert flow["kind_label"] == "call spread" and flow["cp"] == "call"
+    assert {k: flow[k] for k in before} == before
+    assert qf.relabel(doc, capture) == 0  # idempotent

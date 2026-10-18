@@ -53,6 +53,7 @@ captures; a failure leaves the capture and every earlier day as they were.
     python scripts/quikoptions_flow.py audit   --rank N --tape bought|sold|middle [--note ...]
     python scripts/quikoptions_flow.py audit   --report                  # agreement with the tape
     python scripts/quikoptions_flow.py review                            # the fixed test, once ready
+    python scripts/quikoptions_flow.py relabel [--apply]                 # spread labels, past days
 """
 
 from __future__ import annotations
@@ -186,11 +187,58 @@ def _leg_text(expires: str, strike: float, cp: str) -> str:
     return f"{date.fromisoformat(expires):%d %b %y} {strike:g}{'C' if cp == 'call' else 'P'}"
 
 
-SPREAD_KIND = {"CS": "call spread", "PS": "put spread", "CSCAL": "call calendar", "PSCAL": "put calendar"}
+SPREAD_KIND = {
+    "CS": "call spread",
+    "PS": "put spread",
+    "CSCAL": "call calendar",
+    "PSCAL": "put calendar",
+    # The site's M (mixed: a call and a put leg) structures, named where the code is unambiguous.
+    "RR": "risk reversal",
+    "STR": "strangle",
+    "S": "straddle",
+}
+# Bought or sold, a straddle or strangle is a bet on the size of the move, not its direction: the
+# price's sign (the capture's side) is all it takes to read it, and the read is volatility.
+VOLATILITY_KINDS = {"STR", "S"}
+_RATIO = re.compile(r"^(.*?)(\d+x\d+)$")
+
+
+def spread_kind(site_type: str | None, cp: str | None) -> str:
+    """The label for a site's spread code: its name where known, a ratio named as one (`CS1x2` is a
+    1x2 call spread), and otherwise the code with the side the capture states (`call structure
+    (CC)`) -- never a guessed name."""
+    code = site_type or ""
+    if code in SPREAD_KIND:
+        return SPREAD_KIND[code]
+    m = _RATIO.match(code)
+    if m and m.group(1) in SPREAD_KIND:
+        return f"{SPREAD_KIND[m.group(1)]} {m.group(2)}"
+    side = {"call": "call", "put": "put", "mixed": "call and put"}.get(cp or "", "")
+    return f"{side} structure ({code})".strip() if code else "spread"
+
+
+def spread_reading(row: dict, direction: str | None) -> tuple[str | None, str | None]:
+    """(a display-only lean, why the spread is unread): neither enters the score. A straddle or
+    strangle leans long or short volatility by its price's sign; a directional spread whose signs do
+    not fit, or a mixed one whose bought leg the site does not say, is unread and says so."""
+    if direction:
+        return None, None
+    price, cp, code = row.get("price"), row.get("cp"), row.get("type") or ""
+    if code in VOLATILITY_KINDS and price:
+        return ("long volatility" if price > 0 else "short volatility"), "a volatility bet: no direction"
+    if cp == "mixed":
+        return None, "a call and a put leg; the site's signs do not say which was bought"
+    if not price or not row.get("delta"):
+        return None, "no price or delta to read"
+    return None, "the price's and delta's signs do not fit a bought or sold " + (cp or "spread")
 
 
 def describe(
-    kind: str, legs: list[dict], site_text: str | None = None, site_type: str | None = None
+    kind: str,
+    legs: list[dict],
+    site_text: str | None = None,
+    site_type: str | None = None,
+    site_cp: str | None = None,
 ) -> tuple[str, str]:
     """(what, kind label) in one order for every flow — date, strike, then the kind: `15 Jan 27
     16C` / `outright`, `09 Oct 26 43.5/45.5C` / `call spread`, `16 Oct 26 23C / 30 Oct 26 23C` /
@@ -200,7 +248,7 @@ def describe(
     if kind != "spread":
         leg = legs[0] if legs else None
         return (_leg_text(leg["expires"], leg["strike"], leg["cp"]) if leg else (site_text or "")), kind
-    label = SPREAD_KIND.get(site_type or "", (site_type or "spread").lower())
+    label = spread_kind(site_type, site_cp)
     if len(legs) != 2:
         return site_text or "", label
     a, b = legs
@@ -322,7 +370,8 @@ def _spread(row: dict, session: str) -> dict:
         else None
     )
     legs = spread_legs(row.get("spread"), row.get("type")) or []
-    what, kind_label = describe("spread", legs, row.get("spread"), row.get("type"))
+    what, kind_label = describe("spread", legs, row.get("spread"), row.get("type"), row.get("cp"))
+    lean, unread_why = spread_reading(row, direction)
     days = _days(session, row.get("expires"))
     width = (
         abs(legs[1]["strike"] - legs[0]["strike"])
@@ -335,6 +384,11 @@ def _spread(row: dict, session: str) -> dict:
         "name": row.get("name"),
         "what": what,
         "kind_label": kind_label,
+        # Display only, never scored: the side the capture states (call, put, or mixed), a
+        # volatility lean for a straddle or strangle, and why an unread spread is unread.
+        "cp": row.get("cp"),
+        "lean": lean,
+        "unread_why": unread_why,
         "time_et": row.get("time_et"),
         "legs": [
             {
@@ -1164,9 +1218,55 @@ def cmd_show(args) -> int:
     return 0
 
 
+def relabel(doc: dict, capture: dict) -> int:
+    """Bring a scored day's spread rows up to today's labels from its own capture, in place: the
+    kind label, the side, the volatility lean and why an unread spread is unread. Display fields
+    only -- direction, view, score and every factor are left exactly as they were scored. Returns
+    how many rows changed."""
+    rows = {
+        (r.get("symbol"), r.get("time_et"), r.get("size")): r
+        for r in (capture.get("tables") or {}).get("spreads") or []
+    }
+    changed = 0
+    for f in doc.get("flows", []) + doc.get("unread", []):
+        if f.get("kind") != "spread":
+            continue
+        r = rows.get((f.get("symbol"), f.get("time_et"), f.get("size")))
+        if r is None:
+            continue
+        legs = spread_legs(r.get("spread"), r.get("type")) or []
+        _, label = describe("spread", legs, r.get("spread"), r.get("type"), r.get("cp"))
+        lean, why = spread_reading(r, f.get("direction"))
+        new = {"kind_label": label, "cp": r.get("cp"), "lean": lean, "unread_why": why}
+        if any(f.get(k) != v for k, v in new.items()):
+            f.update(new)
+            changed += 1
+    return changed
+
+
+def cmd_relabel(args) -> int:
+    """The backfill for `relabel`, every scored session; dry-run unless --apply."""
+    total = 0
+    for session in _sessions():
+        path, cap = flow_path(session), store() / f"{session}.json"
+        if not path.exists():
+            continue
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        n = relabel(doc, json.loads(cap.read_text(encoding="utf-8")))
+        total += n
+        if n and args.apply:
+            _write(path, doc)
+        print(f"{session}: {n} spread row(s) {'relabelled' if args.apply else 'would change'}")
+    print(f"{total} row(s) {'written' if args.apply else 'to write (dry run; --apply to write)'}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
+    rl = sub.add_parser("relabel", help="bring scored days' spread labels up to date (display fields only)")
+    rl.add_argument("--apply", action="store_true", help="write the files (default: a dry run)")
+    rl.set_defaults(fn=cmd_relabel)
     for name, fn in (("score", cmd_score), ("confirm", cmd_confirm), ("show", cmd_show)):
         p = sub.add_parser(name)
         p.add_argument("--session", default=None)

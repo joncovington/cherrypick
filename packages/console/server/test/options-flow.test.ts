@@ -122,6 +122,23 @@ describe("options flow reader", () => {
     expect(listFlowSessions(config)).toEqual(["2026-10-02"]); // the .flow.json is not a session of its own
   });
 
+  it("passes a spread's side, its volatility lean and why it is unread through, null when absent", () => {
+    fs.mkdirSync(dir, { recursive: true });
+    write("2026-10-02.json", capture("2026-10-02"));
+    write("2026-10-02.flow.json", {
+      flows: [{ kind: "spread", symbol: "UAL", time_et: "15:01:05.233", cp: "call", lean: null, unread_why: null, flags: [] }],
+      unread: [
+        { kind: "spread", symbol: "NU", time_et: "11:00:00.000", cp: "mixed", lean: "long volatility", unread_why: "a volatility bet: no direction", flags: [] },
+        { kind: "spread", symbol: "OLD", flags: [] }, // a day scored before the fields existed
+      ],
+      names: [],
+    });
+    const d = readOptionsFlow(config).current!.derived!;
+    expect(d.flows[0]).toMatchObject({ timeEt: "15:01:05.233", cp: "call", lean: null, unreadWhy: null });
+    expect(d.unread[0]).toMatchObject({ cp: "mixed", lean: "long volatility", unreadWhy: "a volatility bet: no direction" });
+    expect(d.unread[1]).toMatchObject({ timeEt: null, cp: null, lean: null, unreadWhy: null });
+  });
+
   it("attaches the week's high-impact events from the calendar captured with the session", () => {
     fs.mkdirSync(dir, { recursive: true });
     write("2026-10-02.json", capture("2026-10-02"));
