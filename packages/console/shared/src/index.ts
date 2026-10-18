@@ -1,4 +1,6 @@
-export * from "./paths.js";
+// Node-only helpers (paths.ts imports node:fs/os/path/url) are NOT re-exported here: the browser
+// bundle imports this barrel, and Vite's dev server loads every module it names, so a node: import
+// here breaks the SPA in dev. The server and desktop import them from "@console/shared/paths".
 export * from "./types/bridged.js";
 export * from "./feeDrag.js";
 export * from "./types/overview.js";

@@ -14,7 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Writable } from "node:stream";
-import { cherrypickHome } from "@console/shared";
+import { cherrypickHome } from "@console/shared/paths";
 
 export const MAX_LOG_BYTES = 5 * 1024 * 1024;
 export const KEEP_BACKUPS = 3;

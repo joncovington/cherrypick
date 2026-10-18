@@ -55,7 +55,7 @@ launcher removes the trap rather than documenting it.
 | `src/bounds.ts` | remembered window geometry in `data/console/desktop-window.json` |
 | `scripts/start.mjs` | the launcher that clears `ELECTRON_RUN_AS_NODE` |
 
-Home and port resolution are **not** here — they are in `@console/shared` (`paths.ts`), shared with
+Home and port resolution are **not** here — they are in `@console/shared/paths` (`paths.ts`), shared with
 the server so the two cannot disagree about which port to open or which `~/.cherrypick` to read.
 
 Packaging (an installer, a signed binary) is deliberately deferred: run it from the repo. It would

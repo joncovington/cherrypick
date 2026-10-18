@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cherrypickHome, consolePort, BIND_HOST as SHARED_BIND_HOST } from "@console/shared";
+import { cherrypickHome, consolePort, BIND_HOST as SHARED_BIND_HOST } from "@console/shared/paths";
 
 // Home and port resolution live in @console/shared because the desktop shell has to agree with this
 // server about both — see that module for why they must not be duplicated.

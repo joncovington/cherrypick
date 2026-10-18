@@ -22,7 +22,10 @@ RTH cannot read the session that just ended. Two things are easy to break:
 
 Unlike the rest of the suite this package is **Node + TypeScript**:
 
-- `shared/` — types shared by server and web (`@console/shared`).
+- `shared/` — types shared by server and web (`@console/shared`). The barrel is **browser-safe**:
+  the SPA imports it and Vite's dev server loads every module it names, so a Node builtin there
+  breaks pages in dev only. Node-only helpers (`paths.ts`) are the `@console/shared/paths` subpath;
+  `web/test/sharedBarrelBrowserSafe.test.ts` walks the barrel and fails on a builtin.
 - `server/` — Fastify, binds **127.0.0.1:5070** (loopback hard-coded; port via `serve.port` in
   `~/.cherrypick/config/console.json`). Serves the built SPA, `/api/*` and `/ws`.
 - `web/` — React + Vite SPA.

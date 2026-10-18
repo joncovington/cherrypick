@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { suitePython } from "@console/shared";
+import { suitePython } from "@console/shared/paths";
 
 // 2026-10-08 OS audit: every bridge spawned a bare `python`, which failed a console started by hand on
 // Linux (often only `python3`, and the venv on nobody's PATH).

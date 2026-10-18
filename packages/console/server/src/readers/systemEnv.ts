@@ -21,7 +21,7 @@ import type {
   SystemProcessAge,
   SystemStore,
 } from "@console/shared";
-import { suitePython } from "@console/shared";
+import { suitePython } from "@console/shared/paths";
 import { REPO_ROOT, type ConsoleConfig } from "../config.js";
 import { listReaderFailures, readJson } from "./db.js";
 
