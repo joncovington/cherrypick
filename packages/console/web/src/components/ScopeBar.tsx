@@ -17,7 +17,7 @@ export function ScopeSelect({
 }) {
   return (
     <select
-      className="text-input"
+      className="chip review-session-select"
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
       aria-label={label}
@@ -71,7 +71,7 @@ export function EraSelect({
   const name = (e: { era: string; label?: string }): string => e.label ?? `era ${e.era}`;
   return (
     <select
-      className={`text-input ${value === null ? "" : "scope-select-off-default"}`}
+      className={`chip review-session-select ${value === null ? "" : "scope-select-off-default"}`}
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
       aria-label="era"
