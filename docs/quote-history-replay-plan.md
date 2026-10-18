@@ -407,7 +407,16 @@ daily files, is in `meic/replay.py`'s docstring.
 | side worst-cost difference, median / p90 | ≤ 0.10 / ≤ 0.30 |
 
   The share of paper's condors the full-day replay paired is reported beside it, the base the path
-  measures stand on. The backtest's history runs for MEIC unlock on the same rule as flies' (the
+  measures stand on.
+- **Amended the same day: VIX is intraday.** The first rule fixed VIX at the session's Cboe open. Over
+  the four recorder days the check read entries 0.856 and replay-only episodes 0.152, failing both;
+  three days matched 95-97% and 2026-10-16 matched 58%. On 10-16 VIX rose from 15.8 to 22.2 and
+  crossed 18 near 13:00, where paper moved from 0.16- to 0.14-delta shorts, and a fixed VIX cannot
+  follow; in the design window one session in five has a band boundary inside its VIX range. VIX is
+  now read at or before each tick from the history file's own `market_regime_history` (the
+  recorder's readings; the vendor store's minute series from VIX options' underlying price), the
+  session's open the counted fallback. The thresholds are unchanged; the check is re-run on every
+  recorder day under the amended rule. The backtest's history runs for MEIC unlock on the same rule as flies' (the
   vendor against the recording at the vendor's cadence, PR #383).
 
 ## Operations
