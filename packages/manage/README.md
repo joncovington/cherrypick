@@ -129,6 +129,38 @@ reaches the 21-day exit or has given up 80% of its premium. It applies only when
 Earnings inside the new short's life are flagged, not blocked, because the long covers the short through
 a report. When the roll is not taken, the explanation says which condition stopped it.
 
+## The account as one book
+
+Beside the trades, each evaluation reads the whole account as one book (`portfolio.py`; the plan is in
+[docs/portfolio-guidance-plan.md](../../docs/portfolio-guidance-plan.md)). It records:
+
+- **beta-weighted delta (BWD)** in SPY shares, and what a 1% SPY move does to it. The beta is the
+  broker's own, so the figure can be checked against the broker's screen;
+- **theta** in dollars per calendar day and as a share of net liq;
+- **the break-even move**: the SPY move that wipes out a day's theta, beside the move SPY's implied
+  volatility expects that day;
+- **vega**, raw and weighted to a 30-day equivalent;
+- **buying power used** and the account's kind (margin or cash);
+- **a stress line**: the book repriced at SPY −10% and +5%, each name moved by its beta;
+- **each underlying's share** of the book's theta and BWD;
+- **beta doubts**: names whose broker beta disagrees in sign with its own three-month correlation,
+  which happens (RTX, FXI, DELL on 2026-10-18), so their BWD may be misstated.
+
+Everything is modelled (Black-Scholes at each leg's own IV). A leg the model cannot price, or an
+underlying with no beta, is named and left out, never counted as zero; the reading says it is
+partial. A leg expiring today is taken at its moneyness, with its remaining time value as that day's
+theta.
+
+The bands are retail heuristics. None has published out-of-sample evidence, so each runs at
+confidence 40. Each fires REVIEW and names what drives it:
+
+| Rule | Default | Source | Outside evidence |
+|---|---|---|---|
+| `portfolio.theta` | theta 0.1–0.3% of net liq a day; above the ceiling is oversizing | retail options education | None. Theta is paid for by gamma, so more theta is not more edge |
+| `portfolio.delta` | BWD from −0.5× to +0.75× theta (SPY shares), leaning long; ±0.5% of net liq per 1% move when theta is not positive | retail options education ("BWD within about half the theta") | None |
+| `portfolio.breakeven` | short gamma, with a break-even move under SPY's implied one-day move | option theory: theta = −½ Γ S² σ² | The identity is exact; whether acting on it pays is untested |
+| `portfolio.concentration` | one name over 25% of gross theta or gross BWD | convention | None |
+
 ## Known limits
 
 - **Marks are mids** and the payoff model is Black-Scholes at today's IV per leg, with no dividends.

@@ -78,19 +78,25 @@ that reads them, each under its own version bump, so no field is recorded before
   SPY correlation disagreeing in sign on several names (RTX beta −0.01 at correlation +0.94, FXI +0.27
   at −0.75, DELL +1.26 at −0.27). Over one window those two cannot have opposite signs, so they come
   from different windows, and RTX's beta looks wrong. The broker's beta stays the one used, because
-  it is the one on the screen. Beside it goes our own, fitted from the local end-of-day store, and
-  any name where the two differ materially is flagged with both figures and its share of BWD.
+  it is the one on the screen. Piece 2 flags a beta whose sign disagrees with its own correlation, or
+  that sits near zero beside a strong one, with the name's share of BWD. Our own beta, fitted from
+  the local end-of-day store, comes later (piece 2b): manage cannot read another package's store, so
+  the orchestrator has to fetch it into the snapshot first.
 - A stress line: SPY −10% (and +5%) repricing each position at its beta-scaled move, in dollars and %
   of net liq.
 - Rules, each with a default block and a low confidence:
-  - `portfolio_theta` — theta 0.1–0.3% of net liq a day; above the top is flagged as oversizing.
-  - `portfolio_delta` — BWD within ±(theta ÷ 2) SPY shares, leaning slightly long; outside it, name
-    the trades driving it, largest first.
-  - `portfolio_breakeven` — the break-even move is smaller than the expected move.
-  - `portfolio_concentration` — one underlying above 25% of theta or of BWD.
-- An attribution check over the stored snapshots: each day's actual P&L change against BWD × SPY move
-  + theta + ½Γ·move². If the greeks do not explain daily P&L after about 20 sessions, the page says
-  the guidance is noise.
+  - `portfolio.theta` — theta 0.1–0.3% of net liq a day; above the top is flagged as oversizing.
+  - `portfolio.delta` — BWD from −0.5× to +0.75× theta in SPY shares (±(theta ÷ 2), leaning
+    slightly long); outside it, name the trades driving it, largest first.
+  - `portfolio.breakeven` — the break-even move is smaller than the expected move.
+  - `portfolio.concentration` — one underlying above 25% of theta or of BWD.
+- Snapshot v4 keeps each underlying's implied volatility index and 30-day historical volatility,
+  which the expected move needs.
+
+**2c. Attribution check**, once sessions have accumulated: each day's actual P&L change against BWD ×
+SPY move + theta + ½Γ·move², from the stored evaluations. If the greeks do not explain daily P&L after
+about 20 sessions, the page says the guidance is noise. It is a reader over stored days, not part of
+one evaluation, so it lands on its own.
 
 **3. Hedge sizing.** When BWD is outside its band, size an XSP vertical that brings it to the nearer
 band edge, priced at mid. Show both kinds with their effect on BWD, theta, break-even and buying

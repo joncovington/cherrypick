@@ -21,6 +21,10 @@ underlying's beta and three-month correlation to SPY as the broker states them -
 own beta-weighted delta uses, so the two can agree -- and the benchmark's metrics whether or not it is
 held, since a beta-weighted delta is priced in its units. The account's kind (margin or cash, IRA or
 not) rides on `positions`, from the broker's account record.
+
+Version 4 adds each underlying's implied volatility index and 30-day historical volatility, kept in
+the broker's own units and named for them (`iv_index` is a decimal, 0.196; `hv_30_day_pct` a
+percentage, 10.45). SPY's are what a day's expected move is read against.
 """
 
 from __future__ import annotations
@@ -36,7 +40,7 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 3
+SNAPSHOT_VERSION = 4
 # What a beta-weighted delta is stated in. The broker's betas are against SPY, so this is not a free
 # choice: a different benchmark would need betas the broker does not supply.
 BENCHMARK = "SPY"
@@ -57,6 +61,8 @@ def _metric(entry: dict[str, Any]) -> dict[str, Any]:
         "beta": entry.get("beta"),
         "beta_updated_at": entry.get("beta_updated_at"),
         "corr_spy_3month": entry.get("corr_spy_3month"),
+        "iv_index": entry.get("implied_volatility_index"),
+        "hv_30_day_pct": entry.get("historical_volatility_30_day"),
     }
 
 

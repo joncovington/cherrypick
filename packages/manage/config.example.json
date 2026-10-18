@@ -143,6 +143,46 @@
     "grid_high": 3.0,
     "grid_steps": 600
   },
-  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, directional.take_profit, directional.stop, ex_dividend, risk.oversize",
+  "portfolio": {
+    "_comment": "The account as one book: beta-weighted delta (in SPY shares, on the broker's beta), theta per calendar day, the break-even move and a stress line. Retail heuristics with no published out-of-sample evidence, hence confidence 40. Guidance is REVIEW, naming what drives it. enabled: false turns all of it off; the reading is still recorded.",
+    "enabled": true,
+    "theta": {
+      "_comment": "Theta as a share of net liq per day. Above max the book sells more gamma than the band allows; under min only informs.",
+      "enabled": true,
+      "min_pct_nlv": 0.001,
+      "max_pct_nlv": 0.003,
+      "confidence": 40
+    },
+    "delta": {
+      "_comment": "BWD band: -short_per_theta x theta to +long_per_theta x theta SPY shares. With no positive theta, +/- the BWD whose 1% move costs fallback_pct_nlv_per_1pct of net liq.",
+      "enabled": true,
+      "short_per_theta": 0.5,
+      "long_per_theta": 0.75,
+      "fallback_pct_nlv_per_1pct": 0.005,
+      "confidence": 40
+    },
+    "breakeven": {
+      "_comment": "A short-gamma book whose break-even SPY move is under this multiple of SPY's implied one-day move.",
+      "enabled": true,
+      "min_multiple_of_expected_move": 1.0,
+      "confidence": 40
+    },
+    "concentration": {
+      "_comment": "One underlying over max_share of the book's gross theta or gross beta-weighted delta. A position can be excused with positions.<SYM>.disable.",
+      "enabled": true,
+      "max_share": 0.25,
+      "confidence": 40
+    },
+    "beta_doubt": {
+      "_comment": "Flag a broker beta whose sign disagrees with its three-month correlation (|corr| >= min_abs_corr), or that is near zero beside a strong correlation.",
+      "min_abs_corr": 0.3,
+      "near_zero_beta": 0.1
+    },
+    "stress": {
+      "_comment": "SPY shocks the book is repriced at, each underlying moved by beta x shock, IV and time held still.",
+      "shocks": [-0.1, 0.05]
+    }
+  },
+  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, directional.take_profit, directional.stop, ex_dividend, risk.oversize, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration",
   "positions": {}
 }
