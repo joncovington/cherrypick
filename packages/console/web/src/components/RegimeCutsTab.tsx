@@ -470,7 +470,12 @@ export function RegimeCutsTab({ module, arm = null }: { module: RegimeCutsModule
   }
   const picker =
     data.sessions.length > 1 ? (
-      <select value={session ?? ""} onChange={(e) => setSession(e.target.value === "" ? null : e.target.value)}>
+      <select
+        className="chip review-session-select"
+        value={session ?? ""}
+        onChange={(e) => setSession(e.target.value === "" ? null : e.target.value)}
+        aria-label="session"
+      >
         <option value="">latest</option>
         {[...data.sessions].reverse().map((s) => (
           <option key={s} value={s}>

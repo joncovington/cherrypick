@@ -327,7 +327,12 @@ export function ManagePage() {
   const sessions = data?.sessions ?? [];
   const picker =
     sessions.length > 1 ? (
-      <select value={data?.session ?? ""} onChange={(e) => setSession(e.target.value)} aria-label="session">
+      <select
+        className="chip review-session-select"
+        value={data?.session ?? ""}
+        onChange={(e) => setSession(e.target.value)}
+        aria-label="session"
+      >
         {[...sessions].reverse().map((s) => (
           <option key={s} value={s}>
             {s}
