@@ -44,6 +44,19 @@ treated as variance and tail shaping unless a test shows otherwise.
 | Module ledgers | MEIC `open` arm (no stop, full path); flies, bwb, pmcc, calendars paper books | Paired comparisons against what the modules actually did. |
 | Existing replays | `scripts/bwb_history_backtest.py`, `scripts/pmcc_shield_replay.py`, `scripts/earnings_navigator_history.py`, `cherrypick.meic.stop_policies` | Each new rule here is a variant of one of these, not a new harness. |
 
+## Status (2026-10-17)
+
+Five of the eight have been tested against their declared pass tests
+([history-studies-2026-10-c.md](history-studies-2026-10-c.md)), and all five are closed:
+- 1, post-earnings drift;
+- 4 and 8, the box edge and the intraday direction reads (licensed-data results kept locally);
+- 5, the EMA signal;
+- 6, the BWB down-day filter.
+
+That leaves 2 (MEIC afternoon entries), 3 (the mid-morning iron fly) and 7 (MEIC stop mechanics). 3
+and 7 depend on an intraday fill model that is no longer being built for Pulver's sake, so each now
+has to justify that build on its own.
+
 ## The hypotheses, in priority order
 
 Priority weighs two things: how plausible the edge is, and how cheaply our existing data can answer
