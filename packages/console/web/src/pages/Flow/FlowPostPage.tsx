@@ -95,8 +95,8 @@ export function SpreadsPostTable({ rows }: { rows: DerivedFlowRow[] }) {
                 {r.symbol} {r.what ?? ""} <span className="muted">{r.kindLabel}</span>
               </td>
               <td className="num">{fmtCount(r.size)}</td>
-              <td className={tone}>
-                {r.direction ?? "unread"}
+              <td className={tone} title={r.unreadWhy ?? undefined}>
+                {r.direction ?? r.lean ?? "unread"}
                 {r.view !== null ? `, ${r.view}` : ""}
               </td>
               <td className="num">{fmtDollarsShort(r.premium)}</td>

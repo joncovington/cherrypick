@@ -119,6 +119,14 @@ export interface DerivedFlowRow {
   /** The next morning's verdict from open interest, and the score with it; null until then. */
   confirmed: "opened" | "closed" | "mixed" | null;
   confirmedScore: number | null;
+  /** The print's time (ET), the key a capture row is matched to its derived flow by. */
+  timeEt: string | null;
+  /** A spread's side as the capture states it; null on a single leg (its `what` says C or P). */
+  cp: "call" | "put" | "mixed" | null;
+  /** Display only, never scored: a straddle's or strangle's `long volatility` / `short volatility`. */
+  lean: string | null;
+  /** Why an unread spread is unread, in words; null when it was read. */
+  unreadWhy: string | null;
 }
 
 export interface DerivedFlowName {
