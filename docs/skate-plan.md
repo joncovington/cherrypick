@@ -1,7 +1,8 @@
 # Skate screener, wheel and PMCC views — plan
 
 Status: plan, 2026-10-18. Nothing built. The study it rests on was run by hand on 2026-10-18
-(results below); the scripts were scratch files and are not in the repo.
+(results below); the scripts were scratch files and are not in the repo. The three open questions
+were decided by the user on 2026-10-18 (see "Decisions").
 
 | Step | State (2026-10-18) |
 |---|---|
@@ -43,7 +44,8 @@ disk.
 **The range band** is our reconstruction, and the code calls it that, never by the indicator's
 name. Range = highest high − lowest low over N sessions (N = trading days to expiry; his numbers fit
 this better than average true range), smoothed by a 10-day simple average; upper band = close +
-0.75 × range, lower band = close − 0.75 × range. The haircut and the smoothing are config.
+0.75 × range, lower band = close − 0.75 × range. The haircut and the smoothing are config, and a
+second, by-expiry haircut schedule runs beside the fixed one (step 1).
 
 ## What the 2026-10-18 study found
 
@@ -124,8 +126,12 @@ tradable name, each side and each Friday expiry out to 63 days:
   categories), which also catches names the words miss. A disagreement is decided by hand and
   noted. Its test drives off the list itself and is shown to fail by removing a known fund;
 - drop a name with a split inside the lookback, or under a year of history;
-- compute the band, snap to the first listed strike past it, and compute the skate rate at that
-  strike over 11 years and the last 3, skipping windows near a split.
+- compute **two bands**, each snapped to the first listed strike past it, and the skate rate at
+  each strike over 11 years and the last 3, skipping windows near a split:
+  - **fixed**: haircut 0.75 at every expiry;
+  - **by expiry**: a declared schedule in config, defaulting to 0.65 for expiries of 14 days or
+    fewer (Passarelli's Ep73 example) and 0.75 beyond. When both land on the same strike, the row
+    says so.
 
 Writes `data/technicals/skate/<date>.json`: the plan for the quote step and the history each row
 will be judged with. Counting sessions to expiry needs a trading-days counter; it goes in
@@ -138,8 +144,9 @@ regular-hours quotes. `fetch_screener_greeks.py measure` (11:30 / 14:30 ET) gain
 stages to keep the broker load near today's:
 
 1. the band strike on the cycle monthly for every planned name-side (a few hundred legs);
-2. every expiry to 63 days, the band strike and one either side, for the name-sides that pass the
-   filters in stage 1 (about 60, so about 1,000 options).
+2. every expiry to 63 days, both bands' strikes and one either side, for the name-sides that pass
+   the filters in stage 1 (about 60, so about 1,000–1,500 options; the two strikes are often the
+   same or adjacent).
 
 REST quotes carry no IV, so implied volatility is solved from the mid with the IV solver
 `manage.pricing.implied_vol` uses (moved to core), and delta from it at r = 4%, the screeners'
@@ -152,16 +159,29 @@ The measure run scores its own quotes with a pure function from technicals (`ska
 console reads verdicts and never re-derives them:
 
 - skate yield on the bid and on the mid; implied skate = 1 − |delta|; history minus implied;
-- the filters, as config: open interest ≥ 100, `LEG_BARS` spread, skate rate ≥ 84% over 11 years
-  and ≥ 80% over 3, skate yield ≥ 6%;
-- per name-side, the best expiry by premium per day on the bid among legs that pass, its ratio to
-  the monthly, and per-cycle and per-month test odds;
+- **hard filters** (a row that fails is not shown): open interest ≥ 100, the `LEG_BARS` spread, no
+  earnings in the cycle;
+- **soft thresholds**, config, shown as a pass/fail marker and never used to hide a row: skate
+  rate ≥ 84% over 11 years and ≥ 80% over 3, skate yield ≥ 6%;
+- per name-side, the best expiry by premium per day on the bid among legs that pass the hard
+  filters, its ratio to the monthly, and per-cycle and per-month test odds;
+- all of the above for both bands, fixed and by expiry;
 - a "both sides" marker where the call and the put both pass.
 
 Console: a **Skate** slide in `ScreenersLightbox.tsx`, `/api/screeners/skate?day=`, a reader in
-`server/src/readers/skate.ts` with its own types, calls and puts views. Columns as the study's
-tables; the best expiry bold when it beats the monthly; earnings and liquidity defaults as the
-income lists. Money follows the suite's layout (premium per contract, a per-share price labelled).
+`server/src/readers/skate.ts` with its own types, calls and puts views.
+
+- Sorted by history minus implied by default; a "passing only" toggle narrows to the soft
+  thresholds. Closer strikes tend to top that sort, so skate yield and skate rate stay beside it.
+- A **band** selector, fixed or by expiry, picks which band's strikes drive the rows and the
+  ranking. Each row shows the other band's strike and premium per day in a quieter column, so the
+  difference is visible without switching.
+- Columns as the study's tables; the best expiry bold when it beats the monthly. Money follows the
+  suite's layout (premium per contract, a per-share price labelled).
+
+The income tabs (short puts, covered calls, credit spreads) get a **leveraged** badge on names in
+the declared list, and an optional "hide leveraged" toggle, off by default so the rows the
+fidelity score is judged on stay visible.
 
 ### 4. The forward record
 
@@ -171,6 +191,11 @@ study could only estimate from overlapping history: does history-minus-implied p
 that skate more than priced? The test is declared now: rows with history minus implied above 5
 points must skate more often than their implied rate, and more often than rows below zero, by more
 than the binomial noise at that count. Until then, the tab says the gap is a history estimate.
+
+Both bands are recorded, with each row's delta. That answers the haircut question the same way:
+after 20 expiries, did the by-expiry band's closer short-dated strikes skate at their implied rate
+or better, and did their extra premium per day survive the extra tests? Until then the selector is
+a preference, not a finding.
 
 ### 5. The wheel view (packages/manage)
 
@@ -254,10 +279,10 @@ None of it touches a trading loop, so none of it is measurement-affecting; each 
 - What a breach costs. Skate rate is a frequency; weighing the loss needs historical option prices
   (the backtest package's licensed data), which would stay local.
 
-## Open questions for the user
+## Decisions (user, 2026-10-18)
 
-1. The filter thresholds (84% / 80% / 6%) came from one day's study. Keep them, or show everything
-   and sort by history minus implied?
-2. Should the declared leveraged/inverse list also hide those names from the income tabs?
-3. The haircut is 0.75 at every expiry. Passarelli used 0.65 on a 14-day call in Ep73. Make it
-   per-expiry, or leave it fixed until the forward record says otherwise?
+1. **Filters**: liquidity and earnings are hard filters; the skate-rate and yield thresholds are a
+   marker with a "passing only" toggle; the default sort is history minus implied.
+2. **Leveraged funds in the income tabs**: a badge, with an optional hide toggle, off by default.
+3. **Haircut**: both bands computed, fixed 0.75 and a by-expiry schedule; the user picks which one
+   drives the tab; the forward record compares them.
