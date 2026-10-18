@@ -14,6 +14,8 @@ import type {
   ManageBand,
   ManageChainOrder,
   ManageHedges,
+  ManageLadder,
+  ManageScenarios,
   ManageHedgeSuggestion,
   ManagePortfolio,
   ManageAction,
@@ -272,6 +274,7 @@ function hedges(v: unknown): ManageHedges | null {
         maxLoss: num(s["max_loss"]),
         bwdChange: num(s["bwd_change"]),
         thetaChange: num(s["theta_change"]),
+        pastCap: s["past_cap"] === true,
         after: Object.keys(after).length
           ? {
               bwd: num(after["bwd"]),
@@ -301,6 +304,7 @@ function portfolio(v: unknown): ManagePortfolio | null {
     unmodelledLegs: strs(p["unmodelled_legs"]),
     noBeta: strs(p["no_beta"]),
     accountKind: { marginOrCash: str(kind["margin_or_cash"]), typeName: str(kind["type_name"]) },
+    netLiq: num(p["net_liq"]),
     bwd: num(p["bwd"]),
     bwdDollarsPer1pct: num(p["bwd_dollars_per_1pct"]),
     theta: num(p["theta"]),
@@ -320,7 +324,13 @@ function portfolio(v: unknown): ManagePortfolio | null {
       return { shock: num(s["shock"]) ?? 0, pnl: num(s["pnl"]), pctNetLiq: num(s["pct_net_liq"]), leftOut: strs(s["left_out"]) };
     }),
     bands: Object.keys(bands).length
-      ? { delta: { ...band(bands["delta"]), basis: str(rec(bands["delta"])["basis"]) }, theta: band(bands["theta"]) }
+      ? {
+          delta: { ...band(bands["delta"]), basis: str(rec(bands["delta"])["basis"]) },
+          theta: band(bands["theta"]),
+          buyingPower: bands["buying_power"]
+            ? { ...band(bands["buying_power"]), vix: num(rec(bands["buying_power"])["vix"]) }
+            : null,
+        }
       : null,
     guidance: arr(p["guidance"]).map((raw) => {
       const g = rec(raw);
@@ -349,6 +359,54 @@ function portfolio(v: unknown): ManagePortfolio | null {
       };
     }),
     hedges: hedges(p["hedges"]),
+    vix: num(p["vix"]),
+    scenarios: scenarios(p["scenarios"]),
+    ladder: ladder(p["ladder"]),
+  };
+}
+
+function nums(v: unknown): Array<number | null> {
+  return arr(v).map((x) => num(x));
+}
+
+function scenarios(v: unknown): ManageScenarios | null {
+  const s = rec(v);
+  if (Object.keys(s).length === 0) return null;
+  const graph = rec(s["graph"]);
+  return {
+    moves: nums(s["moves"]).filter((x): x is number => x !== null),
+    ivShiftWeighting: str(s["iv_shift_weighting"]),
+    matrix: arr(s["matrix"]).map((raw) => {
+      const row = rec(raw);
+      return { ivShift: num(row["iv_shift"]) ?? 0, pnl: nums(row["pnl"]) };
+    }),
+    graph: {
+      moves: nums(graph["moves"]).filter((x): x is number => x !== null),
+      curves: arr(graph["curves"]).map((raw) => {
+        const c = rec(raw);
+        return { horizonDays: num(c["horizon_days"]) ?? 0, pnl: nums(c["pnl"]) };
+      }),
+    },
+    leftOut: strs(s["left_out"]),
+  };
+}
+
+function ladder(v: unknown): ManageLadder | null {
+  const l = rec(v);
+  if (Object.keys(l).length === 0) return null;
+  const e = rec(l["earnings"]);
+  return {
+    expiries: arr(l["expiries"]).map((raw) => {
+      const x = rec(raw);
+      return {
+        expiration: str(x["expiration"]) ?? "?",
+        trades: strs(x["trades"]),
+        downside: num(x["downside"]),
+        downsideUnknown: num(x["downside_unknown"]) ?? 0,
+        theta: num(x["theta"]),
+      };
+    }),
+    earnings: { trades: strs(e["trades"]), theta: num(e["theta"]), thetaShare: num(e["theta_share"]), downside: num(e["downside"]) },
   };
 }
 

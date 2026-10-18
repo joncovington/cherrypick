@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { ManageBand, ManageHedgeSuggestion, ManagePortfolio } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { Bullet } from "../../components/grid/Bullet";
@@ -28,7 +29,7 @@ function signed(v: number | null, digits = 1): string {
 }
 
 /** The chip a band reading earns. Null (nothing to place) reads as such, never as "in band". */
-function BandChip({ inside }: { inside: boolean | null }) {
+export function BandChip({ inside }: { inside: boolean | null }) {
   if (inside === null) return <span className="chip muted">no reading</span>;
   return inside ? <span className="chip">in band</span> : <span className="chip pf-out">outside band</span>;
 }
@@ -95,12 +96,17 @@ export function BandDial({
         <path d={arc(0, 180)} className="ts-track" strokeWidth={D.stroke} fill="none" strokeLinecap="round" />
         <path d={arc(theta(low), theta(high))} className="pf-dial-band" strokeWidth={D.stroke} fill="none" />
         {signedScale && <line x1={zx1} y1={zy1} x2={zx2} y2={zy2} className="pf-dial-zero" strokeWidth={1.5} />}
-        <text x={lx} y={ly} className="ts-tick" textAnchor="middle" dominantBaseline="middle">
-          {tick(low)}
-        </text>
-        <text x={hx} y={hy} className="ts-tick" textAnchor="middle" dominantBaseline="middle">
-          {tick(high)}
-        </text>
+        {/* A band edge on a scale end is already labelled by that end. */}
+        {low !== lo && (
+          <text x={lx} y={ly} className="ts-tick" textAnchor="middle" dominantBaseline="middle">
+            {tick(low)}
+          </text>
+        )}
+        {high !== reach && (
+          <text x={hx} y={hy} className="ts-tick" textAnchor="middle" dominantBaseline="middle">
+            {tick(high)}
+          </text>
+        )}
         <text x={D.cx - D.r} y={D.cy + 18} className="ts-tick" textAnchor="middle">
           {tick(lo)}
         </text>
@@ -133,7 +139,7 @@ function DeltaCard({ p }: { p: ManagePortfolio }) {
 }
 
 /** A band's fractions as percentages, for a dial whose ticks read "0.3" rather than "0.003". */
-function asPercent(b: ManageBand): ManageBand {
+export function asPercent(b: ManageBand): ManageBand {
   const x = (v: number | null) => (v === null ? null : v * 100);
   return { low: x(b.low), high: x(b.high), value: x(b.value), inside: b.inside };
 }
@@ -317,6 +323,11 @@ function HedgeSuggestion({ s }: { s: ManageHedgeSuggestion }) {
           {pctOf(a.buyingPowerUsedPct, 0)}
         </div>
       )}
+      {s.pastCap && (
+        <div className="pf-out-text">
+          past the buying-power cap: offered anyway, because a debit spread only lowers the book's worst case
+        </div>
+      )}
     </div>
   );
 }
@@ -335,8 +346,12 @@ function HedgeCard({ p }: { p: ManagePortfolio }) {
   );
 }
 
-/** Every portfolio card, in pairs of matching height. Nothing when the evaluation predates them. */
-export function PortfolioCards({ p }: { p: ManagePortfolio | null }) {
+/**
+ * Every portfolio card, in pairs of matching height. Nothing when the evaluation predates them.
+ * `scenarios` (ScenarioCards.tsx) sits between the readings and the guidance, so what to do comes
+ * after everything it was decided from.
+ */
+export function PortfolioCards({ p, scenarios }: { p: ManagePortfolio | null; scenarios?: ReactNode }) {
   if (!p) return null;
   return (
     <>
@@ -348,6 +363,7 @@ export function PortfolioCards({ p }: { p: ManagePortfolio | null }) {
         <ContributionCard p={p} figure="bwd" />
         <ContributionCard p={p} figure="theta" />
       </div>
+      {scenarios}
       <GuidanceCard p={p} />
       <HedgeCard p={p} />
     </>

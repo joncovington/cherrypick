@@ -636,7 +636,10 @@ per-name delta and theta, the guidance, and a sized XSP hedge. **Every band and 
 the reading's `bands`**: the dial draws manage's band and takes amber only from its `inside` flag,
 never from where the needle sits (`web/test/managePortfolioCards.test.tsx` shows a needle inside its
 band drawn as outside when the flag says so). Long and short delta carry no tone. An evaluation
-written before the reading has `portfolio: null` and draws no cards.
+written before the reading has `portfolio: null` and draws no cards. `ScenarioCards.tsx` adds a
+buying-power dial (the cap is manage's, set by VIX), the expiry ladder with the earnings exposure,
+the risk graph and the risk matrix. Every figure is manage's repricing; the matrix states which IV
+weighting manage used, and a card manage wrote no reading for is not drawn.
 
 **There is no Overview page** (removed 2026-10-16): `/` redirects to `/live`, whose `today` tab is
 the every-loop summary. The morning phase chip moved to the status bar and the alert-daemon chip to
