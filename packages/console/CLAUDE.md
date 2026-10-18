@@ -629,6 +629,15 @@ submissions, a tripped breaker, overdue settlement, failing broker contact, an u
 the worst case and the mark are each loop's own measure, shown per loop, never added. `/live/today`
 is this tab now, not an alias for flies. Pinned by `server/test/live-today.test.ts`.
 
+**The Live page's `manage` tab** reads packages/manage's evaluation (`readers/manage.ts`). Since
+2026-10-18 it also carries the account as one book (`pages/Live/PortfolioCards.tsx`). That includes
+dials for beta-weighted delta and theta against their bands, the break-even move, the stress line,
+per-name delta and theta, the guidance, and a sized XSP hedge. **Every band and every in/out flag is
+the reading's `bands`**: the dial draws manage's band and takes amber only from its `inside` flag,
+never from where the needle sits (`web/test/managePortfolioCards.test.tsx` shows a needle inside its
+band drawn as outside when the flag says so). Long and short delta carry no tone. An evaluation
+written before the reading has `portfolio: null` and draws no cards.
+
 **There is no Overview page** (removed 2026-10-16): `/` redirects to `/live`, whose `today` tab is
 the every-loop summary. The morning phase chip moved to the status bar and the alert-daemon chip to
 the Live header. Its two endpoints went with it; `readers/liveBooks.ts` stays, because `liveToday`

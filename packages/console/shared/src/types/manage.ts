@@ -118,6 +118,104 @@ export interface ManageTrade {
   } | null;
 }
 
+/**
+ * A band and the reading's place in it, as packages/manage stated them (`portfolio.bands`). The
+ * console draws these and never works out a band or "inside" itself; `inside` is null where there
+ * was no figure to place.
+ */
+export interface ManageBand {
+  low: number | null;
+  high: number | null;
+  value: number | null;
+  inside: boolean | null;
+}
+
+export interface ManageGuidance {
+  rule: string;
+  confidence: number | null;
+  reason: string;
+  /** What drives it, largest first: an underlying and its figure (`bwd`, `theta`, shares). */
+  drivers: Array<{ underlying: string; value: number | null }>;
+}
+
+export interface ManagePortfolioUnderlying {
+  underlying: string;
+  beta: number | null;
+  bwd: number | null;
+  theta: number | null;
+  vega30: number | null;
+  bwdShare: number | null;
+  thetaShare: number | null;
+  betaDoubt: string | null;
+}
+
+export interface ManageHedgeLeg {
+  label: string;
+  quantity: number;
+  bid: number | null;
+  ask: number | null;
+  mid: number | null;
+  delta: number | null;
+}
+
+export interface ManageHedgeSuggestion {
+  kind: string;
+  structure: string | null;
+  error: string | null;
+  units: number | null;
+  legs: ManageHedgeLeg[];
+  priceLabel: string | null;
+  natural: number | null;
+  cash: number | null;
+  maxLoss: number | null;
+  bwdChange: number | null;
+  thetaChange: number | null;
+  after: {
+    bwd: number | null;
+    inBand: boolean | null;
+    theta: number | null;
+    thetaPctNetLiq: number | null;
+    breakevenPct: number | null;
+    buyingPowerUsedPct: number | null;
+  } | null;
+}
+
+export interface ManageHedges {
+  target: number | null;
+  need: number | null;
+  root: string | null;
+  expiration: string | null;
+  dte: number | null;
+  error: string | null;
+  suggestions: ManageHedgeSuggestion[];
+}
+
+/** The account read as one book (packages/manage `portfolio.py`). Every figure is modelled. */
+export interface ManagePortfolio {
+  benchmark: string | null;
+  benchmarkSpot: number | null;
+  complete: boolean;
+  unmodelledLegs: string[];
+  noBeta: string[];
+  accountKind: { marginOrCash: string | null; typeName: string | null };
+  bwd: number | null;
+  bwdDollarsPer1pct: number | null;
+  theta: number | null;
+  thetaPctNetLiq: number | null;
+  vega30: number | null;
+  breakeven: { kind: "short_gamma" | "long_gamma"; points: number | null; pct: number | null } | null;
+  expectedMovePct: number | null;
+  realisedMove: number | null;
+  expectedMove: number | null;
+  buyingPowerUsed: number | null;
+  buyingPowerUsedPct: number | null;
+  stress: Array<{ shock: number; pnl: number | null; pctNetLiq: number | null; leftOut: string[] }>;
+  bands: { delta: ManageBand & { basis: string | null }; theta: ManageBand } | null;
+  guidance: ManageGuidance[];
+  underlyings: ManagePortfolioUnderlying[];
+  hedges: ManageHedges | null;
+}
+
 export interface ManageAccount {
   account: string | null;
   netLiq: number | null;
@@ -129,6 +227,8 @@ export interface ManageAccount {
   trades: ManageTrade[];
   /** Legs the ruleset leaves out entirely (SPX 0DTE by default), per underlying. */
   excluded: Array<{ underlying: string; legs: number; reason: string }>;
+  /** Null on an evaluation written before the portfolio reading existed (before 2026-10-18). */
+  portfolio: ManagePortfolio | null;
 }
 
 export interface ManagePayload {

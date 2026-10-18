@@ -121,6 +121,61 @@ describe("readManage", () => {
     expect(out.accounts[0]!.excluded).toEqual([]);
   });
 
+  it("passes the portfolio reading through, and an older evaluation has none", () => {
+    const doc = evalDoc("2026-10-19");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    acct["portfolio"] = {
+      benchmark: "SPY",
+      benchmark_spot: 763.28,
+      complete: false,
+      unmodelled_legs: [],
+      no_beta: ["ABC"],
+      account_type: { margin_or_cash: "Cash", type_name: "Traditional IRA" },
+      bwd: 5.85,
+      bwd_dollars_per_1pct: 44.63,
+      theta: 43.68,
+      theta_pct_net_liq: 0.00306,
+      vega_30: -8.87,
+      breakeven: { kind: "short_gamma", points: 15.22, pct: 0.01994 },
+      expected_move_pct: 0.01026,
+      expected_move: 7.83,
+      realised_move: null,
+      buying_power_used: 7622.5,
+      buying_power_used_pct: 0.534,
+      stress: [{ shock: -0.1, pnl: -1569.16, pct_net_liq: -0.1099, left_out: ["ABC"] }],
+      bands: {
+        delta: { low: -21.84, high: 32.76, basis: "theta", value: 5.85, inside: true },
+        theta: { low: 0.001, high: 0.003, value: 0.00306, inside: false },
+      },
+      guidance: [
+        { rule: "portfolio.theta", action: "REVIEW", confidence: 40, reason: "above the ceiling", drivers: [{ underlying: "GOOGL", theta: 9.06 }] },
+      ],
+      underlyings: [
+        { underlying: "FXI", beta: 0.274, bwd: -0.61, theta: -1.34, vega_30: 3.93, bwd_share: 0.011, theta_share: 0.029,
+          beta_doubt: "beta +0.27 but three-month correlation -0.75: opposite signs" },
+      ],
+      hedges: null,
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-16.json"), JSON.stringify(evalDoc("2026-10-16")));
+
+    const p = readManage(config, "2026-10-19").accounts[0]!.portfolio!;
+    expect(p.bwd).toBe(5.85);
+    expect(p.accountKind).toEqual({ marginOrCash: "Cash", typeName: "Traditional IRA" });
+    expect(p.bands?.delta).toEqual({ low: -21.84, high: 32.76, basis: "theta", value: 5.85, inside: true });
+    expect(p.bands?.theta.inside).toBe(false);
+    expect(p.breakeven).toEqual({ kind: "short_gamma", points: 15.22, pct: 0.01994 });
+    expect(p.guidance[0]!.drivers).toEqual([{ underlying: "GOOGL", value: 9.06 }]);
+    expect(p.underlyings[0]!.betaDoubt).toMatch(/opposite signs/);
+    expect(p.stress[0]!.leftOut).toEqual(["ABC"]);
+    expect(p.complete).toBe(false);
+    // Absent stays null, never zero.
+    expect(p.realisedMove).toBeNull();
+    expect(p.hedges).toBeNull();
+    // An evaluation from before the reading existed has no portfolio, not an empty one.
+    expect(readManage(config, "2026-10-16").accounts[0]!.portfolio).toBeNull();
+  });
+
   it("reads an older session when asked", () => {
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-13.json"), JSON.stringify(evalDoc("2026-10-13")));
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-14.json"), "{not json");
