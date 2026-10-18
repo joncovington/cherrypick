@@ -33,148 +33,41 @@ files: `replay=True` turns off the heartbeat, the log file and the advice decisi
 
 from __future__ import annotations
 
-import bisect
 from datetime import date, datetime
 from pathlib import Path
 
-from cherrypick.core import db as core_db
 from cherrypick.core import quotehistory
 from cherrypick.core.clock import ET
-from cherrypick.core.gex import compute_gex
 
 from cherrypick.flies import db as dbmod
 from cherrypick.flies import engine, paper_loop, provider
 
-#: A profile row older than this is no surface: one ~5-minute recorder cadence plus a minute.
-PROFILE_MAX_AGE_SECONDS = 360.0
+#: A profile row older than this is no surface (`core.quotehistory`'s rule, shared with MEIC's replay).
+PROFILE_MAX_AGE_SECONDS = quotehistory.PROFILE_MAX_AGE_SECONDS
 #: The first recorded session.
 FIRST_SESSION = "2026-10-13"
 RTH_OPEN_MIN = 9 * 60 + 30
+
+_leg_symbol = quotehistory.leg_symbol
 
 
 def _fail(symbol: str, reason: str, **extra) -> dict:
     return {"ok": False, "symbol": symbol, "reason": reason, **extra}
 
 
-def _leg_symbol(symbol: str, expiration: str, right: str, strike: float) -> str:
-    """A streamer-style symbol for a recorded leg, so the ledger's leg columns read as paper's do."""
-    yymmdd = date.fromisoformat(expiration).strftime("%y%m%d")
-    k = int(strike) if float(strike).is_integer() else strike
-    return f".{symbol}W{yymmdd}{right}{k}"
-
-
-class RecordedSession:
+class RecordedSession(quotehistory.RecordedDay):
     """One recorded session of `symbol`, ready to hand out the snapshot paper would have built at any
-    recorded instant. Loads the day once; `snapshot` is then pure over what was loaded."""
+    recorded instant. The day is loaded once by `core.quotehistory.RecordedDay` (with flies' own
+    trailing-range bounds); `snapshot` is then pure over what was loaded."""
 
     def __init__(self, symbol: str, day: str, *, history_db: Path | str | None = None):
-        self.symbol = symbol.strip().upper()
-        self.day = day
-        path = Path(history_db) if history_db is not None else quotehistory.default_history_db()
-        self.history_db = path
-        self.samples = quotehistory.session(self.symbol, day, history_db=path)
-        self.by_ts = {s["ts"]: s for s in self.samples}
-        self.profiles: list[tuple[float, list[dict]]] = []
-        self.trail: list[tuple[float, float]] = []
-        self.prev_close: float | None = None
-        self.trailing_range: float | None = None
-        if not path.exists():
-            return
-        conn = core_db.connect_ro(path)
-        try:
-            grouped: dict[float, list[dict]] = {}
-            for r in conn.execute(
-                "SELECT ts, strike, call_oi, put_oi, call_gamma, put_gamma FROM gex_profile_history "
-                "WHERE symbol = ? AND trade_date = ? ORDER BY ts",
-                (self.symbol, day),
-            ):
-                grouped.setdefault(float(r["ts"]), []).append(dict(r))
-            self.profiles = sorted(grouped.items())
-            self.trail = [
-                (float(r["ts"]), float(r["spot"]))
-                for r in conn.execute(
-                    "SELECT ts, spot FROM gex_spot_history WHERE symbol = ? AND trade_date = ? AND spot IS NOT NULL "
-                    "ORDER BY ts",
-                    (self.symbol, day),
-                )
-            ]
-            row = conn.execute(
-                "SELECT close FROM daily_closes WHERE symbol = ? AND trade_date < ? ORDER BY trade_date DESC LIMIT 1",
-                (self.symbol, day),
-            ).fetchone()
-            self.prev_close = float(row["close"]) if row else None
-            self.trailing_range = self._trailing_range(conn)
-        finally:
-            conn.close()
-        self._trail_ts = [t for t, _ in self.trail]
-        self._profile_ts = [t for t, _ in self.profiles]
-
-    def _trailing_range(self, conn) -> float | None:
-        """Mean high-low of the prior `provider.TRAILING_RANGE_SESSIONS` sessions' spot trails, from
-        at least `TRAILING_RANGE_MIN_SESSIONS` (provider's own bounds)."""
-        rows = conn.execute(
-            "SELECT trade_date, MAX(spot) - MIN(spot) AS width FROM gex_spot_history WHERE symbol = ? "
-            "AND trade_date < ? AND spot IS NOT NULL GROUP BY trade_date ORDER BY trade_date DESC LIMIT ?",
-            (self.symbol, self.day, provider.TRAILING_RANGE_SESSIONS),
-        ).fetchall()
-        widths = [float(r["width"]) for r in rows if r["width"] is not None]
-        if len(widths) < provider.TRAILING_RANGE_MIN_SESSIONS:
-            return None
-        return sum(widths) / len(widths)
-
-    def instants(self) -> list[datetime]:
-        """Every recorded RTH sample, as the instant a replayed tick stands for."""
-        return [datetime.fromtimestamp(s["ts"], ET) for s in self.samples]
-
-    def _bounds(self, ts: float) -> dict:
-        open_ts = datetime.fromisoformat(self.day).replace(hour=9, minute=30, tzinfo=ET).timestamp()
-        upto = bisect.bisect_right(self._trail_ts, ts)
-        today = [spot for t, spot in self.trail[:upto] if t >= open_ts]
-        if not today:
-            return {}
-        return {
-            "day_open": today[0],
-            "day_high": max(today),
-            "day_low": min(today),
-            "prev_day_close": self.prev_close,
-            "trailing_range_points": self.trailing_range,
-        }
-
-    def _gex(self, ts: float, spot: float, min_gex_strikes: int) -> tuple[dict, dict]:
-        i = bisect.bisect_right(self._profile_ts, ts) - 1
-        if i < 0 or ts - self.profiles[i][0] > PROFILE_MAX_AGE_SECONDS:
-            age = None if i < 0 else round(ts - self.profiles[i][0], 1)
-            return (
-                {"ok": False, "error": "recorded GEX profile missing or stale", "profile_stale": True},
-                {"strikes_with_data": 0, "min_strikes": min_gex_strikes, "profile_age_seconds": age,
-                 "input_rule": "recorded_profile", "refused": "profile_stale"},
-            )  # fmt: skip
-        profile_ts, rows = self.profiles[i]
-        entries, greeks, oi = [], {}, {}
-        for r in rows:
-            strike = float(r["strike"])
-            for right, side in (("C", "call"), ("P", "put")):
-                sym = f"{right}{strike}"
-                entries.append({"strike_price": strike, "streamer_symbol": sym, "option_type": right})
-                if r[f"{side}_gamma"] is not None:
-                    greeks[sym] = {"gamma": float(r[f"{side}_gamma"])}
-                if r[f"{side}_oi"] is not None:
-                    oi[sym] = float(r[f"{side}_oi"])
-        gex = compute_gex(entries, greeks, oi, spot)
-        stats = {
-            "strikes_with_data": gex.get("strikes_with_data", 0) if gex.get("ok") else 0,
-            "min_strikes": min_gex_strikes,
-            "profile_age_seconds": round(ts - profile_ts, 1),
-            "input_rule": "recorded_profile",
-        }
-        if gex.get("ok") and stats["strikes_with_data"] < min_gex_strikes:
-            gex = {
-                "ok": False,
-                "error": "insufficient GEX coverage (recorded profile)",
-                "insufficient_coverage": True,
-            }
-            stats["refused"] = "insufficient_coverage"
-        return gex, stats
+        super().__init__(
+            symbol,
+            day,
+            history_db=history_db,
+            trailing_sessions=provider.TRAILING_RANGE_SESSIONS,
+            trailing_min_sessions=provider.TRAILING_RANGE_MIN_SESSIONS,
+        )
 
     def snapshot(
         self,
@@ -218,7 +111,7 @@ class RecordedSession:
                 books[side][float(strike)] = quote
         if not books["puts"] and not books["calls"]:
             return _fail(symbol, "no_fresh_quotes", rejected=stale)
-        gex, gex_stats = self._gex(sample["ts"], spot, min_gex_strikes)
+        gex, gex_stats = self.gex(sample["ts"], spot, min_gex_strikes)
         return {
             "ok": True,
             "symbol": symbol,
@@ -231,7 +124,7 @@ class RecordedSession:
             "calls": books["calls"],
             "strike_window": {"low": round(spot - window, 4), "high": round(spot + window, 4)},
             "gex": gex,
-            "session": self._bounds(sample["ts"]),
+            "session": self.bounds(sample["ts"]),
             "events": provider._day_events(date.fromisoformat(self.day)),
             "quote_stats": {
                 "fresh": len(books["puts"]) + len(books["calls"]),
