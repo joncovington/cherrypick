@@ -53,7 +53,7 @@ export function ComparePage() {
 
   const scopeControl = (
     <select
-      className={`text-input ${scope === "era" ? "" : "scope-select-off-default"}`}
+      className={`chip review-session-select ${scope === "era" ? "" : "scope-select-off-default"}`}
       value={scope}
       onChange={(e) => set({ scope: e.target.value === "all" ? "all" : null })}
       aria-label="scope"

@@ -78,7 +78,7 @@ function useEarningsAnalytics(mode: TradingMode, era: string | null) {
 function EraScope({ era, onChange }: { era: string | null; onChange: (v: string | null) => void }) {
   return (
     <select
-      className={`text-input ${era === null ? "" : "scope-select-off-default"}`}
+      className={`chip review-session-select ${era === null ? "" : "scope-select-off-default"}`}
       value={era ?? ""}
       onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
       aria-label="era"

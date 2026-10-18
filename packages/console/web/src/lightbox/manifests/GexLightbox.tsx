@@ -371,7 +371,7 @@ export function GexLightbox({ slide }: { slide: string }) {
       headerControls={
         <>
           {symbols.data && (
-            <select className="text-input" value={symbol} onChange={(e) => setSymbol(e.target.value)} aria-label="symbol">
+            <select className="chip review-session-select" value={symbol} onChange={(e) => setSymbol(e.target.value)} aria-label="symbol">
               {symbols.data.symbols.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}

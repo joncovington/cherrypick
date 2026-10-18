@@ -422,7 +422,7 @@ export function CalendarView({
     <>
       <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", marginBottom: "0.6rem", flexWrap: "wrap" }}>
         <select
-          className="text-input"
+          className="chip review-session-select"
           value={module ?? ""}
           onChange={(e) => {
             setModule(e.target.value === "" ? null : e.target.value);
@@ -437,7 +437,7 @@ export function CalendarView({
           ))}
         </select>
         {module !== null && (
-          <select className="text-input" value={arm ?? ""} onChange={(e) => setArm(e.target.value === "" ? null : e.target.value)}>
+          <select className="chip review-session-select" value={arm ?? ""} onChange={(e) => setArm(e.target.value === "" ? null : e.target.value)}>
             <option value="">every arm</option>
             {arms.map((a) => (
               <option key={a} value={a}>
