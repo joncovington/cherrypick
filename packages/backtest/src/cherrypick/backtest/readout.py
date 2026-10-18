@@ -57,10 +57,10 @@ def _stores(settings: dict) -> list[dict]:
 
 def _validation(settings: dict) -> list[dict]:
     vdir = paths.results_dir() / "validation"
-    latest: dict[str, dict] = {}
+    latest: dict[tuple[str, str], dict] = {}
     for p in sorted(vdir.glob("*.json"), key=lambda p: p.stat().st_mtime) if vdir.exists() else []:
         doc = json.loads(p.read_text(encoding="utf-8"))
-        latest[doc.get("vendor_db", p.name)] = {**doc, "file": p.name}
+        latest[(doc.get("module", "flies"), doc.get("vendor_db", p.name))] = {**doc, "file": p.name}
     out = []
     for doc in latest.values():
         dec = doc.get("decisions") or {}
@@ -70,6 +70,7 @@ def _validation(settings: dict) -> list[dict]:
             cadence = int(stem.rsplit("-", 1)[1].rstrip("s") or 0) or None
         out.append(
             {
+                "module": doc.get("module", "flies"),
                 "cadence": cadence,
                 "file": doc["file"],
                 "dates": doc.get("dates") or [],
@@ -89,7 +90,7 @@ def _validation(settings: dict) -> list[dict]:
                 "sessions": doc.get("sessions") or {},
             }
         )
-    return sorted(out, key=lambda v: v["cadence"] or 0)
+    return sorted(out, key=lambda v: (v["module"], v["cadence"] or 0))
 
 
 def _runs() -> tuple[list[dict], dict]:

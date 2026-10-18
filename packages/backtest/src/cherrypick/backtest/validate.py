@@ -209,6 +209,26 @@ def _flies_cli(args: list[str]) -> dict:
         return {"ok": False, "error": (proc.stderr or proc.stdout)[-800:], "returncode": proc.returncode}
 
 
+def _meic_cli(args: list[str]) -> dict:
+    """`python -m cherrypick.meic.replay <args>` with this interpreter; its JSON reply, or the failure."""
+    proc = subprocess.run(
+        [sys.executable, "-m", "cherrypick.meic.replay", *args], capture_output=True, text=True, timeout=36000
+    )
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {"ok": False, "error": (proc.stderr or proc.stdout)[-800:], "returncode": proc.returncode}
+
+
+#: Per module: the check's CLI, the verb that runs it, and what its summary reports beside the pass
+#: test (flies' completion outcome; MEIC's share of paper's condors the full-day replay paired), which
+#: `cadence_cost` carries for each source. Each module validates its own replay.
+CHECKS = {
+    "flies": (_flies_cli, ("replay-check",), ("completion_outcome_agreement",)),
+    "meic": (_meic_cli, ("check",), ("path_pairs",)),
+}
+
+
 def _sample_instants(db: Path, symbol: str, day: str) -> list[float]:
     conn = core_db.connect_ro(db)
     try:
@@ -281,8 +301,8 @@ def thin_to_vendor_instants(
     return out
 
 
-def _check(runner, db: Path, dates: list[str]) -> dict:
-    reply = runner(["replay-check", "--dates", ",".join(dates), "--history-db", str(db)])
+def _check(runner, db: Path, dates: list[str], command: tuple = ("replay-check",)) -> dict:
+    reply = runner([*command, "--dates", ",".join(dates), "--history-db", str(db)])
     return reply.get("summary", reply)
 
 
@@ -291,15 +311,26 @@ def _sessions(summary: dict) -> int:
 
 
 def decisions_layer(
-    recorder_db: Path, vendor_db: Path, dates: list[str], runner=_flies_cli, *, thinned_db: Path | None = None
+    recorder_db: Path,
+    vendor_db: Path,
+    dates: list[str],
+    runner=_flies_cli,
+    *,
+    thinned_db: Path | None = None,
+    command: tuple = ("replay-check",),
+    outcome_keys: tuple = ("completion_outcome_agreement",),
 ) -> dict:
-    """flies' replay-check on the recording, on the vendor's store and, when the vendor's store is
-    coarser, on the recording thinned to the vendor's instants (`thinned_db`). The bar compares the
-    vendor with the recording at the vendor's cadence (module docstring, amended 2026-10-17)."""
-    out = {"recorder": _check(runner, recorder_db, dates), "vendor": _check(runner, vendor_db, dates)}
+    """A module's replay check (flies' `replay-check` by default) on the recording, on the vendor's
+    store and, when the vendor's store is coarser, on the recording thinned to the vendor's instants
+    (`thinned_db`). The bar compares the vendor with the recording at the vendor's cadence (module
+    docstring, amended 2026-10-17)."""
+    out = {
+        "recorder": _check(runner, recorder_db, dates, command),
+        "vendor": _check(runner, vendor_db, dates, command),
+    }
     basis = "recorder"
     if thinned_db is not None:
-        out["recorder_at_vendor_cadence"] = _check(runner, thinned_db, dates)
+        out["recorder_at_vendor_cadence"] = _check(runner, thinned_db, dates, command)
         basis = "recorder_at_vendor_cadence"
         full, thin = out["recorder"], out["recorder_at_vendor_cadence"]
         out["cadence_cost"] = {
@@ -308,10 +339,13 @@ def decisions_layer(
                 for k, v in (full.get("measures") or {}).items()
                 if k != "sessions"
             },
-            "completion_outcome_agreement": {
-                "full": full.get("completion_outcome_agreement"),
-                "at_vendor_cadence": thin.get("completion_outcome_agreement"),
-                "vendor": out["vendor"].get("completion_outcome_agreement"),
+            **{
+                key: {
+                    "full": full.get(key),
+                    "at_vendor_cadence": thin.get(key),
+                    "vendor": out["vendor"].get(key),
+                }
+                for key in outcome_keys
             },
         }
     ref, ven = out[basis], out["vendor"]
@@ -333,11 +367,22 @@ def run(
     *,
     recorder_db: Path | None = None,
     cadence: float | None = None,
-    runner=_flies_cli,
+    runner=None,
+    module: str = "flies",
+    arms: list[str] | None = None,
 ) -> dict:
+    """Validate `module`'s replay on the vendor store against the recording (`arms`: MEIC's arms to
+    check, default its check's own). The report names the module, so each unlocks only its own."""
+    if module not in CHECKS:
+        raise ValueError(f"module must be one of {sorted(CHECKS)}")
+    default_runner, command, outcome_keys = CHECKS[module]
+    runner = runner or default_runner
+    if module == "meic" and arms:
+        command = (*command, "--arms", ",".join(arms))
     recorder_db = Path(recorder_db) if recorder_db else quotehistory.default_history_db()
     vendor_db = store.db_path(settings, symbol, cadence)
     report = {
+        "module": module,
         "symbol": symbol.upper(),
         "dates": dates,
         "recorder_db": str(recorder_db),
@@ -357,13 +402,23 @@ def run(
         with tempfile.TemporaryDirectory() as tmp:
             thinned = thin_to_vendor_instants(recorder_db, vendor_db, symbol, dates, Path(tmp) / "thinned.db")
             report["decisions"] = decisions_layer(
-                recorder_db, vendor_db, dates, runner=runner, thinned_db=thinned
+                recorder_db,
+                vendor_db,
+                dates,
+                runner=runner,
+                thinned_db=thinned,
+                command=command,
+                outcome_keys=outcome_keys,
             )
     else:
-        report["decisions"] = decisions_layer(recorder_db, vendor_db, dates, runner=runner)
+        report["decisions"] = decisions_layer(
+            recorder_db, vendor_db, dates, runner=runner, command=command, outcome_keys=outcome_keys
+        )
     out_dir = paths.results_dir() / "validation"
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{symbol.upper()}-{dates[0]}_{dates[-1]}.json"
+    # flies' reports keep the name they have always had; another module's carry its name first.
+    prefix = "" if module == "flies" else f"{module}-"
+    path = out_dir / f"{prefix}{symbol.upper()}-{dates[0]}_{dates[-1]}.json"
     path.write_text(json.dumps(report, indent=1), encoding="utf-8")
     report["written"] = str(path)
     return report

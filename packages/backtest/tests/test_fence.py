@@ -43,6 +43,23 @@ NEVER = {
 }
 
 
+#: The modules a backtest replays or reads, always by subprocess: importing one would run its code in
+#: this process (and MEIC's pulls the broker in transitively, which the NEVER scan cannot see).
+STRATEGY = {
+    "cherrypick.flies",
+    "cherrypick.meic",
+    "cherrypick.bwb",
+    "cherrypick.earnings",
+    "cherrypick.calendars",
+    "cherrypick.pmcc",
+    "cherrypick.curve",
+    "cherrypick.contango",
+    "cherrypick.gex",
+    "cherrypick.advisor",
+    "cherrypick.desk",
+}
+
+
 def _imports(path: Path):
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     for node in ast.walk(tree):
@@ -79,6 +96,22 @@ def test_only_the_credential_module_touches_the_keyring():
 def test_no_ai_and_no_broker_anywhere():
     offenders = _offenders(NEVER, None)
     assert not offenders, f"this package never asks a model or reaches an account: {offenders}"
+
+
+def test_no_strategy_module_is_imported():
+    offenders = _offenders(STRATEGY, None)
+    assert not offenders, f"a module is replayed by subprocess, never imported: {offenders}"
+
+
+def test_the_strategy_fence_fires_on_a_planted_import(tmp_path):
+    (tmp_path / "runner.py").write_text(
+        "from cherrypick.meic import paper\nimport cherrypick.flies.replay\nimport cherrypick.core.ledgers\n",
+        encoding="utf-8",
+    )
+    assert _offenders(STRATEGY, None, tmp_path) == [
+        "runner.py: cherrypick.meic",
+        "runner.py: cherrypick.flies.replay",
+    ]
 
 
 def test_the_fence_fires_on_a_planted_import(tmp_path):
