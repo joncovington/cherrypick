@@ -4240,6 +4240,121 @@ select.text-input {
   gap: 0.3rem;
 }
 
+/* An expanded trade on Live -> manage (ManagePage's TradeDetail): the verdict as a lead, then a row
+   of cards that wraps to the width it has, then the legs. */
+.md-detail {
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.75rem 0.25rem 0.5rem;
+  white-space: normal;
+}
+.md-lead {
+  margin: 0;
+  max-width: 72rem;
+  padding: 0.6rem 0.85rem;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-sunken);
+  border-radius: 0 6px 6px 0;
+  font-family: inherit;
+  line-height: 1.5;
+}
+.md-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.6rem;
+  align-items: start;
+}
+.md-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem 0.7rem;
+  min-width: 0;
+}
+.md-card > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 0.5rem;
+  margin-bottom: 0.45rem;
+}
+.md-card h4 {
+  margin: 0;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.md-kv {
+  margin: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+.md-kv > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 12.5px;
+}
+.md-kv dt {
+  color: var(--text-muted);
+}
+.md-kv dd {
+  margin: 0;
+  text-align: right;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+.md-orders,
+.md-rules {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.md-order-head,
+.md-rule-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 12.5px;
+  font-family: var(--num-face);
+}
+.md-rule-head {
+  justify-content: flex-start;
+}
+.md-price {
+  font-family: var(--num-face);
+  font-weight: 600;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.md-sub {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.md-subhead {
+  margin: 0.55rem 0 0.3rem;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.md-note {
+  margin: 0.45rem 0 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
 /* win-rate rings */
 .ts-rings {
   position: relative;

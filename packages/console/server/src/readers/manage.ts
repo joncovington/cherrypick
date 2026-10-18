@@ -227,6 +227,15 @@ function trade(v: unknown): ManageTrade {
             upsideFromNow: num(pf["upside_from_now"]),
             unboundedLow: pf["unbounded_low"] === true,
           },
+    earningsTrade: str(rec(t["earnings_trade"])["report"])
+      ? {
+          report: str(rec(t["earnings_trade"])["report"]) as string,
+          timeOfDay: str(rec(t["earnings_trade"])["time_of_day"]),
+          leadDays: num(rec(t["earnings_trade"])["lead_days"]),
+          passed: rec(t["earnings_trade"])["passed"] === true,
+        }
+      : null,
+    heldForEarnings: arr(t["held_for_earnings"]).map(fired),
   };
 }
 

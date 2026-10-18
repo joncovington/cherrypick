@@ -116,6 +116,10 @@ export interface ManageTrade {
     upsideFromNow: number | null;
     unboundedLow: boolean;
   } | null;
+  /** An earnings trade (packages/manage `earnings_trade`): put on to hold through a report. */
+  earningsTrade: { report: string; timeOfDay: string | null; leadDays: number | null; passed: boolean } | null;
+  /** Before the call, the rules that would have acted and are waiting for it. */
+  heldForEarnings: ManageFired[];
 }
 
 /**

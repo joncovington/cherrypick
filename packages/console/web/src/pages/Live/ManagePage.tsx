@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ManageAccount, ManageLevel, ManagePayload, ManageTrade } from "@console/shared";
 import { Card, DataCard, sortRows, useSort, type SortHeader } from "../../components/DataTable";
@@ -70,96 +70,203 @@ function levelText(l: ManageLevel | null): string {
   return `${net(l.netPrice, l.netSide)} (${fmtMoney(l.closeValue)})${l.basis === "max_loss" ? " · half max loss" : ""}`;
 }
 
-function TradeDetail({ t }: { t: ManageTrade }) {
+/** One card in an expanded trade's row: a small caps title, an optional chip, and its body. */
+function DetailCard({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <div className="manage-detail" style={{ display: "grid", gap: "0.75rem", padding: "0.5rem 0" }}>
-      {t.explanation && <p style={{ margin: 0, whiteSpace: "normal", maxWidth: "70rem" }}>{t.explanation}</p>}
-      {t.chain && t.chain.orders.length > 0 ? (
-        <div>
-          <strong>order chain</strong>
-          <ul style={{ margin: "0.25rem 0 0 1rem" }}>
-            {t.chain.orders.map((o, i) => (
-              <li key={i}>
-                {o.date} · {i === 0 ? "opened for" : o.role} {net(o.netPrice, o.netSide)} ({fmtMoney(o.net)}
-                {o.netSide === "cr" ? " received" : " paid"})
-                <span className="muted"> — {o.legs.join(", ")}</span>
-              </li>
-            ))}
-          </ul>
-          <div style={{ marginTop: "0.25rem" }}>
-            net {t.kind === "credit" ? "taken in" : "paid in"} {fmtMoney(t.chain.cash === null ? null : Math.abs(t.chain.cash))}
-            {t.chain.rolls > 0 ? ` across the opening and ${t.chain.rolls} roll${t.chain.rolls === 1 ? "" : "s"}` : ""} ·
-            fees {fmtMoney(t.fees)} · P&L gross {fmtMoney(t.pnlGross)}, net of fees {fmtMoney(t.pnlNet)}
-          </div>
+    <section className="md-card">
+      <header>
+        <h4>{title}</h4>
+        {aside}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+/** Label / value rows. A value is a node so a figure can carry its tone. */
+function Kv({ rows }: { rows: Array<[string, ReactNode]> }) {
+  return (
+    <dl className="md-kv">
+      {rows.map(([k, v]) => (
+        <div key={k}>
+          <dt>{k}</dt>
+          <dd>{v}</dd>
         </div>
-      ) : (
-        t.opening && (
-          <div>
-            <strong>opened for</strong> · net {net(t.opening.netPrice, t.opening.netSide)} ({fmtMoney(t.opening.net)}
-            {t.opening.netSide === "cr" ? " received" : " paid"})
-            {t.basis === "open_legs" && (
-              <span className="muted"> · from the open legs' average prices; no order chain was reconciled, so earlier rolls are not counted</span>
+      ))}
+    </dl>
+  );
+}
+
+function Money({ v }: { v: number | null }) {
+  return <span className={tone(v)}>{fmtMoney(v)}</span>;
+}
+
+/**
+ * The expanded trade: the plain-English verdict as a lead, then the facts behind it as a row of
+ * cards (opened, exit levels, the closing order, what the model says it can still do, the rules, and
+ * an earnings trade's report where it is one), then the legs. Every figure is packages/manage's;
+ * this only lays them out.
+ */
+function TradeDetail({ t }: { t: ManageTrade }) {
+  const et = t.earningsTrade;
+  const credit = t.kind === "credit";
+  return (
+    <div className="md-detail">
+      {t.explanation && <p className="md-lead">{t.explanation}</p>}
+      <div className="md-cards">
+        <DetailCard
+          title="opened"
+          aside={t.chain && t.chain.rolls > 0 ? <span className="chip">{t.chain.rolls} roll{t.chain.rolls === 1 ? "" : "s"}</span> : null}
+        >
+          {t.chain && t.chain.orders.length > 0 ? (
+            <>
+              <ul className="md-orders">
+                {t.chain.orders.map((o, i) => (
+                  <li key={i}>
+                    <span className="md-order-head">
+                      {o.date} · {i === 0 ? "open" : o.role}
+                      <span className="md-price">{net(o.netPrice, o.netSide)}</span>
+                    </span>
+                    <span className="md-sub">{o.legs.join(" · ")}</span>
+                  </li>
+                ))}
+              </ul>
+              <Kv
+                rows={[
+                  [credit ? "net taken in" : "net paid in", fmtMoney(t.chain.cash === null ? null : Math.abs(t.chain.cash))],
+                  ["fees", fmtMoney(t.fees)],
+                  ["P&L gross", <Money key="g" v={t.pnlGross} />],
+                  ["P&L net of fees", <Money key="n" v={t.pnlNet} />],
+                ]}
+              />
+            </>
+          ) : t.opening ? (
+            <>
+              <Kv
+                rows={[
+                  ["opened for", `${net(t.opening.netPrice, t.opening.netSide)} (${fmtMoney(t.opening.net)})`],
+                  ["P&L gross", <Money key="g" v={t.pnlGross} />],
+                ]}
+              />
+              {t.basis === "open_legs" && (
+                <p className="md-note">from the open legs' average prices: no order chain was reconciled, so earlier rolls are not counted</p>
+              )}
+            </>
+          ) : (
+            <p className="md-note">no opening record</p>
+          )}
+        </DetailCard>
+
+        {et && (
+          <DetailCard
+            title="earnings trade"
+            aside={<span className={`chip ${et.passed ? "pf-out" : ""}`}>{et.passed ? "report out: close" : "holding for the call"}</span>}
+          >
+            <Kv
+              rows={[
+                ["report", `${et.report}${et.timeOfDay ? ` ${et.timeOfDay}` : ""}`],
+                ["put on", et.leadDays === null ? "—" : `${et.leadDays} day${et.leadDays === 1 ? "" : "s"} before`],
+              ]}
+            />
+            {t.heldForEarnings.length > 0 && (
+              <>
+                <p className="md-subhead">waiting for the call</p>
+                <ul className="md-rules">
+                  {t.heldForEarnings.map((f, i) => (
+                    <li key={i}>
+                      <span className="chip">{ACTION_LABEL[f.action] ?? f.action}</span> <code>{f.rule}</code>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
-          </div>
-        )
-      )}
-      {t.roll && (
-        <div>
-          <strong>proposed roll</strong> · about {t.roll.credit === null ? "—" : `${t.roll.credit.toFixed(2)} cr`} (
-          {fmtMoney(t.roll.net)}) <span className="muted">modelled from today's IV; send only for a net credit</span>
-          <ul style={{ margin: "0.25rem 0 0 1rem" }}>
-            {t.roll.legs.map((l, i) => (
-              <li key={i}>{l}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {t.order && (
-        <div>
-          <strong>closing order</strong> · net {net(t.order.netPrice, t.order.netSide)} ({fmtMoney(t.order.net)}) at mid
-          <ul style={{ margin: "0.25rem 0 0 1rem" }}>
-            {t.order.legs.map((l, i) => (
-              <li key={i}>
-                {l.side} {l.quantity} × {l.leg} @ {px(l.mid)}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <div>
-        <strong>exit levels</strong> · take profit {levelText(t.takeProfit)} · stop {levelText(t.stop)} · time exit{" "}
-        {t.timeExit ?? "—"}
-        {t.earnings && (
-          <>
-            {" "}
-            · earnings {t.earnings.date}
-            {t.earnings.timeOfDay ? ` ${t.earnings.timeOfDay}` : ""} ({t.earnings.days}d)
-          </>
+          </DetailCard>
         )}
-        {t.exDividend && <> · ex-dividend {t.exDividend.date}</>}
-      </div>
-      {t.profile && (
-        <div className="muted">
-          modelled at {t.profile.horizon ?? "—"} (Black-Scholes at each leg's own IV, not a tradable price): max loss from
-          open {t.profile.unboundedLow ? "unbounded" : fmtMoney(t.profile.maxLossFromOpen)} · left to win{" "}
-          {fmtMoney(t.profile.upsideFromNow)} · left to lose {fmtMoney(t.profile.downsideFromNow)}
-        </div>
-      )}
-      <div>
-        <strong>rules fired</strong>
-        {t.fired.length === 0 ? (
-          <span className="muted"> · none</span>
-        ) : (
-          <ul style={{ margin: "0.25rem 0 0 1rem" }}>
-            {t.fired.map((f, i) => (
-              <li key={i}>
-                <code>{f.rule}</code> → {ACTION_LABEL[f.action] ?? f.action}
-                {f.confidence !== null ? ` (${f.confidence})` : ""}: {f.reason}
-                {f.legs && f.legs.length > 0 ? <span className="muted"> [{f.legs.join(", ")}]</span> : null}
-              </li>
-            ))}
-          </ul>
+
+        <DetailCard title="exit levels">
+          <Kv
+            rows={[
+              ["take profit", levelText(t.takeProfit)],
+              ["stop", levelText(t.stop)],
+              ["time exit", t.timeExit ?? "—"],
+              ...(t.earnings
+                ? ([["earnings", `${t.earnings.date}${t.earnings.timeOfDay ? ` ${t.earnings.timeOfDay}` : ""} (${t.earnings.days}d)`]] as Array<
+                    [string, ReactNode]
+                  >)
+                : []),
+              ...(t.exDividend ? ([["ex-dividend", `${t.exDividend.date} (${t.exDividend.days}d)`]] as Array<[string, ReactNode]>) : []),
+            ]}
+          />
+        </DetailCard>
+
+        {t.order && (
+          <DetailCard title="closing order" aside={<span className="md-price">{net(t.order.netPrice, t.order.netSide)}</span>}>
+            <ul className="md-orders">
+              {t.order.legs.map((l, i) => (
+                <li key={i}>
+                  <span className="md-order-head">
+                    {l.side} {l.quantity} × {l.leg}
+                    <span className="md-price">{px(l.mid)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <Kv rows={[["at mid", <Money key="c" v={t.order.net} />]]} />
+            <p className="md-note">a mid is not a fill</p>
+          </DetailCard>
         )}
+
+        {t.roll && (
+          <DetailCard title="proposed roll" aside={<span className="md-price">{t.roll.credit === null ? "—" : `${t.roll.credit.toFixed(2)} cr`}</span>}>
+            <ul className="md-orders">
+              {t.roll.legs.map((l, i) => (
+                <li key={i}>
+                  <span className="md-order-head">{l}</span>
+                </li>
+              ))}
+            </ul>
+            <Kv rows={[["modelled", <Money key="r" v={t.roll.net} />]]} />
+            <p className="md-note">modelled from today's IV; send only for a net credit</p>
+          </DetailCard>
+        )}
+
+        {t.profile && (
+          <DetailCard title="what it can still do">
+            <Kv
+              rows={[
+                ["max loss from open", t.profile.unboundedLow ? "unbounded" : <Money key="m" v={t.profile.maxLossFromOpen} />],
+                ["left to win", <Money key="w" v={t.profile.upsideFromNow} />],
+                ["left to lose", <Money key="l" v={t.profile.downsideFromNow} />],
+              ]}
+            />
+            <p className="md-note">modelled at {t.profile.horizon ?? "—"}: Black-Scholes at each leg's own IV, not a tradable price</p>
+          </DetailCard>
+        )}
+
+        <DetailCard title="rules" aside={<span className="muted">{t.fired.length} fired</span>}>
+          {t.fired.length === 0 ? (
+            <p className="md-note">
+              {t.heldForEarnings.length > 0
+                ? `none acting today: ${t.heldForEarnings.length} waiting for the earnings call`
+                : "none fired"}
+            </p>
+          ) : (
+            <ul className="md-rules">
+              {t.fired.map((f, i) => (
+                <li key={i}>
+                  <span className="md-rule-head">
+                    <span className="chip">{ACTION_LABEL[f.action] ?? f.action}</span> <code>{f.rule}</code>
+                    {f.confidence !== null ? <span className="muted"> {f.confidence}</span> : null}
+                  </span>
+                  <span className="md-sub">
+                    {f.reason}
+                    {f.legs && f.legs.length > 0 ? ` [${f.legs.join(", ")}]` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DetailCard>
       </div>
       <div className="table-scroll">
       <table className="data-table num-from-2">
