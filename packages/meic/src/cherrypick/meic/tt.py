@@ -88,6 +88,17 @@ def _load_config() -> dict:
 
 
 _STREAMER_PORT = 7699
+# The sidecar writes this on start and removes it on a clean stop (streamer.py, `--sidecar`).
+_SIDECAR_PID = _paths.data_path("sidecar.pid")
+
+
+def _sidecar_running() -> bool:
+    """Whether the optional sidecar has been started: its pid file is present. It is OFF by default
+    (the orchestrator's `meic-sidecar` job ships disabled), and until 2026-10-18 every command tried
+    127.0.0.1:7699 anyway and stamped a `sidecar_http_fallback` on its answer -- a refused connection
+    that read like a fault. Now the port is tried only when the sidecar was started; a pid file left
+    by a crash costs one refused attempt, as every call used to."""
+    return _SIDECAR_PID.exists()
 
 
 _last_streamer_http_error: str | None = None
@@ -1830,10 +1841,11 @@ def main():
     # skip the shortcut entirely for commands the daemon was never meant to
     # own (VIX1D isn't a traded/managed symbol in its subscription window).
     # get_official_close likewise: a settlement read is never answered by a cache.
+    # And only when the sidecar was started at all (`_sidecar_running`): it is off by default.
     args_dict = {k: v for k, v in vars(args).items() if k != "command" and v is not None}
     http_result = (
         None
-        if args.command in ("get_vix1d", "get_official_close")
+        if args.command in ("get_vix1d", "get_official_close") or not _sidecar_running()
         else _try_streamer_http(args.command, args_dict)
     )
     if http_result is not None:
