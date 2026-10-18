@@ -264,6 +264,7 @@ def run(cfg: dict[str, Any] | None = None, *, account: str | None = None) -> dic
                 "designated": entry.get("designated"),
                 "error": entry.get("error"),
                 "balances": entry.get("balances") or {},
+                "account_type": entry.get("account_type") or {"margin_or_cash": None, "type_name": None},
                 "underlyings": _group_by_underlying(legs),
                 "leg_count": len(legs),
                 "unpriced_count": len(legs) - len(priced),

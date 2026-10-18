@@ -911,7 +911,7 @@ def _run_review(cfg, *, final: bool) -> None:
 def _run_manage(cfg) -> None:
     """Invoked by the daily manage-eval job (see cfgmod.manage_settings), or by hand.
 
-    Takes the broker snapshot here (orchestrator/managesnap.py: two read-only broker calls) and hands
+    Takes the broker snapshot here (orchestrator/managesnap.py: three read-only broker reads) and hands
     it to packages/manage, which judges it against the configured ruleset and writes the evaluation
     into its own home for the console. The evaluation is advice: nothing on this path places, closes
     or sizes an order, so a failed pass costs a missing page and is a WARNING.
