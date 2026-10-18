@@ -161,6 +161,32 @@ describe("readManage", () => {
         expiries: [{ expiration: "2026-11-20", trades: ["META"], downside: -6837, downside_unknown: 1, theta: 77.27 }],
         earnings: { trades: ["META"], theta: 35, theta_share: 0.724, downside: -4292.5 },
       },
+      candidates: {
+        source_session: "2026-10-19",
+        taken_at: "2026-10-19T18:45:00+00:00",
+        account_basis: "cash",
+        names: 458,
+        excluded: { "earnings inside the trade": 120 },
+        fits: [
+          {
+            underlying: "AAL",
+            kind: "short_put",
+            alternative_to: null,
+            expiry: "2026-11-20",
+            legs: [{ strike: 11, right: "P", quantity: -1, bid: 0.31, ask: 0.35, delta: -0.4 }],
+            units: 1,
+            binding: "per-trade risk",
+            per_unit: { credit: 0.33, natural: 0.31, cash: 33, max_loss: 1067, buying_power: 1067, stress_loss: 251.07, theta: 0.87, bwd: null },
+            theta_per_bp: 0.00082,
+            earnings_date: "2026-10-22",
+            earnings_unknown: false,
+          },
+        ],
+        fits_total: 1,
+        too_big: [],
+        too_big_total: 0,
+        error: null,
+      },
       guidance: [
         { rule: "portfolio.theta", action: "REVIEW", confidence: 40, reason: "above the ceiling", drivers: [{ underlying: "GOOGL", theta: 9.06 }] },
       ],
@@ -193,6 +219,12 @@ describe("readManage", () => {
     expect(p.scenarios?.graph.curves[0]).toEqual({ horizonDays: 4, pnl: [-2533, 537, -4] });
     expect(p.ladder?.expiries[0]).toEqual({ expiration: "2026-11-20", trades: ["META"], downside: -6837, downsideUnknown: 1, theta: 77.27 });
     expect(p.ladder?.earnings.thetaShare).toBe(0.724);
+    const c = p.candidates!;
+    expect(c.accountBasis).toBe("cash");
+    expect(c.excluded).toEqual({ "earnings inside the trade": 120 });
+    expect(c.fits[0]).toMatchObject({ underlying: "AAL", kind: "short_put", units: 1, binding: "per-trade risk" });
+    expect(c.fits[0]!.perUnit).toMatchObject({ credit: 0.33, buyingPower: 1067, stressLoss: 251.07, bwd: null });
+    expect(c.fits[0]!.alternative).toBeNull();
     // An evaluation from before the reading existed has no portfolio, not an empty one.
     expect(readManage(config, "2026-10-16").accounts[0]!.portfolio).toBeNull();
   });

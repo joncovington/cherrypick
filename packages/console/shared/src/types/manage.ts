@@ -225,6 +225,48 @@ export interface ManagePortfolio {
   vix: number | null;
   scenarios: ManageScenarios | null;
   ladder: ManageLadder | null;
+  candidates: ManageCandidates | null;
+}
+
+/** One sized income trade (packages/manage `candidates.py`). Every figure is the package's. */
+export interface ManageCandidate {
+  underlying: string;
+  kind: string;
+  /** Set on a narrowed version: the structure it was narrowed from. */
+  alternativeTo: string | null;
+  expiry: string | null;
+  dte: number | null;
+  legs: Array<{ strike: number; right: string; quantity: number; bid: number | null; ask: number | null; delta: number | null }>;
+  units: number;
+  /** The cap the next unit breaks; null when the unit count itself is the limit. */
+  binding: string | null;
+  perUnit: {
+    credit: number | null;
+    natural: number | null;
+    cash: number | null;
+    maxLoss: number | null;
+    buyingPower: number | null;
+    stressLoss: number | null;
+    theta: number | null;
+    bwd: number | null;
+  };
+  thetaPerBp: number | null;
+  earningsDate: string | null;
+  earningsUnknown: boolean;
+  alternative: ManageCandidate | null;
+}
+
+export interface ManageCandidates {
+  sourceSession: string | null;
+  takenAt: string | null;
+  accountBasis: string | null;
+  names: number | null;
+  excluded: Record<string, number>;
+  fits: ManageCandidate[];
+  fitsTotal: number;
+  tooBig: ManageCandidate[];
+  tooBigTotal: number;
+  error: string | null;
 }
 
 /** The book repriced across benchmark moves (packages/manage `portfolio.scenarios`). */

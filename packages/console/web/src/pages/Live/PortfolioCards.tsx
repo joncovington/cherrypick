@@ -6,6 +6,7 @@ import { DivergingBars } from "../../components/grid/DivergingBars";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
+import { IncomeCard } from "./IncomeCard";
 
 /**
  * The account read as one book (packages/manage `portfolio.py`), as cards: a dial for beta-weighted
@@ -366,6 +367,7 @@ export function PortfolioCards({ p, scenarios }: { p: ManagePortfolio | null; sc
       {scenarios}
       <GuidanceCard p={p} />
       <HedgeCard p={p} />
+      <IncomeCard c={p.candidates} />
     </>
   );
 }

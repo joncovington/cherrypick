@@ -639,7 +639,10 @@ band drawn as outside when the flag says so). Long and short delta carry no tone
 written before the reading has `portfolio: null` and draws no cards. `ScenarioCards.tsx` adds a
 buying-power dial (the cap is manage's, set by VIX), the expiry ladder with the earnings exposure,
 the risk graph and the risk matrix. Every figure is manage's repricing; the matrix states which IV
-weighting manage used, and a card manage wrote no reading for is not drawn.
+weighting manage used, and a card manage wrote no reading for is not drawn. `IncomeCard.tsx` lists
+manage's sized income trades in the package's own ranking (never re-sorted here), money in the suite's
+layout. Risk is the figure the per-trade cap was applied to: a short put's stress loss, never its
+strike. The card always says the prices are a day old and to re-quote before sending.
 
 **There is no Overview page** (removed 2026-10-16): `/` redirects to `/live`, whose `today` tab is
 the every-loop summary. The morning phase chip moved to the status bar and the alert-daemon chip to

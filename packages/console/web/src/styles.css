@@ -4226,6 +4226,19 @@ select.text-input {
 .pf-matrix-origin {
   outline: 1px solid var(--chart-grid-strong);
 }
+.pf-too-big {
+  margin-top: 0.75rem;
+  font-size: 12.5px;
+}
+.pf-too-big summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.pf-too-big ul {
+  margin: 0.4rem 0 0 1rem;
+  display: grid;
+  gap: 0.3rem;
+}
 
 /* win-rate rings */
 .ts-rings {
