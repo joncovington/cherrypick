@@ -136,9 +136,12 @@ python run.py gex-gate                       # what the negative-GEX gate refuse
   history's (`--tick-seconds`): on the recorder's 15 s file control would otherwise enter four times
   as often as paper can. Strikes come from `paper_loop.candidates_from_chain`, the builder the loop
   runs after its fetch. What the recorder schema lacks is rebuilt by a declared rule, never guessed
-  (the module docstring): VIX and VIX1D from Cboe's daily files at the session's OPEN, IV rank as
-  that open's place in the prior 252 closes (`iv_rank_source = "vix_proxy"`), ATR from prior
-  sessions' trails, GEX from the recorded profile. It cannot see XSP (nothing recorded), strikes
+  (the module docstring): VIX at or before each tick from the history file's own
+  `market_regime_history` (the recorder's readings; the vendor store's from VIX options, `backtest
+  fetch-vix`), with the session's Cboe open as the declared, counted fallback, because paper moves its
+  delta band the moment VIX crosses 18/25/35 and one session in five straddles one; VIX1D from Cboe's
+  daily file at the open; IV rank as the tick's VIX in the prior 252 Cboe closes (`iv_rank_source =
+  "vix_proxy"`); ATR from prior sessions' trails; GEX from the recorded profile. It cannot see XSP (nothing recorded), strikes
   beyond the recorder's ~20 each side, or `advised:*` arms, and refuses each. A scratch ledger is
   written under `db.scratch_writes()` (no fsync, no WAL checkpoint), which cut a tick from ~0.34 s
   to ~0.04 s; the real ledgers never take that path.

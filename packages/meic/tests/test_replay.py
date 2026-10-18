@@ -42,8 +42,18 @@ def _quote(right: str, k: float, s: float) -> tuple[float, float, float]:
     return round(mid - 0.05, 2), round(mid + 0.05, 2), round(delta, 4)
 
 
-def _history(path, *, every_seconds=60, until="11:00"):
+def _history(path, *, every_seconds=60, until="11:00", vix=()):
+    """`vix`: (hh:mm, value) intraday readings, written as the recorder writes them."""
     conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE market_regime_history (trade_date TEXT NOT NULL, ts REAL NOT NULL, reading TEXT NOT NULL, "
+        "symbol TEXT, value REAL, basis_ts REAL, usable INTEGER NOT NULL, reason TEXT)"
+    )
+    for hhmm, value in vix:
+        conn.execute(
+            "INSERT INTO market_regime_history VALUES (?, ?, 'vix', 'VIX', ?, ?, 1, NULL)",
+            (DAY, _ts(hhmm), value, _ts(hhmm)),
+        )
     conn.executescript(
         """
         CREATE TABLE gex_quote_samples (id INTEGER PRIMARY KEY, symbol TEXT, trade_date TEXT, ts REAL,
@@ -131,6 +141,28 @@ def test_the_snapshot_is_paper_loops_shape_over_the_recorded_chain(tmp_path):
         "ok": False,
         "reason": "no_spot_price",
     }
+
+
+def test_vix_follows_the_history_through_the_day_and_moves_the_delta_band(tmp_path):
+    """Paper moves its band the moment VIX crosses 18 (0.16 at or below, 0.14 above); a VIX fixed for
+    the day cannot. The history's own readings decide each tick, the Cboe open only where it is silent."""
+    _cboe({"VIX": VIX_ROWS})
+    history = _history(tmp_path / "h.db", vix=(("09:59", 15.5), ("10:29", 19.5)))
+    cfg, profiles = replay.replay_profiles(["control"])
+    rday = replay.ReplayDay(DAY, cfg, profiles, history_db=history)
+
+    def at(hhmm):
+        sample = rday.recorded.by_ts[_ts(hhmm)]
+        return rday.snapshot(sample, datetime.fromtimestamp(sample["ts"], ET))
+
+    calm, stressed, early = at("10:00"), at("10:30"), at("09:31")
+    assert (calm["vix"], calm["vix_source"]) == (15.5, "history_intraday")
+    assert (stressed["vix"], stressed["vix_source"]) == (19.5, "history_intraday")
+    assert {c["short_delta"] for c in calm["candidates"]} == {0.16}
+    assert {c["short_delta"] for c in stressed["candidates"]} == {0.14}
+    assert stressed["iv_rank"] > calm["iv_rank"]
+    # Before the first reading the file is silent: the session's Cboe open, said so.
+    assert (early["vix"], early["vix_source"]) == (17.0, "cboe_daily_open")
 
 
 def test_the_candidate_menu_is_the_paper_loops_own(monkeypatch):

@@ -25,11 +25,19 @@ refused, never approximated silently):
   completed sessions in the same file (their trail's high and low, the close before each), None with
   fewer, as `tt get_atr` is. Live reads the streamer's exchange summary rows; a sampled trail is close
   to them, not identical.
-- **VIX, VIX1D, IV rank** (nothing in the recorder's schema): Cboe's daily files
-  (`market-files/cboe`, written by `scripts/fetch_market_files.py`), the session's OPEN, known at
-  09:30 and fixed for the day. IV rank is the open's place in the range of the prior 252 closes and
-  IV percentile the share of those closes below it, tagged `iv_rank_source = "vix_proxy"`: SPX's
-  30-day implied vol standing in for tastytrade's symbol IV rank. A session without a VIX open is
+- **VIX** (amended 2026-10-18): at or before each tick from the history file's own
+  `market_regime_history`, through `core.regime.markets_at` and its staleness rule -- the recorder's
+  live readings, or the vendor store's minute series from VIX options' underlying price
+  (`backtest fetch-vix`). Paper moves its delta band the moment VIX crosses 18, 25 or 35, and a day's
+  range straddled one of those on about one design-window session in five; a VIX fixed for the day
+  could not follow (2026-10-16 matched 58% of paper's entries on the first rule, the other recorder
+  days 95-97%). Where the file holds no reading in bounds, the session's Cboe VIX OPEN is the declared
+  fallback, and each snapshot says which it used (`vix_source`; counted per run).
+- **VIX1D and IV rank** (nothing intraday for VIX1D, which has no options): VIX1D is Cboe's daily file
+  (`market-files/cboe`, `scripts/fetch_market_files.py`) at the session's open, as a ratio to the
+  VIX open. IV rank is the tick's VIX against the range of the prior 252 Cboe closes and IV
+  percentile the share of those closes below it, tagged `iv_rank_source = "vix_proxy"`: SPX's 30-day
+  implied vol standing in for tastytrade's symbol IV rank. A session without a Cboe VIX open is
   refused whole (live falls back to a different delta band without VIX; a replay must not).
 
 Refused: `advised:*` arms (a day's advice artifact decides them, and the replay has none), an arm
@@ -103,28 +111,51 @@ def load_cboe(name: str) -> list[tuple[str, float, float]]:
     return out
 
 
+def iv_rank_of(value: float, prior: list[float]) -> tuple[float, float | None]:
+    """(IV rank, IV percentile) of a VIX `value` against the prior sessions' closes: its place in their
+    range (with itself), and the share of them below it."""
+    window = [*prior, value]
+    lo, hi = min(window), max(window)
+    rank = round((value - lo) / (hi - lo), 3) if hi > lo else 0.5
+    pct = round(sum(1 for c in prior if c < value) / len(prior), 3) if prior else None
+    return rank, pct
+
+
 def vol_inputs(day: str, vix: list[tuple[str, float, float]], vix1d: list[tuple[str, float, float]]) -> dict:
-    """VIX, the VIX1D/VIX ratio and the IV-rank proxy for `day`, from the session's opens and the prior
-    closes only. `{}` when the day has no VIX open."""
+    """The day's VIX inputs from Cboe's daily files: the session's VIX open (the fallback where the
+    history holds no intraday VIX), the prior `IV_RANK_LOOKBACK` closes the IV rank is read against,
+    and the VIX1D/VIX ratio at the open. `{}` when the day has no VIX open."""
     days = [d for d, _, _ in vix]
     i = bisect.bisect_left(days, day)
     if i >= len(days) or days[i] != day:
         return {}
     vix_open = vix[i][1]
     prior = [c for _, _, c in vix[max(0, i - IV_RANK_LOOKBACK) : i]]
-    window = [*prior, vix_open]
-    lo, hi = min(window), max(window)
-    iv_rank = round((vix_open - lo) / (hi - lo), 3) if hi > lo else 0.5
-    iv_pct = round(sum(1 for c in prior if c < vix_open) / len(prior), 3) if prior else None
+    iv_rank, iv_pct = iv_rank_of(vix_open, prior)
     v1 = {d: o for d, o, _ in vix1d}.get(day)
     return {
         "vix": vix_open,
+        "prior_closes": prior,
         "vix1d_ratio": round(v1 / vix_open, 3) if v1 else None,
         "iv_rank": iv_rank,
         "iv_pct": iv_pct,
         "iv_rank_source": "vix_proxy",
         "vol_source": VOL_SOURCE,
     }
+
+
+def intraday_vix(history_db: Path, stamps: list[float]) -> dict[float, float]:
+    """VIX at or before each stamp from the history file's `market_regime_history` (the recorder's own
+    readings, or the vendor store's from VIX options), through `core.regime.markets_at`, its staleness
+    rule included. Stamps with no usable reading are absent."""
+    from cherrypick.core import regime  # function-local: only the replay reads the regime series
+
+    out = {}
+    for ts, block in zip(stamps, regime.markets_at(stamps, history_db=history_db), strict=True):
+        vix = (block.get("readings") or {}).get("vix") or {}
+        if block.get("status") == "measured" and vix.get("usable") and vix.get("value"):
+            out[ts] = float(vix["value"])
+    return out
 
 
 def prior_true_ranges(history_db: Path, symbol: str, day: str, sessions: int) -> list[float]:
@@ -166,6 +197,7 @@ class ReplayDay:
         self.profiles = profiles
         self.recorded = quotehistory.RecordedDay(SYMBOL, day, history_db=history_db)
         self.vol = vol_inputs(day, load_cboe("VIX"), load_cboe("VIX1D"))
+        self.vix_at = intraday_vix(self.recorded.history_db, [s["ts"] for s in self.recorded.samples])
         lookback = int(cfg.get("regime_atr_lookback_days", 5))
         trs = prior_true_ranges(self.recorded.history_db, SYMBOL, day, lookback)
         self.atr = round(sum(trs) / len(trs), 4) if len(trs) >= lookback else None
@@ -192,7 +224,11 @@ class ReplayDay:
                         "delta": q.get("delta"),
                     }
                 )
-        vix = self.vol["vix"]
+        vix = self.vix_at.get(sample["ts"])
+        vix_source = "history_intraday"
+        if vix is None:
+            vix, vix_source = self.vol["vix"], VOL_SOURCE
+        iv_rank, iv_pct = iv_rank_of(vix, self.vol["prior_closes"])
         delta_target = paper_loop._delta_target(self.cfg, vix)
         delta_targets = [delta_target] + [d for d in self.extra_deltas if abs(d - delta_target) > 1e-9]
         candidates, leg_quotes, _err = paper_loop.candidates_from_chain(
@@ -222,10 +258,11 @@ class ReplayDay:
             "expiration": expiration,
             "dte": sample.get("dte"),
             "underlying_price": spot,
-            "iv_rank": self.vol["iv_rank"],
-            "iv_pct": self.vol["iv_pct"],
+            "iv_rank": iv_rank,
+            "iv_pct": iv_pct,
             "iv_rank_source": self.vol["iv_rank_source"],
             "vix": vix,
+            "vix_source": vix_source,
             "vix1d_ratio": self.vol["vix1d_ratio"],
             "atr_5day": self.atr,
             "intraday_range_pct": round(rng / spot, 6) if rng is not None else None,
@@ -284,6 +321,7 @@ def replay_session(
         raise FileExistsError(f"{path} exists: a replay writes a fresh scratch ledger")
     refusals: dict[str, int] = {}
     n_ticks = 0
+    vix_sources: dict[str, int] = {}
     settled = False
     with meic_db.scratch_writes():
         init = meic_db.call("init_db", str(path))
@@ -297,6 +335,7 @@ def replay_session(
                 refusals[snap["reason"]] = refusals.get(snap["reason"], 0) + 1
                 continue
             snap.pop("ok")
+            vix_sources[snap["vix_source"]] = vix_sources.get(snap["vix_source"], 0) + 1
             with paper.pinned_clock(when):
                 paper.process_symbol(snap, str(path), "paper", profiles_filter=arms)
             n_ticks += 1
@@ -325,6 +364,7 @@ def replay_session(
         "tick_seconds": tick_seconds,
         "profiles": len(replay.recorded.profiles),
         "refusals": refusals,
+        "vix_sources": vix_sources,
         "vol": replay.vol,
         "atr_5day": replay.atr,
         "settled": settled,
