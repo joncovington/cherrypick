@@ -942,3 +942,43 @@ def test_get_intraday_range_day_open_none_when_not_yet_captured(cache_db):
 def test_get_intraday_range_without_summary_row(cache_db):
     out = tt.cmd_get_intraday_range(_Args(symbol="SPX"))
     assert out["ok"] is False
+
+
+def _run_main(monkeypatch, capsys, pid_file, sidecar_answer=None):
+    """Run `tt get_quote --symbol XSP` with the sidecar's pid file at `pid_file` and the port's answer
+    faked; returns (printed JSON, whether port 7699 was tried)."""
+    tried = []
+
+    def fake_http(command, args_dict):
+        tried.append(command)
+        if sidecar_answer is None:
+            tt._last_streamer_http_error = "sidecar not reachable: refused"
+        return sidecar_answer
+
+    async def quote(args):
+        return {"ok": True, "symbol": args.symbol, "via": "direct"}
+
+    monkeypatch.setattr(tt, "_SIDECAR_PID", pid_file)
+    monkeypatch.setattr(tt, "_try_streamer_http", fake_http)
+    monkeypatch.setattr(tt, "cmd_get_quote", quote)
+    monkeypatch.setattr(tt, "_last_streamer_http_error", None)
+    monkeypatch.setattr(sys, "argv", ["tt", "get_quote", "--symbol", "XSP"])
+    tt.main()
+    return json.loads(capsys.readouterr().out.strip().splitlines()[-1]), bool(tried)
+
+
+def test_the_sidecar_port_is_not_tried_while_the_sidecar_is_off(tmp_path, monkeypatch, capsys):
+    # Off by default: no pid file, so no attempt on 7699 and no fallback note on the answer.
+    out, tried = _run_main(monkeypatch, capsys, tmp_path / "sidecar.pid")
+    assert not tried
+    assert out == {"ok": True, "symbol": "XSP", "via": "direct"}
+
+
+def test_a_started_sidecar_is_still_used(tmp_path, monkeypatch, capsys):
+    pid = tmp_path / "sidecar.pid"
+    pid.write_text("1234", encoding="utf-8")
+    out, tried = _run_main(monkeypatch, capsys, pid, sidecar_answer={"ok": True, "via": "sidecar"})
+    assert tried and out == {"ok": True, "via": "sidecar"}
+    # A pid file left by a crash: tried once, refused, and the direct answer says it fell back.
+    out, tried = _run_main(monkeypatch, capsys, pid)
+    assert tried and out["via"] == "direct" and "sidecar_http_fallback" in out
