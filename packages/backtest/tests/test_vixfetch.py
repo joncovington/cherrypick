@@ -71,6 +71,23 @@ def test_it_resumes_and_replaces_only_when_asked(tmp_path):
     assert block["readings"]["vix"]["value"] == 30.0
 
 
+def test_a_thin_nearest_expiry_falls_through_to_the_next(tmp_path):
+    """The vendor holds nothing for some weeklies (2022-12-01); every expiry reports the same index."""
+    s = _store(tmp_path)
+
+    class ThinWeekly(FakeVix):
+        def vix_minutes(self, day, expiration):
+            self.calls.append((day, expiration))
+            if expiration == "2026-10-21":
+                raise RuntimeError("no_data: No data found")
+            return self.minutes
+
+    client = ThinWeekly()
+    out = vixfetch.fetch_vix(s, client, "SPX", DAY, DAY, log=lambda _m: None)
+    assert out["written"] == {DAY: 2} and out["refused"] == {}
+    assert client.calls == [(DAY, "2026-10-21"), (DAY, "2026-11-18")]
+
+
 def test_an_empty_or_failed_session_writes_nothing(tmp_path):
     s = _store(tmp_path)
     assert vixfetch.fetch_vix(s, FakeVix(minutes=[]), "SPX", DAY, DAY, log=lambda _m: None)["empty"] == [DAY]

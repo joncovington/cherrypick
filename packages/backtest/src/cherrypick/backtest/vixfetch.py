@@ -19,6 +19,8 @@ from . import store
 
 READING = "vix"
 SYMBOL = "VIX"
+#: Expiries tried per session, nearest first, before the session is refused.
+EXPIRIES_TRIED = 3
 
 
 def _sessions(conn, symbol: str, start: str, end: str) -> list[str]:
@@ -73,14 +75,24 @@ def fetch_vix(
         expirations = sorted(client.expirations(SYMBOL)) if days else []
         written, empty, refused = {}, [], {}
         for day in days:
-            expiry = next((e for e in expirations if e > day), None)
-            if expiry is None:
+            # The nearest expiry is sometimes a thin weekly the vendor holds nothing for (2022-12-01,
+            # 2022-12-28, 2022-12-30, 2026-05-20); every expiry reports the same spot index, so the
+            # next one is as good. Up to EXPIRIES_TRIED, nearest first.
+            later = [e for e in expirations if e > day][:EXPIRIES_TRIED]
+            if not later:
                 refused[day] = "no_vix_expiry_after_session"
                 continue
-            try:
-                minutes = client.vix_minutes(day, expiry)
-            except Exception as exc:  # noqa: BLE001 -- one session's refusal, never the run's
-                refused[day] = f"{type(exc).__name__}: {exc}"[:200]
+            minutes, last_error = [], None
+            for expiry in later:
+                try:
+                    minutes = client.vix_minutes(day, expiry)
+                except Exception as exc:  # noqa: BLE001 -- one session's refusal, never the run's
+                    last_error = f"{type(exc).__name__}: {exc}"[:200]
+                    continue
+                if minutes:
+                    break
+            if not minutes and last_error is not None:
+                refused[day] = last_error
                 continue
             if not minutes:
                 empty.append(day)  # never an empty series: the replay falls back to the declared open
