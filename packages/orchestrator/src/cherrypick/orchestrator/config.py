@@ -529,6 +529,11 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # (`python -m cherrypick.technicals score-screeners`, local files only). Morning, so the
         # previous evening's late greeks run (23:30) has landed.
         "screeners_at": tc.get("screeners_at", "06:40"),
+        # `skate_at`: the skate screen's range bands and their history (`python -m
+        # cherrypick.technicals skate`, the history store and local files only, ~90 s). After the
+        # 06:20 history top-up, so the bands stand on the previous session's close.
+        "skate": bool(tc.get("skate", True)),
+        "skate_at": tc.get("skate_at", "06:45"),
         # `earnings_calendar_at` / `_late_at`: the earnings calendar (`python -m cherrypick.technicals
         # earnings-calendar`, local data and the local Dolt only). After the IV-rank fetch whose
         # per-expiration IVs make its expected move and the 17:15 chart run that saves the security

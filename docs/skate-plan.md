@@ -6,7 +6,7 @@ were decided by the user on 2026-10-18 (see "Decisions").
 
 | Step | State (2026-10-18) |
 |---|---|
-| 1, the range band engine (`technicals skate`) | not started |
+| 1, the range band engine (`technicals skate`) | built: `skate.py`, `leveraged_funds.json`, job `technicals-skate` 06:45 ET, `core.calendar.trading_days_between` |
 | 2, regular-hours quotes (`fetch_screener_greeks.py measure`) | not started |
 | 3, the score and the console's Skate tab | not started |
 | 4, the forward record | not started |
@@ -117,21 +117,33 @@ annualizing trap again), and "months to pay off the LEAPS", which no source defi
 function of the store, the verdicts, the broker earnings dates and the chain listings. For each
 tradable name, each side and each Friday expiry out to 63 days:
 
-- drop the name-side when the name is a stock with a report on or before expiry, or with no
-  known report date ("unknown" is never "clear"); funds are exempt;
+- drop an expiry when the name is a stock reporting on or before it (shorter expiries stay), and
+  the stock when its report date is unknown ("unknown" is never "clear"); funds are exempt;
 - drop leveraged, inverse and volatility products from a **declared list**, since nothing in the
   repo flags them. It was started 2026-10-18: the optionable funds in the Nasdaq Trader directory
   (1,805), flagged by name (an explicit multiple of 1.25× or more, Ultra, Inverse, Short, Bear,
   Bull, VIX futures), then confirmed against Yahoo's fund category (Morningstar's "Trading--"
   categories), which also catches names the words miss. A disagreement is decided by hand and
-  noted. Its test drives off the list itself and is shown to fail by removing a known fund;
-- drop a name with a split inside the lookback, or under a year of history;
-- compute **two bands**, each snapped to the first listed strike past it, and the skate rate at
-  each strike over 11 years and the last 3, skipping windows near a split:
+  noted. Its test drives off the list itself and is shown to fail by removing a known fund. As
+  built: 487 funds (356 leveraged, 123 inverse, 8 volatility); 458 flagged by both, 6 by name
+  alone (new funds Yahoo has not categorized), 23 by Yahoo alone and decided by hand (21 Roundhill
+  WeeklyPay funds, about 1.2× single-name, still to confirm; EMTY; PFIX). MEME, WMTI and TAIL are
+  left out pending the user's call;
+- drop a name with under a year of history;
+- compute **two bands** and, for each, the skate rate over 11 years and the last 3 **at a grid of
+  strikes 0–5% past the band** (quarter-point steps), so step 3 reads the rate at whatever listed
+  strike it quotes. History is on **split-adjusted, not dividend-adjusted** prices: a strike stays
+  put when the price drops on an ex-date, so dividend adjustment would show calls breached that
+  were not (it moved MAGS, VOO, EWJ and EWZ by up to 5 points against the study's raw prices):
   - **fixed**: haircut 0.75 at every expiry;
   - **by expiry**: a declared schedule in config, defaulting to 0.65 for expiries of 14 days or
-    fewer (Passarelli's Ep73 example) and 0.75 beyond. When both land on the same strike, the row
+    fewer (Passarelli's Ep73 example) and 0.75 beyond. When both land on the same price, the row
     says so.
+
+On the 2026-10-16 close: 458 tradable names, 336 with bands, 1,986 name-side-expiry rows, 93
+seconds. Against the study's 20 Nov rows the skate rates agree to a median 0.1 point; the outliers
+are S and MAGS, whose raw history carried an earlier company under the same ticker, which the
+series break now cuts.
 
 Writes `data/technicals/skate/<date>.json`: the plan for the quote step and the history each row
 will be judged with. Counting sessions to expiry needs a trading-days counter; it goes in
