@@ -1,0 +1,263 @@
+# Skate screener, wheel and PMCC views — plan
+
+Status: plan, 2026-10-18. Nothing built. The study it rests on was run by hand on 2026-10-18
+(results below); the scripts were scratch files and are not in the repo.
+
+| Step | State (2026-10-18) |
+|---|---|
+| 1, the range band engine (`technicals skate`) | not started |
+| 2, regular-hours quotes (`fetch_screener_greeks.py measure`) | not started |
+| 3, the score and the console's Skate tab | not started |
+| 4, the forward record | not started |
+| 5, the wheel view (`manage`, Live → manage) | not started |
+| 6, the PMCC view (`manage`, beside the wheel view) | not started |
+
+A screen for short options sold where the seller does not want assignment: covered calls above
+the stock's recent range and cash-secured puts below it, on our own options-tradable names. The
+method is Dan Passarelli's "skate" objective ([Stop Picking Wheel Strategy Strikes by
+Delta](https://www.youtube.com/watch?v=pd6KYv5O0b4), Theta Profits; [Ep73 – My Exact Process for
+Trading Covered Calls](https://www.youtube.com/watch?v=_7sX9naKTaE)). It is a read surface, a new
+tab on the console's Screeners page. It places no order and opens no paper position.
+
+Once one of its trades is open in the real account, the wheel view follows it: the put, any
+assignment, the covered calls written against the shares, and the cycle's money across every roll.
+A PMCC view does the same for a covered call written against a long call. Both belong to `manage`,
+and like the rest of `manage` they are advice only.
+
+The screen does not depend on the vendor's income lists. Those stop on 2026-10-24, when the
+subscription ends; the study's universe came from them only because they were the newest lists on
+disk.
+
+## The rule, as the material states it
+
+| Part | Rule | Source confidence |
+|---|---|---|
+| Objective | Decide before selling whether assignment is wanted. "Skate" = collect the premium and avoid assignment; "trade" = get assigned on purpose at a price the valuation likes. This screen is skate only. | stated |
+| Strike | Not by delta. Sell beyond a band built from the recent range: calls at or above the upper band, puts at or below the lower band, alongside support and resistance. | stated |
+| Band | True range over a lookback equal to the trading days left to expiry, smoothed by a moving average, set above and below the price, scaled by a "haircut" (usually 75%). | stated in Ep73; the formula is unpublished (a paid indicator) |
+| Expiry | No fixed days to expiry. Compare candidates by straight-line theta (premium ÷ days), against implied volatility relative to its usual level; avoid spanning earnings; liquidity, commissions and ease of rolling break ties. | stated |
+| Worth it | Skate yield = premium ÷ capital × 365 ÷ days (capital = the strike for a put, the shares for a call), against Treasuries and the stock's volatility. | stated |
+| Exit | A GTC buy-to-close at $0.03 ($0.05 if illiquid) placed right after the fill. | stated |
+| Tested | Net-zero roll (sell the new option for what the old costs to buy back) or premium-gambit roll (buy back at the original sale price, sell a further-out option). Losers are rolled "99% of the time". | stated |
+
+**The range band** is our reconstruction, and the code calls it that, never by the indicator's
+name. Range = highest high − lowest low over N sessions (N = trading days to expiry; his numbers fit
+this better than average true range), smoothed by a 10-day simple average; upper band = close +
+0.75 × range, lower band = close − 0.75 × range. The haircut and the smoothing are config.
+
+## What the 2026-10-18 study found
+
+Run on the 2026-10-16 covered-call and short-put lists, the 20 Nov monthly, broker chains fetched
+2026-10-18 (Friday's book), and the local daily bars from 2015. Skate rate = the share of past days
+on which the same band, at the same strike offset, held to the close N sessions later.
+
+- **On average the band matches delta and does not beat it.** Band strikes land near 0.15 delta.
+  Calls skated 85.5% of the time over 11 years against 84.9% implied by delta (82.1% over the last
+  3 years); puts 91.1% against 89.2%.
+- **The spread around the average is systematic.** Where delta's implied skate rate was low (high
+  delta at the band), history beat it: calls under 82% implied, 12 of 13; puts under 85%, 10 of 10.
+  Where it was high (far-out strikes, mostly momentum tech), history fell short: calls 88% and up,
+  16 of 18; puts 93% and up, 17 of 18. History minus implied is the candidate screen, not the band
+  alone.
+- **The band holds the per-cycle risk constant across expiries.** At each expiry's own band the
+  skate rate was 89% from 7 to 63 days. On the model price the 7- or 14-day option paid the most
+  per day for 41 of 47 name-sides; on a bid with open interest of at least 100, the monthly won 23.
+  Median open interest at the strike: 209 in the front week, 6 at 28 days, 825 on the monthly.
+- **Weeklies are tested more often.** At 89% a cycle, one monthly goes untested 89% of the time;
+  five 7-day cycles in the same span, 56%.
+
+## What exists, and what's missing
+
+| Need | Exists | Missing |
+|---|---|---|
+| Universe | `technicals liquidity` verdicts (`market-report/liquidity/verdicts.json`): weeklies and $100M a day | — |
+| Bars | `history.db` daily bars and splits, from 2015 | a trading-days counter in `cherrypick.core.calendar` (advisor has `sessions_between`) |
+| Earnings | broker report dates, `earnings_calendar.broker_dates(day)` | — |
+| Fund types | `securities.latest(day)` types; `listings.is_etf` | **any leveraged/inverse flag**: none exists in the repo |
+| Listed strikes | `screener-greeks/chains/<day>.json`, `universe/chains/<day>.json` | expiries beyond the cycle monthly for most names |
+| Regular-hours quotes | `measure` at 11:30 / 14:30 (REST quotes, `LEG_BARS`) | IV and delta (REST returns quotes only) |
+| Trade chains | `manage` rebuilds order chains with rolls and reconciles against deliveries | linking a put chain to the shares it delivered, and those shares to later calls |
+| Resting orders | — | the `manage` snapshot reads positions, metrics and transactions, not open orders |
+
+## What other trackers do, and what we take
+
+A survey on 2026-10-18 of 15 wheel and PMCC spreadsheets and apps and 11 open-source repos. Most
+are spreadsheets fed by hand or by CSV. Their failures are consistent: rolls entered as two
+unrelated trades reset the basis or count the premium twice; collateral is defined three ways in
+one article; short cycles annualized into absurd returns. No repo checks ex-dividend early
+assignment or times the LEAPS roll, which steps 5 and 6 do.
+
+| Idea | Seen in | Where it goes |
+|---|---|---|
+| **Two bases, never one**: tax basis (assignment price, by lot) and wheel basis ((share cost − all net option cash in the cycle, assigning put and rolls included − dividends) ÷ shares). A net-debit roll raises the wheel basis. | [QuantWheel](https://quantwheel.com/learn/cost-basis-tracking), [zyerusha/wheel-options-trading](https://github.com/zyerusha/wheel-options-trading), [TastyMechanics](https://github.com/crux1s/TastyMechanics) | step 5 |
+| Shares that predate the transaction history get `basis_known: false`, never a guessed basis | zyerusha | step 5 |
+| Cash is the broker's net amount after fees, never price × quantity recomputed | zyerusha; [tastypl](https://github.com/gotasty/tastypl) disabled its own fee maths after getting it wrong | steps 5, 6 (`manage` already does this) |
+| Rolls linked by the order chain first, a same-day close-and-reopen (same right, expiry not earlier) as fallback, ambiguity flagged, never guessed | zyerusha, TastyMechanics | step 5 (`manage`'s chains already do the first) |
+| Assignment matched option row to share row: same account, ticker and side, shares = contracts × multiplier, at the strike, within a few days, each share row claimed once | zyerusha, tastypl | step 5 |
+| Option P&L and stock P&L kept apart; realized and unrealized kept apart | zyerusha, [OptionsPilot](https://optionspilot.app/blog/wheel-strategy-annualized-return-calculation) | steps 5, 6 |
+| Annualized = return × 365 ÷ days (simple, as every tracker does), on time-weighted capital: strike × 100 while a put is open, the shares' cost while held; a covered call adds none. Labelled a comparison figure, capped per trade, never a median across mixed durations | zyerusha, OptionsPilot, TastyMechanics | steps 3, 5, 6 |
+| Dual yield on a covered call: premium only, and if called | [PremiumGuard](https://premiumguardhq.com/blog/covered-call-tracking-spreadsheet) | steps 3, 5 |
+| Calls still sellable = shares − short calls − working sell orders | [AllYouNeedIsWheel](https://github.com/WahBun/AllYouNeedIsWheel) | step 5 (needs the open-orders read) |
+| A roll may not pay for itself by taking more risk: a rolled put's strike is capped at old strike + original premium − buyback cost | [thetagang](https://github.com/brndnmtthws/thetagang) | step 5, as a `check-roll` test |
+| PMCC P&L if assigned = (short strike − long strike − long's net cost + premiums) × 100, shown in dollars beside the width check | [trading_skills `ib-pmcc-advisor`](https://github.com/staskh/trading_skills) | step 6 |
+| PMCC short roll candidates: delta ≤ 0.40, net debit no worse than $0.10, next five expiries, never past the long's expiry; assignment chance N(d2) | trading_skills | step 6 |
+| LEAPS extrinsic as a share of its price; roll the long at 90–120 days left or below ~0.70 delta | [coveredcallcalculator.net](https://coveredcallcalculator.net/guides-hub/poor-mans-covered-call-guide.html), [TheOptionPremium](https://www.theoptionpremium.com/p/pmcc-management-rules-rolling-short-calls-dividend-risk) | step 6 floors |
+
+Not taken: win rate by delta bracket and A–F trade grades (they need many closed trades and grade
+nothing the forward record doesn't), projected annual income from a weekly average (the
+annualizing trap again), and "months to pay off the LEAPS", which no source defines.
+
+## Steps
+
+### 1. The range band engine (packages/technicals)
+
+`technicals skate` (job `technicals-skate`, 06:45 ET, after `technicals-screeners`): a pure
+function of the store, the verdicts, the broker earnings dates and the chain listings. For each
+tradable name, each side and each Friday expiry out to 63 days:
+
+- drop the name-side when the name is a stock with a report on or before expiry, or with no
+  known report date ("unknown" is never "clear"); funds are exempt;
+- drop leveraged, inverse and volatility products from a **declared list**, since nothing in the
+  repo flags them. It was started 2026-10-18: the optionable funds in the Nasdaq Trader directory
+  (1,805), flagged by name (an explicit multiple of 1.25× or more, Ultra, Inverse, Short, Bear,
+  Bull, VIX futures), then confirmed against Yahoo's fund category (Morningstar's "Trading--"
+  categories), which also catches names the words miss. A disagreement is decided by hand and
+  noted. Its test drives off the list itself and is shown to fail by removing a known fund;
+- drop a name with a split inside the lookback, or under a year of history;
+- compute the band, snap to the first listed strike past it, and compute the skate rate at that
+  strike over 11 years and the last 3, skipping windows near a split.
+
+Writes `data/technicals/skate/<date>.json`: the plan for the quote step and the history each row
+will be judged with. Counting sessions to expiry needs a trading-days counter; it goes in
+`cherrypick.core.calendar` (moving advisor's `sessions_between`), not copied a third time.
+
+### 2. Regular-hours quotes (scripts)
+
+The study's prices were Friday's after-close book, where spreads run wide; the screen needs
+regular-hours quotes. `fetch_screener_greeks.py measure` (11:30 / 14:30 ET) gains a skate pass, two
+stages to keep the broker load near today's:
+
+1. the band strike on the cycle monthly for every planned name-side (a few hundred legs);
+2. every expiry to 63 days, the band strike and one either side, for the name-sides that pass the
+   filters in stage 1 (about 60, so about 1,000 options).
+
+REST quotes carry no IV, so implied volatility is solved from the mid with the IV solver
+`manage.pricing.implied_vol` uses (moved to core), and delta from it at r = 4%, the screeners'
+own rule. The solver carries each name's dividend yield (step 6 shows why). Writes `screener-greeks/skate/<date>/<HHMM>.json`. A failure here keeps the other
+measure outputs, as the earnings pass does.
+
+### 3. The score and the console's Skate tab
+
+The measure run scores its own quotes with a pure function from technicals (`skate.score`), so the
+console reads verdicts and never re-derives them:
+
+- skate yield on the bid and on the mid; implied skate = 1 − |delta|; history minus implied;
+- the filters, as config: open interest ≥ 100, `LEG_BARS` spread, skate rate ≥ 84% over 11 years
+  and ≥ 80% over 3, skate yield ≥ 6%;
+- per name-side, the best expiry by premium per day on the bid among legs that pass, its ratio to
+  the monthly, and per-cycle and per-month test odds;
+- a "both sides" marker where the call and the put both pass.
+
+Console: a **Skate** slide in `ScreenersLightbox.tsx`, `/api/screeners/skate?day=`, a reader in
+`server/src/readers/skate.ts` with its own types, calls and puts views. Columns as the study's
+tables; the best expiry bold when it beats the monthly; earnings and liquidity defaults as the
+income lists. Money follows the suite's layout (premium per contract, a per-share price labelled).
+
+### 4. The forward record
+
+Each day's passing rows are kept; at expiry the outcome is read from the bars (skated, tested
+mid-cycle, or through the strike at expiry). After 20 expiries' worth, the record answers what the
+study could only estimate from overlapping history: does history-minus-implied pick the strikes
+that skate more than priced? The test is declared now: rows with history minus implied above 5
+points must skate more often than their implied rate, and more often than rows below zero, by more
+than the binomial noise at that count. Until then, the tab says the gap is a history estimate.
+
+### 5. The wheel view (packages/manage)
+
+For each underlying that holds a short put, shares, or a covered call:
+
+- **Cycle linking** (`manage/wheel.py`): follow the order chains through the broker's
+  Receive Deliver rows, from the put chain to the delivered shares to the calls written against
+  them, until the shares are called away or sold. A cycle that cannot be replayed to today's
+  quantities is shown as unreconciled, never guessed.
+- **Cycle accounting**: credits and debits across every chain (the broker's net cash), net
+  premium, both bases (tax and wheel, as in the table above) and the breakeven from the wheel
+  basis, option and stock P&L apart, realized and unrealized apart, days in cycle, and skate yield
+  to date on time-weighted capital against the yield the screen projected at entry. A cycle is
+  complete when it is flat and credits exceed debits. Assignment is matched as in the table above;
+  an unmatched delivery is flagged, never filled in.
+- **Today's check**: strike against today's range band (the orchestrator copies the held names'
+  bands from step 1 into the snapshot, so `reevaluate` still gets the same answer twice), tested or
+  not, extrinsic value left, and whether a buy-to-close is resting. That needs a **fourth read-only
+  broker call**, open orders, in `orchestrator/managesnap.py`.
+- **Suggested action**, from `manage`'s fixed vocabulary: `TAKE_PROFIT` when the mark is at or
+  under the buy-to-close price; `ROLL_OR_CLOSE` when tested, with the net-zero and premium-gambit
+  candidates priced and each passed through `check-roll`; after an assignment, the next leg named
+  from the Skate screen's call band. Each rule gets a confidence and a README row, as `manage`
+  requires.
+- **Console**: a wheel tab beside Live → manage.
+
+The real account is an IRA, so only cash-secured puts and covered calls arise; margin accounts are
+supported by `manage` and need nothing extra here.
+
+### 6. The PMCC view (packages/manage)
+
+A PMCC is a covered call with a long call standing in for the shares, so it gets the same view
+with the long call in the shares' place. `manage` already classifies it: `shapes.classify` calls
+it a diagonal, and `roll.diagonal_short` rolls the short at 21 days or 80% captured. Shape alone
+does not make a PMCC: the 2026-10-16 evaluation's TLT (long 80 call Jan 2029, short 85 call
+Jan 2027) has the shape but was entered as a diagonal, and stays one. What it adds:
+
+- **Recognition**: a call diagonal (a long with at least 180 days left, a short at or above its
+  strike with 60 days or fewer, one short per long) is a PMCC only when the long was **entered at
+  0.80 delta or higher**, or when `manage.json` says so (`positions.<SYMBOL>.intent: "pmcc"`). An
+  intent of `"diagonal"` keeps a trade out whatever its delta. Everything else stays under the
+  diagonal rules it has today.
+- **The long**: the view shows its delta at entry (solved from the opening fill and that day's
+  close; the method enters at 0.80 or higher) and its delta today, and flags a long
+  that has drifted below a configured floor as a candidate to roll down. The solver has to carry
+  the dividend yield: TLT's long (80 strike, stock at 80.16, ~4.3% yield) is about 0.49 delta at
+  its mid, and without the yield the model can't price it at all. Also shown:
+  extrinsic as a share of the long's price, and days left, with a "roll the long" flag below a
+  configured floor (the pmcc package's base trade holds a ~1-year long).
+- **The width check**: short strike − long strike must exceed the long's net cost after all
+  premium collected, or an assignment locks in a loss. Shown on every row, with the P&L if
+  assigned in dollars.
+- **The short**: tested against today's call band (step 1), early-assignment exposure (in the
+  money with extrinsic under the next dividend before an ex-date, the pmcc package's
+  near-zero-extrinsic flag), and earnings inside its span (refused at entry in the pmcc package).
+- **Cycle accounting**: every short sold against the long, from the order chains; net basis of the
+  long; skate yield on the long's cost.
+- **Suggested action**: the existing `roll.diagonal_short`, plus `ROLL_OR_CLOSE` for a failed width
+  check or an assignment-exposed short (with roll candidates chosen as in the table above), and a
+  `REVIEW` when the long needs rolling (90–120 days left or under ~0.70 delta, both config). Each with a
+  confidence and a README row.
+- **Console**: a PMCC tab beside the wheel tab, same columns where they mean the same thing.
+
+## The build, in pull requests
+
+1. `core.calendar` trading-days counter; `technicals skate` engine, its config block, job and tests.
+2. The measure pass and the IV solver move; tests on recorded fixtures.
+3. `skate.score`, the console reader, route and tab.
+4. The forward record and its tab section.
+5. `managesnap` open-orders read; `manage/wheel.py`, its rules and the wheel tab.
+6. PMCC recognition, checks and rules in `manage`, and the PMCC tab.
+
+None of it touches a trading loop, so none of it is measurement-affecting; each lands when green.
+
+## Not in this plan
+
+- Placing, rolling or closing anything. The desk is the only discretionary order path, and nothing
+  automated may import it.
+- The "trade" objective (assignment wanted, strikes from valuation).
+- Support and resistance: our technicals don't reproduce level selection yet.
+- What a breach costs. Skate rate is a frequency; weighing the loss needs historical option prices
+  (the backtest package's licensed data), which would stay local.
+
+## Open questions for the user
+
+1. The filter thresholds (84% / 80% / 6%) came from one day's study. Keep them, or show everything
+   and sort by history minus implied?
+2. Should the declared leveraged/inverse list also hide those names from the income tabs?
+3. The haircut is 0.75 at every expiry. Passarelli used 0.65 on a 14-day call in Ep73. Make it
+   per-expiry, or leave it fixed until the forward record says otherwise?
