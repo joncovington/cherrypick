@@ -94,6 +94,16 @@ A session is written whole or not at all; a refusal is a `vendor_sessions` row w
 an empty session. `fetch` is resumable (a complete session is skipped) and `--refetch` clears a
 session before rewriting it.
 
+**The VIX minute series (`vixfetch`, 2026-10-18).** MEIC's replay reads VIX at each tick, because MEIC
+moves its delta band the moment VIX crosses 18, 25 or 35. The account's tier refuses the index
+endpoints, but every VIX option reports the VIX index as its underlying price, so one narrow request
+a session (nearest expiry after it, one strike each side, one-minute bars) gives the day's series.
+It is written into `market_regime_history`, the recorder's table, in the recorder's own form
+(`reading = 'vix'`, `symbol = 'VIX'`), so `core.regime` reads a vendor session as it reads a recorded
+one; the mirror tests hold that table equal to gex's too. `fetch` fills it for the sessions it
+writes; `fetch-vix --from --to` backfills stored sessions (resumable, `--refetch` replaces, never an
+empty series).
+
 The vendor library is an **extra** (`pip install -e "packages/backtest[thetadata]"`), not a
 dependency: it pins its own pandas/polars/grpc, and nothing but a fetch needs it. It imports
 python-dotenv without declaring it, so the extra lists both.
@@ -143,6 +153,19 @@ is paper's arithmetic. Control always runs beside the named arms; every arm is p
 Statistics (`stats.py`) are per session, never annualised: PSR, DSR at the trial count, minimum track
 record, and a stationary-bootstrap interval. The fill model is flies paper's own (`FILL_MODEL`).
 
+**MEIC is the second module (`run meic`, 2026-10-18).** What differs per module is one `Module` entry
+in `runner.MODULES`: schema, fill model, config loader, the spec a trial is keyed on, the replay
+command. MEIC replays through `python -m cherrypick.meic.replay run` (its own engine, tick by tick at
+paper's 60 s cadence) from a snapshot of BOTH its files, `meic.json` and `meic.risk.json`
+(`$MEIC_CONFIG` / `$MEIC_RISK_CONFIG` for the subprocess), and reads back through `core.ledgers`'
+`meic_ic` reader. A MEIC trial is keyed on the arm's params merged over the base with comments
+dropped, so an inherited base key that changes is a new trial for every arm, and a reworded note is
+none. Advised arms stay flies'. **Each module validates and unlocks its own history**: `validate
+--module meic` runs `meic.replay check` per source under the same cadence-matched bar, the report
+names its module, and a flies report unlocks nothing for MEIC (`unlocked(..., module=)`). The fence
+now forbids importing any strategy module (`STRATEGY` in `test_fence.py`): everything is replayed by
+subprocess, and MEIC's import would also pull the broker in where the AST scan cannot see it.
+
 **Declared gaps:** the suite's events calendar does not reach the history (2022–2024 read unknown on
 BEA, FRED and FOMC; 2025 on FRED), so an event-conditioned arm cannot be backtested until it is
 backfilled; and the vendor store carries no volume, so the regime rows' flow columns are NULL.
@@ -151,7 +174,7 @@ backfilled; and the vendor store carries no volume, so the regime rows' flow col
 
 Built: the config, the key verbs, the licence clock, purge, the backup skip, the fence, the store, the
 fetch (SPXW 0DTE, any cadence the profile cadence divides), regime rows, validation and the flies
-runner with its statistics, and the flow fetch (below); its test is not built yet.
+and MEIC runners with their statistics, and the flow fetch (below); its test is not built yet.
 The console's Backtest page reads `python -m cherrypick.backtest read overview|run` (`readout.py`)
 and is **fail-closed**: shown only when the orchestrator's `features.backtest` is true
 (`orchestrator/backtestgate.py`: the operator's config enabled, the licence active, the key in the

@@ -18,6 +18,7 @@ TABLES = (
     "gex_quotes",
     "daily_closes",
     "gex_regime_history",
+    "market_regime_history",
 )
 
 

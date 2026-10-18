@@ -5,10 +5,12 @@ python -m cherrypick.backtest key status          # whether the vendor key is in
 python -m cherrypick.backtest key set             # store it (hidden prompt; blank keeps the current one)
 python -m cherrypick.backtest key import-env      # copy the vendor's env var into the keyring once
 python -m cherrypick.backtest fetch --from 2026-10-13 --to 2026-10-16 [--dataset SPX] [--refetch]
+python -m cherrypick.backtest fetch-vix --from 2022-05-16 --to 2025-06-30   # VIX minutes, from VIX options
 python -m cherrypick.backtest coverage [--dataset SPX]
 python -m cherrypick.backtest derive-regimes [--dataset SPX]   # regime rows from stored profiles
-python -m cherrypick.backtest validate [--dates a,b,...]   # against the recorder; results stay local
+python -m cherrypick.backtest validate [--module flies|meic] [--dates a,b,...]   # against the recorder
 python -m cherrypick.backtest run flies --arms range-high --window validation|design|holdout [--cadence 60]
+python -m cherrypick.backtest run meic --arms bp-10k --window design [--cadence 60]   # MEIC's own engine
 python -m cherrypick.backtest purge [--derived] [--apply]   # expunge the vendor's data (dry run by default)
 """
 
@@ -129,8 +131,40 @@ def cmd_fetch(args) -> int:
         cadence=args.cadence,
         log=lambda m: print(m, file=sys.stderr),
     )
+    if not report.get("aborted"):
+        # The same sessions' VIX minute series, on the session already held (vixfetch).
+        from . import vixfetch
+
+        report["vix"] = vixfetch.fetch_vix(
+            s, client, args.dataset, args.start, args.end, cadence=args.cadence,
+            log=lambda m: print(m, file=sys.stderr),
+        )  # fmt: skip
     _emit(report)
     return 1 if report.get("aborted") else 0
+
+
+def cmd_fetch_vix(args) -> int:
+    """VIX minute series for sessions already in the store (vixfetch.py): a network verb, refused on
+    the same terms as `fetch`."""
+    from . import vixfetch
+    from .vendor import VendorRefusal, client_for
+
+    s = settings.load(args.config)
+    refusal = _fetch_refusal(s)
+    if refusal:
+        print(f"fetch-vix refused: {refusal}", file=sys.stderr)
+        return 2
+    try:
+        client = client_for(s)
+    except VendorRefusal as exc:
+        print(f"fetch-vix refused: {exc}", file=sys.stderr)
+        return 2
+    report = vixfetch.fetch_vix(
+        s, client, args.dataset, args.start, args.end, cadence=args.cadence, refetch=args.refetch,
+        log=lambda m: print(m, file=sys.stderr),
+    )  # fmt: skip
+    _emit(report)
+    return 0
 
 
 def cmd_fetch_flow(args) -> int:
@@ -250,7 +284,10 @@ def cmd_validate(args) -> int:
     if not dates:
         print("validate: no session is in both the recorder's history and the vendor store", file=sys.stderr)
         return 1
-    report = validate.run(s, args.dataset, dates, recorder_db=recorder, cadence=args.cadence)
+    arms = [a.strip() for a in args.arms.split(",") if a.strip()] if args.arms else None
+    report = validate.run(
+        s, args.dataset, dates, recorder_db=recorder, cadence=args.cadence, module=args.module, arms=arms
+    )
     _emit(report)
     return 0
 
@@ -272,6 +309,7 @@ def cmd_run(args) -> int:
             spend_holdout=args.spend_holdout,
             provisional=args.provisional,
             workers=args.workers,
+            module=args.module,
             log=lambda m: print(m, file=sys.stderr),
         )
     except runner.RunRefused as exc:
@@ -344,6 +382,14 @@ def main(argv: list[str] | None = None) -> int:
         "--workers", type=int, default=1, help="sessions pulled at a time (default 1; see fetch.fetch)"
     )
     f.set_defaults(fn=cmd_fetch)
+    fv = sub.add_parser(
+        "fetch-vix", help="the VIX minute series for stored sessions, from VIX options (network)"
+    )
+    fv.add_argument("--dataset", default="SPX")
+    fv.add_argument("--from", dest="start", required=True)
+    fv.add_argument("--to", dest="end", required=True)
+    fv.add_argument("--refetch", action="store_true", help="replace sessions that already hold VIX rows")
+    fv.set_defaults(fn=cmd_fetch_vix)
     ff = sub.add_parser("fetch-flow", help="large options orders per name and session (a network verb)")
     ff.add_argument("--symbols", required=True, help="comma-separated stock symbols")
     ff.add_argument("--from", dest="start", required=True)
@@ -359,8 +405,8 @@ def main(argv: list[str] | None = None) -> int:
     dr.set_defaults(fn=cmd_derive_regimes)
     va = sub.add_parser("validate", help="vendor sessions against the recorder's on the days both exist")
     va.add_argument("--dataset", default="SPX")
-    rn = sub.add_parser("run", help="replay flies' arms over the store's sessions (results stay local)")
-    rn.add_argument("module", choices=("flies",))
+    rn = sub.add_parser("run", help="replay a module's arms over the store's sessions (results stay local)")
+    rn.add_argument("module", choices=("flies", "meic"))
     rn.add_argument("--arms", default="control", help="comma-separated; control always runs beside them")
     rn.add_argument("--window", required=True, choices=("validation", "design", "holdout"))
     rn.add_argument("--dataset", default="SPX")
@@ -381,7 +427,7 @@ def main(argv: list[str] | None = None) -> int:
     rd.add_argument("what", choices=("overview", "run"))
     rd.add_argument("--id", default=None, help="with `run`: the run id")
     rd.set_defaults(fn=cmd_read)
-    for sp in (f, cv, dr, va, rn, ra):
+    for sp in (f, fv, cv, dr, va, rn, ra):
         sp.add_argument(
             "--cadence",
             type=int,
@@ -392,6 +438,8 @@ def main(argv: list[str] | None = None) -> int:
     va.add_argument(
         "--recorder-db", dest="recorder_db", default=None, help="default: the gex recorder's history"
     )
+    va.add_argument("--module", default="flies", choices=("flies", "meic"), help="whose replay to validate")
+    va.add_argument("--arms", default=None, help="meic: comma-separated SPX arms to check (default control)")
     va.set_defaults(fn=cmd_validate)
     pg = sub.add_parser("purge")
     pg.add_argument("--derived", action="store_true", help="also remove results derived from the data")

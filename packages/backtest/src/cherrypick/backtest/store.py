@@ -54,6 +54,14 @@ RECORDER_DDL = (
     "volume_high_strike REAL)",
     "CREATE INDEX IF NOT EXISTS idx_grh_sym_date ON gex_regime_history(symbol, trade_date)",
     "CREATE INDEX IF NOT EXISTS idx_grh_sym_ts ON gex_regime_history(symbol, ts)",
+    # The recorder's market series (`gex/regime.py::ensure_tables`). The store holds one reading in it,
+    # `vix`, a minute series from VIX options' underlying price (`vixfetch`), which MEIC's replay reads
+    # at or before each tick through `core.regime` exactly as it reads the recorder's own.
+    "CREATE TABLE IF NOT EXISTS market_regime_history ("
+    "trade_date TEXT NOT NULL, ts REAL NOT NULL, reading TEXT NOT NULL, symbol TEXT, "
+    "value REAL, basis_ts REAL, usable INTEGER NOT NULL, reason TEXT)",
+    "CREATE INDEX IF NOT EXISTS idx_mrh_date_reading ON market_regime_history(trade_date, reading)",
+    "CREATE INDEX IF NOT EXISTS idx_mrh_ts ON market_regime_history(ts)",
 )
 
 VENDOR_DDL = (
