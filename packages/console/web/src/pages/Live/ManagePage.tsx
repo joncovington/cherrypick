@@ -61,12 +61,12 @@ function ActionChip({ action }: { action: string }) {
   return <span className={`chip ${ACTION_CHIP[action] ?? ""}`}>{ACTION_LABEL[action] ?? action}</span>;
 }
 
-/** An earnings trade's chip: blue while it holds for the call, red once the report is out and it closes. */
+/** An earnings trade's chip: amber while it holds for the call, red once the report is out and it closes. */
 function EarningsChip({ et, label }: { et: NonNullable<ManageTrade["earningsTrade"]>; label: string }) {
   const report = `${et.report}${et.timeOfDay ? ` ${et.timeOfDay}` : ""}`;
   return (
     <span
-      className={`chip ${et.passed ? "chip-bad" : "chip-hold"}`}
+      className={`chip ${et.passed ? "chip-bad" : "chip-warn"}`}
       title={
         et.passed
           ? `earnings trade: the ${report} report is out, close it`
