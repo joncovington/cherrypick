@@ -40,4 +40,5 @@ export * from "./types/summary.js";
 export * from "./types/screeners.js";
 export * from "./types/earningsCalendar.js";
 export * from "./types/signalBoard.js";
+export * from "./types/skate.js";
 export * from "./types/backtest.js";

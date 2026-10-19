@@ -334,12 +334,14 @@ export const CHARTS_SLIDES = [
 ] as const satisfies readonly NavSlide[];
 
 /** The screeners (2026-10-18 order): our own screens first -- the earnings calendar and its record,
- *  the signal board -- then the vendor's three income lists (one tab each, 2026-10-16), which stop
- *  when its subscription ends on 2026-10-24, with how well our rules match them. */
+ *  the signal board, the skate screen (2026-10-19) -- then the vendor's three income lists (one tab
+ *  each, 2026-10-16), which stop when its subscription ends on 2026-10-24, with how well our rules
+ *  match them. */
 export const SCREENERS_SLIDES = [
   { id: "earnings", label: "earnings" },
   { id: "earnings-record", label: "earnings record" },
   { id: "board", label: "signal board" },
+  { id: "skate", label: "skate" },
   { id: "short-puts", label: "short puts" },
   { id: "covered-calls", label: "covered calls" },
   { id: "credit-spreads", label: "credit spreads" },
@@ -519,9 +521,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   // The fidelity tab is the reproduction's own check: a developer surface, so detail view only.
   screeners: {
     slides: SCREENERS_SLIDES,
-    simple: ["earnings", "earnings-record", "board", "short-puts", "covered-calls", "credit-spreads"],
+    simple: ["earnings", "earnings-record", "board", "skate", "short-puts", "covered-calls", "credit-spreads"],
     groups: [
-      { label: "screens", ids: ["earnings", "earnings-record", "board"] },
+      { label: "screens", ids: ["earnings", "earnings-record", "board", "skate"] },
       // Named for what the lists hold, not their source: the vendor's lists stop on 2026-10-24, and
       // the tabs keep their saved days (and any lists of our own that follow) under the same name.
       { label: "income lists", ids: ["short-puts", "covered-calls", "credit-spreads", "fidelity"] },

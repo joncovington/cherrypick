@@ -426,6 +426,23 @@ when the vendor subscription ends on 2026-10-24, and a fidelity tab (detail view
   tie never listed. A minimum count (2 by default; 1 and 3 one click away), sector and symbol
   filters. Approximate methods carry "≈"; the note names what is not counted and that the board is
   not a tested signal.
+
+  **The skate tab** (2026-10-19; `SkateTab.tsx`, `skateRows.ts`, `readers/skate.ts`,
+  `GET /api/screeners/skate[?day=]`; `docs/skate-plan.md` step 3) reads the newest scheduled run of
+  `fetch_screener_greeks.py skate` (`market-report/screener-greeks/skate/<session>/<HHMM>.json`;
+  a `*.trial.json` is never read) and decides nothing: rates, gap, yields, the hard and soft verdicts
+  and each band's best expiry are `technicals.skate`'s. The reader keeps, per name-side and band,
+  the file's best and the pick leg at that best's own expiry and strike (~0.3 MB of a ~4.5 MB run).
+  - **Hard filters hide, soft thresholds mark.** A row is the band's pick on its best expiry, shown
+    only when the leg's `hard` is true; `soft.all` is a pass/miss chip, and "passing only" is the
+    one way it narrows. Default order is history minus implied, widest first.
+  - **The band selector** (fixed / by expiry) drives the rows and the ranking; the other band's
+    best strike and premium a day sit in a quieter column ("same" where both pick one strike).
+  - **Stated, never empty:** no run, an unreadable run, an incomplete run and the run's `problem`
+    each say so. The note says the gap is a history estimate until the forward record (step 4).
+  - "vs spot" is the strike against the quote's spot, a display figure: the band is set on the
+    band day's close, so a name that has moved can have its pick at or through the money, and those
+    top the gap sort.
 **Compare's risk tab** (`/compare/risk`, 2026-10-17, `pages/Compare/RiskTab.tsx` over
 `GET /api/analysis` → `readers/analysis.ts::readArmsRisk`) — every arm of every module on one
 sortable table, each over its own window (the analysis tab's rule), with peak risk, net over the

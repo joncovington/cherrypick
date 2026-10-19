@@ -6,19 +6,25 @@ import type {
   ScreenerList,
   ScreenerPayload,
   SignalBoardPayload,
+  SkatePayload,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { readEarningsCalendar } from "../readers/earningsCalendar.js";
 import { readEarningsRecord } from "../readers/earningsRecord.js";
 import { readScreener, readScreenerFidelity, SCREENER_LISTS } from "../readers/screeners.js";
 import { readSignalBoard } from "../readers/signalBoard.js";
+import { readSkate } from "../readers/skate.js";
 
 export function registerScreenerRoutes(app: FastifyInstance, config: ConsoleConfig): void {
-  // Registered before the list route, so `fidelity`, `earnings` and `board` are never read as list names.
+  // Registered before the list route, so `fidelity`, `earnings`, `board` and `skate` are never read as list names.
   app.get("/api/screeners/fidelity", async (): Promise<ScreenerFidelityPayload> => readScreenerFidelity(config));
   app.get<{ Querystring: { day?: string } }>(
     "/api/screeners/board",
     async (req): Promise<SignalBoardPayload> => readSignalBoard(config, req.query.day ?? null),
+  );
+  app.get<{ Querystring: { day?: string } }>(
+    "/api/screeners/skate",
+    async (req): Promise<SkatePayload> => readSkate(config, req.query.day ?? null),
   );
   app.get("/api/screeners/earnings-record", async (): Promise<EarningsRecordPayload> => readEarningsRecord(config));
   app.get<{ Querystring: { day?: string } }>(
