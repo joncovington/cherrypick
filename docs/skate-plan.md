@@ -141,7 +141,9 @@ tradable name, each side and each Friday expiry out to 63 days:
   TSLW and TOPW added), WMTI is 105–150% of WMT daily through options, TAIL (puts plus Treasuries, a
   decaying hedge) is excluded for caution, and MEME, a plain basket, stays in: 492 funds, each
   citing its source;
-- drop a name with under a year of history;
+- drop a name with under a year of history (as built: an expiry whose band has under 250 windows to
+  judge it on is dropped, and the name only when every expiry is; a fund is any type that never
+  reports, `securities.NO_EARNINGS`, which includes commodity trusts such as IAU);
 - compute **two bands** and, for each, the skate rate over 11 years and the last 3 **at a grid of
   strikes from 2% inside the band to 5% past it** (quarter-point steps; inside, for the strike one
   closer than the band's), so step 3 reads the rate at whatever listed

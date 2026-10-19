@@ -37,6 +37,11 @@ def test_the_cycle_monthly_is_the_users():
     assert setup_read.cycle_monthly(DAY) == ("2026-11-20", 35)  # 18 Dec is 63 days out
 
 
+def test_a_good_friday_monthly_on_thursday_the_14th_is_found():
+    # Good Friday 2022 fell on the 15th, the third Friday, so April's monthly was Thursday the 14th.
+    assert setup_read.cycle_monthly(date(2022, 2, 25)) == ("2022-04-14", 48)
+
+
 def test_atr_is_wilders_average_true_range():
     highs, lows, closes = [11.0] * 20, [9.0] * 20, [10.0] * 20
     assert setup_read.atr(highs, lows, closes) == pytest.approx(2.0)
