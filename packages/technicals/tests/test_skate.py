@@ -404,6 +404,47 @@ def test_stage_one_quotes_each_band_pick_and_its_neighbours_on_the_cycle_monthly
     assert all(g["option"].startswith("XYZ C") for g in legs)
 
 
+def test_the_band_moves_with_todays_price_before_a_strike_is_picked():
+    # The band day closed at 100 with the call band at 105. Today XYZ trades at 104, so the band is
+    # 109 and the pick moves from 105 (nearly at the money now) to 110.
+    legs = skate.stage_one(_doc(), CHAINS, date(2026, 10, 16), {"XYZ": 104.0})
+    picks = {g["strike"] for g in legs if g["roles"].get("fixed") == "pick"}
+    assert picks == {110.0}
+    # Without a live spot the band day's close stands.
+    still = skate.stage_one(_doc(), CHAINS, date(2026, 10, 16), {})
+    assert {g["strike"] for g in still if g["roles"].get("fixed") == "pick"} == {105.0}
+
+
+def test_a_strike_is_scored_against_the_moved_band():
+    row = _row("C", 105.0)
+    args = (
+        row,
+        "fixed",
+        110.0,
+        {"bid": 1.0, "ask": 1.1, "open_interest": 400},
+        104.0,
+        35,
+        35 / 365,
+        0.0,
+        CFG,
+    )
+    moved = skate.score_leg(*args, skate.offsets(CFG), 4.0)
+    assert moved["band_level"] == pytest.approx(109.0)
+    assert moved["offset"] == pytest.approx(110.0 / 109.0 - 1, abs=1e-5)
+    still = skate.score_leg(*args, skate.offsets(CFG))
+    assert still["offset"] == pytest.approx(110.0 / 105.0 - 1, abs=1e-5)
+    assert moved["skate"] < still["skate"]  # closer to today's band, so less often skated
+
+
+def test_the_scored_entry_names_the_close_its_bands_were_set_on():
+    legs = skate.stage_one(_doc(), CHAINS, date(2026, 10, 16), {"XYZ": 104.0})
+    clock = {"2026-11-20": (35, 35 / 365)}
+    (entry,) = skate.score(_doc(), legs, {"XYZ": 104.0}, clock, CFG)
+    assert entry["spot"] == 104.0 and entry["band_day_close"] == 100.0
+    pick = next(g for g in entry["legs"] if g["role"] == "pick" and g["band"] == "fixed")
+    assert pick["strike"] == 110.0 and pick["band_level"] == pytest.approx(109.0)
+
+
 def test_stage_one_falls_back_to_the_last_expiry_before_a_report():
     doc = _doc()
     doc["names"]["XYZ"]["rows"] = [r for r in doc["names"]["XYZ"]["rows"] if r["expiry"] == "2026-10-30"]

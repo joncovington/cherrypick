@@ -177,6 +177,11 @@ days, wider than the builder's 14–60, so they are cached apart, once a day. Tw
 2. every weekly to 63 days, both bands' strikes and one either side, for the `stage_two` (60)
    name-sides whose tradable band strike has the widest history-minus-implied gap.
 
+Both stages read each band **moved to the run's price** (`skate.shift_for`: band + spot − the band
+day's close; the range stays the band day's). Until 2026-10-19 they used the morning file's band as
+it stood, so a name that had moved through its band since the close was quoted and ranked on a
+strike already in the money (AMZN's 260 call at 262.62 topped the gap sort).
+
 REST quotes carry no IV, so implied volatility is solved from the mid by `cherrypick.core.bs`
 (moved from `manage.pricing`, which now imports it), and delta from it at r = 4%. The solver
 carries each name's trailing dividend yield, which the band file now records. Writes

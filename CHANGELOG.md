@@ -24,6 +24,11 @@ beyond the latest release.
   set, `securities.NO_EARNINGS`, checked against the console's. And one long expiry short of history
   dropped the whole name; now only that expiry goes. `setup_read` also found no monthly when Good
   Friday moved it to Thursday the 14th (next in 2033).
+- **Fixed: skate picked and scored strikes against the band day's close, not today's price.** A
+  band is close ± haircut × range, and the quote runs used the morning band file's close all day. On
+  2026-10-19 AMZN's call "skate" pick was the 260 with the stock at 262.62 (0.62 delta), at the top
+  of the gap sort. Each band now moves with the price (band + today's spot − the band day's close)
+  before a strike is picked and scored; rows carry `band_level` and `band_day_close`.
 
 ## v0.11.2 — 2026-10-19 — review follow-ups
 The decisions the documentation review (v0.11.1) left open. One fixes how earnings marks and closes
