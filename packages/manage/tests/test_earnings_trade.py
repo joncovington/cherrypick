@@ -70,6 +70,16 @@ def test_before_the_call_an_earnings_trade_holds_and_its_close_waits():
     assert "Hold it through the report" in t["explanation"] and "21-day exit" in t["explanation"]
 
 
+def test_its_time_exit_is_the_day_after_the_call_not_expiry_less_21_days():
+    # Expiry less 21 days would be 2026-10-02, before the trade was put on.
+    assert run(date(2026, 10, 18))["exit_levels"]["time_exit"]["date"] == "2026-10-21"
+    assert run(date(2026, 10, 18), time_of_day="BTO")["exit_levels"]["time_exit"]["date"] == "2026-10-20"
+    # A Friday report closes the next trading day.
+    assert run(date(2026, 10, 18), report="2026-10-23")["exit_levels"]["time_exit"]["date"] == "2026-10-26"
+    # Not an earnings trade (opened too early): the 21-day exit stands.
+    assert run(date(2026, 10, 18), opened_on="2026-10-01")["exit_levels"]["time_exit"]["date"] == "2026-10-02"
+
+
 def test_after_the_call_it_closes():
     t = run(date(2026, 10, 21))
     assert t["earnings_trade"]["passed"]

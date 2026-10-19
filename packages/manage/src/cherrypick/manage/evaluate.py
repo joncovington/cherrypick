@@ -734,6 +734,12 @@ def evaluate_trade(
     # ---- an earnings trade holds through the report and closes after the call
     et = trade["earnings_trade"]
     if et and not off("earnings_trade"):
+        # Its time exit is the call, not expiry less 21 days: on a weekly short that date falls before
+        # the trade was even put on, and the rule it belongs to is set aside here anyway.
+        report = _date(et["report"])
+        bto = str(et["time_of_day"] or "").upper() == "BTO"
+        after = report if bto else _calendar.next_trading_day(report)
+        trade["exit_levels"]["time_exit"] = {"date": after.isoformat(), "rule": "earnings_trade"}
         if not et["passed"]:
             held = [f for f in fired if f["rule"].split(".")[0] in HELD_FOR_EARNINGS]
             fired = [f for f in fired if f not in held]
