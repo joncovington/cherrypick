@@ -1361,7 +1361,7 @@ async def _skate_quotes(session, ub, doc: dict, cfg: dict, cache: dict, now) -> 
                 spots[q.symbol.replace("/", ".")] = spot
         await asyncio.sleep(ub.TT_PAUSE_S)
     today = now.date()
-    first = skate.stage_one(doc, cache, today)
+    first = skate.stage_one(doc, cache, today, spots)
     await _quote_options(session, ub, first)
     clock = skate_clock({leg["expiry"] for leg in first}, now)
     scored = skate.score(doc, first, spots, clock, cfg)
@@ -1374,7 +1374,7 @@ async def _skate_quotes(session, ub, doc: dict, cfg: dict, cache: dict, now) -> 
         for leg in first
     }
     picked = skate.select(scored, cfg["stage_two"])
-    second = skate.stage_two(doc, cache, picked)
+    second = skate.stage_two(doc, cache, picked, spots)
     await _quote_options(session, ub, second)
     clock.update(skate_clock({leg["expiry"] for leg in second}, now))
     deep = {(e["symbol"], e["side"]): e for e in skate.score(doc, second, spots, clock, cfg)}

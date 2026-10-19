@@ -426,6 +426,18 @@ def around(pick: float, side: str, strikes: list[float]) -> list[tuple[str, floa
     return [(role, k) for role, k in out if k is not None]
 
 
+def shift_for(name: dict, spots: dict[str, float] | None, symbol: str) -> float:
+    """How far the price has moved since the band day's close, in dollars; 0 with no live spot.
+
+    The band is close +/- haircut x range. The range is the band day's, but the close is not today's
+    price: on 2026-10-19 AMZN's call band from Friday's close sat below Monday's price, so its "skate"
+    pick was a 0.62-delta call already in the money. A band moves with the price, so every pick and
+    every score is read against band + shift."""
+    spot = (spots or {}).get(symbol)
+    base = name.get("spot")
+    return spot - base if spot and base else 0.0
+
+
 def offset_of(strike: float, band: float, side: str) -> float:
     """How far past the band a strike sits, as a share of the band: negative is inside it."""
     return strike / band - 1 if side == "C" else 1 - strike / band
@@ -466,13 +478,16 @@ def score_leg(
     div: float,
     cfg: dict,
     grid: list[float],
+    shift: float = 0.0,
 ) -> dict:
-    """One quoted strike judged against one band: its history, its implied odds, its yield."""
+    """One quoted strike judged against one band, moved by `shift` (see `shift_for`): its history,
+    its implied odds, its yield."""
     from cherrypick.core import bs
 
     side = row["side"]
     b = row["bands"][band]
-    off = offset_of(strike, b["band"], side)
+    level = b["band"] + shift
+    off = offset_of(strike, level, side)
     hist, outside = curve_at(b["skate"], grid, off)
     recent, _ = curve_at(b["skate_recent"], grid, off)
     q = quote or {}
@@ -489,6 +504,7 @@ def score_leg(
     per = 365 / max(days, 1)
     out: dict[str, Any] = {
         "band": band,
+        "band_level": round(level, 4),
         "strike": strike,
         "offset": round(off, 5),
         "outside_grid": outside,
@@ -523,9 +539,15 @@ def _chain_map(chain: list[dict]) -> dict[str, dict[float, list]]:
     return {e["expiration"]: {float(s[0]): s for s in e["strikes"]} for e in chain or []}
 
 
-def plan_legs(doc: dict, chains: dict[str, list[dict]], wanted: list[tuple[str, str, str]]) -> list[dict]:
+def plan_legs(
+    doc: dict,
+    chains: dict[str, list[dict]],
+    wanted: list[tuple[str, str, str]],
+    spots: dict[str, float] | None = None,
+) -> list[dict]:
     """For each (symbol, side, expiry) wanted, the strikes to quote per band: the band's pick and its
-    neighbours. One entry per (symbol, side, expiry, strike) with the bands and roles it serves."""
+    neighbours, the band moved to today's price (`shift_for`). One entry per (symbol, side, expiry,
+    strike) with the bands and roles it serves."""
     legs: dict[tuple, dict] = {}
     for sym, side, exp in wanted:
         name = (doc.get("names") or {}).get(sym)
@@ -535,8 +557,9 @@ def plan_legs(doc: dict, chains: dict[str, list[dict]], wanted: list[tuple[str, 
         listed = _chain_map(chains.get(sym) or []).get(exp)
         if not row or not listed:
             continue
+        shift = shift_for(name or {}, spots, sym)
         for band in BANDS:
-            pick = snap(row["bands"][band]["band"], side, list(listed))
+            pick = snap(row["bands"][band]["band"] + shift, side, list(listed))
             if pick is None:
                 continue
             for role, k in around(pick, side, list(listed)):
@@ -561,7 +584,9 @@ def stage_one_expiry(expiries: list[str], today: date) -> str | None:
     return cycle_expiry(expiries, today) or (max(expiries) if expiries else None)
 
 
-def stage_one(doc: dict, chains: dict[str, list[dict]], today: date) -> list[dict]:
+def stage_one(
+    doc: dict, chains: dict[str, list[dict]], today: date, spots: dict[str, float] | None = None
+) -> list[dict]:
     """Every name-side once: on its cycle monthly, or its furthest expiry where the band file holds
     no monthly (a report comes first) -- and the chain lists it."""
     wanted = []
@@ -572,10 +597,15 @@ def stage_one(doc: dict, chains: dict[str, list[dict]], today: date) -> list[dic
             exp = stage_one_expiry(mine, today)
             if exp:
                 wanted.append((sym, side, exp))
-    return plan_legs(doc, chains, wanted)
+    return plan_legs(doc, chains, wanted, spots)
 
 
-def stage_two(doc: dict, chains: dict[str, list[dict]], picked: list[tuple[str, str]]) -> list[dict]:
+def stage_two(
+    doc: dict,
+    chains: dict[str, list[dict]],
+    picked: list[tuple[str, str]],
+    spots: dict[str, float] | None = None,
+) -> list[dict]:
     """Every expiry the band file holds for the picked name-sides."""
     wanted = [
         (sym, side, r["expiry"])
@@ -583,7 +613,7 @@ def stage_two(doc: dict, chains: dict[str, list[dict]], picked: list[tuple[str, 
         for r in ((doc.get("names") or {}).get(sym) or {}).get("rows", [])
         if r["side"] == side
     ]
-    return plan_legs(doc, chains, wanted)
+    return plan_legs(doc, chains, wanted, spots)
 
 
 def score(
@@ -597,6 +627,7 @@ def score(
         name = doc["names"][leg["symbol"]]
         row = next(r for r in name["rows"] if r["side"] == leg["side"] and r["expiry"] == leg["expiry"])
         spot = spots.get(leg["symbol"]) or name["spot"]
+        shift = shift_for(name, spots, leg["symbol"])
         days, years = now_days[leg["expiry"]]
         entry = out.setdefault(
             (leg["symbol"], leg["side"]),
@@ -604,6 +635,8 @@ def score(
                 "symbol": leg["symbol"],
                 "side": leg["side"],
                 "spot": spot,
+                # The close the bands were set on; every band here is moved by spot less this.
+                "band_day_close": name["spot"],
                 "fund": name["fund"],
                 "earnings": name.get("earnings"),
                 "div_yield": name.get("div_yield", 0.0),
@@ -622,6 +655,7 @@ def score(
                 name.get("div_yield", 0.0),
                 cfg,
                 grid,
+                shift,
             )
             entry["legs"].append(
                 {
