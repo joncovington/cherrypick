@@ -154,4 +154,10 @@ describe("the fidelity tab", () => {
     expect(html).toContain('title="330 of 450">73%<');
     expect(html).toContain('title="0 of 0">—<');
   });
+
+  it("says what it measures and what it is for", () => {
+    const html = renderToString(<FidelityTab />).replace(/<!-- -->/g, "");
+    expect(html).toContain("Whether our own rules pick the same option");
+    expect(html).toContain("not which names make the list");
+  });
 });
