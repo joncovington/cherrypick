@@ -67,6 +67,9 @@ PARAM_DEFAULTS = {
     # King's "80-90% decayed"); None never rolls early (`shield_hold`).
     "early_roll_decay": None,
     "breach_roll": False,
+    # Roll an in-the-money short whose extrinsic is under `assignment_exposure_tv` (`shield_guard`):
+    # the telemetry's own exposure region, so the rule and the measurement share one threshold.
+    "assignment_roll": False,
     # P&L to date at or below -this x the long's cost closes the position (Tom King's 30% stop).
     "stop_loss_frac": None,
     "long_close_dte": 45,
@@ -165,6 +168,7 @@ def evaluate_held_long(
     long_dte: int | None,
     rolled_today: bool,
     session_close_min: int,
+    settlement_style: str | None = None,
 ) -> Decision:
     """The verdict for one open HELD-LONG position this tick, in this order:
 
@@ -179,7 +183,10 @@ def evaluate_held_long(
        extrinsic at sale -> roll it, at most once a session.
     7. `breach`: (`breach_roll`) spot at or below the short's strike -> roll it down, at most once a
        session.
-    8. hold.
+    8. `assignment_guard`: (`assignment_roll`) the short is in the money and its extrinsic is in the
+       assignment-exposed region (`assignment_exposed`, so never on a cash-settled leg) -> roll it,
+       at most once a session.
+    9. hold.
 
     `short` is `{"strike", "expiration", "tv", "entry_tv"}` for the open short, or None. A short
     without a price holds (`unpriced_mark`) rather than acting on a hole; the stop and the long roll
@@ -213,6 +220,17 @@ def evaluate_held_long(
             return Decision("roll_short", "decayed", {"short_tv": short["tv"], "entry_tv": entry_tv})
     if params.get("breach_roll") and not rolled_today and spot <= short["strike"]:
         return Decision("roll_short", "breach", {"spot": spot, "strike": short["strike"]})
+    if (
+        params.get("assignment_roll")
+        and not rolled_today
+        and spot > short["strike"]
+        and assignment_exposed(short["tv"], params, settlement_style=settlement_style)
+    ):
+        return Decision(
+            "roll_short",
+            "assignment_guard",
+            {"spot": spot, "strike": short["strike"], "short_tv": short["tv"]},
+        )
     return Decision("hold", "holding")
 
 

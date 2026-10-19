@@ -6,7 +6,8 @@
 PMCC — a deep-ITM call with a short call sold against it, on XSP, QQQ, GLD, IWM, SLV and SMH, and
 from 2026-10-12 to 10-19 (one a market day) the stocks AMZN, TSLA, AMD, NVDA and PLTR (posture: root
 file). The base trade since 2026-10-06 is the held-long pair: `shield` and `shield_hold` hold a
-~1-year long while a weekly short rolls against it. SLV is the intended first live symbol (nothing live
+~1-year long while a weekly short rolls against it; `shield_guard` (from 2026-10-26) is `shield_hold`
+that also rolls an in-the-money short once it is assignment-exposed. SLV is the intended first live symbol (nothing live
 is built; see below). `control`, which re-bought a ~21-DTE long every cycle, is retired.
 
 Ledger schema: **`pmcc`** (`pmcc_99` until the 2026-10-04 rename; a config still naming it resolves
@@ -50,6 +51,12 @@ Elsewhere:
   `symbols` (with `max_positions` raised for the larger roster) and `earnings` rows. A held-long
   stock long sits deep (broker 0.90 is ~45–55% in the money on these IVs), and AMZN lists strikes
   only down to about 48% below spot, which is where its long lands.
+- **2026-10-26 `shield_guard` joins** (`from` on its config block, `engine.arm_on`), journaled as an
+  `arms` row by `_note_arm_starts` on the first tick of the day. `shield_hold` plus `assignment_roll`:
+  the 2026-10-19 review found the hold arm's shorts deep in the money with almost no extrinsic
+  (SLV 1,071 exposed ticks, QQQ 675), the region where a live IRA short is assigned. It enters fresh,
+  two symbols a session, so its longs are not the pair's; compare weekly marked change per symbol.
+  Additive: no running arm's rules change.
 - **2026-10-06 long delta 0.88–0.92** (was 0.90–0.95, nearest 0.925): Tom King's own ~90-delta long,
   journaled as `long_delta`. Measured by the BROKER's delta, which the live loop will select by: on
   American-style ETFs its deep-call delta runs below parity, so 0.90 sits ~36–41% in the money (parity
@@ -62,6 +69,7 @@ Elsewhere:
 | `control` (retired 2026-10-06) | 17–25 DTE nearest 21, delta 0.85–0.90, re-bought every cycle | ATM, soonest Friday 5–11 DTE | held to the short's expiry; the long rides to the next session's disposal |
 | `shield_hold` | the standard monthly nearest 360 DTE in [240, 540], broker delta 0.88–0.92 nearest 0.90 (0.90–0.95 before 2026-10-06), no extrinsic fallback | 0.70 delta (band 0.65–0.78), soonest Friday 5–11 DTE, above the long's strike, never past its expiry | rolled on its expiry day; closed at 45 DTE on the long or on the 30% stop |
 | `shield` | as `shield_hold` | as `shield_hold` | also rolls early at 85% of the short's extrinsic decayed, or spot at its strike |
+| `shield_guard` (from 2026-10-26) | as `shield_hold` | as `shield_hold` | also rolls an in-the-money short whose extrinsic is under `assignment_exposure_tv` (`assignment_roll`), at most once a session, never on a cash-settled leg |
 
 **How the arms are defined and enabled.**
 - What makes each arm itself is in code, `engine.ARM_RULES`, merged between `defaults` and the arm's
@@ -100,7 +108,8 @@ against hold-to-expiry; `tv_managed_exit` is a no-op for a held-long position. T
 5. expiry roll (`expiry`);
 6. decay roll (`decayed`, `shield` only);
 7. breach roll (`breach`, `shield` only);
-8. hold.
+8. assignment roll (`assignment_guard`, `shield_guard` only);
+9. hold.
 
 **Times are measured from the session's own close** (`clock.session_close_min`, so 13:00 on an early
 close):

@@ -12,7 +12,9 @@ trade is two arms, each its own portfolio:
 - **`shield`** and **`shield_hold`** follow Tom King's "Income Shield": hold a ~1-year call near
   0.90 delta (the broker's, 0.88-0.92) and sell a 0.70-delta weekly call against it, rolled every
   week until the long reaches 45 DTE. `shield` also rolls early once the short has decayed or been
-  breached; `shield_hold` holds each short to Friday.
+  breached; `shield_hold` holds each short to Friday. `shield_guard` (from 2026-10-26) holds like
+  `shield_hold` but rolls an in-the-money short once its extrinsic is nearly gone, the point where a
+  real short risks early assignment.
 - A short spanning an ex-dividend date or, on a stock, an earnings announcement is refused.
 
 A config must declare the shield arms to run them; the shipped example does. `control` (a ~21-DTE
