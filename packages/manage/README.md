@@ -156,7 +156,11 @@ Beside the trades, each evaluation reads the whole account as one book (`portfol
 - **a stress line**: the book repriced at SPY −10% and +5%, each name moved by its beta;
 - **each underlying's share** of the book's theta and BWD;
 - **beta doubts**: names whose broker beta disagrees in sign with its own three-month correlation,
-  which happens (RTX, FXI, DELL on 2026-10-18), so their BWD may be misstated.
+  which happens (RTX, FXI, DELL on 2026-10-18), so their BWD may be misstated;
+- **the broker check** (`broker_check`, from snapshot v9): BWD and theta summed again on the
+  broker's own per-leg greeks, over the same legs with the same betas, with the gap overall and by
+  underlying. A leg only one model prices is named and left out of both. It decides nothing; it is
+  the daily record of how far our model sits from the broker's before the bands are trusted.
 
 Everything is modelled (Black-Scholes at each leg's own IV). A leg the model cannot price, or an
 underlying with no beta, is named and left out, never counted as zero; the reading says it is

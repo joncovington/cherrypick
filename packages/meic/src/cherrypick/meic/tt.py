@@ -1629,6 +1629,35 @@ async def cmd_get_quotes(args) -> dict:
     return {"ok": True, "quotes": out, "missing": [s for s in symbols if s not in out]}
 
 
+async def cmd_get_greeks(args) -> dict:
+    """The broker's own greeks for a list of streamer symbols. Reads the feed; writes NOTHING.
+
+    `get_quotes`'s sibling, under the same rule: the shared cache has one producer, so these come back
+    to the caller and the cache is left alone. Per share, as the feed states them (theta per day).
+    The manage snapshot sets them beside its own Black-Scholes greeks, so a beta-weighted delta can be
+    checked against the broker's model and not only against itself.
+    """
+    symbols = list(dict.fromkeys(args.symbols or []))
+    if not symbols:
+        return {"ok": False, "error": "No symbols provided"}
+    timeout = getattr(args, "timeout", 8.0)
+    try:
+        greeks = await _collect_greeks(symbols, timeout)
+    except Exception as exc:
+        return _error(exc)
+    out = {
+        sym: {
+            "delta": _num(g.delta),
+            "gamma": _num(g.gamma),
+            "theta": _num(g.theta),
+            "vega": _num(g.vega),
+            "iv": _num(g.volatility),
+        }
+        for sym, g in greeks.items()
+    }
+    return {"ok": True, "greeks": out, "missing": [s for s in symbols if s not in out]}
+
+
 # ---------------------------------------------------------------------------
 # CLI dispatch
 # ---------------------------------------------------------------------------
@@ -1747,6 +1776,12 @@ def main():
     )
     p_gqs.add_argument("--timeout", type=float, default=8.0)
 
+    p_ggr = sub.add_parser("get_greeks")
+    p_ggr.add_argument(
+        "--symbols", nargs="+", required=True, help="Streamer symbols to read greeks for (no cache write)"
+    )
+    p_ggr.add_argument("--timeout", type=float, default=8.0)
+
     p_ss = sub.add_parser("stream_subscribe")
     p_ss.add_argument("--symbols", nargs="+", required=True, help="Streamer symbols to warm up in cache")
     p_ss.add_argument("--timeout", type=float, default=6.0)
@@ -1774,6 +1809,7 @@ def main():
         "get_positions": cmd_get_positions,
         "get_transactions": cmd_get_transactions,
         "get_quotes": cmd_get_quotes,
+        "get_greeks": cmd_get_greeks,
         "get_market_overview": cmd_get_market_overview,
         "get_quote": cmd_get_quote,
         "get_vix1d": cmd_get_vix1d,

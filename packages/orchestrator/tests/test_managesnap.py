@@ -33,6 +33,8 @@ def _fake(monkeypatch, answers):
     # Never the real home's income readings.
     monkeypatch.setattr(managesnap, "income_dir", lambda: Path("no-such-income-dir"))
     monkeypatch.setattr(managesnap, "earnings_times_dir", lambda: Path("no-such-times-dir"))
+    # Nor the real home's stream cache.
+    monkeypatch.setattr(managesnap, "_cached_greeks", lambda syms: {})
     monkeypatch.setattr(cfgmod, "enabled_modules", lambda cfg: {"meic": {"path": "."}})
     monkeypatch.setattr(cfgmod, "module_root", lambda mcfg, name: ".")
     monkeypatch.setattr(cfgmod, "broker_tool", lambda mcfg, name: ["-m", "cherrypick.meic.tt"])
@@ -48,7 +50,7 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 8
+    assert snap["snapshot_version"] == 9
     assert snap["transactions"] == {"GLD": [{"order_id": 1}]}
     assert snap["transactions_error"] is None
     (tx_argv, tx_timeout) = next(c for c in calls if "get_transactions" in c[0])
@@ -263,3 +265,56 @@ def test_a_stale_or_missing_timings_file_fills_nothing(tmp_path):
     _times_file(tmp_path, "2026-10-01", {"2026-10-19": {"CLF": "bmo"}})
     assert managesnap.earnings_times(date(2026, 10, 18), tmp_path) == {}
     assert managesnap.earnings_times(date(2026, 10, 18), tmp_path / "none") == {}
+
+
+GREEKS_POSITIONS = {
+    "ok": True,
+    "broker_module": "meic",
+    "accounts": [
+        {
+            "account": "****1234",
+            "underlyings": [
+                {
+                    "underlying": "GLD",
+                    "legs": [
+                        {"symbol": "GLD   261120P00370000", "right": "P"},
+                        {"symbol": "GLD   261120P00360000", "right": "P"},
+                        {"symbol": "GLD", "right": None},
+                    ],
+                }
+            ],
+        }
+    ],
+}
+
+
+def test_the_brokers_greeks_come_from_the_cache_first_and_the_feed_for_the_rest(monkeypatch):
+    calls = _fake(
+        monkeypatch,
+        {
+            "get_greeks": {
+                "ok": True,
+                "greeks": {".GLD261120P360": {"delta": -0.2, "theta": -0.05, "gamma": 0.01}},
+            }
+        },
+    )
+    monkeypatch.setattr(managesnap.positions_mod, "run", lambda cfg: GREEKS_POSITIONS)
+    cached = {".GLD261120P370": {"delta": -0.3, "theta": -0.06, "gamma": 0.02, "iv": 0.2, "vega": 0.3}}
+    monkeypatch.setattr(
+        managesnap, "_cached_greeks", lambda syms: {s: cached[s] for s in syms if s in cached}
+    )
+    snap = managesnap.build({})
+    got = snap["broker_greeks"]
+    assert set(got) == {"GLD   261120P00370000", "GLD   261120P00360000"}  # shares carry none
+    assert got["GLD   261120P00370000"]["source"] == "cache" and got["GLD   261120P00370000"]["delta"] == -0.3
+    assert got["GLD   261120P00360000"]["source"] == "feed" and got["GLD   261120P00360000"]["theta"] == -0.05
+    asked = [c[0] for c in calls if "get_greeks" in c[0]]
+    assert len(asked) == 1 and asked[0][asked[0].index("--symbols") + 1 :] == [".GLD261120P360"]
+    assert snap["broker_greeks_error"] is None
+
+
+def test_a_feed_that_cannot_answer_for_greeks_is_recorded_not_fatal(monkeypatch):
+    _fake(monkeypatch, {"get_greeks": {"ok": False, "error": "DXLink timeout"}})
+    monkeypatch.setattr(managesnap.positions_mod, "run", lambda cfg: GREEKS_POSITIONS)
+    snap = managesnap.build({})
+    assert snap["broker_greeks"] == {} and "DXLink timeout" in snap["broker_greeks_error"]

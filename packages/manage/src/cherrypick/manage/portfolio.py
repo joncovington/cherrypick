@@ -166,6 +166,89 @@ def _beta_doubt(beta: float | None, corr: float | None, cfg: dict[str, Any]) -> 
     return None
 
 
+def broker_check(
+    trades: list[dict[str, Any]],
+    broker: dict[str, dict] | None,
+    metrics: dict[str, Any],
+    bench_spot: float | None,
+    rate: float,
+) -> dict[str, Any]:
+    """Beta-weighted delta and theta summed twice over the same legs: on our model and on the
+    broker's own greeks (snapshot v9), with the same beta, spot and benchmark, so the gap is the two
+    models' and nothing else. A leg only one side prices is left out of both and named, never
+    counted on one side as zero. Shares are delta 1 on both sides. Nothing reads this to decide
+    anything: it is the record the portfolio plan asks for before the bands are trusted."""
+    if broker is None:
+        return {"available": False, "reason": "snapshot carries no broker greeks (before v9)"}
+    per: dict[str, dict[str, Any]] = {}
+    compared, left_out = 0, []
+    for trade in trades:
+        und = trade["underlying"]
+        spot = _f(trade.get("spot"))
+        beta = _f(((metrics or {}).get(und) or {}).get("beta"))
+        row = per.setdefault(
+            und,
+            {"underlying": und, "scale": None, "delta": [0.0, 0.0], "theta": [0.0, 0.0], "legs": 0},
+        )
+        if beta is not None and spot and bench_spot:
+            row["scale"] = beta * spot / bench_spot
+        for leg in trade.get("legs") or []:
+            ours = leg_greeks(leg, spot, rate) if leg.get("priced") else None
+            if ours is not None and ours["basis"] == "shares":
+                row["delta"][0] += ours["delta"]
+                row["delta"][1] += ours["delta"]
+                continue
+            b = (broker or {}).get(str(leg.get("symbol") or ""))
+            b_delta, b_theta = (_f(b.get("delta")), _f(b.get("theta"))) if b else (None, None)
+            if ours is None or b_delta is None or b_theta is None:
+                left_out.append(leg.get("label") or str(leg.get("symbol")))
+                continue
+            size = float(leg.get("quantity") or 0.0) * MULTIPLIER
+            row["delta"][0] += ours["delta"]
+            row["delta"][1] += size * b_delta
+            row["theta"][0] += ours["theta"]
+            row["theta"][1] += size * b_theta
+            row["legs"] += 1
+            compared += 1
+
+    names = []
+    totals = {"bwd": [0.0, 0.0], "theta": [0.0, 0.0]}
+    for r in per.values():
+        bwd = None if r["scale"] is None else [d * r["scale"] for d in r["delta"]]
+        if bwd is not None:
+            totals["bwd"][0] += bwd[0]
+            totals["bwd"][1] += bwd[1]
+        totals["theta"][0] += r["theta"][0]
+        totals["theta"][1] += r["theta"][1]
+        if r["legs"]:
+            names.append(
+                {
+                    "underlying": r["underlying"],
+                    "legs": r["legs"],
+                    "bwd_ours": _round(bwd[0]) if bwd else None,
+                    "bwd_broker": _round(bwd[1]) if bwd else None,
+                    "bwd_gap": _round(bwd[0] - bwd[1]) if bwd else None,
+                    "theta_ours": _round(r["theta"][0]),
+                    "theta_broker": _round(r["theta"][1]),
+                    "theta_gap": _round(r["theta"][0] - r["theta"][1]),
+                }
+            )
+    names.sort(key=lambda n: -abs(n["bwd_gap"] if n["bwd_gap"] is not None else n["theta_gap"] or 0.0))
+    have_bench = bench_spot is not None
+    return {
+        "available": True,
+        "legs_compared": compared,
+        "legs_left_out": left_out,
+        "bwd_ours": _round(totals["bwd"][0]) if have_bench else None,
+        "bwd_broker": _round(totals["bwd"][1]) if have_bench else None,
+        "bwd_gap": _round(totals["bwd"][0] - totals["bwd"][1]) if have_bench else None,
+        "theta_ours": _round(totals["theta"][0]),
+        "theta_broker": _round(totals["theta"][1]),
+        "theta_gap": _round(totals["theta"][0] - totals["theta"][1]),
+        "underlyings": names,
+    }
+
+
 def reading(
     trades: list[dict[str, Any]],
     metrics: dict[str, Any],
@@ -173,6 +256,7 @@ def reading(
     balances: dict[str, Any],
     account_type: dict[str, Any] | None,
     rules: dict[str, Any],
+    broker_greeks: dict[str, dict] | None = None,
 ) -> dict[str, Any]:
     cfg = rules["portfolio"]
     rate = float(rules["pricing"]["rate"])
@@ -294,6 +378,7 @@ def reading(
         "vix": _f(((metrics or {}).get(VIX) or {}).get("last")),
         "scenarios": scenarios(rows, bench_spot, rate, cfg["scenarios"], net_liq),
         "ladder": ladder(trades, leg_thetas, trade_theta, theta),
+        "broker_check": broker_check(trades, broker_greeks, metrics, bench_spot, rate),
     }
     out["bands"] = bands(out, cfg)
     out["guidance"] = guidance(out, rules)

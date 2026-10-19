@@ -347,3 +347,43 @@ def test_buying_power_over_its_vix_cap_fires_and_without_vix_there_is_no_band():
     blind = _read(trades, _metrics(XYZ=(1.0, 0.9)))
     assert blind["bands"]["buying_power"]["high"] is None and blind["bands"]["buying_power"]["inside"] is None
     assert "portfolio.buying_power" not in _rules_fired(blind)
+
+
+# --------------------------------------------------------------------------- against the broker's model
+def _checked(trades, broker, metrics=None):
+    return portfolio.reading(
+        trades, metrics or _metrics(XYZ=(2.0, 0.9)), "SPY", BALANCES, None, RULES, broker
+    )
+
+
+def test_the_broker_check_sums_both_models_over_the_same_legs_with_the_same_beta():
+    # XYZ at 250 with beta 2 against SPY at 500: one XYZ share is one SPY share of BWD.
+    short_put, shares = _leg(-2, "P", 240.0), _leg(100)
+    ours = portfolio.leg_greeks(short_put, 250.0, RULES["pricing"]["rate"])
+    broker = {short_put["symbol"]: {"delta": 0.30, "theta": -0.10}}
+    check = _checked([_trade("XYZ", 250.0, [short_put, shares])], broker)["broker_check"]
+    assert check["available"] and check["legs_compared"] == 1 and check["legs_left_out"] == []
+    # Broker: -2 x 100 x 0.30 = -60 shares of delta, plus 100 shares = +40; x 2 x 250 / 500 = +40 BWD.
+    assert check["bwd_broker"] == pytest.approx(40.0)
+    assert check["bwd_ours"] == pytest.approx(ours["delta"] + 100.0, abs=0.01)
+    assert check["theta_broker"] == pytest.approx(20.0)  # short 2 contracts at -0.10 a share a day
+    assert check["theta_ours"] == pytest.approx(ours["theta"], abs=0.01)
+    assert check["bwd_gap"] == pytest.approx(check["bwd_ours"] - check["bwd_broker"], abs=0.01)
+    assert check["underlyings"][0]["underlying"] == "XYZ"
+
+
+def test_a_leg_only_one_model_prices_is_left_out_of_both_and_named():
+    a, b = _leg(-1, "P", 240.0), _leg(1, "P", 230.0)
+    check = _checked([_trade("XYZ", 250.0, [a, b])], {a["symbol"]: {"delta": 0.3, "theta": -0.1}})[
+        "broker_check"
+    ]
+    assert check["legs_compared"] == 1 and check["legs_left_out"] == [b["label"]]
+    ours_a = portfolio.leg_greeks(a, 250.0, RULES["pricing"]["rate"])
+    # Only leg a is on either side: b is not counted as zero on the broker's.
+    assert check["theta_ours"] == pytest.approx(ours_a["theta"], abs=0.01)
+    assert check["theta_broker"] == pytest.approx(10.0)
+
+
+def test_an_older_snapshot_has_no_broker_check():
+    check = _checked([_trade("XYZ", 250.0, [_leg(-1, "P", 240.0)])], None)["broker_check"]
+    assert check["available"] is False

@@ -47,6 +47,13 @@ for the same report date only and in the broker's own spelling (`BTO` / `AMC`), 
 `earnings_time_source: "nasdaq"`. An earnings trade closes on its report's day when that is before
 the open and the day after otherwise, and on 2026-10-18 the broker timed none of RTX, NFLX and CLF:
 CLF and RTX report before the open, so without this both would have been held a day past the call.
+
+Version 9 carries the broker's own greeks for every option leg held (`broker_greeks`, keyed by the
+leg's symbol, per share as the feed states them): the stream cache's where it holds them fresh, the
+feed's for the rest through the broker tool's read-only `get_greeks`. manage prices every leg itself,
+so these are not inputs to any verdict; they let each day's reading set its beta-weighted delta and
+theta beside the same sums on the broker's model, which is the check the portfolio plan asks for
+before the bands are trusted.
 """
 
 from __future__ import annotations
@@ -57,14 +64,17 @@ import time
 from datetime import date, timedelta
 from typing import Any
 
-from cherrypick.core import clock
+from cherrypick.core import clock, streamcache
+from cherrypick.core.db import connect_ro
 
 from . import config as cfgmod
 from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 8
+SNAPSHOT_VERSION = 9
+# Greeks move far more slowly than a bid; the cache's are used up to this old, the feed's otherwise.
+GREEKS_MAX_AGE_SECONDS = 900.0
 # Monday reads Friday's afternoon reading; anything older is a stale book of quotes.
 INCOME_MAX_AGE_DAYS = 4
 # The timings file is fetched nightly a month ahead; a week-old one still knows this week's reports.
@@ -155,6 +165,55 @@ def transactions(
         cfg, prefer, ["get_transactions", "--underlyings", *symbols, "--since", since], timeout=180
     )
     return payload.get("transactions") or {}, error
+
+
+def _option_symbols(positions: dict[str, Any]) -> dict[str, str]:
+    """{leg symbol: streamer symbol} for every option leg held, in every account."""
+    out: dict[str, str] = {}
+    for account in positions.get("accounts") or []:
+        for u in account.get("underlyings") or []:
+            for leg in u.get("legs") or []:
+                occ = str(leg.get("symbol") or "")
+                if leg.get("right") in ("C", "P") and occ:
+                    out[occ] = streamcache.occ_to_streamer_symbol(occ) or occ.strip()
+    return out
+
+
+def _cached_greeks(streamer_syms: list[str]) -> dict[str, dict]:
+    path = streamcache.cache_path()
+    if not streamer_syms or not path.exists():
+        return {}
+    try:
+        conn = connect_ro(path)
+    except Exception:  # noqa: BLE001 -- an unreadable cache means ask the feed instead
+        return {}
+    try:
+        return streamcache.greeks_for(
+            conn, streamer_syms, now_ts=time.time(), max_age_seconds=GREEKS_MAX_AGE_SECONDS
+        )
+    finally:
+        conn.close()
+
+
+def broker_greeks(
+    cfg: dict[str, Any], positions: dict[str, Any], prefer: str | None = None
+) -> tuple[dict[str, dict], str | None]:
+    """{leg symbol: the broker's per-share greeks} for every option leg held, cache first, feed second;
+    and an error string when the feed was needed and could not answer. A leg neither has is absent."""
+    wanted = _option_symbols(positions)
+    unique = sorted(set(wanted.values()))
+    found = {sym: dict(g, source="cache") for sym, g in _cached_greeks(unique).items()}
+    missing = [s for s in unique if s not in found]
+    error = None
+    if missing:
+        payload, error = _first_answer(cfg, prefer, ["get_greeks", "--symbols", *missing], timeout=60)
+        for sym, g in (payload.get("greeks") or {}).items():
+            found[sym] = dict(g, source="feed")
+    keep = ("delta", "gamma", "theta", "vega", "iv", "source")
+    return (
+        {occ: {k: found[s].get(k) for k in keep} for occ, s in wanted.items() if s in found},
+        error,
+    )
 
 
 def pick_hedge_expiry(listing: dict[str, list[dict]], session: date) -> str | None:
@@ -334,6 +393,7 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
     fill_earnings_times(metrics, earnings_times(date.fromisoformat(session)))
     hedge_spot = (metrics.get(HEDGE_ROOT) or {}).get("last")
     hedge = hedge_chain(cfg, hedge_spot, date.fromisoformat(session), prefer) if ok else None
+    greeks, greeks_error = broker_greeks(cfg, positions, prefer) if ok else ({}, None)
     return {
         "snapshot_version": SNAPSHOT_VERSION,
         "session": session,
@@ -345,5 +405,7 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "transactions": history,
         "transactions_error": history_error,
         "hedge_chain": hedge,
+        "broker_greeks": greeks,
+        "broker_greeks_error": greeks_error,
         "income": income_reading(date.fromisoformat(session)),
     }

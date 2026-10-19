@@ -447,7 +447,7 @@ def test_greeks_for_returns_gamma(tmp_path):
     conn.commit()
     got = streamcache.greeks_for(conn, [".g"], now_ts=now, max_age_seconds=1800)
     assert got[".g"]["gamma"] == 0.0031
-    assert set(got[".g"]) == {"delta", "gamma", "iv", "vega"}
+    assert set(got[".g"]) == {"delta", "gamma", "theta", "iv", "vega"}
 
 
 def test_greeks_for_feeds_compute_gex_end_to_end(tmp_path):
