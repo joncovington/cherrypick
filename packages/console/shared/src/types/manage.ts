@@ -106,8 +106,9 @@ export interface ManageTrade {
   takeProfit: ManageLevel | null;
   stop: ManageLevel | null;
   timeExit: string | null;
-  earnings: { date: string; days: number; timeOfDay: string | null; beforeNearestShortExpiry: boolean } | null;
-  exDividend: { date: string; days: number } | null;
+  /** `days` is null when the evaluation did not count them: never a made-up zero. */
+  earnings: { date: string; days: number | null; timeOfDay: string | null; beforeNearestShortExpiry: boolean } | null;
+  exDividend: { date: string; days: number | null } | null;
   /** Modelled at the nearest expiry (Black-Scholes at each leg's own IV); never a tradable price. */
   profile: {
     horizon: string | null;

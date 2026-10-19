@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ManageAccount, ManageLevel, ManagePayload, ManageTrade } from "@console/shared";
 import { Card, DataCard, sortRows, useSort, type SortHeader } from "../../components/DataTable";
 import { TileGrid } from "../../components/performance/TileGrid";
-import { fmtMoney } from "../../lib/format";
+import { fmtCash, fmtMoney } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
 import { PortfolioCards } from "./PortfolioCards";
 import { ScenarioCards } from "./ScenarioCards";
@@ -98,10 +98,35 @@ function signedLevel(l: ManageLevel | null): number | null {
   return l.netSide === "cr" ? l.netPrice : -l.netPrice;
 }
 
+// A stop set from the max loss rather than the premium. The share is the ruleset's, not this page's.
 function levelText(l: ManageLevel | null): string {
   if (!l) return "—";
-  return `${net(l.netPrice, l.netSide)} (${fmtMoney(l.closeValue)})${l.basis === "max_loss" ? " · half max loss" : ""}`;
+  return `${net(l.netPrice, l.netSide)} (${fmtMoney(l.closeValue)})${l.basis === "max_loss" ? " · from max loss" : ""}`;
 }
+
+/** ` (3d)`, or nothing where the evaluation did not count the days. */
+function daysText(d: number | null): string {
+  return d === null ? "" : ` (${d}d)`;
+}
+
+/** An earnings trade before its call: its take profit and stop wait, and it closes after the call. */
+function heldForCall(t: ManageTrade): boolean {
+  return t.earningsTrade !== null && !t.earningsTrade.passed;
+}
+
+// manage's own ranking (evaluate.PRIORITY), so the action column sorts by urgency, not alphabet.
+const ACTION_PRIORITY: Record<string, number> = {
+  ROLL_FOR_CREDIT: 0,
+  CLOSE: 1,
+  TAKE_PROFIT: 2,
+  ROLL_OR_CLOSE: 3,
+  CLOSE_LEGS: 4,
+  REVIEW: 5,
+  SETTLES: 6,
+  HOLD: 7,
+};
+
+const HELD_TITLE = "an earnings trade: its take profit and stop wait for the call, and it closes after it";
 
 /** One card in an expanded trade's row: a small caps title, an optional chip, and its body. */
 function DetailCard({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
@@ -142,7 +167,10 @@ function Money({ v }: { v: number | null }) {
  */
 function TradeDetail({ t }: { t: ManageTrade }) {
   const et = t.earningsTrade;
-  const credit = t.kind === "credit";
+  const held = heldForCall(t);
+  // Entry + close at mid = gross; gross − fees = net. Fees are a cost, shown positive and subtracted once.
+  const fees = t.fees === null ? null : Math.abs(t.fees);
+  const cashLabel = (v: number | null) => (v !== null && v < 0 ? "net paid in" : "net taken in");
   return (
     <div className="md-detail">
       {t.explanation && <p className="md-lead">{t.explanation}</p>}
@@ -166,9 +194,10 @@ function TradeDetail({ t }: { t: ManageTrade }) {
               </ul>
               <Kv
                 rows={[
-                  [credit ? "net taken in" : "net paid in", fmtMoney(t.chain.cash === null ? null : Math.abs(t.chain.cash))],
-                  ["fees", fmtMoney(t.fees)],
+                  [cashLabel(t.chain.cash), fmtCash(t.chain.cash)],
+                  ["close at mid", fmtCash(t.value)],
                   ["P&L gross", <Money key="g" v={t.pnlGross} />],
+                  ["fees paid", fmtMoney(fees)],
                   ["P&L net of fees", <Money key="n" v={t.pnlNet} />],
                 ]}
               />
@@ -177,7 +206,8 @@ function TradeDetail({ t }: { t: ManageTrade }) {
             <>
               <Kv
                 rows={[
-                  ["opened for", `${net(t.opening.netPrice, t.opening.netSide)} (${fmtMoney(t.opening.net)})`],
+                  ["opened for", `${net(t.opening.netPrice, t.opening.netSide)} (${fmtCash(t.opening.net)})`],
+                  ["close at mid", fmtCash(t.value)],
                   ["P&L gross", <Money key="g" v={t.pnlGross} />],
                 ]}
               />
@@ -219,15 +249,17 @@ function TradeDetail({ t }: { t: ManageTrade }) {
         <DetailCard title="exit levels">
           <Kv
             rows={[
-              ["take profit", levelText(t.takeProfit)],
-              ["stop", levelText(t.stop)],
-              ["time exit", t.timeExit ?? "—"],
+              ["take profit", levelText(t.takeProfit) + (held ? " · waits for the call" : "")],
+              ["stop", levelText(t.stop) + (held ? " · waits for the call" : "")],
+              ["time exit", t.timeExit ? `${t.timeExit}${et ? " · after the call" : ""}` : "—"],
               ...(t.earnings
-                ? ([["earnings", `${t.earnings.date}${t.earnings.timeOfDay ? ` ${t.earnings.timeOfDay}` : ""} (${t.earnings.days}d)`]] as Array<
-                    [string, ReactNode]
-                  >)
+                ? ([
+                    ["earnings", `${t.earnings.date}${t.earnings.timeOfDay ? ` ${t.earnings.timeOfDay}` : ""}${daysText(t.earnings.days)}`],
+                  ] as Array<[string, ReactNode]>)
                 : []),
-              ...(t.exDividend ? ([["ex-dividend", `${t.exDividend.date} (${t.exDividend.days}d)`]] as Array<[string, ReactNode]>) : []),
+              ...(t.exDividend
+                ? ([["ex-dividend", `${t.exDividend.date}${daysText(t.exDividend.days)}`]] as Array<[string, ReactNode]>)
+                : []),
             ]}
           />
         </DetailCard>
@@ -337,27 +369,43 @@ function TradeDetail({ t }: { t: ManageTrade }) {
 const PASSIVE = new Set(["HOLD", "SETTLES"]);
 
 /** The account strip both tabs open with: the book's size and what today asks of it. */
-function AccountTiles({ a }: { a: ManageAccount }) {
+/** The ruleset's `risk.oversize_multiple`: how many budgets of modelled downside flag a trade. */
+function oversizeMultiple(rules: Record<string, unknown> | null | undefined): number | null {
+  const risk = rules?.["risk"];
+  const m = risk && typeof risk === "object" ? (risk as Record<string, unknown>)["oversize_multiple"] : null;
+  return typeof m === "number" && Number.isFinite(m) ? m : null;
+}
+
+function AccountTiles({ a, oversize }: { a: ManageAccount; oversize: number | null }) {
   const acting = a.trades.filter((t) => !PASSIVE.has(t.action)).length;
+  const flagAt = a.riskBudget !== null && oversize !== null ? a.riskBudget * oversize : null;
   return (
     <TileGrid count={6}>
       <Tile label={`net liq · ${a.account ?? "?"}`} value={fmtMoney(a.netLiq)} />
-      <Tile label="per-trade budget" value={fmtMoney(a.riskBudget)} title="max-loss budget per trade (risk.max_risk_pct of net liq)" />
+      <Tile
+        label="per-trade budget"
+        value={fmtMoney(a.riskBudget)}
+        title="risk.max_risk_pct of net liq: the unit a trade's modelled downside from here is measured in"
+      />
+      <Tile
+        label={oversize === null ? "review over" : `review over (${oversize}×)`}
+        value={fmtMoney(flagAt)}
+        title="risk.oversize: a trade is flagged REVIEW when its modelled downside from today's marks exceeds this many budgets"
+      />
       <Tile label="mark P&L (gross)" value={fmtMoney(a.pnlGross)} tone={a.pnlGross === null ? "dim" : a.pnlGross >= 0 ? "pos" : "neg"} />
-      <Tile label="trades" value={String(a.trades.length)} />
-      <Tile label="action needed" value={String(acting)} />
+      <Tile label="action needed" value={`${acting} of ${a.trades.length}`} />
       <Tile label="holding" value={String(a.trades.length - acting)} tone="dim" />
     </TileGrid>
   );
 }
 
 /** Positions: what to do with each trade today, the actions first. */
-function PositionsAccount({ a, loading }: { a: ManageAccount; loading: boolean }) {
+function PositionsAccount({ a, loading, oversize }: { a: ManageAccount; loading: boolean; oversize: number | null }) {
   const acting = a.trades.filter((t) => !PASSIVE.has(t.action));
   const holding = a.trades.filter((t) => PASSIVE.has(t.action));
   return (
     <>
-      <AccountTiles a={a} />
+      <AccountTiles a={a} oversize={oversize} />
       <TradesCard title="action needed" trades={acting} loading={loading} empty="nothing to do today" variant="act" />
       <TradesCard title="holding" trades={holding} loading={loading} empty="no trades on hold" variant="hold" />
       {a.excluded.length > 0 && (
@@ -371,10 +419,10 @@ function PositionsAccount({ a, loading }: { a: ManageAccount; loading: boolean }
 
 /** Portfolio: the account read as one book -- its size, its greeks against their bands, how it
  *  behaves if the market moves, and the trades sized to fit it. */
-function PortfolioAccount({ a }: { a: ManageAccount }) {
+function PortfolioAccount({ a, oversize }: { a: ManageAccount; oversize: number | null }) {
   return (
     <>
-      <AccountTiles a={a} />
+      <AccountTiles a={a} oversize={oversize} />
       {a.portfolio ? (
         <PortfolioCards p={a.portfolio} scenarios={<ScenarioCards p={a.portfolio} />} />
       ) : (
@@ -410,7 +458,7 @@ function TradesCard({
   // Each trade's detail row is rendered inside its own Fragment, so it follows its trade through a sort.
   const rows = sortRows(trades, sort, {
     trade: (t) => t.tradeId,
-    action: (t) => ACTION_LABEL[t.action] ?? t.action,
+    action: (t) => ACTION_PRIORITY[t.action] ?? 9,
     conf: (t) => t.confidence,
     kind: (t) => t.kind,
     pnl: (t) => t.pnlGross,
@@ -468,7 +516,7 @@ function TradesCard({
             <td className={tone(t.pnlGross)} style={RIGHT}>{fmtMoney(t.pnlGross)}</td>
             <td className={tone(t.capture)} style={RIGHT}>{pct(t.capture)}</td>
             <td style={RIGHT}>{t.nearestShortDte ?? "—"}</td>
-            <td>{t.earnings ? `${t.earnings.date} (${t.earnings.days}d)` : "—"}</td>
+            <td>{t.earnings ? `${t.earnings.date}${daysText(t.earnings.days)}` : "—"}</td>
             {variant === "act" ? (
               <td style={{ whiteSpace: "normal", minWidth: "18rem" }}>
                 {t.reason}
@@ -476,9 +524,25 @@ function TradesCard({
               </td>
             ) : (
               <>
-                <td style={RIGHT}>{net(t.takeProfit?.netPrice ?? null, t.takeProfit?.netSide ?? null)}</td>
-                <td style={RIGHT}>{net(t.stop?.netPrice ?? null, t.stop?.netSide ?? null)}</td>
-                <td>{t.timeExit ?? "—"}</td>
+                {heldForCall(t) ? (
+                  <>
+                    <td className="muted" style={RIGHT} title={HELD_TITLE}>
+                      waits for call
+                    </td>
+                    <td className="muted" style={RIGHT} title={HELD_TITLE}>
+                      waits for call
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td style={RIGHT}>{net(t.takeProfit?.netPrice ?? null, t.takeProfit?.netSide ?? null)}</td>
+                    <td style={RIGHT}>{net(t.stop?.netPrice ?? null, t.stop?.netSide ?? null)}</td>
+                  </>
+                )}
+                <td title={t.earningsTrade ? HELD_TITLE : undefined}>
+                  {t.timeExit ?? "—"}
+                  {t.earningsTrade ? <span className="muted"> · after call</span> : null}
+                </td>
               </>
             )}
           </tr>
@@ -569,9 +633,9 @@ function EvaluationPage({ view }: { view: "positions" | "portfolio" }) {
       </Card>
       {(data?.accounts ?? []).map((a) =>
         view === "positions" ? (
-          <PositionsAccount key={a.account ?? "?"} a={a} loading={isLoading} />
+          <PositionsAccount key={a.account ?? "?"} a={a} loading={isLoading} oversize={oversizeMultiple(data?.rules)} />
         ) : (
-          <PortfolioAccount key={a.account ?? "?"} a={a} />
+          <PortfolioAccount key={a.account ?? "?"} a={a} oversize={oversizeMultiple(data?.rules)} />
         ),
       )}
       {view === "positions" && (

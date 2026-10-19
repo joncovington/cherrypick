@@ -211,12 +211,12 @@ function trade(v: unknown): ManageTrade {
     earnings: str(er["date"])
       ? {
           date: str(er["date"]) as string,
-          days: num(er["days"]) ?? 0,
+          days: num(er["days"]),
           timeOfDay: str(er["time_of_day"]),
           beforeNearestShortExpiry: er["before_nearest_short_expiry"] === true,
         }
       : null,
-    exDividend: str(xd["date"]) ? { date: str(xd["date"]) as string, days: num(xd["days"]) ?? 0 } : null,
+    exDividend: str(xd["date"]) ? { date: str(xd["date"]) as string, days: num(xd["days"]) } : null,
     profile:
       Object.keys(pf).length === 0
         ? null
