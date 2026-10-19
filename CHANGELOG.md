@@ -15,6 +15,10 @@ beyond the latest release.
   expiry, so its odds are the chance of finishing out of the money, 1 − N(d2), not 1 − |delta|. At a
   0.15-delta band that read calls about two points too risky and puts about two points too safe,
   the size of the effect the score ranks on. New: `core.bs.prob_itm`.
+- **Added: manage checks its BWD and theta against the broker's model every day.** Snapshot v9
+  carries the broker's own greeks for each option leg held (cache first, then the feed through the
+  new read-only `get_greeks`), and each evaluation's `portfolio.broker_check` sums both models over
+  the same legs and betas, with the gap overall and by underlying.
 
 ## v0.11.2 — 2026-10-19 — review follow-ups
 The decisions the documentation review (v0.11.1) left open. One fixes how earnings marks and closes
