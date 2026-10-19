@@ -195,6 +195,18 @@ describe("readManage", () => {
           beta_doubt: "beta +0.27 but three-month correlation -0.75: opposite signs" },
       ],
       hedges: null,
+      broker_check: {
+        available: true,
+        legs_compared: 30,
+        legs_left_out: ["-1 GOOGL 370C"],
+        bwd_ours: 5.85,
+        bwd_broker: 7.1,
+        bwd_gap: -1.25,
+        theta_ours: 43.68,
+        theta_broker: 41.2,
+        theta_gap: 2.48,
+        underlyings: [{ underlying: "META", legs: 4, bwd_ours: 6.2, bwd_broker: 7.0, bwd_gap: -0.8, theta_ours: 6.4, theta_broker: 6.0, theta_gap: 0.4 }],
+      },
     };
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-16.json"), JSON.stringify(evalDoc("2026-10-16")));
@@ -225,6 +237,17 @@ describe("readManage", () => {
     expect(c.fits[0]).toMatchObject({ underlying: "AAL", kind: "short_put", units: 1, binding: "per-trade risk" });
     expect(c.fits[0]!.perUnit).toMatchObject({ credit: 0.33, buyingPower: 1067, stressLoss: 251.07, bwd: null });
     expect(c.fits[0]!.alternative).toBeNull();
+    expect(p.brokerCheck).toEqual({
+      legsCompared: 30,
+      legsLeftOut: ["-1 GOOGL 370C"],
+      bwdOurs: 5.85,
+      bwdBroker: 7.1,
+      bwdGap: -1.25,
+      thetaOurs: 43.68,
+      thetaBroker: 41.2,
+      thetaGap: 2.48,
+      underlyings: [{ underlying: "META", legs: 4, bwdGap: -0.8, thetaGap: 0.4 }],
+    });
     // An evaluation from before the reading existed has no portfolio, not an empty one.
     expect(readManage(config, "2026-10-16").accounts[0]!.portfolio).toBeNull();
   });

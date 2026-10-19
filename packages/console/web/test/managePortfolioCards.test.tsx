@@ -79,6 +79,7 @@ function reading(over: Partial<ManagePortfolio> = {}): ManagePortfolio {
     ],
     hedges: null,
     candidates: null,
+    brokerCheck: null,
     ...over,
   };
 }
@@ -111,6 +112,31 @@ describe("BandDial", () => {
 describe("PortfolioCards", () => {
   it("draws nothing for an evaluation written before the reading existed", () => {
     expect(render(<PortfolioCards p={null} />)).toBe("");
+  });
+
+  it("shows the check against the broker's model only when the reading carries one, untoned", () => {
+    expect(render(<PortfolioCards p={reading()} />)).not.toContain("against the broker");
+    const html = render(
+      <PortfolioCards
+        p={reading({
+          brokerCheck: {
+            legsCompared: 30,
+            legsLeftOut: ["-1 GOOGL 370C"],
+            bwdOurs: 5.85,
+            bwdBroker: 7.1,
+            bwdGap: -1.21,
+            thetaOurs: 43.68,
+            thetaBroker: 41.2,
+            thetaGap: 2.48,
+            underlyings: [{ underlying: "META", legs: 4, bwdGap: -0.8, thetaGap: 0.4 }],
+          },
+        })}
+      />,
+    );
+    expect(html).toContain("against the broker");
+    expect(html).toContain("−1.2 sh"); // the delta gap
+    expect(html).toContain("30 legs on both models");
+    expect(html).toContain("-1 GOOGL 370C");
   });
 
   it("shows each band's chip from the reading and the guidance it fired", () => {

@@ -12,6 +12,7 @@ import path from "node:path";
 import type {
   ManageAccount,
   ManageBand,
+  ManageBrokerCheck,
   ManageCandidate,
   ManageCandidates,
   ManageChainOrder,
@@ -374,6 +375,32 @@ function portfolio(v: unknown): ManagePortfolio | null {
     scenarios: scenarios(p["scenarios"]),
     ladder: ladder(p["ladder"]),
     candidates: candidates(p["candidates"]),
+    brokerCheck: brokerCheck(p["broker_check"]),
+  };
+}
+
+/** The check against the broker's greeks, passed through; null where the snapshot carried none. */
+function brokerCheck(v: unknown): ManageBrokerCheck | null {
+  const c = rec(v);
+  if (c["available"] !== true) return null;
+  return {
+    legsCompared: num(c["legs_compared"]) ?? 0,
+    legsLeftOut: strs(c["legs_left_out"]),
+    bwdOurs: num(c["bwd_ours"]),
+    bwdBroker: num(c["bwd_broker"]),
+    bwdGap: num(c["bwd_gap"]),
+    thetaOurs: num(c["theta_ours"]),
+    thetaBroker: num(c["theta_broker"]),
+    thetaGap: num(c["theta_gap"]),
+    underlyings: arr(c["underlyings"]).map((raw) => {
+      const u = rec(raw);
+      return {
+        underlying: str(u["underlying"]) ?? "?",
+        legs: num(u["legs"]) ?? 0,
+        bwdGap: num(u["bwd_gap"]),
+        thetaGap: num(u["theta_gap"]),
+      };
+    }),
   };
 }
 

@@ -197,6 +197,23 @@ export interface ManageHedges {
   suggestions: ManageHedgeSuggestion[];
 }
 
+/**
+ * Beta-weighted delta and theta summed on our model and on the broker's own greeks, over the same legs
+ * with the same betas (`portfolio.broker_check`, snapshot v9). A gap is ours less the broker's.
+ */
+export interface ManageBrokerCheck {
+  legsCompared: number;
+  /** Legs only one model priced, left out of both sums. */
+  legsLeftOut: string[];
+  bwdOurs: number | null;
+  bwdBroker: number | null;
+  bwdGap: number | null;
+  thetaOurs: number | null;
+  thetaBroker: number | null;
+  thetaGap: number | null;
+  underlyings: Array<{ underlying: string; legs: number; bwdGap: number | null; thetaGap: number | null }>;
+}
+
 /** The account read as one book (packages/manage `portfolio.py`). Every figure is modelled. */
 export interface ManagePortfolio {
   benchmark: string | null;
@@ -231,6 +248,8 @@ export interface ManagePortfolio {
   scenarios: ManageScenarios | null;
   ladder: ManageLadder | null;
   candidates: ManageCandidates | null;
+  /** Null on an evaluation from before snapshot v9, which carried no broker greeks. */
+  brokerCheck: ManageBrokerCheck | null;
 }
 
 /** One sized income trade (packages/manage `candidates.py`). Every figure is the package's. */
