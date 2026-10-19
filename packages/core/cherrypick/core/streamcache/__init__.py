@@ -1274,7 +1274,8 @@ def chain_for_expiration(conn, symbol: str, expiration: str, root: str) -> list[
 
 
 def greeks_for(conn, streamer_syms: list[str], *, now_ts: float, max_age_seconds: float) -> dict:
-    """delta/gamma/iv/vega per streamer symbol, age-bounded. Missing rows are simply absent.
+    """delta/gamma/theta/iv/vega per streamer symbol, age-bounded. Missing rows are simply absent.
+    (`theta` was added 2026-10-19, for manage's check against the broker's own greeks.)
 
     The age limit is deliberately looser than a quote's: open interest is a once-a-day snapshot and
     gamma updates far less often than a bid, so the quote limit would reject a perfectly good
@@ -1299,7 +1300,7 @@ def greeks_for(conn, streamer_syms: list[str], *, now_ts: float, max_age_seconds
         chunk = streamer_syms[i : i + 900]
         placeholders = ", ".join("?" * len(chunk))
         for r in conn.execute(
-            f"SELECT symbol, delta, gamma, iv, vega, updated_at FROM stream_greeks "
+            f"SELECT symbol, delta, gamma, theta, iv, vega, updated_at FROM stream_greeks "
             f"WHERE symbol IN ({placeholders})",
             chunk,
         ):
@@ -1308,6 +1309,7 @@ def greeks_for(conn, streamer_syms: list[str], *, now_ts: float, max_age_seconds
             out[r["symbol"]] = {
                 "delta": float(r["delta"]) if r["delta"] is not None else None,
                 "gamma": float(r["gamma"]) if r["gamma"] is not None else None,
+                "theta": float(r["theta"]) if r["theta"] is not None else None,
                 "iv": float(r["iv"]) if r["iv"] is not None else None,
                 "vega": float(r["vega"]) if r["vega"] is not None else None,
             }

@@ -269,6 +269,7 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
 | `python -m cherrypick.meic.tt get_positions` | Open positions detail | No |
 | `python -m cherrypick.meic.tt get_working_orders` | Live/unfilled orders | No |
 | `python -m cherrypick.meic.tt get_quotes --symbols .APO260918C120 ...` | Bid/ask/mid for specific streamer symbols **without writing the shared cache** — for symbols no module declared, where seeding the cache would leave rows nothing refreshes | No |
+| `python -m cherrypick.meic.tt get_greeks --symbols .APO260918C120 ...` | The broker's per-share greeks for specific streamer symbols, under the same no-cache-write rule (the manage snapshot's check against the broker's model) | No |
 | `python -m cherrypick.meic.tt list_accounts` | Account numbers | No |
 | `python -m cherrypick.meic.tt execute_trade --order '<JSON>'` | Dry-run validate an order (default) | No |
 | `python -m cherrypick.meic.tt execute_trade --order '<JSON>' --live` | Place a live order | Yes |

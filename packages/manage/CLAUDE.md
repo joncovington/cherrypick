@@ -10,8 +10,8 @@ position at a time, with the rules re-derived each time.
 
 **It is advice, and read-only.** It evaluates a snapshot file and writes only into
 `~/.cherrypick/data/manage`. It has no broker credentials and no network: the snapshot is taken by
-the orchestrator's `manage` verb (`orchestrator/managesnap.py`: positions and balances, market metrics, trade history
-and the XSP hedge chain, all read-only), which then
+the orchestrator's `manage` verb (`orchestrator/managesnap.py`: positions and balances, market metrics, trade history,
+the XSP hedge chain and the broker's greeks for each option leg held, all read-only), which then
 runs this package by subprocess. Nothing here places, closes, rolls or sizes an order, and no loop may
 import it. The closing order an evaluation lists is what a person would enter, priced at mid.
 

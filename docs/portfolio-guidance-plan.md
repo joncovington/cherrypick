@@ -173,7 +173,11 @@ a console card on Live → portfolio (#421).
 ## Checks before it is trusted
 
 - For the first few sessions, set our BWD and theta beside the broker's screen and record the gap
-  (the broker uses its own model; American exercise and dividends will move it a little).
+  (the broker uses its own model; American exercise and dividends will move it a little). **As
+  built (2026-10-19):** every evaluation records it, as `portfolio.broker_check`: the snapshot (v9)
+  carries the broker's per-leg greeks, and the reading sums BWD and theta on them over the same legs
+  and betas as ours. That checks the model against the broker's model; a one-off look at the
+  broker's own BWD figure is still worth doing, to confirm the screen sums it the same way.
 - Each guard shown to fail: a missing beta, an unpriced leg, a band pushed past its limit, a candidate
   with earnings inside its cycle, an IRA account offered an uncovered short, a margin account sized
   past its stress cap, and a missing account type sized as margin instead of cash-secured.

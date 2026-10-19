@@ -1242,7 +1242,13 @@ def evaluate(
         for t in trades:
             counts[t["recommendation"]["action"]] = counts.get(t["recommendation"]["action"], 0) + 1
         book = _portfolio.reading(
-            trades, metrics, snapshot.get("benchmark"), balances, account.get("account_type"), rules
+            trades,
+            metrics,
+            snapshot.get("benchmark"),
+            balances,
+            account.get("account_type"),
+            rules,
+            snapshot.get("broker_greeks"),
         )
         book["hedges"] = _hedge.suggest(book, snapshot.get("hedge_chain"), metrics, session, rules)
         book["candidates"] = _candidates.suggest(
