@@ -485,6 +485,18 @@ sell-off.*
   halves of the sample, or (b) the after-sell-off split is positive where the rest isn't. Expect (a)
   to fail. A pass would more likely point at a premium already measured: the vendor income
   screeners' short puts and credit spreads, and `curve`'s VXX regime gate.
+- **Provisional look, 2026-10-18: fails both tests; closed.** Dolt end of day, design window, 10–17
+  DTE, 40 names. All figures are q25 net per trade.
+  - **(a)** 132 of 561,324 candidates passed the screen: 7 in H1, 125 in H2. Model P(max profit)
+    0.61, realised 0.58. Mean +$52, but the interval spans zero in both halves (H1 −$10 to +$152;
+    H2 −$75 to +$187). Their excess over same-type, same-delta trades spans zero too (H1 −$0 to
+    +$191; H2 −$18 to +$80).
+  - **(b)** The ~0.20-delta spreads on sell-off days: H1 −$4 (−$17 to +$8); H2 +$0.5 (−$24 to
+    +$24).
+  - *Seen, not tested:* on all other days the same spreads lost: −$14 in H1, −$21 in H2, both
+    intervals below zero. A sell-off-versus-other difference wasn't a declared test, so acting on it
+    would need its own.
+  - Not tested: the 7-DTE version (no Dolt expiry that short) and the 40% take-profit.
 
 ## Not worth revisiting
 
