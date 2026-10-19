@@ -149,6 +149,22 @@ def test_gated_features_is_the_one_view_the_console_reads():
     assert caps.gated_features(cfg)["features"]["options_flow"] is True
 
 
+def test_gated_features_names_each_readable_live_switch(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    (home / "config").mkdir(parents=True)
+    (home / "config" / "meic.json").write_text(json.dumps({"enable_live_trading": False}), encoding="utf-8")
+    (home / "config" / "earnings.json").write_text(json.dumps({"live": {"enabled": True}}), encoding="utf-8")
+    monkeypatch.setenv("CHERRYPICK_HOME", str(home))
+    cfg = _cfg()
+    for m in cfg["modules"].values():
+        m["path"] = str(tmp_path / "no-checkout")  # no in-repo fallback config either
+    live = caps.gated_features(cfg)["live"]
+    assert live["meic"] is False
+    assert live["earnings"] is True
+    # No readable config: left out (the console shows the tab), never reported as off.
+    assert "pmcc" not in live
+
+
 def test_cli_dispatches_capabilities(monkeypatch):
     from cherrypick import cli
 

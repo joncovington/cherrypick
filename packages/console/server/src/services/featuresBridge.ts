@@ -54,6 +54,7 @@ export function parseFeatures(raw: BridgeResult): SuiteFeatures {
     modules,
     services: boolMap(raw["services"]),
     features: boolMap(raw["features"]),
+    live: boolMap(raw["live"]),
   };
   return ok;
 }
