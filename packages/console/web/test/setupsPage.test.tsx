@@ -40,6 +40,7 @@ function row(over: Partial<TechnicalsWatchlistRow>): TechnicalsWatchlistRow {
     support: { value: 30.71, pct: -4.39 },
     resistance: null,
     optionsTradable: null,
+    read: null,
     ...over,
   };
 }
@@ -219,5 +220,48 @@ describe("the setups watchlist page", () => {
   it("an empty file says the report job writes it", () => {
     payload = { session: null, generatedAt: null, window: null, optionsLabelDay: null, rows: [] };
     expect(render("/charts/setups")).toContain("No watchlist yet");
+  });
+
+  it("every row has a closed toggle to its read", () => {
+    payload = { session: "2026-10-02", generatedAt: null, window: 20, optionsLabelDay: null, rows: ROWS };
+    const html = render("/charts/setups?view=open");
+    expect(html.match(/aria-expanded="false"/g)).toHaveLength(3);
+    expect(html).not.toContain("md-cards");
+  });
+});
+
+describe("the read behind a row", () => {
+  const read: NonNullable<TechnicalsWatchlistRow["read"]> = {
+    setup: { rule: "Enter on the dip.", change: null, medianHold: 8 },
+    record: { entries: 56634, netR: -0.058, edgeR: -0.202, t: -8.8, verdict: "worse than random", hit: null, medianHold: null },
+    direction: { verdict: "conflicts", counterTrend: false, trendAgrees: false, trendAgainst: true, board: null },
+    volatility: {
+      iv: 40, ivRank: 70, ivPct: 80, hv30: 25, ivHv: 1.6, regime: "rich", cycle: { expiry: "2026-11-20", days: 35 },
+      expectedMove: { dollars: 12.4, pct: 12.4 }, earnings: "2026-11-05", earningsInCycle: true, exDividend: null,
+    },
+    levels: { atr14: 2, support: { value: 95, pct: -5, atr: -2.5, sigma: -0.4 }, resistance: null, target: null },
+    lean: {
+      structure: "call debit spread",
+      why: "a report falls inside the cycle: no premium sold through it",
+      legs: ["buy near the money, sell near +1σ, 112.40 (+12.4%)"],
+      cautions: ["this setup tested worse than random (-0.202 R against random entry)", "earnings 2026-11-05 inside the cycle"],
+    },
+  };
+
+  it("leads with the verdicts and lays out the six cards, the record and the cautions in words", async () => {
+    const { ReadDetail } = await import("../src/pages/Setups/SetupsPage");
+    const html = renderToString(<ReadDetail r={row({ read })} />).replace(/<!-- -->/g, "");
+    for (const title of ["the setup", "its record", "direction", "volatility", "levels", "structure lean"]) {
+      expect(html).toContain(`<h4>${title}</h4>`);
+    }
+    expect(html).toContain("call debit spread");
+    expect(html).toContain("worse than random");
+    expect(html).toContain("inside the cycle");
+    expect(html).toContain("a lean, not a trade");
+  });
+
+  it("a row from an index without reads says so rather than drawing empty cards", async () => {
+    const { ReadDetail } = await import("../src/pages/Setups/SetupsPage");
+    expect(renderToString(<ReadDetail r={row({ read: null })} />)).toContain("No read for this row yet");
   });
 });

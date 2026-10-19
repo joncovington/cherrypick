@@ -10,6 +10,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
+  SetupRead,
+  SetupReadLevel,
   TechnicalsChart,
   TechnicalsChartBar,
   TechnicalsChartIndex,
@@ -271,8 +273,92 @@ function shapeWatchRow(raw: unknown): TechnicalsWatchlistRow[] {
       support: shapeNear(r["support"]),
       resistance: shapeNear(r["resistance"]),
       optionsTradable: typeof r["options_tradable"] === "boolean" ? r["options_tradable"] : null,
+      read: r["read"] === undefined || r["read"] === null ? null : shapeRead(rec(r["read"])),
     },
   ];
+}
+
+function bool(v: unknown): boolean | null {
+  return typeof v === "boolean" ? v : null;
+}
+
+function strs(v: unknown): string[] {
+  return list(v).filter((x): x is string => typeof x === "string");
+}
+
+function shapeReadLevel(v: unknown): SetupReadLevel | null {
+  const r = rec(v);
+  const value = num(r["value"]);
+  return value === null ? null : { value, pct: num(r["pct"]), atr: num(r["atr"]), sigma: num(r["sigma"]) };
+}
+
+const DIRECTION = new Set(["agrees", "conflicts", "mixed", "unread"]);
+const REGIME = new Set(["rich", "cheap", "middling", "unread"]);
+
+/** The row's read, renamed to the console's spelling and passed through; nothing is recomputed. */
+function shapeRead(r: Record<string, unknown>): SetupRead {
+  const s = rec(r["setup"]);
+  const rc = r["record"] === null || r["record"] === undefined ? null : rec(r["record"]);
+  const d = rec(r["direction"]);
+  const b = d["board"] === null || d["board"] === undefined ? null : rec(d["board"]);
+  const v = rec(r["volatility"]);
+  const cyc = v["cycle"] === null || v["cycle"] === undefined ? null : rec(v["cycle"]);
+  const mv = v["expected_move"] === null || v["expected_move"] === undefined ? null : rec(v["expected_move"]);
+  const lv = rec(r["levels"]);
+  const ln = rec(r["lean"]);
+  const verdict = str(d["verdict"]) ?? "unread";
+  const regime = str(v["regime"]) ?? "unread";
+  return {
+    setup: { rule: str(s["rule"]), change: str(s["change"]), medianHold: num(s["median_hold"]) },
+    record:
+      rc === null
+        ? null
+        : {
+            entries: num(rc["entries"]),
+            netR: num(rc["net_r"]),
+            edgeR: num(rc["edge_r"]),
+            t: num(rc["t"]),
+            verdict: str(rc["verdict"]) ?? "",
+            hit: num(rc["hit"]),
+            medianHold: num(rc["median_hold"]),
+          },
+    direction: {
+      verdict: (DIRECTION.has(verdict) ? verdict : "unread") as SetupRead["direction"]["verdict"],
+      counterTrend: d["counter_trend"] === true,
+      trendAgrees: bool(d["trend_agrees"]),
+      trendAgainst: bool(d["trend_against"]),
+      board:
+        b === null
+          ? null
+          : {
+              side: b["side"] === "bullish" || b["side"] === "bearish" ? b["side"] : null,
+              count: num(b["count"]),
+              bullish: num(b["bullish"]),
+              bearish: num(b["bearish"]),
+              tags: strs(b["tags"]),
+            },
+    },
+    volatility: {
+      iv: num(v["iv"]),
+      ivRank: num(v["iv_rank"]),
+      ivPct: num(v["iv_pct"]),
+      hv30: num(v["hv30"]),
+      ivHv: num(v["iv_hv"]),
+      regime: (REGIME.has(regime) ? regime : "unread") as SetupRead["volatility"]["regime"],
+      cycle: cyc === null || str(cyc["expiry"]) === null ? null : { expiry: str(cyc["expiry"])!, days: num(cyc["days"]) ?? 0 },
+      expectedMove: mv === null || num(mv["dollars"]) === null ? null : { dollars: num(mv["dollars"])!, pct: num(mv["pct"]) ?? 0 },
+      earnings: str(v["earnings"]),
+      earningsInCycle: bool(v["earnings_in_cycle"]),
+      exDividend: str(v["ex_dividend"]),
+    },
+    levels: {
+      atr14: num(lv["atr14"]),
+      support: shapeReadLevel(lv["support"]),
+      resistance: shapeReadLevel(lv["resistance"]),
+      target: shapeReadLevel(lv["target"]),
+    },
+    lean: { structure: str(ln["structure"]), why: str(ln["why"]) ?? "", legs: strs(ln["legs"]), cautions: strs(ln["cautions"]) },
+  };
 }
 
 /** The setups watchlist the report job writes beside the chart files; empty when there is none. */

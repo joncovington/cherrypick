@@ -35,11 +35,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import tradable, trend
+from . import setup_read, tradable, trend
 
 # 2: short setups (family, side), our own levels and labels, trend_agrees; 3: tested rows, dollar
-# volume at entry, options_tradable
-VERSION = 3
+# volume at entry, options_tradable; 4: each row's rule, ATR and `read` (setup_read.py)
+VERSION = 4
 WINDOW = 20  # sessions of entries and exits kept beside every open position
 MONTH = 21  # sessions in the 1M vs SPY return
 
@@ -95,6 +95,10 @@ def rows(doc: dict[str, Any], spy: dict[str, float], weekly: set[str] | None = N
 
     close = closes[-1]
     support, resistance = nearest_levels(doc.get("our_levels"), close)
+    highs, lows = (doc["bars"].get("high") or [])[-60:], (doc["bars"].get("low") or [])[-60:]
+    tail = closes[-60:]
+    ok = len(highs) == len(lows) == len(tail) and None not in (*highs, *lows, *tail)
+    atr14 = setup_read.atr(highs, lows, tail) if ok else None
     short, long_ = doc["trend_short"][-1], doc["trend_long"][-1]
     context = {
         "symbol": doc["symbol"],
@@ -109,10 +113,15 @@ def rows(doc: dict[str, Any], spy: dict[str, float], weekly: set[str] | None = N
         "support": support,
         "resistance": resistance,
         "options_tradable": tradable.tradable(doc["symbol"], weekly, doc.get("dollar_volume_50d")),
+        "atr14": None if atr14 is None else round(atr14, 4),
     }
     blocks = [(s, None) for s in doc.get("setups") or []]
-    # A tested rule names the setup it changes; its rows read as that setup's, marked with the rule.
-    blocks += [({**t, "id": t["setup"]}, t["id"]) for t in doc.get("tested") or []]
+    # A tested rule names the setup it changes; its rows read as that setup's, marked with the rule,
+    # and carry that setup's rule text beside the change.
+    rule_of = {s["id"]: s.get("rule") for s in doc.get("setups") or []}
+    blocks += [
+        ({**t, "id": t["setup"], "rule": rule_of.get(t["setup"])}, t["id"]) for t in doc.get("tested") or []
+    ]
     out = []
     for s, tested in blocks:
         for t in s["trades"]:
@@ -128,6 +137,8 @@ def rows(doc: dict[str, Any], spy: dict[str, float], weekly: set[str] | None = N
                     **context,
                     "setup": s["id"],
                     "setup_name": s["name"],
+                    "rule": s.get("rule"),
+                    "change": s.get("change") if tested else None,
                     "family": s.get("family", s["id"]),
                     "side": side,
                     "tested": tested,

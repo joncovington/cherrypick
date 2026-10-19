@@ -197,4 +197,39 @@ describe("the setups watchlist reader", () => {
   it("no file is an empty watchlist, not a failure", () => {
     expect(readSetupsWatchlist(config)).toEqual({ session: null, generatedAt: null, window: null, optionsLabelDay: null, rows: [] });
   });
+
+  it("passes each row's read through renamed, and an index written before the reads reads null", () => {
+    const base = { symbol: "XYZ", session: "2026-10-16", setup: "pullback", entry_date: "2026-10-10" };
+    write("setups-index.json", {
+      version: 4,
+      session: "2026-10-16",
+      rows: [
+        {
+          ...base,
+          read: {
+            setup: { rule: "Enter on the dip.", change: null, median_hold: 8 },
+            record: { entries: 56634, net_r: -0.058, edge_r: -0.202, t: -8.8, verdict: "worse than random" },
+            direction: { verdict: "agrees", counter_trend: false, trend_agrees: true, trend_against: false,
+              board: { side: "bullish", count: 3, bullish: 3, bearish: 0, tags: ["Early breakout"] } },
+            volatility: { iv: 40, iv_rank: 70, iv_pct: 80, hv30: 25, iv_hv: 1.6, regime: "rich",
+              cycle: { expiry: "2026-11-20", days: 35 }, expected_move: { dollars: 12.4, pct: 12.4 },
+              earnings: "2026-12-10", earnings_in_cycle: false, ex_dividend: null },
+            levels: { atr14: 2, support: { value: 95, pct: -5, atr: -2.5, sigma: -0.4 }, resistance: null, target: null },
+            lean: { structure: "put credit spread", why: "rich", legs: ["short strike past support 95.00 (-5.0%)"], cautions: [] },
+          },
+        },
+        { ...base, symbol: "OLD" },
+      ],
+    });
+    const [withRead, old] = readSetupsWatchlist(config).rows;
+    expect(withRead?.read).toMatchObject({
+      setup: { medianHold: 8 },
+      record: { netR: -0.058, edgeR: -0.202, verdict: "worse than random" },
+      direction: { verdict: "agrees", counterTrend: false, board: { side: "bullish", tags: ["Early breakout"] } },
+      volatility: { ivRank: 70, ivPct: 80, regime: "rich", cycle: { expiry: "2026-11-20", days: 35 }, earningsInCycle: false },
+      levels: { support: { value: 95, atr: -2.5, sigma: -0.4 }, resistance: null },
+      lean: { structure: "put credit spread", legs: ["short strike past support 95.00 (-5.0%)"] },
+    });
+    expect(old?.read).toBeNull();
+  });
 });
