@@ -94,6 +94,11 @@ Each gets a provisional look now, and a re-test once validation unlocks.
   holdout is **already seen**: their after-unlock re-test can't count it as out of sample. Any
   evidence for them needs fresh sessions, those after 2026-10-12. Every other spec keeps its holdout
   clean.
+- **Added 2026-10-19: `pm-200-1400`**, with the same consequence. It's `pm-200` entering once a
+  day, 14:00–14:30, and it was suggested by `pm-200`'s own ledgers. Its provisional replay covers
+  the full vendor history by choice, holdout dates included, so its evidence also has to come from
+  sessions after 2026-10-12. Its first four recorded sessions (10-13 to 10-16) are such sessions:
+  provisional and far too few to judge.
 
 ### Declared pass tests for the provisional looks (2026-10-18, before any look ran)
 
