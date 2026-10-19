@@ -29,6 +29,7 @@ import type {
   EarningsCalendarPayload,
   EarningsRecordPayload,
   SignalBoardPayload,
+  SkatePayload,
   ScreenerList,
   ScreenerPayload,
   PmccPayload,
@@ -278,6 +279,15 @@ export function useSignalBoard(day: string | null) {
     queryFn: () => getJson<SignalBoardPayload>(`/api/screeners/board${day ? `?day=${day}` : ""}`),
     // Written once a morning.
     refetchInterval: 900_000,
+  });
+}
+
+export function useSkate(day: string | null) {
+  return useQuery<SkatePayload>({
+    queryKey: ["skate", day ?? "latest"],
+    queryFn: () => getJson<SkatePayload>(`/api/screeners/skate${day ? `?day=${encodeURIComponent(day)}` : ""}`),
+    // Two runs a session (12:00 and 15:05 ET).
+    refetchInterval: 300_000,
   });
 }
 

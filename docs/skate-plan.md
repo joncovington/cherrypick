@@ -8,7 +8,7 @@ were decided by the user on 2026-10-18 (see "Decisions").
 |---|---|
 | 1, the range band engine (`technicals skate`) | built: `skate.py`, `leveraged_funds.json`, job `technicals-skate` 06:45 ET, `core.calendar.trading_days_between` |
 | 2, regular-hours quotes (`fetch_screener_greeks.py skate`, jobs `report-skate-quotes-1/2`) | built |
-| 3, the score and the console's Skate tab | the score built (`skate.score`, in the quote file); the tab not started |
+| 3, the score and the console's Skate tab | the score built (`skate.score`, in the quote file); the tab built 2026-10-19; the income tabs' leveraged badge not started |
 | 4, the forward record | not started |
 | 5, the wheel view (`manage`, Live → positions) | not started |
 | 6, the PMCC view (`manage`, beside the wheel view) | not started |
