@@ -522,7 +522,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     simple: ["earnings", "earnings-record", "board", "short-puts", "covered-calls", "credit-spreads"],
     groups: [
       { label: "screens", ids: ["earnings", "earnings-record", "board"] },
-      { label: "vendor lists", ids: ["short-puts", "covered-calls", "credit-spreads", "fidelity"] },
+      // Named for what the lists hold, not their source: the vendor's lists stop on 2026-10-24, and
+      // the tabs keep their saved days (and any lists of our own that follow) under the same name.
+      { label: "income lists", ids: ["short-puts", "covered-calls", "credit-spreads", "fidelity"] },
     ],
   },
   reports: { slides: REPORTS_SLIDES },

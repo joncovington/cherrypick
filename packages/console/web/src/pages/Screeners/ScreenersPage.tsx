@@ -412,6 +412,16 @@ export function FidelityTab() {
         <h2>Reproduction fidelity</h2>
         <span className="chip">record-only</span>
       </div>
+      <p className="muted" style={{ marginTop: 0 }}>
+        Whether our own rules pick the same option as each row of the income lists. Every night (
+        <code>score-screeners</code>) the listed trades are re-derived from the broker's chain: the expiry (nearest 30
+        days for short puts, 45 for covered calls and credit spreads), the strike (0.40 delta for puts, 0.165 for
+        calls; a spread's short at the first strike out of the money, its long nearest 0.25 delta) and the spread's
+        credit floor (a third of the width). Each cell is how often ours matched. A high rate means the rule is
+        understood and the lists can be built without the vendor; a low one means a rule is still wrong. It scores how a
+        listed name's trade is built, not which names make the list. The vendor's lists stop on 2026-10-24, so no session
+        after that is scored; the record stays as the evidence behind any lists of our own.
+      </p>
       {isError && <p className="muted">Could not read the scores.</p>}
       {isLoading && <p className="muted">Reading the scores…</p>}
       {data && rows.length === 0 && <p className="muted">No session scored yet: `score-screeners` runs at 06:40 ET.</p>}
