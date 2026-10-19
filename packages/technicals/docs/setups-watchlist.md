@@ -113,8 +113,8 @@ out on the console. It is a pure function of data the suite already holds:
 | Levels | Support, resistance and the target as % away, in ATR(14)s and in sigmas of the expected move |
 | Structure lean | A kind of option trade, never a contract: debit spread toward the target when vol is cheap, credit spread past the level (and past the skate band where one exists) when it is rich, either when it is middling; a report inside the cycle means no premium sold. Every lean restates a losing rule's record beside it |
 
-On the 2026-10-16 close: 1,048 rows; 741 have a report inside the cycle (earnings season), so most
-leans are debit spreads.
+On the 2026-10-16 close (the chart job's own run): 658 rows across 386 charts; 541 have a report
+inside the cycle (earnings season), so 581 leans are debit spreads.
 
 ## The numbers
 
