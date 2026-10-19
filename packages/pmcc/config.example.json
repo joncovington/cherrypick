@@ -221,6 +221,25 @@
         "NVDA": 0.5,
         "PLTR": 0.64
       }
+    },
+    "shield_guard": {
+      "_note": "Held-long arm from 2026-10-26 (`from`): shield_hold plus one rule, engine.ARM_RULES `assignment_roll` - an in-the-money short whose extrinsic falls under assignment_exposure_tv (the telemetry's own exposure region) is rolled, at most once a session, never on a cash-settled leg. It measures what avoiding early-assignment exposure costs, the live question for an IRA. Paper still models no early assignment. Enters fresh from its start date, so read it against shield_hold on weekly marked change per symbol, not on entry-matched pairs.",
+      "enabled": true,
+      "from": "2026-10-26",
+      "entry_symbols_per_session": 2,
+      "deep_window_pct_by_symbol": {
+        "XSP": 0.3,
+        "QQQ": 0.46,
+        "GLD": 0.45,
+        "IWM": 0.42,
+        "SLV": 0.5,
+        "SMH": 0.54,
+        "AMZN": 0.56,
+        "TSLA": 0.61,
+        "AMD": 0.65,
+        "NVDA": 0.5,
+        "PLTR": 0.64
+      }
     }
   },
   "_stream_window_note": "How wide an ATM window this module asks the producer for (window_hints). base_width is the ESCALATION FLOOR only -- it is NOT a suppression threshold and NOT a mirror of the producer's default, both of which it was until 2026-08-27. It claimed to mirror `window_strike_count`, and stopped being true when that was cut 60 -> 30 in the 2026-08-24 subscription incident: any computed need between 31 and 60 was then silently swallowed here while the producer served 30. TQQQ's structural need is 39 and sat squarely in that dead band. The hint is now emitted whatever it computes and the producer resolves max(default, hint) at the other end, so there is no duplicated constant left to drift. increment/decay_after_minutes stay at this deployment's tuned values (60/1440) rather than the module's 30/60 defaults -- widened after the 2026-08-17 incident where a faster-decaying escalation recycled the streamer every ~5 minutes for two hours. The union across modules takes the max per symbol, so this can never narrow anyone else.",

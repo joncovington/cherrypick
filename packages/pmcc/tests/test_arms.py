@@ -88,6 +88,42 @@ def test_the_boundary_is_journaled_once_from_what_the_config_runs(config):
     assert conn.execute("SELECT COUNT(*) FROM measurement_breaks").fetchone()[0] == 4
 
 
+def test_shield_guard_is_shield_hold_plus_the_assignment_roll(config):
+    cfg = copy.deepcopy(config)
+    cfg["arms"]["shield_hold"] = {"enabled": True}
+    cfg["arms"]["shield_guard"] = {"enabled": True}
+    hold = engine.merged_params(cfg, "shield_hold")
+    guard = engine.merged_params(cfg, "shield_guard")
+    assert guard["assignment_roll"] is True and hold.get("assignment_roll") is not True
+    same = {k: v for k, v in guard.items() if k not in ("assignment_roll", "arm")}
+    assert same == {k: v for k, v in hold.items() if k not in ("assignment_roll", "arm")}
+
+
+def test_an_arm_with_a_from_date_enters_from_that_day_and_journals_it_once(config):
+    cfg = copy.deepcopy(config)
+    cfg["arms"]["control"] = {"enabled": False}
+    cfg["arms"]["shield"] = {"enabled": True}
+    cfg["arms"]["shield_hold"] = {"enabled": True}
+    cfg["arms"]["shield_guard"] = {"enabled": True, "from": "2026-10-26"}
+    assert paper_loop.session_books(cfg, "2026-10-23")[0] == ["shield", "shield_hold"]
+    assert paper_loop.session_books(cfg, "2026-10-26")[0] == ["shield", "shield_hold", "shield_guard"]
+    conn = db.connect(":memory:")
+    paper_loop._note_arm_starts(conn, cfg, "2026-10-23")
+    assert _breaks(conn) == {}
+    paper_loop._note_arm_starts(conn, cfg, "2026-10-26")
+    paper_loop._note_arm_starts(conn, cfg, "2026-10-27")  # every tick calls it: idempotent
+    assert _breaks(conn) == {
+        "arms": ("2026-10-26", "shield, shield_hold", "shield, shield_hold, shield_guard")
+    }
+    # The shield boundary's own roster row is as of its date: the later arm is not in it.
+    paper_loop._note_shield_boundary(conn, cfg)
+    row = conn.execute(
+        "SELECT new_value FROM measurement_breaks WHERE key='arms' AND break_date=?",
+        (paper_loop.SHIELD_FROM,),
+    ).fetchone()
+    assert row[0] == "shield, shield_hold"
+
+
 def test_a_machine_running_control_alone_journals_no_boundary(config):
     conn = db.connect(":memory:")
     paper_loop._note_shield_boundary(conn, config)

@@ -220,6 +220,27 @@ def test_shield_hold_never_rolls_early():
     assert _verdict(wed, short={**SHORT, "tv": 0.01}, spot=50.0, params=hold).reason == "holding"
 
 
+def test_shield_guard_rolls_an_exposed_itm_short_and_nothing_else():
+    """The guard fires only in the money AND inside the telemetry's exposure region (extrinsic under
+    `assignment_exposure_tv`), once a session, and never on a cash-settled leg."""
+    wed = datetime(2026, 9, 2, 11, 0)
+    guard = _params(early_roll_decay=None, breach_roll=False, assignment_roll=True)
+    exposed = {**SHORT, "tv": 0.04}
+    v = _verdict(wed, short=exposed, spot=70.0, params=guard)
+    assert (v.action, v.reason) == ("roll_short", "assignment_guard")
+    assert _verdict(wed, short={**SHORT, "tv": 0.05}, spot=70.0, params=guard).reason == "holding"
+    assert _verdict(wed, short=exposed, spot=67.5, params=guard).reason == "holding"  # out of the money
+    assert _verdict(wed, short=exposed, spot=70.0, rolled=True, params=guard).reason == "holding"
+    cash = management.evaluate_held_long(
+        POSITION, guard, now=wed, short=exposed, spot=70.0, pnl=PNL_OK, long_dte=389,
+        rolled_today=False, session_close_min=clock.session_close_min(wed.date()), settlement_style="cash",
+    )  # fmt: skip
+    assert cash.reason == "holding"
+    # shield_hold, the same short: holds.
+    hold = _params(early_roll_decay=None, breach_roll=False)
+    assert _verdict(wed, short=exposed, spot=70.0, params=hold).reason == "holding"
+
+
 def test_a_margin_account_may_let_a_far_otm_short_expire_but_an_ira_never_does():
     deadline = datetime(2026, 9, 4, 15, 45)
     short = {**SHORT, "strike": 75.0}

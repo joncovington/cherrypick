@@ -31,7 +31,7 @@ consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/ro
   **paper-only, credential-free**, the calendars posture (chains via `expirations`/`window_hints`,
   year-long dates from the streamer's listing). The base trade since 2026-10-06 is `shield`/
   `shield_hold` (a ~1-year long held while a weekly short rolls against it, closed-only readers seeing
-  them late); `control` (a 21-DTE long re-bought each cycle) and its advised twins are retired and run
+  them late), with `shield_guard` from 2026-10-26 (rolls an assignment-exposed in-the-money short); `control` (a 21-DTE long re-bought each cycle) and its advised twins are retired and run
   off, and pmcc's advice is off. A short spanning an earnings announcement is refused, as one spanning
   an ex-date is. SLV is the intended first live symbol. **Early assignment
   is measured, never modelled**: ex-dividend spans refused, near-zero-extrinsic marks flagged
