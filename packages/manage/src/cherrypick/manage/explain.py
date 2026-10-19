@@ -15,6 +15,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from cherrypick.manage import shapes as _shapes
+
 
 def _usd(v: float | None) -> str:
     return "an unknown amount" if v is None else f"${abs(v):,.0f}"
@@ -393,6 +395,24 @@ SHAPE_NOTES = {
 }
 
 
+def _ratio_note(t: dict[str, Any]) -> str | None:
+    """A ratio butterfly's note, by form: its name is its quantities, or `ratio time spread`."""
+    shape = t.get("shape") or ""
+    if shape == "ratio time spread":
+        what = "a ratio time spread: long-short-long at three strikes, two expiries, wings matching the body"
+    elif _shapes.is_ratio(shape):
+        what = f"a {shape} ratio butterfly: long-short-long at three strikes, the wings matching the body"
+    else:
+        return None
+    judged = (
+        " Its premium is small against what it can lose beyond the heavier wing, so it is judged on what it "
+        "can win and lose, not on its premium."
+        if t.get("kind") == "risk-judged"
+        else ""
+    )
+    return f"This is {what}.{judged}"
+
+
 def _shape_note(t: dict[str, Any]) -> str:
-    note = SHAPE_NOTES.get(t.get("shape") or "")
+    note = SHAPE_NOTES.get(t.get("shape") or "") or _ratio_note(t)
     return f" {note}" if note else ""

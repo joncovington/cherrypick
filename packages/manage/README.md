@@ -55,7 +55,10 @@ judged:
 
 A **broken-wing butterfly** bought for under a quarter of its max loss is judged the same way (`risk-judged`):
 its premium says little about the tail beyond its wider wing. GLD on 2026-10-13 was $193 in with $1,693
-at risk, and the percentage of the $193 said nothing useful. Ordinary butterflies, condors, verticals and
+at risk, and the percentage of the $193 said nothing useful. So is a **ratio butterfly**: long-short-long at
+three strikes, the wings together matching the body but not 1-2-1, named by its quantities from the top
+strike (`1-3-2`; SPY on 2026-10-18 was +1 745P / -3 740P / +2 730P, $200 in against $1,300 at risk), or a
+**ratio time spread** when its legs span expiries. Ordinary butterflies, condors, verticals and
 diagonals are named but judged by their premium as before.
 
 ## Checking a roll before sending it
