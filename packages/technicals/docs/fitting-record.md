@@ -4,6 +4,10 @@ The dated record of how each vendor rule was fitted, moved out of `packages/tech
 (which keeps each rule, its defining numbers, and what is still unsolved). The plan is
 [`docs/market-report-plan.md`](../../../docs/market-report-plan.md).
 
+Fits after 2026-09-29 (the rotation refit to the daily quadrant, analyst revisions, the bearing, the
+signal board, the income screens and the public security list) are recorded with their numbers in
+the package CLAUDE.md's "Solved rules".
+
 ## Adjustment (2026-09-25)
 
 Against the vendor's chart data: MSFT's adjusted closes on all 753 sessions exactly; ANET's to

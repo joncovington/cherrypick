@@ -1,6 +1,7 @@
 # Edge hypotheses: what the 2026-10 video review left worth testing
 
-*Drafted 2026-10-17. Nothing below is built. It follows a review of twenty Theta Profits interviews
+*Drafted 2026-10-17. No module change is built from it; five of the eight tests have run (see
+Status). It follows a review of twenty Theta Profits interviews
 (YouTube, 2024-09 to 2026-06) and asks one question of each idea before anything else: **where does
 the edge live?** Every item names its hypothesised edge, the claim that would falsify it, the data we
 already hold, the smallest test that answers it, and the result that would justify building
@@ -47,11 +48,12 @@ treated as variance and tail shaping unless a test shows otherwise.
 ## Status (2026-10-17)
 
 Five of the eight have been tested against their declared pass tests
-([history-studies-2026-10-c.md](history-studies-2026-10-c.md)), and all five are closed:
-- 1, post-earnings drift;
-- 4 and 8, the box edge and the intraday direction reads (licensed-data results kept locally);
-- 5, the EMA signal;
-- 6, the BWB down-day filter.
+([history-studies-2026-10-c.md](history-studies-2026-10-c.md)):
+- 1, post-earnings drift: closed;
+- 4 and 8, the box edge and the intraday direction reads: not being built (they ran on licensed
+  data, so the results are kept locally under `~/.cherrypick`, per the licence);
+- 5, the EMA signal: closed;
+- 6, the BWB down-day filter: closed.
 
 That leaves 2 (MEIC afternoon entries), 3 (the mid-morning iron fly) and 7 (MEIC stop mechanics). 3
 and 7 depend on an intraday fill model that is no longer being built for Pulver's sake, so each now

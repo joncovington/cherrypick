@@ -7,7 +7,7 @@ import { ADVISED_PREFIX, readExperimentIndex, resolveAdvisedTag } from "./experi
  * Each advised book beside the base it shadows -- paired by session, with the experiment that
  * PRODUCED the book and its stored underpowered verdict, read from `advisor.db` rather than
  * recomputed here (`packages/advisor`'s own rule: verdicts are computed there, through ledger
- * readers -> compare_profiles -> qualify_readings, and stored on the experiment row; a second
+ * readers -> group_by_tag -> qualify_readings, and stored on the experiment row; a second
  * computation here would be a second opinion free to drift, the mistake `services/report.ts`
  * already made once for net rules).
  *

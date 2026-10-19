@@ -15,10 +15,8 @@ Usage:
   python src/tt.py get_watch_universe
   python src/tt.py execute_trade --order '<JSON>' [--account_number X] [--live]
 
-NOTE: This file exceeds 500-line guideline (529 lines). Documented exception
-in docs/file-size-exceptions.md. Broker API wrapper with tightly coupled
-session/auth/order functions. Split would complicate credential handling.
-The shared read-side primitives (account resolution, option-chain strike
+A broker API wrapper with tightly coupled session/auth/order functions;
+splitting it would complicate credential handling. The shared read-side primitives (account resolution, option-chain strike
 helpers) now live in cherrypick.core.broker; the order write path and
 CLI response shaping stay here.
 

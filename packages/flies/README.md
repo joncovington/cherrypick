@@ -42,7 +42,7 @@ python -m pytest                             # confirm everything checks out
 
 # paper trading (simulated) — requires the suite's shared streamer to be running
 python -m cherrypick.flies.paper_loop --once             # run one pass across every strategy variant
-python -m cherrypick.flies.paper_loop --interval 300     # keep running until the market close
+python -m cherrypick.flies.paper_loop --interval 15      # the resident loop; the supervisor already runs it, and a different interval journals a cadence break
 python -m cherrypick.flies.paper_loop --settle           # book the day's results after the closing bell
 python -m cherrypick.flies.paper_loop --status           # what's open, what's settled, right now
 
@@ -60,7 +60,7 @@ python -m cherrypick.review build --session <date>        # the suite review (al
 
 `regime` reports coverage first — how much of the book carries each tag, and whether a tag ever took
 more than one value — because a table split on a tag that never varied looks like a result and isn't.
-Pass `--dimension gex|vol|skew|time|center_offset|trend|drift_alignment` for one dimension, or `--bucket-edges 0.4,0.6`
+Pass `--dimension gex|vol|skew|time|center_offset|trend|drift_alignment|event` for one dimension, or `--bucket-edges 0.4,0.6`
 to re-cut the recorded measurement at different thresholds without re-running any sessions.
 
 `regime-cuts` builds the same per-dimension cut but per ARM, era-scoped to what's comparable (a
@@ -146,14 +146,15 @@ and full defined-risk exposure, not a bounded floor.
 ## Monitoring
 
 The console's flies page, `http://127.0.0.1:5070/flies` (`/console` opens it). Its tabs: session,
-the profit forest, timeline, opening range, attempts, decisions, arm divergence, regime cuts,
-completion, performance, advisor, books, positions (with their post-fee floors), history and help.
+summary, the profit forest, timeline, positions (with their post-fee floors), history, books,
+opening range, attempts, decisions, gates vs control, live vs paper, selector, regime cuts, intraday
+agent, completion, performance, analysis, costs, advisor and help.
 Read-only and loopback-only, and the supervisor keeps it
 running. This module's own dashboard on 5052 was retired on 2026-08-12.
 
 ## What it costs
 
-Every number reported is already net of realistic commissions/fees plus a modeled slippage
+Every number reported is already net of realistic commissions/fees plus a modelled slippage
 haircut (the same cost model MEIC and earnings use). A legged butterfly pays two full fee
 stacks against a credit that's often only $35–105, so costs here aren't a rounding error — they
 are a central part of what this module is measuring. That includes the $5-per-ITM-strike
@@ -189,19 +190,13 @@ Full detail on the live pilot's rules, safety gates, and rollout plan lives in
 
 ## Status
 
-Paper trading is complete, tested, and has run real sessions. **Five sessions in (2026-07-20
-through 2026-07-24), the honest headline result is:** every completed butterfly made money (an
-average of about +$110, with a floor of +$52 — the guaranteed-profit design doing exactly what
-it promises), but the days where a legged entry never completed lost money on average (about
--$208 each), and there were more of those misses than completions. The strategy needs roughly a
-65% completion rate to break even overall; the observed rate over that window was about 57.5%.
-Since then, a few settings were adjusted based on that data (see
-[docs/live-trading-plan.md](docs/live-trading-plan.md) for the reasoning), and the `gex`
-variant specifically has performed much better under the new settings — though still on too
-small a sample to call it proven.
+Paper trading is complete, tested, and has run every session since 2026-07-20. The dated results
+— what each session and each arm measured, the negative ones included — are in
+[docs/experiment-log.md](docs/experiment-log.md). Completion rate against its break-even is still
+the number that decides the strategy.
 
 The live pilot described above began 2026-07-30, as a deliberate, explicitly logged exception
-to that statistical bar — see [docs/live-trading-plan.md](docs/live-trading-plan.md) for exactly
+to the statistical bar — see [docs/live-trading-plan.md](docs/live-trading-plan.md) for exactly
 why, and what has to happen before the pilot can be expanded.
 
 Settlement (the final price used to close out a day's positions) in paper defaults to the last

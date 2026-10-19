@@ -1,7 +1,7 @@
 # MEIC documentation
 
 Guides for the cherrypick **MEIC** engine — 0DTE multiple-entry iron condors. The operating contract the
-agent follows lives in [`../CLAUDE.md`](../CLAUDE.md); the full entry-gate catalog is
+agent follows lives in [`../CLAUDE.md`](../CLAUDE.md); the full entry-gate catalogue is
 [`../GATES.md`](../GATES.md). For the suite-wide picture see the root
 [documentation index](../../../docs/README.md).
 
@@ -32,9 +32,12 @@ agent follows lives in [`../CLAUDE.md`](../CLAUDE.md); the full entry-gate catal
 ## How MEIC relates to the rest of the suite
 
 - The **orchestrator** (`packages/orchestrator`) drives this module by subprocess for unattended paper
-  collection and reads its paper DB for cross-module reporting — see
-  [reporting-and-dashboard.md](../../../docs/reporting-and-dashboard.md).
-- The **GEX** dashboard (`packages/gex`) shares the same `cherrypick.core.gex` engine this module's GEX
+  collection and, while a human has armed the day with `/live-meic-start`, the `meic-live` tick; it
+  reads both ledgers for cross-module reporting — see
+  [reporting-and-dashboard.md](../../../docs/reporting-and-dashboard.md). Live arming, settlement and
+  the quote-history replay are described in [`../CLAUDE.md`](../CLAUDE.md) and
+  [operating.md](operating.md).
+- The **GEX** engine (`packages/gex`) shares the same `cherrypick.core.gex` engine this module's GEX
   regime gate uses.
 - Suite-wide guardrails (paper↔live isolation, no AI/network on the loop path, masked accounts) are in
   [guardrails-and-modes.md](../../../docs/guardrails-and-modes.md) and enforced here too.

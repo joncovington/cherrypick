@@ -24,17 +24,14 @@ doesn't trade — so the module manufactures the credit itself, two ways:
   manufacture a new floor of its own; it spends part of an existing one, so its safety only
   holds up at the book level, within the price range the funding trades cover.
 
-Two further entry constructions are also running, each with an ATM twin so the construction and
-the centring can be separated (see the arms question below): **`debit_first`**, which is `legged`'s
-two trades in the opposite order — buy the debit vertical first, complete by *selling* the credit
-spread once spot comes back — and **`bwb_roll`**, which enters a broken-wing butterfly whole for a
-credit and later rolls its wide wing in.
+The module has also tested two other constructions, each now retired: **`debit_first`**, which is
+`legged`'s two trades in the opposite order — buy the debit vertical first, complete by *selling*
+the credit spread once spot comes back — and **`bwb_roll`**, which enters a broken-wing butterfly
+whole for a credit and later rolls its wide wing in (see the bwb question below).
 
-Several parallel variants ("arms" — `gex`, `time_window`, `control`, `debit-first`, `bwb`, their
-ATM twins `debit-first-atm` and `bwb-atm`, plus a wing-width sweep) run side by side every session,
-each changing exactly *one* variable (how the centre strike is picked, when it trades, how wide the
-wings are, how the credit is constructed) against the same `control` baseline, so results are
-comparable rather than a mix of confounded changes.
+Several parallel variants ("arms") run side by side every session, each changing exactly *one*
+variable against the same `control` baseline, so results are comparable rather than a mix of
+confounded changes. The current roster and what each arm tests are in `CLAUDE.md`'s "The arms".
 
 What the module is actually *for* isn't the trade idea itself — it's measuring whether either
 way of building the credit survives real trading costs once a position actually settles:
@@ -76,8 +73,11 @@ measured two bugs rather than the market (both fixed 2026-08-07):
 - The side rule was `legged`'s, which put the roll spread **in the money**. An ITM vertical cannot
   be bought below its intrinsic, so the roll could never clear its price gate at all.
 
-All 25 positions from 2026-08-04..08-06 are void as a result. The trap remains a hypothesis with no
-clean measurement behind it.
+All 25 positions from 2026-08-04..08-06 are void as a result.
+
+**Measured 2026-10-12 (experiment log), on `bwb-atm` before it retired:** 42 real fills, 34 of them
+rolled, made −$544.21 as traded against +$211.39 had none been rolled. On that sample the roll cost
+money, consistent with the trap.
 
 **One thing the corrections did establish**, by arithmetic rather than by sampling: a bwb credit
 decomposes as `(C(K+w) − C(K+f)) − butterfly(K−w, K, K+w)`, so it is capped by the gap between the
@@ -88,8 +88,9 @@ gate, is now expected to be the binding constraint on entry.
 
 ## Why not trade SPY, /ES, or /MES instead of SPX/XSP, to shrink the assignment fee's bite?
 
-A larger notional — SPY (~$550–600) or the E-mini/Micro E-mini S&P 500 futures (/ES ~$250k+,
-/MES ~$25k notional per contract, vs. XSP's ~$70–80) — would shrink the $5-per-strike
+A larger notional — SPY (~$700) or the E-mini/Micro E-mini S&P 500 futures (/ES ~$380k,
+/MES ~$38k notional per contract), against XSP's index level of ~$770 (SPX/10, with SPX near
+7,700) — would shrink the $5-per-strike
 exercise-assignment fee's bite as a fraction of a structure's value. That's the same lever the
 width-arm sweep (`control` through `width-10`) is already testing, just applied to the underlying
 instead of the wing. It doesn't work for any of these three, and the reason has nothing to do

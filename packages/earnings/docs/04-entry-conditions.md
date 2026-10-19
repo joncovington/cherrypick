@@ -10,10 +10,10 @@ ranking step.
 
 ## The Two-Layer Model
 
-There's no single global "entry conditions" gate that all six strategies share and a router
+There's no single global "entry conditions" gate that all seven strategies share and a router
 that then picks a bucket. Instead:
 
-1. **Each strategy screens itself.** `src/strategies/<name>.py`'s `apply_tiering()` runs that
+1. **Each strategy screens itself.** `cherrypick/earnings/strategies/<name>.py`'s `apply_tiering()` runs that
    strategy's own hard filters and soft criteria against a symbol and returns
    `{"accepted": bool, "reject_reasons": [...]}` — a single accept/reject decision, with one
    reason per bar failed. `iron_fly`'s version is documented in full in
@@ -56,10 +56,10 @@ score = abs(term_structure) * iv_rv_ratio * shrunk_winrate
 ```
 
 (`shrunk_winrate` pulls a thin-sample winrate toward a neutral 0.5 prior — see Screening
-Criteria's ranking section for why.) Whichever strategy scores highest for that symbol wins;
-`double_calendar` and `broken_wing_butterfly`/`directional_credit_spread` substitute their own
-signal (dispersion, skew) into the same formula shape rather than getting a separate scoring
-system. This is a **relative** score used only to break ties between strategies that already
+Criteria's ranking section for why.) Whichever strategy scores highest for that symbol wins.
+`broken_wing_butterfly`, which has no term-structure reading, substitutes `skew_abs` into the same
+formula rather than getting a separate scoring system. `expected_move_butterfly` has neither, scores
+`None`, and is never offered as a symbol's best — the forced-sampling harness opens it regardless. This is a **relative** score used only to break ties between strategies that already
 both cleared their own bar — it is not itself a pass/fail gate.
 
 **Important caveat, directly from the code's own docstring**: this comparison is not

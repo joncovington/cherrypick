@@ -2,7 +2,14 @@
 
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
-Research-backed optimization hypotheses for the six remaining **defined-risk** strategies
+> **Status (2026-10-18).** Written before the 2026-08-12 managed-lifecycle cutover. The "current
+> values" below are the pre-cutover ones. The cutover set iron_fly to 0.25, the calendars to 15% / 50%
+> of debit, directional_credit_spread's stop to 2.0× and BWB's target to 0.25 (see 10-exits.md's
+> thresholds table). Positions are now managed across sessions, not swept the next morning. Queue
+> items 2 and 6 are therefore done, and the calendars are retired from `strat_test` (2026-10-15).
+> `expected_move_butterfly` (2026-10-14) postdates this page.
+
+Research-backed optimization hypotheses for the six then-current **defined-risk** strategies
 (`iron_fly`, `iron_condor`, `double_calendar`, `atm_calendar`, `directional_credit_spread`,
 `broken_wing_butterfly`), specific to this system's structure: **one position
 opened before the close, closed once after the next open, unmonitored overnight** — so the
@@ -124,7 +131,7 @@ paper `entry_context` and check the realized front-vs-back IV differential on wi
 ## 5. Expected move > realized move (the core edge)
 
 **Research:** prioritize names where the **expected (priced-in) move exceeds the historical
-realized move** — options are overpriced, so the crush works in your favor. This is the
+realized move** — options are overpriced, so the crush works in your favour. This is the
 single most-cited edge for short-premium earnings trades.
 
 **Current:** the agent already gates on **IV/RV ratio** (`min_iv_rv_ratio 1.25`) and
@@ -169,7 +176,7 @@ hard-rejected across all 6 strategies for `bid_ask_spread_too_wide`: measured AT
 16.47% vs. the `max_bid_ask_spread_pct` 0.15 cap, a ~1.5-point miss. Single data point, not
 acted on yet — this section exists to track whether it recurs.
 
-**Current:** `max_bid_ask_spread_pct 0.15` (shared liquidity gate, `scanner.py:622-625`),
+**Current:** `max_bid_ask_spread_pct 0.15` (shared liquidity gate, `scanner.apply_liquidity_gates`),
 documented in `config.example.json` as "generous enough not to reject normal earnings-week
 widening but catches genuinely illiquid chains" — a reasoned starting point, not backtested.
 
@@ -181,7 +188,7 @@ names also directly worsens cost-adjusted expectancy on those trades, partially 
 gain from more samples.
 
 **Review checkpoint: ~2026-07-23 (two weeks out).** Query `scan_log` (the strat_test books —
-`profile LIKE 'strat_test%'`)
+`arm LIKE 'strat_test%'`)
 for how often `bid_ask_spread_too_wide` appears as a rejection reason, how close the misses
 run (median/max overage), and whether it disproportionately hits otherwise-qualifying liquid
 names (high market cap / high volume) rather than genuinely illiquid ones. If it's a frequent,
@@ -233,5 +240,5 @@ directional gate** (see `docs/strategy-testing-plan.md`):
 ## See also
 
 - `docs/strategy-testing-plan.md` — the paper program that validates every hypothesis here
-- `docs/05-strategies.md` — the 6 strategies' structures and current parameters
+- `docs/05-strategies.md` — every strategy's structure and current parameters
 - `cherrypick/earnings/strategy_metrics.py` — expectancy / IV-crush / regime metrics the tests are judged on

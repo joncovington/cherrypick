@@ -10,7 +10,7 @@ engine and records the spot trail; the **console** renders it at <http://127.0.0
 serves nothing itself (its old dashboard, WebSocket push and section card are recoverable from the
 `pre-console-only` tag), places no orders, and never touches live trading.
 
-The recorder also carries the **suite-level market-regime series** (`cherrypick/gex/regime.py`;
+The recorder also carries the **suite-level market-regime series** (`src/cherrypick/gex/regime.py`;
 design record [`docs/regime-recorder-plan.md`](../../docs/regime-recorder-plan.md)): one row per
 reading per ~minute during RTH (the vol complex, breadth and cross-asset quotes, GLD/USO as labelled
 commodity proxies, the eleven SPDR sectors) into `market_regime_history`, plus a permanent
@@ -94,8 +94,10 @@ the orchestrator's watchdog recycles on (stop, then start). A missing heartbeat 
 silence-supervised", never to a restart.
 
 Two modes: **piggyback** (default — `source.stream_cache_db` resolves to the suite's shared cache,
-`~/.cherrypick/data/marketdata/stream_cache.db`, read read-only) or **standalone** (`run.py stream`
-populates its own cache, e.g. `data/stream_cache.db`, if `source.stream_cache_db` is repointed there).
+`~/.cherrypick/data/marketdata/stream_cache.db`, read read-only) or **standalone**, development only:
+`run.py stream` writes whatever `source.stream_cache_db` resolves to, which by default is the SHARED
+cache, so repoint it at a private file (e.g. `data/stream_cache.db`) first and never run it beside
+`packages/streamer`.
 
 Suite context: the root [documentation index](../../docs/README.md), especially
 [strategy-engines.md](../../docs/strategy-engines.md). The incidents behind the rules here are in
@@ -104,7 +106,7 @@ Suite context: the root [documentation index](../../docs/README.md), especially
 ## Commands
 
 ```bash
-python run.py stream --symbol SPX     # standalone streamer -> own data/stream_cache.db
+python run.py stream --symbol SPX     # standalone streamer -> source.stream_cache_db (repoint it first)
 python run.py record                  # always-on spot-trail + regime recorder (--once / --interval / --status)
 python run.py gex --symbol SPX --json # one-shot payload to the terminal
 python run.py pin-study [--json]      # which recorded level the close settled nearest, over stored history
@@ -119,18 +121,19 @@ file's directory.
 
 ## Architecture
 
-- **`cherrypick/gex/streamer.py`** — thin standalone wrapper over `cherrypick.core.streamer.ChainStreamer`
-  with this module's own keyring session and cache (no open-position policy, ORB or HTTP API — those
-  stay in MEIC's wrapper). The one place this module talks to the broker.
-- **`cherrypick/gex/provider.py`** — data source → `GexSnapshot`. Reads a stream cache `?mode=ro` and
+- **`src/cherrypick/gex/streamer.py`** — thin standalone wrapper over `cherrypick.core.streamer.ChainStreamer`
+  with this module's own keyring session (no open-position policy, ORB or HTTP API: ORB is the
+  standalone producer's, and modules declare their legs through `state/stream_requests/`). The one
+  place this module talks to the broker.
+- **`src/cherrypick/gex/provider.py`** — data source → `GexSnapshot`. Reads a stream cache `?mode=ro` and
   owns that read shape; add a source by adding a provider, not by editing the schema-aware reader.
-- **`cherrypick/gex/service.py`** — `build_gex(cfg, symbol)`: provider → `compute_gex_profile` → chart
+- **`src/cherrypick/gex/service.py`** — `build_gex(cfg, symbol)`: provider → `compute_gex_profile` → chart
   payload (spot trail read-only); the pure, HTTP-free seam. `record_spots(cfg)` samples **every**
   offered symbol into this module's own `history_db` so a trail has no gap on a symbol switch;
   `run_recorder(cfg)` is the always-on loop.
-- **`cherrypick/gex/cli.py` + `run.py`** — the CLI. Not an integration point: the console reads this
+- **`src/cherrypick/gex/cli.py` + `run.py`** — the CLI. Not an integration point: the console reads this
   module's **data**, not its commands.
-- **`cherrypick/gex/pin_study.py`** — read-only study of which recorded level (call wall / zero gamma /
+- **`src/cherrypick/gex/pin_study.py`** — read-only study of which recorded level (call wall / zero gamma /
   put wall) each close settled nearest, per regime, for the session's first RTH reading and the prior
   session's final one. RTH-gated by calendar-date equality (not hours alone); expired-chain rows
   excluded by `core.regime`'s forward-only rule; reports skipped sessions with reasons and n
@@ -143,7 +146,9 @@ file's directory.
   session or outward connection. The computation is a pure function over a chain snapshot, which is
   what lets a profile be recomputed from history.
 - **Never write a cache you don't own.** In piggyback mode the provider opens the shared cache
-  `?mode=ro`; the streamer writes only this module's own cache; the spot trail goes to `history_db`.
+  `?mode=ro`, and the spot trail goes to `history_db`. `run.py stream` writes whatever
+  `source.stream_cache_db` resolves to, which by default is the SHARED cache: repoint it at a private
+  file first and never run it beside `packages/streamer`. The shared cache has one writer.
 - **GEX math and the streaming engine stay in `cherrypick.core`.** Never fork dollar-gamma / walls /
   zero-gamma or the streamer into this package (a copied GEX calculation once drifted ~75×).
 - **The GEX horizon is forward-only.** `provider.snapshot_from_stream_cache` picks the nearest
@@ -177,6 +182,12 @@ file's directory.
   zero-gamma jumps of more than 15 points from 6 to 2 and the cumulative flip's from 7 to 2, and
   left the flip unchanged in 180 of 191. It does NOT steady the put wall (37 jumps before, 43
   after): that is the arg-min over many similar far-OTM put strikes, a different cause. The
-  recorded `call_gamma`/`put_gamma` are still the feed's own. The console's `gexProfile.ts` mirrors
+  recorded `call_gamma`/`put_gamma` are still the feed's own. The console's `analytics/gex.ts` mirrors
   it (`strikeGamma`); change both or neither. Journaled in flies (`gex_surface`) and bwb (its flip).
+- **A wall needs a strike on its own side of zero** (2026-10-09, `core.gex.net_walls`): with no
+  negative strike there is no put wall, and with no positive one no call wall (an expired chain once
+  named 3000 as SPX's put wall, a 0-against-0 tie on the chain's first row). The console's `netWalls`
+  mirrors it; change both or neither. The console also shows a near-tied wall's runner-up
+  (`contestedWalls`, above 80% of the wall's net); that is display only and measures nothing
+  differently.
 - **Scratch work lives in a git-ignored `.tmp/`.**

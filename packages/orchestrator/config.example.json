@@ -658,7 +658,7 @@
     "end": "16:10"
   },
   "live_settle_overdue": {
-    "_comment": "run.py settle-overdue-live, every interval_seconds, every day: settles any past session a flies/bwb live ledger still holds open (a machine down between the close and the disarm) at THAT session's official close (Yahoo daily bar, source yahoo_daily) -- never a provisional price. A session with a pending entry, or no official close found, stays open and the watchdog keeps alerting. Each settlement is announced on every channel. Safeguard item 4, 2026-10-08 (the owner chose official-print-only).",
+    "_comment": "run.py settle-overdue-live, every interval_seconds, every day: settles any past session a flies, bwb or meic live ledger still holds open (a machine down between the close and the disarm) at THAT session's official close (Yahoo daily bar, source yahoo_daily) -- never a provisional price. A session with a pending entry, or no official close found, stays open and the watchdog keeps alerting. Each settlement is announced on every channel. Safeguard item 4, 2026-10-08 (the owner chose official-print-only).",
     "enabled": true,
     "interval_seconds": 3600
   },

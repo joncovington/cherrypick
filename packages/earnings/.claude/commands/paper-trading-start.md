@@ -76,14 +76,15 @@ If any are selected, each shows:
 
 ## Files Generated
 
-None — this is a read-only ranking scan that prints to the terminal and persists nothing. Real trade
-persistence (for the actual loop, not this standalone scan) goes through `db_paper.py save_trade` into
-the shared `paper_trades.db`, per CLAUDE.md's Step 4b. The end-of-day summary is written separately by
-the forced-sampling close pass; the session is reported by the suite review (`packages/review`).
+No trades. `get_ranked_symbols` does log every evaluation to `scan_log` (one row per symbol ×
+strategy, plus a `_ranked` summary) and upserts `entry_reviews`, in the paper or live ledger per
+`enable_live_trading`. Real trade persistence (for the actual loop, not this standalone scan) goes
+through `db_paper.py save_trade` into the shared `paper_trades.db`, per CLAUDE.md's Step 4b. The
+session is reported by the suite review (`packages/review`).
 
 ## Related Commands
 
-- `/paper-start` — Forced-sampling strategy test (opens the `strat_test` book; writes the daily EOD report)
+- `/paper-start` — Forced-sampling strategy test (opens the per-strategy `strat_test` books)
 - `/earnings-start` — Starts the actual continuous trading loop (Steps 0-5, self-scheduling)
 
 ## Common Issues

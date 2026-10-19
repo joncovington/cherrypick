@@ -112,17 +112,17 @@ def _gates(cfg, designated="5WX11234", when=_GATE_WHEN):
 def test_live_gates_fail_closed_and_require_a_base_book_arm():
     _arm_for(_GATE_DAY)
     assert broker_cli.live_gates({}) == ["live.enabled is false"]
-    assert _gates({"live": {"enabled": False, "gate0_confirmed": "jon", "arm": "control"}})
+    assert _gates({"live": {"enabled": False, "gate0_confirmed": "owner", "arm": "control"}})
     unmet = _gates({"live": {"enabled": True}})
     assert any("gate0_confirmed" in g for g in unmet) and any("live.arm" in g for g in unmet)
     for bad in ("wall", "advised:control", "", "Control"):
-        unmet = _gates({"live": {"enabled": True, "gate0_confirmed": "jon", "arm": bad}})
+        unmet = _gates({"live": {"enabled": True, "gate0_confirmed": "owner", "arm": bad}})
         assert unmet and "not a base arm" in unmet[0], bad
     for arm in engine.ARMS:
-        assert _gates({"live": {"enabled": True, "gate0_confirmed": "jon", "arm": arm}}) == []
+        assert _gates({"live": {"enabled": True, "gate0_confirmed": "owner", "arm": arm}}) == []
 
 
-_LIVE = {"live": {"enabled": True, "gate0_confirmed": "jon", "arm": "control"}}
+_LIVE = {"live": {"enabled": True, "gate0_confirmed": "owner", "arm": "control"}}
 
 
 def test_live_gates_are_readiness_plus_the_day_arm_record():
@@ -135,7 +135,7 @@ def test_live_gates_are_readiness_plus_the_day_arm_record():
         (_LIVE, "5WX11234"),
         (_LIVE, None),
         ({"live": {"enabled": True}}, None),
-        ({"live": {"enabled": True, "gate0_confirmed": "jon"}}, "5WX11234"),
+        ({"live": {"enabled": True, "gate0_confirmed": "owner"}}, "5WX11234"),
     ):
         assert _gates(cfg, designated) == live_loop.readiness(cfg, designated=designated), cfg
     assert any("designated" in g for g in _gates(_LIVE, None))

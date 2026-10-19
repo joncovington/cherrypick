@@ -10,7 +10,11 @@ the suite-wide [documentation index](../../docs/README.md).
 
 ## Sequential Gate Flow
 
-Each gate runs in order; an entry is rejected immediately upon hitting the first gate that blocks it.
+An entry is rejected at the first gate that blocks it. The numbering below is a catalogue, not the
+deterministic engine's order: paper and the live loop check gates in `paper.evaluate_entry`'s order
+(0DTE, IV rank, VIX, VIX1D ratio, ATR, GEX, entry window, spacing and caps, late-entry bias, event
+days, then per candidate: overlap, OTM floors, credit floors, the buying-power cap), and the first
+refusal is the recorded reason.
 
 ---
 
@@ -25,8 +29,10 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 
 ### 2. Force-Close Gate (Global)
 - **Trigger**: At or after `force_close_time` (15:45 ET by default)
-- **Effect**: Close all 0DTE positions immediately (BTC full IC)
-- **Config**: `force_close_time` (15:45 ET)
+- **Effect**: Close non-cash-settled positions (from `physical_settlement_force_close_time`, 15:30,
+  with `force_close_time` as the backstop). Cash-settled positions are left to expire; event days
+  (FOMC, triple witching, quarterly expiry) close everything
+- **Config**: `force_close_time` (15:45 ET), `physical_settlement_force_close_time` (15:30 ET)
 - **Escalation**: For physically-settled symbols not in `cash_settled_symbols`, log at CRITICAL if close fails; for cash-settled, routine retry
 - **IC Impact**: Forces close, does not allow entries
 - **ORB Impact**: Forces close
@@ -46,7 +52,7 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 - **Trigger**: VIX > `regime_vix_pause_threshold` (25)
 - **Effect**: Pause IC entries for ALL symbols this iteration
 - **Config**: `regime_vix_pause_threshold` (25)
-- **Rationale**: High VIX = elevated skew, tail-risk hedging, unfavorable for short premium
+- **Rationale**: High VIX = elevated skew, tail-risk hedging, unfavourable for short premium
 - **IC Impact**: Blocks all IC entries
 - **ORB Impact**: NOT blocked (ORB profits from directional environment)
 
@@ -64,7 +70,7 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 - **Effect**: Pause IC entries for THIS symbol only
 - **Config**: `regime_atr_pause_threshold_pct` (0.015), `regime_atr_lookback_days` (5)
 - **Data**: `atr_5day` comes from the streamer's per-day `stream_summary` session-OHLC rows (`tt.py get_atr`); until the cache holds a full lookback of completed sessions the value is absent and the gate stays inactive (fail-open, never a fabricated reading)
-- **Rationale**: Elevated realized volatility = trending environment, unfavorable for static IC width. Percentage-based so one threshold means the same thing from IWM to SPX — the old fixed-points form silently over-blocked SPX and never fired for QQQ/IWM
+- **Rationale**: Elevated realised volatility = trending environment, unfavourable for static IC width. Percentage-based so one threshold means the same thing from IWM to SPX — the old fixed-points form silently over-blocked SPX and never fired for QQQ/IWM
 - **IC Impact**: Blocks this symbol's IC entries (other symbols unaffected)
 - **ORB Impact**: NOT blocked
 
@@ -72,6 +78,9 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 - **Trigger**: Net GEX < 0 (price below gamma flip); dealers short gamma
 - **Effect**: Pause IC entries for THIS symbol
 - **Config**: `regime_gex_block_negative` (default `true` — the gate is on unless a profile turns it off)
+- **Mode** (2026-10-15): `regime_gex_block_mode` — `"oi"` (default) blocks on open-interest GEX alone;
+  `"both"` blocks only when volume GEX (`net_gex_vol`) is negative too. A missing volume reading
+  keeps the OI rule
 - **Rationale**: Negative gamma = dealer amplification of moves, unstable for short premium
 - **IC Impact**: Blocks this symbol's IC entries
 - **ORB Impact**: NOT blocked
@@ -84,9 +93,9 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
   (below) is retired — the two arms went byte-identical over their one session of data because
   `gex_positive_at_entry` never took the value 0 among 78 tagged rows (73% of rows untagged
   entirely, not a gate that never fired). The question is now answered **read-side, from one
-  stream's own rows**: the `open` arm runs with `regime_gex_block_negative: false` and records
-  `entry_gex_bucket`/`entry_gex_value` (see `regime.py`) on every entry, so
-  `analytics.by_regime(conn, "gex", arm="open")` reconstructs what this gate — and both stricter
+  stream's own rows**: the `open` arm (renamed `control` on 2026-08-21) runs with
+  `regime_gex_block_negative: false` and records `entry_gex_bucket`/`entry_gex_value` (see
+  `regime.py`) on every entry, so `analytics.by_regime(conn, "gex", arm="control")` reconstructs what this gate — and both stricter
   variants below — would have blocked, from real recorded floats, without needing a second
   byte-identical book. `analytics.regime_coverage` reports the untagged share alongside the
   bucket split so a coverage gap is never misread as a settled question. See
@@ -110,7 +119,7 @@ Readable by the engine since they were written, but documented in no config file
 
 Both are per-profile, so a shadow arm could still carry one without touching the live ladder if a
 dedicated arm were ever warranted — but per 7b's update above, both are now readable read-side from
-`open`'s own recorded `entry_gex_bucket`/`entry_gex_value`, the same way gate 7's block_negative
+`control`'s own recorded `entry_gex_bucket`/`entry_gex_value`, the same way gate 7's block_negative
 question is. The gate stays on by default; treat it as untested rather than validated until the
 regime-coverage read has enough tagged, non-degenerate sessions to say more.
 
@@ -176,6 +185,29 @@ regime-coverage read has enough tagged, non-degenerate sessions to say more.
 - **IC Impact**: Soft guidance (higher selectivity, not a hard stop)
 - **ORB Impact**: Not applicable
 
+### 13b. Entry Spacing (Per Arm)
+- **Trigger**: Too soon after this arm's last fill
+- **Config**: `min_seconds_between_entries` (any arm; refusal `entry_cadence_wait`), and
+  `min_minutes_between_entries` for arms with `stagger_entries`, which also makes
+  `daily_ic_trade_target` a hard cap (`entry_spacing_wait`, `daily_target_reached`)
+- **IC Impact**: Waits; an entry that evaluated green but did not fill never spends the slot
+
+### 13c. Open Buying-Power Cap (Per Candidate)
+- **Trigger**: Open ICs' (width − credit) × 100 plus the candidate's exceeds `max_open_bp_dollars`
+- **Effect**: Reject that candidate (`max_open_bp_reached`); a narrower candidate may still fit
+- **Config**: `max_open_bp_dollars` (unset: no cap) — the `bp-*` arms, and live's `live` block,
+  which can only narrow it
+- **IC Impact**: Hard block for the candidate
+
+### Live-only gates (`live_loop.py`)
+Checked by the deterministic live loop on top of the arm's own gates; each blocks NEW entries only,
+never a stop or a force-close:
+- `live.max_structures_per_day` — the per-session count cap (`null`: none)
+- the suite halt flag and `live.daily_loss_halt_dollars`, the daily-loss breaker
+- the orphan sweep — a working order no live ledger knows blocks entries until a person looks
+- an entry with a leg opposite one another live loop holds is refused
+- no new entry on a quarterly expiry (`quarter_end_no_new_entries`)
+
 ---
 
 ## Strike Quality & Risk Gates
@@ -208,20 +240,17 @@ regime-coverage read has enough tagged, non-degenerate sessions to say more.
   - `"shorts"`: blocks only an exact repeat of the SAME short put/call pair — the profit zone,
     the same one-structure-per-centre rule flies enforces
   - `"none"`: no overlap check at all — every tick is an independent draw, treating each entry
-    as its own sample rather than a position in a shared book. Only valid for the forced-sampling
-    forward-test streams (`open`/`width-5`/`width-10`), which run uncapped
-    (`max_concurrent_ics: 999`) and are not meant to model a real book — see gate 12's note and
-    [docs/paper-experiments.md](docs/paper-experiments.md)
+    as its own sample rather than a position in a shared book (`control`'s setting; see gate 12's
+    note and [docs/paper-experiments.md](docs/paper-experiments.md))
 - **Effect**: Reject entry (unless `overlap_scope: "none"`)
-- **Config**: `overlap_scope` (`"all"` / `"shorts"` / `"none"`; default `"all"` if unset,
-  `"shorts"` on `control` and the disabled ladder tiers, `"none"` on the forward-test streams).
-  **Live trading never sees a paper stream's `"none"`**: `live_loop.py` builds its params as an
-  empty profile overlay over `config.json`, so no `config.risk.json` profile key — including a
-  study arm's `overlap_scope` — can reach it; live is bound to `config.json`'s own top-level
-  `overlap_scope` (currently `"shorts"`) regardless of which paper stream is running. Pinned by
-  `test_live_ignores_a_paper_profile_overlap_scope_and_still_refuses_overlap`.
+- **Config**: `overlap_scope` (`"all"` / `"shorts"` / `"sign"` / `"none"`; default `"all"` if
+  unset, `"shorts"` in the shipped top level, `"none"` on `control`).
+  **Live sees only the arm `live.arm` names.** With no `live.arm`, live trades the top level
+  (`paper.live_params`), so no other arm's `overlap_scope` reaches it
+  (`test_live_ignores_a_paper_profile_overlap_scope_and_still_refuses_overlap`). A named arm brings
+  its own `overlap_scope`, `"none"` included.
 - **Rationale**: Prevents accidental double-stacking, simplifies stop management. `"none"` trades
-  that protection away deliberately, in paper only, for independent sampling
+  that protection away deliberately, for independent sampling
 - **IC Impact**: Hard block (`"all"`/`"shorts"`) or no-op (`"none"`)
 - **ORB Impact**: Checked against existing ORB position, unaffected by `overlap_scope`
 
@@ -245,18 +274,18 @@ regime-coverage read has enough tagged, non-degenerate sessions to say more.
 - **Low-IV Override**: relief for days where a fixed pct-of-width floor would lock the tier out entirely. Both halves are **relative to the active profile**, so they scale with the ladder:
   - Ceiling — relief applies while IV rank ≤ `min_iv_rank + low_iv_credit_floor_iv_rank_offset` (0.05) → 0.35 / 0.27 / 0.25 / 0.20 down the ladder
   - Floor — the relaxed floor is `min_credit_pct_of_width × low_iv_credit_relief_multiple` (0.85), so it always sits strictly below that tier's own floor
-  - Previously both were absolutes shared by every tier (0.35 / 0.10 — conservative's own values, never rescaled). That flattened the ladder: whenever IV rank sat under 0.35 all four tiers used the same 0.10 floor (measured: 100% of SPX and XSP entries), and for aggressive/very-aggressive the "relief" equalled their normal floor, so it did nothing at all. The absolute keys are still honored if a profile sets them.
+  - Previously both were absolutes shared by every tier (0.35 / 0.10 — conservative's own values, never rescaled). That flattened the ladder: whenever IV rank sat under 0.35 all four tiers used the same 0.10 floor (measured: 100% of SPX and XSP entries), and for aggressive/very-aggressive the "relief" equalled their normal floor, so it did nothing at all. The absolute keys are still honoured if a profile sets them.
 - **IC Impact**: Hard block
 - **ORB Impact**: Not applicable
 
 ### 19. Fee-Adjusted Credit Floor Gate (Hard Stop)
 - **Trigger**: `(ic_credit × dollar_multiplier) − est_fee_per_contract < applicable_floor`
 - **Effect**: Reject entry
-- **Config**: `fee_estimate_lookback_trades`, `fee_estimate_min_sample_size`, `fee_estimate_fallback_per_contract`
+- **Config**: `fee_estimate_lookback_trades`, `fee_estimate_min_sample_size`
 - **Rationale**: Credit must clear estimated trading costs (opening); closing fees are typically waived on 0DTE expiration
 - **Estimation Logic**: 
   - Call `python -m cherrypick.meic.db get_fee_estimate --symbol <sym>` to retrieve historical average fee
-  - If `sample_size < fee_estimate_min_sample_size`, fall back to `fee_estimate_fallback_per_contract[symbol]`
+  - If `sample_size < fee_estimate_min_sample_size`, fall back to `fallback_per_contract`, computed from `cherrypick.core.fees` (see CLAUDE.md's fee row)
 - **Example**: SPX: $0.45–$0.75 net credit (after fees) qualifies under this gate
 - **IC Impact**: Hard block (separate from gross floor check; entry must clear both)
 - **ORB Impact**: Not applicable
@@ -279,7 +308,7 @@ regime-coverage read has enough tagged, non-degenerate sessions to say more.
   - IV rank ≤ `min_iv_rank + late_entry_bias_iv_rank_offset` (0.15) — i.e. 0.45 / 0.37 / 0.35 / 0.30 down the ladder
   - Current time < `late_entry_bias_start_time` (12:00 ET)
 - **Effect**: Skip IC entries until noon; ORB unaffected
-- **Config**: `late_entry_bias_enabled`, `late_entry_bias_iv_rank_offset`, `late_entry_bias_start_time` (the absolute `late_entry_bias_iv_rank_max` is still honored if a profile sets it)
+- **Config**: `late_entry_bias_enabled`, `late_entry_bias_iv_rank_offset`, `late_entry_bias_start_time` (the absolute `late_entry_bias_iv_rank_max` is still honoured if a profile sets it)
 - **Rationale**: Morning entries at borderline IV carry 3+ hours of directional exposure; afternoon entries capture theta acceleration (2–5× morning rate)
 - **High-IV Bypass**: If IV rank is above that ceiling, do NOT skip; enter anytime. The ceiling is profile-relative because a flat 0.45 put very-aggressive (floor 0.15) under the bias across nearly its whole range while barely touching conservative.
 - **IC Impact**: Soft block (skips until noon; not a hard rejection)
@@ -372,7 +401,7 @@ regime-coverage read has enough tagged, non-degenerate sessions to say more.
 - ATR pause (symbol-specific)
 - GEX negative (symbol-specific)
 
-### Soft Guidance (Do Not Block; Adjust Behavior)
+### Soft Guidance (Do Not Block; Adjust Behaviour)
 - Daily IC trade target (increases selectivity)
 - Late-entry bias (skips until noon, not a hard rejection)
 - Zero-gamma threat (tightens stops, not a block)
@@ -391,7 +420,7 @@ regime-coverage read has enough tagged, non-degenerate sessions to say more.
 | Gate | Config Key(s) | Default | Notes |
 |------|---------------|---------|-------|
 | Time window | Hard-coded | 09:30–15:55 ET | No config |
-| Force close | `force_close_time` | 15:45 ET | All 0DTE closed |
+| Force close | `force_close_time` | 15:45 ET | Non-cash-settled only |
 | Entry window (IC) | `entry_window_start`, `entry_window_end` | 10:00–14:30 ET | — |
 | VIX pause | `regime_vix_pause_threshold` | 25 | Account-wide |
 | VIX1D ratio | `regime_vix1d_ratio_pause_threshold` | 1.30 | Account-wide |
@@ -400,13 +429,13 @@ regime-coverage read has enough tagged, non-degenerate sessions to say more.
 | FOMC post-blackout | `fomc_post_blackout_min_iv_rank`, `fomc_post_blackout_max_intraday_range_pct` | 0.40, 0.005 | Account-wide, FOMC only |
 | Max concurrent ICs | `max_concurrent_ics` | 99 (was 4; see gate 12) | Hard stop, never binds |
 | Daily IC target | `daily_ic_trade_target` | 200 (was 2; see gate 13) | Soft guidance, never binds |
-| Strike overlap | `overlap_scope` | `"all"`/`"shorts"`/`"none"` — see gate 16 | Hard stop unless `"none"`; live never sees `"none"` |
+| Strike overlap | `overlap_scope` | `"all"`/`"shorts"`/`"none"` — see gate 16 | Hard stop unless `"none"`; live sees only `live.arm`'s value |
 | Delta (call) | `max_call_delta_entry`, `_open_volatile`, `_late` | 0.20, 0.19, 0.19 | Hard stop |
 | OTM (call, put) | `min_call_otm_pct`, `min_put_otm_pct` | 0.35%, 0.30% | Hard stop |
 | OPEX OTM override | `quarterly_expiry_min_call_otm_pct`, `quarterly_expiry_skip_open_volatile` | 0.67%, true | Tighter on OPEX |
 | IV rank floor | `min_iv_rank` | 0.30 | Hard stop |
 | Credit floor (gross) | `min_credit_pct_of_width`, `low_iv_credit_relief_multiple`, `low_iv_credit_floor_iv_rank_offset` | 0.15, 0.85, +0.05 (relief ceiling/floor are profile-relative) | Hard stop |
-| Fee floor | `fee_estimate_lookback_trades`, `fee_estimate_min_sample_size`, `fee_estimate_fallback_per_contract` | 20 trades, 5 min, symbol-specific | Hard stop |
+| Fee floor | `fee_estimate_lookback_trades`, `fee_estimate_min_sample_size` | 20 trades, 5 min; fallback computed per symbol from `cherrypick.core.fees` | Hard stop |
 | Spread width (soft) | `mid_spread_gate` | 0.10 | Changes strategy |
 | Late-entry bias | `late_entry_bias_enabled`, `late_entry_bias_iv_rank_offset`, `late_entry_bias_start_time` | true, +0.15 (profile-relative), 12:00 ET | Soft block |
 | ORB enabled | `orb_enabled` | true | Entire feature |

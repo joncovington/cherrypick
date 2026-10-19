@@ -82,7 +82,7 @@ Console's `readers/logs.ts` is a separate implementation and does not inherit th
 
 | Card | Status |
 |---|---|
-| Header status pill / watchdog age / session / findings | done (Overview); active-alerts callout and notify-channels line **struck 2026-08-26** — the merged log tail already filters by level |
+| Header status pill / watchdog age / session / findings | done (on the Overview; since that page's removal on 2026-10-16, the status bar and top bar); active-alerts callout and notify-channels line **struck 2026-08-26** — the merged log tail already filters by level |
 | Suite stats strip (net, trades, win %, avg) | done |
 | Suite equity — cumulative net P&L + module lines | done. 2x-slippage restatement, best/worst-day metrics and the VIX overlay **struck 2026-08-26** (see above). The data-epoch marker **landed 2026-09-29**: each drawn module's journaled `measurement_breaks` inside the curve's range are squares on its line (at the first session on or after the break) and are named under the chart; read on every request, past the fact-set cache, since a module journals a break when it lands one |
 | Champions & challengers (calibrate) | **REMOVED 2026-08-20** — the page, the `/api/calibration` route, the champion column on the System card and `core.profiles.recommend_champion` all went together. Judging whether an arm earned anything belongs to `packages/advisor`'s experiments now, so the suite has one mechanism rather than two answering that on different evidence and thresholds. `cherrypick calibrate` still reports the per-tag reading |
@@ -177,8 +177,9 @@ Three things deliberately survived the teardown, and each is worth not re-deleti
   evidence. Each case replays an observed reference-platform card, and together they are what
   justified those formulae. Nothing calls them now; re-deriving them would mean re-observing a
   platform this suite no longer runs against.
-- **`market/marketData.ts` and `ws/hub.ts`** — the Overview's live quotes ride `/ws`, which has
-  nothing to do with research.
+- **`market/marketData.ts` and `ws/hub.ts`** — the live quotes (then the Overview's; now the top
+  bar's futures ticker, the intraday chart and flies' forest) ride `/ws`, which has nothing to do
+  with research.
 
 And one guard got STRONGER rather than going away: `dry-run-only.test.ts` now pins `postOrderDryRun`
 to exactly one file (the scope probe) instead of two, because order staging was the console's only
@@ -186,8 +187,9 @@ path that touched an order at all. It asserts nothing has grown back.
 
 The console.db tables the section owned (`tt_watchlists`, `tt_metrics`, `tt_public_pins`,
 `symbol_blacklist`, `chain_eod`, `chain_eod_meta`) are **kept for one cycle** — nothing reads or
-writes them, but the DDL and rows stay so the retirement is reversible without a restore. Drop them
-in a follow-up. `~/.cherrypick/data/scout/` was renamed `scout.retired-2026-08-31`, matching how
+writes them, but the DDL and rows stay so the retirement is reversible without a restore. They have
+since been dropped: `store/consoleDb.ts` drops them on open and vacuums once, and a fresh machine
+never creates them. `~/.cherrypick/data/scout/` was renamed `scout.retired-2026-08-31`, matching how
 `scout.json.retired-2026-08-17` was handled.
 
 ## Per-arm portfolios (2026-08-11; re-audited 2026-08-26)

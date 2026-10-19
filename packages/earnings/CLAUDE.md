@@ -19,12 +19,13 @@ live. `atm_calendar` and
 `double_calendar` stay registered but open nothing in `strat_test` from 2026-10-15
 (`strat_test_harness.STRAT_TEST_RETIRED`, a dated retirement; docs/operating-history.md). Undefined-risk/naked
 strategies were deliberately removed — a naked short on a single-name gap can blow out arbitrarily
-overnight. New strategies go under `src/strategies/` without touching the engine.
+overnight. New strategies go under `src/cherrypick/earnings/strategies/` without touching the engine.
 
 **Engine vs. strategy**: `cherrypick/earnings/scanner.py` is strategy-agnostic (calendar, IV/RV,
-winrate backtest, liquidity gates, ranking, expiration selection); `src/strategies/<name>.py` holds
-only thresholds, accept/reject screening and strike/order construction, configured under
-`strategies.<name>`. **Hard filters and the screen are defined in `docs/screening-criteria.md` — the
+winrate backtest, liquidity gates, ranking, expiration selection); `cherrypick/earnings/strategies/<name>.py`
+holds only thresholds, accept/reject screening and strike/order construction, configured under
+`strategies.<name>`. `cherrypick/earnings/time_spread.py` is the time-spread screen's engine (pure
+functions, read by nothing yet; `docs/time-spread-screen-plan.md`). **Hard filters and the screen are defined in `docs/screening-criteria.md` — the
 source of truth; do not duplicate here.** Metrics come live from tastytrade chains and the DoltHub
 datasets (`post-no-preference/earnings`, `/options`, `/stocks`) via local `dolt sql-server`; OI from
 on-demand DXLink `Summary` events. **Always check winrate `sample_size`** — history reaches back only
@@ -39,7 +40,7 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
   (`entry_scan_at`), EOD 16:00–16:30, nothing off-session. It opens the strat_test books (every
   strategy clearing the screen on every viable name; per-strategy by default via
   `strat_test_portfolio`), always paper-only into `paper_trades.db`. No per-iteration agent.
-- **Two trails, different questions.** `state/earnings-*.heartbeat` is a LATEST — "is it alive" only.
+- **Two trails, different questions.** `state/earnings_entry.last.json` / `earnings_exit.last.json` are LATESTs — "is it alive" only.
   `logs/earnings_paper.log` is the run trail: one JSON line per completed forward-scan/entry/exit
   phase (`append_run_log`) with the full per-symbol result. **Every phase must log, the forward scan
   included** — its `symbols` count is what separates "found nothing" from "screened, none cleared".
@@ -76,7 +77,7 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
 
 ## The advised twin (paper only, off by default)
 
-Mechanism in `packages/core/CLAUDE.md`. Earnings runs six strategies, so the tag carries the
+Mechanism in `packages/core/CLAUDE.md`. Earnings runs seven strategies, so the tag carries the
 strategy — `advised:<experiment name>:<strategy>` — opened beside that strategy's strat_test entry
 with identical legs, credit, quantity and modelled costs: paired, with management params the only
 difference. **One twin per experiment per strategy** (2026-09-17): `advice.twins_for` returns one per
@@ -137,16 +138,16 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 ## Tool Reference
 
 All operations via `python -m cherrypick.earnings.tt <command>` (broker), `python -m
-cherrypick.earnings.scanner <command>` (engine), `python src/strategies/<name>.py <command>`
-(strategy). JSON to stdout.
+cherrypick.earnings.scanner <command>` (engine), `python -m cherrypick.earnings.strategies.<name>
+<command>` (strategy). JSON to stdout.
 
 | Command | Purpose |
 |---|---|
 | `python -m cherrypick.earnings.scanner get_calendar --date MM/DD/YYYY` | Tickers with earnings on this date |
 | `python -m cherrypick.earnings.scanner get_iv_rv --symbol X` | IV/RV ratio from DoltHub |
 | `python -m cherrypick.earnings.scanner get_winrate --symbol X [--lookback_quarters N]` | Historical winrate backtest |
-| `python src/strategies/<name>.py get_candidates --date MM/DD/YYYY` | Full accept/reject scan with reasons, ranked candidates, selected (after cap/correlation) |
-| `python src/strategies/<name>.py get_order --symbol X --earnings_date DATE --earnings_timing "..."` | Build a concrete order (strikes, legs, credit/debit) |
+| `python -m cherrypick.earnings.strategies.<name> get_candidates --date MM/DD/YYYY` | Full accept/reject scan with reasons, ranked candidates, selected (after cap/correlation) |
+| `python -m cherrypick.earnings.strategies.<name> get_order --symbol X --earnings_date DATE --earnings_timing "..."` | Build a concrete order (strikes, legs, credit/debit) |
 | `python -m cherrypick.earnings.tt secrets_status` / `secrets_set` | Check/store OAuth credentials |
 | `python -m cherrypick.earnings.tt get_connection_status` | Verify OAuth session |
 | `python -m cherrypick.earnings.tt get_quote --symbol X` | Live underlying price |
@@ -165,6 +166,7 @@ cherrypick.earnings.scanner <command>` (engine), `python src/strategies/<name>.p
 | `python -m cherrypick.earnings.strat_test_harness run_entries --date MM/DD/YYYY` | **Strategy-testing only** (`docs/strategy-testing-plan.md`): a paper trade for **every** strategy clearing the screen on **every** viable symbol, into the strat_test books (`arm='strat_test:<strategy>'` per `strat_test_portfolio`) — forced sampling, since single-best selection would starve most strategies. Always paper regardless of `enable_live_trading`. |
 | `python -m cherrypick.earnings.strat_test_harness run_closes` | Close every open strat_test position via `scanner.compute_generic_exit_debit`, cost-adjusted by `costs.py`. |
 | `python -m cherrypick.earnings.screen_report [--mode live\|paper] [--profile X] [--strategy X] [--since YYYY-MM-DD] [--limit N] [--what-if REASON=THRESHOLD] [--cost-gate F] [--json]` | Why the screen rejected what it did (CLI over `screen_metrics.py`; reads `scan_log` only — safe mid-session). Funnel; reasons with a **sole-blocker** column (only sole blocks are rescuable by a threshold change); distance to the bar; co-firing gates; `_unverified` rejections as coverage gaps. **Cost-to-risk** per strategy with `--cost-gate` (default 0.05/0.10/0.15) — record-only, derived from `entry_cost`/`exit_cost`/`capital_at_risk`, the one counterfactual that may report P&L (those trades were taken). `--what-if` reports **counts and symbols only, never P&L**. Rows are classified first (`screen_metrics.classify`: four incompatible `scan_log` vocabularies) and exclusions are printed, never silent. `--json` is what the console's rejection card reads — one derivation, two renderers; the console must not re-derive it. |
+| `python -m cherrypick.earnings.entry_replay --screen "winrate=off,iv_rv_ratio=near_miss"` | Read-side replay of a proposed entry screen over `entry_reviews` joined to outcomes (`docs/control-book-plan.md`, phase 3). `measured` carries P&L; `counterfactual` never does. |
 | `python -m cherrypick.earnings.strategy_report [--mode live\|paper] [--profile X] [--strategy X] [--since YYYY-MM-DD]` | Per-strategy report: count vs 30/100 targets, win rate, profit factor, net expectancy, Sharpe, max drawdown, IV crush, regime coverage. `--mode` (default `paper`) picks the DB and the header says which; `--profile` defaults to the strat_test family (paper) / `default` (live). |
 
 ## Config Options

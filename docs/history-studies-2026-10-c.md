@@ -1,7 +1,7 @@
-# History studies, 2026-10 (c): post-earnings drift, and the expected-move box edge
+# History studies, 2026-10 (c): the first edge-hypotheses tests
 
-*Run 2026-10-17. These are the first two tests from [edge-hypotheses-plan.md](edge-hypotheses-plan.md).
-Each pass test was declared in its script's docstring before the first full run. Both scripts are
+*Run 2026-10-17. These are the first four tests from [edge-hypotheses-plan.md](edge-hypotheses-plan.md).
+Each pass test was declared in its script's docstring before the first full run. All four scripts are
 read-only.*
 
 ## 1. Post-earnings drift (`scripts/pead_history.py`): no drift, hypothesis closed
@@ -88,9 +88,9 @@ figures are kept under `~/.cherrypick/data/backtest/results/research/` (`box-tou
 `gex_history.db` with `--history-db`, and results from our own recording may be written here once
 enough sessions carry opening quotes (from 2026-10-13).
 
-**The decision the result drove** (stated here because it is ours, not the vendor's): the
-resting-order fill model (step 3 of the Pulver plan) and the fade and trend pricing are **not being
-built**. Hypotheses 4 and 8 are closed unless a new, declared question reopens them.
+**The decision** (stated here because it is ours, not the vendor's): the resting-order fill model
+(step 3 of the Pulver plan) and the fade and trend pricing are **not being built**; the reasoning is
+with the local results. Hypotheses 4 and 8 stay set aside unless a new, declared question reopens them.
 
 ## 3. A down-day entry filter for the put BWB (`scripts/bwb_entry_split.py`): no filter, closed
 

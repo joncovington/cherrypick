@@ -12,8 +12,8 @@ None of it is measurement-affecting (manage runs no arm), so each piece lands wh
 
 ## Why manage the book this way
 
-On 2026-10-16 the account held 37 legs on 13 underlyings against about $15k of net liq. Trade by
-trade, each position can look roughly neutral while the book leans one way. Two numbers say how it
+A small account can easily hold dozens of legs across a dozen underlyings. Trade by trade, each
+position can look roughly neutral while the book leans one way. Two numbers say how it
 leans:
 
 - **Beta-weighted delta (BWD)**, in SPY shares: Σ quantity × multiplier × delta × (S / S_SPY) × β.
@@ -35,8 +35,7 @@ All the bands are retail heuristics with no published out-of-sample evidence. Th
 ## The account type decides buying power
 
 Sizing follows the account type the snapshot reads from the broker's account record. It is never
-assumed from one install's account. The current account is an IRA, but the suite is installed by
-others too.
+assumed: the suite is installed on every kind of account.
 
 | Account | Short put ties up | Covered call ties up | Credit spread ties up |
 |---|---|---|---|
@@ -75,9 +74,9 @@ that reads them, each under its own version bump, so no field is recorded before
   underlying's share of BWD and of theta, and which beta was used. An unpriced leg makes the figures
   partial and names the leg.
 - A beta cross-check. The first v3 snapshot (2026-10-18) showed the broker's beta and its three-month
-  SPY correlation disagreeing in sign on several names (RTX beta −0.01 at correlation +0.94, FXI +0.27
-  at −0.75, DELL +1.26 at −0.27). Over one window those two cannot have opposite signs, so they come
-  from different windows, and RTX's beta looks wrong. The broker's beta stays the one used, because
+  SPY correlation disagreeing in sign on several names (one read beta −0.01 at correlation +0.94,
+  another +1.26 at −0.27). Over one window those two cannot have opposite signs, so they come from
+  different windows, and a near-zero beta beside a strong correlation looks wrong. The broker's beta stays the one used, because
   it is the one on the screen. Piece 2 flags a beta whose sign disagrees with its own correlation, or
   that sits near zero beside a strong one, with the name's share of BWD. Our own beta, fitted from
   the local end-of-day store, comes later (piece 2b): manage cannot read another package's store, so
@@ -130,31 +129,33 @@ end-of-day store, priced through Black-Scholes. A candidate that does not fit is
 with the cap that stopped it and the nearest version that fits: a short put too large to secure is
 offered as a put spread on the same short strike.
 
-The worked figures below are the current IRA's. On a margin account of the same size, a $35-strike
-short put would tie up about $700 of buying power rather than $3,500, so the stress cap, not buying
-power, would set the quantity.
+The worked figures below are for an illustrative cash account. On a margin account of the same size, a
+$35-strike short put would tie up about $700 of buying power rather than $3,500, so the stress cap,
+not buying power, would set the quantity.
 
-On 2026-10-16 (net liq $15,026, 44% of buying power used) the total cap left about $930: one small
-credit spread. A $5-wide spread taking $1.50 ($350 max loss) fits at one lot under the 3% cap ($450).
-A cash-secured put is limited to strikes of $37.50 by the per-name cap and to roughly $18 by the stress
-cap. The caps scale: at $50k the spread cap is $1,500 and the per-name strike limit $125; at $150k,
-$4,500 and $375.
+Take a cash account with $20,000 of net liq and 45% of its buying power already in use. The total cap
+leaves about $1,000: room for a small credit spread. A $5-wide spread taking $1.50 ($350 max loss)
+fits at one lot under the 3% cap ($600). A cash-secured put is limited to strikes of $50 by the
+per-name cap, and the stress cap may limit it further. The caps scale: at $50k the spread cap is
+$1,500 and the per-name strike limit $125; at $150k, $4,500 and $375.
 
 As built (2026-10-18):
 
 - **Data (#399).** `fetch_screener_greeks.py income` reads the tradable names' cycle-monthly chains
   through REST at 14:45 ET, in regular hours, with earnings dates, beta and stress moves. The snapshot
   (v7) carries the newest reading, at most four days old.
-- **Sizing.** `manage/candidates.py`. Three changes from the plan, each found on the real account's
-  numbers:
+- **Sizing.** `manage/candidates.py`. Three changes from the plan, each found while sizing a small
+  cash account:
   - The buying-power cap is the VIX-scaled one, not a fixed 50%.
   - Concentration is a name's theta against the theta the account may *carry* (the ceiling in
     dollars). Against the book as it is, the first trade in an empty book is 100% of it.
   - The nearest version that fits keeps the short strike and takes the *widest long under the
-    per-trade cap*. The rule's 0.25-delta long made spreads $10–20 wide, over a $428 cap on the IRA.
+    per-trade cap*. The rule's 0.25-delta long made spreads $10–20 wide, over a small account's
+    per-trade cap of a few hundred dollars.
     Spreads get the same treatment as short puts.
 
-**5. Console.** A portfolio card on Live → manage, reading the evaluation and computing nothing, with
+**5. Console.** The Live → portfolio tab (a card on Live → manage until that tab was split on
+2026-10-18), reading the evaluation and computing nothing, with
 a dial for BWD against its band (asked for on 2026-10-18). The band and "inside" come from the
 reading's `bands`, never worked out in the browser. Built: dials for BWD and theta, the break-even
 meter, the stress tiles, per-name delta and theta, the guidance and the hedge (#394).
@@ -166,8 +167,8 @@ meter, the stress tiles, per-name delta and theta, the guidance and the hedge (#
 - an expiry ladder with the earnings exposure.
 
 Also from that day: a debit hedge is exempt from the buying-power cap. A debit spread only lowers the
-worst case, so the account sitting past its cap (53% used) must not block the safer trade. Each gets
-a console card in the next PR.
+worst case, so an account already past its cap must not block the safer trade. Each has
+a console card on Live → portfolio (#421).
 
 ## Checks before it is trusted
 

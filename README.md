@@ -37,9 +37,10 @@ or *book*; those spellings keep working.)
 
 Because each arm changes one lever against a shared control, you can measure the isolated effect of a
 single idea rather than confounding several at once. **A base install runs only the `control` arm in
-every module**; any further arms are your own machine's configuration under `~/.cherrypick/config/`
-(MEIC's in `meic.risk.json`). BWB, calendars and curve also build comparison books into the module
-(bwb's add-on triggers, calendars' `path`, curve's `noflip` and `hook`); their shipped examples switch
+MEIC, earnings, flies, bwb, calendars and curve**; PMCC's example runs its two shield arms and
+contango's its two arms. Any further arms are your own machine's configuration under
+`~/.cherrypick/config/` (MEIC's in `meic.risk.json`). BWB, calendars and curve also build comparison
+books into the module (bwb's add-on triggers, calendars' `path`, curve's `noflip` and `near`); their shipped examples switch
 each one off with `enabled: false`, and you switch one on in your own config. With Claude Code
 installed, the optional AI advisor can run its own experiment arms beside the control, each proposed
 and judged against it. The pattern answers questions like:
@@ -106,14 +107,17 @@ suite once collected $4.00 of credit against $4.96 of fees.
   mechanical control book, a permissive path book recording every tick, and a read-side replay that
   scores profit targets, stops and exit timings over the recorded path — validated against the real
   books to the cent. Paper-only and credential-free. See [packages/calendars](packages/calendars).
-- **PMCC** — ⚠️ **EXPERIMENTAL, off by default.** Deep-ITM covered calls on TQQQ and XSP: buy an 85-90-delta ~21DTE call as a stock
-  substitute, sell the ATM ~7DTE call nearest spot (no yield floor), hold to the short's own
-  expiration and close both legs together. Single `control` book plus an advised A/B against the
-  old early-tv-exit rule; early assignment is measured, never modelled, so paper results are an
-  explicit upper bound. Paper-only and credential-free. See [packages/pmcc](packages/pmcc).
+- **PMCC** — ⚠️ **EXPERIMENTAL, off by default.** A deep-ITM call held with a shorter call sold
+  against it (the shipped example lists XSP, QQQ, GLD, IWM and SLV; SMH and single stocks are added
+  per machine). The `shield` and `shield_hold` arms hold a ~1-year 0.90–0.95-delta long and sell a
+  weekly 0.70-delta call against it, rolled each week (`shield` also rolls early); the original
+  21-DTE `control` is retired and off in the example. A short spanning an earnings or ex-dividend
+  date is refused; early assignment is measured, never modelled, so paper results are an explicit
+  upper bound. Paper-only and credential-free. See [packages/pmcc](packages/pmcc).
 - **Curve** — ⚠️ **EXPERIMENTAL, off by default.** VXX call credit spreads harvesting the VIX term-structure roll yield, gated by a daily
-  VIX/VIX3M regime read. Three books (contango-gated control, no-flip-exit, deep-backwardation hook)
-  trade the identical structure and differ only in entry gate and exit rule; the daily regime
+  VIX/VIX3M regime read. Its books (contango-gated `control`, `noflip` without the flip exit, the
+  0.40-delta `near`, and `hook`, retired from 2026-10-15) trade the same structure and differ only
+  in entry gate, exit rule or short delta; the daily regime
   classification is recorded every session as the module's second product. Paper-only and
   credential-free. See [packages/curve](packages/curve).
 - **Contango** — ⚠️ **EXPERIMENTAL, off by default.** The same VIX/VIX3M signal held in shares:
@@ -171,9 +175,10 @@ Every surface binds to loopback only.
   trading *on* is always a deliberate, manual, per-module act — the orchestrator will never do it for you
   and never places an order itself. But note what that means: **once a module's live gate is open, that
   module's own loop can place orders without asking again.** MEIC, earnings, flies, and bwb each have a live
-  path behind their own `enable_live_trading` gate. Flies and bwb are the most tightly bounded of them —
-  pilots that must be re-armed by hand every trading day, one arm at a time, under a worst-case
-  buying-power cap; while armed, the supervisor runs their live loop as a job
+  path, each behind its own gate (`enable_live_trading` for MEIC and earnings; flies and bwb have their
+  own `live` gates instead). MEIC, flies and bwb are the most tightly bounded of them — loops that must
+  be re-armed by hand every trading day (`/live-meic-start`, `/live-flies-start`, `/live-bwb-start`),
+  one arm at a time, under a buying-power cap; while armed, the supervisor runs their live loop as a job
   ([the flies plan](packages/flies/docs/live-trading-plan.md)).
 - **The manual desk — ⚠️ EXPERIMENTAL.**
   [packages/desk](packages/desk) is an EXPERIMENTAL prototype for educational purposes only, not
@@ -192,10 +197,10 @@ kept strictly separate.
 > known, and several of the suite's own recorded results are *negative*.
 >
 > **There are five ways real orders can be placed**, and it is worth knowing all of them before you open
-> any of them: **MEIC**, **earnings**, **flies**, and **bwb** each have a live path behind their own
-> `enable_live_trading` gate, and **desk** is the manual one. The first four are *loops* — once the gate
-> is open, they act on their own schedule without asking again (flies' and bwb's as supervisor jobs while
-> that day's arm is valid; MEIC's and earnings' in an agent session you start). The orchestrator itself
+> any of them: **MEIC**, **earnings**, **flies**, and **bwb** each have a live path behind gates of their
+> own, and **desk** is the manual one. The first four are *loops* — once the gate is open, they act on
+> their own schedule without asking again (MEIC's, flies' and bwb's as supervisor jobs while that day's
+> arm is valid; earnings' in an agent session you start). The orchestrator itself
 > never places an order, but "the automation won't trade for you" stops being true the moment you open
 > one of those gates.
 >
@@ -203,8 +208,8 @@ kept strictly separate.
 > enabled by default. It has no meaningful track record. Read [its documentation](packages/desk/README.md)
 > in full before going near it.
 >
-> **The flies and bwb live pilots are deliberately tiny** (one arm, re-armed by hand each day, under a
-> worst-case buying-power cap) because that is the responsible size for something still being measured — not because
+> **The MEIC, flies and bwb live pilots are deliberately small** (one arm, re-armed by hand each day,
+> under a buying-power cap) because that is the responsible size for something still being measured — not because
 > the constraint is arbitrary. Do not widen it to "see what happens".
 >
 > **Paper results do not predict live results.** Simulated fills are optimistic by construction: the
@@ -214,7 +219,7 @@ kept strictly separate.
 
 ## What's in the repo
 
-One workspace, seventeen packages: the strategy engines above plus the pieces that feed, drive, and
+One workspace, twenty packages: the strategy engines above plus the pieces that feed, drive, and
 read them.
 
 | Package | What it is |
@@ -406,7 +411,7 @@ ones. Paper and live ledgers are separate files, never queryable through one con
 - **Paper by default.** Every engine ships with live trading off, and the orchestrator that schedules
   them never places, cancels, or closes an order itself. Opening a module's live gate is on you — and
   once open, that module's loop trades within its own limits without asking again.
-- **Experimental modules are off.** Calendars, PMCC and curve ship switched off, and the desk is not
+- **Experimental modules are off.** Calendars, PMCC, curve and contango ship switched off, and the desk is not
   installed at all unless you ask for it.
 - **Your data stays yours.** Trades and credentials live on your machine (credentials in your operating
   system's secure keyring — never in a plain file).

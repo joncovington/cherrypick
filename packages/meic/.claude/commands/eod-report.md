@@ -50,9 +50,8 @@ python -m cherrypick.review build --session <YYYY-MM-DD> --final
 ```
 
 It writes `~/.cherrypick/data/review/eod-<date>.json` (the fact set) and `eod-<date>.md` (the render).
-Report those paths. MEIC's per-arm figures — `open` / `width-5` / `width-10`, each with its own net,
-capital at risk and return on risk — are in the render's **By arm** table, which is where the
-comparison those arms exist to make actually lives.
+Report those paths. MEIC's per-arm figures (every arm that traded), each with its own net, capital at risk
+and return on risk, are in the render's **By arm** table.
 
 Note: the paper loop still rolls the session into `daily_summary` at the 16:00 settlement pass, and
 the review reads that for this module's expected-vs-observed. The two daily review passes run on

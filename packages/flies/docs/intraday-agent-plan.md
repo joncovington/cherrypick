@@ -1,6 +1,8 @@
 # Intraday agent for flies: plan
 
-**Status: design, not built (2026-10-05). It runs beside live from day one, in shadow.** The goal is stranding fewer legged entries. This plan
+**Status: built (steps 1–5, 2026-10-05..10-06). The paper arms have traded since 2026-10-06; on live
+the agent is chosen per day, shadow at most until the qualification unlocks more. The live closing
+path is not built.** The goal is stranding fewer legged entries. This plan
 tests whether a model reading the session can beat a fixed rule at the two decisions that cause or
 cap a strand. The suite prefers deterministic solutions (root CLAUDE.md), and leaning away from
 that is a choice to write down. This document is that record.
@@ -189,8 +191,8 @@ $100 is the working guess: about half the strand cost, less the good entries a g
 **The qualification file** (`data/flies/intraday_agent_qualification.json`) is written by a
 deterministic evaluation over the replay, the paper arms and the live shadow, never by the agent
 (`intraday_eval.py`; the paper loop rewrites it after each settlement, and `run.py agent-eval
---write` on demand). The console's `/flies/agent` tab reads it, and step 4's live selection will
-read the same `offered_modes`, so the page and the dialogue cannot disagree. A criterion the suite
+--write` on demand). The console's `/flies/agent` tab reads it, and the live selection (step 4, built)
+reads the same `offered_modes`, so the page and the dialogue cannot disagree. A criterion the suite
 cannot score yet (the live shadow's sign agreement, its re-priced closes) is `pass: null`, and null
 never unlocks. It unlocks:
 

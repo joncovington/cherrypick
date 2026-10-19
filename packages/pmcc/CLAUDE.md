@@ -3,8 +3,9 @@
 > **Vocabulary.** The arm column is `pmcc_positions.arm`. Configs still spelling the registry `books`
 > resolve through `cherrypick.core.config`, as every existing spelling does.
 
-PMCC — a deep-ITM call with a short call sold against it, on XSP, QQQ, GLD, IWM and SLV (posture:
-root file). The base trade since 2026-10-06 is the held-long pair: `shield` and `shield_hold` hold a
+PMCC — a deep-ITM call with a short call sold against it, on XSP, QQQ, GLD, IWM, SLV and SMH, and
+from 2026-10-12 to 10-19 (one a market day) the stocks AMZN, TSLA, AMD, NVDA and PLTR (posture: root
+file). The base trade since 2026-10-06 is the held-long pair: `shield` and `shield_hold` hold a
 ~1-year long while a weekly short rolls against it. SLV is the intended first live symbol (nothing live
 is built; see below). `control`, which re-bought a ~21-DTE long every cycle, is retired.
 
@@ -13,7 +14,8 @@ through `core.ledgers.SCHEMA_ALIASES`).
 
 Elsewhere:
 - history and incidents: [docs/history.md](docs/history.md);
-- the evidence behind the held-long arms and the five symbols: [docs/shield-study.md](docs/shield-study.md);
+- the evidence behind the held-long arms and the five ETF symbols (SMH and the stocks came later:
+  docs/history.md): [docs/shield-study.md](docs/shield-study.md);
 - window sizing: [docs/window-parameters.md](docs/window-parameters.md);
 - suite-wide context: the root [documentation index](../../docs/README.md).
 
@@ -40,10 +42,10 @@ Elsewhere:
   false` and the advisor's `modules.pmcc` off; experiment `exp-2026-10-01-pmcc-1` killed. Journaled as
   `measurement_breaks` `arms` and `advice` rows dated 2026-10-06, by hand: `_note_shield_boundary` only
   writes its own date. No new era: shield's rules and roster are untouched, and the two arms never
-  shared a position. Control and its advised twins run off under their own rules (shorts 10-09 and
-  10-16, the last longs disposed by about 10-19).
+  shared a position. Control and its advised twins ran off under their own rules (shorts 10-09 and
+  10-16); every one of their positions, and every TQQQ position, was closed by 2026-10-18.
 - **2026-10-12 to 10-19, six symbols added**, one a market day (`symbol_from`): SMH, AMZN, TSLA, AMD,
-  NVDA, PLTR — the first single stocks, physical settlement, with the earnings refusal above.
+  NVDA, PLTR — the first single stocks, physical settlement, with the earnings refusal (below, under "What can refuse").
   Additive: each symbol is its own population, and no existing symbol's rules change. Journaled as
   `symbols` (with `max_positions` raised for the larger roster) and `earnings` rows. A held-long
   stock long sits deep (broker 0.90 is ~45–55% in the money on these IVs), and AMZN lists strikes
@@ -151,9 +153,11 @@ entry, so the arm comparison's closed table, the review fact set and the advisor
 nothing from it for most of a year. Its evidence is marked to market:
 - `analytics.open_mtm`, on the console's "open, marked to market";
 - `analytics.weekly_by_arm`, the paired readout per symbol and ISO week ("weekly by arm");
-- `tracker.tracker`, one position week by week, the spreadsheet view (the console's tracker tab).
+- `tracker.tracker`, one position week by week, the spreadsheet view (the console's tracker tab);
+- `analytics.daily_equity` (`run.py equity`), every position at each session's close, the console's
+  marked-equity section.
 
-All three value through `tracker.value_at`:
+All four value through `tracker.value_at`:
 - closed legs at their close;
 - open legs at the latest usable mark at or before the moment;
 - each cost at its own time.
@@ -234,12 +238,12 @@ Their identities: entry + exit = gross; gross − costs = net; the last weekly r
 - **The provider refuses rather than guesses.** The OCC-root filter admits only the configured root.
   A split mid-position is unmodelled: a manual `--settle` plus a measurement break.
 
-## Physical settlement (QQQ, GLD, IWM, SLV; TQQQ until it runs off)
+## Physical settlement (every symbol but XSP)
 
 The calendars decomposition, verbatim: an ITM short at expiry books its intrinsic value AND delivers
 **100 short shares per contract at the settlement spot** (`pmcc_assignments`).
 
-For control:
+For control (retired; nothing open since its run-off):
 - the next session's combined disposal covers the shares and sells the long;
 - a position does not close while shares are outstanding;
 - the Friday-to-Monday gap stays visible, because it IS the weekend exposure.
@@ -282,7 +286,7 @@ Its plan, kept in the session record:
 | `src/cherrypick/pmcc/db.py` | schema, additive migrations, stale-writer guard, writers. |
 | `src/cherrypick/pmcc/stream_request.py` | declares symbols, open legs, per-symbol expirations, window hints. |
 | `src/cherrypick/pmcc/stream_window.py` | deep-window width: computed per target expiry, escalated on misses. |
-| `src/cherrypick/pmcc/cli.py` | `status` / `headline` / `worksheet` / `exposure` / `tracker` / `tracker-index` / `weekly`. |
+| `src/cherrypick/pmcc/cli.py` | `status` / `headline` / `worksheet` / `exposure` / `equity` / `excursions` / `ladder` / `tracker` / `tracker-index` / `weekly`. |
 
 ## Commands
 
@@ -296,6 +300,7 @@ python run.py headline [--era ALL]                 # closed results per arm and 
 python run.py tracker-index                        # every position the tracker can show
 python run.py tracker --position SLV:shield:2026-10-05   # one position, week by week
 python run.py weekly [--era ALL]                   # the arms' weekly A/B
+python run.py equity [--era ALL]                   # each arm's daily marked equity and tear sheet
 python run.py exposure                             # the early-assignment-exposure telemetry
 python ../../scripts/pmcc_leap_probe.py            # what each symbol lists ~1 year out (network, read-only)
 python ../../scripts/pmcc_shield_replay.py         # the 2011- replay behind the shield arms, put benchmark included
@@ -305,7 +310,8 @@ ruff check . && ruff format .                      # line-length 110
 ```
 
 Config: `config.example.json` → `config.json` (git-ignored) or `~/.cherrypick/config/pmcc.json`; the
-example is the design document — read its `_note` keys first.
+example is the design document — read its `_note` keys first. The shipped example lists the five
+ETFs; SMH and the stocks are added per machine (`symbols` plus `symbol_from`).
 
 ## Guardrails and couplings
 

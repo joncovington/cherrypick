@@ -3,19 +3,20 @@
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
 Simulates every strategy's entries, exits, and P&L across a real earnings calendar without ever
-touching the live tastytrade account's orders, positions, or buying power. **There is no
-separate paper-trading loop or command distinct from the real one** — `CLAUDE.md`'s Loop Steps
-are the single definition, and Step 0 (`paper_mode = not config.get("enable_live_trading")`)
-branches persistence and order handling accordingly. Since `enable_live_trading` defaults to
-`false`, running the loop at all is paper mode by default; nothing changes about the scanner,
+touching the live tastytrade account's orders, positions, or buying power. The agent-driven loop
+(`CLAUDE.md`'s Loop Steps) branches between paper and live at Step 0
+(`paper_mode = not config.get("enable_live_trading")`). Since `enable_live_trading` defaults to
+`false`, running that loop at all is paper mode by default; nothing changes about the scanner,
 ranking, or selection logic between modes, so paper results are a genuine test of the system's
-current calibration, not a separate toy implementation.
+current calibration, not a separate toy implementation. Separately, the unattended paper loop
+(`paper_loop.py`, ticked every 60 s by the supervisor) runs the forced-sampling harness into the
+`strat_test` books and manages its positions (see [Exit Strategy Guide](./10-exits.md)).
 
 Two distinct paper-testing *programs* build on this same paper/live split, and can run
 concurrently since they write to isolated books — see [Strategy Testing Plan](./strategy-testing-plan.md)
 for `/paper-start`'s forced-sampling program (`cherrypick/earnings/strat_test_harness.py`, per-strategy `strat_test` books)
-versus `/paper-trading-start`'s one-shot production-ranking analysis (`rank_strategies.py`, no
-persistence at all). What follows describes the underlying mechanism both rely on.
+versus `/paper-trading-start`'s one-shot production-ranking analysis (`rank_strategies.py`; it
+places nothing, but logs its evaluation to `scan_log` and `entry_reviews`). What follows describes the underlying mechanism both rely on.
 
 ## Data separation (hard requirement)
 
@@ -29,10 +30,10 @@ future live-trading bug can never accidentally blend simulated and real P&L by a
 filter.
 
 Both databases' `trades` table is strategy-agnostic — a `strategy` column identifies which of
-the six opened it — so every strategy's paper results land in the same database,
+the seven opened it — so every strategy's paper results land in the same database,
 distinguishable via `get_pnl_summary --strategy <name>` or its `by_strategy` breakdown, without a
-schema change. A `profile` column does the same for the forced-sampling test books (default
-`'default'` for the production loop; `'strat_test:<strategy>'` per-strategy, or `'strat_test'`
+schema change. An `arm` column (named `profile` until 2026-09-24; the flag is still `--profile`) does
+the same for the forced-sampling test books (default `'default'` for the production loop; `'strat_test:<strategy>'` per-strategy, or `'strat_test'`
 combined, for the forced-sampling program — see [Strat-Test Portfolios](./strat-test-portfolios.md)).
 
 ## What Gets Simulated, and How
@@ -40,7 +41,7 @@ combined, for the forced-sampling program — see [Strat-Test Portfolios](./stra
 See `CLAUDE.md`'s Loop Steps for the authoritative, single copy of this logic — summarized here:
 
 **Entry (during `entry_window_start`–`entry_window_end` ET, e.g. `15:30`–`15:55`):**
-1. `rank_strategies.py get_ranked_symbols` evaluates all six strategies against the merged
+1. `rank_strategies.py get_ranked_symbols` evaluates all seven strategies against the merged
    today-AMC/tomorrow-BMO calendar and picks each symbol's single best-ranked strategy.
 2. Re-verify each selected symbol fresh (`rank_strategies.reverify_symbol()`) — confirm it's
    still accepted right before building an order, since the scan and the entry window aren't the
@@ -55,7 +56,9 @@ See `CLAUDE.md`'s Loop Steps for the authoritative, single copy of this logic �
 the live account's actual buying power/margin, which would incorrectly couple a simulated fill
 to whatever happens to be sitting in the connected account.
 
-**Close (during and after `close_window_start`, e.g. `09:45` ET the next morning):**
+**Close (agent-driven loop, during and after `close_window_start`, e.g. `09:45` ET the next
+morning).** The paper loop instead holds on the entry session, then applies the managed rules in
+[Exit Strategy Guide](./10-exits.md).
 1. For positions closing as a single unit (`legs_json`): fetch live quotes for every leg's exact
    option symbol, compute the exit debit via `scanner.compute_generic_exit_debit()` (buy back
    short legs at ask, sell long legs at bid — the conservative, cross-the-spread convention that
@@ -102,7 +105,7 @@ matches what you're trying to do:
 
 ```
 /paper-start              # forced-sampling strategy test, one full day's open-to-close cycle
-/paper-trading-start      # one-shot production-ranking analysis, no persistence
+/paper-trading-start      # one-shot production-ranking analysis, places nothing
 /earnings-start           # the actual continuous loop, following CLAUDE.md's Loop Steps
 ```
 

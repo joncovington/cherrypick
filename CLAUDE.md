@@ -6,8 +6,11 @@ descriptions and the rationale behind the conventions below, as they stood befor
 consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/root-claude-md-2026-09-29.md).
 
 - **packages/orchestrator** — watchdog, OS scheduler, notifications, and the read side (report /
-  dashboard / reconcile / calibrate). Drives modules **by subprocess**, never by import.
-- **packages/meic** — MEIC 0DTE multiple-entry iron-condor trading module.
+  reconcile / calibrate / review). Drives modules **by subprocess**, never by import.
+- **packages/meic** — MEIC 0DTE multiple-entry iron-condor trading module. Paper by default; its live
+  loop is armed per day by `/live-meic-start` (the supervisor's `meic-live` job while that day's arm
+  record is valid, self-disarming at 17:00) and sized from the config's `live` block, which may name
+  one arm (`live.arm`).
 - **packages/earnings** — earnings-play trading module (defined-risk strategies).
 - **packages/gex** — the live GEX engine and spot-trail recorder; it computes and records, the console
   renders.
@@ -72,8 +75,11 @@ consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/ro
   store. No credentials, no network, no AI — the narrative is written outside by a scheduled agent.
 - **packages/manage** — the daily position-management evaluation of the REAL account: a pure function
   of a broker snapshot (taken read-only by the orchestrator's `manage` verb) and a configurable ruleset,
-  giving each trade an action, the rule behind it and a confidence. **Advice only** — no order path,
-  no credentials, no network; read on the console's Live → manage tab. Off until `manage.enabled`.
+  giving each trade an action, the rule behind it and a confidence, and reading the account as one
+  book (beta-weighted delta and theta against bands, an XSP hedge sized when delta leaves its band,
+  income candidates sized to the account). **Advice only** — no order path, no credentials, no
+  network; read on the console's Live → positions and Live → portfolio tabs. Off until
+  `manage.enabled`.
 - **packages/advisor** — the deterministic half of the AI advisor: fact packs, validation of replies,
   and the paper A/B experiments. **It contains no AI** (the model is invoked by
   `scripts/advisor_checkpoint.py`). Read-only over every other package; its one output toward a loop is
@@ -86,7 +92,8 @@ consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/ro
   must stay purgeable (a marked directory the backup skips). The network is reached by the fetch only,
   the key lives in the keyring only, and a run is a pure function of the local store. No AI, no broker.
 - **packages/desk** — ⚠️ **EXPERIMENTAL.** The suite's only *discretionary* live-order path (meic,
-  earnings, flies and bwb each have a live loop behind their own `enable_live_trading` gate). A
+  earnings, flies and bwb each have a live loop behind their own gate: `enable_live_trading` for meic
+  and earnings, flies' and bwb's own `live` gates and per-day arm). A
   foreground, human-initiated CLI, authorized entirely on its own (own config, own PIN, per-order
   ticket, own policy gates). Stores no broker secrets — it borrows a module's keyring session, because
   borrowing credentials is not borrowing permissions. No loop, no schedule, no ledger, never scheduled,
@@ -104,7 +111,9 @@ supervisor); a developer runs `scripts/dev-install.ps1`/`.sh` (editable, with `[
 - Portable paths only.
 - Human-voice docs and commits, no AI attribution.
 - Deterministic solutions preferred over AI/agentic ones (below).
-- Paper↔live isolation: the orchestrator only drives paper; its one live-config action is
+- Paper↔live isolation: the orchestrator places no order and never flips a live gate; it runs a
+  module's own live loop only while that day's human-written arm record is valid, settles overdue
+  live sessions through the module's own command, and its one live-config action is
   onboarding/account selection.
 
 A package's CLAUDE.md states only what it adds or tightens beyond this, never restates it. A
@@ -118,8 +127,9 @@ rows). That is why `engine.py`, `management.py`, `fly.py` are pure functions ove
 snapshot. Network/MCP dependencies are non-deterministic inputs too: prefer the local stream cache,
 and reach outward only to ACT or to confirm a fill — an external streamer once stalled silently for 34
 hours and looked exactly like a quiet market. Where AI earns its place, contain it OUTSIDE the
-packages, in `scripts/` (`eod_narrative.py`, `morning_narrative.py`, `advisor_checkpoint.py`), so a
-failure costs a narrative and never a report, a ledger or a loop. Leaning away from this is a choice
+packages, in `scripts/` (`eod_narrative.py`, `morning_narrative.py`, `advisor_checkpoint.py`,
+`flies_intraday_agent.py`), so a failure costs a narrative or one arm's decision and never a report, a
+ledger or a loop. Leaning away from this is a choice
 to write down.
 
 **Measurement-affecting changes are batched to declared boundaries.** A measurement-affecting change

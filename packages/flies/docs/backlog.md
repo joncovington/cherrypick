@@ -33,6 +33,8 @@ alone, and nothing tracked the gate after that.
   0.15 pair's own 15-20 session read (mid-to-late October from its 2026-09-21 start; 7 sessions at
   2026-09-29, up 22/37 completed +$48, down 17/41 -$1,276), then add it as an `arm_added` boundary.
   Completion at 5 delta needs roughly twice the move.
+  **Closed 2026-10-15:** the 0.15 pair retired at that boundary (experiment-log 2026-10-12);
+  reopening needs a new case and a new arm.
 - A naked-long first leg ("buy the 5-delta put, sell 2 / buy 1 to complete") is a new entry mode,
   not config. Same end state as `debit-first-down`'s completion; the vertical first leg pays less
   premium for the same completed structure. Build only if the vertical version reads well.
@@ -114,6 +116,8 @@ and held to settlement.
   pays on losing days more than it costs on the others, the held version is the proposal, as
   telemetry on the hedge overlay's pattern before any arm; if `traded` does, the debit-first pair's
   own verdict already answers it.
+- **Closed 2026-10-15:** the debit-first pair retired at that boundary (experiment-log 2026-10-12),
+  so the script has no new pair rows to score; reopening needs a new case and a new arm.
 
 ## Re-deriving the delta bwb pairs' credit floor
 
@@ -130,24 +134,15 @@ the slippage model, and that a lower floor's P&L split by side with the tape.
   keep, so every replayed entry carries its whole tail. On the real fills the roll moved results both
   ways (bwb-up +$109 unrolled → +$30 rolled; bwb-atm −$240 → −$144), so the replay overstates both
   tails. A positive result is not a rolled-arm result.
+- **Closed 2026-10-15:** all four delta bwb pairs and `bwb-atm` retired at that boundary
+  (experiment-log 2026-10-12), so no new `proposed_legs` sessions will accrue; reopening needs a new
+  case and a new arm.
 
-## The selector arm: landing it on 2026-10-15
+## The selector arm: what stays open after it landed
 
-Built and off (2026-10-04, [selector.md](selector.md)). **Declared for 2026-10-15**, with its
-judging rule in the experiment log (2026-10-04): the first read comes at 10 departing sessions, on
-per-session net against `control`. Before that date:
+Landed 2026-10-15 (see Done, below). The first read comes at 10 departing sessions, on per-session
+net against `control` (experiment log 2026-10-04, amended 2026-10-12).
 
-- **Built (2026-10-04):** the orchestrator's `selector_fit_at` / `selector_fit_argv` job, which
-  catches up only until midnight; a `selector-fit` that is a stated no-op until a `selector` arm is
-  declared, and fits one that is declared but disabled; and the `arm_added` break for 10-15
-  (`_note_selector_arm`), recorded once the arm is enabled.
-- **Staged (2026-10-04)** on this machine: both orchestrator keys, and the `selector` arm declared
-  `enabled: false`. The nightly fit writes a model from 10-05's close onward; nothing reads it until
-  the arm is enabled.
-- **On the date:** merge to main and flip the arm to `enabled: true` before the first tick. The
-  break journals itself. Land any other roster change from that fortnight with it.
-- **`wall-clear` lands with it** (declared 2026-10-05, experiment log): staged `enabled: false` on this
-  machine, `arm_added` break dated 10-15 (`_note_wall_clear_arm`). Flip it in the same edit.
 - **Not live-eligible** until debit-first has a live order path (`live_orders.py` builds legged
   specs only). A legged-only selector is the live candidate if one is ever wanted.
 - **Extract to `cherrypick.core.selector`** (model file, `fit`, `arm_starts`, `validate_model`) when
@@ -160,6 +155,8 @@ Both are telemetry from 2026-10-05.
   4, 5, 6]}`, which is `debit-first-atm` by design. First read `run.py debit-ladder` at 10 sessions;
   call it descriptive until 15–20. Read the calibration first: same-strike pairs with real delta-arm
   fills must agree on debit and outcome, or the ladder is wrong and nothing else in it is read.
+  **Superseded 2026-10-17:** `debit-first-atm` retires at the 2026-10-26 boundary (experiment log);
+  the ladder read will not be taken.
 - **`sell_at_completion`** in `hedge-overlay` (hold the hedge only while stranded): reopens the
   "Sell-to-cover" question if, at 15 sessions of stamped completions, it recovers more than the
   hedge costs **net of the completed branch**.
@@ -222,17 +219,20 @@ call spread near its put side.
 - **Reopens when** that study shows outside completion paying after fees. Then it is a new entry
   mode and its own arm; it differs from `control` in several things at once, so it is read against
   `control` and against MEIC's afternoon condors, not as a one-variable twin.
-- **Run 2026-10-17, over the backtest's design window (licensed data; reasoning only here):** not
-  met. At both open times, every wing width tried and every completion threshold, completing the
-  outside verticals did worse than holding the plain condor. The side spot leaves completes almost
-  always, but that vertical was going to expire worthless and keep its credit anyway; completing it
-  spends most of that credit, a second fee stack and settlement charges on a far fly that rarely
-  pays. The near gate was not reached. The plain afternoon condor, cut by net GEX sign, is the part
-  worth following, and it belongs to MEIC's question, not to flies.
+- **Run 2026-10-17, over the backtest's design window:** not met, on the backtest's evidence
+  (results kept locally under `~/.cherrypick`, per the licence). The near gate was not reached. The
+  plain afternoon condor, cut by net GEX sign, belongs to MEIC's question, not to flies.
 
 ## Done -- kept for the record
 
 Finished or reversed items stay here, so a later reader can see what was decided and on what evidence.
+
+### The selector arm -- LANDED 2026-10-15
+
+Built 2026-10-04 ([selector.md](selector.md)) with the orchestrator's `selector_fit_at` /
+`selector_fit_argv` nightly fit, and enabled at the 2026-10-15 boundary, where its `arm_added` break
+journalled itself. Sources `control` and `vol-floor` (procedure v2, 2026-10-12). `wall-clear`, once
+planned to land with it, started earlier, on 2026-10-12.
 
 ### The snapshot's GEX surface dropped stale open interest -- FIXED from 2026-10-06
 

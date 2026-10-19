@@ -164,7 +164,7 @@ def test_force_close_spec_refuses_nothing_open():
 
 BASE_CFG = {
     "enable_live_trading": True,
-    "live": {"symbol": "XSP", "gate0_confirmed": "jon 2026-08-01"},
+    "live": {"symbol": "XSP", "gate0_confirmed": "owner 2026-08-01"},
 }
 
 
@@ -257,7 +257,7 @@ def _config(tmp_path=None, **live_over):
     cfg["enable_live_trading"] = True
     cfg["live"] = {
         "symbol": "XSP",
-        "gate0_confirmed": "jon 2026-08-01",
+        "gate0_confirmed": "owner 2026-08-01",
         "daily_loss_halt_dollars": 200,
         **live_over,
     }

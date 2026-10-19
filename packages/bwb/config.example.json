@@ -1,5 +1,5 @@
 {
-  "_header": "===== cherrypick-bwb — SPX daily-laddered put broken-wing butterfly, with a 1-3-2 add-on trigger experiment (paper-only) =====",
+  "_header": "===== cherrypick-bwb — SPX daily-laddered put broken-wing butterfly, with a 1-3-2 add-on trigger experiment (paper by default; a narrow live path behind the `live` block) =====",
   "_what_this_is": "Every session at entry_time, one put BWB on SPX is entered at the expected move for a net credit, ~7 DTE, held to expiry -- a NEW one every session, so ~5-7 positions ride concurrently per book at steady state. Four books trade the IDENTICAL base structure; the only variable is whether/when a reversal-triggered put credit spread add-on fires (control never; delta on a raw touch; bounce on a confirmed pullback; flip on a gamma-flip reclaim). Copy to config.json (git-ignored) or ~/.cherrypick/config/bwb.json.",
   "_symbol_note": "SPX only: cash-settled, European-style -- no assignment machinery, no dividend calendar, no physical-delivery decomposition. The cleanest settlement model in the suite.",
   "symbol": "SPX",

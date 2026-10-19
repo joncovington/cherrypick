@@ -318,7 +318,7 @@ def test_list_accounts_reads_flies_nested_live_convention(fallback_env):
     as unknown/False regardless of the module's real armed state."""
     cfg, _ = fallback_env
     (Path(cfg["modules"]["flies"]["path"]) / "config.json").write_text(
-        json.dumps({"live": {"enabled": True, "gate0_confirmed": "jon 2026-07-30"}}), encoding="utf-8"
+        json.dumps({"live": {"enabled": True, "gate0_confirmed": "owner 2026-07-30"}}), encoding="utf-8"
     )
     out = accounts.list_accounts(cfg, "flies")
     assert out["live_enabled"] is True

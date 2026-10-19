@@ -3,7 +3,7 @@
 The arrows on the console's technicals chart (`/charts/technicals`) are four textbook setups and
 their short mirrors. Each one opens a simulated position when its entry rule fires and closes it when its own
 exit rule fires. The engine is `src/cherrypick/technicals/setups.py`, the indicators it reads are in
-`indicators.py`, and `chart.py` writes the results into each name's chart file (`chart_version` 3).
+`indicators.py`, and `chart.py` writes the results into each name's chart file (`chart_version` 3 when written; 6 now).
 The console only draws what the file says.
 
 This page records what each indicator is for, why the four setups are paired the way they are, and

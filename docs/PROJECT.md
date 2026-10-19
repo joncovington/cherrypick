@@ -33,8 +33,9 @@ in parallel and compare which entry rules actually add edge — see
 | **Flies** | 0DTE **net-credit butterflies** on SPX/XSP: whether the manufactured credit survives real costs, arm by arm. Built so a negative answer is a usable result. | On |
 | **BWB** | A daily-laddered SPX **put broken-wing butterfly**, ~7 DTE, held to expiry; its arms differ only in whether and when a reversal-triggered add-on fires. | On |
 | **Calendars** | Weekly **SPY double calendars**, an exit-parameter experiment. **EXPERIMENTAL.** | Off |
-| **PMCC** | Deep-ITM **covered calls** on TQQQ. **EXPERIMENTAL.** | Off |
+| **PMCC** | **Deep-ITM calls** held with a weekly short call against them, on index ETFs and a few stocks. **EXPERIMENTAL.** | Off |
 | **Curve** | **VXX call credit spreads** gated by a daily VIX/VIX3M regime read. **EXPERIMENTAL.** | Off |
+| **Contango** | The same VIX/VIX3M signal held in shares: SVXY in contango, T-bills (SHV) otherwise. **EXPERIMENTAL.** | Off |
 
 The experimental modules are newer and less tested; switch one on deliberately if you want it (the
 console's **Config** page, or `modules.<name>.enabled` in `~/.cherrypick/config.json`).
@@ -170,9 +171,10 @@ working.)
 The value is in controlled comparison: clone the `control` arm, change **one** parameter, and you
 measure that idea's effect in isolation rather than confounding several changes at once.
 
-**A base install runs only `control` in every module**, and any other arm is your machine's own
+**A base install runs only `control` in MEIC, earnings, flies, bwb, calendars and curve**; PMCC's
+example runs its two shield arms and contango's its two arms. Any other arm is your machine's own
 configuration. BWB, calendars and curve build comparison books into the module (bwb's add-on triggers,
-calendars' `path`, curve's `noflip` and `hook`) that run unless a config sets that book's `enabled` to
+calendars' `path`, curve's `noflip` and `near`) that run unless a config sets that book's `enabled` to
 `false`; their shipped examples do exactly that, so you switch one on in your own config. For MEIC,
 the arm registry is read
 from `$MEIC_RISK_CONFIG` if set, else `~/.cherrypick/config/meic.risk.json`, else the shipped
@@ -253,18 +255,18 @@ python run.py notify-test                        # check that alerts actually re
   Trading for real is a deliberate, manual step you take per module. Once you take it, though, that
   module's loop trades on its own — see the warning below.
 
-Paper and live books are kept strictly separate, and credentials stay in your OS keyring. The flies and
-bwb live pilots add an extra safeguard: each has to be armed with a fresh, explicit confirmation every
-trading day, and the arm is valid for that day only, so one day's confirmation never carries into the
+Paper and live books are kept strictly separate, and credentials stay in your OS keyring. The MEIC,
+flies and bwb live loops add an extra safeguard: each has to be armed with a fresh, explicit
+confirmation every trading day (`/live-meic-start`, `/live-flies-start`, `/live-bwb-start`), and the arm is valid for that day only, so one day's confirmation never carries into the
 next.
 
 > ### ⚠️ If you are thinking about trading live
 >
 > **Know every way an order can be placed.** There are five: **MEIC**, **earnings**, **flies** and
-> **bwb** each have a live loop behind their own `enable_live_trading` gate, and the **desk** is the
-> manual one. The four loops trade on their own once started, without asking again: flies' and bwb's
-> are supervisor jobs that run for as long as that day's arm is valid, and MEIC's and earnings' run in
-> an agent session you start (`/meic-start`, `/earnings-start`). The orchestrator never places an order
+> **bwb** each have a live loop behind gates of their own, and the **desk** is the manual one. The
+> four loops trade on their own once started, without asking again: MEIC's, flies' and bwb's are
+> supervisor jobs that run for as long as that day's arm is valid, and earnings' runs in an agent
+> session you start (`/earnings-start`). The orchestrator never places an order
 > itself, but "the automation won't trade for me" stops being true the moment one of those gates is
 > open.
 >

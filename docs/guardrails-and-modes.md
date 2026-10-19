@@ -28,11 +28,12 @@ Paper and live books are strictly separated: separate SQLite files. Even a paper
 ### The five live-order paths, and what actually gates each
 
 Know all five before opening any of them. **They do not share one gate**, and "gated behind
-`enable_live_trading`" — which earlier versions of this page said — is true of only two:
+`enable_live_trading`" — which earlier versions of this page said — is true of only two (MEIC and
+earnings):
 
 | Path | Code | What gates it |
 |---|---|---|
-| **MEIC** | `meic/live_loop.py`, `live_orders.py` | `enable_live_trading` in MEIC's config, plus its own daily-loss breaker and the suite halt flag. Inert by default and never installed by the orchestrator, but it is a full live loop. |
+| **MEIC** | `meic/live_loop.py`, `live_orders.py` | `enable_live_trading` in MEIC's config **and** `live.symbol` **and** `live.gate0_confirmed` **and** a per-day arm record written by `/live-meic-start` **and** a designated account **and** the halt flag. Sized from the config's `live` block (which may name one arm via `live.arm`) under `max_open_bp_dollars` and `live.max_structures_per_day`, plus its daily-loss breaker. Self-disarms at 17:00 ET. The interactive agent session (`/meic-start`) remains a second, unscheduled path behind `enable_live_trading`. |
 | **Earnings** | `earnings/tt.py execute_trade --live` | `enable_live_trading` in the earnings config. |
 | **Flies** | `flies/live_loop.py`, `live_orders.py` | **Not** `enable_live_trading`. A separate `live.enabled` **and** `live.gate0_confirmed` attestation, **and** a per-day arm record written by `/live-flies-start`, **and** a designated account, **and** the halt flag. Self-disarms every evening. |
 | **BWB** | `bwb/live_loop.py`, `live_orders.py` | The flies posture (2026-09-18): `live.enabled` **and** `live.gate0_confirmed` **and** a per-day arm record written by `/live-bwb-start` **and** a designated account **and** the halt flag, plus `live.arm` naming one of the four base books. Self-disarms every evening. Trades the full daily ladder under a worst-case margin cap (with a firing arm's future add-on reserved), one structure per day, a cost-derived credit floor, and a mark-drawdown breaker that blocks entries only. No closing orders: SPX cash-settles, on an official print or not at all. |
@@ -44,7 +45,7 @@ again. The desk is the only discretionary one — it acts because you typed a co
 **What "the orchestrator never places an order" does and doesn't mean.** The orchestrator process
 genuinely never calls a place-order path. But its supervisor derives a `<module>-live` job for *any*
 module that declares `live.task_name`, and spawns that module's live loop on an interval while it is
-armed — so it is the thing that launches the process that trades. Flies and bwb configure that key;
+armed — so it is the thing that launches the process that trades. Flies, bwb and MEIC configure that key;
 the mechanism is not module-specific, and what the arm record means lives in `cherrypick.core.live`
 (the filename, the two disarm reasons, the rule that under a supervisor arming is a record write).
 
@@ -72,7 +73,7 @@ The boundary is strict: it still **never** places/cancels/closes/adjusts an orde
 does *run* an armed module's live loop as a supervisor job — see
 [above](#the-five-live-order-paths-and-what-actually-gates-each) — but only because a human wrote that
 day's arm record through the module's own command.)
-Account writes are human-confirmed. `reconcile` honors the designation — a designated live account is
+Account writes are human-confirmed. `reconcile` honours the designation — a designated live account is
 *expected* to hold positions (not flagged as drift).
 
 ## The second live-config boundary: `settings`
@@ -81,10 +82,11 @@ Account writes are human-confirmed. `reconcile` honors the designation — a des
 only mutating HTTP surface — every dashboard here is GET-only. Two things make it safe to run:
 
 - **Guarded live-trading fields are read-only, both ways.** `enable_live_trading`, flies' and bwb's
-  `live.enabled`/`live.gate0_confirmed`, bwb's `live.arm` and its live floor, caps and breakers, and
-  every live loss/deploy-limit field are locked in the UI and refused server-side on both write paths
-  (a field-level edit and a raw-text save). This surface can arm nothing and disarm nothing — the
-  deliberate paths above (`/live-flies-start`, `/live-bwb-start`, hand-editing a gate with the plan
+  `live.enabled`/`live.gate0_confirmed`, bwb's `live.arm` and its live floor, caps and breakers, MEIC's
+  `live.symbol`, `live.gate0_confirmed`, `live.arm`, caps and breakers, and every live
+  loss/deploy-limit field are locked in the UI and refused server-side on both write paths (a
+  field-level edit and a raw-text save). This surface can arm nothing and disarm nothing — the
+  deliberate paths above (`/live-meic-start`, `/live-flies-start`, `/live-bwb-start`, hand-editing a gate with the plan
   doc open) stay the only way to touch them. The guard is checked against every package's own
   `config.example.json`, discovered rather than listed, so a module that declares a live gate is
   covered the moment it declares it.
@@ -111,32 +113,34 @@ the stdlib + the OS shell — no MCP, no HTTP client, no AI tooling — so it ha
 modules' loop decisions depend only on their local tools + their instructions, for the same reason.
 
 - **No AI runs inside any suite package**, which is stronger than the fencing this used to describe.
-  There are exactly **two** AI touchpoints in the suite and both are scripts, outside every package:
-  `scripts/eod_narrative.py` (the EOD narrative, over `packages/review`'s fact set) and
-  `scripts/advisor_checkpoint.py` (the advisor's four daily checkpoints, over `packages/advisor`'s
-  fact packs). No package holds an API key or a network dependency, and a failed AI call can only
-  ever cost a note or a day's advice. The deterministic artifacts — the fact set, the fact pack, the
-  advice artifact — are the guaranteed ones.
+  The AI touchpoints are all scripts, outside every package: `scripts/eod_narrative.py` and
+  `scripts/morning_narrative.py` (the narratives, over review's fact set and overview's fact pack),
+  `scripts/advisor_checkpoint.py` (the advisor's post-close `deep` run, plus any intraday slots a
+  machine declares) and `scripts/flies_intraday_agent.py` (flies' intraday agent arm). No package
+  holds an AI key; `packages/backtest`'s vendor fetch is the one package-level network path. A failed
+  AI call can only ever cost a note, a day's advice or one arm's decision. The deterministic
+  artifacts — the fact set, the fact pack, the advice artifact — are the guaranteed ones.
 - **`packages/advisor` is 100% deterministic.** It builds what the model reads and validates what it
   replies; it never invokes AI, holds no API key, and opens no socket. A source scan
   (`packages/advisor/tests/test_guardrails.py`) enforces that rather than trusting the prose.
 - **Paper arms are the dry run.** An advisor proposal is not simulated or replayed — it runs as a
   next-session paper arm beside its control (`advised:<base>`), scored by the same qualification
-  gate every other promotion decision uses. There is no replay engine and there will not be one.
+  gate every other promotion decision uses. The replays that now exist (flies' and MEIC's over the
+  recorded quotes, packages/backtest's over licensed history) never stand in for that: an advisor
+  backtest spec is fenced to the design window and is at most a reason to propose a paper arm.
 - **The advisor reads live, and cannot act on it.** Live databases and live config keys are opened
   read-only and only in `factpack.py`, so the model sees live posture as clearly-labelled context.
   Enactment is structurally paper-only: the single loop-facing output the package can produce is a
   bounded advice artifact at `state/advice/<module>-<session>.json`, and every consumer applies it
   to a synthetic book beside its control — never to the control, never to a live loop.
 - **The one sanctioned network exception is gone with it.** The retired `eod_insight` granted its
-  agent `WebSearch` by default; nothing in the suite does that now — both scripts deny every acting
-  tool and hand the model its facts on stdin.
+  agent `WebSearch` by default; nothing in the suite does that now — every script denies the acting
+  tools and hand the model its facts on stdin.
 
-**Read surfaces read files, never the broker.** `report`/`calibrate`/`dashboard`/EOD reports read paper
-DBs (SQLite read-only), watchdog state, logs, and report files. The static dashboard render reads the
-watchdog **heartbeat** for health rather than re-running `doctor`. The few broker-touching cards
-(`/api/system`, `/api/reconcile`, module iframes) live **only** on the served path and never on the static
-regen.
+**Read surfaces read files, never the broker.** `report`/`calibrate`/the review and the console read
+ledgers (SQLite read-only), watchdog state, logs and report files. The few broker-touching reads
+(`reconcile`, `positions`, `live-positions`, manage's snapshot) are orchestrator commands or jobs,
+never a read surface.
 
 **The watchdog's only trading-adjacent action is benign, non-trading remediation** — restart a dead
 streamer or a dead managed service. It never places, cancels, or closes an order.

@@ -7,8 +7,8 @@ across all of them.
 It drives the modules **by subprocess**, using paths from config — it never imports them, never edits
 their internals, and **never places a live order** itself. Its one live-adjacent configuration action is
 onboarding: helping you pick which account a module would trade in if you ever enabled live trading.
-(It does run a module's own live loop as a job while a human has armed that module for the day — flies
-and bwb; see [guardrails-and-modes.md](../../docs/guardrails-and-modes.md).)
+(It does run a module's own live loop as a job while a human has armed that module for the day — flies,
+bwb and MEIC; see [guardrails-and-modes.md](../../docs/guardrails-and-modes.md).)
 
 New to the suite? Start with [QUICKSTART.md](../../QUICKSTART.md) or the
 [User Guide](../../docs/PROJECT.md) instead — they cover installing and running the whole thing in plain

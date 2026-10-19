@@ -5,10 +5,14 @@ Suite-wide terms. For engine-specific vocabulary see
 
 **0DTE** — Zero days to expiration. Options expiring the same trading day; MEIC trades these exclusively.
 
-**ATR** — Average True Range. A realized-volatility measure; MEIC uses each symbol's 5-day ATR as a
+**Arm** — One configured variant of a strategy, run as its own portfolio (control and treatment, in the
+clinical sense). Older modules call it a *risk profile*, *profile* or *book*; those spellings still
+resolve.
+
+**ATR** — Average True Range. A realised-volatility measure; MEIC uses each symbol's 5-day ATR as a
 fraction of price for a regime (trending) gate.
 
-**Calibration** — The advisory `calibrate` reading that indicates when a risk profile has met a
+**Calibration** — The advisory `calibrate` reading that indicates when an arm has met a
 documented threshold (enough sessions, sustained win rate, sufficient sample) to justify a step up. Never
 changes settings automatically.
 
@@ -34,11 +38,11 @@ The narrative is only ever written against a final set.
 symbol and session share one market event, so a book with hundreds of trades on one name in one
 session has one event, not hundreds.
 
-**Expectancy** — Average net P&L per trade; a per-profile metric in the reports.
+**Expectancy** — Average net P&L per trade; a per-arm metric in the reports.
 
 **GEX (gamma exposure)** — Dealer gamma positioning computed from open interest + greeks. Yields the
-**gamma-flip / zero-gamma** level and the **call/put walls**. Used as a MEIC regime gate and shown in the
-GEX dashboard.
+**gamma-flip / zero-gamma** level and the **call/put walls**. Used as a MEIC regime gate and shown on the
+console's GEX page.
 
 **Gross vs. net** — Gross P&L is before commissions/slippage (does the *entry* select good setups?); net
 is after costs (does it survive?). The reports show both; the gap matters at small size.
@@ -52,8 +56,8 @@ Earnings plays harvest.
 **IV rank** — Where current implied volatility sits within its recent range (0–1). MEIC's `min_iv_rank`
 gate rejects entries when premium is too thin.
 
-**IV/RV ratio** — Implied vol vs. realized vol at entry; an Earnings edge signal (>1 means options price
-more move than the stock has realized).
+**IV/RV ratio** — Implied vol vs. realised vol at entry; an Earnings edge signal (>1 means options price
+more move than the stock has realised).
 
 **Managed home** — `~/.cherrypick`, the single per-user directory holding all runtime config, data, logs,
 and state (relocatable with `$CHERRYPICK_HOME`).
@@ -63,18 +67,16 @@ and state (relocatable with `$CHERRYPICK_HOME`).
 **ORB (opening-range breakout)** — A directional debit spread MEIC trades as a complement to condors; it
 *is* allowed in the trending regimes that pause condor entries.
 
-**Paper mode** — Simulation: live market data in, modeled fills + costs out, no real orders. The default
+**Paper mode** — Simulation: live market data in, modelled fills + costs out, no real orders. The default
 and what all automation runs.
 
-**Risk profile** — A named parameter set (delta, credit floor, stop policy, gates, timing, wing, symbol)
-run as its own shadow book for **variance testing**; every trade is tagged with the profile that opened
-it.
+**Risk profile** — MEIC's older name for an arm; see **Arm**.
 
 **Section 1256** — U.S. tax treatment for broad-based cash-settled **index** options (SPX/XSP/NDX/RUT):
 60/40 long/short mark-to-market, wash-sale exempt. Equity/ETF options (QQQ/IWM/single names) get ordinary
-treatment. Surfaced *informationally* in the EOD analysis tax section — not tax advice.
+treatment. Not tax advice.
 
-**Slippage** — The modeled haircut off mid price applied to fills, on top of the real tastytrade fee
+**Slippage** — The modelled haircut off mid price applied to fills, on top of the real tastytrade fee
 schedule, so reported "net" reflects realistic transaction costs.
 
 **Streamer** — The standalone daemon (`packages/streamer`) that holds the DXLink WebSocket and is the
@@ -83,7 +85,7 @@ stale streamer is the failure mode the watchdog guards against.
 
 **VIX1D** — The 1-day volatility index; MEIC uses `vix1d / vix` as a same-day-specific event-day signal.
 
-**Variance testing** — Running many one-parameter-apart risk profiles in parallel against the same market
+**Variance testing** — Running many one-parameter-apart arms in parallel against the same market
 snapshots to measure which entry rules add edge. The suite's distinguishing capability.
 
 **Watchdog** — The scheduled reliability check that verifies data is flowing in-session, restarts a

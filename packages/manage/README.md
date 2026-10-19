@@ -4,14 +4,15 @@ The daily position-management evaluation. At 10:00 ET on trading days the orches
 broker account (read-only) and this package judges every trade in it against a configurable ruleset.
 For each trade it reports an action, the rule behind it, a confidence, the closing order at mid, and
 for a trade it would hold, the levels at which it would stop holding. The result is on the console's
-**Live → manage** tab.
+**Live → positions** and **Live → portfolio** tabs.
 
 It is advice. Nothing here places an order.
 
 ## Turning it on
 
 1. In the orchestrator config (`~/.cherrypick/config.json`) set `manage.enabled` to `true`, or flip
-   *Daily position evaluation* under **Config → Position rules**. Then re-run `python run.py install`.
+   *Daily position evaluation* under **Config → Position rules**. The supervisor re-derives its jobs from
+   config on every pass, so the `manage-eval` job appears without a reinstall.
 2. Optionally copy `config.example.json` to `~/.cherrypick/config/manage.json` and change thresholds.
    The file is merged key by key over the default, so it may hold only what you change. The console's
    Config page can only edit keys the file already has, so a full copy is the easier start.
@@ -106,6 +107,8 @@ presenter who cuts losers rather than the one who repairs them, and checked agai
 | `legs.short_take_profit` | a short leg 80% captured, bought back with its wings | close legs | 85 | vendor: buy back nickels; close credit legs near max before earnings | Mechanically sound; nothing left to earn |
 | `ex_dividend` | ITM short call over a declared ex-date with time value < the dividend | review | 80 | vendor | Confirmed by option theory; in practice often not exercised |
 | `risk.oversize` | modelled downside > 3× (2% of net liq) | review | 60 | vendor's 2%-per-trade rule | Direction supported (fractional Kelly); the numbers are convention |
+| `directional.take_profit` | a `directional` trade (net premium under ¼ of its modelled max loss) at half its modelled max gain, capped at 1× its risk | take profit | 65 | our rule, 2026-10-13: a percentage of a small premium measures nothing | No outside test |
+| `directional.stop` | a `directional` trade at half its modelled max loss | close | 65 | our rule, 2026-10-13 | No outside test |
 | `earnings_trade` | an **earnings trade**: opened 1–7 days before a report, its nearest short expiring no more than 14 days after. Before the call it holds, and its close, take-profit and roll rules wait; after the call (the day after the report, or the report's day when before the open) it closes, and that day, not expiry less 21 days, is its time exit: the report's day when before the open (the broker's `BTO`, a calendar's `BMO`), else the next trading day. An untimed report waits the extra day, so the snapshot fills a time the broker leaves blank from Nasdaq's calendar for the same date (`earnings_time_source: "nasdaq"`) | hold, then close | 75 | your practice, 2026-10-18: earnings trades go on 1–7 days before the call and come off after it | None tested here. Safety rules (expiry and assignment, ex-dividend), sizing and unpriced legs never wait |
 
 **An earnings trade is remembered past its report.** The day after a report the broker may already
@@ -242,6 +245,8 @@ before sending.
 - **Fees are known only for a reconciled chain.** A trade priced from its open legs shows gross P&L only, and its basis misses any earlier roll.
 - **Ex-dividend dates are the last declared ones.** The rule fires once the next ex-date is announced.
 - **Earnings dates are the broker's expected dates**, which can move.
+- **SPX 0DTE is left out** (`exclude.zero_dte_underlyings`): it is the flies live loop's own book,
+  managed by that loop and cash-settled at the close.
 - **Thesis is not knowable.** `credit.breached` is a mechanical stand-in for "the reason for the trade
   is gone". Use `positions.<SYMBOL>.intent` and `disable` to mark a hedge or a position you mean to be
   assigned on.

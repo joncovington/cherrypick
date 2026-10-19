@@ -196,8 +196,8 @@ def cmd_install(cfg, force: bool = False) -> None:
     pyw = cfgmod.pythonw_exe()
     modules = cfgmod.enabled_modules(cfg)
 
-    # Refuse to cut over while flies is live-armed for today: deleting the legacy live task
-    # mid-armed-day must never silently disarm real orders. --force overrides deliberately.
+    # Refuse to cut over while any live module (flies, bwb, meic) is armed for today: deleting a
+    # legacy live task mid-armed-day must never silently disarm real orders. --force overrides.
     today = timeutil.now_et(cfg.get("timezone", "America/New_York")).date().isoformat()
     for name, mcfg in modules.items():
         if not mcfg.get("live"):
@@ -209,7 +209,7 @@ def cmd_install(cfg, force: bool = False) -> None:
                     "ok": False,
                     "error": f"{name} is LIVE-ARMED for today ({supervisor.arm_record_path(name)}). "
                     "Install would delete its legacy task mid-day. Disarm first "
-                    "(python -m cherrypick.flies.live_loop --uninstall-task) or re-run with --force.",
+                    f"(python -m cherrypick.{name}.live_loop --uninstall-task) or re-run with --force.",
                 }
             )
             sys.exit(1)

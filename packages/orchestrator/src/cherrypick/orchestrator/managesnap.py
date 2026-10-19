@@ -1,9 +1,10 @@
 """The broker snapshot the daily position evaluation is judged on (`run.py manage`).
 
 packages/manage is credential-free and network-free: it evaluates a snapshot and nothing else. This is
-where the snapshot comes from -- the one broker-touching step, and it is three READS: the `positions`
-verb's priced positions and balances, the broker's market metrics (last price, the next earnings date,
-the ex-dividend date) for every underlying held, and each underlying's trade history. Nothing here
+where the snapshot comes from -- the one broker-touching step, and every call in it is a READ: the
+`positions` verb's priced positions and balances, the broker's market metrics (last price, the next
+earnings date, the ex-dividend date) for every underlying held and for SPY and VIX, each underlying's
+trade history, and the XSP option chain the hedge is sized from. Nothing here
 places, cancels or modifies an order. Account numbers arrive masked from `positions`, and the history
 rows carry none.
 

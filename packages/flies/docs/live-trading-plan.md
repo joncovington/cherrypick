@@ -24,6 +24,19 @@ that the bar was met.
 
 **Update (2026-09-17): the pilot now trades the `control` variant, not `gex`.** The `gex` variant was retired from the paper roster at the 2026-08-21 cutover, and over the comparable paper history every alternative way of choosing the centre strike measured flat to negative against plain at-the-money `control` — which, over the 17 sessions from 08-21 to 09-16, made +$3,159 net across 117 structures at a 79% completion rate, with 5-point wings beating every wider width decisively. The one-open-position-at-a-time rule is unchanged (replaying control's entries under it keeps roughly 2.5 structures a day and about 55% of the P&L, so the full 10:00–14:30 window is kept rather than narrowed on top of it). Two safety settings changed with the arm: the daily loss halt was switched off (it read settled net, and live settles after the close, so it could only ever halt the session after a bad day — and at $200 it sat below a single typical miss of $270–310), replaced by a **local buying-power cap** (`live.max_open_margin_dollars`, $1,000) as the one sizing gate: the worst-case exposure of everything open plus the proposed spread must fit under it, computed from the ledger and the order alone so a broker balance read can never block a legitimate entry. One open spread commits about $350–400, so the cap admits at most two. The live loop also starts its day at 10:30 rather than the arm's 10:00 (`live.no_entry_before`, later the same day): by 15-minute slot the 10:00 entry was the era's weakest (36 entries netting +$61, median 81 minutes to complete) while 10:15 and 10:30 made the money (34 entries, 88% completion, +$2,730), and under the one-open-position rule a 10:00 entry blocks exactly those two slots. Replayed under the live rule, a 10:30 start earned +$2,283 on 29 structures against +$1,749 on 42, with half the losing days. Paper keeps 10:00, since an unbounded arm loses nothing to its first entry. No day-of-week, FOMC, or other event gate was added: across the era there was one FOMC session (5 of 5 completed, +$99), one opex Friday (5 of 5, +$511), and the weekday split ranges from +$1,718 on Tuesdays to −$313 on Thursdays on two to four sessions each — nothing large enough to gate on, and gating live where paper does not would break the live-vs-paper comparison this pilot exists to measure. The one calendar gate that was added applies to paper and live equally: no entry on an NYSE early-close session (13:00 close), because every clock in the module — entry windows, completion cutoff, settlement — is written against a 16:00 close. This remains a mechanics pilot ahead of Gate 0's bar.
 
+**Update (2026-10-18): what has changed since.** There is no position-count limit since 2026-09-25:
+the cap is the only sizing gate (`live.max_incomplete_spreads` restores one). Live starts at 10:15
+since 2026-09-29 (`live.no_entry_before`). Completions rest to the close since 2026-10-15
+(`live.completion_cutoff` 16:00, a live `completion_rule` break). Arming writes the day's arm record
+and the supervisor runs the `flies-live` job; there is no scheduled task. Settlement fetches the
+official print first and is provisional on the last trade only when no source has posted one. A
+position books the broker's fill price, not its limit (2026-10-12), and every settle path first
+confirms any pending fill with the broker (2026-10-13). The order-alert daemon is a supervised
+companion while armed (2026-10-14). The intraday agent may run against the live arm in shadow, or
+gate its entries, under its written exception ([intraday-agent-plan.md](intraday-agent-plan.md)).
+The abort rule below is reported in `live_loop --status` and halts nothing. The rules as they stand
+are in [../CLAUDE.md](../CLAUDE.md); the dated sections below are kept as the record.
+
 Every guardrail that applies to the rest of the suite applies here too: paper and live money are
 kept completely separate in every report, nothing on the trading-decision path uses AI or any
 network call, credentials live only in the operating system's secure credential store, account
@@ -47,7 +60,7 @@ count).
 2. **The day's book is net profitable after all fees, over that window** — and whichever
    variant is winning has to clear the same, already-hardened bar the suite uses before trusting
    any strategy result: at least 14 days, at least 20 sample trades, a statistical-significance
-   check, and the result has to survive a stress-test that assumes worse-than-modeled slippage.
+   check, and the result has to survive a stress-test that assumes worse-than-modelled slippage.
 3. **The winning variant is genuinely separable from the plain baseline** — meaning it actually
    made different trading choices, not just the same choices measured twice. (Two of the four
    variants pick the same strike as the baseline by construction, so agreement between those
@@ -70,7 +83,7 @@ Moving from paper to live raises two questions the paper simulation can't answer
 instantly?** In paper trading, "did the completing leg get cheap enough to buy" is a clean
 yes/no check against the recorded price. In live trading, the first leg (the credit spread)
 fills first, and the second leg (the completing purchase) is a resting order that might sit
-unfilled for a while or fill at a worse price than modeled. That means the paper-trading
+unfilled for a while or fill at a worse price than modelled. That means the paper-trading
 completion rate is best understood as a **ceiling** on what live trading can achieve, not a
 prediction of it — so the first job of the pilot is simply to measure the real, live completion
 rate directly, at the smallest possible size, before anything scales up. Mechanically: the
@@ -79,9 +92,10 @@ a price no worse than (credit collected − a fee buffer), subject to the same p
 paper trading uses, and it's automatically cancelled at a fixed cutoff time if it hasn't filled.
 If it never fills, you're simply left holding the original credit spread to expiration — the
 same "uncompleted branch" outcome the paper simulation already tracks and reports separately.
-**A built-in abort rule protects against a bad surprise here:** once at least 30 live legged
+**A built-in abort check guards against a bad surprise here:** once at least 30 live legged
 entries have happened, if the live completion rate falls more than 15 percentage points below
-the paper completion rate over the same days, the pilot halts automatically. The strategy's
+the paper completion rate over the same days, the check is flagged (`abort_rule.triggered` in
+`live_loop --status`). It halts nothing by itself; stopping the pilot is a person's call. The strategy's
 entire edge *is* the completion rate — a persistent gap that size would mean the paper ceiling
 simply isn't achievable in the real market.
 
@@ -114,7 +128,7 @@ or real. Live trading only adds the parts that talk to the actual brokerage acco
   moved against the trade.
 - **Only the winning strategy variant trades live.** The four-variant design exists to compare
   strategies on paper; live trading isn't an experiment, so its settings are locked to whichever
-  variant is authorized (currently `gex`), and those settings don't change mid-pilot — changing
+  variant is authorized (`control` since 2026-09-17; `gex` before), and those settings don't change mid-pilot — changing
   them partway through would make the measurement meaningless.
 - **A completely separate ledger for live trades**, kept out of every comparison, calibration,
   or "what's working" report the suite generates from paper data — live results only ever show
@@ -122,10 +136,11 @@ or real. Live trading only adds the parts that talk to the actual brokerage acco
 - **Several independent kill switches**, any one of which stops new trades: a master on/off
   setting (off by default, checked every minute); a suite-wide "halt" flag that any part of the
   system (including the automated monitor) can set, which blocks new entries within about a
-  minute without touching anything already open; a daily loss limit (if the day's live trading
-  is down past a set dollar amount, no new positions open — anything already open still runs its
-  course to settlement, since these are always fully defined-risk trades); and a real,
-  broker-checked buying-power/exposure limit on every single order.
+  minute without touching anything already open; a daily loss limit (off since 2026-09-17, see the
+  update above; when set, no new positions open past it, and anything already open still runs its
+  course to settlement, since these are always fully defined-risk trades); and a worst-case
+  buying-power cap on every single order, computed locally from the ledger and the order, never
+  from a broker balance read.
 - **Settlement discipline**: live-trading results are recorded against the official market
   closing print, not the same "last streamed trade" approximation paper trading uses by default.
   A daily automated reconciliation check compares what the system believes is open against what
@@ -155,11 +170,11 @@ assignment risk. The two are never traded live at the same time.
 - **Step 0 — broker smoke test.** Build a real order pair from live market data, run it through
   the broker's practice/dry-run check against the real account, confirm the buying-power effect
   and safety-limit result look right — and place nothing. Done under direct supervision.
-- **Step 1 — the measurement pilot (where things are now).** At most one position open at a
-  time, one strategy variant, at least 15 sessions. What gets collected: the real live
-  completion rate, how much worse fills are than the modeled price, actual fees versus the
-  modeled estimate, and how long completions actually take compared to paper. The abort rule
-  above is active from the very first trade.
+- **Step 1 — the measurement pilot (where things are now).** One strategy variant under the
+  buying-power cap (one position at a time until 2026-09-25), at least 15 sessions. What gets
+  collected: the real live completion rate, how much worse fills are than the modelled price,
+  actual fees versus the modelled estimate, and how long completions actually take compared to
+  paper. The abort check above is evaluated from the very first trade.
 - **Step 2 — normal size at one contract.** Only reached if step 1's live completion rate clears
   the recalculated break-even bar. Settings stay locked, and the suite's standard "is this
   strategy working" evaluation runs on the live results directly, using the same hardened bar
@@ -172,7 +187,7 @@ assignment risk. The two are never traded live at the same time.
 - Live results are visible only through the live-specific report view. Every "what's working"
   or calibration report the suite generates is paper-only, by construction and checked by tests.
 - Every live fill records the actual price it filled at versus what was quoted at the time — so
-  over the pilot, the suite's estimated slippage cost (previously just a modeled guess) gets
+  over the pilot, the suite's estimated slippage cost (previously just a modelled guess) gets
   replaced with real, measured numbers.
 - The paper-trading process keeps running the same days live does, specifically so live results
   can be compared against a paper "control" from the same sessions — differences in completion
@@ -186,7 +201,11 @@ paper and live). No "outright" entries live. No more than one strategy variant l
 trading SPX and XSP live at the same time. No automated or AI-driven decision anywhere near a
 live order — anything that reads trading history to suggest changes is only ever allowed to look
 at paper data, and none of the suite's more advanced automation features apply to flies until
-this plan's steps are complete.
+this plan's steps are complete. **One written exception (2026-10-05):** the intraday agent may
+record decisions against the live arm in shadow, and, only when its qualification allows and the
+day's selection names it, block live entries on the trend's losing side
+([intraday-agent-plan.md](intraday-agent-plan.md)). It never places an order: the live closing
+path is not built.
 
 ## Build status
 
@@ -214,7 +233,7 @@ for the exact option contract identifiers the broker needs on every quote.
    builds in the profit-floor requirement, so there's nothing to chase — it just sits until it
    fills or hits its cutoff time. Done.
 4. **Settling the live day's results** — an automatic provisional settlement happens at 16:20
-   ET from the last streamed trade price, clearly labeled as provisional; the official closing
+   ET from the last streamed trade price, clearly labelled as provisional; the official closing
    print can be applied afterward to finalize the day's numbers, and that official number is
    protected from being accidentally overwritten. Done.
 5. **Monitoring and alerts** — the automated monitor now watches the live loop specifically:
@@ -231,8 +250,8 @@ for the exact option contract identifiers the broker needs on every quote.
    new positions can open per day, independent of the one-open-position-at-a-time rule. Done.
 
 **How arming works day to day:** live trading is armed **one day at a time**. Running the
-`/live-flies-start` command with a fresh confirmation registers the day's trading task; it turns
-itself off automatically at a set time each evening (17:00 ET by default), and the automated
+`/live-flies-start` command with a fresh confirmation writes the day's arm record, and while it is
+valid the supervisor runs the `flies-live` job once a minute; it turns itself off automatically at a set time each evening (17:00 ET by default), and the automated
 monitor backstops that shutoff with the suite halt flag if it somehow doesn't happen on its own.
 The rule that governs every piece of this: market data comes from the shared cache first, and
 the broker is only ever contacted to actually place or cancel an order, or to confirm a fill that

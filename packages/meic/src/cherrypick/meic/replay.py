@@ -18,8 +18,8 @@ refused, never approximated silently):
 - **Spot**: the sample's (`core.quotehistory`, joined at or before within 60 s).
 - **GEX**: `core.quotehistory.RecordedDay.gex`, the recorder's per-strike profile at or before the
   sample through `core.gex`, refused past 360 s. Live recomputes it every tick from the stream
-  cache; the profile moves in ~5-minute steps. `net_gex_vol` is not rebuilt (None), and nothing on
-  the paper path gates on it.
+  cache; the profile moves in ~5-minute steps. `net_gex_vol` is not rebuilt (None), so an arm with
+  `regime_gex_block_mode: "both"` replays as `"oi"` (the gate's own fallback with no volume reading).
 - **Session**: day open, high and low from the spot trail up to the sample; `intraday_range_pct` is
   that range over spot. `atr_5day` is the mean true range of the prior `regime_atr_lookback_days`
   completed sessions in the same file (their trail's high and low, the close before each), None with

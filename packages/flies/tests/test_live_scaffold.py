@@ -121,7 +121,7 @@ def test_order_builders_refuse_quotes_without_occ_symbols():
 # --------------------------------------------------------------------------- gates
 BASE_CFG = {
     "arms": {"gex": {}, "control": {}},
-    "live": {"enabled": True, "gate0_confirmed": "jon 2026-08-15", "arm": "gex"},
+    "live": {"enabled": True, "gate0_confirmed": "owner 2026-08-15", "arm": "gex"},
 }
 
 
@@ -515,7 +515,7 @@ def _loop_cfg():
             "completion_cutoff": "15:30",
         },
         "arms": {"gex": {}},
-        "live": {"enabled": True, "gate0_confirmed": "jon", "arm": "gex"},
+        "live": {"enabled": True, "gate0_confirmed": "owner", "arm": "gex"},
     }
 
 

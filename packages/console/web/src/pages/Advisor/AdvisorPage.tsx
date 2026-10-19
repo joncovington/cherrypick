@@ -23,7 +23,7 @@ import { PairedRead } from "../../components/advisor/PairedRead";
  * The AI advisor. Renders what it observed, proposed and ran — and judges none of it here.
  *
  * Every verdict on this page was computed in `packages/advisor`, through the suite's own chain
- * (ledger readers → compare_profiles → qualify_readings). The model's keep/kill/promote sits
+ * (ledger readers → group_by_tag → qualify_readings). The model's keep/kill/promote sits
  * BESIDE those numbers, labelled as a recommendation, never in place of them.
  *
  * Three things this page must keep visible that a tidier rendering would drop:

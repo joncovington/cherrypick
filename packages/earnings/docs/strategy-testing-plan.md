@@ -2,9 +2,10 @@
 
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
-Multi-week forward-test of all 6 implemented (defined-risk) strategies (`iron_fly`,
+Multi-week forward-test of the implemented (defined-risk) strategies (`iron_fly`,
 `double_calendar`, `iron_condor`, `atm_calendar`, `directional_credit_spread`,
-`broken_wing_butterfly`), until each has enough cost-adjusted evidence to
+`broken_wing_butterfly`, and from 2026-10-14 `expected_move_butterfly`; the two calendars are
+retired from 2026-10-15), until each has enough cost-adjusted evidence to
 decide: enable live, keep paper, or retire.
 
 This is a **separate program** from the live/paper trading loop (CLAUDE.md's Loop Steps).
@@ -13,10 +14,10 @@ It never touches `db.py`, never calls `tt.py execute_trade`, and never respects
 open more than the loop ever would, on purpose, so every strategy accumulates a usable
 sample.
 
-In normal suite operation this program runs **unattended under the [orchestrator](../../orchestrator)**:
-it registers and watchdogs the daily entry (15:45 ET) and exit (09:45 ET) OS tasks that invoke
-`strat_test_harness.py` (`run_entries` / `run_closes`) into the strat_test books, then reads the
-resulting `paper_trades.db` (in the shared data home, `~/.cherrypick/data/earnings`) for cross-module
+In normal suite operation this program runs **unattended under the [orchestrator](../../orchestrator)**.
+Its supervisor runs `paper_loop once` every 60 seconds as the `earnings-paper` job. The loop runs
+the harness's entry scan at 15:35 into the strat_test books and manages exits itself. The
+orchestrator then reads the resulting `paper_trades.db` (in the shared data home, `~/.cherrypick/data/earnings`) for cross-module
 reporting. This module has no scheduler of its own. Run `/paper-start` here for a single manual day; see
 the [package README](../README.md#how-this-fits-the-suite) for how the standalone and orchestrator-driven
 roles fit together.
@@ -37,7 +38,7 @@ design).
 Every night runs on one sizing basis — `available_capital_paper_mode` (the simulated NLV in
 config) — so per-strategy comparison isn't confounded by differing capital or risk settings.
 With `strat_test_portfolio: "per_strategy"` (the default), each strategy accumulates in its own
-book (`profile='strat_test:<strategy>'`), so the comparison isolates the strategy itself.
+book (`arm='strat_test:<strategy>'`), so the comparison isolates the strategy itself.
 
 ## Cost model
 
@@ -47,8 +48,8 @@ worst for options:
 - **Commission (open-only):** $1.00/contract to open, $0 to close, capped at $10/leg.
 - **Pass-through fees:** clearing (~$0.10) + regulatory/ORF/FINRA-TAF/SEC (~$0.04) per
   contract, both sides.
-- **Slippage:** a configurable fraction (default 25%) of each leg's bid-ask width,
-  applied at entry and exit.
+- **Slippage:** a configurable fraction (default 12.5%) of each leg's bid-ask width, capped at
+  15% of the leg's mid, applied at entry and exit.
 
 `trades.entry_cost`/`exit_cost` store this separately from `trades.pnl` (which stays
 gross) — cost-adjusted expectancy is computed downstream in `strategy_metrics.py`, never
@@ -68,8 +69,10 @@ every candidate (selected or not) to `scan_log` tagged with its per-strategy boo
 ```
 python -m cherrypick.earnings.strat_test_harness run_closes
 ```
-Closes every open strat_test position via the same generic exit-debit mechanism the real
-loop uses (`scanner.compute_generic_exit_debit`), cost-adjusted.
+Manual/backfill only — the paper loop manages exits. `run_closes` closes the overnight strategies
+unconditionally and lets the calendars and `expected_move_butterfly` hold on their own verdict,
+pricing every close through the same generic exit-debit mechanism the real loop uses
+(`scanner.compute_generic_exit_debit`), cost-adjusted.
 
 ## Weekly review
 
@@ -113,7 +116,7 @@ rare-regime and may only ever reach a directional read within a reasonable horiz
 
 ## Schedule
 
-- **Week 0 — setup & dry run.** One night, confirm all 6 strategies construct, size, cost,
+- **Week 0 — setup & dry run.** One night, confirm every strategy constructs, size, cost,
   persist, and close with no error.
 - **Weeks 1-2 — calibration.** Nightly `run_entries`/`run_closes`. Goal is plumbing
   shakeout, not statistics: confirm every strategy fires at least a few times and every exit
@@ -125,8 +128,9 @@ rare-regime and may only ever reach a directional read within a reasonable horiz
 
 ## Per-strategy regime expectations
 
-- **Common-regime** (`iron_fly`, `iron_condor`, `directional_credit_spread`, the two
-  calendars): expect to reach 30-100 within the horizon on a typical earnings calendar.
+- **Common-regime** (`iron_fly`, `iron_condor`, `directional_credit_spread`, and the two
+  calendars until their retirement on 2026-10-15): expect to reach 30-100 within the horizon on a
+  typical earnings calendar.
 - **Rare-regime**: `broken_wing_butterfly` needs a steep enough IV skew, so it fires less often
   and may only reach a directional read (30) rather than full significance (100) in the tested
   window.

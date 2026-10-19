@@ -1,10 +1,15 @@
 # Trading-metrics expansion — a proposal
 
 *Drafted 2026-08-23, from a survey of standard algorithm-evaluation metrics mapped against what the
-suite already computes. A design proposal, not shipped work — the companion to
+suite already computes. The companion to
 [regime-recorder-plan.md](regime-recorder-plan.md), and its read-side complement: that plan records
 what the market was doing; this one scores what the strategies did, including cut by that record.
 When it ships, the landing note belongs in `docs/history/`.*
+
+***Largely landed since:** `core.metrics` now carries expectancy, profit factor, Sortino, SQN, CVaR,
+worst session, drawdown span, excursions, the per-session Sharpe and the Probabilistic Sharpe Ratio
+(see the dated sections below). Still open: a trials-aware correction across arms. The table below
+is the survey as drafted on 2026-08-23.*
 
 ## What exists, and what the gaps are
 

@@ -46,9 +46,13 @@ probe, the Theta Terminal) ends the fetch's, and the fetch stops rather than rec
 python -m cherrypick.backtest validate [--cadence 60]          # against the recorder; unlocks history
 python -m cherrypick.backtest run flies --arms range-high --window validation
 python -m cherrypick.backtest run flies --arms range-high --window design --cadence 60
+python -m cherrypick.backtest fetch-vix --from 2026-10-13 --to 2026-10-16      # VIX minute series for MEIC's replay
+python -m cherrypick.backtest validate --module meic --cadence 60             # MEIC unlocks its own history
+python -m cherrypick.backtest run meic --arms <arm> --window design --cadence 60
 ```
 
-History (`design`, `holdout`) stays locked until validation unlocks it for that cadence. Every design
+MEIC is the second module. Each module validates and unlocks its own history: a flies report unlocks
+nothing for MEIC. History (`design`, `holdout`) stays locked until validation unlocks it for that cadence. Every design
 evaluation is recorded as a trial, and the holdout is spent once per spec (`--spend-holdout`).
 Reports go to `~/.cherrypick/data/backtest/results/` and nowhere else.
 

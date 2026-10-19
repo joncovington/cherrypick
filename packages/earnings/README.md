@@ -9,7 +9,7 @@
 
 **What this module does:** earnings trades defined-risk options strategies around company
 earnings announcements — opening a position the afternoon before a report and managing it after
-the announcement. It picks from six different structures each night based on which one fits that
+the announcement. It picks from seven different structures each night based on which one fits that
 stock's setup best, and it can run as **paper trading** (simulated) or **live** trading, gated
 behind a setting you turn on yourself. Live trading is experimental, off by default and at your own
 risk. It's one strategy module in the
@@ -27,12 +27,13 @@ engine. Most of what you do here is run terminal commands, or ask Claude to run 
 > [docs/](docs/README.md), and the suite-wide [documentation index](../../docs/README.md).
 
 An autonomous options trading agent for overnight earnings plays. It scans the daily earnings
-calendar, evaluates six defined-risk options strategies against live market data, ranks
+calendar, evaluates seven defined-risk options strategies against live market data, ranks
 candidates, and manages entries and exits around the announcement. The agent-driven loop opens
 before the close and closes in the next morning's close window (the calendars can run longer). The
 unattended paper loop manages positions instead: a loser closes on the first morning, a winner short
 of its target can be carried up to three trading sessions, and anything that expires is settled at
-intrinsic.
+intrinsic. Nothing but the expiry close and the pin guard acts on the entry session, and
+`expected_move_butterfly` is held to the 15:30 expiry close or its take-profit.
 
 Every strategy is **defined-risk**: max loss is known at entry. Undefined-risk/naked strategies
 (naked straddles, strangles, naked puts/calls) were deliberately excluded — a single-name
@@ -131,7 +132,7 @@ for the exact couplings.
 
 ---
 
-## The 6 Strategies
+## The 7 Strategies
 
 All defined-risk, all evaluated nightly against live tastytrade chains and DoltHub data:
 
@@ -144,6 +145,10 @@ All defined-risk, all evaluated nightly against live tastytrade chains and DoltH
 | `atm_calendar` | Short front-month + long back-month, same strike | Low IV, term-structure edge |
 | `double_calendar` | ATM calendar on both the call and put side | Low IV, symmetric term structure |
 | `expected_move_butterfly` | 1-2-1 debit fly, body at spot +/- EM, side by skew (paper only) | Measuring a directional fly's real fills |
+
+`atm_calendar` and `double_calendar` stay registered but open nothing in the forced-sampling books
+from 2026-10-15 (`strat_test_harness.STRAT_TEST_RETIRED`; see
+[docs/operating-history.md](./docs/operating-history.md)).
 
 See [docs/05-strategies.md](./docs/05-strategies.md) for full structure, entry conditions, and
 exit rules per strategy, and [docs/screening-criteria.md](./docs/screening-criteria.md) for the

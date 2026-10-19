@@ -3,11 +3,12 @@
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
 Everything here describes real keys in `config/config.example.json`. Copy it to
-`config/config.json` (gitignored) and edit that copy — the example stays in version control as
-the documented template, `config.json` is yours.
+`~/.cherrypick/config/earnings.json` (or `config/config.json`, gitignored, for a standalone checkout)
+and edit that copy — the example stays in version control as the documented template, the copy is
+yours.
 
 ```bash
-cp config/config.example.json config/config.json
+cp config/config.example.json ~/.cherrypick/config/earnings.json
 ```
 
 The example file itself is heavily commented with `_..._note` fields explaining the reasoning
@@ -37,7 +38,12 @@ it's what the code actually reads.
 | `winrate_lookback_quarters` | How many past quarters `scanner.compute_winrate()` backtests over. Coverage in the Dolt datasets only reaches back to late 2024, so a large lookback on a less-liquid name can return a much smaller sample than you asked for — always check the `sample_size` field in `get_winrate`'s raw output before trusting a thin sample. |
 | `finnhub_api_key_env_var` | Name of the environment variable holding a Finnhub API key, if you're using it as a supplementary data source. Not required for the core scan/rank/order pipeline, which runs entirely on tastytrade + Dolt. |
 | `entry_window_start` / `entry_window_end` | The window before close where new positions get opened, e.g. `15:30`–`15:55` ET. These are ET times regardless of your local timezone. |
+| `entry_scan_at` | When the automated loop starts its forced-sampling entry scan (default `15:35`). Distinct from `entry_window_start`, and must leave room for the scan to finish before `entry_window_end`. |
+| `entry_scan_budget_seconds` / `entry_scan_workers` | Bounds on the entry scan (example: 1500 s, 4 workers). The morning snapshot orders the universe so a budget that binds still finishes the liquid names first. |
+| `symbol_watch` | The pre-market forward scan the loop runs itself (`enabled`, `at` `06:30`, `days` 10 trading days, `liquid_only`, `tier_thresholds` in the example). It pre-filters the entry scan on stable criteria only and never decides an entry. |
+| `dolt_calendar_timeout_seconds` / `dolt_symbol_timeout_seconds` | Per-query bounds on the Dolt calendar and per-symbol reads (example: 30 / 90), so a hung query cannot hold the loop's lock. |
 | `close_window_start` | Next-morning time where Step 3's unconditional close-window backstop kicks in, e.g. `09:45` ET — chosen to be after the open's initial volatility has settled a bit. |
+| `exit_after_announcement_minutes` | The agent loop's same-session backstop (example: `240`). The managed paper loop overrides it — see `management` below. |
 | `correlation_block_list` | Sector/date groupings you don't want opened simultaneously (e.g. two banks reporting the same night). Empty by default — see the note in `CLAUDE.md`: correlation risk isn't fully guarded today, so treat this as a partial mitigation, not a complete one. |
 | `reprice_interval_s` / `reprice_step` | Live-mode only: how often (seconds) and by how much an unfilled limit order reprices toward the market while working an entry. |
 | `tastytrade_costs` | Fee model for paper-mode cost-adjusted P&L — see below. |
@@ -73,7 +79,7 @@ fill price by a fraction of its bid-ask width conceded from mid, rather than ass
 mid-price fill (0.125 = a quarter of the way from mid to the far touch; this was 0.25 before a
 2026 revision toward a more realistic worked-combo-limit assumption). `slippage_cap_frac_of_mid`
 caps a single leg's slippage at that fraction of its own mid price, so a deep-OTM, wide-spread
-wing leg can't dominate the modeled cost. These rates come from tastytrade's published pricing
+wing leg can't dominate the modelled cost. These rates come from tastytrade's published pricing
 page and are checked periodically — re-verify against the current schedule if it's been a
 while, since exchange/regulatory pass-through fees do change.
 
@@ -119,14 +125,15 @@ times the mean, with reason `move_tail_veto`. Left off by default until the reco
 calibrating `move_tail_multiple` — see [Screening Criteria](./screening-criteria.md)'s "Recorded-only
 metrics" section for the full set of new metrics recorded alongside the existing screen (implied
 vs. historical move, bid-ask spread quality, IV rank/percentile), all visible per symbol — accepted
-or rejected — via `db.py`/`db_paper.py`'s `entry_reviews` table and scout's earnings page.
+or rejected — via `db.py`/`db_paper.py`'s `entry_reviews` table and the console's Earnings page.
 
 ---
 
 ## `strat_test_portfolio`
 
 Controls how the forced-sampling strategy test (`strat_test_harness.py`, see
-`docs/strat-test-portfolios.md`) buckets its paper trades into books via the `profile` column.
+`docs/strat-test-portfolios.md`) buckets its paper trades into books via the `arm` column (named
+`profile` until 2026-09-24; the report flags are still spelled `--profile`).
 
 ```json
 "strat_test_portfolio": "per_strategy"
@@ -136,7 +143,7 @@ Controls how the forced-sampling strategy test (`strat_test_harness.py`, see
   `strat_test:<strategy>` (e.g. `strat_test:iron_fly`), giving every strategy its own book —
   its own P&L and equity curve. A newly added strategy automatically gets its own stream.
 - `"combined"` — all forced-sampling trades share a single `strat_test` book (the original
-  behavior), one blended P&L across every strategy.
+  behaviour), one blended P&L across every strategy.
 
 Reporting (`strategy_report.py`, the console's Earnings page) and the orchestrator's
 `report`/`calibrate` group by that book tag; a `--profile strat_test` request matches the whole
@@ -150,7 +157,7 @@ is just `available_capital_paper_mode` — there's no per-book capital or risk m
 Every one of the 7 strategies (`iron_fly`, `iron_condor`, `directional_credit_spread`,
 `broken_wing_butterfly`, `atm_calendar`, `double_calendar`, `expected_move_butterfly`) gets its
 own block
-under `strategies`, keyed by the exact module name in `src/strategies/`. This avoids threshold
+under `strategies`, keyed by the exact module name in `cherrypick/earnings/strategies/`. This avoids threshold
 collisions — each strategy tunes its own liquidity/quality bars independently, even though many
 of them share the same starting values today.
 
@@ -204,7 +211,7 @@ Short ATM straddle + long OTM wings, sized as a multiple of the credit received.
   "wing_width_multiple_high": 3.5,
   "wing_width_band_low_max": 1.25,
   "wing_width_band_mid_max": 1.75,
-  "profit_target_pct": 0.50,
+  "profit_target_pct": 0.25,
   "stop_loss_credit_multiple": 1.5,
   "max_bid_ask_spread_pct": 0.15,
   "min_market_cap": 2000000000,
@@ -282,7 +289,7 @@ whichever side a 25-delta risk reversal shows richer.
   "wing_width_band_low_max": 1.25,
   "wing_width_band_mid_max": 1.75,
   "profit_target_pct": 0.50,
-  "stop_loss_credit_multiple": 1.5,
+  "stop_loss_credit_multiple": 2.0,
   "require_weekly_options": true,
   "min_combined_open_interest": 2000,
   "max_bid_ask_spread_pct": 0.15,
@@ -344,6 +351,9 @@ Common keys apply to every strategy; `management.<strategy>` overrides them for 
 | `close_losers_first_morning` | `true` | The PEAD gate. A position at or below breakeven closes on the first check of a day; a winner may carry. |
 | `exec_window_start` | `"09:40"` | Before this, decisions are recorded and not acted on. Opening spreads can exceed the edge being managed. |
 | `max_leg_spread_pct` | `0.35` | Widest leg spread (of mid) still worth acting on. |
+| `max_leg_spread_abs` | `0.05` | A leg is refused only when wide in percent AND in money. |
+| `max_leg_spread_abs_zero_bid` | `0.20` | The looser money floor for a leg quoting a 0.00 bid. |
+| `expiry_close_time` | `"15:30"` | From this time on any leg's expiration day the position closes, whatever its P&L. Neither the spread gate nor the per-tick cap holds it back. |
 | `pin_guard_dollars` | `1.00` | A short strike this close to spot, late on its expiration day, closes the position. |
 | `pin_guard_window_minutes` | `60` | How late "late" is. |
 | `max_executions_per_tick` | `3` | Bounds one tick; the rest are deferred a minute, not dropped. |
@@ -351,6 +361,9 @@ Common keys apply to every strategy; `management.<strategy>` overrides them for 
 | `spot_max_age_seconds` | `600` | Spot tolerates more age — it gates checks that move on the scale of a strike. |
 | `open_capital_warn` | `15000` | Advisory watermark on total open risk. Multi-day holds accumulate what the old book never carried; this warns rather than capping, since truncating carried winners would bias exactly the sample the hold policy exists to measure. |
 | `exit_after_announcement_minutes` | very large | The strategies' same-session backstop, deliberately set past any hold it could preempt. Lower it to re-enable a same-session forced close. |
+
+Not a key, but a rule every key above sits behind: nothing but the expiry close and the pin guard
+acts on a position's entry session (`entry_session`, 2026-10-17).
 
 ```json
 "management": {
@@ -426,7 +439,7 @@ in practice). Closes as a single 2-leg unit, never leg-by-leg.
 ```json
 "atm_calendar": {
   "min_price": 10.00,
-  "min_term_structure": -0.004,
+  "min_term_structure": -0.15,
   "min_combined_open_interest": 2000,
   "back_month_min_days_after": 21,
   "require_weekly_options": true,
@@ -436,8 +449,8 @@ in practice). Closes as a single 2-leg unit, never leg-by-leg.
   "near_miss_min_iv_rv_ratio": 1.00,
   "min_winrate": 0.50,
   "near_miss_min_winrate": 0.40,
-  "profit_target_pct": 0.30,
-  "stop_loss_pct_of_debit": 1.0,
+  "profit_target_pct": 0.15,
+  "stop_loss_pct_of_debit": 0.5,
   "exit_days_before_front_expiration": 5,
   "max_bid_ask_spread_pct": 0.15,
   "min_market_cap": 2000000000,
@@ -450,9 +463,9 @@ in practice). Closes as a single 2-leg unit, never leg-by-leg.
 `back_month_min_days_after` sets how far past the front expiration the back-month leg must
 land. `exit_days_before_front_expiration` is a hard time-stop: once the front leg gets within 5
 days of expiring, the position exits regardless of P&L, since gamma risk on a short ATM option
-overwhelms any remaining theta benefit inside that window. `stop_loss_pct_of_debit: 1.0` means
-the stop triggers once the position's value has round-tripped back to roughly the entry debit —
-looser than the credit strategies' stop, matching a calendar's slower-resolving decay profile.
+overwhelms any remaining theta benefit inside that window. `stop_loss_pct_of_debit: 0.5` closes
+the position once it has lost half its entry debit, and `profit_target_pct: 0.15` takes 15% of the
+debit (both set at the 2026-08-12 cutover; see [Exit Strategy Guide](./10-exits.md)).
 
 ### `double_calendar`
 
@@ -462,7 +475,7 @@ sides can close independently (`trade_legs` persistence, not just `legs_json`).
 ```json
 "double_calendar": {
   "min_price": 10.00,
-  "min_term_structure": -0.004,
+  "min_term_structure": -0.15,
   "min_expected_move_pct": 0.05,
   "min_combined_open_interest": 2000,
   "back_month_min_days_after": 21,
@@ -474,8 +487,8 @@ sides can close independently (`trade_legs` persistence, not just `legs_json`).
   "min_winrate": 0.50,
   "near_miss_min_winrate": 0.40,
   "max_realized_move_dispersion_pct": 0.15,
-  "profit_target_pct": 0.25,
-  "stop_loss_pct_of_debit": 1.0,
+  "profit_target_pct": 0.15,
+  "stop_loss_pct_of_debit": 0.5,
   "leg_stop_delta_abs": 0.45,
   "exit_days_before_front_expiration": 5,
   "max_bid_ask_spread_pct": 0.15,
@@ -549,8 +562,8 @@ expectancy before and after.
 # Confirm it's still valid JSON
 python -c "import json; json.load(open('config/config.json')); print('Config OK')"
 
-# Confirm all 6 strategies still register
-python -c "from src.rank_strategies import STRATEGY_REGISTRY; print(f'Found {len(STRATEGY_REGISTRY)} strategies')"
+# Confirm all 7 strategies still register
+python -c "from cherrypick.earnings.rank_strategies import STRATEGY_REGISTRY; print(f'Found {len(STRATEGY_REGISTRY)} strategies')"
 
 # Run a dry-run scan to see the change reflected in candidate output
 python -m cherrypick.earnings.strategies.iron_fly get_candidates --date MM/DD/YYYY

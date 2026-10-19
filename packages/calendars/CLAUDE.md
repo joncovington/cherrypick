@@ -43,7 +43,8 @@ an arm joins only by being named there). A derivation that cannot reproduce the 
 The default tolerance is $0.01 (rounding); it was $0.50 until 2026-10-12, which hid a $0.49 bias on
 every `path` week (the long disposal's cost was missing from the recorded-close fallback).
 
-**A Friday-entry regime is built and trading** (enabled 2026-08-24, first entry 2026-09-04) —
+**A Friday-entry regime is built and trading** (enabled 2026-08-24 on the live config, first entry
+2026-09-04; the example ships `friday_entry.enabled: false`) —
 [docs/friday-entry-arm.md](docs/friday-entry-arm.md) (`dc_7_10` vs this `dc_4_7`). It is NOT a fourth
 book: it prices its own snapshot and strikes at 15:50-16:00 on the Friday before (`friday_entry`
 block, `clock.friday_entry_plan`), books `friday:control` and `friday:path` (`engine.FRIDAY_PREFIX`;
@@ -52,7 +53,9 @@ skipped while the week's Monday-regime exits are still pending. Through 10-12 it
 (16 rows); 08-28, 09-11 and 09-18 were skipped. Not yet true, and say so before reading it:
 - **`dc_paired_debits` was empty until the 2026-10-12 fix** — the Monday-moment price of the Friday
   strikes, the low-variance Friday-vs-Monday read. The past weeks cannot be backfilled.
-- **The read-side grid does not cover it.** `exit_policies` derives `path` only, never `friday:path`.
+- **The read-side grid has covered it only since 2026-10-12**: `friday:path` feeds the table under
+  its own `dc_7_*` tag and both Friday arms are validated to the cent (above); before that the
+  Friday weeks were neither in the table nor validated.
 - **Its arrival was never journaled as a break**, though friday-entry-arm.md says it should be.
 
 ## Two settlement styles, one set of numbers
@@ -156,7 +159,7 @@ surfaces show "paper only" (`readModuleGate`/`liveops._live_enabled`), nothing c
 | `src/cherrypick/calendars/analytics.py` | the one read-only query layer. |
 | `src/cherrypick/calendars/db.py` | schema, additive migrations, stale-writer guard, writers. |
 | `src/cherrypick/calendars/stream_request.py` | declares symbols, open legs and the two expirations. |
-| `src/cherrypick/calendars/cli.py` | `status` / `headline` / `policies` / `validate`. |
+| `src/cherrypick/calendars/cli.py` | `status` / `headline` / `excursions` / `policies` / `validate` / `record-break`. |
 
 ## Commands
 

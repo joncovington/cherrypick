@@ -24,6 +24,12 @@ Where the files are (MEIC's own resolvers, so this command and the loops never d
 > ⚠️ This changes what MEIC's **live** path would trade. Live trading is experimental and off by
 > default; see `DISCLAIMER.md` at the repo root.
 
+> ⚠️ **Since 2026-10-14 the way to choose what live trades is `live.arm`** in the `live` block,
+> naming a registry arm (disabled for paper). This command writes the preset into the config's top
+> level, which every paper arm that leaves a key unset inherits — `control` included — and any key
+> the `live.arm` arm sets still wins over it. Prefer adding the preset to the registry and naming it
+> in `live.arm`; live-only sizing belongs in the `live` block.
+
 ## Step 1 — List the profiles this machine has
 
 ```bash
