@@ -49,6 +49,20 @@ def delta(
     return carry * _n(d1) if right == "C" else carry * (_n(d1) - 1.0)
 
 
+def prob_itm(
+    spot: float, strike: float, years: float, vol: float, right: str, rate: float, div: float = 0.0
+) -> float | None:
+    """The model's chance the option finishes in the money: N(d2) for a call, N(-d2) for a put.
+
+    Not delta, which is N(d1) and sits on the far side of it: a 0.15-delta call is about a 13% chance
+    of finishing in the money at 30% vol over 30 days, and a 0.15-delta put about 17%. Anything asking
+    "how often does the price end past the strike" compares against this, never 1 - |delta|."""
+    if years <= 0 or vol <= 0 or spot <= 0:
+        return None
+    d2 = _d1(spot, strike, years, vol, rate, div) - vol * math.sqrt(years)
+    return _n(d2) if right == "C" else _n(-d2)
+
+
 def implied_vol(
     spot: float, strike: float, years: float, mid: float, right: str, rate: float, div: float = 0.0
 ) -> float | None:

@@ -468,7 +468,11 @@ def score_leg(
     mid = (bid + ask) / 2 if bid is not None and ask is not None and ask >= bid >= 0 else None
     iv = bs.implied_vol(spot, strike, years, mid, side, cfg["rate"], div) if mid and spot else None
     dlt = bs.delta(spot, strike, years, iv, side, cfg["rate"], div) if iv else None
-    implied = None if dlt is None else 1 - abs(dlt)
+    # A skate is judged at expiry only (`history`), so the odds it is set against are the model's
+    # chance of finishing out of the money, 1 - N(d2) -- not 1 - |delta|, which reads calls about two
+    # points too risky and puts about two points too safe at a 0.15-delta band.
+    itm = bs.prob_itm(spot, strike, years, iv, side, cfg["rate"], div) if iv else None
+    implied = None if itm is None else 1 - itm
     capital = spot if side == "C" else strike
     per = 365 / max(days, 1)
     out: dict[str, Any] = {

@@ -68,6 +68,14 @@ on which the same band, at the same strike offset, held to the close N sessions 
 - **Weeklies are tested more often.** At 89% a cycle, one monthly goes untested 89% of the time;
   five 7-day cycles in the same span, 56%.
 
+**Corrected 2026-10-19: the study's "implied" was 1 − |delta|, and that is the wrong odds.** A
+skate is judged at expiry, so the model's odds are 1 − N(d2) (call) and 1 − N(−d2) (put); delta is
+N(d1). At a 0.15-delta band, 30 days, 30% vol, a call's implied skate is about 87%, not 85%, and a
+put's about 83%. So the calls' average beat above shrinks to about nothing or reverses, and the puts'
+grows. The bucket results above are stated against delta and were not re-run (the study's scripts
+were scratch). The score has used N(d2) since this date; quote files written on 2026-10-18 and
+earlier carry the delta figure.
+
 ## What exists, and what's missing
 
 | Need | Exists | Missing |
@@ -178,7 +186,8 @@ name-sides scored, 5 to stage two, 309 legs, 8 seconds with the chains cached.
 The skate run scores its own quotes with pure functions from technicals (`skate.score`,
 `skate.best_expiries`; built with step 2), so the console reads verdicts and never re-derives them:
 
-- skate yield on the bid and on the mid; implied skate = 1 − |delta|; history minus implied;
+- skate yield on the bid and on the mid; implied skate = 1 − N(d2) for a call, 1 − N(−d2) for a
+  put (`core.bs.prob_itm`); history minus implied;
 - **hard filters** (a row that fails is not shown): open interest ≥ 100, the `LEG_BARS` spread, no
   earnings in the cycle;
 - **soft thresholds**, config, shown as a pass/fail marker and never used to hide a row: skate
