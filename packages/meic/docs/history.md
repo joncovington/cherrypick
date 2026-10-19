@@ -178,6 +178,19 @@ gross by hand came out $55k off before it was noticed — hence the net-of-fees 
   other side of the same decision, read against `live-shadow`. Both breaks are journaled for 10-16
   (`arm_retired`, `arm_added`). `test_risk_profiles.py` now refuses any follows-live arm whose
   override equals live's own value, which is the state the retired arm was in.
+- **2026-10-18 — live trades a named arm, `pm-200`, from 10-19.** The XSP pilot was given up: an
+  XSP condor's gross was too small to carry its fees. Live went back to SPX, first as a 5-wide
+  hold, then the same evening to `live.arm` `pm-200`. That arm sits in the machine registry,
+  disabled for paper: SPX, 16-delta shorts, 10-wide, a per-side stop at 2x the whole credit, and
+  no IV-rank, GEX or VIX gate. The choice came from the provisional MEIC replay over licensed
+  vendor history, whose results stay local. The `live` block narrows it to entries 13:30-14:30 ET,
+  one IC a day and a $900 cap, which keeps one 10-wide condor small beside the account. Stops are
+  back on for live and its followers (off since 10-15). `config_changed` breaks are journaled for
+  10-19 on `live-shadow` and every follower. Because `pm-200` already sets `min_iv_rank` 0,
+  `regime_gex_block_negative` false and `late_entry_bias_enabled` false, `live-minus-ivrank`,
+  `live-minus-gexblock` and `live-minus-latebias` would each have run as `live-shadow` under another
+  name. They are retired from 10-19 (`arm_retired`) and kept for their books. `live-plus-otmfloor`
+  is the one follower left that differs from live.
 
 ## The gex regime tag
 
