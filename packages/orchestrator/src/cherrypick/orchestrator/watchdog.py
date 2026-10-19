@@ -2412,7 +2412,7 @@ def _fixed_time_job_findings(jobs: dict[str, dict[str, Any]], now: datetime) -> 
             code not in (0, None)
             and not st.get("last_exit_requested")
             and not retry_pending
-            and jid not in jobspec.NOTIFIES_OWN_FAILURE
+            and not jobspec.notifies_own_failure(jid)
             and recent(st.get("last_exit_at"))
         ):
             said = (str(st.get("last_error") or "").strip().splitlines() or [""])[-1][:120]

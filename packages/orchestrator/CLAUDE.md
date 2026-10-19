@@ -153,7 +153,7 @@ ledgers copy through SQLite's online backup API and are quick_checked, a night w
 
 **This package holds no AI and no review or advisor logic; it only schedules them.**
 - The position evaluation is `packages/manage`: job `manage-eval` (10:00 ET, trading days, OFF until
-  `manage.enabled`) runs `run.py manage`, whose one job here is the snapshot (`managesnap.py`: the
+  `manage.enabled`), plus a `manage-eval-HHMM` job per `manage.also_at` time, runs `run.py manage`, whose one job here is the snapshot (`managesnap.py`: the
   `positions` read with the account's margin-or-cash kind, each underlying's market metrics with the
   broker's beta, SPY's metrics whether held or not, and each underlying's trade history, all
   read-only). The rules and verdicts are manage's; the evaluation runs by subprocess.

@@ -583,9 +583,10 @@
   },
   "manage_header": "x",
   "manage": {
-    "_comment": "Daily position-management evaluation of the REAL broker account (packages/manage, `run.py manage`). At 'at' (ET) on trading days the orchestrator reads the account read-only - priced positions and balances (the `positions` verb) plus each underlying's last price, earnings and ex-dividend dates - and packages/manage judges every trade against its ruleset (credit: take profit at 50%, stop at a loss equal to the credit, 21 DTE; debit: stop at -50%, take profit at +75%; never hold a physically-settled option into expiry; never roll a loser). The evaluation lands in data/manage/eval-<day>.json and on the console's Live page. Advice only: nothing places, closes or sizes an order. The ruleset is manage's own config, ~/.cherrypick/config/manage.json (see packages/manage/config.example.json; keep only what you change). OFF by default because it reads the live account daily; 'notify' sends one summary when any trade needs action. Re-run `install` after turning it on.",
+    "_comment": "Daily position-management evaluation of the REAL broker account (packages/manage, `run.py manage`). At 'at' (ET) on trading days the orchestrator reads the account read-only - priced positions and balances (the `positions` verb) plus each underlying's last price, earnings and ex-dividend dates - and packages/manage judges every trade against its ruleset (credit: take profit at 50%, stop at a loss equal to the credit, 21 DTE; debit: stop at -50%, take profit at +75%; never hold a physically-settled option into expiry; never roll a loser). The evaluation lands in data/manage/eval-<day>.json and on the console's Live page. Advice only: nothing places, closes or sizes an order. The ruleset is manage's own config, ~/.cherrypick/config/manage.json (see packages/manage/config.example.json; keep only what you change). OFF by default because it reads the live account daily; 'also_at' lists further ET times the same day (each its own `manage-eval-HHMM` job, rewriting the day's evaluation - one after the close leaves the day's last word); 'notify' posts the trades needing action, one line each, after every run. Re-run `install` after turning it on.",
     "enabled": false,
     "at": "10:00",
+    "also_at": [],
     "notify": true
   },
   "morning_header": "x",

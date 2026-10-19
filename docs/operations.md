@@ -98,7 +98,8 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `advisor-deep` | daily **17:00**, trading days | `scripts/advisor_checkpoint.py --slot deep` | off, needs `claude` | the post-close run, after `review-provisional`, on the strong model. It also ISSUES the next session's advice, even when the AI call failed. Catchup 300 min |
 | `advisor-<slot>` | as configured — **none by default** | `scripts/advisor_checkpoint.py --slot <s>` | off | optional light intraday checkpoints, declared in `advisor.checkpoints` |
 | `reconcile` | daily **16:30** | `run.py reconcile --scheduled` | off | worth turning on once anything trades live |
-| `manage-eval` | daily **10:00** (`manage.at`), trading days | `run.py manage` | off (`manage.enabled`) | the read-only snapshot of the real account and its evaluation, for Live → positions and Live → portfolio |
+| `manage-eval` | daily **10:00** (`manage.at`), trading days | `run.py manage` | off (`manage.enabled`) | the read-only snapshot of the real account and its evaluation, for Live → positions and Live → portfolio; posts the trades needing action |
+| `manage-eval-HHMM` | daily at each `manage.also_at` time, trading days | `run.py manage` | off (`manage.enabled`) | the same evaluation again, rewriting the day's file; catches up for an hour |
 | `backtest-fetch` | daily **18:45** (`backtest.fetch_at`), trading days | `-m cherrypick.backtest fetch` | off (`backtest.fetch`) | the licensed vendor's recent sessions into the backtest store; holds the vendor account's one session while it runs |
 | `live-positions` | every **300 s**, 09:31–16:10, trading days | `run.py live-positions` | on | broker positions against the live ledgers; asks the broker only while a live module is armed or holds a leg |
 | `live-fill-alerts` | every **15 s** while a live module is armed | `run.py live-fill-alerts` | on | one LIVE alert per filled order, ahead of the ledger's own confirmation |

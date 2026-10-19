@@ -956,12 +956,29 @@ def _run_manage(cfg) -> None:
             "WARNING", "manage", "Position evaluation failed", f"{error or 'see logs/manage.log'}"
         )
     elif settings["notify"]:
-        acting = {a: n for a, n in counts.items() if a not in ("HOLD", "SETTLES")}
-        if acting:
-            summary = ", ".join(f"{n} {a.lower().replace('_', ' ')}" for a, n in sorted(acting.items()))
-            notifier.notify(
-                "INFO", "manage", "Position evaluation", f"{summary}; see the console's Live page"
-            )
+        # Every run posts its list, the all-hold one included: the runs are at times a person
+        # chose (`manage.at`, `manage.also_at`) to read what needs managing.
+        from cherrypick.orchestrator import managepost
+
+        written = (result or {}).get("written")
+        try:
+            doc = json.loads(Path(written).read_text(encoding="utf-8")) if written else {}
+        except (OSError, json.JSONDecodeError):
+            doc = {}
+        at = timeutil.now_et(cfg.get("timezone", "America/New_York")).strftime("%H:%M")
+        if doc:
+            title, message, embed = managepost.build(doc, at)
+        else:
+            acting = {a: n for a, n in counts.items() if a not in managepost.QUIET}
+            title = "Position evaluation"
+            message = (
+                ", ".join(f"{n} {a.lower().replace('_', ' ')}" for a, n in sorted(acting.items()))
+                or "nothing needs action"
+            ) + "; see the console's Live page"
+            embed = None
+        notifier.notify(
+            "INFO", "manage", title, message, embed, session=rec["session"], inputs=[written] if doc else ()
+        )
     _emit(rec)
 
 
