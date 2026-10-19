@@ -45,6 +45,39 @@ const ACTION_LABEL: Record<string, string> = {
   HOLD: "hold",
 };
 
+// An action's chip colour: hold is blue, review amber, anything that exits or changes the trade red.
+// SETTLES stays plain: nothing to do but let it expire.
+const ACTION_CHIP: Record<string, string> = {
+  HOLD: "chip-hold",
+  REVIEW: "chip-warn",
+  CLOSE: "chip-bad",
+  TAKE_PROFIT: "chip-bad",
+  ROLL_OR_CLOSE: "chip-bad",
+  ROLL_FOR_CREDIT: "chip-bad",
+  CLOSE_LEGS: "chip-bad",
+};
+
+function ActionChip({ action }: { action: string }) {
+  return <span className={`chip ${ACTION_CHIP[action] ?? ""}`}>{ACTION_LABEL[action] ?? action}</span>;
+}
+
+/** An earnings trade's chip: blue while it holds for the call, red once the report is out and it closes. */
+function EarningsChip({ et, label }: { et: NonNullable<ManageTrade["earningsTrade"]>; label: string }) {
+  const report = `${et.report}${et.timeOfDay ? ` ${et.timeOfDay}` : ""}`;
+  return (
+    <span
+      className={`chip ${et.passed ? "chip-bad" : "chip-hold"}`}
+      title={
+        et.passed
+          ? `earnings trade: the ${report} report is out, close it`
+          : `earnings trade: holding through the ${report} report, close after the call`
+      }
+    >
+      {label}
+    </span>
+  );
+}
+
 function tone(v: number | null | undefined): string {
   if (v === null || v === undefined) return "muted";
   return v >= 0 ? "pnl-pos" : "pnl-neg";
@@ -160,7 +193,7 @@ function TradeDetail({ t }: { t: ManageTrade }) {
         {et && (
           <DetailCard
             title="earnings trade"
-            aside={<span className={`chip ${et.passed ? "pf-out" : ""}`}>{et.passed ? "report out: close" : "holding for the call"}</span>}
+            aside={<EarningsChip et={et} label={et.passed ? "report out: close" : "holding for the call"} />}
           >
             <Kv
               rows={[
@@ -174,7 +207,7 @@ function TradeDetail({ t }: { t: ManageTrade }) {
                 <ul className="md-rules">
                   {t.heldForEarnings.map((f, i) => (
                     <li key={i}>
-                      <span className="chip">{ACTION_LABEL[f.action] ?? f.action}</span> <code>{f.rule}</code>
+                      <ActionChip action={f.action} /> <code>{f.rule}</code>
                     </li>
                   ))}
                 </ul>
@@ -255,7 +288,7 @@ function TradeDetail({ t }: { t: ManageTrade }) {
               {t.fired.map((f, i) => (
                 <li key={i}>
                   <span className="md-rule-head">
-                    <span className="chip">{ACTION_LABEL[f.action] ?? f.action}</span> <code>{f.rule}</code>
+                    <ActionChip action={f.action} /> <code>{f.rule}</code>
                     {f.confidence !== null ? <span className="muted"> {f.confidence}</span> : null}
                   </span>
                   <span className="md-sub">
@@ -420,9 +453,15 @@ function TradesCard({
               </button>
               {t.shape ? <span className="muted"> · {t.shape}</span> : null}
               {t.intent ? <span className="muted"> · {t.intent}</span> : null}
+              {t.earningsTrade ? (
+                <>
+                  {" "}
+                  <EarningsChip et={t.earningsTrade} label="earnings" />
+                </>
+              ) : null}
             </td>
             <td>
-              <span className="chip">{ACTION_LABEL[t.action] ?? t.action}</span>
+              <ActionChip action={t.action} />
             </td>
             <td style={RIGHT}>{t.confidence ?? "—"}</td>
             <td>{t.kind ?? "—"}</td>

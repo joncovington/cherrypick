@@ -256,6 +256,13 @@ a.chip:hover {
   border-color: color-mix(in srgb, var(--chart-special-2) 45%, transparent);
 }
 
+/* A manage verdict of hold: the accent blue, so a quiet row reads apart from review (amber) and an
+   exit (red). */
+.chip-hold {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
 .chip-warn {
   color: var(--warn);
   border-color: color-mix(in srgb, var(--warn) 40%, transparent);
