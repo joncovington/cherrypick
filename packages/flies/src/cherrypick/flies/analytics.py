@@ -1680,7 +1680,7 @@ ABORT_MIN_LIVE_ENTRIES = 30
 ABORT_COMPLETION_GAP = 0.15
 
 
-def live_vs_paper(live_conn, paper_conn, arm: str = "gex") -> dict:
+def live_vs_paper(live_conn, paper_conn, arm: str = "control") -> dict:
     """Live completion/latency/pricing vs CONTEMPORANEOUS paper for the same arm.
 
     "Contemporaneous" is load-bearing: paper is restricted to exactly the sessions the live

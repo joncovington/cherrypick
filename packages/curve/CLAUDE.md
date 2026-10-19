@@ -21,9 +21,10 @@ Suite-wide context: the root [documentation index](../../docs/README.md).
 - **`spread_width` 1.0** (was 5.0 until 2026-08-27). A credit spread's credit cannot exceed the
   short's premium, so `credit / width` is capped at `short_mid / width` whatever the wing costs; at
   5-wide the cap sat barely above the 15% floor. At 1-wide the short pays ~17% of width.
-  `tests/test_structure_coherence.py` pins width against the percentage floor off the shipped
-  config, so a pair that cannot coexist fails at declaration, not after a month of silent refusals.
-  Since 2026-10-06 the shipped config declares the net floor instead, which that test does not check.
+  `tests/test_structure_coherence.py` pins width against the shipped config's credit floor, so a
+  pair that cannot coexist fails at declaration, not after a month of silent refusals. It checks
+  both floors: the percentage one, and since 2026-10-06 the net floor the shipped config declares
+  (a free-wing net ceiling against `min_net_credit_to_max_loss`, with its own case shown to fail).
 - **`max_leg_spread_pct` 0.30** (was 0.25): the short itself quotes 0.27–0.28 wide on VXX.
 - **A wing's spread is money, not a ratio.** The long leg is refused only when wide in percent AND
   in dollars (`max_wing_spread_abs`) — a zero bid makes `spread_pct` 2.0 whatever the option costs.

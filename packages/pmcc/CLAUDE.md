@@ -310,8 +310,8 @@ ruff check . && ruff format .                      # line-length 110
 ```
 
 Config: `config.example.json` → `config.json` (git-ignored) or `~/.cherrypick/config/pmcc.json`; the
-example is the design document — read its `_note` keys first. The shipped example lists the five
-ETFs; SMH and the stocks are added per machine (`symbols` plus `symbol_from`).
+example is the design document — read its `_note` keys first. It ships the full roster; a
+symbol added later joins on its `symbol_from` date.
 
 ## Guardrails and couplings
 

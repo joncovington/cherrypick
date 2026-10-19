@@ -60,7 +60,7 @@ Every command below is run from inside `packages/meic`. On macOS/Linux, if `pyth
 ```bash
 # 2. Install dependencies -- packages/core FIRST (it's not on PyPI, so pip can only resolve
 # "cherrypick-core" from what's already installed), then this package's own (tastytrade, keyring,
-# pytz, flask from pyproject.toml). Developers can run scripts/dev-install.ps1 (or .sh) from the
+# pytz from pyproject.toml). Developers can run scripts/dev-install.ps1 (or .sh) from the
 # repo root instead, which does both steps for every package at once.
 pip install -e ../core
 pip install -e .

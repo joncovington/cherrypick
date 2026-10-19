@@ -158,11 +158,10 @@ close, and it is outside `OVERNIGHT`. The plan as written before the build follo
   `sizing.per_contract_max_loss` with max loss = debit × 100, the three report lists,
   `_REJECT_REASON_MAP`, both configs including the deployed `strategy_defaults`), plus the docs
   tables.
-- First fix `management.unrealized_pnl`'s second multiplication by quantity (`management.py:204`):
-  a 1-2-1 fly is the first structure with a leg ratio above 1 on that path. **Not done as of
-  2026-10-18.** `unrealized_pnl` still multiplies by `quantity`, but the harness stores
+- First fix `management.unrealized_pnl`'s second multiplication by quantity: a 1-2-1 fly is the
+  first structure with a leg ratio above 1 on that path. **Fixed 2026-10-19.** The harness stores
   `entry_credit` and every `legs_json` leg quantity already scaled by the position quantity
-  (`strat_test_harness._scaled_legs`), so a mark on a position of more than one contract is
-  overstated by that factor. The fly's own take-profit check is unaffected because it divides by
-  quantity. It binds on no row so far, since the shipped `max_contracts_per_leg` is 1.
+  (`strat_test_harness._scaled_legs`), so the mark is now `cmd_run_closes`'s own `x 100`, with no
+  second multiplication (`tests/test_unrealized_pnl_quantity.py`, shown to fail on the old code).
+  No stored row was affected: every earnings trade recorded to that date was one contract.
 - Lands at the next declared measurement boundary, with a `measurement_breaks` row.

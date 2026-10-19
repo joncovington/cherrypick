@@ -417,9 +417,10 @@ def test_the_unrealized_mark_uses_the_same_arithmetic_as_the_realised_close():
 
 
 def test_unrealized_pnl_counts_every_contract():
-    """Per share x 100 x quantity. The quantity was missing until 2026-09-25, so a two-contract
-    position would have been marked and closed at half its P&L."""
-    assert management.unrealized_pnl({"entry_credit": 5.0, "quantity": 2}, 3.5) == pytest.approx(300.0)
+    """`entry_credit` and the exit debit are stored as position totals (the harness's sizing
+    convention), so two contracts at 5.00 credit and 3.50 to close are 10.00 and 7.00, and the mark
+    is x 100 once. Multiplying by quantity again marked such a position at twice its P&L."""
+    assert management.unrealized_pnl({"entry_credit": 10.0, "quantity": 2}, 7.0) == pytest.approx(300.0)
 
 
 # --------------------------------------------------------------------------- the expiry close
