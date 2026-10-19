@@ -147,6 +147,35 @@ def test_a_short_history_is_left_out():
     assert _judge(fund=True, days=200)[1] == "under a year of history"
 
 
+def test_just_over_a_year_keeps_the_short_expiries_and_drops_only_the_long_ones():
+    # 300 bars: the one-week expiry has ~280 windows to judge it on, the nine-week one ~200.
+    judged, why = _judge(fund=True, earnings=None, days=300)
+    assert why is None
+    kept = sorted({r["days"] for r in judged["rows"]})
+    assert kept[0] <= 7 and kept[-1] < 63
+    full, _ = _judge(fund=True, earnings=None)
+    assert len({r["expiry"] for r in judged["rows"]}) < len({r["expiry"] for r in full["rows"]})
+
+
+def test_every_type_that_never_reports_is_exempt_and_a_company_is_not():
+    for kind in ("Exchange Traded Fund", "Exchange Traded Commodity", "Fund", "Index", "Structured Product"):
+        assert kind in skate.FUND_TYPES  # IAU is an Exchange Traded Commodity
+    for kind in ("Stock", "Depository Receipt", "Preferred Shares", "Units", None):
+        assert kind not in skate.FUND_TYPES
+
+
+def test_the_consoles_fund_types_are_ones_skate_exempts_too():
+    """Driven off the console reader's own declaration, so the two cannot drift apart unseen."""
+    import re
+    from pathlib import Path
+
+    ts = Path(__file__).resolve().parents[2] / "console" / "server" / "src" / "readers" / "screeners.ts"
+    declared = re.search(r"const FUND_TYPES = new Set\(\[([^\]]*)\]\)", ts.read_text(encoding="utf-8"))
+    assert declared, "screeners.ts no longer declares FUND_TYPES"
+    kinds = set(re.findall(r'"([^"]+)"', declared.group(1)))
+    assert kinds and kinds <= set(skate.FUND_TYPES)
+
+
 def test_every_row_carries_both_bands_and_says_when_they_match():
     judged, _ = _judge(fund=True, earnings=None)
     short = next(r for r in judged["rows"] if r["days"] <= 14)

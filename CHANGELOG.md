@@ -19,6 +19,11 @@ beyond the latest release.
   carries the broker's own greeks for each option leg held (cache first, then the feed through the
   new read-only `get_greeks`), and each evaluation's `portfolio.broker_check` sums both models over
   the same legs and betas, with the gap overall and by underlying.
+- **Fixed: skate left out commodity trusts and names just over a year old.** IAU (an "Exchange
+  Traded Commodity") was taken for a stock with no report date; the fund types are now one declared
+  set, `securities.NO_EARNINGS`, checked against the console's. And one long expiry short of history
+  dropped the whole name; now only that expiry goes. `setup_read` also found no monthly when Good
+  Friday moved it to Thursday the 14th (next in 2033).
 
 ## v0.11.2 — 2026-10-19 — review follow-ups
 The decisions the documentation review (v0.11.1) left open. One fixes how earnings marks and closes

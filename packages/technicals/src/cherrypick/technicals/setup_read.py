@@ -138,17 +138,10 @@ def regime(iv_rank: float | None, iv_pct: float | None, cfg: dict) -> str:
 
 def cycle_monthly(day: date) -> tuple[str, int] | None:
     """The user's cycle monthly from `day`: (expiry, calendar days)."""
-    months = []
-    for k in range(1, 4):
-        y, m = day.year + (day.month - 1 + k) // 12, (day.month - 1 + k) % 12 + 1
-        first = date(y, m, 1)
-        months.append(first)
     exps = []
-    for first in [date(day.year, day.month, 1), *months]:
-        for d in range(15, 22):
-            cand = first.replace(day=d)
-            if skate.is_monthly(cand):
-                exps.append(cand.isoformat())
+    for k in range(0, 4):
+        y, m = day.year + (day.month - 1 + k) // 12, (day.month - 1 + k) % 12 + 1
+        exps.append(skate.monthly_expiry(y, m).isoformat())
     exp = skate.cycle_expiry(sorted(set(exps)), day)
     return (exp, (date.fromisoformat(exp) - day).days) if exp else None
 

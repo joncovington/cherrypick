@@ -46,7 +46,7 @@ from . import adjust, earnings_calendar, liquidity, paths, securities, store
 
 SIDES = ("C", "P")
 BANDS = ("fixed", "by_expiry")
-FUND_TYPES = {securities.FUND, securities.STRUCTURED}
+FUND_TYPES = securities.NO_EARNINGS
 LEVERAGED_FUNDS = Path(__file__).with_name("leveraged_funds.json")
 
 DEFAULTS: dict[str, Any] = {
@@ -225,6 +225,10 @@ def judge(
     since = cfg["history_from"]
     recent = (day - timedelta(days=round(365.25 * cfg["recent_years"]))).isoformat()
     rows = []
+    # A longer expiry has fewer windows to judge it on, so a name with just over a year of bars can
+    # pass the short expiries and fall short on the long ones. Only those are dropped; the name is
+    # dropped only when no expiry has enough.
+    short_history = False
     for exp in expiries(day, cfg["max_days"], cfg["min_sessions"]):
         if not fund and earnings is not None and earnings <= exp:
             continue  # this expiry spans the report; shorter ones may not
@@ -240,8 +244,11 @@ def judge(
                 series = band_series(closes, srange, h, side)
                 hist = history(dates, closes, series, n, since, recent, grid, side)
                 if hist["n"] < cfg["min_history"]:
-                    return None, "under a year of history"
+                    break
                 bands[name] = {"haircut": h, "band": round(series[-1], 4), **hist}  # type: ignore[arg-type]
+            if len(bands) < len(BANDS):
+                short_history = True
+                continue
             rows.append(
                 {
                     "side": side,
@@ -254,7 +261,7 @@ def judge(
                 }
             )
     if not rows:
-        return None, "earnings before every expiry"
+        return None, "under a year of history" if short_history else "earnings before every expiry"
     return {
         "spot": closes[-1],
         "fund": fund,
@@ -378,11 +385,16 @@ def latest_doc(day: str, root: Path | None = None) -> dict | None:
     return json.loads(files[-1].read_text(encoding="utf-8")) if files else None
 
 
-def is_monthly(d: date) -> bool:
-    """The standard monthly: the third Friday, or the trading day before it when that is a holiday."""
-    first = d.replace(day=1)
+def monthly_expiry(year: int, month: int) -> date:
+    """The standard monthly: the third Friday, or the trading day before it when that is a holiday
+    (Good Friday on the 15th puts it on Thursday the 14th)."""
+    first = date(year, month, 1)
     third = first + timedelta(days=(4 - first.weekday()) % 7 + 14)
-    return d == (third if cal.is_trading_day(third) else cal.previous_trading_day(third))
+    return third if cal.is_trading_day(third) else cal.previous_trading_day(third)
+
+
+def is_monthly(d: date) -> bool:
+    return d == monthly_expiry(d.year, d.month)
 
 
 def cycle_expiry(expiries: list[str], today: date) -> str | None:
