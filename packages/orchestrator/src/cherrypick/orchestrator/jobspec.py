@@ -73,6 +73,9 @@ CATCHUP_MINUTES = {
     # The daily position evaluation judges the session's marks; caught up any time before the close it
     # still describes today's positions, after the close it would judge stale ones.
     "manage-eval": 5 * 60,
+    # The day's further runs (`manage.also_at`) are refreshes: a missed one is overtaken by the next,
+    # so it catches up for an hour and no more.
+    "manage-eval-also": 60,
     # The market files: the evening fetch is good until the pack builds at 08:30, and the pre-pack
     # retry is worth nothing after it.
     # The end-of-day landing reads the local Dolt clones; a late one is the same landing, and the
@@ -241,6 +244,12 @@ NOTIFIES_OWN_FAILURE = frozenset(
         "reconcile",  # its scheduled run pushes every non-FLAT verdict; the exit code is the verdict
     }
 )
+
+
+def notifies_own_failure(job_id: str) -> bool:
+    """`NOTIFIES_OWN_FAILURE`, plus the `manage-eval-HHMM` runs named by config (`manage.also_at`)."""
+    return job_id in NOTIFIES_OWN_FAILURE or job_id.startswith("manage-eval-")
+
 
 # Fixed-time jobs that may run again after a failure, inside their catch-up window: fetchers that
 # are safe to repeat (each writes per-day files, or replaces the day it already wrote). The vendor
@@ -1511,6 +1520,21 @@ def derive_jobs(
             enabled_reason="" if mg["enabled"] else "disabled in config (manage)",
         ),
     )
+    for at in mg["also_at"]:
+        job_id = f"manage-eval-{at.replace(':', '')}"
+        add(
+            job_id,
+            lambda job_id=job_id, at=at: JobSpec(
+                id=job_id,
+                argv=_run_py(pythonw, launcher, "manage"),
+                kind=KIND_DAILY,
+                at_et=at,
+                catchup_minutes=CATCHUP_MINUTES["manage-eval-also"],
+                trading_days_only=True,
+                enabled=mg["enabled"],
+                enabled_reason="" if mg["enabled"] else "disabled in config (manage)",
+            ),
+        )
     add(
         "morning-factpack",
         lambda: JobSpec(
