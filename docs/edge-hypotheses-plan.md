@@ -95,6 +95,55 @@ Each gets a provisional look now, and a re-test once validation unlocks.
   evidence for them needs fresh sessions, those after 2026-10-12. Every other spec keeps its holdout
   clean.
 
+### Declared pass tests for the provisional looks (2026-10-18, before any look ran)
+
+These apply to the looks and, unchanged, to their re-tests. They're stricter than each item's
+"build only if", and a result that misses them closes the item.
+
+**Common to all:**
+- **Halves:** H1 is 2022-05-16 to 2023-12-31; H2 is 2024-01-01 to 2025-06-30.
+- **Intervals:** 95% intervals come from a day-level bootstrap (2,000 resamples, fixed seed).
+- **Fills:** credit at mid; at mid − $0.10 (his order, assumed to fill: optimistic); and a quarter
+  and a half of the way from mid to natural (q25, half). **q25 is the basis for every pass.**
+- **Costs:** `core.fees`' open fee, plus $5 per ITM leg at settlement.
+- **Entry minute:** the first fully quoted one-minute sample in the entry window.
+
+**The tests:**
+- **9, sandwich.** Shorts at the strikes nearest spot ± 5 and 5-wide wings, entered 13:45–14:00.
+  Four filter settings: none; VIX < 24; mid credit ≥ $2.50 (reward to risk ≥ 1); both.
+  - *Passes if* at q25 the setting's mean net is positive in at least three of 2022, 2023, 2024 and
+    2025 H1, **and** its overall interval's lower bound is above zero.
+  - A filter earns its place only if it raises the q25 mean over the unfiltered rule in both halves.
+- **10, flatfly.** Entered 10:00–10:05. The prior-close-centred fly is paired with the spot-centred
+  fly from the same minute. Wings 10 and 20, both declared.
+  - *Passes if* at q25 the paired difference (prior close − spot) has its interval's lower bound
+    above zero in both halves, **and** the prior-close fly's mean net is positive in at least three
+    of the four years.
+  - Days the prior-close centre isn't quoted are counted, not filled.
+- **12, GEX reads.** Signal only, from the store's profile through `core.gex`, by gamma and by open
+  interest:
+  - *(a) Pin*, at 10:00, 12:00 and 14:00. Measure whether the close moves from spot toward the
+    largest-exposure strike. *Passes if* the interval's lower bound on the hit rate is above 50% in
+    both halves, for the strike above spot and for the strike below spot taken separately. That
+    rules out drift.
+  - *(b) Barrier*, at 10:00. Count touches of the largest call wall above spot and the largest put
+    wall below it, against the touches expected at the same distance in straddles, taken from the
+    same half's days. *Passes if* observed ÷ expected is ≤ 0.85 with the interval's upper bound
+    below 1, for both the call and the put wall of one level type, in both halves.
+  - *(c) Regime*, at 10:00. Compare the range to the close, in straddles, on days of negative
+    against positive net GEX. *Passes if* the interval of the difference (negative − positive) is
+    above zero in both halves.
+- **13, screener.** Dolt end of day. Universe: 40 fixed liquid names. Expiry: the shortest listed at
+  10–17 DTE; Dolt lists nothing shorter, so the video's 7-DTE version needs single-stock vendor
+  chains. Shorts ≥ 2% OTM; spreads one or two listed strikes wide; iron condors paired at equal
+  width. Earnings spans are excluded, and so is any expiry past the design end. Held to expiry; the
+  40% take-profit isn't modelled.
+  - *(a) Passes if* the screened set's q25 mean net has its interval above zero in both halves,
+    **and** so does its excess over same-type, same-delta-bin unscreened trades. The bins are 0.05
+    of delta, weighted by screened counts.
+  - *(b) Passes if*, for one ~0.20-delta spread of each type per name and day, sell-off days (SPY
+    down ≥ 3% over 5 sessions) have their q25 interval above zero in both halves.
+
 ## The hypotheses, in priority order
 
 Priority weighs two things: how plausible the edge is, and how cheaply our existing data can answer
