@@ -26,5 +26,10 @@
     "soft": {"skate": 0.84, "skate_recent": 0.80, "yield": 0.06},
     "stage_two": 60,
     "month_days": 35
+  },
+  "setup_read": {
+    "_comment": "The read behind each setups-watchlist row (setup_read.py): the volatility regime reads IV rank AND IV percentile -- rich when both are at or above 'rich', cheap when both are under 'cheap', middling otherwise -- and picks the structure lean with the direction and the earnings calendar.",
+    "cheap": 33.0,
+    "rich": 50.0
   }
 }

@@ -33,6 +33,7 @@ from . import (
     levels,
     liquidity,
     paths,
+    setup_read,
     setups,
     signals,
     store,
@@ -380,6 +381,7 @@ def write_all(session: str | None = None, conn=None) -> dict:
     own = conn is None
     conn = conn or store.connect()
     written, sessions, rows = [], set(), []
+    spans: dict[str, list[int]] = {}  # every drawn trade's sessions held, by setup, for the reads
     spy = {b.date: b.close for b in store.adjusted_bars(conn, "SPY")}
     spy_above = hypotheses.spy_regime(conn)
     weekly, label_day = tradable.weeklies()
@@ -394,6 +396,8 @@ def write_all(session: str | None = None, conn=None) -> dict:
         written.append({"symbol": sym, "session": doc["session"], "vendor": doc["vendor"] is not None})
         sessions.add(doc["session"])
         rows.extend(watchlist.rows(doc, spy, weekly if label_day else None))
+        for key, held in setup_read.hold_spans(doc).items():
+            spans.setdefault(key, []).extend(held)
     if own:
         conn.close()
     index = {
@@ -403,6 +407,14 @@ def write_all(session: str | None = None, conn=None) -> dict:
         "symbols": written,
     }
     _write(charts_dir() / "index.json", index)
+    # The read behind each row (why it fired, its record, direction, volatility, levels, a lean). A
+    # failure here costs the reads, never the watchlist.
+    try:
+        setup_read.annotate(rows, index["session"], setup_read.medians(spans))
+    except Exception as exc:  # noqa: BLE001 -- the table still lands; the console shows no read
+        for r in rows:
+            r.pop("read", None)
+        print(f"setup reads skipped: {type(exc).__name__}: {exc}"[:300])
     watchlist.write(charts_dir(), rows, index["session"], label_day)
     return {
         "charts": len(written),
