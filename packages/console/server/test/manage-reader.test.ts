@@ -21,8 +21,8 @@ function evalDoc(session: string): Record<string, unknown> {
     session,
     snapshot_generated_at: `${session}T10:00:02-0400`,
     ok: true,
-    ruleset: "zhang-2026-10",
-    rules: { ruleset: "zhang-2026-10" },
+    ruleset: "manage-2026-10",
+    rules: { ruleset: "manage-2026-10" },
     rule_warnings: [],
     accounts: [
       {

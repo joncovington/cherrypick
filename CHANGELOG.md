@@ -11,6 +11,21 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Fixed: earnings marked a multi-contract position at its P&L times its quantity.**
+  `management.unrealized_pnl` multiplied by quantity, but `entry_credit` and the legs are already
+  stored as position totals. That overstated a mark and a managed close by the contract count.
+  Every trade recorded so far is one contract, so no stored number changes.
+- **Changed: pmcc's example config ships the full roster.** XSP, QQQ, GLD, IWM, SLV, SMH and the
+  stocks AMZN, TSLA, AMD, NVDA and PLTR, with each symbol's settlement, dividend, earnings and
+  window entries, and `max_positions` 12. An install that copies the example now trades what the
+  docs describe.
+- **Changed: manage's default ruleset is named `manage-2026-10`** (was `zhang-2026-10`). It is only
+  a label on each evaluation; stored evaluations keep the old one.
+- **Removed: `flask` from MEIC's dependencies.** Nothing has imported it since the REST sidecar was
+  removed.
+- **Fixed: flies' `live_vs_paper` defaulted to the retired `gex` arm.** It now defaults to
+  `control`; every caller already passed its arm, so no reading changes.
+
 ## v0.11.1 — 2026-10-19 — documentation corrections
 A review of every document in the repo against the code, which v0.11.0 should have carried. About
 130 docs changed; no behaviour did. What matters if you act on the docs:

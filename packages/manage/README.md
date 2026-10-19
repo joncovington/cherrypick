@@ -85,7 +85,7 @@ The verdict is `reject` for a debit roll, an unlimited loss, or a naked put roll
 changes from diagonal to broken-wing butterfly, the shorts move into the long's expiry, and what it can
 lose grows.
 
-## The default ruleset (`zhang-2026-10`)
+## The default ruleset (`manage-2026-10`)
 
 Built on 2026-10-13 from an options-education vendor's webinar library (2022–2026), following the
 presenter who cuts losers rather than the one who repairs them, and checked against outside research.

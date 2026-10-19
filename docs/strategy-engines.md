@@ -137,9 +137,8 @@ physical settlement are modelled; ex-dividend weeks are skipped. Paper-only and 
 
 ## PMCC — deep-ITM calls with a short call against them (EXPERIMENTAL, off by default)
 
-On XSP, QQQ, GLD, IWM, SLV, SMH and five single stocks (the shipped example lists the five ETFs; SMH
-and the stocks are added per machine): the `shield` and `shield_hold` arms hold a ~1-year
-0.90–0.95-delta call and sell a weekly 0.70-delta call against it, rolled each week until the long
+On XSP, QQQ, GLD, IWM, SLV, SMH and five single stocks (AMZN, TSLA, AMD, NVDA, PLTR): the
+`shield` and `shield_hold` arms hold a ~1-year 0.88–0.92-delta call and sell a weekly 0.70-delta call against it, rolled each week until the long
 reaches 45 DTE; the original 21-DTE `control` is retired. Shorts spanning an earnings or ex-dividend
 date are refused. Early assignment is measured, never modelled —
 ex-dividend spans are refused and near-zero-extrinsic marks flagged — so the paper result is an explicit

@@ -108,8 +108,8 @@ suite once collected $4.00 of credit against $4.96 of fees.
   scores profit targets, stops and exit timings over the recorded path — validated against the real
   books to the cent. Paper-only and credential-free. See [packages/calendars](packages/calendars).
 - **PMCC** — ⚠️ **EXPERIMENTAL, off by default.** A deep-ITM call held with a shorter call sold
-  against it (the shipped example lists XSP, QQQ, GLD, IWM and SLV; SMH and single stocks are added
-  per machine). The `shield` and `shield_hold` arms hold a ~1-year 0.90–0.95-delta long and sell a
+  against it, on XSP, QQQ, GLD, IWM, SLV, SMH and the stocks AMZN, TSLA, AMD, NVDA and PLTR.
+  The `shield` and `shield_hold` arms hold a ~1-year 0.88–0.92-delta long and sell a
   weekly 0.70-delta call against it, rolled each week (`shield` also rolls early); the original
   21-DTE `control` is retired and off in the example. A short spanning an earnings or ex-dividend
   date is refused; early assignment is measured, never modelled, so paper results are an explicit

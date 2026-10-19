@@ -33,7 +33,7 @@ cd cherrypick/packages/meic
 ```bash
 pip install -e ../core              # the shared cherrypick.core library — install this first, or
                                      # every import cherrypick.core... fails (calendar, fee lookups)
-pip install -e .                    # installs tastytrade, keyring, pytz, flask (from pyproject.toml)
+pip install -e .                    # installs tastytrade, keyring, pytz (from pyproject.toml)
 pip install pytest pytest-asyncio   # optional — only needed to run the test suite
 ```
 

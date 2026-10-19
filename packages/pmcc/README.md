@@ -35,5 +35,4 @@ python -m pytest
 
 Config: the machine's copy is `~/.cherrypick/config/pmcc.json`; a git-ignored in-repo `config.json`
 is still read, and with neither the module runs off `config.example.json`. The example's `_note`
-keys are the design document. The shipped example lists the five ETFs; SMH and the stocks are
-added per machine (`symbols` plus `symbol_from`).
+keys are the design document, and it ships the full roster.

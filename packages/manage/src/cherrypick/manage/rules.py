@@ -1,11 +1,11 @@
 """The management ruleset: the shipped default and the operator's overrides.
 
-The default is the vendor's Zhang-style rule set as digested on 2026-10-13 (credit trades take profit
-at 50% of the credit, stop when the loss equals the credit, close at 21 DTE; debit trades stop at -50%
-and take profit at +75%; never roll a loser; never hold a physically-settled option into expiry). The
-evidence behind each number, and where outside research disagrees, is in this package's README; each
-rule's `confidence` is how much that evidence supports it, and is what an evaluation reports beside
-the rule's verdict.
+The default is the rule set digested from the vendor's education library on 2026-10-13 (credit
+trades take profit at 50% of the credit, stop when the loss equals the credit, close at 21 DTE; debit
+trades stop at -50% and take profit at +75%; never roll a loser; never hold a physically-settled
+option into expiry). The evidence behind each number, and where outside research disagrees, is in
+this package's README; each rule's `confidence` is how much that evidence supports it, and is what an
+evaluation reports beside the rule's verdict.
 
 Overrides live in ``~/.cherrypick/config/manage.json`` and are merged key by key over the default, so
 a file holding one changed threshold keeps every other rule. A key the default does not have is
@@ -22,7 +22,7 @@ from typing import Any
 
 from cherrypick.core import home as _home
 
-RULESET_NAME = "zhang-2026-10"
+RULESET_NAME = "manage-2026-10"
 
 DEFAULT_RULES: dict[str, Any] = {
     "ruleset": RULESET_NAME,
@@ -59,7 +59,7 @@ DEFAULT_RULES: dict[str, Any] = {
         # Thesis rule: a short strike is in the money and what is left to win, against what is left to
         # lose, is below the entry standard (1/3 of width = 0.5 reward per unit of risk).
         "breached": {"enabled": True, "min_reward_to_risk": 0.50, "confidence": 70},
-        # Off by default (Zhang holds credit trades through earnings); on = close before the report.
+        # Off by default (the rule set holds credit trades through earnings); on = close before it.
         "close_before_earnings": {"enabled": False, "confidence": 55},
     },
     "debit": {
