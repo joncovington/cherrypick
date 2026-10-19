@@ -1,6 +1,8 @@
 # Large options orders as a signal-board method — plan
 
-*Drafted 2026-10-17. A build plan and a declared test, nothing built yet.*
+*Drafted 2026-10-17. A build plan and a declared test. Step 1, the ThetaData flow fetch
+(`backtest fetch-flow`, `flow.py`, `flowfetch.py`), was built the same evening; the declared test and
+the broker's nightly feed are not yet run or built.*
 
 ## The question
 

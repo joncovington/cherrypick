@@ -1,8 +1,9 @@
 # cherrypick-core
 
 Shared core library for the **cherrypick** trading suite. Every other Python package in this monorepo
-depends on it — the strategy modules (meic, earnings, flies, bwb, calendars, pmcc, curve), the
-streamer, gex, the orchestrator, review, advisor, overview, technicals and desk — so the auth,
+depends on it — the strategy modules (meic, earnings, flies, bwb, calendars, pmcc, curve,
+contango), the streamer, gex, the orchestrator, review, advisor, overview, technicals, manage,
+backtest and desk — so the auth,
 market-data, fee, risk, calendar, GEX, ledger and reporting concerns are implemented **once**.
 
 > Distribution name is `cherrypick-core`; it imports as the **`cherrypick.core`** namespace package,
@@ -23,41 +24,53 @@ market-data, fee, risk, calendar, GEX, ledger and reporting concerns are impleme
 ```
 cherrypick/core/
   advice/          bounded, expiring, deterministically validated paper advice
+  analysis/        per-arm strategy analysis (streaks, drawdowns, stress, capital)
   auth/            keyring credentials (CredentialStore) + lazy OAuth session (SessionManager)
   broker/          account resolution, option-chain helpers, order build/submit
   calendar/        trading-day / expiration calendar
   clock/           what "now" means, in Eastern, everywhere
+  compare/         every arm beside its control (the console's Compare bridge)
   config/          reading a module config key that has more than one accepted spelling
   db/              SQLite connection + additive migrations
   dxfeed/          on-demand DXLink collectors (quotes/greeks/OI/volume; session injected)
   entry/           shared entry-permission primitives (cadence, leg-sign rule)
+  events/          scheduled market releases for a session (local files only)
+  excursions/      one closed position's mark path, best and worst
   execution/       the one live broker adapter and the fill primitives every live loop shares
   fees/            tastytrade cost model (one home for the fee schedule)
   gex/             gamma-exposure engine
   impliedvar/      model-free implied variance (Cboe's VIX arithmetic, any expiration)
   ledgerstore/     ledger mechanics calendars and pmcc share
   live/            the per-day arm record and dead-man's switch a live loop runs under
+  livepositions/   broker positions against the live ledgers; the cross-loop opposite-leg rule
   looplock/        single-instance guards for the suite's loops
   marketregime/    daily-bar market regime (derived, never recorded)
   metrics/         the shared calibration metric bundle
   openingrange/    the 09:30-10:00 ET opening range (derived, never recorded)
+  portfolio/       one arm per module held together (correlation, drawdown benefit)
+  power/           is this machine on battery
   profiles/        named arm registry + merge engine + calibration comparison
+  quotehistory/    the read side of gex's recorded chain quotes
   rangefeatures/   the declared daily range-features study (docs/range-features.md)
   regime/          joining a timestamp against the recorded market regime
   regimecuts/      the regime-cuts artifact contract
   risk/            account-level risk primitives (fail-closed deploy cap)
   settlement/      American physical-settlement arithmetic
   spreadbook/      ledger writes calendars, pmcc and curve share
+  stats/           arm-vs-control statistics, sessions as the unit
   streamcache/     the shared stream-cache schema + SQLite helpers
   streamer/        the persistent DXLink option-chain streaming engine (packages/streamer runs it)
   streamrequests/  the consumer side of the streamer's subscription registry
   structures/      shared option-structure arithmetic
+  trace/           one closed position's entry and management trace
   viz/             money formatting and the section contract
+  bs.py            Black-Scholes-Merton price, delta and implied vol (a model, never a price)
   home.py          the one resolver for ~/.cherrypick
   jsonio.py        the one atomic JSON writer
   ledgers.py       per-schema ledger readers: the one home for net/cost/capital/session rules
   logs.py          one log-line format for every module
   redact.py        account numbers masked to ****1234 before they reach a log
+  vendor.py        the one switch every vendor-fed job and reader follows
 ```
 
 ## How consumers use it

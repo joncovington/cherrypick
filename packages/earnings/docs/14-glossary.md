@@ -20,9 +20,9 @@ stock has actually delivered historically — the central "are these options ove
 
 **Winrate**
 Historical percentage of past earnings where the option-implied move (ATM straddle mid) exceeded
-the actual realized move, over `winrate_lookback_quarters` (default 8). Computed by
+the actual realized move, over `winrate_lookback_quarters` (12 in the shipped config). Computed by
 `scanner.compute_winrate()`. Always check the accompanying `sample_size` — Dolt's historical
-option-chain coverage only reaches back to roughly late 2024, so a "last 8 quarters" request can
+option-chain coverage only reaches back to roughly late 2024, so a "last 12 quarters" request can
 come back with a much smaller real sample, especially for less-liquid names.
 
 **Expected Move**
@@ -31,7 +31,8 @@ The options-implied move around earnings, in percent (`min_expected_move_pct`) o
 
 **Skew** (`min_skew_abs`, `skew_delta_target`)
 A 25-delta risk reversal — the IV difference between a delta-symmetric out-of-the-money call and
-put — used by `directional_credit_spread`, `broken_wing_butterfly`, to pick
+put — used by `directional_credit_spread`, `broken_wing_butterfly` and (read the other way, over
+ATM IV, as `rr25`) `expected_move_butterfly` to pick
 which side (calls or puts) to sell/build around. Compared at a fixed delta target, not at the
 expected-move strikes themselves, since those aren't delta-symmetric once skew is present.
 
@@ -40,7 +41,9 @@ expected-move strikes themselves, since those aren't delta-symmetric once skew i
 `scanner.compute_composite_score()`. Used both to rank a single strategy's own candidates
 against each other and, via `rank_strategies.py`, to pick which strategy wins for a symbol that
 qualifies under more than one. `shrunk_winrate` pulls a thin-sample winrate toward a neutral 0.5
-prior in proportion to how far `sample_size` falls below the target lookback.
+prior in proportion to how far `sample_size` falls below 8 quarters. `term_structure` falls back to
+`skew_abs` where a strategy has none (`broken_wing_butterfly`); with neither
+(`expected_move_butterfly`) there is no score, so it is never a symbol's best.
 
 ---
 
@@ -67,7 +70,7 @@ every credit strategy in this system is built to capture — see
 
 ---
 
-## Strategies (All Six, All Defined-Risk)
+## Strategies (All Seven, All Defined-Risk)
 
 Full structure/entry/exit detail for each lives in [Strategy Guide](./05-strategies.md); this is
 a one-line reminder of the shape of each:
@@ -82,6 +85,10 @@ a one-line reminder of the shape of each:
   unit.
 - **`double_calendar`** — an ATM calendar run on both the call and put side, the only strategy
   whose sides can close independently.
+- **`expected_move_butterfly`** — a 1-2-1 debit fly with its body one expected move from spot,
+  side by rr25 skew. Paper only, from 2026-10-14.
+
+The two calendars are retired from the forced-sampling books from 2026-10-15.
 
 Every strategy is **defined-risk** — max loss is known at entry. Undefined-risk/naked strategies
 (naked straddles, strangles, naked short verticals) were deliberately excluded from this system:
@@ -119,14 +126,27 @@ Step 3c early-exit stop threshold, checked alongside the profit target.
 
 **Close-Window Backstop**
 The unconditional exit (Step 3 in `CLAUDE.md`'s Loop Steps) that closes whatever's still open
-once `close_window_start` arrives, regardless of P&L. There's no same-day, hours-after-the-
+once `close_window_start` arrives, regardless of P&L. Agent-driven loop only; the paper loop
+manages positions instead. There's no same-day, hours-after-the-
 announcement backstop in this system — every strategy is either a single overnight hold or a
 multi-day calendar hold, closed out by this mechanism if nothing else has closed it first. See
 [Exit Strategy Guide](./10-exits.md).
 
+**Expiry Close** (`management.expiry_close_time`)
+From 15:30 on any leg's expiration day, the position closes regardless of P&L. The spread gate does
+not hold it back.
+
+**Entry Session**
+The session a position opens on. Nothing acts on it then except the expiry close and the pin
+guard (`entry_session`).
+
+**PEAD Gate / Session Cap**
+On a day's first check, a losing overnight position closes; a winner may carry for up to three
+trading sessions (`hold_winners_max_days`). See [Exit Strategy Guide](./10-exits.md).
+
 **`leg_stop_delta_abs`**
-`double_calendar`-specific per-side delta threshold, checked during its intraday management
-(Step 3b). A side crossing this gets closed independently of the other side.
+Per-leg delta stop. On `double_calendar` it applies per side (0.45) and closes only that side, during
+Step 3b. On `broken_wing_butterfly` it applies to the short body (0.60) and closes the position.
 
 **Defined Risk / Undefined Risk**
 Defined-risk: maximum loss is known at entry (every strategy in this system). Undefined risk:
@@ -161,12 +181,12 @@ the calendar and picking each symbol's single best-ranked strategy by composite 
 `strat_test_harness.py`'s testing program (`/paper-start`) — opens a paper trade for every
 strategy that clears the screen on every viable symbol (not just each symbol's single best), so
 every strategy accumulates a usable sample size instead of only the ones that happen to win the
-head-to-head comparison. Writes to per-strategy strat_test books by default (`profile
-='strat_test:<strategy>'`, controlled by `strat_test_portfolio`). See
+head-to-head comparison. Writes to per-strategy strat_test books by default
+(`arm='strat_test:<strategy>'`, controlled by `strat_test_portfolio`). See
 `docs/strat-test-portfolios.md` and `docs/strategy-testing-plan.md`.
 
 **Cost-Adjusted Expectancy**
-Expected P&L per trade after subtracting tastytrade's real commission/fee schedule (modeled in
+Expected P&L per trade after subtracting tastytrade's real commission/fee schedule (modelled in
 `cherrypick/earnings/costs.py`), computed downstream in `strategy_metrics.py` — kept separate from the raw
 `pnl` column stored per trade, which always stays gross.
 
@@ -202,14 +222,14 @@ A few worth calling out by name since they show up throughout the other docs:
 **`python -m cherrypick.earnings.scanner get_calendar --date MM/DD/YYYY`**
 Fetch tickers with earnings on a given date.
 
-**`python src/strategies/<name>.py get_candidates --date MM/DD/YYYY`**
+**`python -m cherrypick.earnings.strategies.<name> get_candidates --date MM/DD/YYYY`**
 Full accept/reject scan for one strategy: accepted vs rejected, pass/skip reasons, ranked candidates, selected.
 
 **`python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY`**
-Cross-strategy ranking — evaluates all six strategies against every symbol, picks each
+Cross-strategy ranking — evaluates all seven strategies against every symbol, picks each
 symbol's best.
 
-**`python src/strategies/<name>.py get_order --symbol X --earnings_date DATE --earnings_timing "..."`**
+**`python -m cherrypick.earnings.strategies.<name> get_order --symbol X --earnings_date DATE --earnings_timing "..."`**
 Build a concrete tradeable order from live chain data.
 
 **`python -m cherrypick.earnings.tt execute_trade --order '<JSON>' [--live]`**

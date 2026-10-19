@@ -7,7 +7,8 @@ nothing measured the difference.
   `credit − fee_buffer` and the floor gate passes. The modelled debit is mid plus `slippage_frac`
   (0.125) of each leg's bid-ask spread. Paper pays that modelled debit.
 - **Live** rests a Day limit at `live_orders.max_safe_completion_debit` the moment the entry fills.
-  It pays the limit whenever the market reaches it, or is cancelled at 15:30.
+  It pays the limit whenever the market reaches it, or dies unfilled at `live.completion_cutoff`
+  (15:30 until 2026-10-15, the close since).
 
 ## What prompted it
 
@@ -109,7 +110,7 @@ via `analytics.fill_realism` and `analytics.shadow_completion`.
 - **`shadow`:** per paper arm, paper's own completion rate and net beside the shadow's at each grid
   value, on the same modelled cost stack at each row's own settlement price.
   A negative price value is a deeper resting limit (`limit + value`), so the same record replays
-  a bigger net target, down to credit − 1.00, with the 15:30 cutoff applied exactly. The ledger's
+  a bigger net target, down to credit − 1.00, with the shadow's 15:30 cutoff (live's own until 2026-10-15) applied exactly. The ledger's
   own lowest-debit columns cannot do that: they keep only the day's low, usually after the cutoff.
 
 ## What comes next, and what would change paper

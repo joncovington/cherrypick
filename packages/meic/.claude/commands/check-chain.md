@@ -45,7 +45,7 @@ Extract:
 - `iv_rank` and `iv_percentile` (strings — convert with `float()`)
 - `last` underlying price to use as `around_price` in Steps 3 and 4
 
-**If `last` is absent or null** (common after hours): proceed without `around_price` and note the omission — the chain window will center on the median strike rather than ATM.
+**If `last` is absent or null** (common after hours): proceed without `around_price` and note the omission — the chain window will centre on the median strike rather than ATM.
 
 ---
 

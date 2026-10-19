@@ -88,7 +88,7 @@ def test_kill_switches_read_flies_nested_convention(env):
     banner built on it -- reported flies as PAPER ONLY even while its live loop was armed."""
     tmp_path, cfg = env
     (tmp_path / "earn" / "config.json").write_text(
-        json.dumps({"live": {"enabled": True, "gate0_confirmed": "jon 2026-07-30"}})
+        json.dumps({"live": {"enabled": True, "gate0_confirmed": "owner 2026-07-30"}})
     )
     out = liveops.run(cfg)
     by_name = {m["module"]: m["live_enabled"] for m in out["modules"]}

@@ -1,6 +1,7 @@
 # Our own daily market report — research and plan
 
-*Drafted 2026-09-27. A research record and a build plan, nothing built yet. The subject is a
+*Drafted 2026-09-27. A research record and a build plan; Phase 1 and the technicals store landed the
+same week (see Plan). The subject is a
 third-party pre-open report (the 2026-09-25 edition of a commercial vendor's daily report), read
 section by section to find out what it measures, what data each measurement needs, and what of that the suite
 already has. The first draft's endpoints came from documentation and search results the research

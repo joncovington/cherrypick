@@ -2,7 +2,7 @@
 // Shapes mirror `packages/advisor`'s store (data/advisor/advisor.db) and the advice artifacts it
 // issues (state/advice/<module>-<session>.json). The console renders that record and computes
 // nothing of its own about it — the advisor's verdicts are computed in Python, by the same chain
-// (ledger readers → compare_profiles → qualify_readings) every other promotion decision uses.
+// (ledger readers → group_by_tag → qualify_readings) every other promotion decision uses.
 //
 // Two things this page has to keep visible that a naive rendering would drop: a REJECTED proposal
 // and why (a rejection nobody sees gets re-proposed forever), and whether a reading is

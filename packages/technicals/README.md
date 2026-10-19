@@ -4,8 +4,9 @@ The market report's end-of-day store and technical engines (see
 [`docs/market-report-plan.md`](../../docs/market-report-plan.md)).
 
 Every morning after the 05:30 ET Dolt pull, it lands raw daily bars, splits, dividends and
-implied-volatility history for the 35 rotation ETFs, the benchmarks and the stock universe's
-candidates into its own SQLite store, `~/.cherrypick/data/technicals/eod.db` (`technicals-land`,
+implied-volatility history for the 35 rotation ETFs, the benchmarks, the stock universe's
+candidates and the earnings calendar's liquid names (and SPX's daily bars from the broker's
+candles) into its own SQLite store, `~/.cherrypick/data/technicals/eod.db` (`technicals-land`,
 06:15 ET). The candidates exist only once the stock-universe builder has run; it is off by default
 (`market_report.universe`). At 06:30 ET `report` writes that session's readings,
 `report-<session>.json`, for the console. Adjusted prices are computed from raw on read, with the

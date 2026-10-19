@@ -7,8 +7,9 @@ Guidance for Claude Code when working in the orchestrator package.
 The **orchestrator** drives the module packages and the standalone streamer (`../streamer`) **in
 place**, by subprocess with paths from config, for unattended **paper** data collection, with a
 watchdog and notifications so a walk-away user is told (or at least has it logged) whenever something
-stalls. It never edits a module's internals and **never places live trades** — its sole live-adjacent
-action is onboarding config (`connect`/`account`, below).
+stalls. It never edits a module's internals and **never places live trades** — its sole live-config
+action is onboarding (`connect`/`account`, below). It does run a module's OWN live loop as a job while
+a human has armed that module for the day, and a few live safeguards (see *Paper ↔ live isolation*).
 
 What shipped is in git history (`ROADMAP.md` is a frozen Stage 0 record). The design rationale is
 [`docs/design.md`](docs/design.md) (a 2026-07-11 research report, not updated as work ships); the
@@ -21,7 +22,7 @@ start at the root [documentation index](../../docs/README.md).
 # Fresh clone: scripts\dev-install.ps1 (or .sh) from the repo root, or pip install -e packages/core first.
 # From a source checkout use run.py (never create a root cherrypick.py — see Gotchas); if pip-installed, `cherrypick <cmd>`.
 python run.py doctor             # green/red readiness (read-only)
-python run.py install            # register the ONE anchor task, start supervisor + streamer/services, delete legacy per-job tasks; refuses while flies is live-armed today (--force overrides)
+python run.py install            # register the ONE anchor task, start supervisor + streamer/services, delete legacy per-job tasks; refuses while any live module is armed today (--force overrides)
 python run.py uninstall          # remove cherrypick-managed tasks
 python run.py status             # supervisor job registry + heartbeats (legacy schtasks snapshot on a pre-cutover box)
 python run.py watchdog           # one watchdog pass (the supervisor's 10-minute job)
@@ -41,6 +42,9 @@ python -m pytest                 # default lane `-m "not live" -q`; markers unit
 python -m pytest tests/test_report.py::test_report_unifies_pnl_net_of_costs_across_modules  # one test
 ruff check . ; ruff format .     # line-length 110
 ```
+
+Every other verb (`ps`/`restart`/`stop`/`start`, `service`, `dolt-*`, the live safeguards,
+`notify-*`, `sent`, `capabilities`) is in [docs/orchestrator-cli.md](../../docs/orchestrator-cli.md).
 
 Config: copy `config.example.json` → `config.json` (machine-local). Module paths resolve **relative to
 the config file's directory**. Document a new key in `config.example.json`.
@@ -101,6 +105,13 @@ watch:
 - **A job whose derivation failed** is invisible to both checks above. `supersnap.jobs_failing_derivation`
   reads `derive_errors` FROM THE REGISTRY rather than re-deriving, so it reports what the running
   daemon actually hit.
+- **Optional Windows-service mode** (`run.py service prepare|status|uninstall`, `winservice.py`,
+  `service.enabled`, default off). WinSW wraps `run.py supervise` as a service that runs as the user
+  and starts at boot with nobody logged on. `prepare` writes the files and PRINTS the elevated steps;
+  nothing here elevates on its own. The anchor stays: WinSW restarts a supervisor that exits,
+  `ensure-supervisor` ends a hung one, and in service mode the anchor never spawns its own. Restart
+  the service's supervisor with `supervise --restart`. `doctor` and `install` report Windows Update's
+  active hours against the suite's day (`winupdate.py`).
 - **Under the Windows service, daemon stop/start/restart go through the supervisor** (`daemonreq`).
   The streamer and services run in session 0, where the desktop cannot stop them (2026-10-09:
   `restart gex-recorder` failed with Access is denied and left the recorder held). The CLI queues a
@@ -133,7 +144,7 @@ and the quote history it lost cannot be fetched again.
 **Read side.** `report.py` (`run(session=…)` scopes to one settlement day) and `calibrate.py`, over the
 ledger readers in **`cherrypick.core.ledgers`**. Read-only and file-only. The console is the one page
 that composes it; this package serves nothing of its own. `logrotate.py` (`archive`, the monthly
-`cherrypick-log-archive` task) zips finished months into `logs/archive/<YYYY-MM>/<scope>.zip`,
+`log-archive` supervisor job) zips finished months into `logs/archive/<YYYY-MM>/<scope>.zip`,
 idempotent, never touching the current month or an active `.log`, off the reliability path.
 `backup.py` (the `suite-backup` job) keeps ONE zip of the suite's own data, rewritten nightly: live
 ledgers copy through SQLite's online backup API and are quick_checked, a night with a problem lands as
@@ -204,20 +215,28 @@ filename; override with `paper.sla_state_prefix`.
   settles. Before that date it stopped the whole tick, so a halt left open positions unmanaged.
   The broker-touching live-ops view was deliberately never ported to the console; `reconcile` answers
   that half.
-- **Paper ↔ live isolation.** Only paper engines and paper DBs are invoked; anything advisory
-  (`calibrate`, the drawdown alert) never mutates a config or switches live risk. Live P&L is only
-  through the separate `report.live_run` (`report --live`) over a module's `live_db`; a test asserts
-  `calibrate` references neither `live_run` nor `live_db`.
-- **The real broker account is read in exactly two places, both on demand and off the watchdog path,
-  with read-only calls and masked accounts.** `reconcile` enumerates **every** account on the login
+- **Paper ↔ live isolation.** The orchestrator never places, cancels or sizes an order and never
+  flips `enable_live_trading`. It does run a module's OWN live loop as the `<module>-live` job (and
+  the companions its arm record names) only while a human's per-day arm record is valid
+  (`core.live`, `jobspec`). Its live safeguards are read-only at the broker (`live-positions`,
+  `live-fill-alerts`); the one that writes a live ledger, `settle-overdue-live`, does it through the
+  module's own `live_loop --settle-overdue` at the official close and announces every write. Anything
+  advisory (`calibrate`, the drawdown alert) never mutates a config or switches live risk. Live P&L is
+  only through the separate `report.live_run` (`report --live`) over a module's `live_db`; a test
+  asserts `calibrate` references neither `live_run` nor `live_db`.
+- **The real broker account is read only by named, read-only paths with masked accounts, never from
+  the watchdog tick.** `reconcile` enumerates **every** account on the login
   (`list_accounts`) and flags any positions/BP a paper-only suite shouldn't have (a designated live
   account is *expected* to hold positions); `reconcile.schedule.enabled` makes it a daily job
-  (`reconcile --scheduled`) that notifies on any non-FLAT verdict. `positions.py` is the second, and
-  the last to be added without an equally explicit reason: **never scheduled**, reuses `reconcile`'s
+  (`reconcile --scheduled`) that notifies on any non-FLAT verdict. `positions.py` is
+  **never scheduled**, reuses `reconcile`'s
   account enumeration, writes nothing (the stream cache included), marks from the stream cache first
   and the feed only for undeclared symbols. It must never regress on two things: a **stale** cached
   quote is withheld, not priced, and a leg **neither source can price** is reported and excluded,
-  never counted as zero.
+  never counted as zero. The others, each scheduled: `live-positions` (designated live accounts
+  against the live ledgers, its verdict in `state/live_positions.last.json` for the watchdog to read),
+  `managesnap.py` (the `manage-eval` snapshot) and `desk_notifier`'s order-status poll. A new one
+  needs an equally explicit reason.
 - **The settings surface (`settings`, port 8804) is the suite's only mutating HTTP surface.**
   Loopback-only; every route checks the `Host` header (DNS rebinding); every POST needs a per-session
   CSRF token and `application/json` (no CORS headers are sent). Config writes (`configedit.py`) splice
@@ -234,7 +253,11 @@ filename; override with `paper.sla_state_prefix`.
 - **`configcli.py`** is the same two modules for non-Python callers (the console): one JSON request on
   stdin, one response on stdout. Dispatch only — every guarantee above is inherited, `secretsops` is
   deliberately NOT wired in, and a refusal is data (`ok: false` plus a `code`) on exit 0 so a caller
-  can tell "the config said no" from "the bridge is broken". Keep new ops thin.
+  can tell "the config said no" from "the bridge is broken". Keep new ops thin. Its `features` op
+  (`capabilities.py`) is the console's only answer to "what is on": `capabilities`, `modules`
+  (switch plus capabilities), `services`, `features` (`backtest` fails closed) and, from 2026-10-18, `live`, each module's live master
+  switch read as `liveops` reads it. An unreadable switch is omitted, never `false`, so the console
+  fails open.
 - **Onboarding (`connect`/`account`) is the one live-config action.** `orchestrator/connect.py` and
   `accounts.py` run the module's *own* hidden-input credential tool (the orchestrator never sees
   `client_secret`/`refresh_token`) and **select the live account**, writing `ACCOUNT_NUMBER` to the
@@ -273,7 +296,8 @@ filename; override with `paper.sla_state_prefix`.
   stays a deprecated alias until the transition closes.
 - **The watchdog's only trading-adjacent action is benign remediation**, gated on `auto_restart`; it
   never places, cancels or closes an order:
-  - restart the **streamer** (top-level `streamer` block, session-gated) on death, on *silence*, and
+  - restart the **streamer** (top-level `streamer` block, gated on `streamer.session_start`, default 09:15 ET,
+    which moves this check alone) on death, on *silence*, and
     on a base window **serving a chain dated before the session** (`stale_chains`) — fresh ages can
     hide an expired chain;
   - restart a dead managed **service** (top-level `services`: daemons `install` starts and `uninstall`

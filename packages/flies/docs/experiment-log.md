@@ -216,7 +216,7 @@ with it — sell it to cover if it rises, or sell 2 / buy 1 to complete a lower 
 aim of cutting drawdown and setting up for a reversal. Neither half needed an arm.
 
 **The hedge, as telemetry.** Every legged entry now stamps the ~5-delta option on its losing side —
-strike, delta, modeled buy premium, single-leg fee — without buying it (`hedge_*` columns), keeps the
+strike, delta, modelled buy premium, single-leg fee — without buying it (`hedge_*` columns), keeps the
 running max of what selling it would have fetched, and values it at the settlement print. `hedge-overlay`
 reprices every settled spread with and without it, split stranded/completed, with a sell-at-Nx replay
 over the running max. The prior it tests: the stranded branch's loss sits between K and K−W and a
@@ -1686,31 +1686,20 @@ and PR #383), so none counted as a trial.
 **Retired from 2026-10-26** (`enabled` false with a dated note; kept in `ARMS` and in config so
 their books stay readable):
 
-- **`restack`** finished behind `control` in both halves of the window, by the widest margin of any
-  arm. A second contract on a completed centre is a fresh legged entry that has to complete on its
-  own, and the extra entries lost more than they earned. That answers the question the arm was
-  declared for (2026-10-11): re-entries at a completed centre do not pay.
-- **`debit-first-atm`** finished behind `control` in both halves, consistent with the retired
-  delta-placed debit-first pair (2026-10-12): legging order does not rescue the trade. Its shadow
-  ladder read, which kept it running past the 10-15 boundary, is superseded by the backtest.
+- **`restack`** and **`debit-first-atm`**, on the backtest's evidence (results kept locally under
+  `~/.cherrypick`, per the licence). `debit-first-atm`'s shadow ladder read, which kept it running
+  past the 10-15 boundary, is superseded by the backtest.
 
 **Kept, deliberately.** Every other gate arm (`range-high`, `range-centre`, `wall-clear`, `vol-floor`,
-`window-1230`, `window-1300`) finished ahead of `control` per session in the backtest, which is what
-its own declared judging rule asks, so each runs on to its own read. Ahead per session is not the
-same as profitable: in the backtest those arms were ahead because they trade less of a losing trade,
-not because any of them turned the trade positive. Their reads should be taken with that in mind.
+`window-1230`, `window-1300`) runs on to its own declared read.
 
-**The general finding, in words.** Across every replayable arm, nine completion limits (from paper's
-floor down to completing for a debit), five entry-credit filters, and gates on regime tags, range
-position, entry state, pre-open volatility and scheduled events, no variant or gate turned the ATM
-legged fly positive per trade in either half of the window. Loosening the completion limit raised the
-completion rate steadily and made no money: the strands it rescued were paid for by completing
-flies that would have completed anyway earlier, at worse prices. Completion rate is a symptom of the
-price paid for the structure, not a lever. Rule 6 and "a negative answer is a usable result" both
-apply: this is the result, and it is kept.
+**What else was searched**, so the search is counted: nine completion limits (from paper's floor
+down to completing for a debit), five entry-credit filters, and gates on regime tags, range
+position, entry state, pre-open volatility and scheduled events. The outcomes are kept with the
+results, locally. Rule 6 and "a negative answer is a usable result" both apply.
 
 **Conditions on the boundary.** Validation should reach its ten sessions about 10-26. If it unlocks
 history, the design window is re-run with every arm searched counted as a trial before the config
 change is applied, and the retirement goes ahead only if both arms are still behind `control` in both
 halves. If validation has not unlocked by then, the boundary waits for it. The config change is
-applied on the boundary's eve, as the 10-19 one was, with a backup and a diff.
+applied on the boundary's eve, as the 10-15 one was, with a backup and a diff.

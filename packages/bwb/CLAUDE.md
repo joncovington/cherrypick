@@ -1,7 +1,8 @@
 # cherrypick-bwb
 
-> **Vocabulary.** This module's **book** is the suite's **arm** (root `CLAUDE.md`). The column
-> (`bwb_positions.book`) moves with the rest of the schema; prose and the console already say `arm`.
+> **Vocabulary.** This module's **book** (the config key `books`) is the suite's **arm** (root
+> `CLAUDE.md`). The ledger column has been `bwb_positions.arm` since 2026-09-23; prose and the
+> console say `arm`.
 
 A daily-laddered SPX put broken-wing butterfly; the root file gives the posture. Every book enters
 the IDENTICAL BWB from the same plan on the same tick and differs only in whether/when the add-on
@@ -39,13 +40,15 @@ doubly so here because a zero credit floor cannot screen out an illusory opening
 | `bounce` | peak \|delta\| since entry >= `delta_trigger` AND current <= `delta_trigger - bounce_pullback` (45Δ). No `bounce_peak` key: delta and bounce differ by exactly one condition |
 | `flip` | spot traded below `gamma_flip` since entry AND reclaimed to >= `flip * flip_buffer` (1.001) |
 
-Advised twins follow `packages/core/CLAUDE.md`. bwb specifics: **deliberately UNBOUNDED** (no
-`advice.bounds` at all); the pre-2026-09-17 tags `advised:control` / `advised:delta` still resolve
+Advised twins follow `packages/core/CLAUDE.md`. bwb specifics: **deliberately UNBOUNDED** (every
+`defaults` key is advisable, and `advice.bounds` carries validity-only ranges, not experiment
+opinion); the pre-2026-09-17 tags `advised:control` / `advised:delta` still resolve
 by name in `engine.base_book` and `management.effective_params`; the `wall` book is never an advised
 base. The add-on params (`delta_trigger`, `bounce_pullback`, `flip_buffer`, `addon_credit_floor`)
 declare `arms` in their bounds — none acts on `control`, which never arms — and
 `tests/test_advice_arms.py` derives each list from `management.evaluate`, so a drifted list fails.
-The deployed config needs the same `arms` keys before the refusal applies there.
+The boundary script copied the same `arms` keys into the deployed config at the 2026-10-15
+boundary.
 
 **The add-on** (identical for all three arms): a put credit spread bracketing the far wing — SELL
 one increment above, BUY one below — which must itself price as a credit (`addon_credit_floor`, a
@@ -89,7 +92,7 @@ above), net credit required. It tests whether the wall BOUNDS price over a week 
 close at or below the morning wall 19–21 of 23 sessions; a pin bet captured 2/23), so its result
 **never pools** with the four base books.
 
-It is NOT in `engine.BOOKS`, so "every book enters the identical BWB" stays true. It never arms
+It is NOT in `engine.ARMS`, so "every book enters the identical BWB" stays true. It never arms
 (`triggers.evaluate` returns fired=False for an unknown book) and has no add-on yet; its trigger-tick
 cohort records the call-side candidates so a future add-on is a replay away (and its own break).
 Its spread gate is percent AND absolute money (`max_leg_spread_abs`, since OTM calls zero-bid); the
@@ -155,10 +158,11 @@ affecting.
 11. **Implied variance at entry is recorded, never acted on** (2026-10-09). `entry_iv_vol` with
     `entry_iv_complete = 0` is a lower bound (the cache's strike window cut the wings); rows before
     2026-10-09 carry none.
-12. **The vol term structure at entry is recorded, never acted on** (2026-10-09). VIX9D, VIX and
-    VIX3M prints with their ages; a stale or missing print is no number plus its reason. The
-    VIX9D/VIX gate (`bwb regime-split`) is a hypothesis from a modelled two-year backtest that
-    chose the best of six gates. It is measured here and not traded on. The modelled out-of-sample
+12. **The vol term structure at entry is recorded, and never gates a paper entry** (2026-10-09).
+    VIX9D, VIX and VIX3M prints with their ages; a stale or missing print is no number plus its
+    reason. The VIX9D/VIX gate (`bwb regime-split`) is a hypothesis from a modelled two-year
+    backtest that chose the best of six gates. It is measured on paper; live may gate on it
+    (`live.vix9d_vix_max`, below). The modelled out-of-sample
     test (2011-2024, `scripts/bwb_regime_gate_history.py`, root `docs/history-studies-2026-10.md`)
     found that skipped entries lose about twice as much per trade, and that kept entries still lose. A row with no reading,
     including every row before 2026-10-09, is `unmeasured` and is never assigned to a side.
@@ -196,6 +200,10 @@ Built to test whether the paper result survives a fill without disturbing the pa
   `core.live.QUARTER_END_REASON`): the entry refuses, and an armed add-on is deferred (not lost: it
   fires on the next session's first credit tick). Paper is untouched; arming warns. First binding
   session 2026-12-31, journaled on the live ledger.
+- **No leg opposite another live loop's** (2026-10-15, `core.livepositions.cross_module_conflict`):
+  flies and MEIC trade SPX in this account, so an entry with a leg opposite one they hold or have
+  working is refused `cross_module_sign_conflict`; it would net at the broker into a position no
+  ledger describes.
 - **Every fill is the broker's word.** An entry row is born `pending` (not marked or managed); the
   actual credit overwrites the modelled one on confirmation, realised slippage is measured against
   the mid at submission, and a terminal order leaves a `cancelled` row. The add-on records only a
@@ -234,11 +242,11 @@ Built to test whether the paper result survives a fill without disturbing the pa
 | `analytics.py` | the one query layer: nets, fire counts, trigger-tick coverage. |
 | `replay.py` | read-side threshold replay over `bwb_trigger_ticks` — a stubbed fast-follow. |
 | `addon_replay.py` | the add-on scored as its own trade (`bwb addon-replay`). |
-| `db.py`, `stream_request.py`, `cli.py` | the standard trio (`status`/`worksheet`/`fires`/`triggers`/`headline`/`replay`/`addon-replay`). `db.live_db_path()` is the live ledger; `stream_request.register(live=True)` writes `bwb-live`'s request file. |
+| `db.py`, `stream_request.py`, `cli.py` | the standard trio (`status`/`worksheet`/`fires`/`addon-missed`/`triggers`/`headline`/`replay`/`addon-replay`/`iv-premium`/`regime-split`/`live-gap`/`entry-context`). `db.live_db_path()` is the live ledger; `stream_request.register(live=True)` writes `bwb-live`'s request file. |
 | `live_loop.py` | the LIVE tick: dead-man's switch, orphan sweep, fill confirmation, the walk-down, official-print settlement, ONE gated entry attempt, then the paper pass over the live ledger with the fire seam swapped for order placement. |
 | `live_orders.py` | pure: order specs, the live floor, the walk-down's next limit, worst-case payoffs, margin caps with the add-on reserve. |
 | `broker_cli.py`, `credentials.py` | keyring service `bwbagent` (falling back to the shared login) and `live_gates`. Serializer, tick rounding, settlement price and arm record come from `cherrypick.core`, not copies. |
-| `fee_reconcile.py` | replaces a settled live row's estimated costs with the broker's cash flow; run by the live tick and by hand. |
+| `fee_reconcile.py` | replaces a settled live row's estimated costs with the broker's cash flow; run daily by the supervisor's `bwb-fee-reconcile` job, whether or not live was armed, and by hand. |
 
 ## Commands
 

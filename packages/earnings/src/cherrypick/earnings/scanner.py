@@ -9,9 +9,6 @@ logic live in src/strategies/<strategy_name>.py (see strategies/iron_fly.py
 for the first and currently only implementation), which import from this
 module rather than duplicating it.
 
-NOTE: This file exceeds 500-line guideline (1,038 lines). Documented exception
-in docs/file-size-exceptions.md. Refactoring is high-risk due to circular
-imports and cross-module state management. Current state is stable & tested.
 
 Commands (see CLAUDE.md's Tool Reference):
   get_calendar --date MM/DD/YYYY
@@ -1362,10 +1359,11 @@ def _shrunk_winrate(winrate: float | None, sample_size: int, target_sample: int 
 def compute_composite_score(criteria: dict, winrate_sample_size: int = 0) -> float | None:
     """Composite ranking score for an accepted candidate, built from signals
     common to any earnings-vol-selling strategy: term structure (or, absent
-    that, skew_abs -- expected_move_butterfly has no back-month/term-
-    structure signal at all, only a call/put skew reading, and needs a
-    comparable score too so it isn't silently unrankable next to the five
-    strategies that do have term_structure), IV/RV ratio, winrate. No new
+    that, skew_abs -- broken_wing_butterfly has no back-month/term-structure
+    signal, only a call/put skew reading, and needs a comparable score so it
+    isn't silently unrankable next to the strategies that do have
+    term_structure; expected_move_butterfly carries neither and is never
+    ranked), IV/RV ratio, winrate. No new
     data, just combining what a strategy's tiering already required to be
     present.
 

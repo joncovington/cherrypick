@@ -19,11 +19,11 @@ experimental, off by default and at your own risk.
 
 The Earnings Agent is a rules-based options trading system that:
 - Scans daily earnings calendar for candidates
-- Analyzes 6 defined-risk strategies using entry condition framework
+- Analyses 7 defined-risk strategies using entry condition framework
 - Routes each candidate to optimal strategy based on market data
 - Executes pre-earnings positions and manages exits
 
-### 6 Strategies (all defined-risk)
+### 7 Strategies (all defined-risk)
 
 Profit targets and stops are the shipped `config.example.json` values (`strategies.<name>`).
 
@@ -35,6 +35,10 @@ Profit targets and stops are the shipped `config.example.json` values (`strategi
 | Broken Wing Butterfly | 25% of credit | 2.0× credit | Asymmetric IV |
 | ATM Calendar | 15% of debit | 50% of debit | Low IV |
 | Double Calendar | 15% of debit | 50% of debit (plus a 0.45-delta leg stop) | Overpriced moves |
+| Expected-Move Butterfly | fly worth 50% of its width | none (the debit is the max loss) | Measuring a directional fly's fills (paper only) |
+
+The two calendars stay registered but open nothing in the forced-sampling books from 2026-10-15
+(`strat_test_harness.STRAT_TEST_RETIRED`).
 
 ### Key Metrics
 
@@ -47,7 +51,8 @@ Profit targets and stops are the shipped `config.example.json` values (`strategi
   backstop the next morning (default `09:45` ET) closes whatever is still open regardless of P&L.
   The unattended paper loop manages positions instead (since 2026-08-12): a loser closes on the
   first morning, a winner short of target may be carried up to three trading sessions
-  (`management.hold_winners_max_days`), nothing is held through a leg's expiration, and an expired
+  (`management.hold_winners_max_days`), nothing acts on the entry session but the expiry close and
+  the pin guard, nothing is held through a leg's expiration (the 15:30 expiry close), and an expired
   position is settled at intrinsic.
 - **Entry Gate**: IV/RV ratio, term structure, and liquidity — see
   [Screening Criteria](./screening-criteria.md) for the full hard-filter list.
@@ -67,7 +72,7 @@ remaining files keep the numbers they were written with, so existing links stay 
 ### Learning the Framework
 - [Entry Conditions Framework](./04-entry-conditions.md) — Decision matrix, routing logic
 - [Strategy Guide](./05-strategies.md) — Deep dive on each strategy
-- [Earnings Scan Analysis](./06-scan-analysis.md) — How to analyze daily candidates
+- [Earnings Scan Analysis](./06-scan-analysis.md) — How to analyse daily candidates
 - [Screening Criteria](./screening-criteria.md) — Hard filters and the accept/reject screen (source of truth)
 
 ### Operations
@@ -77,16 +82,23 @@ remaining files keep the numbers they were written with, so existing links stay 
 - [Paper Trading](./paper-trading.md) — How paper mode works, data separation from live
 - [Strat-Test Portfolios](./strat-test-portfolios.md) — Per-strategy paper books for the forced-sampling test
 - [Strategy Testing Plan](./strategy-testing-plan.md) — Forced-sampling validation program
-- [Control Book Plan](./control-book-plan.md) — Plan (nothing built): widening the control so entry
-  screening becomes measurable by read-side replay, since the advisor's twin cannot express it
-- [Time Spread Screen Plan](./time-spread-screen-plan.md) — Plan (nothing built): an endurable-gap
-  screen and a combined side read for every earnings time spread, revisited once backtesting data exists
+- [Control Book Plan](./control-book-plan.md) — Widening the control so entry screening becomes
+  measurable by read-side replay, since the advisor's twin cannot express it. Phases 0–1 and the
+  entry replay (phase 3) are built; phases 2 and 4 are open
+- [Time Spread Screen Plan](./time-spread-screen-plan.md) — An endurable-gap screen and a combined
+  side read for every earnings time spread. The engine is built (`time_spread.py`) and nothing reads it
+  yet; step 0 ran 2026-10-17, and the rest waits for backtest data
+- [Expected-Move Fly Plan](./expected-move-fly-plan.md) — The history study (verdict: don't build)
+  behind the paper-only `expected_move_butterfly` book
 
 ### Reference
 - [Glossary](./14-glossary.md) — Terms and definitions
 - [Strategy Optimization Research](./strategy-optimization.md) — Hypotheses queued for paper-test validation
 - [File Size Exceptions](./file-size-exceptions.md) — Documented exceptions to the 500-line guideline
 - [Operating History](./operating-history.md) — Dated incidents behind the rules in `CLAUDE.md`
+- [Earnings screener plan](../../../docs/earnings-screener-plan.md) — The navigator-rule history study
+  (no edge after costs) and the earnings calendar. Both live in `packages/technicals` and on the
+  console's Screeners page, not in this module
 
 ---
 
@@ -116,6 +128,14 @@ Calendar Strategies (ATM Calendar, Double Calendar):
   Profit Target: 15% of entry debit
   Stop Loss: 50% of entry debit
   Backstop: unconditional close-window exit next morning (agent loop)
+
+Expected-Move Butterfly (paper only):
+  Profit Target: fly worth 50% of its width
+  Stop Loss: none (the debit is the max loss)
+  Held to the 15:30 expiry close otherwise
+
+Every strategy (paper loop): held on its entry session; closed from
+15:30 on any leg's expiration day.
 ```
 
 In the agent-driven loop every strategy closes by the next morning's close window regardless of
@@ -143,13 +163,14 @@ cherrypick/
 ├── packages/core/                # Shared cherrypick.core library (in-repo package: calendar, fees)
 └── packages/earnings/           # ← this package (cherrypick-earnings)
     ├── src/cherrypick/earnings/  # the cherrypick.earnings namespace package
-    │   ├── strategies/          # 6 defined-risk strategy modules
+    │   ├── strategies/          # 7 defined-risk strategy modules
     │   │   ├── iron_fly.py
     │   │   ├── iron_condor.py
     │   │   ├── directional_credit_spread.py
     │   │   ├── broken_wing_butterfly.py
     │   │   ├── atm_calendar.py
-    │   │   └── double_calendar.py
+    │   │   ├── double_calendar.py
+    │   │   └── expected_move_butterfly.py
     │   ├── scanner.py           # Strategy-agnostic scanning engine
     │   ├── rank_strategies.py   # Multi-strategy ranking
     │   ├── sizing.py            # Code-enforced risk-cap sizing
@@ -179,7 +200,7 @@ cherrypick/
 ### Afternoon, Before the Close
 ```bash
 python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY
-# Evaluates all 6 strategies against tonight's/tomorrow's calendar, picks each symbol's best
+# Evaluates all 7 strategies against tonight's/tomorrow's calendar, picks each symbol's best
 ```
 
 ### Entry Window (default 15:30-15:55 ET)
@@ -214,7 +235,7 @@ See [Trading Workflow](./08-trading-workflow.md) for the full day-by-day walkthr
 
 ## Statistics
 
-- **Total Strategies**: 6 (all defined-risk)
+- **Total Strategies**: 7 (all defined-risk; one paper-only, two retired from the forced-sampling books)
 - **Tests**: unit tests under `tests/` (`pytest`)
 - **Market Coverage**: Any US-listed options with earnings and a real tastytrade option chain
 

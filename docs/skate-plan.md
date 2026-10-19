@@ -1,6 +1,6 @@
 # Skate screener, wheel and PMCC views — plan
 
-Status: plan, 2026-10-18. Nothing built. The study it rests on was run by hand on 2026-10-18
+Status: plan, 2026-10-18; steps 1–2 and the score are built (table below). The study it rests on was run by hand on 2026-10-18
 (results below); the scripts were scratch files and are not in the repo. The three open questions
 were decided by the user on 2026-10-18 (see "Decisions").
 
@@ -10,7 +10,7 @@ were decided by the user on 2026-10-18 (see "Decisions").
 | 2, regular-hours quotes (`fetch_screener_greeks.py skate`, jobs `report-skate-quotes-1/2`) | built |
 | 3, the score and the console's Skate tab | the score built (`skate.score`, in the quote file); the tab not started |
 | 4, the forward record | not started |
-| 5, the wheel view (`manage`, Live → manage) | not started |
+| 5, the wheel view (`manage`, Live → positions) | not started |
 | 6, the PMCC view (`manage`, beside the wheel view) | not started |
 
 A screen for short options sold where the seller does not want assignment: covered calls above
@@ -240,7 +240,7 @@ For each underlying that holds a short put, shares, or a covered call:
   candidates priced and each passed through `check-roll`; after an assignment, the next leg named
   from the Skate screen's call band. Each rule gets a confidence and a README row, as `manage`
   requires.
-- **Console**: a wheel tab beside Live → manage.
+- **Console**: a wheel tab beside Live → positions.
 
 The real account is an IRA, so only cash-secured puts and covered calls arise; margin accounts are
 supported by `manage` and need nothing extra here.

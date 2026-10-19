@@ -22,6 +22,7 @@ be imported by a loop.
 | **Can** | Issue a bounded, single-session, expiring advice artifact for the next paper session |
 | **Can** | Run any number of experiments per module concurrently (unlimited by default, capped via `max_experiments_per_module`), each its own `advised:<experiment-name>` book beside the shared control |
 | **Can** | Propose anything at all — new arms, new strategies, whole new modules — as propose-only memos |
+| **Can** | Queue a backtest spec for packages/backtest to run over the design window only, when `advisor.backtest_proposals` is on (off by default); a result is at most a reason to propose a paper experiment |
 | **Cannot** | Touch a live account, in any way, ever |
 | **Cannot** | Write a module config, a risk profile, or a module's database |
 | **Cannot** | Widen a parameter past the bounds a human declared for it |

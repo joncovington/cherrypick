@@ -14,13 +14,17 @@ re-derivation, no guesswork.
 The forced-sampling harness (`strat_test_harness.py`) opens a paper trade for **every strategy
 that clears the screen** on **every viable symbol** each night — deliberately more than the
 production loop would, so no strategy starves for a sample. Each of those paper trades is tagged
-with a `profile` value in the shared `paper_trades.db` that decides which **book** it lands in.
+with an `arm` value in the shared `paper_trades.db` that decides which **book** it lands in.
 That tag is controlled by the top-level `strat_test_portfolio` config key:
 
 | `strat_test_portfolio` | Behavior |
 |---|---|
 | `"per_strategy"` (default) | Each strategy's trades are tagged `strat_test:<strategy>` (e.g. `strat_test:iron_fly`), so every strategy has its **own** book — its own open positions, P&L ledger, and equity curve. A newly added strategy automatically gets its own stream the first night it fires; nothing else has to be wired up. |
-| `"combined"` | All forced-sampling trades share a single `strat_test` book (the original behavior). One blended P&L across every strategy. |
+| `"combined"` | All forced-sampling trades share a single `strat_test` book (the original behaviour). One blended P&L across every strategy. |
+
+Two books are closed to new entries: `strat_test:atm_calendar` and `strat_test:double_calendar` from
+2026-10-15 (`STRAT_TEST_RETIRED`). `strat_test:expected_move_butterfly` opens from 2026-10-14
+(`STRAT_TEST_STARTS`).
 
 The expensive live scan (`rank_strategies.evaluate_symbol` per calendar entry, which makes the
 tastytrade/DoltHub calls) still runs **once** per night regardless of this setting; the only
@@ -50,14 +54,15 @@ Reporting and the orchestrator's read side group by that per-strategy book tag:
 
 ---
 
-## Attribution: the `profile` column
+## Attribution: the `arm` column
 
-Every forced-sampling trade and every `scan_log` row carries the `profile` column that holds its
+Every forced-sampling trade and every `scan_log` row carries the `arm` column (named `profile` until
+2026-09-24; the report flags are still spelled `--profile`) that holds its
 book tag (`strat_test:<strategy>` in per-strategy mode, `strat_test` in combined mode; the
 production paper/live loop uses `'default'`). `trades` also carries `quantity` and
 `capital_at_risk` from `sizing.compute_position_size`. This is what lets a single shared
 `paper_trades.db` hold every strategy's book side by side without a schema change per strategy —
-the reporting layer just filters on `profile`.
+the reporting layer just filters on `arm`.
 
 Sizing basis for the whole test is simply `available_capital_paper_mode` (the simulated NLV in
 config), the same basis the paper loop uses — there's no separate per-book capital or risk

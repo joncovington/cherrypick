@@ -16,12 +16,12 @@ that one strategy:
 python -m cherrypick.earnings.strategies.iron_fly get_candidates --date MM/DD/YYYY
 ```
 
-Works identically for any of the six (`iron_condor`, `directional_credit_spread`,
-`broken_wing_butterfly`, `atm_calendar`, `double_calendar`) — every strategy's
+Works identically for any of the seven (`iron_condor`, `directional_credit_spread`,
+`broken_wing_butterfly`, `atm_calendar`, `double_calendar`, `expected_move_butterfly`) — every strategy's
 `get_candidates` is a thin wrapper around the same shared engine function,
 `scanner.run_candidate_scan()`.
 
-**Cross-strategy, one date** — evaluates all six against every symbol and picks each symbol's
+**Cross-strategy, one date** — evaluates all seven against every symbol and picks each symbol's
 best:
 
 ```bash
@@ -72,14 +72,15 @@ run it yourself before the market close to see exactly what the loop is about to
   bar it failed. See [Screening Criteria](./screening-criteria.md) for exactly what each named
   criterion checks and its strict/near-miss thresholds.
 - **`ranked`** — only accepted candidates, scored by `scanner.compute_composite_score()`
-  (`abs(term_structure) * iv_rv_ratio * shrunk_winrate`) and sorted descending. Rejected
+  (`abs(term_structure) * iv_rv_ratio * shrunk_winrate`, with `skew_abs` standing in where a
+  strategy has no term structure; a candidate with neither has no score) and sorted descending. Rejected
   candidates never appear here — a score on a candidate that already failed a screening bar
   doesn't mean anything.
 - **`selected`** — what survives `scanner.select_positions()`'s account-wide
   `max_concurrent_earnings_positions` cap and `correlation_block_list` check, walking down the
   ranked list and backfilling around any skip.
 - **`skipped_for_selection`** — every ranked candidate that didn't make the cut, each with a
-  specific reason (`concurrency_cap_reached`, `correlation_blocked`, etc.) rather than silently
+  specific reason (`max_positions_reached`, `correlation_block`) rather than silently
   dropped.
 - **`broker_data_error`** — non-null if the live tastytrade chain pull failed for that symbol
   (e.g. no listed options at all). This is a data problem for that one symbol, not a scan-wide
@@ -128,7 +129,7 @@ python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date 07/15/20
   symbol. `null` if nothing on this symbol cleared any strategy's screen.
 - **`outcome`** / **`reason`** — human-readable summary of both the within-symbol strategy
   choice and the symbol's cross-symbol rank, or the rejection reason if it never got selected
-  (`rejected_no_viable_strategy`, `concurrency_cap_reached`, `correlation_blocked`, etc.).
+  (`rejected_no_viable_strategy`, `max_positions_reached`, `correlation_block`, etc.).
 
 Every evaluated (symbol, strategy) pair, plus one `strategy = "_ranked"` summary row per symbol,
 gets written to `scan_log` automatically — query the database directly if you want the full
@@ -148,7 +149,7 @@ something's broken:
   Screening Criteria's note on this.
 - `term_structure_insufficient` — the front month's IV isn't inflated enough over the back
   month to suggest a real earnings-specific IV bump.
-- `iv_rv_ratio_below_threshold` — the options aren't pricing in enough premium relative to the
+- `iv_rv_ratio_below_minimum` — the options aren't pricing in enough premium relative to the
   stock's own historical realized moves to be worth selling.
 
 ---

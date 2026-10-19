@@ -58,7 +58,7 @@ describe("module live gates", () => {
   });
 
   it("reads flies' nested switch too — a top-level-only read reports an armed module as paper", () => {
-    writeModuleConfig("flies", { live: { enabled: true, gate0_confirmed: "jon 2026-07-30: authorized" } });
+    writeModuleConfig("flies", { live: { enabled: true, gate0_confirmed: "owner 2026-07-30: authorized" } });
     expect(readModuleGate(config, "flies")).toMatchObject({ liveEnabled: true, gate0Confirmed: true });
   });
 

@@ -75,7 +75,9 @@ unrecoverable in a way nothing else's is:
 - **The 09:30 deadline is hard.** A producer that is down through 09:30–09:35 loses that day's opening
   range permanently; there is no backfill.
 - **A restart is not instant.** After a restart the daemon needs a settling window (~240 s) before its
-  data is trustworthy, so "restart it at 09:29" is already too late. Aim to be alive by ~09:20.
+  data is trustworthy, so "restart it at 09:29" is already too late. Aim to be alive by ~09:20. The
+  watchdog starts a down producer from `streamer.session_start` in the orchestrator's config
+  (default 09:15 ET, a check that moves alone) on a trading day, up to one watchdog tick later.
 - **Death is not the only failure.** The 34-hour stall was a live-but-silent socket: the process was up
   and the connection was open, and no data was moving. So supervision restarts on **silence**, not just
   on a dead PID.

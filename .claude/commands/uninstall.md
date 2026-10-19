@@ -29,6 +29,12 @@ Do this:
    resting orders. The "Left running by design" section names the streamer, the console, and Dolt —
    **the streamer is why the next step exists.**
 
+   **Service mode** (the optional Windows service, `run.py service`, `service.enabled`): `uninstall`
+   does not touch the service. Its WinSW definition is `startmode Automatic`, so the service starts
+   the supervisor again at the next boot. For a stop that survives a reboot, run
+   `python packages/orchestrator/run.py service uninstall` and have the commands it prints run in an
+   administrator prompt.
+
 2. **Stop what uninstall leaves behind** (each is best-effort — "not running" is a fine result):
    - **Streamer, services, console and any job child still running:**
      `python packages/orchestrator/run.py stop --all`. It stops the streamer and every managed

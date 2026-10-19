@@ -4,7 +4,7 @@ argument-hint: [--status] | [--restart] | [--logs] | [--stop] | [--no-browser]
 ---
 
 Open the **console** (`packages/console`), the suite's single read surface: every module's read
-models (overview/watchdog, MEIC, flies, earnings, GEX) plus research and screening, in one app
+models (Live, MEIC, flies, earnings, bwb, GEX and the rest) plus research and screening, in one app
 on **127.0.0.1:5070**. Read-only over every other package's data, loopback-only.
 
 **The supervisor owns this process.** It is an always-on resident job (`console` in

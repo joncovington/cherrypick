@@ -14,7 +14,7 @@ honesty rules and the money layout.
 pip install -e ../core -e .[dev]
 python -m cherrypick.contango.paper_loop --status
 python run.py nav
-python ../../scripts/contango_replay.py            # the rule over 2018-03 onward
+python ../../scripts/contango_replay.py            # the rule over 2018-03 onward (needs the technicals store and Cboe's VIX/VIX3M files)
 python -m pytest
 ```
 

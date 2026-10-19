@@ -25,7 +25,7 @@ a `/`-prefixed command on your behalf — no coding required.
 > never by import. See [How this fits the suite](#how-this-fits-the-suite) below, this module's own
 > [docs/](docs/README.md), and the suite-wide [documentation index](../../docs/README.md).
 
-An autonomous options trading agent running the **Multiple Entry Iron Condor (MEIC)** strategy on 0DTE index options. Rather than a traditional rules-only trading-bot framework, the agent itself runs the decision loop every few minutes during market hours, reading live market data, checking a stack of risk gates, and deciding whether to enter, hold, or close positions. It runs inside **[Claude Code](https://docs.claude.com/en/docs/claude-code)** (Anthropic's agentic CLI), which executes the operating instructions in `CLAUDE.md` and the skills in `.claude/commands/`. It talks to tastytrade directly via their official Python SDK (OAuth2, no middleman broker API). Live trading is gated behind an explicit config flag and defaults to dry-run.
+An autonomous options trading agent running the **Multiple Entry Iron Condor (MEIC)** strategy on 0DTE index options. Rather than a traditional rules-only trading-bot framework, the agent itself runs the decision loop every few minutes during market hours, reading live market data, checking a stack of risk gates, and deciding whether to enter, hold, or close positions. It runs inside **[Claude Code](https://docs.claude.com/en/docs/claude-code)** (Anthropic's agentic CLI), which executes the operating instructions in `CLAUDE.md` and the skills in `.claude/commands/`. It talks to tastytrade directly via their official Python SDK (OAuth2, no middleman broker API). Live trading is gated behind an explicit config flag and defaults to dry-run. Paper and the armed live loop (`live_loop.py`) run deterministic code, not the agent.
 
 Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`** library, a sibling package (`packages/core`) in this same monorepo. The suite's installer at the repo root (`install.cmd` on Windows, `install.sh` on macOS/Linux) installs it along with this package; installing by hand, `pip install -e ../core` has to come first, before any `import cherrypick.core...` resolves here. The distribution name in `pyproject.toml` is **`meicagent`** (the import package is `cherrypick.meic`), which is the name `pip show` and `pip uninstall` expect.
 
@@ -86,13 +86,13 @@ Then, inside Claude Code, pick a track:
 
 On a base install the paper loop runs one arm, `control`. Any other arm is this machine's own configuration in `~/.cherrypick/config/meic.risk.json` (see [Risk Profiles](#risk-profiles)). The AI advisor's `advised:<name>` books also need Claude Code and `advisor.enabled` in the suite config; both are off on a base install.
 
-**Live / dry-run trading (experimental, off by default, at your own risk)** — the real agent loop. It stays in dry-run until you set `enable_live_trading: true` yourself:
+**Live trading (experimental, off by default, at your own risk)** — the deterministic live loop, armed one day at a time. Set `enable_live_trading`, `live.symbol` and `live.gate0_confirmed` in `~/.cherrypick/config/meic.json`, then, from the repo root:
 
 ```
-/meic-start
+/live-meic-start
 ```
 
-Run it from the repo root. If `enable_live_trading` is true, it shows the disclaimer verbatim and stops unless you answer an explicit YES. It then verifies the shared market-data streamer and starts the agent loop. The live path trades one pinned symbol (`live.symbol`) and refuses to place orders until `live.gate0_confirmed` is filled in. Read [DISCLAIMER.md](../../DISCLAIMER.md) first. To watch the session, open the console with `/console` — the supervisor already has it running.
+It shows a status readout and the disclaimer verbatim and needs a literal YES; the supervisor then runs the `meic-live` tick until `live.disarm_time`. Tomorrow needs a fresh `/live-meic-start`. `/meic-start` remains the manual, agent-driven session (it shows the same disclaimer when `enable_live_trading` is true). Read [DISCLAIMER.md](../../DISCLAIMER.md) first. To watch the session, open the console with `/console` — the supervisor already has it running.
 
 See [docs/setup.md](docs/setup.md) for the full walkthrough and [docs/paper-trading.md](docs/paper-trading.md) for the paper-trading design and graduation criteria.
 
@@ -101,12 +101,15 @@ See [docs/setup.md](docs/setup.md) for the full walkthrough and [docs/paper-trad
 ## How this fits the suite
 
 This package is self-contained — everything below works from `packages/meic` on its own. Inside the
-cherrypick suite it plays two roles:
+cherrypick suite it plays three roles:
 
-- **Live / interactive (this package, standalone).** You drive the agent loop and the `/`-commands
+- **Live (supervisor-ticked, human-armed).** `cherrypick.meic.live_loop --once --live` runs as the
+  supervisor's `meic-live` job, only while today's arm record from `/live-meic-start` exists. It
+  trades one pinned `live.symbol` with the paper engine's own decision functions — experimental, off
+  by default, at your own risk.
+- **Interactive (this package, standalone).** You drive the agent loop and the `/`-commands
   yourself; start it with `/meic-start` from the repo root, which adds the disclaimer and YES check.
-  This is the only MEIC path that can place live orders, and only when you set
-  `enable_live_trading: true` — experimental, off by default, at your own risk. The orchestrator never
+  It can place live orders only when you set `enable_live_trading: true`. The orchestrator never
   touches it.
 - **Unattended paper (orchestrator-orchestrated).** The [orchestrator](../orchestrator)'s supervisor runs
   this module's `cherrypick.meic.paper_loop --once` as its `meic-paper` job (a short-lived process every
@@ -126,10 +129,10 @@ for the exact couplings.
 
 ## Design highlights
 
-- **Parallel-shadow paper trading** — every trading day, `control` and every active AI-advisor experiment (each its own `advised:<name>` book, any number running at once since 2026-09-17) are evaluated deterministically against the *same* live-quote snapshot per symbol, each as its own virtual account. Advised books need Claude Code and `advisor.enabled`, both off on a base install. No capital, no live orders, apples-to-apples stream comparison. Optional SPX historical-replay mode front-loads samples from past days that actually paid. See [docs/paper-trading.md](docs/paper-trading.md) and [docs/paper-experiments.md](docs/paper-experiments.md).
+- **Parallel-shadow paper trading** — every trading day, `control` and every active AI-advisor experiment (each its own `advised:<name>` book, any number running at once since 2026-09-17) are evaluated deterministically against the *same* live-quote snapshot per symbol, each as its own virtual account. Advised books need Claude Code and `advisor.enabled`, both off on a base install. No capital, no live orders, apples-to-apples stream comparison. Recorded sessions can be replayed through the same engine (`python -m cherrypick.meic.replay`, over the gex recorder's quote history from 2026-10-13). See [docs/paper-trading.md](docs/paper-trading.md) and [docs/paper-experiments.md](docs/paper-experiments.md).
 - **Corrected MEIC exit rules** — iron condors have exactly three exits: a per-side software stop (switched off in the shipped paper `control` arm, which holds to settlement or force-close), a time-based force-close **before the bell for non-cash-settled symbols only** (QQQ/IWM/equities — avoids physical assignment), and **left-to-expire cash settlement for cash-settled symbols** (SPX/XSP). There is **no profit-target exit** — that was removed as it isn't part of MEIC. Event days (FOMC, triple-witching, quarterly) still force-close everything as risk overrides.
 - **One read surface, both books** — the console tags every row with the mode it came from, so paper and live can never be confused for one another.
-- **Realistic fee modeling** — the paper engine charges tastytrade's exact broad-based-index-options fee schedule per leg (commission, clearing, ORF, per-symbol exchange fee, TAF on sells), so simulated P&L reflects real cost drag.
+- **Realistic fee modelling** — the paper engine charges tastytrade's exact broad-based-index-options fee schedule per leg (commission, clearing, ORF, per-symbol exchange fee, TAF on sells), so simulated P&L reflects real cost drag.
 - **Unattended, self-healing loop** — the suite's supervisor fires a short-lived paper-loop process every 60 seconds during market hours (the OS scheduler holds one entry for the whole suite, not one per module): headless, time-gated, and persistent across sessions. At the 16:00 settlement pass it rolls the session into `daily_summary`, which the suite review reads; this module's own EOD reports were retired on 2026-08-13.
 - **Automated end-of-day reporting** — the suite review (`packages/review`) covers this module alongside the other modules, split by arm, on two daily passes. `/eod-report` still produces the agent-synthesized LIVE write-up. Bounded log rotation keeps every log file from growing without limit.
 
@@ -198,13 +201,13 @@ python run.py headline                                # per-arm results + what i
 ```
 
 Under the supervisor, the paper loop stops when the module is switched off (`modules.meic.enabled`
-in `~/.cherrypick/config.json`). The standalone helpers `--install-task` / `--uninstall-task`
-(Windows only) register and remove the loop's own scheduled task, for a machine running MEIC without
-the supervisor.
+in `~/.cherrypick/config.json`). Without the supervisor, run `python -m cherrypick.meic.paper_loop`
+in a terminal (or `--start` for a detached daemon); the loop's own scheduled task (`--install-task`)
+was removed on 2026-10-08.
 
 Every 60 seconds during market hours, the engine takes one live-quote snapshot per symbol and runs every enabled arm against it deterministically — synthetic fills at mid less a modelled slippage haircut (`slippage_frac_of_spread`, 0.125 of the bid-ask by default), each arm its own virtual account, tastytrade's exact fee schedule applied per leg. Writes go only to `paper_trades.db` in the data home; the live account and `meic_trades.db` are never touched, and no live order is ever submitted (paper mode is not gated by `enable_live_trading`).
 
-A pre-registered **graduation gate** (≥30 filled ICs, positive expectancy, ≥65% win rate, profit factor 1.3–4.0, bounded drawdown and worst day) is the written bar for judging whether an arm's record could justify live capital. Nothing applies it automatically: `cherrypick calibrate` gives an advisory reading, and going live stays your decision. See [docs/paper-trading.md](docs/paper-trading.md) for the full design, the SPX historical-replay accelerator, and the known limitations of a frictionless paper model.
+A pre-registered **graduation gate** (≥30 filled ICs, positive expectancy, ≥65% win rate, profit factor 1.3–4.0, bounded drawdown and worst day) is the written bar for judging whether an arm's record could justify live capital. Nothing applies it automatically: `cherrypick calibrate` gives an advisory reading, and going live stays your decision. See [docs/paper-trading.md](docs/paper-trading.md) for the full design, the fee and slippage model, and the known limitations of a frictionless paper model.
 
 ## The read surface
 
@@ -214,15 +217,20 @@ which port you opened (this module's own two-port dashboard, 5050 live / 5051 pa
 2026-08-12). The MEIC page has a left rail of tabs:
 
 - **session** — one session's net, positions, costs, net by arm and why entries were refused
+- **summary** — the gauge-led day summary
 - **forest**, **attempts**, **exits**, **regime cuts** — each arm's expiry payoff, every evaluated
   entry, how positions ended, and outcomes by regime
 - **calibration**, **performance** — arm comparison, cumulative net and drawdown, per-period
   statistics and risk-adjusted metrics (scaled to a notional $100k bankroll; filterable by symbol and
   arm)
+- **analysis**, **costs** — the module's analysis view and its cost breakdown
 - **advisor** — the AI advisor's experiments on this module (only when the advisor is switched on)
 - **positions**, **history**, **sessions** — open trades, closed trades in the suite's standard money
   layout, and the per-session roll-up
 - **help** — what each view means
+
+MEIC's live ledger also has its own tab on the console's **Live** page, shown while MEIC's live
+switch is on.
 
 GEX, IV skew and volume are on the console's own **GEX** page, off the same live stream cache; MEIC's
 trading loop still uses the shared GEX engine (`cherrypick.core.gex`, via `tt.py get_gex`) for its
@@ -272,7 +280,7 @@ cherrypick/
     │   ├── notify.py                # Structured log CLI helper
     │   ├── gex_math.py              # Gamma-exposure (GEX) computation helpers
     │   ├── regime.py                # Entry-time regime tagging (vol/GEX/skew/trend, 8 dimensions)
-    │   ├── stop_policies.py         # Derived stop policies, computed read-side from open's paths
+    │   ├── stop_policies.py         # Derived stop policies, computed read-side from control's paths
     │   ├── analytics.py             # Read-only query layer: by_arm, breakeven_scorecard, regime cuts
     │   ├── paper.py                 # Deterministic parallel-shadow paper engine (every enabled arm)
     │   ├── paper_loop.py            # Unattended paper loop (one --once tick per spawn) + daily roll-up
@@ -280,8 +288,13 @@ cherrypick/
     │   ├── paper_replay.py          # SPX historical-replay mode (0DTESPX data; bulk mode disabled)
     │   ├── cli.py                   # Read-only CLI behind run.py (headline, arms, regime, exits, stops, …)
     │   ├── regime_cuts.py           # Nightly regime-cuts artifact (the supervisor's meic-regime-cuts job)
-    │   ├── live_loop.py             # Live agent-loop entry/exit mechanics (isolated from paper's arms)
+    │   ├── live_loop.py             # Deterministic live loop (armed per day; the meic-live job)
     │   ├── live_orders.py           # Live order placement/adjustment helpers
+    │   ├── live_migrate.py          # Moves live-only keys from the top level into the live block
+    │   ├── alert_daemon.py          # Order-alert daemon: fills confirmed on the broker's push
+    │   ├── fee_reconcile.py         # Live ledger fees reconciled against the broker (meic-fee-reconcile)
+    │   ├── replay.py                # Quote-history replay of a recorded session (scratch ledger)
+    │   ├── replay_check.py          # The replay validated against paper on recorded sessions
     │   ├── live_smoke.py            # Supervised dry-run smoke test of the live broker write path
     │   ├── experiment.py            # Session-bootstrap comparison CLI for study arms
     │   └── gate_health.py           # Reports which regime gates are armed/stood-down right now
@@ -291,13 +304,12 @@ cherrypick/
     │   ├── operating.md             # Running and monitoring the agent
     │   ├── strategy.md              # MEIC strategy details and exit rules
     │   ├── paper-trading.md         # Paper-trading engine, fee model, graduation gate
-    │   ├── paper-experiments.md     # The current forward test + retired-study design record
+    │   ├── paper-experiments.md     # The closed forward test + retired-study design record
     │   ├── paper-practice-plan.md   # Structured plan for building paper-workflow confidence
     │   ├── risk-profiles.md         # The retired risk ladder and its rationale
     │   ├── history.md               # Dated incidents, audits and arm changes
     │   └── 0dtespx-api.md           # 0DTESPX API/ToS notes (historical-replay data source)
     ├── .claude/
-    │   ├── settings.json            # Permissions and MCP environment overrides
     │   └── commands/
     │       ├── meic-start.md        # /meic-start — launch full live session
     │       ├── paper-start.md       # /paper-start — check the streamer, console and supervisor's paper job
@@ -322,11 +334,15 @@ orchestrator and this module read the same files. Resolved by [`cherrypick/meic/
 ├── meic_trades.db                   # Live trade history, loop log, daily summaries
 ├── paper_trades.db                  # Paper trade history (every enabled arm)
 ├── replay_cache/                    # Cached SPX historical-replay snapshots
-├── streamer.pid                     # Rollback-producer PID file (MEIC's own streamer, normally off)
+├── live_alerts.db                   # Order alerts the alert daemon records (read by live-fill-alerts)
+├── live_once.lock / live_orphans.json / live_held.json   # live tick lock, orphan sweep, held submits
 └── paper_loop.pid / paper_loop.once.lock   # --start daemon PID and the --once overlap lock
 
 ~/.cherrypick/logs/meic/             # default; override with the MEIC_LOGS_DIR env var (all rotated)
+├── agent.log                        # Agent-path events (notify log_event)
 ├── paper_loop.log                   # Paper loop log
+├── meic_live.log                    # One JSON line per live tick
+├── meic_alert_daemon.log            # Order-alert daemon log
 ├── tt.log                           # Broker CLI log
 └── eod-<date>.md                    # Live end-of-day write-up from /eod-report (agent-synthesized)
 

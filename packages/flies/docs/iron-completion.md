@@ -72,7 +72,7 @@ while the index does not update.
 
 **Assignment fees.** An iron butterfly always has one side in the money; a same-type fly can settle
 entirely out of the money. This book's completions arrive *after* spot has walked away from the
-short strike (119 of 143 completions drifted favorably), which is exactly where the same-type fly
+short strike (119 of 143 completions drifted favourably), which is exactly where the same-type fly
 settles clean and the iron does not. Measured over all 143 completed legged flies in the ledger,
 re-scored under both geometries at their real settlement prices:
 
@@ -135,5 +135,5 @@ Until both exist, iron completion is a strictly more expensive way to buy the sa
 
 There is one narrow use that does **not** require the above and is worth remembering: as a
 **fallback** when the same-type completion returns `missing_leg_quotes` while the opposite side is
-quotable. That is availability, not edge, and it would be gated on realized-fee neutrality rather
+quotable. That is availability, not edge, and it would be gated on realised-fee neutrality rather
 than on the floor comparison — a different feature from the arm retired here.

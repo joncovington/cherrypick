@@ -11,6 +11,40 @@ beyond the latest release.
 
 ## [Unreleased]
 
+## v0.11.1 — 2026-10-19 — documentation corrections
+A review of every document in the repo against the code, which v0.11.0 should have carried. About
+130 docs changed; no behaviour did. What matters if you act on the docs:
+
+- **Commands that would have failed or misled.**
+  - `/live-bwb-start`'s readiness check passed an argument the function no longer takes, so it
+    raised a TypeError; it now runs.
+  - `/install` refuses while **any** live module (flies, bwb, meic) is armed for today, not only
+    flies. Its refusal message now names the armed module's own disarm command.
+  - `/live-flies-start` no longer describes the scheduled-task fallback that was removed on
+    2026-10-08. It now stops on unresolved broker submissions and overdue settlements, as MEIC's and
+    bwb's do.
+  - The flies README's paper-loop example used a 300-second interval; the supervised cadence is
+    15 seconds, and a different interval records a cadence break.
+- **MEIC's live path is described as it runs.** It is the deterministic `live_loop.py`, armed per
+  day with `/live-meic-start` and ticked by the supervisor as `meic-live`, sized from the `live` block
+  (which may name one arm in `live.arm`). The agent-driven `/meic-start` session is the second,
+  manual path. Several MEIC docs still described the agent loop as the only live path, the retired
+  forward-test streams as current, and gates in an order the code does not use.
+- **Each package's docs caught up with the last three weeks.** That covers contango, manage and
+  backtest, pmcc's full roster, curve's `near` arm and `hook`'s retirement, and earnings' seventh
+  strategy and its entry-session hold. It also covers the console's Live, Screeners and Charts pages
+  and the orchestrator's live jobs and Windows-service mode. Boundary dates that moved from 10-19 to
+  10-15 are corrected everywhere.
+- **Nothing personal or licensed in the repo.**
+  - Test fixtures no longer echo a real account's last four digits, a real balance, a first name or
+    a machine user name.
+  - The author email is gone from two `pyproject.toml` files.
+  - The portfolio-guidance plan's worked figures are a hypothetical account.
+  - Statements of results derived from the licensed backtest history now say only what was decided,
+    with the results kept locally.
+- **Removed:** the Overview screenshot in QUICKSTART (the page no longer exists), and the earnings
+  file-size exceptions page, which had drifted from the code.
+
 ## v0.11.0 — 2026-10-19 — live loops and the read side
 Three weeks and about 420 pull requests since the public release. MEIC got a live path of its own,
 armed a day at a time like flies and bwb, and every live loop now stops new risk the same way. Three

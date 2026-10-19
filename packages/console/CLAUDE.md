@@ -1,7 +1,8 @@
 # console (unified web UI)
 
-The suite's only read surface: one app over every module's read models — overview/watchdog, MEIC,
-flies, earnings, PMCC, calendars, curve, BWB, GEX — plus the advisor and the reports. Every module
+The suite's only read surface: one app over every module's read models — the Live page, the eight
+trading modules (flies, MEIC, bwb, earnings, PMCC, calendars, curve, contango), GEX, Options flow,
+Charts, Screeners, Compare, Backtest and System — plus the advisor and the reports. Every module
 remains a producer this package reads; it touches none of their code. The dashboards it replaced
 survive only at the `pre-console-only` tag, and the scout research surfaces are retired too, so **no
 path here touches an order** — `dry-run-only.test.ts` pins `postOrderDryRun` to the scope probe alone
@@ -58,8 +59,9 @@ alone):
   `--dump <file>` writes the rendered DOM. `--card <title text>` crops `--shot` to one grid card
   that has drawn its chart, and fails rather than falling back to the page;
   `scripts/flies_payoff_post.py` captures the flies payoff card this way, and the QuikOptions
-  Discord series captures the Options flow page's `today` cards (each titled `<name> — <session>`),
-  so changing a card's title text breaks those posts. Prefer `--route` over `--click`: every slide is
+  Discord series captures the Options flow page's `today` cards (each titled `<name> — <session>`;
+  some from `/post/flow`, a capture-only page outside the shell, with no rail or header and in no
+  nav), so changing a card's title text breaks those posts. Prefer `--route` over `--click`: every slide is
   addressable, and on the frame `--click` cannot reach a tab (it skips anything inside a `<nav>`, and
   the rail is one).
 - **Under Git Bash, prefix it with `MSYS_NO_PATHCONV=1`**, or `--route /flies` arrives as
@@ -130,7 +132,7 @@ alone):
   scheduled runs and the browser use the same door. Both only make the advisor do LESS — there is
   deliberately no way to start, tune or enact anything from the browser. The rest of the page reads
   `data/advisor/advisor.db` (read-only) and the artifacts, and **computes no verdicts**: they come from
-  `packages/advisor` via ledger-readers → `compare_profiles` → `qualify_readings`. "Did the loop apply
+  `packages/advisor` via ledger-readers → `group_by_tag` → `qualify_readings`. "Did the loop apply
   this artifact" is one of those verdicts, read from the `enactment` table, never recomputed here (a
   reject-all artifact beside a baseline decision IS enacted). No rows on an older store renders as
   "not scored yet"; only a dropped artifact gets a warning chip. The apply banner compares like with
@@ -234,7 +236,7 @@ tooltips, built from `navLinks.ts` so a hint cannot outlive its shortcut.
 **Views.** One console pref (`viewMode`; absent means `detail`) switches every module between
 `simple` and `detail`. Each module lists its simple tabs in its own vocabulary (`ModuleNavDecl.simple`
 in `navGroups.ts`); detail shows every tab; a module that declares no list shows everything in both.
-Simple view also leaves Compare, Advisor and System off the rail (`SIMPLE_HIDDEN_PAGES`,
+Simple view also leaves Compare, Backtest, Advisor and System off the rail (`SIMPLE_HIDDEN_PAGES`,
 `navLinks.ts`). A bare module URL lands on the view's first tab, a deep link to a tab outside the view still renders
 (and the rail keeps it listed while you are on it), and `j`/`k` step through the view's tabs.
 
@@ -250,8 +252,8 @@ coverage (`python -m cherrypick.core.quotehistory coverage`, which reads only th
 `core.impliedvar check` for VIX9D and VIX, whose refusal (`not_bracketed`) is a reading, not a
 failure (`spawnModuleCli`'s `okStatuses`).
 
-**What is off is not shown.** Whether a module, GEX (the `gex-recorder` service), the advisor, the
-technicals cards or a narrative is on comes **only** from the orchestrator's `configcli` op
+**What is off is not shown.** Whether a module, GEX (the `gex-recorder` service), Options flow
+(`options_flow`, i.e. `quikoptions.enabled`), the advisor, the technicals cards or a narrative is on comes **only** from the orchestrator's `configcli` op
 `features` (`services/featuresBridge.ts`, memoised 15 s and dropped on every config save or halt
 toggle; `GET /api/features`), never from reading the config here — `enabled` already folds in
 capabilities like Dolt and Claude Code. Every web rule is in `lib/visibility.ts`; the desk
@@ -260,8 +262,8 @@ loading, `{ok: false}` or an id the reply does not name all show the thing, with
 failure. A Live tab named for a module (flies, meic) follows that module's live master switch,
 which the same reply carries as `live` (2026-10-18); only an explicit `false` hides it, and the
 account-wide tabs never leave. A direct URL to an off page renders `ModuleOffCard` (why, and a link to Config), never a 404
-and never the module. Config always lists every toggle. Calendars, pmcc and curve carry an
-`experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`.
+and never the module. Config always lists every toggle. Calendars, pmcc, curve and contango carry
+an `experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`.
 
 - **The one exception fails closed: Backtest** (`FAIL_CLOSED_PAGES` in `visibility.ts`). Its results
   come from licensed vendor history whose licence forbids redistribution, so it is shown only when
@@ -312,7 +314,7 @@ four tabs, because its write actions are wired through page-spanning state (`nav
 
 **Reports** (`/reports`) holds the morning pack (`packages/overview`) and the EOD review
 (`packages/review`) as tabs; each tab renders its own page component unchanged, so neither report gains
-a second place its shape is decided. The tab is in the URL (`?tab=eod`) because reports get sent, and
+a second place its shape is decided. The tab is in the URL (`/reports/eod`) because reports get sent, and
 `/morning` and `/review` redirect rather than 404.
 
 - The Morning tab also shows `packages/technicals`' report (`data/technicals/report-<session>.json`,
@@ -322,7 +324,8 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   fail at `<=`.
 - Its leaders and scan matches link to the technicals chart, which is on the Charts page.
 
-**Charts** (`/charts`, `lightbox/manifests/ChartsLightbox.tsx`) — two tabs, both chart only:
+**Charts** (`/charts`, `lightbox/manifests/ChartsLightbox.tsx`) — three tabs: two charts and
+the setups watchlist:
 
 - `/charts/intraday?product=ES&period=5m` is a live futures chart (1m/5m/15m) over the console's own
   DXLink session, extended hours included (`market/candles.ts`, `pages/Intraday/IntradayPage.tsx`).
@@ -355,9 +358,23 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
     the setup lines. Vendor levels are drawn from their own date, as the vendor draws them, and kept out
     of the autoscale. Entry and exit arrows are both amber: an arrow marks an event, and green or
     red would read as a gain or a loss.
-- `/screeners` (2026-10-16; `pages/Screeners/ScreenersPage.tsx`, `readers/screeners.ts`,
-  `GET /api/screeners/:list[?day=]` and `/api/screeners/fidelity`) shows the income screener lists:
-  short puts, covered calls, credit spreads, one row a name, and a fidelity tab (detail view only).
+- `/charts/setups` is the setups watchlist (`pages/Setups/SetupsPage.tsx`, `GET /api/technicals/setups`
+  over `charts/setups-index.json`): recent entries and exits, or open positions, long and short,
+  each symbol linking to its chart with the setup and side selected; nothing on it is vendor data. Gated with the technicals tab. The page filters and sorts
+  and splits a position into entry and exit lines; every value is the package's. "Move" is close to
+  close and never called P&L, and nothing ranks a signal's quality. "Tested edge" swaps in the
+  study's confirmed rule's rows (`tested`), which overlap the setup rows and are never shown with
+  them. The page is cut to `optionsTradable` names by default whenever the file carries a label
+  (`names=all` is the way out). With no label it cuts nothing, because an unknown flag would empty
+  it.
+
+**Screeners** (`/screeners`, 2026-10-16; `lightbox/manifests/ScreenersLightbox.tsx`) — two groups
+(2026-10-18 order). Our own screens first: the earnings calendar, its forward record and the signal
+board. Then the income lists: short puts, covered calls and credit spreads, one tab each, which stop
+when the vendor subscription ends on 2026-10-24, and a fidelity tab (detail view only).
+
+- The income lists (`pages/Screeners/ScreenersPage.tsx`, `readers/screeners.ts`,
+  `GET /api/screeners/:list[?day=]` and `/api/screeners/fidelity`) are one row a name.
   The reader JOINS other packages' files and re-derives no rule: our strike is `score-screeners`'
   `picks`, each leg's verdict and the listed-or-cycle recommendation are `fetch_screener_greeks.py`'s
   (`rebar` re-applies the bars to saved readings), the tradable verdict is `technicals liquidity`'s
@@ -409,16 +426,6 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   tie never listed. A minimum count (2 by default; 1 and 3 one click away), sector and symbol
   filters. Approximate methods carry "≈"; the note names what is not counted and that the board is
   not a tested signal.
-- `/charts/setups` is the setups watchlist (`pages/Setups/SetupsPage.tsx`, `GET /api/technicals/setups`
-  over `charts/setups-index.json`): recent entries and exits, or open positions, long and short,
-  each symbol linking to its chart with the setup and side selected; nothing on it is vendor data. Gated with the technicals tab. The page filters and sorts
-  and splits a position into entry and exit lines; every value is the package's. "Move" is close to
-  close and never called P&L, and nothing ranks a signal's quality. "Tested edge" swaps in the
-  study's confirmed rule's rows (`tested`), which overlap the setup rows and are never shown with
-  them. The page is cut to `optionsTradable` names by default whenever the file carries a label
-  (`names=all` is the way out). With no label it cuts nothing, because an unknown flag would empty
-  it.
-
 **Compare's risk tab** (`/compare/risk`, 2026-10-17, `pages/Compare/RiskTab.tsx` over
 `GET /api/analysis` → `readers/analysis.ts::readArmsRisk`) — every arm of every module on one
 sortable table, each over its own window (the analysis tab's rule), with peak risk, net over the
@@ -478,7 +485,7 @@ every module beside its control, over `GET /api/compare?scope=era|all` (`routes/
 the intervals, paired differences, t bounds, sign tests and projections are `core.stats`'
 (`server/test/compare-bridge.test.ts`, `web/test/comparePage.test.tsx`).
 
-- Field names stay the bridge's snake_case, verbatim (`shared/types/compare.ts`). A schema other than
+- Field names stay the bridge's snake_case, verbatim (`shared/src/types/compare.ts`). A schema other than
   1 is refused, never half-rendered; every failure is `{ok: false, error}`, never an empty table.
 - Memoised on every module's paper ledger, the advisor's store and the New York session (a break
   dated ahead binds from its own date). A bad `scope` is a 400 and never runs the bridge.
@@ -562,8 +569,10 @@ of the last evening pass, tomorrow's artifact, the queue and the last concluded.
 experiments tab opens with the cross-module roll-up. Module slides are read-only; kill/dismiss stay on
 the Advisor page only.
 
-**Live** (`/live`, `lightbox/manifests/LiveLightbox.tsx`, `pages/Live/`) — the flies live pilot's day
-over `GET /api/live/flies` (`routes/live.ts` → `readers/fliesLive.ts`), composing existing readers
+**Live** (`/live`, `lightbox/manifests/LiveLightbox.tsx`, `pages/Live/`) — five tabs: `today` (where
+`/live` lands), the account-wide `positions` and `portfolio`, and one per live loop with a page of its
+own (`flies`, `meic`; each hidden when that module's live switch is off, see *What is off*). The
+`flies` tab is the pilot's day over `GET /api/live/flies` (`routes/live.ts` → `readers/fliesLive.ts`), composing existing readers
 (`services/liveLock`, `readFliesLoopStatus`, `readFliesJournal`, `readFliesAnalytics`) plus settled
 net per period, the intraday series and the broker account. Rules, stated on the page:
 
@@ -678,6 +687,14 @@ module, is the "live shadow" table in the Paper view, read off the same file.
   reads characters 11-16, and a UTC ISO string there reads four or five hours out.
 - A pack is served as the model saw it, `_` keys removed as `intraday_pack.for_model` removes them.
   A close is a tag priced at natural, never a fill, and the page says so.
+
+**GEX** (`/gex`, four tabs: gex, iv skew, volume, history) computes its profile in TypeScript,
+mirroring `core.gex`: `analytics/gex.ts`'s `strikeGamma` (one gamma per strike, the OTM side's) and
+`netWalls` (no wall without a strike on its own side of zero) are the core's `strike_gamma` and
+`net_walls`, and `services/gexProfile.ts`'s `LEFTOVER_ROW_SECONDS` is `core.gex.LEFTOVER_ROW_SECONDS`.
+Change each pair together or not at all. `wallAlternates` (`contestedWalls`: a runner-up whose net is
+above `WALL_NEAR_TIE`, 80%, of the wall's) is display only; the recorded walls and the wall-clear arm's read are
+unchanged by it.
 
 **Regime-cuts slide** (flies and MEIC) — `components/RegimeCutsTab.tsx` over
 `GET /api/<module>/regime-cuts[?session=YYYY-MM-DD]` (`routes/modules.ts` → `readers/regimeCuts.ts`).

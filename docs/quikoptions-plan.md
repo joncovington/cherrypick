@@ -1,6 +1,6 @@
 # QuikOptions: hot options and the event calendar — plan
 
-*Drafted 2026-10-02. A build plan, nothing built yet. Two pages of app.quikoptions.com, read with
+*Drafted 2026-10-02; built 2026-10-03 onward (each phase marks its own state). Two pages of app.quikoptions.com, read with
 our own login: the Hot Options Report (`/Market/Options/THOR/Stock`), shown on its own console page
 and posted to Discord as a daily series on its own webhook, and Resources > Calendars as an
 independent check on our own event calendar.*

@@ -2,18 +2,21 @@
 
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
-Structure, entry gates, and exit rules for all six strategies. Every strategy is
+Structure, entry gates, and exit rules for all seven strategies. Every strategy is
 **defined-risk** — max loss is known at entry. Undefined-risk/naked strategies were deliberately
 excluded: a naked short on a single-name earnings gap can blow out arbitrarily during the
 unmonitored overnight hold this system is built around.
 
-Two shared facts apply to every strategy below, so they aren't repeated six times:
+Two shared facts apply to every strategy below, so they aren't repeated seven times:
 
-- **Exit mechanics are the same shape for all six** — positions are **managed**, not force-closed
+- **Exit mechanics share one shape** — positions are **managed**, not force-closed
   the morning after entry (changed 2026-08-12; a measurement break, never pool across it). Each
   strategy owns its own profit target and stop, listed below; on top of those sit the rules that need
   more than one tick to see — the PEAD gate (a winner may carry, a loser closes the first morning),
-  a three-session cap on the four overnight structures, and a pin guard on expiration day. Marks are
+  a three-session cap on the four overnight structures, a pin guard on expiration day, and the 15:30
+  expiry close on any leg's expiration day. Nothing but those last two acts on the entry session
+  (`entry_session`, 2026-10-17). `expected_move_butterfly` is exempt from the PEAD gate and the
+  session cap. Marks are
   taken every minute but never acted on before 09:40, since opening spreads can exceed the edge being
   managed. See [Exit Strategy Guide](./10-exits.md) for the formulas, the execution gates, and which
   thresholds are research-backed rather than house rules.
@@ -159,6 +162,9 @@ Far wing: buy 1x 145 put (wide, away from spot)
 
 ## 5. ATM Calendar
 
+**Retired from `strat_test` from 2026-10-15** (`STRAT_TEST_RETIRED`): still registered and screened,
+it opens nothing in the forced-sampling books.
+
 **Structure:** Sell a front-month ATM call, buy the same strike in a later monthly expiration.
 Always the call side — literature treats call and put ATM calendars as performing virtually
 identically, so this is a config-fixed choice, not a computed one. Always closes as a single
@@ -169,20 +175,23 @@ back), `back_month_min_days_after` (back-month must land a documented distance p
 plus the shared gates. No expected-move-boundary filter — this is a pure ATM term-structure
 play, not targeting where the stock lands.
 
-**Exit:** `evaluate_debit_spread_exit()` at a looser 30%/100% target/stop (the position tolerates
-more round-trip noise since it decays over days, not hours), plus a hard time-stop
+**Exit:** `evaluate_debit_spread_exit()` at 15% of debit / 50% of debit target/stop (set at the
+2026-08-12 cutover, aligned with the double calendar's), plus a hard time-stop
 (`exit_days_before_front_expiration`, default 5 days) — once the front leg is within 5 days of
 expiring, gamma risk on the short ATM option overwhelms any remaining theta benefit.
 
 ```
 Sell front-month 150 call ($0.40) / Buy back-month 150 call ($0.70)
 Entry debit: $0.30
-Profit target: 30% → close once back-front spread narrows to ~$0.21
+Profit target: 15% → close once the spread is worth ~$0.345 (a $0.045 gain)
 ```
 
 ---
 
 ## 6. Double Calendar
+
+**Retired from `strat_test` from 2026-10-15** (`STRAT_TEST_RETIRED`): still registered and screened,
+it opens nothing in the forced-sampling books.
 
 **Structure:** An ATM calendar run on both the call and put side simultaneously — sell
 front-month calls and puts at the expected-move boundaries, buy the same two strikes in a later
@@ -195,8 +204,7 @@ width-defined credit strategy's max loss. Also gates on `max_realized_move_dispe
 consistent the underlying's historical earnings moves have been), since this structure leans on
 the expected-move assumption more than a single-expiration credit spread does.
 
-**Exit:** the same target/stop shape and 5-day time-stop as `atm_calendar` (though the profit target
-differs: 25% here, 30% there), plus a per-side
+**Exit:** the same 15% / 50% of debit target/stop and 5-day time-stop as `atm_calendar`, plus a per-side
 delta stop (`leg_stop_delta_abs`, default 0.45) checked during Step 3b — a side crossing this
 threshold gets closed independently while the other side, likely still healthy, stays open.
 
@@ -248,7 +256,7 @@ Max profit 2.49 at 100; breakevens 97.51 / 102.49; max loss the debit
 ## Strategy Selection at a Glance
 
 There's no fixed lookup table mapping a market condition to a strategy — `rank_strategies.py`
-evaluates all six against every symbol and picks whichever scores highest among those that
+evaluates all seven against every symbol and picks whichever scores highest among those that
 clear their own screen. As a rough mental model of what tends to win under which conditions:
 
 - **Rich IV/RV, negative term structure, no strong skew** → `iron_fly` or `iron_condor`

@@ -39,8 +39,8 @@ python -m cherrypick.core.auth setup      # THE single setting path (hidden inpu
 ```
 
 The console only reads. At boot it probes the credential's scope live (scope rides on the refresh
-token): a read-only token disables write-oriented functions (broker dry-run validation of staged
-tickets) until a trade-scoped token is rotated in. Inspection commands:
+token): a read-only token gets a warning and a status-bar chip. The console has no order path, so
+nothing else changes until a trade-scoped token is rotated in. Inspection commands:
 
 ```
 python run.py credentials show     # source + masked values

@@ -36,9 +36,10 @@ Order lifecycle:
     auto-fetch never lands. Next-day settlement happens automatically — settlement is checked
     before the session gate, like paper.
   - SELF-DISARM (dead-man's switch): a live tick at/after `live.disarm_time` (default 17:00),
-    or one that finds the arm stamp from a previous day, uninstalls its OWN scheduled task.
-    Arming is per-day by design — today's YES can never carry into tomorrow. The orchestrator
-    watchdog backstops this by setting the halt flag if the task somehow survives.
+    or one that finds the arm stamp from a previous day, deletes the arm record, and the
+    supervisor's `flies-live` job stops on its next pass. Arming is per-day by design — today's
+    YES can never carry into tomorrow. The orchestrator watchdog backstops this by setting the
+    halt flag if a stale arm record somehow survives.
 
 Gates checked every live tick (`readiness()`): `live.enabled`, a non-empty `gate0_confirmed`
 attestation, one configured arm and a designated account -- unmet, the tick does nothing. The halt

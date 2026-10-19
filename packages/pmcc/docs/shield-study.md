@@ -200,7 +200,8 @@ of the following 21 sessions, since 2011.
 - **DIA, EEM, EFA, FXI, XLK, XBI**: too thin, under 60k calls a day.
 - **TLT and HYG**: monthly dividends, so a refused short every month.
 - **EWZ, USO, GDX, KWEB, ARKK, KRE, SMH, XLE, XLF**: ATM spreads of 5.5% to 29%, most with fat
-  tails.
+  tails. (SMH was added on 2026-10-12 after a broker-measured candidate screen: docs/history.md,
+  "Single stocks join".)
 - **IBIT**: too short a history to replay.
 
 ## The year-long expiry: why the pick is a standard monthly

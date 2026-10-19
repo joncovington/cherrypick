@@ -12,12 +12,12 @@ IV crush, not an intraday move.
 
 ## The Slash Commands
 
-Four slash commands cover the actual day-to-day operation; which one you reach for depends on
+Three slash commands cover the actual day-to-day operation; which one you reach for depends on
 what you're trying to accomplish:
 
 | Command | What it does |
 |---|---|
-| `/paper-start` | Forced-sampling strategy test — opens a paper trade for every strategy that clears the screen on every viable symbol (not just each symbol's best) into per-strategy strat_test books, then closes them the next morning. Use this daily while you're still building a track record for each strategy. |
+| `/paper-start` | Forced-sampling strategy test — opens a paper trade for every strategy that clears the screen on every viable symbol (not just each symbol's best) into per-strategy strat_test books, then runs the next morning's close pass. Use this daily while you're still building a track record for each strategy. |
 | `/paper-trading-start` | One-shot production-ranking analysis — runs `rank_strategies.py get_ranked_symbols` and shows what the real loop would pick tonight, without opening anything. Good for a quick look at tonight's candidates without committing to a full cycle. |
 | `/earnings-start` | The actual continuous trading loop (paper or live, depending on `enable_live_trading`) — runs through a full entry window and the next morning's close window, following `CLAUDE.md`'s Loop Steps. |
 
@@ -25,10 +25,11 @@ Everything below walks through what's actually happening underneath these comman
 want to run the pieces by hand or understand what a slash command is doing on your behalf.
 
 These slash commands are the **interactive / live** side you drive yourself from this package. The
-day-to-day paper collection runs the other way: the [orchestrator](../../orchestrator) drives the same
-`/paper-start` forced-sampling program **unattended** via OS-scheduled entry (15:45 ET) and exit
-(09:45 ET) tasks it watchdogs — this module has no scheduler of its own, and the orchestrator never
-places live orders. See the [package README](../README.md#how-this-fits-the-suite) for how the two roles
+day-to-day paper collection runs the other way: the [orchestrator](../../orchestrator)'s supervisor
+runs the managed paper loop (`paper_loop once`) **unattended** every 60 seconds as its
+`earnings-paper` job. The loop runs the same forced-sampling program's entry scan at 15:35 and
+manages exits itself. This module has no scheduler of its own, and the orchestrator never places
+live orders. See the [package README](../README.md#how-this-fits-the-suite) for how the two roles
 divide up.
 
 ---
@@ -48,7 +49,7 @@ Then run the cross-strategy ranking to see what the loop would actually pick ton
 python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY
 ```
 
-This evaluates all six strategies against every symbol on the merged today-AMC/tomorrow-BMO
+This evaluates all seven strategies against every symbol on the merged today-AMC/tomorrow-BMO
 calendar and picks each symbol's single best-ranked strategy — see
 [Entry Conditions Framework](./04-entry-conditions.md) for how that ranking works and
 [Earnings Scan Analysis](./06-scan-analysis.md) for how to read the output.
@@ -90,7 +91,7 @@ this system is defined-risk: an undefined-risk position left unmonitored overnig
 against you by an amount that isn't capped, which is why naked strategies were removed from
 this system entirely.
 
-Two of the six strategies (`double_calendar`, `atm_calendar`) do get intraday management
+Two of the strategies (`double_calendar`, `atm_calendar`) do get intraday management
 during *regular session hours* if a position happens to still be open then (Step 3b/3d in
 `CLAUDE.md`'s Loop Steps) — but this doesn't apply overnight, only during market hours the
 position is open across a multi-day hold.
@@ -106,6 +107,8 @@ position can live for one morning or for three sessions.
 The full rule set, the thresholds, and the execution gates are in
 [Exit Strategy Guide](./10-exits.md); the shape of a day is:
 
+0. **The entry session (15:35–16:00)** — a position just opened by the entry scan is held untouched
+   (`entry_session`). Only the expiry close and the pin guard may act before the report.
 1. **09:30–09:40** — marks are taken but nothing is acted on. Opening spreads on an earnings name can
    be wider than the edge being managed, so a target computed off that mid is not a price.
 2. **09:40 onward** — decisions are acted on. Most positions resolve here: a winner at its target
@@ -113,7 +116,8 @@ The full rule set, the thresholds, and the execution gates are in
    rather than revert.
 3. **A winner short of its target is held** — that is the change. It carries overnight and is
    re-marked from the next open, up to a three-session cap.
-4. **Every close is confirmed through the broker** before it is recorded, even when the cache decided
+4. **15:30 on any leg's expiration day** — the expiry close, whatever the P&L.
+5. **Every close is confirmed through the broker** before it is recorded, even when the cache decided
    it.
 
 **A worked multi-day hold:**
@@ -132,29 +136,15 @@ exactly what the `hold_days` and excursion columns now let the reports answer.
 
 ## End of Day
 
-The forced-sampling close pass (`run_closes`, driven by the orchestrator's 09:45 ET exit task)
-writes **two** deterministic end-of-day files automatically to `~/.cherrypick/logs/earnings/`:
-
-- (retired 2026-08-13) `paper-eod-<date>.md` — the terse metrics report: an account-wide net-P&L summary plus per-profile,
-  per-strategy, and per-symbol breakdowns, all net of costs.
-- `eod-analysis-<date>.md` — a conversational **7-section** read on the same session (executive
-  snapshot, position detail, trade log, risk metrics, market context, tax notes, and a notes/journal
-  with recommendations). Still fully deterministic/code-generated — no agent — just written in
-  plain-English analysis language.
-
-The module's own EOD reports were retired 2026-08-13; the suite review covers the session (`eod_report`/`eod_analysis` previously wrote just
-the analysis):
+The module's own EOD reports were retired 2026-08-13. The loop's `eod` phase records an iteration
+and writes nothing. The suite review builds the session from one fact set across every module,
+rendered to `~/.cherrypick/data/review/eod-<date>.md`:
 
 ```
 python -m cherrypick.review build --session YYYY-MM-DD
-python -m cherrypick.earnings.strat_test_harness eod_analysis [--date YYYY-MM-DD]
 ```
 
-The orchestrator's suite digest and (opt-in) AI insight build on these files — see the suite
-[reporting docs](../../../docs/reporting-and-dashboard.md).
-
-For accumulated (multi-day) results across the whole sample, use `python -m cherrypick.earnings.strategy_report`
-or the console's Earnings page instead.
+See the suite [reporting docs](../../../docs/reporting-and-dashboard.md).
 
 To check accumulated results across many days:
 
@@ -165,7 +155,7 @@ python -m cherrypick.earnings.strategy_report
 
 ---
 
-## A Realistic Day, End to End
+## A Realistic Day, End to End (agent-driven loop)
 
 **Afternoon (before 15:30 ET):**
 ```

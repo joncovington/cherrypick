@@ -61,6 +61,10 @@ names" one click away. A name is options-tradable when both hold (`tradable.py`)
 
 A cash index (SPX) has no stock volume; its weeklies alone decide.
 
+Since 2026-10-07 a name the nightly liquidity verdict holds illiquid (`liquidity.py`) has no chart
+file, so no row at all, until the monthly sweep. The weeklies are read from each name's own latest
+IV-rank reading, at most 10 days old.
+
 **Tastytrade's liquidity rating was dropped the same day it was adopted.** It marks a name down for
 its share price. Among names with weeklies, the median close was $42 at rating 4, $88 at 3, $189 at
 2 and $544 at 1. HD, LOW, APP, GS, CAT, LLY and COST were all rated 2. The market report's universe

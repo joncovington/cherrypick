@@ -2,9 +2,10 @@
 
 *Drafted 2026-10-12. **The recording landed the same day** (gex PRs #172–#174): the gex recorder keeps
 SPX's 0DTE chain every tick (~15 s), and `cherrypick.core.quotehistory` reads it back. **First
-recorded session: 2026-10-13.** Nothing below that line is built yet. Amended the same evening: the
-storage made compact and held strikes added before the first session, and six gaps in this plan
-named (*Before Phase 1*).*
+recorded session: 2026-10-13.** Amended the same evening: the storage made compact and held strikes
+added before the first session, and six gaps in this plan named (*Before Phase 1*). Since then the
+flies replay is built (Phase 1, 2026-10-17) and MEIC's (Phase 2, 2026-10-18); each phase's section
+says what is validated.*
 
 ## Why
 

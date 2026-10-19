@@ -16,7 +16,7 @@ keeps how each was found, with the numbers. For the experiment designs themselve
 - **2026-07-02** — the opening range was missed entirely because no loop iteration landed inside
   09:30–09:35; capture moved into the streamer (`_track_orb`, later `packages/streamer/orb.py`).
 - **2026-07-21** — the standalone `packages/streamer` became the producer; this module's streamer
-  remains as rollback. The cache moved from `data/meic` to `data/marketdata`
+  remained as rollback until 2026-10-18. The cache moved from `data/meic` to `data/marketdata`
   (`docs/history/streamer-package-plan.md` at the repo root).
 - **2026-08-09** — supervisor cutover: `meic-paper` runs every 60 s under the orchestrator daemon,
   replacing the module-registered 2-minute `cherrypick-meic-paper-loop` schtasks task.
@@ -24,6 +24,17 @@ keeps how each was found, with the numbers. For the experiment designs themselve
   issuing the same artifact through the same `cherrypick.core.advice` contract; the consumer here
   needed no change.
 - **2026-08-20** — the SPX/XSP same-index correlation lint landed in the orchestrator's tests.
+- **2026-10-15** — the live ledger's fees are reconciled against the broker (`fee_reconcile`, the
+  supervisor's daily `meic-fee-reconcile` job), and the order-alert daemon (`alert_daemon`,
+  `live.use_order_alert_daemon`) confirms live fills on the broker's push instead of at the next
+  minute's tick. `regime_gex_block_mode` landed the same day: `"both"` blocks a negative-GEX entry
+  only when volume GEX is negative too, because open interest is yesterday's book and misses every
+  0DTE position opened today (`"oi"`, the default, is unchanged). Mid-session config changes on live
+  that day are journaled as breaks on the arms that follow it.
+- **2026-10-18** — the REST sidecar and its 7699 API, and this module's rollback streamer, were
+  removed; the standalone producer is the only one. The same day the quote-history replay
+  (`python -m cherrypick.meic.replay`, with `replay check` against paper) landed, reading VIX at each
+  tick from the history file.
 - **Early live testing** — a fixed 0.18 delta target on a low-VIX day traded one hard-stop failure (OTM
   distance) for another (credit floor) with no delta clearing both; hence the VIX-banded delta scale.
 - **Fixed-point thresholds** — the old fixed 30-point ATR pause over-blocked SPX and never fired for
@@ -127,7 +138,7 @@ gross by hand came out $55k off before it was noticed — hence the net-of-fees 
   block, and only 09-30, 10-02 and 10-05 cleared IV, GEX and the bias -- where the 0.0035 call floor
   then refused nearly every tick (71% of control's candidates fail it alone). Enabling MEIC live as
   configured would buy a book that trades about one day in ten.
-- **2026-10-12 — live minus one gate, from 2026-10-19.** Four arms, each `live-shadow` with ONE gate
+- **2026-10-12 — live minus one gate, from 2026-10-15.** Four arms, each `live-shadow` with ONE gate
   set back to `control`'s value: `live-minus-ivrank` (`min_iv_rank` 0), `live-minus-gexblock`
   (`regime_gex_block_negative` false), `live-minus-otmfloor` (both OTM floors 0.0001; one rule, two
   sides) and `live-minus-latebias` (`late_entry_bias_enabled` false). Live adds about a dozen gates
@@ -136,8 +147,8 @@ gross by hand came out $55k off before it was noticed — hence the net-of-fees 
   the shadow is dark names the gate that keeps live dark. Expect masking -- IV and GEX each darkened
   whole sessions on their own, so removing either may leave the other holding the day; a pair is the
   next question only if no single arm opens up. Added to the machine registry by
-  `scripts/boundary_2026_10_19.py` on the weekend of 10-17, with an `arm_added` break each dated
-  2026-10-19; `tests/test_risk_profiles.py` pins each to one gate at control's value.
+  `scripts/boundary_2026_10_19.py`, with an `arm_added` break each dated 2026-10-15 (the boundary
+  was moved forward from 10-19); `tests/test_risk_profiles.py` pins each to one gate at control's value.
 - **2026-10-12 — `advised:live-stop-vs-hold` wound down at the boundary.** The replay had already
   found holding beats every stop at every cap, and forward it won 26% of entries over 9 sessions. It
   is concluded with a verdict by `advisor kill` on the weekend of 10-17 (the boundary script), not

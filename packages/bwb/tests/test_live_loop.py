@@ -150,7 +150,7 @@ def live_config(config):
         **config,
         "live": {
             "enabled": True,
-            "gate0_confirmed": "jon 2026-09-18",
+            "gate0_confirmed": "owner 2026-09-18",
             "arm": "control",
             "max_open_margin_dollars": 2000,
             "max_structures_per_day": 1,

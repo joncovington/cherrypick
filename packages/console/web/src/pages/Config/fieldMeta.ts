@@ -65,7 +65,7 @@ export const SECTIONS: SectionMeta[] = [
     id: "rules",
     title: "Position rules",
     blurb:
-      "The daily position evaluation (Live → manage): when it runs, and the thresholds it judges the live " +
+      "The daily position evaluation (Live → positions and portfolio): when it runs, and the thresholds it judges the live " +
       "account by. Advice only — it never places an order. A change applies at the next evaluation.",
   },
   {
@@ -265,7 +265,7 @@ export const FIELDS: FieldMeta[] = [
     target: "orchestrator",
     pointer: "/manage/enabled",
     label: "Daily position evaluation",
-    help: "Reads the live account read-only each trading day. Re-run install after turning it on.",
+    help: "Reads the live account read-only each trading day. The supervisor picks the change up on its next pass.",
     type: "boolean",
     section: "rules",
   },

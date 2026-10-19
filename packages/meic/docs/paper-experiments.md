@@ -1,5 +1,5 @@
-**What this covers:** the history and design of MEIC's paper-trading studies — the current
-four-stream forward test (below), and the retired GEX and wing-width studies it supersedes. More
+**What this covers:** the history and design of MEIC's paper-trading studies — the closed
+2026-08 four-stream forward test (below), and the retired GEX and wing-width studies it supersedes. More
 of an internal design record than a how-to guide — see [paper-trading.md](paper-trading.md) for
 the general paper-trading system and [risk-profiles.md](risk-profiles.md) for the risk-profile
 ladder (now disabled, kept for history and for live `/set-risk-profile`). Part of the
@@ -53,8 +53,9 @@ which now splits `expired` into `expired_otm`/`expired_itm`/`expired_unknown` ev
 
 `analytics.breakeven_scorecard` computes this identity per arm, per period — reproduced this
 document's own manual finding exactly (`{'trades': 290, 'clean_pct': 10.0, 'double_stop_pct': 4.8,
-'breakeven_bar_pct': 5.5, 'margin_pct': -0.4}`) — and is the health line in every EOD report
-(`paper-eod-<day>.md`'s "Arm scorecard" section) and the dashboard's Performance view.
+'breakeven_bar_pct': 5.5, 'margin_pct': -0.4}`) — and was the health line in every EOD report
+(`paper-eod-<day>.md`'s "Arm scorecard" section, retired 2026-08-13; the suite review's By-arm table
+and the console's performance tab carry the per-arm read now).
 
 **The stop is the canonical convention, not a bug.** Research confirms the per-side stop keyed to
 the *whole IC's* credit (not each side's own credit) is the published Chambless MEIC method,
@@ -71,7 +72,7 @@ worthless anyway. That gap is what the derived stop policies below are built to 
 | `control` | today's deployed policy incl. its 0.95×net stop, `overlap_scope: "shorts"` | the reference book — validates every derivation below. (It was also the champion under `calibration.champion` until the champion/challenger surface was retired 2026-08-20; arms are judged by `packages/advisor`'s experiments now.) |
 | `open` | every study gate off, no per-side stop, `overlap_scope: "none"`, full per-side path recording (running max cost, settle values on every exit path, first strike-touch time) | the **permissive superset** — every gate variant and every stop policy is a read-side split of this one stream's own recorded rows, never a reason to run a sixth or seventh arm |
 | `width-5` | SPX wing pinned to 5, otherwise identical gates to `open`, but keeps `control`'s real 0.95×net stop | the one genuinely non-derivable structural variant — wing width isn't a float you can re-derive after the fact |
-| `width-10` | SPX wing pinned to 10, same design as `width-5` | paired against `width-5` on the same ticks; expected to near-duplicate `control`'s own book under `control`'s widest-first selection — `analytics.arm_divergence` reports how often the two streams actually realized different strikes, so that isn't assumed |
+| `width-10` | SPX wing pinned to 10, same design as `width-5` | paired against `width-5` on the same ticks; expected to near-duplicate `control`'s own book under `control`'s widest-first selection — `analytics.arm_divergence` reports how often the two streams actually realised different strikes, so that isn't assumed |
 
 All four write `arm = <arm name>` -- the column every reader, from the orchestrator's
 `report`/`calibrate` to the console, groups on. It was `risk_profile` until 2026-09-24. Rows carry an `era` column: `'book'` for the pre-cutover ladder-era history
@@ -82,7 +83,7 @@ default to `era='sample'` so the two selection intensities are never silently po
 
 **Entries.** With `overlap_scope: "none"` and no position interaction, every gate variant is a
 pure entry filter and a deterministic function of a float `open` already records per entry (IV
-rank, ATR/spot, GEX bucket and value, skew, center offset, trend — see `regime.py`'s 8 dimensions).
+rank, ATR/spot, GEX bucket and value, skew, centre offset, trend — see `regime.py`'s 8 dimensions).
 So `atr-open`, `ivr-open`, `gex-mag`, and the retired `gex-open`/`gex-blocked` pair (see below) are
 all answerable via `analytics.by_regime(conn, dimension, arm="open")`, immediately, rather than
 after a dedicated arm collects its own 14 sessions.
@@ -102,12 +103,12 @@ position cost** and with exact pairing (same entries, same strikes, same credit,
 
 This is only valid because paper has no market impact and positions are independent, and it is
 **validated, not assumed**: `analytics.validate_stop_derivation` re-derives every arm that really
-stopped, at the ratio each row ran, and must reproduce its realized P&L within fill noise
+stopped, at the ratio each row ran, and must reproduce its realised P&L within fill noise
 (2026-09-24: 4,817 of 4,817 real stops across 14 arms, maximum difference $0.00). It was written
 against `control` when `control` was the stopping book, and after the 2026-08-21 redefinition made
 `control` the never-stopping substrate it validated nothing (4,678 of 6,043 rows "mismatched");
 it now finds the stopping arms from the rows themselves. If a future change makes that validation
-fail, every number under "Stop-policy table" in the EOD report is void until it's fixed. What the
+fail, every derived stop-policy number is void until it's fixed. What the
 derivation prices and charges is set out in `packages/meic/CLAUDE.md` ("reworked 2026-09-24").
 
 ### Corrections this redesign made to earlier assumptions
@@ -138,7 +139,7 @@ wrong — recorded here so they aren't re-asserted:
 **The kill rule this document follows:** a stream is retired only by an explicit written verdict
 here, never by silent deletion — the arm registry keeps every retired profile's exact key set
 with `enabled: false` and a `_disabled_note` explaining why, rather than deleting it. A stream that
-enters zero trades for 5 consecutive sessions is escalated in the EOD report, not quietly dropped.
+enters zero trades for 5 consecutive sessions is escalated (in the EOD report until its 2026-08-13 retirement), not quietly dropped.
 
 ---
 
@@ -347,16 +348,16 @@ over-target floor-tightening) — so a paired comparison across widths on the sa
   0DTE positioning largely builds intraday where OI is blind, so the flow series lets a regime read
   ask later whether volume-GEX would have gated differently. Flip *distance* is derivable from the
   existing `gamma_flip_at_entry` + `gex_spot_at_entry` pair — no separate column needed.
-- QQQ's physical-settlement path applies a modeled pin-risk penalty that scales with wing width; a
+- QQQ's physical-settlement path applies a modelled pin-risk penalty that scales with wing width; a
   force-closed QQQ trade that paid it is flagged (`ic_trades.pin_risk_applied`), so QQQ cells can be
-  read both gross and net of that modeled cost rather than treating a width "result" there as free of
+  read both gross and net of that modelled cost rather than treating a width "result" there as free of
   the two uncalibrated settlement-friction constants.
 
 The parallel-shadow paper engine (`cherrypick/meic/paper.py`, driven unattended by `cherrypick/meic/paper_loop.py`)
 evaluates **every** enabled profile in the arm registry against each iteration's market snapshot, per
 symbol, writing all books to `~/.cherrypick/data/meic/paper_trades.db`. Beyond the four-tier risk
 ladder (conservative → very-aggressive), the registry *used to* hold **experiment cells** whose
-purpose was to collect enough variation in the placed iron condors to analyze optimal risk profiles
+purpose was to collect enough variation in the placed iron condors to analyse optimal risk profiles
 for **small, medium, and large accounts** — by varying wings, symbols, and the minimum credit, and
 by staggering entries across the day. This was paper-only; nothing here ever touched the live
 account.
@@ -369,10 +370,10 @@ per-profile keys the ladder does not carry:
 
 | Key | Meaning |
 |---|---|
-| `symbols` | The subset of the account's symbols this profile trades. A cell pinned to `["XSP"]` is skipped entirely for an SPX snapshot. Absent ⇒ trades all base `symbols` (the ladder's behavior). |
+| `symbols` | The subset of the account's symbols this profile trades. A cell pinned to `["XSP"]` is skipped entirely for an SPX snapshot. Absent ⇒ trades all base `symbols` (the ladder's behaviour). |
 | `wing_widths_by_symbol` | This profile's own wing shortlist per symbol. `paper_loop` builds each symbol's candidate menu from the **union** of every profile's widths; each profile then picks from its own subset. |
 | `wing_selection` | How to pick among clearing candidates: `widest` (default, fee-drag bias), `narrowest` (small-account cells), or `fixed` (the shortlist's own order). |
-| `stagger_entries` | Opt-in. When true, enforces the entry window (`entry_window_start`/`_end`), a hard daily cap (`daily_ic_trade_target`), and spacing (`min_minutes_between_entries`) so entries spread across the session instead of filling in the first passing iterations. The ladder omits this and keeps the prior unstaggered behavior. |
+| `stagger_entries` | Opt-in. When true, enforces the entry window (`entry_window_start`/`_end`), a hard daily cap (`daily_ic_trade_target`), and spacing (`min_minutes_between_entries`) so entries spread across the session instead of filling in the first passing iterations. The ladder omits this and keeps the prior unstaggered behaviour. |
 | `min_minutes_between_entries` | Minimum spacing between this profile's entries (staggering). |
 
 **Account-size character lives in wing width + symbol** (the dollar risk per IC), not in throttling
@@ -386,8 +387,8 @@ time-cohorts stay open at once for denser time-of-day coverage; reconstruct a st
 > pinning a *symbol* into a profile's identity, which collided with the portfolio model. The table is
 > kept so historical books opened under these names stay readable, and because the per-profile
 > mechanism it documents (`symbols`, `wing_widths_by_symbol` + `wing_selection`, `stagger_entries`) is
-> what every study arm since has used — without the `symbols` pin. The **live** roster is the
-> four-stream forward test described earlier in this document.
+> what every study arm since has used — without the `symbols` pin. The current roster is each
+> machine's registry; see [history.md](history.md).
 
 | Profile | Symbol | Wings | Pick | min_credit | Concurrent | Daily | Spacing | Tier / purpose |
 |---|---|---|---|---|---|---|---|---|
@@ -400,7 +401,7 @@ time-cohorts stay open at once for denser time-of-day coverage; reconstruct a st
 | `explore-xsp-loosecredit` | XSP | 2 | fixed | 0.10 | 4 | 6 | 45m | Credit-floor sweep (looser) |
 
 QQQ and IWM are physically settled — they exercise the paper engine's existing early
-force-close + modeled friction / pin-penalty path (see `docs/paper-trading.md`); no new settlement
+force-close + modelled friction / pin-penalty path (see `docs/paper-trading.md`); no new settlement
 code was added for them.
 
 ## How staggering behaves through the day
@@ -418,7 +419,7 @@ Every book is tagged with its profile name in `ic_trades.arm`, and the whole rea
 profile-name-agnostic:
 
 - `python -m cherrypick.meic.db get_range_summary --start <d> --end <d>` groups metrics by profile.
-- The daemon's deterministic EOD report (`logs/paper-eod-<day>.md`) tables every profile that
+- The daemon's deterministic EOD report (`logs/paper-eod-<day>.md`, retired 2026-08-13) tabled every profile that
   traded, with a **Symbol** column — so each cell reads directly as an account-size / wing / credit
   comparison — and notes which configured profiles were idle.
 - The live dashboard's profile selector lists whatever tags exist.
@@ -463,6 +464,11 @@ tastytrade data — the cells accumulate real, tagged trades day to day and surf
 > backtesting is therefore out of scope here; the sanctioned server-side alternatives (0DTESPX
 > practice sessions / strategy backtester) would require re-expressing MEIC in their order model and
 > are not currently pursued.
+>
+> From 2026-10-18, recorded sessions (the gex recorder's 15 s quote history from 2026-10-13, or
+> packages/backtest's local vendor stores) replay through `paper.process_symbol` via
+> `python -m cherrypick.meic.replay`, validated against paper by `replay check`. Results derived
+> from the licensed vendor history stay local under `~/.cherrypick`, per the licence.
 
 ## Load note
 

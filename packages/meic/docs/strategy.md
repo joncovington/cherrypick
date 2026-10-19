@@ -4,7 +4,7 @@
 get picked, and the rules for closing a position. Part of the [MEIC module](../README.md) in the
 cherrypick suite.
 
-The `cherrypick-meic` module runs a **Multiple Entry Iron Condor (MEIC)** strategy on 0DTE options. Rather than placing a single IC at the open, it evaluates market conditions on each loop iteration and enters additional ICs throughout the day when conditions are favorable.
+The `cherrypick-meic` module runs a **Multiple Entry Iron Condor (MEIC)** strategy on 0DTE options. Rather than placing a single IC at the open, it evaluates market conditions on each loop iteration and enters additional ICs throughout the day when conditions are favourable.
 
 ---
 
@@ -14,16 +14,16 @@ Each IC consists of four legs:
 - **Short put** + **long put** (put spread) — below the market
 - **Short call** + **long call** (call spread) — above the market
 
-Short strikes begin from `delta_target` (default 0.18) as a starting suggestion. The agent then applies OTM distance guardrails (see below) and may move strikes farther OTM if the guardrail requires it. Wing width is decided dynamically per entry, bounded by `max_wing_width` rather than picked from a fixed list.
+Short strikes begin from `delta_target` (default 0.18) as a starting suggestion. The agent then applies OTM distance guardrails (see below) and may move strikes farther OTM if the guardrail requires it. On the agent path the wing width is decided per entry, bounded by `max_wing_width`; paper and the live loop pick from `wing_widths_by_symbol` (widest first).
 
 ---
 
 ## Wing width selection
 
-The agent isn't restricted to a fixed enumerated list — it decides the wing width per entry, choosing any reasonable value up to `max_wing_width`, and picks the one that best fits current conditions:
+Paper and the live loop scan `wing_widths_by_symbol`'s list widest-first. On the agent path the agent decides the wing width per entry, choosing any reasonable value up to `max_wing_width`, and picks the one that best fits current conditions:
 
-- **Earlier in the session** — favor wider wings (more credit, more room)
-- **Later in the session** or multiple ICs already open — favor narrower wings (lower max loss as gamma accelerates)
+- **Earlier in the session** — favour wider wings (more credit, more room)
+- **Later in the session** or multiple ICs already open — favour narrower wings (lower max loss as gamma accelerates)
 - **High IV rank** — wider wings are more defensible
 - **Skewed market** — adjust width by side based on put/call IV skew
 - **Elevated short-strike gamma** (above 0.07) — prefer narrower wings
@@ -49,16 +49,14 @@ Every loop iteration classifies the current time into one of these labels (used 
 
 ## Short strike placement and OTM guardrails
 
-`delta_target` is a suggestion, not a hard requirement. After the delta-based strikes are returned, the agent computes the actual OTM distance for each short strike and checks it against context-aware minimums:
+`delta_target` is a suggestion, not a hard requirement. After the delta-based strikes are returned, the actual OTM distance of each short strike is checked against minimums expressed as a fraction of spot (fixed-point floors mis-fired across price levels):
 
 | Condition | Minimum call OTM | Minimum put OTM |
 |---|---|---|
-| Bearish IV skew | 4.5 pts | 4.0 pts |
-| Bullish IV skew | 4.0 pts | 4.5 pts |
-| `open_volatile` session | 4.0 pts | 4.0 pts |
-| Default | 3.5 pts | 3.5 pts |
+| Default | `min_call_otm_pct` (0.35% of spot) | `min_put_otm_pct` (0.30% of spot) |
+| Quarterly expiry | `quarterly_expiry_min_call_otm_pct` (0.67%) | `min_put_otm_pct` |
 
-When multiple conditions apply, the largest applicable minimum wins per side. If a delta-targeted strike is closer than its floor, the agent finds the nearest chain strike at or beyond the minimum distance and uses that instead — accepting a lower delta in exchange for more OTM buffer. The adjustment is noted in `ai_entry_reasoning`.
+On the agent path, if a delta-targeted strike is closer than its floor, the agent finds the nearest chain strike at or beyond the minimum distance and uses that instead — accepting a lower delta in exchange for more OTM buffer. The adjustment is noted in `ai_entry_reasoning`.
 
 ---
 
@@ -68,9 +66,9 @@ The **natural bid** — the price buyers are actively bidding for the IC combo �
 
 Several strategies can attempt to capture price improvement above the natural bid. Set `entry_price_strategy` in `config.json`:
 
-| Value | Behavior |
+| Value | Behaviour |
 |---|---|
-| `"mid"` | Use the streaming mid price as a Day limit, waiting up to `mid_improve_wait_seconds` before falling back to natural bid. Skipped in favor of natural bid if the average per-leg spread exceeds `mid_spread_gate` (too wide to expect a mid fill). |
+| `"mid"` | Use the streaming mid price as a Day limit, waiting up to `mid_improve_wait_seconds` before falling back to natural bid. Skipped in favour of natural bid if the average per-leg spread exceeds `mid_spread_gate` (too wide to expect a mid fill). |
 | `"natural_bid"` | Always submit at natural bid. Safest, no price-improvement attempt. |
 | `"ioc_step"` | Try natural bid + each increment in `ioc_step_increments` as IOC orders, then fall back to natural bid as a Day order. |
 | `"day_improve"` | Submit a Day limit at natural bid + `day_improve_amount`, wait `day_improve_wait_seconds`, cancel-replace at natural bid if unfilled. |
@@ -97,7 +95,7 @@ scratch trends slightly positive. This basis is fixed in `paper.py`/the live loo
 choice — a `per_side_stop_trigger` key once existed to describe it in words but was removed
 2026-08-07, since it was never read by any code path. The actual "stop on that side's own
 credit" question — the rule people usually mean when they say a side "gave back its own premium" —
-is instead answered read-side, from the paper engine's `open` stream, as the derived
+is instead answered read-side, from the paper engine's `control` stream (named `open` until 2026-08-21), as the derived
 `stop-2.0-side` policy; see [paper-experiments.md](paper-experiments.md)'s "The forward test"
 section for the full derivation and why it's computed after the fact rather than run as a fifth
 live-configurable mode.
@@ -148,7 +146,7 @@ A MEIC iron condor has exactly three exits — **there is no profit-target close
 
 **Event overrides.** On FOMC days (force-close all by `fomc_blackout_start`, 13:30 ET) and triple-witching / quarterly-expiry days (force-close all by 14:00 ET), *every* open position — including cash-settled — is force-closed as a risk override; the expire-to-settlement rule does not apply on those days.
 
-Note: the deterministic paper-trading engine models paths 1–3 and the event overrides, but not the discretionary gamma safety close (that's a live agent-judgment behavior) — see `docs/paper-trading.md`.
+Note: the deterministic paper-trading engine models paths 1–3 and the event overrides, but not the discretionary gamma safety close — see `docs/paper-trading.md`. Neither does the deterministic live loop (`live_loop.py`): the discretionary close exists only on the agent-driven path.
 
 ---
 
@@ -168,7 +166,7 @@ When the symbol being processed in the per-symbol loop starts with `/`, the agen
 `dollar_multiplier` is returned by `get_strategies` and is used for:
 - **Buying power check**: `wing_width × dollar_multiplier` = max loss per spread
 - **Position sizing**: `net_credit_per_contract` is already in dollars (no manual scaling needed)
-- **P&L accounting**: the DB stores `dollar_multiplier` per trade for correct unrealized/realized P&L math
+- **P&L accounting**: the DB stores `dollar_multiplier` per trade for correct unrealised/realised P&L math
 
 ---
 

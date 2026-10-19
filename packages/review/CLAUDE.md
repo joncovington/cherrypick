@@ -44,8 +44,9 @@ they cannot disagree.
 ## The arms are the experiment — never collapse them
 
 A module's arms run against the same underlying on the same sessions: a paired comparison, and the
-reason they exist. A module-level total averages them and hides the finding. So `by_profile` rides on
-every module block and every trend, grouped through `cherrypick.core.profiles.compare_profiles`
+reason they exist. A module-level total averages them and hides the finding. So `by_arm` rides on
+every module block and every trend (`by_profile` before fact set v8), grouped through
+`cherrypick.core.profiles.group_by_tag`
 (never a hand-rolled grouping). The render shows the table only when a module has more than one arm,
 because a one-row comparison table implies a comparison. An arm that degraded to the control's own
 strategy is not an independent observation: `centred_by` and the render's collapsed-arms note say so.
@@ -92,6 +93,10 @@ against open issues.
 merely failing. Proving the code equals itself is worthless; the failures worth catching are scope
 differences (the earnings reader does no SQL date pushdown, which once reported every closed trade as
 settling today). Run it after any change to a collector and after any module changes its schema.
+
+Every reviewed schema has its own independent query, bwb, curve and contango included. A session
+still trading is left out and named in `skipped`, because the status digest refreshes today's
+provisional set through the day; every closed session is checked.
 
 ---
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE

@@ -343,7 +343,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_pack = sub.add_parser("factpack", help="build one deterministic fact pack")
     p_pack.add_argument("--slot", required=True, choices=list(_factpack.SLOTS))
     p_pack.add_argument("--session", help="ISO date; defaults to today (ET)")
-    p_pack.add_argument("--modules", help="csv subset of meic,flies,earnings")
+    p_pack.add_argument("--modules", help="csv subset of the modules the advisor covers (bounds.MODULES)")
     p_pack.set_defaults(func=cmd_factpack)
 
     p_admit = sub.add_parser("admit", help="parse a raw model reply and record its proposals")
@@ -382,7 +382,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_enact = sub.add_parser("enact", help="issue the next session's advice for active experiments")
     p_enact.add_argument("--session", help="ISO date; defaults to today (ET)")
-    p_enact.add_argument("--modules", help="csv subset of meic,flies,earnings")
+    p_enact.add_argument("--modules", help="csv subset of the modules the advisor covers (bounds.MODULES)")
     p_enact.set_defaults(func=cmd_enact)
 
     p_recount = sub.add_parser(

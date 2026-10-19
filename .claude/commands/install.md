@@ -22,9 +22,9 @@ Do this:
      login for every module, with per-module overrides offered). Surface this to me and ask whether to
      install anyway (the supervisor runs fine; the broker just won't connect until credentials exist).
    - Other WARNs like "streamer not running" or "supervisor NOT running" are expected before install.
-   - If flies is **live-armed for today**, `install` refuses (deleting the legacy live task mid-day
-     must never silently disarm). Disarm first (`/live-flies-start --stop`) or, only with my explicit
-     say-so, use `install --force`.
+   - If any live module (flies, bwb, meic) is **live-armed for today**, `install` refuses (a
+     cut-over mid-armed-day must never silently disarm). Disarm it first
+     (`/live-<module>-start --stop`) or, only with my explicit say-so, use `install --force`.
 
 2. **Install**: `python packages/orchestrator/run.py install`. This registers the single
    `cherrypick-supervisor` anchor task (a 2-minute `ensure-supervisor` probe that restarts a dead

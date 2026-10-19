@@ -272,10 +272,10 @@ export type CalendarsSlideId = (typeof CALENDARS_SLIDES)[number]["id"];
  * The suite surfaces, on the frame since 2026-09-25 -- the last five, so the lightbox is gone.
  *
  * - GEX keeps its four former page tabs.
- * - Live: every live loop's day on one page, the flies live pilot's day, MEIC's live loop and the manage
- *   evaluation -- all read-only.
- * - Reports keeps its two artifacts, `morning` and `eod`, written by separate packages, plus
- *   `chart`: one name at a time from the technicals package's chart files.
+ * - Live: every live loop's day on one page, the manage evaluation's positions and portfolio, and a
+ *   tab per live loop (hidden while its live switch is off) -- all read-only.
+ * - Reports keeps its two artifacts, `morning` and `eod`, written by separate packages (the
+ *   technicals chart moved to Charts).
  * - Advisor stays ONE page holding its own internal tabs (today / proposals / experiments /
  *   history). It carries the console's only two write actions besides Config's, wired through
  *   session and tab state that spans the page, and splitting that across frame pages is a change

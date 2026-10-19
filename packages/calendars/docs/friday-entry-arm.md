@@ -10,7 +10,9 @@ against the Monday regime's `dc_4_8` (Labor Day shifts the back expiration — t
 `engine.price_at_strikes` prices the Friday arm's own strikes off the Monday entry snapshot, and
 `dc_paired_debits` holds one row per (week, side) with both debits. It records itself from the
 Monday entry pass and does nothing on a week the Friday arm holds nothing — which is every week
-until the first Friday entry on 2026-08-28.*
+until the first Friday entry on 2026-08-28.* *It never actually ran until the 2026-10-12 fix
+(docs/history.md): `dc_paired_debits` is empty before then, and the 15-paired-weeks bar below counts
+from 2026-10-19.*
 
 *Original framing follows. A design, not shipped work. The module had taken
 exactly one position when this was written — 2026-08-24's `dc_4_7`, entered at 11:24 after two
@@ -32,7 +34,7 @@ for SPY weeklies is an empirical question, and measuring it forward is what this
 ## Why this is not a "book"
 
 The existing books (`control`, `path`, `advised:control`) all derive from **one entry plan** —
-identical strikes, identical mids, identical modeled costs — so any divergence between them is exit
+identical strikes, identical mids, identical modelled costs — so any divergence between them is exit
 policy and nothing else. That pairing is the module's central design property.
 
 A Friday entry cannot share that plan. It prices a different snapshot, computes its expected move
@@ -190,7 +192,7 @@ in the trade for. Both are second-order against the debit differential, but neit
 
 ## Measurement rules this arm inherits
 
-1. Net of the full modeled fee and slippage stack; gross is not a result (rule 1).
+1. Net of the full modelled fee and slippage stack; gross is not a result (rule 1).
 2. `dc_7_10` never pools with `dc_4_7` on any surface (rule 4) — including the headline.
 3. A refused mark is still a row (rule 6); a Friday-entered week with a hole in its path is
    `derivable: False`, never zero.
@@ -251,6 +253,7 @@ Declared now, deliberately, while neither regime has a number anyone could be at
 2. **At least 15 of those weeks PAIRED** — both regimes entered the same week. They skip different
    weeks by construction (the ex-dividend span widens by three days when entry moves earlier), so
    the unpaired weeks are real and the paired count, not the total, is the comparison's effective n.
+   Paired weeks count from 2026-10-19; the weeks before the recording fix cannot be backfilled.
 3. **A paired-debit difference whose sign is consistent** across at least 70% of paired weeks. The
    headline number is `monday_debit − friday_debit`; a mean that is positive only because two weeks
    dominate it is not an edge, and this is the cheapest available check on that.

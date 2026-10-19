@@ -91,7 +91,7 @@ For scale: one day at our 120s cadence ≈ 195 marks. Single-snapshot pulls = ~1
 range endpoint = ~975 credits/day. Either way a handful of days drains the 24h bucket — **and it is
 disallowed regardless of pacing** (see verdict above).
 
-## Endpoint catalog (by group)
+## Endpoint catalogue (by group)
 
 - **auth:** `POST /auth/check-email` `{email}` (404 = free to register); `POST /auth/verify-email`
   `{email}` (204; 1/60s, code expires 15min, locks after 5 fails); `POST /auth/register`

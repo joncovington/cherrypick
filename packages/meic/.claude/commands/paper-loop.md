@@ -21,7 +21,7 @@ python -m cherrypick.meic.paper_loop --status          # daemon status + open-po
 python -m cherrypick.review build --session <date>      # the suite review for one session (all modules)
 ```
 
-The daemon also writes that deterministic end-of-day report automatically, once, at the 16:00 settlement pass — a per-profile metrics table (trades, win rate, net P&L, expectancy, profit factor, max drawdown), an exits-by-reason breakdown, and per-symbol P&L. It's code-generated (no agent), distinct from the agent-synthesized `/paper-report`.
+At the 16:00 settlement pass the loop rolls the session into `daily_summary`; the suite review (`python -m cherrypick.review build`) is the deterministic end-of-day report (this module's own was retired 2026-08-13), distinct from the agent-synthesized `/paper-report`.
 
 Without the supervisor, run `python -m cherrypick.meic.paper_loop` in a terminal. A long-running detached daemon (`--start`) also exists but is less robust on Windows than the supervisor. The module's own Windows scheduled task (`--install-task`) was removed on 2026-10-08.
 

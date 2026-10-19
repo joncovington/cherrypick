@@ -100,14 +100,14 @@ def test_the_elevated_steps_install_with_a_prompted_password_and_free_the_anchor
     steps = winservice.elevated_steps(
         r"C:\h\service\svc.exe",
         "cherrypick-supervisor",
-        "jonco",
+        "trader",
         r"C:\repo\scripts\windows\grant-logon-as-service.ps1",
     )
     assert steps[0].endswith("install /p")
     assert "grant-logon-as-service.ps1" in steps[1]  # the right the install did not grant (event 7041)
     assert "supervise --stop" in steps[2] and steps[3].endswith(" start")
     assert "Set-ScheduledTask -TaskName 'cherrypick-supervisor'" in steps[4]
-    assert r"Get-Credential '.\jonco'" in steps[4]  # the service manager refuses a bare account name
+    assert r"Get-Credential '.\trader'" in steps[4]  # the service manager refuses a bare account name
 
 
 @pytest.mark.parametrize(

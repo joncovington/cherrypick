@@ -4,7 +4,7 @@
 
 Everything here is a real command you can run today — no placeholder scripts. All operations go
 through `python -m cherrypick.earnings.tt <command>` (broker), `python -m cherrypick.earnings.scanner <command>` (shared engine),
-or `python src/strategies/<name>.py <command>` (strategy-specific). Every command prints JSON to
+or `python -m cherrypick.earnings.strategies.<name> <command>` (strategy-specific). Every command prints JSON to
 stdout, so pipe through `python -m json.tool` or `jq` if you want it pretty-printed.
 
 ---
@@ -28,7 +28,7 @@ python -m cherrypick.earnings.strategies.iron_fly get_candidates --date MM/DD/YY
 ```
 
 Same command shape for any strategy (`iron_condor`, `directional_credit_spread`,
-`broken_wing_butterfly`, `atm_calendar`, `double_calendar`). Returns accepted vs rejected
+`broken_wing_butterfly`, `atm_calendar`, `double_calendar`, `expected_move_butterfly`). Returns accepted vs rejected
 candidates with pass/skip reasons per `docs/screening-criteria.md`, ranked candidates, and which
 ones survived the account-wide cap/correlation filter.
 
@@ -56,7 +56,7 @@ live chain, not a simulation.
 ## Strategy Selection at a Glance
 
 The actual routing logic lives in `cherrypick/earnings/rank_strategies.py` and each strategy's own accept/reject
-screen (`apply_tiering` in `src/strategies/<name>.py`), not a fixed lookup table — but as a rough
+screen (`apply_tiering` in `cherrypick/earnings/strategies/<name>.py`), not a fixed lookup table — but as a rough
 mental model:
 
 ```
@@ -75,10 +75,13 @@ Every candidate has to clear the shared liquidity/quality gates in
 
 ## Exit Mechanics (In Order)
 
+In the agent-driven loop (`/earnings-start`):
+
 1. **Early exit check (Step 3c/3b/3d)** — the first morning after entry, between market open and
-   `close_window_start` (default `09:45` ET): profit-target and stop-loss checks run against
-   live quotes. `iron_fly`/`iron_condor`/`directional_credit_spread`/`broken_wing_butterfly`
-   hit at 50% of credit / 1.5x credit stop; calendars hit at 25-30% of debit.
+   `close_window_start` (default `09:45` ET): profit-target and stop checks per strategy run against
+   live quotes (`strategies.<name>`: iron_fly 25% / 1.5×, iron_condor 50% / 1.5×,
+   directional_credit_spread 50% / 2.0×, broken_wing_butterfly 25% / 2.0×, calendars 15% / 50% of
+   debit — see [Exit Strategy Guide](./10-exits.md)).
 2. **Unconditional close-window backstop (Step 3)** — whatever is still open when the close
    window arrives gets closed regardless of P&L. IV crush already happened overnight; there's no
    more edge from holding, so this is a hard stop, not a target.
@@ -86,6 +89,10 @@ Every candidate has to clear the shared liquidity/quality gates in
 There is no same-day "4-hour backstop" — every strategy here holds overnight by design (that's
 the whole edge: capturing the IV crush that happens around the report, not during the
 afternoon before it). See `CLAUDE.md`'s Loop Steps for the full mechanics.
+
+The unattended paper loop manages positions instead: it holds them on the entry session, then
+applies the PEAD gate, a three-session cap and the 15:30 expiry close — see
+[Exit Strategy Guide](./10-exits.md).
 
 ---
 
@@ -156,7 +163,7 @@ See [Configuration Guide](./03-configuration.md) for every parameter and what it
 
 ## Strategy Comparison
 
-All six strategies are defined-risk — max loss is known at entry for every one of them.
+All seven strategies are defined-risk — max loss is known at entry for every one of them.
 
 | Strategy | Structure | Entry | Hold |
 |---|---|---|---|
@@ -166,6 +173,9 @@ All six strategies are defined-risk — max loss is known at entry for every one
 | `broken_wing_butterfly` | Skip-strike butterfly, wings sized to skew | Credit | Overnight |
 | `atm_calendar` | Short front-month + long back-month, one side | Debit | Multi-day |
 | `double_calendar` | ATM calendar on both call and put side | Debit | Multi-day |
+| `expected_move_butterfly` | 1-2-1 fly, body at spot ± EM, side by rr25 skew (paper only) | Debit | To the 15:30 expiry close or take-profit |
+
+The two calendars open nothing in the forced-sampling books from 2026-10-15.
 
 ---
 
@@ -208,7 +218,7 @@ python -m cherrypick.earnings.strategy_report           # per-strategy expectanc
 # For the same numbers as a page, open the console: http://127.0.0.1:5070/earnings
 ```
 
-For accumulating a real sample across all 6 strategies before trusting any of the above, use
+For accumulating a real sample across every strategy before trusting any of the above, use
 `/paper-start` daily — see `docs/strategy-testing-plan.md`.
 
 ---

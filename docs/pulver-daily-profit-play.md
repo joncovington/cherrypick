@@ -2,7 +2,10 @@
 
 *Drafted 2026-10-17 from his live streams for Monday 2026-10-12 to Friday 2026-10-16 (YouTube, "Daily
 Profit Plan"), read in full and checked against screenshots of his broker's order panel and charts.
-This is hypothesis 8 of [edge-hypotheses-plan.md](edge-hypotheses-plan.md). Nothing is built.*
+This is hypothesis 8 of [edge-hypotheses-plan.md](edge-hypotheses-plan.md). Nothing is built. Its
+box-edge test ran 2026-10-17 on licensed history
+([history-studies-2026-10-c.md](history-studies-2026-10-c.md), section 2); the results are kept
+locally, per the licence.*
 
 ## The short version
 

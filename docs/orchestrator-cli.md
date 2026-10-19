@@ -6,8 +6,9 @@ a pip install (`pip install -e ".[dev]"`) also exposes them as `cherrypick <cmd>
 All commands are **read-only or paper-only** except the narrow onboarding pair (`connect`/`account`) and
 `settings`, which write *configuration* (never an order). See
 [guardrails-and-modes.md](guardrails-and-modes.md).
-(The flies module's own live-trading loop is a separate program, started with `/live-flies-start` rather
-than any command on this page — see [strategy-engines.md](strategy-engines.md#flies--0dte-net-credit-butterflies).)
+(The modules' own live-trading loops are separate programs, armed per day with `/live-meic-start`,
+`/live-flies-start` and `/live-bwb-start` rather than any command on this page — see
+[strategy-engines.md](strategy-engines.md).)
 
 ## Onboarding & setup
 
@@ -30,7 +31,7 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 
 | Command | What it does |
 |---|---|
-| `install` | Register the ONE `cherrypick-supervisor` anchor task, start the supervisor daemon (which derives every job — module paper loops, earnings entry/exit, Dolt keep-alive, watchdog, streamer-health, trade-notify, log-archive, opt-ins — from config each pass), delete every legacy per-job task, and start the streamer / services if down. Refuses while flies is live-armed today (`--force` overrides). The suite review runs as two daily jobs (`review-provisional`, `review-final`). Full verified inventory: [operations.md](operations.md). |
+| `install` | Register the ONE `cherrypick-supervisor` anchor task, start the supervisor daemon (which derives every job — module paper loops, earnings entry/exit, Dolt keep-alive, watchdog, streamer-health, trade-notify, log-archive, opt-ins — from config each pass), delete every legacy per-job task, and start the streamer / services if down. Refuses while any live loop (meic, flies, bwb) is armed for today (`--force` overrides). The suite review runs as two daily jobs (`review-provisional`, `review-final`). Full verified inventory: [operations.md](operations.md). |
 | `uninstall` | Delete the anchor task first, stop the supervisor, remove any legacy per-job tasks, and stop the orchestrator's own background services. Recorded data and config are untouched. |
 | `status` | Supervisor liveness + per-job registry (last start/exit, next run) + heartbeats. File reads plus one anchor-task query; falls back to the OS-scheduler snapshot on a pre-cutover box. |
 | `supervise` | Run the supervisor daemon loop in the foreground (diagnostic; the anchor task keeps it alive normally). `--stop` asks a running daemon to exit via its stop file. `--restart` asks it to exit with code 3 so it is started again with fresh code: by the Windows service after its restart delay (the service restarts only after a failure, so a clean stop would leave it stopped), otherwise by the anchor's next probe. In service mode the anchor waits 5 minutes for a stopped service to restart itself before starting a supervisor outside it. |
@@ -71,7 +72,7 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 | `calibrate` | Per-profile calibration readings + advisory promotion recommendations (never changes risk settings). | — |
 | `review` | Suite end-of-day review (`packages/review`): build one session's cross-module fact set and render it. `--final` marks the session final and re-runs reconciliation; without it the pass is provisional. Read-only over every module's ledger. What the two daily supervisor jobs run. | `--final` |
 | `morning` | Build the pre-open morning fact pack (`packages/overview`): index/vol/sector readings from the stream cache, gamma flip and walls from the suite's own GEX history, and the mechanical GREEN/YELLOW/RED phase. What the daily morning-factpack job runs; a pure stream-cache + GEX consumer writing only into its own home, so a bad pass costs a report, never a trade. The session it describes is overview's own contract (today's ET trading day, resolved internally). | — |
-| `manage` | Daily position evaluation (`packages/manage`): take a read-only snapshot of the real broker account (priced positions and balances, plus each underlying's earnings and ex-dividend dates) and judge every trade against the ruleset in `~/.cherrypick/config/manage.json`. Writes `data/manage/eval-<day>.json` for the console's Live → manage tab and sends one summary when any trade needs action. What the `manage-eval` job (10:00 ET, off until `manage.enabled`) runs. Advice only: places no order. | — |
+| `manage` | Daily position evaluation (`packages/manage`): take a read-only snapshot of the real broker account (priced positions and balances, plus each underlying's earnings and ex-dividend dates) and judge every trade against the ruleset in `~/.cherrypick/config/manage.json`. Writes `data/manage/eval-<day>.json` for the console's Live → positions and Live → portfolio tabs and sends one summary when any trade needs action. What the `manage-eval` job (10:00 ET, off until `manage.enabled`) runs. Advice only: places no order. | — |
 | `archive` | End-of-month rotation: zip each finished month's dated reports + rotated log backups into `logs/archive/<YYYY-MM>/<scope>.zip` and remove the originals (idempotent; never touches the current month or an active `.log`). | `--month YYYY-MM`, `--dry-run` |
 | `backup` | Nightly backup of the suite's own data -- configs, `state/`, every ledger (copied through SQLite's online backup API and quick_checked) and every artifact under `data/` -- into ONE zip at `backup.dest/cherrypick-backup.zip` (default `~/.cherrypick/backups`), replaced each night. A night with a problem lands as `cherrypick-backup.failed.zip`, never replaces the good backup, and notifies. Skips the Dolt stores, stream caches, logs, the vendor browser profile and backup/archive copies. What the daily `suite-backup` job (01:30 ET) runs; `doctor` warns past 36h. | `--dry-run`, `--list`, `--verify`, `--restore-to DIR` (never into the live home) |
 
@@ -98,7 +99,7 @@ The module paper loops are supervisor jobs too: MEIC as a 60 s `--once` spawn
 (`modules.meic.paper.tick_interval_seconds`), flies as the one **resident** child (its own
 `--interval 15` mode in-session, supervised for death and silence) plus a 60 s off-session `--once`
 job that owns settlement. The paper modules' own scheduled-task helpers were removed on
-2026-10-08; flies' and bwb's live `--install-task` only writes the day's arm record, and refuses
+2026-10-08; flies', bwb's and MEIC's live `--install-task` only writes the day's arm record, and refuses
 without a running supervisor.
 
 ## Global flags
@@ -115,5 +116,6 @@ verdict) · `--month` / `--dry-run` (archive) · `--dry-run` / `--list` / `--ver
 ## Slash-command equivalents (Claude Code)
 
 Some workflows are also exposed as checked-in slash commands for interactive sessions:
-`/install`, `/uninstall`, `/console`, `/meic-start`, `/earnings-start`. These are dev
-conveniences, never a runtime dependency.
+`/install`, `/uninstall`, `/console`, `/desktop`, `/meic-start`, `/earnings-start`. These are dev
+conveniences, never a runtime dependency. The per-day live arms `/live-meic-start`,
+`/live-flies-start` and `/live-bwb-start` are not conveniences: they are the deliberate arming path.

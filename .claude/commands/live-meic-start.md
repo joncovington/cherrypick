@@ -18,7 +18,7 @@ block's `entry_window_start`/`entry_window_end`, over `live.arm` or the top leve
 the same entry function the paper arms use, with live's own gates (IV rank floor, GEX block, OTM
 floors, VIX/ATR pauses). When an IC clears them and fits under `max_open_bp_dollars` together with
 what is already open, it places one four-leg iron condor on `live.symbol` as a limit order, at the
-width the `live` block names. `live.max_structures_per_day` caps new ICs a day (absent: 1; `null`:
+width from the `live` block's `wing_widths_by_symbol`, else the arm's (or the top level's). `live.max_structures_per_day` caps new ICs a day (absent: 1; `null`:
 no count cap, sizing by buying power alone; a cancelled entry never counts). Exits depend on
 `per_side_stop_management` -- READ IT from `--status` and say it: when true each side is stopped
 at `stop_trigger_ratio` (re-priced every tick); when false every IC is held to settlement and the
@@ -53,7 +53,7 @@ holds is refused.
      fresh YES may clear it (step 4).
    - **What live trades, said out loud**: `symbol`, `arm` (null = the top level), `entry_window`,
      `max_open_bp_dollars`, `max_structures_per_day`, `per_side_stop_management`, the width from
-     the `live` block's `wing_widths_by_symbol`, and the `daily_loss_halt_dollars` breaker from the
+     the `live` block's `wing_widths_by_symbol` (else the arm's or the top level's), and the `daily_loss_halt_dollars` breaker from the
      config's `live` block. If the breaker is unset, say so PROMINENTLY and offer to set it before
      the YES -- with stops off it is the only intraday brake besides the halt flag.
    - **Open positions / pending orders / `entries_today` / `breaker_tripped`**, plus whether
@@ -71,6 +71,10 @@ holds is refused.
    - **Supervisor liveness** (`supervisor_fresh`): if false, say so PROMINENTLY. **Nothing will
      tick, and arming will be refused.** Run `python packages/orchestrator/run.py
      ensure-supervisor` before arming.
+   - **Order-alert daemon** (only when `live.use_order_alert_daemon` is true): arming names it on
+     the arm record as a companion, and the supervisor keeps it up until `disarm_time`, restarting
+     it on death or a silent heartbeat. Informational: it only gets fills noticed sooner, and is
+     never a reason to refuse to arm.
    - **The per-day contract**: this arms TODAY only. The loop self-disarms at the configured
      `disarm_time`, and tomorrow needs a fresh `/live-meic-start`.
 

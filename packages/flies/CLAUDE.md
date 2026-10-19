@@ -50,13 +50,13 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `cherrypick/flies/provider.py` | builds snapshots from the shared stream cache, read-only. No decisions. |
 | `cherrypick/flies/paper_loop.py` | session driver: fetch, run every arm, settle at the bell. `run_once`/`run_settle` take `snapshot_fn` and `replay=True` for the quote-history replay: a replayed tick touches nothing but its ledger (no heartbeat, log file or advice decision, which writes). |
 | `cherrypick/flies/replay.py` | the quote-history replay (docs/quote-history-replay-plan.md Phase 1): rebuilds each recorded sample as paper's snapshot (quotes in paper's window and age, GEX from the recorded profile within 360 s, session bounds from the spot trail up to the instant) and runs `paper_loop.run_once` over it into a scratch ledger. Rule arms only; model-driven arms are refused. CLI `replay --date --out`. |
-| `cherrypick/flies/replay_check.py` | the replay's decision-level validation (plan, stage 2): at each recorded sample the replay is handed paper's own book as of that instant (`as_of`) and runs one tick; each paper entry and completion is tested at its own moment, and replay decisions paper never made are counted as episodes. `summarise` applies the declared pass test (ten sessions). CLI `replay-check --dates`. |
+| `cherrypick/flies/replay_check.py` | the replay's decision-level validation (plan, stage 2): at each recorded sample the replay is handed paper's own book as of that instant (`as_of`) and runs one tick; each paper entry and completion is tested at its own moment, and replay decisions paper never made are counted as episodes. `summarise` applies the declared pass test (ten sessions); the completion test is on outcome, declared for ten sessions from 2026-10-19 (root docs/quote-history-replay-plan.md). CLI `replay-check --dates`. |
 | `cherrypick/flies/book.py` | wires engine decisions to the paper DB; one book per (date, arm, symbol). A replay hands `process_snapshot`/`settle_book` the tick's `now` (or `paper_loop.run_once` its `when`) and every stamp — entry_time, completed_at, latencies, the cadence clock, the journals — is that instant (`clock.pinned`); the loops pass none and stamp the wall clock. |
 | `cherrypick/flies/db.py` | `fly_positions` (ledger) and `fly_books` (roll-up with the floor's price band). |
 | `cherrypick/flies/analytics.py` | the one query layer every read surface goes through. Read-only. |
 | `cherrypick/flies/analysis_rows.py` | The `scripts/flies_*` replays' settled-row loader and the ONE split of a row's `fees` into entry / completion / roll / settlement (`fees` is the total; the print's part is `settlement_fees`, else derived from a reconciled total, else the module's own fee at the print; the trades share the rest by shape). A replay never takes the entry's fee another way. |
 | `cherrypick/flies/eod.py` | Report builders, retired 2026-08-13 (`packages/review` reports the session now). `logs_dir()` is still the loops' path helper. |
-| `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `regime` / `bands` / `replay-gates` / `hedge-overlay` (`--run-k`) / `reversal-book` / `fill-model` / `regime-cuts` / `debit-first-offsets` / `debit-ladder` / `selector-fit` / `selector-replay` / `close-or-hold`; the console bridges three read-only evidence verbs, `live-gap` (live vs paper paired per session), `gate-sessions` (gate arms vs control over each arm's own window) and `selector-sessions`. |
+| `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `regime` / `bands` / `replay-gates` / `hedge-overlay` (`--run-k`) / `reversal-book` / `fill-model` / `regime-cuts` / `debit-first-offsets` / `debit-ladder` / `selector-fit` / `selector-replay` / `close-or-hold` / `close-tags` / `close-tag-tracker` / `agent-eval` / `backfill-events` / `backfill-peak-risk`; the console bridges three read-only evidence verbs, `live-gap` (live vs paper paired per session), `gate-sessions` (gate arms vs control over each arm's own window) and `selector-sessions`. |
 | `cherrypick/flies/close_or_hold.py` | `run.py close-or-hold` (live ledger; `--paper`, `--at HH:MM`): each of today's open positions closed now at natural (long legs at the bid, shorts at the ask, less `ic_close_fee`) beside its expected expiry P&L under the empirical move from this clock time (±5 min) to the close, from the gex recorder's `gex_spot_history` and `daily_closes`, settled through `fly.position_pnl` with its settlement fee. Any unusable leg quote means no close number, never a guess. **Unscaled** (a quiet day and a fast one weigh the same), ~50-80 sessions, no estimate under 20; values the structure as it stands, not a completion still resting. A read, not advice: nothing consults it and rule 5 stands. Pure functions plus a read-only reader. |
 | `cherrypick/flies/selector.py` | The selector arm, pure: candidates against its own book, the merge, scoring, the choice, `fit`, model validation. [docs/selector.md](docs/selector.md). |
 | `cherrypick/flies/selector_replay.py` | The selector walked forward over recorded sessions, out of sample, beside every benchmark it must beat. Read-only. |
@@ -69,6 +69,13 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `cherrypick/flies/credentials.py` | `fliesagent` keyring store + hidden-input CLI (orchestrator `connect` delegates here). `designated_account` is `CredentialStore.designated_account()`. |
 | `cherrypick/flies/fill_model.py` | Fill realism, pure: the three at-fill distances, spread prices and gaps, first-touch records, rule scoring, the paper shadow's outcome. [docs/fill-model.md](docs/fill-model.md). |
 | `cherrypick/flies/fill_facts.py` | Fill realism, recorded: the live loop's order/path writers (`fly_live_orders`, `fly_order_path`), `rebuild`, and the dry-run-by-default `backfill` from broker transactions and the gex spot trail. |
+| `cherrypick/flies/intraday_pack.py`, `intraday_advice.py`, `intraday_eval.py`, `intraday_replay.py` | The intraday agent ([docs/intraday-agent-plan.md](docs/intraday-agent-plan.md)): the fact pack with its look-ahead guard, validation of a decision and the live tick's read of it, the qualification (`agent-eval`), and the historical replay. Deterministic; the model call is `scripts/flies_intraday_agent.py`. |
+| `cherrypick/flies/close_tags.py` | Closes of stranded verticals tagged at natural on the row, never executed (`close-tags`, `close-tag-tracker`). |
+| `cherrypick/flies/completion_escalation.py` | A raised completion limit replayed on live's own quoted order path (`scripts/flies_completion_replay.py`). Pure. |
+| `cherrypick/flies/replay_gates.py` | `replay-gates`: the miss-stop and trend-bucket gates re-run over recorded rows. Read-only. |
+| `cherrypick/flies/stream_window.py` | Escalates the streamer's ATM window after repeated `missing_leg_quotes` refusals, and decays it back. |
+| `cherrypick/flies/fee_reconcile.py` | Settled live rows against the broker's cash, run daily by the supervisor's `flies-fee-reconcile` job whether or not live was armed. |
+| `cherrypick/flies/clock.py` | ET clock helpers; `clock.pinned` stamps a replayed tick with its own instant. |
 | `tests/fixtures/books.json` | three real tastytrade order chains, transcribed. |
 
 ## The read side
@@ -172,7 +179,7 @@ assumed:
   calibrated against real delta-arm fills at the same centre; read the calibration before any cell.
   A rung at k = 0 reproduces its anchor exactly, and a test pins it.
 
-**Intraday agent (planned, 2026-10-05):** [docs/intraday-agent-plan.md](docs/intraday-agent-plan.md). A model reads the session and decides the trend gate and stranded-vertical closes for one paper `advised:` arm, beside a fixed `trend-rule` arm. On live it runs in shadow only until the evidence agrees. Not built yet.
+**Intraday agent (built 2026-10-06, [docs/intraday-agent-plan.md](docs/intraday-agent-plan.md)).** A model reads the session and decides the trend gate and which stranded verticals to close for the `intraday-agent` arm, beside the fixed `trend-rule` arm (both under "The arms"). Closes are tagged at natural on the row, never executed (`close_tags.py`; `run.py close-tags`, `close-tag-tracker`). The model call lives outside the package (`scripts/flies_intraday_agent.py`, supervisor jobs `flies-intraday-agent` and `flies-intraday-agent-live`). On live it is chosen per day in `/live-flies-start` (`live_loop --agent-mode`), only up to the modes the qualification unlocks (`run.py agent-eval`), shadow until then; there is no live closing path (`intraday_advice.LIVE_CLOSES_BUILT` is false).
 
 **Two overlays on the legged book, both tag-don't-gate** (2026-09-19):
 - **The hedge overlay** (`engine.hedge_candidate`, `book.py` step 1e, `analytics.hedge_overlay`,
@@ -270,8 +277,10 @@ GEX profile — neither is reimplemented here.
 
 Separate books, each differing from `control` in **exactly one** thing. Every gate is shared, so each
 comparison measures one variable. Keep `max_positions` equal across any compared pair, or the
-comparison measures opportunity count instead of the variable. `engine.ARMS` is pinned by test to the
-example config's arm set. Full history per arm: [docs/history.md](docs/history.md#the-arms-in-full).
+comparison measures opportunity count instead of the variable. `engine.ARMS` is the registry; an arm
+runs only where a machine's config defines it (the shipped example holds only `control`, with each
+other arm's settings in a `_<arm>` note), and `tests/test_engine.py` checks that every configured arm
+is a registered one. Full history per arm: [docs/history.md](docs/history.md#the-arms-in-full).
 
 - `control` — ATM, all day. The naive baseline without which a profitable arm proves nothing.
 - `gex` — centre on the strongest positive per-strike net GEX near spot. Degrades to ATM when no OI
@@ -322,11 +331,10 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   be complete by 10-15 (the 10-08 outage voided that session's anchors), so it slips to the next
   boundary.
 - **Retiring at the 2026-10-26 boundary** (experiment log, 2026-10-17): `restack` and
-  `debit-first-atm`, each behind `control` in both halves of a backtest over licensed history. The
-  licence keeps the numbers out of this repo; the log gives the reasoning and the conditions (the
-  retirement waits for validation to unlock history and a re-run with every searched arm counted as
-  a trial).
-- `bwb-atm`, `debit-first-atm` — ATM twins of the two GEX-centred construction arms, restoring the
+  `debit-first-atm`, retired on the backtest's evidence (results kept locally under `~/.cherrypick`,
+  per the licence). The log gives the conditions: the retirement waits for validation to unlock
+  history and a re-run with every searched arm counted as a trial.
+- `bwb-atm`, `debit-first-atm` (retired; kept as the record) — ATM twins of the two GEX-centred construction arms, restoring the
   one-variable rule: **X-atm vs `control`** isolates construction, **X-atm vs X** isolates centring. ATM
   means the structure straddles spot, deliberately. **No `spot + N strikes` arm**: `center_offset` is
   stored as a signed continuous float and re-cut with `by_regime(bucket_edges=...)`; what matters is
@@ -361,14 +369,14 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   (5/10 and 10/20) as separate arms, each with its own `max_bwb_tail_dollars`. **Paper only, never a
   live candidate.** Read the roll as the result (`best_roll_debit`, unrolled vs rolled P&L). No hedge
   overlay — insuring the far wing is the roll's job.
-- `selector` — **registered and off** (2026-10-04, [docs/selector.md](docs/selector.md)). One
+- `selector` — **on the roster from 2026-10-15** (built 2026-10-04, [docs/selector.md](docs/selector.md)). One
   portfolio that, each tick, runs its declared sources' own entry functions against ITS book,
   merges identical plans (mode, side and geometry; never pooling the proposers' rows), scores them on
   a model fitted the night before and pinned for the session, and books at most one through the
   same booking code its source uses. **With no model it is control's exact twin**, and a test pins
   that through settlement. Its positions complete under the proposing source's params
-  (`selected_from`). Every tick writes `fly_selector_choices`. **Declared for 2026-10-15**; the
-  first read is at 10 departing sessions, on per-session net against control (experiment log,
+  (`selected_from`). Every tick writes `fly_selector_choices`. **Started 2026-10-15** (its
+  `arm_added` break); the first read is at 10 departing sessions, on per-session net against control (experiment log,
   2026-10-04, amended 2026-10-12).
   - **Procedure v2** (2026-10-12, before it traded): it skips or departs only on a cell whose
     session interval (`core.regimecuts.robustness`) is wholly clear of zero, and never on a
@@ -448,6 +456,17 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   live-start replay's half-hour grid, ahead of 10:15 in 3 of 4 tick phases but not significantly, so
   a forward test. Pinned by `tests/test_window_1230.py`; judging rule in the experiment log
   (2026-10-16).
+- `trend-rule` — `control` plus the trend gate, **from 2026-10-06**
+  ([docs/intraday-agent-plan.md](docs/intraday-agent-plan.md)): `refuse_completion_against_trend`
+  refuses an entry whose completion needs the day to turn against a drift beyond
+  `regime_trend_points`, and `tag_closes: "rule"` tags (never executes) a close of a stranded
+  vertical through its short but not past its wing on a day committed against it
+  (`close_tags.rule_wants_close`). The arm the agent must beat.
+- `intraday-agent` — `trend-rule`'s gate switched per tick by the agent's fresh decision
+  (`trend_gate_source: "agent"`, `paper_loop.tick_config`; the rule's gate exactly when there is
+  none), and the closes the agent names, tagged the same way. **From 2026-10-06**; judged against
+  `trend-rule`, not just `control`. Needs `intraday_agent.enabled` and the supervisor's
+  `flies-intraday-agent` job.
 
 ### Regime tagging
 
@@ -584,7 +603,7 @@ core mechanism is in [packages/core/CLAUDE.md](../core/CLAUDE.md). Module specif
 
 These are the constraints the module exists to enforce. Breaking one makes the numbers worthless.
 
-1. **Every result is net of the modeled fee and slippage stack.** This suite has recorded a trade
+1. **Every result is net of the modelled fee and slippage stack.** This suite has recorded a trade
    collecting $4.00 against $4.96 of fees. Gross credit is not a result.
 2. **"Risk-free" is a measurement, never an assumption.** `position_floor` is computed after fees and
    `is_risk_free` can and does return `False` for a fly with a positive gross credit.
@@ -651,6 +670,9 @@ talkative as a human reader needs.
   a balance call — with an uncompleted vertical counted at its worst case. No count limit on
   incomplete positions since 2026-09-25; `live.max_incomplete_spreads: 1` restores one-at-a-time. See
   `live_loop.py` and [docs/live-trading-plan.md](docs/live-trading-plan.md).
+- **No live leg opposite another live loop's** (2026-10-15, `core.livepositions.cross_module_conflict`,
+  refusal `cross_module_sign_conflict`): bwb and MEIC trade SPX in the same account, and a leg
+  opposite one they hold or have working would net at the broker into a position no ledger describes.
 - **No entry of any mode on an NYSE early-close session**, paper or live (`engine.early_close_gate`):
   every clock here assumes a 16:00 close, so a 13:00 day is refused outright.
 - **No new entry after 12:30 ET on a triple-witching session** (`engine.triple_witching_gate`, refusal
@@ -666,7 +688,7 @@ talkative as a human reader needs.
   exercise/assignment at expiry is not free: tastytrade charges **$5 per ITM STRIKE** — per distinct
   settling option symbol, not per contract — so a completed fly pays at most 3 charges. Modeled
   (`fly.expire_fee`, `fly.itm_legs_at_settlement`), reserved in every floor
-  (`fly.WORST_CASE_ITM_LEGS`), and paid, never dodged (rule 5). `fee_reconcile` compares modeled vs
+  (`fly.WORST_CASE_ITM_LEGS`), and paid, never dodged (rule 5). `fee_reconcile` compares modelled vs
   real fees **per settlement symbol**, since an aggregate hid a per-contract mis-model as ~$12 of
   apparent slippage.
 - **The decision path is deterministic.** `fly.py` and `engine.py` are pure functions over a
@@ -705,8 +727,8 @@ talkative as a human reader needs.
 ## Status
 
 **Complete and tested:** decision engine, floor accounting, paper DB, snapshot provider, session
-driver, CLI, and the orchestrator `fly_book` wiring across all four schema registries. 300 tests,
-including a provider suite built against the real `cherrypick.core.streamcache` DDL so an upstream
+driver, CLI, and the orchestrator `fly_book` wiring across all four schema registries. The tests
+include a provider suite built against the real `cherrypick.core.streamcache` DDL so an upstream
 schema change fails here rather than silently producing empty snapshots. Runs in CI. What each session
 measured: [docs/experiment-log.md](docs/experiment-log.md).
 
@@ -738,9 +760,10 @@ resolves them:
 - **Legging is where live diverges hardest from paper.** Live, step 2 is a working limit that may sit
   or fill worse, so the paper completion rate was taken as a **ceiling** on the live rate. The first
   48 live completions question that: a resting limit filled where paper's modelled debit said no
-  (fill realism, above). Built-in abort: once
-  30+ live legged entries exist, a live rate more than 15 points below paper over the same days halts
-  the pilot automatically.
+  (fill realism, above). Built-in abort check: once 30+ live legged entries exist,
+  `analytics.live_vs_paper` flags `abort_rule.triggered` when the live rate is more than 15 points
+  below paper over the same days. It is reported in `live_loop --status` and halts nothing; acting
+  on it is a person's call.
 - **`fund_from_open_credit` needs a real buying-power check** before any outright entry. Moot for the
   pilot: outright entries are off in live, so this must be solved before they could go live.
 
@@ -750,11 +773,11 @@ rung-by-rung rollout — is [docs/live-trading-plan.md](docs/live-trading-plan.m
 ## Band placement (`python run.py bands`)
 
 Where each book's band sat relative to the range the session actually printed. A fly's floor holding
-is the joint event of band placement and realized range, so `floor_holds` alone credits a wide band on
+is the joint event of band placement and realised range, so `floor_holds` alone credits a wide band on
 a quiet day and blames a tight one on a fast day.
 
 - **Both edges**: the metric is `min(low_margin, high_margin)` with the binding edge named (72 of 152
-  books were bound by the UPPER edge), normalised by the session's realized range (ex-post) and by the
+  books were bound by the UPPER edge), normalised by the session's realised range (ex-post) and by the
   VIX1D one-day implied move (knowable at entry — the only one that separates "places wider bands"
   from "got quieter days").
 - **The range comes from the stream cache's `day_high`/`day_low`, not `fly_iterations`** — a 0.11-point
