@@ -91,6 +91,28 @@ def test_after_the_call_it_closes():
 def test_a_report_before_the_open_has_passed_on_its_own_day_one_after_the_close_has_not():
     assert run(date(2026, 10, 20), time_of_day="BTO")["earnings_trade"]["passed"]
     assert not run(date(2026, 10, 20), time_of_day="AMC")["earnings_trade"]["passed"]
+    # BMO is the same as the broker's BTO: closed on the report's own day.
+    bmo = run(date(2026, 10, 20), time_of_day="bmo")
+    assert bmo["earnings_trade"]["passed"] and bmo["exit_levels"]["time_exit"]["date"] == "2026-10-20"
+    assert rec(bmo)[0] == ev.CLOSE
+
+
+def test_a_blank_time_carried_from_yesterday_takes_todays_for_the_same_report():
+    # Yesterday's evaluation had no time; today's snapshot has one for the same date: it is used, so a
+    # before-the-open report closes on its day rather than the next.
+    blank = {f"XYZ|{EXPIRY}": {"report": "2026-10-20", "time": None, "opened": "2026-10-16"}}
+    t = run(date(2026, 10, 20), time_of_day="BTO", seen=blank)
+    assert t["earnings_trade"]["time_of_day"] == "BTO" and t["earnings_trade"]["passed"]
+    # A time for a different report date (next quarter's) is never borrowed.
+    assert (
+        run(date(2026, 10, 20), report="2027-01-20", time_of_day="BTO", seen=blank)["earnings_trade"][
+            "time_of_day"
+        ]
+        is None
+    )
+    # A time yesterday already had stands.
+    timed = {f"XYZ|{EXPIRY}": {"report": "2026-10-20", "time": "AMC", "opened": "2026-10-16"}}
+    assert run(date(2026, 10, 20), time_of_day="BTO", seen=timed)["earnings_trade"]["time_of_day"] == "AMC"
 
 
 def test_only_a_trade_put_on_one_to_seven_days_before_the_report_is_one():

@@ -39,6 +39,13 @@ Version 7 carries the income reading: the newest `screener-greeks/income/<date>.
 `fetch_screener_greeks.py income` the previous afternoon; never a `.trial` file), at most
 INCOME_MAX_AGE_DAYS old, which manage sizes candidate trades from. A file read, not a broker call, so
 the snapshot stays the record of everything an evaluation was judged on.
+
+Version 8 fills an earnings report's time of day where the broker leaves it blank, from Nasdaq's
+public calendar as `scripts/fetch_earnings_times.py` records it (`market-report/earnings/times/`),
+for the same report date only and in the broker's own spelling (`BTO` / `AMC`), marked
+`earnings_time_source: "nasdaq"`. An earnings trade closes on its report's day when that is before
+the open and the day after otherwise, and on 2026-10-18 the broker timed none of RTX, NFLX and CLF:
+CLF and RTX report before the open, so without this both would have been held a day past the call.
 """
 
 from __future__ import annotations
@@ -56,9 +63,13 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 7
+SNAPSHOT_VERSION = 8
 # Monday reads Friday's afternoon reading; anything older is a stale book of quotes.
 INCOME_MAX_AGE_DAYS = 4
+# The timings file is fetched nightly a month ahead; a week-old one still knows this week's reports.
+EARNINGS_TIMES_MAX_AGE_DAYS = 7
+# The timings file's spelling to the broker's, which manage reads.
+EARNINGS_TIME_SPELLING = {"bmo": "BTO", "amc": "AMC"}
 # What a beta-weighted delta is stated in. The broker's betas are against SPY, so this is not a free
 # choice: a different benchmark would need betas the broker does not supply.
 BENCHMARK = "SPY"
@@ -258,6 +269,50 @@ def income_reading(session: date, folder=None) -> dict[str, Any]:
     return {**doc, "error": None}
 
 
+def earnings_times_dir():
+    from cherrypick.core import home
+
+    return home.data_dir("market-report") / "earnings" / "times"
+
+
+def earnings_times(session: date, folder=None) -> dict[str, dict[str, str]]:
+    """{report date: {symbol: "BTO" | "AMC"}} from the newest timings file on or before `session` and
+    at most EARNINGS_TIMES_MAX_AGE_DAYS old; empty when there is none or it cannot be read."""
+    folder = earnings_times_dir() if folder is None else folder
+    days = []
+    for f in folder.glob("????-??-??.json") if folder.is_dir() else []:
+        try:
+            d = date.fromisoformat(f.stem)
+        except ValueError:
+            continue
+        if d <= session and (session - d).days <= EARNINGS_TIMES_MAX_AGE_DAYS:
+            days.append((d, f))
+    if not days:
+        return {}
+    try:
+        doc = json.loads(max(days)[1].read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    for day, symbols in (doc.get("dates") or {}).items():
+        for symbol, when in (symbols or {}).items():
+            spelled = EARNINGS_TIME_SPELLING.get(str(when or "").lower())
+            if spelled:
+                out.setdefault(day, {})[str(symbol).upper()] = spelled
+    return out
+
+
+def fill_earnings_times(metrics: dict[str, dict], times: dict[str, dict[str, str]]) -> None:
+    """Give each metric the broker left untimed the timings file's time for the SAME report date."""
+    for symbol, m in metrics.items():
+        if m.get("earnings_time") or not m.get("earnings_date"):
+            continue
+        when = (times.get(str(m["earnings_date"])[:10]) or {}).get(symbol)
+        if when:
+            m["earnings_time"] = when
+            m["earnings_time_source"] = "nasdaq"
+
+
 def build(cfg: dict[str, Any]) -> dict[str, Any]:
     positions = positions_mod.run(cfg)
     symbols = sorted(
@@ -275,6 +330,7 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
     metrics, error = market_metrics(cfg, quoted, prefer) if ok else ({}, None)
     history, history_error = transactions(cfg, symbols, prefer) if ok else ({}, None)
     session = clock.today_iso()
+    fill_earnings_times(metrics, earnings_times(date.fromisoformat(session)))
     hedge_spot = (metrics.get(HEDGE_ROOT) or {}).get("last")
     hedge = hedge_chain(cfg, hedge_spot, date.fromisoformat(session), prefer) if ok else None
     return {

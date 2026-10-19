@@ -32,6 +32,7 @@ def _fake(monkeypatch, answers):
     monkeypatch.setattr(managesnap.doctor, "_run", run)
     # Never the real home's income readings.
     monkeypatch.setattr(managesnap, "income_dir", lambda: Path("no-such-income-dir"))
+    monkeypatch.setattr(managesnap, "earnings_times_dir", lambda: Path("no-such-times-dir"))
     monkeypatch.setattr(cfgmod, "enabled_modules", lambda cfg: {"meic": {"path": "."}})
     monkeypatch.setattr(cfgmod, "module_root", lambda mcfg, name: ".")
     monkeypatch.setattr(cfgmod, "broker_tool", lambda mcfg, name: ["-m", "cherrypick.meic.tt"])
@@ -47,7 +48,7 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 7
+    assert snap["snapshot_version"] == 8
     assert snap["transactions"] == {"GLD": [{"order_id": 1}]}
     assert snap["transactions_error"] is None
     (tx_argv, tx_timeout) = next(c for c in calls if "get_transactions" in c[0])
@@ -226,3 +227,39 @@ def test_a_stale_or_missing_income_reading_is_said_not_used(tmp_path):
     stale = managesnap.income_reading(date(2026, 10, 19), tmp_path)
     assert "too old" in stale["error"] and "symbols" not in stale
     assert "no income reading" in managesnap.income_reading(date(2026, 10, 19), tmp_path / "none")["error"]
+
+
+def _times_file(folder, day, dates):
+    (folder / f"{day}.json").write_text(json.dumps({"fetched_at": day, "dates": dates}), encoding="utf-8")
+
+
+def test_an_untimed_report_takes_the_timings_files_time_for_the_same_date(tmp_path):
+    _times_file(tmp_path, "2026-10-10", {"2026-10-19": {"CLF": "amc"}})  # older: not read
+    _times_file(
+        tmp_path, "2026-10-17", {"2026-10-19": {"CLF": "bmo"}, "2026-10-20": {"NFLX": "amc", "RTX": "bmo"}}
+    )
+    _times_file(tmp_path, "2026-10-19", {"2026-10-19": {"CLF": "amc"}})  # after the session: not yet
+    times = managesnap.earnings_times(date(2026, 10, 18), tmp_path)
+    metrics = {
+        "CLF": {"earnings_date": "2026-10-19", "earnings_time": None},
+        "NFLX": {"earnings_date": "2026-10-20", "earnings_time": None},
+        "RTX": {"earnings_date": "2026-10-27", "earnings_time": None},  # a different date: left blank
+        "UAL": {"earnings_date": "2026-10-20", "earnings_time": "AMC"},  # the broker's own time stands
+        "SPY": {"earnings_date": None, "earnings_time": None},
+    }
+    managesnap.fill_earnings_times(metrics, times)
+    assert metrics["CLF"] == {
+        "earnings_date": "2026-10-19",
+        "earnings_time": "BTO",
+        "earnings_time_source": "nasdaq",
+    }
+    assert metrics["NFLX"]["earnings_time"] == "AMC"
+    assert metrics["RTX"]["earnings_time"] is None and "earnings_time_source" not in metrics["RTX"]
+    assert "earnings_time_source" not in metrics["UAL"]
+    assert metrics["SPY"]["earnings_time"] is None
+
+
+def test_a_stale_or_missing_timings_file_fills_nothing(tmp_path):
+    _times_file(tmp_path, "2026-10-01", {"2026-10-19": {"CLF": "bmo"}})
+    assert managesnap.earnings_times(date(2026, 10, 18), tmp_path) == {}
+    assert managesnap.earnings_times(date(2026, 10, 18), tmp_path / "none") == {}

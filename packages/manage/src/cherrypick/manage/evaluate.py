@@ -737,8 +737,7 @@ def evaluate_trade(
         # Its time exit is the call, not expiry less 21 days: on a weekly short that date falls before
         # the trade was even put on, and the rule it belongs to is set aside here anyway.
         report = _date(et["report"])
-        bto = str(et["time_of_day"] or "").upper() == "BTO"
-        after = report if bto else _calendar.next_trading_day(report)
+        after = report if before_open(et["time_of_day"]) else _calendar.next_trading_day(report)
         trade["exit_levels"]["time_exit"] = {"date": after.isoformat(), "rule": "earnings_trade"}
         if not et["passed"]:
             held = [f for f in fired if f["rule"].split(".")[0] in HELD_FOR_EARNINGS]
@@ -763,6 +762,14 @@ def evaluate_trade(
 # The rule families an earnings trade's report outranks: closing, taking profit and rolling wait for
 # the call. Safety (expiry and assignment, ex-dividend), sizing and unpriced legs never wait.
 HELD_FOR_EARNINGS = {"credit", "debit", "directional", "legs", "roll"}
+
+# A report before the open: the broker spells it BTO, most calendars BMO.
+BEFORE_OPEN = {"BTO", "BMO"}
+
+
+def before_open(time_of_day: Any) -> bool:
+    """A report before the open is closed on its own day; after the close, or untimed, the day after."""
+    return str(time_of_day or "").upper() in BEFORE_OPEN
 
 
 def earnings_trade(
@@ -794,7 +801,11 @@ def earnings_trade(
     key = f"{trade['underlying']}|{expiry.isoformat()}"
     prior = (seen or {}).get(key) or {}
     report = _date(prior.get("report")) or _date(metrics.get("earnings_date"))
-    time_of_day = prior.get("time") if prior.get("report") else metrics.get("earnings_time")
+    # Yesterday's time stands, but a blank one takes today's for the same report: a time can arrive a
+    # day late, and an untimed report is held a day past a before-the-open call.
+    time_of_day = prior.get("time") if prior.get("report") else None
+    if not time_of_day and _date(metrics.get("earnings_date")) == report:
+        time_of_day = metrics.get("earnings_time")
     orders = (trade.get("chain") or {}).get("orders") or []
     opened = _date(orders[0].get("date")) if orders else _date(prior.get("opened"))
     if report is None or report > expiry or (expiry - report).days > int(cfg["max_days_expiry_after"]):
@@ -805,7 +816,7 @@ def earnings_trade(
         lead = (report - opened).days
         if not int(cfg["min_days_before"]) <= lead <= int(cfg["max_days_before"]):
             return None
-    passed = session > report or (session == report and str(time_of_day or "").upper() == "BTO")
+    passed = session > report or (session == report and before_open(time_of_day))
     return {
         "key": key,
         "report": report.isoformat(),
