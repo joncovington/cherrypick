@@ -3,7 +3,7 @@ import { NavLink, useSearchParams } from "react-router-dom";
 import { type ModuleId, isExperimental } from "../../lightbox/moduleOrder";
 import { NAV_DECL, navGroups, viewSlides } from "../../lightbox/navGroups";
 import { useViewMode } from "../../lib/viewMode";
-import { CONFIG_LINK, suiteLinksFor, visibleNavLinks, type NavLinkDef } from "./navLinks";
+import { CONFIG_LINK, railHalves, suiteLinksFor, visibleNavLinks, type NavLinkDef } from "./navLinks";
 import { useFeatures } from "../../lib/useFeatures";
 import { isSlideVisible } from "../../lib/visibility";
 import { ExperimentalChip } from "../ExperimentalChip";
@@ -64,6 +64,10 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
   const visible = visibleNavLinks(features);
   const suite = suiteLinksFor(visible.suite, view, module);
   const { modules } = visible;
+  // Real money and the market reads above the modules; research and the suite's own pages below.
+  const { above, below } = railHalves(suite);
+  const research = below.filter((l) => l.section === "research");
+  const suitePages = below.filter((l) => l.section !== "research");
   const grouping = navGroups(
     module ?? ("meic" as ModuleId), // never read when module is null — grouping is built only for the open module
     module === null
@@ -161,10 +165,13 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
           collapsing never asks you to scroll a long module's tab list to reach the control. */}
       <div className="mf-nav-scroll">
       <div id="mf-nav-links" hidden={!expanded}>
-        {suite.map((l) => link(l))}
+        {above.map((l) => link(l))}
         <div className="mf-nav-section">Modules</div>
         {modules.map((l) => link(l))}
+        {research.length > 0 && <div className="mf-nav-section">Research</div>}
+        {research.map((l) => link(l))}
         <div className="mf-nav-section">Suite</div>
+        {suitePages.map((l) => link(l))}
         {link(
           CONFIG_LINK,
           dirty > 0 && <span className="nav-dot" title={`${String(dirty)} unsaved change${dirty === 1 ? "" : "s"}`} />,
@@ -174,7 +181,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
           the page's root (the root is what an icon names). A name per link (aria-label) because
           the glyph carries no text; the expanded list stays as the tab order's text links. */}
       <div className="mf-nav-icons" hidden={expanded}>
-        {[...suite, ...modules, CONFIG_LINK].map((l) => (
+        {[...above, ...modules, ...below, CONFIG_LINK].map((l) => (
           <NavLink
             key={l.to}
             to={l.to}

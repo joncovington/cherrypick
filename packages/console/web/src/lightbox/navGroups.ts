@@ -69,6 +69,9 @@ export const FLIES_SLIDES = [
   { id: "summary", label: "summary" },
   { id: "forest", label: "forest" },
   { id: "timeline", label: "timeline" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
+  { id: "books", label: "books" },
   { id: "openingrange", label: "opening range" },
   { id: "attempts", label: "attempts" },
   { id: "decisions", label: "decisions" },
@@ -82,9 +85,6 @@ export const FLIES_SLIDES = [
   { id: "analysis", label: "analysis" },
   { id: "costs", label: "costs" },
   { id: "advisor", label: "advisor" },
-  { id: "books", label: "books" },
-  { id: "positions", label: "positions" },
-  { id: "history", label: "history" },
   { id: "guide", label: "help" },
 ] as const satisfies readonly NavSlide[];
 
@@ -111,6 +111,9 @@ export const MEIC_SLIDES = [
   { id: "summary", label: "summary" },
   { id: "forest", label: "forest" },
   { id: "attempts", label: "attempts" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
+  { id: "sessions", label: "sessions" },
   { id: "exits", label: "exits" },
   { id: "regime", label: "regime cuts" },
   { id: "calibration", label: "calibration" },
@@ -118,9 +121,6 @@ export const MEIC_SLIDES = [
   { id: "analysis", label: "analysis" },
   { id: "costs", label: "costs" },
   { id: "advisor", label: "advisor" },
-  { id: "positions", label: "positions" },
-  { id: "history", label: "history" },
-  { id: "sessions", label: "sessions" },
   { id: "guide", label: "help" },
 ] as const satisfies readonly NavSlide[];
 
@@ -139,6 +139,8 @@ export type MeicSlideId = (typeof MEIC_SLIDES)[number]["id"];
 export const BWB_SLIDES = [
   { id: "session", label: "session" },
   { id: "summary", label: "summary" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
   { id: "vol", label: "entry vol" },
@@ -146,8 +148,6 @@ export const BWB_SLIDES = [
   { id: "performance", label: "performance" },
   { id: "analysis", label: "analysis" },
   { id: "advisor", label: "advisor" },
-  { id: "positions", label: "positions" },
-  { id: "history", label: "history" },
   { id: "guide", label: "help" },
 ] as const satisfies readonly NavSlide[];
 
@@ -164,15 +164,15 @@ export type BwbSlideId = (typeof BWB_SLIDES)[number]["id"];
 export const EARNINGS_SLIDES = [
   { id: "session", label: "session" },
   { id: "summary", label: "summary" },
-  { id: "decisions", label: "decisions" },
-  { id: "strategies", label: "strategies" },
-  { id: "screening", label: "screening" },
   { id: "upcoming", label: "upcoming" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
+  { id: "decisions", label: "decisions" },
+  { id: "screening", label: "screening" },
+  { id: "strategies", label: "strategies" },
   { id: "performance", label: "performance" },
   { id: "analysis", label: "analysis" },
   { id: "advisor", label: "advisor" },
-  { id: "positions", label: "positions" },
-  { id: "history", label: "history" },
 ] as const satisfies readonly NavSlide[];
 
 export type EarningsSlideId = (typeof EARNINGS_SLIDES)[number]["id"];
@@ -187,14 +187,14 @@ export const CURVE_SLIDES = [
   { id: "session", label: "session" },
   { id: "summary", label: "summary" },
   { id: "regime", label: "regime" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
   { id: "performance", label: "performance" },
   { id: "analysis", label: "analysis" },
   { id: "costs", label: "costs" },
   { id: "advisor", label: "advisor" },
-  { id: "positions", label: "positions" },
-  { id: "history", label: "history" },
   { id: "guide", label: "help" },
 ] as const satisfies readonly NavSlide[];
 
@@ -210,13 +210,13 @@ export const CONTANGO_SLIDES = [
   { id: "session", label: "session" },
   { id: "summary", label: "summary" },
   { id: "regime", label: "regime" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
   { id: "performance", label: "performance" },
   { id: "analysis", label: "analysis" },
   { id: "costs", label: "costs" },
-  { id: "positions", label: "positions" },
-  { id: "history", label: "history" },
   { id: "guide", label: "help" },
 ] as const satisfies readonly NavSlide[];
 
@@ -231,15 +231,15 @@ export type ContangoSlideId = (typeof CONTANGO_SLIDES)[number]["id"];
 export const PMCC_SLIDES = [
   { id: "session", label: "session" },
   { id: "summary", label: "summary" },
+  { id: "positions", label: "positions" },
+  { id: "tracker", label: "tracker" },
+  { id: "history", label: "history" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
   { id: "performance", label: "performance" },
   { id: "analysis", label: "analysis" },
   { id: "costs", label: "costs" },
   { id: "advisor", label: "advisor" },
-  { id: "positions", label: "positions" },
-  { id: "tracker", label: "tracker" },
-  { id: "history", label: "history" },
   { id: "guide", label: "help" },
 ] as const satisfies readonly NavSlide[];
 
@@ -255,14 +255,14 @@ export const CALENDARS_SLIDES = [
   { id: "session", label: "session" },
   { id: "summary", label: "summary" },
   { id: "plan", label: "plan" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
   { id: "decisions", label: "decisions" },
   { id: "arms", label: "arms" },
   { id: "policies", label: "policies" },
   { id: "performance", label: "performance" },
   { id: "analysis", label: "analysis" },
   { id: "advisor", label: "advisor" },
-  { id: "positions", label: "positions" },
-  { id: "history", label: "history" },
   { id: "guide", label: "help" },
 ] as const satisfies readonly NavSlide[];
 
@@ -292,14 +292,16 @@ export const GEX_SLIDES = [
 
 export type GexSlideId = (typeof GEX_SLIDES)[number]["id"];
 
-// `today` (2026-10-15): every live loop on one page, first. Then each live loop's tab, named for its
-// module (flies' was `today` until the summary took the name back the same day), and the
-// account-wide manage evaluation after them.
+// `today` (2026-10-15): every live loop on one page, first. Then the account-wide views from the
+// manage evaluation (2026-10-18: `manage` split into `positions`, each trade's action, and
+// `portfolio`, the account as one book), then each live loop's tab, named for its module (flies'
+// was `today` until the summary took the name back the same day).
 export const LIVE_SLIDES = [
   { id: "today", label: "today" },
+  { id: "positions", label: "positions" },
+  { id: "portfolio", label: "portfolio" },
   { id: "flies", label: "flies" },
   { id: "meic", label: "meic" },
-  { id: "manage", label: "manage" },
 ] as const satisfies readonly NavSlide[];
 
 export const REPORTS_SLIDES = [
@@ -331,15 +333,16 @@ export const CHARTS_SLIDES = [
   { id: "setups", label: "setups" },
 ] as const satisfies readonly NavSlide[];
 
-/** The income screener lists (2026-10-16): one tab per list, the earnings calendar (2026-10-17),
- *  the signal board (2026-10-17), then how well our rules match the lists. */
+/** The screeners (2026-10-18 order): our own screens first -- the earnings calendar and its record,
+ *  the signal board -- then the vendor's three income lists (one tab each, 2026-10-16), which stop
+ *  when its subscription ends on 2026-10-24, with how well our rules match them. */
 export const SCREENERS_SLIDES = [
-  { id: "short-puts", label: "short puts" },
-  { id: "covered-calls", label: "covered calls" },
-  { id: "credit-spreads", label: "credit spreads" },
   { id: "earnings", label: "earnings" },
   { id: "earnings-record", label: "earnings record" },
   { id: "board", label: "signal board" },
+  { id: "short-puts", label: "short puts" },
+  { id: "covered-calls", label: "covered calls" },
+  { id: "credit-spreads", label: "credit spreads" },
   { id: "fidelity", label: "fidelity" },
 ] as const satisfies readonly NavSlide[];
 
@@ -401,12 +404,12 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     simple: ["summary", "session", "forest", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["session", "summary", "forest", "timeline"] },
+      { label: "tables", ids: ["positions", "history", "books"] },
       {
         label: "evidence",
         ids: ["attempts", "decisions", "gates", "livegap", "selector", "openingrange", "regime", "agent"],
       },
       { label: "study", ids: ["completion", "performance", "analysis", "costs", "advisor"] },
-      { label: "tables", ids: ["books", "positions", "history"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: {
@@ -424,9 +427,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     simple: ["summary", "forest", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["session", "summary", "forest", "attempts"] },
+      { label: "tables", ids: ["positions", "history", "sessions"] },
       { label: "evidence", ids: ["exits", "regime"] },
       { label: "study", ids: ["calibration", "performance", "analysis", "costs", "advisor"] },
-      { label: "tables", ids: ["positions", "history", "sessions"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: { now: "session", trades: "history" },
@@ -436,9 +439,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     simple: ["summary", "session", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["session", "summary"] },
+      { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions", "arms", "vol", "livegap"] },
       { label: "study", ids: ["performance", "analysis", "advisor"] },
-      { label: "tables", ids: ["positions", "history"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: { now: "session" },
@@ -448,9 +451,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     simple: ["summary", "session", "upcoming", "performance", "positions"],
     groups: [
       { label: "today", ids: ["session", "summary", "upcoming"] },
+      { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions", "screening", "strategies"] },
       { label: "study", ids: ["performance", "analysis", "advisor"] },
-      { label: "tables", ids: ["positions", "history"] },
     ],
     legacy: { now: "session", overview: "session", detail: "strategies", trades: "history" },
   },
@@ -459,9 +462,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     simple: ["summary", "session", "regime", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["session", "summary", "regime"] },
+      { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "analysis", "costs", "advisor"] },
-      { label: "tables", ids: ["positions", "history"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: { now: "session" },
@@ -471,9 +474,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     simple: ["summary", "session", "regime", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["session", "summary", "regime"] },
+      { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "analysis", "costs"] },
-      { label: "tables", ids: ["positions", "history"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: {},
@@ -483,9 +486,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     simple: ["summary", "session", "plan", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["session", "summary", "plan"] },
+      { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions", "arms", "policies"] },
       { label: "study", ids: ["performance", "analysis", "advisor"] },
-      { label: "tables", ids: ["positions", "history"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: { now: "session", weeks: "history" },
@@ -495,9 +498,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     simple: ["summary", "session", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["session", "summary"] },
+      { label: "tables", ids: ["positions", "tracker", "history"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "analysis", "costs", "advisor"] },
-      { label: "tables", ids: ["positions", "tracker", "history"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: { now: "session" },
@@ -511,12 +514,16 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
       { label: "tables", ids: ["birdseye", "trades", "spreads", "voloi"] },
     ],
   },
-  live: { slides: LIVE_SLIDES },
+  live: { slides: LIVE_SLIDES, legacy: { manage: "positions" } },
   charts: { slides: CHARTS_SLIDES },
   // The fidelity tab is the reproduction's own check: a developer surface, so detail view only.
   screeners: {
     slides: SCREENERS_SLIDES,
-    simple: ["short-puts", "covered-calls", "credit-spreads", "earnings", "earnings-record", "board"],
+    simple: ["earnings", "earnings-record", "board", "short-puts", "covered-calls", "credit-spreads"],
+    groups: [
+      { label: "screens", ids: ["earnings", "earnings-record", "board"] },
+      { label: "vendor lists", ids: ["short-puts", "covered-calls", "credit-spreads", "fidelity"] },
+    ],
   },
   reports: { slides: REPORTS_SLIDES },
   compare: { slides: COMPARE_SLIDES },

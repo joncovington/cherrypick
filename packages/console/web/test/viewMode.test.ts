@@ -43,7 +43,8 @@ describe("the simple and detail views", () => {
   it("detail lists every tab; simple lists the module's own set in tab order", () => {
     const slides = NAV_DECL.meic.slides;
     expect(viewSlides("meic", slides, "detail").map((s) => s.id)).toEqual(slides.map((s) => s.id));
-    expect(viewSlides("meic", slides, "simple").map((s) => s.id)).toEqual(["summary", "forest", "performance", "positions", "guide"]);
+    // Tab order: the tables sit right after today's tabs (2026-10-18), so positions comes before performance.
+    expect(viewSlides("meic", slides, "simple").map((s) => s.id)).toEqual(["summary", "forest", "positions", "performance", "guide"]);
   });
 
   it("keeps the tab the reader is on, even when the simple view leaves it out", () => {

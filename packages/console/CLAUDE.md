@@ -282,6 +282,10 @@ four tabs, because its write actions are wired through page-spanning state (`nav
   `ModuleFrame` compares the two tab lists at runtime and says so **on the page** on a mismatch.
 - **A renamed tab keeps its old id as an alias**, resolved before the first-tab fallback
   (`/flies/exits` → `divergence`); a fall-through looks like a working link showing the wrong page.
+- **The rail's order is a decision, pinned by `navLinks.test.ts`** (2026-10-18): Live first, the
+  market reads (Reports, Charts, Options flow, GEX, Screeners) above the modules, the modules
+  live-capable first (`TRADING_MODULE_ORDER`), then Research and the suite's own pages, Config last.
+  Inside every module the tables group (positions, history) follows the today group.
 - **A tab change is a handoff, not a remount.** The frame body stays mounted, the slide subtree is
   keyed with a 120ms settle, scroll resets explicitly, and `Shell` keys its outlet on the module
   segment, not the whole pathname (or every tab change refetches the module).
@@ -629,8 +633,11 @@ submissions, a tripped breaker, overdue settlement, failing broker contact, an u
 the worst case and the mark are each loop's own measure, shown per loop, never added. `/live/today`
 is this tab now, not an alias for flies. Pinned by `server/test/live-today.test.ts`.
 
-**The Live page's `manage` tab** reads packages/manage's evaluation (`readers/manage.ts`). Since
-2026-10-18 it also carries the account as one book (`pages/Live/PortfolioCards.tsx`). That includes
+**The Live page's `positions` and `portfolio` tabs** read packages/manage's evaluation
+(`readers/manage.ts`); they were one `manage` tab until 2026-10-18, and `/live/manage` lands on
+`positions`. `positions` is each trade's action, actions first, with the ruleset; `portfolio` is
+the account as one book (`pages/Live/PortfolioCards.tsx`). Both open with the same evaluation
+header (its caveats qualify both) and the same six-tile account strip. The portfolio includes
 dials for beta-weighted delta and theta against their bands, the break-even move, the stress line,
 per-name delta and theta, the guidance, and a sized XSP hedge. **Every band and every in/out flag is
 the reading's `bands`**: the dial draws manage's band and takes amber only from its `inside` flag,

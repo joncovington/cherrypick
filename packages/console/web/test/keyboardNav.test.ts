@@ -44,19 +44,26 @@ describe("the g chord", () => {
 
 describe("the module digits", () => {
   it("names the same modules the menu advertises, in the same order", () => {
-    expect(press(IDLE, "1").action).toEqual({ kind: "navigate", to: "/meic" });
-    expect(press(IDLE, "2").action).toEqual({ kind: "navigate", to: "/flies" });
-    expect(press(IDLE, "5").action).toEqual({ kind: "navigate", to: "/contango" });
-    expect(press(IDLE, "9").action).toEqual({ kind: "navigate", to: "/gex" });
+    // 2026-10-18: the live-capable modules first, flies leading, then the paper-only ones.
+    expect(press(IDLE, "1").action).toEqual({ kind: "navigate", to: "/flies" });
+    expect(press(IDLE, "2").action).toEqual({ kind: "navigate", to: "/meic" });
+    expect(press(IDLE, "5").action).toEqual({ kind: "navigate", to: "/pmcc" });
+    expect(press(IDLE, "8").action).toEqual({ kind: "navigate", to: "/contango" });
   });
 
   it("ignores a digit no module claims", () => {
-    // nine module pages since contango (2026-10-05): every digit 1-9 is claimed, 0 never is.
+    // Eight trading modules since GEX joined the market reads (2026-10-18): 9 and 0 are nobody's.
+    expect(press(IDLE, "9").action).toBeNull();
     expect(press(IDLE, "0").action).toBeNull();
   });
 
+  it("g g reaches GEX, now a suite page among the market reads", () => {
+    const first = press(IDLE, "g");
+    expect(press(first.state, "g", { now: 1100 }).action).toEqual({ kind: "navigate", to: "/gex" });
+  });
+
   it("name the VISIBLE modules: an off module's digit goes to the next one shown", () => {
-    // pmcc off: 3 is curve now, 8 is gex, and 9 (gex's old digit) is nobody's.
+    // pmcc off: 5 is calendars now, 7 is contango, and 8 (contango's old digit) is nobody's.
     const features = {
       ok: true as const,
       capabilities: {},
@@ -64,9 +71,9 @@ describe("the module digits", () => {
       services: {},
       features: {},
     };
-    expect(press(IDLE, "3", { features }).action).toEqual({ kind: "navigate", to: "/curve" });
-    expect(press(IDLE, "8", { features }).action).toEqual({ kind: "navigate", to: "/gex" });
-    expect(press(IDLE, "9", { features }).action).toBeNull();
+    expect(press(IDLE, "5", { features }).action).toEqual({ kind: "navigate", to: "/calendars" });
+    expect(press(IDLE, "7", { features }).action).toEqual({ kind: "navigate", to: "/contango" });
+    expect(press(IDLE, "8", { features }).action).toBeNull();
   });
 
   it("a chord to a hidden page does nothing", () => {
@@ -85,7 +92,7 @@ describe("the module digits", () => {
   });
 
   it("show every module when the bridge failed", () => {
-    expect(press(IDLE, "3", { features: { ok: false, error: "bridge down" } }).action).toEqual({ kind: "navigate", to: "/pmcc" });
+    expect(press(IDLE, "5", { features: { ok: false, error: "bridge down" } }).action).toEqual({ kind: "navigate", to: "/pmcc" });
   });
 });
 
