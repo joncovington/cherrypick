@@ -63,6 +63,50 @@ def test_the_accounts_shapes_are_named(legs, name):
     assert shapes.classify(opts(legs), cost(legs)) == name
 
 
+# The account's SPY ratio on 2026-10-18: +1 745P / -3 740P / +2 730P, $200 in against $1,300 at risk.
+SPY_132 = [
+    leg(2, "P", 730, NOV, 5.78, 5.565),
+    leg(-3, "P", 740, NOV, 7.2333, 6.995),
+    leg(1, "P", 745, NOV, 8.14, 7.895),
+]
+DEC = "2026-12-18"
+
+
+@pytest.mark.parametrize(
+    "legs, name",
+    [
+        (SPY_132, "1-3-2"),
+        ([{**x, "quantity": x["quantity"] * 2} for x in SPY_132], "1-3-2"),  # 2-6-4 reduces
+        ([leg(2, "C", 100, NOV, 1, 1), leg(-3, "C", 105, NOV, 1, 1), leg(1, "C", 115, NOV, 1, 1)], "1-3-2"),
+        # A naked short (1-3-1) is not a ratio butterfly.
+        ([leg(1, "P", 730, NOV, 1, 1), leg(-3, "P", 740, NOV, 1, 1), leg(1, "P", 745, NOV, 1, 1)], "custom"),
+        # Across expiries: a ratio time spread.
+        (
+            [leg(2, "P", 730, DEC, 1, 1), leg(-3, "P", 740, NOV, 1, 1), leg(1, "P", 745, DEC, 1, 1)],
+            "ratio time spread",
+        ),
+        # A 1-2-1 across expiries keeps its diagonal name.
+        (
+            [leg(1, "P", 730, DEC, 1, 1), leg(-2, "P", 740, NOV, 1, 1), leg(1, "P", 750, DEC, 1, 1)],
+            "diagonal",
+        ),
+    ],
+)
+def test_a_ratio_butterfly_is_named_by_its_quantities_from_the_top_strike(legs, name):
+    assert shapes.classify(opts(legs), cost(legs)) == name
+
+
+def test_the_spy_1_3_2_is_judged_on_its_risk_not_its_credit():
+    t = run(SPY_132, spot=763.28)
+    assert t["shape"] == "1-3-2" and t["kind"] == "risk-judged"
+    assert "credit.stop" not in fired(t)
+    assert t["exit_levels"]["stop"]["basis"] != "credit"
+    assert (
+        "This is a 1-3-2 ratio butterfly" in t["explanation"]
+        and "judged on what it can win" in t["explanation"]
+    )
+
+
 def test_a_super_bear_is_judged_on_its_risk_not_its_tiny_credit():
     t = run(XLU, spot=41.85)
     assert t["kind"] == "directional"

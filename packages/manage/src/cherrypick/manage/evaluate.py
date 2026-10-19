@@ -288,7 +288,7 @@ def evaluate_trade(
     dr = rules["directional"]
     directional = bool(
         dr["enabled"]
-        and trade["shape"] in _shapes.RISK_JUDGED
+        and _shapes.risk_judged(trade["shape"])
         and profile
         and not profile["unbounded_low"]
         and -profile["max_loss_from_open"] > 0
