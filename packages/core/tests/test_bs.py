@@ -55,3 +55,23 @@ def test_no_time_or_no_mid_solves_nothing():
     assert bs.implied_vol(100, 100, 0, 1.0, "C", 0.04) is None
     assert bs.implied_vol(100, 100, 0.1, None, "C", 0.04) is None
     assert bs.delta(100, 100, 0.1, 0.0, "C", 0.04) is None
+    assert bs.prob_itm(100, 110, 0.0, 0.3, "C", 0.04) is None
+    assert bs.prob_itm(100, 110, 0.1, 0.0, "P", 0.04) is None
+
+
+@pytest.mark.parametrize("q", [0.0, 0.03])
+def test_the_chance_of_finishing_in_the_money_is_n_d2_and_the_two_sides_sum_to_one(q):
+    s, k, t, v, r = 100.0, 110.0, 30 / 365, 0.30, 0.04
+    call, put = bs.prob_itm(s, k, t, v, "C", r, q), bs.prob_itm(s, k, t, v, "P", r, q)
+    assert call + put == pytest.approx(1.0, abs=1e-12)
+    d2 = (math.log(s / k) + (r - q - v * v / 2) * t) / (v * math.sqrt(t))
+    assert call == pytest.approx(0.5 * (1 + math.erf(d2 / math.sqrt(2))), abs=1e-12)
+
+
+def test_the_chance_is_not_delta():
+    """A 0.15-delta call finishes in the money less often than 15%, a 0.15-delta put more often."""
+    t, v, r = 30 / 365, 0.30, 0.04
+    assert bs.delta(100, 110.09, t, v, "C", r) == pytest.approx(0.15, abs=1e-3)
+    assert bs.prob_itm(100, 110.09, t, v, "C", r) == pytest.approx(0.131, abs=1e-3)
+    assert bs.delta(100, 92.11, t, v, "P", r) == pytest.approx(-0.15, abs=1e-3)
+    assert bs.prob_itm(100, 92.11, t, v, "P", r) == pytest.approx(0.171, abs=1e-3)

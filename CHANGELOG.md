@@ -11,6 +11,11 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Fixed: the skate score set history against the wrong implied odds.** A skate is judged at
+  expiry, so its odds are the chance of finishing out of the money, 1 − N(d2), not 1 − |delta|. At a
+  0.15-delta band that read calls about two points too risky and puts about two points too safe,
+  the size of the effect the score ranks on. New: `core.bs.prob_itm`.
+
 ## v0.11.2 — 2026-10-19 — review follow-ups
 The decisions the documentation review (v0.11.1) left open. One fixes how earnings marks and closes
 a multi-contract position (no stored number changes); the rest bring shipped defaults and labels in

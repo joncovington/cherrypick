@@ -11,6 +11,7 @@ import math
 from datetime import date
 
 import pytest
+from cherrypick.core import bs
 from cherrypick.core import calendar as cal
 
 from cherrypick.technicals import adjust, paths, skate, store
@@ -305,7 +306,12 @@ def test_a_scored_leg_carries_history_implied_odds_and_yield():
         skate.offsets(CFG),
     )
     assert g["offset"] == 0.0 and g["skate"] == pytest.approx(0.816)
-    assert 0 < g["delta"] < 0.5 and g["implied_skate"] == pytest.approx(1 - g["delta"], abs=1e-4)
+    assert 0 < g["delta"] < 0.5
+    # Judged at expiry, so the implied odds are 1 - N(d2), and for a call that is safer than 1 - delta.
+    assert g["implied_skate"] == pytest.approx(
+        1 - bs.prob_itm(100.0, 105.0, 35 / 365, g["iv"], "C", CFG["rate"]), abs=1e-3
+    )
+    assert g["implied_skate"] > 1 - g["delta"] + 0.005
     assert g["gap"] == pytest.approx(g["skate"] - g["implied_skate"], abs=1e-4)
     assert g["yield_bid"] == pytest.approx(1.00 / 100 * 365 / 35, abs=1e-4)  # a call's capital is the shares
     assert g["per_day_bid"] == pytest.approx(100 / 35, abs=1e-3) and g["hard"]
@@ -326,6 +332,8 @@ def test_a_put_yields_on_the_strike_it_secures():
         skate.offsets(CFG),
     )
     assert g["yield_bid"] == pytest.approx(0.80 / 95 * 365 / 35, abs=1e-4) and g["delta"] < 0
+    # A put is the other way round: finishing past the strike is likelier than |delta| says.
+    assert g["implied_skate"] < 1 - abs(g["delta"]) - 0.005
 
 
 def _doc():
