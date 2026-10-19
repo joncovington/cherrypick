@@ -11,6 +11,109 @@ beyond the latest release.
 
 ## [Unreleased]
 
+## v0.11.0 — 2026-10-19 — live loops and the read side
+Three weeks and about 420 pull requests since the public release. MEIC got a live path of its own,
+armed a day at a time like flies and bwb, and every live loop now stops new risk the same way. Three
+packages arrived: contango, manage and backtest. The console was reorganised around the Live page,
+and gained a Compare page, an analysis tab on every module and the Screeners page. Under all of it,
+the GEX recorder began keeping the chain's quotes, so rules a module never ran can now be replayed
+against the session as it actually traded.
+
+### Upgrading
+
+- **Re-run the installer** (`install.cmd`/`install.ps1`/`install.sh`, or `scripts/dev-install.*`).
+  It installs every package it finds, so the three new ones come in, and it rebuilds the console.
+  The broker SDK moved to tastytrade 13.
+- **The new packages are all off until you switch them on.** contango: `modules.contango.enabled`.
+  manage: `manage.enabled` in `config.json`, then `install` again (it reads the real account
+  read-only every trading day). backtest: a vendor subscription, its key in the keyring
+  (`python -m cherrypick.backtest key set`), `~/.cherrypick/config/backtest.json` enabled and the
+  vendor extra (`pip install -e "packages/backtest[thetadata]"`); until then its console page does
+  not exist.
+- **MEIC live is armed per day now.** `enable_live_trading` stays the master switch, but nothing
+  trades until `/live-meic-start` writes that day's arm record, and the loop disarms itself at
+  17:00 ET. Live-only sizing lives in the `live` block, never the top level, which every paper arm
+  inherits. `python -m cherrypick.meic.live_migrate` (a dry run by default) moves top-level live keys
+  into it.
+- **The halt flag stops new risk only.** Every live loop still confirms fills, manages stops,
+  closes and settles while `halt-live.flag` is up. Before, a halt stopped the whole tick and left
+  open positions unmanaged.
+- **Gone:** the Overview page (`/` opens the Live page), MEIC's REST sidecar and its 7699 API, the
+  rollback streamer, and the Windows-only module scheduler launchers. Anything that called the
+  sidecar's API has to move to the stream cache.
+- **Optional, off by default:** the chain quote history (`quote_history` in the gex config, about
+  10 MB a session per symbol), Telegram as a push channel, the supervisor as a Windows service, and
+  QuikOptions.
+
+### What's new
+
+- **New packages.**
+  - **contango** (#66, #67, #191): the VIX/VIX3M switch held in shares, SVXY in contango and T-bills
+    otherwise, decided ten minutes before the close. Paper only.
+  - **manage** (#246–#255, #390–#421): a daily read of the real account. Each position gets an
+    action and the rule behind it; the account is also read as one book, with beta-weighted delta,
+    theta, scenarios, a risk matrix, a sized XSP hedge and income trades sized to the account.
+    Advice only: no order path.
+  - **backtest** (#342–#388): the suite's own rules replayed over licensed vendor history, flies
+    and MEIC so far. Every vendor session is first validated against the recorder. Results stay
+    under `~/.cherrypick`, and the console page fails closed without a licence.
+- **Live trading.**
+  - **MEIC.** A `live` block that names an arm and sizes live alone, per-day arming and a count cap
+    (#269–#277). Settlement on the official print, a fee reconcile against the broker and a
+    read-only Live tab (#274–#276). A GEX block that can require volume GEX to be negative too
+    (#282).
+  - **Every live loop.** The halt flag and the daily-loss breakers stop new risk only (#115). An
+    uncertain submit holds entries until it resolves, and an unknown working order blocks them
+    (#117). One orphan sweep (#219). No entry opposite a leg another live loop holds (#272). Fill
+    alerts in seconds (#277). Broker positions are checked against the live ledgers (#126), and a
+    past session left open is CRITICAL and settled at its official close (#129, #130).
+  - **flies.** Live books the broker's fill price, not its limit (#169). A failed submit no longer
+    counts as an entry (#128), and pending fills are confirmed before a book settles (#239).
+- **Console.**
+  - **The Live page comes first.** A `today` tab over every live loop (#281), the manage tabs
+    (`positions` and `portfolio`), and a tab for each live loop, hidden while that module's live
+    switch is off (#422). The Overview page was removed (#304).
+  - **Compare** (#207, #328–#338): every arm beside its control, a risk tab over every module, a P&L
+    calendar that opens to a day's trades, each trade's excursion and trace, and a portfolio view.
+  - **An analysis tab on every trading module** (#316–#327): streaks, drawdown episodes, stress,
+    capital, a slippage ladder and P&L breakdowns, each arm read over its own era.
+  - **Screeners** (#311, #346–#362, #368): the income lists, an earnings calendar with its forward
+    record, and a signal board from our own engines.
+  - **Around it:** an icon-first rail ordered by use, a simple/detail view switch (#292, #297,
+    #410), sortable tables (#306), a Charts page with a live intraday futures chart (#6), a costs page
+    per module (#76), and React 19, Vite 8 and Electron 44 (#60–#62).
+- **Measurement.**
+  - **The recorder keeps the chain's quotes** (#172–#174, #197), read back through
+    `cherrypick.core.quotehistory`, with a recording verdict per session (#263).
+  - **Replays.** flies and MEIC replay against the recorded quotes and are checked against their
+    own paper (#339, #340, #385, #386).
+  - **New in core:** `core.stats` (#205), `core.analysis` (#316), and model-free implied variance
+    (#144), which bwb records at entry (#145, #146).
+  - **The GEX profile** uses one gamma per strike, and a one-sided chain no longer makes a wall
+    (#152, #157).
+- **Modules.**
+  - **flies:** the intraday agent (shadow on live, acting on paper; #77–#93) and the `range-high`
+    arm (#152).
+  - **pmcc:** the Income Shield as its base trade, extended to single stocks and SMH with an
+    earnings refusal (#39, #52, #55).
+  - **curve:** the 10-06 boundary, $2 wide with a net credit floor (#64).
+  - **earnings:** the expected-move butterfly, on paper (#244).
+  - **bwb:** live enters only while VIX9D is below VIX, and records the vol term structure at
+    entry (#162).
+  - **technicals:** six study rounds, setups and a watchlist, analyst revisions (#31–#38,
+    #150–#155, #298–#301, #365–#372).
+- **Operations.**
+  - **The supervisor** can run as a Windows service (#136–#139, #156, #258), manages the Dolt server
+    as a daemon (#158), and replaces itself when hung (#135).
+  - **The watchdog** reports failed and missed jobs (#131, #148) and low disk (#135).
+  - **Linux and macOS:** notifications, battery reads and process control work there (#118–#123).
+  - **Elsewhere:** a broken `config.json` runs on its last good copy, loudly (#134), and
+    `run.py sent` reads back every webhook send (#102).
+
+### In detail
+
+The entries below were written as each change landed, newest first.
+
 - **Added: Telegram as a push channel.** `telegram` joins `desktop`, `slack` and `discord` in the
   `notify` channel lists. It takes a bot token and a chat ID, stored in the OS keyring with
   `cherrypick secrets-set --channel telegram` (prompted without echo, never in config files or env
