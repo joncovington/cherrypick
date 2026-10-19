@@ -303,27 +303,52 @@ function TradeDetail({ t }: { t: ManageTrade }) {
 /** Actions that ask a person to do nothing today: a hold waits on its levels, a settling trade on the print. */
 const PASSIVE = new Set(["HOLD", "SETTLES"]);
 
-function AccountView({ a, loading }: { a: ManageAccount; loading: boolean }) {
+/** The account strip both tabs open with: the book's size and what today asks of it. */
+function AccountTiles({ a }: { a: ManageAccount }) {
+  const acting = a.trades.filter((t) => !PASSIVE.has(t.action)).length;
+  return (
+    <TileGrid count={6}>
+      <Tile label={`net liq · ${a.account ?? "?"}`} value={fmtMoney(a.netLiq)} />
+      <Tile label="per-trade budget" value={fmtMoney(a.riskBudget)} title="max-loss budget per trade (risk.max_risk_pct of net liq)" />
+      <Tile label="mark P&L (gross)" value={fmtMoney(a.pnlGross)} tone={a.pnlGross === null ? "dim" : a.pnlGross >= 0 ? "pos" : "neg"} />
+      <Tile label="trades" value={String(a.trades.length)} />
+      <Tile label="action needed" value={String(acting)} />
+      <Tile label="holding" value={String(a.trades.length - acting)} tone="dim" />
+    </TileGrid>
+  );
+}
+
+/** Positions: what to do with each trade today, the actions first. */
+function PositionsAccount({ a, loading }: { a: ManageAccount; loading: boolean }) {
   const acting = a.trades.filter((t) => !PASSIVE.has(t.action));
   const holding = a.trades.filter((t) => PASSIVE.has(t.action));
   return (
     <>
-      <TileGrid count={6}>
-        <Tile label={`net liq · ${a.account ?? "?"}`} value={fmtMoney(a.netLiq)} />
-        <Tile label="per-trade budget" value={fmtMoney(a.riskBudget)} title="max-loss budget per trade (risk.max_risk_pct of net liq)" />
-        <Tile label="mark P&L (gross)" value={fmtMoney(a.pnlGross)} tone={a.pnlGross === null ? "dim" : a.pnlGross >= 0 ? "pos" : "neg"} />
-        <Tile label="trades" value={String(a.trades.length)} />
-        <Tile label="action needed" value={String(acting.length)} />
-        <Tile label="holding" value={String(holding.length)} tone="dim" />
-      </TileGrid>
+      <AccountTiles a={a} />
+      <TradesCard title="action needed" trades={acting} loading={loading} empty="nothing to do today" variant="act" />
+      <TradesCard title="holding" trades={holding} loading={loading} empty="no trades on hold" variant="hold" />
       {a.excluded.length > 0 && (
         <p className="muted" style={{ margin: 0 }}>
           not evaluated: {a.excluded.map((e) => `${e.underlying} (${e.legs} leg${e.legs === 1 ? "" : "s"}, ${e.reason})`).join("; ")}
         </p>
       )}
-      <PortfolioCards p={a.portfolio} scenarios={a.portfolio && <ScenarioCards p={a.portfolio} />} />
-      <TradesCard title="action needed" trades={acting} loading={loading} empty="nothing to do today" variant="act" />
-      <TradesCard title="holding" trades={holding} loading={loading} empty="no trades on hold" variant="hold" />
+    </>
+  );
+}
+
+/** Portfolio: the account read as one book -- its size, its greeks against their bands, how it
+ *  behaves if the market moves, and the trades sized to fit it. */
+function PortfolioAccount({ a }: { a: ManageAccount }) {
+  return (
+    <>
+      <AccountTiles a={a} />
+      {a.portfolio ? (
+        <PortfolioCards p={a.portfolio} scenarios={<ScenarioCards p={a.portfolio} />} />
+      ) : (
+        <p className="muted" style={{ margin: 0 }}>
+          no portfolio reading for this account in this evaluation
+        </p>
+      )}
     </>
   );
 }
@@ -431,7 +456,23 @@ function TradesCard({
   );
 }
 
-export function ManagePage() {
+/** Live → positions: each trade's action, rule and levels, actions first. */
+export function PositionsPage() {
+  return <EvaluationPage view="positions" />;
+}
+
+/** Live → portfolio: the account as one book, from the same evaluation. */
+export function PortfolioPage() {
+  return <EvaluationPage view="portfolio" />;
+}
+
+/**
+ * Both tabs read one evaluation file (2026-10-18: split from the single `manage` tab, whose dozen
+ * account cards had buried the action list). Each keeps the evaluation header, because its caveats
+ * -- missing order chains, missing earnings dates, an unapplied rule -- qualify both.
+ */
+function EvaluationPage({ view }: { view: "positions" | "portfolio" }) {
+  const title = view === "positions" ? "position evaluation" : "portfolio";
   const [session, setSession] = useState<string | undefined>(undefined);
   const { data, isLoading, isError, dataUpdatedAt } = useManage(session);
   const sessions = data?.sessions ?? [];
@@ -453,7 +494,7 @@ export function ManagePage() {
 
   if (data && data.session === null) {
     return (
-      <Card title="position evaluation" isError={isError}>
+      <Card title={title} isError={isError}>
         <p className="muted">
           No evaluation has been written yet. It runs at 10:00 ET on trading days once <code>manage.enabled</code> is true in
           the orchestrator config (then re-run <code>install</code>), or by hand with <code>run.py manage</code>. The ruleset
@@ -465,7 +506,7 @@ export function ManagePage() {
 
   return (
     <div className="view-fade" style={{ display: "grid", gap: "1rem" }}>
-      <Card title="position evaluation" updatedAt={dataUpdatedAt} isError={isError} controls={picker}>
+      <Card title={title} updatedAt={dataUpdatedAt} isError={isError} controls={picker}>
         <p className="muted" style={{ margin: 0 }}>
           {data?.session ?? "…"} · snapshot {data?.snapshotGeneratedAt ?? "—"} · ruleset {data?.ruleset ?? "—"} (
           {data?.rulesSource ?? "shipped default"}) · advice only: marks are mids, table P&L is gross (net of fees is in each trade's chain), and nothing here
@@ -487,14 +528,20 @@ export function ManagePage() {
           </p>
         ))}
       </Card>
-      {(data?.accounts ?? []).map((a) => (
-        <AccountView key={a.account ?? "?"} a={a} loading={isLoading} />
-      ))}
-      <Card title="ruleset" collapseKey="manage-ruleset" defaultCollapsed>
-        <pre style={{ margin: 0, fontSize: "0.8rem", whiteSpace: "pre-wrap" }}>
-          {data?.rules ? JSON.stringify(data.rules, null, 2) : "—"}
-        </pre>
-      </Card>
+      {(data?.accounts ?? []).map((a) =>
+        view === "positions" ? (
+          <PositionsAccount key={a.account ?? "?"} a={a} loading={isLoading} />
+        ) : (
+          <PortfolioAccount key={a.account ?? "?"} a={a} />
+        ),
+      )}
+      {view === "positions" && (
+        <Card title="ruleset" collapseKey="manage-ruleset" defaultCollapsed>
+          <pre style={{ margin: 0, fontSize: "0.8rem", whiteSpace: "pre-wrap" }}>
+            {data?.rules ? JSON.stringify(data.rules, null, 2) : "—"}
+          </pre>
+        </Card>
+      )}
     </div>
   );
 }

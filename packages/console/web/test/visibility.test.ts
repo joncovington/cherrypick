@@ -92,7 +92,8 @@ describe("fail open", () => {
     expect(isSlideVisible("flies", "advisor", undefined)).toBe(true);
     expect(isFeatureOn("technicals", undefined)).toBe(true);
     expect(offReason("earnings", undefined)).toBeNull();
-    expect(visibleNavLinks(undefined).modules).toHaveLength(9);
+    expect(visibleNavLinks(undefined).modules).toHaveLength(8);
+    expect(visibleNavLinks(undefined).suite.map((l) => l.to)).toContain("/gex");
   });
 
   it("a failed bridge shows everything", () => {
@@ -101,7 +102,7 @@ describe("fail open", () => {
     expect(isFeatureOn("advisor", failed)).toBe(true);
     expect(isSlideVisible("charts", "technicals", failed)).toBe(true);
     expect(offReason("earnings", failed)).toBeNull();
-    expect(visibleNavLinks(failed).modules).toHaveLength(9);
+    expect(visibleNavLinks(failed).modules).toHaveLength(8);
   });
 });
 
@@ -125,14 +126,13 @@ describe("the nav lists", () => {
   it("drop an off module and renumber the digits over what is left", () => {
     const { modules } = visibleNavLinks(pmccSwitchedOff);
     expect(modules.map((l) => [l.to, l.key])).toEqual([
-      ["/meic", "1"],
-      ["/flies", "2"],
-      ["/curve", "3"],
-      ["/contango", "4"],
-      ["/bwb", "5"],
-      ["/calendars", "6"],
-      ["/earnings", "7"],
-      ["/gex", "8"],
+      ["/flies", "1"],
+      ["/meic", "2"],
+      ["/bwb", "3"],
+      ["/earnings", "4"],
+      ["/calendars", "5"],
+      ["/curve", "6"],
+      ["/contango", "7"],
     ]);
   });
 

@@ -20,33 +20,50 @@ export interface NavLinkDef {
   /** Exact-match route, for a path that would otherwise prefix others. */
   end?: boolean;
   key?: string;
+  /** Where a suite page sits on the rail: above the modules (`live`, then `market`) or below them
+   *  (`research`, then `suite`, Config last). Module links carry none. */
+  section?: NavSection;
 }
 
+export type NavSection = "live" | "market" | "research" | "suite";
+
+/**
+ * The suite pages, in rail order (2026-10-18): real money first, then the market reads in the order
+ * a day uses them (the morning report before the open, the market, then candidates), the modules
+ * between, then the research surfaces and the suite's own pages at the bottom. GEX joined the market
+ * reads from the module list: it records and reads the market, it trades nothing.
+ */
 export const SUITE_LINKS: readonly NavLinkDef[] = [
-  { to: "/charts", label: "Charts", key: "c" },
-  { to: "/screeners", label: "Screeners", key: "i" },
-  { to: "/flow", label: "Options flow", key: "f" },
-  { to: "/reports", label: "Reports", key: "r" },
-  { to: "/compare", label: "Compare", key: "m" },
-  { to: "/backtest", label: "Backtest", key: "b" },
-  { to: "/advisor", label: "Advisor", key: "a" },
-  { to: "/live", label: "Live", key: "l" },
-  { to: "/system", label: "System", key: "s" },
+  { to: "/live", label: "Live", key: "l", section: "live" },
+  { to: "/reports", label: "Reports", key: "r", section: "market" },
+  { to: "/charts", label: "Charts", key: "c", section: "market" },
+  { to: "/flow", label: "Options flow", key: "f", section: "market" },
+  { to: "/gex", label: "GEX", key: "g", section: "market" },
+  { to: "/screeners", label: "Screeners", key: "i", section: "market" },
+  { to: "/compare", label: "Compare", key: "m", section: "research" },
+  { to: "/backtest", label: "Backtest", key: "b", section: "research" },
+  { to: "/advisor", label: "Advisor", key: "a", section: "research" },
+  { to: "/system", label: "System", key: "s", section: "suite" },
 ];
 
-/** The module pages, in the order the suite lists them everywhere (`TRADING_MODULE_ORDER`, then
- *  GEX). Hand-kept for its labels and keys, so `test/navLinks.test.ts` fails when a trading module
- *  has no link here: contango shipped 2026-10-05 with a route and no way to reach it. */
+/** The suite links above the modules, and those below them. */
+export function railHalves<T extends NavLinkDef>(links: readonly T[]): { above: T[]; below: T[] } {
+  const above = links.filter((l) => l.section === "live" || l.section === "market");
+  return { above, below: links.filter((l) => !above.includes(l)) };
+}
+
+/** The module pages, in the order the suite lists them everywhere (`TRADING_MODULE_ORDER`). Hand-kept
+ *  for its labels and keys, so `test/navLinks.test.ts` fails when a trading module has no link here:
+ *  contango shipped 2026-10-05 with a route and no way to reach it. */
 export const MODULE_LINKS: readonly NavLinkDef[] = [
-  { to: "/meic", label: "MEIC", key: "1" },
-  { to: "/flies", label: "Flies", key: "2" },
-  { to: "/pmcc", label: "PMCC", key: "3" },
-  { to: "/curve", label: "Curve", key: "4" },
-  { to: "/contango", label: "Contango", key: "5" },
-  { to: "/bwb", label: "BWB", key: "6" },
-  { to: "/calendars", label: "Calendars", key: "7" },
-  { to: "/earnings", label: "Earnings", key: "8" },
-  { to: "/gex", label: "GEX", key: "9" },
+  { to: "/flies", label: "Flies", key: "1" },
+  { to: "/meic", label: "MEIC", key: "2" },
+  { to: "/bwb", label: "BWB", key: "3" },
+  { to: "/earnings", label: "Earnings", key: "4" },
+  { to: "/pmcc", label: "PMCC", key: "5" },
+  { to: "/calendars", label: "Calendars", key: "6" },
+  { to: "/curve", label: "Curve", key: "7" },
+  { to: "/contango", label: "Contango", key: "8" },
 ];
 
 export const CONFIG_LINK: NavLinkDef = { to: "/config", label: "Config" };
