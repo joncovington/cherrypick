@@ -11,6 +11,11 @@ beyond the latest release.
 
 ## [Unreleased]
 
+## v0.11.2 — 2026-10-19 — review follow-ups
+The decisions the documentation review (v0.11.1) left open. One fixes how earnings marks and closes
+a multi-contract position (no stored number changes); the rest bring shipped defaults and labels in
+line with the docs.
+
 - **Fixed: earnings marked a multi-contract position at its P&L times its quantity.**
   `management.unrealized_pnl` multiplied by quantity, but `entry_credit` and the legs are already
   stored as position totals. That overstated a mark and a managed close by the contract count.
