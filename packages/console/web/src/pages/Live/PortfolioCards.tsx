@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ManageBand, ManageHedgeSuggestion, ManagePortfolio } from "@console/shared";
+import type { ManageBand, ManageGuidance, ManageHedgeSuggestion, ManagePortfolio } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { Bullet } from "../../components/grid/Bullet";
 import { DivergingBars } from "../../components/grid/DivergingBars";
@@ -261,23 +261,54 @@ function ContributionCard({ p, figure }: { p: ManagePortfolio; figure: "bwd" | "
   );
 }
 
+// What each guidance rule is about, for its chip. A rule this page does not know is named from its id.
+const GUIDANCE_TOPIC: Record<string, string> = {
+  "portfolio.theta": "theta",
+  "portfolio.delta": "delta",
+  "portfolio.breakeven": "break-even",
+  "portfolio.buying_power": "buying power",
+  "portfolio.concentration": "concentration",
+};
+
+function guidanceTopic(rule: string): string {
+  return GUIDANCE_TOPIC[rule] ?? rule.replace(/^portfolio\./, "").replace(/_/g, " ");
+}
+
+/** One guidance item as its own small card: the topic as an amber chip (every item is a review), the
+ *  rule's confidence, its reason, and what drives it. */
+function GuidanceItem({ g }: { g: ManageGuidance }) {
+  return (
+    <section className="md-card" title={g.rule}>
+      <header>
+        <span className="chip chip-warn">{guidanceTopic(g.rule)}</span>
+        {g.confidence !== null ? <span className="muted pf-guide-conf">confidence {g.confidence}</span> : null}
+      </header>
+      <p className="pf-guide-reason">{g.reason}</p>
+      {g.drivers.length > 0 && (
+        <ul className="pf-guide-drivers">
+          {g.drivers.map((d) => (
+            <li key={d.underlying}>
+              <span>{d.underlying}</span>
+              <span>{signed(d.value)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function GuidanceCard({ p }: { p: ManagePortfolio }) {
   return (
     <Card title="portfolio guidance">
       {p.guidance.length === 0 ? (
         <p className="muted">nothing outside its band today</p>
       ) : (
-        <ul className="pf-guidance">
+        <div className="pf-guide-grid">
           {p.guidance.map((g) => (
-            <li key={g.rule}>
-              <span className="chip">review</span> <code>{g.rule}</code>
-              {g.confidence !== null ? <span className="muted"> ({g.confidence})</span> : null}: {g.reason}
-              {g.drivers.length > 0 && (
-                <span className="muted"> · {g.drivers.map((d) => `${d.underlying} ${signed(d.value)}`).join(", ")}</span>
-              )}
-            </li>
+            <GuidanceItem key={g.rule} g={g} />
           ))}
-        </ul>
+        </div>
       )}
       {!p.complete && (
         <p className="muted pf-caption">
@@ -349,8 +380,9 @@ function HedgeCard({ p }: { p: ManagePortfolio }) {
 
 /**
  * Every portfolio card, in pairs of matching height. Nothing when the evaluation predates them.
- * `scenarios` (ScenarioCards.tsx) sits between the readings and the guidance, so what to do comes
- * after everything it was decided from.
+ * The guidance follows the four headline readings it is judged from (delta, theta, break-even and
+ * the stress row) -- 2026-10-19: moved up from below the scenarios, where it was read last -- and the
+ * breakdowns, `scenarios` (ScenarioCards.tsx) and the hedge come after it.
  */
 export function PortfolioCards({ p, scenarios }: { p: ManagePortfolio | null; scenarios?: ReactNode }) {
   if (!p) return null;
@@ -361,11 +393,13 @@ export function PortfolioCards({ p, scenarios }: { p: ManagePortfolio | null; sc
         <ThetaCard p={p} />
         <BreakevenCard p={p} />
         <StressCard p={p} />
+      </div>
+      <GuidanceCard p={p} />
+      <div className="cards cards-pairs">
         <ContributionCard p={p} figure="bwd" />
         <ContributionCard p={p} figure="theta" />
       </div>
       {scenarios}
-      <GuidanceCard p={p} />
       <HedgeCard p={p} />
       <IncomeCard c={p.candidates} />
     </>

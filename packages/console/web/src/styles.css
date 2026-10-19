@@ -4160,11 +4160,34 @@ select.text-input {
   font-size: 12px;
   white-space: normal;
 }
-.pf-guidance {
-  margin: 0;
-  padding-left: 1rem;
+/* Portfolio guidance: one small card per item, two or three to a row, its topic as a chip top-left. */
+.pf-guide-grid {
   display: grid;
-  gap: 0.4rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(19rem, 100%), 1fr));
+  gap: 0.6rem;
+  align-items: start;
+}
+.pf-guide-conf {
+  font-size: 11px;
+}
+.pf-guide-reason {
+  margin: 0;
+  line-height: 1.45;
+}
+.pf-guide-drivers {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0.4rem 0 0;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 0.15rem;
+  font-size: 12px;
+}
+.pf-guide-drivers li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-variant-numeric: tabular-nums;
 }
 .pf-hedge {
   padding: 0.6rem 0;
