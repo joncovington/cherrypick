@@ -88,6 +88,12 @@ Each gets a provisional look now, and a re-test once validation unlocks.
 - **What can't run yet:** 11 needs the next-day expiry fetched first. 13 reads Dolt rather than the
   vendor store, so the lock doesn't apply. It still keeps its newest year aside as its own holdout,
   with the same once-only rule.
+- **One deliberate exception (2026-10-18).** The MEIC stop and entry-window arms `pm-hold`,
+  `pm-095`, `pm-200`, `day-095` and `day-200` (items 2 and 7) were run provisionally over the
+  holdout dates by the operator's choice, as well as over the design window. For those arms the
+  holdout is **already seen**: their after-unlock re-test can't count it as out of sample. Any
+  evidence for them needs fresh sessions, those after 2026-10-12. Every other spec keeps its holdout
+  clean.
 
 ## The hypotheses, in priority order
 
