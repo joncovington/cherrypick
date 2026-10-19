@@ -261,6 +261,44 @@ function ContributionCard({ p, figure }: { p: ManagePortfolio; figure: "bwd" | "
   );
 }
 
+/**
+ * Our delta and theta against the same sums on the broker's own greeks, over the same legs and betas
+ * (`broker_check`). It decides nothing: it is the record of how far our model sits from the broker's,
+ * kept before the bands are trusted. Gaps carry no tone, since neither side is the right answer.
+ */
+export function BrokerCheckCard({ p }: { p: ManagePortfolio }) {
+  const c = p.brokerCheck;
+  if (!c) return null;
+  const sh = (v: number | null) => (v === null ? "—" : `${signed(v)} sh`);
+  return (
+    <Card title="against the broker's model">
+      <TileGrid count={6}>
+        <Tile label="delta, ours" value={sh(c.bwdOurs)} />
+        <Tile label="delta, broker's greeks" value={sh(c.bwdBroker)} />
+        <Tile label="delta gap" value={sh(c.bwdGap)} title="ours less the broker's" />
+        <Tile label="theta, ours" value={fmtCash(c.thetaOurs)} />
+        <Tile label="theta, broker's greeks" value={fmtCash(c.thetaBroker)} />
+        <Tile label="theta gap" value={fmtCash(c.thetaGap)} title="ours less the broker's, a day" />
+      </TileGrid>
+      <DivergingBars
+        rows={c.underlyings.slice(0, 8).map((u) => ({
+          label: u.underlying,
+          value: u.bwdGap,
+          title: `${u.underlying}: ${u.legs} legs · theta gap ${fmtCash(u.thetaGap)}/day`,
+        }))}
+        tone="none"
+        format={(v) => `${signed(v)} sh`}
+        emptyText="no legs both models priced"
+      />
+      <p className="muted pf-caption">
+        {c.legsCompared} legs on both models, same betas · the broker's greeks are American-exercise with dividends, ours
+        Black-Scholes at each leg's own IV
+        {c.legsLeftOut.length ? ` · left out of both (one model only): ${c.legsLeftOut.join(", ")}` : ""}
+      </p>
+    </Card>
+  );
+}
+
 // What each guidance rule is about, for its chip. A rule this page does not know is named from its id.
 const GUIDANCE_TOPIC: Record<string, string> = {
   "portfolio.theta": "theta",
@@ -399,6 +437,7 @@ export function PortfolioCards({ p, scenarios }: { p: ManagePortfolio | null; sc
         <ContributionCard p={p} figure="bwd" />
         <ContributionCard p={p} figure="theta" />
       </div>
+      <BrokerCheckCard p={p} />
       {scenarios}
       <HedgeCard p={p} />
       <IncomeCard c={p.candidates} />
