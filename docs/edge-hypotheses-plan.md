@@ -149,6 +149,25 @@ These apply to the looks and, unchanged, to their re-tests. They're stricter tha
   - *(b) Passes if*, for one ~0.20-delta spread of each type per name and day, sell-off days (SPY
     down ≥ 3% over 5 sessions) have their q25 interval above zero in both halves.
 
+### Results of the provisional looks (2026-10-19)
+
+Every look ran against the tests above, unchanged. 9, 10 and 12 used licensed vendor data, so as for
+4 and 8 only the verdicts are recorded here; the figures stay under `~/.cherrypick`.
+
+- **9, sandwich: closed.** No filter setting passes. The VIX filter raises the mean in both halves;
+  the credit filter doesn't.
+- **10, flatfly: closed.** It fails both parts. Centring on the prior close does worse than centring
+  on spot, most of all after large gaps, as the daily check above predicted.
+- **12, GEX levels: closed again**, this time over years rather than weeks.
+  - *(a) Pin:* fails for both gamma and open interest at every time. The above/below split shows
+    the apparent pull toward a strike above spot is market drift.
+  - *(b) Barrier:* fails for both level types.
+  - *(c) Regime:* fails.
+
+  Reopen only with a new mechanism and a new declared test, not a new threshold.
+- **13, screener: closed** (figures under item 13).
+- **11** is still blocked on the next-day expiry fetch.
+
 ## The hypotheses, in priority order
 
 Priority weighs two things: how plausible the edge is, and how cheaply our existing data can answer
