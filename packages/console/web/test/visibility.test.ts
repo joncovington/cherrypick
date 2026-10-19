@@ -62,6 +62,23 @@ describe("gex, the advisor and the reports", () => {
     expect(isSlideVisible("flies", "advisor", ALL_ON)).toBe(true);
   });
 
+  it("a live loop's Live tab follows its live switch; unread or absent stays shown", () => {
+    const fliesOff = withOff({ live: { flies: false, meic: true } });
+    expect(isSlideVisible("live", "flies", fliesOff)).toBe(false);
+    expect(isSlideVisible("live", "meic", fliesOff)).toBe(true);
+    expect(isSlideVisible("live", "meic", withOff({ live: { meic: false } }))).toBe(false);
+    // The account-wide tabs are no module's: never hidden by a switch.
+    expect(isSlideVisible("live", "today", withOff({ live: { flies: false, meic: false } }))).toBe(true);
+    expect(isSlideVisible("live", "positions", withOff({ live: { flies: false, meic: false } }))).toBe(true);
+    // A reply that does not name the switch, an older reply with no map, and a failed bridge: shown.
+    expect(isSlideVisible("live", "flies", withOff({ live: { meic: false } }))).toBe(true);
+    expect(isSlideVisible("live", "flies", ALL_ON)).toBe(true);
+    expect(isSlideVisible("live", "flies", { ok: false, error: "x" })).toBe(true);
+    expect(isSlideVisible("live", "flies", undefined)).toBe(true);
+    // The switch is about the Live tab, not the module's own page.
+    expect(isSlideVisible("flies", "session", fliesOff)).toBe(true);
+  });
+
   it("Options flow follows the options_flow feature, and is shown while the reply does not name it", () => {
     expect(isModuleVisible("flow", withOff({ features: { ...ALL_ON.features, options_flow: false } }))).toBe(false);
     expect(isModuleVisible("flow", withOff({ features: { ...ALL_ON.features, options_flow: true } }))).toBe(true);

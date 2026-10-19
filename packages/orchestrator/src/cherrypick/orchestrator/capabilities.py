@@ -141,4 +141,19 @@ def gated_features(cfg: dict[str, Any]) -> dict[str, Any]:
             # FAIL-CLOSED, unlike the rest: licensed vendor data (backtestgate's docstring).
             "backtest": backtestgate.backtest_feature()["available"],
         },
+        "live": live_switches(cfg),
     }
+
+
+def live_switches(cfg: dict[str, Any]) -> dict[str, bool]:
+    """Each configured module's live master switch (`enable_live_trading` or `live.enabled` in its
+    own config), read as the Live Ops view reads it. The console hides a module's Live tab when this
+    says False. A switch that cannot be read is left out rather than reported off, so the tab stays."""
+    from . import liveops  # its account imports are not needed by the rest of this view
+
+    out: dict[str, bool] = {}
+    for name, mcfg in (cfg.get("modules") or {}).items():
+        flag, _ = liveops._live_enabled(name, cfgmod.module_root(mcfg or {}, name))
+        if flag is not None:
+            out[name] = flag
+    return out

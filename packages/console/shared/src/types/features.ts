@@ -21,6 +21,12 @@ export interface SuiteFeaturesOk {
   modules: Record<string, SuiteModuleFeature>;
   services: Record<string, boolean>;
   features: Record<string, boolean>;
+  /**
+   * Each module's live master switch (`enable_live_trading` or `live.enabled`), keyed by module id.
+   * Only a readable switch is named; absent is visible. The Live page's tab for a module leaves the
+   * rail when this says false. Optional: a reply from before 2026-10-18 has none.
+   */
+  live?: Record<string, boolean>;
 }
 
 export interface SuiteFeaturesFailure {

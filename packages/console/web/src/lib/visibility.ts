@@ -64,13 +64,16 @@ export function isModuleVisible(id: string, f: Features): boolean {
   return true;
 }
 
-/** Whether one tab of a visible page is shown: each module's advisor tab, and the technicals chart.
- *  Every tab of a fail-closed page follows the page. */
+/** Whether one tab of a visible page is shown: each module's advisor tab, the technicals chart, and
+ *  each live loop's Live tab. Every tab of a fail-closed page follows the page. */
 export function isSlideVisible(module: string, slide: string, f: Features): boolean {
   // A hidden fail-closed page has no tabs either, so neither the rail nor `j`/`k` can name one.
   if (isFailClosed(module)) return isModuleVisible(module, f);
   if (slide === "advisor" && isTradingModuleId(module)) return isFeatureOn("advisor", f);
   if (module === "charts" && (slide === "technicals" || slide === "setups")) return isFeatureOn("technicals", f);
+  // A Live tab named for a module (flies, meic) follows that module's live master switch. Only an
+  // explicit false hides it; an unreadable switch is absent from the reply, and stays shown.
+  if (module === "live" && isTradingModuleId(slide)) return !known(f) || f.live?.[slide] !== false;
   return true;
 }
 

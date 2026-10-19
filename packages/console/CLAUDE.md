@@ -257,7 +257,9 @@ toggle; `GET /api/features`), never from reading the config here — `enabled` a
 capabilities like Dolt and Claude Code. Every web rule is in `lib/visibility.ts`; the desk
 rows and the default log sources are filtered on the server with the same answer. **Fail open:**
 loading, `{ok: false}` or an id the reply does not name all show the thing, with a status-bar chip on
-failure. A direct URL to an off page renders `ModuleOffCard` (why, and a link to Config), never a 404
+failure. A Live tab named for a module (flies, meic) follows that module's live master switch,
+which the same reply carries as `live` (2026-10-18); only an explicit `false` hides it, and the
+account-wide tabs never leave. A direct URL to an off page renders `ModuleOffCard` (why, and a link to Config), never a 404
 and never the module. Config always lists every toggle. Calendars, pmcc and curve carry an
 `experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`.
 
