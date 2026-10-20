@@ -9,7 +9,7 @@ were decided by the user on 2026-10-18 (see "Decisions").
 | 1, the range band engine (`technicals skate`) | built: `skate.py`, `leveraged_funds.json`, job `technicals-skate` 06:45 ET, `core.calendar.trading_days_between` |
 | 2, regular-hours quotes (`fetch_screener_greeks.py skate`, jobs `report-skate-quotes-1/2`) | built |
 | 3, the score and the console's Skate tab | the score built (`skate.score`, in the quote file); the tab built 2026-10-19; the income tabs' leveraged badge not started |
-| 4, the forward record | not started |
+| 4, the forward record | built: `skate_record.py`, recording from 2026-10-20 (the tab section not started) |
 | 5, the wheel view (`manage`, Live → positions) | not started |
 | 6, the PMCC view (`manage`, beside the wheel view) | not started |
 
@@ -232,6 +232,28 @@ Both bands are recorded, with each row's delta. That answers the haircut questio
 after 20 expiries, did the by-expiry band's closer short-dated strikes skate at their implied rate
 or better, and did their extra premium per day survive the extra tests? Until then the selector is
 a preference, not a finding.
+
+**As built (2026-10-19):** `technicals.skate_record`, run by the `technicals-skate` job after the
+bands (and alone as `python -m cherrypick.technicals skate-record`); its failure is reported and
+never fails the bands.
+
+- **What is a row.** Each session's newest scheduled quote run, per name-side and band: the band's
+  pick on its best expiry, only when it passed the hard filters, which is the Skate tab's row. A
+  strike is kept once, the first session it was shown: the same strike seen again is the same bet,
+  and counting it daily would shrink the noise the test is judged by.
+- **First session: 2026-10-20.** Runs before it scored strikes against the band day's close (#435),
+  so some of their picks were already in the money.
+- **Outcome.** Read from split-adjusted closes, as the skate rate is. `skated`: the close at expiry
+  on the safe side of the strike. `tested`: skated, but a bar reached the strike on the way. `through`:
+  finished past it. A tested row counts as skated in the test, as the skate rate counts it.
+- **"20 expiries" means 20 distinct expiry dates**, weeklies included: about five months at the
+  screen's weekly-heavy picks, not twenty monthlies.
+- **"The binomial noise"** is a one-sided z > 1.645. Against implied, it is the row count's own
+  Poisson-binomial spread, each row at its own implied rate. Against the below-zero rows, it is a
+  two-proportion z. The test is judged per band.
+
+The reading lands beside the bands as `data/technicals/skate/record.json`, with rows in `record.db`.
+The tab section is the next PR.
 
 ### 5. The wheel view (packages/manage)
 

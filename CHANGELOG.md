@@ -20,6 +20,11 @@ beyond the latest release.
   (`run.py stream`) defaulted to the shared cache with no guard, and the single-writer checks only
   read the orchestrator's config. The streaming engine now refuses the shared cache path unless the
   caller says it is the producer (`producer=True`, passed only by `packages/streamer`'s daemon).
+- **Added: the skate screen's forward record** (skate plan, step 4). Each session's shown rows are
+  kept once, settled at expiry from the bars (skated, tested on the way, or through), and judged by
+  the test declared before any data came in: high-gap rows must beat both their implied odds and the
+  below-zero rows by more than binomial noise, once 20 distinct expiries have settled. Recording
+  starts 2026-10-20, the first session after the band fix.
 - **Fixed: MEIC's session windows in the docs disagreed with the code.** The v0.11.1 documentation
   review set `open_volatile` to 09:30–10:00 and `late` to 14:30–15:30 in `docs/strategy.md` and the
   agent's `execute-entry` command; the loops classify by 10:15 and 14:45, so 10:00–10:15 entries meet

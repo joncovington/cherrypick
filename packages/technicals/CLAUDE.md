@@ -352,7 +352,9 @@ only while the earnings module is, since that job keeps the dolt sql-server aliv
 `technicals-iv-rank` runs after the close on trading days. `technicals-screeners` (06:40 ET,
 `screeners_at`) scores every saved screener session with its broker chain, after the previous
 evening's late greeks run; a scored session is skipped. `technicals-skate` (06:45 ET, `skate_at`)
-writes the skate screen's bands from `history.db` (docs/skate-plan.md).
+writes the skate screen's bands from `history.db` (docs/skate-plan.md), then the forward record
+(`skate_record.py`: what the tab showed, what happened at expiry, the declared test; a failure there
+is reported and never fails the bands).
 
 The rest run daily under the same `technicals` block (times ET, each overridable by its `*_at` key):
 `technicals-index-bars` 06:00, `-history` 06:20, `-fundamentals` 06:25, `-report` 06:30,
