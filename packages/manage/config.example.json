@@ -151,9 +151,9 @@
     "warn_days": 14
   },
   "earnings_trade": {
-    "_comment": "A trade put on to hold through an earnings report: opened min_days_before..max_days_before days before the call (1-7), its nearest short expiring no more than max_days_expiry_after days after it. Until the call its close, take-profit and roll rules wait (shown as waiting); the day after the report (the report's own day if before the open) it closes. Expiry, ex-dividend, sizing and unpriced-leg rules never wait. Disable per name with positions.<SYM>.disable [\"earnings_trade\"].",
+    "_comment": "A trade put on to hold through an earnings report: opened min_days_before..max_days_before days before the call (0-7; the report's own day only for a call after the close), its nearest short expiring no more than max_days_expiry_after days after it. Until the call its close, take-profit and roll rules wait (shown as waiting), and so does the expiry close when the trade comes off after the call before its legs' expiry day; the day after the report (the report's own day if before the open) it closes. Ex-dividend, sizing and unpriced-leg rules never wait, nor does expiry for a trade closing on its expiry day. Disable per name with positions.<SYM>.disable [\"earnings_trade\"].",
     "enabled": true,
-    "min_days_before": 1,
+    "min_days_before": 0,
     "max_days_before": 7,
     "max_days_expiry_after": 14,
     "confidence": 75

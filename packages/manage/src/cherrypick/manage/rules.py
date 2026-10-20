@@ -197,12 +197,14 @@ DEFAULT_RULES: dict[str, Any] = {
     },
     "earnings": {"enabled": True, "warn_days": 14},
     # A trade put on to hold through an earnings report: opened `min_days_before`..`max_days_before`
-    # days before the call (the user's practice, 2026-10-18: 1 to 7), its nearest short expiring no
-    # more than `max_days_expiry_after` days after it. Before the call its close, take-profit and roll
-    # rules wait; after it, close. Safety rules never wait.
+    # days before the call (the user's practice, 2026-10-18: 1 to 7; the report's own day counts for
+    # an after-the-close call since 2026-10-20), its nearest short expiring no more than
+    # `max_days_expiry_after` days after it. Before the call its close, take-profit and roll rules
+    # wait, and the expiry close when the trade comes off before its legs expire; after it, close.
+    # Other safety rules never wait.
     "earnings_trade": {
         "enabled": True,
-        "min_days_before": 1,
+        "min_days_before": 0,
         "max_days_before": 7,
         "max_days_expiry_after": 14,
         "confidence": 75,

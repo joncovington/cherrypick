@@ -115,18 +115,39 @@ def test_a_blank_time_carried_from_yesterday_takes_todays_for_the_same_report():
     assert run(date(2026, 10, 20), time_of_day="BTO", seen=timed)["earnings_trade"]["time_of_day"] == "AMC"
 
 
-def test_only_a_trade_put_on_one_to_seven_days_before_the_report_is_one():
-    # 1 and 7 days before are in; 8 days, or the report's own day, are not.
+def test_only_a_trade_put_on_up_to_seven_days_before_the_report_is_one():
+    # 1 and 7 days before are in; 8 days are not.
     for opened_on, expect in (
         ("2026-10-19", True),
         ("2026-10-13", True),
         ("2026-10-12", False),
-        ("2026-10-20", False),
     ):
         t = run(date(2026, 10, 18), opened_on=opened_on)
         assert (t["earnings_trade"] is not None) is expect, opened_on
     eight = run(date(2026, 10, 18), opened_on="2026-10-12")
     assert rec(eight) == (ev.CLOSE, "credit.time_exit")  # not an earnings trade: the time exit stands
+
+
+def test_the_reports_own_day_counts_only_before_a_call_after_the_close():
+    # Opened the morning of an after-the-close report, it was put on for that call.
+    t = run(date(2026, 10, 20), time_of_day="AMC", opened_on="2026-10-20")
+    assert t["earnings_trade"]["lead_days"] == 0 and not t["earnings_trade"]["passed"]
+    # A before-the-open call had already happened when the trade went on: not put on for it.
+    assert run(date(2026, 10, 20), time_of_day="BTO", opened_on="2026-10-20")["earnings_trade"] is None
+
+
+def test_the_expiry_close_waits_when_the_trade_comes_off_after_the_call_before_expiry():
+    # The report tonight after the close, the short expiring Friday (3 DTE): the expiry window is
+    # reached, but the trade closes tomorrow, before expiry, so the expiry close waits with the rest.
+    t = run(date(2026, 10, 20), time_of_day="AMC")
+    assert rec(t) == (ev.HOLD, "earnings_trade")
+    assert [f["rule"] for f in t["held_for_earnings"]] == ["expiry", "credit.time_exit"]
+    assert t["order"] is None
+    assert "expiry rule" in t["explanation"]
+    # Tomorrow the call is out: the trade closes, and the expiry close stands beside it.
+    after = run(date(2026, 10, 21), time_of_day="AMC")
+    assert ev.CLOSE == after["recommendation"]["action"]
+    assert {"earnings_trade", "expiry"} <= {f["rule"] for f in after["fired"]}
 
 
 def test_a_short_expiring_long_after_the_report_is_not_an_earnings_trade():
@@ -139,8 +160,9 @@ def test_without_an_order_chain_there_is_no_opening_date_and_no_classification()
     assert t["earnings_trade"] is None and rec(t) == (ev.CLOSE, "credit.time_exit")
 
 
-def test_safety_rules_never_wait_for_the_call():
-    # Report tomorrow, physically settled short expiring in two days: the expiry rule still closes it.
+def test_the_expiry_close_stands_when_the_trade_would_come_off_on_expiry_day():
+    # Report tomorrow (untimed, so closed the day after), physically settled short expiring that same
+    # day: the post-call close would be on expiry day, so the expiry rule still closes it now.
     near = [leg(-1, "C", 192.5, 5.15, 5.72, exp="2026-10-20"), leg(1, "C", 200, 2.36, 2.74, exp="2026-10-20")]
     t = run(date(2026, 10, 18), report="2026-10-19", opened_on="2026-10-16", legs=near)
     assert t["earnings_trade"] is not None
