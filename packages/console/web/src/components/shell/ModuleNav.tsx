@@ -6,6 +6,7 @@ import { useViewMode } from "../../lib/viewMode";
 import { CONFIG_LINK, railHalves, suiteLinksFor, visibleNavLinks, type NavLinkDef } from "./navLinks";
 import { useFeatures } from "../../lib/useFeatures";
 import { isSlideVisible } from "../../lib/visibility";
+import { useLiveLoopsInUse } from "../../lib/useLiveToday";
 import { ExperimentalChip } from "../ExperimentalChip";
 import { useDirtyCount } from "../../pages/Config/stagedStore";
 import { RAIL_PREF, useCloseRailOnNavigate, useRailExpanded } from "./railState";
@@ -58,6 +59,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
   // An off module, the advisor and its tabs, and the technicals chart leave the rail when the suite has
   // turned them off (`visibility.ts`); Config keeps every toggle, so it is never filtered.
   const features = useFeatures();
+  const liveInUse = useLiveLoopsInUse(features);
   // The open module's tabs in the reader's view (simple or detail); the tab they are on always stays.
   // Simple view also leaves the developer surfaces (Compare, Advisor, System) off the rail.
   const view = useViewMode();
@@ -72,7 +74,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
     module ?? ("meic" as ModuleId), // never read when module is null — grouping is built only for the open module
     module === null
       ? []
-      : viewSlides(module, NAV_DECL[module].slides.filter((s) => isSlideVisible(module, s.id, features)), view, slide),
+      : viewSlides(module, NAV_DECL[module].slides.filter((s) => isSlideVisible(module, s.id, features, liveInUse)), view, slide),
   );
 
   // Any page opens out in place, wherever its link sits: a suite surface (Reports, Live, Config)

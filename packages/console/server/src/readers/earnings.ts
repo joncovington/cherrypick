@@ -52,16 +52,29 @@ export function earningsExitKind(exitReason: string | null, settlementFees: numb
   return "closed";
 }
 
+/** The per-share net price from the ledger's quantity-scaled `entry_credit`. No quantity reads as
+ *  one contract (older rows); a zero or negative one cannot be divided out and is not a price. */
+function perShare(credit: number | null, quantity: number | null): number | null {
+  if (credit === null) return null;
+  const qty = quantity ?? 1;
+  return qty > 0 ? Math.round((credit / qty) * 10_000) / 10_000 : null;
+}
+
 /**
  * The standard's money columns for one trade. `pnl` is GROSS and the costs sit in
  * entry_cost + exit_cost, which carry the slippage charge and (exit_cost) any settlement fee;
  * each comes out once, so net stays `pnl − entry_cost − exit_cost` (core.ledgers' earnings rule).
+ *
+ * `entry_credit` is stored ALREADY multiplied by quantity (`strat_test_harness`: per-contract credit
+ * x quantity; `pnl = (entry_credit − exit_debit) x 100`), so the whole-position entry cash is
+ * x100 alone, and the per-share price divides the quantity back out. Multiplying by quantity here
+ * overstated every multi-contract row and broke entry + exit = gross (packages/earnings fixed the
+ * same mistake in `management.unrealized_pnl`, #426).
  */
 function earningsTradeCash(r: Record<string, unknown>): Pick<
   EarningsTradeRow,
   "entryCash" | "exitCash" | "exitKind" | "exitReason" | "gross" | "fees" | "settlementFees" | "slippage" | "net"
 > {
-  const qty = num(r["quantity"]) ?? 1;
   const credit = num(r["entry_credit"]);
   const gross = num(r["pnl"]);
   const closed = r["closed_at"] != null && gross !== null;
@@ -69,7 +82,7 @@ function earningsTradeCash(r: Record<string, unknown>): Pick<
   const settlementFees = closed ? num(r["settlement_fees"]) : null;
   const slips = [num(r["entry_slippage"]), num(r["exit_slippage"])];
   const slippage = slips[0] === null && slips[1] === null ? null : round2((slips[0] ?? 0) + (slips[1] ?? 0));
-  const entryCash = credit !== null ? round2(credit * 100 * qty) : null;
+  const entryCash = credit !== null ? round2(credit * 100) : null;
   const exitReason = str(r["exit_reason"]);
   return {
     entryCash,
@@ -107,7 +120,7 @@ function readTrades(dbPath: string, mode: TradingMode, since: string | null): Ea
         symbol: str(r["symbol"]) ?? "",
         strategy: str(r["strategy"]) ?? "",
         expiration: str(r["expiration"]),
-        entryCredit: num(r["entry_credit"]),
+        entryCredit: perShare(num(r["entry_credit"]), num(r["quantity"])),
         quantity: num(r["quantity"]),
         ...earningsTradeCash(r),
         // Epoch floats in this store, not strings — see isoStamp.
@@ -508,12 +521,13 @@ export function readEarningsAnalytics(
           strategy: str(r["strategy"]) ?? "?",
           symbol: str(r["symbol"]) ?? "?",
           quantity: num(r["quantity"]),
-          // Per share, signed (credit +, debit −): the standard's one per-share column.
-          price: credit,
-          // Whole-position entry cash: x100 x contracts. It was x100 alone until 2026-09-25, which
-          // every one-contract position so far read correctly and a second contract would not.
-          credit: credit !== null ? round2(credit * 100 * (num(r["quantity"]) ?? 1)) : null,
-          netOfCost: credit !== null ? round2(credit * 100 * (num(r["quantity"]) ?? 1) - (entryCost ?? 0)) : null,
+          // Per share, signed (credit +, debit −): the standard's one per-share column. The ledger's
+          // entry_credit is already x contracts, so the quantity comes back out here.
+          price: perShare(credit, num(r["quantity"])),
+          // Whole-position entry cash: x100 alone, because entry_credit already carries every
+          // contract. A 2026-09-25 change multiplied by quantity again, doubling a 2-lot.
+          credit: credit !== null ? round2(credit * 100) : null,
+          netOfCost: credit !== null ? round2(credit * 100 - (entryCost ?? 0)) : null,
           maxLoss: num(r["capital_at_risk"]),
           entryCost,
           expiration: str(r["expiration"]),

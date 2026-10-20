@@ -29,6 +29,20 @@ beyond the latest release.
   2026-10-19 AMZN's call "skate" pick was the 260 with the stock at 262.62 (0.62 delta), at the top
   of the gap sort. Each band now moves with the price (band + today's spot − the band day's close)
   before a strike is picked and scored; rows carry `band_level` and `band_day_close`.
+- **Fixed: switching a live loop off mid-session hid the one page showing what it still held
+  (#422).** The console's flies and meic Live tabs followed the live switch alone, so with a condor
+  open, an order working, an orphan or a settlement overdue, Live Today's links to that tab bounced
+  back to Today. A switched-off loop's tab now goes only when Live Today reports nothing for it, read
+  from the payload the console already polls.
+- **Fixed: manage called a name excused from the earnings-trade rule an earnings trade.** A
+  `positions.<SYM>.disable: ["earnings_trade"]` restored the ordinary stop, take profit and time
+  exit, but the evaluation still wrote `earnings_trade`, so the console showed "waits for call"
+  against a stop that would fire. An excused name now has no `earnings_trade`.
+- **Fixed: the console counted an earnings trade's quantity twice.** `entry_credit` is stored
+  already multiplied by quantity (the mistake #426 fixed in `management.unrealized_pnl`), but the
+  history's entry cash and the open positions' credit multiplied by it again, so a 2-lot showed
+  double its entry and the per-share price was the position total. Both now read the ledger as
+  stored; no stored number changes.
 
 ## v0.11.2 — 2026-10-19 — review follow-ups
 The decisions the documentation review (v0.11.1) left open. One fixes how earnings marks and closes

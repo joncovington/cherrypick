@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { SuiteFeatures, SuiteFeaturesOk } from "@console/shared";
-import { isFeatureOn, isHiddenAsUnknown, isModuleVisible, isSlideVisible, offReason } from "../src/lib/visibility";
+import type { LiveAttentionItem, LiveTodayLoop, LiveTodayPayload, SuiteFeatures, SuiteFeaturesOk } from "@console/shared";
+import { isFeatureOn, isHiddenAsUnknown, isModuleVisible, isSlideVisible, liveLoopsInUse, offReason } from "../src/lib/visibility";
 import { visibleNavLinks } from "../src/components/shell/navLinks";
 
 /**
@@ -20,6 +20,12 @@ const ALL_ON: SuiteFeaturesOk = {
 
 function withOff(over: Partial<SuiteFeaturesOk>): SuiteFeaturesOk {
   return { ...ALL_ON, ...over };
+}
+
+/** A Live Today answer carrying only what the visibility rule reads; every loop idle unless told. */
+function today(loops: Array<Partial<LiveTodayLoop> & { loop: LiveTodayLoop["loop"] }>, attention: LiveAttentionItem[] = []): LiveTodayPayload {
+  const idle = { open: 0, working: 0, held: 0, orphans: { at: null, count: 0 }, overdue: [] };
+  return { loops: loops.map((l) => ({ ...idle, ...l })), attention } as unknown as LiveTodayPayload;
 }
 
 const earningsNeedsDolt = withOff({
@@ -62,7 +68,25 @@ describe("gex, the advisor and the reports", () => {
     expect(isSlideVisible("flies", "advisor", ALL_ON)).toBe(true);
   });
 
-  it("a live loop's Live tab follows its live switch; unread or absent stays shown", () => {
+  it("a switched-off live loop's tab stays while Live Today reports anything for it (#422)", () => {
+    const meicOff = withOff({ live: { flies: true, meic: false } });
+    // MEIC's switch turned off mid-session with a condor still open: the only page that shows it
+    // is this tab, and Live Today's row and attention items link to it.
+    expect(isSlideVisible("live", "meic", meicOff, liveLoopsInUse(today([{ loop: "meic", open: 1 }])))).toBe(true);
+    for (const busy of [{ working: 2 }, { held: 1 }, { orphans: { at: null, count: 1 } }, { overdue: [{ session: "2026-10-16", positions: 1, pendingEntries: 0 }] }]) {
+      expect(isSlideVisible("live", "meic", meicOff, liveLoopsInUse(today([{ loop: "meic", ...busy }])))).toBe(true);
+    }
+    // Any attention item for the loop keeps it too (a tripped breaker, an unreadable ledger).
+    const attention: LiveAttentionItem[] = [{ loop: "meic", kind: "ledger_unreadable", detail: "x", to: "/live/meic" }];
+    expect(isSlideVisible("live", "meic", meicOff, liveLoopsInUse(today([{ loop: "meic" }], attention)))).toBe(true);
+    // Another loop's activity is not this one's.
+    expect(isSlideVisible("live", "meic", meicOff, liveLoopsInUse(today([{ loop: "meic" }, { loop: "flies", open: 3 }])))).toBe(false);
+    // Idle, and read: hidden. Unread (loading, failed): unknown, so shown.
+    expect(isSlideVisible("live", "meic", meicOff, liveLoopsInUse(today([{ loop: "meic" }])))).toBe(false);
+    expect(isSlideVisible("live", "meic", meicOff, liveLoopsInUse(undefined))).toBe(true);
+  });
+
+  it("an idle live loop's Live tab follows its live switch; unread or absent stays shown", () => {
     const fliesOff = withOff({ live: { flies: false, meic: true } });
     expect(isSlideVisible("live", "flies", fliesOff)).toBe(false);
     expect(isSlideVisible("live", "meic", fliesOff)).toBe(true);

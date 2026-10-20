@@ -370,7 +370,12 @@ def evaluate_trade(
     xd = _date(metrics.get("ex_dividend_date"))
     if xd and xd > session:
         trade["ex_dividend"] = {"date": xd.isoformat(), "days": (xd - session).days}
-    trade["earnings_trade"] = earnings_trade(trade, metrics, session, rules, seen)
+    # A name excused from the rule (`positions.<SYM>.disable`) is not an earnings trade at all: its
+    # ordinary exits stand, so the evaluation must not say it is holding for the call. Readers (the
+    # console's chip, the carried-forward `seen` record) take this field as the verdict.
+    trade["earnings_trade"] = (
+        None if off("earnings_trade") else earnings_trade(trade, metrics, session, rules, seen)
+    )
 
     # ---- trades judged on their risk, not their premium
     if directional:

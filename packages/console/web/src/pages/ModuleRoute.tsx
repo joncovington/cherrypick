@@ -8,6 +8,7 @@ import { NAV_DECL, resolveSlide, viewSlides } from "../lightbox/navGroups";
 import { useFeatures } from "../lib/useFeatures";
 import { useViewMode } from "../lib/viewMode";
 import { isHiddenAsUnknown, isSlideVisible, offReason } from "../lib/visibility";
+import { useLiveLoopsInUse } from "../lib/useLiveToday";
 import { ModuleOffCard } from "./ModuleOffCard";
 
 /**
@@ -25,6 +26,7 @@ import { ModuleOffCard } from "./ModuleOffCard";
 export function ModuleRoute() {
   const { module = "", slide = "" } = useParams();
   const features = useFeatures();
+  const liveInUse = useLiveLoopsInUse(features);
   const view = useViewMode();
   if (!isModuleId(module)) return <NotFoundPage />;
 
@@ -38,7 +40,7 @@ export function ModuleRoute() {
   if (off !== null) return <ModuleOffCard module={module} off={off} />;
 
   const Frame = MODULE_FRAMES[module];
-  const slides = NAV_DECL[module].slides.filter((s) => isSlideVisible(module, s.id, features));
+  const slides = NAV_DECL[module].slides.filter((s) => isSlideVisible(module, s.id, features, liveInUse));
   const activeId = resolveSlide(module, slide, slides, viewSlides(module, slides, view));
   const label = slides.find((s) => s.id === activeId)?.label ?? activeId;
 

@@ -345,6 +345,31 @@ describe("a page the suite has turned off", () => {
     expect(renderWith("/flies/session", on)).toContain('href="/flow"');
   });
 
+  it("a switched-off live loop's tab stays reachable while it still holds something (#422)", () => {
+    const meicOff = { ...base, live: { flies: true, meic: false } };
+    const withToday = (open: number): string => {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      client.setQueryData(["features"], meicOff);
+      const loop = { loop: "meic", open, working: 0, held: 0, orphans: { at: null, count: 0 }, overdue: [] };
+      client.setQueryData(["live-today"], { loops: [loop], attention: [], suite: { armed: [], loops: 1 }, halted: false });
+      return renderToString(
+        <QueryClientProvider client={client}>
+          <MemoryRouter initialEntries={["/live/meic"]}>
+            <App />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    };
+    // A condor still open: the URL Live Today links to is the meic tab, not a bounce to today.
+    const busy = withToday(1);
+    expect(text(busy)).toContain("Live / meic");
+    expect(busy).toContain('href="/live/meic"');
+    // Idle: the switch hides it, and the URL falls back to the first tab as before.
+    const idle = withToday(0);
+    expect(text(idle)).not.toContain("Live / meic");
+    expect(idle).not.toContain('href="/live/meic"');
+  });
+
   it("a failed features read shows everything (fail open)", () => {
     const html = text(renderWith("/pmcc", { ok: false, error: "bridge down" }));
     expect(html).toContain("PMCC / session");

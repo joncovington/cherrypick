@@ -1,4 +1,4 @@
-import type { SuiteFeatures } from "@console/shared";
+import type { LiveTodayPayload, SuiteFeatures } from "@console/shared";
 import { isTradingModuleId } from "../lightbox/moduleOrder";
 
 /**
@@ -64,16 +64,51 @@ export function isModuleVisible(id: string, f: Features): boolean {
   return true;
 }
 
+/**
+ * The live loops Live Today (`GET /api/live/today`) reports anything for, or null while that is
+ * unknown (loading, or the read failed).
+ */
+export type LiveInUse = ReadonlySet<string> | null;
+
+/** No live loop holds anything: the only state in which a switched-off loop's tab may go. */
+export const NO_LIVE_IN_USE: LiveInUse = new Set<string>();
+
+/**
+ * Which live loops have something a person may need to see: an open position, a working or held
+ * order, an orphaned broker order, an overdue settlement, or any attention item (an unreadable
+ * ledger, a tripped breaker, a failing broker). Read from the payload as the server built it, never
+ * a second broker read. `undefined` (loading, failed) is null: unknown.
+ */
+export function liveLoopsInUse(d: LiveTodayPayload | undefined): LiveInUse {
+  if (d === undefined) return null;
+  const out = new Set<string>();
+  for (const l of d.loops) {
+    if (l.open > 0 || l.working > 0 || l.held > 0 || l.orphans.count > 0 || l.overdue.length > 0) out.add(l.loop);
+  }
+  for (const a of d.attention) out.add(a.loop);
+  return out;
+}
+
 /** Whether one tab of a visible page is shown: each module's advisor tab, the technicals chart, and
- *  each live loop's Live tab. Every tab of a fail-closed page follows the page. */
-export function isSlideVisible(module: string, slide: string, f: Features): boolean {
+ *  each live loop's Live tab. Every tab of a fail-closed page follows the page.
+ *
+ *  `inUse` is what Live Today reports per loop (`liveLoopsInUse`); it matters only to a live loop's
+ *  tab whose switch is off. */
+export function isSlideVisible(module: string, slide: string, f: Features, inUse: LiveInUse = NO_LIVE_IN_USE): boolean {
   // A hidden fail-closed page has no tabs either, so neither the rail nor `j`/`k` can name one.
   if (isFailClosed(module)) return isModuleVisible(module, f);
   if (slide === "advisor" && isTradingModuleId(module)) return isFeatureOn("advisor", f);
   if (module === "charts" && (slide === "technicals" || slide === "setups")) return isFeatureOn("technicals", f);
-  // A Live tab named for a module (flies, meic) follows that module's live master switch. Only an
-  // explicit false hides it; an unreadable switch is absent from the reply, and stays shown.
-  if (module === "live" && isTradingModuleId(slide)) return !known(f) || f.live?.[slide] !== false;
+  // A Live tab named for a module (flies, meic) follows that module's live master switch, but only
+  // once that loop is idle. A switch turned off mid-session leaves a position open, an order
+  // working, an orphan or an overdue settlement that only this tab shows, and Live Today links
+  // there; hiding it would bounce that link to Today. So it goes only when the switch is an
+  // explicit false AND Live Today was read and reports nothing for the loop. An unreadable switch
+  // (absent from the reply) or an unread Live Today stays shown.
+  if (module === "live" && isTradingModuleId(slide)) {
+    if (!known(f) || f.live?.[slide] !== false) return true;
+    return inUse === null || inUse.has(slide);
+  }
   return true;
 }
 
