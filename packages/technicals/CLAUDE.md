@@ -354,7 +354,11 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
 ## Scheduling
 
 `technicals-land` (06:15 ET daily, after the 05:30 Dolt pull; config block `technicals`), enabled
-only while the earnings module is, since that job keeps the dolt sql-server alive.
+with Dolt set up. The sql-server it reads is kept by earnings' declared `dolt_service`, with or
+without the earnings module on (`orchestrator.config.dolt_hosts`, 2026-10-19; before, switching
+earnings off stopped the server and every Dolt-reading job here). The income lists' inputs --
+`-dollar-volume`, `-securities`, `-liquidity`, `-iv-rank` -- read no Dolt and need only the block's
+switch.
 `technicals-iv-rank` runs after the close on trading days. `technicals-screeners` (06:40 ET,
 `screeners_at`) scores every saved screener session with its broker chain, after the previous
 evening's late greeks run; a scored session is skipped. `technicals-skate` (06:45 ET, `skate_at`)

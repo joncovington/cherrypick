@@ -11,14 +11,20 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed: technicals no longer needs the earnings module on.** The Dolt sql-server, the 05:30
+  pull and every Dolt-reading technicals job used to follow the earnings module, because only an
+  enabled module's `dolt_service` kept the server up. Technicals now keeps the same server by
+  earnings' declared service when earnings is off. The income lists' inputs (dollar volume,
+  security list, liquidity verdict, IV rank) read no Dolt and run on the technicals switch alone,
+  so a machine without Dolt still builds the lists' universe. A job switched off for want of Dolt
+  now says so, rather than "disabled in config".
 - **Added: dollar volume from the broker's candles, so the security list builds without Dolt.**
   A new evening job (`technicals-dollar-volume`, 18:35 ET, `scripts/fetch_dollar_volume.py`)
   records every optionable name's 50-session median dollar volume from tastytrade's daily
   candles. The public security list's liquidity rank and the liquidity verdict now read it in
   place of the local Dolt clone, on every machine. On 2026-10-19 the two sources agreed to a
   median ratio of 1.0000 and gave the same rank-1-or-2 set on 889 of 890 names. The job runs
-  whether or not Dolt is installed; the security list and liquidity jobs themselves are still
-  gated on Dolt until that coupling is removed.
+  whether or not Dolt is installed, and so (entry above) do the security list and liquidity jobs.
 - **Fixed: the console's concentration guidance showed the wrong figure.** The reader took the
   first figure in each driver row, which for concentration is the theta share, and the card printed
   it as a signed number: a name at 30% of the book's theta read "+0.3", and a name over the cap on

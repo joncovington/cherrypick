@@ -1230,8 +1230,8 @@ def test_market_files_follow_the_morning_switch():
 
 # --------------------------------------------------------------------------- technicals (2026-09-27)
 def test_the_technicals_landing_follows_the_dolt_pull_and_needs_the_dolt_server():
-    """It reads the local dolt sql-server, which only the earnings module keeps alive, and the
-    clones it reads are pulled at 05:30 -- a landing before the pull lands yesterday's data."""
+    """It reads the local dolt sql-server, and the clones it reads are pulled at 05:30 -- a landing
+    before the pull lands yesterday's data. Without Dolt set up it is off."""
     by_id = {j.id: j for j in derive(suite_cfg())[0]}
     land, pull = by_id["technicals-land"], by_id["earnings-dolt-pull"]
 
@@ -1242,9 +1242,52 @@ def test_the_technicals_landing_follows_the_dolt_pull_and_needs_the_dolt_server(
     assert minutes(land.at_et) > minutes(pull.at_et)
     assert land.argv[1:] == ("-m", "cherrypick.technicals", "land")
     cfg = suite_cfg()
-    cfg.setdefault("modules", {}).setdefault("earnings", {})["enabled"] = False
+    cfg["capabilities"]["dolt"] = False
     off = {j.id: j for j in derive(cfg)[0]}["technicals-land"]
     assert not off.enabled and "dolt" in off.enabled_reason
+
+
+def test_technicals_keeps_the_dolt_server_with_the_earnings_module_off():
+    """Until 2026-10-19 only an enabled module's `dolt_service` kept the server up, so switching
+    earnings off took the server, the pull and every technicals job with it. Now technicals keeps
+    the same server by earnings' declared service, with the same job id."""
+    from cherrypick.orchestrator import config as cfgmod
+    from cherrypick.orchestrator import proc
+
+    cfg = suite_cfg()
+    cfg["modules"]["earnings"]["enabled"] = False
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert "earnings-entry" not in by_id
+    for job_id in ("earnings-dolt", "earnings-dolt-pull", "technicals-land", "technicals-earnings-calendar"):
+        assert by_id[job_id].enabled, job_id
+    assert set(cfgmod.dolt_hosts(cfg)) == {"earnings"} and proc.DOLT_DAEMON in proc.daemons(cfg)
+    # With technicals off as well, nothing reads Dolt: no server, no pull.
+    cfg["technicals"] = {"enabled": False}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert "earnings-dolt" not in by_id and not by_id["earnings-dolt-pull"].enabled
+    assert cfgmod.dolt_hosts(cfg) == {} and proc.DOLT_DAEMON not in proc.daemons(cfg)
+
+
+def test_the_income_lists_inputs_run_without_dolt():
+    """The security list, the liquidity verdict, the IV-rank fetch and the dollar volume read no
+    Dolt, so a machine without the clones still builds the lists' universe; the jobs that read Dolt
+    are off there."""
+    cfg = suite_cfg()
+    cfg["capabilities"]["dolt"] = False
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    for job_id in (
+        "technicals-dollar-volume",
+        "technicals-securities",
+        "technicals-iv-rank",
+        "technicals-liquidity",
+    ):
+        assert by_id[job_id].enabled, job_id
+    for job_id in ("technicals-land", "technicals-earnings-calendar", "technicals-board"):
+        assert not by_id[job_id].enabled, job_id
+    assert "earnings-dolt" not in by_id and not by_id["earnings-dolt-pull"].enabled
+    cfg["technicals"] = {"enabled": False}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert not by_id["technicals-securities"].enabled and not by_id["technicals-liquidity"].enabled
 
 
 def test_the_dollar_volume_fetch_needs_no_dolt_and_runs_before_its_readers():

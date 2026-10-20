@@ -923,6 +923,22 @@ def derive_jobs(
         ),
     )
 
+    # --- the Dolt sql-server's keep-alive, for whichever module's `dolt_service` the suite runs it
+    # by (`config.dolt_hosts`): the earnings module's, and from 2026-10-19 the same one with earnings
+    # off while technicals reads Dolt. The job keeps its `<module>-dolt` id either way.
+    for name, mcfg in cfgmod.dolt_hosts(cfg).items():
+        svc = (mcfg.get("paper") or {})["dolt_service"]
+        add(
+            f"{name}-dolt",
+            lambda name=name, svc=svc: JobSpec(
+                id=f"{name}-dolt",
+                argv=_run_py(pythonw, launcher, "ensure-dolt"),
+                kind=KIND_INTERVAL,
+                interval_seconds=int(svc.get("interval_minutes", 5)) * 60,
+                **_quiet("dolt", int(svc.get("interval_minutes", 5)) * 60),
+            ),
+        )
+
     # --- per-module jobs
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         paper = mcfg.get("paper", {}) or {}
@@ -952,19 +968,6 @@ def derive_jobs(
                     kind=KIND_DAILY,
                     at_et=paper["exit_time"],
                     catchup_minutes=CATCHUP_MINUTES["exit"],
-                ),
-            )
-
-        svc = paper.get("dolt_service")
-        if svc:
-            add(
-                f"{name}-dolt",
-                lambda name=name, svc=svc: JobSpec(
-                    id=f"{name}-dolt",
-                    argv=_run_py(pythonw, launcher, "ensure-dolt"),
-                    kind=KIND_INTERVAL,
-                    interval_seconds=int(svc.get("interval_minutes", 5)) * 60,
-                    **_quiet("dolt", int(svc.get("interval_minutes", 5)) * 60),
                 ),
             )
 
@@ -1157,31 +1160,39 @@ def derive_jobs(
         ),
     )
     tc = cfgmod.technicals_settings(cfg)
-    # The Dolt server is kept alive by the earnings module's own job, so technicals needs earnings
-    # running -- and through enabled_modules, a machine with Dolt set up (capabilities.dolt).
-    dolt_on = "earnings" in cfgmod.enabled_modules(cfg)
+    # The Dolt-reading jobs need Dolt set up (`enabled` folds in capabilities.dolt) and a server
+    # to read (`config.dolt_read`: earnings on, or a server kept for technicals), which no longer
+    # needs the earnings module on
+    # (2026-10-19). The jobs that read no Dolt -- the dollar-volume, security-list, liquidity and
+    # IV-rank jobs, the income lists' inputs -- follow the block's own switch (`switch`) instead.
+    dolt_on = cfgmod.dolt_read(cfg)
     tc_on = tc["enabled"] and dolt_on
+    tc_free = tc["switch"]
+    # Why a Dolt-reading job is off, in the order a person would fix it.
+    tc_off_why = (
+        ""
+        if tc_on
+        else "disabled in config (technicals)"
+        if not tc["switch"]
+        else "Dolt not set up (capabilities.dolt; run.py capabilities --detect --write)"
+        if not tc["enabled"]
+        else "no dolt sql-server to read (no module declares a dolt_service)"
+    )
     add(
         "technicals-land",
         lambda: JobSpec(
             id="technicals-land",
             # A package command, not a script: it reads the LOCAL dolt sql-server only (the
             # clones are pulled by the 05:30 earnings-dolt-pull script) and writes its own store.
-            # That server is kept alive by the earnings module's own job, so without earnings
-            # there is nothing to read and the job would fail every morning.
+            # That server is kept alive by `config.dolt_hosts`' module (earnings' declared
+            # service, with or without the earnings module on).
             argv=(pythonw, "-m", "cherrypick.technicals", "land"),
             kind=KIND_DAILY,
             at_et=tc["land_at"],
             catchup_minutes=CATCHUP_MINUTES["technicals-land"],
             trading_days_only=False,
             enabled=tc_on,
-            enabled_reason=(
-                ""
-                if tc_on
-                else "disabled in config (technicals)"
-                if not tc["enabled"]
-                else "earnings module disabled (no dolt sql-server to read)"
-            ),
+            enabled_reason=tc_off_why,
         ),
     )
     add(
@@ -1291,7 +1302,7 @@ def derive_jobs(
             enabled_reason="" if ixb_on else "disabled in config (technicals.index_bars)",
         ),
     )
-    ivr_on = tc["enabled"] and tc["iv_rank"]
+    ivr_on = tc_free and tc["iv_rank"]
     add(
         "technicals-iv-rank",
         lambda: JobSpec(
@@ -1378,7 +1389,7 @@ def derive_jobs(
         lambda: JobSpec(
             id="technicals-securities",
             # A package command: the public security list from local files (Nasdaq Trader's directory
-            # and OCC's volume, both landed by market-files; dollar volume from the local Dolt), and
+            # and OCC's volume, both landed by market-files; dollar volume from the candle file), and
             # the pointer naming which list -- it or the vendor's -- the evening's readers use. Runs
             # whatever the vendor switch says: the public list is the fallback while the vendor is on.
             argv=(pythonw, "-m", "cherrypick.technicals", "securities"),
@@ -1386,8 +1397,8 @@ def derive_jobs(
             at_et=tc["securities_at"],
             catchup_minutes=CATCHUP_MINUTES["technicals-securities"],
             trading_days_only=True,
-            enabled=tc_on,
-            enabled_reason="" if tc_on else "disabled in config (technicals), or no dolt sql-server to read",
+            enabled=tc_free,
+            enabled_reason="" if tc_free else "disabled in config (technicals)",
         ),
     )
     add(
@@ -1395,15 +1406,15 @@ def derive_jobs(
         lambda: JobSpec(
             id="technicals-liquidity",
             # A package command: judges every stored and listed screener name liquid or not from
-            # local data (the IV-rank file, the store's bars, the local Dolt clone) and writes the
+            # local data (the IV-rank file and the candle file's dollar volume) and writes the
             # verdicts the broker-spending scripts skip by and the listed views hide by.
             argv=(pythonw, "-m", "cherrypick.technicals", "liquidity"),
             kind=KIND_DAILY,
             at_et=tc["liquidity_at"],
             catchup_minutes=CATCHUP_MINUTES["technicals-liquidity"],
             trading_days_only=True,
-            enabled=tc_on,
-            enabled_reason="" if tc_on else "disabled in config (technicals), or no dolt sql-server to read",
+            enabled=tc_free,
+            enabled_reason="" if tc_free else "disabled in config (technicals)",
         ),
     )
     for job_id, at_key in (
@@ -1441,7 +1452,7 @@ def derive_jobs(
             catchup_minutes=CATCHUP_MINUTES["technicals-earnings-record"],
             trading_days_only=True,
             enabled=tc_on,
-            enabled_reason="" if tc_on else "disabled in config (technicals), or no dolt sql-server to read",
+            enabled_reason=tc_off_why,
         ),
     )
     add(
@@ -1457,7 +1468,7 @@ def derive_jobs(
             catchup_minutes=CATCHUP_MINUTES["technicals-screeners"],
             trading_days_only=True,
             enabled=tc_on,
-            enabled_reason="" if tc_on else "disabled in config (technicals), or no dolt sql-server to read",
+            enabled_reason=tc_off_why,
         ),
     )
     skate_on = tc_on and tc["history"] and tc["skate"]
@@ -1628,11 +1639,13 @@ def derive_jobs(
             at_et="05:30",
             catchup_minutes=CATCHUP_MINUTES["earnings-dolt-pull"],
             trading_days_only=False,
-            enabled="earnings" in cfgmod.enabled_modules(cfg),
+            # Whenever anything reads the clones (`config.dolt_read`): earnings, or technicals with
+            # earnings off.
+            enabled=cfgmod.dolt_read(cfg),
             enabled_reason=(
                 ""
-                if "earnings" in cfgmod.enabled_modules(cfg)
-                else "earnings module disabled, or Dolt not set up (capabilities.dolt)"
+                if cfgmod.dolt_read(cfg)
+                else "neither earnings nor technicals reads Dolt here, or Dolt not set up (capabilities.dolt)"
             ),
         ),
     )
