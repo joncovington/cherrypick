@@ -382,9 +382,19 @@ the setups watchlist:
 
 **Screeners** (`/screeners`, 2026-10-16; `lightbox/manifests/ScreenersLightbox.tsx`) — two groups
 (2026-10-18 order). Our own screens first: the earnings calendar, its forward record and the signal
-board. Then the income lists: short puts, covered calls and credit spreads, one tab each, which stop
-when the vendor subscription ends on 2026-10-24. The fidelity tab was retired on 2026-10-19; its
-final rates are in `packages/technicals/CLAUDE.md`.
+board. Then the income lists: short puts, covered calls and credit spreads, one tab each. The fidelity
+tab was retired on 2026-10-19; its final rates are in `packages/technicals/CLAUDE.md`.
+
+- **Short puts and covered calls are OURS by default** (2026-10-19; `pages/Screeners/IncomeTab.tsx`,
+  `OwnListTab.tsx`, `readers/incomeLists.ts`, `GET /api/screeners/own/:list[?day=]`), the vendor's
+  saved days one click away (`?source=vendor`, the tables below). They are `technicals income-lists`'
+  file renamed: our options-tradable universe, the strike nearest 16 delta (put on the cycle monthly,
+  call on the monthly 30-45 days out), at the working price; the reader and page decide nothing.
+  **The rows are in symbol order and are never ranked by yield**, and the standing "No tested edge"
+  note above the table is never removed while the list shows: the rule is the least-bad cell of two
+  studies that found no edge (`cherrypick.core.incomerules`). Defaults hide a thin option and a trade
+  with earnings inside it, each with its escape; an unknown or past date stays shown, marked. Credit
+  spreads stay the vendor's: their selection is not reproduced.
 
 - The income lists (`pages/Screeners/ScreenersPage.tsx`, `readers/screeners.ts`,
   `GET /api/screeners/:list[?day=]`) are one row a name.

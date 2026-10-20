@@ -161,6 +161,18 @@ def test_the_covered_call_is_written_on_its_own_expiry_when_the_reading_has_one(
     assert old["dte"] == 52
 
 
+def test_a_short_put_or_call_far_from_its_delta_is_not_built():
+    """The Screeners lists' tolerance: a nearest strike that misses 16 delta by more than 0.05 is no
+    trade (a $3 stock's nearest call at 0.43 delta, 2026-10-19). The spreads have no delta target."""
+    e = _entry(strikes=[44, 49, 51, 53])  # nearest picks near 0.09 and 0.32 delta, both outside
+    opts = candidates.priced_options(e, SESSION, 0.04)
+    kinds = {s["kind"] for s in candidates.structures(e, opts, CFG, 300.0)}
+    assert "short_put" not in kinds and "covered_call" not in kinds
+    loose = {**CFG, "delta_tolerance": 1.0}
+    kinds = {s["kind"] for s in candidates.structures(e, opts, loose, 300.0)}
+    assert {"short_put", "covered_call"} <= kinds
+
+
 def _held(shares, *calls):
     """A name's trades: the shares, and each (signed quantity, strike) call leg open against them."""
     legs = [{"quantity": float(shares), "right": None, "strike": None}]

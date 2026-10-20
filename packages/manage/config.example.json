@@ -214,11 +214,12 @@
       "max_buying_power_pct": 0.5
     },
     "candidates": {
-      "_comment": "Income trades from our own universe (the evening income reading), sized to the account. Structures: a short put at short_put_delta; a put or call credit spread short the first out-of-the-money strike, long at spread_long_delta, at least spread_min_credit of the width; a covered call at covered_call_delta on held shares only, on its own expiry (the monthly 30-45 days out, else the cycle monthly). The two deltas are the Screeners lists' 16 (2026-10-19). Each gets the largest quantity that keeps one unit's stress loss (a spread's max loss) under per_trade_risk_pct of net liq, a short put's notional under notional_per_name_pct (by account kind), buying power under the VIX-scaled cap (else max_buying_power_pct), delta in its band, theta under its ceiling and the name under max_name_theta_share of the book's theta; the cap that stops it is named. Ranked by theta per dollar of buying power. Modelled at mid from a day-old reading: re-quote before sending.",
+      "_comment": "Income trades from our own universe (the evening income reading), sized to the account. Structures: a short put at short_put_delta; a put or call credit spread short the first out-of-the-money strike, long at spread_long_delta, at least spread_min_credit of the width; a covered call at covered_call_delta on held shares only, on its own expiry (the monthly 30-45 days out, else the cycle monthly). The two deltas are the Screeners lists' 16 (2026-10-19); a short put or covered call whose nearest strike misses its delta by more than delta_tolerance is not built, as the lists drop it. Each gets the largest quantity that keeps one unit's stress loss (a spread's max loss) under per_trade_risk_pct of net liq, a short put's notional under notional_per_name_pct (by account kind), buying power under the VIX-scaled cap (else max_buying_power_pct), delta in its band, theta under its ceiling and the name under max_name_theta_share of the book's theta; the cap that stops it is named. Ranked by theta per dollar of buying power. Modelled at mid from a day-old reading: re-quote before sending.",
       "enabled": true,
       "short_put_delta": 0.16,
       "spread_long_delta": 0.25,
       "covered_call_delta": 0.16,
+      "delta_tolerance": 0.05,
       "spread_min_credit": 0.331,
       "per_trade_risk_pct": 0.03,
       "notional_per_name_pct": {"cash": 0.25, "margin": 0.5},

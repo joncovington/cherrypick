@@ -341,6 +341,7 @@ def test_derive_full_suite_job_table():
         "technicals-revisions",
         "technicals-liquidity",
         "technicals-securities",
+        "technicals-income-lists",
         "technicals-earnings-calendar",
         "technicals-earnings-calendar-late",
         "technicals-earnings-record",
@@ -1320,6 +1321,24 @@ def test_the_income_chains_are_their_own_switch_on_by_default():
     off = {j.id: j for j in derive(suite_cfg(market_report={"income": False}))[0]}
     assert not off["report-income-chains"].enabled
     assert "market_report.income" in off["report-income-chains"].enabled_reason
+
+
+def test_our_income_lists_follow_the_chains_and_need_no_dolt():
+    """They read the 14:45 income chains, so they run after them, where they run, Dolt or not."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+
+    def minutes(at):
+        h, m = (int(x) for x in at.split(":"))
+        return h * 60 + m
+
+    job = by_id["technicals-income-lists"]
+    assert job.enabled and job.argv[-1] == "income-lists" and job.trading_days_only
+    assert minutes(job.at_et) > minutes(by_id["report-income-chains"].at_et)
+    no_dolt = suite_cfg()
+    no_dolt["capabilities"]["dolt"] = False
+    assert {j.id: j for j in derive(no_dolt)[0]}["technicals-income-lists"].enabled
+    no_chains = {j.id: j for j in derive(suite_cfg(market_report={"income": False}))[0]}
+    assert not no_chains["technicals-income-lists"].enabled
 
 
 def test_the_dividend_fetch_is_a_script_on_by_default():

@@ -565,6 +565,10 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # cherrypick.technicals securities`, local files only). After the 18:45 market-files run
         # lands the symbol directory, before the 18:50 IV-rank fetch, its first reader.
         "securities_at": tc.get("securities_at", "18:48"),
+        # `income_lists_at`: our own short-put and covered-call lists (`python -m cherrypick.technicals
+        # income-lists`, local files only), from the 14:45 income chains -- after that run, which
+        # takes ~10 minutes. Needs no Dolt; off with `market_report.income`, which writes its input.
+        "income_lists_at": tc.get("income_lists_at", "15:10"),
         # `screeners_at`: score the income screens' rules on every saved list with its broker chain
         # (`python -m cherrypick.technicals score-screeners`, local files only). Morning, so the
         # previous evening's late greeks run (23:30) has landed.

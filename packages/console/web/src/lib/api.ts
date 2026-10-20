@@ -29,6 +29,8 @@ import type {
   EarningsRecordPayload,
   SignalBoardPayload,
   SkatePayload,
+  IncomeList,
+  IncomeListPayload,
   ScreenerList,
   ScreenerPayload,
   PmccPayload,
@@ -242,6 +244,15 @@ export function useScreener(list: ScreenerList, day: string | null) {
     queryKey: ["screener", list, day ?? "latest"],
     queryFn: () => getJson<ScreenerPayload>(`/api/screeners/${list}${day ? `?day=${day}` : ""}`),
     // A list is saved once an evening; its readings land twice the next session.
+    refetchInterval: 300_000,
+  });
+}
+
+export function useIncomeList(list: IncomeList, day: string | null) {
+  return useQuery<IncomeListPayload>({
+    queryKey: ["income-list", list, day],
+    queryFn: () => getJson<IncomeListPayload>(`/api/screeners/own/${list}${day ? `?day=${encodeURIComponent(day)}` : ""}`),
+    // Built once a session, after the afternoon chains.
     refetchInterval: 300_000,
   });
 }

@@ -214,6 +214,17 @@ def cmd_score_screeners(args) -> int:
     return 0
 
 
+def cmd_income_lists(args) -> int:
+    """Our own short-put and covered-call lists from the afternoon income chains (incomelists.py)."""
+    from pathlib import Path
+
+    from . import incomelists
+
+    report = incomelists.build(day=args.day, source=Path(args.source) if args.source else None)
+    print(json.dumps(report, indent=1))
+    return 0 if report.get("ok") else 1
+
+
 def cmd_skate(args) -> int:
     """The skate screen's bands and their history (skate.py): the history store and local files only."""
     from . import skate
@@ -671,6 +682,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     ss.add_argument("--rescore", action="store_true", help="score sessions already scored again")
     ss.set_defaults(fn=cmd_score_screeners)
+    il = sub.add_parser(
+        "income-lists", help="our own short-put and covered-call lists, from the afternoon income chains"
+    )
+    il.add_argument("--day", help="the newest reading on or before this day (YYYY-MM-DD); default today")
+    il.add_argument("--source", help="build from this income file instead (written as a .trial.json)")
+    il.set_defaults(fn=cmd_income_lists)
     sk = sub.add_parser(
         "skate", help="the skate screen's range bands and how often each has held, per name and expiry"
     )
