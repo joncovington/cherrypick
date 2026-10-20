@@ -219,8 +219,28 @@ def cmd_skate(args) -> int:
     from . import skate
 
     result = skate.build(day=args.day, cfg=_config().get("skate"))
+    # The forward record rides the same job (plan step 4): yesterday's shown rows recorded, expired ones
+    # settled from the bars this build just read. Its failure is reported and never fails the bands.
+    try:
+        from . import skate_record
+
+        rec = skate_record.run()
+        result["record"] = {k: rec[k] for k in ("recorded", "added", "settled_now")} | {
+            "decision_grade": rec["verdict"]["decision_grade"],
+            "expiries": rec["verdict"]["expiries"],
+        }
+    except Exception as exc:  # noqa: BLE001 -- the record is a reading, the bands are the product
+        result["record"] = {"error": f"{type(exc).__name__}: {exc}"[:300]}
     print(json.dumps(result, indent=1))
     return 0 if result.get("ok") else 1
+
+
+def cmd_skate_record(args) -> int:
+    """The skate screen's forward record alone (skate_record.py): record, settle, read the verdict."""
+    from . import skate_record
+
+    print(json.dumps(skate_record.run(through=args.through), indent=1))
+    return 0
 
 
 def cmd_earnings_calendar(args) -> int:
@@ -656,6 +676,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     sk.add_argument("--day", help="the session (YYYY-MM-DD); default the history store's newest")
     sk.set_defaults(fn=cmd_skate)
+    sr = sub.add_parser(
+        "skate-record",
+        help="the skate screen's forward record: what it showed, what happened, the declared test",
+    )
+    sr.add_argument("--through", help="record sessions up to this one (YYYY-MM-DD); default every one")
+    sr.set_defaults(fn=cmd_skate_record)
     ec = sub.add_parser(
         "earnings-calendar", help="the next 30 days' announcements, as the earnings tab shows them"
     )
