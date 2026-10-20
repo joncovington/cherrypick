@@ -11,6 +11,12 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: manage flies a credit broken-wing butterfly's risk off.** `roll.fly_off` (review,
+  confidence 55): when a broken-wing butterfly opened for a net credit can be made a plain butterfly
+  (buy the wing at the narrow side's width beyond the body, sell the wide wing) for no more than the
+  credit, the evaluation proposes it, with the order. What is left cannot lose, fees aside. The new
+  wing is modelled, so the debit is an estimate.
+
 - **Added: manage sells a butterfly's long spread near its full value.** `legs.long_vertical` (close
   legs, confidence 50): when the long spread of a butterfly, broken-wing or broken-heart butterfly is
   worth 90% of its width, the evaluation says to sell just that spread and keep the short spread,

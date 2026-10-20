@@ -229,6 +229,7 @@ def evaluate_trade(
         "earnings": None,
         "ex_dividend": None,
         "long_vertical": None,
+        "fly_off": None,
         "fired": [],
         "exit_levels": {},
     }
@@ -681,6 +682,32 @@ def evaluate_trade(
             )
             trade.setdefault("leg_orders", {})["legs.long_vertical"] = _order(sold)
 
+    # ---- a broken-wing butterfly taken in for a credit flies off its risk while that costs less
+    fo = rules["roll"]["fly_off"]
+    if (
+        trade["shape"] == "broken-wing butterfly"
+        and cost < 0
+        and spot
+        and not expiring
+        and not off("roll.fly_off")
+    ):
+        fly = _fly_off(options, spot, rate)
+        if fly and fly["debit"] <= float(fo["max_share_of_credit"]) * -cost:
+            fly["kept"] = -cost - fly["debit"]
+            trade["fly_off"] = fly
+            fired.append(
+                _fire(
+                    "roll.fly_off",
+                    REVIEW,
+                    fo["confidence"],
+                    f"buy the {fly['new_strike']:g}{fly['right']} and sell the "
+                    f"{fly['old_strike']:g}{fly['right']} for about ${fly['debit']:,.0f} (modelled) against "
+                    f"the ${-cost:,.0f} taken in: a plain butterfly that keeps ${fly['kept']:,.0f} "
+                    "and cannot lose",
+                    fly["legs"],
+                )
+            )
+
     # ---- ex-dividend assignment risk on short calls
     xr = rules["ex_dividend"]
     if (
@@ -927,6 +954,37 @@ def _long_vertical(
         return out
 
     return [near, part(body, -qty)], [part(body, body["quantity"] + qty), far]
+
+
+def _fly_off(options: list[dict[str, Any]], spot: float, rate: float) -> dict[str, Any] | None:
+    """The trade that makes a broken-wing butterfly a plain one: buy the wing at the narrow side's width
+    beyond the body and sell the wide wing. The new wing is priced at an IV read linearly off the body's
+    and the old wing's (it lies between them), so its debit is modelled. None when a leg has no IV."""
+    low, body, high = sorted(options, key=lambda leg: leg["strike"])
+    below, above = body["strike"] - low["strike"], high["strike"] - body["strike"]
+    old = high if above > below else low
+    new_strike = body["strike"] + below if old is high else body["strike"] - above
+    if body["iv"] is None or old["iv"] is None or old["mid"] is None or old["dte"] is None:
+        return None
+    t = (new_strike - body["strike"]) / (old["strike"] - body["strike"])
+    iv = body["iv"] + t * (old["iv"] - body["iv"])
+    new_mid = pricing.price(spot, new_strike, old["years"], iv, old["right"], rate)
+    qty = old["quantity"]
+    per_unit = new_mid - old["mid"]
+    exp = old["expiration"]
+    return {
+        "right": old["right"],
+        "old_strike": old["strike"],
+        "new_strike": new_strike,
+        "new_mid": new_mid,
+        "debit": per_unit * qty * pricing.MULTIPLIER,
+        "debit_price": per_unit,
+        "modelled": True,
+        "legs": [
+            f"BTO {qty:g} {exp} {new_strike:g}{old['right']} @ ~{new_mid:.2f} (modelled)",
+            f"STC {qty:g} {exp} {old['strike']:g}{old['right']} @ {old['mid']:.2f}",
+        ],
+    }
 
 
 def _diagonal_width(options: list[dict[str, Any]]) -> float | None:

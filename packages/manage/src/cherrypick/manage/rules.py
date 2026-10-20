@@ -149,6 +149,12 @@ DEFAULT_RULES: dict[str, Any] = {
             "skip_through_earnings": False,
             "confidence": 60,
         },
+        # A broken-wing butterfly opened for a credit "flies off" its risk: buy the wing that makes it a
+        # plain butterfly and sell the wide one, when that costs no more than `max_share_of_credit` of
+        # the net credit taken in. What is left cannot lose (fees aside) and still pays most at the body.
+        # The new wing is MODELLED (its IV read off the body's and the old wing's): re-quote first. The
+        # tastylive strategy guide's (2023) first goal for a BWB; no outside test.
+        "fly_off": {"enabled": True, "max_share_of_credit": 1.0, "confidence": 55},
     },
     "expiry": {
         "enabled": True,
@@ -298,6 +304,7 @@ RULE_IDS = (
     "legs.long_vertical",
     "roll.naked_put",
     "roll.diagonal_short",
+    "roll.fly_off",
     "directional.take_profit",
     "directional.stop",
     "ex_dividend",
