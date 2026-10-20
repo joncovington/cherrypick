@@ -1084,8 +1084,8 @@ def cmd_measure(args) -> int:
 # sides, quoted through REST in regular hours -- the evening quotes say nothing about a real spread,
 # and the leg bars judge spreads. Beside them, from local files only: the name's earnings and
 # ex-dividend dates, IV, HV and the broker's beta (the nightly metrics file), and its stress move over
-# the holding period (the end-of-day store). manage picks the strikes, sizes and ranks; this decides
-# nothing about a trade.
+# the holding period (the history store, as `stress_closes` reads it). manage picks the strikes, sizes
+# and ranks; this decides nothing about a trade.
 
 INCOME_REACH = CAND_REACH
 INCOME_STRIKES = CAND_STRIKES
@@ -1093,6 +1093,21 @@ INCOME_NEAR = CAND_NEAR
 # The history a stress move is read from: five years of sessions, and at least a year of windows.
 STRESS_SESSIONS = 1260
 STRESS_MIN_WINDOWS = 250
+
+
+def stress_closes(conn, symbol: str) -> list[float]:
+    """The closes a stress move is read from: the history store's bars (every tradable name, from
+    2015), split-adjusted and not dividend-adjusted, from the series break on -- skate's reading
+    (`skate.price_bars`). A short put's strike does not move on an ex-date, so a dividend drop is a
+    real move against it, and scaling it away would understate the tail.
+
+    Until 2026-10-19 this read the end-of-day store, which holds the report's names and not every
+    tradable one: 58 of the 457 planned names on 2026-10-18 (IVV, FXI, DOCU, CPB, BURL among them)
+    had no bars there, no stress move, and so were never sized by manage."""
+    from cherrypick.technicals import skate
+
+    store_sym, _ = skate._spellings(symbol)
+    return [b.close for b in skate.price_bars(conn, store_sym)]
 
 
 def income_names(verdicts: dict[str, dict]) -> list[str]:
@@ -1204,6 +1219,7 @@ def cmd_income(args) -> int:
     from cherrypick.core import calendar as cal
     from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
     from cherrypick.technicals import liquidity
+    from cherrypick.technicals import paths as tpaths
     from cherrypick.technicals import store as tstore
 
     ub = _universe_builder()
@@ -1245,7 +1261,7 @@ def cmd_income(args) -> int:
     ub._write_json(chain_path, cache)
 
     metrics_day, metric_rows = latest_metrics()
-    conn = tstore.connect()
+    conn = tstore.connect(tpaths.history_db())
     symbols: dict[str, dict] = {}
     for sym in names:
         plan = plans.get(sym)
@@ -1254,7 +1270,7 @@ def cmd_income(args) -> int:
             entry["error"] = "no chain listed" if not cache.get(sym) else "no cycle monthly or no price"
             symbols[sym] = entry
             continue
-        closes = [b.close for b in tstore.adjusted_bars(conn, sym)]
+        closes = stress_closes(conn, sym)
         options = []
         for leg in plan["legs"]:
             q = leg.get("quote") or {}
