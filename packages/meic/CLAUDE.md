@@ -422,6 +422,7 @@ preserve: [docs/risk-profiles.md](docs/risk-profiles.md#design-rationale).
 | `vix_band_low_max` / `_elevated_max` / `_high_max` | `18` / `25` / `35` | VIX band boundaries |
 | `max_wing_width` | `10` | Upper bound (points); the agent picks the width per entry |
 | `wing_widths_by_symbol` | per-symbol lists | Candidate widths per instrument, scanned widest-first (10 points is ~0.13% of SPX but ~3.4% of IWM). `DEFAULT` covers unlisted symbols |
+| `equalize_credit` | `false` | Opt-in (per profile): also build put-wing/call-wing width-pair candidates and enter the most credit-balanced one that clears every gate, instead of widest-first. Hidden from every profile without the key, so existing books are untouched. `wing_width` records the wider wing; `put_wing`/`call_wing` on the row hold each side's own |
 | `quantity` | `1` | Contracts per IC |
 | `daily_ic_trade_target` | `200` | Guidance, never a cap — a never-binding backstop under independent sampling. `0` disables IC entries (ORB-only) |
 | `overlap_scope` | `"shorts"` | Check against this arm's open positions on the same symbol: `"all"` (any shared strike), `"shorts"` (exact repeat of the short pair), `"none"`, `"sign"` (see above). Default `"all"`. **Live sees only the arm `live.arm` names** (none: the top level); no other arm's value reaches it |

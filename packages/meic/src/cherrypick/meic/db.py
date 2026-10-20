@@ -490,6 +490,14 @@ _ADDED_TRADE_COLUMNS = {
     # Through 09-16 the tag was `advised:<base>` and every experiment on that base reused it, so
     # this is what splits those rows apart; since 09-17 the tag names the experiment itself.
     "experiment_id": "TEXT",
+    # Per-side wing widths (2026-10-20, `equalize_credit`): the put wing and the
+    # call wing sized independently so the two side credits can be balanced -- delta still pins
+    # the shorts, width tunes each side's credit. Equal to `wing_width` on every single-width
+    # trade; NULL on every row written before the columns existed, which read `wing_width` as
+    # always. `wing_width` keeps meaning the WIDER of the two (buying power's "widest single-side
+    # loss", the credit floors). Additive only, same orchestrator constraint as everything above.
+    "put_wing": "REAL",
+    "call_wing": "REAL",
 }
 
 

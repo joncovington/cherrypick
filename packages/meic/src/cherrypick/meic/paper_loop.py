@@ -402,6 +402,37 @@ def candidates_from_chain(entries, last, widths, delta_targets, default_delta):
                         "is_default_delta": is_default,
                     }
                 )
+        # Equalization menu (2026-10-20, `equalize_credit`): off-diagonal width PAIRS, each wing
+        # sized independently -- what a trader does when the two side credits don't match: adjust
+        # one wing until they do, delta still pinning the shorts. Tagged `is_pair` with
+        # `put_wing`/`call_wing`; `wing_width` carries the WIDER of the two so every existing
+        # single-width reader (buying power's "widest single-side loss", the credit floors, the
+        # widest-first sort) sees the conservative scalar it always has. `_select_candidates`
+        # hides these from any profile that has not opted in, so every existing arm's menu is
+        # unchanged. Diagonal (w, w) pairs are the singles already built above, not repeated.
+        # Built unconditionally to keep this function pure and profile-blind like the rest of it;
+        # the menu is shared per symbol across profiles, so visibility is selection's job.
+        for wp in widths:
+            for wc in widths:
+                if wp == wc:
+                    continue
+                lc = by_call.get(short_call["strike"] + wc)
+                lp = by_put.get(short_put["strike"] - wp)
+                if lc and lp:
+                    candidates.append(
+                        {
+                            "wing_width": max(wp, wc),
+                            "put_wing": wp,
+                            "call_wing": wc,
+                            "is_pair": True,
+                            "short_put": short_put,
+                            "long_put": lp,
+                            "short_call": short_call,
+                            "long_call": lc,
+                            "short_delta": dt,
+                            "is_default_delta": is_default,
+                        }
+                    )
     if not candidates:
         return [], leg_quotes, "no short strike near delta"
     return candidates, leg_quotes, None

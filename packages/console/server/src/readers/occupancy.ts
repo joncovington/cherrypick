@@ -117,7 +117,7 @@ export function readOccupancy(
       }
       const rows = db
         .prepare<unknown[], Record<string, unknown>>(
-          `SELECT ${armColumn} AS arm, put_strike, call_strike, wing_width
+          `SELECT ${armColumn} AS arm, put_strike, call_strike, wing_width, put_wing, call_wing
              FROM ic_trades WHERE ${clauses.join(" AND ")}`,
         )
         .all(...params);
@@ -127,15 +127,19 @@ export function readOccupancy(
         const w = num(r["wing_width"]);
         const p = num(r["put_strike"]);
         const c = num(r["call_strike"]);
+        // Per-side widths on an `equalize_credit` row (each wing sized independently, 2026-10-20);
+        // NULL on every other row, which reads the scalar as always.
+        const pw = num(r["put_wing"]) ?? w;
+        const cw = num(r["call_wing"]) ?? w;
         // A row without a wing width contributes its shorts alone rather than
         // being dropped — same permissive-in-one-direction rule `ic_legs` keeps.
         if (p !== null) {
           legs.push({ arm, right: "P", strike: p, sign: -1, count: 1 });
-          if (w !== null) legs.push({ arm, right: "P", strike: p - w, sign: 1, count: 1 });
+          if (pw !== null) legs.push({ arm, right: "P", strike: p - pw, sign: 1, count: 1 });
         }
         if (c !== null) {
           legs.push({ arm, right: "C", strike: c, sign: -1, count: 1 });
-          if (w !== null) legs.push({ arm, right: "C", strike: c + w, sign: 1, count: 1 });
+          if (cw !== null) legs.push({ arm, right: "C", strike: c + cw, sign: 1, count: 1 });
         }
       }
       return { mode, module, tradeDate, legs: merge(legs) };
