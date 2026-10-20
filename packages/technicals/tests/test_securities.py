@@ -157,3 +157,38 @@ def test_no_dollar_volume_file_is_no_list_never_a_list_of_unknown_ranks():
     out = securities.build(day="2026-10-16")
     assert not out["ok"] and "fetch_dollar_volume" in out["reason"]
     assert not (paths.securities_dir() / "2026-10-16.json").exists()
+
+
+def test_the_liquid_optionable_names_are_rank_one_or_two_with_options_in_the_stores_spelling():
+    rows = [
+        {"symbol": "AAPL", "hasOptions": True, "liquidityRank": 1},
+        {"symbol": "BRK/B", "hasOptions": True, "liquidityRank": 2},
+        {"symbol": "THIN", "hasOptions": True, "liquidityRank": 3},
+        {"symbol": "NOOP", "hasOptions": False, "liquidityRank": 1},
+        {"symbol": "UNKN", "hasOptions": True, "liquidityRank": None},
+    ]
+    assert securities.liquid_optionable_rows(rows) == ["AAPL", "BRK.B"]
+
+
+def test_with_no_list_built_the_shipped_seed_stands_in_and_says_so():
+    names, source = securities.liquid_optionable("2026-10-16")
+    assert names == securities.seed_universe() and "seed" in source
+    _write(
+        paths.securities_dir() / "2026-10-16.json",
+        {"rows": [{"symbol": "AAPL", "hasOptions": True, "liquidityRank": 1}]},
+    )
+    names, source = securities.liquid_optionable("2026-10-16")
+    assert names == ["AAPL"] and source == "public list of 2026-10-16"
+
+
+def test_the_shipped_seed_is_bare_tickers_and_nothing_else():
+    """The seed ships in a public repo: tickers only, no figure of any source."""
+    import re
+
+    doc = json.loads(securities.SEED_UNIVERSE.read_text(encoding="utf-8"))
+    assert set(doc) == {"_note", "from", "rule", "symbols"}
+    assert doc["from"].startswith("public security list of ")  # ours, never the vendor's
+    syms = doc["symbols"]
+    assert len(syms) > 300 and syms == sorted(set(syms))
+    assert all(isinstance(x, str) and re.fullmatch(r"[A-Z][A-Z0-9.$]{0,9}", x) for x in syms)
+    assert {"AAPL", "SPY", "QQQ"} <= set(syms)

@@ -172,3 +172,18 @@ def test_cli_dispatches_capabilities(monkeypatch):
     monkeypatch.setattr(cli, "_emit", lambda obj: seen.setdefault("out", obj))
     cli.cmd_capabilities(_cfg(claude=True), SimpleNamespace(cap_set=None, detect=False, write=False))
     assert seen["out"]["capabilities"] == {"claude": True, "dolt": False}
+
+
+def test_doctor_warns_without_dolt_and_says_how_but_claude_stays_optional(monkeypatch):
+    """Dolt is expected from 2026-10-19 (the installer sets it up); Claude Code stays optional."""
+    from cherrypick.orchestrator import doctor
+
+    absent = {
+        "dolt": {"present": False, "detail": "dolt not found on PATH"},
+        "claude": {"present": False, "detail": "claude not found on PATH"},
+    }
+    monkeypatch.setattr(caps, "detect", lambda cfg: absent)
+    checks = {c.name: c for c in doctor._capability_checks(_cfg())}
+    assert checks["capability.dolt"].status == doctor.WARN
+    assert "run the installer again" in checks["capability.dolt"].detail
+    assert checks["capability.claude"].status == doctor.OK

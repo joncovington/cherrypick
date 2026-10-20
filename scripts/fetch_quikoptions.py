@@ -58,6 +58,11 @@ import _common  # noqa: E402
 SITE = "https://app.quikoptions.com"
 REPORT_URL = f"{SITE}/Market/Options/THOR/Stock"
 REPORT_MARKER = "Hot Options Report"
+# The menus Calendars has lived under, newest first: MORE since 2026-10-19 (a dropdown holding a
+# Resources section); RESOURCES, a page with a Calendars tab, from the 2026-10-09 redesign. Both
+# land on CALENDAR_URL, which is typed in, as a person would, when neither menu shows.
+CALENDAR_MENUS = ("MORE", "RESOURCES")
+CALENDAR_URL = f"{SITE}/Calendars"
 SIGN_IN_TIMEOUT_S = 600
 TABLES_TIMEOUT_S = 90
 ET = ZoneInfo("America/New_York")
@@ -796,6 +801,10 @@ class NeedsPerson(RuntimeError):
     """Signed out, a challenge, or the page never drew: a person has to look."""
 
 
+class CalendarMissed(NeedsPerson):
+    """The report saved, then the calendar did not: a day short of its events, not a sign-in."""
+
+
 # ------------------------------------------------------------------------------------------------
 # The browser.
 # ------------------------------------------------------------------------------------------------
@@ -1013,14 +1022,25 @@ def capture_report(page, hits: list[str]) -> str:
     return result
 
 
+def _open_calendar(page) -> None:
+    """Reach the calendar through whichever menu holds it, else by its address. The menu has moved
+    twice (2026-10-09, 2026-10-19) and each move cost a day's calendar to a `NeedsPerson`; the
+    address has not changed, so a missing menu is logged and the capture carries on. A page that
+    then never draws the calendar is still reported, by `_wait_for_tables`."""
+    for menu in CALENDAR_MENUS:
+        if not _click_text(page, menu):
+            continue
+        time.sleep(random.uniform(1.0, 2.5))
+        # Calendars is drawn after the menu or page opens; on 2026-10-12 one look 1-2.5 s after the
+        # click missed it.
+        if _click_text(page, "Calendars", exact=False, wait_s=30):
+            return
+    _log(f"no menu reached Calendars; going to {CALENDAR_URL}")
+    page.goto(CALENDAR_URL, wait_until="domcontentloaded", timeout=90_000)
+
+
 def capture_calendar(page, hits: list[str]) -> str:
-    if not _click_text(page, "RESOURCES"):
-        raise NeedsPerson("the Resources menu was not found")
-    time.sleep(random.uniform(1.0, 2.5))
-    # Since the 2026-10-09 redesign RESOURCES opens a page, not a menu, and Calendars is a tab on
-    # it drawn after the page loads; on 2026-10-12 one look 1-2.5 s after the click missed it.
-    if not _click_text(page, "Calendars", exact=False, wait_s=30):
-        raise NeedsPerson("the Calendars link was not found")
+    _open_calendar(page)
     _wait_for_tables(page, _calendar_ready, hits)
     time.sleep(random.uniform(8, 15))
     if hits:
@@ -1058,13 +1078,19 @@ def cmd_hot_options(args) -> int:
                 capture_report(page, hits)
                 if not args.no_calendar:
                     _pause()
-                    capture_calendar(page, hits)
+                    try:
+                        capture_calendar(page, hits)
+                    except NeedsPerson as exc:
+                        raise CalendarMissed(str(exc)) from exc
             finally:
                 ctx.close()
     except Throttled as exc:
         start_cooldown(str(exc))
         _warn("QuikOptions throttled: 24-hour cooldown", str(exc))
         return 2
+    except CalendarMissed as exc:
+        _warn("QuikOptions calendar missed (report saved)", str(exc))
+        return 1
     except NeedsPerson as exc:
         _warn("QuikOptions needs a person", str(exc))
         return 1

@@ -187,6 +187,16 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   fidelity tab that showed these rates was retired on 2026-10-19; the per-session files stay in
   `screeners/`, and `score-screeners` keeps running because the income tabs' "ours" strike is its
   `picks`.
+- **Our income lists** (`incomelists.py`, `income-lists`, 2026-10-19): the short-put and covered-call
+  lists the Screeners page shows in place of the vendor's. From the afternoon income chains
+  (`fetch_screener_greeks.py income`, the tradable names and the passing reference funds), each
+  option priced from its mid (Black-Scholes IV and delta at 4%), the strike nearest 16 delta -- a put
+  on the cycle monthly, a call on the reading's covered-call expiry -- kept only within 0.05 of it, the
+  history replay's tolerance. Rule numbers are `cherrypick.core.incomerules`', shared with manage.
+  The price is the working one, the return over the cash it ties up (strike for a put, share price
+  for a call), rows by symbol. **No edge**: the rule is the least-bad of two studies that found none.
+  The fetch always quotes the two listed strikes nearest one standard deviation out (`aimed_strikes`),
+  so thinning cannot skip the 16-delta strike.
 - **The security list** (`securities.py`, `securities`, 2026-10-17): every listed symbol's type
   (Nasdaq Trader's directory), options (any OCC volume in 20 sessions) and a liquidity rank that is
   **ours**: 2 at 200 contracts and $100M of stock a day, 1 at 2,000 and $300M. The dollar volume
@@ -298,7 +308,11 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
 - **Liquidity verdicts** (`liquidity.py`, `liquidity` command, nightly 18:57 ET) hold a name that
   fails the options-tradable test **illiquid until the monthly sweep** (the first trading day of the
   month). The test's dollar volume is the candle file's for every name (2026-10-19; before, the
-  store's bars, else Dolt's). Every broker-spending script skips those names (universe measurement, the IV-rank fetch,
+  store's bars, else Dolt's). It judges the store's names, the screener names and, from
+  2026-10-19, every **liquid optionable** name (`securities.liquid_optionable`: the current security
+  list's rank 1-2 optionable names, else the shipped `seed_universe.json`) -- the income lists'
+  universe, which a fresh install (no universe builder, no vendor lists) would otherwise lack; the
+  IV-rank fetch reads the same names. Every broker-spending script skips those names (universe measurement, the IV-rank fetch,
   the screener spread readings and greeks, the earnings moves), and no listed view names them:
   chart files, the picker, the watchlist, and the report's lists. Their bars stay in the store and
   every count still includes them -- breadth, sector net, rank cut-offs -- because the engines are
@@ -375,6 +389,7 @@ The rest run daily under the same `technicals` block (times ET, each overridable
 `technicals-index-bars` 06:00, `-history` 06:20, `-fundamentals` 06:25, `-report` 06:30,
 `-stage-lists` 06:35, `-board` 06:45, `-earnings-record` 06:50; in the evening `-sectors` 18:40,
 `-dollar-volume` 18:35 (the one that needs no Dolt: it follows the block's own switch),
+`-income-lists` 15:10 (after the 14:45 income chains, no Dolt; off with `market_report.income`),
 `-earnings-times` 18:45, `-securities` 18:48, `-iv-rank` 18:50, `-liquidity` 18:57,
 `-earnings-calendar` 19:10 (and a late pass at 23:40), `-dividends` 19:30, `-revisions` 20:15.
 
@@ -419,6 +434,8 @@ tight, open interest) and soft thresholds as a marker.
 | `python -m cherrypick.technicals score-board` | The board's six methods vs every saved board: found, tagged, extra; rows on the board's side. |
 | `python -m cherrypick.technicals securities [--session D]` | The public security list from local files, `securities/current.json` naming the list readers use, and the public list scored against the vendor's of that day where one is saved. |
 | `python -m cherrypick.technicals score-bearing` | The bearing lookup fitted on earlier security lists, scored on the latest. |
+| `python -m cherrypick.technicals seed-universe [--write]` | Where the income lists' universe comes from tonight (the security list's rank 1-2 optionable names, or the shipped seed when none is built); `--write` regenerates `seed_universe.json` from the newest PUBLIC list -- tickers only, never the vendor's list, never a figure. |
+| `python -m cherrypick.technicals income-lists [--day D] [--source FILE]` | Our own short-put and covered-call lists from the newest afternoon income chains: the strike nearest 16 delta within 0.05 (`cherrypick.core.incomerules`), at the working price, earnings against each trade's expiry; `income-lists/<session>.json` (`.trial.json` with `--source`). |
 | `python -m cherrypick.technicals score-screeners [--rescore]` | The income screens' expiry, strike and return rules vs every saved list with its broker chain; one file per session in `screeners/`, totals printed. |
 | `python -m cherrypick.technicals skate [--day YYYY-MM-DD]` | The skate screen's fixed and by-expiry range bands for every options-tradable name, side and weekly expiry to 63 days, with each band's skate curve over history; `skate/<day>.json`. |
 | `python -m cherrypick.technicals earnings-record [--today D] [--dry-run]` | The earnings calendar's forward record: each past announcement's move against the expected move (0.85 × straddle) the calendar showed the session before, whether a strong read called it, and the suggested spread's money on its marks; `earnings-calendar/record.json`, rebuilt whole. Reads the local Dolt. |

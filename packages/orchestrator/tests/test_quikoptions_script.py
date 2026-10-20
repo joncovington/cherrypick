@@ -17,8 +17,11 @@ import html
 import importlib.util
 import json
 import re
+import sys
+from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -525,6 +528,136 @@ def test_a_429_while_tables_draw_is_throttling_not_a_person(monkeypatch):
         fq._wait_for_tables(_Page(), lambda html: False, ["429 https://app.quikoptions.com/_blazor"], 0)
     with pytest.raises(fq.NeedsPerson):
         fq._wait_for_tables(_Page(), lambda html: False, [], 0)
+
+
+class _NavPage:
+    """A page whose visible text is `shown`; clicking a menu named in `opens` shows its items. Its
+    clock moves only when the page is waited on, so a 30 s wait costs nothing."""
+
+    url = fq.REPORT_URL
+
+    def __init__(self, shown=(), opens=None):
+        self.shown, self.opens = set(shown), opens or {}
+        self.clicks: list[str] = []
+        self.gone_to: str | None = None
+        self.now = 0.0
+
+    def get_by_text(self, text, exact=True):
+        page = self
+
+        class _Locator:
+            def filter(self, visible):
+                return self
+
+            @property
+            def first(self):
+                return self
+
+            def _match(self):
+                if exact:
+                    return text if text in page.shown else None
+                return next((s for s in sorted(page.shown) if text.lower() in s.lower()), None)
+
+            def count(self):
+                return int(self._match() is not None)
+
+            def scroll_into_view_if_needed(self):
+                pass
+
+            def hover(self):
+                pass
+
+            def click(self):
+                hit = self._match()
+                page.clicks.append(hit)
+                page.shown |= page.opens.get(hit, set())
+
+        return _Locator()
+
+    def wait_for_timeout(self, ms):
+        self.now += ms / 1000
+
+    def goto(self, url, **_):
+        self.gone_to = url
+
+
+@pytest.fixture
+def nav_page(monkeypatch):
+    def make(**kw):
+        page = _NavPage(**kw)
+        monkeypatch.setattr(fq, "time", SimpleNamespace(sleep=lambda s: None, monotonic=lambda: page.now))
+        return page
+
+    return make
+
+
+def test_the_calendar_is_reached_through_more_since_2026_10_19(nav_page):
+    page = nav_page(
+        shown={"MORE", "MARKETS"}, opens={"MORE": {"Resources", "Calendars", "Earnings Calendar"}}
+    )
+    fq._open_calendar(page)
+    assert page.clicks == ["MORE", "Calendars"] and page.gone_to is None
+
+
+def test_the_resources_layout_still_reaches_the_calendar(nav_page):
+    page = nav_page(shown={"RESOURCES"}, opens={"RESOURCES": {"Calendars"}})
+    fq._open_calendar(page)
+    assert page.clicks == ["RESOURCES", "Calendars"] and page.gone_to is None
+
+
+def test_with_no_menu_the_calendar_is_opened_by_its_address(nav_page):
+    page = nav_page(shown={"MARKETS", "LISTS"})
+    fq._open_calendar(page)
+    assert page.clicks == [] and page.gone_to == fq.CALENDAR_URL
+
+
+def test_a_menu_without_calendars_falls_through_to_the_address(nav_page):
+    page = nav_page(shown={"MORE"}, opens={"MORE": {"Scoreboards"}})
+    fq._open_calendar(page)
+    assert page.clicks == ["MORE"] and page.gone_to == fq.CALENDAR_URL
+    assert page.now >= 30  # Calendars was given its full wait before the fallback
+
+
+def test_a_missed_calendar_after_a_saved_report_says_so(monkeypatch):
+    """The 2026-10-19 warning read "needs a person", the sign-in title, for a day whose report had
+    saved: a missed calendar now says it is partial."""
+
+    class _Ctx:
+        pages = [object()]
+
+        def close(self):
+            pass
+
+    @contextmanager
+    def sync_playwright():
+        yield None
+
+    fake = ModuleType("playwright.sync_api")
+    fake.Error, fake.sync_playwright = RuntimeError, sync_playwright
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake)
+    monkeypatch.setattr(fq, "cooldown_until", lambda: None)
+    monkeypatch.setattr(fq, "_open_browser", lambda pw, headed: _Ctx())
+    monkeypatch.setattr(fq, "_watch", lambda page, hits: None)
+    monkeypatch.setattr(fq, "_pause", lambda: None)
+    monkeypatch.setattr(fq, "capture_report", lambda page, hits: "saved")
+    warned: list[str] = []
+    monkeypatch.setattr(fq, "_warn", lambda title, message: warned.append(title))
+    args = SimpleNamespace(jitter=0, headless=True, no_calendar=False)
+
+    def no_calendar(page, hits):
+        raise fq.NeedsPerson("the tables were not drawn within 90 s")
+
+    monkeypatch.setattr(fq, "capture_calendar", no_calendar)
+    assert fq.cmd_hot_options(args) == 1
+    assert warned == ["QuikOptions calendar missed (report saved)"]
+
+    def signed_out(page, hits):
+        raise fq.NeedsPerson("signed out")
+
+    warned.clear()
+    monkeypatch.setattr(fq, "capture_report", signed_out)
+    assert fq.cmd_hot_options(args) == 1
+    assert warned == ["QuikOptions needs a person"]
 
 
 class _Request:

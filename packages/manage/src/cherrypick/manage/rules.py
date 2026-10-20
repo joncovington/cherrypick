@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import home as _home
+from cherrypick.core import incomerules as _income
 
 from cherrypick.manage import shapes as _shapes
 
@@ -282,14 +283,17 @@ DEFAULT_RULES: dict[str, Any] = {
         },
         # Income trades from our own universe, sized to the account (candidates.py). The structures
         # are the screener rules on the cycle monthly; the caps scale with net liq. The short put and
-        # covered call deltas are the Screeners lists' (16, 2026-10-19: the short-put and covered-call
-        # delta studies found no edge at the vendor's 0.40 and 0.165, and the least loss at 16).
+        # covered call deltas are the Screeners lists' (`cherrypick.core.incomerules`, 16, 2026-10-19:
+        # the delta studies found no edge at the vendor's 0.40 and 0.165, and the least loss at 16).
         # Buying power is held under the VIX-scaled cap the reading states, else `max_buying_power_pct`.
         "candidates": {
             "enabled": True,
-            "short_put_delta": 0.16,
+            "short_put_delta": _income.SHORT_PUT_DELTA,
             "spread_long_delta": 0.25,
-            "covered_call_delta": 0.16,
+            "covered_call_delta": _income.COVERED_CALL_DELTA,
+            # A short put or covered call whose nearest strike misses its delta by more is not built:
+            # the Screeners lists' tolerance, the history replay's (`cherrypick.core.incomerules`).
+            "delta_tolerance": _income.DELTA_TOLERANCE,
             "spread_min_credit": 0.331,
             "per_trade_risk_pct": 0.03,
             "notional_per_name_pct": {"cash": 0.25, "margin": 0.50},

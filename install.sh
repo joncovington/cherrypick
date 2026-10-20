@@ -8,6 +8,7 @@
 #   --yes                accept every default without asking
 #   --accept-disclaimer  you have read DISCLAIMER.md and accept it
 #   --skip-dolt          do not offer the Dolt setup (earnings and technicals stay off)
+#   --skip-bootstrap     do not build the income lists' universe now (it builds this evening)
 #   --with-desk          also install the EXPERIMENTAL manual desk (packages/desk)
 #   --no-start           install only; do not start the suite
 #   --config-history [--config-remote URL]  keep a git history of your settings
@@ -17,7 +18,7 @@
 
 set -euo pipefail
 
-YES=0; ACCEPT=0; SKIP_DOLT=0; WITH_DESK=0; NO_START=0; CONFIG_HISTORY=0; CONFIG_REMOTE=""
+YES=0; ACCEPT=0; SKIP_DOLT=0; SKIP_BOOTSTRAP=0; WITH_DESK=0; NO_START=0; CONFIG_HISTORY=0; CONFIG_REMOTE=""
 EXPECT_REMOTE=0
 for arg in "$@"; do
     if [ "$EXPECT_REMOTE" = 1 ]; then CONFIG_REMOTE="$arg"; EXPECT_REMOTE=0; continue; fi
@@ -27,6 +28,7 @@ for arg in "$@"; do
         --yes) YES=1 ;;
         --accept-disclaimer) ACCEPT=1 ;;
         --skip-dolt) SKIP_DOLT=1 ;;
+        --skip-bootstrap) SKIP_BOOTSTRAP=1 ;;
         --with-desk) WITH_DESK=1 ;;
         --no-start) NO_START=1 ;;
         -h|--help) sed -n 2,15p "$0"; exit 0 ;;
@@ -133,11 +135,11 @@ HAS_DOLT="$(cap dolt)"
 if [ "$HAS_DOLT" = True ]; then
     note "Dolt data: found - earnings and technicals are available."
 elif [ "$SKIP_DOLT" != 1 ]; then
-    step "Optional: Dolt market data (for the earnings module and the technicals report)"
+    step "Dolt market data (needed by the earnings module, the technicals report and the screeners)"
     note "Dolt is a free database tool. cherrypick uses three free public datasets from DoltHub"
-    note "(earnings calendar, option history and stock history). The download is SEVERAL GB and"
-    note "can take an hour or more on a slow connection."
-    if ask "Set up Dolt now?" n; then
+    note "(earnings calendar, option history and stock history), about 12 GB, which can take an hour"
+    note "or more on a slow connection. Without it those features stay off; --skip-dolt skips this."
+    if ask "Set up Dolt now?" y; then
         if ! command -v dolt >/dev/null 2>&1; then
             case "$(uname -s)" in
                 Darwin) note "Install Dolt with:  brew install dolt" ;;
@@ -162,8 +164,8 @@ elif [ "$SKIP_DOLT" != 1 ]; then
     fi
 fi
 if [ "$HAS_DOLT" != True ]; then
-    warn "Without the Dolt data, the EARNINGS module and the TECHNICALS report are turned off"
-    warn "automatically and hidden from the console. Run this installer again any time to add it."
+    warn "Without the Dolt data, the EARNINGS module, the TECHNICALS report and four Screeners tabs"
+    warn "are turned off (the tabs say what they need). Run this installer again any time to add it."
 fi
 
 # ------------------------------------------------------------------------------- broker
@@ -178,6 +180,18 @@ elif ask "Connect now?" y; then
     "$VPY" -m cherrypick.core.auth setup || warn "Not connected. Run this installer again to try once more."
 else
     warn "Skipped. Market data will not flow until you connect; run this installer again to do it."
+fi
+
+# ------------------------------------------------------------------------------- first lists
+# The evening jobs that build the income lists' universe, once, now (run.py bootstrap says why).
+CONNECTED="$("$VPY" -m cherrypick.core.auth status 2>/dev/null | "$VPY" -c "import json,sys; s=json.load(sys.stdin)['secrets']; print(bool(s.get('client_secret') and s.get('refresh_token')))" 2>/dev/null || echo False)"
+if [ "$CONNECTED" = True ] && [ "$SKIP_BOOTSTRAP" != 1 ]; then
+    step "Building the universe for your first lists (a few minutes)"
+    note "Market files, each optionable name's dollar volume, the security list, IV ranks and the"
+    note "liquidity check -- the jobs that otherwise first run this evening. The short-put and"
+    note "covered-call lists then appear after 15:10 ET on the next trading day."
+    if "$VPY" "$RUNPY" bootstrap >/dev/null; then note "Done."
+    else warn "Some steps did not finish; they run again this evening on their own. 'run.py bootstrap' retries now."; fi
 fi
 
 # ------------------------------------------------------------------------------- config history

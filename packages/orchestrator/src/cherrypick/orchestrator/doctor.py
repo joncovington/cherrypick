@@ -374,6 +374,14 @@ def _capability_checks(cfg: dict[str, Any]) -> list[Check]:
                     "run.py capabilities --detect --write to use it",
                 )
             )
+        elif name == "dolt":
+            # Required from 2026-10-19: without it the earnings module, the technicals engines and
+            # the Dolt-backed Screeners tabs are off. A WARN, not a FAIL: -SkipDolt is a choice.
+            detail = (
+                "not set up: the earnings module, the technicals report and four Screeners tabs are "
+                f"off; run the installer again to set it up ({found['detail']})"
+            )
+            out.append(Check(f"capability.{name}", WARN, detail))
         else:
             detail = f"not present; its features are off ({found['detail']})"
             out.append(Check(f"capability.{name}", OK, detail))

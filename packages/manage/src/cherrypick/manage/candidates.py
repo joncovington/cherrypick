@@ -162,7 +162,16 @@ def structures(
     name, every one of which takes 100 shares out of what a covered call may be written against."""
     spot = _f(entry.get("spot")) or 0.0
     out = []
-    sp = _nearest(options, "P", float(cfg["short_put_delta"])) if "short_put" in kinds else None
+    tol = float(cfg.get("delta_tolerance", 1.0))
+
+    def near_enough(o: dict | None, target: float) -> dict | None:
+        return o if o is not None and abs(abs(o["delta"]) - target) <= tol + 1e-9 else None
+
+    sp = (
+        near_enough(_nearest(options, "P", float(cfg["short_put_delta"])), float(cfg["short_put_delta"]))
+        if "short_put" in kinds
+        else None
+    )
     if sp:
         out.append({"kind": "short_put", "legs": [(sp, -1)]})
     for right in ("P", "C"):
@@ -187,7 +196,10 @@ def structures(
             )
     free = uncovered_shares(shares, short_calls)
     if free >= 100 and "covered_call" in kinds:
-        cc = _nearest(options, "C", float(cfg["covered_call_delta"]), lambda o: o["strike"] > spot)
+        cc = near_enough(
+            _nearest(options, "C", float(cfg["covered_call_delta"]), lambda o: o["strike"] > spot),
+            float(cfg["covered_call_delta"]),
+        )
         if cc:
             out.append({"kind": "covered_call", "legs": [(cc, -1)], "max_units": int(free // 100)})
     return out

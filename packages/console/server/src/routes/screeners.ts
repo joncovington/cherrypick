@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type {
   EarningsCalendarPayload,
+  IncomeList,
+  IncomeListPayload,
   EarningsRecordPayload,
   ScreenerList,
   ScreenerPayload,
@@ -10,12 +12,25 @@ import type {
 import type { ConsoleConfig } from "../config.js";
 import { readEarningsCalendar } from "../readers/earningsCalendar.js";
 import { readEarningsRecord } from "../readers/earningsRecord.js";
+import { INCOME_LISTS, readIncomeList } from "../readers/incomeLists.js";
 import { readScreener, SCREENER_LISTS } from "../readers/screeners.js";
 import { readSignalBoard } from "../readers/signalBoard.js";
 import { readSkate } from "../readers/skate.js";
 
 export function registerScreenerRoutes(app: FastifyInstance, config: ConsoleConfig): void {
   // Registered before the list route, so `earnings`, `board` and `skate` are never read as list names.
+  // Our own lists (technicals income-lists): two path segments, so never read as a vendor list name.
+  app.get<{ Params: { list: string }; Querystring: { day?: string } }>(
+    "/api/screeners/own/:list",
+    async (req, reply): Promise<IncomeListPayload | undefined> => {
+      const which = req.params.list as IncomeList;
+      if (!INCOME_LISTS.includes(which)) {
+        await reply.code(404).send({ error: `no list of ours named ${req.params.list}` });
+        return undefined;
+      }
+      return readIncomeList(config, which, req.query.day ?? null);
+    },
+  );
   app.get<{ Querystring: { day?: string } }>(
     "/api/screeners/board",
     async (req): Promise<SignalBoardPayload> => readSignalBoard(config, req.query.day ?? null),

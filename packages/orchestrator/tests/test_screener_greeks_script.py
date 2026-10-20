@@ -188,6 +188,40 @@ def test_the_covered_call_has_its_own_30_to_45_day_monthly():
     assert (plan["cc"]["expiry"], plan["cc"]["window"], plan["cc"]["legs"]) == ("2026-12-18", "cycle", None)
 
 
+def test_each_name_reads_its_own_latest_metrics_not_only_the_newest_days():
+    """A night's fetch files names under several days; the newest day alone lost AGQ's IV and
+    earnings dates on 2026-10-19. A reading older than ten days is no reading."""
+    days = {
+        "2026-10-05": {"OLD": {"iv_index": 0.9}},
+        "2026-10-16": {"AGQ": {"iv_index": 0.7, "earnings_date": None}, "AAPL": {"iv_index": 0.2}},
+        "2026-10-19": {"AAPL": {"iv_index": 0.3}},
+    }
+    day, rows = fsg.merge_metrics(days)
+    assert day == "2026-10-19"
+    assert rows["AAPL"]["iv_index"] == 0.3 and rows["AGQ"]["iv_index"] == 0.7  # newest per name
+    assert "OLD" not in rows
+    assert fsg.merge_metrics({}) == (None, {})
+
+
+def test_the_plan_reaches_by_the_iv_index_else_the_historical_vol():
+    assert fsg.plan_vol({"iv_index": 0.3, "hv_30": 50.0}) == 0.3
+    assert fsg.plan_vol({"iv_index": None, "hv_30": 42.5}) == pytest.approx(0.425)  # hv_30 is in percent
+    assert fsg.plan_vol({"iv_index": 0.0, "hv_30": None}) is None and fsg.plan_vol({}) is None
+
+
+def test_the_strikes_nearest_16_delta_are_always_quoted():
+    """Evenly thinned strikes can skip the 16-delta one; the strikes nearest one standard deviation
+    out are added whatever the thinning."""
+    assert fsg.aimed_strikes([80.0, 85.0, 90.0, 95.0], 100.0, "P", None, 50) == []
+    # 40% over 50 days is ~14.8% a standard deviation: ~86.2 for a put, ~116 for a call.
+    assert fsg.aimed_strikes([float(k) for k in range(70, 100)], 100.0, "P", 0.40, 50) == [86.0, 87.0]
+    assert fsg.aimed_strikes([float(k) for k in range(101, 131)], 100.0, "C", 0.40, 50) == [116.0, 115.0]
+    strikes = [(float(k), f"C{k}", f"P{k}") for k in range(40, 201)]
+    plan = fsg.income_plan([_exp("2026-12-18", 50, strikes)], 100.0, _is_monthly, iv=0.40)
+    puts = {leg["strike"] for leg in plan["legs"] if leg["right"] == "P"}
+    assert {86.0, 87.0} <= puts and len(puts) <= fsg.INCOME_STRIKES + fsg.AIM_STRIKES
+
+
 def test_the_stress_move_is_the_names_bad_tail_over_the_holding_period():
     # A steady 1% a session up, with one 30% crash: the worst 5-session windows hold the crash.
     closes = [100.0 * 1.01**i for i in range(400)]

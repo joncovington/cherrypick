@@ -58,7 +58,7 @@ import json
 import math
 import sys
 import time
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from cherrypick.core import legbars
@@ -1157,11 +1157,50 @@ def covered_call_expiry(expirations: list[dict], is_monthly) -> dict | None:
     return max(inside, key=lambda e: e["dte"]) if inside else None
 
 
-def _plan_legs(expiry: dict, spot: float, rights: str, reach: float, most: int, near: int) -> list[dict]:
+# The listed strikes nearest the lists' 16-delta point always quoted, whatever the thinning: a 16-delta
+# strike sits about one standard deviation out, and evenly thinned strikes left the nearest one more
+# than 0.05 delta away on 13% of covered calls (2026-10-19; the lists drop such a pick).
+AIM_SD = 1.0
+AIM_STRIKES = 2
+
+
+def plan_vol(metrics: dict) -> float | None:
+    """The vol the plan reaches and aims by: the broker's IV index (a fraction), else its 30-day
+    historical vol (stated in percent) -- the leveraged funds and some small names carry no IV index
+    (AGQ, FCEL, NUGT on 2026-10-19), and without a vol their 16-delta strike was never aimed at."""
+    iv = _f(metrics.get("iv_index"))
+    if iv and iv > 0:
+        return iv
+    hv = _f(metrics.get("hv_30"))
+    return hv / 100.0 if hv and hv > 0 else None
+
+
+def aimed_strikes(listed: list[float], spot: float, right: str, iv: float | None, dte: int) -> list[float]:
+    """The AIM_STRIKES listed strikes out of the money nearest `spot` moved AIM_SD standard deviations
+    (down for a put, up for a call) at `iv` over `dte` days; none without a vol."""
+    if not iv or iv <= 0 or dte <= 0:
+        return []
+    move = math.exp((-1 if right == "P" else 1) * AIM_SD * iv * math.sqrt(dte / 365.0))
+    target = spot * move
+    otm = [k for k in listed if (k < spot if right == "P" else k > spot)]
+    return sorted(otm, key=lambda k: (abs(k - target), k))[:AIM_STRIKES]
+
+
+def _plan_legs(
+    expiry: dict,
+    spot: float,
+    rights: str,
+    reach: float,
+    most: int,
+    near: int,
+    iv: float | None = None,
+) -> list[dict]:
     by_strike = {float(k): (call, put) for k, call, put in expiry["strikes"]}
     legs = []
     for right in rights:
-        for k in candidate_strikes(list(by_strike), spot, right, reach, most, near):
+        picked = candidate_strikes(list(by_strike), spot, right, reach, most, near)
+        aimed = aimed_strikes(list(by_strike), spot, right, iv, int(expiry.get("dte") or 0))
+        for k in sorted(set(picked) | set(aimed)):
             call, put = by_strike[k]
             option = put if right == "P" else call
             if option:
@@ -1179,7 +1218,7 @@ def income_plan(listing: list[dict], spot: float | None, is_monthly, iv: float |
     if cyc is None or not spot:
         return None
     reach = income_reach(iv, cyc["dte"])
-    legs = _plan_legs(cyc, spot, "PC", reach, INCOME_STRIKES, INCOME_NEAR)
+    legs = _plan_legs(cyc, spot, "PC", reach, INCOME_STRIKES, INCOME_NEAR, iv)
     ce = covered_call_expiry(listing, is_monthly)
     if ce is None or ce["expiration"] == cyc["expiration"]:
         cc = {
@@ -1194,7 +1233,7 @@ def income_plan(listing: list[dict], spot: float | None, is_monthly, iv: float |
             "expiry": ce["expiration"],
             "dte": ce["dte"],
             "window": "30-45",
-            "legs": _plan_legs(ce, spot, "C", cc_reach, CC_STRIKES, CC_NEAR),
+            "legs": _plan_legs(ce, spot, "C", cc_reach, CC_STRIKES, CC_NEAR, iv),
         }
     return {"expiry": cyc["expiration"], "dte": cyc["dte"], "reach": round(reach, 4), "legs": legs, "cc": cc}
 
@@ -1255,18 +1294,35 @@ def income_metrics(rows: dict, sym: str) -> dict:
     return {k: r.get(k) for k in keys}
 
 
+# How old a name's own metrics reading may be and still stand for it (technicals `tradable`'s rule).
+METRICS_MAX_AGE_DAYS = 10
+
+
+def merge_metrics(days: dict[str, dict]) -> tuple[str | None, dict]:
+    """(the newest day, each name's latest row within METRICS_MAX_AGE_DAYS of it). The file files a
+    row under the broker's own update time, so one night's fetch lands names on several days; reading
+    only the newest day lost every name filed under an earlier one -- their IV, and with it the
+    reach and aim, and their earnings dates (AGQ, FCEL, GRAB on 2026-10-19)."""
+    if not days:
+        return None, {}
+    newest = max(days)
+    oldest = (datetime.fromisoformat(newest) - timedelta(days=METRICS_MAX_AGE_DAYS)).date().isoformat()
+    out: dict[str, dict] = {}
+    for d in sorted(days):
+        if d >= oldest:
+            out.update(days[d] or {})
+    return newest, out
+
+
 def latest_metrics() -> tuple[str | None, dict]:
-    """(day, rows) of the newest day in the nightly metrics file; (None, {}) without it."""
+    """(newest day, each name's latest row) from the nightly metrics file; (None, {}) without it."""
     try:
         days = (
             json.loads((store_dir() / "iv" / "tastytrade.json").read_text(encoding="utf-8")).get("days") or {}
         )
     except (OSError, ValueError):
         return None, {}
-    if not days:
-        return None, {}
-    day = max(days)
-    return day, days[day] or {}
+    return merge_metrics(days)
 
 
 async def _income_quotes(
@@ -1340,7 +1396,7 @@ def cmd_income(args) -> int:
     }
     started = datetime.now(UTC)
     metrics_day, metric_rows = latest_metrics()
-    ivs = {s: _f((metric_rows.get(s) or {}).get("iv_index")) for s in names}
+    ivs = {s: plan_vol(metric_rows.get(s) or {}) for s in names}
     try:
         session = SessionManager(store).get_session()
         spots, plans, problem = asyncio.run(_income_quotes(session, ub, names, cache, ivs))
@@ -1395,6 +1451,7 @@ def cmd_income(args) -> int:
                 "reach": {"min": INCOME_REACH, "sd": INCOME_REACH_SD, "max": INCOME_REACH_MAX},
                 "strikes": INCOME_STRIKES,
                 "covered_call": {"window": COVERED_CALL_RANGE, "else": "cycle", "strikes": CC_STRIKES},
+                "aimed": {"sd": AIM_SD, "strikes": AIM_STRIKES},
                 "stress_sessions": STRESS_SESSIONS,
             },
             "bars": LEG_BARS,

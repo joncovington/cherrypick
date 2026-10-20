@@ -244,6 +244,11 @@ def main(argv=None) -> int:
     # less the names held illiquid: between sweeps their expiry count is not re-read (2026-10-07).
     skip = liquidity.skip()
     todo = [s for s in sorted({*symbols.all_symbols(), *liquidity.screener_names()}) if s not in skip]
+    # The liquid optionable names (the income lists' universe, 2026-10-19), less the held-illiquid:
+    # the liquidity verdict judges them by this fetch's weekly-expiry count.
+    from cherrypick.technicals import securities as _sec
+
+    todo = list(dict.fromkeys([*todo, *(s for s in _sec.liquid_optionable()[0] if s not in skip)]))
     # The earnings calendar's names, skip or not: its expected move needs every one (2026-10-17).
     todo = list(dict.fromkeys([*todo, *calendar_names(latest_security_list())]))
     if args.symbols_file:

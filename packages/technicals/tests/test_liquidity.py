@@ -99,10 +99,11 @@ def test_the_build_judges_dollar_volume_from_the_candle_file_alone(monkeypatch):
     import json
     from datetime import date
 
-    from cherrypick.technicals import paths, symbols, tradable
+    from cherrypick.technicals import paths, securities, symbols, tradable
 
     monkeypatch.setattr(symbols, "all_symbols", lambda: ["BIG", "THIN", "NEW"])
     monkeypatch.setattr(liquidity, "screener_names", lambda: [])
+    monkeypatch.setattr(securities, "liquid_optionable", lambda day=None: ([], "none"))
     rows = {s: {"expiries_35d": 5} for s in ("BIG", "THIN", "NEW")}
     monkeypatch.setattr(tradable, "latest_rows", lambda: (rows, "2026-10-16"))
     root = paths.dollar_volume_dir()
@@ -117,3 +118,24 @@ def test_the_build_judges_dollar_volume_from_the_candle_file_alone(monkeypatch):
     verdicts = liquidity.load()
     assert verdicts["BIG"]["verdict"] == "tradable" and verdicts["THIN"]["verdict"] == "illiquid"
     assert "NEW" not in verdicts and out["unjudged"] == 1
+
+
+def test_the_build_judges_the_liquid_optionable_names_too(monkeypatch):
+    """A fresh install has no universe builder and no vendor lists; the income lists' universe is
+    the security list's rank 1-2 optionable names, so the verdict judges them."""
+    import json
+    from datetime import date
+
+    from cherrypick.technicals import paths, securities, symbols, tradable
+
+    monkeypatch.setattr(symbols, "all_symbols", lambda: [])
+    monkeypatch.setattr(liquidity, "screener_names", lambda: [])
+    monkeypatch.setattr(securities, "liquid_optionable", lambda day=None: (["MSFT"], "public list of x"))
+    monkeypatch.setattr(tradable, "latest_rows", lambda: ({"MSFT": {"expiries_35d": 6}}, "2026-10-16"))
+    root = paths.dollar_volume_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "2026-10-16.json").write_text(
+        json.dumps({"names": {"MSFT": {"median": 9e9, "sessions": 50}}}), "utf-8"
+    )
+    out = liquidity.build(today=date(2026, 10, 20))
+    assert liquidity.load()["MSFT"]["verdict"] == "tradable" and out["tradable"] == 1

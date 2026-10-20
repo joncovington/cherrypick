@@ -105,6 +105,8 @@ CATCHUP_MINUTES = {
     "technicals-liquidity": 120,
     # A rerun rebuilds the same session's list from the same files; its readers run at 18:50-19:10.
     "technicals-securities": 120,
+    # A rerun rebuilds the newest reading's lists; the console reads them whenever they land.
+    "technicals-income-lists": 8 * 60,
     # A rerun replaces the session's file, so a late one is the same calendar; the late pass covers
     # the rest of the evening.
     "technicals-earnings-calendar": 240,
@@ -1399,6 +1401,26 @@ def derive_jobs(
             trading_days_only=True,
             enabled=tc_free,
             enabled_reason="" if tc_free else "disabled in config (technicals)",
+        ),
+    )
+    # Our own income lists read the afternoon chains, so they run where those do (`market_report.income`)
+    # and need only the block's own switch -- no Dolt.
+    il_on = tc_free and cfgmod.market_report_settings(cfg)["income"]
+    add(
+        "technicals-income-lists",
+        lambda: JobSpec(
+            id="technicals-income-lists",
+            # A package command: the short-put and covered-call lists from the newest income chains
+            # (`incomelists.py`), local files only. The Screeners page's own lists read what it writes.
+            argv=(pythonw, "-m", "cherrypick.technicals", "income-lists"),
+            kind=KIND_DAILY,
+            at_et=tc["income_lists_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-income-lists"],
+            trading_days_only=True,
+            enabled=il_on,
+            enabled_reason=""
+            if il_on
+            else "disabled in config (technicals, or market_report.income, which writes its input)",
         ),
     )
     add(
