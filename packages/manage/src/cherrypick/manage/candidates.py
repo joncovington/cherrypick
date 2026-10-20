@@ -21,9 +21,9 @@ user's cycle monthly rather than the vendor's expiry):
   call spread or a diagonal whose long would cover it. That last part is deliberately cautious: a
   long call covers a short only at a strike and expiry the broker accepts, and in an IRA a spread
   needs its own approval, so the shares are never assumed free on the strength of a long. A name
-  whose shares are all written against gets no covered call (counted in `excluded`). Working sell
-  orders would reduce it further, but the snapshot has no open-orders read yet, so a call sold and
-  not yet filled is not seen.
+  whose shares are all written against gets no covered call (counted in `excluded`). A call being
+  sold to open and not yet filled (snapshot v10's `working_orders`, `pending_short_calls`) counts as
+  written too; before v10 the snapshot has no orders and only filled calls are seen.
 
 Deltas are Black-Scholes on each strike's own IV, solved from its mid, as the screener rules found.
 
@@ -51,6 +51,7 @@ by the morning: re-quote before sending.
 from __future__ import annotations
 
 import math
+import re
 from datetime import date
 from typing import Any
 
@@ -98,6 +99,30 @@ def priced_options(entry: dict[str, Any], session: date, rate: float) -> list[di
 def _nearest(options: list[dict], right: str, target: float, where=lambda o: True) -> dict | None:
     pool = [o for o in options if o["right"] == right and where(o)]
     return min(pool, key=lambda o: abs(abs(o["delta"]) - target)) if pool else None
+
+
+# An order still able to fill. The broker's day list also holds the day's filled, cancelled, expired
+# and rejected orders, which are either in the positions already or never will be.
+WORKING = {"Received", "Routed", "In Flight", "Live", "Contingent", "Cancel Requested", "Replace Requested"}
+_OCC_RIGHT = re.compile(r"\d{6}([CP])\d{8}\s*$")
+
+
+def pending_short_calls(orders: list[dict[str, Any]] | None) -> dict[str, float]:
+    """{underlying: call contracts being sold to open on a working order, not yet filled}."""
+    out: dict[str, float] = {}
+    for o in orders or []:
+        if o.get("status") not in WORKING:
+            continue
+        und = str(o.get("underlying_symbol") or "").upper()
+        for leg in o.get("legs") or []:
+            m = _OCC_RIGHT.search(str(leg.get("symbol") or ""))
+            if not m or m.group(1) != "C" or leg.get("action") != "Sell to Open":
+                continue
+            left = _f(leg.get("remaining_quantity"))
+            qty = left if left is not None else _f(leg.get("quantity")) or 0.0
+            if und and qty:
+                out[und] = out.get(und, 0.0) + qty
+    return out
 
 
 def uncovered_shares(shares: float, short_calls: float) -> float:
@@ -369,6 +394,7 @@ def suggest(
     rules: dict[str, Any],
     account_type: dict[str, Any] | None,
     benchmark_spot: float | None,
+    orders: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     cfg = rules["portfolio"]["candidates"]
     if cfg.get("enabled") is False:
@@ -391,6 +417,8 @@ def suggest(
             elif leg.get("right") == "C" and qty < 0:
                 # Every short call, whatever its expiry or structure, ties up 100 shares.
                 short_calls[t["underlying"]] = short_calls.get(t["underlying"], 0.0) - qty
+    for und, qty in pending_short_calls(orders).items():
+        short_calls[und] = short_calls.get(und, 0.0) + qty
     excluded: dict[str, int] = {}
 
     def drop(reason: str) -> None:

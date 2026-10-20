@@ -1264,6 +1264,8 @@ def evaluate(
             rules,
             account.get("account_type"),
             book.get("benchmark_spot"),
+            # The broker tool's day list is for its designated account, the one manage evaluates.
+            snapshot.get("working_orders"),
         )
         accounts.append(
             {
