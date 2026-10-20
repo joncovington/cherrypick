@@ -127,11 +127,11 @@ def test_unclosed_link_rule(line, expect_finding):
             True,
         ),
         # --- shapes that must be left alone ---
-        ("the current -m form", MEIC, ["python -m cherrypick.meic.streamer --status"], False),
+        ("the current -m form", MEIC, ["python -m cherrypick.meic.tt stream_status"], False),
         (
             "the current PowerShell -m form",
             MEIC,
-            [r"Start-Process python -ArgumentList '-m','cherrypick.meic.streamer'"],
+            [r"Start-Process python -ArgumentList '-m','cherrypick.meic.tt'"],
             False,
         ),
         # bare `run.py` means "from packages/orchestrator" only next to the prose saying so; there are
@@ -250,8 +250,8 @@ def test_port_rule_detects_drift_in_both_directions(tmp_path, monkeypatch):
 
 
 def test_port_rule_stays_quiet_on_multi_port_cells_and_the_allowlist(tmp_path, monkeypatch):
-    """Real rows carry `5050 / 5051` and `5055 (+5056)` in one cell, and three documented ports are
-    genuinely underivable (a +1 WebSocket, an off-by-default sidecar, Dolt's own default)."""
+    """Real rows carry `5050 / 5051` and `5055 (+5056)` in one cell, and some documented ports are
+    genuinely underivable (a +1 WebSocket, Dolt's own default)."""
     monkeypatch.setattr(cd, "ROOT", tmp_path)
     src = tmp_path / "ports.py"
     src.write_text("PAIR = (5050, 5051)\n")

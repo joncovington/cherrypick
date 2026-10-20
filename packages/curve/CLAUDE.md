@@ -4,9 +4,9 @@
 > (`curve_positions.book`) moves with the rest of the schema; prose and the console already say `arm`.
 
 VXX call credit spreads harvesting the VIX term-structure roll yield, gated by a daily VIX/VIX3M
-regime read (posture: root file). Every book trades the same shape — short call ~30-delta, long wing
-a declared width higher, same monthly-cycle expiration — and differs only in declared entry gate and
-exit rule. Ledger schema: **`curve_vx`**. Calibration history: [docs/history.md](docs/history.md).
+regime read (posture: root file). Every arm trades the same shape — a short call (~30-delta; 0.40 in
+`near`), long wing a declared width higher, same monthly-cycle expiration — and differs only in
+entry gate, exit rule or short delta. Ledger schema: **`curve_vx`**. Calibration history: [docs/history.md](docs/history.md).
 Suite-wide context: the root [documentation index](../../docs/README.md).
 
 ## The structure's calibration (never pool across these breaks)
@@ -21,16 +21,19 @@ Suite-wide context: the root [documentation index](../../docs/README.md).
 - **`spread_width` 1.0** (was 5.0 until 2026-08-27). A credit spread's credit cannot exceed the
   short's premium, so `credit / width` is capped at `short_mid / width` whatever the wing costs; at
   5-wide the cap sat barely above the 15% floor. At 1-wide the short pays ~17% of width.
-  `tests/test_structure_coherence.py` pins width against floor off the shipped config, so a pair
-  that cannot coexist fails at declaration, not after a month of silent refusals.
+  `tests/test_structure_coherence.py` pins width against the shipped config's credit floor, so a
+  pair that cannot coexist fails at declaration, not after a month of silent refusals. It checks
+  both floors: the percentage one, and since 2026-10-06 the net floor the shipped config declares
+  (a free-wing net ceiling against `min_net_credit_to_max_loss`, with its own case shown to fail).
 - **`max_leg_spread_pct` 0.30** (was 0.25): the short itself quotes 0.27–0.28 wide on VXX.
 - **A wing's spread is money, not a ratio.** The long leg is refused only when wide in percent AND
   in dollars (`max_wing_spread_abs`) — a zero bid makes `spread_pct` 2.0 whatever the option costs.
   The SHORT leg keeps the plain percentage test: its premium is the whole credit, and paying up there
   is what the gate prevents.
-- **Fee-adjusted credit floor** (2026-09-02): `engine.plan_entry` nets modelled entry commission
-  AND slippage against the dollar floor and refuses `credit_below_fee_adjusted_floor`, with or
-  without a config passed. A percentage floor is a ratio of mids and cannot see opening cost (the
+- **Fee-adjusted credit floor** (2026-09-02 to 10-06; still the rule for a config without
+  `min_net_credit_to_max_loss`): `engine.plan_entry` nets modelled entry commission AND slippage
+  against the dollar floor and refuses `credit_below_fee_adjusted_floor`, with or without a config
+  passed. The net floor that replaced it refuses `net_credit_below_floor`. A percentage floor is a ratio of mids and cannot see opening cost (the
   first trade lost $6.49 of $18 to it, 72% slippage). Unlike MEIC's, it nets slippage too, since
   this credit metric has none haircut out. Only the entry side is netted — the exit's cost depends
   on a close path not yet decided.
@@ -66,8 +69,9 @@ Suite-wide context: the root [documentation index](../../docs/README.md).
 as off by design; it ran two experiments in September), bounded to `profit_take_pct`,
 `short_delta_target` and `contango_max`.
 
-**Pairing is partial, deliberately**: `control`/`noflip` share one plan and tick; `hook` enters on
-its own. Never treat the three as a fully paired grid.
+**Pairing is partial, deliberately**: `control`/`noflip` share one plan and tick; `near` is planned
+from its own params (and `hook`, retired, entered on its own). Never treat the arms as a fully
+paired grid.
 
 **A structurally slow advisor target**: ~2-4 closes a month, so a 15-session experiment is
 `underpowered` against the promotion gate's min-14-days/min-sample-20 floor. Bounds ship anyway, but
@@ -144,7 +148,7 @@ it and it is `configedit.GUARDED`.
 | `src/cherrypick/curve/regime_history.py` | the read-side regime replay — a benchmark, never P&L. |
 | `src/cherrypick/curve/db.py` | schema (`curve_positions`, `curve_marks`, `curve_regime`, `curve_snapshots`, attempts/refusals), migrations, stale-writer guard. |
 | `src/cherrypick/curve/stream_request.py` | VXX underlying, VIX/VIX3M quote-only legs, target expiration, `history_days`. |
-| `src/cherrypick/curve/cli.py` | `status` / `regime` / `worksheet` / `exposure` / `headline` / `regime-history`. |
+| `src/cherrypick/curve/cli.py` | `status` / `regime` / `worksheet` / `exposure` / `excursions` / `equity` / `headline` / `regime-history`. |
 
 ## Commands
 
@@ -157,6 +161,8 @@ python run.py status                                # open positions + target ex
 python run.py regime                                # the stored daily regime series
 python run.py worksheet                             # the live per-position worksheet
 python run.py exposure                              # the early-assignment-exposure telemetry
+python run.py headline                              # closed results per arm
+python run.py equity                                # each arm's daily marked equity and tear sheet
 python run.py regime-history                        # the VIX/VIX3M signal replay over stored history
 python -m pytest                                    # temp CHERRYPICK_HOME; no broker, no streamer needed
 ruff check . && ruff format .                       # line-length 110

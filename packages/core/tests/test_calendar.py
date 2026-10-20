@@ -148,6 +148,21 @@ def test_nth_trading_day_spans_weekend_and_labor_day_holiday():
     assert cal.nth_trading_day(start, 3) == date(2026, 9, 10)
 
 
+def test_trading_days_between_counts_the_window_nth_trading_day_ends():
+    start = date(2026, 10, 16)
+    for n in (0, 1, 5, 25, 44):
+        assert cal.trading_days_between(start, cal.nth_trading_day(start, n)) == n
+    # 16 Oct to 20 Nov 2026: 10 sessions in October, 15 in November.
+    assert cal.trading_days_between(start, date(2026, 11, 20)) == 25
+    # Thanksgiving (26 Nov) is skipped; the half day after it counts.
+    assert cal.trading_days_between(date(2026, 11, 20), date(2026, 11, 27)) == 4
+
+
+def test_trading_days_between_is_zero_when_end_is_not_after_start():
+    assert cal.trading_days_between(date(2026, 10, 16), date(2026, 10, 16)) == 0
+    assert cal.trading_days_between(date(2026, 10, 16), date(2026, 10, 1)) == 0
+
+
 def test_nth_trading_day_negative_n_treated_as_zero():
     assert cal.nth_trading_day(date(2026, 9, 4), -5) == date(2026, 9, 4)
 

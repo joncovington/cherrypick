@@ -18,6 +18,9 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   config/calendars.json           # Calendars engine config (experimental)
   config/pmcc.json                # PMCC engine config (experimental)
   config/curve.json               # Curve engine config (experimental)
+  config/contango.json            # Contango engine config (experimental)
+  config/manage.json              # manage's ruleset and portfolio bands
+  config/backtest.json            # backtest store and runs (the vendor key lives in the keyring)
   config/gex.json                 # GEX engine config
   config/streamer.json            # standalone streamer config
   config/console.json             # console UI config
@@ -36,6 +39,10 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/calendars/paper_trades.db  # Calendars paper ledger (dc_positions / dc_legs / dc_marks)
   data/pmcc/paper_trades.db       # PMCC paper ledger (pmcc_positions / pmcc_legs / pmcc_marks)
   data/curve/paper_trades.db      # Curve paper ledger (curve_positions)
+  data/contango/paper_trades.db   # Contango paper ledger (contango_positions / contango_sessions)
+  data/manage/                    # eval-<day>.json evaluations of the real account
+  data/backtest/                  # the licensed vendor store and its results (purgeable; the backup skips it)
+  data/console/                   # the console's own store
   data/gex/gex_history.db         # GEX spot trail + regime history + the suite-level market-regime
                                   #   series (market_regime_history / daily_closes; read via
                                   #   cherrypick.core.regime — see docs/regime-recorder-plan.md)
@@ -60,7 +67,7 @@ configure their own engine and nothing else:
 | Config | Owned by | Sets |
 |---|---|---|
 | `~/.cherrypick/config.json` | Orchestrator | `capabilities` (`claude`, `dolt` — see below); which modules are enabled + their `path` and `live_db`; the per-module `paper` block (`paper_db`, `trade_schema`, tick argv and cadence, entry/exit times) and `calibration`; the top-level `streamer` (the standalone producer), `services` (background daemons like the gex recorder) and `console`; `watchdog`, `eval_activity`, `trade_notify`, `desk_notify`, `status_digest`, `flies_payoff_post`, `notify`; `review`, `morning` (the overview), `technicals`, `market_report`; `data_epoch`, `log_archive`, `backup`, `config_backup`; `advisor`, `reconcile`, `symbol_watch`; timezone. |
-| `~/.cherrypick/config/meic.json` | MEIC | `symbols`, delta/VIX bands, wing widths, credit floors, entry/exit windows, stop policy, regime thresholds, cash-settled set, deploy-limit pct. |
+| `~/.cherrypick/config/meic.json` | MEIC | `symbols`, delta/VIX bands, wing widths, credit floors, entry/exit windows, stop policy, regime thresholds, cash-settled set, deploy-limit pct, and the `live` block for the live loop (armed per day via `/live-meic-start`; `live.symbol`, `live.arm`, its caps and breakers). |
 | `~/.cherrypick/config/meic.risk.json` | MEIC | The arm registry (`active_profile`, `profiles`). Read from `$MEIC_RISK_CONFIG` if set, else this file, else the shipped control-only `packages/meic/config.risk.example.json`; a machine's arms are its own configuration, never the repo's. |
 | `~/.cherrypick/config/earnings.json` | Earnings | `available_capital_paper_mode`, position caps, entry/close windows, correlation block list, liquidity gates, per-strategy tuning, named profiles. |
 | `~/.cherrypick/config/flies.json` | Flies | `symbols`, wing/increment scaling, entry gates and floors, the experiment `arms`, and the `live` block for the narrow live pilot (armed per day via `/live-flies-start`, one arm / one symbol, sized by the `live.max_open_margin_dollars` cap, self-disarming at `live.disarm_time`). |
@@ -68,6 +75,9 @@ configure their own engine and nothing else:
 | `~/.cherrypick/config/calendars.json` | Calendars | Symbols (`SPY` since 2026-08-15), OCC roots, settlement style per symbol, the declared ex-dividend calendar, books, `advice` bounds. EXPERIMENTAL; the module is off in the orchestrator config by default. |
 | `~/.cherrypick/config/pmcc.json` | PMCC | Symbols, the long/short delta and DTE windows, the declared ex-dividend spans, books, `advice` bounds. EXPERIMENTAL; off by default. |
 | `~/.cherrypick/config/curve.json` | Curve | The VXX spread construction, the VIX/VIX3M regime thresholds, books, `advice` bounds. EXPERIMENTAL; off by default. |
+| `~/.cherrypick/config/contango.json` | Contango | The arms and their two thresholds, the decision time. EXPERIMENTAL; off by default. |
+| `~/.cherrypick/config/manage.json` | Manage | The ruleset each trade is judged by and the portfolio bands; read by `run.py manage`. Keep only what you change. |
+| `~/.cherrypick/config/backtest.json` | Backtest | The vendor store and the runs; the vendor key lives in the keyring (`python -m cherrypick.backtest key set`), never here. |
 | `~/.cherrypick/config/gex.json` | GEX | `symbols`, the shared stream-cache source path, serve host/port, history DB path. |
 | *(orchestrator `morning`, `technicals` blocks)* | Overview, Technicals | Neither has a config file of its own: the orchestrator's `morning` block schedules the overview's fact pack (and its optional narrative), and `technicals` schedules the end-of-day landing and report. Technicals reads the Dolt clones the earnings module's `paper.dolt_service` serves. |
 | `~/.cherrypick/config/streamer.json` | Streamer | Broker session settings and the stream-cache path it writes; the symbol set is not configured here — it is the union of every module's `state/stream_requests/` file. |
@@ -79,8 +89,8 @@ configure their own engine and nothing else:
   the source anchor (e.g. `../meic`) — never hardcode absolute paths.
 - A module's config is resolved **home-first** by its `paths.py` (`~/.cherrypick/config/<engine>.json`),
   falling back to the in-repo `config.json` until an explicit `migrate-home`.
-- A module without a home config runs from its shipped `config.example.json`; every example declares
-  only the `control` arm.
+- A module without a home config runs from its shipped `config.example.json`; every example runs
+  `control` alone except PMCC's (the shield arms) and contango's (two arms).
 - Env overrides (mainly for tests / a machine escape hatch): `CHERRYPICK_HOME` relocates everything;
   `MEIC_DATA_DIR` / `EARNINGS_DATA_DIR` and `MEIC_LOGS_DIR` / `EARNINGS_LOGS_DIR` relocate a single
   module's data/logs; `MEIC_DB_PATH` points db.py at a specific DB (used by the paper engine);
@@ -149,6 +159,12 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | `config_backup` | **off** (opt in; `run.py config-backup --init --enable`, the installer, or the Config page) | `config-backup` |
 | `log_archive` | **on**, day 1 @ 03:30 | `log-archive` (monthly) |
 | `reconcile.schedule` | **off** by default, daily 16:30 when enabled — worth turning on once any module trades live, since it diffs the live ledger against the broker | `reconcile` |
+| `manage` | **off** (`enabled`), daily at `at` (10:00 ET), and at each `also_at` time | `manage-eval`, `manage-eval-HHMM` |
+| `backtest` | **off** (`fetch`), daily at `fetch_at` (18:45 ET) | `backtest-fetch` |
+| `live_positions` | **on** | `live-positions` |
+| `live_fill_alerts` | **on**, enabled only while a live module is armed | `live-fill-alerts` |
+| `live_settle_overdue` | **on**, hourly | `settle-overdue-live` |
+| `power_watch` | **on** | `power-watch` |
 
 Cadences are deliberately not restated here — each job's interval is the value of its own config key
 (`watchdog.interval_minutes`, `trade_notify.interval_seconds`, a module's `paper.tick_interval_seconds`,
@@ -193,12 +209,13 @@ are conservative by design:
   form view doesn't expose; it writes the client's text verbatim after validation.
 - **Every write is backed up first.** A timestamped copy of the previous file goes to
   `state/config-backups/<target>.<timestamp>.json` before the new version replaces it (atomic
-  tmp-then-`os.replace`, same idiom as the dashboard renderer).
+  tmp-then-`os.replace`).
 - **Guarded fields are read-only, in both directions.** `enable_live_trading` (meic/earnings),
   flies' and bwb's `live.enabled` and `live.gate0_confirmed` (a human attestation string), bwb's
-  `live.arm`, floor, caps and breakers, and every live loss/deploy-limit field cannot be changed from
-  this surface — arming or de-risking live trading stays on its existing deliberate path
-  (`/live-flies-start`, `/live-bwb-start`, hand-editing the live gates with the plan doc open). The UI shows each locked field with a pointer to where it's actually changed; a direct API
+  `live.arm`, floor, caps and breakers, MEIC's `live.symbol`, `live.gate0_confirmed`, `live.arm`, caps
+  and breakers, and every live loss/deploy-limit field cannot be changed from this surface — arming or
+  de-risking live trading stays on its existing deliberate path (`/live-meic-start`,
+  `/live-flies-start`, `/live-bwb-start`, hand-editing the live gates with the plan doc open). The UI shows each locked field with a pointer to where it's actually changed; a direct API
   call to the same pointer is refused server-side too.
 - **`--organize [target] [--apply]`** reorders a live config's top-level keys to match its
   `config.example.json`'s section order — inserting the example's `*_header` markers, appending any
@@ -221,8 +238,9 @@ arms and risk profiles, module enablement and symbols, entry windows and cadence
 because the rest are decided once and a page that offers everything equally makes the rare edit as
 easy to reach as the routine one. And it surfaces the **suite halt flag** as its headline control,
 with asymmetric friction: setting it is one click, clearing it takes a typed `RESUME LIVE`
-confirmation. Clearing it arms nothing on its own — every per-module gate still applies, and flies
-still needs its per-day arm record.
+confirmation. Clearing it arms nothing on its own — every per-module gate still applies, and MEIC,
+flies and bwb still need their per-day arm records. Setting it blocks new entries on every live loop;
+fills already sent are still confirmed, and open positions are still managed and settled.
 
 ## Report & log files
 
@@ -235,7 +253,7 @@ monthly `archive` task zips finished-month reports + rotated logs into `logs/arc
 Every secret lives in the **OS keyring** (Windows Credential Manager/DPAPI, macOS Keychain, Linux Secret
 Service) — never in files, env vars, or logs. The broker OAuth tokens are one shared entry,
 `cherrypick-broker`, which the installer and `connect` write; a module's own `keyring_service` is an
-optional per-module override layered over it. Slack/Discord webhooks live under the orchestrator's
+optional per-module override layered over it. Slack/Discord webhooks and Telegram's bot token and chat ID live under the orchestrator's
 `cherrypick-notify` service (`secrets-set`). See [guardrails-and-modes.md](guardrails-and-modes.md).
 
 > **Moved out (2026-08-21):** the tastylive Follow Feed and Lossdog VIP feed notifiers live in a

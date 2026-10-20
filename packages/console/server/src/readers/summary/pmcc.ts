@@ -296,7 +296,7 @@ export function readPmccSummary(config: ConsoleConfig, q: SummaryQuery): ModuleS
     "Each position is a deep in-the-money long call with short calls sold against it; it is counted on the day it closes. Paper trading only.",
     "Fills are at the mid price; slippage is charged as its own cost beside fees and settlement, so net = gross − fees − settlement − slippage.",
     "Early assignment is not modelled. It is measured instead (the assignment-exposed flags), so the paper result is an upper bound on what a real account would have made.",
-    "The main arms (shield, shield_hold) hold a roughly one-year long and close about ten months after entry; until then their result shows only in the 'open now' figure, not in the net above.",
+    "The main arms (shield, shield_hold, shield_guard) hold a roughly one-year long and close about ten months after entry; until then their result shows only in the 'open now' figure, not in the net above.",
     "Each symbol is its own experiment; read the by-symbol table rather than the pooled total.",
   ];
   if (unpriced > 0) {

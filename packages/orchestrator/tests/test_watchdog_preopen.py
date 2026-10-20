@@ -67,13 +67,13 @@ def test_it_reuses_the_streamer_health_check(wired):
     assert res["overall"] == wd.OK
 
 
-def test_it_falls_back_to_a_modules_own_streamer(wired):
-    """Before the standalone-producer cutover a module owns the streamer. The pre-open window is
-    worth protecting either way, so it follows the same producer resolution the full tick uses."""
+def test_a_modules_own_streamer_is_never_checked(wired):
+    """Module-owned streamers were removed on 2026-10-18. A block left enabled in a kept config is
+    doctor's to warn about; the health check must not start treating it as a producer again."""
     cfg = _cfg(streamer={"enabled": False})
     cfg["modules"] = {"meic": {"enabled": True, "streamer": dict(STREAMER)}}
     wd.run_preopen(cfg)
-    assert wired["checked"] == ["meic.streamer"]
+    assert wired["checked"] == []
 
 
 def test_findings_go_through_the_normal_notify_path(wired, monkeypatch):

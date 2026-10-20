@@ -5,7 +5,7 @@ Thin shim over cherrypick-core's shared ``SessionManager`` (see ``cherrypick.cor
 loop and the REST poller on a separate thread with its own loop; tastytrade's Session holds an
 httpx.AsyncClient bound to whichever loop first uses it, so a session per thread keeps each bound to a
 single loop (sharing one would silently hang awaits from the second loop). The ``get_session`` /
-``reset_session`` names are preserved so existing call sites (streamer.py, tt.py) are unchanged.
+``reset_session`` names are preserved so existing call sites (tt.py) are unchanged.
 """
 
 from __future__ import annotations

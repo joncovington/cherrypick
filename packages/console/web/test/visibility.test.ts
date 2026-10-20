@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { SuiteFeatures, SuiteFeaturesOk } from "@console/shared";
-import { isFeatureOn, isHiddenAsUnknown, isModuleVisible, isSlideVisible, offReason } from "../src/lib/visibility";
+import type { LiveAttentionItem, LiveTodayLoop, LiveTodayPayload, SuiteFeatures, SuiteFeaturesOk } from "@console/shared";
+import { isFeatureOn, isHiddenAsUnknown, isModuleVisible, isSlideVisible, liveLoopsInUse, offReason } from "../src/lib/visibility";
 import { visibleNavLinks } from "../src/components/shell/navLinks";
 
 /**
@@ -20,6 +20,12 @@ const ALL_ON: SuiteFeaturesOk = {
 
 function withOff(over: Partial<SuiteFeaturesOk>): SuiteFeaturesOk {
   return { ...ALL_ON, ...over };
+}
+
+/** A Live Today answer carrying only what the visibility rule reads; every loop idle unless told. */
+function today(loops: Array<Partial<LiveTodayLoop> & { loop: LiveTodayLoop["loop"] }>, attention: LiveAttentionItem[] = []): LiveTodayPayload {
+  const idle = { open: 0, working: 0, held: 0, orphans: { at: null, count: 0 }, overdue: [] };
+  return { loops: loops.map((l) => ({ ...idle, ...l })), attention } as unknown as LiveTodayPayload;
 }
 
 const earningsNeedsDolt = withOff({
@@ -62,6 +68,41 @@ describe("gex, the advisor and the reports", () => {
     expect(isSlideVisible("flies", "advisor", ALL_ON)).toBe(true);
   });
 
+  it("a switched-off live loop's tab stays while Live Today reports anything for it (#422)", () => {
+    const meicOff = withOff({ live: { flies: true, meic: false } });
+    // MEIC's switch turned off mid-session with a condor still open: the only page that shows it
+    // is this tab, and Live Today's row and attention items link to it.
+    expect(isSlideVisible("live", "meic", meicOff, liveLoopsInUse(today([{ loop: "meic", open: 1 }])))).toBe(true);
+    for (const busy of [{ working: 2 }, { held: 1 }, { orphans: { at: null, count: 1 } }, { overdue: [{ session: "2026-10-16", positions: 1, pendingEntries: 0 }] }]) {
+      expect(isSlideVisible("live", "meic", meicOff, liveLoopsInUse(today([{ loop: "meic", ...busy }])))).toBe(true);
+    }
+    // Any attention item for the loop keeps it too (a tripped breaker, an unreadable ledger).
+    const attention: LiveAttentionItem[] = [{ loop: "meic", kind: "ledger_unreadable", detail: "x", to: "/live/meic" }];
+    expect(isSlideVisible("live", "meic", meicOff, liveLoopsInUse(today([{ loop: "meic" }], attention)))).toBe(true);
+    // Another loop's activity is not this one's.
+    expect(isSlideVisible("live", "meic", meicOff, liveLoopsInUse(today([{ loop: "meic" }, { loop: "flies", open: 3 }])))).toBe(false);
+    // Idle, and read: hidden. Unread (loading, failed): unknown, so shown.
+    expect(isSlideVisible("live", "meic", meicOff, liveLoopsInUse(today([{ loop: "meic" }])))).toBe(false);
+    expect(isSlideVisible("live", "meic", meicOff, liveLoopsInUse(undefined))).toBe(true);
+  });
+
+  it("an idle live loop's Live tab follows its live switch; unread or absent stays shown", () => {
+    const fliesOff = withOff({ live: { flies: false, meic: true } });
+    expect(isSlideVisible("live", "flies", fliesOff)).toBe(false);
+    expect(isSlideVisible("live", "meic", fliesOff)).toBe(true);
+    expect(isSlideVisible("live", "meic", withOff({ live: { meic: false } }))).toBe(false);
+    // The account-wide tabs are no module's: never hidden by a switch.
+    expect(isSlideVisible("live", "today", withOff({ live: { flies: false, meic: false } }))).toBe(true);
+    expect(isSlideVisible("live", "positions", withOff({ live: { flies: false, meic: false } }))).toBe(true);
+    // A reply that does not name the switch, an older reply with no map, and a failed bridge: shown.
+    expect(isSlideVisible("live", "flies", withOff({ live: { meic: false } }))).toBe(true);
+    expect(isSlideVisible("live", "flies", ALL_ON)).toBe(true);
+    expect(isSlideVisible("live", "flies", { ok: false, error: "x" })).toBe(true);
+    expect(isSlideVisible("live", "flies", undefined)).toBe(true);
+    // The switch is about the Live tab, not the module's own page.
+    expect(isSlideVisible("flies", "session", fliesOff)).toBe(true);
+  });
+
   it("Options flow follows the options_flow feature, and is shown while the reply does not name it", () => {
     expect(isModuleVisible("flow", withOff({ features: { ...ALL_ON.features, options_flow: false } }))).toBe(false);
     expect(isModuleVisible("flow", withOff({ features: { ...ALL_ON.features, options_flow: true } }))).toBe(true);
@@ -92,7 +133,8 @@ describe("fail open", () => {
     expect(isSlideVisible("flies", "advisor", undefined)).toBe(true);
     expect(isFeatureOn("technicals", undefined)).toBe(true);
     expect(offReason("earnings", undefined)).toBeNull();
-    expect(visibleNavLinks(undefined).modules).toHaveLength(9);
+    expect(visibleNavLinks(undefined).modules).toHaveLength(8);
+    expect(visibleNavLinks(undefined).suite.map((l) => l.to)).toContain("/gex");
   });
 
   it("a failed bridge shows everything", () => {
@@ -101,7 +143,7 @@ describe("fail open", () => {
     expect(isFeatureOn("advisor", failed)).toBe(true);
     expect(isSlideVisible("charts", "technicals", failed)).toBe(true);
     expect(offReason("earnings", failed)).toBeNull();
-    expect(visibleNavLinks(failed).modules).toHaveLength(9);
+    expect(visibleNavLinks(failed).modules).toHaveLength(8);
   });
 });
 
@@ -125,14 +167,13 @@ describe("the nav lists", () => {
   it("drop an off module and renumber the digits over what is left", () => {
     const { modules } = visibleNavLinks(pmccSwitchedOff);
     expect(modules.map((l) => [l.to, l.key])).toEqual([
-      ["/meic", "1"],
-      ["/flies", "2"],
-      ["/curve", "3"],
-      ["/contango", "4"],
-      ["/bwb", "5"],
-      ["/calendars", "6"],
-      ["/earnings", "7"],
-      ["/gex", "8"],
+      ["/flies", "1"],
+      ["/meic", "2"],
+      ["/bwb", "3"],
+      ["/earnings", "4"],
+      ["/calendars", "5"],
+      ["/curve", "6"],
+      ["/contango", "7"],
     ]);
   });
 

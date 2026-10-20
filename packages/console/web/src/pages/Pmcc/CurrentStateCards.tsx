@@ -13,7 +13,7 @@ import { EntrySpreadCell } from "./EntrySpread";
  * `advised:<name>` synthetic arm is recognised by its prefix, never by being "not core": shield
  * read as an advised arm for a day because the list held control alone.
  */
-const CORE_BOOKS = ["shield", "shield_hold", "control"];
+const CORE_BOOKS = ["shield", "shield_hold", "shield_guard", "control"];
 const isAdvised = (arm: string) => arm.startsWith("advised:");
 
 /**

@@ -1,11 +1,11 @@
 """The management ruleset: the shipped default and the operator's overrides.
 
-The default is the vendor's Zhang-style rule set as digested on 2026-10-13 (credit trades take profit
-at 50% of the credit, stop when the loss equals the credit, close at 21 DTE; debit trades stop at -50%
-and take profit at +75%; never roll a loser; never hold a physically-settled option into expiry). The
-evidence behind each number, and where outside research disagrees, is in this package's README; each
-rule's `confidence` is how much that evidence supports it, and is what an evaluation reports beside
-the rule's verdict.
+The default is the rule set digested from the vendor's education library on 2026-10-13 (credit
+trades take profit at 50% of the credit, stop when the loss equals the credit, close at 21 DTE; debit
+trades stop at -50% and take profit at +75%; never roll a loser; never hold a physically-settled
+option into expiry). The evidence behind each number, and where outside research disagrees, is in
+this package's README; each rule's `confidence` is how much that evidence supports it, and is what an
+evaluation reports beside the rule's verdict.
 
 Overrides live in ``~/.cherrypick/config/manage.json`` and are merged key by key over the default, so
 a file holding one changed threshold keeps every other rule. A key the default does not have is
@@ -22,7 +22,7 @@ from typing import Any
 
 from cherrypick.core import home as _home
 
-RULESET_NAME = "zhang-2026-10"
+RULESET_NAME = "manage-2026-10"
 
 DEFAULT_RULES: dict[str, Any] = {
     "ruleset": RULESET_NAME,
@@ -59,7 +59,7 @@ DEFAULT_RULES: dict[str, Any] = {
         # Thesis rule: a short strike is in the money and what is left to win, against what is left to
         # lose, is below the entry standard (1/3 of width = 0.5 reward per unit of risk).
         "breached": {"enabled": True, "min_reward_to_risk": 0.50, "confidence": 70},
-        # Off by default (Zhang holds credit trades through earnings); on = close before the report.
+        # Off by default (the rule set holds credit trades through earnings); on = close before it.
         "close_before_earnings": {"enabled": False, "confidence": 55},
     },
     "debit": {
@@ -132,6 +132,17 @@ DEFAULT_RULES: dict[str, Any] = {
         "confidence": 90,
     },
     "earnings": {"enabled": True, "warn_days": 14},
+    # A trade put on to hold through an earnings report: opened `min_days_before`..`max_days_before`
+    # days before the call (the user's practice, 2026-10-18: 1 to 7), its nearest short expiring no
+    # more than `max_days_expiry_after` days after it. Before the call its close, take-profit and roll
+    # rules wait; after it, close. Safety rules never wait.
+    "earnings_trade": {
+        "enabled": True,
+        "min_days_before": 1,
+        "max_days_before": 7,
+        "max_days_expiry_after": 14,
+        "confidence": 75,
+    },
     "ex_dividend": {"enabled": True, "warn_days": 10, "confidence": 80},
     # A trade whose net premium is under `max_premium_share` of its modelled max loss (a super bear or
     # bull, a risk reversal) earns from direction, not premium, so the credit and debit rules -- each a
@@ -152,6 +163,81 @@ DEFAULT_RULES: dict[str, Any] = {
     # managed by that loop and settles in cash at the close, so judging it here only adds noise.
     "exclude": {"zero_dte_underlyings": ["SPX"]},
     "pricing": {"rate": 0.04, "grid_low": 0.01, "grid_high": 3.0, "grid_steps": 600},
+    # The account as one book (portfolio.py, docs/portfolio-guidance-plan.md). Every band is a retail
+    # heuristic with no published out-of-sample evidence, hence the low confidences.
+    "portfolio": {
+        "enabled": True,
+        # Theta per calendar day as a share of net liq. Above the ceiling the book is selling more
+        # gamma than the band allows; the floor only informs (theta is not edge).
+        "theta": {"enabled": True, "min_pct_nlv": 0.001, "max_pct_nlv": 0.003, "confidence": 40},
+        # Beta-weighted delta band in benchmark shares: -short_per_theta x theta to +long_per_theta x
+        # theta (leaning slightly long). With no theta to scale by, +/- the BWD whose 1% move costs
+        # `fallback_pct_nlv_per_1pct` of net liq.
+        "delta": {
+            "enabled": True,
+            "short_per_theta": 0.5,
+            "long_per_theta": 0.75,
+            "fallback_pct_nlv_per_1pct": 0.005,
+            "confidence": 40,
+        },
+        # A short-gamma book whose break-even move is under this multiple of the benchmark's implied
+        # one-day move is losing the race between theta and gamma.
+        "breakeven": {"enabled": True, "min_multiple_of_expected_move": 1.0, "confidence": 40},
+        # One underlying over this share of the book's gross theta or gross beta-weighted delta.
+        "concentration": {"enabled": True, "max_share": 0.25, "confidence": 40},
+        # When the broker's beta and its three-month correlation disagree enough to doubt the beta.
+        "beta_doubt": {"min_abs_corr": 0.3, "near_zero_beta": 0.1},
+        # Benchmark shocks the stress line reprices the book at, each underlying moved by beta x shock.
+        "stress": {"shocks": [-0.10, 0.05]},
+        # Buying power used against a ceiling that rises with VIX: [VIX under, cap], the last bound
+        # null for "anything above". The common retail table (more room when premium is rich).
+        "buying_power": {
+            "enabled": True,
+            "vix_steps": [[15, 0.25], [20, 0.30], [30, 0.35], [40, 0.40], [None, 0.50]],
+            "confidence": 40,
+        },
+        # The risk matrix (benchmark moves x IV shifts in vol points, time held still) and the risk
+        # graph (`graph` = [from, to, step] of benchmark moves, now and at the nearest expiry).
+        "scenarios": {
+            "moves": [-0.10, -0.05, -0.02, -0.01, 0.0, 0.01, 0.02, 0.05, 0.10],
+            "iv_shifts": [-0.05, 0.0, 0.05],
+            # "term": each leg's shift scaled by sqrt(30 / DTE), front months moving most; "flat": alike.
+            "iv_shift_weighting": "term",
+            "graph": [-0.15, 0.15, 0.01],
+        },
+        # When `portfolio.delta` fires, size an XSP vertical (hedge.py) toward a target `inset` of the
+        # band's width inside the breached edge: a credit spread with its short at
+        # `credit_short_delta`, and a debit spread with its long at `debit_long_delta`, each `width`
+        # points wide, at most `max_units` of either.
+        "hedge": {
+            "enabled": True,
+            "inset": 0.25,
+            "credit_short_delta": 0.30,
+            "debit_long_delta": 0.40,
+            "width": 5,
+            "max_units": 10,
+            # A credit spread never takes buying power used past this share of net liq. A debit spread
+            # is exempt: it only lowers the book's worst case, so it is offered past the cap and says so.
+            "max_buying_power_pct": 0.50,
+        },
+        # Income trades from our own universe, sized to the account (candidates.py). The structures
+        # are the screener rules on the cycle monthly; the caps scale with net liq. Buying power is
+        # held under the VIX-scaled cap the reading states, else `max_buying_power_pct`.
+        "candidates": {
+            "enabled": True,
+            "short_put_delta": 0.40,
+            "spread_long_delta": 0.25,
+            "covered_call_delta": 0.165,
+            "spread_min_credit": 0.331,
+            "per_trade_risk_pct": 0.03,
+            "notional_per_name_pct": {"cash": 0.25, "margin": 0.50},
+            "max_buying_power_pct": 0.50,
+            "max_name_theta_share": 0.25,
+            "max_units": 10,
+            "show": 15,
+            "show_too_big": 10,
+        },
+    },
     # Per-underlying overrides: {"SPY": {"intent": "hedge", "disable": ["debit.stop"], "note": "..."}}.
     "positions": {},
 }
@@ -174,6 +260,12 @@ RULE_IDS = (
     "directional.stop",
     "ex_dividend",
     "risk.oversize",
+    "earnings_trade",
+    "portfolio.theta",
+    "portfolio.delta",
+    "portfolio.breakeven",
+    "portfolio.concentration",
+    "portfolio.buying_power",
 )
 
 

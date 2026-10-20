@@ -14,8 +14,8 @@ live trading.
 
 It owns the daemon **lifecycle** (PID guard, `--status`/`--stop`, logging), the subscription registry
 and opening-range capture — and **no trading policy**: no open-position leg subscriptions of its own,
-no account REST poller, no `127.0.0.1:7699` HTTP API. Those stay in MEIC's wrapper
-(`../meic/src/cherrypick/meic/streamer.py`), layered onto the same engine. Opening-range capture
+no account REST poller, no HTTP API; a module declares its needs in `state/stream_requests/`.
+Opening-range capture
 (`orb.py`) is not an exception: it writes a generic `orb_ranges` table any consumer reads, and it
 belongs to the always-on producer because a consumer's cadence is not guaranteed to land inside
 09:30–09:35.
@@ -29,6 +29,7 @@ python run.py --stop        # SIGTERM a running daemon
 python run.py --symbol SPX --symbol XSP   # override the configured symbols for this run
 python run.py --secrets-set    # store the shared tastytrade OAuth bearer secrets (hidden input) in the keyring
 python run.py --secrets-status # print which shared OAuth secrets are present (JSON)
+python run.py --prune       # report dead chain rows in the cache; add --apply to delete them
 python -m pytest            # lifecycle tests; no broker/streamer required (temp $CHERRYPICK_HOME)
 ruff check . && ruff format .             # line-length 110
 ```
@@ -82,21 +83,28 @@ Config: copy `config.example.json` → `config.json` (git-ignored, machine-local
   broker.
 - **`credentials.py`** — keyring entry for the shared OAuth **bearer** secrets (`client_secret`,
   `refresh_token`) under the shared `meicagent` service; no `account_number`, since the streamer makes
-  no account-scoped call. `cherrypick connect` delegates bearer-secret entry here for a streamer-only
-  install. Writes only the keyring.
+  no account-scoped call. The suite's onboarding (`python -m cherrypick.core.auth setup`) writes the
+  shared `cherrypick-broker` login this daemon falls back to; `--secrets-set` is the streamer-only
+  path. Writes only the keyring.
 - **`orb.py`** — the opening-range `trade_hook`: per-symbol 09:30–09:35 ET high/low from Trade ticks,
   written once (idempotent per day) to `orb_ranges`, a table that already lives in
   `cherrypick.core.streamcache`.
 - **`cli.py` + `run.py`** — flat args (default = run) so the orchestrator drives this with the same
-  start/status/stop argv contract it uses for MEIC's streamer.
+  start/status/stop argv contract it uses for every daemon.
 - **`cherrypick.core`** holds the engine (`core.streamer`), cache schema (`core.streamcache`), auth
   and home resolver.
 
 ## Invariants (do not violate)
 
-- **Exactly one producer writes the cache at a time.** This daemon and MEIC's streamer write the same
-  cache; both running means two writers and two DXLink connections into one account. The PID guard and
-  the orchestrator starting only one producer enforce this — do not add a second writer path.
+- **Exactly one producer writes the cache: this daemon.** MEIC's rollback streamer, the last other
+  writer, was removed on 2026-10-18. A second writer means two DXLink connections into one account;
+  the PID guard, the orchestrator knowing only this producer, and the engine itself enforce it — do
+  not add one. `ChainStreamer` refuses the shared cache path unless constructed with
+  `producer=True`, which only this daemon passes (since 2026-10-19; gex's standalone streamer took the
+  shared path by default before).
+  `orchestrator/tests/test_single_cache_writer.py` pins the example config and this machine's to one
+  producer, and `doctor` warns on an enabled `modules.<m>.streamer` block. (gex's standalone
+  `run.py stream` is development-only and must never run beside this daemon.)
 - **Only the daemon talks to the broker.** `--status`/`--stop` read files and the PID only;
   `--secrets-*` touch only the OS keyring. Each emits a single JSON object. What the producer writes
   must depend only on what the feed sent.
@@ -114,8 +122,9 @@ Config: copy `config.example.json` → `config.json` (git-ignored, machine-local
   date (none on or after it is a `chain_fetch_error`, never a silent stale load); `_symbol_refresher`
   refetches and rebuilds the window when the session date moves past the load date; and each health
   row records `chain_expiration`, from which `--status` reports `stale_chains` (base windows only) so
-  the watchdog restarts on it.
+  the watchdog restarts on it. Only symbols the registry union still serves are judged: a symbol no
+  module requests any more keeps its last row, and is not stale (2026-10-13).
 - **The streaming engine stays in `cherrypick.core`.** Do not fork `ChainStreamer` or the cache schema
   here (the GEX math drifted ~75× once when copied).
 - **No trading policy here.** Open-position leg subscriptions of its own, REST polling and any HTTP API
-  belong to a trading module's wrapper. (ORB capture is the generic exception described above.)
+  belong in a trading module, which declares its legs through `state/stream_requests/`. (ORB capture is the generic exception described above.)

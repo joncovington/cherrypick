@@ -65,6 +65,12 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
               The same entry as shield, on the same days, holding each short to Friday. The pair isolates the early
               roll.
             </dd>
+            <dt>shield_guard (from 2026-10-26)</dt>
+            <dd>
+              shield_hold plus one rule: a short in the money with almost no time value left is rolled, at most once a
+              session. That is where a real short risks early assignment, which paper does not model; this arm measures
+              what avoiding it costs. It enters on its own days, so compare its weekly change, not matched entries.
+            </dd>
             <dt>advised:&lt;experiment name&gt; (off since 2026-10-06)</dt>
             <dd>
               History only: pmcc&apos;s advice was switched off with control, and the last experiment killed. Each was one

@@ -106,8 +106,9 @@ export interface ManageTrade {
   takeProfit: ManageLevel | null;
   stop: ManageLevel | null;
   timeExit: string | null;
-  earnings: { date: string; days: number; timeOfDay: string | null; beforeNearestShortExpiry: boolean } | null;
-  exDividend: { date: string; days: number } | null;
+  /** `days` is null when the evaluation did not count them: never a made-up zero. */
+  earnings: { date: string; days: number | null; timeOfDay: string | null; beforeNearestShortExpiry: boolean } | null;
+  exDividend: { date: string; days: number | null } | null;
   /** Modelled at the nearest expiry (Black-Scholes at each leg's own IV); never a tradable price. */
   profile: {
     horizon: string | null;
@@ -116,6 +117,218 @@ export interface ManageTrade {
     upsideFromNow: number | null;
     unboundedLow: boolean;
   } | null;
+  /** An earnings trade (packages/manage `earnings_trade`): put on to hold through a report. */
+  earningsTrade: { report: string; timeOfDay: string | null; leadDays: number | null; passed: boolean } | null;
+  /** Before the call, the rules that would have acted and are waiting for it. */
+  heldForEarnings: ManageFired[];
+}
+
+/**
+ * A band and the reading's place in it, as packages/manage stated them (`portfolio.bands`). The
+ * console draws these and never works out a band or "inside" itself; `inside` is null where there
+ * was no figure to place.
+ */
+export interface ManageBand {
+  low: number | null;
+  high: number | null;
+  value: number | null;
+  inside: boolean | null;
+}
+
+/**
+ * What a guidance driver's figure measures, so the page states it in its own unit: `bwd` in benchmark
+ * shares, `theta` in dollars a day, and the two shares of the book as fractions (0.30 = 30%).
+ */
+export type ManageDriverKind = "bwd" | "theta" | "bwd_share" | "theta_share";
+
+export interface ManageGuidanceFigure {
+  kind: ManageDriverKind;
+  value: number | null;
+}
+
+export interface ManageGuidance {
+  rule: string;
+  confidence: number | null;
+  reason: string;
+  /** What drives it, largest first: an underlying and its figures, each with its kind. A
+   *  concentration driver carries both shares, since either one can be what breached the cap. */
+  drivers: Array<{ underlying: string; figures: ManageGuidanceFigure[] }>;
+}
+
+export interface ManagePortfolioUnderlying {
+  underlying: string;
+  beta: number | null;
+  bwd: number | null;
+  theta: number | null;
+  vega30: number | null;
+  bwdShare: number | null;
+  thetaShare: number | null;
+  betaDoubt: string | null;
+}
+
+export interface ManageHedgeLeg {
+  label: string;
+  quantity: number;
+  bid: number | null;
+  ask: number | null;
+  mid: number | null;
+  delta: number | null;
+}
+
+export interface ManageHedgeSuggestion {
+  kind: string;
+  structure: string | null;
+  error: string | null;
+  units: number | null;
+  legs: ManageHedgeLeg[];
+  priceLabel: string | null;
+  natural: number | null;
+  cash: number | null;
+  maxLoss: number | null;
+  bwdChange: number | null;
+  thetaChange: number | null;
+  /** A debit hedge offered past the buying-power cap, which it is exempt from. */
+  pastCap: boolean;
+  after: {
+    bwd: number | null;
+    inBand: boolean | null;
+    theta: number | null;
+    thetaPctNetLiq: number | null;
+    breakevenPct: number | null;
+    buyingPowerUsedPct: number | null;
+  } | null;
+}
+
+export interface ManageHedges {
+  target: number | null;
+  need: number | null;
+  root: string | null;
+  expiration: string | null;
+  dte: number | null;
+  error: string | null;
+  suggestions: ManageHedgeSuggestion[];
+}
+
+/**
+ * Beta-weighted delta and theta summed on our model and on the broker's own greeks, over the same legs
+ * with the same betas (`portfolio.broker_check`, snapshot v9). A gap is ours less the broker's.
+ */
+export interface ManageBrokerCheck {
+  legsCompared: number;
+  /** Legs only one model priced, left out of both sums. */
+  legsLeftOut: string[];
+  bwdOurs: number | null;
+  bwdBroker: number | null;
+  bwdGap: number | null;
+  thetaOurs: number | null;
+  thetaBroker: number | null;
+  thetaGap: number | null;
+  underlyings: Array<{ underlying: string; legs: number; bwdGap: number | null; thetaGap: number | null }>;
+}
+
+/** The account read as one book (packages/manage `portfolio.py`). Every figure is modelled. */
+export interface ManagePortfolio {
+  benchmark: string | null;
+  benchmarkSpot: number | null;
+  complete: boolean;
+  unmodelledLegs: string[];
+  noBeta: string[];
+  accountKind: { marginOrCash: string | null; typeName: string | null };
+  netLiq: number | null;
+  bwd: number | null;
+  bwdDollarsPer1pct: number | null;
+  theta: number | null;
+  thetaPctNetLiq: number | null;
+  vega30: number | null;
+  breakeven: { kind: "short_gamma" | "long_gamma"; points: number | null; pct: number | null } | null;
+  expectedMovePct: number | null;
+  realisedMove: number | null;
+  expectedMove: number | null;
+  buyingPowerUsed: number | null;
+  buyingPowerUsedPct: number | null;
+  stress: Array<{ shock: number; pnl: number | null; pctNetLiq: number | null; leftOut: string[] }>;
+  bands: {
+    delta: ManageBand & { basis: string | null };
+    theta: ManageBand;
+    /** Buying power used against a cap set by VIX; null on an evaluation from before it existed. */
+    buyingPower: (ManageBand & { vix: number | null }) | null;
+  } | null;
+  guidance: ManageGuidance[];
+  /** The lowest and highest confidence the evaluation's ruleset gives the portfolio rules (theta,
+   *  delta, break-even, buying power, concentration); null where the evaluation embeds no ruleset. */
+  ruleConfidence: { low: number; high: number } | null;
+  underlyings: ManagePortfolioUnderlying[];
+  hedges: ManageHedges | null;
+  vix: number | null;
+  scenarios: ManageScenarios | null;
+  ladder: ManageLadder | null;
+  candidates: ManageCandidates | null;
+  /** Null on an evaluation from before snapshot v9, which carried no broker greeks. */
+  brokerCheck: ManageBrokerCheck | null;
+}
+
+/** One sized income trade (packages/manage `candidates.py`). Every figure is the package's. */
+export interface ManageCandidate {
+  underlying: string;
+  kind: string;
+  /** Set on a narrowed version: the structure it was narrowed from. */
+  alternativeTo: string | null;
+  expiry: string | null;
+  dte: number | null;
+  legs: Array<{ strike: number; right: string; quantity: number; bid: number | null; ask: number | null; delta: number | null }>;
+  units: number;
+  /** The cap the next unit breaks; null when the unit count itself is the limit. */
+  binding: string | null;
+  perUnit: {
+    credit: number | null;
+    natural: number | null;
+    cash: number | null;
+    maxLoss: number | null;
+    buyingPower: number | null;
+    stressLoss: number | null;
+    theta: number | null;
+    bwd: number | null;
+  };
+  thetaPerBp: number | null;
+  earningsDate: string | null;
+  earningsUnknown: boolean;
+  alternative: ManageCandidate | null;
+}
+
+export interface ManageCandidates {
+  sourceSession: string | null;
+  takenAt: string | null;
+  accountBasis: string | null;
+  names: number | null;
+  excluded: Record<string, number>;
+  fits: ManageCandidate[];
+  fitsTotal: number;
+  tooBig: ManageCandidate[];
+  tooBigTotal: number;
+  error: string | null;
+  /** The sizing caps from the evaluation's ruleset (`portfolio.candidates`), as fractions of net liq
+   *  (the theta share of the theta the account may carry). The notional cap is the one `size` applies
+   *  to this account's basis. Null where the evaluation embeds no ruleset. */
+  caps: {
+    perTradeRiskPct: number | null;
+    notionalPerNamePct: number | null;
+    maxNameThetaShare: number | null;
+  } | null;
+}
+
+/** The book repriced across benchmark moves (packages/manage `portfolio.scenarios`). */
+export interface ManageScenarios {
+  moves: number[];
+  ivShiftWeighting: string | null;
+  /** One row per IV shift (vol points as a fraction, 0.05 = five points), a P&L per move. */
+  matrix: Array<{ ivShift: number; pnl: Array<number | null> }>;
+  graph: { moves: number[]; curves: Array<{ horizonDays: number; pnl: Array<number | null> }> };
+  leftOut: string[];
+}
+
+export interface ManageLadder {
+  expiries: Array<{ expiration: string; trades: string[]; downside: number | null; downsideUnknown: number; theta: number | null }>;
+  earnings: { trades: string[]; theta: number | null; thetaShare: number | null; downside: number | null };
 }
 
 export interface ManageAccount {
@@ -129,6 +342,8 @@ export interface ManageAccount {
   trades: ManageTrade[];
   /** Legs the ruleset leaves out entirely (SPX 0DTE by default), per underlying. */
   excluded: Array<{ underlying: string; legs: number; reason: string }>;
+  /** Null on an evaluation written before the portfolio reading existed (before 2026-10-18). */
+  portfolio: ManagePortfolio | null;
 }
 
 export interface ManagePayload {

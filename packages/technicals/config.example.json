@@ -6,5 +6,30 @@
     "user": "root",
     "stocks_db": "stocks",
     "options_db": "options"
+  },
+  "skate": {
+    "_comment": "The skate screen's range band (skate.py, docs/skate-plan.md): close +/- haircut x SMA(smoothing) of (highest high - lowest low over the sessions to expiry). 'haircut' is the fixed band's; 'by_expiry' is the second band's schedule, [[max calendar days, haircut], ...], first match wins, 'haircut' past the last. History counts from 'history_from' and over the last 'recent_years'; a name with fewer than 'min_history' past sessions is left out. The skate rate is recorded at strikes 0 to 'offset_max' past the band in steps of 'offset_step'.",
+    "haircut": 0.75,
+    "by_expiry": [[14, 0.65]],
+    "smoothing": 10,
+    "max_days": 63,
+    "min_sessions": 3,
+    "history_from": "2015-01-01",
+    "recent_years": 3,
+    "min_history": 250,
+    "offset_step": 0.0025,
+    "offset_min": -0.02,
+    "offset_max": 0.05,
+    "_comment_score": "The score of the regular-hours quotes (fetch_screener_greeks.py skate): 'rate' for Black-Scholes; 'hard' filters drop a leg (two-sided, spread within max_spread_pct of mid OR max_spread_abs, open interest); 'soft' thresholds are a pass/fail marker only (skate rate over the whole history and the recent years, skate yield on the bid); 'stage_two' is how many name-sides get every expiry quoted; test odds are stated per 'month_days'. 'offset_min' is how far inside the band history is recorded, for the strike one closer than the band's.",
+    "rate": 0.04,
+    "hard": {"min_open_interest": 100, "max_spread_pct": 0.10, "max_spread_abs": 0.05},
+    "soft": {"skate": 0.84, "skate_recent": 0.80, "yield": 0.06},
+    "stage_two": 60,
+    "month_days": 35
+  },
+  "setup_read": {
+    "_comment": "The read behind each setups-watchlist row (setup_read.py): the volatility regime reads IV rank AND IV percentile -- rich when both are at or above 'rich', cheap when both are under 'cheap', middling otherwise -- and picks the structure lean with the direction and the earnings calendar.",
+    "cheap": 33.0,
+    "rich": 50.0
   }
 }

@@ -6,7 +6,7 @@ import { spawnModuleCli, spawnModuleCliAsync, type SpawnedJson } from "./moduleC
  *
  * `python -m cherrypick.core.metrics read` runs the exact normalise-then-summarize pipeline
  * `orchestrator.report`/`calibrate` already run over a module's ledger -- `ledgers.READERS` +
- * `profiles.compare_profiles` + `calibration_reading` -- for one schema, grouped by that schema's
+ * `profiles.group_by_tag` + `calibration_reading` -- for one schema, grouped by that schema's
  * own profile tag. A TypeScript re-derivation would be a second implementation of `calibration_
  * reading`'s ~20 metrics free to drift from the one `calibrate` actually promotes on, which is the
  * exact mistake `services/report.ts` already made once (its own docstring calls the net rules

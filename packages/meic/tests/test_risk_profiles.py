@@ -41,14 +41,19 @@ LIVE_MINUS_ARMS = {
     "live-minus-latebias": {"late_entry_bias_enabled": False},
 }
 # live-minus-otmfloor retired from 2026-10-16: live's own OTM floors went to control's 0.0001 at
-# ~12:55 ET on 10-15, which made it live-shadow under another name. Kept, disabled, for its book.
-RETIRED_LIVE_ARMS = {"live-minus-otmfloor"}
+# ~12:55 ET on 10-15, which made it live-shadow under another name. The other three retired from
+# 2026-10-19 for the same reason: live moved to pm-200, which already sets each of their gates to
+# control's value. Each kept, disabled, for its book.
+RETIRED_LIVE_ARMS = {"live-minus-otmfloor", *LIVE_MINUS_ARMS}
 # live plus one gate (from 2026-10-16): live-shadow with ONE gate live no longer runs put back at the
 # value live ran until it was dropped -- the other side of that decision, read against live-shadow.
 LIVE_PLUS_ARMS = {
     "live-plus-otmfloor": {"min_call_otm_pct": 0.0035, "min_put_otm_pct": 0.003},
 }
 LIVE_ROSTER = set(LIVE_MINUS_ARMS) | RETIRED_LIVE_ARMS | set(LIVE_PLUS_ARMS)
+# The arm `live.arm` names (2026-10-18): in the registry so live can name it, disabled for paper,
+# because live-shadow (which follows live) is its paper measurement.
+LIVE_ARMS = {"pm-200"}
 LADDER = {"conservative", "moderate", "aggressive", "very-aggressive"}
 RETIRED_STUDY_ARMS = {
     "gex-open",
@@ -155,7 +160,7 @@ def test_config_risk_json_has_the_expected_profiles(sample_risk_profiles):
     kept for the record. Any name outside that set must be a recognized experiment prefix."""
     names = set(sample_risk_profiles["profiles"].keys())
     assert ACTIVE_STREAMS <= names
-    for extra in names - ACTIVE_STREAMS - LADDER - RETIRED_STUDY_ARMS - LIVE_ROSTER:
+    for extra in names - ACTIVE_STREAMS - LADDER - RETIRED_STUDY_ARMS - LIVE_ROSTER - LIVE_ARMS:
         assert extra.split("-")[0] in EXPERIMENT_PREFIXES, f"unexpected profile {extra!r}"
 
 
@@ -165,16 +170,16 @@ def test_registry_is_the_active_streams_plus_the_historical_record(sample_risk_p
     names = set(sample_risk_profiles["profiles"])
     live = names & LIVE_ROSTER
     assert live in (set(), LIVE_ROSTER), "the live-minus/plus arms land together or not at all"
-    assert names - live == ACTIVE_STREAMS | LADDER | RETIRED_STUDY_ARMS
+    assert names - live - (names & LIVE_ARMS) == ACTIVE_STREAMS | LADDER | RETIRED_STUDY_ARMS
 
 
 def test_only_the_active_streams_are_enabled(sample_risk_profiles):
     """Every ladder tier and every retired study arm must be `enabled: false` — kept for history,
     not competing with the active streams for the same ticks."""
     profiles = sample_risk_profiles["profiles"]
-    for name in ACTIVE_STREAMS | (set(profiles) & (set(LIVE_MINUS_ARMS) | set(LIVE_PLUS_ARMS))):
+    for name in ACTIVE_STREAMS | (set(profiles) & set(LIVE_PLUS_ARMS)):
         assert profiles[name].get("enabled", True) is True, f"{name} must be enabled"
-    for name in LADDER | RETIRED_STUDY_ARMS | (set(profiles) & RETIRED_LIVE_ARMS):
+    for name in LADDER | RETIRED_STUDY_ARMS | (set(profiles) & (RETIRED_LIVE_ARMS | LIVE_ARMS)):
         assert profiles[name].get("enabled") is False, f"{name} must be disabled"
 
 
@@ -228,6 +233,8 @@ def test_the_live_minus_arms_are_live_shadow_with_one_gate_relaxed(sample_risk_p
     profiles = sample_risk_profiles["profiles"]
     if not set(LIVE_MINUS_ARMS) <= set(profiles):
         pytest.skip("live-minus arms not yet added to this machine's registry (from 2026-10-15)")
+    if not any(profiles[n].get("enabled", True) for n in LIVE_MINUS_ARMS):
+        pytest.skip("the live-minus arms are retired (2026-10-19): nothing left to compare")
     live_top = json.loads((Path.home() / ".cherrypick" / "config" / "meic.json").read_text(encoding="utf-8"))
     _check_live_minus(profiles, live_top)
 
@@ -676,7 +683,8 @@ def test_profile_gate_values_in_reasonable_ranges(sample_risk_profiles):
         if "min_call_otm_pct" in profile:
             assert 0.0 <= profile["min_call_otm_pct"] <= 1.0
         if "stop_trigger_ratio" in profile:
-            assert 0.5 <= profile["stop_trigger_ratio"] <= 1.5
+            # Up to 3x: pm-200 (2026-10-18) stops a side at 2x the whole credit, its defining rule.
+            assert 0.5 <= profile["stop_trigger_ratio"] <= 3.0, name
         if profile.get("regime_vix_pause_threshold") is not None:
             assert profile["regime_vix_pause_threshold"] > 0
 
@@ -685,7 +693,9 @@ def test_profile_gate_values_in_reasonable_ranges(sample_risk_profiles):
         # capped by buying power instead of by count (the bp-* arms), whose cap is the real limit.
         if "max_concurrent_ics" in profile:
             bp_capped = bool(profile.get("max_open_bp_dollars"))
-            ceiling = 999 if name in UNCAPPED_SAMPLING_STREAMS or bp_capped else 99
+            # The live arm too: live caps it by the live block's buying power and per-day count.
+            uncapped = name in UNCAPPED_SAMPLING_STREAMS | LIVE_ARMS
+            ceiling = 999 if uncapped or bp_capped else 99
             assert 1 <= profile["max_concurrent_ics"] <= ceiling, name
 
         if "daily_ic_trade_target" in profile:
@@ -703,6 +713,10 @@ def test_experiment_profiles_pin_symbol_and_wings(sample_risk_profiles):
         if "symbols" not in p:
             continue
         assert isinstance(p.get("symbols"), list) and p["symbols"], f"{name} must pin `symbols`"
+        # The scalar `wing_width_points` outranks the per-symbol table (paper.py), so it pins the
+        # wings for every symbol on its own (pm-200).
+        if p.get("wing_width_points"):
+            continue
         wbs = p.get("wing_widths_by_symbol")
         assert isinstance(wbs, dict) and wbs, f"{name} must set `wing_widths_by_symbol`"
         for sym in p["symbols"]:

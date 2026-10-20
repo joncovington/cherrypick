@@ -216,4 +216,35 @@ describe("the Options flow page", () => {
     expect(full).toContain("<th>Spread</th>");
     expect(render(<FlowToday day={DAY} />)).not.toContain("th-sort");
   });
+
+  it("every spread says call, put or both, and carries its read from the scored flow", () => {
+    const base = DAY.derived!.flows[1]!;
+    const read = (over: object) => ({ ...base, cp: null, lean: null, unreadWhy: null, ...over });
+    const rr = { ...DAY.spreads[0]!, symbol: "MAT", timeEt: "10:00:00.000", size: 16441, type: "RR", cp: "mixed" as const, direction: null };
+    const str = { ...DAY.spreads[0]!, symbol: "NU", timeEt: "11:00:00.000", size: 6645, type: "STR", cp: "mixed" as const, direction: null };
+    const day = {
+      ...DAY,
+      spreads: [DAY.spreads[0]!, rr, str],
+      derived: {
+        ...DAY.derived!,
+        flows: [read({ symbol: "AI", timeEt: "15:01:34.327", size: 41900, kindLabel: "call spread", cp: "call" })],
+        unread: [
+          read({ symbol: "MAT", timeEt: "10:00:00.000", size: 16441, kindLabel: "risk reversal", direction: null, view: null,
+                 score: null, cp: "mixed", unreadWhy: "a call and a put leg; the site's signs do not say which was bought" }),
+          read({ symbol: "NU", timeEt: "11:00:00.000", size: 6645, kindLabel: "strangle", direction: null, view: null,
+                 score: null, cp: "mixed", lean: "long volatility", unreadWhy: "a volatility bet: no direction" }),
+        ],
+      },
+    } as OptionsFlowDay;
+    const html = render(<FlowSpreads day={day} />);
+    expect(html).toContain(">call spread<");
+    expect(html).toMatch(/class="pnl-neg"[^>]*>bearish</); // AI's call spread, sold
+    expect(html).toContain("risk reversal (call + put)");
+    expect(html).toContain("which was bought"); // the unread reason, on hover
+    expect(html).toContain(">long volatility<");
+    // Before the day is scored: the site's code with the capture's side, and no read.
+    const unscored = render(<FlowSpreads day={{ ...day, derived: null }} />);
+    expect(unscored).toContain(">call (CS)<");
+    expect(unscored).toContain("call + put (RR)");
+  });
 });

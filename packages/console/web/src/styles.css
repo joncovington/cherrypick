@@ -256,6 +256,13 @@ a.chip:hover {
   border-color: color-mix(in srgb, var(--chart-special-2) 45%, transparent);
 }
 
+/* A manage verdict of hold: the accent blue, so a quiet row reads apart from review (amber) and an
+   exit (red). */
+.chip-hold {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
 .chip-warn {
   color: var(--warn);
   border-color: color-mix(in srgb, var(--warn) 40%, transparent);
@@ -4109,6 +4116,273 @@ select.text-input {
   font-family: var(--num-face);
   font-size: 24px;
   font-weight: 700;
+}
+
+/* manage's portfolio cards (pages/Live/PortfolioCards.tsx). The only tone that is not a sign is
+   in-band against outside, and that is a flag manage set; outside reads amber, a warning, not red,
+   which would read as a loss. */
+.pf-dial svg {
+  display: block;
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
+}
+.pf-dial-band {
+  stroke: color-mix(in srgb, var(--pos) 38%, var(--track));
+}
+.pf-dial-zero {
+  stroke: var(--chart-grid-strong);
+}
+.pf-needle-out {
+  stroke: var(--warn);
+  fill: var(--warn);
+}
+.pf-out-text {
+  color: var(--warn);
+}
+.chip.pf-out {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+.pf-unit {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.pf-hero {
+  font-family: var(--num-face);
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0.25rem 0 0.75rem;
+}
+.pf-caption {
+  margin: 0.6rem 0 0;
+  font-size: 12px;
+  white-space: normal;
+}
+/* Portfolio guidance: one small card per item, two or three to a row, its topic as a chip top-left. */
+.pf-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(19rem, 100%), 1fr));
+  gap: 0.6rem;
+  align-items: start;
+}
+.pf-guide-conf {
+  font-size: 11px;
+}
+.pf-guide-reason {
+  margin: 0;
+  line-height: 1.45;
+}
+.pf-guide-drivers {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0.4rem 0 0;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 0.15rem;
+  font-size: 12px;
+}
+.pf-guide-drivers li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.pf-hedge {
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border);
+}
+.pf-hedge ul {
+  margin: 0.25rem 0 0.25rem 1rem;
+}
+.pf-earnings {
+  margin: 0.75rem 0 0;
+  font-size: 12.5px;
+  white-space: normal;
+}
+.pf-graph {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.pf-graph-label {
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--num-face);
+}
+.pf-legend {
+  display: flex;
+  gap: 1.25rem;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+.pf-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
+/* The risk matrix: P&L cells tinted by sign, darker the larger; the origin (no move, no IV change)
+   is outlined so the eye has a zero to start from. */
+.pf-matrix {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-family: var(--num-face);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.pf-matrix th {
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 0.3rem 0.5rem;
+  text-align: right;
+  white-space: nowrap;
+}
+.pf-matrix tbody th {
+  text-align: left;
+}
+.pf-matrix td {
+  text-align: right;
+  padding: 0.45rem 0.5rem;
+  border-radius: 3px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.pf-matrix-origin {
+  outline: 1px solid var(--chart-grid-strong);
+}
+.pf-too-big {
+  margin-top: 0.75rem;
+  font-size: 12.5px;
+}
+.pf-too-big summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.pf-too-big ul {
+  margin: 0.4rem 0 0 1rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+/* An expanded trade on Live -> manage (ManagePage's TradeDetail): the verdict as a lead, then a row
+   of cards that wraps to the width it has, then the legs. */
+.md-detail {
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.75rem 0.25rem 0.5rem;
+  white-space: normal;
+}
+.md-lead {
+  margin: 0;
+  max-width: 72rem;
+  padding: 0.6rem 0.85rem;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-sunken);
+  border-radius: 0 6px 6px 0;
+  font-family: inherit;
+  line-height: 1.5;
+}
+.md-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.6rem;
+  align-items: start;
+}
+.md-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem 0.7rem;
+  min-width: 0;
+}
+.md-card > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 0.5rem;
+  margin-bottom: 0.45rem;
+}
+.md-card h4 {
+  margin: 0;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.md-kv {
+  margin: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+.md-kv > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 12.5px;
+}
+.md-kv dt {
+  color: var(--text-muted);
+}
+.md-kv dd {
+  margin: 0;
+  text-align: right;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+.md-orders,
+.md-rules {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.md-order-head,
+.md-rule-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 12.5px;
+  font-family: var(--num-face);
+}
+.md-rule-head {
+  justify-content: flex-start;
+}
+.md-price {
+  font-family: var(--num-face);
+  font-weight: 600;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.md-sub {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.md-subhead {
+  margin: 0.55rem 0 0.3rem;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.md-note {
+  margin: 0.45rem 0 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.4;
 }
 
 /* win-rate rings */

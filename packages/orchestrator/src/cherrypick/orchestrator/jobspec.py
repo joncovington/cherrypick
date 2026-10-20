@@ -73,6 +73,9 @@ CATCHUP_MINUTES = {
     # The daily position evaluation judges the session's marks; caught up any time before the close it
     # still describes today's positions, after the close it would judge stale ones.
     "manage-eval": 5 * 60,
+    # The day's further runs (`manage.also_at`) are refreshes: a missed one is overtaken by the next,
+    # so it catches up for an hour and no more.
+    "manage-eval-also": 60,
     # The market files: the evening fetch is good until the pack builds at 08:30, and the pre-pack
     # retry is worth nothing after it.
     # The end-of-day landing reads the local Dolt clones; a late one is the same landing, and the
@@ -108,6 +111,9 @@ CATCHUP_MINUTES = {
     "technicals-earnings-record": 12 * 60,
     # Local files only and idempotent (an already-scored session is skipped), so any time that day.
     "technicals-screeners": 12 * 60,
+    # Rebuilt whole from the history store, so any time that day is the same file; the measure run
+    # that reads it starts at 11:30.
+    "technicals-skate": 12 * 60,
     # Ahead of the 06:15 landing; a late fetch is the same fetch, and the landing after it picks it up.
     "technicals-index-bars": 12 * 60,
     # The vendor's sessions for the last few trading days; idempotent (complete sessions are
@@ -152,6 +158,12 @@ CATCHUP_MINUTES = {
     "report-earnings-strikes": 240,
     "report-screener-measure-1": 60,
     "report-screener-measure-2": 60,
+    # The script refuses outside regular hours, so a late catch-up records nothing rather than an
+    # after-hours book; half an hour is all the window leaves.
+    "report-income-chains": 30,
+    # The same window rule: a late catch-up quotes nothing rather than an after-hours book.
+    "report-skate-quotes-1": 30,
+    "report-skate-quotes-2": 30,
     "universe-watchlist": 300,
     # Broker-cash reconciliation of a settled live session. Generous, because the whole point is
     # that it must not depend on anyone arming the live loop: a box asleep until mid-afternoon
@@ -232,6 +244,12 @@ NOTIFIES_OWN_FAILURE = frozenset(
         "reconcile",  # its scheduled run pushes every non-FLAT verdict; the exit code is the verdict
     }
 )
+
+
+def notifies_own_failure(job_id: str) -> bool:
+    """`NOTIFIES_OWN_FAILURE`, plus the `manage-eval-HHMM` runs named by config (`manage.also_at`)."""
+    return job_id in NOTIFIES_OWN_FAILURE or job_id.startswith("manage-eval-")
+
 
 # Fixed-time jobs that may run again after a failure, inside their catch-up window: fetchers that
 # are safe to repeat (each writes per-day files, or replaces the day it already wrote). The vendor
@@ -1421,6 +1439,25 @@ def derive_jobs(
             enabled_reason="" if tc_on else "disabled in config (technicals), or no dolt sql-server to read",
         ),
     )
+    skate_on = tc_on and tc["history"] and tc["skate"]
+    add(
+        "technicals-skate",
+        lambda: JobSpec(
+            id="technicals-skate",
+            # A package command: the skate screen's range bands for every options-tradable name and
+            # weekly expiry to 63 days, with how often each band has held since 2015, from the
+            # history store and local files alone. The 11:30 / 14:30 measure run quotes its strikes.
+            argv=(pythonw, "-m", "cherrypick.technicals", "skate"),
+            kind=KIND_DAILY,
+            at_et=tc["skate_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-skate"],
+            trading_days_only=True,
+            enabled=skate_on,
+            enabled_reason=""
+            if skate_on
+            else "disabled in config (technicals.skate or technicals.history), or with technicals-land",
+        ),
+    )
     mv = cfgmod.morning_settings(cfg)
     files_on = mv["enabled"] and mv["files"]
     for job_id, at in (("market-files", mv["files_at"]), ("market-files-retry", mv["files_retry_at"])):
@@ -1483,6 +1520,21 @@ def derive_jobs(
             enabled_reason="" if mg["enabled"] else "disabled in config (manage)",
         ),
     )
+    for at in mg["also_at"]:
+        job_id = f"manage-eval-{at.replace(':', '')}"
+        add(
+            job_id,
+            lambda job_id=job_id, at=at: JobSpec(
+                id=job_id,
+                argv=_run_py(pythonw, launcher, "manage"),
+                kind=KIND_DAILY,
+                at_et=at,
+                catchup_minutes=CATCHUP_MINUTES["manage-eval-also"],
+                trading_days_only=True,
+                enabled=mg["enabled"],
+                enabled_reason="" if mg["enabled"] else "disabled in config (manage)",
+            ),
+        )
     add(
         "morning-factpack",
         lambda: JobSpec(
@@ -1762,6 +1814,44 @@ def derive_jobs(
                 trading_days_only=True,
                 enabled=mr["screener_greeks"],
                 enabled_reason=sg_reason,
+            ),
+        )
+    add(
+        "report-income-chains",
+        lambda: JobSpec(
+            id="report-income-chains",
+            # Our own income candidates (docs/portfolio-guidance-plan.md, piece 4): every tradable name's
+            # cycle-monthly chain, out of the money both sides, quoted in regular hours for manage to
+            # size against the account. Needs no vendor list. Read-only REST; the script refuses
+            # outside the measuring window. After the 14:30 measure, whose chain listings it reuses.
+            argv=(pythonw, _suite_script(launcher, "fetch_screener_greeks.py"), "income"),
+            kind=KIND_DAILY,
+            at_et=mr["income_chains_at"],
+            catchup_minutes=CATCHUP_MINUTES["report-income-chains"],
+            trading_days_only=True,
+            enabled=mr["screener_greeks"],
+            enabled_reason=sg_reason,
+        ),
+    )
+    skate_q_on = mr["screener_greeks"] and skate_on
+    for i, at in enumerate(mr["skate_quotes_at"][:2], 1):
+        add(
+            f"report-skate-quotes-{i}",
+            lambda i=i, at=at: JobSpec(
+                id=f"report-skate-quotes-{i}",
+                # The skate screen's strikes (docs/skate-plan.md): the morning's bands snapped to listed
+                # strikes, quoted in regular hours and scored -- every name-side on its cycle monthly,
+                # every weekly for the widest history-minus-implied gaps. Read-only REST; the script
+                # refuses outside the measuring window.
+                argv=(pythonw, _suite_script(launcher, "fetch_screener_greeks.py"), "skate"),
+                kind=KIND_DAILY,
+                at_et=at,
+                catchup_minutes=CATCHUP_MINUTES[f"report-skate-quotes-{i}"],
+                trading_days_only=True,
+                enabled=skate_q_on,
+                enabled_reason=""
+                if skate_q_on
+                else "disabled in config (market_report.screener_greeks, or technicals-skate is off)",
             ),
         )
     uv_reason = "" if mr["universe"] else "disabled in config (market_report.universe)"

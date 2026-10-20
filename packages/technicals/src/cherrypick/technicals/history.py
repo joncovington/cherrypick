@@ -7,7 +7,8 @@ tastytrade's are on file. Every name Dolt lists, from START, read in month-wide 
 symbol filter (Dolt's keys lead with the date, so a symbol filter walks the table). A re-run reads
 from RESTATE_DAYS behind the newest bar held, so a restated bar lands.
 
-Rebuildable from Dolt at any time; nothing nightly reads it. `check` compares it with `eod.db` where
+Rebuildable from Dolt at any time. Its morning readers are the board's fundamentals score and the
+skate bands (`skate.py`), both after the 06:20 top-up. `check` compares it with `eod.db` where
 the two overlap, and lists what a reader of fifteen years of a free dataset should look at before
 trusting it: price jumps no split explains, and names with holes in their history.
 """

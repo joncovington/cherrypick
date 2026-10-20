@@ -61,6 +61,10 @@ names" one click away. A name is options-tradable when both hold (`tradable.py`)
 
 A cash index (SPX) has no stock volume; its weeklies alone decide.
 
+Since 2026-10-07 a name the nightly liquidity verdict holds illiquid (`liquidity.py`) has no chart
+file, so no row at all, until the monthly sweep. The weeklies are read from each name's own latest
+IV-rank reading, at most 10 days old.
+
 **Tastytrade's liquidity rating was dropped the same day it was adopted.** It marks a name down for
 its share price. Among names with weeklies, the median close was $42 at rating 4, $88 at 3, $189 at
 2 and $544 at 1. HD, LOW, APP, GS, CAT, LLY and COST were all rated 2. The market report's universe
@@ -98,6 +102,23 @@ rows. Most of the rest list monthly options only (MCO, CB, BNY, LIN).
 
 Nothing ranks signals by quality. These setups aren't scored for outcomes, so the table shouldn't
 imply which signal is better.
+
+## The read behind a row (2026-10-18)
+
+Each row carries `read` (`setup_read.py`), written with the watchlist and shown when the row opens
+out on the console. It is a pure function of data the suite already holds:
+
+| Card | What it says |
+|---|---|
+| The setup | The rule in words, a tested rule's change, the setup's median hold over every drawn trade, the target |
+| Its record | The historical study's result for this setup and side: entries, net R, edge against random entry, verdict |
+| Direction | Agrees, conflicts, mixed or unread, from the 1M/6M trend against the side and the signal board. Mean reversion fades the move by design, so its trend is shown but does not vote |
+| Volatility | Implied and 30-day historical vol, IV rank and percentile, the regime (rich when both are at or above 50, cheap when both are under 33; config `setup_read`), the expected move to the user's cycle monthly, earnings inside the cycle, ex-dividend |
+| Levels | Support, resistance and the target as % away, in ATR(14)s and in sigmas of the expected move |
+| Structure lean | A kind of option trade, never a contract: debit spread toward the target when vol is cheap, credit spread past the level (and past the skate band where one exists) when it is rich, either when it is middling; a report inside the cycle means no premium sold. Every lean restates a losing rule's record beside it |
+
+On the 2026-10-16 close (the chart job's own run): 658 rows across 386 charts; 541 have a report
+inside the cycle (earnings season), so 581 leans are debit spreads.
 
 ## The numbers
 

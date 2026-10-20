@@ -38,10 +38,17 @@ decisions per symbol, one shared account-wide risk budget.
   touched. **It is not a full re-implementation of the Loop Steps**: GEX-wall strike anchoring, the ORB
   debit-spread path and judgement-based stop tightening are agent-loop-only. The engine runs the
   simpler deterministic mechanics `paper.py` codifies (per-arm gate thresholds, fixed
-  `stop_trigger_ratio`, no discretionary tightening), which is what makes its EOD report and every
+  `stop_trigger_ratio`, no discretionary tightening), which is what makes its daily roll-up and every
   `analytics.py` read reproducible.
-- **Live / interactive (agent-driven).** You execute the Loop Steps below for live and manual sessions;
-  live-order tools require `enable_live_trading: true`. The orchestrator never runs this path.
+- **Live (deterministic, armed per day).** `cherrypick/meic/live_loop.py` trades one pinned
+  `live.symbol` with the same `paper.py` decision functions, against `meic_trades.db`. The supervisor
+  runs it as the `meic-live` job (one `--once --live` tick a minute) only while a human's
+  `/live-meic-start` arm record is today's, and it is inert unless `readiness()` comes back empty. No
+  ORB, no discretionary tightening, no working-order repricing beyond the stop rule.
+- **Interactive (agent-driven).** You execute the Loop Steps below for manual `/meic-start` sessions,
+  through `tt execute_trade --live`. That path needs `enable_live_trading: true` and the designated
+  account, but not `live.symbol`, `live.gate0_confirmed` or the arm record. The orchestrator never
+  runs it.
 
 > ⚠️ **Think hard before adding a dependency to the loop path.** Entry/stop/logging decisions depend
 > only on `tt.py`, `db.py`, the streamer's cache and this file. Every added dependency is a new failure
@@ -54,7 +61,9 @@ decisions per symbol, one shared account-wide risk budget.
   Calendar and fees come from `cherrypick.core.calendar` / `cherrypick.core.fees`; add a symbol's fee
   by extending `cherrypick.core.fees`, never by hardcoding here.
 - **The orchestrator boundary is strict.** It runs this module by subprocess for paper collection, fires
-  `meic-paper`, watchdogs it and the streamer, and reads `paper_trades.db` for reporting. It **never
+  `meic-paper`, watchdogs it and the streamer, and, from a human's arm record only, runs the
+  `meic-live` tick; it also runs `meic-fee-reconcile`, `meic-regime-cuts` and the suite's
+  `settle-overdue-live`, and reads `paper_trades.db` for reporting. It **never
   edits this module's code or config, never places, cancels, adjusts or closes an order, and never
   flips `enable_live_trading`**. Its one live-config action is onboarding (`cherrypick
   connect`/`account`): it delegates to this module's credential tool and writes the selected
@@ -142,7 +151,9 @@ python run.py gex-gate                       # what the negative-GEX gate refuse
   delta band the moment VIX crosses 18/25/35 and one session in five straddles one; VIX1D from Cboe's
   daily file at the open; IV rank as the tick's VIX in the prior 252 Cboe closes (`iv_rank_source =
   "vix_proxy"`); ATR from prior sessions' trails; GEX from the recorded profile. It cannot see XSP (nothing recorded), strikes
-  beyond the recorder's ~20 each side, or `advised:*` arms, and refuses each. A scratch ledger is
+  beyond the recorder's ~20 each side, or `advised:*` arms, and refuses each. A known limit: volume
+  GEX (`net_gex_vol`) is not rebuilt, so an arm with `regime_gex_block_mode: "both"` replays as
+  `"oi"`. A scratch ledger is
   written under `db.scratch_writes()` (no fsync, no WAL checkpoint), which cut a tick from ~0.34 s
   to ~0.04 s; the real ledgers never take that path.
 - **`... replay check --dates D1,D2 --arms ...`** validates it against paper on recorded sessions:
@@ -185,10 +196,21 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
   only while it is today's, and each `--live` tick deletes it once stale or past `live.disarm_time`,
   before any broker read. A manual `--once --live` needs the record too. `--status` is the arming
   command's and the watchdog's read (no broker). `live.max_structures_per_day` (default 1) caps new
-  ICs a session; a one-tick lock keeps a slow tick from overlapping the next.
+  ICs a session (`null` lifts the count cap, so buying power alone sizes); a one-tick lock keeps a
+  slow tick from overlapping the next. `live.daily_loss_halt_dollars` and the halt flag block NEW ICs
+  only: fills are still confirmed and open ICs still stopped and force-closed.
+  `live.use_order_alert_daemon` makes the supervisor keep `cherrypick.meic.alert_daemon` up until
+  `disarm_time`; it records order alerts in `live_alerts.db` and starts a tick when an order the
+  ledger knows stops working, so a fill is confirmed in seconds rather than at the next minute.
+- **Live settles on the official print only (2026-10-15).** A held side settles at
+  `core.settlement.official_index_close` (the posted close, else Yahoo/Barchart); until one is posted
+  the IC stays open and the next tick asks again. A past session left open is settled at that day's
+  close by `live_loop --settle-overdue` (the hourly `settle-overdue-live` job), or by hand with
+  `--settle --date --price`.
 - **The orphan sweep is suite-wide.** flies, bwb and MEIC trade SPX in one account, so each loop
   publishes its ledger's order ids (`core.execution.publish_known_orders`) and counts the others' as
   known; an order none of them records blocks new entries, and a sweep that cannot look does too.
+  An entry with a leg opposite one another live loop holds is refused (`core.livepositions`).
 - **Every live submit goes through `cherrypick.core.execution.Broker` (`make_broker`)**, which re-checks
   `readiness` on every submit and applies the deploy governor. `adjust_order` goes through
   `cherrypick.core.broker.replace_order` (same preflight and governor as `execute_trade`); a core test
@@ -235,6 +257,7 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
 | `python -m cherrypick.meic.tt get_market_overview --symbols XSP` | IV rank, underlying price, market summary | No |
 | `python -m cherrypick.meic.tt get_transactions --underlyings GLD --since 2026-01-01` | Trade history per underlying, GET only -- the order chains the daily position evaluation (packages/manage) judges | No |
 | `python -m cherrypick.meic.fee_reconcile [--date D] [--symbol S] [--apply]` | Settled LIVE rows' fees against the broker's: trade lines by the row's own order ids, settlement lines per contract on the sides `ic_spread_legs` records `expired`. Dry-run reports; `--apply` writes `fees`/`settlement_fees` and keeps the model once in `fee_reconciliations`. The gross is reported, never written (it is split per side in `ic_spread_legs`). The supervisor's `meic-fee-reconcile` job runs it with `--apply` daily, armed or not | No |
+| `python -m cherrypick.meic.live_loop --status \| --once [--live] \| --settle-overdue \| --settle --date D --price P [--symbol S] \| --install-task \| --uninstall-task` | The deterministic live loop: its state with no broker read (`--status`); one tick, dry-run unless `--live`; past sessions settled at their own official close; arm or disarm today (the `/live-meic-start` path) | `--live`: Yes |
 | `python -m cherrypick.meic.tt get_quote --symbol XSP` | Last trade price (stream cache → DXLink fallback) | No |
 | `python -m cherrypick.meic.tt get_vix1d` | Live VIX1D via direct DXLink fetch — feeds the `vix1d_ratio` trigger (Step 4) | No |
 | `python -m cherrypick.meic.tt get_calendar [--year N]` | Shared market calendar from `cherrypick.core.calendar`: `nyse_holidays`, `fomc_dates` (+ `fomc_year_known`), `quarterly_expiry_dates`, `triple_witching_dates`. No broker. | No |
@@ -246,6 +269,7 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
 | `python -m cherrypick.meic.tt get_positions` | Open positions detail | No |
 | `python -m cherrypick.meic.tt get_working_orders` | Live/unfilled orders | No |
 | `python -m cherrypick.meic.tt get_quotes --symbols .APO260918C120 ...` | Bid/ask/mid for specific streamer symbols **without writing the shared cache** — for symbols no module declared, where seeding the cache would leave rows nothing refreshes | No |
+| `python -m cherrypick.meic.tt get_greeks --symbols .APO260918C120 ...` | The broker's per-share greeks for specific streamer symbols, under the same no-cache-write rule (the manage snapshot's check against the broker's model) | No |
 | `python -m cherrypick.meic.tt list_accounts` | Account numbers | No |
 | `python -m cherrypick.meic.tt execute_trade --order '<JSON>'` | Dry-run validate an order (default) | No |
 | `python -m cherrypick.meic.tt execute_trade --order '<JSON>' --live` | Place a live order | Yes |
@@ -258,23 +282,15 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
 **Note**: `close_position` cancels a *working order*. To flatten an open position, use `execute_trade
 --live` with closing actions (Buy to Close / Sell to Close).
 
-## DXLink Streamer Daemon
+## Market data
 
-`cherrypick/meic/streamer.py` holds a persistent DXLink WebSocket and writes Quote, Greeks and Trade
-events to the shared cache (path from `paths.py::stream_cache_path()`). Start it with the dashboard at
-session open.
-
-```bash
-python -m cherrypick.meic.streamer            # foreground
-Start-Process python -ArgumentList '-m','cherrypick.meic.streamer' -WindowStyle Hidden   # hidden (Windows)
-python -m cherrypick.meic.streamer --status
-python -m cherrypick.meic.streamer --stop
-```
-
-For **every symbol in `symbols`** it subscribes `Trade` on the underlying, and `Quote`/`Greeks`/
-`Summary` on a re-centring near-the-money window plus every open IC leg (read from the DB every 30s).
-`Summary.open_interest` lands in `stream_oi` and feeds `get_gex --symbol <SYM>`, computed per symbol
-from that symbol's own window.
+MEIC has no streamer of its own. The standalone producer (`packages/streamer`) writes the shared cache
+(path from `paths.py::stream_cache_path()`), and MEIC declares what it needs through
+`stream_request.py`: **every symbol in `symbols`**, with a near-the-money window, plus every open IC
+leg of the paper and live ledgers (re-read by the producer every poll). `Summary.open_interest` lands
+in `stream_oi` and feeds `get_gex --symbol <SYM>`, computed per symbol from that symbol's own window;
+the opening range comes from the producer's `orb.py`. `tt stream_status` reports the producer's health.
+MEIC's in-module rollback streamer was removed on 2026-10-18.
 
 ## Risk profiles and arms
 
@@ -306,13 +322,11 @@ era (`ic_trades.era`, from `analytics.CURRENT_ERA` via `cmd_save_trade`), journa
 
 - **`live-shadow`** carries no overrides, only `follows_live: true`: it resolves to exactly the dict
   `live_loop.run_once` trades (`paper.live_params`) and keeps doing so as the config changes;
-  `test_risk_profiles.py` pins it override-free and equal to the live params. Live's top level differs
-  from control on sixteen settings, so control's result describes a configuration live does not run.
-  Live stays disabled; enabling it, and what it trades, is a decision this arm's rows inform. **Verdict
-  at 10 sessions: live as configured almost never trades** (1 fill session of 10). From 2026-10-15 four
-  `live-minus-*` arms (also `follows_live`) each relax ONE of the gates that refused, to name the one
-  keeping it dark (docs/history.md, 2026-10-12). From 2026-10-16 `live-minus-otmfloor` is retired
-  (live dropped its OTM floors) and `live-plus-otmfloor` puts them back on live-shadow instead.
+  `test_risk_profiles.py` pins it override-free and equal to the live params. Control's result
+  describes a configuration live does not run, so this arm is live's paper measurement. Other arms
+  with `follows_live: true` resolve to `paper.live_params` plus their one override, so each is live
+  with one thing changed. Which followers exist is the machine registry's business; their dated
+  history is in [docs/history.md](docs/history.md).
 - **The live block (2026-10-14), flies' `live.arm` seam.** `live.arm` names the registry arm live
   trades (unset: the top level, as before); `live.max_open_bp_dollars`, `wing_widths_by_symbol`,
   `entry_window_start` and `entry_window_end` apply to live alone and only narrow the arm (later start,
@@ -410,10 +424,10 @@ preserve: [docs/risk-profiles.md](docs/risk-profiles.md#design-rationale).
 | `wing_widths_by_symbol` | per-symbol lists | Candidate widths per instrument, scanned widest-first (10 points is ~0.13% of SPX but ~3.4% of IWM). `DEFAULT` covers unlisted symbols |
 | `quantity` | `1` | Contracts per IC |
 | `daily_ic_trade_target` | `200` | Guidance, never a cap — a never-binding backstop under independent sampling. `0` disables IC entries (ORB-only) |
-| `overlap_scope` | `"shorts"` | Check against this arm's open positions on the same symbol: `"all"` (any shared strike), `"shorts"` (exact repeat of the short pair), `"none"` (paper-only), `"sign"` (see above). Default `"all"`. **Live never sees a paper arm's value**: `live_loop.py` applies no arm-registry overlay |
+| `overlap_scope` | `"shorts"` | Check against this arm's open positions on the same symbol: `"all"` (any shared strike), `"shorts"` (exact repeat of the short pair), `"none"`, `"sign"` (see above). Default `"all"`. **Live sees only the arm `live.arm` names** (none: the top level); no other arm's value reaches it |
 | `entry_window_start` | `10:00` | Earliest entry (ET); skips the volatile first 30 min |
 | `entry_window_end` | `14:30` | Latest new IC entry (ET) — gamma risk after |
-| `force_close_time` | `15:45` | Hard force-close (ET) for all open 0DTE positions regardless of P&L |
+| `force_close_time` | `15:45` | Backstop force-close (ET) for non-cash-settled symbols, after `physical_settlement_force_close_time`; cash-settled positions are left to expire |
 | `max_credit` | `null` | Credit ceiling; `null` = agent decides |
 | `separate_spread_entry` | `false` | `false` = 4-leg combo; `true` = two 2-leg spreads; `"auto"` = agent chooses |
 | `entry_price_strategy` | `auto` | `mid` / `natural_bid` / `ioc_step` / `day_improve` / `auto` (picks by session/spread width/IV rank). Read only by the agent-driven live path |
@@ -429,7 +443,7 @@ preserve: [docs/risk-profiles.md](docs/risk-profiles.md#design-rationale).
 | `per_side_stop_management` | `true` | Independent call/put stops. The trigger basis is always the whole IC's `net_credit` (the Chambless convention, `docs/strategy.md`) — fixed in code. **`per_side_stop_trigger` does not exist and was never read — do not reintroduce it**; the per-side-own-credit question is the derived `stop-2.0-side` policy ([docs/paper-experiments.md](docs/paper-experiments.md)) |
 | `max_stop_adjustments_per_ic` | `3` | Max stop tightenings per IC |
 | `cash_settled_symbols` | `[SPX, XSP, NDX, RUT]` | Decides the **end-of-day path**: listed symbols are **left to expire** and cash-settled at `expiration_settlement_time` (OTM short keeps full credit; ITM settles at intrinsic capped at width); unlisted (QQQ/IWM/equities) are **force-closed** by `physical_settlement_force_close_time`. Also drives the missed-force-close escalation (Step 2) and paper's assignment/pin friction. Per-side stops and event force-closes apply to every symbol. Never list physically settled ETFs |
-| `expiration_settlement_time` | `16:00` | Cash settlement time (ET). Paper computes settlement P&L from the close; live reconciles the broker's cash settlement next session |
+| `expiration_settlement_time` | `16:00` | Cash settlement time (ET). Paper settles at the close; live settles only on the official print (`core.settlement.official_index_close`), leaving the IC open until one is posted, and a missed session is settled by `live_loop --settle-overdue` (the hourly `settle-overdue-live` job) |
 | `physical_settlement_force_close_time` | `15:30` | Force-close (ET) for non-cash-settled symbols (backstop `force_close_time`) |
 | `physical_settlement_exit_friction` | `0.05` | **Paper only.** Per-spread friction added when force-closing a physically settled position |
 | `pin_risk_threshold_pct` | `0.002` | **Paper only.** A short within 0.2% of spot at force-close is "pinned" |
@@ -459,6 +473,7 @@ preserve: [docs/risk-profiles.md](docs/risk-profiles.md#design-rationale).
 | `regime_vix_pause_threshold` | `25` | Pause IC entries above this VIX |
 | `regime_atr_lookback_days` | `5` | Days in each symbol's own ATR |
 | `regime_atr_pause_threshold_pct` | `0.015` | Pause IC entries when 5-day ATR exceeds 1.5% of spot (ORB stays eligible). Percentage thresholds scale across price levels; fixed-point ones mis-fired |
+| `regime_gex_block_mode` | _(unset: `"oi"`)_ | With `regime_gex_block_negative`: `"oi"` blocks on open-interest GEX alone; `"both"` blocks only when volume GEX (`net_gex_vol`) is negative too, falling back to the OI rule when no volume reading exists (2026-10-15) |
 | `orb_enabled` | `true` | ORB debit spread alongside IC entries |
 | `orb_range_minutes` | `5` | Opening range 9:30–9:35 |
 | `orb_breakout_threshold_pct` | `0.005` | Break beyond the range needed to enter (0.5% of spot) |
@@ -470,6 +485,8 @@ preserve: [docs/risk-profiles.md](docs/risk-profiles.md#design-rationale).
 | `late_entry_bias_enabled` | `true` | Prefer post-noon IC entries when IV rank is borderline |
 | `late_entry_bias_iv_rank_max` | `0.45` | Bias applies at IV rank ≤ this |
 | `late_entry_bias_start_time` | `12:00` | No IC entries before this when the bias applies |
+| `slippage_frac_of_spread` | `0.125` | Paper fills are priced at mid less this fraction of the leg spreads, on entry and every priced exit (a live row's entry slippage is measured instead; see above) |
+| `live` | see the example | Live-only: the pinned `symbol`, the `gate0_confirmed` attestation, `arm`, the narrowing overrides, `max_structures_per_day`, `daily_loss_halt_dollars`, `disarm_time`, `use_order_alert_daemon` — see the live block above |
 
 ## Database
 
@@ -540,14 +557,10 @@ side, own status/exit/P&L), `daily_summary` (key `summary_date`), `loop_log` (ap
 
    **4a. Account-wide (once per iteration):**
    - Confirm the connection.
-   - **Streamer cache health:** `tt stream_status`. `running`/`pid` reflect whichever producer is alive
-     (`producer`: `"standalone"` = `packages/streamer`, `"meic"` = this module's rollback streamer, or
-     `null`); freshness numbers are valid either way. If `stale_warning` (no event in >10 min, or ever),
-     **distrust cached quotes/greeks/OI for every symbol this iteration**, log `stale_reason`, and use
-     REST — a silently dead connection once caused a 34+ hour outage. A `sidecar_http_fallback` field
-     on any `tt.py` response means that call fell back to the cold-start path because the optional
-     sidecar (127.0.0.1:7699, off by default) was unreachable; a *timeout* there is the same failure
-     shape as that outage and is logged to `logs/tt.log`. It says nothing about the producer.
+   - **Streamer cache health:** `tt stream_status`. `running`/`pid` are the standalone producer's
+     (`producer`: `"standalone"`, or `null` when it is down). If `stale_warning` (no event in >10 min, or ever),
+     **distrust cached quotes/greeks/OI for every symbol this iteration**, log `stale_reason`, and rely
+     on `tt`'s direct DXLink reads — a silently dead connection once caused a 34+ hour outage.
    - Fetch buying power, NLV, working orders, open positions (account-wide calls).
    - **Halt entries for every symbol if NLV is down more than 5%** on yesterday.
    - Reconcile broker positions against the DB (read-only; surface mismatches for human review).

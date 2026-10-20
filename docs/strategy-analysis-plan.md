@@ -1,6 +1,7 @@
 # Strategy analysis — a per-arm overview for every module
 
-*Drafted 2026-10-16. Nothing below is built yet. The plan follows a review of eleven videos from a
+*Drafted 2026-10-16; built in large part 2026-10-16/17 (`core.analysis`, the analysis tab on every
+module, Compare's risk and portfolio tabs; dated notes in each section). The plan follows a review of eleven videos from a
 vendor's weekly series on running a portfolio of automated options strategies (weeks 1–10 and a
 scaling episode, August to October 2026). It records what those screens did, what we take, what we leave, and the order we
 build in.*

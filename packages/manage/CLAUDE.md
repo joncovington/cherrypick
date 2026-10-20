@@ -10,14 +10,16 @@ position at a time, with the rules re-derived each time.
 
 **It is advice, and read-only.** It evaluates a snapshot file and writes only into
 `~/.cherrypick/data/manage`. It has no broker credentials and no network: the snapshot is taken by
-the orchestrator's `manage` verb (`orchestrator/managesnap.py`, three read-only broker calls), which then
+the orchestrator's `manage` verb (`orchestrator/managesnap.py`: positions and balances, market metrics, trade history,
+the XSP hedge chain, the broker's greeks for each option leg held and the day's orders, all
+read-only), which then
 runs this package by subprocess. Nothing here places, closes, rolls or sizes an order, and no loop may
 import it. The closing order an evaluation lists is what a person would enter, priced at mid.
 
 ## The artifact is the product
 
 - `eval-<session>.json` — the evaluation, and the only thing any surface reads (the console's
-  Live → manage tab). Nothing downstream re-derives a verdict, a level or a confidence.
+  Live → positions and Live → portfolio tabs). Nothing downstream re-derives a verdict, a level or a confidence.
 - `snapshot-<session>.json` — the snapshot it was judged on, kept so `reevaluate` can re-run a past
   session under changed rules and get the same answer twice.
 
@@ -44,7 +46,8 @@ of that day, not today's.
 ## Changing a rule
 
 A new rule needs: a default block with `confidence`, an id in `RULE_IDS`, an action from the fixed
-vocabulary (`CLOSE`, `TAKE_PROFIT`, `ROLL_OR_CLOSE`, `CLOSE_LEGS`, `REVIEW`, `SETTLES`), a test that
+vocabulary (`ROLL_FOR_CREDIT`, `CLOSE`, `TAKE_PROFIT`, `ROLL_OR_CLOSE`, `CLOSE_LEGS`, `REVIEW`,
+`SETTLES`, `HOLD`), a test that
 shows it firing and not firing, the regenerated example, and a README row with its source and the
 outside evidence. Its confidence is a statement about evidence — say where it came from.
 
@@ -60,8 +63,8 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 
 | Command | Purpose |
 |---|---|
-| `python run.py manage` (orchestrator) | Take the broker snapshot and evaluate it — what the 10:00 ET `manage-eval` job runs. |
+| `python run.py manage` (orchestrator) | Take the broker snapshot and evaluate it — what the 10:00 ET `manage-eval` job (and each `manage.also_at` run) runs. |
 | `python -m cherrypick.manage evaluate --snapshot PATH [--rules PATH]` | Evaluate one snapshot file and store both. |
 | `python -m cherrypick.manage reevaluate [--session YYYY-MM-DD] [--rules PATH]` | Re-run a stored snapshot (latest by default) under the current or a trial ruleset. |
-| `python -m cherrypick.manage check-roll --trade ID --close LEG ... --open LEG ...` | Judge a proposed roll of one trade against the latest snapshot before sending it: credit, shape change, shorts moving into the long's expiry, net-short coverage, breakeven, max loss and earnings. Verdict reject / risky / ok. |
+| `python -m cherrypick.manage check-roll --trade ID --close LEG ... --open LEG ... [--session YYYY-MM-DD] [--rules PATH]` | Judge a proposed roll of one trade against the latest snapshot before sending it: credit, shape change, shorts moving into the long's expiry, net-short coverage, breakeven, max loss and earnings. Verdict reject / risky / ok. |
 | `python -m cherrypick.manage rules [--rules PATH]` | Print the effective ruleset and any override that could not be applied. |

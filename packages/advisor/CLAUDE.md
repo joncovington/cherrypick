@@ -40,7 +40,7 @@ The advisor reads live facts (context a competent observer would want) but canno
 ## Experiments
 
 **Paper arms are the real test.** A proposal's test is a next-session paper arm beside its control,
-scored through `cherrypick.core.profiles.compare_profiles` and `qualify_readings`. Default length is
+scored through `cherrypick.core.profiles.group_by_tag` and `qualify_readings`. Default length is
 **15 sessions** because the promotion gate needs min 14 days and min sample 20; shorter is
 structurally `underpowered`.
 
@@ -134,7 +134,7 @@ Properties not to break:
 
 ## Verdicts are computed, not written
 
-`verdicts.py` computes the comparison deterministically (ledger readers → `compare_profiles` →
+`verdicts.py` computes the comparison deterministically (ledger readers → `group_by_tag` →
 `qualify_readings`), always with **the module's own qualification rule**, never the library default.
 The model only *recommends*; its recommendation is stored beside the numbers, never instead of them.
 A verdict below the qualification thresholds is labelled `underpowered` — never silently passed or
@@ -154,7 +154,7 @@ fail: `declared` when every param is one the module's bounds say cannot act on t
 `arms`), `never_diverged` when the rows show it. No closed advised rows is no evidence either way.
 Admission, `tune` and `enact` refuse the declared case outright through `core.advice` (2026-10-12:
 bwb's `delta-trigger-early` and both earlier `flip_buffer` experiments sat on `control`, which never
-arms, and matched it row for row). The pack does not carry these fields until the 2026-10-15
+arms, and matched it row for row). The pack carries these fields from the 2026-10-15
 boundary.
 
 **A `kill` recommendation is actioned; `keep` and `promote` are recorded** (`advisor.kill_on_verdict`,
@@ -178,7 +178,7 @@ console `kill` re-issues the same way, so a kill after the 17:00 pass leaves no 
 
 **The budget is an ATTENTION budget.** The deep pack (~130–160k tokens) fits a 1M context and costs
 about $1 a day; what an oversized pack costs is a finding inside it going unread. The rule is **"cut
-the largest section; do not raise the ceiling."** Ceilings: light 48,000, deep 200,000.
+the largest section; do not raise the ceiling."** Ceilings: light 48,000 bytes, deep 200,000 bytes.
 `test_the_ceilings_are_pinned_so_a_raise_is_a_deliberate_act` fails on any move, and
 `test_the_deep_ceiling_stays_below_the_pack_it_is_meant_to_constrain` keeps the bar under the real
 pack so it keeps reporting over-budget (the deep pack is still ~1.8x its ceiling, recorded rather than
@@ -276,6 +276,8 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.advisor status [--session D]` | Checkpoints, experiments, apply status per module. |
 | `python -m cherrypick.advisor kill <experiment_id>` | Stop an experiment now. Journaled; a queued experiment activates and the next artifact is re-issued for it (retracted when nothing is queued). A model `kill` verdict runs this same path. |
 | `python -m cherrypick.advisor dismiss <proposal_id>` | Mark a proposal dismissed. Fed back to the model so it stops re-proposing it. |
+| `python -m cherrypick.advisor backtest-requests [--status queued\|done\|refused]` | The admitted `backtest_spec` replies (queued by default), which packages/backtest's `run-advised` reads. |
+| `python -m cherrypick.advisor backtest-result --id ID --status done\|refused [--run-id R] --result-file PATH` | Record a spec's design-window result; written by `run-advised`, never by hand. |
 
 The console's two write actions (kill, dismiss) invoke exactly these verbs as a subprocess — the
 console holds no advisor logic.
@@ -288,7 +290,7 @@ console holds no advisor logic.
   `experiments.artifact_for`, for both `check_params` and `enact._issue`.
 - `cherrypick.core.ledgers` — per-schema net/risk/session rules. Do not add another implementation;
   its docstring records what happened the first three times.
-- `cherrypick.core.profiles` — `compare_profiles` and `qualify_readings`, the suite's one
+- `cherrypick.core.profiles` — `group_by_tag` and `qualify_readings`, the suite's one
   arm-comparison and promotion gate.
 - Deliberately NOT folded, because the difference is the point: the dotted-param split (`bounds`
   takes the first dot for earnings' strategy prefix, `enactment` the last for the stamped leaf) and

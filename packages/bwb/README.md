@@ -12,9 +12,10 @@ expected move for a net credit, ~7 DTE, held to expiry — a new one every sessi
 positions ride concurrently per book at steady state. Four books trade the IDENTICAL base
 structure; the only variable is whether/when a reversal-triggered put credit spread add-on fires,
 turning the fly into a 1-3-2: `control` (never), `delta` (raw |delta| touch), `bounce` (confirmed
-pullback off a peak), `flip` (a gamma-flip reclaim). A base install runs only `control`: the example
-config switches `delta`, `bounce` and `flip` off with `enabled: false`, and a fifth, call-side `wall`
-book is opt-in. Turn any of them on in `~/.cherrypick/config/bwb.json`. SPX is cash-settled and European-style — no
+pullback off a peak), `flip` (a gamma-flip reclaim). `delta` and a fifth, call-side `wall` book
+were retired at the 2026-10-15 boundary; their rows stay readable. A base install runs only
+`control`: the example config switches `delta`, `bounce` and `flip` off with `enabled: false`. Turn
+`bounce` or `flip` on in `~/.cherrypick/config/bwb.json`. SPX is cash-settled and European-style — no
 assignment machinery, no dividend calendar, the cleanest settlement model in the suite.
 
 See [CLAUDE.md](CLAUDE.md) for the experiment design, the honesty rules, the trigger-tick

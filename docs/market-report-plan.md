@@ -1,6 +1,7 @@
 # Our own daily market report — research and plan
 
-*Drafted 2026-09-27. A research record and a build plan, nothing built yet. The subject is a
+*Drafted 2026-09-27. A research record and a build plan; Phase 1 and the technicals store landed the
+same week (see Plan). The subject is a
 third-party pre-open report (the 2026-09-25 edition of a commercial vendor's daily report), read
 section by section to find out what it measures, what data each measurement needs, and what of that the suite
 already has. The first draft's endpoints came from documentation and search results the research
@@ -644,8 +645,23 @@ bid/ask, decent open interest and volume), and otherwise the same strike on the 
 `screener-greeks/legs/`, and `recommend` applies the rule. Its bars were chosen from six sessions
 of those readings (2026-10-16): a spread of 10% of mid or a nickel, 100 open, 10 traded. The
 vendor's weeklies rarely pass (median open interest 7), so about 85% of rows go to the monthly, and
-each row also says whether the monthly itself passes, since often it does not either. The nightly
-IV-rank fetch now keeps the broker's expected report date (confirmed or
+each row also says whether the monthly itself passes, since often it does not either.
+
+**The bars revised (2026-10-19), from seven sessions of readings (~25,000 legs).** They now live in
+`cherrypick.core.legbars`, shared with manage's candidates. Three changes:
+- **Volume is a flag (`quiet`), not a bar.** A part-day count failed tight, open legs: 15% of the
+  monthly short puts at 11:30, 9.6% at 14:30, median open interest 466.
+- **A credit spread is judged as one order.** Its cost to trade (the mid credit less the natural one)
+  must be within 10% of the credit or a nickel, with 100 open on each leg. The monthly spreads cost a
+  median 7.5% of the credit, and a third of those costing 10% or less had failed on one leg, usually
+  the cheap long.
+- **Each side carries its prices:** mid, natural, and working, halfway between. The console's trade
+  columns show the working price. Manage tests the one-third credit floor there: 78% of the monthly
+  spreads cleared it at the mid and 62% at the natural.
+
+`rebar` re-judged every saved reading.
+
+The nightly IV-rank fetch now keeps the broker's expected report date (confirmed or
 estimated) and ex-dividend date, which reach past the local Dolt calendar's ~5 weeks, for the
 "no earnings within the trade cycle" filter the screener view will carry.
 

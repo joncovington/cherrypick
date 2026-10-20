@@ -29,15 +29,18 @@ beforeAll(() => {
        exit_reason, capital_at_risk)
      VALUES (?, 'iron_fly', ?, '2026-09-19', ?, ?, ?, 1789000000, ?, ?, ?, ?, ?, ?, ?, ?, ?, 500)`,
   );
-  // Settled with one strike ITM: 2.00 cr x2 = +400, exit debit 3.00 x2 -> gross -200, exit -600;
-  // entry_cost 3.00 (1.00 slippage), exit_cost 5.00 = the $5 settlement fee.
-  ins.run("t-itm", "ZM", 2.0, 3.0, -200, 1789300000, 2, 3.0, 5.0, 1.0, 0, 5.0, "closed", "expired");
+  // The ledger stores entry_credit and exit_debit ALREADY multiplied by quantity, as the harness
+  // writes them (strat_test_harness: per-contract x quantity; pnl = (entry_credit - exit_debit) x 100).
+  // Settled with one strike ITM, a 2-lot: 2.00 cr/sh -> entry_credit 4.00 = +400, exit debit 3.00/sh
+  // -> exit_debit 6.00 = -600, gross -200; entry_cost 3.00 (1.00 slippage), exit_cost 5.00 = the $5
+  // settlement fee.
+  ins.run("t-itm", "ZM", 4.0, 6.0, -200, 1789300000, 2, 3.0, 5.0, 1.0, 0, 5.0, "closed", "expired");
   // Traded out at a profit target.
   ins.run("t-pt", "AEO", 1.5, 0.5, 100, 1789100000, 1, 2.5, 2.2, 0.6, 0.4, 0, "closed", "profit_target");
   // A debit structure, closed before the split was recorded.
   ins.run("t-old", "INTU", -1.2, -1.6, 40, 1789200000, 1, 1.4, 1.6, 0.3, 0.3, null, "closed", "front_expiry");
-  // Still open: a position, not history.
-  ins.run("t-open", "S", 0.9, null, null, null, 3, 2.1, null, 0.5, null, null, "open", null);
+  // Still open: a position, not history. A 3-lot at 0.90 cr/sh: entry_credit 2.70.
+  ins.run("t-open", "S", 2.7, null, null, null, 3, 2.1, null, 0.5, null, null, "open", null);
   db.close();
   config = {
     paths: { earningsDir: path.join(tmp, "earnings"), orchestratorConfig: path.join(tmp, "none.json") },
@@ -56,6 +59,17 @@ describe("earnings' history rows", () => {
     expect(row("t-itm")?.entryCash).toBe(400);
     expect(row("t-itm")?.exitCash).toBe(-600);
     expect(row("t-old")?.entryCash).toBe(-120);
+  });
+
+  it("count a multi-contract row's quantity once: entry_credit already carries it", () => {
+    // Multiplying by quantity again read this 2-lot's entry as +800 against a -200 gross.
+    const r = row("t-itm");
+    expect(r?.quantity).toBe(2);
+    expect(r?.entryCash).toBe(400);
+    expect((r?.entryCash ?? 0) + (r?.exitCash ?? 0)).toBe(r?.gross);
+    // The one per-share column is per share.
+    expect(r?.entryCredit).toBe(2);
+    expect(row("t-old")?.entryCredit).toBe(-1.2);
   });
 
   it("add up: entry + exit = gross, gross - fees - settlement - slippage = net", () => {
@@ -94,10 +108,12 @@ describe("earnings' history rows", () => {
 });
 
 describe("earnings' open positions", () => {
-  it("carry entry cash for every contract", () => {
+  it("carry entry cash for every contract, counted once, and a per-share price", () => {
     const open = readEarningsAnalytics(config, "paper", "ALL").openPositions.find((p) => p.symbol === "S");
+    expect(open?.quantity).toBe(3);
     expect(open?.price).toBe(0.9);
     expect(open?.credit).toBe(270);
+    expect(open?.netOfCost).toBe(267.9);
   });
 });
 

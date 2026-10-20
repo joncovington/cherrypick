@@ -203,10 +203,13 @@ def unrealized_pnl(trade: dict, exit_debit: float) -> float:
     disagreed with the P&L eventually recorded would make every excursion column a different
     measurement from the result it is supposed to explain.
     """
-    # Per share x 100 x contracts. The quantity was missing until 2026-09-25; every trade recorded
-    # so far is one contract, so no stored number changes -- a second contract would have been
-    # recorded at half its P&L.
-    return (trade["entry_credit"] - exit_debit) * 100 * (trade.get("quantity") or 1)
+    # `entry_credit` is stored already multiplied by quantity, and `exit_debit` prices legs_json,
+    # whose legs carry their real contract counts (strat_test_harness's sizing convention), so the
+    # two are position totals per share and the formula is `cmd_run_closes`'s own: x 100, never x
+    # quantity again. A 2026-09-25 change multiplied by quantity a second time, overstating every
+    # multi-contract mark and managed close by that factor; until 2026-10-19 every recorded trade
+    # was one contract, so no stored number was affected.
+    return (trade["entry_credit"] - exit_debit) * 100
 
 
 def _pin_risk(trade: dict, legs: list[dict], spot: float | None, policy: dict, now: datetime) -> bool:

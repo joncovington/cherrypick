@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import type { TechnicalsWatchlistRow } from "@console/shared";
+import type { SetupRead, SetupReadLevel, TechnicalsWatchlistRow } from "@console/shared";
 import { useSetupsWatchlist } from "../../lib/api";
 
 /**
@@ -105,6 +105,196 @@ function LevelCell({ near }: { near: TechnicalsWatchlistRow["support"] }) {
   );
 }
 
+/* ------------------------------------------------------------------ the expanded row: the read */
+
+function Card({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="md-card">
+      <header>
+        <h4>{title}</h4>
+        {aside}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function Kv({ rows }: { rows: Array<[string, ReactNode]> }) {
+  return (
+    <dl className="md-kv">
+      {rows.map(([k, v]) => (
+        <div key={k}>
+          <dt>{k}</dt>
+          <dd>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function num(v: number | null | undefined, digits = 1): string {
+  return v === null || v === undefined ? "—" : v.toFixed(digits);
+}
+
+function signed(v: number | null | undefined, digits = 2): string {
+  return v === null || v === undefined ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}`;
+}
+
+const VERDICT_TONE: Record<SetupRead["direction"]["verdict"], string> = {
+  agrees: "pnl-pos",
+  conflicts: "pnl-neg",
+  mixed: "",
+  unread: "muted",
+};
+
+function levelText(l: SetupReadLevel | null): ReactNode {
+  if (l === null) return <span className="muted">—</span>;
+  return (
+    <>
+      {money(l.value)} <span className="muted">({pct(l.pct)} · {signed(l.atr, 1)} ATR · {signed(l.sigma, 2)}σ)</span>
+    </>
+  );
+}
+
+/**
+ * The read behind a row, as a lead line and a row of cards: the setup's rule, its record in the
+ * historical study, the direction, the volatility, the levels and the structure lean. Every word and
+ * figure is `setup_read.py`'s; this lays them out.
+ */
+export function ReadDetail({ r }: { r: TechnicalsWatchlistRow }) {
+  const rd = r.read;
+  if (rd === null) return <p className="muted">No read for this row yet: the next chart run writes one.</p>;
+  const v = rd.volatility;
+  const d = rd.direction;
+  const rec = rd.record;
+  return (
+    <div className="md-detail">
+      <p className="md-lead">
+        {FAMILY_SHORT[r.family] ?? r.setupName} {r.side} · direction{" "}
+        <span className={VERDICT_TONE[d.verdict]}>{d.verdict}</span> · IV {v.regime}
+        {v.regime !== "unread" ? ` (rank ${num(v.ivRank, 0)}, percentile ${num(v.ivPct, 0)})` : ""} · lean:{" "}
+        <strong>{rd.lean.structure ?? "undecided"}</strong>
+        {rec ? <span className="muted"> · tested {rec.verdict}</span> : null}
+      </p>
+      <div className="md-cards">
+        <Card title="the setup">
+          <p style={{ margin: 0 }}>{rd.setup.rule ?? "—"}</p>
+          {rd.setup.change && <p className="muted" style={{ margin: "4px 0 0" }}>Tested change: {rd.setup.change}</p>}
+          <Kv
+            rows={[
+              ["typical hold", rd.setup.medianHold === null ? "—" : `${rd.setup.medianHold} sessions (median, every drawn trade)`],
+              ["status", r.status === "open" ? `open since ${r.entryDate}` : `exited ${r.exitDate ?? "—"} · ${r.reason ?? ""}`],
+              ["target", levelText(rd.levels.target)],
+            ]}
+          />
+        </Card>
+        <Card title="its record" aside={rec ? <span className={rec.edgeR !== null && rec.edgeR > 0 ? "chip" : "chip pf-out"}>{rec.verdict}</span> : undefined}>
+          {rec === null ? (
+            <p className="muted">not in the historical study</p>
+          ) : (
+            <Kv
+              rows={[
+                ["entries", rec.entries === null ? "—" : rec.entries.toLocaleString()],
+                ["net per trade", `${signed(rec.netR, 3)} R`],
+                ["vs random entry", `${signed(rec.edgeR, 3)} R (t ${num(rec.t, 1)})`],
+                ...(rec.hit !== null ? ([["hit rate", `${Math.round(rec.hit * 100)}%`]] as Array<[string, ReactNode]>) : []),
+              ]}
+            />
+          )}
+          <p className="muted" style={{ margin: "4px 0 0" }}>
+            2011–2026, R per ATR(14) net of costs, stock fills at the next open — not options.
+          </p>
+        </Card>
+        <Card title="direction" aside={<span className={`chip ${VERDICT_TONE[d.verdict]}`}>{d.verdict}</span>}>
+          <Kv
+            rows={[
+              ["1M / 6M trend", `${r.trend1mLabel ?? "—"} / ${r.trend6mLabel ?? "—"}`],
+              [
+                "trend vs side",
+                d.counterTrend
+                  ? "counter-trend by design (mean reversion fades the move); not counted"
+                  : d.trendAgrees
+                    ? "agrees"
+                    : d.trendAgainst
+                      ? "against"
+                      : "split",
+              ],
+              ["RS rank", r.rs === null ? "—" : `${r.rs}/10`],
+              ["1M vs SPY", r.vsSpy1m === null ? "—" : `${signed(r.vsSpy1m, 1)} pts`],
+              [
+                "signal board",
+                d.board === null
+                  ? "not on the board"
+                  : d.board.side === null
+                    ? "tied"
+                    : `${d.board.side}, ${d.board.count ?? 0} methods (${d.board.bullish ?? 0} bull / ${d.board.bearish ?? 0} bear)`,
+              ],
+            ]}
+          />
+          {d.board && d.board.tags.length > 0 && (
+            <p className="muted" style={{ margin: "4px 0 0" }}>
+              {d.board.tags.join(" · ")}
+            </p>
+          )}
+        </Card>
+        <Card title="volatility" aside={<span className="chip">{v.regime}</span>}>
+          <Kv
+            rows={[
+              ["implied / 30d historical", `${num(v.iv)}% / ${num(v.hv30)}%${v.ivHv === null ? "" : ` (×${num(v.ivHv, 2)})`}`],
+              ["IV rank / percentile", `${num(v.ivRank, 0)} / ${num(v.ivPct, 0)}`],
+              ["cycle monthly", v.cycle === null ? "—" : `${v.cycle.expiry} (${v.cycle.days} days)`],
+              ["expected move", v.expectedMove === null ? "—" : `±${money(v.expectedMove.dollars)} (±${num(v.expectedMove.pct)}%)`],
+              [
+                "earnings",
+                v.earnings === null ? (
+                  "—"
+                ) : (
+                  <span className={v.earningsInCycle ? "pnl-neg" : undefined}>
+                    {v.earnings}
+                    {v.earningsInCycle ? " · inside the cycle" : ""}
+                  </span>
+                ),
+              ],
+              ["ex-dividend", v.exDividend ?? "—"],
+            ]}
+          />
+        </Card>
+        <Card title="levels" aside={<span className="muted">ATR {rd.levels.atr14 === null ? "—" : money(rd.levels.atr14)}</span>}>
+          <Kv
+            rows={[
+              ["resistance", levelText(rd.levels.resistance)],
+              ["support", levelText(rd.levels.support)],
+            ]}
+          />
+          <p className="muted" style={{ margin: "4px 0 0" }}>σ is the expected move to the cycle monthly: a level past 1σ is outside the likely range.</p>
+        </Card>
+        <Card title="structure lean" aside={<span className="chip">a lean, not a trade</span>}>
+          <p style={{ margin: 0 }}>
+            <strong>{rd.lean.structure ?? "undecided"}</strong> — {rd.lean.why}
+          </p>
+          {rd.lean.legs.length > 0 && (
+            <ul style={{ margin: "4px 0 0", paddingLeft: "1.1rem" }}>
+              {rd.lean.legs.map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+            </ul>
+          )}
+          {rd.lean.cautions.length > 0 && (
+            <ul className="pnl-neg" style={{ margin: "4px 0 0", paddingLeft: "1.1rem" }}>
+              {rd.lean.cautions.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          )}
+          <p className="muted" style={{ margin: "4px 0 0" }}>
+            From end-of-day data: re-quote before acting. No contract is chosen here.
+          </p>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 function Toggle<T extends string | number>({
   value,
   options,
@@ -203,6 +393,8 @@ function compare(sort: Sort, dir: Dir) {
 export function SetupsPage() {
   const [params, setParams] = useSearchParams();
   const { data, isLoading, isError } = useSetupsWatchlist();
+  // The one row opened out into its read; a row's key, so it follows the row through a sort.
+  const [open, setOpen] = useState<string | null>(null);
 
   const view: View = params.get("view") === "open" ? "open" : "signals";
   const windowParam = Number(params.get("window"));
@@ -389,6 +581,7 @@ export function SetupsPage() {
           <table className="data-table">
             <thead>
               <tr>
+                <th aria-label="read" />
                 {sortHead("symbol", "Symbol", undefined, false)}
                 <th>Setup</th>
                 <th>Side</th>
@@ -421,8 +614,23 @@ export function SetupsPage() {
             <tbody>
               {lines.map((l) => {
                 const r = l.row;
+                const key = `${r.symbol}-${r.setup}-${r.tested ?? ""}-${r.entryDate}-${l.kind}`;
+                const isOpen = open === key;
                 return (
-                  <tr key={`${r.symbol}-${r.setup}-${r.tested ?? ""}-${r.entryDate}-${l.kind}`}>
+                  <Fragment key={key}>
+                  <tr>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-quiet"
+                        aria-expanded={isOpen}
+                        aria-label={`${isOpen ? "Close" : "Open"} the read for ${r.symbol}`}
+                        title="The read: why it fired, its record, direction, volatility, levels and a structure lean"
+                        onClick={() => setOpen(isOpen ? null : key)}
+                      >
+                        {isOpen ? "▾" : "▸"}
+                      </button>
+                    </td>
                     <td>
                       <Link className="module-link" to={chartLink(r)} title={`Open ${r.symbol}'s chart with ${r.setupName} selected`}>
                         {r.symbol}
@@ -459,6 +667,14 @@ export function SetupsPage() {
                     <LevelCell near={r.support} />
                     <LevelCell near={r.resistance} />
                   </tr>
+                  {isOpen && (
+                    <tr>
+                      <td colSpan={18}>
+                        <ReadDetail r={r} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>

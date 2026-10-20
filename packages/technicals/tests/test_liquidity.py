@@ -6,6 +6,7 @@ that silently passes everything reads exactly like a market where everything is 
 
 from __future__ import annotations
 
+import json
 from datetime import date
 
 from cherrypick.technicals import liquidity
@@ -36,6 +37,21 @@ def test_reference_series_are_never_judged():
     """AGG and AOR are benchmarks with thin options; hiding them would break the report."""
     for sym in ("AGG", "AOR", "JETS", "SPX"):
         assert liquidity.judge(sym, 1, 1e6) == (None, [])
+
+
+def test_reference_funds_are_judged_apart_for_the_income_candidates(tmp_path, monkeypatch):
+    """SPY and the sector funds pass the same test, kept apart from the names so none is ever hidden.
+    2026-10-19: the income candidates never saw SPY, QQQ, IWM or TLT, because they read the names only."""
+    rows = {"SPY": {"expiries_35d": 13}, "AGG": {"expiries_35d": 1}, "XLE": {"expiries_35d": 9}}
+    dv = {"SPY": 4e10, "AGG": 6e8, "XLE": 2e9}
+    out = liquidity.reference_verdicts(["AGG", "SPY", "XLE", "XLK"], rows, dv, TODAY)
+    assert out["SPY"]["verdict"] == "tradable" and out["XLE"]["verdict"] == "tradable"
+    assert out["AGG"]["verdict"] == "illiquid" and "XLK" not in out  # no data: no verdict
+    path = tmp_path / "verdicts.json"
+    path.write_text(json.dumps({"names": {}, "reference": out}), encoding="utf-8")
+    monkeypatch.setattr(liquidity, "verdicts_path", lambda: path)
+    assert liquidity.reference_tradable() == {"SPY", "XLE"}
+    assert liquidity.illiquid() == set()  # a fund judged illiquid is still never hidden
 
 
 def test_an_illiquid_verdict_holds_between_sweeps():

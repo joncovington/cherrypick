@@ -96,3 +96,23 @@ def test_secrets_set_keeps_a_stored_value_on_blank_input(monkeypatch):
     creds = _creds()
     out = cli.secrets_set(creds, ["client_secret", "refresh_token"])
     assert creds.store.saved == {"client_secret": "new-secret"} and out["service"] == "testagent"
+
+
+def test_account_info_says_whether_the_account_is_margin_or_cash():
+    async def balances(session):
+        return {"net_liquidating_value": "25000.00"}
+
+    account = SimpleNamespace(
+        account_number="5WX19999",
+        nickname="ira",
+        margin_or_cash="Cash",
+        account_type_name="Roth IRA",
+        get_balances=balances,
+    )
+
+    async def get_account(number):
+        return account
+
+    out = asyncio.run(cli.account_info(get_account, lambda: object(), None, lambda b: b))
+    assert out["ok"] and out["margin_or_cash"] == "Cash" and out["account_type_name"] == "Roth IRA"
+    assert out["balances"] == {"net_liquidating_value": "25000.00"}

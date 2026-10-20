@@ -6,7 +6,7 @@ Set up MEIC credentials and verify the broker connection.
 python -m cherrypick.meic.tt secrets_status
 ```
 
-Report which secrets are set and which are missing. The two required secrets are `client_secret` and `refresh_token`. `account_number` is optional (the SDK discovers accounts automatically if omitted).
+Report which secrets are set and which are missing. The two required secrets are `client_secret` and `refresh_token`. `account_number` is optional for reads (the SDK discovers accounts if it is omitted), but it is the designated trading account: `tt`'s order commands and the live loop refuse without it (the suite sets it with `cherrypick account --module meic --set <last4>`).
 
 ## Step 2 — Set missing credentials
 
@@ -23,7 +23,7 @@ To update a single key only:
 python -m cherrypick.meic.tt secrets_set --keys refresh_token
 ```
 
-Tell the user: credentials are stored under service name `meicagent` in the OS keyring. `secrets_set`/`get_secret` also fall back to reading the older `tastytrade-mcp` service name (read-only) so anyone with credentials already stored under it don't need to re-enter them — new writes always go to `meicagent`.
+Tell the user: credentials are stored under service name `meicagent` in the OS keyring. `secrets_set`/`get_secret` also fall back to reading the older `tastytrade-mcp` service name and then the suite-wide shared login (`cherrypick-broker`), both read-only, so credentials already stored there don't need re-entering — new writes always go to `meicagent`.
 
 ## Step 3 — Verify connection
 
@@ -53,9 +53,8 @@ python -m cherrypick.meic.tt secrets_set --keys account_number
 ## Step 5 — Check streamer (optional)
 
 Since the 2026-07-21 producer cutover the **standalone streamer** (`packages/streamer`) is the
-suite's single writer of the shared stream cache; MEIC's own `cherrypick/meic/streamer.py` is a
-disabled rollback path. **Never start `cherrypick/meic/streamer.py` while the standalone streamer
-runs** — two producers means two DXLink writers on one cache and one account. Check it (from the
+suite's single writer of the shared stream cache, and since 2026-10-18 the only producer there is
+(MEIC's own rollback streamer was removed). Check it (from the
 monorepo root):
 
 ```bash
@@ -70,9 +69,6 @@ python ../orchestrator/run.py install
 # or, directly:
 python ../streamer/run.py    # blocks; run detached/hidden
 ```
-
-(Only if this box was deliberately rolled back to MEIC-as-producer — `modules.meic.streamer.enabled`
-true in the cherrypick config — use `python -m cherrypick.meic.streamer --status` / start instead.)
 
 ## Summary
 

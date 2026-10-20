@@ -16,14 +16,14 @@ One workspace holds the whole trading-tool suite as separate packages under `pac
 | `packages/gex` | The **GEX** (gamma-exposure) engine and spot-trail recorder, built on the shared GEX math. It computes and records; the console renders it. |
 | `packages/flies` | The **Flies** 0DTE net-credit butterfly ("profit forest") paper engine — deliberately built so a negative result is usable (floors measured after fees, arm-based experiments). |
 | `packages/calendars` | ⚠️ **EXPERIMENTAL, off by default.** The **Calendars** weekly SPY double-calendar paper engine (SPX before 2026-08-15) — a forward exit-parameter experiment: control and path books over shared entry fills, a per-tick mark path, and a read-side exit-policy replay validated against the real books. Paper-only, credential-free; its 4DTE/7DTE chains come from the streamer's `expirations` request field. |
-| `packages/pmcc` | ⚠️ **EXPERIMENTAL, off by default.** The **PMCC** deep-ITM covered-call paper engine on TQQQ — an 85-90-delta ~21DTE long against an ATM ~7DTE short (no yield floor, either side of spot), holding to the short's own expiration before closing both legs. Single `control` book plus an advised A/B against the old early-tv-exit rule. Paper-only, credential-free; its deep strikes come from the streamer's `expirations` **and `window_hints`** request fields, and early assignment is measured (exposure telemetry), never modelled. |
-| `packages/curve` | ⚠️ **EXPERIMENTAL, off by default.** The **Curve** VXX call-credit-spread paper engine harvesting the VIX term-structure roll yield, gated by a daily VIX/VIX3M regime read. Three books differ only in entry gate and exit rule; the daily regime classification is recorded every session, RTH-gated and basis-stamped. Paper-only, credential-free. |
+| `packages/pmcc` | ⚠️ **EXPERIMENTAL, off by default.** The **PMCC** deep-ITM call paper engine on XSP, QQQ, GLD, IWM, SLV, SMH and five single stocks: `shield`/`shield_hold` hold a ~1-year long against a weekly short (the 21-DTE `control` retired 2026-10-06, advice off). Paper-only, credential-free; its deep strikes come from the streamer's `expirations` **and `window_hints`** request fields, and early assignment is measured (exposure telemetry), never modelled. |
+| `packages/curve` | ⚠️ **EXPERIMENTAL, off by default.** The **Curve** VXX call-credit-spread paper engine harvesting the VIX term-structure roll yield, gated by a daily VIX/VIX3M regime read. Four books (`hook` retired from 2026-10-15) differ only in entry gate, exit rule or short delta; the daily regime classification is recorded every session, RTH-gated and basis-stamped. Paper-only, credential-free. |
 | `packages/contango` | ⚠️ **EXPERIMENTAL, paper-only, off by default.** The VIX/VIX3M switch held in shares: SVXY while the ratio says contango, SHV (T-bills) otherwise, one decision per arm ten minutes before the close. Arms differ only in their two thresholds. A position is one holding stint; the daily NAV (`contango_sessions`) is the judged series. Fund distributions come from the local technicals store. Credential-free and network-free. |
 | `packages/bwb` | The **BWB** daily-laddered SPX put broken-wing-butterfly paper engine — one net-credit BWB per session at the expected move, ~7 DTE, held to expiry. Four books share the identical base structure and differ only in the reversal add-on trigger; a cohort-keyed trigger-tick path is recorded for read-side replay. Plus an opt-in call-side book at the GEX call wall. Paper by default, credential-free on that path; since 2026-09-18 a narrow live path (one arm, per-day armed, the daily ladder under a worst-case cap, no closing orders) writes a separate live ledger. |
 | `packages/overview` | The **Overview** pre-open morning fact pack — index/vol/sector readings from the stream cache, gamma flip and walls from the suite's own GEX history, and a mechanical GREEN/YELLOW/RED phase from five declared gates. Missing data can never produce RED and always blocks GREEN. Credential-free, network-free, read-only. |
 | `packages/technicals` | The market report's **end-of-day store and technical engines**: raw daily bars, splits, dividends and IV history from the local Dolt clones for the universe candidates, rotation ETFs and benchmarks, with adjusted bars computed from raw on read (matched to the vendor's own to the cent). Credential-free, network-free; writes only its own store. Needs the `dolt` capability. |
 | `packages/review` | The cross-module **end-of-day review**: one versioned, deterministic fact set per session over every module's ledger, read through `cherrypick.core.ledgers`, plus its renders. Written only to its own store (`~/.cherrypick/data/review/`); no credentials, no network, no AI — the narrative is written beside it by `scripts/eod_narrative.py`. |
-| `packages/manage` | The daily **position-management evaluation** of the real account: a pure function of a broker snapshot (taken read-only by the orchestrator's `manage` verb) and a configurable ruleset, giving each trade an action, the rule behind it, a confidence and the closing order at mid. Advice only — no order path, no credentials, no network; written only to `~/.cherrypick/data/manage/` and read on the console's Live → manage tab. |
+| `packages/manage` | The daily **position-management evaluation** of the real account: a pure function of a broker snapshot (taken read-only by the orchestrator's `manage` verb) and a configurable ruleset, giving each trade an action, the rule behind it, a confidence and the closing order at mid. Advice only — no order path, no credentials, no network; written only to `~/.cherrypick/data/manage/` and read on the console's Live → positions and Live → portfolio tabs. |
 | `packages/advisor` | The **deterministic half of the AI advisor**: fact packs, validation of the model's replies, and the paper A/B experiments its admitted proposals run as (`advised:<experiment>` arms). Contains no AI — the model is invoked by `scripts/advisor_checkpoint.py` — and is off by default twice over: the suite must schedule it (and have the `claude` capability) and each module must declare its own `advice` bounds. |
 | `packages/backtest` | **Backtests over licensed vendor history** (ThetaData Options Standard): the suite's own rules replayed over years of quotes. Vendor data and results stay under `~/.cherrypick` (the licence forbids redistribution and requires a purge after termination; the backup skips the marked store). The fetch is its one network path and the keyring its one secret; runs read only the local store. No AI, no broker. |
 | `packages/streamer` | The **standalone streamer** — the suite's single market-data producer, writing the canonical shared stream cache that every module reads; modules declare their symbols via `state/stream_requests/`. |
@@ -31,7 +31,8 @@ One workspace holds the whole trading-tool suite as separate packages under `pac
 | `packages/desk` | ⚠️ **EXPERIMENTAL** prototype for educational purposes only, not installed or enabled by default ([its README](../packages/desk/README.md)). The **manual trading desk** — the suite's only *discretionary* live-order path (MEIC, earnings, flies and bwb each have a live loop behind their own gate; this one has no loop at all). A foreground, human-initiated CLI for discretionary live orders, authorized entirely on its own (own config, own keyring PIN, per-order ticket) so placing one order never requires flipping a module's `enable_live_trading`. Not a strategy module: no loop, no schedule, no ledger. Never scheduled, and no automated package may import it. |
 
 Each package has its own `CLAUDE.md` with build commands, tech-stack reference, and invariants.
-`packages/console` is the one non-Python package; the rest share the src-layout described below.
+`packages/console` is the one non-Python package; the rest share the src-layout described below,
+except `packages/core`, which keeps `cherrypick/core/` at its package root.
 
 ## Shared library: `cherrypick.core` (an in-repo package)
 
@@ -63,7 +64,7 @@ and imports as `cherrypick.<pkg>.<mod>` — `cherrypick.meic.tt`, `cherrypick.fl
 `cherrypick.earnings.scanner`, and so on, alongside `cherrypick.core.*` and `cherrypick.orchestrator.*`.
 
 `src/cherrypick/` has **no `__init__.py`** in any package. That is what makes it a PEP 420 namespace, so
-all sixteen Python distributions (every package but the console) compose under one `cherrypick.*` root
+all nineteen Python distributions (every package but the console) compose under one `cherrypick.*` root
 instead of colliding. One level deeper,
 `src/cherrypick/<pkg>/__init__.py` **does** exist — that is an ordinary package.
 
@@ -112,7 +113,7 @@ The orchestrator runs each module **in place, by subprocess**, using paths from 
 a module's code or config, and never imports its engine. The boundary is strict: its own commands only
 invoke **paper** engines and paper DBs, it **never places, cancels, adjusts, or closes an order**, never
 flips a module's live-trading flag, and never writes an arm record. The one live process it launches is a
-module's own live loop (`<module>-live`, today flies and bwb) while a human-written arm record for that
+module's own live loop (`<module>-live`, today flies, bwb and meic) while a human-written arm record for that
 day is valid; the module's loop places the orders, under the module's own gates. Its one live-adjacent
 *configuration* action is onboarding (`connect`/`account`), which delegates to the module's own
 credential tool — see [guardrails-and-modes.md](guardrails-and-modes.md).
@@ -171,6 +172,7 @@ resolved against the config file's directory / the source anchor, not the home. 
 scheduled agent reading `packages/review`'s fact set, and the AI advisor's model call lives in
 `scripts/advisor_checkpoint.py` behind the same fence — `packages/advisor` holds only its
 deterministic half (the fact packs, the reply validation, and the paper A/B experiments its admitted
-proposals run as). No package holds an API key or a network dependency — see
+proposals run as). No package holds an AI key; the one package that reaches the network is
+`packages/backtest`, whose vendor fetch is its only network path — see
 [reporting-and-dashboard.md](reporting-and-dashboard.md) and
 [guardrails-and-modes.md](guardrails-and-modes.md).

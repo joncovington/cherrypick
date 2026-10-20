@@ -8,7 +8,7 @@ reading the fact set below.
 ## The reporting stack, layer by layer
 
 ```
-cherrypick.core.ledgers  ── the per-schema readers (meic_ic / fly_book / earnings):
+cherrypick.core.ledgers  ── the per-schema readers (one per schema in schemas.SCHEMAS):
         │                     one home for the net, cost, capital and session rules
         │
         ├── report.run(session=day) ── unified cross-module P&L (gross/net, per profile)
@@ -52,8 +52,8 @@ moment a module's tags were parallel arms rather than a risk sequence.)
 ## `report` — unified paper P&L
 
 `report.run(cfg, session=…)` reads each enabled module's paper DB through the per-schema adapter
-(`meic_ic`, `earnings`, `fly_book`), normalizes every closed trade to `{profile, symbol, strategy,
-gross_pnl, cost, net_pnl, session}`, and summarizes:
+(one per module's schema), normalises every closed trade to `{profile, symbol, strategy,
+gross_pnl, cost, net_pnl, session}`, and summarises:
 
 - **Suite total** and **per-module** rows.
 - **Per-profile** breakdown (grouping by the trade's attribution tag via
@@ -72,7 +72,7 @@ cite, so they can never disagree for the same day.
 
 ## The suite review (`packages/review`)
 
-One versioned fact set per session across MEIC, flies and earnings, plus the renders of it. This
+One versioned fact set per session across every module, plus the renders of it. This
 replaced the six per-module and suite report families on 2026-08-13.
 
 | File | Content |
@@ -162,8 +162,8 @@ send.
 ## The console
 
 The suite's **one read surface**: `packages/console`, a Node + TypeScript server and a React SPA on
-**127.0.0.1:5070**, composing every module's read models (overview/watchdog, MEIC, flies, earnings,
-GEX) plus the research and screening surfaces. It reads module SQLite stores with `readonly: true` and their
+**127.0.0.1:5070**, composing every module's read models (the Live page, each module, GEX, Compare, Reports)
+plus the research and screening surfaces. It reads module SQLite stores with `readonly: true` and their
 JSON state as files; its only writable store is `~/.cherrypick/data/console/`.
 
 **The supervisor keeps it up** as an always-on resident job — no clock window and no trading-day
@@ -182,9 +182,9 @@ and each module's own dashboard (MEIC 5050/5051, flies 5052, GEX 5055, scout 505
 
 - The watchdog no longer renders anything on its tick, which takes that work off the reliability path
   for good.
-- The served page's **live ops card** — the halt flag, per-module live gates, and the reconcile
-  panel — has no console equivalent. It was deliberately never ported because it is broker-touching,
-  and it is the one real gap the deletion accepted. `liveops.py` and `reconcile.py` both survive;
+- The served page's **live ops card** was not ported as a page, because it was broker-touching; its
+  parts are now spread out: the halt flag is the Config page's headline control and shows on
+  Live → today, each live loop has its own Live tab (hidden while its live switch is off), and
   `cherrypick reconcile` still runs on demand and as its daily job.
 
 ## End-of-month log/report rotation
@@ -193,6 +193,6 @@ and each module's own dashboard (MEIC 5050/5051, flies 5052, GEX 5055, scout 505
 (the review's dated fact sets and renders) and rotated log backups (`*.log.N`) into
 `logs/archive/<YYYY-MM>/<scope>.zip` — one zip per scope (the suite logs root + each module dir) — then
 removes the originals once the zip verifies (`testzip()`). It is idempotent and safe: it never touches the
-current month or an active `.log`, and a re-run (or a run after a missed month) converges. Registered as a
-monthly `cherrypick-log-archive` task (on by default). `--dry-run` previews; `--month YYYY-MM` scopes to
+current month or an active `.log`, and a re-run (or a run after a missed month) converges. Runs as the
+monthly `log-archive` supervisor job (on by default). `--dry-run` previews; `--month YYYY-MM` scopes to
 one month.

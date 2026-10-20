@@ -77,28 +77,6 @@
         "log": "paper_loop.log",
         "freshness_minutes": 20
       },
-      "streamer": {
-        "_note": "MEIC's own in-module streamer — DISABLED since the 2026-07-21 producer cutover: the standalone streamer (top-level `streamer` block below) is the suite's sole producer, and exactly ONE producer ever runs. Kept only as the rollback path: to revert, set enabled=true here AND streamer.enabled=false below.",
-        "enabled": false,
-        "status_argv": [
-          "-m",
-          "cherrypick.meic.streamer",
-          "--status"
-        ],
-        "start_argv": [
-          "-m",
-          "cherrypick.meic.streamer"
-        ],
-        "_stop_argv_note": "Optional. Used to stop a STALLED streamer before relaunching it — the daemon is single-instance guarded, so relaunching without stopping is a silent no-op. Defaults to the status command with --stop.",
-        "stop_argv": [
-          "-m",
-          "cherrypick.meic.streamer",
-          "--stop"
-        ],
-        "auto_restart": true,
-        "_stale_restart_note": "Restart the streamer when it is CONNECTED but has received no market events for this many seconds during RTH. A process check cannot see this: observed 2026-07-20, the streamer reconnected then went silent for 8 minutes while still reporting running=true and its own stale_warning=false (that flag only trips at 600s), so nothing restarted it — MEIC degraded to REST and the flies module refused every iteration on stale quotes. 240s is well inside the 600s self-report and well outside a normal quiet tick. Restarts are skipped while a connection is younger than this, so a just-restarted streamer is not judged before it has resubscribed.",
-        "stale_restart_seconds": 240
-      },
       "calibration": {
         "_comment": "Optional. `cherrypick calibrate` reads paper P&L per profile and advises whether a qualified challenger should replace the live 'champion' (advisory only; never switches live risk). 'champion' names the currently-live profile -- every other tag observed is a challenger compared against it on return_on_capital (falling back to net_pnl). Omit 'champion' entirely to get per-tag qualification readings with NO champion/challenger comparison (for a module whose tags are parallel experiments rather than a risk sequence -- see flies below). 'deliberate_only' tags are never auto-recommended even if they qualify and beat the champion; 'rule' overrides the default {min_sessions:14 (older configs' min_days is still read), min_win_rate:0.6, min_sample:20} and may add 'margin' (default 0.0 -- any positive edge counts as beating the champion).",
         "_arms_cutover_note": "Updated 2026-08-07 for the arms cutover (config.risk.json's _arms_cutover_note): champion is now `control` (today's deployed policy, formerly `conservative` -- same values, new name). The retired ladder/GEX tags (conservative/moderate/aggressive/very-aggressive/gex-open/gex-blocked) never write a new row again, so they simply stop appearing as challengers going forward; their historical rows stay under their own tag and never blend into `control`'s reading, since the tag NAME itself is what segregates the eras here -- no data_epoch needed (that key is suite-wide and would also truncate flies/earnings' unrelated history). `open` is deliberate_only: it runs with per_side_stop_management OFF (held to settlement/force-close, no per-side stop at all), a materially different risk posture from control's canonical MEIC+ stop, not just a quality-gate relaxation -- qualifying on paper should not auto-promote a no-stop policy without a human decision, the same reasoning very-aggressive's deliberate_only carried.",
@@ -479,7 +457,7 @@
   },
   "streamer_header": "x",
   "streamer": {
-    "_comment": "The suite's standalone market-data producer (packages/streamer) — the single streamer that writes the shared cache ~/.cherrypick/data/marketdata/stream_cache.db, which every module reads. THE sole producer since the 2026-07-21 cutover (modules.meic.streamer is the disabled rollback path; exactly ONE producer runs at a time). Session-gated and silence-restarted by the watchdog. Located by 'path' (relative to this file). Modules declare which symbols they need via ~/.cherrypick/state/stream_requests/<module>.json — every module regenerates its own file on each run — and the streamer streams the union.",
+    "_comment": "The suite's standalone market-data producer (packages/streamer) — the single streamer that writes the shared cache ~/.cherrypick/data/marketdata/stream_cache.db, which every module reads. THE sole producer since the 2026-07-21 cutover, and since 2026-10-18 the only one there is (MEIC's in-module rollback streamer was removed). Session-gated and silence-restarted by the watchdog. Located by 'path' (relative to this file). Modules declare which symbols they need via ~/.cherrypick/state/stream_requests/<module>.json — every module regenerates its own file on each run — and the streamer streams the union.",
     "enabled": true,
     "path": "../streamer",
     "status_argv": [
@@ -516,30 +494,6 @@
       "stop_argv": [
         "run.py",
         "record",
-        "--stop"
-      ],
-      "auto_restart": true
-    },
-    {
-      "_comment": "MEIC's post-cutover sidecar: the REST account poller + the 127.0.0.1:7699 HTTP API ONLY, no DXLink streaming (the standalone `streamer` above is the market-data producer). It serves the shared cache read-only and caches account/positions/market-overview into MEIC's own rest_cache.db, so MEIC's interactive loop keeps its REST/quote fast-path without a second writer on the shared cache. Optional and OFF by default — MEIC works without it (quotes read the cache directly; account calls just go live). Enable it if you run MEIC's live/interactive loop and want the cached fast-path back.",
-      "id": "meic-sidecar",
-      "enabled": false,
-      "path": "../meic",
-      "status_argv": [
-        "-m",
-        "cherrypick.meic.streamer",
-        "--sidecar",
-        "--status"
-      ],
-      "start_argv": [
-        "-m",
-        "cherrypick.meic.streamer",
-        "--sidecar"
-      ],
-      "stop_argv": [
-        "-m",
-        "cherrypick.meic.streamer",
-        "--sidecar",
         "--stop"
       ],
       "auto_restart": true
@@ -629,9 +583,10 @@
   },
   "manage_header": "x",
   "manage": {
-    "_comment": "Daily position-management evaluation of the REAL broker account (packages/manage, `run.py manage`). At 'at' (ET) on trading days the orchestrator reads the account read-only - priced positions and balances (the `positions` verb) plus each underlying's last price, earnings and ex-dividend dates - and packages/manage judges every trade against its ruleset (credit: take profit at 50%, stop at a loss equal to the credit, 21 DTE; debit: stop at -50%, take profit at +75%; never hold a physically-settled option into expiry; never roll a loser). The evaluation lands in data/manage/eval-<day>.json and on the console's Live page. Advice only: nothing places, closes or sizes an order. The ruleset is manage's own config, ~/.cherrypick/config/manage.json (see packages/manage/config.example.json; keep only what you change). OFF by default because it reads the live account daily; 'notify' sends one summary when any trade needs action. Re-run `install` after turning it on.",
+    "_comment": "Daily position-management evaluation of the REAL broker account (packages/manage, `run.py manage`). At 'at' (ET) on trading days the orchestrator reads the account read-only - priced positions and balances (the `positions` verb) plus each underlying's last price, earnings and ex-dividend dates - and packages/manage judges every trade against its ruleset (credit: take profit at 50%, stop at a loss equal to the credit, 21 DTE; debit: stop at -50%, take profit at +75%; never hold a physically-settled option into expiry; never roll a loser). The evaluation lands in data/manage/eval-<day>.json and on the console's Live page. Advice only: nothing places, closes or sizes an order. The ruleset is manage's own config, ~/.cherrypick/config/manage.json (see packages/manage/config.example.json; keep only what you change). OFF by default because it reads the live account daily; 'also_at' lists further ET times the same day (each its own `manage-eval-HHMM` job, rewriting the day's evaluation - one after the close leaves the day's last word); 'notify' posts the trades needing action, one line each, after every run. Re-run `install` after turning it on.",
     "enabled": false,
     "at": "10:00",
+    "also_at": [],
     "notify": true
   },
   "morning_header": "x",
@@ -687,6 +642,9 @@
     "securities_at": "18:48",
     "_comment_screeners_at": "Score the income screens' expiry and strike rules (python -m cherrypick.technicals score-screeners, local files only) against every saved screener list that has its broker chain; a session already scored is skipped. In the morning, after the previous evening's late greeks run. Trading days, ET.",
     "screeners_at": "06:40",
+    "_comment_skate": "The skate screen's range bands (python -m cherrypick.technicals skate, the history store and local files only, ~90 s): for every options-tradable name, side and weekly expiry to 63 days, the fixed and by-expiry bands and how often each held since 2015 (docs/skate-plan.md). Needs technicals.history. Trading days, ET, after the 06:20 history top-up.",
+    "skate": true,
+    "skate_at": "06:45",
     "_comment_earnings_calendar_at": "The earnings calendar (python -m cherrypick.technicals earnings-calendar, local data and the local Dolt only): every announcement in the next 30 days with our direction and strength (from the store's bars), the broker's IV rank, and the broker's expected move (0.85 x the ATM straddle) from the IV-rank fetch's per-expiration IVs, for the console's earnings tab (docs/earnings-screener-plan.md). After iv_rank_at and the 17:15 chart run; the late pass catches a security list saved after the first. A rerun replaces the session's file. Trading days, ET.",
     "earnings_calendar_at": "19:10",
     "earnings_calendar_late_at": "23:40",
@@ -701,7 +659,7 @@
     "end": "16:10"
   },
   "live_settle_overdue": {
-    "_comment": "run.py settle-overdue-live, every interval_seconds, every day: settles any past session a flies/bwb live ledger still holds open (a machine down between the close and the disarm) at THAT session's official close (Yahoo daily bar, source yahoo_daily) -- never a provisional price. A session with a pending entry, or no official close found, stays open and the watchdog keeps alerting. Each settlement is announced on every channel. Safeguard item 4, 2026-10-08 (the owner chose official-print-only).",
+    "_comment": "run.py settle-overdue-live, every interval_seconds, every day: settles any past session a flies, bwb or meic live ledger still holds open (a machine down between the close and the disarm) at THAT session's official close (Yahoo daily bar, source yahoo_daily) -- never a provisional price. A session with a pending entry, or no official close found, stays open and the watchdog keeps alerting. Each settlement is announced on every channel. Safeguard item 4, 2026-10-08 (the owner chose official-print-only).",
     "enabled": true,
     "interval_seconds": 3600
   },
@@ -775,7 +733,9 @@
     "_comment_earnings_strikes_at": "With screener_greeks on: the earnings calendar's suggested spreads matched to listed strikes (scripts/fetch_screener_greeks.py strikes) -- the chain listing of each strong read reporting within the week, after the 19:10 calendar build, so the earnings tab shows real strikes rather than target prices until the next regular-hours reading prices them. Listings only, read-only, a second a name. Times are ET.",
     "earnings_strikes_at": "19:20",
     "_comment_screener_measure_at": "With screener_greeks on: two regular-hours readings (fetch_screener_greeks.py measure) of the ATM monthly call and put spread for every listed name the universe builder does not already measure. After-hours quotes say nothing about a name's spread. Half an hour after the universe's own readings, inside the same 10:00-to-30-minutes-before-the-close window. Times are ET.",
-    "screener_measure_at": ["11:30", "14:30"]
+    "screener_measure_at": ["11:30", "14:30"],
+    "_comment_skate_quotes_at": "With screener_greeks on and technicals.skate on: two regular-hours passes (fetch_screener_greeks.py skate) quoting the skate screen's strikes past the morning's range bands and scoring them -- every name-side on its cycle monthly, then every weekly to 63 days for the name-sides whose history beats their implied odds by the most (docs/skate-plan.md). The first pass of a day lists the chains, about six minutes; the second reuses them. Read-only. Times are ET.",
+    "skate_quotes_at": ["12:00", "15:05"]
   },
   "data_header": "x",
   "data_epoch": {

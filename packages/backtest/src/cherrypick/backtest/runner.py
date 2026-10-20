@@ -22,6 +22,7 @@ the rule here.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import os
@@ -33,6 +34,7 @@ import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from cherrypick.core import compare as core_compare
@@ -125,7 +127,11 @@ def sessions_in(
     ]
 
 
-def _fingerprint(conn, symbol: str, days: list[str]) -> str:
+def _fingerprint(conn, symbol: str, days: list[str], extra: dict | None = None) -> str:
+    """A hash of every input the replay reads that the store or the home can change under a run.
+    The `vendor_sessions` rows always; `extra` is what a module reads beyond them (MEIC: its VIX rows
+    and Cboe files, `_meic_inputs`). Flies reads nothing else, so `extra` is None for it and its
+    fingerprint is the one every stored flies report already carries."""
     h = hashlib.sha256()
     for d in days:
         row = conn.execute(
@@ -134,6 +140,8 @@ def _fingerprint(conn, symbol: str, days: list[str]) -> str:
             (symbol.upper(), d),
         ).fetchone()
         h.update(json.dumps(list(row)).encode())
+    if extra is not None:
+        h.update(json.dumps(extra, sort_keys=True, default=str).encode())
     return h.hexdigest()[:16]
 
 
@@ -200,6 +208,70 @@ def meic_spec_for(config: dict, arm: str, *, cadence: int) -> dict:
     }
 
 
+#: The Cboe daily files MEIC's replay reads for every session (`meic.replay.load_cboe`): VIX for the
+#: fallback open and the IV-rank closes, VIX1D for the open ratio. Spelt here because this package
+#: imports no strategy module; `cboe_dir` is `meic.replay.cboe_path`'s directory.
+CBOE_FILES = ("VIX", "VIX1D")
+#: How MEIC's replay names each tick's VIX source (`meic.replay`: `vix_source`, counted in `vix_sources`).
+VIX_INTRADAY = "history_intraday"
+
+
+def cboe_dir() -> Path:
+    return _home.data_dir("market-files") / "cboe"
+
+
+def _cboe_digest(path: Path, through: str) -> dict:
+    """What the replay can read from one Cboe daily file for sessions up to `through`: each row's DATE,
+    OPEN and CLOSE as written, hashed. Rows after the window are left out, so the nightly refresh that
+    appends today's row does not move the stamp of a run over last year; a corrected or missing row does."""
+    if not path.exists():
+        return {"file": path.name, "absent": True}
+    h, rows = hashlib.sha256(), 0
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            try:
+                day = datetime.strptime((row.get("DATE") or "").strip(), "%m/%d/%Y").date().isoformat()
+            except ValueError:
+                continue
+            if day > through:
+                continue
+            h.update(json.dumps([day, row.get("OPEN"), row.get("CLOSE")]).encode())
+            rows += 1
+    return {"file": path.name, "rows": rows, "sha256": h.hexdigest()[:16]}
+
+
+def _meic_inputs(conn, days: list[str]) -> dict:
+    """What MEIC's replay reads beyond `vendor_sessions`: each session's `market_regime_history` rows
+    (the VIX minutes `fetch-vix` writes, read through `core.regime`; the table carries no fetch stamp,
+    so the rows themselves are hashed) and the Cboe daily files its fallback and IV rank read."""
+    vix = {}
+    for d in days:
+        h, n = hashlib.sha256(), 0
+        for r in conn.execute(
+            "SELECT ts, reading, symbol, value, basis_ts, usable, reason FROM market_regime_history "
+            "WHERE trade_date = ? ORDER BY ts, reading, symbol",
+            (d,),
+        ):
+            h.update(json.dumps(list(r)).encode())
+            n += 1
+        vix[d] = [n, h.hexdigest()[:16]] if n else [0, None]
+    through = max(days) if days else ""
+    return {"regime_rows": vix, "cboe": [_cboe_digest(cboe_dir() / f"{n}.csv", through) for n in CBOE_FILES]}
+
+
+def vix_source_of(counts: dict | None) -> str:
+    """One session's VIX source from the replay's per-tick counts: `intraday` (every tick read the
+    store's minutes), `cboe_fallback` (none did: the day's Cboe open stood all day), `mixed`, or
+    `unreported` where the replay said nothing."""
+    if not counts:
+        return "unreported"
+    intraday = counts.get(VIX_INTRADAY, 0)
+    other = sum(v for k, v in counts.items() if k != VIX_INTRADAY)
+    if intraday and not other:
+        return "intraday"
+    return "mixed" if intraday else "cboe_fallback"
+
+
 def _meic_replay(day: str, out: Path, arms: list[str], history_db: Path, settle: float, config: Path) -> dict:
     """`python -m cherrypick.meic.replay run` against this run's snapshot of both config files."""
     env = {
@@ -229,6 +301,10 @@ class Module:
     snapshot: Callable[[dict, Path], Path]  # write the config beside the ledgers; the path to hand on
     spec_for: Callable[..., dict]
     replay: Callable[..., dict]
+    #: What the replay reads beyond `vendor_sessions`, folded into the data fingerprint (None: nothing).
+    inputs: Callable[[sqlite3.Connection, list[str]], dict] | None = None
+    #: Whether the replay reports its per-tick VIX sources (`vix_sources`), recorded per session.
+    reports_vix: bool = False
 
 
 def _flies_load() -> tuple[dict, dict[str, Path]]:
@@ -257,7 +333,15 @@ def _meic_snapshot(config: dict, ledger_dir: Path) -> Path:
 MODULES = {
     "flies": Module("flies", SCHEMA, FILL_MODEL, _flies_load, _flies_snapshot, spec_for, _replay),
     "meic": Module(
-        "meic", "meic_ic", MEIC_FILL_MODEL, _meic_load, _meic_snapshot, meic_spec_for, _meic_replay
+        "meic",
+        "meic_ic",
+        MEIC_FILL_MODEL,
+        _meic_load,
+        _meic_snapshot,
+        meic_spec_for,
+        _meic_replay,
+        inputs=_meic_inputs,
+        reports_vix=True,
     ),
 }
 
@@ -332,7 +416,8 @@ def run(
     vconn = store.connect(settings, symbol, cadence)
     try:
         days = sessions_in(vconn, symbol, lo, hi)
-        fingerprint = _fingerprint(vconn, symbol, [d for d, _ in days])
+        inputs = mod.inputs(vconn, [d for d, _ in days]) if mod.inputs else None
+        fingerprint = _fingerprint(vconn, symbol, [d for d, _ in days], inputs)
     finally:
         vconn.close()
     run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
@@ -357,11 +442,15 @@ def run(
         return day, out, rows
 
     per_arm: dict[str, dict[str, dict]] = {a: {} for a in arms}
+    vix_by_session: dict[str, dict] = {}
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         for day, out, rows in pool.map(one, todo):
             if not out.get("ok"):
                 refused[day] = str(out.get("error"))[:200]
                 continue
+            if mod.reports_vix:
+                counts = out.get("vix_sources") or {}
+                vix_by_session[day] = {"source": vix_source_of(counts), "ticks": counts}
             for arm in arms:
                 mine = [r for r in rows if r["arm"] == arm and r["session"] == day]
                 per_arm[arm][day] = {
@@ -392,6 +481,26 @@ def run(
     if mod.name == "flies":  # the keys every flies report has carried
         report["flies_config"] = str(config_paths["flies"])
         report["flies_config_snapshot"] = str(snapshot)
+    if inputs is not None:
+        report["data_inputs"] = {
+            "sessions_with_regime_rows": sum(1 for n, _ in inputs["regime_rows"].values() if n),
+            "cboe": inputs["cboe"],
+        }
+    if mod.reports_vix:
+        by_source = {k: 0 for k in ("intraday", "mixed", "cboe_fallback", "unreported")}
+        for v in vix_by_session.values():
+            by_source[v["source"]] += 1
+        # A session that read the Cboe open for any tick did not run on intraday VIX: stated at the top
+        # of the report, because MEIC's delta band moves on VIX and a fixed open cannot cross 18/25/35.
+        fallback = by_source["cboe_fallback"] + by_source["mixed"]
+        report["vix_fallback_sessions"] = fallback
+        report["vix_sources"] = {"sessions": by_source, "by_session": dict(sorted(vix_by_session.items()))}
+        if fallback:
+            report["vix_note"] = (
+                f"{fallback} of {len(vix_by_session)} replayed sessions read VIX from the Cboe daily open "
+                f"for some or all ticks (no intraday VIX in the store: fetch-vix); see vix_sources.by_session"
+            )
+            log(report["vix_note"])
     rconn.execute(
         "INSERT INTO runs (run_id, created_at, module, arms, window_name, start, end, cadence, code_commit, "
         "data_fingerprint, fill_model, status, sessions, refused, report) "

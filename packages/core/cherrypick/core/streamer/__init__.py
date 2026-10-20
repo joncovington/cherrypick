@@ -187,6 +187,13 @@ async def _wait_or_stop(state: _State, delay: float) -> bool:
     return state.stop_event.is_set()
 
 
+def _same_file(a: Path | str, b: Path | str) -> bool:
+    """Whether two paths name one file, whether or not it exists yet."""
+    return os.path.normcase(str(Path(a).expanduser().resolve())) == os.path.normcase(
+        str(Path(b).expanduser().resolve())
+    )
+
+
 class ChainStreamer:
     def __init__(
         self,
@@ -211,7 +218,17 @@ class ChainStreamer:
         stop_file: Path | str | None = None,
         stop_poll_s: float = 1.0,
         logger: logging.Logger | None = None,
+        producer: bool = False,
     ) -> None:
+        # The shared cache has exactly one writer: packages/streamer, which says so with
+        # `producer=True`. Anything else pointed at it -- gex's standalone streamer took the shared
+        # path by default until 2026-10-19 -- would interleave a second DXLink feed into the file
+        # every module trades off. Refused here, at the engine, so no new caller can repeat it.
+        if not producer and _same_file(db_path, streamcache.cache_path()):
+            raise ValueError(
+                f"{db_path} is the shared stream cache, which only packages/streamer writes; "
+                "point this streamer at a cache of its own (source.stream_cache_db)"
+            )
         self.session_factory = session_factory
         self.db_path = Path(db_path)
         self.symbols = [s.strip().upper() for s in symbols]

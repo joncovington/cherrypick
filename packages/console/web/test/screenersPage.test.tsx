@@ -37,10 +37,23 @@ function row(over: Partial<ScreenerRow>): ScreenerRow {
     earningsExpiry: "2026-11-13",
     earnings: "clear",
     readingAt: "2026-10-15T18:30:00Z",
-    listedLegs: [{ role: "short", right: "P", expiry: "2026-11-13", strike: 98, bid: 1.9, ask: 2.1, openInterest: 500, volume: 50, passes: true }],
-    cycleLegs: [{ role: "short", right: "P", expiry: "2026-11-20", strike: 98, bid: 2.2, ask: 2.3, openInterest: 900, volume: 40, passes: true }],
+    listedQuote: null,
+    listedLegs: [{ role: "short", right: "P", expiry: "2026-11-13", strike: 98, bid: 1.9, ask: 2.1, openInterest: 500, volume: 50, passes: true, quiet: false }],
+    cycleLegs: [{ role: "short", right: "P", expiry: "2026-11-20", strike: 98, bid: 2.2, ask: 2.3, openInterest: 900, volume: 40, passes: true, quiet: false }],
     recommendation: "listed",
     cyclePasses: true,
+    trade: {
+      side: "listed",
+      expiry: "2026-11-13",
+      dte: 30,
+      mid: 2,
+      working: 1.95,
+      natural: 1.9,
+      cost: 0.1,
+      workingAnnualisedPct: 23.72,
+      naturalAnnualisedPct: 23.12,
+      workingCreditPct: null,
+    },
     ...over,
   };
 }
@@ -140,6 +153,35 @@ describe("the screener page", () => {
     expect(html).toMatch(/broker chain was not recorded for this name">—</);
   });
 
+  it("the trade is priced at the working price, with mid and natural behind it", () => {
+    const html = render("/screeners/short-puts");
+    expect(html).toMatch(/mid 2\.00, working 1\.95, natural 1\.90[^"]*">1\.95</);
+    expect(html).toMatch(/At the natural fill: 23\.1%\.">23\.7%</);
+  });
+
+  it("a row with no priced trade shows a dash, never a figure carried over from the list", () => {
+    const saved = payload;
+    payload = { ...payload, rows: [row({ symbol: "UNR", recommendation: null, trade: null })] };
+    expect(render("/screeners/short-puts")).toMatch(/<td class="num muted">—<\/td><td class="num muted">—<\/td><\/tr>/);
+    payload = saved;
+  });
+
+  it("a listed quote with no bid, or wider than its mid, says so instead of a yield", () => {
+    const saved = payload;
+    payload = {
+      ...payload,
+      rows: [
+        row({ symbol: "NOB", bid: 0, ask: 4.9, listedQuote: "no-bid", annualisedPct: 32.79 }),
+        row({ symbol: "WID", bid: 0.3, ask: 1.2, listedQuote: "wide" }),
+      ],
+    };
+    const html = render("/screeners/short-puts");
+    expect(html).toMatch(/has no bid[^"]*The list states 32\.8%\."><span class="chip chip-warn">no bid</);
+    expect(html).toContain(">wide</span>");
+    expect(html).not.toContain(">32.8%<");
+    payload = saved;
+  });
+
   it("an unscored list says when its picks arrive", () => {
     payload = { ...payload, scored: false };
     expect(render("/screeners/short-puts")).toContain("Our rule has not scored this list yet");
@@ -153,5 +195,11 @@ describe("the fidelity tab", () => {
     expect(html).toContain('title="0 of 1">0/1<');
     expect(html).toContain('title="330 of 450">73%<');
     expect(html).toContain('title="0 of 0">—<');
+  });
+
+  it("says what it measures and what it is for", () => {
+    const html = renderToString(<FidelityTab />).replace(/<!-- -->/g, "");
+    expect(html).toContain("Whether our own rules pick the same option");
+    expect(html).toContain("not which names make the list");
   });
 });

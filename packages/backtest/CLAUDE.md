@@ -102,7 +102,10 @@ It is written into `market_regime_history`, the recorder's table, in the recorde
 (`reading = 'vix'`, `symbol = 'VIX'`), so `core.regime` reads a vendor session as it reads a recorded
 one; the mirror tests hold that table equal to gex's too. `fetch` fills it for the sessions it
 writes; `fetch-vix --from --to` backfills stored sessions (resumable, `--refetch` replaces, never an
-empty series).
+empty series), and exits 1 when any session was refused or came back empty. A session without VIX
+rows replays on the Cboe daily open, so a MEIC run records each session's VIX source and states
+`vix_fallback_sessions`, and MEIC's data fingerprint covers the VIX rows and the Cboe files
+(`runner._meic_inputs`): adding VIX to a session is new evidence under a new stamp.
 
 The vendor library is an **extra** (`pip install -e "packages/backtest[thetadata]"`), not a
 dependency: it pins its own pandas/polars/grpc, and nothing but a fetch needs it. It imports
@@ -118,22 +121,17 @@ vendor with our own recording, not with perfection: the recorder-sourced replay 
 completion-timing check. Its reports are derived results and are written only under
 `results/validation/`.
 
-**Amended 2026-10-17, after the first four sessions: the recording is compared at the vendor's
-cadence.** A 60 s store matched paper's entries well below the 15 s recording, and every miss was the
-replay's one sample in flies' 30 s window landing across a strike boundary (a neighbouring centre, or
-the other side at the same centre), none a quote the vendor got wrong. The recording thinned to the
-vendor's minute marks did no better, so the bar as first written compared a cadence with a cadence and
-no 60 s store could pass it. The bar is now the vendor against the recording thinned to the vendor's
-own instants (`validate.thin_to_vendor_instants`, a temporary copy that lives only for the check);
-what a minute costs is reported beside it (`cadence_cost`: each measure full and thinned, and the
-completion outcome, which is what moves P&L), never a bar and never assumed. Stores of the same cadence
-compare as before. Thresholds, checks and `UNLOCK_SESSIONS` are unchanged. On the first four sessions
-the vendor met the thinned recording on every check; only the session count held it.
+**Amended 2026-10-17: the recording is compared at the vendor's cadence.** The bar as first written
+compared a 60 s store with the 15 s recording, which measures the cadence rather than the vendor. The
+bar is now the vendor against the recording thinned to the vendor's own instants
+(`validate.thin_to_vendor_instants`, a temporary copy that lives only for the check); what a minute
+costs is reported beside it (`cadence_cost`: each measure full and thinned, and the completion
+outcome, which is what moves P&L), never a bar and never assumed. Stores of the same cadence compare
+as before. Thresholds, checks and `UNLOCK_SESSIONS` are unchanged. The validation reports behind this
+amendment are kept locally under `~/.cherrypick`, per the licence.
 
-What the first read already showed (described here, never quantified): the recorder's own profile
-can be the thinner one (on a monthly-expiry session it carried visibly fewer strikes, which moves
-walls and the flip), so a profile disagreement is read against each side's strike count, which the
-report carries.
+A profile disagreement is read against each side's strike count, which the report carries: either
+side's profile can be the thinner one, and fewer strikes move the walls and the flip.
 
 ## The runner
 

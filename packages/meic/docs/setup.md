@@ -33,7 +33,7 @@ cd cherrypick/packages/meic
 ```bash
 pip install -e ../core              # the shared cherrypick.core library — install this first, or
                                      # every import cherrypick.core... fails (calendar, fee lookups)
-pip install -e .                    # installs tastytrade, keyring, pytz, flask (from pyproject.toml)
+pip install -e .                    # installs tastytrade, keyring, pytz (from pyproject.toml)
 pip install pytest pytest-asyncio   # optional — only needed to run the test suite
 ```
 
@@ -45,7 +45,7 @@ Store OAuth2 credentials (`client_secret`, `refresh_token`) in the OS keyring �
 python -m cherrypick.meic.tt secrets_set
 ```
 
-This prompts for each credential with hidden input and preserves existing values if you press Enter without typing. `account_number` is optional; the SDK discovers accounts automatically if omitted. See `/setup` for a guided walkthrough, including connection verification.
+This prompts for each credential with hidden input and preserves existing values if you press Enter without typing. `account_number` is optional for reads (the SDK discovers accounts if it is omitted), but it is the designated trading account: `tt`'s order commands and the live loop refuse without it. The suite sets it with `cherrypick account --module meic --set <last4>`. See `/setup` for a guided walkthrough, including connection verification.
 
 Credentials are stored via the [`keyring`](https://github.com/jaraco/keyring) library, which uses the OS secure store automatically — **Keychain** on macOS, **Credential Manager / DPAPI** on Windows, and the **Secret Service** (GNOME Keyring / KWallet) on a Linux desktop. All three encrypt credentials at rest and unlock them with your login session, which is the appropriate bar for a long-lived broker refresh token. Nothing is ever written to a file or environment variable, and `credentials.py` deliberately fails with `CredentialError("No keyring backend available.")` rather than falling back to anything insecure.
 
@@ -68,33 +68,33 @@ You'll be prompted for the passphrase again the first time the agent reads a sec
 
 ### 4. Configure the agent
 
-Copy the example config and edit it with your settings:
+Copy the example config to the config home and edit it with your settings:
 
 ```bash
-cp config.example.json config.json
+cp config.example.json ~/.cherrypick/config/meic.json
 ```
 
-> **Config location.** This in-repo `config.json` is the standalone-checkout path. Under the orchestrated
-> cherrypick suite the config resolves **home-first** to `~/.cherrypick/config/meic.json` (see
-> [`cherrypick/meic/paths.py`](../src/cherrypick/meic/paths.py)); `cherrypick migrate-home` moves an in-repo config up to the home. The
-> keys are identical either way — edit whichever `paths.config_path()` resolves to.
+> **Config location.** The config resolves **home-first** to `~/.cherrypick/config/meic.json` (see
+> [`cherrypick/meic/paths.py`](../src/cherrypick/meic/paths.py)), else a legacy in-repo `config.json`
+> until migrated (`cherrypick migrate-home` moves it up), else the shipped example, read-only. The keys
+> are identical either way — edit whichever `paths.config_path()` resolves to.
 
 Key fields to update in your config:
 
 | Field | Description |
 |---|---|
-| `symbols` | List of underlyings to trade concurrently, e.g. `["XSP", "SPX"]` — any index or equity symbols tastytrade supports, such as equity index options (`XSP`, `SPX`, `NDX`, `RUT`) or futures options (`/MES`, `/ES`, `/MNQ`, `/NQ`). Every symbol must list daily-expiring (0DTE) option chains; most single-name equities don't. Non-cash-settled symbols should be left out of `cash_settled_symbols` so a missed force-close is escalated as an assignment-risk failure. All symbols share one account-wide risk budget (buying power, `max_concurrent_ics`, `max_entries_per_day`) — there's no per-symbol cap, and correlated symbols aren't exposure-limited against each other yet. The single-symbol `symbol` key is still accepted as a deprecated alias for `["symbol"]` if `symbols` is omitted. |
+| `symbols` | List of underlyings to trade concurrently, e.g. `["SPX", "QQQ"]` (never two vehicles on one index, such as SPX with XSP — a suite test refuses that) — any index or equity symbols tastytrade supports, such as equity index options (`XSP`, `SPX`, `NDX`, `RUT`) or futures options (`/MES`, `/ES`, `/MNQ`, `/NQ`). Every symbol must list daily-expiring (0DTE) option chains; most single-name equities don't. Non-cash-settled symbols should be left out of `cash_settled_symbols` so a missed force-close is escalated as an assignment-risk failure. On the agent path all symbols share one account-wide risk budget (buying power, `max_concurrent_ics`) — there's no per-symbol cap, and correlated symbols aren't exposure-limited against each other yet. The single-symbol `symbol` key is still accepted as a deprecated alias for `["symbol"]` if `symbols` is omitted. |
 | `delta_target` | Short strike delta target (default `0.18`) |
-| `max_wing_width` | Upper bound (points) on spread width; the agent decides the actual wing width per entry rather than picking from a fixed list |
+| `max_wing_width` | Upper bound (points) on spread width for the agent path; paper and the live loop pick from `wing_widths_by_symbol` |
 | `quantity` | Number of contracts per IC leg |
-| `max_entries_per_day` | Hard cap on entries (`-1` = no cap, rely on the agent's judgment + buying power) |
+| `daily_ic_trade_target` | Daily entry guidance (soft; a never-binding 200 by default). The live loop's count cap is `live.max_structures_per_day` |
 | `entry_window_start` | Earliest time to enter new ICs in HH:MM ET (default `"10:00"`) |
 | `separate_spread_entry` | Order structure: `false` = 4-leg combo (default), `true` = separate 2-leg spreads, `"auto"` = agent decides per-iteration based on IV rank, session, and open IC count |
 | `entry_price_strategy` | Limit price strategy: `"mid"` = streaming mid price with a spread-width gate and fallback to natural bid, `"natural_bid"` = always submit at natural bid (safest), `"ioc_step"` = try IOC orders above natural bid then fall back, `"day_improve"` = Day limit above natural bid with cancel-replace, `"auto"` (default) = agent decides per-iteration by session/spread-width/IV rank |
 | `ioc_step_increments` | Amounts above natural bid to attempt as IOC orders (e.g. `[0.02, 0.01]`). Used when `entry_price_strategy` is `"ioc_step"` or `"auto"` selects it |
 | `ioc_step_wait_seconds` | Seconds to wait per IOC attempt before stepping to the next increment (default `10`) |
 | `day_improve_amount` | Amount above natural bid to submit as a Day limit when using `"day_improve"` (default `0.03`) |
-| `day_improve_wait_seconds` | Seconds to wait before canceling the Day improve order and resubmitting at natural bid (default `60`) |
+| `day_improve_wait_seconds` | Seconds to wait before cancelling the Day improve order and resubmitting at natural bid (default `60`) |
 
 ### 5. Initialize the database
 
@@ -119,9 +119,7 @@ package) is the suite's single writer of the shared stream cache — run it from
 python ../streamer/run.py
 ```
 
-**Do not run `python -m cherrypick.meic.streamer` alongside it** — two producers means two DXLink
-writers on one cache and one account; MEIC's own streamer module is a disabled rollback path, only
-for a box deliberately configured with `modules.meic.streamer.enabled: true`. Either producer
+It is the only producer (MEIC's own rollback streamer was removed on 2026-10-18), and it
 maintains a persistent DXLink WebSocket so quote/greeks/chain reads are served from cache instead of
 a cold connection each time. `/meic-start` and `/paper-start` both check/start it automatically as
 their first step (see `.claude/commands/meic-start.md`); the console is already running.
@@ -137,6 +135,12 @@ Tastytrade operations go direct via the Python SDK in `tt.py` — there is no MC
 ```
 
 By default this is `false`, so `execute_trade`/`adjust_order` calls without `--live` always dry-run regardless of this setting, and calls with `--live` are rejected outright. To go live, set `enable_live_trading` to `true` in `config.json` — no restart of the running session is required, since `tt.py` reads `config.json` fresh on every invocation.
+
+That key is the master switch. The deterministic live loop also needs `live.symbol`, a non-empty
+`live.gate0_confirmed` attestation and a designated account, and trades only on a day armed with
+`/live-meic-start`. Size live in the `live` block (`live.arm`, `max_open_bp_dollars`,
+`wing_widths_by_symbol`, the entry window), never at the top level, which every paper arm inherits;
+`python -m cherrypick.meic.live_migrate` moves misplaced keys (dry run by default).
 
 ---
 

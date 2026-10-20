@@ -72,6 +72,8 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `calendars-paper-offsession` | every 60 s **outside** 09:30–16:00 | `…calendars.paper_loop --once` | **off** (experimental) | owns the 16:20 settlement of expiring legs: cash for SPX-style underlyings, **physical** for SPY (an ITM short delivers shares, held to the next session's disposal), retry-until-settled off a staleness-gated spot read |
 | `pmcc-paper` | every **60 s** | `-m cherrypick.pmcc.paper_loop --once` | **off** (experimental) | enters whenever the (symbol, book) slot is free, marks every open leg (the assignment-exposure telemetry reads that path), holds to the short's expiry, and settles expiring legs (an ITM short delivers shares covered the next session) |
 | `curve-paper` | every **60 s** | `-m cherrypick.curve.paper_loop --once` | **off** (experimental) | VXX call credit spreads; records the daily VIX/VIX3M regime classification every session, traded or not |
+| `contango-paper` | every **60 s** | `-m cherrypick.contango.paper_loop --once` | **off** (experimental) | the SVXY/SHV switch: one decision per arm ten minutes before the close |
+| `meic-live` | every 60 s — **enabled only while the arm record is valid for today** | `-m cherrypick.meic.live_loop --once --live` | off (unarmed) | armed by `/live-meic-start` writing `state/meic-live-arm.json`; the same self-disarm at `live.disarm_time` (17:00 ET) and watchdog backstop as flies, through `cherrypick.core.live` |
 
 **Reports, data and the AI**
 
@@ -96,9 +98,20 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `advisor-deep` | daily **17:00**, trading days | `scripts/advisor_checkpoint.py --slot deep` | off, needs `claude` | the post-close run, after `review-provisional`, on the strong model. It also ISSUES the next session's advice, even when the AI call failed. Catchup 300 min |
 | `advisor-<slot>` | as configured — **none by default** | `scripts/advisor_checkpoint.py --slot <s>` | off | optional light intraday checkpoints, declared in `advisor.checkpoints` |
 | `reconcile` | daily **16:30** | `run.py reconcile --scheduled` | off | worth turning on once anything trades live |
+| `manage-eval` | daily **10:00** (`manage.at`), trading days | `run.py manage` | off (`manage.enabled`) | the read-only snapshot of the real account and its evaluation, for Live → positions and Live → portfolio; posts the trades needing action |
+| `manage-eval-HHMM` | daily at each `manage.also_at` time, trading days | `run.py manage` | off (`manage.enabled`) | the same evaluation again, rewriting the day's file; catches up for an hour |
+| `backtest-fetch` | daily **18:45** (`backtest.fetch_at`), trading days | `-m cherrypick.backtest fetch` | off (`backtest.fetch`) | the licensed vendor's recent sessions into the backtest store; holds the vendor account's one session while it runs |
+| `live-positions` | every **300 s**, 09:31–16:10, trading days | `run.py live-positions` | on | broker positions against the live ledgers; asks the broker only while a live module is armed or holds a leg |
+| `live-fill-alerts` | every **15 s** while a live module is armed | `run.py live-fill-alerts` | on | one LIVE alert per filled order, ahead of the ledger's own confirmation |
+| `settle-overdue-live` | **hourly** | `run.py settle-overdue-live` | on | settles a past live session at that session's official close, through each module's own `live_loop --settle-overdue` |
+| `power-watch` | every **60 s**, every day | `run.py power-watch` | on | warns on every channel while the machine runs on battery |
 | `suite-backup` | daily **01:30** | `run.py backup` | on | one zip at `backup.dest`; `doctor` warns past 36 h |
 | `config-backup` | every `config_backup.interval_minutes` (15) | `run.py config-backup` | **off** (opt in) | commits the config files the home repo's allow-list tracks and pushes to its remote; `doctor` warns when on but not set up or failing |
 | `log-archive` | monthly, day 1 @ **03:30** | `run.py archive` | on | catchup 7 days (idempotent, finished months only) |
+
+Research and screener collectors (`technicals-*` beyond the five above, `report-screener-*`,
+`report-skate-quotes-*`, `report-income-chains`, `report-earnings-strikes`, `pmcc-earnings-refresh`,
+`flies-intraday-agent`) are derived the same way; `run.py status` lists them with their schedules.
 
 Missed-fire policy after sleep/hibernate: interval jobs fire once immediately and resume cadence
 (never a burst); daily/monthly jobs fire inside their catchup window, else record `missed` and skip.
@@ -138,8 +151,9 @@ policed by the watchdog:
 | **streamer** (`packages/streamer`, top-level `streamer` config block) | The suite's single producer: writes `~/.cherrypick/data/marketdata/stream_cache.db`, streaming the **union** of every `state/stream_requests/<module>.json` | Session-gated **09:15–16:00 ET**; restarted on *silence*, not just death (`stale_restart_seconds: 240` — the 2026-07-20 stall was a live-but-quiet socket) | `status_argv`/`start_argv`/`stop_argv` = `run.py --status` / `run.py` / `run.py --stop`. **`run.py uninstall` deliberately leaves it running** (`cli.py`); `run.py stop --all` stops it |
 | **services** (top-level `services` block) — `gex-recorder`, on by default | The GEX spot-trail recorder: samples every symbol's spot ~15 s so the trail has no gaps whether or not anyone is looking at it, and records the GEX and market-regime history | Every watchdog tick (not session-gated) | Same argv contract; `status_argv` must print `{"running": bool}`. `uninstall` **stops** services (they are the orchestrator's own daemons) |
 
-`meic-sidecar` (the 127.0.0.1:7699 REST poller) is a declared-but-disabled third; enable only for
-MEIC's live/interactive loop fast-path.
+MEIC's old `meic-sidecar` (a REST poller and HTTP API on 127.0.0.1:7699) was removed on 2026-10-18.
+Quotes come from the shared cache and account calls go straight to the broker. A `services` entry
+that still names it now fails at start, so delete the entry.
 
 **Both are also recycled when their config changes.** A daemon reads config once, at launch, so
 an edit afterwards reaches the file and never the process — and no liveness check can see it, because
@@ -178,7 +192,6 @@ directions).
 |---|---|
 | 5070 | **Console** — the suite's one read surface (`packages/console/server/src/config.ts`, overridable via `config/console.json`). Kept up by the supervisor as an always-on resident job |
 | 8804 | **Settings editor** — `run.py settings` (`settings_serve.py`); the suite's only config-writing surface, foreground-only and never scheduled |
-| 7699 | MEIC REST sidecar (optional, off) |
 | 3306 | Dolt SQL server (earnings data; the `earnings-dolt` supervisor job keeps it alive) |
 
 Two servers, one read and one write. Until 2026-08-12 there were seven: a suite dashboard on 8787,

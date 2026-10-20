@@ -57,9 +57,9 @@ from cherrypick.meic.session import get_session
 
 # ---------------------------------------------------------------------------
 # Logging — each invocation is a short-lived subprocess whose only normal
-# output channel is the JSON printed to stdout, so a failed streamer-HTTP
-# fallback (see _try_streamer_http) would otherwise be invisible across
-# iterations. Append warnings to a file so degraded-mode calls are auditable.
+# output channel is the JSON printed to stdout, so a degraded call would
+# otherwise be invisible across iterations. Append warnings to a file so
+# degraded-mode calls are auditable.
 # ---------------------------------------------------------------------------
 _LOG_FILE = _paths.log_path("tt.log")
 _LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -85,57 +85,6 @@ def _load_config() -> dict:
         with open(path) as f:
             return json.load(f)
     return {}
-
-
-_STREAMER_PORT = 7699
-
-
-_last_streamer_http_error: str | None = None
-
-
-def _try_streamer_http(command: str, args_dict: dict) -> dict | None:
-    """POST command to the MEIC sidecar's HTTP API (127.0.0.1:7699 — the optional REST-poller fast-path,
-    `--sidecar` in streamer.py; disabled by default in config, distinct from the DXLink streamer/producer
-    itself). Returns parsed JSON or None on failure.
-
-    Sets module-level `_last_streamer_http_error` so callers falling back to the
-    slow (cold-import asyncio) path can surface *why* in the response JSON —
-    a caller-invisible fallback here previously masked a 34+ hour streamer
-    stall (silently-dead persistent connection) behind an unremarkable
-    per-call latency bump. Named "sidecar", not "streamer", so it can't be misread as a report on the
-    DXLink producer's health — that not being reachable here is the sidecar's normal disabled-by-default
-    state, not a market-data outage; check `stream_status` for the producer.
-    """
-    global _last_streamer_http_error
-    import urllib.error
-    import urllib.request
-
-    body = json.dumps({"command": command, "args": args_dict}).encode()
-    try:
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{_STREAMER_PORT}/api",
-            data=body,
-            method="POST",
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            result = json.loads(resp.read())
-        _last_streamer_http_error = None
-        return result
-    except (ConnectionRefusedError, urllib.error.URLError) as exc:
-        # Sidecar simply isn't running — normal/expected (it's disabled by default), not worth a warning.
-        _last_streamer_http_error = f"sidecar not reachable: {exc}"
-        return None
-    except TimeoutError as exc:
-        # Sidecar is running but didn't respond within 5s — the interesting case:
-        # the same failure shape as the 2026-07-01 session/event-loop stall.
-        _last_streamer_http_error = f"sidecar HTTP timeout: {exc}"
-        logger.warning("sidecar HTTP timeout on command=%s: %s", command, exc)
-        return None
-    except Exception as exc:
-        _last_streamer_http_error = f"sidecar HTTP error: {exc}"
-        logger.warning("sidecar HTTP error on command=%s: %s", command, exc)
-        return None
 
 
 def _live_trading_enabled() -> bool:
@@ -1383,7 +1332,7 @@ async def cmd_get_gex(args) -> dict:
 
 def cmd_get_orb_range(args) -> dict:
     """Read the day's ORB (Opening Range Breakout) high/low, captured by the streamer
-    from live Trade events during 9:30-9:35 ET (see streamer.py's _track_orb) rather than
+    from live Trade events during 9:30-9:35 ET (the standalone streamer's orb.py) rather than
     by the AI loop's own iterations, which aren't guaranteed to land inside that window."""
     symbol = args.symbol.strip().upper()
     et_today = datetime.now(_ET).strftime("%Y-%m-%d")
@@ -1502,26 +1451,24 @@ def cmd_get_intraday_range(args) -> dict:
     }
 
 
-def cmd_stream_status(_args) -> dict:
-    # os.kill(pid, 0) is unreliable on Windows (raises SystemError for some
-    # process states) — reuse streamer.py's cross-platform _running_pid(),
-    # which already handles this via psutil/OpenProcess. streamer.py's
-    # top-level imports are all stdlib, so this import is cheap.
-    from cherrypick.meic import streamer as _streamer
+def _producer_pid() -> int | None:
+    """The standalone producer's pid (packages/streamer, the shared cache's only writer), from the PID
+    file it keeps beside that cache (`cherrypick.streamer.config.pid_path`), or None when it is not
+    running. A reader: a stale file is left for the producer to clear."""
+    from cherrypick.core.looplock import pid_alive
 
-    # Since the 2026-07-21 cutover the actual producer of the shared cache is normally the standalone
-    # streamer (packages/streamer), not this module's own (rollback-only) full-streamer mode — but this
-    # command used to check only the latter's PID file, so it reported running=false whenever the
-    # standalone producer was the one actually alive and writing fresh data. Check both; the cache
-    # freshness numbers below already reflect whichever one is really producing.
-    meic_pid = _streamer._running_pid()
-    standalone_pid = _streamer._standalone_producer_pid()
-    if standalone_pid is not None:
-        producer, pid = "standalone", standalone_pid
-    elif meic_pid is not None:
-        producer, pid = "meic", meic_pid
-    else:
-        producer, pid = None, None
+    try:
+        pid = int((_CACHE_DB.parent / "streamer.pid").read_text().strip())
+    except (OSError, ValueError):
+        return None
+    return pid if pid_alive(pid) else None
+
+
+def cmd_stream_status(_args) -> dict:
+    # MEIC's own rollback streamer was removed on 2026-10-18; the standalone producer is the only one,
+    # and the cache freshness numbers below say whether it is really producing.
+    pid = _producer_pid()
+    producer = "standalone" if pid is not None else None
     running = pid is not None
 
     result: dict = {"ok": True, "running": running, "pid": pid, "producer": producer}
@@ -1566,7 +1513,7 @@ def cmd_stream_status(_args) -> dict:
         # Each entry in `ages` is already `now - MAX(updated_at)` for its own
         # table (computed above, per table) -- taking min() here correctly
         # picks the freshest feed's age. (Not the same shape as the bug fixed
-        # earlier in streamer.py's own --status output, which took min/max of
+        # earlier in MEIC's old streamer --status output, which took min/max of
         # raw *timestamps* before converting to age -- this code was already
         # doing it the right way round.)
         stale_age_s = min(ages) if ages else None
@@ -1680,6 +1627,35 @@ async def cmd_get_quotes(args) -> dict:
             "mid": round((bid + ask) / 2, 4) if bid is not None and ask is not None else None,
         }
     return {"ok": True, "quotes": out, "missing": [s for s in symbols if s not in out]}
+
+
+async def cmd_get_greeks(args) -> dict:
+    """The broker's own greeks for a list of streamer symbols. Reads the feed; writes NOTHING.
+
+    `get_quotes`'s sibling, under the same rule: the shared cache has one producer, so these come back
+    to the caller and the cache is left alone. Per share, as the feed states them (theta per day).
+    The manage snapshot sets them beside its own Black-Scholes greeks, so a beta-weighted delta can be
+    checked against the broker's model and not only against itself.
+    """
+    symbols = list(dict.fromkeys(args.symbols or []))
+    if not symbols:
+        return {"ok": False, "error": "No symbols provided"}
+    timeout = getattr(args, "timeout", 8.0)
+    try:
+        greeks = await _collect_greeks(symbols, timeout)
+    except Exception as exc:
+        return _error(exc)
+    out = {
+        sym: {
+            "delta": _num(g.delta),
+            "gamma": _num(g.gamma),
+            "theta": _num(g.theta),
+            "vega": _num(g.vega),
+            "iv": _num(g.volatility),
+        }
+        for sym, g in greeks.items()
+    }
+    return {"ok": True, "greeks": out, "missing": [s for s in symbols if s not in out]}
 
 
 # ---------------------------------------------------------------------------
@@ -1800,6 +1776,12 @@ def main():
     )
     p_gqs.add_argument("--timeout", type=float, default=8.0)
 
+    p_ggr = sub.add_parser("get_greeks")
+    p_ggr.add_argument(
+        "--symbols", nargs="+", required=True, help="Streamer symbols to read greeks for (no cache write)"
+    )
+    p_ggr.add_argument("--timeout", type=float, default=8.0)
+
     p_ss = sub.add_parser("stream_subscribe")
     p_ss.add_argument("--symbols", nargs="+", required=True, help="Streamer symbols to warm up in cache")
     p_ss.add_argument("--timeout", type=float, default=6.0)
@@ -1820,26 +1802,6 @@ def main():
         _out(sync_dispatch[args.command](args))
         return
 
-    # Route through the streamer HTTP API when it's running.
-    # This reuses the streamer's already-initialized OAuth session and cache,
-    # avoiding 1.3s of Python import overhead per call. get_vix1d is excluded:
-    # the daemon doesn't recognize it and replies with a normal (non-None)
-    # {"ok": false, "error": "unknown command"} response rather than failing
-    # the HTTP call outright, so _try_streamer_http can't tell the difference
-    # between "daemon answered" and "daemon doesn't know this command" --
-    # skip the shortcut entirely for commands the daemon was never meant to
-    # own (VIX1D isn't a traded/managed symbol in its subscription window).
-    # get_official_close likewise: a settlement read is never answered by a cache.
-    args_dict = {k: v for k, v in vars(args).items() if k != "command" and v is not None}
-    http_result = (
-        None
-        if args.command in ("get_vix1d", "get_official_close")
-        else _try_streamer_http(args.command, args_dict)
-    )
-    if http_result is not None:
-        _out(http_result)
-        return
-
     dispatch = {
         "get_connection_status": cmd_get_connection_status,
         "list_accounts": cmd_list_accounts,
@@ -1847,6 +1809,7 @@ def main():
         "get_positions": cmd_get_positions,
         "get_transactions": cmd_get_transactions,
         "get_quotes": cmd_get_quotes,
+        "get_greeks": cmd_get_greeks,
         "get_market_overview": cmd_get_market_overview,
         "get_quote": cmd_get_quote,
         "get_vix1d": cmd_get_vix1d,
@@ -1866,10 +1829,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    result = asyncio.run(fn(args))
-    if isinstance(result, dict) and _last_streamer_http_error is not None:
-        result.setdefault("sidecar_http_fallback", _last_streamer_http_error)
-    _out(result)
+    _out(asyncio.run(fn(args)))
 
 
 if __name__ == "__main__":

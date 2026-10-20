@@ -65,7 +65,25 @@ For a multi-day, profile-by-profile performance write-up (equity curves, risk-ad
 /paper-report
 ```
 
-**Standalone (no supervisor).** Run `python -m cherrypick.meic.paper_loop` in a terminal, or wire a cron job to `--once`. The loop's own Windows scheduled task (`--install-task`) was removed on 2026-10-08; the supervisor is the unattended driver on every OS. See [paper-trading.md](paper-trading.md) for the engine design, fee model, historical-replay accelerator, and graduation criteria.
+**Standalone (no supervisor).** Run `python -m cherrypick.meic.paper_loop` in a terminal, or wire a cron job to `--once`. The loop's own Windows scheduled task (`--install-task`) was removed on 2026-10-08; the supervisor is the unattended driver on every OS. See [paper-trading.md](paper-trading.md) for the engine design, fee model and graduation criteria.
+
+---
+
+## Live (armed per day)
+
+Live trading is the deterministic live loop (`cherrypick.meic.live_loop`), not the agent loop above.
+Run `/live-meic-start` from the repo root on a trading day: it shows a status readout and the
+disclaimer, needs a literal YES, and arms the supervisor's `meic-live` job for today only; the loop
+self-disarms at `live.disarm_time`. `/live-meic-start --stop` disarms early.
+
+```bash
+python -m cherrypick.meic.live_loop --status    # gates, caps, orphans, holds — no broker read
+```
+
+A held IC settles only on the official close; the hourly `settle-overdue-live` job catches up a
+session the machine missed (`live_loop --settle-overdue`). Each morning `meic-fee-reconcile` writes
+the broker's fees to settled live rows (`python -m cherrypick.meic.fee_reconcile`, dry run without
+`--apply`). The console's **Live** page has a MEIC tab while MEIC's live switch is on.
 
 ---
 
@@ -88,16 +106,10 @@ which port you opened, which is what the old two-port arrangement (5050 live / 5
 It also defaults to the module's own `CURRENT_ERA`, the way this module's analytics do, with earlier
 eras reachable through a visible scope control.
 
-**Today view**
-- Multi-period stats grid — Net P&L, total trades, wins, losses, and W/L ratio across today / this week / this month / this year / all-time (live trades only)
-- Trades table — each IC with entry time, strikes, wing width, per-spread credits, per-spread stop status badges (e.g. `STOPPED 11:21`), and P&L
-
-**History view**
-- NLV trend chart — account value over all days where the EOD sequence has run
-- Session win rate breakdown
-- Exit reason breakdown
-- Avg P&L by IV rank bucket
-- All-time fee drag summary
+The MEIC page has a rail of tabs: **session**, **summary**, **forest**, **attempts**, **positions**,
+**history**, **sessions**, **exits**, **regime cuts**, **calibration**, **performance**,
+**analysis**, **costs**, **advisor** and **help** (see the [README](../README.md#the-read-surface)
+for what each holds).
 
 The console reads `meic_trades.db` and `paper_trades.db` from the data home
 (`~/.cherrypick/data/meic/` by default), read-only. In paper scope the Performance view can be
@@ -143,13 +155,10 @@ You can also trigger it manually at any time. `/eod-report` accepts a scope argu
 /eod-report paper --date 2026-07-08
 ```
 
-The **live** report is a plain-English synthesis (agent-written). The **paper** side is deterministic and
-code-generated — two files per session in `~/.cherrypick/logs/meic/`:
-
-**Both retired 2026-08-13.** `paper-eod-<date>.md` and `eod-analysis-<date>.md` were this module's
-own account of a session; the suite review (`packages/review`) now covers MEIC, flies and earnings in
-one versioned fact set, with MEIC split by arm — which is where the `open`/`width-5`/`width-10`
-comparison those arms exist to make actually lives. `python -m cherrypick.review build --session <d>`.
+The **live** report is a plain-English synthesis (agent-written). This module's own paper reports
+(`paper-eod-<date>.md`, `eod-analysis-<date>.md`) were retired 2026-08-13; the suite review
+(`packages/review`) now covers MEIC, flies and earnings in one versioned fact set, with MEIC split by
+arm. `python -m cherrypick.review build --session <d>`.
 
 The suite review builds on the ledger directly — see the suite
 [reporting docs](../../../docs/reporting-and-dashboard.md).
@@ -158,9 +167,9 @@ The suite review builds on the ledger directly — see the suite
 
 ## Logs
 
-All loop actions are written to `logs/agent.log` as newline-delimited JSON via `python -m cherrypick.meic.notify log_event --level <LEVEL>`. Each entry includes a timestamp, level (typically `INFO`, `WARN` for conflicts, or `CRITICAL` for escalated failures like a missed force-close on a non-cash-settled symbol), message, and optional structured data. Review `WARN`/`CRITICAL` entries after EOD to identify conflict patterns and refine agent behavior.
+All loop actions are written to `logs/agent.log` as newline-delimited JSON via `python -m cherrypick.meic.notify log_event --level <LEVEL>`. Each entry includes a timestamp, level (typically `INFO`, `WARN` for conflicts, or `CRITICAL` for escalated failures like a missed force-close on a non-cash-settled symbol), message, and optional structured data. Review `WARN`/`CRITICAL` entries after EOD to identify conflict patterns and refine agent behaviour.
 
-Every log file is size-capped with rotation (10 MB per file, 5 backups), so `agent.log`, `streamer.log`, and `paper_loop.log` never grow without bound. The paper daemon logs to `logs/paper_loop.log` in a human-readable one-line-per-iteration format.
+Every log file is size-capped with rotation (10 MB per file, 5 backups), so `agent.log` and `paper_loop.log` never grow without bound. The live loop writes one JSON line per tick to `meic_live.log`. The paper daemon logs to `logs/paper_loop.log` in a human-readable one-line-per-iteration format.
 
 The easiest way to watch the log live is the console's log card, which merges every module's tail
 with level filters.

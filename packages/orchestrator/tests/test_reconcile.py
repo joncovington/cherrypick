@@ -222,3 +222,21 @@ def test_balances_summary_matches_the_sdks_underscored_keys():
     wire = {"net-liquidating-value": "10.5", "buying-power": "9"}
     assert _balances_summary(wire) == wire
     assert _balances_summary(None) == {}
+
+
+def _entry_with_info(monkeypatch, info):
+    answers = {"get_positions": {"ok": True, "positions": []}, "get_account_info": info}
+    monkeypatch.setattr(reconcile, "_tt", lambda root, *argv, tool=None: answers[argv[0]])
+    return reconcile._account_entry(".", "5WX19999", set())
+
+
+def test_the_account_entry_carries_the_accounts_kind(monkeypatch):
+    info = {"ok": True, "margin_or_cash": "Cash", "account_type_name": "Roth IRA", "balances": {}}
+    entry = _entry_with_info(monkeypatch, info)
+    assert entry["account_type"] == {"margin_or_cash": "Cash", "type_name": "Roth IRA"}
+    assert entry["account"] == "****9999"
+
+
+def test_an_unread_account_kind_is_unknown_not_margin(monkeypatch):
+    entry = _entry_with_info(monkeypatch, {"ok": False, "error": "HTTP 503"})
+    assert entry["account_type"] == {"margin_or_cash": None, "type_name": None}

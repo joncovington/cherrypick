@@ -2,7 +2,7 @@
  * The AI advisor: read what it observed, proposed and ran — and compute nothing.
  *
  * `packages/advisor` owns every judgement on this page. Its verdicts come from the suite's own
- * chain (ledger readers → `compare_profiles` → `qualify_readings`), the same one calibration and
+ * chain (ledger readers → `group_by_tag` → `qualify_readings`), the same one calibration and
  * the review use, and they are stored on the experiment row. This reader parses, shapes and passes
  * through. A TypeScript re-derivation would be a second opinion free to drift from the first, which
  * is exactly the mistake `services/report.ts` already made once with the P&L rules.

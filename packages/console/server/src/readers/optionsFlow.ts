@@ -199,6 +199,10 @@ function shapeDerivedRow(v: unknown): DerivedFlowRow {
     score: num(r["score"]),
     confirmed: c === "opened" || c === "closed" || c === "mixed" ? c : null,
     confirmedScore: num(r["confirmed_score"]),
+    timeEt: str(r["time_et"]),
+    cp: spreadCp(r["cp"]),
+    lean: str(r["lean"]),
+    unreadWhy: str(r["unread_why"]),
   };
 }
 

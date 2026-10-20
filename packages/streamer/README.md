@@ -75,7 +75,9 @@ unrecoverable in a way nothing else's is:
 - **The 09:30 deadline is hard.** A producer that is down through 09:30–09:35 loses that day's opening
   range permanently; there is no backfill.
 - **A restart is not instant.** After a restart the daemon needs a settling window (~240 s) before its
-  data is trustworthy, so "restart it at 09:29" is already too late. Aim to be alive by ~09:20.
+  data is trustworthy, so "restart it at 09:29" is already too late. Aim to be alive by ~09:20. The
+  watchdog starts a down producer from `streamer.session_start` in the orchestrator's config
+  (default 09:15 ET, a check that moves alone) on a trading day, up to one watchdog tick later.
 - **Death is not the only failure.** The 34-hour stall was a live-but-silent socket: the process was up
   and the connection was open, and no data was moving. So supervision restarts on **silence**, not just
   on a dead PID.
@@ -85,12 +87,11 @@ never a faster full watchdog tick.
 
 ## Boundaries
 
-- **Exactly one producer writes the cache.** MEIC's in-module streamer writes the same file and is
-  disabled; it survives only as the rollback path. Two producers means two DXLink connections into one
-  account. A PID single-instance guard plus the orchestrator starting only one is what enforces this.
-- **No trading policy lives here.** No account REST poller, no HTTP API, no order path. Those belong to
-  a trading module's wrapper (`packages/meic/src/cherrypick/meic/streamer.py`), which layers them onto
-  the same shared engine.
+- **Exactly one producer writes the cache: this one.** MEIC's in-module rollback streamer was removed
+  on 2026-10-18. Two producers would mean two DXLink connections into one account; a PID
+  single-instance guard plus the orchestrator knowing only this producer is what enforces it.
+- **No trading policy lives here.** No account REST poller, no HTTP API, no order path. A module
+  declares what it needs in `state/stream_requests/` and reads the cache.
 - **The engine itself is in `cherrypick.core`** (`core.streamer`, `core.streamcache`). Do not fork it
   into this package — the GEX math once drifted ~75× when it was copied.
 

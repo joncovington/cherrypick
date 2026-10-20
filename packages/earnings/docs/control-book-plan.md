@@ -1,6 +1,7 @@
 # The control book: making entry screening measurable
 
-**Status:** phase 1 landed 2026-08-25. Phases 2-4 planned, nothing built.
+**Status:** phases 0, 0b and 1 landed 2026-08-25; phase 3 (the entry replay) landed 2026-08-26.
+Phases 2 and 4 are planned, and nothing for them is built.
 
 ## Decisions taken 2026-08-25
 

@@ -422,7 +422,11 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "enabled": bool(mg.get("enabled", False)),
         # ET. 10:00 leaves the open's first half hour to settle the marks the rules are judged on.
         "at": mg.get("at", "10:00"),
-        # One notification summarising the actions when any trade needs one.
+        # Further runs the same day (ET), each its own `manage-eval-HHMM` job. Each rewrites the day's
+        # evaluation, so the console shows the latest; one after the close leaves the day's final word.
+        "also_at": sorted({str(t) for t in (mg.get("also_at") or [])} - {mg.get("at", "10:00")}),
+        # Every run posts the trades needing action (or that none does): the notification is the
+        # Discord list a person reads at those times, not an alarm.
         "notify": bool(mg.get("notify", True)),
     }
 
@@ -529,6 +533,11 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # (`python -m cherrypick.technicals score-screeners`, local files only). Morning, so the
         # previous evening's late greeks run (23:30) has landed.
         "screeners_at": tc.get("screeners_at", "06:40"),
+        # `skate_at`: the skate screen's range bands and their history (`python -m
+        # cherrypick.technicals skate`, the history store and local files only, ~90 s). After the
+        # 06:20 history top-up, so the bands stand on the previous session's close.
+        "skate": bool(tc.get("skate", True)),
+        "skate_at": tc.get("skate_at", "06:45"),
         # `earnings_calendar_at` / `_late_at`: the earnings calendar (`python -m cherrypick.technicals
         # earnings-calendar`, local data and the local Dolt only). After the IV-rank fetch whose
         # per-expiration IVs make its expected move and the 17:15 chart run that saves the security
@@ -578,7 +587,9 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     fails if today's lists never came). Its own switch, OFF by default: it reads the shared broker
     credential. The same
     switch runs `measure` at `screener_measure_at`: two regular-hours readings of the listed names'
-    ATM monthly spreads, half an hour after the universe builder's, so the two never overlap.
+    ATM monthly spreads, half an hour after the universe builder's, so the two never overlap. And
+    `income` at `income_chains_at`: every tradable name's cycle-monthly chain, quoted in regular hours,
+    for manage's sized candidates (needs no vendor list).
     """
     mr = cfg.get("market_report", {}) or {}
     # The collector signs in to a subscription site, so nothing about that site is in the code: its
@@ -606,6 +617,13 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # evening's chain listing (`fetch_screener_greeks.py strikes`), after the 19:10 calendar build.
         "earnings_strikes_at": mr.get("earnings_strikes_at", "19:20"),
         "screener_measure_at": list(mr.get("screener_measure_at", ["11:30", "14:30"])),
+        # After the 14:30 measure (its chain listings are reused), inside the window that closes half
+        # an hour before the bell.
+        "income_chains_at": mr.get("income_chains_at", "14:45"),
+        # `skate_quotes_at`: the skate screen's strikes quoted and scored in regular hours
+        # (`fetch_screener_greeks.py skate`, docs/skate-plan.md), after each measure and clear of the
+        # income pass. The first run of a day lists the chains (~6 min); the second reuses them.
+        "skate_quotes_at": list(mr.get("skate_quotes_at", ["12:00", "15:05"])),
     }
 
 

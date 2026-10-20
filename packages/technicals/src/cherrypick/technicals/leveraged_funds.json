@@ -1,0 +1,2964 @@
+{
+ "as_of": "2026-10-18",
+ "how": "Optionable ETFs and ETNs in Nasdaq Trader's directory (1,805), flagged by name (a multiple of 1.25x or more, Ultra, Inverse, Short, Bear, Bull, VIX futures) and checked against Yahoo's Morningstar category ('Trading--...'). Agreement is listed as is; a disagreement was decided by hand and says so in `evidence`.",
+ "undecided": {},
+ "funds": {
+  "AAOG": {
+   "name": "Leverage Shares 2X Long AAOI Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AAOX": {
+   "name": "Tradr 2X Long AAOI Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AAOZ": {
+   "name": "Tradr 2X Short AAOI Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "AAPB": {
+   "name": "GraniteShares 2x Long AAPL Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AAPD": {
+   "name": "Direxion Daily AAPL Bear 1X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "AAPU": {
+   "name": "Direxion Daily AAPL Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AAPW": {
+   "name": "Roundhill AAPL WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "AAPX": {
+   "name": "T-Rex 2X Long Apple Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ADBG": {
+   "name": "Leverage Shares 2X Long ADBE Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AFRU": {
+   "name": "T-REX 2X Long AFRM Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AGQ": {
+   "name": "ProShares Ultra Silver",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Commodities"
+  },
+  "AIBU": {
+   "name": "Direxion Daily AI and Big Data Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ALBG": {
+   "name": "Leverage Shares 2X Long ALB Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AMAU": {
+   "name": "Leverage Shares 2X Long AMAT Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AMDD": {
+   "name": "Direxion Daily AMD Bear 1X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "AMDG": {
+   "name": "Leverage Shares 2X Long AMD Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AMDL": {
+   "name": "GraniteShares 2x Long AMD Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AMDW": {
+   "name": "Roundhill AMD WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "AMZD": {
+   "name": "Direxion Daily AMZN Bear 1X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "AMZO": {
+   "name": "Tradr 2X Short AMZN Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "AMZU": {
+   "name": "Direxion Daily AMZN Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AMZW": {
+   "name": "Roundhill AMZN WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "AMZZ": {
+   "name": "GraniteShares 2x Long AMZN Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "APHU": {
+   "name": "T-REX 2X Long APH Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "APLX": {
+   "name": "Tradr 2X Long APLD Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "APLZ": {
+   "name": "Tradr 2X Short APLD Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "APPX": {
+   "name": "Tradr 2X Long APP Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ARCX": {
+   "name": "Tradr 2X Long ACHR Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ARMG": {
+   "name": "Leverage Shares 2X Long ARM Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ARMW": {
+   "name": "Roundhill ARM WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "ASMG": {
+   "name": "Leverage Shares 2X Long ASML Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ASSX": {
+   "name": "T-REX 2X Long ASST Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ASTN": {
+   "name": "Defiance Daily Target 2X Short ASTS ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "ASTX": {
+   "name": "Tradr 2X Long ASTS Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AVGG": {
+   "name": "Leverage Shares 2X Long AVGO Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AVGW": {
+   "name": "Roundhill AVGO WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "AVGX": {
+   "name": "Defiance Daily Target 2X Long AVGO ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AVL": {
+   "name": "Direxion Daily AVGO Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AVXX": {
+   "name": "Defiance Daily Target 2x Long AVAV ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AXTQ": {
+   "name": "Tradr 2X Short AXTI Daily ETF",
+   "kind": "inverse",
+   "evidence": "name (Yahoo has no trading category)",
+   "yahoo_category": null
+  },
+  "AXTU": {
+   "name": "T-REX 2X Long AXTI Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "AXTX": {
+   "name": "Tradr 2X Long AXTI Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "BABW": {
+   "name": "Roundhill BABA WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "BABX": {
+   "name": "GraniteShares 2x Long BABA Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "BAIG": {
+   "name": "Leverage Shares 2X Long BBAI Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "BEG": {
+   "name": "Leverage Shares 2x Long BE Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "BEX": {
+   "name": "Tradr 2X Long BE Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "BEZ": {
+   "name": "Tradr 2X Short BE Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "BIB": {
+   "name": "ProShares Ultra Nasdaq Biotechnology",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "BIDG": {
+   "name": "Leverage Shares 2X Long BIDU Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "BIS": {
+   "name": "ProShares UltraShort Nasdaq Biotechnology",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "BITI": {
+   "name": "ProShares Short Bitcoin ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "BITU": {
+   "name": "ProShares Ultra Bitcoin ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "BITX": {
+   "name": "2x Bitcoin ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "BLSG": {
+   "name": "Leverage Shares 2X Long BLSH Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "BMNG": {
+   "name": "Leverage Shares 2X Long BMNR Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "BMNU": {
+   "name": "T-REX 2X Long BMNR Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "BMNZ": {
+   "name": "Defiance Daily Target 2X Short BMNR ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "BOIL": {
+   "name": "ProShares Ultra Bloomberg Natural Gas",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Commodities"
+  },
+  "BRKW": {
+   "name": "Roundhill BRKB WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "BRZU": {
+   "name": "Direxion Daily Brazil Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "BTCL": {
+   "name": "T-Rex 2X Long Bitcoin Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "BTCZ": {
+   "name": "T-Rex 2X Inverse Bitcoin Daily Target ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "BULG": {
+   "name": "Leverage Shares 2X Long BULL Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "BZQ": {
+   "name": "ProShares UltraShort MSCI Brazil Capped",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "CATG": {
+   "name": "Leverage Shares 2X Long CAT Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CBRG": {
+   "name": "Leverage Shares 2X Long CBRS Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CBRX": {
+   "name": "Tradr 2X Long CBRS Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name (Yahoo has no trading category)",
+   "yahoo_category": null
+  },
+  "CBRZ": {
+   "name": "Tradr 2X Short CBRS Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "CCUP": {
+   "name": "T-REX 2X Long CRCL Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CEGX": {
+   "name": "Tradr 2X Long CEG Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CHAU": {
+   "name": "Direxion Daily CSI 300 China A Share Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CIEG": {
+   "name": "Leverage Shares 2X Long CIEN Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CIFG": {
+   "name": "Leverage Shares 2X Long CIFR Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CIFU": {
+   "name": "T-REX 2X Long CIFR Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CLSX": {
+   "name": "Tradr 2X Long CLSK Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "COHH": {
+   "name": "Leverage Shares 2X Long COHR Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "COHQ": {
+   "name": "Tradr 2X Short COHR Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "COHX": {
+   "name": "Tradr 2X Long COHR Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name (Yahoo has no trading category)",
+   "yahoo_category": null
+  },
+  "COIG": {
+   "name": "Leverage Shares 2X Long COIN Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "COIW": {
+   "name": "Roundhill COIN WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "CONI": {
+   "name": "GraniteShares 2x Short COIN Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "CONL": {
+   "name": "GraniteShares 2x Long COIN Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "COPZ": {
+   "name": "Defiance Daily Target 2X Long Copper Miners ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CORD": {
+   "name": "T-REX 2X Inverse CRWV Daily Target ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "COSW": {
+   "name": "Roundhill COST WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "COZX": {
+   "name": "Tradr 2X Long CORZ Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "CPNX": {
+   "name": "Tradr 2X Long CPNG Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CPXR": {
+   "name": "USCF Daily Target 2X Copper Index ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Commodities"
+  },
+  "CRCA": {
+   "name": "ProShares Ultra CRCL",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CRCD": {
+   "name": "T-REX 2X Inverse CRCL Daily Target ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "CRCG": {
+   "name": "Leverage Shares 2X Long CRCL Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CRDU": {
+   "name": "Tradr 2X Long CRDO Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CRMG": {
+   "name": "Leverage Shares 2X Long CRM Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CRMX": {
+   "name": "Tradr 2X Long CRML Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CRWG": {
+   "name": "Leverage Shares 2X Long CRWV Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CRWL": {
+   "name": "GraniteShares 2x Long CRWD Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CRWU": {
+   "name": "T-REX 2X Long CRWV Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CSEX": {
+   "name": "Tradr 2X Long CLS Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CURE": {
+   "name": "Direxion Daily Healthcare Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CWEB": {
+   "name": "Direxion Daily CSI China Internet Index Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "CWVX": {
+   "name": "Tradr 2X Long CRWV Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "DDM": {
+   "name": "ProShares Ultra Dow30",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "DFEN": {
+   "name": "Direxion Daily Aerospace & Defense Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "DIG": {
+   "name": "ProShares Ultra Energy",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "DJTU": {
+   "name": "T-REX 2X Long DJT Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "DLLL": {
+   "name": "GraniteShares 2x Long DELL Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "DOG": {
+   "name": "ProShares Short Dow30",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "DPST": {
+   "name": "Direxion Daily Regional Banks Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "DRAL": {
+   "name": "Defiance Daily Target 2X Long DRAM ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "DRIP": {
+   "name": "Direxion Daily S&P Oil & Gas Exp. & Prod. Bear 2X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "DRN": {
+   "name": "Direxion Daily Real Estate Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "DRV": {
+   "name": "Direxion Daily Real Estate Bear 3X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "DUG": {
+   "name": "ProShares UltraShort Energy",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "DUOG": {
+   "name": "Leverage Shares 2X Long DUOL Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "DUSL": {
+   "name": "Direxion Daily Industrials Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "DUST": {
+   "name": "Direxion Daily Gold Miners Index Bear 2X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "DXD": {
+   "name": "ProShares UltraShort Dow30",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "ECHX": {
+   "name": "Leverage Shares 2X Long ECHO Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "EDC": {
+   "name": "Direxion Emerging Markets Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "EDZ": {
+   "name": "Direxion Emerging Markets Bear 3X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "EET": {
+   "name": "ProShares Ultra MSCI Emerging Markets",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "EEV": {
+   "name": "ProShares UltraShort MSCI Emerging Markets",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "EFZ": {
+   "name": "ProShares Short MSCI EAFE",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "ELIL": {
+   "name": "Direxion Daily LLY Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "EMTY": {
+   "name": "ProShares Decline of the Retail Store ETF",
+   "kind": "inverse",
+   "evidence": "Yahoo: Trading--Inverse Equity; an inverse retail-sector fund",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "EOSU": {
+   "name": "T-REX 2X Long EOSE Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "EPV": {
+   "name": "ProShares UltraShort FTSE Europe ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "ERX": {
+   "name": "Direxion Energy Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ERY": {
+   "name": "Direxion Daily Energy Bear 2X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "ETHD": {
+   "name": "ProShares UltraShort Ether ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "ETHT": {
+   "name": "ProShares Ultra Ether ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "ETHU": {
+   "name": "2x Ether ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "ETNG": {
+   "name": "Leverage Shares 2X Long ETN Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ETU": {
+   "name": "T-Rex 2X Long Ether Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "EUO": {
+   "name": "ProShares UltraShort Euro",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "EURL": {
+   "name": "Direxion Daily FTSE Europe Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "EWV": {
+   "name": "ProShares UltraShort MSCI Japan",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "EZJ": {
+   "name": "ProShares Ultra MSCI Japan",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "FAS": {
+   "name": "Direxion Financial Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "FAZ": {
+   "name": "Direxion Financial Bear 3X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "FBL": {
+   "name": "GraniteShares 2x Long META Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "FGRU": {
+   "name": "T-REX 2X Long FIGR Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "FIGG": {
+   "name": "Leverage Shares 2x Long FIG Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "FLYT": {
+   "name": "Tradr 2X Long FLY Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "FNGG": {
+   "name": "Direxion Daily NYSE FANG+ Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "FUTG": {
+   "name": "Leverage Shares 2x Long FUTU Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "FXP": {
+   "name": "ProShares UltraShort FTSE China 50",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "GDXW": {
+   "name": "Roundhill Gold Miners WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "GEMG": {
+   "name": "Leverage Shares 2X Long GEMI Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "GEVG": {
+   "name": "Leverage Shares 2X Long GEV Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "GEVX": {
+   "name": "Tradr 2X Long GEV Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "GGLL": {
+   "name": "Direxion Daily GOOGL Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "GGLS": {
+   "name": "Direxion Daily GOOGL Bear 1X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "GLDW": {
+   "name": "Roundhill Gold WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "GLGG": {
+   "name": "Leverage Shares 2X Long GLXY Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "GLL": {
+   "name": "ProShares UltraShort Gold",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Commodities"
+  },
+  "GLWG": {
+   "name": "Leverage Shares 2X Long GLW Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "GLXU": {
+   "name": "T-REX 2X Long GLXY Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "GMEU": {
+   "name": "T-REX 2X Long GME Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "GOOW": {
+   "name": "Roundhill GOOGL WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "GOOX": {
+   "name": "T-Rex 2X Long Alphabet Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "GRAG": {
+   "name": "Leverage Shares 2X Long GRAB Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "GUSH": {
+   "name": "Direxion Daily S&P Oil & Gas Exp. & Prod. Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "HDGE": {
+   "name": "Ranger Equity Bear Bear ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "HIBL": {
+   "name": "Direxion Daily S&P 500 High Beta Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "HIBS": {
+   "name": "Direxion Daily S&P 500 High Beta Bear 3X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "HIMZ": {
+   "name": "Defiance Daily Target 2X Long HIMS ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "HONG": {
+   "name": "Leverage Shares 2X Long HON Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "HOOG": {
+   "name": "Leverage Shares 2X Long HOOD Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "HOOW": {
+   "name": "Roundhill HOOD WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "HOOX": {
+   "name": "Defiance Daily Target 2X Long HOOD ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "HUTG": {
+   "name": "Leverage Shares 2X Long HUT Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "HYNX": {
+   "name": "T-REX 2X Long SKHY Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "IBX": {
+   "name": "Tradr 2X Long IBM Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "INDL": {
+   "name": "Direxion Daily MSCI India Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "INTW": {
+   "name": "GraniteShares 2x Long INTC Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "IONL": {
+   "name": "GraniteShares 2x Long IONQ Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "IONX": {
+   "name": "Defiance Daily Target 2X Long IONQ ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "IONZ": {
+   "name": "Defiance Daily Target 2x Short IONQ ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "IRE": {
+   "name": "Defiance Daily Target 2X Long IREN ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "IREG": {
+   "name": "Leverage Shares 2X Long IREN Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "IREX": {
+   "name": "Tradr 2X Long IREN Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "IREZ": {
+   "name": "Tradr 2X Short IREN Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "JDST": {
+   "name": "Direxion Daily Junior Gold Miners Index Bear 2X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "JNUG": {
+   "name": "Direxion Daily Junior Gold Miners Index Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "JOBX": {
+   "name": "Tradr 2X Long JOBY Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "KJD": {
+   "name": "KraneShares 2x Long JD Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "KLAG": {
+   "name": "Leverage Shares 2x Long KLAC Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "KOLD": {
+   "name": "ProShares UltraShort Bloomberg Natural Gas",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Commodities"
+  },
+  "KORU": {
+   "name": "Direxion Daily South Korea Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "KPDD": {
+   "name": "KraneShares 2x Long PDD Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "KTUP": {
+   "name": "T-REX 2X Long KTOS Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "LABD": {
+   "name": "Direxion Daily S&P Biotech Bear 3X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "LABU": {
+   "name": "Direxion Daily S&P Biotech Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "LABX": {
+   "name": "Tradr 2X Long ALAB Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "LEUX": {
+   "name": "Tradr 2X Long LEU Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "LITX": {
+   "name": "Tradr 2X Long LITE Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "LITZ": {
+   "name": "Tradr 2X Short LITE Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "LLYX": {
+   "name": "Defiance Daily Target 2X Long LLY ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "LOFF": {
+   "name": "Direxion Daily SpaceX Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "LRCU": {
+   "name": "Tradr 2X Long LRCX Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "LULG": {
+   "name": "Leverage Shares 2X Long LULU Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MAGX": {
+   "name": "Roundhill Daily 2X Long Magnificent Seven ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MCHU": {
+   "name": "Tradr 2X Long MCHP Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "METQ": {
+   "name": "Tradr 2X Short META Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "METU": {
+   "name": "Direxion Daily META Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "METW": {
+   "name": "Roundhill META WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "MEXX": {
+   "name": "Direxion Daily MSCI Mexico Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MIDU": {
+   "name": "Direxion Mid Cap Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MPG": {
+   "name": "Leverage Shares 2X Long MP Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MPWX": {
+   "name": "Tradr 2X Long MPWR Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MQQQ": {
+   "name": "Tradr 2X Long Innovation 100 Monthly ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MRAL": {
+   "name": "GraniteShares 2x Long MARA Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MRAX": {
+   "name": "Tradr 2X Long MRAM Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MRNX": {
+   "name": "Defiance Daily Target 2X Long MRNA ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MRVU": {
+   "name": "Direxion Daily MRVL Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MSFD": {
+   "name": "Direxion Daily MSFT Bear 1X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "MSFL": {
+   "name": "GraniteShares 2x Long MSFT Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MSFU": {
+   "name": "Direxion Daily MSFT Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MSFW": {
+   "name": "Roundhill MSFT WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "MSFX": {
+   "name": "T-Rex 2X Long Microsoft Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MSOX": {
+   "name": "AdvisorShares MSOS Daily Leveraged ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MST": {
+   "name": "Defiance Leveraged Long + Income MSTR ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "MSTU": {
+   "name": "T-Rex 2X Long MSTR Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MSTW": {
+   "name": "Roundhill MSTR WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "MSTX": {
+   "name": "Defiance Daily Target 2x Long MSTR ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MSTZ": {
+   "name": "T-Rex 2X Inverse MSTR Daily Target ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "MULL": {
+   "name": "GraniteShares 2x Long MU Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MUU": {
+   "name": "Direxion Daily MU Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MUZ": {
+   "name": "Defiance Daily Target 2X Short MU ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "MVLL": {
+   "name": "GraniteShares 2x Long MRVL Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MVV": {
+   "name": "ProShares Ultra MidCap400",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "MYY": {
+   "name": "ProShares Short MidCap400",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "MZZ": {
+   "name": "ProShares UltraShort MidCap400",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "NAIL": {
+   "name": "Direxion Daily Homebuilders & Supplies Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NBIG": {
+   "name": "Leverage Shares 2X Long NBIS Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NBIL": {
+   "name": "GraniteShares 2x Long NBIS Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NBIZ": {
+   "name": "Tradr 2X Short NBIS Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "NEBX": {
+   "name": "Tradr 2X Long NBIS Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NEMG": {
+   "name": "Leverage Shares 2x Long NEM Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NETG": {
+   "name": "Leverage Shares 2X Long NET Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NFLU": {
+   "name": "T-Rex 2X Long NFLX Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NFLW": {
+   "name": "Roundhill NFLX WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "NIOG": {
+   "name": "Leverage Shares 2X Long NIO Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NOWL": {
+   "name": "GraniteShares 2x Long NOW Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NUG": {
+   "name": "Leverage Shares 2X Long NU Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NUGT": {
+   "name": "Direxion Daily Gold Miners Index Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NVD": {
+   "name": "GraniteShares 2x Short NVDA Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "NVDD": {
+   "name": "Direxion Daily NVDA Bear 1X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "NVDG": {
+   "name": "Leverage Shares 2X Long NVDA Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NVDL": {
+   "name": "GraniteShares 2x Long NVDA Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NVDQ": {
+   "name": "T-Rex 2X Inverse NVIDIA Daily Target ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "NVDS": {
+   "name": "Tradr 1.5X Short NVDA Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "NVDU": {
+   "name": "Direxion Daily NVDA Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NVDW": {
+   "name": "Roundhill NVDA WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": null
+  },
+  "NVDX": {
+   "name": "T-Rex 2X Long NVIDIA Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NVOX": {
+   "name": "Defiance Daily Target 2X Long NVO ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NVTX": {
+   "name": "Tradr 2X Long NVTS Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "NXPX": {
+   "name": "Tradr 2X Long NXPI Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "OKLL": {
+   "name": "Defiance Daily Target 2x Long OKLO ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "OKTG": {
+   "name": "Leverage Shares 2X Long OKTA Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ONDG": {
+   "name": "Leverage Shares 2X Long ONDS Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ONDL": {
+   "name": "Defiance Daily Target 2X Long ONDS ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ONDU": {
+   "name": "Tradr 2X Long ONDS Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ONX": {
+   "name": "Tradr 2X Long ON Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "OPEG": {
+   "name": "Leverage Shares 2X Long OPEN Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "OPEX": {
+   "name": "Tradr 2X Long OPEN Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ORCU": {
+   "name": "Direxion Daily ORCL Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ORCX": {
+   "name": "Defiance Daily Target 2X Long ORCL ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ORCZ": {
+   "name": "Tradr 2X Short ORCL Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "PANG": {
+   "name": "Leverage Shares 2X Long PANW Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "PATX": {
+   "name": "Tradr 2X Long PATH Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "PBRG": {
+   "name": "Leverage Shares 2X Long PBR Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "PFIX": {
+   "name": "Simplify Interest Rate Hedge ETF",
+   "kind": "inverse",
+   "evidence": "Yahoo: Trading--Inverse Debt; long rate-cap options, gains as bonds fall",
+   "yahoo_category": "Trading--Inverse Debt"
+  },
+  "PILL": {
+   "name": "Direxion Daily Pharmaceutical & Medical Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "PLTD": {
+   "name": "Direxion Daily PLTR Bear 1X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "PLTG": {
+   "name": "Leverage Shares 2X Long PLTR Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "PLTU": {
+   "name": "Direxion Daily PLTR Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "PLTW": {
+   "name": "Roundhill PLTR WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "PLTZ": {
+   "name": "Defiance Daily Target 2x Short PLTR ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "PLUL": {
+   "name": "Leverage Shares 2X Long PLUG Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "POEL": {
+   "name": "Defiance Daily Target 2X Long POET ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "PONX": {
+   "name": "Tradr 2X Long PONY Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "PSQ": {
+   "name": "ProShares Short QQQ",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "PST": {
+   "name": "ProShares UltraShort Lehman 7-10 Year Treasury",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Debt"
+  },
+  "PTIR": {
+   "name": "GraniteShares 2x Long PLTR Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "PUR": {
+   "name": "Defiance Daily Target 2X Long PURR ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "PYPG": {
+   "name": "Leverage Shares 2X Long PYPL Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "QBTX": {
+   "name": "Tradr 2X Long QBTS Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "QBTZ": {
+   "name": "Defiance Daily Target 2x Short QBTS ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "QCML": {
+   "name": "GraniteShares 2x Long QCOM Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "QID": {
+   "name": "ProShares UltraShort QQQ",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "QLD": {
+   "name": "ProShares Ultra QQQ",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "QNTU": {
+   "name": "Tradr 2X Long QNT Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "QPUX": {
+   "name": "Defiance 2X Daily Long Pure Quantum ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "QQQD": {
+   "name": "Direxion Daily Magnificent 7 Bear 1X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "QQQP": {
+   "name": "Tradr 2X Long Innovation 100 Quarterly ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "QUBX": {
+   "name": "Tradr 2X Long QUBT Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "RAM": {
+   "name": "Roundhill T-REX 2X Long DRAM Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "RAML": {
+   "name": "Leverage Shares 2X Long Memory Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "RAMZ": {
+   "name": "T-REX 2X Inverse DRAM Daily Target ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "RBLU": {
+   "name": "T-REX 2X Long RBLX Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "RDTL": {
+   "name": "GraniteShares 2x Long RDDT Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "RDWU": {
+   "name": "T-REX 2X Long RDW Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "REK": {
+   "name": "ProShares Short Real Estate",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "RETL": {
+   "name": "Direxion Daily Retail Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "REW": {
+   "name": "ProShares UltraShort Technology",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "RGTU": {
+   "name": "Tradr 2X Long RGTI Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "RGTX": {
+   "name": "Defiance Daily Target 2X Long RGTI ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "RGTZ": {
+   "name": "Defiance Daily Target 2x Short RGTI ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "RIOX": {
+   "name": "Defiance Daily Target 2X Long RIOT ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "RKLX": {
+   "name": "Defiance Daily Target 2X Long RKLB ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "RKLZ": {
+   "name": "Defiance Daily Target 2x Short RKLB ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "RMBX": {
+   "name": "Tradr 2X Long RMBS Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ROBN": {
+   "name": "T-Rex 2X Long HOOD Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ROM": {
+   "name": "ProShares Ultra Technology",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "RWM": {
+   "name": "ProShares Short Russell2000",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "RXL": {
+   "name": "ProShares Ultra Health Care",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SARK": {
+   "name": "Tradr 1X Short Innovation Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SBIT": {
+   "name": "ProShares UltraShort Bitcoin ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "SBTU": {
+   "name": "T-REX 2X Long SBET Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SCC": {
+   "name": "ProShares UltraShort Consumer Discretionary",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SCO": {
+   "name": "ProShares UltraShort Bloomberg Crude Oil",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Commodities"
+  },
+  "SDD": {
+   "name": "ProShares UltraShort SmallCap600",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SDOW": {
+   "name": "UltraPro Short Dow30",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SDP": {
+   "name": "ProShares UltraShort Utilities",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SDS": {
+   "name": "ProShares UltraShort S&P500",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SEF": {
+   "name": "ProShares Short Financials",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SETH": {
+   "name": "ProShares Short Ether ETF",
+   "kind": "inverse",
+   "evidence": "name (Yahoo has no trading category)",
+   "yahoo_category": "Digital Assets"
+  },
+  "SH": {
+   "name": "ProShares Short S&P500",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SIJ": {
+   "name": "ProShares UltraShort Industrials",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SITX": {
+   "name": "Tradr 2X Long SITM Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SJB": {
+   "name": "ProShares Short High Yield",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Debt"
+  },
+  "SK": {
+   "name": "Corgi SK hynix 2x Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SKDD": {
+   "name": "GraniteShares 2x Short SK Hynix Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SKF": {
+   "name": "ProShares UltraShort Financials",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SKHA": {
+   "name": "Tradr 2X Long SK hynix Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SKHL": {
+   "name": "Direxion Daily SK Hynix Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SKHN": {
+   "name": "Tradr 2X Short SK hynix Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SKHU": {
+   "name": "ProShares Ultra SK hynix",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SKHX": {
+   "name": "Leverage Shares 2X Long SK Hynix Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SKHZ": {
+   "name": "Leverage Shares 1X Short SK Hynix Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SKRE": {
+   "name": "Tuttle Capital Daily 2X Inverse Regional Banks ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SKUU": {
+   "name": "GraniteShares 2x Long SK Hynix Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SKYU": {
+   "name": "ProShares Ultra Cloud Computing",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SLON": {
+   "name": "ProShares Ultra Solana ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "SMCL": {
+   "name": "GraniteShares 2x Long SMCI Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SMCX": {
+   "name": "Defiance Daily Target 2X Long SMCI ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SMDD": {
+   "name": "UltraPro Short MidCap400",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SMN": {
+   "name": "ProShares UltraShort Materials",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SMST": {
+   "name": "Defiance Daily Target 2x Short MSTR ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SMU": {
+   "name": "Tradr 2X Long SMR Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SMUP": {
+   "name": "T-REX 2X Long SMR Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SMZ": {
+   "name": "Tradr 2X Short SMR Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SNAG": {
+   "name": "Leverage Shares 2x Long SNAP Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SNDC": {
+   "name": "Corgi SNDK 2x Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SNDG": {
+   "name": "Leverage Shares 2X Long SNDK Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SNDQ": {
+   "name": "Tradr 2X Short SNDK Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SNDU": {
+   "name": "T-REX 2X Long SNDK Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SNK": {
+   "name": "GraniteShares 2x Short SpaceX Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SNOU": {
+   "name": "T-REX 2X Long SNOW Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SNXX": {
+   "name": "Tradr 2X Long SNDK Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SOFX": {
+   "name": "Defiance Daily Target 2X Long SOFI ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SOLT": {
+   "name": "2x Solana ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "SOXL": {
+   "name": "Direxion Daily Semiconductor Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SOXS": {
+   "name": "Direxion Daily Semiconductor Bear 3X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SPAL": {
+   "name": "GraniteShares 2x Long SpaceX Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SPAX": {
+   "name": "T-REX 2X Long SPCX Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SPCF": {
+   "name": "ProShares Ultra SpaceX",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SPCG": {
+   "name": "Tradr 2X Short SpaceX Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SPCH": {
+   "name": "Leverage Shares 2X Long SPCX Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SPCL": {
+   "name": "Defiance Pure Space Daily 2X Strategy ETF",
+   "kind": "leveraged",
+   "evidence": "name (Yahoo has no trading category)",
+   "yahoo_category": null
+  },
+  "SPCM": {
+   "name": "Tradr 2X Long SpaceX Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SPCQ": {
+   "name": "Defiance Daily Target 2X Short SPCX ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SPCU": {
+   "name": "Defiance Daily Target 2X Long SPCX ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SPDN": {
+   "name": "Direxion Daily S&P 500 Bear 1X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SPOG": {
+   "name": "Leverage Shares 2X Long SPOT Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SPUU": {
+   "name": "Direxion Daily S&P 500 Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SPXL": {
+   "name": "Direxion Daily S&P 500 Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SPXS": {
+   "name": "Direxion Daily S&P 500 Bear 3X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SPXU": {
+   "name": "ProShares UltraPro Short S&P500",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SPYQ": {
+   "name": "Tradr 2X Long SPY Quarterly ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SQQQ": {
+   "name": "ProShares UltraPro Short QQQ",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SRS": {
+   "name": "ProShares UltraShort Real Estate",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SRTY": {
+   "name": "ProShares UltraPro Short Russell2000",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SSG": {
+   "name": "ProShares UltraShort Semiconductors",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SSO": {
+   "name": "ProShares Ultra S&P500",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SSPC": {
+   "name": "Leverage Shares 2X Short SPCX Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "STXL": {
+   "name": "Defiance Daily Target 2x Long STX ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "STXU": {
+   "name": "Leverage Shares 2X Long STX Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "STXX": {
+   "name": "Tradr 2X Long STX Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "SVIX": {
+   "name": "-1x Short VIX Futures ETF",
+   "kind": "volatility",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "SVXY": {
+   "name": "ProShares Short VIX Short Term Futures ETF",
+   "kind": "volatility",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "TAIL": {
+   "name": "Cambria Tail Risk ETF",
+   "kind": "inverse",
+   "evidence": "issuer: OTM S&P 500 puts plus Treasuries, a decaying hedge rather than a geared inverse; excluded for caution (https://www.cambriafunds.com/tail)",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "TARK": {
+   "name": "Tradr 2X Long Innovation ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TBF": {
+   "name": "ProShares Short 20+ Year Treasury",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Debt"
+  },
+  "TBT": {
+   "name": "ProShares UltraShort Lehman 20  Year Treasury",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Debt"
+  },
+  "TECL": {
+   "name": "Direxion Daily Technology Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TECS": {
+   "name": "Direxion Technology Bear 3X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "TEMT": {
+   "name": "Tradr 2X Long TEM Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TERG": {
+   "name": "Leverage Shares 2X Long TER Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TEUP": {
+   "name": "T-REX 2X Long TE Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TMF": {
+   "name": "Direxion Daily 20-Yr Treasury Bull 3x Shrs",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Debt"
+  },
+  "TMV": {
+   "name": "Direxion Daily 20-Year Treasury Bear 3X",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Debt"
+  },
+  "TNA": {
+   "name": "Direxion Small Cap Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TOPW": {
+   "name": "Roundhill Top WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": null
+  },
+  "TPOR": {
+   "name": "Direxion Daily Transportation Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TQQQ": {
+   "name": "ProShares UltraPro QQQ",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TSDD": {
+   "name": "GraniteShares 2x Short TSLA Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "TSL": {
+   "name": "GraniteShares 1.25x Long TSLA Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TSLG": {
+   "name": "Leverage Shares 2X Long TSLA Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TSLL": {
+   "name": "Direxion Daily TSLA Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TSLQ": {
+   "name": "Tradr 2X Short TSLA Daily ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "TSLR": {
+   "name": "GraniteShares 2x Long TSLA Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TSLS": {
+   "name": "Direxion Daily TSLA Bear 1X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "TSLT": {
+   "name": "T-REX 2X Long Tesla Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TSLW": {
+   "name": "Roundhill TSLA WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": null
+  },
+  "TSLZ": {
+   "name": "T-Rex 2X Inverse Tesla Daily Target ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "TSMG": {
+   "name": "Leverage Shares 2X Long TSM Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TSMU": {
+   "name": "GraniteShares 2x Long TSM Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TSYW": {
+   "name": "Roundhill Treasury Bond WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "TTDU": {
+   "name": "T-REX 2X Long TTD Daily Target ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TTMX": {
+   "name": "Tradr 2X Long TTMI Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "TTT": {
+   "name": "ProShares UltraPro Short 20 Year Treasury",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Debt"
+  },
+  "TWM": {
+   "name": "ProShares UltraShort Russell2000",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "TXXD": {
+   "name": "21Shares 2x Long Dogecoin ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "TXXS": {
+   "name": "21Shares 2x Long Sui ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "TYD": {
+   "name": "Direxion Daily 10-Yr Treasury Bull 3x Shrs",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Debt"
+  },
+  "TYO": {
+   "name": "Direxion Daily 10-Yr Treasury Bear 3x Shrs",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Debt"
+  },
+  "TZA": {
+   "name": "Direxion Small Cap Bear 3X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "UBEW": {
+   "name": "Roundhill UBER WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "UBOT": {
+   "name": "Direxion Daily Robotics, Artificial Intelligence & Automation Index Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UBR": {
+   "name": "ProShares Ultra MSCI Brazil Capped",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UBRL": {
+   "name": "GraniteShares 2x Long UBER Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UBT": {
+   "name": "ProShares Ultra 20+ Year Treasury",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Debt"
+  },
+  "UCO": {
+   "name": "ProShares Ultra Bloomberg Crude Oil",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Commodities"
+  },
+  "UCOP": {
+   "name": "ProShares Ultra Copper K-1 Free ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Commodities"
+  },
+  "UDOW": {
+   "name": "ProShares UltraPro Dow30",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UGE": {
+   "name": "ProShares Ultra Consumer Staples",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UGL": {
+   "name": "ProShares Ultra Gold",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Commodities"
+  },
+  "UGLD": {
+   "name": "Direxion Daily Gold Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ULE": {
+   "name": "ProShares Ultra Euro",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "UMDD": {
+   "name": "UltraPro MidCap400",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UNHG": {
+   "name": "Leverage Shares 2X Long UNH Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name (Yahoo has no trading category)",
+   "yahoo_category": "Industrials"
+  },
+  "UNHW": {
+   "name": "Roundhill UNH WeeklyPay ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 120% of the underlying's calendar-week return via swaps (https://www.roundhillinvestments.com/weeklypay-etfs)",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "UNX": {
+   "name": "Tradr 2X Long U Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UPLT": {
+   "name": "ProShares Ultra Platinum K-1 Free ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Commodities"
+  },
+  "UPRO": {
+   "name": "ProShares UltraPro S&P 500",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UPSX": {
+   "name": "Tradr 2X Long UPST Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UPV": {
+   "name": "ProShares Ultra FTSE Europe",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UPW": {
+   "name": "ProShares Ultra Utilities",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "URE": {
+   "name": "ProShares Ultra Real Estate",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "URTY": {
+   "name": "ProShares UltraPro Russell2000",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "USAX": {
+   "name": "Tradr 2X Long USAR Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "USD": {
+   "name": "ProShares Ultra Semiconductors",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "USGG": {
+   "name": "Leverage Shares 2X Long USAR Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "USLV": {
+   "name": "Direxion Daily Silver Bull 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UST": {
+   "name": "ProShares Ultra 7-10 Year Treasury",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Debt"
+  },
+  "UTSL": {
+   "name": "Direxion Daily Utilities Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UUUG": {
+   "name": "Leverage Shares 2X Long UUUU Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UVIX": {
+   "name": "2x Long VIX Futures ETF",
+   "kind": "volatility",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UVXY": {
+   "name": "ProShares Ultra VIX Short Term Futures ETF",
+   "kind": "volatility",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "UWM": {
+   "name": "ProShares Ultra Russell2000",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UXI": {
+   "name": "ProShares Ultra Industrials",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UXRP": {
+   "name": "ProShares Ultra XRP ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "UYG": {
+   "name": "ProShares Ultra Financials",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "UYM": {
+   "name": "ProShares Ultra Materials",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "VALG": {
+   "name": "Leverage Shares 2X Long VALE Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "VIXM": {
+   "name": "VIX Mid-Term Futures ETF",
+   "kind": "volatility",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "VIXY": {
+   "name": "VIX Short-Term Futures ETF",
+   "kind": "volatility",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "VRTL": {
+   "name": "GraniteShares 2x Long VRT Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "VXX": {
+   "name": "iPath Series B S&P 500 VIX Short-Term Futures ETN",
+   "kind": "volatility",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "VXZ": {
+   "name": "iPath Series B S&P 500 VIX Mid-Term Futures ETN",
+   "kind": "volatility",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "WANT": {
+   "name": "Direxion Daily Consumer Discretionary Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "WDCX": {
+   "name": "Tradr 2X Long WDC Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "WEBL": {
+   "name": "Direxion Daily Dow Jones Internet Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "WEBS": {
+   "name": "Direxion Daily Dow Jones Internet Bear 3X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "WMTI": {
+   "name": "REX WMT Growth & Income ETF",
+   "kind": "leveraged",
+   "evidence": "issuer: 105-150% of WMT's daily return via options, calls written on about half (https://rexshares.com/wmti/)",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "WULX": {
+   "name": "Tradr 2X Long WULF Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "WXET": {
+   "name": "Teucrium 2x Daily Wheat ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Commodities"
+  },
+  "XNDX": {
+   "name": "Tradr 2X Long XNDU Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "XPEG": {
+   "name": "Leverage Shares 2X Long XPEV Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "XPP": {
+   "name": "ProShares Ultra FTSE China 50",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "XRPT": {
+   "name": "Volatility Shares Trust XRP 2X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "XXRP": {
+   "name": "Teucrium 2x Long Daily XRP ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "XYZG": {
+   "name": "Leverage Shares 2X Long XYZ Daily ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "YANG": {
+   "name": "Direxion Daily FTSE China Bear 3X ETF",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Equity"
+  },
+  "YCL": {
+   "name": "ProShares Ultra Yen",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "YCS": {
+   "name": "ProShares UltraShort Yen New",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Miscellaneous"
+  },
+  "YINN": {
+   "name": "Direxion Daily FTSE China Bull 3X ETF",
+   "kind": "leveraged",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Leveraged Equity"
+  },
+  "ZSL": {
+   "name": "ProShares UltraShort Silver",
+   "kind": "inverse",
+   "evidence": "name and Yahoo",
+   "yahoo_category": "Trading--Inverse Commodities"
+  }
+ },
+ "not_listed": {
+  "MEME": "Yahoo says Trading--Leveraged Equity, but the issuer's prospectus describes a plain actively managed basket with no swaps (https://www.roundhillinvestments.com/etf/meme/)",
+  "UUP, UDN, USDU": "dollar-index futures funds Yahoo files under Trading--Miscellaneous; not geared",
+  "IWMY, QQQY, WDTE": "option-income funds Yahoo files under Trading--Miscellaneous; not geared"
+ }
+}

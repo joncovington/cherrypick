@@ -4,12 +4,12 @@
 engine instead of the broker's own sandbox, and the bar a risk profile has to clear before it's
 trusted with real capital. Part of the [MEIC module](../README.md) in the cherrypick suite.
 
-Capital-free evaluation of every enabled forward-test stream (`control`/`open`/`width-5`/
-`width-10` — see `docs/paper-experiments.md` for what each one is and why) on identical market
-conditions, before graduating one to live trading via `/set-risk-profile`. The four-tier risk
-ladder this document originally evaluated (conservative / moderate / aggressive / very-aggressive)
-is disabled by default since 2026-08-07, superseded here by the forward-test streams — it remains
-what `/set-risk-profile` targets for **live** trading (see `docs/risk-profiles.md`). This document
+Capital-free evaluation of every enabled arm in the registry (`control` on a base install; see
+`docs/paper-experiments.md` for how arms are designed) on identical market conditions. A graduated
+arm reaches live by being named in `live.arm`, with live-only sizing in the `live` block. The
+four-tier risk ladder this document originally evaluated (conservative / moderate / aggressive /
+very-aggressive) has been disabled for paper since 2026-08-07 and no longer ships (see
+`docs/risk-profiles.md`). This document
 is the operating reference; `.claude/commands/paper-loop.md` and `.claude/commands/paper-report.md`
 are the operational skills.
 
@@ -31,8 +31,9 @@ quotes**, and only stubbing the two broker-mutating calls (submit, close).
   day. This removes market-regime confounding between streams and needs far fewer calendar
   weeks than testing profiles sequentially.
 - **Deterministic, not agent-judged.** `cherrypick/meic/paper.py`'s gate evaluator and fill/exit engine
-  encode a fixed policy: wing width = widest candidate ≤ `max_wing_width` that clears the
-  profile's fee-aware credit floor; entry price = `ic_natural_bid`; no discretionary skips.
+  encode a fixed policy: wing width = the widest candidate in the arm's `wing_widths_by_symbol` (or
+  its `wing_width_points`) that clears its fee-aware credit floor; entry price = mid less
+  `slippage_frac_of_spread` × the leg spreads; no discretionary skips.
   This means paper results measure the **profile parameters**, reproducibly — not the live
   agent's session-by-session judgment, which sits on top of a graduated profile afterward.
 - **Isolated storage.** All paper (and replay) trades live in `paper_trades.db` in the data home
@@ -129,7 +130,7 @@ SPX/XSP are cash-settled European-style — a missed close just settles to cash.
 symbol **not** in `cash_settled_symbols`) are physically-settled American-style: a short leg
 left open into expiration risks assignment into shares, and a strike pinned at-the-money at
 the bell has an ambiguous ITM/OTM outcome. So paper mirrors the live loop's settlement-aware
-exit behavior rather than treating every symbol identically:
+exit behaviour rather than treating every symbol identically:
 
 - **Earlier force-close.** Non-cash-settled positions force-close at
   `physical_settlement_force_close_time` (default 15:30 ET), ~15 min ahead of the general
@@ -138,7 +139,7 @@ exit behavior rather than treating every symbol identically:
 - **Full event force-close cascade.** Paper now also honors the FOMC-blackout (13:30 ET) and
   triple-witching/quarterly-expiry (14:00 ET) force-closes, which the earlier build omitted —
   these apply to all symbols, cash-settled or not.
-- **Modeled assignment/pin friction.** When a physically-settled position force-closes, paper
+- **Modelled assignment/pin friction.** When a physically-settled position force-closes, paper
   adds `physical_settlement_exit_friction` (per spread) to the cost-to-close, plus a
   `pin_risk_penalty_pct_of_width` penalty when a short strike is within `pin_risk_threshold_pct`
   of spot. This makes QQQ/IWM paper P&L strictly worse than an equivalent cash-settled close,
@@ -167,50 +168,49 @@ hold, net of fees, over the test window:
 | Worst single day | ≥ −$5,000 (5% of $100k) | Screens the tail a high win-rate can mask |
 
 **Reported, not gating:** Sharpe, Sortino, Calmar, recovery factor (Sharpe > 3 flagged as
-likely overfit), avg-win/avg-loss, max consecutive losses, realized-vs-unrealized split.
+likely overfit), avg-win/avg-loss, max consecutive losses, realised-vs-unrealised split.
 
 ## Known limitations
 
-- **No exit-side slippage modeled.** Entries fill conservatively at `ic_natural_bid`; exits
-  (per-side stop, force-close) fill at the computed marketable crossing price with no
-  additional slippage. This is the deliberate base-build scope decision — friction is instead
-  absorbed by a **20–40% haircut applied to paper P&L when judging graduation**, and expect
+- **Slippage is modelled as a fraction of the spread.** Entries and every priced exit fill at mid
+  less `slippage_frac_of_spread` (0.125, core's value) of the leg spreads, recorded in
+  `slippage_dollars`. 0.125 sits at the optimistic edge of the practitioner range, so friction is
+  still covered by a **20–40% haircut applied to paper P&L when judging graduation**, and expect
   **live drawdown ~1.5–2× the paper figure**.
 - **Exit model = the MEIC rules.** The engine implements the three iron-condor exits — per-side
   stop, time-based force-close (non-cash-settled), and left-to-expire cash settlement (cash-
   settled, at `expiration_settlement_time`: OTM = full credit, ITM = intrinsic capped at the
   wing) — plus the FOMC/triple-witching event force-closes. There is **no profit-target close**.
-  The one live behavior it does **not** model is the discretionary post-15:00 gamma safety
-  close (an agent-judgment backstop) — consistent with paper being the deterministic mechanical
+  The one behaviour it does **not** model is the agent path's discretionary post-15:00 gamma
+  safety close (the deterministic live loop does not take it either) — consistent with paper being the deterministic mechanical
   baseline; a cash-settled position the stops don't catch rides to settlement.
 - **Stop-out P&L is the single most optimistic element of the paper model.** Real 0DTE stop
   fills can slip badly on fast moves (documented cases of a stop trigger blowing several
-  dollars past its limit); the 120-second loop cadence also samples stops later than a true
+  dollars past its limit); the 60-second loop cadence also samples stops later than a true
   intrabar trigger would. The live-discount view exists specifically to cover this.
-- **No partial-fill / queue-position modeling.** Synthetic fills are all-or-nothing at the
+- **No partial-fill / queue-position modelling.** Synthetic fills are all-or-nothing at the
   computed price — the single biggest realism gap versus Tier-1 broker simulators (which model
-  volume-weighted slippage and land within ~8–12% of live). Acceptable here because natural-bid
-  entry and the graduation discount already bias pessimistic.
+  volume-weighted slippage and land within ~8–12% of live). The graduation discount is what
+  covers it.
 - **Deterministic ≠ the live agent.** The engine measures profile *parameters* with judgment
   held constant; the live agent's session-by-session discretion sits on top of a graduated
   profile, so paper P&L is a mechanical baseline, not a live forecast.
 - **Replay's GEX and VIX1D-ratio gates never fire** (data unavailable) — replay entry
   frequency for those specific triggers will run slightly higher than forward-paper's. This is
   a known, documented asymmetry, not a bug.
-- **Physical-settlement risk is modeled only at force-close, not intraday.** The friction/pin
+- **Physical-settlement risk is modelled only at force-close, not intraday.** The friction/pin
   model (above) captures the assignment/pin cost of *closing* a QQQ/IWM position at the bell,
   but does **not** simulate American-style *early* assignment during the session (e.g. a short
   call going deep ITM near an ex-dividend date and being assigned at 11am). The live loop's
   chosen scope is "earlier force-close + guardrails," not proactive early-assignment
-  management, so this tail is documented rather than modeled — treat QQQ/IWM paper results as
+  management, so this tail is documented rather than modelled — treat QQQ/IWM paper results as
   still slightly optimistic on assignment risk, on top of the general 20–40% discount.
 
 ## Multi-week cadence
 
 Minimum 4 weeks of forward paper trading (~20 trading days), extended until the `control`
-stream (the current reference book) reaches ≥30 filled ICs or a 6–8 week cap — shortened
-materially by SPX replay, which can front-load samples for SPX specifically. No mid-test parameter edits — changing thresholds
-invalidates the sample. At window end, any profile clearing all six gates is eligible; switch
-the live account via `/set-risk-profile`, keep `quantity=1` initially, and consider a small
+stream (the current reference book) reaches ≥30 filled ICs or a 6–8 week cap. No mid-test parameter edits — changing thresholds
+invalidates the sample. At window end, any arm clearing all six gates is eligible; name it in
+`live.arm` (live-only sizing in the `live` block), keep `quantity=1` initially, and consider a small
 tiny-live calibration run targeting **stop fills specifically**, since that's the most
 optimistic part of the paper model.

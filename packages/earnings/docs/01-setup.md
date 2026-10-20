@@ -129,9 +129,9 @@ and live mode — see `CLAUDE.md`'s Loop Step 0 for the paper/live distinction.
 # Config is valid JSON
 python -c "import json; json.load(open('config/config.json')); print('Config OK')"
 
-# All 6 strategies register cleanly
-python -c "from src.rank_strategies import STRATEGY_REGISTRY; print(f'Found {len(STRATEGY_REGISTRY)} strategies')"
-# Expected: Found 6 strategies
+# All 7 strategies register cleanly
+python -c "from cherrypick.earnings.rank_strategies import STRATEGY_REGISTRY; print(f'Found {len(STRATEGY_REGISTRY)} strategies')"
+# Expected: Found 7 strategies
 
 # Run the test suite
 pytest
@@ -163,7 +163,8 @@ normal and not a bug.
 ## Step 7: Run the forced-sampling strategy test (recommended first)
 
 Before running the live/paper trading loop, use `/paper-start` (see
-`docs/strategy-testing-plan.md`) to force-sample all 6 strategies nightly into an isolated
+`docs/strategy-testing-plan.md`) to force-sample every open strategy nightly (the two calendars are
+retired from 2026-10-15) into isolated
 per-strategy strat_test paper books — this validates the whole pipeline end-to-end (scan, screen,
 size, cost-adjust, persist, close) and starts building the sample size needed to evaluate each
 strategy, without affecting the real paper/live trading book:
@@ -187,10 +188,11 @@ python -m cherrypick.earnings.strategy_report
 # strategy_dashboard.py was retired 2026-08-12 when the console became the suite's one read surface.
 ```
 
-> **Inside the suite:** you don't have to run this by hand day to day. The [orchestrator](../../orchestrator)
-> registers and watchdogs two daily OS tasks (via `cherrypick install`) — an entry task at 15:45 ET and an
-> 60-second `self_healing` job — that runs `paper_loop.py`, which does entry, marking and managed exits from its own clock, into the
-> `strat_test` book, then surface the results through `cherrypick report` / the console / `calibrate`. It
+> **Inside the suite:** you don't have to run this by hand day to day. The [orchestrator](../../orchestrator)'s
+> supervisor (set up by `cherrypick install`) runs `paper_loop once` every 60 seconds as its
+> `earnings-paper` job. The loop runs the forward scan, the marking, the managed exits and the 15:35
+> entry scan from its own clock, writing into the per-strategy `strat_test` books. The orchestrator then
+> surfaces the results through `cherrypick report`, the console and `calibrate`. It
 > drives this module by subprocess only — it never places live orders or edits this config. Running
 > `/paper-start` here is the standalone equivalent, minus the watchdog and notifications.
 
@@ -236,7 +238,7 @@ tastytrade connection — if a failure mentions either, check `tests/conftest.py
 1. **Read** [Quick Reference](./02-quick-reference.md) for daily CLI workflows.
 2. **Read** `CLAUDE.md` in full — it's the authoritative operational spec (loop steps, tool
    reference, config options, database schema).
-3. **Study** [Strategy Guide](./05-strategies.md) for how each of the 6 strategies works.
+3. **Study** [Strategy Guide](./05-strategies.md) for how each of the 7 strategies works.
 4. **Run** `/paper-start` daily for a few weeks before considering live trading.
 
 ---

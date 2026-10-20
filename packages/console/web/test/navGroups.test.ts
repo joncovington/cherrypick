@@ -54,8 +54,13 @@ describe("the live nav declaration", () => {
   // all-loops summary took `today` back the same day, so the `today -> flies` alias went with it.
   const decl = NAV_DECL.live!;
 
-  it("opens on the all-loops summary, then names each live loop for its module, loops before manage", () => {
-    expect(navSlideIds("live")).toEqual(["today", "flies", "meic", "manage"]);
+  it("opens on the all-loops summary, then the account's positions and portfolio, then each live loop", () => {
+    // 2026-10-18: `manage` split in two and moved up beside `today`: both read the whole account.
+    expect(navSlideIds("live")).toEqual(["today", "positions", "portfolio", "flies", "meic"]);
+  });
+
+  it("sends the old manage tab to positions, so a bookmark still lands on the actions", () => {
+    expect(resolveSlide("live", "manage", decl.slides)).toBe("positions");
   });
 
   it("resolves /live/today to the summary itself", () => {

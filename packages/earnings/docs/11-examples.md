@@ -79,14 +79,15 @@ mode would submit both via `tt.py execute_trade --live`.
 NVEX announces after close, gaps +10%.
 Next morning 09:15 ET (Step 3c): iron_condor's exit_debit computed from live quotes —
   profit came in under the 50% target, exit_debit stayed under the 1.5x stop → hold.
-09:41 ET (management): still open and winning short of target → hold; a loser would close here.
+09:41 ET (management): at a loss → the PEAD gate closes it (`pead_loser`).
   Realized: -$310 net (defined risk — the wings capped it well short of the raw
   spread-width max loss).
 
 BNKX announces before tomorrow's open, moves +1.2%, mild and well within the straddle's
   expected move.
 09:15 ET (Step 3c): exit_debit computed at $1.53/spread.
-  profit = $3.18 - $1.53 = $1.65, which is ≥ $3.18 * 0.50 ($1.59) → close_all, profit_target.
+  profit = $3.18 - $1.53 = $1.65, which is ≥ $3.18 * 0.25 ($0.80) → close_all, profit_target
+  (acted on from 09:40 in the paper loop).
   Realized: +$1,320 across 8 spreads (net of costs via costs.py, slightly lower than gross).
 ```
 
@@ -113,13 +114,13 @@ Rank 5: SYME  best_strategy: atm_calendar           score 0.0142
 ```
 
 `scanner.select_positions()` walks this list top-down. The first 3 (SYMA, SYMB, SYMC) get
-selected. SYMD and SYME are logged with `outcome: "concurrency_cap_reached"` — not silently
+selected. SYMD and SYME are logged with `outcome: "max_positions_reached"` — not silently
 dropped, just recorded as skipped with the specific reason, visible in both the console output
 and `scan_log`.
 
 If SYMB had instead shared a `correlation_block_list` grouping with SYMA (say, both regional
 banks reporting the same night), `select_positions()` would skip SYMB with
-`outcome: "correlation_blocked"` and backfill SYMD into that third slot instead of leaving it
+`outcome: "correlation_block"` and backfill SYMD into that third slot instead of leaving it
 empty — diversifying across names rather than concentrating in the two highest scorers alone.
 
 ---
@@ -144,7 +145,7 @@ python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date 07/10/20
     {
       "symbol": "MEGACAP",
       "outcome": "rejected_no_viable_strategy",
-      "reason": "iron_fly: iv_rv_ratio_below_threshold; iron_condor: iv_rv_ratio_below_threshold"
+      "reason": "iron_fly: iv_rv_ratio_below_minimum; iron_condor: iv_rv_ratio_below_minimum"
     }
   ]
 }
@@ -174,8 +175,8 @@ If `NVEX` is accepted under both `iron_condor` and `directional_credit_spread`,
 (`strat_test:iron_condor` and `strat_test:directional_credit_spread`) — so every strategy that
 qualifies gets its own sample and its own equity curve, not just the single best. Meanwhile that
 same night's `rank_strategies.py get_ranked_symbols` run would have picked only `iron_condor`
-(the higher-scoring one) for the actual production paper/live book (`profile='default'`). Every
-book is a separate `profile` value in the same database, so running both the same night doesn't
+(the higher-scoring one) for the actual production paper/live book (`arm='default'`). Every
+book is a separate `arm` value in the same database, so running both the same night doesn't
 conflict — it's how the forced-sampling program accumulates a usable sample for every strategy
 instead of starving whichever one rarely wins the head-to-head comparison.
 

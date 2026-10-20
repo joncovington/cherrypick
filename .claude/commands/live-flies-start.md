@@ -7,8 +7,8 @@ Arm the flies live loop for today — real money, real orders, against the real 
 account. Arming writes the **arm record** (`~/.cherrypick/state/flies-live-arm.json`), which the
 orchestrator's supervisor daemon reads to enable its `flies-live` job (one
 `cherrypick.flies.live_loop --once --live` tick per minute, with burst fill-watchers spawned as
-needed); on a box without a running supervisor, arming falls back to registering the legacy
-`cherrypick-flies-live-loop` OS task. The loop **self-disarms at `live.disarm_time` (default
+needed). There is no scheduled-task fallback: without a running supervisor, arming is refused.
+The loop **self-disarms at `live.disarm_time` (default
 17:00 ET)** — disarming deletes the arm record, and any tick that finds a stale record disarms
 immediately — arming is per-day by design, and the orchestrator watchdog backstops with the
 suite halt flag. This command exists so nothing live ever starts without a fresh, explicit
@@ -47,13 +47,17 @@ confirmation, a current status readout, and a visible way to stop.
    - **Orphaned orders**: if `--status` shows `orphaned_orders > 0`, **stop here** — the last
      tick's broker-truth sweep found working orders the ledger has never heard of. That must be
      resolved in the broker UI before arming anything.
+   - **Broker held**: if `--status` shows a non-empty `broker_held`, **stop here** — a prior
+     submission's outcome is unknown or an order was placed that no row records; the seam refuses
+     every live order until it is resolved.
+   - **Overdue settlement**: if `--status` lists a past session in `overdue_settlement`, **stop
+     here** — a past day's live book is still open in the ledger and must be reconciled first.
    - **Market state**: whether it's currently a trading day inside RTH. Off-hours arming is
      allowed (the ticks no-op until the open) but say so plainly.
    - **Supervisor liveness**: check `~/.cherrypick/state/supervisor.last.json` is fresh (< ~90s
-     old). If it's stale or absent, say so PROMINENTLY — on a supervisor-driven box **nothing
-     will tick if the supervisor is down**; run `python packages/orchestrator/run.py
-     ensure-supervisor` (or check the `cherrypick-supervisor` anchor task) before arming. Arming
-     on a legacy (schtasks) box doesn't need this.
+     old). If it's stale or absent, say so PROMINENTLY — **nothing will tick, and arming will be
+     refused**; run `python packages/orchestrator/run.py ensure-supervisor` (or check the
+     `cherrypick-supervisor` anchor task) before arming.
    - **Order-alert daemon** (only when `live.use_order_alert_daemon` is true): `--status` carries
      an `alert_daemon` block. Report it, but treat it as INFORMATIONAL — the daemon only makes
      fills get *noticed* sooner; a dead or missing one costs latency and nothing else, and is
@@ -122,18 +126,19 @@ confirmation, a current status readout, and a visible way to stop.
    - The choice is for today only. It lives on the arm record and goes with it at disarm or
      `--stop`.
 
-5. **Verify + report**: confirm `--status` now shows `armed_for` = today, and (supervisor-driven)
-   that `python packages/orchestrator/run.py status` shows the `flies-live` job enabled with a
+5. **Verify + report**: confirm `--status` now shows `armed_for` = today, and that
+   `python packages/orchestrator/run.py status` shows the `flies-live` job enabled with a
    future `next_run` (and, with the alert daemon on, `flies-alert-daemon` enabled and its
-   `resident_state` running within a pass or two). Then report: the driver (supervisor job or legacy task), the armed-for
-   date, the self-disarm time, the log to watch
+   `resident_state` running within a pass or two). Then report: the armed-for date, the self-disarm time, the log to watch
    (`tail -f ~/.cherrypick/logs/flies/flies_live.log`), the console's flies page with its
    mode set to live (http://127.0.0.1:5070/flies), and how to stop early: `/live-flies-start --stop`,
    or create the halt flag (`~/.cherrypick/state/halt-live.flag` — stops new entries within one
    tick; open positions still follow their normal hold-to-settlement rules), or
-   `python -m cherrypick.flies.live_loop --uninstall-task` directly. Also mention settlement: the loop
-   settles provisionally at 16:20 from the last streamed trade, and the official-print confirm
-   is `python -m cherrypick.flies.live_loop --settle --price <official>`.
+   `python -m cherrypick.flies.live_loop --uninstall-task` directly. Also mention settlement: from 16:20
+   each tick fetches the official print (tastytrade, else Yahoo/Barchart) and falls back to the
+   last streamed trade, marked provisional, only when none answers; a session the machine missed is
+   settled by the hourly `settle-overdue-live` job, and a by-hand confirm is
+   `python -m cherrypick.flies.live_loop --settle --price <official> [--date YYYY-MM-DD]`.
 
 ## Stop / disarm (`--stop`)
 
@@ -144,8 +149,8 @@ confirmation, a current status readout, and a visible way to stop.
 3. ```bash
    python -m cherrypick.flies.live_loop --uninstall-task
    ```
-   This deletes the arm record (the supervisor's `flies-live` job disables within one pass) and
-   removes the legacy scheduled task if one exists.
+   This deletes the arm record (the supervisor's `flies-live` job disables within one pass); a
+   legacy task left on an old box is removed by `run.py install`.
    Then, if `live.use_order_alert_daemon` is true, also stop the alert daemon (it holds an
    authenticated broker session open; disarming should not leave one running). The supervisor
    drops its job with the record but never kills a resident, so this stop is still needed:
@@ -153,8 +158,9 @@ confirmation, a current status readout, and a visible way to stop.
    python -m cherrypick.flies.alert_daemon --stop
    ```
 4. Report what was disarmed and remind: open live positions are unaffected — they follow their
-   normal hold-to-settlement rules, and the completion/cutoff/settlement handling for anything
-   already open requires either re-arming or manual `--once --live` ticks. If the intent is a
+   normal hold-to-settlement rules, and the completion/cutoff handling for anything already open
+   requires either re-arming or manual `--once --live` ticks; a session left unsettled is settled
+   by the hourly `settle-overdue-live` job once it is past, at its own official close. If the intent is a
    harder stop that also blocks manual/future ticks, mention the halt flag.
 
 ## Escape hatch

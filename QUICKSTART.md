@@ -144,16 +144,14 @@ What you will see:
 
 - During market hours (9:30–16:00 US Eastern, on trading days) the strategies take paper trades and
   the pages fill in. Outside those hours there is little to see; that is expected.
-- **Overview** is the summary. Each strategy has its own page in the menu on the left (click **»**
-  at the top left to open it).
+- The console opens on **Live**. Each strategy has its own page in the icon rail on the left; the
+  **»** button at the bottom of the rail expands it to show names.
 - **Config** turns strategies on and off. Strategies marked **experimental** are off by default.
 - A small **read-only** badge at the bottom means your tastytrade key has the read scope only. That
   is right for paper mode.
 
-Right after installing, before the first trading session, the **Overview** looks like this: the
-three base strategies listed with nothing open yet.
-
-![The console's Overview page on a fresh install](docs/images/console-overview.png)
+Right after installing, before the first trading session, the pages are mostly empty: that is
+expected.
 
 **Optional: the console in its own window.** If you would rather have cherrypick as a desktop app
 than a browser tab, double-click **`console-desktop.cmd`** in the installation folder (Windows), or

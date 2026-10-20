@@ -129,6 +129,54 @@ def test_a_weekly_is_never_the_cycle_and_an_empty_range_is_none():
     assert fsg.cycle_expiry([_exp("2026-11-20", 29), _exp("2026-12-18", 64)], _is_monthly) is None
 
 
+def test_income_names_are_the_tradable_verdicts_only():
+    verdicts = {
+        "AA": {"verdict": "tradable"},
+        "A": {"verdict": "illiquid"},
+        "BRK.B": {"verdict": "tradable"},
+        "X": {},
+    }
+    assert fsg.income_names(verdicts) == ["AA", "BRK.B"]
+
+
+def test_the_income_plan_is_the_cycle_monthly_both_sides_out_of_the_money():
+    strikes = [(float(k), f"C{k}", f"P{k}") for k in range(80, 121, 5)]
+    exps = [_exp("2026-11-06", 30, strikes), _exp("2026-12-18", 50, strikes)]
+    plan = fsg.income_plan(exps, 101.0, _is_monthly)
+    assert plan["expiry"] == "2026-12-18" and plan["dte"] == 50  # the monthly, never the nearer weekly
+    puts = [leg["strike"] for leg in plan["legs"] if leg["right"] == "P"]
+    calls = [leg["strike"] for leg in plan["legs"] if leg["right"] == "C"]
+    assert puts and max(puts) <= 101.0 and min(puts) >= 101.0 * 0.8  # out of the money, within reach
+    assert calls and min(calls) >= 101.0 and max(calls) <= 101.0 * 1.2
+    assert {leg["option"] for leg in plan["legs"] if leg["strike"] == 95.0} == {"P95"}
+    # No cycle monthly, or no price to centre on: no plan, never a weekly instead.
+    assert fsg.income_plan([_exp("2026-11-06", 45, strikes)], 101.0, _is_monthly) is None
+    assert fsg.income_plan(exps, None, _is_monthly) is None
+
+
+def test_the_stress_move_is_the_names_bad_tail_over_the_holding_period():
+    # A steady 1% a session up, with one 30% crash: the worst 5-session windows hold the crash.
+    closes = [100.0 * 1.01**i for i in range(400)]
+    closes = closes[:200] + [c * 0.7 for c in closes[200:]]
+    s = fsg.stress_move(closes, 5)
+    assert s["sessions"] == 5 and s["windows"] == 395
+    assert s["p01"] < -0.25 < 0 < s["p99"]
+    # Too little history to read a tail from is no reading, never a mild one.
+    assert fsg.stress_move(closes[:100], 5) is None
+    assert fsg.stress_move(closes, 0) is None
+
+
+def test_a_holding_period_is_counted_in_sessions():
+    assert fsg.holding_sessions(50) == 35 and fsg.holding_sessions(1) == 1
+
+
+def test_the_income_metrics_are_the_recorded_fields_and_absent_ones_are_null():
+    rows = {"AA": {"earnings_date": "2026-10-22", "iv_index": 0.49, "beta": 2.1, "liquidity_rank": 0.03}}
+    m = fsg.income_metrics(rows, "AA")
+    assert m["earnings_date"] == "2026-10-22" and m["beta"] == 2.1 and "liquidity_rank" not in m
+    assert all(v is None for v in fsg.income_metrics(rows, "ZZ").values())
+
+
 def test_the_option_symbol_is_the_brokers_padded_occ():
     assert fsg.option_symbol("VPG", "2026-11-20", "C", 105.0) == "VPG   261120C00105000"
     assert fsg.option_symbol("BRK.B", "2026-11-20", "P", 7.5) == "BRK/B 261120P00007500"
@@ -174,10 +222,18 @@ def test_the_chosen_bars_are_the_ones_the_readings_picked():
     assert fsg.LEG_BARS == BARS
 
 
+def _one(q):
+    return [(q, -1)]
+
+
+def _spread(short, long_):
+    return [(short, -1), (long_, 1)]
+
+
 def test_a_row_says_whether_its_monthly_passes_too():
-    assert fsg.monthly_passes([GOOD], BARS) is True
-    assert fsg.monthly_passes([GOOD, {**GOOD, "open_interest": 5}], BARS) is False
-    assert fsg.monthly_passes(None, BARS) is None and fsg.monthly_passes([GOOD], None) is None
+    assert fsg.monthly_passes(_one(GOOD), BARS) is True
+    assert fsg.monthly_passes(_spread(GOOD, {**GOOD, "open_interest": 5}), BARS) is False
+    assert fsg.monthly_passes(None, BARS) is None and fsg.monthly_passes(_one(GOOD), None) is None
 
 
 def test_apply_bars_judges_each_leg_and_the_row():
@@ -194,21 +250,51 @@ def test_apply_bars_judges_each_leg_and_the_row():
 
 
 def test_no_recommendation_until_the_bars_are_chosen():
-    assert fsg.recommend([GOOD], [GOOD], None) is None
+    assert fsg.recommend(_one(GOOD), _one(GOOD), None) is None
 
 
 def test_a_liquid_vendor_leg_is_recommended():
-    assert fsg.recommend([GOOD], [GOOD], BARS) == "vendor"
+    assert fsg.recommend(_one(GOOD), _one(GOOD), BARS) == "vendor"
 
 
 def test_each_failing_input_sends_the_trade_to_the_monthly():
-    for broken in ({"ask": 1.60}, {"open_interest": 20}, {"volume": 2}, {"bid": 0.0}):
-        assert fsg.recommend([{**GOOD, **broken}], [GOOD], BARS) == "monthly", broken
+    for broken in ({"ask": 1.60}, {"open_interest": 20}, {"bid": 0.0}):
+        assert fsg.recommend(_one({**GOOD, **broken}), _one(GOOD), BARS) == "monthly", broken
 
 
-def test_a_spread_passes_only_when_both_legs_do_and_no_monthly_is_none():
-    assert fsg.recommend([GOOD, {**GOOD, "volume": 0}], [GOOD, GOOD], BARS) == "monthly"
-    assert fsg.recommend([{**GOOD, "volume": 0}], None, BARS) == "none"
+def test_volume_is_a_flag_not_a_bar():
+    # 2026-10-19: a part-day count failed tight, open legs -- 15% of monthly short puts at 11:30.
+    assert fsg.recommend(_one({**GOOD, "volume": 2}), _one(GOOD), BARS) == "vendor"
+    rows = [{"vendor": [{"quote": {**GOOD, "volume": 2}}], "monthly": None}]
+    fsg.apply_bars(rows, BARS)
+    assert rows[0]["vendor"][0]["passes"] is True and rows[0]["vendor"][0]["quiet"] is True
+
+
+CHEAP_LONG = {"bid": 0.30, "ask": 0.36, "open_interest": 500, "volume": 50}  # 18% of mid, over a nickel
+
+
+def test_a_spread_is_judged_as_one_order():
+    # The cheap long fails on its own, but the spread costs 5.5 cents on a 0.695 credit: 7.9%.
+    assert not fsg.leg_passes(CHEAP_LONG, BARS)
+    assert fsg.recommend(_spread(GOOD, CHEAP_LONG), None, BARS) == "vendor"
+    # A short leg a dime wide makes the spread cost 8 cents on 0.72: 11%, over the bar.
+    wide = {"bid": 1.00, "ask": 1.10, "open_interest": 500, "volume": 50}
+    assert fsg.recommend(_spread(wide, CHEAP_LONG), None, BARS) == "none"
+    # Each leg must still have its open interest.
+    assert fsg.recommend(_spread(GOOD, {**CHEAP_LONG, "open_interest": 3}), None, BARS) == "none"
+
+
+def test_a_spread_with_no_monthly_is_none():
+    assert fsg.recommend(_spread(GOOD, {**GOOD, "open_interest": 0}), None, BARS) == "none"
+
+
+def test_apply_bars_prices_each_side_at_mid_working_and_natural():
+    rows = [
+        {"vendor": [{"role": "short", "quote": GOOD}, {"role": "long", "quote": CHEAP_LONG}], "monthly": None}
+    ]
+    fsg.apply_bars(rows, BARS)
+    assert rows[0]["vendor_prices"] == {"mid": 0.695, "natural": 0.64, "working": 0.6675, "cost": 0.055}
+    assert rows[0]["monthly_prices"] is None
 
 
 def test_a_cheap_option_passes_on_the_absolute_width():
@@ -478,3 +564,17 @@ def test_marks_fall_due_on_the_reaction_day_and_the_session_after(tmp_path):
         ("NFLX", "day2")
     ]
     assert fsg.marks_due(tmp_path, date(2026, 10, 23)) == []
+
+
+def test_the_skate_clock_counts_to_each_expirys_close():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2026, 10, 19, 12, 0, tzinfo=ZoneInfo("America/New_York"))
+    clock = fsg.skate_clock({"2026-10-23", "2026-11-20"}, now)
+    days, years = clock["2026-10-23"]
+    assert days == 4 and abs(years - 100 / (365 * 24)) < 1e-12  # Friday 16:00 is 100 hours away
+    assert clock["2026-11-20"][0] == 32
+    # On the expiry day after the close there is no time left, never a negative one.
+    late = datetime(2026, 10, 23, 16, 30, tzinfo=ZoneInfo("America/New_York"))
+    assert fsg.skate_clock({"2026-10-23"}, late)["2026-10-23"] == (0, 0.0)

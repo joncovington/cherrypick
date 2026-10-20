@@ -29,6 +29,12 @@ Do this:
    resting orders. The "Left running by design" section names the streamer, the console, and Dolt —
    **the streamer is why the next step exists.**
 
+   **Service mode** (the optional Windows service, `run.py service`, `service.enabled`): `uninstall`
+   does not touch the service. Its WinSW definition is `startmode Automatic`, so the service starts
+   the supervisor again at the next boot. For a stop that survives a reboot, run
+   `python packages/orchestrator/run.py service uninstall` and have the commands it prints run in an
+   administrator prompt.
+
 2. **Stop what uninstall leaves behind** (each is best-effort — "not running" is a fine result):
    - **Streamer, services, console and any job child still running:**
      `python packages/orchestrator/run.py stop --all`. It stops the streamer and every managed
@@ -37,17 +43,12 @@ Do this:
      tree, and only if the PID's creation time still matches, so a reused PID is never touched. It
      refuses while the supervisor or its anchor task is still up, which means step 1 did not finish.
      Confirm with `python packages/orchestrator/run.py ps` (nothing running).
-     (Only if this box was rolled back to MEIC-as-producer — `modules.meic.streamer.enabled` true —
-     stop that one too: `python -m cherrypick.meic.streamer --stop`. Exactly one producer ever runs.)
      The settings editor (8804) needs nothing — it is foreground-only and stops when you close it.
    - **Dolt sql-server** (earnings' local market-data DB; its keep-alive task was removed in step 1):
      stop the process serving port **3306**, but only if it really is `dolt` (the same rule the root
      uninstall scripts follow; anything else on the port is left alone):
      `Get-NetTCPConnection -LocalPort 3306 -State Listen -EA SilentlyContinue | ForEach-Object { Get-Process -Id $_.OwningProcess } | Where-Object ProcessName -eq 'dolt' | Stop-Process -Force`
      (This is the shared Dolt server — skip it if you use Dolt outside cherrypick and want it running.)
-   - **MEIC sidecar** (optional, off by default — if `meic-sidecar` was enabled in `services` it was
-     already stopped in step 1; a manually-started one stops with
-     `python -m cherrypick.meic.streamer --sidecar --stop`).
 
 3. **Verify a clean stop:**
    - No cherrypick tasks: `Get-ScheduledTask | Where-Object { $_.TaskName -like 'cherrypick*' }`
@@ -56,7 +57,7 @@ Do this:
      running); `python packages/orchestrator/run.py status` shows the legacy empty-tasks view.
    - Streamer down: `python packages/streamer/run.py --status` reports `"running": false`.
    - gex recorder down: `python packages/gex/run.py record --status` reports `"running": false`.
-   - Nothing listening on ports **3306**, **5070**, or **7699**.
+   - Nothing listening on ports **3306** or **5070**.
 
 4. **Report** clearly: the suite is fully stopped and unscheduled, which daemons were stopped (vs.
    already down), and that all data/credentials are intact and `/install` restores everything. The full

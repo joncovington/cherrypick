@@ -83,7 +83,8 @@ mid), and the series it is judged on: a stint's P&L can't show a drawdown inside
 ## Layout
 
 `regime.py` (the reading and the switch rule), `engine.py` (fills, stint money, distribution
-entitlement), `replay.py` (the rule over daily closes); all pure. `provider.py` (read-only stream
+entitlement), `replay.py` (the rule over daily closes), `clock.py` (the ET clock and the decision
+window, from the session's own close, so 12:50 on an early close); all pure. `provider.py` (read-only stream
 cache and technicals store), `db.py` (ledger), `paper_loop.py` (the tick), `stream_request.py`
 (the funds and VIX/VIX3M as quote-only legs, no underlyings), `cli.py` (status, nav, stints,
 metrics). `analytics.py` is the read side's one query layer: each arm's daily-NAV reading
@@ -92,6 +93,23 @@ over this module's own recorded ratios and fund marks (`contango_marks`, each fu
 decision tick, from 2026-10-06), with the cash fund's distributions added back. The gap between an
 arm's NAV and its expected path (`tracking`) is execution, not the rule: spread paid over 2 bps,
 whole shares, missed windows.
+
+## Commands
+
+```bash
+python -m cherrypick.contango.paper_loop --once        # one gated tick
+python -m cherrypick.contango.paper_loop --interval 60 # the in-session resident loop
+python -m cherrypick.contango.paper_loop --status      # one JSON health object (watchdog contract)
+python run.py status | nav [--arm A] [--limit N] | stints [--arm A] | metrics
+python ../../scripts/contango_replay.py [--start 2018-03-01] [--cost-bps 2]
+python ../../scripts/contango_replay.py --validate [--ledger PATH]   # the replay against the ledger, read-only
+python -m pytest
+```
+
+`paper_loop --force` acts outside the window, for testing only. The replay reads SVXY/SHV from the
+technicals store and VIX/VIX3M from Cboe's files (`scripts/fetch_market_files.py`). The loop credits
+distributions only where the technicals store can be read: a missing store refuses to credit, never
+a zero.
 
 ## Suite wiring
 
@@ -103,8 +121,8 @@ window, so an idle tick is the design and not a stall. It ships `enabled: false`
 orchestrator's example, like curve.
 
 **Console** (2026-10-06): `/contango`. Session (today's read, each arm's holding and decision),
-regime, decisions, arms (each arm's daily-NAV tear sheet against buy-and-hold and against its own
-rule), performance (NAV, underwater, monthly heat map, rolling 60-session return, stress windows),
-costs (every fill's slippage against the 2 bps the replay assumed, missed windows, distributions),
+summary, regime, decisions, arms (each arm's daily-NAV tear sheet against buy-and-hold and against
+its own rule), performance (NAV, underwater, monthly heat map, rolling 60-session return, stress
+windows), analysis, costs (every fill's slippage against the 2 bps the replay assumed, missed windows, distributions),
 positions, history (closed stints and the daily NAV log), help. The ledger is read by
 `readers/contango.ts`; the tear sheet comes from `contango metrics` through `services/navBridge.ts`.

@@ -196,8 +196,8 @@ def cmd_install(cfg, force: bool = False) -> None:
     pyw = cfgmod.pythonw_exe()
     modules = cfgmod.enabled_modules(cfg)
 
-    # Refuse to cut over while flies is live-armed for today: deleting the legacy live task
-    # mid-armed-day must never silently disarm real orders. --force overrides deliberately.
+    # Refuse to cut over while any live module (flies, bwb, meic) is armed for today: deleting a
+    # legacy live task mid-armed-day must never silently disarm real orders. --force overrides.
     today = timeutil.now_et(cfg.get("timezone", "America/New_York")).date().isoformat()
     for name, mcfg in modules.items():
         if not mcfg.get("live"):
@@ -209,7 +209,7 @@ def cmd_install(cfg, force: bool = False) -> None:
                     "ok": False,
                     "error": f"{name} is LIVE-ARMED for today ({supervisor.arm_record_path(name)}). "
                     "Install would delete its legacy task mid-day. Disarm first "
-                    "(python -m cherrypick.flies.live_loop --uninstall-task) or re-run with --force.",
+                    f"(python -m cherrypick.{name}.live_loop --uninstall-task) or re-run with --force.",
                 }
             )
             sys.exit(1)
@@ -227,11 +227,6 @@ def cmd_install(cfg, force: bool = False) -> None:
         results[f"{name}.checkout"] = chk
         if not chk.get("ok"):
             continue
-        root = cfgmod.module_root(mcfg, name)
-        # per-module streamer (the disabled rollback path) still starts like any daemon
-        streamer = mcfg.get("streamer", {})
-        if streamer.get("enabled"):
-            results[f"{name}.streamer"] = _ensure_daemon(root, streamer, f"{name}.streamer", producer=True)
 
     # The one remaining OS task: a 2-minute keep-alive probe that (re)starts the supervisor.
     # The OS guarantees the probe; the probe guarantees the daemon; the daemon fires everything.
@@ -328,8 +323,8 @@ def _stamp_service_config(
     root: Path, spec: dict, stamp_id: str | None = None, *, producer: bool = False
 ) -> None:
     """Record what config a daemon was launched with. `services[]` entries name themselves with `id`;
-    the streamer blocks carry none, so their caller passes the same label the watchdog stamps under
-    ("streamer", "<module>.streamer") — the two must agree or every tick would see a missing stamp.
+    the streamer block carries none, so its caller passes the same label the watchdog stamps under
+    ("streamer") — the two must agree or every tick would see a missing stamp.
 
     A `producer` also stamps the stream-request union it just bound, for the same reason: install is
     what usually follows the config edit, and a producer started here subscribed exactly today's
@@ -911,7 +906,7 @@ def _run_review(cfg, *, final: bool) -> None:
 def _run_manage(cfg) -> None:
     """Invoked by the daily manage-eval job (see cfgmod.manage_settings), or by hand.
 
-    Takes the broker snapshot here (orchestrator/managesnap.py: two read-only broker calls) and hands
+    Takes the broker snapshot here (orchestrator/managesnap.py: three read-only broker reads) and hands
     it to packages/manage, which judges it against the configured ruleset and writes the evaluation
     into its own home for the console. The evaluation is advice: nothing on this path places, closes
     or sizes an order, so a failed pass costs a missing page and is a WARNING.
@@ -961,12 +956,29 @@ def _run_manage(cfg) -> None:
             "WARNING", "manage", "Position evaluation failed", f"{error or 'see logs/manage.log'}"
         )
     elif settings["notify"]:
-        acting = {a: n for a, n in counts.items() if a not in ("HOLD", "SETTLES")}
-        if acting:
-            summary = ", ".join(f"{n} {a.lower().replace('_', ' ')}" for a, n in sorted(acting.items()))
-            notifier.notify(
-                "INFO", "manage", "Position evaluation", f"{summary}; see the console's Live page"
-            )
+        # Every run posts its list, the all-hold one included: the runs are at times a person
+        # chose (`manage.at`, `manage.also_at`) to read what needs managing.
+        from cherrypick.orchestrator import managepost
+
+        written = (result or {}).get("written")
+        try:
+            doc = json.loads(Path(written).read_text(encoding="utf-8")) if written else {}
+        except (OSError, json.JSONDecodeError):
+            doc = {}
+        at = timeutil.now_et(cfg.get("timezone", "America/New_York")).strftime("%H:%M")
+        if doc:
+            title, message, embed = managepost.build(doc, at)
+        else:
+            acting = {a: n for a, n in counts.items() if a not in managepost.QUIET}
+            title = "Position evaluation"
+            message = (
+                ", ".join(f"{n} {a.lower().replace('_', ' ')}" for a, n in sorted(acting.items()))
+                or "nothing needs action"
+            ) + "; see the console's Live page"
+            embed = None
+        notifier.notify(
+            "INFO", "manage", title, message, embed, session=rec["session"], inputs=[written] if doc else ()
+        )
     _emit(rec)
 
 

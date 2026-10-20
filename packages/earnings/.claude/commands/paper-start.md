@@ -8,7 +8,8 @@ Runs one full open→close cycle of the forced-sampling strategy test
 (`cherrypick/earnings/strat_test_harness.py`, see `docs/strategy-testing-plan.md`):
 checks the dolt/tastytrade connections, opens every strategy that clears
 the screen on every viable symbol into the per-strategy strat_test paper
-books, then closes them all the following morning. Used both for the
+books, then runs the next morning's close pass (overnight strategies close;
+the calendars and `expected_move_butterfly` may hold on their own verdict). Used both for the
 initial Week 0 validation (confirm every strategy constructs, sizes,
 cost-adjusts, persists, and closes with no error) and for every day of the
 Weeks 1-8 accumulation phase — re-invoke it daily. This is a **separate
@@ -63,7 +64,8 @@ sample).
    python -m cherrypick.earnings.strat_test_harness run_closes
    ```
    Report closed trades with P&L (gross and cost-adjusted per
-   `entry_cost`/`exit_cost`), and any skips.
+   `entry_cost`/`exit_cost`), any positions held on their own verdict, and
+   any skips.
 
 6. **Release `.claude/strategy_test_lock`** and end — one full day's cycle
    is complete. Re-invoke `/paper-start` again the next day to continue

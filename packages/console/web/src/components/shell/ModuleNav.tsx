@@ -3,9 +3,10 @@ import { NavLink, useSearchParams } from "react-router-dom";
 import { type ModuleId, isExperimental } from "../../lightbox/moduleOrder";
 import { NAV_DECL, navGroups, viewSlides } from "../../lightbox/navGroups";
 import { useViewMode } from "../../lib/viewMode";
-import { CONFIG_LINK, suiteLinksFor, visibleNavLinks, type NavLinkDef } from "./navLinks";
+import { CONFIG_LINK, railHalves, suiteLinksFor, visibleNavLinks, type NavLinkDef } from "./navLinks";
 import { useFeatures } from "../../lib/useFeatures";
 import { isSlideVisible } from "../../lib/visibility";
+import { useLiveLoopsInUse } from "../../lib/useLiveToday";
 import { ExperimentalChip } from "../ExperimentalChip";
 import { useDirtyCount } from "../../pages/Config/stagedStore";
 import { RAIL_PREF, useCloseRailOnNavigate, useRailExpanded } from "./railState";
@@ -58,17 +59,22 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
   // An off module, the advisor and its tabs, and the technicals chart leave the rail when the suite has
   // turned them off (`visibility.ts`); Config keeps every toggle, so it is never filtered.
   const features = useFeatures();
+  const liveInUse = useLiveLoopsInUse(features);
   // The open module's tabs in the reader's view (simple or detail); the tab they are on always stays.
   // Simple view also leaves the developer surfaces (Compare, Advisor, System) off the rail.
   const view = useViewMode();
   const visible = visibleNavLinks(features);
   const suite = suiteLinksFor(visible.suite, view, module);
   const { modules } = visible;
+  // Real money and the market reads above the modules; research and the suite's own pages below.
+  const { above, below } = railHalves(suite);
+  const research = below.filter((l) => l.section === "research");
+  const suitePages = below.filter((l) => l.section !== "research");
   const grouping = navGroups(
     module ?? ("meic" as ModuleId), // never read when module is null — grouping is built only for the open module
     module === null
       ? []
-      : viewSlides(module, NAV_DECL[module].slides.filter((s) => isSlideVisible(module, s.id, features)), view, slide),
+      : viewSlides(module, NAV_DECL[module].slides.filter((s) => isSlideVisible(module, s.id, features, liveInUse)), view, slide),
   );
 
   // Any page opens out in place, wherever its link sits: a suite surface (Reports, Live, Config)
@@ -161,10 +167,13 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
           collapsing never asks you to scroll a long module's tab list to reach the control. */}
       <div className="mf-nav-scroll">
       <div id="mf-nav-links" hidden={!expanded}>
-        {suite.map((l) => link(l))}
+        {above.map((l) => link(l))}
         <div className="mf-nav-section">Modules</div>
         {modules.map((l) => link(l))}
+        {research.length > 0 && <div className="mf-nav-section">Research</div>}
+        {research.map((l) => link(l))}
         <div className="mf-nav-section">Suite</div>
+        {suitePages.map((l) => link(l))}
         {link(
           CONFIG_LINK,
           dirty > 0 && <span className="nav-dot" title={`${String(dirty)} unsaved change${dirty === 1 ? "" : "s"}`} />,
@@ -174,7 +183,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
           the page's root (the root is what an icon names). A name per link (aria-label) because
           the glyph carries no text; the expanded list stays as the tab order's text links. */}
       <div className="mf-nav-icons" hidden={expanded}>
-        {[...suite, ...modules, CONFIG_LINK].map((l) => (
+        {[...above, ...modules, ...below, CONFIG_LINK].map((l) => (
           <NavLink
             key={l.to}
             to={l.to}

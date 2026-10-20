@@ -17,7 +17,9 @@ What the loop does once armed, in one paragraph, so the YES is informed: at the 
 (default 10:00 ET) it places ONE broken-wing butterfly for the configured arm (`live.arm`), the
 same structure the paper books enter, as a three-leg limit at mid minus the concession, walking
 the limit down one tick every couple of minutes and never under the live floor (fees plus the
-declared minimum net) until the cutoff (default 11:00) cancels it. `max_structures_per_day` is 1.
+declared minimum net) until the cutoff (default 11:00) cancels it. `max_structures_per_day`
+(default 1) caps entries; with `live.vix9d_vix_max` set, an entry is refused unless VIX9D/VIX at the
+entry tick is below it, and a missing or stale print refuses.
 If the arm is not `control`, its add-on fires live on the same trigger the paper book uses, one
 order per tick, recorded only when the broker confirms. Nothing is ever closed with an order: SPX
 cash-settles on Friday and the ledger settles on the official print or waits. The daily ladder
@@ -41,20 +43,19 @@ means several live positions ride at once under `max_open_margin_dollars`.
      python -c "
    from cherrypick.bwb.cli import load_config
    from cherrypick.bwb import live_loop, credentials as creds
-   import os
    cfg = load_config()
-   unmet = live_loop.readiness(cfg, halt_present=os.path.exists(live_loop.halt_flag_path()), designated=creds.designated_account())
+   unmet = live_loop.readiness(cfg, designated=creds.designated_account())
    print('unmet gates:', unmet or 'NONE -- readiness passes')
    "
      ```
-     If any gate other than the halt flag is unmet, **stop here** and report — there is nothing
-     to arm if every tick would refuse.
+     If any gate is unmet, **stop here** and report — there is nothing to arm if every tick would
+     refuse. (The halt flag is not a readiness gate; it stops new entries and add-ons only.)
    - **Halt flag**: if `--status` shows `halt_flag: true`, surface it PROMINENTLY — the watchdog
      backstop may have set it after a failed self-disarm, which is worth understanding before
      re-arming. Only a fresh YES may clear it (step 4).
    - **The arm, the caps and the floor** from the module config's `live` block: `arm`,
      `max_structures_per_day`, `max_open_margin_dollars` (and the per-expiration cap if set),
-     `min_net_credit_dollars`, `mark_drawdown_halt_dollars`. Say them out loud.
+     `min_net_credit_dollars`, `mark_drawdown_halt_dollars`, `vix9d_vix_max`. Say them out loud.
    - **Open live positions / pending orders / breaker state / open marked loss** from the
      `--status` JSON, plus whether today's session is already settled.
    - **Orphaned orders**: if `--status` shows any `orphaned_orders`, **stop here** — the last
@@ -63,6 +64,8 @@ means several live positions ride at once under `max_open_margin_dollars`.
    - **Broker held**: if `--status` shows a non-empty `broker_held`, **stop here** — a prior
      submission's outcome is unknown or an order was placed that no row records; the adapter
      refuses every live submission until a human acknowledges it.
+   - **Overdue settlement**: if `--status` lists a past expiry in `overdue_settlement`, **stop
+     here** — a past ladder position is still open in the ledger and must be reconciled first.
    - **Market state**: whether it's currently a trading day inside RTH. Off-hours arming is
      allowed (the ticks no-op until the open) but say so plainly.
    - **Supervisor liveness**: check `~/.cherrypick/state/supervisor.last.json` is fresh (< ~90s
@@ -127,8 +130,9 @@ means several live positions ride at once under `max_open_margin_dollars`.
 4. Report what was disarmed and remind: open live positions are unaffected — they ride to
    settlement, and a resting entry or add-on order left working at the broker is NOT cancelled by
    disarming (it dies at the day's close as a Day order, or cancel it in the broker UI). Any
-   pending fill confirmation and Friday's settlement need either re-arming or manual
-   `--once --live` ticks. If the intent is a harder stop that also blocks manual ticks, mention
+   pending fill confirmation needs re-arming or manual `--once --live` ticks; a Friday the loop did
+   not settle is settled by the hourly `settle-overdue-live` job at that day's official close, or by
+   hand with `--settle --price <official SET> --date <YYYY-MM-DD>`. If the intent is a harder stop that also blocks manual ticks, mention
    the halt flag.
 
 ## Escape hatch

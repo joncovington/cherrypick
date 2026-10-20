@@ -31,7 +31,10 @@ exits, so the module doesn't guess — it measures:
 - optional `advised:<experiment name>` books (off unless the advisor and this module's `advice`
   block are both switched on) run the AI advisor's admitted exit params (frozen per
   row at entry) as real books beside the control — one book per concurrent advisor experiment
-  since 2026-09-17 (`advised:control` before).
+  since 2026-09-17 (`advised:control` before);
+- an optional Friday-entry regime (`friday_entry`, off in the example) enters the same week's
+  calendars at Friday's close as `friday:control` and `friday:path` (`dc_7_10`), never pooled with
+  the Monday `dc_4_7`: [docs/friday-entry-arm.md](docs/friday-entry-arm.md).
 
 Paper-only and credential-free: a pure read-only consumer of the suite's shared stream cache, whose
 4DTE/7DTE chains are served via the streamer's `expirations` request field. There is no live path.

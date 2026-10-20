@@ -143,6 +143,11 @@ are the first cut of that grid.
 
 ## Step 2 — the strategy (only if step 1 earns it)
 
+**As built (2026-10-13):** the side comes from rr25 alone, inside `strategies/expected_move_butterfly.py`.
+There is no `direction.py` and no technicals read. It opened on 2026-10-14, off the boundary, under its
+own `strat_test_strategies` break. It exits on a take-profit at half the width or at the 15:30 expiry
+close, and it is outside `OVERNIGHT`. The plan as written before the build follows.
+
 - `strategies/expected_move_butterfly.py` (under 500 lines), from `broken_wing_butterfly.py`'s shape;
   a pure `direction.py` that scores the side from pre-fetched inputs — no AI in the package.
 - Strikes: body the listed strike nearest spot ± k × EM; wings symmetric at a listed width, refused
@@ -153,6 +158,10 @@ are the first cut of that grid.
   `sizing.per_contract_max_loss` with max loss = debit × 100, the three report lists,
   `_REJECT_REASON_MAP`, both configs including the deployed `strategy_defaults`), plus the docs
   tables.
-- First fix `management.unrealized_pnl`'s second multiplication by quantity (`management.py:204`):
-  a 1-2-1 fly is the first structure with a leg ratio above 1 on that path.
+- First fix `management.unrealized_pnl`'s second multiplication by quantity: a 1-2-1 fly is the
+  first structure with a leg ratio above 1 on that path. **Fixed 2026-10-19.** The harness stores
+  `entry_credit` and every `legs_json` leg quantity already scaled by the position quantity
+  (`strat_test_harness._scaled_legs`), so the mark is now `cmd_run_closes`'s own `x 100`, with no
+  second multiplication (`tests/test_unrealized_pnl_quantity.py`, shown to fail on the old code).
+  No stored row was affected: every earnings trade recorded to that date was one contract.
 - Lands at the next declared measurement boundary, with a `measurement_breaks` row.

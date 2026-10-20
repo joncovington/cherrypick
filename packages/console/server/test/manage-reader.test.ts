@@ -21,8 +21,8 @@ function evalDoc(session: string): Record<string, unknown> {
     session,
     snapshot_generated_at: `${session}T10:00:02-0400`,
     ok: true,
-    ruleset: "zhang-2026-10",
-    rules: { ruleset: "zhang-2026-10" },
+    ruleset: "manage-2026-10",
+    rules: { ruleset: "manage-2026-10" },
     rule_warnings: [],
     accounts: [
       {
@@ -119,6 +119,206 @@ describe("readManage", () => {
     expect(iwm!.explanation).toBeNull();
     expect(out.accounts[0]!.counts).toEqual({ CLOSE: 1, HOLD: 1 });
     expect(out.accounts[0]!.excluded).toEqual([]);
+  });
+
+  it("passes the portfolio reading through, and an older evaluation has none", () => {
+    const doc = evalDoc("2026-10-19");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    acct["portfolio"] = {
+      benchmark: "SPY",
+      benchmark_spot: 763.28,
+      complete: false,
+      unmodelled_legs: [],
+      no_beta: ["ABC"],
+      account_type: { margin_or_cash: "Cash", type_name: "Traditional IRA" },
+      bwd: 5.85,
+      bwd_dollars_per_1pct: 44.63,
+      theta: 43.68,
+      theta_pct_net_liq: 0.00306,
+      vega_30: -8.87,
+      breakeven: { kind: "short_gamma", points: 15.22, pct: 0.01994 },
+      expected_move_pct: 0.01026,
+      expected_move: 7.83,
+      realised_move: null,
+      buying_power_used: 7622.5,
+      buying_power_used_pct: 0.534,
+      stress: [{ shock: -0.1, pnl: -1569.16, pct_net_liq: -0.1099, left_out: ["ABC"] }],
+      bands: {
+        delta: { low: -21.84, high: 32.76, basis: "theta", value: 5.85, inside: true },
+        theta: { low: 0.001, high: 0.003, value: 0.00306, inside: false },
+        buying_power: { low: 0, high: 0.3, value: 0.534, vix: 19.99, inside: false },
+      },
+      vix: 19.99,
+      net_liq: 14273.72,
+      scenarios: {
+        moves: [-0.1, 0, 0.1],
+        iv_shift_weighting: "term",
+        matrix: [{ iv_shift: 0.05, pnl: [-1437, -48, null] }],
+        graph: { moves: [-0.15, 0, 0.15], curves: [{ horizon_days: 4, pnl: [-2533, 537, -4] }] },
+        left_out: [],
+      },
+      ladder: {
+        expiries: [{ expiration: "2026-11-20", trades: ["META"], downside: -6837, downside_unknown: 1, theta: 77.27 }],
+        earnings: { trades: ["META"], theta: 35, theta_share: 0.724, downside: -4292.5 },
+      },
+      candidates: {
+        source_session: "2026-10-19",
+        taken_at: "2026-10-19T18:45:00+00:00",
+        account_basis: "cash",
+        names: 458,
+        excluded: { "earnings inside the trade": 120 },
+        fits: [
+          {
+            underlying: "AAL",
+            kind: "short_put",
+            alternative_to: null,
+            expiry: "2026-11-20",
+            legs: [{ strike: 11, right: "P", quantity: -1, bid: 0.31, ask: 0.35, delta: -0.4 }],
+            units: 1,
+            binding: "per-trade risk",
+            per_unit: { credit: 0.33, natural: 0.31, cash: 33, max_loss: 1067, buying_power: 1067, stress_loss: 251.07, theta: 0.87, bwd: null },
+            theta_per_bp: 0.00082,
+            earnings_date: "2026-10-22",
+            earnings_unknown: false,
+          },
+        ],
+        fits_total: 1,
+        too_big: [],
+        too_big_total: 0,
+        error: null,
+      },
+      guidance: [
+        { rule: "portfolio.theta", action: "REVIEW", confidence: 40, reason: "above the ceiling", drivers: [{ underlying: "GOOGL", theta: 9.06 }] },
+      ],
+      underlyings: [
+        { underlying: "FXI", beta: 0.274, bwd: -0.61, theta: -1.34, vega_30: 3.93, bwd_share: 0.011, theta_share: 0.029,
+          beta_doubt: "beta +0.27 but three-month correlation -0.75: opposite signs" },
+      ],
+      hedges: null,
+      broker_check: {
+        available: true,
+        legs_compared: 30,
+        legs_left_out: ["-1 GOOGL 370C"],
+        bwd_ours: 5.85,
+        bwd_broker: 7.1,
+        bwd_gap: -1.25,
+        theta_ours: 43.68,
+        theta_broker: 41.2,
+        theta_gap: 2.48,
+        underlyings: [{ underlying: "META", legs: 4, bwd_ours: 6.2, bwd_broker: 7.0, bwd_gap: -0.8, theta_ours: 6.4, theta_broker: 6.0, theta_gap: 0.4 }],
+      },
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-16.json"), JSON.stringify(evalDoc("2026-10-16")));
+
+    const p = readManage(config, "2026-10-19").accounts[0]!.portfolio!;
+    expect(p.bwd).toBe(5.85);
+    expect(p.accountKind).toEqual({ marginOrCash: "Cash", typeName: "Traditional IRA" });
+    expect(p.bands?.delta).toEqual({ low: -21.84, high: 32.76, basis: "theta", value: 5.85, inside: true });
+    expect(p.bands?.theta.inside).toBe(false);
+    expect(p.breakeven).toEqual({ kind: "short_gamma", points: 15.22, pct: 0.01994 });
+    expect(p.guidance[0]!.drivers).toEqual([{ underlying: "GOOGL", figures: [{ kind: "theta", value: 9.06 }] }]);
+    expect(p.underlyings[0]!.betaDoubt).toMatch(/opposite signs/);
+    expect(p.stress[0]!.leftOut).toEqual(["ABC"]);
+    expect(p.complete).toBe(false);
+    // Absent stays null, never zero.
+    expect(p.realisedMove).toBeNull();
+    expect(p.hedges).toBeNull();
+    expect(p.netLiq).toBe(14273.72);
+    expect(p.bands?.buyingPower).toEqual({ low: 0, high: 0.3, value: 0.534, vix: 19.99, inside: false });
+    expect(p.scenarios?.ivShiftWeighting).toBe("term");
+    expect(p.scenarios?.matrix[0]).toEqual({ ivShift: 0.05, pnl: [-1437, -48, null] }); // a missing cell stays null
+    expect(p.scenarios?.graph.curves[0]).toEqual({ horizonDays: 4, pnl: [-2533, 537, -4] });
+    expect(p.ladder?.expiries[0]).toEqual({ expiration: "2026-11-20", trades: ["META"], downside: -6837, downsideUnknown: 1, theta: 77.27 });
+    expect(p.ladder?.earnings.thetaShare).toBe(0.724);
+    const c = p.candidates!;
+    expect(c.accountBasis).toBe("cash");
+    expect(c.excluded).toEqual({ "earnings inside the trade": 120 });
+    expect(c.fits[0]).toMatchObject({ underlying: "AAL", kind: "short_put", units: 1, binding: "per-trade risk" });
+    expect(c.fits[0]!.perUnit).toMatchObject({ credit: 0.33, buyingPower: 1067, stressLoss: 251.07, bwd: null });
+    expect(c.fits[0]!.alternative).toBeNull();
+    expect(p.brokerCheck).toEqual({
+      legsCompared: 30,
+      legsLeftOut: ["-1 GOOGL 370C"],
+      bwdOurs: 5.85,
+      bwdBroker: 7.1,
+      bwdGap: -1.25,
+      thetaOurs: 43.68,
+      thetaBroker: 41.2,
+      thetaGap: 2.48,
+      underlyings: [{ underlying: "META", legs: 4, bwdGap: -0.8, thetaGap: 0.4 }],
+    });
+    // An evaluation from before the reading existed has no portfolio, not an empty one.
+    expect(readManage(config, "2026-10-16").accounts[0]!.portfolio).toBeNull();
+  });
+
+  it("passes an earnings trade and the rules waiting for its call through, and an ordinary trade has neither", () => {
+    const doc = evalDoc("2026-10-18");
+    const trades = (doc["accounts"] as Array<Record<string, unknown>>)[0]!["trades"] as Array<Record<string, unknown>>;
+    trades[1]!["earnings_trade"] = { key: "IWM|2026-10-23", report: "2026-10-20", time_of_day: "AMC", lead_days: 4, passed: false };
+    trades[1]!["held_for_earnings"] = [{ rule: "credit.time_exit", action: "CLOSE", confidence: 75, reason: "losing", legs: null }];
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-18.json"), JSON.stringify(doc));
+    const [ko, iwm] = readManage(config).accounts[0]!.trades;
+    expect(iwm!.earningsTrade).toEqual({ report: "2026-10-20", timeOfDay: "AMC", leadDays: 4, passed: false });
+    expect(iwm!.heldForEarnings.map((f) => f.rule)).toEqual(["credit.time_exit"]);
+    expect(ko!.earningsTrade).toBeNull();
+    expect(ko!.heldForEarnings).toEqual([]);
+  });
+
+  it("carries each guidance driver's figures with their kind, and both shares for concentration", () => {
+    const doc = evalDoc("2026-10-19");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    acct["portfolio"] = {
+      benchmark: "SPY",
+      guidance: [
+        { rule: "portfolio.delta", confidence: 40, reason: "outside", drivers: [{ underlying: "META", bwd: 6.22 }] },
+        // The cap is breached by the delta share; the theta share comes first in the row and is smaller.
+        {
+          rule: "portfolio.concentration",
+          confidence: 40,
+          reason: "over 25%",
+          drivers: [{ underlying: "SPY", theta_share: 0.128, bwd_share: 0.31 }],
+        },
+      ],
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    const [delta, conc] = readManage(config).accounts[0]!.portfolio!.guidance;
+    expect(delta!.drivers).toEqual([{ underlying: "META", figures: [{ kind: "bwd", value: 6.22 }] }]);
+    expect(conc!.drivers).toEqual([
+      { underlying: "SPY", figures: [{ kind: "bwd_share", value: 0.31 }, { kind: "theta_share", value: 0.128 }] },
+    ]);
+  });
+
+  it("reads the caption figures from the evaluation's own ruleset, and none where it embeds none", () => {
+    const doc = evalDoc("2026-10-19");
+    doc["rules"] = {
+      ruleset: "manage-2026-10",
+      portfolio: {
+        theta: { confidence: 55 },
+        delta: { confidence: 50 },
+        breakeven: { confidence: 55 },
+        buying_power: { confidence: 60 },
+        concentration: { confidence: 55 },
+        candidates: { per_trade_risk_pct: 0.02, notional_per_name_pct: { cash: 0.25, margin: 0.5 }, max_name_theta_share: 0.2 },
+      },
+    };
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    acct["portfolio"] = { benchmark: "SPY", candidates: { account_basis: "margin", fits: [], too_big: [] } };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    const p = readManage(config).accounts[0]!.portfolio!;
+    expect(p.ruleConfidence).toEqual({ low: 50, high: 60 });
+    // A margin account is held to the margin notional cap, not the cash one.
+    expect(p.candidates!.caps).toEqual({ perTradeRiskPct: 0.02, notionalPerNamePct: 0.5, maxNameThetaShare: 0.2 });
+
+    (acct["portfolio"] as Record<string, unknown>)["candidates"] = { account_basis: "cash", fits: [], too_big: [] };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    expect(readManage(config).accounts[0]!.portfolio!.candidates!.caps!.notionalPerNamePct).toBe(0.25);
+
+    doc["rules"] = { ruleset: "manage-2026-10" };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    const bare = readManage(config).accounts[0]!.portfolio!;
+    expect(bare.ruleConfidence).toBeNull();
+    expect(bare.candidates!.caps).toBeNull();
   });
 
   it("reads an older session when asked", () => {

@@ -9,7 +9,7 @@ description = "Shared core library for the Cherrypick trading suite (auth, dxfee
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-authors = [{ name = "Jon Covington", email = "jon.covington@gmail.com" }]
+authors = [{ name = "Jon Covington" }]
 keywords = ["trading", "options", "tastytrade", "iron-condor", "cherrypick"]
 classifiers = [
     "Private :: Do Not Upload",

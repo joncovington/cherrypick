@@ -11,9 +11,20 @@ import fs from "node:fs";
 import path from "node:path";
 import type {
   ManageAccount,
+  ManageBand,
+  ManageBrokerCheck,
+  ManageCandidate,
+  ManageCandidates,
   ManageChainOrder,
+  ManageHedges,
+  ManageLadder,
+  ManageScenarios,
+  ManageHedgeSuggestion,
+  ManagePortfolio,
   ManageAction,
   ManageFired,
+  ManageDriverKind,
+  ManageGuidance,
   ManageLeg,
   ManageLevel,
   ManageOrder,
@@ -203,12 +214,12 @@ function trade(v: unknown): ManageTrade {
     earnings: str(er["date"])
       ? {
           date: str(er["date"]) as string,
-          days: num(er["days"]) ?? 0,
+          days: num(er["days"]),
           timeOfDay: str(er["time_of_day"]),
           beforeNearestShortExpiry: er["before_nearest_short_expiry"] === true,
         }
       : null,
-    exDividend: str(xd["date"]) ? { date: str(xd["date"]) as string, days: num(xd["days"]) ?? 0 } : null,
+    exDividend: str(xd["date"]) ? { date: str(xd["date"]) as string, days: num(xd["days"]) } : null,
     profile:
       Object.keys(pf).length === 0
         ? null
@@ -219,10 +230,329 @@ function trade(v: unknown): ManageTrade {
             upsideFromNow: num(pf["upside_from_now"]),
             unboundedLow: pf["unbounded_low"] === true,
           },
+    earningsTrade: str(rec(t["earnings_trade"])["report"])
+      ? {
+          report: str(rec(t["earnings_trade"])["report"]) as string,
+          timeOfDay: str(rec(t["earnings_trade"])["time_of_day"]),
+          leadDays: num(rec(t["earnings_trade"])["lead_days"]),
+          passed: rec(t["earnings_trade"])["passed"] === true,
+        }
+      : null,
+    heldForEarnings: arr(t["held_for_earnings"]).map(fired),
   };
 }
 
-function account(v: unknown): ManageAccount {
+function band(v: unknown): ManageBand {
+  const b = rec(v);
+  return {
+    low: num(b["low"]),
+    high: num(b["high"]),
+    value: num(b["value"]),
+    inside: typeof b["inside"] === "boolean" ? b["inside"] : null,
+  };
+}
+
+function hedges(v: unknown): ManageHedges | null {
+  if (v === null || v === undefined) return null;
+  const h = rec(v);
+  return {
+    target: num(h["target"]),
+    need: num(h["need"]),
+    root: str(h["root"]),
+    expiration: str(h["expiration"]),
+    dte: num(h["dte"]),
+    error: str(h["error"]),
+    suggestions: arr(h["suggestions"]).map((raw): ManageHedgeSuggestion => {
+      const s = rec(raw);
+      const after = rec(s["after"]);
+      const be = rec(after["breakeven"]);
+      return {
+        kind: str(s["kind"]) ?? "?",
+        structure: str(s["structure"]),
+        error: str(s["error"]),
+        units: num(s["units"]),
+        legs: arr(s["legs"]).map((l) => {
+          const leg = rec(l);
+          return {
+            label: str(leg["label"]) ?? "?",
+            quantity: num(leg["quantity"]) ?? 0,
+            bid: num(leg["bid"]),
+            ask: num(leg["ask"]),
+            mid: num(leg["mid"]),
+            delta: num(leg["delta"]),
+          };
+        }),
+        priceLabel: str(s["price_label"]),
+        natural: num(s["natural"]),
+        cash: num(s["cash"]),
+        maxLoss: num(s["max_loss"]),
+        bwdChange: num(s["bwd_change"]),
+        thetaChange: num(s["theta_change"]),
+        pastCap: s["past_cap"] === true,
+        after: Object.keys(after).length
+          ? {
+              bwd: num(after["bwd"]),
+              inBand: typeof after["in_band"] === "boolean" ? after["in_band"] : null,
+              theta: num(after["theta"]),
+              thetaPctNetLiq: num(after["theta_pct_net_liq"]),
+              breakevenPct: num(be["pct"]),
+              buyingPowerUsedPct: num(after["buying_power_used_pct"]),
+            }
+          : null,
+      };
+    }),
+  };
+}
+
+/**
+ * Which figures each guidance rule's drivers carry (packages/manage `portfolio.guidance`), chosen per
+ * rule so a figure is never stated in another's unit: theta drivers carry `theta` ($/day), delta
+ * drivers `bwd` (benchmark shares), and concentration drivers BOTH shares, since the rule fires on
+ * whichever is larger and taking the first key once showed the smaller theta share as "+0.3".
+ */
+const DRIVER_FIGURES: Record<string, readonly ManageDriverKind[]> = {
+  "portfolio.theta": ["theta"],
+  "portfolio.delta": ["bwd"],
+  "portfolio.concentration": ["bwd_share", "theta_share"],
+};
+const DRIVER_KINDS: readonly ManageDriverKind[] = ["bwd", "theta", "bwd_share", "theta_share"];
+
+/** One driver row with its figures by kind. A rule this reader does not know keeps every figure it
+ *  recognises; a key it does not know is dropped rather than shown in a guessed unit. */
+function drivers(rule: string | null, row: Record<string, unknown>): ManageGuidance["drivers"][number] {
+  const kinds = DRIVER_FIGURES[rule ?? ""] ?? DRIVER_KINDS.filter((k) => k in row);
+  return { underlying: str(row["underlying"]) ?? "?", figures: kinds.map((kind) => ({ kind, value: num(row[kind]) })) };
+}
+
+const PORTFOLIO_RULES = ["theta", "delta", "breakeven", "buying_power", "concentration"] as const;
+
+/** The range of confidences the evaluation's own ruleset gives the portfolio rules; null when the
+ *  evaluation embeds no ruleset (the caption then names no number rather than a stale one). */
+function ruleConfidence(rules: Record<string, unknown>): ManagePortfolio["ruleConfidence"] {
+  const cfg = rec(rules["portfolio"]);
+  const all = PORTFOLIO_RULES.map((r) => num(rec(cfg[r])["confidence"])).filter((c): c is number => c !== null);
+  return all.length ? { low: Math.min(...all), high: Math.max(...all) } : null;
+}
+
+/** The candidates' sizing caps from the evaluation's ruleset. The notional cap follows
+ *  `candidates.size`: the cash figure for a cash basis, the margin figure for any other. */
+function candidateCaps(rules: Record<string, unknown>, basis: string | null): ManageCandidates["caps"] {
+  const cfg = rec(rec(rules["portfolio"])["candidates"]);
+  if (Object.keys(cfg).length === 0) return null;
+  return {
+    perTradeRiskPct: num(cfg["per_trade_risk_pct"]),
+    notionalPerNamePct: num(rec(cfg["notional_per_name_pct"])[basis === "cash" ? "cash" : "margin"]),
+    maxNameThetaShare: num(cfg["max_name_theta_share"]),
+  };
+}
+
+/** The portfolio reading, passed through. Absent on an evaluation written before it existed. */
+function portfolio(v: unknown, rules: Record<string, unknown>): ManagePortfolio | null {
+  const p = rec(v);
+  if (Object.keys(p).length === 0) return null;
+  const kind = rec(p["account_type"]);
+  const be = rec(p["breakeven"]);
+  const bands = rec(p["bands"]);
+  return {
+    benchmark: str(p["benchmark"]),
+    benchmarkSpot: num(p["benchmark_spot"]),
+    complete: p["complete"] === true,
+    unmodelledLegs: strs(p["unmodelled_legs"]),
+    noBeta: strs(p["no_beta"]),
+    accountKind: { marginOrCash: str(kind["margin_or_cash"]), typeName: str(kind["type_name"]) },
+    netLiq: num(p["net_liq"]),
+    bwd: num(p["bwd"]),
+    bwdDollarsPer1pct: num(p["bwd_dollars_per_1pct"]),
+    theta: num(p["theta"]),
+    thetaPctNetLiq: num(p["theta_pct_net_liq"]),
+    vega30: num(p["vega_30"]),
+    breakeven:
+      be["kind"] === "short_gamma" || be["kind"] === "long_gamma"
+        ? { kind: be["kind"], points: num(be["points"]), pct: num(be["pct"]) }
+        : null,
+    expectedMovePct: num(p["expected_move_pct"]),
+    expectedMove: num(p["expected_move"]),
+    realisedMove: num(p["realised_move"]),
+    buyingPowerUsed: num(p["buying_power_used"]),
+    buyingPowerUsedPct: num(p["buying_power_used_pct"]),
+    stress: arr(p["stress"]).map((raw) => {
+      const s = rec(raw);
+      return { shock: num(s["shock"]) ?? 0, pnl: num(s["pnl"]), pctNetLiq: num(s["pct_net_liq"]), leftOut: strs(s["left_out"]) };
+    }),
+    bands: Object.keys(bands).length
+      ? {
+          delta: { ...band(bands["delta"]), basis: str(rec(bands["delta"])["basis"]) },
+          theta: band(bands["theta"]),
+          buyingPower: bands["buying_power"]
+            ? { ...band(bands["buying_power"]), vix: num(rec(bands["buying_power"])["vix"]) }
+            : null,
+        }
+      : null,
+    guidance: arr(p["guidance"]).map((raw) => {
+      const g = rec(raw);
+      return {
+        rule: str(g["rule"]) ?? "?",
+        confidence: num(g["confidence"]),
+        reason: str(g["reason"]) ?? "",
+        drivers: arr(g["drivers"]).map((d) => drivers(str(g["rule"]), rec(d))),
+      };
+    }),
+    ruleConfidence: ruleConfidence(rules),
+    underlyings: arr(p["underlyings"]).map((raw) => {
+      const u = rec(raw);
+      return {
+        underlying: str(u["underlying"]) ?? "?",
+        beta: num(u["beta"]),
+        bwd: num(u["bwd"]),
+        theta: num(u["theta"]),
+        vega30: num(u["vega_30"]),
+        bwdShare: num(u["bwd_share"]),
+        thetaShare: num(u["theta_share"]),
+        betaDoubt: str(u["beta_doubt"]),
+      };
+    }),
+    hedges: hedges(p["hedges"]),
+    vix: num(p["vix"]),
+    scenarios: scenarios(p["scenarios"]),
+    ladder: ladder(p["ladder"]),
+    candidates: candidates(p["candidates"], rules),
+    brokerCheck: brokerCheck(p["broker_check"]),
+  };
+}
+
+/** The check against the broker's greeks, passed through; null where the snapshot carried none. */
+function brokerCheck(v: unknown): ManageBrokerCheck | null {
+  const c = rec(v);
+  if (c["available"] !== true) return null;
+  return {
+    legsCompared: num(c["legs_compared"]) ?? 0,
+    legsLeftOut: strs(c["legs_left_out"]),
+    bwdOurs: num(c["bwd_ours"]),
+    bwdBroker: num(c["bwd_broker"]),
+    bwdGap: num(c["bwd_gap"]),
+    thetaOurs: num(c["theta_ours"]),
+    thetaBroker: num(c["theta_broker"]),
+    thetaGap: num(c["theta_gap"]),
+    underlyings: arr(c["underlyings"]).map((raw) => {
+      const u = rec(raw);
+      return {
+        underlying: str(u["underlying"]) ?? "?",
+        legs: num(u["legs"]) ?? 0,
+        bwdGap: num(u["bwd_gap"]),
+        thetaGap: num(u["theta_gap"]),
+      };
+    }),
+  };
+}
+
+function candidate(v: unknown): ManageCandidate {
+  const c = rec(v);
+  const pu = rec(c["per_unit"]);
+  return {
+    underlying: str(c["underlying"]) ?? "?",
+    kind: str(c["kind"]) ?? "?",
+    alternativeTo: str(c["alternative_to"]),
+    expiry: str(c["expiry"]),
+    dte: num(c["dte"]),
+    legs: arr(c["legs"]).map((raw) => {
+      const l = rec(raw);
+      return {
+        strike: num(l["strike"]) ?? 0,
+        right: str(l["right"]) ?? "?",
+        quantity: num(l["quantity"]) ?? 0,
+        bid: num(l["bid"]),
+        ask: num(l["ask"]),
+        delta: num(l["delta"]),
+      };
+    }),
+    units: num(c["units"]) ?? 0,
+    binding: str(c["binding"]),
+    perUnit: {
+      credit: num(pu["credit"]),
+      natural: num(pu["natural"]),
+      cash: num(pu["cash"]),
+      maxLoss: num(pu["max_loss"]),
+      buyingPower: num(pu["buying_power"]),
+      stressLoss: num(pu["stress_loss"]),
+      theta: num(pu["theta"]),
+      bwd: num(pu["bwd"]),
+    },
+    thetaPerBp: num(c["theta_per_bp"]),
+    earningsDate: str(c["earnings_date"]),
+    earningsUnknown: c["earnings_unknown"] === true,
+    alternative: c["alternative"] ? candidate(c["alternative"]) : null,
+  };
+}
+
+function candidates(v: unknown, rules: Record<string, unknown>): ManageCandidates | null {
+  if (v === null || v === undefined) return null;
+  const c = rec(v);
+  const excluded: Record<string, number> = {};
+  for (const [k, n] of Object.entries(rec(c["excluded"]))) {
+    const x = num(n);
+    if (x !== null) excluded[k] = x;
+  }
+  return {
+    sourceSession: str(c["source_session"]),
+    takenAt: str(c["taken_at"]),
+    accountBasis: str(c["account_basis"]),
+    names: num(c["names"]),
+    excluded,
+    fits: arr(c["fits"]).map(candidate),
+    fitsTotal: num(c["fits_total"]) ?? 0,
+    tooBig: arr(c["too_big"]).map(candidate),
+    tooBigTotal: num(c["too_big_total"]) ?? 0,
+    error: str(c["error"]),
+    caps: candidateCaps(rules, str(c["account_basis"])),
+  };
+}
+
+function nums(v: unknown): Array<number | null> {
+  return arr(v).map((x) => num(x));
+}
+
+function scenarios(v: unknown): ManageScenarios | null {
+  const s = rec(v);
+  if (Object.keys(s).length === 0) return null;
+  const graph = rec(s["graph"]);
+  return {
+    moves: nums(s["moves"]).filter((x): x is number => x !== null),
+    ivShiftWeighting: str(s["iv_shift_weighting"]),
+    matrix: arr(s["matrix"]).map((raw) => {
+      const row = rec(raw);
+      return { ivShift: num(row["iv_shift"]) ?? 0, pnl: nums(row["pnl"]) };
+    }),
+    graph: {
+      moves: nums(graph["moves"]).filter((x): x is number => x !== null),
+      curves: arr(graph["curves"]).map((raw) => {
+        const c = rec(raw);
+        return { horizonDays: num(c["horizon_days"]) ?? 0, pnl: nums(c["pnl"]) };
+      }),
+    },
+    leftOut: strs(s["left_out"]),
+  };
+}
+
+function ladder(v: unknown): ManageLadder | null {
+  const l = rec(v);
+  if (Object.keys(l).length === 0) return null;
+  const e = rec(l["earnings"]);
+  return {
+    expiries: arr(l["expiries"]).map((raw) => {
+      const x = rec(raw);
+      return {
+        expiration: str(x["expiration"]) ?? "?",
+        trades: strs(x["trades"]),
+        downside: num(x["downside"]),
+        downsideUnknown: num(x["downside_unknown"]) ?? 0,
+        theta: num(x["theta"]),
+      };
+    }),
+    earnings: { trades: strs(e["trades"]), theta: num(e["theta"]), thetaShare: num(e["theta_share"]), downside: num(e["downside"]) },
+  };
+}
+
+function account(v: unknown, rules: Record<string, unknown>): ManageAccount {
   const a = rec(v);
   const counts: Partial<Record<ManageAction, number>> = {};
   for (const [k, n] of Object.entries(rec(a["counts"]))) {
@@ -242,6 +572,7 @@ function account(v: unknown): ManageAccount {
       const e = rec(raw);
       return { underlying: str(e["underlying"]) ?? "?", legs: num(e["legs"]) ?? 0, reason: str(e["reason"]) ?? "" };
     }),
+    portfolio: portfolio(a["portfolio"], rules),
   };
 }
 
@@ -281,6 +612,6 @@ export function readManage(config: ConsoleConfig, session?: string): ManagePaylo
     rulesSource: str(doc["rules_source"]),
     ruleWarnings: strs(doc["rule_warnings"]),
     rules: Object.keys(rec(doc["rules"])).length ? rec(doc["rules"]) : null,
-    accounts: arr(doc["accounts"]).map(account),
+    accounts: arr(doc["accounts"]).map((a) => account(a, rec(doc["rules"]))),
   };
 }

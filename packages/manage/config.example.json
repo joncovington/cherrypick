@@ -1,6 +1,6 @@
 {
   "_comment": "Position-management ruleset. Copy to ~/.cherrypick/config/manage.json and keep only what you change: the file is merged key by key over this default, and a key the default does not have is reported, not applied. Every rule carries `confidence` (0-100), reported beside its verdict. Money is gross of fees.",
-  "ruleset": "zhang-2026-10",
+  "ruleset": "manage-2026-10",
   "trade_grouping": "order_chain",
   "hold": {
     "confidence": 70,
@@ -111,6 +111,14 @@
     "enabled": true,
     "warn_days": 14
   },
+  "earnings_trade": {
+    "_comment": "A trade put on to hold through an earnings report: opened min_days_before..max_days_before days before the call (1-7), its nearest short expiring no more than max_days_expiry_after days after it. Until the call its close, take-profit and roll rules wait (shown as waiting); the day after the report (the report's own day if before the open) it closes. Expiry, ex-dividend, sizing and unpriced-leg rules never wait. Disable per name with positions.<SYM>.disable [\"earnings_trade\"].",
+    "enabled": true,
+    "min_days_before": 1,
+    "max_days_before": 7,
+    "max_days_expiry_after": 14,
+    "confidence": 75
+  },
   "ex_dividend": {
     "enabled": true,
     "warn_days": 10,
@@ -143,6 +151,84 @@
     "grid_high": 3.0,
     "grid_steps": 600
   },
-  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, directional.take_profit, directional.stop, ex_dividend, risk.oversize",
+  "portfolio": {
+    "_comment": "The account as one book: beta-weighted delta (in SPY shares, on the broker's beta), theta per calendar day, the break-even move and a stress line. Retail heuristics with no published out-of-sample evidence, hence confidence 40. Guidance is REVIEW, naming what drives it. enabled: false turns all of it off; the reading is still recorded.",
+    "enabled": true,
+    "theta": {
+      "_comment": "Theta as a share of net liq per day. Above max the book sells more gamma than the band allows; under min only informs.",
+      "enabled": true,
+      "min_pct_nlv": 0.001,
+      "max_pct_nlv": 0.003,
+      "confidence": 40
+    },
+    "delta": {
+      "_comment": "BWD band: -short_per_theta x theta to +long_per_theta x theta SPY shares. With no positive theta, +/- the BWD whose 1% move costs fallback_pct_nlv_per_1pct of net liq.",
+      "enabled": true,
+      "short_per_theta": 0.5,
+      "long_per_theta": 0.75,
+      "fallback_pct_nlv_per_1pct": 0.005,
+      "confidence": 40
+    },
+    "breakeven": {
+      "_comment": "A short-gamma book whose break-even SPY move is under this multiple of SPY's implied one-day move.",
+      "enabled": true,
+      "min_multiple_of_expected_move": 1.0,
+      "confidence": 40
+    },
+    "concentration": {
+      "_comment": "One underlying over max_share of the book's gross theta or gross beta-weighted delta. A position can be excused with positions.<SYM>.disable.",
+      "enabled": true,
+      "max_share": 0.25,
+      "confidence": 40
+    },
+    "beta_doubt": {
+      "_comment": "Flag a broker beta whose sign disagrees with its three-month correlation (|corr| >= min_abs_corr), or that is near zero beside a strong correlation.",
+      "min_abs_corr": 0.3,
+      "near_zero_beta": 0.1
+    },
+    "stress": {
+      "_comment": "SPY shocks the book is repriced at, each underlying moved by beta x shock, IV and time held still.",
+      "shocks": [-0.1, 0.05]
+    },
+    "buying_power": {
+      "_comment": "Buying power used against a ceiling that rises with VIX: [VIX under, cap] pairs, the last bound null for anything above. The common retail table. No VIX, no band.",
+      "enabled": true,
+      "vix_steps": [[15, 0.25], [20, 0.3], [30, 0.35], [40, 0.4], [null, 0.5]],
+      "confidence": 40
+    },
+    "scenarios": {
+      "_comment": "The risk matrix (SPY moves x IV shifts in vol points for a 30-day option, time held still; with iv_shift_weighting \"term\" each leg's shift is scaled by sqrt(30 / DTE) so front months move most, \"flat\" shifts every leg alike) and the risk graph ([from, to, step] of SPY moves, now and at the nearest expiry).",
+      "moves": [-0.1, -0.05, -0.02, -0.01, 0.0, 0.01, 0.02, 0.05, 0.1],
+      "iv_shifts": [-0.05, 0.0, 0.05],
+      "iv_shift_weighting": "term",
+      "graph": [-0.15, 0.15, 0.01]
+    },
+    "hedge": {
+      "_comment": "When portfolio.delta fires, size an XSP vertical toward a target `inset` of the band's width inside the breached edge: a credit spread (short at credit_short_delta) and a debit spread (long at debit_long_delta), each `width` points wide, at most max_units. A credit spread never takes buying power used past max_buying_power_pct of net liq; a debit spread only lowers the worst case, so it is offered past the cap and flagged. Priced at mid, with the natural price beside it; nothing is placed.",
+      "enabled": true,
+      "inset": 0.25,
+      "credit_short_delta": 0.3,
+      "debit_long_delta": 0.4,
+      "width": 5,
+      "max_units": 10,
+      "max_buying_power_pct": 0.5
+    },
+    "candidates": {
+      "_comment": "Income trades from our own universe (the evening income reading), sized to the account. Structures: a short put at short_put_delta; a put or call credit spread short the first out-of-the-money strike, long at spread_long_delta, at least spread_min_credit of the width; a covered call at covered_call_delta on held shares only. Each gets the largest quantity that keeps one unit's stress loss (a spread's max loss) under per_trade_risk_pct of net liq, a short put's notional under notional_per_name_pct (by account kind), buying power under the VIX-scaled cap (else max_buying_power_pct), delta in its band, theta under its ceiling and the name under max_name_theta_share of the book's theta; the cap that stops it is named. Ranked by theta per dollar of buying power. Modelled at mid from a day-old reading: re-quote before sending.",
+      "enabled": true,
+      "short_put_delta": 0.4,
+      "spread_long_delta": 0.25,
+      "covered_call_delta": 0.165,
+      "spread_min_credit": 0.331,
+      "per_trade_risk_pct": 0.03,
+      "notional_per_name_pct": {"cash": 0.25, "margin": 0.5},
+      "max_buying_power_pct": 0.5,
+      "max_name_theta_share": 0.25,
+      "max_units": 10,
+      "show": 15,
+      "show_too_big": 10
+    }
+  },
+  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power",
   "positions": {}
 }

@@ -29,6 +29,7 @@ import type {
   EarningsCalendarPayload,
   EarningsRecordPayload,
   SignalBoardPayload,
+  SkatePayload,
   ScreenerList,
   ScreenerPayload,
   PmccPayload,
@@ -278,6 +279,15 @@ export function useSignalBoard(day: string | null) {
     queryFn: () => getJson<SignalBoardPayload>(`/api/screeners/board${day ? `?day=${day}` : ""}`),
     // Written once a morning.
     refetchInterval: 900_000,
+  });
+}
+
+export function useSkate(day: string | null) {
+  return useQuery<SkatePayload>({
+    queryKey: ["skate", day ?? "latest"],
+    queryFn: () => getJson<SkatePayload>(`/api/screeners/skate${day ? `?day=${encodeURIComponent(day)}` : ""}`),
+    // Two runs a session (12:00 and 15:05 ET).
+    refetchInterval: 300_000,
   });
 }
 
@@ -819,7 +829,10 @@ export function useEarnings(
 
 export interface EarningsMark {
   markedAt: string | null;
+  /** Per share, a debit to close positive. */
   exitDebit: number | null;
+  /** Whole-position dollars to close, signed (a debit paid is −). */
+  exitCash: number | null;
   unrealizedPnl: number | null;
   spot: number | null;
   source: string | null;
@@ -841,7 +854,10 @@ export interface EarningsOpenPosition {
   symbol: string;
   strategy: string;
   expiration: string | null;
+  /** Per share, signed (credit +, debit −). */
   entryCredit: number | null;
+  /** Whole-position entry cash, signed. */
+  entryCash: number | null;
   quantity: number | null;
   capitalAtRisk: number | null;
   openedAt: string | null;

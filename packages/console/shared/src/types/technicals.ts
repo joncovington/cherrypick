@@ -128,6 +128,57 @@ export interface TechnicalsLevelNear {
   pct: number | null;
 }
 
+/** A level as the read states it: distance in percent, in ATR(14)s and in sigmas of the expected move. */
+export interface SetupReadLevel {
+  value: number;
+  pct: number | null;
+  atr: number | null;
+  sigma: number | null;
+}
+
+/**
+ * The read behind a row (`setup_read.py`), built nightly with the watchlist: why the setup fired,
+ * what its rule earned in the historical study, the direction and the volatility, the levels, and
+ * the kind of option trade the read points to. The console lays it out and decides nothing.
+ */
+export interface SetupRead {
+  setup: { rule: string | null; change: string | null; medianHold: number | null };
+  /** The historical study's result for this setup and side (R per ATR, net of costs, stock fills). */
+  record: {
+    entries: number | null;
+    netR: number | null;
+    edgeR: number | null;
+    t: number | null;
+    verdict: string;
+    hit: number | null;
+    medianHold: number | null;
+  } | null;
+  direction: {
+    verdict: "agrees" | "conflicts" | "mixed" | "unread";
+    /** Mean reversion fades the move by design: its trend is shown but does not vote. */
+    counterTrend: boolean;
+    trendAgrees: boolean | null;
+    trendAgainst: boolean | null;
+    board: { side: "bullish" | "bearish" | null; count: number | null; bullish: number | null; bearish: number | null; tags: string[] } | null;
+  };
+  volatility: {
+    /** Implied vol in percent (the broker's 30-day IV index). */
+    iv: number | null;
+    ivRank: number | null;
+    ivPct: number | null;
+    hv30: number | null;
+    ivHv: number | null;
+    regime: "rich" | "cheap" | "middling" | "unread";
+    cycle: { expiry: string; days: number } | null;
+    expectedMove: { dollars: number; pct: number } | null;
+    earnings: string | null;
+    earningsInCycle: boolean | null;
+    exDividend: string | null;
+  };
+  levels: { atr14: number | null; support: SetupReadLevel | null; resistance: SetupReadLevel | null; target: SetupReadLevel | null };
+  lean: { structure: string | null; why: string; legs: string[]; cautions: string[] };
+}
+
 export interface TechnicalsWatchlistRow {
   symbol: string;
   /** The chart's own last session; behind the index's session when the name was not landed. */
@@ -173,6 +224,8 @@ export interface TechnicalsWatchlistRow {
   resistance: TechnicalsLevelNear | null;
   /** Weeklies and a tastytrade liquidity rating of 3+ on the label's day; null with no label. */
   optionsTradable: boolean | null;
+  /** The read behind the row; null for an index written before the reads existed. */
+  read: SetupRead | null;
 }
 
 export interface TechnicalsWatchlist {

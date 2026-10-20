@@ -38,10 +38,10 @@ The finite-deadline optimal-stopping literature (du Toit & Peskir, "Selling a st
 ultimate maximum") answers this exact shape of problem: sell an appreciating asset before a hard
 deadline, under drift plus reversal risk. The result is bang-bang in the drift: when drift is
 *against* you, sell immediately — first-qualifying-tick is optimal, which is what our ledger
-found. When drift is *favorable*, the optimal rule is a **trailing retracement from the running
+found. When drift is *favourable*, the optimal rule is a **trailing retracement from the running
 maximum, tightening to zero as the deadline approaches** — not a fixed threshold.
 
-For `debit_first` the favorable-drift regime has a candidate observable: dealer-gamma pinning.
+For `debit_first` the favourable-drift regime has a candidate observable: dealer-gamma pinning.
 A positive-gamma concentration at the centre strike is the regime where hedging flow pulls spot
 toward the strikes — exactly the drift that richens the completing credit. The `gex` arm's
 centring bet is this same hypothesis, and it is not yet validated; GEX here is inferred from
@@ -66,7 +66,7 @@ for a *miss*, and nothing answered "how much better did it get after we took it"
   `completion_gex_bucket`**, because that split is the drift-regime hypothesis under test.
 - The paper EOD report prints the same numbers per mode once tracked completions exist.
 
-## The bar for changing behavior
+## The bar for changing behaviour
 
 A wait-for-better rule (trailing retracement, GEX-gated) gets built only if the recorded data
 shows, at a sample comparable to the suite's usual promotion bar (≥14 sessions, ≥20 tracked

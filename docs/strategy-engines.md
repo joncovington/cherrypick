@@ -10,18 +10,19 @@ internals.
 
 | Module | Structure | Default | Live path |
 |---|---|---|---|
-| MEIC | 0DTE iron condors, multiple entries | on | agent session behind `enable_live_trading` |
+| MEIC | 0DTE iron condors, multiple entries | on | per-day armed loop (`/live-meic-start`, the `meic-live` job) behind `enable_live_trading`; also an agent session |
 | Earnings | defined-risk earnings plays, held overnight | on with the `dolt` capability | `enable_live_trading` |
 | Flies | 0DTE net-credit butterflies | on | per-day armed pilot |
 | BWB | ~7 DTE SPX put broken-wing butterflies, laddered daily | on | per-day armed pilot |
 | Calendars | weekly SPY double calendars | **off** (experimental) | none |
-| PMCC | deep-ITM covered calls on TQQQ | **off** (experimental) | none |
+| PMCC | deep-ITM calls with a weekly short call (the shield arms) | **off** (experimental) | none |
 | Curve | VXX call credit spreads, regime-gated | **off** (experimental) | none |
+| Contango | SVXY/SHV switch on VIX/VIX3M | **off** (experimental) | none |
 
-Every shipped example config declares only the `control` arm. MEIC, flies and PMCC start on control
-alone, and any other arm named below is added in a machine's own config. BWB, calendars and curve build
-their comparison books into the module and run them unless the config sets that book's `enabled` to
-`false`.
+Every shipped example config runs `control` alone except PMCC's (`shield` and `shield_hold`; `control`
+off) and contango's (`control` and `flipexit`). Any other arm named below is added in a machine's own
+config. BWB, calendars and curve build their comparison books into the module and run them unless the
+config sets that book's `enabled` to `false`, as their examples do.
 
 ## MEIC — 0DTE multiple-entry iron condors
 
@@ -50,8 +51,10 @@ breakout) debit spread runs alongside and *is* allowed in the trending regimes t
 
 **How it runs.** Unattended paper is a codified loop (`cherrypick.meic.paper_loop`), spawned once a
 minute by the supervisor as the `meic-paper` job — the same decisions as the agent loop, in code,
-writing to `~/.cherrypick/data/meic/paper_trades.db`. Live/interactive trading is agent-driven
-(`/meic-start`) and gated behind `enable_live_trading`; the orchestrator never runs that path.
+writing to `~/.cherrypick/data/meic/paper_trades.db`. Live trading has two paths, both behind
+`enable_live_trading`: the per-day armed loop (`/live-meic-start` writes the day's arm record; the
+supervisor runs `meic-live` once a minute, sized from the config's `live` block, until it self-disarms
+at 17:00 ET), and the interactive agent session (`/meic-start`), which the orchestrator never runs.
 
 → Depth: [`meic/docs/strategy.md`](../packages/meic/docs/strategy.md),
 [`meic/GATES.md`](../packages/meic/GATES.md),
@@ -132,10 +135,12 @@ physical settlement are modelled; ex-dividend weeks are skipped. Paper-only and 
 → Depth: [`calendars/README.md`](../packages/calendars/README.md),
 [`calendars/CLAUDE.md`](../packages/calendars/CLAUDE.md).
 
-## PMCC — deep-ITM covered calls (EXPERIMENTAL, off by default)
+## PMCC — deep-ITM calls with a short call against them (EXPERIMENTAL, off by default)
 
-On TQQQ: buy an 85-90-delta ~21 DTE call as a stock substitute, sell the ATM ~7 DTE call nearest spot,
-hold to the short's expiry and close both legs together. Early assignment is measured, never modelled —
+On XSP, QQQ, GLD, IWM, SLV, SMH and five single stocks (AMZN, TSLA, AMD, NVDA, PLTR): the
+`shield` and `shield_hold` arms hold a ~1-year 0.88–0.92-delta call and sell a weekly 0.70-delta call against it, rolled each week until the long
+reaches 45 DTE; the original 21-DTE `control` is retired. Shorts spanning an earnings or ex-dividend
+date are refused. Early assignment is measured, never modelled —
 ex-dividend spans are refused and near-zero-extrinsic marks flagged — so the paper result is an explicit
 upper bound. Paper-only and credential-free.
 
@@ -144,7 +149,8 @@ upper bound. Paper-only and credential-free.
 ## Curve — VXX call credit spreads (EXPERIMENTAL, off by default)
 
 Harvests the VIX term-structure roll yield with VXX call credit spreads, gated by a daily VIX/VIX3M
-regime read. Its books (`control`, `noflip`, `hook`) differ only in entry gate and exit rule, and the
+regime read. Its books (`control`, `noflip`, the 0.40-delta `near`, and `hook`, retired from 2026-10-15) differ
+only in entry gate, exit rule or short delta, and the
 daily regime classification is recorded every session, traded or not. Early assignment and VXX reverse
 splits are measured, never modelled. Paper-only and credential-free.
 

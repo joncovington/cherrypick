@@ -2,9 +2,9 @@
 
 Every strategy's own get_candidates only ever considers itself --
 iron_fly.py get_candidates only ranks iron fly candidates, double_calendar.py
-only double calendar, and so on. With six strategies now, there's no single
-answer to "what should we actually trade tonight" without running all six
-per symbol and comparing. This tool closes that gap: for each symbol on
+only double calendar, and so on. With several strategies registered, there's
+no single answer to "what should we actually trade tonight" without running
+all of them per symbol and comparing. This tool closes that gap: for each symbol on
 tonight's/tomorrow-morning's earnings calendar (scanner.fetch_entry_window_calendar's
 merge), every registered strategy is evaluated, the single best-ranked
 viable strategy per symbol is picked (a second strategy on the same name
@@ -15,7 +15,8 @@ single strategy's candidates.
 
 Score comparison reuses scanner.compute_composite_score's existing
 signal-strength formula as-is (term_structure, or skew_abs for
-expected_move_butterfly, times iv_rv_ratio times shrunk_winrate) -- not
+broken_wing_butterfly, times iv_rv_ratio times shrunk_winrate;
+expected_move_butterfly carries neither, scores None and is never offered) -- not
 risk-adjusted for how differently these strategies pay off (defined vs.
 undefined risk, credit vs. debit), deferred until there's real trade data
 to calibrate a risk adjustment against.

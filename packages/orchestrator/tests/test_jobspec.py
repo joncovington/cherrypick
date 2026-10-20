@@ -321,6 +321,9 @@ def test_derive_full_suite_job_table():
         "report-screener-greeks",
         "report-screener-greeks-late",
         "report-earnings-strikes",
+        "report-income-chains",
+        "report-skate-quotes-1",
+        "report-skate-quotes-2",
         "universe-measure-1",
         "universe-measure-2",
         "universe-daily",
@@ -341,6 +344,7 @@ def test_derive_full_suite_job_table():
         "technicals-earnings-calendar-late",
         "technicals-earnings-record",
         "technicals-screeners",
+        "technicals-skate",
         "technicals-report",
         "technicals-stage-lists",
         "technicals-history",
@@ -637,6 +641,22 @@ def test_manage_eval_off_by_default_and_runs_at_ten_on_trading_days_when_on():
     assert job.enabled and job.trading_days_only
     assert job.at_et == "10:00"
     assert job.argv[-1] == "manage"
+
+
+def test_manage_also_at_adds_one_job_per_further_time():
+    """Each further time is its own job running the same verb; one equal to `at` is not doubled."""
+    cfg = suite_cfg()
+    cfg["manage"] = {"enabled": True, "also_at": ["16:35", "12:30", "10:00"]}
+    jobs = {j.id: j for j in derive(cfg)[0] if j.id.startswith("manage-eval")}
+    assert sorted(jobs) == ["manage-eval", "manage-eval-1230", "manage-eval-1635"]
+    late = jobs["manage-eval-1635"]
+    assert late.at_et == "16:35" and late.trading_days_only and late.enabled
+    assert late.argv == jobs["manage-eval"].argv
+    assert late.catchup_minutes == 60
+    assert jobspec.notifies_own_failure("manage-eval-1635")
+    assert not jobspec.notifies_own_failure("managed-something")
+    cfg["manage"]["enabled"] = False
+    assert not {j.id: j for j in derive(cfg)[0]}["manage-eval-1230"].enabled
 
 
 def test_every_derived_run_py_job_actually_parses():

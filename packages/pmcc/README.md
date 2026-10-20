@@ -6,24 +6,26 @@
 > `~/.cherrypick/config.json`. It is paper-only either way.
 
 PMCC: a paper-only module that holds a deep-ITM call and sells a shorter call against it, on XSP,
-QQQ, GLD, IWM and SLV. Three arms, each its own portfolio:
+QQQ, GLD, IWM, SLV and SMH and the stocks AMZN, TSLA, AMD, NVDA and PLTR. Since 2026-10-06 the
+trade is two arms, each its own portfolio:
 
-- **`control`** buys an 85-90-delta call at ~21 DTE, sells the call nearest spot at ~7 DTE, holds to
-  the short's expiration and closes both.
-- **`shield`** and **`shield_hold`** (from 2026-10-05) follow Tom King's "Income Shield": hold a
-  ~1-year 0.90-0.95-delta call and sell a 0.70-delta weekly call against it, rolled every week until
-  the long reaches 45 DTE. `shield` also rolls early once the short has decayed or been breached;
-  `shield_hold` holds each short to Friday.
+- **`shield`** and **`shield_hold`** follow Tom King's "Income Shield": hold a ~1-year call near
+  0.90 delta (the broker's, 0.88-0.92) and sell a 0.70-delta weekly call against it, rolled every
+  week until the long reaches 45 DTE. `shield` also rolls early once the short has decayed or been
+  breached; `shield_hold` holds each short to Friday. `shield_guard` (from 2026-10-26) holds like
+  `shield_hold` but rolls an in-the-money short once its extrinsic is nearly gone, the point where a
+  real short risks early assignment.
+- A short spanning an ex-dividend date or, on a stock, an earnings announcement is refused.
 
-A config must declare the shield arms to run them; the shipped example does. The advisor's
-`advised:<experiment name>` twins shadow control when the advisor and this module's `advice` block
-are both on.
+A config must declare the shield arms to run them; the shipped example does. `control` (a ~21-DTE
+long re-bought each cycle) was retired on 2026-10-06 and its advisor twins with it; pmcc's advice is
+off.
 
-XSP settles in cash and the ETFs physically, so each symbol is read as its own population. A
+XSP settles in cash and every other symbol physically, so each symbol is read as its own population. A
 held-long position closes about ten months after entry, so judge the shield arms by their
 marked-to-market weekly readout (the console's "weekly by arm" and tracker tab), not by closed
 results. Why these arms and symbols: [docs/shield-study.md](docs/shield-study.md). The experiment
-design, the honesty rules (early assignment on the ETFs is measured, not modelled, so their paper
+design, the honesty rules (early assignment on the physical symbols is measured, not modelled, so their paper
 results are an upper bound) and the layout are in [CLAUDE.md](CLAUDE.md).
 
 ```bash
@@ -35,4 +37,4 @@ python -m pytest
 
 Config: the machine's copy is `~/.cherrypick/config/pmcc.json`; a git-ignored in-repo `config.json`
 is still read, and with neither the module runs off `config.example.json`. The example's `_note`
-keys are the design document.
+keys are the design document, and it ships the full roster.

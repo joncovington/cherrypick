@@ -106,7 +106,7 @@ set_clock(16:00); read session realized P&L + transactions -> finalize each book
   the metered cost is per-tick, not per-profile. SPX-eligible profiles = ladder ×4 + `large-spx` +
   `explore-spx-tightcredit` (6 books).
 - **SPX is cash-settled** → MEIC leaves ICs to expire; the session settles them at 16:00 ET. Verify
-  0DTESPX auto-settles open positions at close (the prototype saw realized P&L populate at close);
+  0DTESPX auto-settles open positions at close (the prototype saw realised P&L populate at close);
   if a leg lingers, force-close as a backstop.
 - **Force-close/event days:** reuse the FOMC/quarterly logic from `paper.force_close_active` for the
   event closes (SPX cash-settled otherwise expires).
@@ -151,7 +151,7 @@ tastytrade fees.**
 
 The one residual vs. forward paper is 0DTESPX's **0.05 slippage**, which is baked into their fills and
 cannot be removed retroactively — so practice P&L is fee-comparable to forward paper but carries a
-small extra modeled slippage cost on each entry/stop. (The entry *decision* already uses our fee model
+small extra modelled slippage cost on each entry/stop. (The entry *decision* already uses our fee model
 via `evaluate_entry`'s fee-adjusted floor; only the *fill* uses theirs — and the two fee models agree.)
 
 ## Results storage & reporting
@@ -159,7 +159,7 @@ via `evaluate_entry`'s fee-adjusted floor; only the *fill* uses theirs — and t
 - **Reuse the `ic_trades` schema** (via `db.py`), tagged `execution_mode="practice_0dtespx"` and a
   `cost_basis` note, in a **dedicated DB** (e.g. `~/.cherrypick/data/meic/practice_trades.db`) so the
   three cost bases (live, forward-paper, practice) never blend. Map 0DTESPX fills → our columns
-  (strikes, `net_credit` from `fill_price`, `fees`, `pnl` from realized settlement, `risk_profile`).
+  (strikes, `net_credit` from `fill_price`, `fees`, `pnl` from realised settlement, `risk_profile`).
 - Reporting is **free**: `get_range_summary` / the dashboard profile selector / the EOD roll-up are
   already profile- and mode-agnostic. Store **only** our trades — never the raw chains.
 

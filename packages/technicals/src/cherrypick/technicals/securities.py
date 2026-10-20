@@ -65,6 +65,14 @@ FUND = "Exchange Traded Fund"
 PREFERRED = "Preferred Shares"
 STRUCTURED = "Structured Product"
 UNITS = "Units"
+# Spelled by the vendor's list, never derived here.
+COMMODITY = "Exchange Traded Commodity"
+OTHER_FUND = "Fund"
+INDEX = "Index"
+# Types that never report earnings, so an unknown report date says nothing about them. Every other
+# type is a company until shown otherwise ("unknown" is never "clear"). The console's screeners
+# reader keeps the same set (`FUND_TYPES` in server/src/readers/screeners.ts) less STRUCTURED.
+NO_EARNINGS = frozenset({FUND, COMMODITY, OTHER_FUND, INDEX, STRUCTURED})
 
 _PREFERRED = re.compile(r"\b(preferred|pfd)\b", re.I)
 _NOTE = re.compile(r"\b(exchange[- ]traded notes?|ETNs?|notes? due|debentures?)\b", re.I)

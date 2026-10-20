@@ -8,11 +8,12 @@
 
 curve: a paper-only module harvesting the VIX term-structure roll yield with VXX call credit
 spreads (short call ~30-delta, long wing a declared width higher), gated by a daily VIX/VIX3M
-regime read. Three books isolate one variable each: `control` (contango-gated entry, profit-take
-or a regime-flip hard exit or close_dte), `noflip` (control's entry exactly — its exit is
-control's minus the flip rule), `hook` (only the rare two-day-confirmed deep-backwardation entry).
-`noflip` and `hook` are **off on a base install** (`enabled: false` under `books` in the example
-config); switch either on in `~/.cherrypick/config/curve.json`. The daily ratio/regime/hook series
+regime read. Each arm is one variable from `control` (contango-gated entry; profit-take, a
+regime-flip hard exit or close_dte): `noflip` (control's entry exactly, minus the flip exit),
+`near` (control's rules on a 0.40-delta short, from 2026-10-06) and `hook` (the rare
+two-day-confirmed backwardation entry; retired 2026-10-15, never traded). `noflip` and `near` are
+**off on a base install** (`enabled: false` under `books` in the example config); switch either on
+in `~/.cherrypick/config/curve.json`. Spreads are $2 wide from 2026-10-06. The daily ratio/regime/hook series
 is recorded every session, traded or not — the module's second product.
 
 See [CLAUDE.md](CLAUDE.md) for the experiment design, the honesty rules (early assignment and VXX

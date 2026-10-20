@@ -5,9 +5,8 @@ This is the paper-trading counterpart to `/meic-start` — it starts the same sh
 ## Step 1 — Market data (the standalone streamer)
 
 Since the 2026-07-21 producer cutover the **standalone streamer** (`packages/streamer`) is the
-suite's single writer of the shared stream cache; MEIC's own `cherrypick/meic/streamer.py` is the
-disabled rollback path. **Never start `cherrypick/meic/streamer.py` while the standalone streamer
-runs** — two producers means two DXLink writers on one cache and one account. Paper trading marks
+suite's single writer of the shared stream cache, and since 2026-10-18 the only producer there is
+(MEIC's own rollback streamer was removed). Paper trading marks
 positions from the same real market quotes live trading uses, so this step is identical to
 `/meic-start`'s Step 1:
 
@@ -21,9 +20,6 @@ down, start it via `python ../orchestrator/run.py install` (idempotent), or dire
 ```bash
 python ../streamer/run.py    # blocks; run detached/hidden
 ```
-
-(Only if this box was deliberately rolled back to MEIC-as-producer — `modules.meic.streamer.enabled`
-true in the cherrypick config — use `python -m cherrypick.meic.streamer --status` / start instead.)
 
 ## Step 2 — The read surface
 

@@ -1,0 +1,189 @@
+# Portfolio delta and theta guidance — plan
+
+Agreed 2026-10-18. Adds a portfolio-level reading to `packages/manage`, beside its per-trade
+evaluation: where the real account stands on beta-weighted delta and theta each morning, whether that
+is inside the bands we set, what is driving it, what would bring it back, and which screener trades
+would fit, sized to the account.
+
+It stays advice. Nothing here places an order; every hedge and suggestion is something a person would
+enter, priced at mid. The orchestrator takes every broker read, and manage stays a pure function of
+the stored snapshot and the ruleset, so `reevaluate` over a past session gives the same answer twice.
+None of it is measurement-affecting (manage runs no arm), so each piece lands when it is ready.
+
+## Why manage the book this way
+
+A small account can easily hold dozens of legs across a dozen underlyings. Trade by trade, each
+position can look roughly neutral while the book leans one way. Two numbers say how it
+leans:
+
+- **Beta-weighted delta (BWD)**, in SPY shares: Σ quantity × multiplier × delta × (S / S_SPY) × β.
+  "+40" means a 1% SPY fall costs about 40 × $7.63 = $305 (SPY at $763 on 2026-10-16). One XSP spread can then correct the whole
+  book rather than reworking several trades, each paying its own spread.
+- **Theta**, in dollars a day and as a share of net liq: how hard the book is selling premium.
+
+Theta is paid for by gamma (θ ≈ −½ Γ S² σ²), so it is not edge; positive theta earns only if implied
+volatility beats realised. The useful form is the **break-even move**, √(2θ / |Γ|): the daily move that
+wipes out a day's theta, set against what the market expects to move. A theta *floor* would push
+toward selling more gamma, so the theta band has a ceiling that matters and a floor that only informs.
+
+What it cannot see: single-name gaps (earnings), which the per-trade rules still cover; and beta's
+instability, which runs toward 1 in a selloff, so a low-beta name reads as hedged until it is not. A
+book-level stress line (below) covers the second in part.
+
+All the bands are retail heuristics with no published out-of-sample evidence. Their confidences say so.
+
+## The account type decides buying power
+
+Sizing follows the account type the snapshot reads from the broker's account record. It is never
+assumed: the suite is installed on every kind of account.
+
+| Account | Short put ties up | Covered call ties up | Credit spread ties up |
+|---|---|---|---|
+| Cash / IRA | strike × 100 − premium | the shares' full cost − premium | max loss |
+| Margin (Reg T) | the greater of 20% of the underlying − the OTM amount + premium, and 10% of the strike + premium, × 100 (15% for broad indexes) | 50% of the shares' cost − premium | max loss |
+| Portfolio margin | not modelled: the broker's risk arrays cannot be reproduced from a snapshot | not modelled | max loss |
+
+When the type is missing, sizing assumes cash-secured, the cautious reading. Portfolio margin sizes
+by stress loss alone, and the page says buying power was not modelled. A margin requirement is a
+modelled figure and says so, as manage's max loss already does.
+
+On margin, buying power stops being a risk limit. A short put ties up a fifth of what it does in an
+IRA, so the buying-power cap allows about five times the exposure. The **stress-loss cap** is what
+holds size in check there, so it applies the same way on every account type. The per-name cap is on
+**notional exposure** (strike × 100, or share cost), not on buying power, so leverage cannot quietly
+raise it. Its default differs by type (below).
+
+## Pieces
+
+**1. Snapshot v3 (orchestrator, read-only).**
+- Keep the broker's `beta` and `corr_spy_3month` from the market metrics `_metric` already fetches
+  (and currently drops), and always request SPY. The broker's beta is the one its own BWD display
+  uses, so our figure should match the screen.
+- The account type (margin or cash, and the broker's name for it), through the shared
+  `core.broker.cli.account_info`, so every module's `get_account_info` carries it.
+- Anything unavailable is recorded, never fatal; older snapshots evaluate with these fields null,
+  never zero.
+
+The XSP chain slice (piece 3) and the candidate re-quotes (piece 4) join the snapshot with the piece
+that reads them, each under its own version bump, so no field is recorded before anything uses it.
+
+**2. Portfolio greeks and bands (manage).**
+- Gamma, theta and vega in `pricing.py`, from each leg's own solved IV; shares count as delta 1.
+- A `portfolio` section in the evaluation: BWD, theta ($/day and % of net liq), the break-even move
+  against SPY's expected daily move, DTE-weighted vega (√(30/DTE)), buying power used, each
+  underlying's share of BWD and of theta, and which beta was used. An unpriced leg makes the figures
+  partial and names the leg.
+- A beta cross-check. The first v3 snapshot (2026-10-18) showed the broker's beta and its three-month
+  SPY correlation disagreeing in sign on several names (one read beta −0.01 at correlation +0.94,
+  another +1.26 at −0.27). Over one window those two cannot have opposite signs, so they come from
+  different windows, and a near-zero beta beside a strong correlation looks wrong. The broker's beta stays the one used, because
+  it is the one on the screen. Piece 2 flags a beta whose sign disagrees with its own correlation, or
+  that sits near zero beside a strong one, with the name's share of BWD. Our own beta, fitted from
+  the local end-of-day store, comes later (piece 2b): manage cannot read another package's store, so
+  the orchestrator has to fetch it into the snapshot first.
+- A stress line: SPY −10% (and +5%) repricing each position at its beta-scaled move, in dollars and %
+  of net liq.
+- Rules, each with a default block and a low confidence:
+  - `portfolio.theta` — theta 0.1–0.3% of net liq a day; above the top is flagged as oversizing.
+  - `portfolio.delta` — BWD from −0.5× to +0.75× theta in SPY shares (±(theta ÷ 2), leaning
+    slightly long); outside it, name the trades driving it, largest first.
+  - `portfolio.breakeven` — the break-even move is smaller than the expected move.
+  - `portfolio.concentration` — one underlying above 25% of theta or of BWD.
+- Snapshot v4 keeps each underlying's implied volatility index and 30-day historical volatility,
+  which the expected move needs.
+
+**2c. Attribution check**, once sessions have accumulated: each day's actual P&L change against BWD ×
+SPY move + theta + ½Γ·move², from the stored evaluations. If the greeks do not explain daily P&L after
+about 20 sessions, the page says the guidance is noise. It is a reader over stored days, not part of
+one evaluation, so it lands on its own.
+
+**3. Hedge sizing.** When BWD is outside its band, size an XSP vertical that brings it to the nearer
+band edge, priced at mid. Show both kinds with their effect on BWD, theta, break-even and buying
+power: a credit spread on the opposite side (cuts delta, adds theta) and a debit spread (cuts delta,
+costs theta). XSP is European and cash-settled, so a hedge carries no early-assignment risk.
+As built: the target is a quarter of the band's width inside the breached edge; a hedge is held under
+the 50% total buying-power cap; snapshot v5 carries the XSP expiry; and the reading states each band
+and the figure's place in it (`bands`), for the console to draw without deriving. Building it also
+fixed a snapshot that one timed-out broker read could crash.
+
+**4. Screener candidates, sized to the account.** Short puts, credit spreads, and covered calls on
+shares the account holds. The candidate universe is our own options-tradable list (weeklies, $100M a
+day), not the vendor's evening lists, which stop when the subscription ends on 2026-10-24; strikes
+follow our own scored rules (short put 0.40Δ, covered call 0.165Δ, credit spread short at the first
+OTM strike with the long at 0.25Δ). Filters: liquid by the screener leg bars, tradable, no earnings
+inside the trade, the monthly at 30–60 DTE preferring 45–60.
+
+Ranked by theta per dollar of buying power, inside the bands, never past them. Each candidate gets a
+quantity: the smallest of five caps, every one scaled by net liq, with the binding cap named.
+
+| Cap | Credit spread | Short put | Covered call |
+|---|---|---|---|
+| Per-trade risk | max loss ≤ 3% of net liq | stress loss ≤ 3% of net liq | stress loss on the shares less premium ≤ 3% |
+| Notional per name | max loss | strike × 100 ≤ 25% of net liq (cash/IRA), 50% (margin) | share cost ≤ 25% (cash/IRA), 50% (margin) |
+| Total buying power | used after the trade ≤ 50%, by the account type's rule above | same | same |
+| Delta and theta room | BWD and theta stay in band | same | same |
+| Concentration | the name stays ≤ 25% of theta | same | same |
+
+Stress loss is the name's own 1st-percentile return over the holding period, from the local
+history store (`history.db`: every tradable name, split-adjusted and not dividend-adjusted; until
+2026-10-19 it read the end-of-day store, which lacked 52 of the 458 names), priced through
+Black-Scholes. A candidate that does not fit is shown at quantity 0
+with the cap that stopped it and the nearest version that fits: a short put too large to secure is
+offered as a put spread on the same short strike.
+
+The worked figures below are for an illustrative cash account. On a margin account of the same size, a
+$35-strike short put would tie up about $700 of buying power rather than $3,500, so the stress cap,
+not buying power, would set the quantity.
+
+Take a cash account with $20,000 of net liq and 45% of its buying power already in use. The total cap
+leaves about $1,000: room for a small credit spread. A $5-wide spread taking $1.50 ($350 max loss)
+fits at one lot under the 3% cap ($600). A cash-secured put is limited to strikes of $50 by the
+per-name cap, and the stress cap may limit it further. The caps scale: at $50k the spread cap is
+$1,500 and the per-name strike limit $125; at $150k, $4,500 and $375.
+
+As built (2026-10-18):
+
+- **Data (#399).** `fetch_screener_greeks.py income` reads the tradable names' cycle-monthly chains
+  through REST at 14:45 ET, in regular hours, with earnings dates, beta and stress moves. The snapshot
+  (v7) carries the newest reading, at most four days old.
+- **Sizing.** `manage/candidates.py`. Three changes from the plan, each found while sizing a small
+  cash account:
+  - The buying-power cap is the VIX-scaled one, not a fixed 50%.
+  - Concentration is a name's theta against the theta the account may *carry* (the ceiling in
+    dollars). Against the book as it is, the first trade in an empty book is 100% of it.
+  - The nearest version that fits keeps the short strike and takes the *widest long under the
+    per-trade cap*. The rule's 0.25-delta long made spreads $10–20 wide, over a small account's
+    per-trade cap of a few hundred dollars.
+    Spreads get the same treatment as short puts.
+
+**5. Console.** The Live → portfolio tab (a card on Live → manage until that tab was split on
+2026-10-18), reading the evaluation and computing nothing, with
+a dial for BWD against its band (asked for on 2026-10-18). The band and "inside" come from the
+reading's `bands`, never worked out in the browser. Built: dials for BWD and theta, the break-even
+meter, the stress tiles, per-name delta and theta, the guidance and the hedge (#394).
+
+**6. More of the book** (chosen 2026-10-18):
+- buying power against a VIX-scaled cap (snapshot v6 quotes VIX), with its own rule;
+- a risk matrix (SPY moves × term-weighted IV shifts) and a risk graph (now and at the nearest
+  expiry);
+- an expiry ladder with the earnings exposure.
+
+Also from that day: a debit hedge is exempt from the buying-power cap. A debit spread only lowers the
+worst case, so an account already past its cap must not block the safer trade. Each has
+a console card on Live → portfolio (#421).
+
+## Checks before it is trusted
+
+- For the first few sessions, set our BWD and theta beside the broker's screen and record the gap
+  (the broker uses its own model; American exercise and dividends will move it a little). **As
+  built (2026-10-19):** every evaluation records it, as `portfolio.broker_check`: the snapshot (v9)
+  carries the broker's per-leg greeks, and the reading sums BWD and theta on them over the same legs
+  and betas as ours. That checks the model against the broker's model; a one-off look at the
+  broker's own BWD figure is still worth doing, to confirm the screen sums it the same way.
+- Each guard shown to fail: a missing beta, an unpriced leg, a band pushed past its limit, a candidate
+  with earnings inside its cycle, an IRA account offered an uncovered short, a margin account sized
+  past its stress cap, and a missing account type sized as margin instead of cash-secured.
+- The attribution reading at about 20 sessions.
+
+All thresholds live in `manage.json` beside the existing rules; `config.example.json` and the README's
+rule table are regenerated with each new block.

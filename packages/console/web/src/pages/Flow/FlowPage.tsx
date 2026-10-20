@@ -1,4 +1,5 @@
 import type {
+  DerivedFlow,
   DerivedFlowChecks,
   DerivedFlowName,
   DerivedFlowRow,
@@ -242,7 +243,46 @@ function directionTone(d: FlowSpread["direction"]): string {
   return d === "bought" ? "pnl-pos" : d === "sold" ? "pnl-neg" : "muted";
 }
 
-function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: number; full: boolean }) {
+const SIDE_WORD: Record<string, string> = { call: "call", put: "put", mixed: "call + put" };
+
+/** The derived flow a capture spread became, matched on symbol, print time and size. */
+function spreadReads(derived: DerivedFlow | null | undefined): Map<string, DerivedFlowRow> {
+  const out = new Map<string, DerivedFlowRow>();
+  for (const f of [...(derived?.flows ?? []), ...(derived?.unread ?? [])]) {
+    if (f.kind === "spread") out.set(`${f.symbol}|${f.timeEt ?? ""}|${String(f.size)}`, f);
+  }
+  return out;
+}
+
+/** The structure in words with its side: the derived flow's label, or the site's code with the
+ *  capture's side before the day is scored. A mixed structure says both legs. */
+export function spreadKind(r: FlowSpread, d: DerivedFlowRow | undefined): string {
+  const side = r.cp === null ? null : SIDE_WORD[r.cp];
+  const label = d?.kindLabel ?? (side ? `${side} (${r.type ?? "spread"})` : (r.type ?? "spread"));
+  return r.cp === "mixed" && !label.includes("call") ? `${label} (call + put)` : label;
+}
+
+/** The read: bullish / bearish from the derived flow, a volatility lean, or unread with its reason. */
+export function spreadRead(d: DerivedFlowRow | undefined): { text: string; tone: string; why?: string } {
+  if (d === undefined) return { text: "—", tone: "muted", why: "not scored yet (quikoptions_flow.py score)" };
+  if (d.view !== null) return { text: d.view, tone: d.view === "bullish" ? "pnl-pos" : "pnl-neg" };
+  if (d.lean !== null) return { text: d.lean, tone: "muted", why: d.unreadWhy ?? undefined };
+  return { text: "unread", tone: "muted", why: d.unreadWhy ?? undefined };
+}
+
+function SpreadsTable({
+  rows,
+  limit,
+  full,
+  derived,
+}: {
+  rows: FlowSpread[];
+  limit?: number;
+  full: boolean;
+  derived?: DerivedFlow | null;
+}) {
+  const reads = spreadReads(derived);
+  const readOf = (r: FlowSpread) => reads.get(`${r.symbol}|${r.timeEt ?? ""}|${String(r.size)}`);
   const sortState = useSort();
   const sort = limit === undefined ? sortState : null;
   // Linked (⛓) prints sit next to each other in the capture's order; a sort can pull them apart.
@@ -255,6 +295,8 @@ function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: numbe
           time: (r) => r.timeEt,
           size: (r) => r.size,
           direction: (r) => r.direction,
+          kind: (r) => spreadKind(r, readOf(r)),
+          read: (r) => spreadRead(readOf(r)).text,
           price: (r) => (r.price === null ? null : Math.abs(r.price)),
           delta: (r) => r.delta,
           premium: (r) => r.premium,
@@ -272,8 +314,10 @@ function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: numbe
           <FlowTh label="Symbol" k="symbol" sort={sort} />
           <FlowTh label="Time ET" k="time" sort={sort} />
           <th>Spread</th>
+          <FlowTh label="Kind" k="kind" sort={sort} />
           <FlowTh label="Size" k="size" sort={sort} className="num" />
           <FlowTh label="Direction" k="direction" sort={sort} />
+          <FlowTh label="Read" k="read" sort={sort} />
           <FlowTh label="Price" k="price" sort={sort} className="num" />
           {full && <FlowTh label="Delta" k="delta" sort={sort} className="num" />}
           <FlowTh label="Premium" k="premium" sort={sort} className="num" />
@@ -286,6 +330,8 @@ function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: numbe
         {shown.map((r, i) => {
           const linked = r.group !== null;
           const u = r.underlying;
+          const d = readOf(r);
+          const read = spreadRead(d);
           return (
             <tr key={`${r.symbol}-${String(i)}`} className={linked ? "flow-linked" : undefined}>
               <td title={r.name ?? undefined}>
@@ -298,9 +344,13 @@ function SpreadsTable({ rows, limit, full }: { rows: FlowSpread[]; limit?: numbe
               </td>
               <td className="muted">{r.timeEt?.slice(0, 8) ?? "—"}</td>
               <td title={r.type ?? undefined}>{r.spread ?? "—"}</td>
+              <td>{spreadKind(r, d)}</td>
               <td className="num">{fmtCount(r.size)}</td>
               <td className={directionTone(r.direction)} title="price sign for the side (debit bought, credit sold); delta checked against it">
                 {r.direction ?? "—"}
+              </td>
+              <td className={read.tone} title={read.why}>
+                {read.text}
               </td>
               <td className="num">{r.price === null ? "—" : fmtNum(Math.abs(r.price))}</td>
               {full && <td className="num">{fmtNum(r.delta)}</td>}
@@ -879,7 +929,7 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         to="/flow/spreads"
         foot="⛓ printed together (same time and size); direction from the price sign, checked against delta"
       >
-        <SpreadsTable rows={day.spreads} limit={7} full={false} />
+        <SpreadsTable rows={day.spreads} limit={7} full={false} derived={day.derived} />
       </GridCard>
       <GridCard label={`Vol / OI — ${asOf(day)}`} span={6} h={304} to="/flow/voloi" foot="volume against open interest; OI > 100">
         <VolOiTable rows={day.voloi} limit={7} />
@@ -977,7 +1027,7 @@ export function FlowSpreads({ day }: { day: OptionsFlowDay }) {
         <h2>Top spreads</h2>
         <span className="card-asof">QuikOptions, {day.session}</span>
       </div>
-      <SpreadsTable rows={day.spreads} full />
+      <SpreadsTable rows={day.spreads} full derived={day.derived} />
       <p className="muted">
         Direction is read from the price's sign — a debit is a spread bought, a credit one sold — and checked against the
         delta's: a call spread bought is long delta, a put spread bought short it. Where the signs do not fit, direction is a

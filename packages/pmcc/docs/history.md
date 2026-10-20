@@ -135,7 +135,7 @@ technicals store misses the 2014-04-03 Class C split.
 
 Measured without a model, stock options carry a variance premium about as rich as the index ones
 (IV/RV 1.19–1.32). They also have three to five times the jump days, and the weekly short is the leg
-the jumps hurt. A realized-vol IV proxy missed the real index by up to 10 points (AMZN's sign flipped),
+the jumps hurt. A realised-vol IV proxy missed the real index by up to 10 points (AMZN's sign flipped),
 so no proxy-graded stock alpha is to be trusted.
 
 The user added AMZN, TSLA, AMD, NVDA and PLTR anyway, on paper, as a measurement, together with SMH,

@@ -4,14 +4,15 @@ The daily position-management evaluation. At 10:00 ET on trading days the orches
 broker account (read-only) and this package judges every trade in it against a configurable ruleset.
 For each trade it reports an action, the rule behind it, a confidence, the closing order at mid, and
 for a trade it would hold, the levels at which it would stop holding. The result is on the console's
-**Live → manage** tab.
+**Live → positions** and **Live → portfolio** tabs.
 
 It is advice. Nothing here places an order.
 
 ## Turning it on
 
 1. In the orchestrator config (`~/.cherrypick/config.json`) set `manage.enabled` to `true`, or flip
-   *Daily position evaluation* under **Config → Position rules**. Then re-run `python run.py install`.
+   *Daily position evaluation* under **Config → Position rules**. The supervisor re-derives its jobs from
+   config on every pass, so the `manage-eval` job appears without a reinstall.
 2. Optionally copy `config.example.json` to `~/.cherrypick/config/manage.json` and change thresholds.
    The file is merged key by key over the default, so it may hold only what you change. The console's
    Config page can only edit keys the file already has, so a full copy is the easier start.
@@ -55,7 +56,10 @@ judged:
 
 A **broken-wing butterfly** bought for under a quarter of its max loss is judged the same way (`risk-judged`):
 its premium says little about the tail beyond its wider wing. GLD on 2026-10-13 was $193 in with $1,693
-at risk, and the percentage of the $193 said nothing useful. Ordinary butterflies, condors, verticals and
+at risk, and the percentage of the $193 said nothing useful. So is a **ratio butterfly**: long-short-long at
+three strikes, the wings together matching the body but not 1-2-1, named by its quantities from the top
+strike (`1-3-2`; SPY on 2026-10-18 was +1 745P / -3 740P / +2 730P, $200 in against $1,300 at risk), or a
+**ratio time spread** when its legs span expiries. Ordinary butterflies, condors, verticals and
 diagonals are named but judged by their premium as before.
 
 ## Checking a roll before sending it
@@ -81,7 +85,7 @@ The verdict is `reject` for a debit roll, an unlimited loss, or a naked put roll
 changes from diagonal to broken-wing butterfly, the shorts move into the long's expiry, and what it can
 lose grows.
 
-## The default ruleset (`zhang-2026-10`)
+## The default ruleset (`manage-2026-10`)
 
 Built on 2026-10-13 from an options-education vendor's webinar library (2022–2026), following the
 presenter who cuts losers rather than the one who repairs them, and checked against outside research.
@@ -103,6 +107,15 @@ presenter who cuts losers rather than the one who repairs them, and checked agai
 | `legs.short_take_profit` | a short leg 80% captured, bought back with its wings | close legs | 85 | vendor: buy back nickels; close credit legs near max before earnings | Mechanically sound; nothing left to earn |
 | `ex_dividend` | ITM short call over a declared ex-date with time value < the dividend | review | 80 | vendor | Confirmed by option theory; in practice often not exercised |
 | `risk.oversize` | modelled downside > 3× (2% of net liq) | review | 60 | vendor's 2%-per-trade rule | Direction supported (fractional Kelly); the numbers are convention |
+| `directional.take_profit` | a `directional` trade (net premium under ¼ of its modelled max loss) at half its modelled max gain, capped at 1× its risk | take profit | 65 | our rule, 2026-10-13: a percentage of a small premium measures nothing | No outside test |
+| `directional.stop` | a `directional` trade at half its modelled max loss | close | 65 | our rule, 2026-10-13 | No outside test |
+| `earnings_trade` | an **earnings trade**: opened 1–7 days before a report, its nearest short expiring no more than 14 days after. Before the call it holds, and its close, take-profit and roll rules wait; after the call (the day after the report, or the report's day when before the open) it closes, and that day, not expiry less 21 days, is its time exit: the report's day when before the open (the broker's `BTO`, a calendar's `BMO`), else the next trading day. An untimed report waits the extra day, so the snapshot fills a time the broker leaves blank from Nasdaq's calendar for the same date (`earnings_time_source: "nasdaq"`) | hold, then close | 75 | your practice, 2026-10-18: earnings trades go on 1–7 days before the call and come off after it | None tested here. Safety rules (expiry and assignment, ex-dividend), sizing and unpriced legs never wait |
+
+**An earnings trade is remembered past its report.** The day after a report the broker may already
+show next quarter's date. So the `evaluate` command carries each earnings trade the previous evaluation
+found (by underlying and short expiry) into the snapshot as `earnings_trades_seen`, where `reevaluate`
+reads it too. A name excused with `positions.<SYMBOL>.disable: ["earnings_trade"]` is not one at all:
+its evaluation carries no `earnings_trade`, its ordinary exits stand, and nothing is carried forward.
 
 **A roll is only ever for a net credit.** A winner at its time exit may roll out, but only if the roll
 takes in money; one that would cost a debit is a close. A losing spread at its time exit closes.
@@ -129,6 +142,111 @@ reaches the 21-day exit or has given up 80% of its premium. It applies only when
 Earnings inside the new short's life are flagged, not blocked, because the long covers the short through
 a report. When the roll is not taken, the explanation says which condition stopped it.
 
+## The account as one book
+
+Beside the trades, each evaluation reads the whole account as one book (`portfolio.py`; the plan is in
+[docs/portfolio-guidance-plan.md](../../docs/portfolio-guidance-plan.md)). It records:
+
+- **beta-weighted delta (BWD)** in SPY shares, and what a 1% SPY move does to it. The beta is the
+  broker's own, so the figure can be checked against the broker's screen;
+- **theta** in dollars per calendar day and as a share of net liq;
+- **the break-even move**: the SPY move that wipes out a day's theta, beside the move SPY's implied
+  volatility expects that day;
+- **vega**, raw and weighted to a 30-day equivalent;
+- **buying power used** and the account's kind (margin or cash);
+- **a stress line**: the book repriced at SPY −10% and +5%, each name moved by its beta;
+- **each underlying's share** of the book's theta and BWD;
+- **beta doubts**: names whose broker beta disagrees in sign with its own three-month correlation,
+  which happens (RTX, FXI, DELL on 2026-10-18), so their BWD may be misstated;
+- **the broker check** (`broker_check`, from snapshot v9): BWD and theta summed again on the
+  broker's own per-leg greeks, over the same legs with the same betas, with the gap overall and by
+  underlying. A leg only one model prices is named and left out of both. It decides nothing; it is
+  the daily record of how far our model sits from the broker's before the bands are trusted.
+
+Everything is modelled (Black-Scholes at each leg's own IV). A leg the model cannot price, or an
+underlying with no beta, is named and left out, never counted as zero; the reading says it is
+partial. A leg expiring today is taken at its moneyness, with its remaining time value as that day's
+theta.
+
+The bands are retail heuristics. None has published out-of-sample evidence, so each runs at
+confidence 40. Each fires REVIEW and names what drives it:
+
+| Rule | Default | Source | Outside evidence |
+|---|---|---|---|
+| `portfolio.theta` | theta 0.1–0.3% of net liq a day; above the ceiling is oversizing | retail options education | None. Theta is paid for by gamma, so more theta is not more edge |
+| `portfolio.delta` | BWD from −0.5× to +0.75× theta (SPY shares), leaning long; ±0.5% of net liq per 1% move when theta is not positive | retail options education ("BWD within about half the theta") | None |
+| `portfolio.breakeven` | short gamma, with a break-even move under SPY's implied one-day move | option theory: theta = −½ Γ S² σ² | The identity is exact; whether acting on it pays is untested |
+| `portfolio.concentration` | one name over 25% of gross theta or gross BWD | convention | None |
+| `portfolio.buying_power` | buying power used over a cap set by VIX: 25% under 15, 30% under 20, 35% under 30, 40% under 40, 50% above | retail options education (more room when premium is rich) | None. On 2026-10-18 the account used 53% against a 30% cap at VIX 20 |
+
+Each band is written into the reading with the figure's place in it (`bands`), so the console draws
+the band manage used and never works one out itself.
+
+**When `portfolio.delta` fires, a hedge is sized** (`hedge.py`) in XSP: European, cash-settled, a
+tenth of SPX, and allowed in an IRA as a defined-risk spread. The snapshot carries one quoted XSP
+expiry: the monthly 30–60 days out, preferring 45–60. Two verticals are offered, each `width` (5)
+points wide, sized toward a point a quarter of the band's width inside the breached edge:
+
+- a **credit spread** on the side the book leans away from, short near 30 delta. It cuts delta and
+  adds theta, and the short gamma that comes with it;
+- a **debit spread** on the side it leans toward, long near 40 delta. It cuts delta and usually costs
+  a little theta.
+
+Each shows its legs, the mid and the natural price (sell at the bid, buy at the ask), the cash, the
+max loss, and the book after it: BWD (and whether that is inside the band the book would then have),
+theta, the break-even move and buying power used. A credit spread never takes buying power used past
+50% of net liq, and one that cannot fit says so. A debit spread is exempt: its cost is its whole
+worst case and it only lowers the book's, so it is offered past the cap and marked `past_cap`. The
+mid is not a fill. Nothing is placed.
+
+**Scenarios and the expiry ladder.** The reading also carries:
+
+- a **risk matrix**: the book's P&L across SPY moves (−10% to +10%) and IV shifts (−5, 0, +5 points),
+  each name moved by its beta, time held still. The shift is stated for a 30-day option and scaled
+  to each leg by √(30 / DTE), so front months move most. A flat shift once showed the book *gaining*
+  $425 on +5 points, carried by long-dated longs, while the front months a vol spike hits were short;
+- a **risk graph**: P&L across SPY −15% to +15%, now and at the nearest expiry (legs expiring by then
+  at intrinsic);
+- an **expiry ladder**: per expiry, the trades whose nearest short expires then, what they can still
+  lose and the theta of the legs expiring then; and the share of theta and downside in trades with
+  earnings before their nearest short expires (72% of theta on 2026-10-18).
+
+Every figure is modelled repricing, not a forecast.
+
+**Income trades, sized to the account** (`candidates.py`). The snapshot carries the previous
+afternoon's income reading (`fetch_screener_greeks.py income`). It covers every name the liquidity
+verdict calls tradable, on the cycle monthly, quoted in regular hours, with earnings dates, beta and
+the name's stress move. From it manage builds the screener rules' structures:
+
+- a short put near 0.40 delta;
+- put and call credit spreads, short the first strike out of the money and long near 0.25 delta, at
+  a credit of at least a third of the width;
+- a covered call near 0.165 delta, on shares the account holds and has not already written against.
+  Each short call open on the name, at any expiry and inside any structure (a spread's or diagonal's
+  short included, its long not taken as cover), ties up 100 shares; a name with fewer than 100 left
+  gets none. A call being sold to open on a working order counts too (snapshot v10's
+  `working_orders`; only the part not yet filled, since the filled part is already a position).
+
+It drops any structure with an illiquid or unquoted leg, or an earnings report inside the trade. An
+unknown earnings date is flagged, never called clear. Each structure left gets the largest quantity
+that clears every cap, all scaled by net liq:
+
+| Cap | Default |
+|---|---|
+| per-trade risk: a spread's max loss, a short put's stress loss (the name's 1st-percentile move over the holding period, at expiry, less the credit) | 3% of net liq |
+| a short put's notional (strike × 100) per name | 25% of net liq in a cash account or IRA, 50% on margin |
+| buying power used after the trade | the VIX-scaled cap (`bands.buying_power`), else 50% |
+| beta-weighted delta | stays inside its band, or moves toward it |
+| theta | stays under the band's ceiling |
+| one name's theta | under 25% of the theta the account may carry |
+
+Buying power follows the account kind: cash or an IRA secures a put at its strike, Reg T margin takes
+its formula, and portfolio margin is not modelled. The list is ranked by theta per dollar of buying
+power. A trade that does not fit is shown with the cap that stopped it. A short put or spread the rule
+built too wide is offered narrowed: the same short, and the widest long that keeps one unit under the
+per-trade cap and still takes a third of the width. Priced at mid from a day-old reading: re-quote
+before sending.
+
 ## Known limits
 
 - **Marks are mids** and the payoff model is Black-Scholes at today's IV per leg, with no dividends.
@@ -136,6 +254,8 @@ a report. When the roll is not taken, the explanation says which condition stopp
 - **Fees are known only for a reconciled chain.** A trade priced from its open legs shows gross P&L only, and its basis misses any earlier roll.
 - **Ex-dividend dates are the last declared ones.** The rule fires once the next ex-date is announced.
 - **Earnings dates are the broker's expected dates**, which can move.
+- **SPX 0DTE is left out** (`exclude.zero_dte_underlyings`): it is the flies live loop's own book,
+  managed by that loop and cash-settled at the close.
 - **Thesis is not knowable.** `credit.breached` is a mechanical stand-in for "the reason for the trade
   is gone". Use `positions.<SYMBOL>.intent` and `disable` to mark a hedge or a position you mean to be
   assigned on.

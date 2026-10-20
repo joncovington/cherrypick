@@ -184,9 +184,7 @@ def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]
     on a baseline day. Every tag here is on the roster the stream request subscribes for -- the
     2026-08-27 lesson (`stream_window.entry_possible`) holds for every twin, not just the first."""
     declared = _cfg.registry(config, label="pmcc", log=_log)
-    arms = [
-        b for b in engine.ARMS if (declared.get(b) or {}).get("enabled", engine.DEFAULT_ENABLED.get(b, False))
-    ]
+    arms = [b for b in engine.ARMS if engine.arm_on(declared.get(b), b, today)]
     advised = advised_entries(advice_decision(config, today))
     arms.extend(tag for tag in advised if tag not in arms)
     return arms, advised
@@ -213,11 +211,8 @@ def _note_shield_boundary(conn, config: dict) -> None:
     a reason to skip a tick."""
     try:
         declared = _cfg.registry(config, label="pmcc")
-        on = [
-            b
-            for b in engine.ARMS
-            if (declared.get(b) or {}).get("enabled", engine.DEFAULT_ENABLED.get(b, False))
-        ]
+        # As of the boundary: an arm joining later (`from`) journals its own row (`_note_arm_starts`).
+        on = [b for b in engine.ARMS if engine.arm_on(declared.get(b), b, SHIELD_FROM)]
         held = {b: engine.merged_params(config, b) for b in on}
         held = {b: p for b, p in held.items() if management.is_held_long(p)}
         if not held:
@@ -257,6 +252,30 @@ def _note_shield_boundary(conn, config: dict) -> None:
             )
     except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
         _log(f"shield boundary journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
+def _note_arm_starts(conn, config: dict, day: str) -> None:
+    """Journal an arm joining at its block's `from` date (`engine.arm_on`): one `arms` row dated
+    that day, the roster before it and with it. Written on the first tick on or after the date,
+    idempotent like the shield boundary's, and best-effort."""
+    try:
+        declared = _cfg.registry(config, label="pmcc")
+        for arm in engine.ARMS:
+            start = (declared.get(arm) or {}).get("from")
+            if not start or not engine.arm_on(declared.get(arm), arm, day):
+                continue
+            start = str(start)
+            before = [b for b in engine.ARMS if b != arm and engine.arm_on(declared.get(b), b, start)]
+            db.record_measurement_break(
+                conn,
+                break_date=start,
+                key="arms",
+                old_value=", ".join(before),
+                new_value=", ".join([*before, arm]),
+                note=f"{arm} joins from {start}; the arms already running keep their rules",
+            )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"arm start journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
 # --------------------------------------------------------------------------- the skew sampler
@@ -317,6 +336,7 @@ def run_once(
     if not force and not _cal.is_trading_day(today):
         return {"ok": True, "skipped": "not_a_trading_day", "date": day}
     _note_shield_boundary(conn, config)
+    _note_arm_starts(conn, config, day)
 
     # Settlement before the RTH gate (the settle time is after the close). Only ever settles legs
     # expiring TODAY: a leg whose expiration already passed cannot be honestly priced from a cache

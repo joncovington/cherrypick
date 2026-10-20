@@ -5,9 +5,8 @@ Runs ``cherrypick.core.streamer.ChainStreamer`` to keep the canonical shared str
 MEIC's own readers — can price off live quotes without MEIC's streamer being installed.
 
 This is the generic daemon **lifecycle only** — PID guard, ``--status``/``--stop``, logging — lifted from
-MEIC's streamer wrapper. It carries NONE of MEIC's trading policy: no ORB capture, no open-position leg
-subscriptions, no account REST poller, no ``127.0.0.1:7699`` HTTP API. Those stay in MEIC's wrapper
-(``packages/meic/src/streamer.py``); a live-trading module layers them onto the same shared engine.
+MEIC's old streamer wrapper (removed 2026-10-18). It carries NONE of MEIC's trading policy: no open-position leg
+subscriptions, no account REST poller, no HTTP API.
 
 Credentials come from the OS keyring under the ``"meicagent"`` service, with read-only fallbacks to the
 pre-rename ``"tastytrade-mcp"`` and the suite's shared broker login (``"cherrypick-broker"``), so a box
@@ -192,6 +191,7 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         window_events_for=lambda symbol: window_events.get(symbol),
         nearest_window_for=lambda symbol: nearest_window.get(symbol, True),
         logger=logger,
+        producer=True,  # the suite's one writer of the shared cache
     )
 
 

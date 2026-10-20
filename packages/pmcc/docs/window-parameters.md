@@ -38,7 +38,9 @@ closer to spot than TQQQ's — the 2026-08-24 XSP entry bought 734 against a 764
 — because a 3× leveraged ETF carries several times the implied volatility of a broad index. One
 `deep_window_pct` serves both, so it is necessarily sized for the deepest symbol and is
 correspondingly wasteful for the shallowest. If the XSP window's cost ever matters again, the fix
-is a per-symbol bound, not a smaller shared one.
+is a per-symbol bound, not a smaller shared one. That is what was done: `deep_window_pct_by_symbol`
+(per symbol in `defaults`, and per arm since 2026-10-05; see CLAUDE.md, "The deep window has a
+width per arm").
 
 ## The dividend calendar lapsed for TQQQ, and was refreshed the same evening
 

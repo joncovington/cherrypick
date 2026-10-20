@@ -345,7 +345,7 @@ next largest sections are `arm_readings` (101KB, deliberately kept) and the jour
 ledgers, smaller and truer input; read proposals either side of 2026-09-14 with that in mind, as
 with 2026-08-26.
 
-## The cap is one per module, by construction
+## The cap was one per module, by construction (until 2026-09-17)
 
 Each module's consumer builds **one book per experiment** (2026-09-17): the artifact carries an
 `experiments` entry for every active experiment, each validated on its own, each naming its own

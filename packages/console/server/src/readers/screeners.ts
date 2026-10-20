@@ -5,7 +5,8 @@
  * - the list rows as the evening capture saved them (`market-report/vendor-screeners/<day>/`);
  * - our rule's strike for each row, from `packages/technicals` `score-screeners`
  *   (`technicals/screeners/<day>.json`, its `picks`), so the console holds no copy of the rule;
- * - each leg's liquidity verdict and the listed-or-cycle recommendation, from
+ * - each leg's liquidity verdict, the listed-or-cycle recommendation and each side's price (mid,
+ *   working -- halfway to the natural fill -- and natural, a spread judged as one order), from
  *   `fetch_screener_greeks.py measure` / `rebar` (`market-report/screener-greeks/legs/`), taken in
  *   regular hours the session after the list -- the bars are applied there, not here;
  * - our options-tradable verdict (`market-report/liquidity/verdicts.json`);
@@ -33,6 +34,7 @@ import type {
   ScreenerPayload,
   ScreenerRate,
   ScreenerRow,
+  ScreenerTrade,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num, str } from "./db.js";
@@ -173,7 +175,58 @@ function leg(raw: unknown): ScreenerLeg | null {
     openInterest: num(q["open_interest"]),
     volume: num(q["volume"]),
     passes: typeof l["passes"] === "boolean" ? l["passes"] : null,
+    quiet: typeof l["quiet"] === "boolean" ? l["quiet"] : null,
   };
+}
+
+/**
+ * The recommended trade priced from the reading's own figures (`vendor_prices` / `monthly_prices`,
+ * written by `fetch_screener_greeks.py` where the bars are applied). The one thing worked out here is
+ * arithmetic the list itself states its returns in: premium over the share price, x 365 / days.
+ */
+export function tradePrice(
+  reading: Record<string, unknown> | undefined,
+  listedExpiry: string,
+  listedDte: number | null,
+  cycleLegs: ScreenerLeg[] | null,
+  day: string,
+  price: number | null,
+  width: number | null,
+): ScreenerTrade | null {
+  if (!reading) return null;
+  const which = reading["recommendation"];
+  if (which !== "vendor" && which !== "monthly") return null;
+  const p = rec(reading[which === "vendor" ? "vendor_prices" : "monthly_prices"]);
+  const mid = num(p["mid"]);
+  const working = num(p["working"]);
+  const natural = num(p["natural"]);
+  const cost = num(p["cost"]);
+  if (mid === null || working === null || natural === null || cost === null) return null;
+  const expiry = which === "vendor" ? listedExpiry : (cycleLegs?.[0]?.expiry ?? null);
+  if (expiry === null) return null;
+  const dte = which === "vendor" ? listedDte : daysBetween(day, expiry);
+  const annual = (premium: number): number | null =>
+    width === null && price !== null && price > 0 && dte !== null && dte > 0 ? (premium / price) * (365 / dte) * 100 : null;
+  return {
+    side: which === "vendor" ? "listed" : "cycle",
+    expiry,
+    dte,
+    mid,
+    working,
+    natural,
+    cost,
+    workingAnnualisedPct: annual(working),
+    naturalAnnualisedPct: annual(natural),
+    workingCreditPct: width !== null && width > 0 ? (working / width) * 100 : null,
+  };
+}
+
+/** Whether the list's own quote can back the mid it prices its return at. */
+export function listedQuote(bid: number | null, ask: number | null): "no-bid" | "wide" | null {
+  if (ask === null) return null;
+  if (bid === null || bid <= 0) return "no-bid";
+  const mid = (bid + ask) / 2;
+  return ask - bid > mid ? "wide" : null;
 }
 
 /** The broker's report dates from the latest IV-rank reading on or before `day`. */
@@ -284,16 +337,19 @@ export function readScreener(config: ConsoleConfig, which: ScreenerList, wanted?
     // later of the two, so a listed expiry spanning an announcement is never shown as clear.
     const later = cycle !== null && cycle > expiry ? cycle : expiry;
     const judged = rec_ === "vendor" ? expiry : rec_ === "monthly" ? cycle : later;
+    const dte = num(r["daysToExpiry"]) ?? daysBetween(day, expiry);
+    const price = num(spread ? r["price"] : r["stockPrice"]);
+    const width = spread ? num(premium["width"]) : null;
     return [
       {
         symbol,
         direction: spread && right === "C" ? "bearish" : "bullish",
         right,
-        price: num(spread ? r["price"] : r["stockPrice"]),
+        price,
         ivRank: pct(r["impliedVolatilityRank"]),
         liquid: liquid.get(symbol) ?? liquid.get(symbol.replace("/", ".")) ?? null,
         expiry,
-        dte: num(r["daysToExpiry"]) ?? daysBetween(day, expiry),
+        dte,
         weekly: !isMonthly(expiry),
         strikes,
         mid: spread ? num(premium["value"]) : num(r["midPrice"]),
@@ -301,8 +357,9 @@ export function readScreener(config: ConsoleConfig, which: ScreenerList, wanted?
         ask: spread ? null : num(r["askPrice"]),
         rawReturnPct: spread ? null : pct(r["rawReturn"]),
         annualisedPct: spread ? null : pct(r["annualizedReturn"]),
+        listedQuote: spread ? null : listedQuote(num(r["bidPrice"]), num(r["askPrice"])),
         distancePct: spread ? null : pct(r["distanceToStrike"]),
-        width: spread ? num(premium["width"]) : null,
+        width,
         creditPct: spread ? pct(premium["percentage"]) : null,
         ours,
         earningsDate: nextKnown,
@@ -316,6 +373,7 @@ export function readScreener(config: ConsoleConfig, which: ScreenerList, wanted?
         cycleLegs,
         recommendation: rec_ === "vendor" ? "listed" : rec_ === "monthly" ? "cycle" : rec_ === "none" ? "none" : null,
         cyclePasses: reading && typeof reading["monthly_passes"] === "boolean" ? reading["monthly_passes"] : null,
+        trade: tradePrice(reading, expiry, dte, cycleLegs, day, price, width),
       },
     ];
   });

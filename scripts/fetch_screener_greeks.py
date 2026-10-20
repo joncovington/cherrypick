@@ -41,6 +41,13 @@ against the same leg bars, and the spread priced at mid and at the natural fill.
     python scripts/fetch_screener_greeks.py measure [--force] [--limit N]
     python scripts/fetch_screener_greeks.py rebar     # re-apply the leg bars to saved readings
     python scripts/fetch_screener_greeks.py strikes   # the earnings spreads' listed strikes, evening
+    python scripts/fetch_screener_greeks.py income [--force] [--limit N]   # our own candidates, in hours
+    python scripts/fetch_screener_greeks.py skate [--force] [--limit N]    # skate strikes, scored
+
+**`income`: our own candidates** (2026-10-18). Every name the liquidity verdict calls tradable, on
+the cycle monthly, the strikes out of the money on both sides, quoted in regular hours with each leg
+judged by the same bars; with each name's earnings dates, IV, HV, beta and stress move. Written to
+`screener-greeks/income/<date>.json` for manage to size against the account. Needs no vendor list.
 """
 
 from __future__ import annotations
@@ -50,8 +57,10 @@ import asyncio
 import json
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
+
+from cherrypick.core import legbars
 
 LISTS = (
     ("short-puts", "shortPuts"),
@@ -427,26 +436,22 @@ def measure_names(lists: dict[str, dict], universe_candidates: set[str]) -> list
 # Legs: the vendor's own option against the monthly the user would trade instead (2026-10-07).
 #
 # The user's rule: recommend the vendor's strike only when THAT option is liquid -- a tight bid/ask,
-# decent open interest and volume -- and otherwise the standard monthly on the user's cycle, 45-60
-# days out where one is listed, else 30-60. Weeklies usually quote wider and trade thinner.
+# decent open interest -- and otherwise the standard monthly on the user's cycle, 45-60 days out
+# where one is listed, else 30-60. Weeklies usually quote wider and trade thinner.
 #
 # The bars (chosen 2026-10-16 from six sessions of 11:30 and 14:30 readings, ~5,700 legs a side):
 # the vendor's weekly options are mostly not tradable -- median open interest 7, volume 3 by 14:30,
-# spread 22% of mid -- against the cycle monthly's 877, 40 and 10%. Ten percent of mid (or a nickel),
-# 100 open and 10 traded: stricter bars barely move who wins, looser ones admit weeklies with a
-# single-digit open interest. Under them about 85% of rows go to the monthly. The monthly is not
-# always liquid either (far out-of-the-money calls are cheap, so wide in percent: ~1 in 5 covered-call
-# monthlies pass), so each row also says whether its monthly passes, never implying it.
+# spread 22% of mid -- against the cycle monthly's 877, 40 and 10%. Ten percent of mid (or a nickel)
+# and 100 open: stricter bars barely move who wins, looser ones admit weeklies with a single-digit
+# open interest. Under them about 85% of rows go to the monthly. The monthly is not always liquid
+# either (far out-of-the-money calls are cheap, so wide in percent), so each row also says whether its
+# monthly passes, never implying it. The bars live in `cherrypick.core.legbars`, shared with manage's
+# candidates; since 2026-10-19 volume is a flag there (`quiet`), and a spread is judged as one order.
 
 CYCLE_PREFERRED = (45, 60)
 CYCLE_ALLOWED = (30, 60)
-LEG_BARS: dict | None = {
-    "max_spread_pct": 0.10,
-    "max_spread_abs": 0.05,
-    "min_open_interest": 100,
-    "min_volume": 10,
-}
-EPS = 1e-9
+LEG_BARS: dict | None = legbars.LEG_BARS
+leg_passes = legbars.leg_passes
 
 
 def cycle_expiry(expirations: list[dict], is_monthly) -> dict | None:
@@ -487,51 +492,58 @@ def row_legs(name: str, row: dict) -> list[dict]:
     return [{"symbol": sym, "role": "short", "right": right, "expiry": exp, "strike": float(k)}]
 
 
-def leg_passes(q: dict, bars: dict) -> bool:
-    """A quoted option against the bars: two-sided and tight enough on either leg of the spread
-    rule (percent of mid OR absolute), with enough open interest and volume."""
-    bid, ask = q.get("bid"), q.get("ask")
-    if bid is None or ask is None or bid <= 0 or ask < bid:
-        return False
-    width, mid = ask - bid, (ask + bid) / 2
-    # A cent-priced width compared in floats: 0.23 - 0.18 is 0.0500000000000000017, one nickel.
-    tight = width / mid <= bars["max_spread_pct"] + EPS or width <= bars["max_spread_abs"] + EPS
-    return (
-        tight
-        and (q.get("open_interest") or 0) >= bars["min_open_interest"]
-        and (q.get("volume") or 0) >= bars["min_volume"]
-    )
+def signed(legs: list[dict] | None) -> list[tuple[dict, int]] | None:
+    """A row side's legs as (quote, signed quantity): -1 sold, +1 bought. None with no legs."""
+    if not legs:
+        return None
+    return [(leg.get("quote") or {}, -1 if leg.get("role", "short") == "short" else 1) for leg in legs]
 
 
-def recommend(vendor: list[dict], monthly: list[dict] | None, bars: dict | None) -> str | None:
-    """'vendor' when every vendor leg passes, else 'monthly' when the user's cycle lists one, else
-    'none'; None while the bars are unset (readings only)."""
+def recommend(
+    vendor: list[tuple[dict, int]] | None, monthly: list[tuple[dict, int]] | None, bars: dict | None
+) -> str | None:
+    """'vendor' when the vendor's trade passes (one option as a leg, a spread as one order), else
+    'monthly' when the user's cycle lists one, else 'none'; None while the bars are unset."""
     if bars is None:
         return None
-    if vendor and all(leg_passes(q, bars) for q in vendor):
+    if vendor and legbars.structure_passes(vendor, bars):
         return "vendor"
     return "monthly" if monthly else "none"
 
 
-def monthly_passes(monthly: list[dict] | None, bars: dict | None) -> bool | None:
-    """Whether the cycle monthly's own legs pass the bars; None with no monthly or no bars."""
+def monthly_passes(monthly: list[tuple[dict, int]] | None, bars: dict | None) -> bool | None:
+    """Whether the cycle monthly's trade passes the bars; None with no monthly or no bars."""
     if bars is None or not monthly:
         return None
-    return all(leg_passes(q, bars) for q in monthly)
+    return legbars.structure_passes(monthly, bars)
 
 
 def apply_bars(rows: list[dict], bars: dict | None) -> None:
-    """Judge every row's legs against `bars`, in place: each quoted leg's `passes`, the row's
-    `recommendation` and whether its monthly passes. The one place the bars are applied, so a
-    reader (the console's screener page) shows the verdict rather than re-deriving it."""
+    """Judge every row against `bars`, in place: each quoted leg's `passes` and `quiet`, the row's
+    `recommendation`, whether its monthly passes, and each side's prices per share (credit +: mid,
+    working, natural and the cost of trading it). The one place the bars are applied, so a reader
+    (the console's screener page) shows the verdict rather than re-deriving it. A spread's legs keep
+    their own verdicts for the record; the row is judged on the spread."""
     for r in rows:
         for leg in [*r["vendor"], *(r["monthly"] or [])]:
             q = leg.get("quote")
             leg["passes"] = None if bars is None or not q else leg_passes(q, bars)
-        vendor_q = [leg.get("quote") or {} for leg in r["vendor"]]
-        monthly_q = [leg.get("quote") or {} for leg in r["monthly"]] if r["monthly"] else None
-        r["recommendation"] = recommend(vendor_q, monthly_q, bars)
-        r["monthly_passes"] = monthly_passes(monthly_q, bars)
+            leg["quiet"] = None if bars is None or not q else legbars.quiet(q, bars)
+        vendor, monthly = signed(r["vendor"]), signed(r["monthly"])
+        r["recommendation"] = recommend(vendor, monthly, bars)
+        r["monthly_passes"] = monthly_passes(monthly, bars)
+        r["vendor_prices"] = legbars.structure_prices(vendor) if vendor else None
+        r["monthly_prices"] = legbars.structure_prices(monthly) if monthly else None
+
+
+def judge_income(doc: dict, bars: dict | None) -> None:
+    """Each quoted option of an `income` reading against the bars, in place."""
+    for entry in (doc.get("symbols") or {}).values():
+        for o in entry.get("options") or []:
+            q = {k: o.get(k) for k in ("bid", "ask", "volume", "open_interest")}
+            quoted = o.get("bid") is not None or o.get("ask") is not None
+            o["passes"] = leg_passes(q, bars) if bars and quoted else None
+            o["quiet"] = legbars.quiet(q, bars) if bars and quoted else None
 
 
 def cmd_rebar(_args) -> int:
@@ -551,6 +563,13 @@ def cmd_rebar(_args) -> int:
     for path in sorted((store_dir() / "screener-greeks" / "earnings-legs").glob("*/*.json")):
         doc = json.loads(path.read_text(encoding="utf-8"))
         judge_earnings_legs(doc.get("rows") or [], LEG_BARS)
+        doc["bars"] = LEG_BARS
+        write_json_atomic(path, doc, indent=None, default=None)
+        changed += 1
+    # Our own candidates (2026-10-18), whose verdicts manage reads.
+    for path in sorted((store_dir() / "screener-greeks" / "income").glob("*.json")):
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        judge_income(doc, LEG_BARS)
         doc["bars"] = LEG_BARS
         write_json_atomic(path, doc, indent=None, default=None)
         changed += 1
@@ -744,13 +763,15 @@ def plan_earnings_legs(rows: list[dict], chains: dict[str, list]) -> list[dict]:
     return out
 
 
-async def _chain_listings(session, ub, symbols: list[str], cache: dict) -> None:
-    """Each name's chain listing (expirations in the builder's range, strikes with their call and put
-    symbols) into `cache`, in the universe builder's own format: listings only, no quotes. One call a
-    name, a second apart; a 429 stops the run."""
+async def _chain_listings(
+    session, ub, symbols: list[str], cache: dict, dte_range: tuple[int, int] | None = None
+) -> None:
+    """Each name's chain listing (expirations in `dte_range`, the builder's range by default; strikes
+    with their call and put symbols) into `cache`, in the universe builder's own format: listings
+    only, no quotes. One call a name, a second apart; a 429 stops the run."""
     from tastytrade.instruments import NestedOptionChain
 
-    lo, hi = ub.RULE["option_dte_range"]
+    lo, hi = dte_range or ub.RULE["option_dte_range"]
     for sym in symbols:
         if sym in cache:
             continue
@@ -881,19 +902,20 @@ def marks_due(root: Path, today) -> list[dict]:
 
 
 def judge_earnings_legs(rows: list[dict], bars: dict | None) -> None:
-    """Each quoted leg against the bars and each spread's price, in place."""
+    """Each quoted leg against the bars, each spread as one order, and its price, in place."""
     for r in rows:
         if not r.get("legs"):
             continue
         for leg in r["legs"]:
             q = leg.get("quote")
             leg["passes"] = None if bars is None or not q else leg_passes(q, bars)
+            leg["quiet"] = None if bars is None or not q else legbars.quiet(q, bars)
+        long_q, short_q = (r["legs"][0].get("quote") or {}), (r["legs"][1].get("quote") or {})
         r["passes"] = (
             None
             if any(leg.get("passes") is None for leg in r["legs"])
-            else all(leg["passes"] for leg in r["legs"])
+            else legbars.structure_passes([(long_q, 1), (short_q, -1)], bars)
         )
-        long_q, short_q = (r["legs"][0].get("quote") or {}), (r["legs"][1].get("quote") or {})
         r.update(price_spread(r["kind"], long_q, short_q, r["width"]))
 
 
@@ -1065,9 +1087,432 @@ def cmd_measure(args) -> int:
     return 0
 
 
+# ------------------------------------------------------------------------------------------------
+# `income`: our own candidates, in regular hours (2026-10-18; docs/portfolio-guidance-plan.md, 4).
+#
+# The vendor's lists stop with its subscription on 2026-10-24, and which names they carry was never
+# reproduced. So the candidates manage sizes for the account come from OUR universe instead: every
+# name the nightly liquidity verdict calls tradable (weeklies and $100M a day). For each, on the
+# standard monthly of the user's cycle (45-60 days, else 30-60), the strikes out of the money on both
+# sides, quoted through REST in regular hours -- the evening quotes say nothing about a real spread,
+# and the leg bars judge spreads. Beside them, from local files only: the name's earnings and
+# ex-dividend dates, IV, HV and the broker's beta (the nightly metrics file), and its stress move over
+# the holding period (the history store, as `stress_closes` reads it). manage picks the strikes, sizes
+# and ranks; this decides nothing about a trade.
+
+INCOME_REACH = CAND_REACH
+INCOME_STRIKES = CAND_STRIKES
+INCOME_NEAR = CAND_NEAR
+# The history a stress move is read from: five years of sessions, and at least a year of windows.
+STRESS_SESSIONS = 1260
+STRESS_MIN_WINDOWS = 250
+
+
+def stress_closes(conn, symbol: str) -> list[float]:
+    """The closes a stress move is read from: the history store's bars (every tradable name, from
+    2015), split-adjusted and not dividend-adjusted, from the series break on -- skate's reading
+    (`skate.price_bars`). A short put's strike does not move on an ex-date, so a dividend drop is a
+    real move against it, and scaling it away would understate the tail.
+
+    Until 2026-10-19 this read the end-of-day store, which holds the report's names and not every
+    tradable one: 58 of the 457 planned names on 2026-10-18 (IVV, FXI, DOCU, CPB, BURL among them)
+    had no bars there, no stress move, and so were never sized by manage."""
+    from cherrypick.technicals import skate
+
+    store_sym, _ = skate._spellings(symbol)
+    return [b.close for b in skate.price_bars(conn, store_sym)]
+
+
+def income_names(verdicts: dict[str, dict], funds: set[str] = frozenset()) -> list[str]:
+    """The tradable names, in the store's spelling (BRK.B), and the reference funds that pass the
+    same test (`liquidity.reference_tradable`: SPY, QQQ, the sector funds)."""
+    return sorted({*(s for s, v in verdicts.items() if (v or {}).get("verdict") == "tradable"), *funds})
+
+
+def income_plan(listing: list[dict], spot: float | None, is_monthly) -> dict | None:
+    """The cycle monthly and the out-of-the-money strikes either side of `spot` to quote, or None
+    when the cycle lists no monthly or there is no price to centre on."""
+    cyc = cycle_expiry(listing, is_monthly)
+    if cyc is None or not spot:
+        return None
+    by_strike = {float(k): (call, put) for k, call, put in cyc["strikes"]}
+    legs = []
+    for right in ("P", "C"):
+        for k in candidate_strikes(list(by_strike), spot, right, INCOME_REACH, INCOME_STRIKES, INCOME_NEAR):
+            call, put = by_strike[k]
+            option = put if right == "P" else call
+            if option:
+                legs.append({"strike": k, "right": right, "option": option})
+    return {"expiry": cyc["expiration"], "dte": cyc["dte"], "legs": legs}
+
+
+def stress_move(closes: list[float], days: int) -> dict | None:
+    """The name's 1st and 99th percentile return over `days` sessions, from overlapping windows of
+    its last STRESS_SESSIONS closes: how far it has fallen (and risen) over a holding period like
+    this one, in bad times. None with too little history -- a stress cap guessed for a short history
+    would understate it."""
+    if days < 1:
+        return None
+    series = closes[-(STRESS_SESSIONS + days) :]
+    rets = sorted(series[i + days] / series[i] - 1.0 for i in range(len(series) - days) if series[i] > 0)
+    if len(rets) < STRESS_MIN_WINDOWS:
+        return None
+
+    def q(p: float) -> float:
+        return rets[min(len(rets) - 1, max(0, round(p * (len(rets) - 1))))]
+
+    return {"sessions": days, "p01": round(q(0.01), 4), "p99": round(q(0.99), 4), "windows": len(rets)}
+
+
+def holding_sessions(dte: int) -> int:
+    """Trading sessions in `dte` calendar days."""
+    return max(1, round(dte * 252 / 365))
+
+
+def income_metrics(rows: dict, sym: str) -> dict:
+    """The fields manage needs from the nightly metrics row (`fetch_iv_rank.py`), as recorded."""
+    r = rows.get(sym) or {}
+    keys = (
+        "earnings_date",
+        "earnings_time",
+        "earnings_estimated",
+        "ex_dividend_date",
+        "iv_index",
+        "hv_30",
+        "beta",
+    )
+    return {k: r.get(k) for k in keys}
+
+
+def latest_metrics() -> tuple[str | None, dict]:
+    """(day, rows) of the newest day in the nightly metrics file; (None, {}) without it."""
+    try:
+        days = (
+            json.loads((store_dir() / "iv" / "tastytrade.json").read_text(encoding="utf-8")).get("days") or {}
+        )
+    except (OSError, ValueError):
+        return None, {}
+    if not days:
+        return None, {}
+    day = max(days)
+    return day, days[day] or {}
+
+
+async def _income_quotes(session, ub, names: list[str], cache: dict) -> tuple[dict, dict, str | None]:
+    """(spots, plans, problem): each name's price (mid in hours, else mark, else last), its plan on the
+    cycle monthly, and the options quoted in place. Chain listings go through the day's shared cache,
+    so the 11:30 and 14:30 measures' listings are not asked for again. A 429 ends the listings and is
+    the run's problem: what was listed is quoted and saved, marked incomplete."""
+    from tastytrade.market_data import get_market_data_by_type
+
+    problem = None
+    try:
+        await _chain_listings(session, ub, names, cache)
+    except Exception as exc:  # noqa: BLE001 -- a 429: keep what was listed
+        problem = f"chain listings stopped: {type(exc).__name__}: {exc}"[:300]
+    spots: dict[str, float | None] = {}
+    for batch in ub._batches(names, ub.TT_QUOTE_BATCH):
+        for q in await get_market_data_by_type(session, equities=[ub.to_tastytrade(s) for s in batch]):
+            sym = q.symbol.replace("/", ".")
+            bid, ask = _f(q.bid), _f(q.ask)
+            mid = (bid + ask) / 2 if bid and ask and ask >= bid else None
+            spots[sym] = mid or _f(getattr(q, "mark", None)) or _f(getattr(q, "last", None))
+        await asyncio.sleep(ub.TT_PAUSE_S)
+    plans: dict[str, dict] = {}
+    for sym in names:
+        plan = income_plan(cache.get(sym) or [], spots.get(sym), ub.is_monthly)
+        if plan:
+            plans[sym] = plan
+    await _quote_options(session, ub, [leg for p in plans.values() for leg in p["legs"]])
+    return spots, plans, problem
+
+
+def cmd_income(args) -> int:
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.core import calendar as cal
+    from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
+    from cherrypick.technicals import liquidity
+    from cherrypick.technicals import paths as tpaths
+    from cherrypick.technicals import store as tstore
+
+    ub = _universe_builder()
+    et = ZoneInfo("America/New_York")
+    now = datetime.now(et)
+    today = now.date()
+    if not args.force and not ub.in_window(now, cal.is_trading_day(today), cal.session_close_hhmm(today)):
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "skipped": f"outside the measuring window ({ub.WINDOW_START} ET to 30 min before close)",
+                }
+            )
+        )
+        return 0
+    names = income_names(liquidity.load(), liquidity.reference_tradable())[: args.limit]
+    if not names:
+        print(json.dumps({"ok": False, "reason": "no tradable names: the liquidity verdicts are missing"}))
+        return 1
+    store = CredentialStore(SHARED_SERVICE)
+    if store.missing_secrets():
+        print(json.dumps({"ok": False, "reason": "credentials_missing"}))
+        return 1
+    root = store_dir() / "screener-greeks"
+    chain_path = root / "chains" / f"{today.isoformat()}.json"
+    cache = {
+        **ub._read_json(ub.store_dir() / "chains" / f"{today.isoformat()}.json", {}),
+        **ub._read_json(chain_path, {}),
+    }
+    started = datetime.now(UTC)
+    try:
+        session = SessionManager(store).get_session()
+        spots, plans, problem = asyncio.run(_income_quotes(session, ub, names, cache))
+    except Exception as exc:  # noqa: BLE001 -- keep the listings gathered so far for the next run
+        ub._write_json(chain_path, cache)
+        print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:300]}))
+        return 1
+    ub._write_json(chain_path, cache)
+
+    metrics_day, metric_rows = latest_metrics()
+    conn = tstore.connect(tpaths.history_db())
+    symbols: dict[str, dict] = {}
+    for sym in names:
+        plan = plans.get(sym)
+        entry: dict = {"spot": spots.get(sym), **income_metrics(metric_rows, sym)}
+        if plan is None:
+            entry["error"] = "no chain listed" if not cache.get(sym) else "no cycle monthly or no price"
+            symbols[sym] = entry
+            continue
+        closes = stress_closes(conn, sym)
+        options = []
+        for leg in plan["legs"]:
+            q = leg.get("quote") or {}
+            options.append(
+                {
+                    "strike": leg["strike"],
+                    "right": leg["right"],
+                    "option": leg["option"],
+                    **{k: q.get(k) for k in ("bid", "ask", "volume", "open_interest", "updated_at")},
+                    "passes": leg_passes(q, LEG_BARS) if q else None,
+                    "quiet": legbars.quiet(q, LEG_BARS) if q else None,
+                }
+            )
+        entry.update(
+            expiry=plan["expiry"],
+            dte=plan["dte"],
+            stress=stress_move(closes, holding_sessions(plan["dte"])),
+            options=options,
+        )
+        symbols[sym] = entry
+    # A trial (a --limit run) never stands in for the day's file, which manage would read as complete.
+    out = root / "income" / f"{today.isoformat()}{'.trial' if args.limit else ''}.json"
+    ub._write_json(
+        out,
+        {
+            "taken_at": started.isoformat(),
+            "session": today.isoformat(),
+            "complete": problem is None,
+            "problem": problem,
+            "metrics_day": metrics_day,
+            "rule": {
+                "cycle": {"preferred": CYCLE_PREFERRED, "allowed": CYCLE_ALLOWED},
+                "reach": INCOME_REACH,
+                "strikes": INCOME_STRIKES,
+                "stress_sessions": STRESS_SESSIONS,
+            },
+            "bars": LEG_BARS,
+            "symbols": symbols,
+        },
+    )
+    quoted = [o for s in symbols.values() for o in s.get("options") or []]
+    print(
+        json.dumps(
+            {
+                "ok": problem is None,
+                "problem": problem,
+                "path": str(out),
+                "names": len(names),
+                "planned": len(plans),
+                "options": len(quoted),
+                "quoted": sum(1 for o in quoted if o.get("bid") is not None),
+                "passing": sum(1 for o in quoted if o.get("passes")),
+                "with_stress": sum(1 for s in symbols.values() if s.get("stress")),
+                "metrics_day": metrics_day,
+                "seconds": round((datetime.now(UTC) - started).total_seconds()),
+            },
+            indent=1,
+        )
+    )
+    return 0 if problem is None else 1
+
+
+# ------------------------------------------------------------------------------------------------
+# The skate screen's quotes (docs/skate-plan.md, steps 2-3). `technicals skate` writes each name's
+# bands at 06:45; here the strikes past them are listed, quoted in regular hours and scored by
+# technicals' own functions. Two stages keep the broker load near the other passes': every name-side
+# on its cycle monthly, then every weekly expiry for the name-sides whose history beats their implied
+# odds by the most. Chain listings reach further than the builder's (3 to 70 days), so they are cached
+# apart, once a day, and the second run reuses the first's.
+
+SKATE_DTE_RANGE = (1, 70)
+ET_CLOSE_HOUR = 16
+
+
+def skate_clock(expiries: set[str], now) -> dict[str, tuple[int, float]]:
+    """Each expiry's (calendar days left, years left to its 16:00 ET close) as of `now` (ET)."""
+    from datetime import time as dtime
+
+    out = {}
+    for e in expiries:
+        d = datetime.fromisoformat(e).date()
+        close = datetime.combine(d, dtime(ET_CLOSE_HOUR), tzinfo=now.tzinfo)
+        out[e] = ((d - now.date()).days, max(0.0, (close - now).total_seconds()) / (365 * 86400))
+    return out
+
+
+async def _skate_quotes(session, ub, doc: dict, cfg: dict, cache: dict, now) -> tuple[list[dict], str | None]:
+    """(the scored name-sides, a problem or None): listings, spots, stage one, stage two."""
+    from cherrypick.technicals import skate
+    from tastytrade.market_data import get_market_data_by_type
+
+    problem = None
+    names = sorted(doc.get("names") or {})
+    try:
+        await _chain_listings(session, ub, names, cache, SKATE_DTE_RANGE)
+    except Exception as exc:  # noqa: BLE001 -- a 429: score what was listed
+        problem = f"chain listings stopped: {type(exc).__name__}: {exc}"[:300]
+    spots: dict[str, float] = {}
+    for batch in ub._batches(names, ub.TT_QUOTE_BATCH):
+        for q in await get_market_data_by_type(session, equities=[ub.to_tastytrade(s) for s in batch]):
+            bid, ask = _f(q.bid), _f(q.ask)
+            mid = (bid + ask) / 2 if bid and ask and ask >= bid else None
+            spot = mid or _f(getattr(q, "mark", None)) or _f(getattr(q, "last", None))
+            if spot:
+                spots[q.symbol.replace("/", ".")] = spot
+        await asyncio.sleep(ub.TT_PAUSE_S)
+    today = now.date()
+    first = skate.stage_one(doc, cache, today, spots)
+    await _quote_options(session, ub, first)
+    clock = skate_clock({leg["expiry"] for leg in first}, now)
+    scored = skate.score(doc, first, spots, clock, cfg)
+    # Stage one's expiry is the cycle monthly where one is free of earnings; otherwise it is the last
+    # expiry before the report, and the best expiry is then compared with no monthly.
+    monthly = {
+        (leg["symbol"], leg["side"]): leg["expiry"]
+        if skate.is_monthly(date.fromisoformat(leg["expiry"]))
+        else None
+        for leg in first
+    }
+    picked = skate.select(scored, cfg["stage_two"])
+    second = skate.stage_two(doc, cache, picked, spots)
+    await _quote_options(session, ub, second)
+    clock.update(skate_clock({leg["expiry"] for leg in second}, now))
+    deep = {(e["symbol"], e["side"]): e for e in skate.score(doc, second, spots, clock, cfg)}
+    rows = []
+    for e in scored:
+        key = (e["symbol"], e["side"])
+        entry = deep.get(key, e)
+        entry["stage"] = 2 if key in deep else 1
+        entry["monthly"] = monthly.get(key)
+        entry["best"] = skate.best_expiries(entry, entry["monthly"])
+        rows.append(entry)
+    return rows, problem
+
+
+def cmd_skate(args) -> int:
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.core import calendar as cal
+    from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
+    from cherrypick.technicals import skate
+
+    ub = _universe_builder()
+    et = ZoneInfo("America/New_York")
+    now = datetime.now(et)
+    today = now.date()
+    if not args.force and not ub.in_window(now, cal.is_trading_day(today), cal.session_close_hhmm(today)):
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "skipped": f"outside the measuring window ({ub.WINDOW_START} ET to 30 min before close)",
+                }
+            )
+        )
+        return 0
+    doc = skate.latest_doc(today.isoformat())
+    if doc is None:
+        print(
+            json.dumps(
+                {"ok": False, "reason": "no skate band file: run `python -m cherrypick.technicals skate`"}
+            )
+        )
+        return 1
+    if args.limit:
+        doc = {**doc, "names": dict(sorted(doc["names"].items())[: args.limit])}
+    cfg = skate.load_settings()
+    store = CredentialStore(SHARED_SERVICE)
+    if store.missing_secrets():
+        print(json.dumps({"ok": False, "reason": "credentials_missing"}))
+        return 1
+    root = store_dir() / "screener-greeks" / "skate"
+    chain_path = root / "chains" / f"{today.isoformat()}.json"
+    cache = ub._read_json(chain_path, {})
+    started = datetime.now(UTC)
+    try:
+        session = SessionManager(store).get_session()
+        rows, problem = asyncio.run(_skate_quotes(session, ub, doc, cfg, cache, now))
+    except Exception as exc:  # noqa: BLE001 -- keep the listings gathered so far for the next run
+        ub._write_json(chain_path, cache)
+        print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:300]}))
+        return 1
+    ub._write_json(chain_path, cache)
+    stamp = f"{started.astimezone(et):%H%M}{'.trial' if args.limit else ''}"
+    out = root / today.isoformat() / f"{stamp}.json"
+    ub._write_json(
+        out,
+        {
+            "measured_at": started.isoformat(),
+            "session": today.isoformat(),
+            "band_day": doc["day"],
+            "complete": problem is None,
+            "problem": problem,
+            "config": {
+                k: cfg[k] for k in ("haircut", "by_expiry", "rate", "hard", "soft", "stage_two", "month_days")
+            },
+            "rows": rows,
+        },
+    )
+    legs = [g for r in rows for g in r["legs"]]
+    print(
+        json.dumps(
+            {
+                "ok": problem is None,
+                "problem": problem,
+                "path": str(out),
+                "band_day": doc["day"],
+                "name_sides": len(rows),
+                "stage_two": sum(1 for r in rows if r["stage"] == 2),
+                "legs": len(legs),
+                "quoted": sum(1 for g in legs if (g.get("quote") or {}).get("bid") is not None),
+                "hard_pass": sum(1 for g in legs if g["hard"]),
+                "seconds": round((datetime.now(UTC) - started).total_seconds()),
+            },
+            indent=1,
+        )
+    )
+    return 0 if problem is None else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("mode", nargs="?", choices=("greeks", "measure", "rebar", "strikes"), default="greeks")
+    ap.add_argument(
+        "mode",
+        nargs="?",
+        choices=("greeks", "measure", "rebar", "strikes", "income", "skate"),
+        default="greeks",
+    )
     ap.add_argument("--date", help="greeks: the list date to record (default: today, ET)")
     ap.add_argument(
         "--final",
@@ -1083,6 +1528,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_measure(args)
     if args.mode == "strikes":
         return cmd_strikes(args)
+    if args.mode == "income":
+        return cmd_income(args)
+    if args.mode == "skate":
+        return cmd_skate(args)
 
     day = args.date or today_et()
     lists = load_lists(day)

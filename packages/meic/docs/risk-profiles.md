@@ -12,8 +12,10 @@ of the [MEIC module](../README.md) in the cherrypick suite.
 > the values and the rationale are below. Where this document says `config.risk.json`, read "the arm
 > registry": that was its name in the package until 2026-10-01.
 >
-> **`/set-risk-profile` has not followed the move.** It still opens `config.risk.json` in the package
-> folder, so on a fresh install it finds no registry; the mechanism it describes below is unchanged.
+> **Since 2026-10-14 the way to choose what live trades is `live.arm`** in the `live` block, naming a
+> registry arm. `/set-risk-profile` writes a preset into the config's top level instead, which every
+> paper arm that leaves a key unset inherits (`control` included) — see the warning in
+> [`.claude/commands/set-risk-profile.md`](../.claude/commands/set-risk-profile.md).
 
 ## Overview
 
@@ -43,12 +45,12 @@ Each profile bundles gate-threshold changes with offsetting position-sizing and 
 > described below for **live** trading. The disabled/enabled split is a paper-collection decision,
 > not a statement that the ladder no longer functions.
 >
-> ⚠️ **`/set-risk-profile` is a live-trading-config mutator; the four forward-test streams are
-> paper-only and must never be passed to it.** `open`/`width-5`/`width-10` run with
-> `overlap_scope: "none"` and (for `open`) no per-side stop management — settings that make sense
-> only as independent paper samples, never as a live risk posture. `/set-risk-profile` does not
-> filter on `enabled`, so it will mechanically accept any name in `config.risk.json`'s `profiles`
-> map; the four ladder tiers are the only names it is meant to be called with. See
+> ⚠️ **`/set-risk-profile` is a live-trading-config mutator; the paper arms (`control`,
+> `live-shadow`, `bp-*`, …) must never be passed to it.** `control` runs with `overlap_scope:
+> "none"` and no per-side stop management — settings that make sense only as independent paper
+> samples, never as a live risk posture. `/set-risk-profile` does not filter on `enabled`, so it
+> will mechanically accept any name in the registry's `profiles` map; the four ladder tiers are the
+> only names it is meant to be called with. See
 > [`.claude/commands/set-risk-profile.md`](../.claude/commands/set-risk-profile.md).
 
 ---
@@ -137,7 +139,7 @@ Both halves are now derived from the profile itself:
 | Late-entry-bias **ceiling** | `min_iv_rank + late_entry_bias_iv_rank_offset` (0.15) | 0.45 / 0.37 / 0.35 / 0.30 |
 
 Conservative reproduces its historical values exactly (0.35 / 0.45); the looser rungs now scale.
-The absolute keys are still honored if a profile sets them, so nothing external breaks.
+The absolute keys are still honoured if a profile sets them, so nothing external breaks.
 
 **Why the multiple is 0.85 and not a deeper cut.** A stronger relief (0.67 was tried) let a tier
 *inside* its borderline band undercut the next tier's plain floor — conservative would accept 0.101
@@ -153,7 +155,7 @@ enforced by test.
 
 Hitting `daily_ic_trade_target` does **not** block further entries. Past the target, the credit floor
 is multiplied by `over_target_credit_multiple` (1.5), so an extra trade is available **only when
-conditions are genuinely favorable** — rich premium clears the raised bar, marginal setups are
+conditions are genuinely favourable** — rich premium clears the raised bar, marginal setups are
 declined with the auditable reason `over_target_credit_below_floor`.
 
 This keeps the target doing what it was always documented to do (calibrate selectivity) rather than
@@ -307,10 +309,10 @@ The four tiers follow a deliberate sequence. **Do not skip ahead** — the inter
 
 When you run `/set-risk-profile moderate`:
 
-1. The command reads `config.risk.json` from the package folder (not the home registry — see the note at the top) and extracts the `moderate` profile object.
-2. It backs up your current `config.json` → `config.json.bak` (so you can revert if needed).
-3. It overwrites the matching keys in `config.json` with the moderate profile's values.
-4. It updates `config.risk.json`'s `active_profile` field to track which one is active (for logging/auditing).
+1. The command reads the `moderate` profile from the machine's registry (`paths.risk_profiles_path()`), refusing the shipped control-only example.
+2. It backs up your current `meic.json` → `meic.json.bak` (so you can revert if needed).
+3. It overwrites the matching top-level keys in `meic.json` with the moderate profile's values.
+4. It updates the registry's `active_profile` field to track which one is active (for logging/auditing).
 5. It prints a before/after table showing every key that changed, plus the profile's rationale.
 6. The next loop iteration reads the updated `config.json` and picks up the new values — **no restart needed**, but the change is not retroactive to in-flight positions.
 

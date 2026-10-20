@@ -215,7 +215,7 @@ function TradeCell({ t }: { t: EarningsTrade }) {
       {t.passes === false && (
         <>
           {" "}
-          <span className="chip chip-warn" title="A leg fails the liquidity bars (10% of mid or a nickel, 100 open, 10 traded)">
+          <span className="chip chip-warn" title="The spread fails the liquidity bars: judged as one order, its cost to trade within 10% of its price (or a nickel), 100 open a leg">
             thin
           </span>
         </>
@@ -223,7 +223,7 @@ function TradeCell({ t }: { t: EarningsTrade }) {
       {t.passes === true && (
         <>
           {" "}
-          <span className="chip chip-ok" title="Both legs pass the liquidity bars">
+          <span className="chip chip-ok" title="The spread passes the liquidity bars, judged as one order">
             liquid
           </span>
         </>
@@ -432,7 +432,7 @@ export function EarningsCalendarTab() {
         <Flag
           on={!allTrades}
           onChange={(on) => set("trade", on ? null : "all")}
-          title="Hide names whose suggested spread was read in regular hours and a leg failed the liquidity bars (10% of mid or a nickel, 100 open, 10 traded). A spread not read yet stays shown, with its target strikes."
+          title="Hide names whose suggested spread was read in regular hours and the spread failed the liquidity bars (judged as one order: its cost to trade within 10% of its price or a nickel, 100 open a leg). A spread not read yet stays shown, with its target strikes."
         >
           Liquid trade
         </Flag>

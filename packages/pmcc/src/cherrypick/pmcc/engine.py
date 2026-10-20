@@ -21,7 +21,7 @@ from cherrypick.core import config as _cfg
 from cherrypick.core import fees as _fees
 from cherrypick.core import settlement as _settlement
 
-ARMS = ("control", "shield", "shield_hold")
+ARMS = ("control", "shield", "shield_hold", "shield_guard")
 
 # What makes each arm itself, in code (2026-10-04). Merged between `defaults` and the arm's own
 # config block, so the config tunes an arm but a thin or missing block cannot turn a held-long arm
@@ -45,10 +45,33 @@ ARM_RULES = {
     "control": {},
     "shield": {**_HELD_LONG_RULES, "early_roll_decay": 0.85, "breach_roll": True},
     "shield_hold": {**_HELD_LONG_RULES, "early_roll_decay": None, "breach_roll": False},
+    # `shield_hold` plus one rule (2026-10-26): roll an in-the-money short once its extrinsic is
+    # inside the assignment-exposed region (`management.assignment_exposed`), the region the
+    # module's telemetry has measured since August. Paper still models no early assignment; this
+    # arm measures what avoiding the exposure costs, which is the live question for an IRA.
+    "shield_guard": {
+        **_HELD_LONG_RULES,
+        "early_roll_decay": None,
+        "breach_roll": False,
+        "assignment_roll": True,
+    },
 }
 # Whether an arm the config does not declare may enter. Only control: an arm joins a suite because
 # its config says so, never because the code grew one (each new arm widens the stream request).
 DEFAULT_ENABLED = {"control": True}
+
+
+def arm_on(block: dict | None, arm: str, today: str) -> bool:
+    """Whether `arm` may enter on `today`: enabled (`DEFAULT_ENABLED` when undeclared) and on or after
+    its block's `from` date, if it has one. `from` is how an arm joins at a declared boundary
+    without a config edit on the day; management never reads it, so what an arm holds is managed
+    whatever the date."""
+    block = block or {}
+    if not block.get("enabled", DEFAULT_ENABLED.get(arm, False)):
+        return False
+    start = block.get("from")
+    return not start or today >= str(start)
+
 
 # How an expiring leg settles, per underlying. The module models both styles and refuses a symbol it
 # has been told nothing about — the calendars guard, kept verbatim: an unmodelled settlement produces

@@ -27,7 +27,7 @@ so a tick can be reasoned about without knowing anything about the tick before i
 | `open_window` | 09:30–09:40 | **marks, never acts** |
 | `management` | 09:40–15:40 | marks, decides, acts |
 | `entry` | 15:35, once daily | the forced-sampling entry scan |
-| `eod` | 16:00–16:30 | writes the session's reports |
+| `eod` | 16:00–16:30 | bounds the session and records an iteration; writes nothing since the reports moved to `packages/review` (2026-08-13) |
 
 The open window is a phase of its own because the first ten minutes of an earnings name's options are
 not reliably priceable — spreads can be wider than the edge being managed, so a target computed off
@@ -63,7 +63,7 @@ their own close, to make symbols available fourteen hours before this module mar
 serves every consumer correctly and never triggers a recycle.
 
 **Known gap:** the entry scan holds the loop's single-writer lock for up to ~25 minutes, so positions
-go unmarked roughly 15:45–16:10. Accepted deliberately — the morning is where management matters, and
+go unmarked roughly 15:35–16:00. Accepted deliberately — the morning is where management matters, and
 the alternative (a second writer against the same SQLite book) trades a documented gap for a much
 harder class of bug.
 
@@ -72,9 +72,9 @@ harder class of bug.
 Checked in this order. Settlement comes before everything because it is the one case with no market
 to consult; the expiry close is next because holding a physically settled position through its
 expiration is not an outcome any other rule may trade against; the pin guard follows because it is
-about an outcome nothing else prices; the strategy's
-own verdict follows because it owns every threshold; the last two only ever turn a *hold* into a
-*close*, never the reverse.
+about an outcome nothing else prices; the entry-session hold follows, so that nothing below it acts
+before the report; the strategy's own verdict follows because it owns every threshold; the last two
+only ever turn a *hold* into a *close*, never the reverse.
 
 0. **Settlement** — any leg whose last trading day has passed. There is nothing to trade out of, so
    the position is resolved at **intrinsic against the expiration day's own settlement close**,
@@ -93,6 +93,10 @@ own verdict follows because it owns every threshold; the last two only ever turn
 2. **Pin guard** — any **short** strike within `pin_guard_dollars` (1.00) of spot inside the last
    `pin_guard_window_minutes` (60) of its expiration day. Fires on *proximity*, not on being in the
    money: assignment is decided by the settlement print, which has not happened yet. Reason `pin_risk`.
+2b. **Entry session** — on the session a position was opened (`sessions_held == 0`), nothing below
+   acts. The report has not happened, and a fresh mark is only the spread. Reason `entry_session`
+   (a hold). Added 2026-10-17, after 23 positions were closed minutes after the 15:35 scan
+   (docs/operating-history.md).
 3. **The strategy's own `evaluate_position`** — profit target, stop, leg-delta stops, and (for the
    calendars) the front-expiration time stop. Thresholds live in `strategies.<name>` and are listed
    below. The management layer never restates them.
@@ -113,7 +117,7 @@ verdict with `executed = 0` and the gate that held it, and the next tick reconsi
 |---|---|
 | `before_exec_window` | earlier than `exec_window_start` (09:40) |
 | `open_window` | the tick's phase never acts |
-| `spread_too_wide` | a leg wide in percent (`max_leg_spread_pct`, 0.35 of mid) **and** in money (`max_leg_spread_abs`, $0.05), judged per leg. Percent alone refused the win case — a near-worthless short quotes 0.00/0.01, a one-cent buyback that reads as a 200% spread; before 2026-08-31 that blocked 32 positions' profit-target exits and every one rode to expiry instead |
+| `spread_too_wide` | a leg wide in percent (`max_leg_spread_pct`, 0.35 of mid) **and** in money (`max_leg_spread_abs`, $0.05), judged per leg. Percent alone refused the win case — a near-worthless short quotes 0.00/0.01, a one-cent buyback that reads as a 200% spread; before 2026-08-31 that blocked 32 positions' profit-target exits and every one rode to expiry instead. A leg quoting a 0.00 bid uses the looser `max_leg_spread_abs_zero_bid` ($0.20) |
 | `unusable_mark` | the position could not be priced at all this tick |
 | `tick_execution_cap` | more than `max_executions_per_tick` (3) closes already taken; deferred a minute |
 | `close_failed` | the close itself failed; `close_attempts` is bumped and it becomes `stranded` at 2 |
@@ -145,7 +149,7 @@ identify a position held across several sessions at all.
 entry. Eighteen hours pass between a 15:45 entry and the first morning mark, so left in force it
 would fire on **every** position before any management rule was reached — multi-day holds would be
 unreachable while appearing to work. The management layer therefore injects a value past any hold it
-could preempt. Lowering `management.exit_after_announcement_minutes` re-enables the old behavior; the
+could preempt. Lowering `management.exit_after_announcement_minutes` re-enables the old behaviour; the
 top-level key still applies to the agent-driven loop, which has no session cap of its own.
 
 ## Settlement
@@ -277,7 +281,7 @@ otherwise stand.
 
 ---
 
-## A Realistic Example: `iron_fly` Overnight Hold
+## A Realistic Example: `iron_fly` Overnight Hold (agent-driven loop)
 
 ```
 Entry (day 1, 15:32 ET): AAPL iron_fly, entry credit $5.10 for 3 contracts
@@ -285,7 +289,7 @@ Overnight: unmonitored, earnings announced after close
 
 Next morning, 09:15 ET (Step 3c check):
   Live quotes pulled, exit_debit computed at $2.10
-  profit = $5.10 - $2.10 = $3.00 ≥ $5.10 * 0.50 ($2.55) → close_all, reason: profit_target
+  profit = $5.10 - $2.10 = $3.00 ≥ $5.10 * 0.25 ($1.28) → close_all, reason: profit_target
   Position closed, save_close records the trade
 
 Result: no need to wait for the 09:45 close-window backstop -- the early-exit check already
@@ -297,7 +301,7 @@ And a case where the early-exit check doesn't fire:
 ```
 Next morning, 09:15 ET (Step 3c check):
   exit_debit computed at $4.00
-  profit = $5.10 - $4.00 = $1.10, below the $2.55 target
+  profit = $5.10 - $4.00 = $1.10, below the $1.28 target
   exit_debit ($4.00) below the $7.65 stop-loss threshold (1.5x $5.10)
   → hold
 
@@ -311,8 +315,8 @@ Next morning, 09:15 ET (Step 3c check):
 
 **"Position didn't close at the early-exit check, but I expected it to"**
 Check the actual `exit_debit` computed from live quotes against the specific formula above —
-the position may simply not have hit either threshold yet. It'll still close at the
-unconditional close-window backstop no later than `close_window_start`.
+the position may simply not have hit either threshold yet. In the agent-driven loop it still closes
+at the close-window backstop; the paper loop carries it under the session cap and PEAD gate instead.
 
 **"`double_calendar` closed one side but left the other open"**
 That's `action: close_side` working as intended — one side crossed `leg_stop_delta_abs` while
@@ -343,8 +347,8 @@ The loop's own observability, and what each surface answers.
 | `loop_iterations` | is the loop alive — one row per in-session tick, `status` `ok` or the refusal |
 | `measurement_breaks` | which dates results must not be pooled across |
 | `~/.cherrypick/state/earnings_entry.last.json` / `_exit.last.json` | the SLA heartbeats the watchdog and the console read |
-| console → Earnings → **open** | positions, marks, loop health, management log |
-| `data/review/eod-<day>.md` | What each module did, the arms, and the trend (suite review) |
+| console → Earnings → **positions** | positions, marks, loop health, management log |
+| `~/.cherrypick/data/review/eod-<day>.md` | What each module did, the arms, and the trend (suite review) |
 
 ```bash
 python -m cherrypick.earnings.paper_loop status        # phase, last tick, open positions, lock
@@ -362,8 +366,8 @@ minute and refused, and the refusal reason says why.
 
 **Stranded positions.** Two failed closes and a position's `status` becomes `stranded`. That
 threshold used to be applied inside a single sweep, so a position missing one attempt per day looked
-fresh every morning; it outlives the run that noticed it now. It still shows in the EOD report's
-stranded section and still carries real risk.
+fresh every morning; it outlives the run that noticed it now. It stays `status = 'stranded'` on the
+ledger and still carries real risk.
 
 ## Troubleshooting
 
@@ -380,4 +384,4 @@ be quoted; see the refusal on its latest `position_marks` row.
 front-expiration time stop instead.
 
 **"Nothing is being marked."** Check the phase — `paper_loop status`. Outside 09:30–15:40 ET the loop
-deliberately does nothing, and between 15:45 and roughly 16:10 the entry scan holds the lock.
+deliberately does nothing, and between 15:35 and roughly 16:00 the entry scan holds the lock.

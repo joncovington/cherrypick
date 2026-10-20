@@ -139,7 +139,7 @@ def test_live_trading_enabled_top_level_convention():
 def test_live_trading_enabled_nested_live_convention():
     """flies' shape: nested under 'live'. Checking only the top-level key left every flies-specific
     safety surface reading PAPER ONLY even while its live loop was armed — the bug this guards."""
-    assert c.live_trading_enabled({"live": {"enabled": True, "gate0_confirmed": "jon 2026-07-30"}}) is True
+    assert c.live_trading_enabled({"live": {"enabled": True, "gate0_confirmed": "owner 2026-07-30"}}) is True
     assert c.live_trading_enabled({"live": {"enabled": False}}) is False
     assert c.live_trading_enabled({"live": {}}) is False
     assert c.live_trading_enabled({"live": "not a dict"}) is False

@@ -327,6 +327,9 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
       (`estimates`, `quarters` in `history.db`, landed by `history fundamentals`), each a
       percentile within the market report's sector map. That map lists only today's names.
     - The 1-10 score on history is rebuilt as `land.land_rank_cutoffs` builds it live.
+  - **Rounds 6 and 7** (`round6.py`, `round7.py`, the frozen `bearing_table.py`): a revision inside
+    the strong bearing, and entering a bearing at all, each against its declared baseline. Nothing
+    passed; the bearing is a weak filter, not a signal (docs/setups.md, "Round 6", "Round 7").
   - **Dolt's split table misses many splits before 2014** (KO, NKE, GILD, TJX, IBB, BEN, DUK...;
     254 suspects on in-universe days). `history.suspected_actions` flags an unexplained 40%+ jump
     whose opening gap is a clean split ratio. The study excludes positions and draws held through
@@ -348,13 +351,32 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
 only while the earnings module is, since that job keeps the dolt sql-server alive.
 `technicals-iv-rank` runs after the close on trading days. `technicals-screeners` (06:40 ET,
 `screeners_at`) scores every saved screener session with its broker chain, after the previous
-evening's late greeks run; a scored session is skipped.
+evening's late greeks run; a scored session is skipped. `technicals-skate` (06:45 ET, `skate_at`)
+writes the skate screen's bands from `history.db` (docs/skate-plan.md), then the forward record
+(`skate_record.py`: what the tab showed, what happened at expiry, the declared test; a failure there
+is reported and never fails the bands).
 
----
-CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
----
+The rest run daily under the same `technicals` block (times ET, each overridable by its `*_at` key):
+`technicals-index-bars` 06:00, `-history` 06:20, `-fundamentals` 06:25, `-report` 06:30,
+`-stage-lists` 06:35, `-board` 06:45, `-earnings-record` 06:50; in the evening `-sectors` 18:40,
+`-earnings-times` 18:45, `-securities` 18:48, `-iv-rank` 18:50, `-liquidity` 18:57,
+`-earnings-calendar` 19:10 (and a late pass at 23:40), `-dividends` 19:30, `-revisions` 20:15.
 
-> ⚠️ Suite-wide guardrails apply — see root `CLAUDE.md`.
+## The skate bands
+
+`skate.py` records history on **split-adjusted, never dividend-adjusted** prices
+(`skate.price_bars`): an option's strike stays put when the price drops on an ex-date, so a
+dividend-adjusted series would show calls breached that were not. Leveraged, inverse and
+volatility funds are dropped by the declared `leveraged_funds.json` (name rule confirmed against
+Yahoo's fund category, each entry's `evidence` saying which); its tests fail when a known fund is
+removed. An expiry that spans a stock's report is dropped, the shorter ones kept, and the band file
+records each name's trailing dividend yield.
+
+**The score** (`skate.score`, `best_expiries`, `select`; skate plan step 2) is read by
+`scripts/fetch_screener_greeks.py skate` (jobs `report-skate-quotes-1/2`, 12:00 and 15:05 ET): the
+morning's bands snapped to listed strikes and quoted in regular hours; history at the strike read off
+the band's curve, implied odds from an IV solved at the mid, skate yield, hard filters (two-sided,
+tight, open interest) and soft thresholds as a marker.
 
 ## Tool Reference
 
@@ -362,6 +384,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 |---|---|
 | `python -m cherrypick.technicals land [--symbols ...]` | Land bars, splits, dividends and IV from the local Dolt clones. Incremental; idempotent. |
 | `python -m cherrypick.technicals status` | What the store holds, and the last landing. |
+| `python -m cherrypick.technicals liquidity` | Judge every name liquid or not from local data; the illiquid are skipped by broker-spending scripts and hidden from listed views until the monthly sweep. |
 | `python -m cherrypick.technicals bars SYMBOL [--raw] [--last N]` | Adjusted (or raw) bars and IV rank (ours, or tastytrade's where Dolt has none). |
 | `python -m cherrypick.technicals check-vendor [--all]` | Our adjusted bars against every vendor capture; non-zero exit on any disagreement. |
 | `python -m cherrypick.technicals stages [--session D]` | Every candidate's stage on a session. |
@@ -377,10 +400,11 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-revisions` | The analyst-revision rule vs every saved board: agree, opposite, missed, not in source, extra. |
 | `python -m cherrypick.technicals stage-lists [--session D]` | Our six stage lists on one close, tradable names only, in `stage-lists/<session>.json`, scored against the vendor's watchlists filed under that session and the one before. |
 | `python -m cherrypick.technicals board [--session D]` | Write one session's signal board (each stock's count of agreeing methods). |
-| `python -m cherrypick.technicals score-board` | The board's four methods vs every saved board: found, tagged, extra; rows on the board's side. |
+| `python -m cherrypick.technicals score-board` | The board's six methods vs every saved board: found, tagged, extra; rows on the board's side. |
 | `python -m cherrypick.technicals securities [--session D]` | The public security list from local files, `securities/current.json` naming the list readers use, and the public list scored against the vendor's of that day where one is saved. |
 | `python -m cherrypick.technicals score-bearing` | The bearing lookup fitted on earlier security lists, scored on the latest. |
 | `python -m cherrypick.technicals score-screeners [--rescore]` | The income screens' expiry, strike and return rules vs every saved list with its broker chain; one file per session in `screeners/`, totals printed. |
+| `python -m cherrypick.technicals skate [--day YYYY-MM-DD]` | The skate screen's fixed and by-expiry range bands for every options-tradable name, side and weekly expiry to 63 days, with each band's skate curve over history; `skate/<day>.json`. |
 | `python -m cherrypick.technicals earnings-record [--today D] [--dry-run]` | The earnings calendar's forward record: each past announcement's move against the expected move (0.85 × straddle) the calendar showed the session before, whether a strong read called it, and the suggested spread's money on its marks; `earnings-calendar/record.json`, rebuilt whole. Reads the local Dolt. |
 | `python -m cherrypick.technicals earnings-calendar [--day D] [--dry-run]` | The next 30 days' announcements for the console's earnings tab; one file per session in `earnings-calendar/`, a rerun replacing it. Reads the local Dolt. |
 | `python -m cherrypick.technicals study round7 [--workers N] [--count]` | Round 7: entering a bearing (frozen `bearing_table.py`) against random entry; `--count` gives frequencies only. |

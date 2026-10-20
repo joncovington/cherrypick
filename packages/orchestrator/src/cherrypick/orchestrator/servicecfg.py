@@ -291,9 +291,8 @@ def staleness(
     other combination is "cannot tell", which reports `adopt` (record the hash, change nothing)
     rather than a restart nobody asked for.
 
-    `service_id` names the stamp. `services[]` entries carry their own `id`; the streamer blocks do
-    not, so their caller passes the watchdog's finding label ("streamer", "meic.streamer") — which
-    also keeps two producers from sharing one stamp and recycling each other.
+    `service_id` names the stamp. `services[]` entries carry their own `id`; the streamer block does
+    not, so its caller passes the watchdog's finding label ("streamer").
 
     `check_subscriptions` adds the producer-only second axis: the stream-request union grew past what
     the running process subscribed at launch. Config change is checked first, since a config recycle
