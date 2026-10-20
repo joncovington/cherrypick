@@ -27,6 +27,33 @@ beyond the latest release.
   Dolt needed). Rows are by symbol, never ranked by yield, under a standing note that the rule has no
   tested edge. manage's income candidates apply the same 0.05 tolerance, and the chain fetch always
   quotes the strikes nearest 16 delta. The rule's numbers live once, in `cherrypick.core.incomerules`.
+- **Added: manage rolls a tested strangle's untested side, at quoted prices.** The manage snapshot
+  (v11, `roll_chains`) now quotes the chain of every expiry in which one underlying is short both a
+  put and a call: one read-only chain read per such expiry, none when there is none. From it,
+  `roll.untested_side` (confidence 50) proposes rolling the untested short of a tested strangle
+  toward the money, to the listed strike nearest 30 delta, for a credit at the quoted mids, never
+  past the tested strike: an inverted strangle always ranks below closing or rolling out in time. It
+  is a review, offered in place of the short-leg buy-back when that names the same leg, and never in
+  place of a stop or a close.
+- **Added: manage flies a credit broken-wing butterfly's risk off.** `roll.fly_off` (review,
+  confidence 55): when a broken-wing butterfly opened for a net credit can be made a plain butterfly
+  (buy the wing at the narrow side's width beyond the body, sell the wide wing) for no more than the
+  credit, the evaluation proposes it, with the order. What is left cannot lose, fees aside. The new
+  wing is modelled, so the debit is an estimate.
+- **Added: manage sells a butterfly's long spread near its full value.** `legs.long_vertical` (close
+  legs, confidence 50): when the long spread of a butterfly, broken-wing or broken-heart butterfly is
+  worth 90% of its width, the evaluation says to sell just that spread and keep the short spread,
+  naming what the short spread costs to buy back and how wide it is. The strategy guide's defence for
+  these shapes.
+- **Added: manage names the strategy guide's structures, and some take profit on their own target.**
+  The short straddle and strangle, big lizard, reverse jade and big lizards, zebras, front-ratios and
+  the broken-heart butterfly were all `custom`; they are now named as the tastylive Options Strategy
+  Guide (2023) draws them. A short straddle, iron butterfly or big lizard takes profit at 25% of the
+  credit, and a calendar or zebra at +25% on the debit (`by_shape` under each take-profit rule,
+  overridable per shape). A reverse lizard's in-the-money put is no longer a breached strike, and a
+  broken-heart butterfly is judged on its risk. A new review, `debit.diagonal_width`, flags a PMCC-style
+  diagonal held for more than 75% of its strike width. Over the six stored snapshots it fires on one
+  trade, TLT, and changes nothing else.
 - **Changed: a Screeners tab that needs Dolt says so.** On a machine without the Dolt data, the
   earnings, earnings record, signal board and skate tabs showed empty tables, which read as a quiet
   day (and once as "it needs a vendor"). They now show what they need and the steps to set it

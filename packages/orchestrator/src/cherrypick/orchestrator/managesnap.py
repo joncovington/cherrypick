@@ -4,7 +4,8 @@ packages/manage is credential-free and network-free: it evaluates a snapshot and
 where the snapshot comes from -- the one broker-touching step, and every call in it is a READ: the
 `positions` verb's priced positions and balances, the broker's market metrics (last price, the next
 earnings date, the ex-dividend date) for every underlying held and for SPY and VIX, each underlying's
-trade history, and the XSP option chain the hedge is sized from. Nothing here
+trade history, the XSP option chain the hedge is sized from, and the chain of any expiry holding a
+short strangle. Nothing here
 places, cancels or modifies an order. Account numbers arrive masked from `positions`, and the history
 rows carry none.
 
@@ -60,6 +61,13 @@ through the broker tool's read-only `get_working_orders`): working ones and the 
 cancelled ones alike, each slimmed to its id, status, underlying, type, price and legs, with every
 account number left out. manage counts a call still being sold against shares as already written
 (docs/skate-plan.md step 5 reads it for the wheel view's resting buy-to-close).
+
+Version 11 carries `roll_chains`: for every expiry in which one underlying is short both a put and a
+call (a short strangle or straddle, or anything holding one), that expiry's chain, quoted, ROLL_STRIKES
+strikes either side of spot. manage rolls a tested strangle's untested short toward the money (the
+tastylive strategy guide's defence), and needs a strike that is listed and a price that was quoted for
+it, which the trade's own legs cannot supply. One read per such expiry; none when the account holds
+none.
 """
 
 from __future__ import annotations
@@ -78,7 +86,7 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 10
+SNAPSHOT_VERSION = 11
 # Greeks move far more slowly than a bid; the cache's are used up to this old, the feed's otherwise.
 GREEKS_MAX_AGE_SECONDS = 900.0
 # Monday reads Friday's afternoon reading; anything older is a stale book of quotes.
@@ -98,6 +106,9 @@ HEDGE_DTE = (30, 60)
 HEDGE_PREFER_MIN_DTE = 45
 # XSP lists 1-point strikes near the money; 60 a side reaches past the 15-delta strike at 45 days.
 HEDGE_STRIKES = 60
+# Strikes either side of spot a short strangle's expiry is quoted at: an untested short rolls toward
+# the money, so the window is centred there, and 40 a side reaches a 30-delta strike on a $1 ladder.
+ROLL_STRIKES = 40
 # How far back a chain is rebuilt. A LEAPS-backed position can roll for a year; anything older than
 # this is reported as an incomplete chain rather than guessed.
 HISTORY_DAYS = 400
@@ -325,6 +336,65 @@ def hedge_chain(cfg: dict[str, Any], spot: float | None, session: date, prefer: 
     return out
 
 
+def short_pairs(positions: dict[str, Any]) -> list[tuple[str, str]]:
+    """(underlying, expiry) for every expiry in which one underlying is short both a put and a call."""
+    out: set[tuple[str, str]] = set()
+    for account in positions.get("accounts") or []:
+        for u in account.get("underlyings") or []:
+            short_rights: dict[str, set[str]] = {}
+            for leg in u.get("legs") or []:
+                try:
+                    qty = float(leg.get("quantity") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if leg.get("right") in ("C", "P") and qty < 0 and leg.get("expiration"):
+                    short_rights.setdefault(str(leg["expiration"])[:10], set()).add(leg["right"])
+            for exp, rights in short_rights.items():
+                if rights == {"C", "P"} and u.get("underlying"):
+                    out.add((str(u["underlying"]).upper(), exp))
+    return sorted(out)
+
+
+def roll_chains(
+    cfg: dict[str, Any], positions: dict[str, Any], metrics: dict[str, dict], prefer: str | None
+) -> dict[str, dict[str, Any]]:
+    """{"<UNDERLYING>|<expiry>": that expiry's quoted chain around spot} for every `short_pairs` entry,
+    each with `error` saying why it is empty when it is."""
+    out: dict[str, dict[str, Any]] = {}
+    for underlying, expiry in short_pairs(positions):
+        spot = (metrics.get(underlying) or {}).get("last")
+        entry: dict[str, Any] = {"underlying": underlying, "expiration": expiry, "spot": spot, "options": []}
+        if not spot:
+            out[f"{underlying}|{expiry}"] = {
+                **entry,
+                "error": f"no {underlying} price to centre the chain on",
+            }
+            continue
+        argv = [
+            "get_option_chain",
+            "--symbol",
+            underlying,
+            "--expiration",
+            expiry,
+            "--include_quotes",
+            "--include_greeks",
+            "--strike_count",
+            str(ROLL_STRIKES),
+            "--around_price",
+            str(spot),
+        ]
+        payload, error = _first_answer(cfg, prefer, argv, timeout=60)
+        rows = (payload.get("chain") or {}).get(expiry) or []
+        options = [o for o in (_option_row(r) for r in rows) if o is not None]
+        out[f"{underlying}|{expiry}"] = {
+            **entry,
+            "quotes_complete": payload.get("quotes_complete"),
+            "options": options,
+            "error": error or (None if options else f"no quoted {underlying} strikes for {expiry}"),
+        }
+    return out
+
+
 def income_dir():
     from cherrypick.core import home
 
@@ -421,6 +491,7 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
     hedge = hedge_chain(cfg, hedge_spot, date.fromisoformat(session), prefer) if ok else None
     greeks, greeks_error = broker_greeks(cfg, positions, prefer) if ok else ({}, None)
     orders, orders_error = working_orders(cfg, prefer) if ok else ([], None)
+    chains = roll_chains(cfg, positions, metrics, prefer) if ok else {}
     return {
         "snapshot_version": SNAPSHOT_VERSION,
         "session": session,
@@ -436,5 +507,6 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "broker_greeks_error": greeks_error,
         "working_orders": orders,
         "working_orders_error": orders_error,
+        "roll_chains": chains,
         "income": income_reading(date.fromisoformat(session)),
     }

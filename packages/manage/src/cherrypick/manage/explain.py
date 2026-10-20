@@ -190,14 +190,27 @@ def explain(t: dict[str, Any]) -> str:
             "Close it."
         )
     elif rule == "credit.take_profit":
+        tp = levels.get("take_profit") or {}
         why = (
-            "You have kept at least half of the credit. The rule banks it: the rest of the premium is "
-            "small, and earning it means carrying the full risk for weeks. Close it."
+            f"You have kept at least {_share(tp.get('target', 0.5))} of the credit. The rule banks it: the "
+            "rest of the premium is small, and earning it means carrying the full risk for weeks."
+            f"{_target_note(tp)} Close it."
         )
     elif rule == "debit.take_profit":
+        tp = levels.get("take_profit") or {}
         why = (
-            "It has gained three quarters or more on what you paid. The rule says take the profit, roll it "
-            "to a new position, or add to it, rather than let the gain ride on to expiry."
+            f"It has gained {_share(tp.get('target', 0.75))} or more on what you paid. The rule says take "
+            "the profit, roll it to a new position, or add to it, rather than let the gain ride on to "
+            f"expiry.{_target_note(tp)}"
+        )
+    elif rule == "debit.diagonal_width":
+        why = (
+            "The net you have in this diagonal is most of the distance between its strikes, or more. If the "
+            "stock runs well through the short, both legs head toward their intrinsic value and the trade "
+            "toward that distance, so there is little left to make, and a net past it loses once the long's "
+            "time value runs off. A long with years left keeps some of that time value, which softens this. "
+            "Review it: rolling the short out for a credit lowers the net, and a trade like this is opened "
+            "for under three quarters of the width."
         )
     elif rule in ("credit.time_exit", "debit.time_exit"):
         dte = t.get("nearest_short_dte")
@@ -225,6 +238,16 @@ def explain(t: dict[str, Any]) -> str:
             "Some legs expire within days and settle into shares, not cash. Holding them into expiry risks "
             "being assigned stock, even after the closing bell. Close before then."
         )
+    elif rule == "legs.long_vertical":
+        lv = t.get("long_vertical") or {}
+        why = (
+            f"Sell only the long spread: {', '.join(lv.get('legs') or [])}. It is worth "
+            f"{_usd(lv.get('value'))}, nearly all of its {_usd(lv.get('width'))} width, and holding it gives "
+            "that back if the stock comes back through the body. What is left is a short spread "
+            f"({', '.join(lv.get('rest') or [])}): {_usd(lv.get('rest_cost'))} to buy back, "
+            f"{_usd(lv.get('rest_width'))} wide. Hold it for its credit, close it too, or add the other "
+            "side to make it a condor."
+        )
     elif rule == "legs.short_take_profit":
         f = _fired(t, rule) or {}
         legs = ", ".join(f.get("legs") or []) or "the short legs"
@@ -243,6 +266,38 @@ def explain(t: dict[str, Any]) -> str:
             f"more than the buy-back (roughly {total} in credit, an estimate from today's volatility). That "
             "keeps you paid for the risk while giving the stock more time. Only send it for a net credit; "
             "if it will not fill for one, close the put instead."
+        )
+    elif rule == "roll.untested_side":
+        r = t.get("untested_roll") or {}
+        right = "put" if r.get("right") == "P" else "call"
+        tested = "call" if right == "put" else "put"
+        way = "up" if right == "put" else "down"
+        why = (
+            f"The stock has moved toward your {r.get('tested_strike', 0):g} {tested}, and the "
+            f"{r.get('from_strike', 0):g} {right} on the other side has little left to give. Roll that "
+            f"untested {right} {way} to the {r.get('to_strike', 0):g}"
+        )
+        why += (
+            f" in the same expiry, for about {r.get('credit', 0):.2f} a share ({_usd(r.get('net'))}) at "
+            "today's quoted mids. It takes in more credit and cuts the trade's lean toward the tested side, "
+            "but it is repair, not a cure: if the move keeps going the tested side still loses. Only send "
+            "it for a net credit."
+        )
+        if "legs.short_take_profit" in (rec.get("replaces") or []):
+            why += (
+                f" The {right} has given up most of its premium, so it is due to be bought back anyway; "
+                "rolling it, rather than only buying it back, keeps a short on both sides. If the roll will "
+                f"not fill for a credit, just buy the {right} back."
+            )
+    elif rule == "roll.fly_off":
+        fo = t.get("fly_off") or {}
+        new, old = f"{fo.get('new_strike', 0):g}", f"{fo.get('old_strike', 0):g}"
+        why = (
+            f"The wide wing can be flown off: buy the {new} and sell the {old} for about "
+            f"{_usd(fo.get('debit'))} (an estimate from today's volatility), less than the "
+            f"{_usd(t.get('cost'))} you took in. That leaves a plain butterfly opened for a net credit of "
+            f"about {_usd(fo.get('kept'))}: it cannot lose (fees aside) and still pays most if the stock "
+            f"finishes at the body. Re-quote it first, and check the {new} strike is listed."
         )
     elif rule == "roll.diagonal_short":
         r = t.get("roll") or {}
@@ -344,16 +399,47 @@ PLAIN = {
     "credit.close_before_earnings": "close-before-earnings rule",
     "debit.stop": "50% debit stop",
     "debit.take_profit": "debit take-profit rule",
+    "debit.diagonal_width": "diagonal width check",
     "debit.time_exit": "time exit",
     "legs.short_take_profit": "short-leg buy-back rule",
+    "legs.long_vertical": "long-spread sale",
     "roll.naked_put": "naked-put credit roll",
     "roll.diagonal_short": "diagonal short roll",
+    "roll.fly_off": "broken-wing fly-off",
+    "roll.untested_side": "untested-side roll",
     "ex_dividend": "ex-dividend check",
     "risk.oversize": "risk budget check",
     "earnings_trade": "earnings-trade rule",
     "directional.take_profit": "directional take-profit",
     "directional.stop": "directional stop",
 }
+
+
+def _share(v: float) -> str:
+    """0.5 -> 'half', 0.25 -> 'a quarter', 0.75 -> 'three quarters', anything else a percentage."""
+    words = {0.25: "a quarter", 0.5: "half", 0.75: "three quarters"}
+    return next((w for k, w in words.items() if abs(v - k) < 1e-9), _pct(v))
+
+
+# Why a shape's own profit target differs from its rule's, for the shapes the default sets apart.
+TARGET_NOTES = {
+    "short straddle": "one of its short strikes is nearly always in the money, so it rarely keeps more",
+    "iron butterfly": "one of its short strikes is nearly always in the money, so it rarely keeps more",
+    "big lizard": "its short put and call share a strike, so one is nearly always in the money",
+    "reverse big lizard": "its short call and put share a strike, so one is nearly always in the money",
+    "calendar": "it trades only the time value between its two expiries, which cannot run far either way",
+    "call zebra": "it starts with no time value, so the gain is the stock's move, taken early",
+    "put zebra": "it starts with no time value, so the gain is the stock's move, taken early",
+}
+
+
+def _target_note(level: dict[str, Any]) -> str:
+    """' A short straddle's target is its own: ...' when the trade's shape has its own target."""
+    shape = level.get("by_shape")
+    if not shape:
+        return ""
+    why = TARGET_NOTES.get(shape)
+    return f" A {shape}'s target is its own" + (f": {why}." if why else ".")
 
 
 def _names(rules: list[str]) -> str:
@@ -391,6 +477,51 @@ SHAPE_NOTES = {
     "jade lizard (put wing)": (
         "This is a jade lizard with a put wing: taken in for at least the call spread's width, so it has no "
         "upside risk; its risk is the put spread below."
+    ),
+    "big lizard": (
+        "This is a big lizard: a short put at the short call's strike, under a call spread, taken in for at "
+        "least the call spread's width, so it has no upside risk; all of its risk is the short put."
+    ),
+    "reverse jade lizard": (
+        "This is a reverse jade lizard: taken in for at least the put spread's width, so it has no downside "
+        "risk; all of its risk is the short call."
+    ),
+    "reverse jade lizard (call wing)": (
+        "This is a reverse jade lizard with a call wing: taken in for at least the put spread's width, so "
+        "it has no downside risk; its risk is the call spread above."
+    ),
+    "reverse big lizard": (
+        "This is a reverse big lizard: a short call at the short put's strike, over a put spread, taken in "
+        "for at least the put spread's width, so it has no downside risk; all of its risk is the short call."
+    ),
+    "short straddle": (
+        "This is a short straddle: a short put and a short call at one strike. One side is nearly always in "
+        "the money, and its risk is open on both sides."
+    ),
+    "short strangle": (
+        "This is a short strangle: a short put below a short call. It earns while the stock stays between "
+        "them, and its risk is open on both sides."
+    ),
+    "broken-heart butterfly": (
+        "This is a broken-heart butterfly: a long spread nearer the money paid for by a wider short spread "
+        "further out. It pays most if the stock finishes between the two, and its risk sits beyond the "
+        "short spread, so bought cheaply against that tail it is judged on what it can win and lose."
+    ),
+    "call zebra": (
+        "This is a call zebra: two long calls against one short call above them, a stock substitute "
+        "whose risk is what was paid."
+    ),
+    "put zebra": (
+        "This is a put zebra: two long puts against one short put below them, a short-stock substitute "
+        "whose risk is what was paid."
+    ),
+    "call front-ratio": (
+        "This is a call front-ratio: one long call against two short calls further out. The second short "
+        "is naked, so its risk is above the short strike."
+    ),
+    "put front-ratio": (
+        "This is a put front-ratio: one long put against two short puts further out. The second short is "
+        "naked, so its risk is below the short strike."
     ),
 }
 

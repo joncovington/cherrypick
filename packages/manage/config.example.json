@@ -18,7 +18,14 @@
     "take_profit": {
       "enabled": true,
       "capture": 0.5,
-      "confidence": 80
+      "confidence": 80,
+      "by_shape": {
+        "_comment": "A shape's own capture and confidence, in place of the rule's (a field left out is the rule's). Any shape manage names may be added, a ratio butterfly by its quantities (\"1-3-2\"); a shape it never names is reported. One short strike of these is nearly always in the money, so the tastylive strategy guide (2023) takes them off at 25%.",
+        "short straddle": {"capture": 0.25, "confidence": 55},
+        "iron butterfly": {"capture": 0.25, "confidence": 55},
+        "big lizard": {"capture": 0.25, "confidence": 55},
+        "reverse big lizard": {"capture": 0.25, "confidence": 55}
+      }
     },
     "stop": {
       "enabled": true,
@@ -52,7 +59,19 @@
     "take_profit": {
       "enabled": true,
       "gain_fraction": 0.75,
-      "confidence": 65
+      "confidence": 65,
+      "by_shape": {
+        "_comment": "A shape's own gain_fraction and confidence. A calendar trades only the time value between its expiries, so the strategy guide takes it off at 10-25% of the debit; a zebra starts with no time value and takes 25%.",
+        "calendar": {"gain_fraction": 0.25, "confidence": 55},
+        "call zebra": {"gain_fraction": 0.25, "confidence": 55},
+        "put zebra": {"gain_fraction": 0.25, "confidence": 55}
+      }
+    },
+    "diagonal_width": {
+      "_comment": "Review a two-leg diagonal (a PMCC or its put mirror) whose net debit, rolls counted, is over max_share_of_width of the distance between its strikes: a fast move through the short leaves little to make, and past the width it loses.",
+      "enabled": true,
+      "max_share_of_width": 0.75,
+      "confidence": 60
     },
     "time_exit": {
       "enabled": true,
@@ -68,6 +87,12 @@
       "enabled": true,
       "capture": 0.8,
       "confidence": 85
+    },
+    "long_vertical": {
+      "_comment": "A butterfly's (broken-wing, broken-heart) long spread worth share_of_width of its width is sold, keeping the short spread.",
+      "enabled": true,
+      "share_of_width": 0.9,
+      "confidence": 50
     }
   },
   "roll": {
@@ -86,6 +111,20 @@
       "min_long_days": 45,
       "skip_through_earnings": false,
       "confidence": 60
+    },
+    "fly_off": {
+      "_comment": "A broken-wing butterfly opened for a credit: buy the wing that makes it a plain butterfly and sell the wide one, when that costs at most max_share_of_credit of the net credit. The new wing is modelled.",
+      "enabled": true,
+      "max_share_of_credit": 1.0,
+      "confidence": 55
+    },
+    "untested_side": {
+      "_comment": "A short strangle or straddle with one short at tested_delta or more and the other under target_delta: roll the untested short toward the money, same expiry, to the listed strike nearest target_delta, for at least min_credit a share at the snapshot's quoted mids (roll_chains). A review; in place of the short-leg buy-back when that names the untested leg; never in place of a stop. Never past the tested strike: an inversion ranks below closing or rolling out in time, so it is only recorded, never proposed.",
+      "enabled": true,
+      "tested_delta": 0.4,
+      "target_delta": 0.3,
+      "min_credit": 0.1,
+      "confidence": 50
     }
   },
   "expiry": {
@@ -230,6 +269,6 @@
       "show_too_big": 10
     }
   },
-  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power",
+  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.time_exit, legs.short_take_profit, legs.long_vertical, roll.naked_put, roll.diagonal_short, roll.fly_off, roll.untested_side, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power",
   "positions": {}
 }
