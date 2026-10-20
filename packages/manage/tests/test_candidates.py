@@ -63,7 +63,7 @@ def _book(net_liq=100_000.0, used=0.0, theta=0.0, bwd=0.0, bp_cap=0.50, underlyi
     }
 
 
-def _suggest(entries, book=None, trades=(), kind=None, rules=RULES):
+def _suggest(entries, book=None, trades=(), kind=None, rules=RULES, orders=None):
     income = {"session": "2026-10-16", "taken_at": "t", "complete": True, "symbols": entries}
     return candidates.suggest(
         income,
@@ -73,7 +73,40 @@ def _suggest(entries, book=None, trades=(), kind=None, rules=RULES):
         rules,
         kind or {"margin_or_cash": "Cash", "type_name": "Roth IRA"},
         500.0,
+        orders,
     )
+
+
+def _order(status, action, symbol="SLV   261120C00055000", qty=1, left=None):
+    return {
+        "status": status,
+        "underlying_symbol": "SLV",
+        "legs": [{"symbol": symbol, "action": action, "quantity": qty, "remaining_quantity": left}],
+    }
+
+
+def test_a_call_still_being_sold_counts_against_the_shares_and_a_finished_order_does_not():
+    held = _held(200)
+    working = [_order("Live", "Sell to Open")]
+    (row,) = _rows(_suggest({"SLV": _entry()}, trades=held, orders=working), "covered_call")
+    assert row["units"] == 1  # 200 shares, one call already on its way
+    # A filled order is in the positions already; a cancelled one never will be.
+    for done in ("Filled", "Cancelled", "Rejected", "Expired"):
+        (row,) = _rows(
+            _suggest({"SLV": _entry()}, trades=held, orders=[_order(done, "Sell to Open")]), "covered_call"
+        )
+        assert row["units"] == 2
+    # Partly filled: only what is left counts (the filled part is a position).
+    assert candidates.pending_short_calls([_order("Live", "Sell to Open", qty=3, left=1)]) == {"SLV": 1.0}
+    # Not a call sold to open: a put, a buy, a close.
+    for o in (
+        _order("Live", "Sell to Open", symbol="SLV   261120P00050000"),
+        _order("Live", "Buy to Open"),
+        _order("Live", "Buy to Close"),
+    ):
+        assert candidates.pending_short_calls([o]) == {}
+    out = _suggest({"SLV": _entry()}, trades=_held(100), orders=working)
+    assert _rows(out, "covered_call") == [] and out["excluded"].get("shares already written against") == 1
 
 
 def _rows(out, kind=None):

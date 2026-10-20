@@ -11,6 +11,11 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: the manage snapshot reads the day's orders** (v10, `working_orders`, through the broker
+  tool's read-only `get_working_orders`), slimmed to id, status, underlying, type, price and legs,
+  with the account number and the user's name left out. manage now counts a call still being sold
+  to open against the shares, so a covered call already on its way is not offered again. It is the
+  open-orders read the wheel view (skate plan, step 5) also needs.
 - **Fixed: 52 tradable names had no stress move, so manage never offered them.** The income run
   read each name's history from the end-of-day store, which holds the report's names and not every
   tradable one (IVV, FXI, DOCU, CPB, BURL, BRK.B among those missed). It now reads the history store,

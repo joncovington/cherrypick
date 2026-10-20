@@ -224,7 +224,8 @@ the name's stress move. From it manage builds the screener rules' structures:
 - a covered call near 0.165 delta, on shares the account holds and has not already written against.
   Each short call open on the name, at any expiry and inside any structure (a spread's or diagonal's
   short included, its long not taken as cover), ties up 100 shares; a name with fewer than 100 left
-  gets none. Working sell orders are not seen: the snapshot has no open-orders read yet.
+  gets none. A call being sold to open on a working order counts too (snapshot v10's
+  `working_orders`; only the part not yet filled, since the filled part is already a position).
 
 It drops any structure with an illiquid or unquoted leg, or an earnings report inside the trade. An
 unknown earnings date is flagged, never called clear. Each structure left gets the largest quantity

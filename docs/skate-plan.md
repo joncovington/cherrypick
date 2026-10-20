@@ -87,7 +87,7 @@ earlier carry the delta figure.
 | Listed strikes | `screener-greeks/chains/<day>.json`, `universe/chains/<day>.json` | expiries beyond the cycle monthly for most names |
 | Regular-hours quotes | `measure` at 11:30 / 14:30 (REST quotes, `LEG_BARS`) | IV and delta (REST returns quotes only) |
 | Trade chains | `manage` rebuilds order chains with rolls and reconciles against deliveries | linking a put chain to the shares it delivered, and those shares to later calls |
-| Resting orders | — | the `manage` snapshot reads positions, metrics and transactions, not open orders |
+| Resting orders | the `manage` snapshot's `working_orders` (v10, 2026-10-19): the day's orders, slimmed, no account number | — |
 
 ## What other trackers do, and what we take
 
@@ -107,7 +107,7 @@ assignment or times the LEAPS roll, which steps 5 and 6 do.
 | Option P&L and stock P&L kept apart; realized and unrealized kept apart | zyerusha, [OptionsPilot](https://optionspilot.app/blog/wheel-strategy-annualized-return-calculation) | steps 5, 6 |
 | Annualized = return × 365 ÷ days (simple, as every tracker does), on time-weighted capital: strike × 100 while a put is open, the shares' cost while held; a covered call adds none. Labelled a comparison figure, capped per trade, never a median across mixed durations | zyerusha, OptionsPilot, TastyMechanics | steps 3, 5, 6 |
 | Dual yield on a covered call: premium only, and if called | [PremiumGuard](https://premiumguardhq.com/blog/covered-call-tracking-spreadsheet) | steps 3, 5 |
-| Calls still sellable = shares − short calls − working sell orders | [AllYouNeedIsWheel](https://github.com/WahBun/AllYouNeedIsWheel) | step 5 (needs the open-orders read) |
+| Calls still sellable = shares − short calls − working sell orders | [AllYouNeedIsWheel](https://github.com/WahBun/AllYouNeedIsWheel) | step 5; built in `manage.candidates` 2026-10-19 (filled short calls, then working sell-to-open calls) |
 | A roll may not pay for itself by taking more risk: a rolled put's strike is capped at old strike + original premium − buyback cost | [thetagang](https://github.com/brndnmtthws/thetagang) | step 5, as a `check-roll` test |
 | PMCC P&L if assigned = (short strike − long strike − long's net cost + premiums) × 100, shown in dollars beside the width check | [trading_skills `ib-pmcc-advisor`](https://github.com/staskh/trading_skills) | step 6 |
 | PMCC short roll candidates: delta ≤ 0.40, net debit no worse than $0.10, next five expiries, never past the long's expiry; assignment chance N(d2) | trading_skills | step 6 |
@@ -272,7 +272,8 @@ For each underlying that holds a short put, shares, or a covered call:
 - **Today's check**: strike against today's range band (the orchestrator copies the held names'
   bands from step 1 into the snapshot, so `reevaluate` still gets the same answer twice), tested or
   not, extrinsic value left, and whether a buy-to-close is resting. That needs a **fourth read-only
-  broker call**, open orders, in `orchestrator/managesnap.py`.
+  broker call**, open orders, in `orchestrator/managesnap.py` (built 2026-10-19: snapshot v10's
+  `working_orders`, from the broker tool's `get_working_orders`).
 - **Suggested action**, from `manage`'s fixed vocabulary: `TAKE_PROFIT` when the mark is at or
   under the buy-to-close price; `ROLL_OR_CLOSE` when tested, with the net-zero and premium-gambit
   candidates priced and each passed through `check-roll`; after an assignment, the next leg named

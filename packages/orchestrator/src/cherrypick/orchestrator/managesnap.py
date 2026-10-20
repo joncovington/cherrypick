@@ -54,6 +54,12 @@ feed's for the rest through the broker tool's read-only `get_greeks`. manage pri
 so these are not inputs to any verdict; they let each day's reading set its beta-weighted delta and
 theta beside the same sums on the broker's model, which is the check the portfolio plan asks for
 before the bands are trusted.
+
+Version 10 carries the account's orders as the broker lists them for the day (`working_orders`,
+through the broker tool's read-only `get_working_orders`): working ones and the day's filled or
+cancelled ones alike, each slimmed to its id, status, underlying, type, price and legs, with every
+account number left out. manage counts a call still being sold against shares as already written
+(docs/skate-plan.md step 5 reads it for the wheel view's resting buy-to-close).
 """
 
 from __future__ import annotations
@@ -72,7 +78,7 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 9
+SNAPSHOT_VERSION = 10
 # Greeks move far more slowly than a bid; the cache's are used up to this old, the feed's otherwise.
 GREEKS_MAX_AGE_SECONDS = 900.0
 # Monday reads Friday's afternoon reading; anything older is a stale book of quotes.
@@ -214,6 +220,26 @@ def broker_greeks(
         {occ: {k: found[s].get(k) for k in keep} for occ, s in wanted.items() if s in found},
         error,
     )
+
+
+# The broker's reply also carries the account number, the user's name and id: none of them is kept.
+ORDER_KEEP = ("id", "status", "underlying_symbol", "order_type", "time_in_force", "price", "size")
+LEG_KEEP = ("symbol", "instrument_type", "action", "quantity", "remaining_quantity")
+
+
+def _slim_order(order: dict[str, Any]) -> dict[str, Any]:
+    """An order without its account number or fills: what manage reads, nothing else."""
+    out = {k: order.get(k) for k in ORDER_KEEP}
+    out["legs"] = [
+        {k: leg.get(k) for k in LEG_KEEP} for leg in order.get("legs") or [] if isinstance(leg, dict)
+    ]
+    return out
+
+
+def working_orders(cfg: dict[str, Any], prefer: str | None = None) -> tuple[list[dict], str | None]:
+    """The day's orders on the account, slimmed (`_slim_order`), and an error string when unavailable."""
+    payload, error = _first_answer(cfg, prefer, ["get_working_orders"])
+    return [_slim_order(o) for o in payload.get("orders") or [] if isinstance(o, dict)], error
 
 
 def pick_hedge_expiry(listing: dict[str, list[dict]], session: date) -> str | None:
@@ -394,6 +420,7 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
     hedge_spot = (metrics.get(HEDGE_ROOT) or {}).get("last")
     hedge = hedge_chain(cfg, hedge_spot, date.fromisoformat(session), prefer) if ok else None
     greeks, greeks_error = broker_greeks(cfg, positions, prefer) if ok else ({}, None)
+    orders, orders_error = working_orders(cfg, prefer) if ok else ([], None)
     return {
         "snapshot_version": SNAPSHOT_VERSION,
         "session": session,
@@ -407,5 +434,7 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "hedge_chain": hedge,
         "broker_greeks": greeks,
         "broker_greeks_error": greeks_error,
+        "working_orders": orders,
+        "working_orders_error": orders_error,
         "income": income_reading(date.fromisoformat(session)),
     }

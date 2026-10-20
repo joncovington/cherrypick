@@ -50,7 +50,7 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 9
+    assert snap["snapshot_version"] == 10
     assert snap["transactions"] == {"GLD": [{"order_id": 1}]}
     assert snap["transactions_error"] is None
     (tx_argv, tx_timeout) = next(c for c in calls if "get_transactions" in c[0])
@@ -318,3 +318,41 @@ def test_a_feed_that_cannot_answer_for_greeks_is_recorded_not_fatal(monkeypatch)
     monkeypatch.setattr(managesnap.positions_mod, "run", lambda cfg: GREEKS_POSITIONS)
     snap = managesnap.build({})
     assert snap["broker_greeks"] == {} and "DXLink timeout" in snap["broker_greeks_error"]
+
+
+def test_the_days_orders_are_kept_without_the_account_or_the_user(monkeypatch):
+    order = {
+        "id": 77,
+        "account_number": "5WT12345",
+        "username": "someone",
+        "user_id": 9,
+        "status": "Live",
+        "underlying_symbol": "SLV",
+        "order_type": "Limit",
+        "time_in_force": "Day",
+        "price": "0.45",
+        "size": 1,
+        "legs": [
+            {
+                "symbol": "SLV   261120C00055000",
+                "action": "Sell to Open",
+                "quantity": 1,
+                "remaining_quantity": 1,
+                "instrument_type": "Equity Option",
+                "fills": [{"fill_id": "x"}],
+            }
+        ],
+    }
+    _fake(monkeypatch, {"get_working_orders": {"ok": True, "orders": [order]}})
+    snap = managesnap.build({})
+    (kept,) = snap["working_orders"]
+    text = json.dumps(kept)
+    assert "5WT12345" not in text and "someone" not in text and "fills" not in text
+    assert kept["status"] == "Live" and kept["legs"][0]["action"] == "Sell to Open"
+    assert snap["working_orders_error"] is None
+
+
+def test_an_orders_read_that_fails_is_recorded_not_fatal(monkeypatch):
+    _fake(monkeypatch, {"get_working_orders": {"ok": False, "error": "HTTP 502"}})
+    snap = managesnap.build({})
+    assert snap["working_orders"] == [] and "HTTP 502" in snap["working_orders_error"]
