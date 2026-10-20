@@ -4,8 +4,9 @@ A pure function of the evening `income` reading the snapshot carries (`fetch_scr
 income`: every tradable name's cycle-monthly chain, quoted in regular hours, with its earnings dates,
 beta and stress move) and the portfolio reading manage has already made of the book. For each name it
 builds the structures the suite's screener rules describe, keeps the ones whose every leg is quoted,
-liquid by the leg bars and clear of an earnings report, and gives each a QUANTITY: the largest that
-clears every cap, with the cap that stops it named.
+liquid by the leg bars (`cherrypick.core.legbars`: one option as a leg, a spread as one order) and
+clear of an earnings report, and gives each a QUANTITY: the largest that clears every cap, with the
+cap that stops it named.
 
 The structures (the vendor's rules as `packages/technicals` `screeners.py` reproduced them, on the
 user's cycle monthly rather than the vendor's expiry):
@@ -13,7 +14,8 @@ user's cycle monthly rather than the vendor's expiry):
 - a **short put** at the strike nearest `short_put_delta` (0.40);
 - a **put or call credit spread**: short the first strike out of the money, long the strike nearest
   `spread_long_delta` (0.25) beyond it, offered only at a credit of `spread_min_credit` (a third) of
-  the width;
+  the width at the WORKING price (halfway from the mid to the natural fill; from 2026-10-19 -- over
+  seven sessions of cycle-monthly spreads 78% cleared a third at the mid and 62% at the natural);
 - a **covered call** at the strike nearest `covered_call_delta` (0.165), only on a name the account
   holds at least 100 shares of, never more contracts than the shares cover. Shares already written
   against are spoken for: the calls still sellable are (shares - 100 x the short calls already open
@@ -44,7 +46,8 @@ its strike; Reg T margin takes the greater of 20% of the underlying less the out
 plus the premium, and 10% of the strike plus the premium; portfolio margin is not modelled, and says
 so. An unknown kind is sized as cash-secured, the cautious reading.
 
-Every figure is modelled, at mid. Nothing here places an order, and the evening reading is a day old
+Every figure is modelled at mid, beside the working and natural prices; the credit floor alone is
+tested at the working price. Nothing here places an order, and the evening reading is a day old
 by the morning: re-quote before sending.
 """
 
@@ -55,10 +58,21 @@ import re
 from datetime import date
 from typing import Any
 
+from cherrypick.core import legbars
+
 from cherrypick.manage import portfolio as _portfolio
 from cherrypick.manage import pricing
 
 MULTIPLIER = pricing.MULTIPLIER
+
+
+def liquid(legs: list[tuple[dict, int]], bars: dict) -> bool:
+    """One option by the reading's own verdict; a spread as one order (`cherrypick.core.legbars`):
+    its cost to trade against its credit, and each leg's open interest -- never leg by leg, where the
+    cheap long's wide-in-percent spread failed a third of spreads that cost under 10% to trade."""
+    if len(legs) == 1:
+        return bool(legs[0][0].get("passes"))
+    return legbars.structure_passes(legs, bars)
 
 
 def _f(value: Any) -> float | None:
@@ -189,7 +203,8 @@ def fitted_spread(
     for o in sorted(beyond, key=lambda o: abs(o["strike"] - short["strike"])):
         width = abs(o["strike"] - short["strike"])
         credit = short["mid"] - o["mid"]
-        if credit < min_credit_share * width or (width - credit) * MULTIPLIER > max_loss_cap:
+        working = credit - ((short["ask"] - short["bid"]) + (o["ask"] - o["bid"])) / 4.0
+        if working < min_credit_share * width or (width - credit) * MULTIPLIER > max_loss_cap:
             continue
         best = o
     if best is None:
@@ -211,6 +226,9 @@ def unit(
     spot = _f(entry.get("spot")) or 0.0
     credit = -sum(q * o["mid"] for o, q in legs)  # per share
     natural = -sum(q * (o["ask"] if q > 0 else o["bid"]) for o, q in legs)
+    # The price a patient order is modelled to get (`cherrypick.core.legbars`): halfway from the mid
+    # to the natural fill. The credit floor is tested there, never at the mid alone.
+    working = (credit + natural) / 2.0
     stress = entry.get("stress") or {}
     kind = s["kind"]
     if kind in ("put_spread", "call_spread"):
@@ -241,7 +259,7 @@ def unit(
         notional = 0.0
         bp = 0.0
         stress_loss = 0.0
-    if kind in ("put_spread", "call_spread") and width and credit < s.get("min_credit_share", 0.0) * width:
+    if kind in ("put_spread", "call_spread") and width and working < s.get("min_credit_share", 0.0) * width:
         return None
     theta = sum(q * MULTIPLIER * o["theta"] for o, q in legs)
     delta = sum(q * MULTIPLIER * o["delta"] for o, q in legs)
@@ -249,6 +267,7 @@ def unit(
     return {
         "credit": credit,
         "natural": natural,
+        "working": working,
         "width": width,
         "max_loss": max_loss,
         "bp": bp,
@@ -371,6 +390,7 @@ def _describe(
         "per_unit": {
             "credit": round(u["credit"], 2),
             "natural": round(u["natural"], 2),
+            "working": round(u["working"], 2),
             "cash": round(u["credit"] * MULTIPLIER, 2),
             "max_loss": None if u["max_loss"] is None else round(u["max_loss"], 2),
             "buying_power": None if u["bp"] is None else round(u["bp"], 2),
@@ -406,6 +426,7 @@ def suggest(
             "too_big": [],
         }
     rate = float(rules["pricing"]["rate"])
+    bars = {**legbars.LEG_BARS, **(income.get("bars") or {})}
     basis = account_basis(account_type)
     shares: dict[str, float] = {}
     short_calls: dict[str, float] = {}
@@ -441,7 +462,7 @@ def suggest(
         if held >= 100 and uncovered_shares(held, written) < 100:
             drop("shares already written against")
         for s in structures(entry, options, cfg, held, written):
-            if any(not o.get("passes") for o, _ in s["legs"]):
+            if not liquid(s["legs"], bars):
                 drop("a leg is illiquid or unquoted")
                 continue
             s["min_credit_share"] = float(cfg["spread_min_credit"])
@@ -461,7 +482,7 @@ def suggest(
                 min_share = float(cfg["spread_min_credit"])
                 alt = fitted_spread(options, s["legs"][0][0], cap, min_share, s["kind"])
                 same = alt and s["kind"] != "short_put" and alt["legs"][1][0] is s["legs"][1][0]
-                if alt and not same and all(o.get("passes") for o, _ in alt["legs"]):
+                if alt and not same and liquid(alt["legs"], bars):
                     alt["min_credit_share"] = min_share
                     au = unit(alt, entry, basis, scale)
                     if au is not None:

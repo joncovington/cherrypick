@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ConsoleConfig } from "../src/config.js";
-import { cycleExpiry, earningsState, readScreener, readScreenerFidelity } from "../src/readers/screeners.js";
+import { cycleExpiry, earningsState, listedQuote, readScreener, readScreenerFidelity, tradePrice } from "../src/readers/screeners.js";
 
 /**
  * The Screeners page's reader joins files other packages write and derives two calendar facts. What
@@ -159,6 +159,39 @@ describe("readScreener", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
     expect(readScreener(config, "credit-spreads")).toMatchObject({ day: null, days: [], rows: [] });
     expect(readScreenerFidelity(config)).toEqual({ sessions: [], totals: null });
+  });
+});
+
+describe("the trade's price", () => {
+  const prices = { mid: 2.0, working: 1.95, natural: 1.9, cost: 0.1 };
+  const cycle = [{ role: "short" as const, right: "P" as const, expiry: "2026-12-18", strike: 98, bid: 1, ask: 1.1, openInterest: 500, volume: 5, passes: true, quiet: true }];
+
+  it("prices the side the reading recommends, annualised on the share price as the list does", () => {
+    const listed = tradePrice({ recommendation: "vendor", vendor_prices: prices, monthly_prices: { ...prices, working: 9 } }, "2026-11-13", 30, cycle, "2026-10-14", 100, null)!;
+    expect(listed).toMatchObject({ side: "listed", expiry: "2026-11-13", dte: 30, working: 1.95, workingCreditPct: null });
+    expect(listed.workingAnnualisedPct).toBeCloseTo((1.95 / 100) * (365 / 30) * 100, 6);
+    const monthly = tradePrice({ recommendation: "monthly", vendor_prices: prices, monthly_prices: { ...prices, working: 2.5 } }, "2026-11-13", 30, cycle, "2026-10-14", 100, null)!;
+    expect(monthly).toMatchObject({ side: "cycle", expiry: "2026-12-18", dte: 65, working: 2.5 });
+  });
+
+  it("states a spread's working credit against its width, not an annual return", () => {
+    const t = tradePrice({ recommendation: "vendor", vendor_prices: { mid: 2, working: 1.8, natural: 1.6, cost: 0.4 } }, "2026-11-27", 45, null, "2026-10-14", 380, 5)!;
+    expect(t.workingCreditPct).toBeCloseTo(36, 6);
+    expect(t.workingAnnualisedPct).toBeNull();
+  });
+
+  it("prices nothing without a reading, a recommendation or a priced side", () => {
+    expect(tradePrice(undefined, "2026-11-13", 30, cycle, "2026-10-14", 100, null)).toBeNull();
+    expect(tradePrice({ recommendation: "none" }, "2026-11-13", 30, cycle, "2026-10-14", 100, null)).toBeNull();
+    expect(tradePrice({ recommendation: "monthly", monthly_prices: null }, "2026-11-13", 30, cycle, "2026-10-14", 100, null)).toBeNull();
+  });
+
+  it("flags a listed quote that cannot back its mid", () => {
+    expect(listedQuote(0, 4.9)).toBe("no-bid"); // IYR 2026-10-16: 32.8% annualised on no bid
+    expect(listedQuote(0.3, 1.2)).toBe("wide"); // 0.90 wide on a 0.75 mid
+    expect(listedQuote(0.39, 1.16)).toBeNull(); // 99% of its mid: wide, but not past it
+    expect(listedQuote(1.9, 2.1)).toBeNull();
+    expect(listedQuote(null, null)).toBeNull();
   });
 });
 

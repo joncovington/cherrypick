@@ -55,6 +55,10 @@ def judge(symbol: str, expiries_35d: int | None, dollar_volume: float | None) ->
     """(verdict, reasons). None when the data to judge is missing, or for a reference series."""
     if symbol in REFERENCE:
         return None, []
+    return _test(expiries_35d, dollar_volume)
+
+
+def _test(expiries_35d: int | None, dollar_volume: float | None) -> tuple[str | None, list[str]]:
     if expiries_35d is None or dollar_volume is None:
         return None, []
     reasons = []
@@ -63,6 +67,17 @@ def judge(symbol: str, expiries_35d: int | None, dollar_volume: float | None) ->
     if dollar_volume < tradable.MIN_DOLLAR_VOLUME:
         reasons.append(f"${dollar_volume / 1e6:.0f}M a day, under ${tradable.MIN_DOLLAR_VOLUME / 1e6:.0f}M")
     return (ILLIQUID, reasons) if reasons else (TRADABLE, [])
+
+
+def reference_verdicts(funds: list[str], rows: dict, dv: dict, today: str) -> dict[str, dict]:
+    """The reference funds' verdicts by the options-tradable test, judged afresh every night; a fund
+    the data cannot judge is left out."""
+    out = {}
+    for s in funds:
+        verdict, reasons = _test((rows.get(s) or {}).get("expiries_35d"), dv.get(s))
+        if verdict is not None:
+            out[s] = {"verdict": verdict, "reasons": reasons, "judged_on": today}
+    return out
 
 
 def is_sweep_day(day: date) -> bool:
@@ -102,6 +117,18 @@ def load() -> dict[str, dict]:
         return json.loads(verdicts_path().read_text(encoding="utf-8")).get("names") or {}
     except (OSError, ValueError):
         return {}
+
+
+def reference_tradable() -> set[str]:
+    """The reference funds that pass the options-tradable test tonight (SPY, QQQ, the sector funds).
+    Judged apart from the names (`build`), so a reference fund is never held illiquid or hidden from
+    the report; read by the income candidates, which would otherwise never see the market's most
+    liquid underlyings (found 2026-10-19: SPY, QQQ, IWM, TLT and every sector fund were missing)."""
+    try:
+        doc = json.loads(verdicts_path().read_text(encoding="utf-8")).get("reference") or {}
+    except (OSError, ValueError):
+        return set()
+    return {s for s, v in doc.items() if (v or {}).get("verdict") == TRADABLE}
 
 
 def illiquid(names: dict[str, dict] | None = None) -> set[str]:
@@ -193,16 +220,24 @@ def build(dolt_cfg: dict | None = None, today: date | None = None) -> dict[str, 
     today = today or date.today()
     sweep = is_sweep_day(today)
     names = sorted({*symbols.all_symbols(), *screener_names()} - REFERENCE)
+    # The reference funds, judged by the same test but kept apart: never sticky, never hidden.
+    funds = sorted(REFERENCE - set(symbols.INDEXES))
     rows, label_day = tradable.latest_rows()
     conn = store.connect()
     try:
-        dv = _dollar_volumes(conn, names, dolt_cfg or {})
+        dv = _dollar_volumes(conn, [*names, *funds], dolt_cfg or {})
     finally:
         conn.close()
     fresh = {s: judge(s, (rows.get(s) or {}).get("expiries_35d"), dv.get(s)) for s in names}
     previous = load()
     verdicts = update(previous, fresh, today.isoformat(), sweep)
-    doc = {"updated_on": today.isoformat(), "sweep": sweep, "label_day": label_day, "names": verdicts}
+    doc = {
+        "updated_on": today.isoformat(),
+        "sweep": sweep,
+        "label_day": label_day,
+        "names": verdicts,
+        "reference": reference_verdicts(funds, rows, dv, today.isoformat()),
+    }
     path = _jsonio.write_json_atomic(verdicts_path(), doc, indent=1, default=None)
     held = illiquid(verdicts)
     return {

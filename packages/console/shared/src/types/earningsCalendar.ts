@@ -25,7 +25,8 @@ export interface EarningsTradeLeg {
   ask: number | null;
   openInterest: number | null;
   volume: number | null;
-  /** Against the leg bars (10% of mid or a nickel, 100 open, 10 traded); null when unquoted. */
+  /** Against the leg bars (10% of mid or a nickel, 100 open); null when unquoted. The spread itself
+   *  is judged as one order (its cost to trade against its price), so a leg can fail while it passes. */
   passes: boolean | null;
 }
 

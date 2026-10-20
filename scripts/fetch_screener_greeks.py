@@ -60,6 +60,8 @@ import time
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from cherrypick.core import legbars
+
 LISTS = (
     ("short-puts", "shortPuts"),
     ("covered-calls", "coveredCalls"),
@@ -434,26 +436,22 @@ def measure_names(lists: dict[str, dict], universe_candidates: set[str]) -> list
 # Legs: the vendor's own option against the monthly the user would trade instead (2026-10-07).
 #
 # The user's rule: recommend the vendor's strike only when THAT option is liquid -- a tight bid/ask,
-# decent open interest and volume -- and otherwise the standard monthly on the user's cycle, 45-60
-# days out where one is listed, else 30-60. Weeklies usually quote wider and trade thinner.
+# decent open interest -- and otherwise the standard monthly on the user's cycle, 45-60 days out
+# where one is listed, else 30-60. Weeklies usually quote wider and trade thinner.
 #
 # The bars (chosen 2026-10-16 from six sessions of 11:30 and 14:30 readings, ~5,700 legs a side):
 # the vendor's weekly options are mostly not tradable -- median open interest 7, volume 3 by 14:30,
-# spread 22% of mid -- against the cycle monthly's 877, 40 and 10%. Ten percent of mid (or a nickel),
-# 100 open and 10 traded: stricter bars barely move who wins, looser ones admit weeklies with a
-# single-digit open interest. Under them about 85% of rows go to the monthly. The monthly is not
-# always liquid either (far out-of-the-money calls are cheap, so wide in percent: ~1 in 5 covered-call
-# monthlies pass), so each row also says whether its monthly passes, never implying it.
+# spread 22% of mid -- against the cycle monthly's 877, 40 and 10%. Ten percent of mid (or a nickel)
+# and 100 open: stricter bars barely move who wins, looser ones admit weeklies with a single-digit
+# open interest. Under them about 85% of rows go to the monthly. The monthly is not always liquid
+# either (far out-of-the-money calls are cheap, so wide in percent), so each row also says whether its
+# monthly passes, never implying it. The bars live in `cherrypick.core.legbars`, shared with manage's
+# candidates; since 2026-10-19 volume is a flag there (`quiet`), and a spread is judged as one order.
 
 CYCLE_PREFERRED = (45, 60)
 CYCLE_ALLOWED = (30, 60)
-LEG_BARS: dict | None = {
-    "max_spread_pct": 0.10,
-    "max_spread_abs": 0.05,
-    "min_open_interest": 100,
-    "min_volume": 10,
-}
-EPS = 1e-9
+LEG_BARS: dict | None = legbars.LEG_BARS
+leg_passes = legbars.leg_passes
 
 
 def cycle_expiry(expirations: list[dict], is_monthly) -> dict | None:
@@ -494,51 +492,58 @@ def row_legs(name: str, row: dict) -> list[dict]:
     return [{"symbol": sym, "role": "short", "right": right, "expiry": exp, "strike": float(k)}]
 
 
-def leg_passes(q: dict, bars: dict) -> bool:
-    """A quoted option against the bars: two-sided and tight enough on either leg of the spread
-    rule (percent of mid OR absolute), with enough open interest and volume."""
-    bid, ask = q.get("bid"), q.get("ask")
-    if bid is None or ask is None or bid <= 0 or ask < bid:
-        return False
-    width, mid = ask - bid, (ask + bid) / 2
-    # A cent-priced width compared in floats: 0.23 - 0.18 is 0.0500000000000000017, one nickel.
-    tight = width / mid <= bars["max_spread_pct"] + EPS or width <= bars["max_spread_abs"] + EPS
-    return (
-        tight
-        and (q.get("open_interest") or 0) >= bars["min_open_interest"]
-        and (q.get("volume") or 0) >= bars["min_volume"]
-    )
+def signed(legs: list[dict] | None) -> list[tuple[dict, int]] | None:
+    """A row side's legs as (quote, signed quantity): -1 sold, +1 bought. None with no legs."""
+    if not legs:
+        return None
+    return [(leg.get("quote") or {}, -1 if leg.get("role", "short") == "short" else 1) for leg in legs]
 
 
-def recommend(vendor: list[dict], monthly: list[dict] | None, bars: dict | None) -> str | None:
-    """'vendor' when every vendor leg passes, else 'monthly' when the user's cycle lists one, else
-    'none'; None while the bars are unset (readings only)."""
+def recommend(
+    vendor: list[tuple[dict, int]] | None, monthly: list[tuple[dict, int]] | None, bars: dict | None
+) -> str | None:
+    """'vendor' when the vendor's trade passes (one option as a leg, a spread as one order), else
+    'monthly' when the user's cycle lists one, else 'none'; None while the bars are unset."""
     if bars is None:
         return None
-    if vendor and all(leg_passes(q, bars) for q in vendor):
+    if vendor and legbars.structure_passes(vendor, bars):
         return "vendor"
     return "monthly" if monthly else "none"
 
 
-def monthly_passes(monthly: list[dict] | None, bars: dict | None) -> bool | None:
-    """Whether the cycle monthly's own legs pass the bars; None with no monthly or no bars."""
+def monthly_passes(monthly: list[tuple[dict, int]] | None, bars: dict | None) -> bool | None:
+    """Whether the cycle monthly's trade passes the bars; None with no monthly or no bars."""
     if bars is None or not monthly:
         return None
-    return all(leg_passes(q, bars) for q in monthly)
+    return legbars.structure_passes(monthly, bars)
 
 
 def apply_bars(rows: list[dict], bars: dict | None) -> None:
-    """Judge every row's legs against `bars`, in place: each quoted leg's `passes`, the row's
-    `recommendation` and whether its monthly passes. The one place the bars are applied, so a
-    reader (the console's screener page) shows the verdict rather than re-deriving it."""
+    """Judge every row against `bars`, in place: each quoted leg's `passes` and `quiet`, the row's
+    `recommendation`, whether its monthly passes, and each side's prices per share (credit +: mid,
+    working, natural and the cost of trading it). The one place the bars are applied, so a reader
+    (the console's screener page) shows the verdict rather than re-deriving it. A spread's legs keep
+    their own verdicts for the record; the row is judged on the spread."""
     for r in rows:
         for leg in [*r["vendor"], *(r["monthly"] or [])]:
             q = leg.get("quote")
             leg["passes"] = None if bars is None or not q else leg_passes(q, bars)
-        vendor_q = [leg.get("quote") or {} for leg in r["vendor"]]
-        monthly_q = [leg.get("quote") or {} for leg in r["monthly"]] if r["monthly"] else None
-        r["recommendation"] = recommend(vendor_q, monthly_q, bars)
-        r["monthly_passes"] = monthly_passes(monthly_q, bars)
+            leg["quiet"] = None if bars is None or not q else legbars.quiet(q, bars)
+        vendor, monthly = signed(r["vendor"]), signed(r["monthly"])
+        r["recommendation"] = recommend(vendor, monthly, bars)
+        r["monthly_passes"] = monthly_passes(monthly, bars)
+        r["vendor_prices"] = legbars.structure_prices(vendor) if vendor else None
+        r["monthly_prices"] = legbars.structure_prices(monthly) if monthly else None
+
+
+def judge_income(doc: dict, bars: dict | None) -> None:
+    """Each quoted option of an `income` reading against the bars, in place."""
+    for entry in (doc.get("symbols") or {}).values():
+        for o in entry.get("options") or []:
+            q = {k: o.get(k) for k in ("bid", "ask", "volume", "open_interest")}
+            quoted = o.get("bid") is not None or o.get("ask") is not None
+            o["passes"] = leg_passes(q, bars) if bars and quoted else None
+            o["quiet"] = legbars.quiet(q, bars) if bars and quoted else None
 
 
 def cmd_rebar(_args) -> int:
@@ -558,6 +563,13 @@ def cmd_rebar(_args) -> int:
     for path in sorted((store_dir() / "screener-greeks" / "earnings-legs").glob("*/*.json")):
         doc = json.loads(path.read_text(encoding="utf-8"))
         judge_earnings_legs(doc.get("rows") or [], LEG_BARS)
+        doc["bars"] = LEG_BARS
+        write_json_atomic(path, doc, indent=None, default=None)
+        changed += 1
+    # Our own candidates (2026-10-18), whose verdicts manage reads.
+    for path in sorted((store_dir() / "screener-greeks" / "income").glob("*.json")):
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        judge_income(doc, LEG_BARS)
         doc["bars"] = LEG_BARS
         write_json_atomic(path, doc, indent=None, default=None)
         changed += 1
@@ -890,19 +902,20 @@ def marks_due(root: Path, today) -> list[dict]:
 
 
 def judge_earnings_legs(rows: list[dict], bars: dict | None) -> None:
-    """Each quoted leg against the bars and each spread's price, in place."""
+    """Each quoted leg against the bars, each spread as one order, and its price, in place."""
     for r in rows:
         if not r.get("legs"):
             continue
         for leg in r["legs"]:
             q = leg.get("quote")
             leg["passes"] = None if bars is None or not q else leg_passes(q, bars)
+            leg["quiet"] = None if bars is None or not q else legbars.quiet(q, bars)
+        long_q, short_q = (r["legs"][0].get("quote") or {}), (r["legs"][1].get("quote") or {})
         r["passes"] = (
             None
             if any(leg.get("passes") is None for leg in r["legs"])
-            else all(leg["passes"] for leg in r["legs"])
+            else legbars.structure_passes([(long_q, 1), (short_q, -1)], bars)
         )
-        long_q, short_q = (r["legs"][0].get("quote") or {}), (r["legs"][1].get("quote") or {})
         r.update(price_spread(r["kind"], long_q, short_q, r["width"]))
 
 
@@ -1110,9 +1123,10 @@ def stress_closes(conn, symbol: str) -> list[float]:
     return [b.close for b in skate.price_bars(conn, store_sym)]
 
 
-def income_names(verdicts: dict[str, dict]) -> list[str]:
-    """The tradable names, in the store's spelling (BRK.B)."""
-    return sorted(s for s, v in verdicts.items() if (v or {}).get("verdict") == "tradable")
+def income_names(verdicts: dict[str, dict], funds: set[str] = frozenset()) -> list[str]:
+    """The tradable names, in the store's spelling (BRK.B), and the reference funds that pass the
+    same test (`liquidity.reference_tradable`: SPY, QQQ, the sector funds)."""
+    return sorted({*(s for s, v in verdicts.items() if (v or {}).get("verdict") == "tradable"), *funds})
 
 
 def income_plan(listing: list[dict], spot: float | None, is_monthly) -> dict | None:
@@ -1236,7 +1250,7 @@ def cmd_income(args) -> int:
             )
         )
         return 0
-    names = income_names(liquidity.load())[: args.limit]
+    names = income_names(liquidity.load(), liquidity.reference_tradable())[: args.limit]
     if not names:
         print(json.dumps({"ok": False, "reason": "no tradable names: the liquidity verdicts are missing"}))
         return 1
@@ -1281,6 +1295,7 @@ def cmd_income(args) -> int:
                     "option": leg["option"],
                     **{k: q.get(k) for k in ("bid", "ask", "volume", "open_interest", "updated_at")},
                     "passes": leg_passes(q, LEG_BARS) if q else None,
+                    "quiet": legbars.quiet(q, LEG_BARS) if q else None,
                 }
             )
         entry.update(

@@ -22,8 +22,31 @@ export interface ScreenerLeg {
   ask: number | null;
   openInterest: number | null;
   volume: number | null;
-  /** Against the leg bars (10% of mid or a nickel, 100 open, 10 traded); null when unquoted. */
+  /** Against the leg bars (10% of mid or a nickel, 100 open); null when unquoted. A spread's row is
+   *  judged on the spread as one order, so a leg can fail here while its spread passes. */
   passes: boolean | null;
+  /** Fewer than 10 traded so far that session: a flag, never a failure (2026-10-19). */
+  quiet: boolean | null;
+}
+
+/** The trade the row stands for -- the listed option where it passes, else the cycle monthly -- priced
+ *  per share from the regular-hours reading (credit +). `working` is halfway from the mid to the
+ *  natural fill: a limit at the mid stepped down a quarter of the spread (`cherrypick.core.legbars`). */
+export interface ScreenerTrade {
+  side: "listed" | "cycle";
+  expiry: string;
+  dte: number | null;
+  mid: number;
+  working: number;
+  natural: number;
+  /** Mid less natural: what crossing the whole spread would cost, per share. */
+  cost: number;
+  /** Simple annualised return on the share price, as the list states its own (short puts and covered
+   *  calls); null for a spread. */
+  workingAnnualisedPct: number | null;
+  naturalAnnualisedPct: number | null;
+  /** A spread's working credit as a share of its width, %; null for one option. */
+  workingCreditPct: number | null;
 }
 
 export interface ScreenerRow {
@@ -47,6 +70,9 @@ export interface ScreenerRow {
   ask: number | null;
   rawReturnPct: number | null;
   annualisedPct: number | null;
+  /** The list's own quote cannot back its mid-priced return: no bid, or a spread wider than the mid
+   *  itself. The return is then shown as that, never as a yield. Null when the quote is sound. */
+  listedQuote: "no-bid" | "wide" | null;
   /** Strike against the share price, %. */
   distancePct: number | null;
   /** A spread's width and its credit as a share of it, %. */
@@ -74,6 +100,8 @@ export interface ScreenerRow {
   recommendation: "listed" | "cycle" | "none" | null;
   /** Whether the cycle monthly's own legs pass the bars too; null with no reading or no monthly. */
   cyclePasses: boolean | null;
+  /** The recommended trade, priced; null with no reading, no recommendation or an unquoted leg. */
+  trade: ScreenerTrade | null;
 }
 
 export interface ScreenerPayload {
