@@ -11,6 +11,11 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Fixed: 52 tradable names had no stress move, so manage never offered them.** The income run
+  read each name's history from the end-of-day store, which holds the report's names and not every
+  tradable one (IVV, FXI, DOCU, CPB, BURL, BRK.B among those missed). It now reads the history store,
+  split-adjusted and not dividend-adjusted, as skate does: on 2026-10-19's names, 451 of 458 have a
+  stress move, up from 399, and none lost theirs.
 - **Fixed: MEIC's session windows in the docs disagreed with the code.** The v0.11.1 documentation
   review set `open_volatile` to 09:30–10:00 and `late` to 14:30–15:30 in `docs/strategy.md` and the
   agent's `execute-entry` command; the loops classify by 10:15 and 14:45, so 10:00–10:15 entries meet

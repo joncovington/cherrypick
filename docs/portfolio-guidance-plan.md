@@ -125,7 +125,9 @@ quantity: the smallest of five caps, every one scaled by net liq, with the bindi
 | Concentration | the name stays ≤ 25% of theta | same | same |
 
 Stress loss is the name's own 1st-percentile return over the holding period, from the local
-end-of-day store, priced through Black-Scholes. A candidate that does not fit is shown at quantity 0
+history store (`history.db`: every tradable name, split-adjusted and not dividend-adjusted; until
+2026-10-19 it read the end-of-day store, which lacked 52 of the 458 names), priced through
+Black-Scholes. A candidate that does not fit is shown at quantity 0
 with the cap that stopped it and the nearest version that fits: a short put too large to secure is
 offered as a put spread on the same short strike.
 
