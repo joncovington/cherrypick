@@ -12,7 +12,7 @@
  * failure is memoised too (shorter), so a broker outage costs one call a minute, not one a poll.
  * Never fatal: the tile degrades to the local figure and says why.
  */
-import { suitePython } from "@console/shared";
+import { suitePython } from "@console/shared/paths";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

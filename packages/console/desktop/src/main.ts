@@ -10,7 +10,7 @@
  * loaded inside Electron — so this needs no `electron-rebuild` step and no native module of its own.
  */
 import { app, BrowserWindow, Menu, Tray, shell, nativeImage } from "electron";
-import { consolePort, consoleUrl, BIND_HOST } from "@console/shared";
+import { consolePort, consoleUrl, BIND_HOST } from "@console/shared/paths";
 import { probeHealth, diagnose } from "./status.js";
 import { loadBounds, saveBounds, type Bounds } from "./bounds.js";
 import { splashDataUrl } from "./splash.js";

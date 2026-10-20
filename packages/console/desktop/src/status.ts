@@ -13,7 +13,7 @@ import {
   consoleHeartbeatPath,
   supervisorHeartbeatPath,
   supervisorJobsPath,
-} from "@console/shared";
+} from "@console/shared/paths";
 
 /** How stale the supervisor's heartbeat may be before it counts as dead. Matches the daemon's own
  *  `HEARTBEAT_FRESH_SECONDS`, which tolerates a slow pass without flapping. */

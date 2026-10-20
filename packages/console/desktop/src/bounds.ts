@@ -5,7 +5,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { cherrypickHome } from "@console/shared";
+import { cherrypickHome } from "@console/shared/paths";
 
 export interface Bounds {
   x?: number;

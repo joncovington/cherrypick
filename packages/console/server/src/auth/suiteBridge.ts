@@ -1,4 +1,4 @@
-import { suitePython } from "@console/shared";
+import { suitePython } from "@console/shared/paths";
 import { spawnSync } from "node:child_process";
 
 /**
