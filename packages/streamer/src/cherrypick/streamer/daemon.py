@@ -191,6 +191,7 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         window_events_for=lambda symbol: window_events.get(symbol),
         nearest_window_for=lambda symbol: nearest_window.get(symbol, True),
         logger=logger,
+        producer=True,  # the suite's one writer of the shared cache
     )
 
 

@@ -56,6 +56,33 @@ def test_no_producer_is_not_treated_as_a_producer():
     assert producers({}) == []
 
 
+def test_the_engine_refuses_the_shared_cache_to_anyone_but_the_producer(tmp_path, monkeypatch):
+    """The config checks above see only what the orchestrator starts. A process started by hand
+    (gex's `run.py stream`, which took the shared path by default until 2026-10-19) never passes
+    through them, so the engine itself refuses the shared cache unless told it is the producer."""
+    from cherrypick.core import streamcache
+    from cherrypick.core.streamer import ChainStreamer
+
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    shared = streamcache.cache_path()
+    with pytest.raises(ValueError, match="only packages/streamer writes"):
+        ChainStreamer(session_factory=lambda: None, db_path=shared, symbols=["SPX"])
+    ChainStreamer(session_factory=lambda: None, db_path=shared, symbols=["SPX"], producer=True)
+    ChainStreamer(session_factory=lambda: None, db_path=tmp_path / "own.db", symbols=["SPX"])
+
+
+def test_the_producer_says_it_is_the_producer():
+    """The daemon is the one constructor of the engine that claims the shared cache."""
+    hits = []
+    for p in (REPO / "packages").rglob("*.py"):
+        if {"tests", "node_modules", "build"} & set(p.parts):
+            continue
+        text = p.read_text(encoding="utf-8", errors="ignore")
+        if "ChainStreamer(" in text and "producer=True" in text:
+            hits.append(p.relative_to(REPO).as_posix())
+    assert hits == ["packages/streamer/src/cherrypick/streamer/daemon.py"]
+
+
 def test_doctor_warns_on_an_enabled_module_block_and_ignores_a_disabled_one():
     """The old rollback recipe (module block on, standalone off) would now start nothing at all."""
     warned = doctor.module_streamer_checks("meic", {"streamer": {"enabled": True}})

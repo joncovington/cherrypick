@@ -96,8 +96,9 @@ silence-supervised", never to a restart.
 Two modes: **piggyback** (default — `source.stream_cache_db` resolves to the suite's shared cache,
 `~/.cherrypick/data/marketdata/stream_cache.db`, read read-only) or **standalone**, development only:
 `run.py stream` writes whatever `source.stream_cache_db` resolves to, which by default is the SHARED
-cache, so repoint it at a private file (e.g. `data/stream_cache.db`) first and never run it beside
-`packages/streamer`.
+cache, so repoint it at a private file (e.g. `data/stream_cache.db`) first. Since 2026-10-19 the
+engine refuses the shared path to any writer but `packages/streamer`, so on a default config it exits
+saying so.
 
 Suite context: the root [documentation index](../../docs/README.md), especially
 [strategy-engines.md](../../docs/strategy-engines.md). The incidents behind the rules here are in
@@ -148,7 +149,7 @@ file's directory.
 - **Never write a cache you don't own.** In piggyback mode the provider opens the shared cache
   `?mode=ro`, and the spot trail goes to `history_db`. `run.py stream` writes whatever
   `source.stream_cache_db` resolves to, which by default is the SHARED cache: repoint it at a private
-  file first and never run it beside `packages/streamer`. The shared cache has one writer.
+  file first (the engine refuses the shared path otherwise). The shared cache has one writer.
 - **GEX math and the streaming engine stay in `cherrypick.core`.** Never fork dollar-gamma / walls /
   zero-gamma or the streamer into this package (a copied GEX calculation once drifted ~75×).
 - **The GEX horizon is forward-only.** `provider.snapshot_from_stream_cache` picks the nearest
