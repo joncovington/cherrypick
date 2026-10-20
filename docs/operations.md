@@ -91,6 +91,7 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `technicals-index-bars` | daily **06:00** | `scripts/fetch_index_bars.py` | on with `dolt` + earnings | |
 | `technicals-land` | daily **06:15** | `-m cherrypick.technicals land` | on with `dolt` + earnings | lands the end-of-day store from the Dolt clones |
 | `technicals-report` | daily **06:30** | `-m cherrypick.technicals report` | on with `dolt` + earnings | disabled with `technicals-land` |
+| `technicals-dollar-volume` | daily **18:35**, trading days | `scripts/fetch_dollar_volume.py` | on (no `dolt` needed) | each name's 50-session dollar volume from the broker's candles; the security list and the liquidity verdict read it |
 | `technicals-iv-rank` | daily **18:50**, trading days | `scripts/fetch_iv_rank.py` | on with `dolt` + earnings | |
 | `technicals-dividends` | daily **19:30** | `scripts/fetch_dividends.py` | on with `dolt` + earnings | |
 | `report-edition` / `-retry`, `report-charts` | daily 07:00 / 08:15, 17:15, trading days | `scripts/fetch_vendor_edition.py` | off | `market_report.collector`; needs both vendor keys set |

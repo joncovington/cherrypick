@@ -92,3 +92,28 @@ def test_skip_is_empty_on_a_sweep_day(monkeypatch):
 
 def test_listed_drops_only_the_illiquid_and_keeps_the_order():
     assert liquidity.listed(["B", "ALL", "A"], {"ALL"}) == ["B", "A"]
+
+
+def test_the_build_judges_dollar_volume_from_the_candle_file_alone(monkeypatch):
+    """No store and no Dolt: a name with the full 50 sessions is judged, one with fewer is not."""
+    import json
+    from datetime import date
+
+    from cherrypick.technicals import paths, symbols, tradable
+
+    monkeypatch.setattr(symbols, "all_symbols", lambda: ["BIG", "THIN", "NEW"])
+    monkeypatch.setattr(liquidity, "screener_names", lambda: [])
+    rows = {s: {"expiries_35d": 5} for s in ("BIG", "THIN", "NEW")}
+    monkeypatch.setattr(tradable, "latest_rows", lambda: (rows, "2026-10-16"))
+    root = paths.dollar_volume_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    names = {
+        "BIG": {"median": 500e6, "sessions": 50},
+        "THIN": {"median": 20e6, "sessions": 50},
+        "NEW": {"median": 900e6, "sessions": 30},
+    }
+    (root / "2026-10-16.json").write_text(json.dumps({"names": names}), encoding="utf-8")
+    out = liquidity.build(today=date(2026, 10, 20))
+    verdicts = liquidity.load()
+    assert verdicts["BIG"]["verdict"] == "tradable" and verdicts["THIN"]["verdict"] == "illiquid"
+    assert "NEW" not in verdicts and out["unjudged"] == 1

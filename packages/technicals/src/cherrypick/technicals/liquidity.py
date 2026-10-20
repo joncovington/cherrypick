@@ -9,6 +9,10 @@ as before, and tonight's verdict re-judges the ones held illiquid.
 The spread bar the user asked for joins it once it is chosen on complete readings. It is NOT the
 universe builder's membership rule, which is far stricter (32 members of 600 candidates).
 
+**The dollar volume is the broker's daily candles'** (`dollarvolume.py`, from 2026-10-19), for
+every name, so the verdict needs no Dolt and no store; before, it read the store's bars and Dolt's
+for names the store did not hold. A name the file has no 50-session median for is unjudged.
+
 **Kept, not deleted.** An illiquid name's daily bars stay in the store: they cost no broker call
 (local Dolt) and the market-report engines are scored against the vendor's tables, whose names are
 mostly illiquid. Breadth, sector net and rank therefore still count every name; only the names a
@@ -19,20 +23,20 @@ view *lists* leave out the illiquid ones.
 illiquid any day. A name with no data has no verdict and is treated as tradable.
 
 `python -m cherrypick.technicals liquidity` writes `market-report/liquidity/verdicts.json` from
-local data only. Network-free, like the rest of the package.
+local data only. Network-free, like the rest of the package; the dollar volume is the file the
+evening fetch writes.
 """
 
 from __future__ import annotations
 
 import json
-import statistics
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 from cherrypick.core import jsonio as _jsonio
 
-from . import paths, symbols, tradable
+from . import dollarvolume, paths, symbols, tradable, universe
 
 ILLIQUID = "illiquid"
 TRADABLE = "tradable"
@@ -170,64 +174,16 @@ def screener_names() -> list[str]:
     return sorted(out)
 
 
-def _dollar_volumes(conn, names: list[str], dolt_cfg: dict) -> dict[str, float]:
-    """50-session median of close x volume: the store's bars, else Dolt's for names it does not hold
-    (most screener names). A Dolt outage leaves those names unjudged, never guessed."""
-    from . import store, universe
-
-    out: dict[str, float] = {}
-    missing = []
-    for s in names:
-        bars = store.raw_bars(conn, s)
-        if len(bars) >= universe.WINDOW:
-            out[s] = statistics.median(b.close * (b.volume or 0) for b in bars[-universe.WINDOW :])
-        else:
-            missing.append(s)
-    if missing:
-        try:
-            out.update(_dolt_dollar_volumes(missing, dolt_cfg))
-        except Exception:  # noqa: BLE001 -- reported as unjudged by the caller
-            pass
-    return out
-
-
-def _dolt_dollar_volumes(names: list[str], cfg: dict) -> dict[str, float]:
-    from . import land, universe
-
-    cfg = {**land.DEFAULTS, **cfg}
-    db = land._connect(cfg, cfg["stocks_db"])
-    try:
-        cur = db.cursor()
-        marks = ",".join(["%s"] * len(names))
-        cur.execute(
-            "SELECT act_symbol, close, volume FROM ohlcv "
-            f"WHERE date > DATE_SUB(CURDATE(), INTERVAL 100 DAY) AND act_symbol IN ({marks}) "
-            "ORDER BY act_symbol, date",
-            names,
-        )
-        by: dict[str, list[float]] = {}
-        for sym, close, volume in cur.fetchall():
-            by.setdefault(sym, []).append(float(close) * float(volume or 0))
-    finally:
-        db.close()
-    return {s: statistics.median(v[-universe.WINDOW :]) for s, v in by.items() if len(v) >= universe.WINDOW}
-
-
-def build(dolt_cfg: dict | None = None, today: date | None = None) -> dict[str, Any]:
+def build(today: date | None = None) -> dict[str, Any]:
     """Judge every name the store holds and every listed screener name; write the verdicts."""
-    from . import store
-
     today = today or date.today()
     sweep = is_sweep_day(today)
     names = sorted({*symbols.all_symbols(), *screener_names()} - REFERENCE)
     # The reference funds, judged by the same test but kept apart: never sticky, never hidden.
     funds = sorted(REFERENCE - set(symbols.INDEXES))
     rows, label_day = tradable.latest_rows()
-    conn = store.connect()
-    try:
-        dv = _dollar_volumes(conn, [*names, *funds], dolt_cfg or {})
-    finally:
-        conn.close()
+    dv_names, dv_header = dollarvolume.latest(today.isoformat())
+    dv = dollarvolume.medians(dv_names, universe.WINDOW)
     fresh = {s: judge(s, (rows.get(s) or {}).get("expiries_35d"), dv.get(s)) for s in names}
     previous = load()
     verdicts = update(previous, fresh, today.isoformat(), sweep)
@@ -235,6 +191,7 @@ def build(dolt_cfg: dict | None = None, today: date | None = None) -> dict[str, 
         "updated_on": today.isoformat(),
         "sweep": sweep,
         "label_day": label_day,
+        "dollar_volume_file": dv_header.get("file"),
         "names": verdicts,
         "reference": reference_verdicts(funds, rows, dv, today.isoformat()),
     }
