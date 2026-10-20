@@ -11,6 +11,20 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: manage rolls a tested strangle's untested side, at quoted prices.** The manage snapshot
+  (v11, `roll_chains`) now quotes the chain of every expiry in which one underlying is short both a
+  put and a call: one read-only chain read per such expiry, none when there is none. From it,
+  `roll.untested_side` (confidence 50) proposes rolling the untested short of a tested strangle or
+  straddle toward the money, to the listed strike nearest 30 delta, for a credit at the quoted mids.
+  It is a review, offered in place of the short-leg buy-back when that names the same leg, and never
+  in place of a stop or a close.
+
+- **Added: manage flies a credit broken-wing butterfly's risk off.** `roll.fly_off` (review,
+  confidence 55): when a broken-wing butterfly opened for a net credit can be made a plain butterfly
+  (buy the wing at the narrow side's width beyond the body, sell the wide wing) for no more than the
+  credit, the evaluation proposes it, with the order. What is left cannot lose, fees aside. The new
+  wing is modelled, so the debit is an estimate.
+
 - **Added: manage sells a butterfly's long spread near its full value.** `legs.long_vertical` (close
   legs, confidence 50): when the long spread of a butterfly, broken-wing or broken-heart butterfly is
   worth 90% of its width, the evaluation says to sell just that spread and keep the short spread,

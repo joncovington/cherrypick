@@ -189,10 +189,12 @@ def evaluate_trade(
     rules: dict[str, Any],
     chain: dict[str, Any] | None = None,
     seen: dict[str, Any] | None = None,
+    roll_chains: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """`chain`, when the broker history reconciled one, sets the basis: the chain's net cash across its
     opening order and every roll, not the open legs' average prices. `seen` is the earnings trades the
-    previous evaluation found (`earnings_trade`)."""
+    previous evaluation found (`earnings_trade`). `roll_chains` is the snapshot's quoted chains, keyed
+    "<UNDERLYING>|<expiry>", that a strangle's untested side is rolled along."""
     metrics = metrics or {}
     spot = _f(metrics.get("last"))
     pr = rules["pricing"]
@@ -229,6 +231,8 @@ def evaluate_trade(
         "earnings": None,
         "ex_dividend": None,
         "long_vertical": None,
+        "fly_off": None,
+        "untested_roll": None,
         "fired": [],
         "exit_levels": {},
     }
@@ -681,6 +685,77 @@ def evaluate_trade(
             )
             trade.setdefault("leg_orders", {})["legs.long_vertical"] = _order(sold)
 
+    # ---- a broken-wing butterfly taken in for a credit flies off its risk while that costs less
+    fo = rules["roll"]["fly_off"]
+    if (
+        trade["shape"] == "broken-wing butterfly"
+        and cost < 0
+        and spot
+        and not expiring
+        and not off("roll.fly_off")
+    ):
+        fly = _fly_off(options, spot, rate)
+        if fly and fly["debit"] <= float(fo["max_share_of_credit"]) * -cost:
+            fly["kept"] = -cost - fly["debit"]
+            trade["fly_off"] = fly
+            fired.append(
+                _fire(
+                    "roll.fly_off",
+                    REVIEW,
+                    fo["confidence"],
+                    f"buy the {fly['new_strike']:g}{fly['right']} and sell the "
+                    f"{fly['old_strike']:g}{fly['right']} for about ${fly['debit']:,.0f} (modelled) against "
+                    f"the ${-cost:,.0f} taken in: a plain butterfly that keeps ${fly['kept']:,.0f} "
+                    "and cannot lose",
+                    fly["legs"],
+                )
+            )
+
+    # ---- a tested strangle or straddle rolls its untested short toward the money, for a credit
+    ur = rules["roll"]["untested_side"]
+    if (
+        trade["shape"] in ("short strangle", "short straddle")
+        and spot
+        and not expiring
+        and not off("roll.untested_side")
+    ):
+        roll = _untested_roll(options, spot, rate, ur, (roll_chains or {}), underlying)
+        if roll:
+            trade["untested_roll"] = roll
+            if not roll.get("blocked"):
+                # The untested short has often decayed past the buy-back rule's capture by now. Buying it
+                # back alone leaves the tested short on its own, so the roll -- the same buy-back with a
+                # new short sold closer -- is offered in its place, the buy-back its fallback order. A
+                # stop or any other close still outranks it: this is repair, never a rescue.
+                untested = f"{roll['from_strike']:g}{roll['right']}"
+                buyback = next(
+                    (
+                        f
+                        for f in fired
+                        if f["rule"] == "legs.short_take_profit"
+                        and any(str(x).endswith(f" {untested}") for x in f["legs"] or [])
+                    ),
+                    None,
+                )
+                closing = any(f["action"] in (CLOSE, ROLL_OR_CLOSE) for f in fired)
+                instead = bool(buyback) and not closing
+                if instead:
+                    trade.setdefault("leg_orders", {})["roll.untested_side"] = trade["leg_orders"][
+                        "legs.short_take_profit"
+                    ]
+                fired.append(
+                    _fire(
+                        "roll.untested_side",
+                        ROLL_FOR_CREDIT if instead else REVIEW,
+                        ur["confidence"],
+                        f"the {roll['tested_strike']:g}{roll['tested_right']} is tested "
+                        f"({abs(roll['tested_delta']):.2f} delta): roll the untested "
+                        f"{roll['from_strike']:g}{roll['right']} to the {roll['to_strike']:g}{roll['right']} "
+                        f"({abs(roll['to_delta']):.2f} delta) for {roll['credit']:.2f} cr at the quoted mids",
+                        roll["legs"],
+                    )
+                )
+
     # ---- ex-dividend assignment risk on short calls
     xr = rules["ex_dividend"]
     if (
@@ -927,6 +1002,128 @@ def _long_vertical(
         return out
 
     return [near, part(body, -qty)], [part(body, body["quantity"] + qty), far]
+
+
+def _untested_roll(
+    options: list[dict[str, Any]],
+    spot: float,
+    rate: float,
+    cfg: dict[str, Any],
+    roll_chains: dict[str, Any],
+    underlying: str,
+) -> dict[str, Any] | None:
+    """The untested short of a tested strangle or straddle rolled toward the money, or None when it is
+    not tested. Tested: one short at `tested_delta` or more while the other is under `target_delta`.
+    The new strike is the listed one, in the same expiry, nearest `target_delta`, never further out than
+    the old one and never past the tested strike (a strangle may become a straddle, no more). Priced at
+    the snapshot's quoted mids, each strike's delta at its own IV. A tested trade with no usable chain,
+    strike or credit comes back `blocked`.
+
+    An inverted strangle always ranks below closing or rolling out in time without the inversion (the
+    user's rule, 2026-10-19), so a roll that would invert -- every in-expiry roll of a straddle's
+    untested side -- is never proposed: it comes back `blocked: "inverts"`, the best such strike kept
+    under `inversion` as the last alternative, after the close."""
+    put = next(leg for leg in options if leg["right"] == "P")
+    call = next(leg for leg in options if leg["right"] == "C")
+    if put["delta"] is None or call["delta"] is None or put["mid"] is None or call["mid"] is None:
+        return None
+    tested, untested = (put, call) if abs(put["delta"]) > abs(call["delta"]) else (call, put)
+    if abs(tested["delta"]) < float(cfg["tested_delta"]) or abs(untested["delta"]) >= float(
+        cfg["target_delta"]
+    ):
+        return None
+    head = {
+        "tested_strike": tested["strike"],
+        "tested_right": tested["right"],
+        "tested_delta": tested["delta"],
+        "from_strike": untested["strike"],
+        "right": untested["right"],
+        "expiration": untested["expiration"],
+    }
+    chain = roll_chains.get(f"{underlying.upper()}|{untested['expiration']}")
+    if not chain or not chain.get("options"):
+        return {**head, "blocked": "no_chain", "error": (chain or {}).get("error")}
+    target = float(cfg["target_delta"])
+    candidates, inversions = [], []
+    for o in chain["options"]:
+        mid = _f(o.get("mid"))
+        if o.get("right") != untested["right"] or not mid or mid <= 0:
+            continue
+        k = float(o["strike"])
+        toward = k > untested["strike"] if untested["right"] == "P" else k < untested["strike"]
+        if not toward:
+            continue
+        iv = pricing.implied_vol(spot, k, untested["years"], mid, untested["right"], rate)
+        if not iv:
+            continue
+        delta = pricing.delta(spot, k, untested["years"], iv, untested["right"], rate)
+        past = k > tested["strike"] if untested["right"] == "P" else k < tested["strike"]
+        (inversions if past else candidates).append((abs(abs(delta) - target), k, mid, delta))
+    qty = abs(untested["quantity"])
+    if not candidates:
+        if not inversions:
+            return {**head, "blocked": "no_strike"}
+        _, k, mid, delta = min(inversions)
+        return {
+            **head,
+            "blocked": "inverts",
+            "inversion": {
+                "to_strike": k,
+                "to_delta": delta,
+                "to_mid": mid,
+                "credit": mid - untested["mid"],
+                "ranked_below": ["close", "roll out in time without inverting"],
+            },
+        }
+    _, k, mid, delta = min(candidates)
+    credit = mid - untested["mid"]
+    roll = {
+        **head,
+        "to_strike": k,
+        "to_delta": delta,
+        "to_mid": mid,
+        "credit": credit,
+        "net": credit * qty * pricing.MULTIPLIER,
+        "legs": [
+            f"BTC {qty:g} {untested['expiration']} {untested['strike']:g}{untested['right']} "
+            f"@ {untested['mid']:.2f}",
+            f"STO {qty:g} {untested['expiration']} {k:g}{untested['right']} @ {mid:.2f}",
+        ],
+    }
+    if credit < float(cfg["min_credit"]):
+        return {**roll, "blocked": "credit"}
+    return roll
+
+
+def _fly_off(options: list[dict[str, Any]], spot: float, rate: float) -> dict[str, Any] | None:
+    """The trade that makes a broken-wing butterfly a plain one: buy the wing at the narrow side's width
+    beyond the body and sell the wide wing. The new wing is priced at an IV read linearly off the body's
+    and the old wing's (it lies between them), so its debit is modelled. None when a leg has no IV."""
+    low, body, high = sorted(options, key=lambda leg: leg["strike"])
+    below, above = body["strike"] - low["strike"], high["strike"] - body["strike"]
+    old = high if above > below else low
+    new_strike = body["strike"] + below if old is high else body["strike"] - above
+    if body["iv"] is None or old["iv"] is None or old["mid"] is None or old["dte"] is None:
+        return None
+    t = (new_strike - body["strike"]) / (old["strike"] - body["strike"])
+    iv = body["iv"] + t * (old["iv"] - body["iv"])
+    new_mid = pricing.price(spot, new_strike, old["years"], iv, old["right"], rate)
+    qty = old["quantity"]
+    per_unit = new_mid - old["mid"]
+    exp = old["expiration"]
+    return {
+        "right": old["right"],
+        "old_strike": old["strike"],
+        "new_strike": new_strike,
+        "new_mid": new_mid,
+        "debit": per_unit * qty * pricing.MULTIPLIER,
+        "debit_price": per_unit,
+        "modelled": True,
+        "legs": [
+            f"BTO {qty:g} {exp} {new_strike:g}{old['right']} @ ~{new_mid:.2f} (modelled)",
+            f"STC {qty:g} {exp} {old['strike']:g}{old['right']} @ {old['mid']:.2f}",
+        ],
+    }
 
 
 def _diagonal_width(options: list[dict[str, Any]]) -> float | None:
@@ -1177,7 +1374,8 @@ def _recommend(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str
         "replaces": replaces,
     }
     if chosen["action"] in (CLOSE, TAKE_PROFIT, ROLL_OR_CLOSE, ROLL_FOR_CREDIT):
-        trade["order"] = _order(legs)
+        # A roll's fallback is the close it replaces: the whole trade, or the legs that rule named.
+        trade["order"] = (trade.get("leg_orders") or {}).get(chosen["rule"]) or _order(legs)
     elif chosen["action"] == CLOSE_LEGS:
         named = set(chosen["legs"] or [])
         trade["order"] = (trade.get("leg_orders") or {}).get(chosen["rule"]) or _order(
@@ -1355,6 +1553,7 @@ def evaluate(
                     rules,
                     chain,
                     snapshot.get("earnings_trades_seen"),
+                    snapshot.get("roll_chains"),
                 )
                 trade["trade_id"] = u["underlying"] if len(groups) == 1 else f"{u['underlying']}#{i + 1}"
                 trades.append(trade)

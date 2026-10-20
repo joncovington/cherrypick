@@ -267,6 +267,38 @@ def explain(t: dict[str, Any]) -> str:
             "keeps you paid for the risk while giving the stock more time. Only send it for a net credit; "
             "if it will not fill for one, close the put instead."
         )
+    elif rule == "roll.untested_side":
+        r = t.get("untested_roll") or {}
+        right = "put" if r.get("right") == "P" else "call"
+        tested = "call" if right == "put" else "put"
+        way = "up" if right == "put" else "down"
+        why = (
+            f"The stock has moved toward your {r.get('tested_strike', 0):g} {tested}, and the "
+            f"{r.get('from_strike', 0):g} {right} on the other side has little left to give. Roll that "
+            f"untested {right} {way} to the {r.get('to_strike', 0):g}"
+        )
+        why += (
+            f" in the same expiry, for about {r.get('credit', 0):.2f} a share ({_usd(r.get('net'))}) at "
+            "today's quoted mids. It takes in more credit and cuts the trade's lean toward the tested side, "
+            "but it is repair, not a cure: if the move keeps going the tested side still loses. Only send "
+            "it for a net credit."
+        )
+        if "legs.short_take_profit" in (rec.get("replaces") or []):
+            why += (
+                f" The {right} has given up most of its premium, so it is due to be bought back anyway; "
+                "rolling it, rather than only buying it back, keeps a short on both sides. If the roll will "
+                f"not fill for a credit, just buy the {right} back."
+            )
+    elif rule == "roll.fly_off":
+        fo = t.get("fly_off") or {}
+        new, old = f"{fo.get('new_strike', 0):g}", f"{fo.get('old_strike', 0):g}"
+        why = (
+            f"The wide wing can be flown off: buy the {new} and sell the {old} for about "
+            f"{_usd(fo.get('debit'))} (an estimate from today's volatility), less than the "
+            f"{_usd(t.get('cost'))} you took in. That leaves a plain butterfly opened for a net credit of "
+            f"about {_usd(fo.get('kept'))}: it cannot lose (fees aside) and still pays most if the stock "
+            f"finishes at the body. Re-quote it first, and check the {new} strike is listed."
+        )
     elif rule == "roll.diagonal_short":
         r = t.get("roll") or {}
         due = _names(rec.get("replaces") or [])
@@ -373,6 +405,8 @@ PLAIN = {
     "legs.long_vertical": "long-spread sale",
     "roll.naked_put": "naked-put credit roll",
     "roll.diagonal_short": "diagonal short roll",
+    "roll.fly_off": "broken-wing fly-off",
+    "roll.untested_side": "untested-side roll",
     "ex_dividend": "ex-dividend check",
     "risk.oversize": "risk budget check",
     "earnings_trade": "earnings-trade rule",
