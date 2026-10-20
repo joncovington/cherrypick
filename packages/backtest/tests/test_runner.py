@@ -8,7 +8,7 @@ import json
 import pytest
 from test_fetch import FakeClient, _rows
 
-from cherrypick.backtest import fetch, paths, results, runner, settings, store
+from cherrypick.backtest import fetch, paths, results, runner, settings, store, vixfetch
 
 DAYS = ["2025-03-04", "2025-03-05", "2026-10-14", "2026-10-15"]
 
@@ -250,6 +250,91 @@ def test_a_meic_trial_is_keyed_on_the_merged_params_not_the_comments(meic_world)
     )
     _meic_run(s, "design")
     assert results.trial_count(conn, "meic") == 4  # an inherited base key moves every arm
+
+
+def _vix_rows(s, day, values):
+    conn = store.connect(s, "SPX")
+    try:
+        vixfetch.write_series(conn, day, [(1_700_000_000.0 + 60 * i, v) for i, v in enumerate(values)])
+    finally:
+        conn.close()
+
+
+def _cboe(rows):
+    """A synthetic Cboe daily file in the home, in the vendor-free public layout the replay reads."""
+    d = runner.cboe_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    lines = ["DATE,OPEN,HIGH,LOW,CLOSE"] + [f"{m},{o},0,0,{c}" for m, o, c in rows]
+    (d / "VIX.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_the_meic_fingerprint_moves_when_a_session_gains_vix_rows(meic_world):
+    """`run meic`, `fetch-vix`, `run meic` again: different inputs, so a different stamp. Flies reads no
+    VIX, so its stamp stays the one every stored flies report carries."""
+    s, _ = meic_world
+    before = _meic_run(s, "validation")["data_fingerprint"]
+    flies_before = _run(s, "validation")["data_fingerprint"]
+    assert _meic_run(s, "validation")["data_fingerprint"] == before  # same inputs, same stamp
+    _vix_rows(s, "2026-10-14", [16.0, 16.4])
+    after = _meic_run(s, "validation")
+    assert after["data_fingerprint"] != before
+    assert after["data_inputs"]["sessions_with_regime_rows"] == 1
+    _vix_rows(s, "2026-10-14", [16.0, 18.5])  # a refetch that changes a value moves it again
+    assert _meic_run(s, "validation")["data_fingerprint"] != after["data_fingerprint"]
+    assert _run(s, "validation")["data_fingerprint"] == flies_before
+    conn = store.connect(s, "SPX")
+    try:
+        assert flies_before == runner._fingerprint(conn, "SPX", ["2026-10-14", "2026-10-15"])
+    finally:
+        conn.close()
+
+
+def test_the_meic_fingerprint_moves_when_a_cboe_file_changes(meic_world):
+    s, _ = meic_world
+    absent = _meic_run(s, "validation")["data_fingerprint"]
+    _cboe([("10/13/2026", 17.0, 17.5), ("10/14/2026", 17.2, 18.0), ("10/15/2026", 18.1, 18.3)])
+    first = _meic_run(s, "validation")
+    assert first["data_fingerprint"] != absent
+    vix_file = first["data_inputs"]["cboe"][0]
+    assert vix_file["file"] == "VIX.csv" and vix_file["rows"] == 3
+    _cboe([("10/13/2026", 17.0, 17.5), ("10/14/2026", 19.9, 18.0), ("10/15/2026", 18.1, 18.3)])
+    corrected = _meic_run(s, "validation")["data_fingerprint"]
+    assert corrected != first["data_fingerprint"]
+    # The nightly refresh appending a session after the window is not a change to what the run read.
+    _cboe(
+        [("10/13/2026", 17.0, 17.5), ("10/14/2026", 19.9, 18.0), ("10/15/2026", 18.1, 18.3),
+         ("10/16/2026", 20.0, 21.0)]
+    )  # fmt: skip
+    assert _meic_run(s, "validation")["data_fingerprint"] == corrected
+
+
+def test_sessions_on_the_cboe_fallback_are_counted_in_the_report(meic_world):
+    s, _ = meic_world
+    sources = {
+        "2026-10-14": {"history_intraday": 300},
+        "2026-10-15": {"history_intraday": 120, "cboe_daily_open": 180},
+    }
+
+    def replay(day, out, arms, history_db, settle, config):
+        out.write_bytes(b"")
+        return {"ok": True, "vix_sources": sources[day]}
+
+    report = runner.run(
+        s, ["bp-10k"], "validation", module="meic", replay=replay, read_rows=_meic_read, workers=1,
+        log=lambda _m: None,
+    )  # fmt: skip
+    assert report["vix_fallback_sessions"] == 1
+    assert report["vix_sources"]["by_session"]["2026-10-14"]["source"] == "intraday"
+    assert report["vix_sources"]["by_session"]["2026-10-15"]["source"] == "mixed"
+    assert "1 of 2" in report["vix_note"]
+    sources["2026-10-14"] = {"cboe_daily_open": 300}
+    report = runner.run(
+        s, ["bp-10k"], "validation", module="meic", replay=replay, read_rows=_meic_read, workers=1,
+        log=lambda _m: None,
+    )  # fmt: skip
+    assert report["vix_fallback_sessions"] == 2
+    assert report["vix_sources"]["sessions"]["cboe_fallback"] == 1
+    assert "vix_sources" not in _run(s, "validation")  # flies reports no VIX source
 
 
 def test_meic_refusals(meic_world):

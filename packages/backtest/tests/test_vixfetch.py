@@ -88,6 +88,40 @@ def test_a_thin_nearest_expiry_falls_through_to_the_next(tmp_path):
     assert client.calls == [(DAY, "2026-10-21"), (DAY, "2026-11-18")]
 
 
+def test_a_refused_expiry_listing_is_reported_not_raised(tmp_path):
+    """The listing is the first vendor call; a refusal there is every session's, and the fetch report
+    still comes back (before, it raised past `fetch`'s report with the SPX sessions already written)."""
+    s = _store(tmp_path)
+
+    class NoListing(FakeVix):
+        def expirations(self, root):
+            raise RuntimeError("permission denied")
+
+    out = vixfetch.fetch_vix(s, NoListing(), "SPX", DAY, DAY, log=lambda _m: None)
+    assert out["written"] == {} and "permission denied" in out["aborted"]
+    assert list(out["refused"]) == [DAY]
+    assert "aborted" in vixfetch.shortfall(out)
+
+
+def test_fetch_vix_exits_non_zero_when_a_session_is_left_without_a_series(tmp_path, monkeypatch, capsys):
+    from cherrypick.backtest import __main__ as cli
+    from cherrypick.backtest import vendor
+
+    s = _store(tmp_path)
+    s = {**s, "enabled": True}
+    monkeypatch.setattr(cli.settings, "load", lambda _path=None: s)
+    argv = ["fetch-vix", "--from", DAY, "--to", DAY]
+    monkeypatch.setattr(vendor, "client_for", lambda _s: FakeVix(minutes=[]))
+    assert cli.main(argv) == 1
+    assert "1 session(s) came back empty" in capsys.readouterr().err
+    monkeypatch.setattr(vendor, "client_for", lambda _s: FakeVix(fail=True))
+    assert cli.main(argv) == 1
+    assert "1 session(s) refused" in capsys.readouterr().err
+    monkeypatch.setattr(vendor, "client_for", lambda _s: FakeVix())
+    assert cli.main(argv) == 0
+    assert vixfetch.shortfall({"sessions": 0, "written": {}, "empty": [], "refused": {}}) is None
+
+
 def test_an_empty_or_failed_session_writes_nothing(tmp_path):
     s = _store(tmp_path)
     assert vixfetch.fetch_vix(s, FakeVix(minutes=[]), "SPX", DAY, DAY, log=lambda _m: None)["empty"] == [DAY]

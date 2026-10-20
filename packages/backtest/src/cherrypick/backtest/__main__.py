@@ -139,6 +139,9 @@ def cmd_fetch(args) -> int:
             s, client, args.dataset, args.start, args.end, cadence=args.cadence,
             log=lambda m: print(m, file=sys.stderr),
         )  # fmt: skip
+        why = vixfetch.shortfall(report["vix"])
+        if why:  # the SPX sessions are written; the VIX gap is reported, and `fetch-vix` retries it
+            print(f"fetch: vix {why}", file=sys.stderr)
     _emit(report)
     return 1 if report.get("aborted") else 0
 
@@ -164,6 +167,10 @@ def cmd_fetch_vix(args) -> int:
         log=lambda m: print(m, file=sys.stderr),
     )  # fmt: skip
     _emit(report)
+    why = vixfetch.shortfall(report)
+    if why:
+        print(f"fetch-vix incomplete: {why}", file=sys.stderr)
+        return 1
     return 0
 
 

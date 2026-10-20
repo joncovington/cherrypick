@@ -72,8 +72,18 @@ def fetch_vix(
     conn = store.connect(settings, symbol, cadence)
     try:
         days = [d for d in _sessions(conn, symbol, start, end) if refetch or not _has_vix(conn, d)]
-        expirations = sorted(client.expirations(SYMBOL)) if days else []
         written, empty, refused = {}, [], {}
+        try:
+            expirations = sorted(client.expirations(SYMBOL)) if days else []
+        except Exception as exc:  # noqa: BLE001 -- the listing refused: every session waits, nothing raises
+            reason = f"vix_expirations: {type(exc).__name__}: {exc}"[:200]
+            return {
+                "sessions": len(days),
+                "written": written,
+                "empty": empty,
+                "refused": dict.fromkeys(days, reason),
+                "aborted": reason,
+            }
         for day in days:
             # The nearest expiry is sometimes a thin weekly the vendor holds nothing for (2022-12-01,
             # 2022-12-28, 2022-12-30, 2026-05-20); every expiry reports the same spot index, so the
@@ -102,3 +112,22 @@ def fetch_vix(
         return {"sessions": len(days), "written": written, "empty": empty, "refused": refused}
     finally:
         conn.close()
+
+
+def shortfall(report: dict) -> str | None:
+    """Why a VIX fetch left sessions without a series, or None when every session asked for got one.
+    Such a session replays on the Cboe daily open, so a fetch that leaves one is not a success."""
+    parts = []
+    if report.get("aborted"):
+        parts.append(f"aborted ({report['aborted']})")
+    refused = report.get("refused") or {}
+    if refused and not report.get("aborted"):
+        parts.append(f"{len(refused)} session(s) refused")
+    if report.get("empty"):
+        parts.append(f"{len(report['empty'])} session(s) came back empty")
+    if not parts:
+        return None
+    return (
+        "; ".join(parts)
+        + ": those sessions have no intraday VIX and MEIC's replay falls back to the Cboe daily open"
+    )

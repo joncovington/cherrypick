@@ -30,6 +30,16 @@ beyond the latest release.
   the test declared before any data came in: high-gap rows must beat both their implied odds and the
   below-zero rows by more than binomial noise, once 20 distinct expiries have settled. Recording
   starts 2026-10-20, the first session after the band fix.
+- **Fixed: a MEIC backtest could not tell which sessions ran on intraday VIX.** A session with no VIX
+  minutes in the store replays on the Cboe daily open all day, and the run counted it like any other
+  while its data fingerprint hashed only the vendor sessions; `run meic`, `fetch-vix`, `run meic`
+  again gave different P&L under the same stamp. MEIC's fingerprint now also covers each session's
+  `market_regime_history` rows and the Cboe VIX and VIX1D files' rows through the window's end (flies
+  reads neither, and its fingerprint is unchanged). Each report records the VIX source per session
+  (`intraday`, `mixed` or `cboe_fallback`) and states `vix_fallback_sessions` at the top. Stored
+  MEIC reports keep their old stamp, which no new run will repeat. `fetch-vix` now exits 1, and says
+  why, when a session was refused or came back empty, and a refused VIX expiry listing is reported
+  instead of raising past `fetch`'s report.
 - **Fixed: MEIC's session windows in the docs disagreed with the code.** The v0.11.1 documentation
   review set `open_volatile` to 09:30–10:00 and `late` to 14:30–15:30 in `docs/strategy.md` and the
   agent's `execute-entry` command; the loops classify by 10:15 and 14:45, so 10:00–10:15 entries meet
