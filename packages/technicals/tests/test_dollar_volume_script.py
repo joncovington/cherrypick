@@ -3,6 +3,9 @@
 The extended-hours flag is the whole correctness of the figure: the regular-hours candle (the SDK's
 default) carries a median 0.40 of the consolidated volume, which halved the security list's
 rank-1-or-2 set when it slipped through on 2026-10-19.
+
+Here, not in the orchestrator's tests, because the script imports `cherrypick.technicals`, which
+only this package's CI job installs. The SDK is never imported: the fake streamer is passed in.
 """
 
 from __future__ import annotations
@@ -63,12 +66,12 @@ class FakeStreamer:
         return self.events.pop(0)
 
 
-def test_the_fetch_asks_for_extended_hours_and_reads_the_broker_spelling(monkeypatch):
-    import tastytrade
+FAKE_SDK = (FakeStreamer, object)
 
+
+def test_the_fetch_asks_for_extended_hours_and_reads_the_broker_spelling():
     FakeStreamer.calls = []
-    monkeypatch.setattr(tastytrade, "DXLinkStreamer", FakeStreamer)
-    bars, ended = asyncio.run(fdv.fetch_batch(None, ["BRK.B", "AAPL"], datetime.now(UTC)))
+    bars, ended = asyncio.run(fdv.fetch_batch(None, ["BRK.B", "AAPL"], datetime.now(UTC), FAKE_SDK))
     (call,) = FakeStreamer.calls
     assert call["extended_trading_hours"] is True and call["interval"] == "1d"
     assert call["symbols"] == ["BRK/B", "AAPL"]
@@ -76,13 +79,10 @@ def test_the_fetch_asks_for_extended_hours_and_reads_the_broker_spelling(monkeyp
     assert bars["BRK.B"] == [("2026-10-15", 10.0, 5.0), ("2026-10-16", 10.0, 7.0)]
 
 
-def test_batches_stay_under_the_feeds_candle_subscription_limit(monkeypatch):
-    import tastytrade
-
+def test_batches_stay_under_the_feeds_candle_subscription_limit():
     FakeStreamer.calls = []
-    monkeypatch.setattr(tastytrade, "DXLinkStreamer", FakeStreamer)
     names = [f"S{i:03d}" for i in range(250)]
-    asyncio.run(fdv.fetch(None, names, datetime.now(UTC)))
+    asyncio.run(fdv.fetch(None, names, datetime.now(UTC), FAKE_SDK))
     assert [len(c["symbols"]) for c in FakeStreamer.calls] == [100, 100, 50]
 
 
