@@ -59,6 +59,151 @@ That leaves 2 (MEIC afternoon entries), 3 (the mid-morning iron fly) and 7 (MEIC
 and 7 depend on an intraday fill model that is no longer being built for Pulver's sake, so each now
 has to justify that build on its own.
 
+**Added 2026-10-18:**
+- 9–11, Option Alpha's three automated bots (a separate source from the Theta Profits series).
+- 12, GEX levels. They were in "not worth revisiting" until the backtest store made years of rebuilt
+  dealer profiles available.
+- 13, Option Alpha's credit-structure screener.
+
+### Provisional now, re-tested after the unlock (decided 2026-10-18)
+
+9–12 needn't wait for validation to unlock vendor history (`validate.UNLOCK_SESSIONS`, ~2026-10-26).
+Each gets a provisional look now, and a re-test once validation unlocks.
+
+- **Now: a provisional look, on the design window only** (2022-05-16 to 2025-06-30). It's the
+  runner's `--provisional`: no trial recorded, marked provisional in every report and reader, never
+  shown to the advisor. 9–12 aren't flies or MEIC rules, so their looks are scratch studies that read
+  the store directly, as the 10-17 IC-start study did. They follow the same rules by hand:
+  - clip to the design window;
+  - write under `~/.cherrypick/data/backtest/results/`, labelled provisional;
+  - record no trials.
+
+  **None of them reads the holdout.** A look that touched it would spoil the re-test below.
+- **After the unlock: the re-test, on the most recent window.**
+  - Re-run validation (`python -m cherrypick.backtest validate --cadence 60`).
+  - Re-run each item's spec on the design window as a trial. Every variant tried in the provisional
+    look counts toward the trial count, so DSR deflates for the search.
+  - Then spend the holdout (2025-07-01 to 2026-10-12) **once** per spec that still passes. Only that
+    result is evidence; a provisional look can only send an item to its re-test or close it.
+- **Declare each pass test before the look**, and use the same one for the re-test. A threshold
+  moved between the look and the re-test is a new spec.
+- **What can't run yet:** 11 needs the next-day expiry fetched first. 13 reads Dolt rather than the
+  vendor store, so the lock doesn't apply. It still keeps its newest year aside as its own holdout,
+  with the same once-only rule.
+- **One deliberate exception (2026-10-18).** The MEIC stop and entry-window arms `pm-hold`,
+  `pm-095`, `pm-200`, `day-095` and `day-200` (items 2 and 7) were run provisionally over the
+  holdout dates by the operator's choice, as well as over the design window. For those arms the
+  holdout is **already seen**: their after-unlock re-test can't count it as out of sample. Any
+  evidence for them needs fresh sessions, those after 2026-10-12. Every other spec keeps its holdout
+  clean.
+- **Added 2026-10-19: `pm-200-1400`**, with the same consequence. It's `pm-200` entering once a
+  day, 14:00–14:30, and it was suggested by `pm-200`'s own ledgers. Its provisional replay covers
+  the full vendor history by choice, holdout dates included, so its evidence also has to come from
+  sessions after 2026-10-12. Its first four recorded sessions (10-13 to 10-16) are such sessions:
+  provisional and far too few to judge.
+- **Added 2026-10-19: `pm-200-1400-w5`**, with the same consequence. It's `pm-200-1400` with SPX
+  wings one strike (5 points) wide instead of 10, run over the same full history to answer whether
+  live could trade the rule at half the buying power. It did worse than the 10-wide in the paired
+  sessions and in nearly every quarter, and isn't adopted: live trades `pm-200-1400`'s rule at 10
+  wide from 2026-10-19. The figures stay under `~/.cherrypick`.
+
+### Declared pass tests for the provisional looks (2026-10-18, before any look ran)
+
+These apply to the looks and, unchanged, to their re-tests. They're stricter than each item's
+"build only if", and a result that misses them closes the item.
+
+**Common to all:**
+- **Halves:** H1 is 2022-05-16 to 2023-12-31; H2 is 2024-01-01 to 2025-06-30.
+- **Intervals:** 95% intervals come from a day-level bootstrap (2,000 resamples, fixed seed).
+- **Fills:** credit at mid; at mid − $0.10 (his order, assumed to fill: optimistic); and a quarter
+  and a half of the way from mid to natural (q25, half). **q25 is the basis for every pass.**
+- **Costs:** `core.fees`' open fee, plus $5 per ITM leg at settlement.
+- **Entry minute:** the first fully quoted one-minute sample in the entry window.
+
+**The tests:**
+- **9, sandwich.** Shorts at the strikes nearest spot ± 5 and 5-wide wings, entered 13:45–14:00.
+  Four filter settings: none; VIX < 24; mid credit ≥ $2.50 (reward to risk ≥ 1); both.
+  - *Passes if* at q25 the setting's mean net is positive in at least three of 2022, 2023, 2024 and
+    2025 H1, **and** its overall interval's lower bound is above zero.
+  - A filter earns its place only if it raises the q25 mean over the unfiltered rule in both halves.
+- **10, flatfly.** Entered 10:00–10:05. The prior-close-centred fly is paired with the spot-centred
+  fly from the same minute. Wings 10 and 20, both declared.
+  - *Passes if* at q25 the paired difference (prior close − spot) has its interval's lower bound
+    above zero in both halves, **and** the prior-close fly's mean net is positive in at least three
+    of the four years.
+  - Days the prior-close centre isn't quoted are counted, not filled.
+- **12, GEX reads.** Signal only, from the store's profile through `core.gex`, by gamma and by open
+  interest:
+  - *(a) Pin*, at 10:00, 12:00 and 14:00. Measure whether the close moves from spot toward the
+    largest-exposure strike. *Passes if* the interval's lower bound on the hit rate is above 50% in
+    both halves, for the strike above spot and for the strike below spot taken separately. That
+    rules out drift.
+  - *(b) Barrier*, at 10:00. Count touches of the largest call wall above spot and the largest put
+    wall below it, against the touches expected at the same distance in straddles, taken from the
+    same half's days. *Passes if* observed ÷ expected is ≤ 0.85 with the interval's upper bound
+    below 1, for both the call and the put wall of one level type, in both halves.
+  - *(c) Regime*, at 10:00. Compare the range to the close, in straddles, on days of negative
+    against positive net GEX. *Passes if* the interval of the difference (negative − positive) is
+    above zero in both halves.
+- **13, screener.** Dolt end of day. Universe: 40 fixed liquid names. Expiry: the shortest listed at
+  10–17 DTE; Dolt lists nothing shorter, so the video's 7-DTE version needs single-stock vendor
+  chains. Shorts ≥ 2% OTM; spreads one or two listed strikes wide; iron condors paired at equal
+  width. Earnings spans are excluded, and so is any expiry past the design end. Held to expiry; the
+  40% take-profit isn't modelled.
+  - *(a) Passes if* the screened set's q25 mean net has its interval above zero in both halves,
+    **and** so does its excess over same-type, same-delta-bin unscreened trades. The bins are 0.05
+    of delta, weighted by screened counts.
+  - *(b) Passes if*, for one ~0.20-delta spread of each type per name and day, sell-off days (SPY
+    down ≥ 3% over 5 sessions) have their q25 interval above zero in both halves.
+
+### Declared pass test for item 7 (2026-10-19, before any look)
+
+Item 7 runs on the recorder's own quote history (SPX 0DTE, 20 strikes each side, from 2026-10-13),
+not the vendor store. Every session in it is after 2026-10-12, so for the `pm-200` arms its result
+counts as evidence, not a provisional look. Its figures can be published.
+
+- **Condors:** every one `pm-200` would enter on a recorded session (16 delta, 10 wide, every 30
+  minutes 12:00–14:30), rebuilt from the recorded chain. `pm-200-1400`'s entries, the live rule, are
+  reported as a subset. A session whose recording has a gap while a condor is open is left out and
+  counted.
+- **Baseline:** `pm-200`'s stop. A side closes when its cost reaches 2× the whole credit; the other
+  side is held to settlement.
+- **Variant A, a tighter surviving side.** Once one side stops, the other side's trigger drops by
+  10% and, separately, by 25% (1.8× and 1.5× the whole credit). Those are the ends of Talon's stated
+  range.
+- **Variant B, a stop on the short leg only.** The short is bought back when its own ask reaches the
+  side's trigger plus the long's entry price. The long is then sold at the first bid after the fill;
+  separately, it's held to settlement. Both are declared.
+- **Fills:** every rule is priced on the same recorded quotes. A stop fills at the natural (ask to
+  buy, bid to sell) on the first sample at or past its trigger.
+- **Costs:** `core.fees`' close fee for each leg closed, plus $5 per ITM leg at settlement.
+- **Sample:** no verdict before 30 condors have had a first stop, across at least 10 sessions.
+  Until then, only counts are reported.
+- **Passes if** the paired difference in net per condor (variant − baseline) has a positive mean
+  and its 95% interval's lower bound above zero. The interval comes from a day-level bootstrap
+  (2,000 resamples, fixed seed). Drawdown (Talon's claim: similar profit, half the drawdown) is
+  reported beside it, but it can't pass the test alone. A drawdown-only gain is a sizing argument
+  and is made as one.
+
+### Results of the provisional looks (2026-10-19)
+
+Every look ran against the tests above, unchanged. 9, 10 and 12 used licensed vendor data, so as for
+4 and 8 only the verdicts are recorded here; the figures stay under `~/.cherrypick`.
+
+- **9, sandwich: closed.** No filter setting passes. The VIX filter raises the mean in both halves;
+  the credit filter doesn't.
+- **10, flatfly: closed.** It fails both parts. Centring on the prior close does worse than centring
+  on spot, most of all after large gaps, as the daily check above predicted.
+- **12, GEX levels: closed again**, this time over years rather than weeks.
+  - *(a) Pin:* fails for both gamma and open interest at every time. The above/below split shows
+    the apparent pull toward a strike above spot is market drift.
+  - *(b) Barrier:* fails for both level types.
+  - *(c) Regime:* fails.
+
+  Reopen only with a new mechanism and a new declared test, not a new threshold.
+- **13, screener: closed** (figures under item 13).
+- **11** is still blocked on the next-day expiry fetch.
+
 ## The hypotheses, in priority order
 
 Priority weighs two things: how plausible the edge is, and how cheaply our existing data can answer
@@ -236,6 +381,183 @@ below. The test plan there supersedes this section.*
 - **Then:** after 10–20 sessions, separate the rules from the judgment calls. Test the rule-like
   parts against our recorded quotes and GEX levels on the same days.
 
+### 9. The 1:45 PM sandwich
+
+*Sources: Option Alpha, "triple threat" (https://youtu.be/1BOZ0M3fSCs), a bot running live since
+2026-04-01; and the video where it was chosen and set up (https://youtu.be/4ngxNC6AWQI, about
+2026-03-31).*
+
+- **Rule as stated:** at 13:45 ET, a 0DTE SPX iron condor with its shorts at spot ±5 and 5-wide
+  wings, 10 wide overall. Held to settlement, with no target and no stop. Two filters:
+  - VIX below 24.
+  - Reward to risk of 100% or more. On a 5-wide side that means a credit of at least $2.50, so at
+    most $250 at risk.
+
+  Orders work from 13:45 to 14:00, giving up to $0.10 from mid. Run at a broker that charges no
+  exercise fee, because it settles in the money more often than not.
+- **How it was found:** he picked it from a pool of 671,000 profitable community backtests, filtered
+  to 3 years, 0DTE, at least 300 trades and an average loss of $200 or less. Then he added the
+  reward-to-risk filter, which cut the drawdown from $2,085 to $1,638 for $300 less profit (≈$20k
+  over 3 years, ~45% wins). A rule chosen from a pool that size carries a trial count nobody can
+  know, so its backtest counts for nothing here. The live record from 04-01 is its only
+  out-of-sample evidence, and our own test is scored as a new trial with DSR.
+- **Where the edge would live:** the **0DTE variance premium** over the last two and a quarter hours,
+  in nearly the narrowest structure there is: an ATM iron fly with a 10-point flat top. It's flies'
+  edge in a different shape.
+- **His live figures:** 41% wins, average win $281, average loss $153. That's about +$26 a trade
+  before fees, and four SPX legs filled below mid cost about that much.
+- **What would falsify it:** net after a realistic fill, four legs of fees and settlement is zero or
+  less.
+- **Data:** the quote history from 10-13; ThetaData's 0DTE minute history for years.
+- **Smallest test:** the one fixed rule, with and without each filter. Run the fill sensitivity first
+  (mid, $0.10 off mid as he trades it, 25% and 50% of the way to natural), then report net by year
+  and the worst session. Historical VIX for the filter comes from `fetch-vix`.
+- **Build only if:** positive at 25% to natural in most years, and the filters earn their place
+  against the unfiltered rule out of sample.
+- **Harness:** the runner replays flies and MEIC only, and this structure is neither module's rule.
+  Before building a third harness, check whether MEIC's replay can express it (one entry, fixed strike
+  offsets instead of a delta band).
+
+### 10. The flatfly: an iron fly pinned to the prior close
+
+*Source: as 9.*
+
+- **Rule as stated:** at 10:00 ET, a 0DTE SPX iron fly with its shorts at the strike nearest the
+  prior close and 10-wide wings, held to settlement.
+- **Where the edge would live:** a claimed **structural pin**: SPX closes near the prior close more
+  often than the option prices allow. His backtest put that at about 25% of days.
+- **Already checked, on public daily data** (Dolt SPY 2023-09 to 2026-10, scaled to SPX points, with
+  the open standing in for 10:00 spot): the prior close is a worse centre than the open at every
+  width.
+  - Within 10 points at the close: 20.1% of days from the prior close, against 25.3% from the open.
+  - A 10-wide fly is worth 1.07 points at expiry on average centred on the prior close, against 1.30
+    on the open.
+  - On days that gap 10 points or more: 14.8% within 10 points of the prior close, against 23.8% of
+    the open.
+
+  His 25% matches the open, not the prior close. An off-centre fly is also cheaper to buy, so this
+  doesn't settle its expectancy; only quotes can.
+- **His live figures:** 12 wins and 62 losses, average win ~$2,063, average loss $391, so about +$7 a
+  trade. Drawdown $10.4k over two and a half months. Scaled back to his backtest's size, that drawdown
+  is already more than the whole three-bot backtest's in 3.5 years.
+- **What would falsify it:** centred on the prior close, the fly nets no more than the same fly
+  centred on 10:00 spot that day.
+- **Smallest test:** paired, the same session and minute, prior-close centre against spot centre,
+  with the fill sensitivity. Split by gap size.
+- **Build only if:** it beats the spot-centred pair in most years **and** nets positive after costs.
+  The daily check predicts a negative.
+
+### 11. The overnight gamma scalper (1DTE)
+
+*Source: as 9.*
+
+- **Rule as stated:** at 13:30 ET, a 1DTE SPX iron fly with its shorts at the next day's
+  highest-gamma strike and 30-wide wings. Take profit at 15% of credit or $300; otherwise hold to the
+  next day's settlement.
+- **Where the edge would live:** **dealer pinning** carried overnight, a structural effect. It is one
+  case of 12, held overnight.
+- **His live figures:** 53% wins, average win larger than average loss; no amounts given.
+- **What would falsify it:** the next day's close lands no nearer the highest-gamma strike than the
+  13:30 spot predicts.
+- **Data gap:** the store fetches the 0DTE expiry only (`fetch.py` refuses anything else). This needs
+  the next day's expiry from 13:30, with its quotes overnight and through the next session. That is a
+  fetch extension (a second expiry on each session), and the signal test needs it too, because the
+  highest-gamma strike is read from that expiry's own profile.
+- **Smallest test:** the signal first. Measure the distance from the next close to the highest-gamma
+  strike, against its distance from the 13:30 spot, as in 12(a). Price the fly only if the signal
+  exists.
+- **Build only if:** as 12, then positive after costs with his take-profit.
+
+### 12. GEX levels, revisited with history
+
+*Sources: Theta Profits videos 5, 7 and 14; Option Alpha's gamma scalper (11). Moved out of "not
+worth revisiting" on 2026-10-18.*
+
+- **Why reopen it:** the evidence that closed it was short. It came from the 10-15 sign-gate replay
+  over recorded sessions and bwb's `wall` arm, and the recorder has held per-strike profiles only
+  since 10-05. The backtest store writes the recorder's own `gex_profile_history` and
+  `gex_regime_history` tables for every vendor session: per-strike open interest, volume, IV and
+  gamma, plus walls and the flip. So the same readers can be run over years instead of weeks.
+- **Where the edge would live:** a **flow effect**, dealer hedging. Long gamma at a strike fades
+  price toward it; short gamma chases price away.
+- **The reads to test, signal first, each against a same-distance baseline** (walls tend to sit on
+  round strikes near spot, so the baseline is a strike at the same distance, not a random one):
+  - *(a) Pin:* the close lands nearer the highest-gamma strike (or a long-gamma cluster) than a
+    same-distance strike (video 5, 11).
+  - *(b) Barrier:* price crosses the largest long-gamma strike above or below by the close less often
+    than a same-distance strike (videos 7 and 14: sell beyond the node).
+  - *(c) Regime:* net-positive gamma sessions realise a smaller range relative to the expected move
+    than net-negative ones (video 7's fade versus chase). The sign gate already lost on this in our
+    short sample; history decides whether that was the sample.
+
+  Read each two ways: by gamma, and by **open interest alone**. Video 7 reads the vendor's chart as
+  contract counts, so far out-of-the-money clusters still count.
+- **What would falsify it:** no read separates outcomes from its baseline out of sample.
+- **Caveats to declare before running:**
+  - The store's gamma is computed from the vendor's IV (`greeks.bs_gamma`), not taken from a live
+    feed.
+  - The store's profile covers the 0DTE expiry only. An all-expiries level isn't reproduced, so the
+    test states which one it uses.
+  - Profile strike counts differ between the vendor and the recorder (the validation report carries
+    both).
+  - Until validation unlocks, a read is a provisional look on the design window only (see
+    "Provisional now" above). Results are licensed and stay under `~/.cherrypick`; this doc records
+    only that a read passed or closed, as for 4 and 8.
+- **Build only if:** a read beats its baseline in most years. Then a structure priced at that level
+  (a credit spread beyond a barrier, or a fly at a pin) nets positive after costs. A passing read
+  becomes a proposal for flies' `call_wall` rule or a new arm, landing at a boundary.
+
+### 13. A screener for credit structures the model calls positive-expectancy
+
+*Source: Option Alpha (https://youtu.be/4ngxNC6AWQI), two discretionary trades placed live after a
+sell-off.*
+
+- **Rule as stated:** in the vendor's trade-ideas screener, look for iron condors and credit spreads
+  on single stocks (index ETFs excluded) that meet all of these:
+  - reward to risk ≥ 100%;
+  - probability of max profit ≥ 50%;
+  - 7 DTE or less;
+  - at least 2% out of the money.
+
+  Take profit at 40%; otherwise hold to expiry. His examples: an ORCL 2 DTE iron condor at $0.47
+  (mid $0.49; 88% reward to risk once filled), and a 17 DTE VZ call spread at $1.26 (101%). Entered
+  after a sell-off, to catch the contraction of a volatility spike.
+- **Where the edge would live:** a **risk premium**, the variance premium sold when IV is high after
+  a sell-off. The screen itself is a different matter. A credit structure with reward to risk of
+  100% or more *and* at least a 50% chance of max profit has positive expectancy by the screener's
+  own model. Under fair pricing that can't happen. So the screen selects the trades where the model's
+  probabilities disagree most with the market: skew the model flattens, stale or wide mids (ORCL's
+  quote was wide), or event risk the model leaves out. That makes it a **model-error selector**
+  unless shown otherwise.
+- **What would falsify it:**
+  - *(a)* Trades passing both thresholds win max profit no more often than their prices imply, and
+    net no better than same-delta structures that fail the screen.
+  - *(b)* Selling after a sell-off earns no more of the variance premium than selling on other days.
+- **Data:** Dolt option chains (end of day, dense from 2024; sparse before) and daily bars for single
+  stocks. The ThetaData store is SPXW 0DTE only, so this doesn't use it.
+- **Smallest test:**
+  - *(a)* From the chains, build the candidates each day (ICs and verticals, ≤7 DTE, ≥2% OTM). Score
+    probability of max profit from each leg's own IV, as a screener would. Then compare the
+    both-threshold set with a same-delta control on realised max-profit rate and net at natural less
+    25%. Exclude earnings spans, which the screen doesn't.
+  - *(b)* Split the same candidates by a prior-week drawdown in the underlying, or IV rank.
+- **Build only if:** (a) the screened set nets positive after costs and beats the control in both
+  halves of the sample, or (b) the after-sell-off split is positive where the rest isn't. Expect (a)
+  to fail. A pass would more likely point at a premium already measured: the vendor income
+  screeners' short puts and credit spreads, and `curve`'s VXX regime gate.
+- **Provisional look, 2026-10-18: fails both tests; closed.** Dolt end of day, design window, 10–17
+  DTE, 40 names. All figures are q25 net per trade.
+  - **(a)** 132 of 561,324 candidates passed the screen: 7 in H1, 125 in H2. Model P(max profit)
+    0.61, realised 0.58. Mean +$52, but the interval spans zero in both halves (H1 −$10 to +$152;
+    H2 −$75 to +$187). Their excess over same-type, same-delta trades spans zero too (H1 −$0 to
+    +$191; H2 −$18 to +$80).
+  - **(b)** The ~0.20-delta spreads on sell-off days: H1 −$4 (−$17 to +$8); H2 +$0.5 (−$24 to
+    +$24).
+  - *Seen, not tested:* on all other days the same spreads lost: −$14 in H1, −$21 in H2, both
+    intervals below zero. A sell-off-versus-other difference wasn't a declared test, so acting on it
+    would need its own.
+  - Not tested: the 7-DTE version (no Dolt expiry that short) and the 40% take-profit.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
@@ -244,7 +566,6 @@ Each of these came up again in the review and is already answered:
 |---|---|---|
 | Debit-first fly building (videos 4, 8) | Payoff shaping that pays fees on extra legs | Flies debit-first arms: −$35 gross against $1,979 of fees |
 | A cheap single long as a hedge | Paid twice, recovered little | Flies hedge overlay: +$803 → −$4,813 |
-| GEX levels as entry signals (videos 5, 7, 14) | No separation in our data | MEIC's negative-GEX gate hurt flies and bwb; bwb `wall` lost everywhere |
 | Roll-for-a-credit, never close (video 17) | Wins most weeks, keeps the tail | pmcc roll policy lost to holding on 5 of 6 symbols; a 25-delta SPY spread never collects ⅓ of the width |
 | "Risk-free" transforms (videos 4, 13) | Accounting: spends booked profit as the floor | Flies' `outright` honesty rule |
 | Pin flies with 1,000%+ average wins (video 5) | Implausible expectancy; fair at mid otherwise | Expected-move fly study |
