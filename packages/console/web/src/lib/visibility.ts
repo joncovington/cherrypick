@@ -115,6 +115,8 @@ export function isSlideVisible(module: string, slide: string, f: Features, inUse
 export interface OffReason {
   /** One line for the turned-off card: why this page is not shown. */
   reason: string;
+  /** What would bring it back, where a card offers steps: the capability it lacks. */
+  needs?: "dolt";
 }
 
 const CAPABILITY_LABEL: Record<string, string> = { dolt: "Dolt", claude: "Claude Code" };
@@ -135,4 +137,24 @@ export function offReason(id: string, f: Features): OffReason | null {
   if (id === "advisor") return { reason: "The advisor is switched off in the suite config." };
   if (id === "flow") return { reason: "The QuikOptions capture is switched off in the suite config (quikoptions.enabled)." };
   return { reason: "It is switched off in the suite config." };
+}
+
+/**
+ * The Screeners tabs whose files the technicals engines write from the local Dolt clones: the
+ * earnings calendar, its record, the signal board and the skate bands. Unlike the rest of the
+ * console, an off tab here is NOT hidden (the user's choice, 2026-10-19): it stays in the rail and
+ * says what it needs, because a screen that silently vanishes, or shows an empty table, reads as
+ * "no data today" -- the confusion that started this (a fresh install with no Dolt saw empty
+ * screeners and was told it needed a vendor).
+ */
+export const SCREENERS_NEED_DOLT: ReadonlySet<string> = new Set(["earnings", "earnings-record", "board", "skate"]);
+
+/** Why a Dolt-backed Screeners tab has nothing to show, or null when it does (or when that is
+ *  unknown: loading or a failed bridge shows the tab, as every rule here does). */
+export function screenerOffReason(slide: string, f: Features): OffReason | null {
+  if (!SCREENERS_NEED_DOLT.has(slide) || !known(f) || f.features["technicals"] !== false) return null;
+  if (f.capabilities["dolt"] !== true) {
+    return { reason: "It is built from the local Dolt market data, which this machine does not have set up.", needs: "dolt" };
+  }
+  return { reason: "The technicals engines that build it are switched off in the suite config (technicals.enabled)." };
 }

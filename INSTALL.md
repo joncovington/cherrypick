@@ -98,7 +98,8 @@ The optional browser collectors use Playwright, which no installer adds. Install
 yourself (`.venv/bin/pip install playwright`), then add the browsers:
 - **QuikOptions** needs Google Chrome itself: install it the usual way on macOS, or run
   `.venv/bin/playwright install chrome` on x86-64 Linux. There is no Chrome for Linux on ARM.
-- **The screener collector** uses Playwright's own Chromium:
+- **The vendor collector** (optional and off by default: it reads a paid subscription's lists, and
+  nothing in the suite needs it) uses Playwright's own Chromium:
   `.venv/bin/playwright install --with-deps chromium`. On Linux this installs system libraries and
   needs sudo.
 
