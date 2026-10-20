@@ -1,6 +1,6 @@
 import { useEarningsLive, type EarningsEvent, type EarningsOpenPosition } from "../../lib/api";
-import { DataCard, PnlCell, fmtMoney, fmtNum, sortRows, useSort, type SortHeader } from "../../components/DataTable";
-import { fmtPrice } from "../../lib/format";
+import { DataCard, PnlCell, fmtMoney, sortRows, useSort, type SortHeader } from "../../components/DataTable";
+import { fmtCash, fmtPrice } from "../../lib/format";
 
 /**
  * What the managed loop is holding right now.
@@ -57,8 +57,11 @@ const POSITION_HEADERS: Array<string | SortHeader> = [
   { label: "Symbol", k: "symbol" },
   { label: "Strategy", k: "strategy" },
   { label: "Opened", k: "opened" },
-  { label: "Price", k: "price" },
+  { label: "Qty", k: "qty" },
+  { label: "Price (per share)", k: "price" },
+  { label: "Entry", k: "entry" },
   { label: "Mark (per share)", k: "mark" },
+  { label: "To close", k: "close" },
   { label: "Unrealized (gross)", k: "unrealised" },
   "Best / worst",
   "Waiting on",
@@ -68,9 +71,12 @@ const POSITION_SORTS = {
   symbol: (p: EarningsOpenPosition) => p.symbol,
   strategy: (p: EarningsOpenPosition) => p.strategy,
   opened: (p: EarningsOpenPosition) => p.openedAt,
+  qty: (p: EarningsOpenPosition) => p.quantity,
   price: (p: EarningsOpenPosition) => p.entryCredit,
+  entry: (p: EarningsOpenPosition) => p.entryCash,
   // An unpriced mark is not a valuation, so it sinks with the nulls rather than ranking as a number.
   mark: (p: EarningsOpenPosition) => p.mark?.exitDebit ?? null,
+  close: (p: EarningsOpenPosition) => p.mark?.exitCash ?? null,
   unrealised: (p: EarningsOpenPosition) => p.mark?.unrealizedPnl ?? null,
 };
 
@@ -100,16 +106,20 @@ export function EarningsLiveCard() {
           <td>{p.symbol}</td>
           <td>{p.strategy}</td>
           <td title={p.openedAt ?? ""}>{ago(p.openedAt)}</td>
+          <td>{p.quantity ?? "—"}</td>
+          {/* Per share is the one per-share column; the rest are whole-position dollars, signed. */}
           <td>{fmtPrice(p.entryCredit)}</td>
+          <td>{fmtCash(p.entryCash)}</td>
           {/* A refused mark records that we looked and could not price it — real, but not a
-              valuation, so it is never shown as one. */}
+              valuation, so it is never shown as one. The mark is a cost to close, so a debit. */}
           <td title={p.mark ? `${p.mark.source ?? "?"} · ${ago(p.mark.markedAt)}` : ""}>
             {p.mark && p.mark.exitDebit !== null ? (
-              fmtNum(p.mark.exitDebit)
+              fmtPrice(-p.mark.exitDebit)
             ) : (
               <span className="muted">unpriced</span>
             )}
           </td>
+          <td>{fmtCash(p.mark?.exitCash ?? null)}</td>
           <td>
             <PnlCell v={p.mark?.unrealizedPnl ?? null} />
           </td>

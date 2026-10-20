@@ -829,7 +829,10 @@ export function useEarnings(
 
 export interface EarningsMark {
   markedAt: string | null;
+  /** Per share, a debit to close positive. */
   exitDebit: number | null;
+  /** Whole-position dollars to close, signed (a debit paid is −). */
+  exitCash: number | null;
   unrealizedPnl: number | null;
   spot: number | null;
   source: string | null;
@@ -851,7 +854,10 @@ export interface EarningsOpenPosition {
   symbol: string;
   strategy: string;
   expiration: string | null;
+  /** Per share, signed (credit +, debit −). */
   entryCredit: number | null;
+  /** Whole-position entry cash, signed. */
+  entryCash: number | null;
   quantity: number | null;
   capitalAtRisk: number | null;
   openedAt: string | null;

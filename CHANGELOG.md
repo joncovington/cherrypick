@@ -11,6 +11,22 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Fixed: the console's concentration guidance showed the wrong figure.** The reader took the
+  first figure in each driver row, which for concentration is the theta share, and the card printed
+  it as a signed number: a name at 30% of the book's theta read "+0.3", and a name over the cap on
+  its delta share showed its smaller theta share instead. Each rule's drivers now carry their
+  figures with their kind, chosen per rule: theta in dollars a day, delta in benchmark shares, and
+  concentration as both shares, each as a percentage.
+- **Fixed: two manage captions stated numbers the ruleset can change.** The income card always said
+  a short put's strike is held to 25% of net liq, though a margin account is held to 50%, and the
+  guidance card always said confidence 40. Both now read the evaluation's own ruleset: the caps
+  for the account's basis (the per-trade risk and name theta share too), and the portfolio rules'
+  confidence. An evaluation without a ruleset names no number rather than a default.
+- **Fixed: the console's earnings open positions stated a position total as per share.** The live
+  card passed the ledger's `entry_credit` and the mark's `exit_debit` straight through under
+  "Price" and "Mark (per share)", but both are already multiplied by quantity, so a 2-lot showed
+  twice its price. They are now per share, beside the whole-position entry cash and cost to close,
+  signed, which add up to the unrealised figure (the same fix as #439 on the history table).
 - **Added: the manage snapshot reads the day's orders** (v10, `working_orders`, through the broker
   tool's read-only `get_working_orders`), slimmed to id, status, underlying, type, price and legs,
   with the account number and the user's name left out. manage now counts a call still being sold

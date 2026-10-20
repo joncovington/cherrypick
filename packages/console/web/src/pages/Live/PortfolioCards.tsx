@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ManageBand, ManageGuidance, ManageHedgeSuggestion, ManagePortfolio } from "@console/shared";
+import type { ManageBand, ManageGuidance, ManageGuidanceFigure, ManageHedgeSuggestion, ManagePortfolio } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { Bullet } from "../../components/grid/Bullet";
 import { DivergingBars } from "../../components/grid/DivergingBars";
@@ -312,9 +312,24 @@ function guidanceTopic(rule: string): string {
   return GUIDANCE_TOPIC[rule] ?? rule.replace(/^portfolio\./, "").replace(/_/g, " ");
 }
 
+/** A driver's figure in its own unit: delta in benchmark shares, theta in dollars a day, and a share
+ *  of the book as a percentage, named, since a concentration driver carries both shares. */
+function driverFigure(f: ManageGuidanceFigure, benchmark: string | null): string {
+  switch (f.kind) {
+    case "bwd":
+      return f.value === null ? "—" : `${signed(f.value)} ${benchmark ? `${benchmark} ` : ""}sh`;
+    case "theta":
+      return f.value === null ? "—" : `${fmtCash(f.value)}/day`;
+    case "bwd_share":
+      return `${pctOf(f.value, 0)} of delta`;
+    case "theta_share":
+      return `${pctOf(f.value, 0)} of theta`;
+  }
+}
+
 /** One guidance item as its own small card: the topic as an amber chip (every item is a review), the
  *  rule's confidence, its reason, and what drives it. */
-function GuidanceItem({ g }: { g: ManageGuidance }) {
+function GuidanceItem({ g, benchmark }: { g: ManageGuidance; benchmark: string | null }) {
   return (
     <section className="md-card" title={g.rule}>
       <header>
@@ -327,13 +342,20 @@ function GuidanceItem({ g }: { g: ManageGuidance }) {
           {g.drivers.map((d) => (
             <li key={d.underlying}>
               <span>{d.underlying}</span>
-              <span>{signed(d.value)}</span>
+              <span>{d.figures.map((f) => driverFigure(f, benchmark)).join(" · ") || "—"}</span>
             </li>
           ))}
         </ul>
       )}
     </section>
   );
+}
+
+/** The ruleset's own confidence for the portfolio rules, as the caption states it: one figure when
+ *  they agree, the range when they do not, and none when the evaluation embeds no ruleset. */
+function confidenceText(c: ManagePortfolio["ruleConfidence"]): string {
+  if (!c) return "";
+  return c.low === c.high ? ` at confidence ${c.low}` : ` at confidence ${c.low}–${c.high}`;
 }
 
 function GuidanceCard({ p }: { p: ManagePortfolio }) {
@@ -344,7 +366,7 @@ function GuidanceCard({ p }: { p: ManagePortfolio }) {
       ) : (
         <div className="pf-guide-grid">
           {p.guidance.map((g) => (
-            <GuidanceItem key={g.rule} g={g} />
+            <GuidanceItem key={g.rule} g={g} benchmark={p.benchmark} />
           ))}
         </div>
       )}
@@ -353,7 +375,9 @@ function GuidanceCard({ p }: { p: ManagePortfolio }) {
           partial: {[...p.unmodelledLegs.map((l) => `${l} (not modelled)`), ...p.noBeta.map((u) => `${u} (no beta)`)].join(", ") || "no benchmark price"}
         </p>
       )}
-      <p className="muted pf-caption">retail heuristics at confidence 40: no published evidence stands behind these bands</p>
+      <p className="muted pf-caption">
+        retail heuristics{confidenceText(p.ruleConfidence)}: no published evidence stands behind these bands
+      </p>
     </Card>
   );
 }
